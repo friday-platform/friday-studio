@@ -2,7 +2,6 @@ import React from "react";
 import { render } from "ink";
 import { Box, Text } from "ink";
 import { spinner } from "../../utils/prompts.tsx";
-import { z } from "zod/v4";
 import { promises as fs } from "node:fs";
 import { YargsInstance } from "../../utils/yargs.ts";
 import { getAtlasClient } from "@atlas/client";
@@ -125,11 +124,11 @@ export async function handler(argv: GenerateArgs) {
       }
       : undefined;
 
-    const result = await client.generateFromTemplate(
+    const result = (await client.generateFromTemplate(
       argv.template,
       data,
       options,
-    ) as GenerationResult;
+    )) as GenerationResult;
 
     s.stop("Content generated successfully");
 
@@ -143,7 +142,9 @@ export async function handler(argv: GenerateArgs) {
     } else if (argv.json) {
       console.log(JSON.stringify(result, null, 2));
     } else {
-      const { unmount } = render(<GenerationResultDisplay result={result} stored={argv.store} />);
+      const { unmount } = render(
+        <GenerationResultDisplay result={result} stored={argv.store} />,
+      );
       setTimeout(() => unmount(), 100);
     }
   } catch (error) {

@@ -1,6 +1,6 @@
 import { Box, render, Text } from "ink";
 import { StatusBadge } from "../../../cli/components/status-badge.tsx";
-import { getAtlasClient } from "@atlas/client";
+import { getAtlasClient, SessionDetailedInfo } from "@atlas/client";
 
 interface GetArgs {
   id: string;
@@ -49,7 +49,8 @@ export const handler = async (argv: GetArgs): Promise<void> => {
     const port = argv.port || 8080;
     const client = getAtlasClient({ url: `http://localhost:${port}` });
 
-    let session;
+    let session: SessionDetailedInfo;
+
     try {
       session = await client.getSession(argv.id);
     } catch (error) {
@@ -68,17 +69,15 @@ export const handler = async (argv: GetArgs): Promise<void> => {
       // Render with Ink - convert client response to expected format
       const sessionDetail: SessionDetail = {
         id: session.id,
-        workspaceName: session.workspaceName,
         signal: session.signal,
         status: session.status,
-        startedAt: session.startedAt,
-        completedAt: session.completedAt,
-        agents: session.agents,
-        context: session.context,
-        result: session.result,
-        error: session.error,
+        startedAt: session.startTime || "",
+        completedAt: session.endTime,
+        result: session.results,
       };
-      const { unmount } = render(<SessionDetailCommand session={sessionDetail} />);
+      const { unmount } = render(
+        <SessionDetailCommand session={sessionDetail} />,
+      );
 
       // Give a moment for render then exit
       setTimeout(() => {

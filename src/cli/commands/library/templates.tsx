@@ -1,7 +1,6 @@
 import { spinner } from "../../utils/prompts.tsx";
 import { Box, render, Text } from "ink";
 import React from "react";
-import { z } from "zod/v4";
 import { Table } from "../../components/table.tsx";
 import { YargsInstance } from "../../utils/yargs.ts";
 import { getAtlasClient } from "@atlas/client";
@@ -87,12 +86,15 @@ interface TemplatesDisplayProps {
 
 const TemplatesDisplay: React.FC<TemplatesDisplayProps> = ({ templates }) => {
   // Group templates by category
-  const categorized = templates.reduce((acc, template) => {
-    const category = template.category || "General";
-    if (!acc[category]) acc[category] = [];
-    acc[category].push(template);
-    return acc;
-  }, {} as Record<string, Template[]>);
+  const categorized = templates.reduce(
+    (acc, template) => {
+      const category = template.category || "General";
+      if (!acc[category]) acc[category] = [];
+      acc[category].push(template);
+      return acc;
+    },
+    {} as Record<string, Template[]>,
+  );
 
   return (
     <Box flexDirection="column">

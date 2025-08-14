@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useState } from "react";
 import { Box, render, Text, useApp, useInput } from "ink";
 import { Alert, ConfirmInput, MultiSelect, Spinner, StatusMessage, TextInput } from "@inkjs/ui";
 import process from "node:process";
@@ -39,10 +39,11 @@ export const spinner = () => {
 };
 
 // Text input prompt
-export const text = async (options: PromptOptions): Promise<string | symbol> => {
+export const text = async (
+  options: PromptOptions,
+): Promise<string | symbol> => {
   return new Promise((resolve) => {
     const TextPrompt = () => {
-      const [value, setValue] = useState("");
       const { exit } = useApp();
 
       useInput((input, key) => {
@@ -80,7 +81,9 @@ export const text = async (options: PromptOptions): Promise<string | symbol> => 
 };
 
 // Confirm prompt
-export const confirm = async (options: PromptOptions): Promise<boolean | symbol> => {
+export const confirm = async (
+  options: PromptOptions,
+): Promise<boolean | symbol> => {
   return new Promise((resolve) => {
     const ConfirmPrompt = () => {
       const { exit } = useApp();
@@ -122,7 +125,7 @@ export const multiselect = async (options: {
 }): Promise<string[] | symbol> => {
   return new Promise((resolve) => {
     const MultiSelectPrompt = () => {
-      const [selected, setSelected] = useState<string[]>([]);
+      const [_, setSelected] = useState<string[]>([]);
       const { exit } = useApp();
 
       useInput((input, key) => {
@@ -175,7 +178,9 @@ export const group = async <T extends Record<string, any>>(
 export const intro = (message: string) => {
   render(
     <Box paddingY={1}>
-      <Text bold color="cyan">┌ {message}</Text>
+      <Text bold color="cyan">
+        ┌ {message}
+      </Text>
     </Box>,
   );
 };

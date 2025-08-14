@@ -9,24 +9,22 @@ import {
 /**
  * Custom fail handler for Yargs to provide better error messages and suggestions
  */
-export function customFailHandler(
-  msg: string,
-  err: Error | null,
-): void {
+export function customFailHandler(msg: string, err: Error | null): void {
   // First check if this is a "not enough arguments" error
   if (msg.includes("Not enough non-option arguments")) {
     // Extract how many args were expected
     const match = msg.match(/got (\d+), need at least (\d+)/);
     if (match) {
-      const got = match[1];
-      const need = match[2];
-
       // Get the command path for context
       const denoArgs = Deno.args.filter((arg) => !arg.startsWith("-"));
       const commandPath = denoArgs.join(" ");
 
-      console.error(`Error: Missing required argument for 'atlas ${commandPath}'`);
-      console.error(`\nRun 'atlas ${commandPath} --help' for usage information.`);
+      console.error(
+        `Error: Missing required argument for 'atlas ${commandPath}'`,
+      );
+      console.error(
+        `\nRun 'atlas ${commandPath} --help' for usage information.`,
+      );
       Deno.exit(1);
     }
   }
@@ -35,12 +33,12 @@ export function customFailHandler(
   const unknownCommandMatch = msg.match(/Unknown arguments?: (.+)/);
   const commandNotFoundMatch = msg.match(/Unknown command: (.+)/);
 
-  let unknownCommand: string | null = null;
+  let unknownCommand: string | null | undefined = null;
 
   if (unknownCommandMatch) {
-    unknownCommand = unknownCommandMatch[1].trim().split(/\s+/)[0];
+    unknownCommand = unknownCommandMatch[1]?.trim().split(/\s+/)[0];
   } else if (commandNotFoundMatch) {
-    unknownCommand = commandNotFoundMatch[1].trim();
+    unknownCommand = commandNotFoundMatch[1]?.trim();
   }
 
   // Also try to get the command from Deno.args if not found in message
@@ -62,14 +60,25 @@ export function customFailHandler(
         const mainCommand = denoArgs[0];
         const subCommand = denoArgs[1];
 
-        if (isValidCommand(mainCommand) && SUBCOMMANDS[mainCommand]) {
+        if (
+          mainCommand &&
+          isValidCommand(mainCommand) &&
+          SUBCOMMANDS?.[mainCommand]
+        ) {
           // Check if the subcommand exists
-          const validSubcommands = SUBCOMMANDS[mainCommand].map((sc) => sc.command);
-          if (!validSubcommands.includes(subCommand)) {
+          const validSubcommands = SUBCOMMANDS?.[mainCommand]?.map(
+            (sc) => sc.command,
+          );
+          if (subCommand && !validSubcommands?.includes(subCommand)) {
             // This is an unknown subcommand
-            const suggestions = findClosestCommand(subCommand, SUBCOMMANDS[mainCommand]);
+            const suggestions = findClosestCommand(
+              subCommand,
+              SUBCOMMANDS[mainCommand],
+            );
 
-            console.error(`Error: Unknown ${mainCommand} command: '${subCommand}'`);
+            console.error(
+              `Error: Unknown ${mainCommand} command: '${subCommand}'`,
+            );
 
             if (suggestions.length > 0) {
               console.error(formatSuggestions(suggestions));
@@ -78,7 +87,9 @@ export function customFailHandler(
               for (const sub of SUBCOMMANDS[mainCommand]) {
                 console.error(`  ${sub.command} - ${sub.description}`);
               }
-              console.error(`\nRun 'atlas ${mainCommand} --help' for more information.`);
+              console.error(
+                `\nRun 'atlas ${mainCommand} --help' for more information.`,
+              );
             }
 
             Deno.exit(1);
@@ -107,7 +118,10 @@ export function customFailHandler(
     // Clean up Yargs error messages
     const cleanMsg = msg
       .replace(/Unknown arguments?:/, "Unknown command:")
-      .replace(/Not enough non-option arguments.*/, "You need to specify a command");
+      .replace(
+        /Not enough non-option arguments.*/,
+        "You need to specify a command",
+      );
 
     console.error(`Error: ${cleanMsg}`);
   }

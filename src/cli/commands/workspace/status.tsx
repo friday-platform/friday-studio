@@ -25,8 +25,6 @@ export const builder = {
 };
 
 // Extract response types from OpenAPI
-type WorkspaceListResponse =
-  paths["/api/workspaces"]["get"]["responses"]["200"]["content"]["application/json"];
 type WorkspaceDetailsResponse =
   paths["/api/workspaces/{workspaceId}"]["get"]["responses"]["200"]["content"]["application/json"];
 
@@ -65,11 +63,14 @@ export const handler = async (argv: StatusArgs): Promise<void> => {
 
     if (argv.workspace) {
       // Use specified workspace - try to find by ID or name
-      const getWorkspaceResult = await client.GET("/api/workspaces/{workspaceId}", {
-        params: {
-          path: { workspaceId: argv.workspace },
+      const getWorkspaceResult = await client.GET(
+        "/api/workspaces/{workspaceId}",
+        {
+          params: {
+            path: { workspaceId: argv.workspace },
+          },
         },
-      });
+      );
 
       if (getWorkspaceResult.data) {
         workspaceId = getWorkspaceResult.data.id;
@@ -78,10 +79,14 @@ export const handler = async (argv: StatusArgs): Promise<void> => {
         const listResult = await client.GET("/api/workspaces");
 
         if (listResult.error) {
-          throw new Error(listResult.error.error || "Failed to list workspaces");
+          throw new Error(
+            listResult.error.error || "Failed to list workspaces",
+          );
         }
 
-        const foundWorkspace = listResult.data?.find((w) => w.name === argv.workspace);
+        const foundWorkspace = listResult.data?.find(
+          (w) => w.name === argv.workspace,
+        );
         if (foundWorkspace) {
           workspaceId = foundWorkspace.id;
         } else {
@@ -100,10 +105,14 @@ export const handler = async (argv: StatusArgs): Promise<void> => {
         const listResult = await client.GET("/api/workspaces");
 
         if (listResult.error) {
-          throw new Error(listResult.error.error || "Failed to list workspaces");
+          throw new Error(
+            listResult.error.error || "Failed to list workspaces",
+          );
         }
 
-        const currentWorkspace = listResult.data?.find((w) => w.name === currentWorkspaceName);
+        const currentWorkspace = listResult.data?.find(
+          (w) => w.name === currentWorkspaceName,
+        );
 
         if (currentWorkspace) {
           workspaceId = currentWorkspace.id;
@@ -127,7 +136,9 @@ export const handler = async (argv: StatusArgs): Promise<void> => {
     });
 
     if (workspaceResult.error) {
-      throw new Error(workspaceResult.error.error || "Failed to get workspace details");
+      throw new Error(
+        workspaceResult.error.error || "Failed to get workspace details",
+      );
     }
 
     const workspace = workspaceResult.data;
@@ -177,7 +188,10 @@ export const handler = async (argv: StatusArgs): Promise<void> => {
     const errorMessage = error instanceof Error ? error.message : String(error);
 
     // Check for connection errors
-    if (errorMessage.includes("Failed to fetch") || errorMessage.includes("NetworkError")) {
+    if (
+      errorMessage.includes("Failed to fetch") ||
+      errorMessage.includes("NetworkError")
+    ) {
       console.error(
         "Error: Unable to connect to Atlas daemon. Make sure it's running with 'atlas daemon start'",
       );
@@ -212,7 +226,7 @@ function JsonOutput({
         description: workspace.description,
         path: workspace.path,
         status: workspace.status,
-        hasActiveRuntime: workspace.hasActiveRuntime,
+        hasActiveRuntime: workspace.runtime?.status === "running",
         runtime: workspace.runtime,
         createdAt: workspace.createdAt,
         lastSeen: workspace.lastSeen,
@@ -296,9 +310,7 @@ function WorkspaceStatusCommand({
 
         <Box>
           <Text bold>Status:</Text>
-          <Text color={statusColor}>
-            {workspace.status}
-          </Text>
+          <Text color={statusColor}>{workspace.status}</Text>
         </Box>
 
         <Box>
@@ -317,7 +329,9 @@ function WorkspaceStatusCommand({
               </Text>
             </Box>
             <Box paddingLeft={2}>
-              <Text>Started: {new Date(workspace.runtime.startedAt).toLocaleString()}</Text>
+              <Text>
+                Started: {new Date(workspace.runtime.startedAt).toLocaleString()}
+              </Text>
             </Box>
             <Box paddingLeft={2}>
               <Text>Sessions: {workspace.runtime.sessions}</Text>
@@ -347,10 +361,14 @@ function WorkspaceStatusCommand({
         <Box flexDirection="column" marginTop={1}>
           <Text bold>Timestamps:</Text>
           <Box paddingLeft={2}>
-            <Text>Created: {new Date(workspace.createdAt).toLocaleString()}</Text>
+            <Text>
+              Created: {new Date(workspace.createdAt).toLocaleString()}
+            </Text>
           </Box>
           <Box paddingLeft={2}>
-            <Text>Last Seen: {new Date(workspace.lastSeen).toLocaleString()}</Text>
+            <Text>
+              Last Seen: {new Date(workspace.lastSeen).toLocaleString()}
+            </Text>
           </Box>
         </Box>
       </Box>

@@ -8,5 +8,5 @@ export const DIAGNOSTICS_STATUS = {
   DONE: "done",
 } as const;
 
-export type DiagnosticsStatus = typeof DIAGNOSTICS_STATUS[keyof typeof DIAGNOSTICS_STATUS] | string;
+export type DiagnosticsStatus = string;
 // Note: string is included for error messages

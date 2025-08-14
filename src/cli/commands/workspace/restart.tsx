@@ -1,14 +1,5 @@
 import { getWorkspaceManager } from "@atlas/workspace";
-// import { WorkspaceProcessManager } from "../../../core/workspace-process-manager.ts";
 import { errorOutput } from "../../utils/output.ts";
-
-interface RestartArgs {
-  workspace?: string;
-  port?: number;
-  detached?: boolean;
-  lazy?: boolean;
-  logLevel?: string;
-}
 
 export const command = "restart [workspace]";
 export const desc = "Restart a workspace server";
@@ -41,7 +32,7 @@ export const builder = {
   },
 };
 
-export const handler = async (argv: RestartArgs): Promise<void> => {
+export const handler = async (): Promise<void> => {
   try {
     const registry = await getWorkspaceManager();
     await registry.initialize();

@@ -1,7 +1,6 @@
 import { spinner } from "../../utils/prompts.tsx";
 import { Box, render, Text } from "ink";
 import React from "react";
-import { z } from "zod/v4";
 import { YargsInstance } from "../../utils/yargs.ts";
 import { getAtlasClient } from "@atlas/client";
 import type { LibraryStats } from "@atlas/client";
@@ -149,7 +148,7 @@ const StatsDisplay: React.FC<StatsDisplayProps> = ({ stats }) => {
             <Box key={activity.date} marginLeft={2}>
               <Text>
                 • {activity.date}: {activity.items_added} items added (
-                {formatBytes(activity.size_added_bytes)})
+                {formatBytes(Number(activity.size_added_bytes))})
               </Text>
             </Box>
           ))}

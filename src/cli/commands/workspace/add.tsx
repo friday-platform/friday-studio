@@ -48,7 +48,7 @@ export function builder(y: YargsInstance) {
       describe: "Output results as JSON",
       default: false,
     })
-    .check((argv) => {
+    .check((argv: AddArgs) => {
       // Validate depth
       if (argv.depth && (argv.depth < 1 || argv.depth > 10)) {
         throw new Error("Depth must be between 1 and 10");
@@ -60,16 +60,27 @@ export function builder(y: YargsInstance) {
       }
 
       // Ensure name/description only used for single workspace
-      if ((argv.name || argv.description) && (argv.scan || (argv.paths && argv.paths.length > 1))) {
-        throw new Error("--name and --description can only be used when adding a single workspace");
+      if (
+        (argv.name || argv.description) &&
+        (argv.scan || (argv.paths && argv.paths.length > 1))
+      ) {
+        throw new Error(
+          "--name and --description can only be used when adding a single workspace",
+        );
       }
 
       return true;
     })
     .example("$0 workspace add ~/my-workspace", "Add a single workspace")
     .example("$0 workspace add ~/proj1 ~/proj2", "Add multiple workspaces")
-    .example("$0 workspace add ~/my-workspace/workspace.yml", "Add using workspace.yml path")
-    .example("$0 workspace add --scan ~/projects", "Scan directory for workspaces")
+    .example(
+      "$0 workspace add ~/my-workspace/workspace.yml",
+      "Add using workspace.yml path",
+    )
+    .example(
+      "$0 workspace add --scan ~/projects",
+      "Scan directory for workspaces",
+    )
     .example("$0 workspace add ~/work --name my-work", "Add with custom name")
     .help()
     .alias("help", "h");
@@ -105,14 +116,18 @@ const WorkspaceAddUI = ({
         if (args.scan) {
           // Scan directory for workspaces
           const scanPath = resolve(args.scan);
-          if (!await exists(scanPath)) {
+          if (!(await exists(scanPath))) {
             throw new Error(`Directory not found: ${scanPath}`);
           }
 
           const maxDepth = args.depth || 3;
 
           for await (
-            const entry of walk(scanPath, { maxDepth, includeDirs: true, includeFiles: false })
+            const entry of walk(scanPath, {
+              maxDepth,
+              includeDirs: true,
+              includeFiles: false,
+            })
           ) {
             const depth = entry.path.split("/").length - scanPath.split("/").length;
             if (depth > maxDepth) continue;
@@ -132,7 +147,7 @@ const WorkspaceAddUI = ({
           // Use provided paths
           for (const path of args.paths) {
             const resolvedPath = resolve(path);
-            if (!await exists(resolvedPath)) {
+            if (!(await exists(resolvedPath))) {
               throw new Error(`Path not found: ${resolvedPath}`);
             }
 
@@ -145,7 +160,7 @@ const WorkspaceAddUI = ({
             } else if (stats.isDirectory) {
               // If it's a directory, check for workspace.yml inside
               const workspaceYml = join(resolvedPath, "workspace.yml");
-              if (!await exists(workspaceYml)) {
+              if (!(await exists(workspaceYml))) {
                 throw new Error(`workspace.yml not found in: ${resolvedPath}`);
               }
               paths.push(resolvedPath);
@@ -182,26 +197,30 @@ const WorkspaceAddUI = ({
         if (workspacePaths.length === 1 && (args.name || args.description)) {
           // Single workspace with custom metadata
           const request: WorkspaceAddRequest = {
-            path: workspacePaths[0],
+            path: workspacePaths[0] || "",
             name: args.name,
             description: args.description,
           };
 
           try {
             const workspace = await client.addWorkspace(request);
-            setResults([{
-              path: workspacePaths[0],
-              success: true,
-              id: workspace.id,
-              name: workspace.name,
-            }]);
+            setResults([
+              {
+                path: workspacePaths[0] || "",
+                success: true,
+                id: workspace.id,
+                name: workspace.name,
+              },
+            ]);
           } catch (err) {
             const errorMessage = err instanceof Error ? err.message : String(err);
-            setResults([{
-              path: workspacePaths[0],
-              success: false,
-              error: errorMessage,
-            }]);
+            setResults([
+              {
+                path: workspacePaths[0] || "",
+                success: false,
+                error: errorMessage,
+              },
+            ]);
           }
         } else {
           // Batch add
@@ -252,23 +271,27 @@ const WorkspaceAddUI = ({
   if (args.json) {
     // Output JSON for scripting
     if (status === "complete") {
-      console.log(JSON.stringify(
-        {
-          success: results.filter((r) => r.success).length,
-          failed: results.filter((r) => !r.success).length,
-          results: results,
-        },
-        null,
-        2,
-      ));
+      console.log(
+        JSON.stringify(
+          {
+            success: results.filter((r) => r.success).length,
+            failed: results.filter((r) => !r.success).length,
+            results: results,
+          },
+          null,
+          2,
+        ),
+      );
     } else if (status === "error") {
-      console.log(JSON.stringify(
-        {
-          error: error,
-        },
-        null,
-        2,
-      ));
+      console.log(
+        JSON.stringify(
+          {
+            error: error,
+          },
+          null,
+          2,
+        ),
+      );
     }
     return null;
   }
@@ -287,7 +310,8 @@ const WorkspaceAddUI = ({
       <Box flexDirection="column" gap={1}>
         <Box>
           <Text color="cyan">
-            Adding {workspacePaths.length} workspace{workspacePaths.length !== 1 ? "s" : ""}...
+            Adding {workspacePaths.length} workspace
+            {workspacePaths.length !== 1 ? "s" : ""}...
           </Text>
         </Box>
         <Box marginTop={1}>
@@ -321,8 +345,8 @@ const WorkspaceAddUI = ({
           <Text bold>
             {successCount > 0 && failedCount === 0 && (
               <Text color="green">
-                ✓ Successfully added {successCount} workspace{successCount !== 1 ? "s" : ""}{" "}
-                to Atlas
+                ✓ Successfully added {successCount} workspace
+                {successCount !== 1 ? "s" : ""} to Atlas
               </Text>
             )}
             {successCount > 0 && failedCount > 0 && (
@@ -334,7 +358,8 @@ const WorkspaceAddUI = ({
             )}
             {successCount === 0 && failedCount > 0 && (
               <Text color="red">
-                ✗ Failed to add {failedCount} workspace{failedCount !== 1 ? "s" : ""}
+                ✗ Failed to add {failedCount} workspace
+                {failedCount !== 1 ? "s" : ""}
               </Text>
             )}
           </Text>
@@ -342,7 +367,9 @@ const WorkspaceAddUI = ({
 
         {/* Detailed results */}
         <Box flexDirection="column">
-          <Text bold dimColor>Registration Details:</Text>
+          <Text bold dimColor>
+            Registration Details:
+          </Text>
         </Box>
 
         {results.map((result, i) => (
@@ -374,7 +401,9 @@ const WorkspaceAddUI = ({
 
         {successCount > 0 && (
           <Box marginTop={1} flexDirection="column">
-            <Text bold color="cyan">Next steps:</Text>
+            <Text bold color="cyan">
+              Next steps:
+            </Text>
             <Box marginLeft={2}>
               <Text>
                 • Run <Text color="cyan">atlas workspace list</Text> to see all workspaces

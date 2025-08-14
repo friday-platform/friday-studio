@@ -1,5 +1,4 @@
 import { Box, Text } from "ink";
-import React from "react";
 import { z } from "zod/v4";
 import { Table } from "../../components/table.tsx";
 

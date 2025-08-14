@@ -8,7 +8,7 @@ export interface SessionInfo {
   status: string;
   summary: string;
   signal: string;
-  startTime: string;
+  startTime?: string;
   endTime?: string;
   progress: number;
 }

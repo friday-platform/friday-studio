@@ -28,7 +28,9 @@ export const MessageBuffer = () => {
     null,
   );
 
-  const [sseMessages, setSseMessages] = useState<Map<string, SSEEvent>>(new Map());
+  const [sseMessages, setSseMessages] = useState<Map<string, SSEEvent>>(
+    new Map(),
+  );
   const [output, setOutput] = useState<OutputEntry[]>([]);
 
   const [typingState, setTypingState] = useState<TypingState>({
@@ -118,7 +120,9 @@ export const MessageBuffer = () => {
             // Handle daemon connection loss with user-friendly message
             if (errorMessage.includes("Connection to Atlas daemon lost")) {
               setDaemonStatusState(DAEMON_STATUS.UNHEALTHY);
-            } else if (errorMessage.includes("Network connection to Atlas daemon failed")) {
+            } else if (
+              errorMessage.includes("Network connection to Atlas daemon failed")
+            ) {
               setDaemonStatusState(DAEMON_STATUS.UNHEALTHY);
             } else {
               // Any other SSE error means connection is lost - always notify and reconnect
@@ -157,16 +161,19 @@ export const MessageBuffer = () => {
 
   function getGroupedMessages(messageValues: SSEEvent[]) {
     // Group messages by ID
-    return messageValues.reduce((groups, message) => {
-      const id = message.id;
-      if (!groups[id]) {
-        groups[id] = [];
-      }
+    return messageValues.reduce(
+      (groups, message) => {
+        const id = message.id;
+        if (!groups[id]) {
+          groups[id] = [];
+        }
 
-      groups[id].push(message);
+        groups[id].push(message);
 
-      return groups;
-    }, {} as Record<string, SSEEvent[]>);
+        return groups;
+      },
+      {} as Record<string, SSEEvent[]>,
+    );
   }
 
   useEffect(() => {

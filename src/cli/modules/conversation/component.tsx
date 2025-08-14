@@ -69,7 +69,9 @@ export function Component() {
       await conversationClient.sendMessage(conversationSessionId, input);
 
       // The persistent SSE listener will handle the response
-    } catch {}
+    } catch {
+      console.error("Failed to send message to LLM");
+    }
   };
 
   // Command execution handler
@@ -84,7 +86,9 @@ export function Component() {
     if (!parsed) {
       // Send non-slash input to LLM (requires daemon)
       if (!conversationClient || !conversationSessionId) {
-        console.error("Cannot send message to LLM: Atlas daemon is not running");
+        console.error(
+          "Cannot send message to LLM: Atlas daemon is not running",
+        );
         return;
       }
       handleLLMInput(input);
@@ -133,7 +137,9 @@ export function Component() {
 
     // Commands that REQUIRE daemon connection
     if (!conversationClient || !conversationSessionId) {
-      console.error(`Cannot execute /${parsed.command}: Atlas daemon is not running`);
+      console.error(
+        `Cannot execute /${parsed.command}: Atlas daemon is not running`,
+      );
       return;
     }
 
@@ -175,7 +181,7 @@ export function Component() {
     }
 
     // Check command registry
-    const commandDef = COMMAND_REGISTRY[parsed.command];
+    const commandDef = COMMAND_REGISTRY[parsed.command || ""];
     if (!commandDef) {
       console.error(
         `Unknown command: /${parsed.command}. Type /help for available commands.`,

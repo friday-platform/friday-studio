@@ -50,7 +50,7 @@ export const parseSlashCommand = (input: string) => {
   }
 
   return {
-    command: args[0].toLowerCase(),
+    command: args[0]?.toLowerCase(),
     args: args.slice(1),
     rawInput: input,
   };

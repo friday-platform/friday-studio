@@ -17,8 +17,13 @@ export const CommandInput = ({
   onSubmit,
   isDisabled = false,
 }: CommandInputProps) => {
-  const { exitApp, diagnosticsStatus, daemonStatus, multilineSetupStatus, multilineTerminalType } =
-    useAppContext();
+  const {
+    exitApp,
+    diagnosticsStatus,
+    daemonStatus,
+    multilineSetupStatus,
+    multilineTerminalType,
+  } = useAppContext();
 
   const [currentInput, setCurrentInput] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -238,6 +243,7 @@ export const CommandInput = ({
                 DIAGNOSTICS_STATUS.COLLECTING,
                 DIAGNOSTICS_STATUS.UPLOADING,
                 DIAGNOSTICS_STATUS.DONE,
+                // @ts-expect-error checking a string in another array of strings is perfectly valid
               ].includes(diagnosticsStatus) && <Text color="red">Error: {diagnosticsStatus}</Text>}
             </Box>
           )
@@ -269,7 +275,8 @@ export const CommandInput = ({
               </Text>
             )}
 
-            {multilineSetupStatus !== "running" && multilineSetupStatus !== "done" && (
+            {multilineSetupStatus !== "running" &&
+              multilineSetupStatus !== "done" && (
               <Text color="red">Error: {multilineSetupStatus}</Text>
             )}
           </Box>

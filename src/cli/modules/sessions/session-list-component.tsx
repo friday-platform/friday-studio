@@ -6,7 +6,7 @@ export interface Session {
   workspaceName?: string;
   signal?: string;
   status: string;
-  startedAt: string;
+  startedAt?: string;
   completedAt?: string;
   agents?: Array<{ name: string; status: string }>;
 }
@@ -60,7 +60,7 @@ export function formatSessionForJson(session: Session) {
     status: session.status,
     startedAt: session.startedAt,
     completedAt: session.completedAt,
-    duration: calculateDuration(session.startedAt, session.completedAt),
+    duration: session.startedAt ? calculateDuration(session.startedAt, session.completedAt) : 0,
     agents: session.agents,
   };
 }
@@ -119,8 +119,8 @@ export function SessionListComponent({
       </Text>
       {sessions.map((session) => (
         <Box key={session.id}>
-          <Box width={18}>
-            <Text>{session.id.substring(0, 12) + "..."}</Text>
+          <Box flexGrow={1}>
+            <Text>{session.id}</Text>
           </Box>
           <Box width={18}>
             <Text>{session.workspaceName || "Unknown"}</Text>
@@ -132,11 +132,11 @@ export function SessionListComponent({
             <StatusBadge status={session.status} />
           </Box>
           <Box width={12}>
-            <Text>{formatTime(session.startedAt)}</Text>
+            <Text>{formatTime(session.startedAt || "")}</Text>
           </Box>
           <Box width={11} justifyContent="flex-end">
             <Text>
-              {formatDuration(session.startedAt, session.completedAt)}
+              {formatDuration(session.startedAt || "", session.completedAt)}
             </Text>
           </Box>
         </Box>

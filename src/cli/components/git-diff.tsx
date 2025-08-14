@@ -16,11 +16,7 @@ interface DiffLine {
   lineNumber: number;
 }
 
-export function GitDiff({
-  diffContent,
-  startingLine,
-  endingLine,
-}: GitDiffProps) {
+export function GitDiff({ diffContent, startingLine }: GitDiffProps) {
   const lines = diffContent.split(/[\n\r]/);
   const diffLines: DiffLine[] = [];
   let currentLineNumber = startingLine;
@@ -28,27 +24,27 @@ export function GitDiff({
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
 
-    if (line.startsWith("-")) {
+    if (line && line.startsWith("-")) {
       diffLines.push({
         type: "removal",
         content: line.slice(1), // Remove the - prefix
         lineNumber: currentLineNumber,
       });
       currentLineNumber++;
-    } else if (line.startsWith("+")) {
+    } else if (line && line.startsWith("+")) {
       // Check if there are removals immediately before this addition
       let removalCount = 0;
       let checkIndex = diffLines.length - 1;
 
       // Count consecutive removals before this addition
-      while (checkIndex >= 0 && diffLines[checkIndex].type === "removal") {
+      while (checkIndex >= 0 && diffLines[checkIndex]?.type === "removal") {
         removalCount++;
         checkIndex--;
       }
 
       if (removalCount > 0) {
         // Reset to the first removal's line number
-        currentLineNumber = diffLines[diffLines.length - removalCount].lineNumber;
+        currentLineNumber = diffLines[diffLines.length - removalCount]?.lineNumber || 0;
       }
 
       diffLines.push({
@@ -60,7 +56,7 @@ export function GitDiff({
     } else {
       diffLines.push({
         type: "unchanged",
-        content: line,
+        content: String(line),
         lineNumber: currentLineNumber,
       });
       currentLineNumber++;

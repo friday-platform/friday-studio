@@ -4,8 +4,6 @@ import { useAppContext } from "../contexts/app-context.tsx";
 
 interface CollapsibleProps {
   children: React.ReactNode;
-  content: string;
-
   totalLines?: number;
 }
 

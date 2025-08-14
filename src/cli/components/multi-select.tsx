@@ -1,5 +1,5 @@
 import { Box, Text, useInput } from "ink";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
 interface Option {
   label: string;
@@ -36,9 +36,9 @@ export const MultiSelect = ({
         setFocusedIndex((prev) => (prev < options.length - 1 ? prev + 1 : 0));
       } else if (input === " ") {
         const option = options[focusedIndex];
-        const newSelectedValues = selectedValues.includes(option.value)
-          ? selectedValues.filter((v) => v !== option.value)
-          : [...selectedValues, option.value];
+        const newSelectedValues = selectedValues.includes(option?.value || "")
+          ? selectedValues.filter((v) => v !== option?.value)
+          : [...selectedValues, option?.value || ""];
 
         setSelectedValues(newSelectedValues);
         onChange?.(newSelectedValues);
@@ -53,9 +53,9 @@ export const MultiSelect = ({
 
         if (targetIndex >= 0 && targetIndex < options.length) {
           const option = options[targetIndex];
-          const newSelectedValues = selectedValues.includes(option.value)
-            ? selectedValues.filter((v) => v !== option.value)
-            : [...selectedValues, option.value];
+          const newSelectedValues = selectedValues.includes(option?.value || "")
+            ? selectedValues.filter((v) => v !== option?.value)
+            : [...selectedValues, option?.value || ""];
 
           setSelectedValues(newSelectedValues);
           onChange?.(newSelectedValues);

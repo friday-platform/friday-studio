@@ -22,9 +22,15 @@ export class WorkspaceLogReader {
   private fileHandle?: Deno.FsFile;
   private followAbort?: AbortController;
 
-  constructor(private workspaceId: string) {
+  constructor(workspaceId: string) {
     const homeDir = Deno.env.get("HOME") || Deno.env.get("USERPROFILE") || Deno.cwd();
-    this.logPath = join(homeDir, ".atlas", "logs", "workspaces", `${workspaceId}.log`);
+    this.logPath = join(
+      homeDir,
+      ".atlas",
+      "logs",
+      "workspaces",
+      `${workspaceId}.log`,
+    );
   }
 
   async read(options: ReadOptions = {}): Promise<LogEntry[]> {
@@ -38,7 +44,9 @@ export class WorkspaceLogReader {
       if (fileInfo.size > 5 * 1024 * 1024) {
         console.warn(
           `Warning: Log file is large (${
-            (fileInfo.size / 1024 / 1024).toFixed(1)
+            (fileInfo.size / 1024 / 1024).toFixed(
+              1,
+            )
           }MB), this may be slow`,
         );
       }
@@ -99,7 +107,7 @@ export class WorkspaceLogReader {
 
     // Poll for new content
     const pollLoop = async () => {
-      while (!this.followAbort.signal.aborted) {
+      while (!this.followAbort?.signal.aborted) {
         try {
           // Check if file still exists
           try {
@@ -140,7 +148,7 @@ export class WorkspaceLogReader {
             }
           }
         } catch (error) {
-          if (!this.followAbort.signal.aborted) {
+          if (!this.followAbort?.signal.aborted) {
             console.error("Error reading log file:", error);
           }
           break;
@@ -204,11 +212,13 @@ export class WorkspaceLogReader {
 export function parseDuration(duration: string): Date {
   const match = duration.match(/^(\d+)([smhd])$/);
   if (!match) {
-    throw new Error(`Invalid duration format: ${duration}. Use format like: 5m, 2h, 1d`);
+    throw new Error(
+      `Invalid duration format: ${duration}. Use format like: 5m, 2h, 1d`,
+    );
   }
 
   const [, amount, unit] = match;
-  const value = parseInt(amount, 10);
+  const value = parseInt(amount || "0", 10);
   const now = new Date();
 
   switch (unit) {
@@ -229,7 +239,9 @@ export function parseDuration(duration: string): Date {
   return now;
 }
 
-export function parseContextFilters(filters?: string[]): Record<string, string> | undefined {
+export function parseContextFilters(
+  filters?: string[],
+): Record<string, string> | undefined {
   if (!filters || filters.length === 0) return undefined;
 
   const result: Record<string, string> = {};
@@ -273,9 +285,15 @@ export function formatLog(
   if (entry.context) {
     const contextParts: string[] = [];
     if (entry.context.workerType) contextParts.push(entry.context.workerType);
-    if (entry.context.workerId) contextParts.push(entry.context.workerId.slice(0, 8));
-    if (entry.context.sessionId) contextParts.push(entry.context.sessionId.slice(0, 8));
-    if (entry.context.supervisorId) contextParts.push(entry.context.supervisorId.slice(0, 8));
+    if (entry.context.workerId) {
+      contextParts.push(entry.context.workerId.slice(0, 8));
+    }
+    if (entry.context.sessionId) {
+      contextParts.push(entry.context.sessionId.slice(0, 8));
+    }
+    if (entry.context.supervisorId) {
+      contextParts.push(entry.context.supervisorId.slice(0, 8));
+    }
     if (entry.context.agentName) contextParts.push(entry.context.agentName);
 
     if (contextParts.length > 0) {

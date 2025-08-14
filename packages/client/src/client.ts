@@ -344,6 +344,7 @@ export class AtlasClient {
    */
   async getSession(sessionId: string): Promise<SessionDetailedInfo> {
     const response = await this.makeRequest(`/api/sessions/${sessionId}`);
+
     return SessionDetailedInfoSchema.parse(response);
   }
 

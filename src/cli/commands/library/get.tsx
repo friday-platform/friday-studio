@@ -2,7 +2,6 @@ import React from "react";
 import { render } from "ink";
 import { Box, Text } from "ink";
 import { spinner } from "../../utils/prompts.tsx";
-import { z } from "zod/v4";
 import { YargsInstance } from "../../utils/yargs.ts";
 import { getAtlasClient } from "@atlas/client";
 import type { LibraryItemWithContent } from "@atlas/client";
@@ -71,7 +70,10 @@ export async function handler(argv: GetArgs) {
 
         if (matchingItem) {
           // Try again with the full ID
-          itemDetail = await client.getLibraryItem(matchingItem.id, argv.content);
+          itemDetail = await client.getLibraryItem(
+            matchingItem.id,
+            argv.content,
+          );
         } else {
           throw error;
         }

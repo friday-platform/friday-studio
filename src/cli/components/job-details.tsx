@@ -116,7 +116,7 @@ export const JobDetails = ({
           triggersContent += `Condition: ${String(trigger.condition)}\n`;
         }
       }
-      if (index < jobData.triggers.length - 1) triggersContent += "\n";
+      if (index < (jobData.triggers?.length || 0) - 1) triggersContent += "\n";
     });
     markdown = appendSection(markdown, "Triggers", triggersContent);
   }
@@ -274,7 +274,10 @@ export const JobDetails = ({
 
   return (
     <Box flexDirection="column" flexShrink={0}>
-      <MarkdownDisplay content={markdown} />
+      <MarkdownDisplay
+        markdown={markdown}
+        totalLines={markdown.split("\n").length}
+      />
     </Box>
   );
 };

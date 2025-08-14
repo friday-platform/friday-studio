@@ -76,7 +76,10 @@ export function builder(y: YargsInstance) {
     .example("$0 daemon start", "Start daemon on default port 8080")
     .example("$0 daemon start --port 3000", "Start daemon on specific port")
     .example("$0 daemon start --detached", "Start daemon in background mode")
-    .example("$0 daemon start --max-workspaces 20", "Start with higher workspace limit")
+    .example(
+      "$0 daemon start --max-workspaces 20",
+      "Start with higher workspace limit",
+    )
     .example(
       "$0 daemon start --atlas-config /path/to/config",
       "Start with custom atlas config path",
@@ -87,7 +90,9 @@ export const handler = async (argv: StartArgs): Promise<void> => {
   try {
     // Validate port
     if (argv.port && (argv.port < 1 || argv.port > 65535)) {
-      errorOutput(`Invalid port number: ${argv.port}. Port must be between 1 and 65535.`);
+      errorOutput(
+        `Invalid port number: ${argv.port}. Port must be between 1 and 65535.`,
+      );
       Deno.exit(1);
     }
 
@@ -111,7 +116,7 @@ export const handler = async (argv: StartArgs): Promise<void> => {
     if (Deno.build.os === "linux") {
       const systemAtlasEnv = "/etc/atlas/env";
       if (await exists(systemAtlasEnv)) {
-        await load({ export: true, envPath: systemAtlasEnv, override: false });
+        await load({ export: true, envPath: systemAtlasEnv });
       }
     }
 
@@ -119,7 +124,7 @@ export const handler = async (argv: StartArgs): Promise<void> => {
     // Note: getAtlasHome() will return the appropriate path based on system/user mode
     const globalAtlasEnv = join(getAtlasHome(), ".env");
     if (await exists(globalAtlasEnv)) {
-      await load({ export: true, envPath: globalAtlasEnv, override: false });
+      await load({ export: true, envPath: globalAtlasEnv });
     }
 
     // Check for ATLAS_KEY and fetch credentials if present
@@ -156,21 +161,29 @@ export const handler = async (argv: StartArgs): Promise<void> => {
           `Credentials fetched successfully: ${setCount} set, ${skippedCount} skipped (already configured)`,
         );
       } catch (error) {
-        logger.error(`Failed to fetch credentials: ${error.message}`);
+        logger.error(
+          `Failed to fetch credentials: ${error instanceof Error ? error.message : String(error)}`,
+        );
         logger.error("Continuing with existing environment variables...");
 
         errorOutput("\nFailed to fetch credentials with ATLAS_KEY.");
-        errorOutput("Please check your ATLAS_KEY in ~/.atlas/.env and restart the daemon.");
+        errorOutput(
+          "Please check your ATLAS_KEY in ~/.atlas/.env and restart the daemon.",
+        );
         Deno.exit(1);
       }
     } else if (atlasKey && localOnlyMode) {
-      logger.info("ATLAS_LOCAL_ONLY mode enabled - skipping Atlas API credential fetch");
+      logger.info(
+        "ATLAS_LOCAL_ONLY mode enabled - skipping Atlas API credential fetch",
+      );
       logger.info("Using only locally configured environment variables");
       logger.info(
         "Ensure all required API keys (ANTHROPIC_API_KEY, etc.) are set in your environment",
       );
     } else if (localOnlyMode) {
-      logger.info("ATLAS_LOCAL_ONLY mode enabled - using only local environment variables");
+      logger.info(
+        "ATLAS_LOCAL_ONLY mode enabled - using only local environment variables",
+      );
     }
 
     // Set atlas config path if provided
@@ -201,18 +214,14 @@ function isLocalOnlyMode(value: string | undefined): boolean {
   return ["true", "1", "yes", "on"].includes(normalizedValue);
 }
 
-async function _checkDaemonRunning(port: number): Promise<boolean> {
-  const client = getLocalDaemonClient(port, 2000);
-  return await client.isHealthy();
-}
-
 async function startDetached(argv: StartArgs): Promise<void> {
   // For detached mode, spawn a new process
   const execPath = Deno.execPath();
   const mainModule = Deno.mainModule;
 
   // Check if we're running as a compiled binary
-  const isCompiledBinary = execPath.endsWith("atlas-test") || execPath.endsWith("atlas") ||
+  const isCompiledBinary = execPath.endsWith("atlas-test") ||
+    execPath.endsWith("atlas") ||
     execPath.endsWith("atlas.exe");
 
   // On Windows, we need to use a different approach for true background process
@@ -367,20 +376,6 @@ WshShell.Run "${cmdLine}", 0, False`;
 
   await Deno.writeTextFile(vbsFile, vbsContent);
 
-  // Execute the VBScript
-  const cmd = new Deno.Command("wscript.exe", {
-    args: [vbsFile],
-    env: {
-      ...Deno.env.toObject(),
-      ATLAS_DETACHED: "true",
-    },
-    stdout: "null",
-    stderr: "null",
-    stdin: "null",
-  });
-
-  const _child = cmd.spawn();
-
   // Give VBScript a moment to launch the process
   await new Promise((resolve) => setTimeout(resolve, 1000));
 
@@ -417,13 +412,15 @@ async function startForeground(argv: StartArgs): Promise<void> {
   });
 
   // Start browser download in background (non-blocking)
-  import("../../../utils/browser-manager.ts").then(({ checkAndDownloadBrowsers }) => {
-    checkAndDownloadBrowsers().catch((_error) => {
-      // Browser manager will log errors internally
+  import("../../../utils/browser-manager.ts")
+    .then(({ checkAndDownloadBrowsers }) => {
+      checkAndDownloadBrowsers().catch((_error) => {
+        // Browser manager will log errors internally
+      });
+    })
+    .catch((_error) => {
+      // Module loading errors are rare but non-fatal
     });
-  }).catch((_error) => {
-    // Module loading errors are rare but non-fatal
-  });
 
   // Handle graceful shutdown
   const shutdown = async () => {

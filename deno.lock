@@ -1,9 +1,9 @@
 {
   "version": "5",
   "specifiers": {
-    "jsr:@std/assert@1": "1.0.14",
-    "jsr:@std/assert@^1.0.13": "1.0.14",
-    "jsr:@std/assert@^1.0.14": "1.0.14",
+    "jsr:@std/assert@*": "1.0.13",
+    "jsr:@std/assert@1": "1.0.13",
+    "jsr:@std/assert@^1.0.13": "1.0.13",
     "jsr:@std/async@^1.0.13": "1.0.14",
     "jsr:@std/async@^1.0.14": "1.0.14",
     "jsr:@std/cli@^1.0.20": "1.0.21",
@@ -11,16 +11,19 @@
     "jsr:@std/crypto@^1.0.5": "1.0.5",
     "jsr:@std/data-structures@^1.0.9": "1.0.9",
     "jsr:@std/dotenv@0.225": "0.225.5",
-    "jsr:@std/expect@^1.0.16": "1.0.17",
+    "jsr:@std/expect@^1.0.16": "1.0.16",
     "jsr:@std/fs@1": "1.0.19",
     "jsr:@std/fs@^1.0.19": "1.0.19",
     "jsr:@std/fs@^1.0.5": "1.0.19",
     "jsr:@std/internal@^1.0.10": "1.0.10",
+    "jsr:@std/internal@^1.0.6": "1.0.10",
+    "jsr:@std/internal@^1.0.7": "1.0.10",
     "jsr:@std/internal@^1.0.9": "1.0.10",
+    "jsr:@std/path@*": "1.1.2",
     "jsr:@std/path@1": "1.1.2",
     "jsr:@std/path@^1.0.8": "1.1.2",
     "jsr:@std/path@^1.1.1": "1.1.2",
-    "jsr:@std/streams@^1.0.10": "1.0.11",
+    "jsr:@std/streams@^1.0.10": "1.0.10",
     "jsr:@std/tar@~0.1.7": "0.1.7",
     "jsr:@std/testing@^1.0.12": "1.0.15",
     "jsr:@std/yaml@^1.0.5": "1.0.9",
@@ -32,14 +35,14 @@
     "npm:@deno/vite-plugin@^1.0.5": "1.0.5_vite@7.1.2__picomatch@4.0.3_@types+node@22.15.15",
     "npm:@eslint/compat@^1.2.5": "1.3.2_eslint@9.33.0",
     "npm:@eslint/js@^9.18.0": "9.33.0",
-    "npm:@hono/mcp@0.1": "0.1.1_@modelcontextprotocol+sdk@1.17.2__express@5.1.0__zod@3.25.76_hono@4.9.1",
+    "npm:@hono/mcp@0.1": "0.1.1_@modelcontextprotocol+sdk@1.17.3__express@5.1.0__zod@3.25.76_hono@4.9.1",
     "npm:@hono/standard-validator@~0.1.4": "0.1.4_@standard-schema+spec@1.0.0_hono@4.9.1",
     "npm:@inkjs/ui@2": "2.0.0_ink@6.1.1__@types+react@19.1.10__react@19.1.1_@types+react@19.1.10_react@19.1.1",
     "npm:@lezer/common@^1.2.3": "1.2.3",
     "npm:@lezer/markdown@^1.3.2": "1.4.3",
     "npm:@melt-ui/svelte@~0.86.6": "0.86.6_svelte@5.38.1__acorn@8.15.0",
-    "npm:@modelcontextprotocol/sdk@^1.12.1": "1.17.2_express@5.1.0_zod@3.25.76",
-    "npm:@modelcontextprotocol/sdk@^1.15.0": "1.17.2_express@5.1.0_zod@3.25.76",
+    "npm:@modelcontextprotocol/sdk@^1.12.1": "1.17.3_express@5.1.0_zod@3.25.76",
+    "npm:@modelcontextprotocol/sdk@^1.15.0": "1.17.3_express@5.1.0_zod@3.25.76",
     "npm:@opentelemetry/api@^1.9.0": "1.9.0",
     "npm:@scalar/hono-api-reference@~0.9.9": "0.9.13_hono@4.9.1",
     "npm:@sendgrid/mail@^8.1.5": "8.1.5",
@@ -96,10 +99,10 @@
     "npm:zod@^4.0.0-beta.2": "4.0.17"
   },
   "jsr": {
-    "@std/assert@1.0.14": {
-      "integrity": "68d0d4a43b365abc927f45a9b85c639ea18a9fab96ad92281e493e4ed84abaa4",
+    "@std/assert@1.0.13": {
+      "integrity": "ae0d31e41919b12c656c742b22522c32fb26ed0cba32975cb0de2a273cb68b29",
       "dependencies": [
-        "jsr:@std/internal@^1.0.10"
+        "jsr:@std/internal@^1.0.6"
       ]
     },
     "@std/async@1.0.14": {
@@ -117,11 +120,11 @@
     "@std/dotenv@0.225.5": {
       "integrity": "9ce6f9d0ec3311f74a32535aa1b8c62ed88b1ab91b7f0815797d77a6f60c922f"
     },
-    "@std/expect@1.0.17": {
-      "integrity": "316b47dd65c33e3151344eb3267bf42efba17d1415425f07ed96185d67fc04d9",
+    "@std/expect@1.0.16": {
+      "integrity": "ceeef6dda21f256a5f0f083fcc0eaca175428b523359a9b1d9b3a1df11cc7391",
       "dependencies": [
-        "jsr:@std/assert@^1.0.14",
-        "jsr:@std/internal@^1.0.10"
+        "jsr:@std/assert@^1.0.13",
+        "jsr:@std/internal@^1.0.7"
       ]
     },
     "@std/fs@1.0.19": {
@@ -140,8 +143,8 @@
         "jsr:@std/internal@^1.0.10"
       ]
     },
-    "@std/streams@1.0.11": {
-      "integrity": "db583d27e28d133f389f1eec318cffdf4998305e5134c1d4b1c56b361cee6018"
+    "@std/streams@1.0.10": {
+      "integrity": "75c0b1431873cd0d8b3d679015220204d36d3c7420d93b60acfc379eb0dc30af"
     },
     "@std/tar@0.1.7": {
       "integrity": "767ed89376a9665cee6d33144d2a06619e35411ad08b363568582bbaff5b40d2",
@@ -474,7 +477,7 @@
     "@floating-ui/utils@0.2.10": {
       "integrity": "sha512-aGTxbpbg8/b5JfU1HXSrbH3wXZuLPJcNEcZQFMxLs3oSzgtVu6nFPkbbGGUvBcUjKV2YyB9Wxxabo+HEH9tcRQ=="
     },
-    "@hono/mcp@0.1.1_@modelcontextprotocol+sdk@1.17.2__express@5.1.0__zod@3.25.76_hono@4.9.1": {
+    "@hono/mcp@0.1.1_@modelcontextprotocol+sdk@1.17.3__express@5.1.0__zod@3.25.76_hono@4.9.1": {
       "integrity": "sha512-2iQ4xBKfQdBBJP3V1/XCVyxQZeWWnxJG+5ytu9/Xuwwje3D70fm9ws0VV536rZ3CKWrnZZ/X+xeJ7FwR3ErVbw==",
       "dependencies": [
         "@modelcontextprotocol/sdk",
@@ -581,8 +584,8 @@
     "@mixmark-io/domino@2.2.0": {
       "integrity": "sha512-Y28PR25bHXUg88kCV7nivXrP2Nj2RueZ3/l/jdx6J9f8J4nsEGcgX0Qe6lt7Pa+J79+kPiJU3LguR6O/6zrLOw=="
     },
-    "@modelcontextprotocol/sdk@1.17.2_express@5.1.0_zod@3.25.76": {
-      "integrity": "sha512-EFLRNXR/ixpXQWu6/3Cu30ndDFIFNaqUXcTqsGebujeMan9FzhAaFFswLRiFj61rgygDRr8WO1N+UijjgRxX9g==",
+    "@modelcontextprotocol/sdk@1.17.3_express@5.1.0_zod@3.25.76": {
+      "integrity": "sha512-JPwUKWSsbzx+DLFznf/QZ32Qa+ptfbUlHhRLrBQBAFu9iI1iYvizM4p+zhhRDceSsPutXp4z+R/HPVphlIiclg==",
       "dependencies": [
         "ajv",
         "content-type",
@@ -2046,8 +2049,8 @@
         "walk-up-path"
       ]
     },
-    "fdir@6.4.6_picomatch@4.0.3": {
-      "integrity": "sha512-hiFoqpyZcfNm1yc4u8oWCf9A2c4D3QjCrks3zmoVKVxpQRzmPNar1hUJcBG2RQHvEVGDN+Jm81ZheVLAQMK6+w==",
+    "fdir@6.5.0_picomatch@4.0.3": {
+      "integrity": "sha512-tIbYtZbucOs0BRGqPJkshJUYdL+SDH7dVM8gjy+ERp3WAUjLEFJE+02kanyHtwjWOnwrKYBiwAmM0p4kLJAnXg==",
       "dependencies": [
         "picomatch@4.0.3"
       ],

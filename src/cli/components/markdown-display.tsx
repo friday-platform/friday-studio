@@ -4,7 +4,7 @@ import { useResponsiveDimensions } from "../utils/useResponsiveDimensions.ts";
 
 interface MarkdownDisplayProps {
   markdown: string;
-  totalLines: number;
+  totalLines?: number;
   showCollapsible?: boolean;
 }
 
@@ -17,7 +17,7 @@ export const MarkdownDisplay = ({
 
   return showCollapsible
     ? (
-      <Collapsible totalLines={totalLines} content={markdown}>
+      <Collapsible totalLines={totalLines}>
         <Text>{markdown}</Text>
       </Collapsible>
     )

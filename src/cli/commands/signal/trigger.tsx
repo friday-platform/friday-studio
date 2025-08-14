@@ -1,5 +1,5 @@
-import { confirm, isCancel, spinner, text } from "../../utils/prompts.tsx";
-import { errorOutput, infoOutput } from "../../utils/output.ts";
+import { confirm, isCancel, text } from "../../utils/prompts.tsx";
+import { errorOutput } from "../../utils/output.ts";
 import { batchTriggerSignal, validateSignalPayload } from "../../modules/signals/trigger.ts";
 import { YargsInstance } from "../../utils/yargs.ts";
 
@@ -58,18 +58,41 @@ export function builder(y: YargsInstance) {
       describe: "Output trigger result as JSON",
       default: false,
     })
-    .example("$0 signal trigger manual", "Trigger 'manual' signal interactively")
-    .example('$0 signal trigger webhook --data \'{"user":"john"}\'', "Trigger with JSON data")
-    .example("$0 sig fire deploy --workspace prod", "Trigger in specific workspace")
-    .example("$0 signal trigger deploy --all", "Trigger on all running workspaces")
-    .example("$0 signal trigger test --all --exclude dev", "Trigger on all except dev workspace")
-    .example("$0 signal trigger refresh --workspace prod,staging", "Trigger on multiple workspaces")
-    .example("$0 signal trigger test --json", "Trigger and output result as JSON")
+    .example(
+      "$0 signal trigger manual",
+      "Trigger 'manual' signal interactively",
+    )
+    .example(
+      '$0 signal trigger webhook --data \'{"user":"john"}\'',
+      "Trigger with JSON data",
+    )
+    .example(
+      "$0 sig fire deploy --workspace prod",
+      "Trigger in specific workspace",
+    )
+    .example(
+      "$0 signal trigger deploy --all",
+      "Trigger on all running workspaces",
+    )
+    .example(
+      "$0 signal trigger test --all --exclude dev",
+      "Trigger on all except dev workspace",
+    )
+    .example(
+      "$0 signal trigger refresh --workspace prod,staging",
+      "Trigger on multiple workspaces",
+    )
+    .example(
+      "$0 signal trigger test --json",
+      "Trigger and output result as JSON",
+    )
     .help()
     .alias("help", "h");
 }
 
-async function getSignalPayload(args: TriggerArgs): Promise<Record<string, unknown>> {
+async function getSignalPayload(
+  args: TriggerArgs,
+): Promise<Record<string, unknown>> {
   let payload: Record<string, unknown> = {};
 
   if (args.data) {
@@ -86,7 +109,7 @@ async function getSignalPayload(args: TriggerArgs): Promise<Record<string, unkno
     }
 
     if (wantsData) {
-      const dataStr = await text({
+      const dataStr = (await text({
         message: "Enter JSON data:",
         placeholder: '{"message": "Hello"}',
         validate: (value) => {
@@ -99,7 +122,7 @@ async function getSignalPayload(args: TriggerArgs): Promise<Record<string, unkno
             return "Invalid JSON format";
           }
         },
-      }) as string;
+      })) as string;
 
       if (isCancel(dataStr)) {
         throw new Error("Signal trigger cancelled");
@@ -119,11 +142,11 @@ export const handler = async (argv: TriggerArgs): Promise<void> => {
 
     // Prepare workspace targeting options
     const workspaceIds = argv.workspace
-      ? (Array.isArray(argv.workspace) ? argv.workspace : [argv.workspace])
+      ? Array.isArray(argv.workspace) ? argv.workspace : [argv.workspace]
       : undefined;
 
     const exclude = argv.exclude
-      ? (Array.isArray(argv.exclude) ? argv.exclude : [argv.exclude])
+      ? Array.isArray(argv.exclude) ? argv.exclude : [argv.exclude]
       : undefined;
 
     // Trigger signal using abstracted function
@@ -140,7 +163,9 @@ export const handler = async (argv: TriggerArgs): Promise<void> => {
       console.log(JSON.stringify(batchResult, null, 2));
     } else {
       const { results } = batchResult;
-      console.log(`\n✨ Signal '${argv.name}' triggered on ${results.length} workspace(s)\n`);
+      console.log(
+        `\n✨ Signal '${argv.name}' triggered on ${results.length} workspace(s)\n`,
+      );
 
       const successful = results.filter((r) => r.success);
       const failed = results.filter((r) => !r.success);

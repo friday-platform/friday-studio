@@ -1,4 +1,3 @@
-import yargs from "yargs";
 import { getAliasesHelp } from "./command-suggestions.ts";
 import { YargsInstance } from "./yargs.ts";
 
@@ -15,7 +14,10 @@ export function customHelp(y: YargsInstance): string {
   // Find the Options section and insert aliases before it
   const optionsIndex = help.indexOf("Options:");
   if (optionsIndex !== -1) {
-    help = help.slice(0, optionsIndex) + aliasesHelp + "\n\n" + help.slice(optionsIndex);
+    help = help.slice(0, optionsIndex) +
+      aliasesHelp +
+      "\n\n" +
+      help.slice(optionsIndex);
   } else {
     // If no Options section, append at the end
     help += "\n" + aliasesHelp;

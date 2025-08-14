@@ -76,7 +76,7 @@ export const SessionInfoSchema = z.object({
   status: z.string(),
   summary: z.string(),
   signal: z.string(),
-  startTime: z.string(),
+  startTime: z.string().optional(),
   endTime: z.string().optional(),
   progress: z.number(),
 });

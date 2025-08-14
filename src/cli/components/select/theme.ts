@@ -1,10 +1,5 @@
 import { type BoxProps, type TextProps } from "ink";
 
-interface StyleOptions {
-  isFocused?: boolean;
-  isSelected?: boolean;
-}
-
 export interface Theme {
   styles: {
     container(): BoxProps;

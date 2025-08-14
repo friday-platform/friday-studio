@@ -1,7 +1,6 @@
 import { spinner } from "../../utils/prompts.tsx";
 import { Box, render, Text } from "ink";
 import React from "react";
-import { z } from "zod/v4";
 import { Table } from "../../../cli/components/table.tsx";
 import { YargsInstance } from "../../utils/yargs.ts";
 import { getAtlasClient } from "@atlas/client";
@@ -91,7 +90,9 @@ export async function handler(argv: SearchArgs) {
       return;
     }
 
-    const { unmount } = render(<SearchResultsDisplay result={result} query={argv.query} />);
+    const { unmount } = render(
+      <SearchResultsDisplay result={result} query={argv.query} />,
+    );
     setTimeout(() => unmount(), 100);
   } catch (error) {
     s.stop("Search failed");

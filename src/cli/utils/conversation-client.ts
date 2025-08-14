@@ -1,4 +1,7 @@
-import { createEventSource } from "../../core/agents/remote/adapters/sse-utils.ts";
+import {
+  createEventSource,
+  EventSourceMessage,
+} from "../../core/agents/remote/adapters/sse-utils.ts";
 import { createAtlasClient } from "@atlas/oapi-client";
 import { DaemonClient } from "./daemon-client.ts";
 
@@ -209,7 +212,11 @@ export class ConversationClient {
     const streamUrl = sseUrl ||
       `${this.daemonUrl}/system/conversation/sessions/${sessionId}/stream`;
 
-    let eventSource: any = null;
+    let eventSource: {
+      response: Response;
+      consume(): AsyncIterableIterator<EventSourceMessage>;
+    } | null = null;
+
     try {
       eventSource = await createEventSource({
         url: streamUrl,
@@ -242,9 +249,7 @@ export class ConversationClient {
             // @ts-expect-error event is currently untyped
             event.data?.closeConnection === true
           ) {
-            if (eventSource && eventSource.close) {
-              eventSource.close();
-            }
+            // @TODO: cleanup: ensure the connection is closed
             break;
           }
         } catch (error) {
@@ -279,14 +284,9 @@ export class ConversationClient {
       }
 
       // Default error message for other cases
-      throw new Error(
-        `SSE connection error: ${errorMessage}`,
-      );
+      throw new Error(`SSE connection error: ${errorMessage}`);
     } finally {
-      // Ensure the connection is closed
-      if (eventSource && eventSource.close) {
-        eventSource.close();
-      }
+      // @TODO: cleanup: ensure the connection is closed
     }
   }
 

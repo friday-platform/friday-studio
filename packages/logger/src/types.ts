@@ -26,6 +26,10 @@ export interface LogContext {
   workspaceId?: string;
   sessionId?: string;
   agentId?: string;
+  workerType?: string;
+  agentName?: string;
+  supervisorId?: string;
+  workerId?: string;
 
   // for error logging
   error?: unknown;

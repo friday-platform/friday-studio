@@ -1,4 +1,4 @@
-import React, { type ReactNode } from "react";
+import { type ReactNode } from "react";
 import { Box, Text } from "ink";
 import { Option } from "./types.ts";
 import { SelectOption } from "./select-option.tsx";

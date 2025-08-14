@@ -53,7 +53,7 @@ export const handler = async (argv: ListArgs): Promise<void> => {
 
     // Give a moment for render then exit
     setTimeout(() => {
-      unmount();
+      unmount?.();
     }, 100);
   } catch (error) {
     // Ensure cleanup before exiting on error
@@ -63,7 +63,10 @@ export const handler = async (argv: ListArgs): Promise<void> => {
 
     // Provide helpful error message if daemon is not running
     const errorMessage = error instanceof Error ? error.message : String(error);
-    if (errorMessage.includes("Failed to fetch") || errorMessage.includes("NetworkError")) {
+    if (
+      errorMessage.includes("Failed to fetch") ||
+      errorMessage.includes("NetworkError")
+    ) {
       console.error(
         "Error: Unable to connect to Atlas daemon. Make sure it's running with 'atlas daemon start'",
       );

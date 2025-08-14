@@ -6,7 +6,7 @@ import * as psCmd from "./ps.ts";
 import * as serviceCmd from "./service.ts";
 import * as sessionCmd from "./session.ts";
 import * as signalCmd from "./signal.ts";
-import * as sseDebugCmd from "./sse-debug.ts";
+
 import * as updateCmd from "./update.tsx";
 import * as versionCmd from "./version.ts";
 import * as workspaceCmd from "./workspace.ts";
@@ -22,6 +22,5 @@ export const commands = [
   libraryCmd,
   daemonCmd,
   serviceCmd,
-  sseDebugCmd,
   interactiveCmd,
 ];

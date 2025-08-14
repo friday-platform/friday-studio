@@ -396,7 +396,7 @@ export const SignalDetails = ({
 
   return (
     <Box flexDirection="column" flexShrink={0}>
-      <MarkdownDisplay content={markdown} />
+      <MarkdownDisplay markdown={markdown} />
     </Box>
   );
 };
