@@ -13,7 +13,6 @@
     "@std/fs": "jsr:@std/fs@^1.0.19",
     "@std/path": "jsr:@std/path@^1.1.1",
     "@atlas/memory": "./../../packages/memory/mod.ts",
-    "onnxruntime-node": "npm:onnxruntime-node@^1.20.1",
     "@std/crypto": "jsr:@std/crypto@^1.0.5"
   }
 }

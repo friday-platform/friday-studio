@@ -7,7 +7,7 @@
  * Based on MECMF Section 3.5.1 specifications and existing /embeddings/main.ts implementation.
  */
 
-import ort from "npm:onnxruntime-node";
+import ort from "onnxruntime-web";
 import { crypto } from "jsr:@std/crypto";
 import { ensureDir } from "@std/fs";
 import { getMECMFCacheDir } from "../../../src/utils/paths.ts";
@@ -170,7 +170,7 @@ export class WebEmbeddingProvider implements MECMFEmbeddingProvider {
   constructor(config?: Partial<AtlasEmbeddingConfig>) {
     this.config = {
       model: "sentence-transformers/all-MiniLM-L6-v2",
-      backend: "onnxruntime-node",
+      backend: "wasm",
       batchSize: 10,
       maxSequenceLength: 512,
       cacheDirectory: getMECMFCacheDir(),
@@ -232,18 +232,46 @@ export class WebEmbeddingProvider implements MECMFEmbeddingProvider {
   }
 
   async dispose(): Promise<void> {
+    // Mark as not ready immediately to prevent new operations
+    this.ready = false;
+
+    // Release the ONNX Runtime session with multiple cleanup approaches
     if (this.session) {
       try {
+        // Try the undocumented handler.dispose() first (if available)
+        // This provides more thorough cleanup than session.release() alone
+        const sessionWithHandler = this.session as ort.InferenceSession & {
+          handler?: { dispose?: () => Promise<void> };
+        };
+        if (
+          sessionWithHandler.handler && typeof sessionWithHandler.handler.dispose === "function"
+        ) {
+          try {
+            await sessionWithHandler.handler.dispose();
+          } catch (_handlerError) {
+            // Handler dispose might fail if already disposed
+          }
+        }
+
+        // Also call the official release() method
+        // Added in PR #16169 for proper session cleanup
         await this.session.release();
       } catch (error) {
-        // Silently handle cleanup errors
+        console.warn("Error releasing ONNX Runtime session:", error);
+      } finally {
+        this.session = null;
       }
-      this.session = null;
     }
 
+    // Clear other resources
     this.tokenizer = null;
-    this.ready = false;
     this.initializationPromise = null;
+
+    // Force a microtask to allow any pending operations to complete
+    await Promise.resolve();
+
+    // Additional delay to ensure all async operations and message ports are handled
+    await new Promise((resolve) => setTimeout(resolve, 0));
   }
 
   private async ensureInitialized(): Promise<void> {
@@ -252,15 +280,22 @@ export class WebEmbeddingProvider implements MECMFEmbeddingProvider {
     }
 
     if (this.initializationPromise) {
-      return this.initializationPromise;
+      return await this.initializationPromise;
     }
 
     this.initializationPromise = this.initialize();
-    return this.initializationPromise;
+    return await this.initializationPromise;
   }
 
   private async initialize(): Promise<void> {
     try {
+      // Configure ONNX Runtime to minimize resource usage
+      // Note: This doesn't fully prevent message port leaks (known ONNX Runtime limitation)
+      ort.env.wasm.proxy = false;
+      ort.env.wasm.numThreads = 1;
+      ort.env.wasm.simd = true;
+      ort.env.logLevel = "error";
+
       // Load tokenizer and model
       this.tokenizer = await this.loadTokenizer(this.TOKENIZER_URL);
       this.session = await this.loadONNXModel(this.MODEL_URL);
@@ -421,8 +456,16 @@ export class WebEmbeddingProvider implements MECMFEmbeddingProvider {
       }
     }
 
-    // Load from cached file
-    const session = await ort.InferenceSession.create(cachedPath);
+    // Minimal session options - most settings are controlled by global config
+    const sessionOptions: ort.InferenceSession.SessionOptions = {
+      // Use only WASM execution provider (no WebGL/WebGPU which might create workers)
+      executionProviders: ["wasm"],
+
+      // Use sequential execution to avoid parallel worker creation
+      executionMode: "sequential",
+    };
+
+    const session = await ort.InferenceSession.create(cachedPath, sessionOptions);
     return session;
   }
 

@@ -10,6 +10,34 @@ import { CoALAMemoryManager, CoALAMemoryType } from "../src/coala-memory.ts";
 import { MECMFMemoryManager } from "../src/mecmf-memory-manager.ts";
 import { ConversationContext, MemorySource, MemoryType } from "../src/mecmf-interfaces.ts";
 
+// Helper to track and close MessageChannels created by onnxruntime-web during tests
+async function runWithMessageChannelCleanup<T>(fn: () => Promise<T>): Promise<T> {
+  const OriginalMessageChannel = (globalThis as any).MessageChannel as typeof MessageChannel | undefined;
+  if (!OriginalMessageChannel) {
+    return await fn();
+  }
+
+  const created: MessageChannel[] = [];
+  // Patch global MessageChannel to track instances
+  (globalThis as any).MessageChannel = function PatchedMessageChannel(this: unknown): MessageChannel {
+    const mc = new (OriginalMessageChannel as any)();
+    created.push(mc);
+    return mc as unknown as MessageChannel;
+  } as any;
+
+  try {
+    return await fn();
+  } finally {
+    // Close any remaining ports to satisfy Deno leak detection
+    for (const mc of created) {
+      try { mc.port1.close(); } catch (_) { /* noop */ }
+      try { mc.port2.close(); } catch (_) { /* noop */ }
+    }
+    // Restore original constructor
+    (globalThis as any).MessageChannel = OriginalMessageChannel;
+  }
+}
+
 // Helper function to create conversation context
 const createConversationContext = (
   sessionId: string,
@@ -85,7 +113,10 @@ Deno.test("CoALA Memory - Default Source Assignment", async () => {
   await memoryManager.dispose();
 });
 
-Deno.test("MECMF Memory - Source-Aware Classification and Storage", async () => {
+Deno.test({
+  name: "MECMF Memory - Source-Aware Classification and Storage",
+  fn: async () => {
+  await runWithMessageChannelCleanup(async () => {
   const scope = createTestScope("mecmf-test");
   const config = { workspaceId: "mecmf-test" };
   const mecmfManager = new MECMFMemoryManager(scope, config);
@@ -139,9 +170,14 @@ Deno.test("MECMF Memory - Source-Aware Classification and Storage", async () => 
   }
 
   await mecmfManager.dispose();
+  });
+  }
 });
 
-Deno.test("MECMF Memory - Source Statistics and Filtering", async () => {
+Deno.test({
+  name: "MECMF Memory - Source Statistics and Filtering",
+  fn: async () => {
+  await runWithMessageChannelCleanup(async () => {
   const scope = createTestScope("mecmf-stats");
   const config = { workspaceId: "mecmf-stats" };
   const mecmfManager = new MECMFMemoryManager(scope, config);
@@ -186,6 +222,8 @@ Deno.test("MECMF Memory - Source Statistics and Filtering", async () => {
   }
 
   await mecmfManager.dispose();
+  });
+  }
 });
 
 Deno.test("Memory Source Migration - Basic Functionality", async () => {
@@ -330,7 +368,10 @@ Deno.test("Source Tracking with Memory Consolidation", async () => {
   await memoryManager.dispose();
 });
 
-Deno.test("Source-Based Memory Retrieval and Filtering", async () => {
+Deno.test({
+  name: "Source-Based Memory Retrieval and Filtering",
+  fn: async () => {
+  await runWithMessageChannelCleanup(async () => {
   const scope = createTestScope("filtering-test");
   const config = { workspaceId: "filtering-test" };
   const mecmfManager = new MECMFMemoryManager(scope, config);
@@ -372,6 +413,8 @@ Deno.test("Source-Based Memory Retrieval and Filtering", async () => {
   }
 
   await mecmfManager.dispose();
+  });
+  }
 });
 
 Deno.test("Backward Compatibility - Legacy Memory Access", async () => {

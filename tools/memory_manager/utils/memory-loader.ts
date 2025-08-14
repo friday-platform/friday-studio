@@ -4,8 +4,6 @@
  * Loads and saves memory data from Atlas workspace memory files using the current MECMF system
  */
 
-import { join } from "@std/path";
-import { ensureDir } from "@std/fs";
 import { CoALAMemoryType, type MemoryEntry, type MemoryStorage } from "../types/memory-types.ts";
 import { CoALAMemoryManager } from "@atlas/memory";
 import { WebEmbeddingProvider } from "../../../packages/memory/src/web-embedding-provider.ts";
@@ -33,7 +31,7 @@ export class AtlasMemoryLoader implements MemoryStorage {
       if (!this.embeddingProvider) {
         this.embeddingProvider = new WebEmbeddingProvider({
           model: "sentence-transformers/all-MiniLM-L6-v2",
-          backend: "onnxruntime-node",
+          backend: "wasm",
           batchSize: 10,
           maxSequenceLength: 512,
           cacheDirectory: getWorkspaceMemoryDir(this.workspaceId),
@@ -48,11 +46,12 @@ export class AtlasMemoryLoader implements MemoryStorage {
       }
 
       // Create a proper scope for the memory manager
+      // Using partial IAtlasScope for memory manager initialization
       const scope = {
         id: this.workspaceId,
         workspaceId: this.workspaceId,
         type: "workspace" as const,
-      } as any;
+      } as Parameters<typeof CoALAMemoryManager.prototype.constructor>[0];
 
       // Create CoALA manager with vector search enabled
       this.coalaManager = new CoALAMemoryManager(scope, undefined, true);
@@ -81,7 +80,7 @@ export class AtlasMemoryLoader implements MemoryStorage {
   }
 
   async loadAll(): Promise<Record<CoALAMemoryType, Record<string, MemoryEntry>>> {
-    const manager = await this.getCoALAManager();
+    await this.getCoALAManager();
     const result: Record<CoALAMemoryType, Record<string, MemoryEntry>> = {
       [CoALAMemoryType.WORKING]: {},
       [CoALAMemoryType.EPISODIC]: {},
@@ -198,7 +197,7 @@ export class AtlasMemoryLoader implements MemoryStorage {
       { count: number; lastModified?: Date; size?: number }
     >;
   }> {
-    const manager = await this.getCoALAManager();
+    await this.getCoALAManager();
     const stats: Record<
       CoALAMemoryType,
       { count: number; lastModified?: Date; size?: number }
