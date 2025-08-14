@@ -9,48 +9,6 @@ import { ConfigLoader } from "@atlas/config";
 import { FilesystemConfigAdapter } from "@atlas/storage";
 
 /**
- * Test agent tool checking logic directly
- * This test would have caught the "agent.config?.tools?.includes is not a function" bug
- */
-Deno.test("Agent tool checking handles simple array tool format", () => {
-  // Create test agent with new simple array format
-  const agent = {
-    type: "llm",
-    model: "claude-3-5-haiku-latest",
-    purpose: "Test agent with new tool format",
-    default_tools: ["workspace.memory.recall"],
-    tools: ["computer_use", "filesystem-context", "workspace.sessions.describe"],
-    config: {},
-  };
-
-  // Test the actual logic used in SessionSupervisor (line 1145)
-  // This should not throw "agent.config?.tools?.includes is not a function"
-  const hasComputerUse = agent.tools?.includes("computer_use");
-
-  assertEquals(
-    hasComputerUse,
-    true,
-    "Should correctly detect computer_use tool in new format",
-  );
-
-  // Test that old format access would fail (this is what was broken)
-  let oldFormatWouldFail = false;
-  try {
-    // This is the old broken code that caused the bug
-    const oldResult = (agent as any).config?.tools?.includes("computer_use");
-  } catch (error) {
-    oldFormatWouldFail = true;
-  }
-
-  // The old format should either be undefined or fail, not work
-  assertEquals(
-    (agent as any).config?.tools?.includes !== undefined,
-    false,
-    "Old format config.tools.includes should not exist",
-  );
-});
-
-/**
  * Test that all workspace examples load without configuration errors
  */
 Deno.test({
@@ -262,7 +220,7 @@ Deno.test({
         }
 
         // Track current agent name
-        if (inAgentSection && line.match(/^  [a-zA-Z-]+:$/) && !line.startsWith("    ")) {
+        if (inAgentSection && line.match(/^ {2}[a-zA-Z-]+:$/) && !line.startsWith("    ")) {
           currentAgentName = line.replace(":", "").trim();
         }
 

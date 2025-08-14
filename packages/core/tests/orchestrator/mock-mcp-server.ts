@@ -239,7 +239,7 @@ export class MockMCPServer {
     };
   }
 
-  private handleSSE(req: Request): Response {
+  private handleSSE(_req: Request): Response {
     // Return SSE stream for notifications
     const stream = new ReadableStream({
       start(controller) {

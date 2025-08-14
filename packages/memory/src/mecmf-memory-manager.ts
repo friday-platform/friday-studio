@@ -19,16 +19,13 @@ import {
 
 import { WebEmbeddingProvider } from "./web-embedding-provider.ts";
 import { AtlasTokenBudgetManager } from "./token-budget-manager.ts";
-import { AtlasMemoryClassifier } from "./memory-classifier.ts";
 import { PIISafeMemoryClassifier } from "./pii-safe-classifier.ts";
-import { FallbackResult, MECMFErrorHandler } from "./error-handling.ts";
+import { MECMFErrorHandler } from "./error-handling.ts";
 import { getGlobalMECMFDebugLogger, type PromptEnhancementLog } from "./debug-logger.ts";
 
 // Import existing Atlas components
 import { CoALAMemoryEntry, CoALAMemoryManager, CoALAMemoryType } from "./coala-memory.ts";
 import type { IAtlasScope } from "../../../src/types/core.ts";
-import { VectorSearchLocalStorageAdapter } from "@atlas/storage";
-import { join } from "jsr:@std/path";
 
 export interface MECMFConfig {
   workspaceId: string;
@@ -325,8 +322,6 @@ export class MECMFMemoryManager implements MECMFMemoryManager {
       ],
       maxResults = 10,
       minRelevanceScore = 0.3,
-      maxAge,
-      includeSimilarity = true,
     } = options || {};
 
     // Use error handling with fallback for vector search
@@ -448,7 +443,7 @@ export class MECMFMemoryManager implements MECMFMemoryManager {
     this.coalaManager.consolidate();
   }
 
-  async pruneByRelevance(threshold: number): Promise<number> {
+  async pruneByRelevance(_threshold: number): Promise<number> {
     await this.ensureReady();
 
     const initialCount = this.coalaManager.size();
@@ -474,7 +469,7 @@ export class MECMFMemoryManager implements MECMFMemoryManager {
 
     const averageRelevance = totalMemories > 0
       ? Object.entries(coalaStats).reduce(
-        (sum, [type, stats]) => sum + (stats?.avgRelevance || 0) * (stats?.count || 0),
+        (sum, [_type, stats]) => sum + (stats?.avgRelevance || 0) * (stats?.count || 0),
         0,
       ) / totalMemories
       : 0;

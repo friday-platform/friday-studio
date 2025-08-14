@@ -3,7 +3,7 @@
  * Tests multi-agent scenarios, error handling, and advanced planning features
  */
 
-import { assertEquals, assertExists, assertStringIncludes } from "@std/assert";
+import { assertEquals, assertExists } from "@std/assert";
 import {
   type SessionContext,
   SessionSupervisorActor,
@@ -154,7 +154,6 @@ Deno.test({
     const extractorIndex = agentIds.indexOf("data-extractor");
     const transformerIndex = agentIds.indexOf("data-transformer");
     const validatorIndex = agentIds.indexOf("data-validator");
-    const loaderIndex = agentIds.indexOf("data-loader");
 
     if (extractorIndex !== -1 && transformerIndex !== -1) {
       if (extractorIndex < transformerIndex) {

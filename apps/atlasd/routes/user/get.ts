@@ -1,6 +1,5 @@
 import { daemonFactory } from "../../src/factory.ts";
-import { describeRoute, resolver, validator } from "hono-openapi";
-import { InMemoryTodoStorage } from "../../../../src/core/daemon-capabilities.ts";
+import { describeRoute, resolver } from "hono-openapi";
 import { errorResponseSchema, userGetResponseSchema } from "./schemas.ts";
 
 const getUser = daemonFactory.createApp();

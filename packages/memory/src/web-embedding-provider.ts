@@ -39,38 +39,38 @@ export interface EmbeddingResult {
 export class BERTTokenizer {
   private vocab: Record<string, number> = {};
   private idToToken: Record<number, string> = {};
-  private specialTokens: Record<string, number> = {};
+  private _specialTokens: Record<string, number> = {};
   private doLowerCase: boolean = true;
   private maxLength: number = 512;
   private clsToken: string = "[CLS]";
   private sepToken: string = "[SEP]";
-  private padToken: string = "[PAD]";
+  private _padToken: string = "[PAD]";
   private unkToken: string = "[UNK]";
-  private maskToken: string = "[MASK]";
-  private clsTokenId: number = 101;
-  private sepTokenId: number = 102;
+  private _maskToken: string = "[MASK]";
+  private _clsTokenId: number = 101;
+  private _sepTokenId: number = 102;
   private padTokenId: number = 0;
   private unkTokenId: number = 100;
-  private maskTokenId: number = 103;
+  private _maskTokenId: number = 103;
 
   constructor(config: TokenizerConfig) {
     this.vocab = config.vocab;
-    this.specialTokens = config.special_tokens;
+    this._specialTokens = config.special_tokens;
     this.doLowerCase = config.do_lower_case;
     this.maxLength = config.max_len || 512;
 
     // Set token strings and IDs from config
     this.clsToken = config.cls_token || "[CLS]";
     this.sepToken = config.sep_token || "[SEP]";
-    this.padToken = config.pad_token || "[PAD]";
+    this._padToken = config.pad_token || "[PAD]";
     this.unkToken = config.unk_token || "[UNK]";
-    this.maskToken = config.mask_token || "[MASK]";
+    this._maskToken = config.mask_token || "[MASK]";
 
-    this.clsTokenId = config.cls_token_id ?? 101;
-    this.sepTokenId = config.sep_token_id ?? 102;
+    this._clsTokenId = config.cls_token_id ?? 101;
+    this._sepTokenId = config.sep_token_id ?? 102;
     this.padTokenId = config.pad_token_id ?? 0;
     this.unkTokenId = config.unk_token_id ?? 100;
-    this.maskTokenId = config.mask_token_id ?? 103;
+    this._maskTokenId = config.mask_token_id ?? 103;
 
     // Create reverse mapping
     for (const [token, id] of Object.entries(this.vocab)) {
@@ -481,7 +481,7 @@ export class WebEmbeddingProvider implements MECMFEmbeddingProvider {
 
       // Perform mean pooling to get sentence embedding
       const data = outputTensor.data as Float32Array;
-      const [batchSize, seqLength, hiddenSize] = outputTensor.dims as number[];
+      const [_batchSize, seqLength, hiddenSize] = outputTensor.dims as number[];
 
       const embedding = new Array(hiddenSize).fill(0);
       let validTokens = 0;

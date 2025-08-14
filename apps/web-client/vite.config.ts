@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 // Custom plugin to handle YAML imports with { type: "text" }
 const yamlTextPlugin = () => ({
   name: "yaml-text-loader",
-  transform(code: any, id: string) {
+  transform(_code: any, id: string) {
     if (id.endsWith(".yml") || id.endsWith(".yaml")) {
       try {
         const yamlContent = readFileSync(id, "utf-8");

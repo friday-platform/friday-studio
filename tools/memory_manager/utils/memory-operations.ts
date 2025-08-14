@@ -5,7 +5,6 @@
  */
 
 import {
-  CoALAMemoryManager,
   CoALAMemoryType,
   type MemoryEntry,
   type MemoryOperations,

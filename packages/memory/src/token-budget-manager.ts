@@ -120,7 +120,7 @@ export class AtlasTokenBudgetManager implements TokenBudgetManager {
     },
   ): EnhancedPrompt {
     const {
-      includeSystemInstructions = false,
+      includeSystemInstructions: _includeSystemInstructions = false,
       recentContext = "",
       adaptiveAllocation = true,
       contextFormat = "summary",

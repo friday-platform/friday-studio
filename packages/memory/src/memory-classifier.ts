@@ -603,7 +603,7 @@ export class AtlasMemoryClassifier implements MemoryClassifier {
   /**
    * Extract technical terms
    */
-  private extractTechnicalTerms(content: string): string[] {
+  private _extractTechnicalTerms(content: string): string[] {
     // Simple pattern matching for technical terms
     const technicalPatterns = [
       /\b[A-Z]{2,}\b/g, // Acronyms
@@ -626,7 +626,7 @@ export class AtlasMemoryClassifier implements MemoryClassifier {
   /**
    * Extract named entities (basic implementation)
    */
-  private extractNamedEntities(content: string): Entity[] {
+  private _extractNamedEntities(content: string): Entity[] {
     const entities: Entity[] = [];
 
     // Simple capitalized word detection
@@ -649,7 +649,7 @@ export class AtlasMemoryClassifier implements MemoryClassifier {
   /**
    * Extract action verbs
    */
-  private extractActionVerbs(content: string): string[] {
+  private _extractActionVerbs(content: string): string[] {
     const commonActionVerbs = [
       "create",
       "build",

@@ -5,7 +5,7 @@
  * degradation when memory operations encounter failures or resource constraints.
  */
 
-import { FailureRecoveryStrategies, MemoryType, ResourceManagement } from "./mecmf-interfaces.ts";
+import { FailureRecoveryStrategies, MemoryType } from "./mecmf-interfaces.ts";
 
 export interface ErrorDetails {
   error?: string;
@@ -56,7 +56,6 @@ export interface EmergencyPruneResult {
 
 export class MECMFErrorHandler {
   private readonly recoveryStrategies: FailureRecoveryStrategies;
-  private readonly resourceManagement: ResourceManagement;
   private readonly errorHistory: Map<string, ErrorContext[]> = new Map();
   private readonly circuitBreakers: Map<string, CircuitBreaker> = new Map();
 
@@ -81,21 +80,6 @@ export class MECMFErrorHandler {
         recovery: "restore_from_checkpoint",
         checkpoint_interval: "1 hour",
         validation_checks: true,
-      },
-    };
-
-    this.resourceManagement = {
-      memory_pressure: {
-        trigger_threshold: "85% of available memory",
-        response: "immediate_pruning_of_low_relevance_memories",
-        emergency_threshold: "95% of available memory",
-        emergency_response: "clear_working_memory_and_alert",
-      },
-      disk_space_pressure: {
-        trigger_threshold: "90% of allocated storage",
-        response: "compress_old_memories_and_archive",
-        emergency_threshold: "98% of allocated storage",
-        emergency_response: "emergency_pruning_with_backup",
       },
     };
   }
