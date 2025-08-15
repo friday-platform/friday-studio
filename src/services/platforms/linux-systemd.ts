@@ -150,8 +150,9 @@ export class LinuxSystemdService implements PlatformServiceManager {
         const pidResult = await pidCmd.output();
         const pidOutput = new TextDecoder().decode(pidResult.stdout).trim();
         const pidMatch = pidOutput.match(/MainPID=(\d+)/);
-        if (pidMatch && pidMatch[1] !== "0") {
-          pid = parseInt(pidMatch[1], 10);
+        const pidString = pidMatch?.[1];
+        if (pidString && pidString !== "0") {
+          pid = parseInt(pidString, 10);
         }
       } catch {
         // PID detection failed, continue without it

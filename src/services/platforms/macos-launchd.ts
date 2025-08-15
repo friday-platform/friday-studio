@@ -29,7 +29,11 @@ export class MacOSLaunchdService implements PlatformServiceManager {
       await Deno.mkdir(this.serviceDir, { recursive: true });
     } catch (error) {
       if (!(error instanceof Deno.errors.AlreadyExists)) {
-        throw new Error(`Failed to create service directory: ${error.message}`);
+        throw new Error(
+          `Failed to create service directory: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
       }
     }
 
@@ -75,7 +79,11 @@ export class MacOSLaunchdService implements PlatformServiceManager {
     try {
       await Deno.writeTextFile(this.plistPath, plistXml);
     } catch (error) {
-      throw new Error(`Failed to write service configuration: ${error.message}`);
+      throw new Error(
+        `Failed to write service configuration: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
     }
 
     // Load the service with launchctl
@@ -99,7 +107,11 @@ export class MacOSLaunchdService implements PlatformServiceManager {
       } catch {
         // Ignore cleanup errors
       }
-      throw new Error(`Failed to register service with launchctl: ${error.message}`);
+      throw new Error(
+        `Failed to register service with launchctl: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
     }
   }
 
@@ -123,7 +135,11 @@ export class MacOSLaunchdService implements PlatformServiceManager {
       await Deno.remove(this.plistPath);
     } catch (error) {
       if (!(error instanceof Deno.errors.NotFound)) {
-        throw new Error(`Failed to remove service configuration: ${error.message}`);
+        throw new Error(
+          `Failed to remove service configuration: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
       }
     }
   }
@@ -188,9 +204,10 @@ export class MacOSLaunchdService implements PlatformServiceManager {
         if (output.includes('"PID"')) {
           // Extract PID from property list format
           const pidMatch = output.match(/"PID"\s*=\s*(\d+);/);
-          if (pidMatch) {
+          const pidString = pidMatch?.[1];
+          if (pidString) {
             status.running = true;
-            status.pid = parseInt(pidMatch[1], 10);
+            status.pid = parseInt(pidString, 10);
           }
         }
       }
@@ -199,8 +216,9 @@ export class MacOSLaunchdService implements PlatformServiceManager {
       try {
         const configText = await Deno.readTextFile(this.plistPath);
         const portMatch = configText.match(/--port[\s\n]*<string>(\d+)<\/string>/);
-        if (portMatch) {
-          status.port = parseInt(portMatch[1], 10);
+        const portString = portMatch?.[1];
+        if (portString) {
+          status.port = parseInt(portString, 10);
         }
       } catch {
         // Ignore config parsing errors

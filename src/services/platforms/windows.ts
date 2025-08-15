@@ -245,29 +245,31 @@ exit
         if (line) {
           const parts = line.trim().split(/\s+/);
           const maybePid = parts[parts.length - 1];
-          const parsedPid = Number.parseInt(maybePid, 10);
-          if (Number.isFinite(parsedPid)) {
-            // Verify the PID belongs to atlas.exe
-            try {
-              const tlCmd = new Deno.Command("tasklist", {
-                args: ["/FI", `PID eq ${parsedPid}`, "/FO", "CSV", "/NH"],
-                stdout: "piped",
-                stderr: "piped",
-              });
-              const tlRes = await tlCmd.output();
-              if (tlRes.success) {
-                const tlOut = new TextDecoder().decode(tlRes.stdout).trim();
-                if (tlOut && tlOut.startsWith('"atlas.exe"')) {
-                  pid = parsedPid;
-                  running = true;
-                  port = configuredPort;
+          if (maybePid) {
+            const parsedPid = Number.parseInt(maybePid, 10);
+            if (Number.isFinite(parsedPid)) {
+              // Verify the PID belongs to atlas.exe
+              try {
+                const tlCmd = new Deno.Command("tasklist", {
+                  args: ["/FI", `PID eq ${parsedPid}`, "/FO", "CSV", "/NH"],
+                  stdout: "piped",
+                  stderr: "piped",
+                });
+                const tlRes = await tlCmd.output();
+                if (tlRes.success) {
+                  const tlOut = new TextDecoder().decode(tlRes.stdout).trim();
+                  if (tlOut && tlOut.startsWith('"atlas.exe"')) {
+                    pid = parsedPid;
+                    running = true;
+                    port = configuredPort;
+                  }
                 }
+              } catch {
+                // If tasklist check fails, still consider the port as running
+                pid = parsedPid;
+                running = true;
+                port = configuredPort;
               }
-            } catch {
-              // If tasklist check fails, still consider the port as running
-              pid = parsedPid;
-              running = true;
-              port = configuredPort;
             }
           }
         }
@@ -328,15 +330,6 @@ exit
     return Promise.resolve(undefined);
   }
 
-  private async fileExists(path: string): Promise<boolean> {
-    try {
-      await Deno.stat(path);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
   private async getConfiguredPort(): Promise<number> {
     try {
       const text = await Deno.readTextFile(this.configPath);
@@ -348,15 +341,5 @@ exit
       // ignore
     }
     return 8080;
-  }
-
-  private createServiceWrapper(
-    _wrapperPath: string,
-    _binaryPath: string,
-    _port: number,
-  ): void {
-    // Skip creating service wrapper - use direct daemon installation instead
-    // Windows services work better with direct executable registration
-    console.log("Using direct daemon registration for Windows service");
   }
 }
