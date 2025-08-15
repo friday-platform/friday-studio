@@ -7,6 +7,7 @@
 
 import { assert, assertEquals, assertExists } from "@std/assert";
 import { checkAndDisplayUpdate, checkForUpdates } from "./version-checker.ts";
+import { ReleaseChannel } from "./release-channel.ts";
 
 Deno.test("Version Checker - Development builds skip checking", async () => {
   const result = await checkForUpdates();
@@ -18,7 +19,7 @@ Deno.test("Version Checker - Development builds skip checking", async () => {
 });
 
 Deno.test("Version Checker - API endpoints are accessible", async () => {
-  const channels = ["edge", "nightly"];
+  const channels = [ReleaseChannel.Edge, ReleaseChannel.Nightly];
 
   for (const channel of channels) {
     try {

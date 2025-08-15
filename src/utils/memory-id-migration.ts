@@ -8,7 +8,6 @@
 import { join } from "@std/path";
 import { exists, move } from "@std/fs";
 import { getAtlasMemoryDir } from "./paths.ts";
-import { RegistryStorageAdapter } from "../core/storage/registry-storage-adapter.ts";
 import { createRegistryStorage, StorageConfigs } from "../core/storage/index.ts";
 
 export interface MemoryIdMigrationResult {
@@ -193,7 +192,9 @@ export async function migrateUuidMemoryDirectories(
       result.warnings.push("No directories were migrated - check errors above");
     }
   } catch (error) {
-    result.errors.push(`Migration failed: ${error.message}`);
+    result.errors.push(
+      `Migration failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
 
   return result;
@@ -212,7 +213,7 @@ export async function cleanupEmptyUuidDirectories(): Promise<string[]> {
 
     try {
       let hasFiles = false;
-      for await (const entry of Deno.readDir(dirPath)) {
+      for await (const _entry of Deno.readDir(dirPath)) {
         hasFiles = true;
         break;
       }

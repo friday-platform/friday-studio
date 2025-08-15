@@ -6,6 +6,7 @@
 import { getVersionInfo } from "./version.ts";
 import { ensureDir, existsSync } from "@std/fs";
 import { getAtlasBaseUrl } from "@atlas/core";
+import { ReleaseChannel } from "./release-channel.ts";
 
 export interface VersionResponse {
   channel: string;
@@ -236,7 +237,7 @@ export async function checkForUpdates(
   }
 
   // Determine channel from version
-  const channel = versionInfo.isNightly ? "nightly" : "edge";
+  const channel = versionInfo.isNightly ? ReleaseChannel.Nightly : ReleaseChannel.Edge;
 
   try {
     const serverResponse = await fetchLatestVersion(channel);
@@ -319,7 +320,11 @@ export async function checkForUpdate(channel?: string): Promise<UpdateInfo> {
 
   // Determine channel
   if (!channel) {
-    channel = versionInfo.isNightly ? "nightly" : versionInfo.isDev ? "edge" : "edge";
+    channel = versionInfo.isNightly
+      ? ReleaseChannel.Nightly
+      : versionInfo.isDev
+      ? ReleaseChannel.Edge
+      : ReleaseChannel.Edge;
   }
 
   try {

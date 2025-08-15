@@ -145,7 +145,9 @@ export async function migrateGlobalMemoriesToWorkspace(
       );
     }
   } catch (error) {
-    result.errors.push(`Migration failed: ${error.message}`);
+    result.errors.push(
+      `Migration failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
 
   return result;
@@ -244,7 +246,7 @@ export async function cleanupEmptyWorkspaceDirectories(): Promise<string[]> {
 
     try {
       let hasFiles = false;
-      for await (const entry of Deno.readDir(workspaceDir)) {
+      for await (const _entry of Deno.readDir(workspaceDir)) {
         hasFiles = true;
         break;
       }

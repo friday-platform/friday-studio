@@ -6,6 +6,8 @@ import { TarStream, type TarStreamInput } from "@std/tar/tar-stream";
 import { getAtlasClient } from "@atlas/client";
 import { stringify } from "@std/yaml";
 import { getVersionInfo } from "./version.ts";
+import { ReleaseChannel } from "./release-channel.ts";
+import type { WorkspaceDraft } from "../core/storage/workspace-draft-storage-adapter.ts";
 
 export class DiagnosticsCollector {
   private tempDir: string;
@@ -121,7 +123,7 @@ export class DiagnosticsCollector {
                     const client = getAtlasClient({ timeout: 5000 });
                     const workspaceDetails = await client.getWorkspace(workspace.id);
 
-                    if (workspaceDetails.config) {
+                    if ("config" in workspaceDetails && workspaceDetails.config) {
                       // Save runtime config as YAML
                       const yamlContent = stringify(workspaceDetails.config);
                       const configPath = join(workspaceDir, "runtime-config.yml");
@@ -292,7 +294,7 @@ export class DiagnosticsCollector {
       for await (const entry of drafts) {
         if (entry.value && typeof entry.value === "object") {
           draftCount++;
-          const draft = entry.value as Record<string, unknown>;
+          const draft = entry.value as WorkspaceDraft;
           const draftId = entry.key[entry.key.length - 1] as string;
 
           try {
@@ -540,7 +542,7 @@ export class DiagnosticsCollector {
         const { stdout } = await command.output();
         const output = new TextDecoder().decode(stdout);
         const resolutionMatch = output.match(/Resolution: (\d+ x \d+)/);
-        return resolutionMatch ? resolutionMatch[1] : "unknown";
+        return resolutionMatch && resolutionMatch[1] ? resolutionMatch[1] : "unknown";
       } catch {
         return "unknown";
       }
@@ -554,7 +556,7 @@ export class DiagnosticsCollector {
         const { stdout } = await command.output();
         const output = new TextDecoder().decode(stdout);
         const resolutionMatch = output.match(/(\d+x\d+)\s+\d+\.\d+\*/);
-        if (resolutionMatch) {
+        if (resolutionMatch && resolutionMatch[1]) {
           return resolutionMatch[1].replace("x", " x ");
         }
       } catch {
@@ -595,7 +597,7 @@ export class DiagnosticsCollector {
         if (success) {
           const output = new TextDecoder().decode(stdout);
           const lines = output.split("\n").filter((line) => line.trim());
-          if (lines.length > 1) {
+          if (lines.length > 1 && lines[1]) {
             const values = lines[1].trim().split(/\s+/);
             if (values.length >= 2 && values[0] !== "" && values[1] !== "") {
               return `${values[0]} x ${values[1]}`;
@@ -740,9 +742,8 @@ export class DiagnosticsCollector {
               stdout: "piped",
               stderr: "piped",
             });
-            const { stdout, stderr } = await command.output();
+            const { stdout } = await command.output();
             const output = new TextDecoder().decode(stdout);
-            const errorOutput = new TextDecoder().decode(stderr);
 
             // Check for verification result
             if (output.includes("Verify return code: 0 (ok)")) {
@@ -761,8 +762,8 @@ export class DiagnosticsCollector {
             if (certMatches) {
               verifyResult.certificateChain = certMatches.map((match) => {
                 const lines = match.split("\n");
-                const subject = lines[0].substring(2).trim();
-                const issuer = lines[1].substring(4).trim();
+                const subject = lines[0] ? lines[0].substring(2).trim() : "unknown";
+                const issuer = lines[1] ? lines[1].substring(4).trim() : "unknown";
                 return { subject, issuer };
               });
             }
@@ -843,11 +844,20 @@ export class DiagnosticsCollector {
     // Collect system information
     const systemInfo = await this.collectSystemInfo();
 
+    // Derive channel from version info
+    const channel = versionInfo.isNightly
+      ? ReleaseChannel.Nightly
+      : versionInfo.isDev
+      ? ReleaseChannel.Edge
+      : versionInfo.isCompiled
+      ? ReleaseChannel.Stable
+      : ReleaseChannel.Edge;
+
     const metadata = {
       timestamp: new Date().toISOString(),
       atlasVersion: versionInfo.version,
       gitSha: versionInfo.gitSha || undefined,
-      channel: versionInfo.channel,
+      channel,
       isCompiled: versionInfo.isCompiled,
       isDev: versionInfo.isDev,
       platform: Deno.build.os,
@@ -911,6 +921,11 @@ export class DiagnosticsCollector {
         const parts = relativePath.split("/");
         const filename = parts[parts.length - 1];
 
+        // Skip truncation if filename is undefined (shouldn't happen with valid paths)
+        if (!filename) {
+          continue;
+        }
+
         // If just the filename is too long, truncate it
         if (filename.length > 90) {
           const ext = filename.lastIndexOf(".");
@@ -923,8 +938,9 @@ export class DiagnosticsCollector {
           // Otherwise, shorten directory names
           const maxDirLength = Math.floor((95 - filename.length) / (parts.length - 1));
           for (let i = 0; i < parts.length - 1; i++) {
-            if (parts[i].length > maxDirLength) {
-              parts[i] = parts[i].substring(0, maxDirLength - 1) + "~";
+            const part = parts[i];
+            if (part && part.length > maxDirLength) {
+              parts[i] = part.substring(0, maxDirLength - 1) + "~";
             }
           }
           relativePath = parts.join("/");
