@@ -59,6 +59,11 @@ function extractImports(content: string): Array<{ import: string; line: number }
     while ((match = pattern.exec(content)) !== null) {
       const importPath = match[1];
 
+      // Skip if importPath is undefined
+      if (!importPath) {
+        continue;
+      }
+
       // Skip external packages and URLs
       if (isExternalImport(importPath)) {
         continue;
@@ -177,7 +182,7 @@ async function validateImport(
       line,
       import: importPath,
       resolvedPath: resolveImportPath(filePath, importPath),
-      reason: `Error resolving import: ${error.message}`,
+      reason: `Error resolving import: ${error instanceof Error ? error.message : String(error)}`,
     };
   }
 }
@@ -187,11 +192,11 @@ async function validateStagedImports(): Promise<ImportIssue[]> {
   const files = await getStagedFiles();
 
   if (files.length === 0) {
-    console.log("🔍 No staged TypeScript/JavaScript files to validate");
+    console.log("No staged TypeScript/JavaScript files to validate");
     return issues;
   }
 
-  console.log(`🔍 Validating imports in ${files.length} staged files...`);
+  console.log(`Validating imports in ${files.length} staged files...`);
 
   for (const file of files) {
     try {
@@ -205,7 +210,9 @@ async function validateStagedImports(): Promise<ImportIssue[]> {
         }
       }
     } catch (error) {
-      console.error(`❌ Error reading file ${file}: ${error.message}`);
+      console.error(
+        `Error reading file ${file}: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
 
@@ -214,14 +221,14 @@ async function validateStagedImports(): Promise<ImportIssue[]> {
 
 function printIssues(issues: ImportIssue[]): void {
   if (issues.length === 0) {
-    console.log("✅ All staged imports are valid!");
+    console.log("All staged imports are valid!");
     return;
   }
 
-  console.log(`❌ Found ${issues.length} import issues in staged files:\n`);
+  console.log(`Found ${issues.length} import issues in staged files:\n`);
 
   for (const issue of issues) {
-    console.log(`📄 ${issue.file}:${issue.line}`);
+    console.log(`${issue.file}:${issue.line}`);
     console.log(`  Import: ${issue.import}`);
     console.log(`  Issue: ${issue.reason}`);
     console.log();
@@ -230,21 +237,23 @@ function printIssues(issues: ImportIssue[]): void {
 
 // Main execution
 if (import.meta.main) {
-  console.log("🚀 Validating imports in staged files...");
+  console.log("Validating imports in staged files...");
 
   try {
     const issues = await validateStagedImports();
     printIssues(issues);
 
     if (issues.length > 0) {
-      console.log("💡 Fix these import issues before committing.");
-      console.log("💡 Run 'deno task validate-imports' to check all files.");
+      console.log("Fix these import issues before committing.");
+      console.log("Run 'deno task validate-imports' to check all files.");
       Deno.exit(1);
     } else {
-      console.log("🎉 Staged import validation completed successfully!");
+      console.log("Staged import validation completed successfully!");
     }
   } catch (error) {
-    console.error(`❌ Validation failed: ${error.message}`);
+    console.error(
+      `Validation failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
     Deno.exit(1);
   }
 }

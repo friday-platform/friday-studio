@@ -24,14 +24,14 @@ async function clean() {
     // Try to backup the .env file if it exists
     try {
       envFileContent = await Deno.readTextFile(envFilePath);
-      console.log(`✓ Backed up .env file`);
+      console.log(`Backed up .env file`);
     } catch {
       // .env file doesn't exist, which is fine
     }
 
     // Remove the directory
     await Deno.remove(atlasHome, { recursive: true });
-    console.log(`✓ Removed Atlas directory: ${atlasHome}`);
+    console.log(`Removed Atlas directory: ${atlasHome}`);
 
     // Restore the .env file if we backed it up
     if (envFileContent !== null) {
@@ -39,13 +39,15 @@ async function clean() {
       await Deno.mkdir(atlasHome, { recursive: true });
       // Restore the .env file
       await Deno.writeTextFile(envFilePath, envFileContent);
-      console.log(`✓ Restored .env file`);
+      console.log(`Restored .env file`);
     }
   } catch (error) {
     if (error instanceof Deno.errors.NotFound) {
       console.log(`Atlas directory does not exist: ${atlasHome}`);
     } else {
-      console.error(`Error removing Atlas directory: ${error.message}`);
+      console.error(
+        `Error removing Atlas directory: ${error instanceof Error ? error.message : String(error)}`,
+      );
       Deno.exit(1);
     }
   }

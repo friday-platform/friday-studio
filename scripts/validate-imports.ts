@@ -9,7 +9,7 @@
  */
 
 import { walk } from "@std/fs";
-import { dirname, extname, join, resolve } from "@std/path";
+import { dirname, join, resolve } from "@std/path";
 
 interface ImportIssue {
   file: string;
@@ -57,7 +57,6 @@ async function findTypeScriptFiles(rootDir: string): Promise<string[]> {
 
 function extractImports(content: string): Array<{ import: string; line: number }> {
   const imports: Array<{ import: string; line: number }> = [];
-  const lines = content.split("\n");
 
   for (const pattern of IMPORT_PATTERNS) {
     pattern.lastIndex = 0; // Reset regex state
@@ -65,6 +64,11 @@ function extractImports(content: string): Array<{ import: string; line: number }
 
     while ((match = pattern.exec(content)) !== null) {
       const importPath = match[1];
+
+      // Skip if importPath is undefined
+      if (!importPath) {
+        continue;
+      }
 
       // Skip external packages and URLs
       if (isExternalImport(importPath)) {
@@ -76,7 +80,9 @@ function extractImports(content: string): Array<{ import: string; line: number }
       const lineContent = content.split("\n")[lineNumber - 1];
 
       // Skip commented lines
-      if (lineContent.trim().startsWith("//") || lineContent.trim().startsWith("/*")) {
+      if (
+        lineContent && (lineContent.trim().startsWith("//") || lineContent.trim().startsWith("/*"))
+      ) {
         continue;
       }
 
@@ -191,7 +197,7 @@ async function validateImport(
       line,
       import: importPath,
       resolvedPath: resolveImportPath(filePath, importPath),
-      reason: `Error resolving import: ${error.message}`,
+      reason: `Error resolving import: ${error instanceof Error ? error.message : String(error)}`,
     };
   }
 }
@@ -200,7 +206,7 @@ async function validateAllImports(rootDir: string): Promise<ImportIssue[]> {
   const issues: ImportIssue[] = [];
   const files = await findTypeScriptFiles(rootDir);
 
-  console.log(`🔍 Validating imports in ${files.length} files...`);
+  console.log(`Validating imports in ${files.length} files...`);
 
   for (const file of files) {
     try {
@@ -214,7 +220,9 @@ async function validateAllImports(rootDir: string): Promise<ImportIssue[]> {
         }
       }
     } catch (error) {
-      console.error(`❌ Error reading file ${file}: ${error.message}`);
+      console.error(
+        `Error reading file ${file}: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
 
@@ -223,11 +231,11 @@ async function validateAllImports(rootDir: string): Promise<ImportIssue[]> {
 
 function printIssues(issues: ImportIssue[]): void {
   if (issues.length === 0) {
-    console.log("✅ All imports are valid!");
+    console.log("All imports are valid!");
     return;
   }
 
-  console.log(`❌ Found ${issues.length} import issues:\n`);
+  console.log(`Found ${issues.length} import issues:\n`);
 
   // Group issues by file
   const issuesByFile = new Map<string, ImportIssue[]>();
@@ -238,7 +246,7 @@ function printIssues(issues: ImportIssue[]): void {
   }
 
   for (const [file, fileIssues] of issuesByFile) {
-    console.log(`📄 ${file}:`);
+    console.log(`${file}:`);
     for (const issue of fileIssues) {
       console.log(`  Line ${issue.line}: ${issue.import}`);
       console.log(`    ${issue.reason}`);
@@ -251,20 +259,22 @@ function printIssues(issues: ImportIssue[]): void {
 if (import.meta.main) {
   const rootDir = Deno.args[0] || Deno.cwd();
 
-  console.log(`🚀 Starting import validation in: ${rootDir}`);
+  console.log(`Starting import validation in: ${rootDir}`);
 
   try {
     const issues = await validateAllImports(rootDir);
     printIssues(issues);
 
     if (issues.length > 0) {
-      console.log(`💡 Fix these import issues to prevent build failures.`);
+      console.log(`Fix these import issues to prevent build failures.`);
       Deno.exit(1);
     } else {
-      console.log("🎉 Import validation completed successfully!");
+      console.log("Import validation completed successfully!");
     }
   } catch (error) {
-    console.error(`❌ Validation failed: ${error.message}`);
+    console.error(
+      `Validation failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
     Deno.exit(1);
   }
 }
