@@ -1,6 +1,7 @@
 // Core Atlas interfaces based on technical design document
 
 import type { AgentOrchestrator } from "@atlas/core";
+import type { WorkspaceSignalConfig } from "@atlas/config";
 
 export interface IAtlasScope {
   id: string;
@@ -129,7 +130,7 @@ export interface IWorkspaceSignal extends IAtlasScope {
     name: string;
   };
   trigger(): Promise<void>;
-  configure(config: any): void;
+  configure(config: WorkspaceSignalConfig): void;
 }
 
 export interface IWorkspaceSignalCallback extends IAtlasDecisionGraph {
