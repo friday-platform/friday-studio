@@ -50,7 +50,10 @@ export function registerLibraryGetTool(server: McpServer, ctx: ToolContext) {
           timestamp: new Date().toISOString(),
         });
       } catch (error) {
-        ctx.logger.error("MCP library_get failed", { itemId, error });
+        ctx.logger.error("MCP library_get failed", {
+          itemId,
+          error: error instanceof Error ? error.message : String(error),
+        });
         throw error;
       }
     },

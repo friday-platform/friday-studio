@@ -11,7 +11,7 @@ import {
 } from "@atlas/config";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Span } from "@opentelemetry/api";
-import { experimental_createMCPClient as createMCPClient, Tool } from "ai";
+import { experimental_createMCPClient as createMCPClient, JSONValue, Schema, Tool } from "ai";
 import { Experimental_StdioMCPTransport as StdioMCPTransport } from "ai/mcp-stdio";
 import { z } from "zod/v4";
 import { logger } from "@atlas/logger";
@@ -161,9 +161,14 @@ export class MCPManager {
         case "http": {
           const { url } = validatedConfig.transport;
 
-          // Create client with StreamableHTTPClientTransport
+          // Create client with StreamableHTTPClientTransport with auth headers
           const transport = new StreamableHTTPClientTransport(
             new URL(url),
+            {
+              requestInit: {
+                headers: this.buildAuthHeaders(validatedConfig.auth),
+              },
+            },
           );
 
           mcpClient = await createMCPClient({
@@ -371,10 +376,10 @@ export class MCPManager {
    * @returns Filtered and converted tools object
    */
   private filterTools(
-    tools: Record<string, unknown>,
+    tools: Record<string, Tool>,
     filterConfig?: MCPServerToolFilter,
-  ): Record<string, unknown> {
-    const filtered: Record<string, unknown> = {};
+  ): Record<string, Tool> {
+    const filtered: Record<string, Tool> = {};
 
     for (const [toolName, tool] of Object.entries(tools)) {
       // Apply allowed list
@@ -387,18 +392,16 @@ export class MCPManager {
         continue;
       }
 
-      // @FIXME: this is probably wrong.
       // Convert MCP tool format to AI SDK format if needed
-      // MCP tools may have 'parameters' but AI SDK expects 'input_schema'
-      if (tool && typeof tool === "object" && "parameters" in tool && !("input_schema" in tool)) {
-        // Create a new tool object with input_schema instead of parameters
-        const toolObj = tool as Record<string, unknown>;
-        const convertedTool: any = {
-          ...toolObj,
-          input_schema: toolObj.parameters,
+      // MCP tools may have 'parameters' but AI SDK expects 'inputSchema'
+      if (tool && typeof tool === "object" && "parameters" in tool && !("inputSchema" in tool)) {
+        // Create a new tool object with inputSchema instead of parameters
+        // We destructure to exclude 'parameters' and rebuild with 'inputSchema'
+        const { parameters, ...restTool } = tool as Tool & { parameters?: Schema<JSONValue> };
+        const convertedTool: Tool = {
+          ...restTool,
+          inputSchema: parameters as Schema<JSONValue>,
         };
-        // Remove the original parameters property to avoid confusion
-        delete convertedTool.parameters;
         filtered[toolName] = convertedTool;
       } else {
         filtered[toolName] = tool;
