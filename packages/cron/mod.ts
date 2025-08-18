@@ -9,6 +9,8 @@ export {
   type CronLogger,
   CronManager,
   type CronTimerConfig,
+  type CronTimerSignalData,
+  type CronTimerSignalPayload,
   type PersistedTimerData,
   type TimerInfo,
   type WorkspaceWakeupCallback,

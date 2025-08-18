@@ -1,5 +1,10 @@
 import { ConfigLoader, type SupervisorDefaults, supervisorDefaultsWrapped } from "@atlas/config";
-import { CronManager, type CronTimerConfig, type WorkspaceWakeupCallback } from "@atlas/cron";
+import {
+  CronManager,
+  type CronTimerConfig,
+  type CronTimerSignalData,
+  type WorkspaceWakeupCallback,
+} from "@atlas/cron";
 import { PlatformMCPServer } from "@atlas/mcp-server";
 import { FilesystemConfigAdapter, FilesystemWorkspaceCreationAdapter } from "@atlas/storage";
 import { getAtlasDaemonUrl } from "@atlas/atlasd";
@@ -208,12 +213,12 @@ export class AtlasDaemon implements AppContext {
     const wakeupCallback: WorkspaceWakeupCallback = async (
       workspaceId: string,
       signalId: string,
-      signalData: unknown,
+      signalData: CronTimerSignalData,
     ) => {
       logger.info("CronManager waking up workspace for timer signal", {
         workspaceId,
         signalId,
-        timestamp: (signalData as Record<string, unknown>)?.timestamp,
+        timestamp: signalData.timestamp,
       });
 
       try {
@@ -223,7 +228,7 @@ export class AtlasDaemon implements AppContext {
         // Process the timer signal using triggerSignal which handles signal creation
         await runtime.triggerSignal(
           signalId,
-          (signalData as Record<string, unknown>)?.data,
+          { ...signalData.data },
         );
 
         logger.info("Timer signal processed", { workspaceId, signalId });
@@ -2071,7 +2076,7 @@ export class AtlasDaemon implements AppContext {
         port,
         hostname,
         onListen: ({ hostname, port }) => {
-          this.actualPort = port; // Store the actual port
+          this.#port = port; // Store the actual port
           logger.info("Atlas daemon running", {
             hostname,
             port,
@@ -2261,22 +2266,24 @@ export class AtlasDaemon implements AppContext {
 
       for (const [signalId, signalConfig] of Object.entries(signals)) {
         // Check if this is a timer signal with cron schedule
+        // Schedule signals have provider="schedule" and config.schedule per the schema
         if (
           signalConfig &&
           typeof signalConfig === "object" &&
           "provider" in signalConfig &&
           signalConfig.provider === "schedule" &&
-          "schedule" in signalConfig &&
-          typeof signalConfig.schedule === "string"
+          "config" in signalConfig &&
+          signalConfig.config &&
+          typeof signalConfig.config === "object" &&
+          "schedule" in signalConfig.config &&
+          typeof signalConfig.config.schedule === "string"
         ) {
           const cronConfig: CronTimerConfig = {
             workspaceId,
             signalId,
-            schedule: signalConfig.schedule,
-            timezone: ((signalConfig as Record<string, unknown>).timezone as string) ||
-              "UTC",
-            description: (signalConfig as Record<string, unknown>)
-              .description as string,
+            schedule: signalConfig.config.schedule,
+            timezone: signalConfig.config.timezone || "UTC",
+            description: signalConfig.description,
           };
 
           cronTimers.push(cronConfig);

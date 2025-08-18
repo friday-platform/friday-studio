@@ -46,10 +46,30 @@ export interface PersistedTimerData {
 }
 
 /**
+ * Cron timer signal payload data
+ */
+export interface CronTimerSignalPayload {
+  scheduled: string;
+  timezone: string;
+  nextRun: string;
+  source: "cron-manager";
+}
+
+/**
+ * Cron timer signal data structure passed to workspace wakeup callback
+ */
+export interface CronTimerSignalData {
+  id: string;
+  type: "timer";
+  timestamp: string;
+  data: CronTimerSignalPayload;
+}
+
+/**
  * Callback interface for workspace wake-up
  */
 export interface WorkspaceWakeupCallback {
-  (workspaceId: string, signalId: string, signalData: unknown): Promise<void> | void;
+  (workspaceId: string, signalId: string, signalData: CronTimerSignalData): Promise<void> | void;
 }
 
 /**
@@ -507,14 +527,14 @@ export class CronManager {
         await this.persistTimer(timerKey, timer);
 
         // Create signal data
-        const signalData = {
+        const signalData: CronTimerSignalData = {
           id: timer.signalId,
           type: "timer",
           timestamp: new Date().toISOString(),
           data: {
             scheduled: timer.schedule,
             timezone: timer.timezone,
-            nextRun: timer.nextExecution?.toISOString() ?? "unknown",
+            nextRun: timer.nextExecution?.toISOString() ?? "",
             source: "cron-manager",
           },
         };
