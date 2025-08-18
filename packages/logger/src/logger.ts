@@ -128,7 +128,11 @@ export class AtlasLoggerV2 implements Logger {
   }
 
   private formatConsoleOutput(level: string, message: string, context: LogContext): string {
-    const timestamp = new Date().toISOString().slice(11, 23);
+    const fullTimestamp = new Date().toISOString();
+    // Use full timestamp for file logs (non-TTY), shorter format for console
+    const timestamp = Deno.stdout.isTerminal()
+      ? fullTimestamp.slice(11, 23) // HH:MM:SS.mmm for interactive console
+      : fullTimestamp; // Full ISO for service logs/files
     const component = this.getComponentName(context);
 
     // Process context to serialize Error objects for console output
