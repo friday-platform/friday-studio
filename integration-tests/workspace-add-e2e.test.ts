@@ -4,7 +4,7 @@
  */
 
 import { AtlasDaemon } from "@atlas/atlasd";
-import { AtlasClient } from "@atlas/client";
+import { AtlasApiError, AtlasClient } from "@atlas/client";
 import { assertEquals, assertExists } from "@std/assert";
 import { ensureDir, exists } from "@std/fs";
 import { join } from "@std/path";
@@ -121,7 +121,9 @@ Deno.test({
         });
       } catch (error) {
         failed = true;
-        assertEquals(error.status, 409);
+        if (error instanceof AtlasApiError) {
+          assertEquals(error.status, 409);
+        }
       }
       assertEquals(failed, true, "Should have failed with 409 for duplicate path");
 
@@ -225,13 +227,15 @@ Deno.test({
       const client = new AtlasClient({ url: `http://localhost:${port}` });
 
       // Test 1: Non-existent path
-      let error = null;
+      let error: AtlasApiError | null = null;
       try {
         await client.addWorkspace({
           path: "/this/path/does/not/exist",
         });
       } catch (e) {
-        error = e;
+        if (e instanceof AtlasApiError) {
+          error = e;
+        }
       }
       assertExists(error);
       assertEquals(error.status, 404);
@@ -246,7 +250,9 @@ Deno.test({
           path: filePath,
         });
       } catch (e) {
-        error = e;
+        if (e instanceof AtlasApiError) {
+          error = e;
+        }
       }
       assertExists(error);
       assertEquals(error.status, 400);
@@ -261,7 +267,9 @@ Deno.test({
           path: noYmlDir,
         });
       } catch (e) {
-        error = e;
+        if (e instanceof AtlasApiError) {
+          error = e;
+        }
       }
       assertExists(error);
       assertEquals(error.status, 400);
@@ -309,14 +317,16 @@ Deno.test({
       assertEquals(result1.name, uniqueSharedName);
 
       // Try to add second workspace with same name - should fail
-      let error = null;
+      let error: AtlasApiError | null = null;
       try {
         await client.addWorkspace({
           path: workspace2,
           name: uniqueSharedName,
         });
       } catch (e) {
-        error = e;
+        if (e instanceof AtlasApiError) {
+          error = e;
+        }
       }
 
       assertExists(error);
