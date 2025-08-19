@@ -495,49 +495,65 @@ async function performUpdate(params: {
       infoOutput("Starting Atlas service...");
     }
 
-    // Try to start the service - use direct launchctl on macOS for better reliability
+    // Start the service using the unified approach
     let serviceStarted = false;
 
     try {
-      if (platform.platform === "darwin") {
-        // On macOS, use launchctl directly for more reliable start after binary update
-
-        // launchctl start returns 0 even if service is already running
-        serviceStarted = true;
-
-        // Give it a moment to start
-        await new Promise((resolve) => setTimeout(resolve, 2000));
-      } else {
-        // For other platforms, use the regular service start
-        // Windows: proactively (re)install service to ensure Startup entry exists after binary swap
-        if (platform.platform === "windows") {
-          try {
-            const installCmd = new Deno.Command("atlas", {
-              args: ["service", "install", "--force", "--port", "8080"],
-            });
-            await installCmd.output();
-          } catch {
-            // ignore install failure, attempt start anyway
-          }
+      // Windows: proactively (re)install service to ensure Startup entry exists after binary swap
+      if (platform.platform === "windows") {
+        try {
+          const installCmd = new Deno.Command("atlas", {
+            args: ["service", "install", "--force", "--port", "8080"],
+          });
+          await installCmd.output();
+        } catch {
+          // ignore install failure, attempt start anyway
         }
+      }
 
-        const startCmd = new Deno.Command("atlas", {
-          args: ["service", "start"],
-        });
-        const startResult = await startCmd.output();
-        serviceStarted = startResult.success;
+      // Use atlas service start for all platforms - it has platform-specific logic internally
+      const startCmd = new Deno.Command("atlas", {
+        args: ["service", "start"],
+      });
+      const startResult = await startCmd.output();
+      serviceStarted = startResult.success;
+
+      // On macOS, if the standard start fails, try launchctl kickstart as a fallback
+      // This can help when the service is in a weird state after binary replacement
+      if (!serviceStarted && platform.platform === "darwin") {
+        try {
+          // Get the current user ID for launchctl kickstart
+          const idCmd = new Deno.Command("id", {
+            args: ["-u"],
+            stdout: "piped",
+          });
+          const idResult = await idCmd.output();
+          const uid = new TextDecoder().decode(idResult.stdout).trim();
+
+          // Try launchctl kickstart - this forces restart even if service is stuck
+          const kickstartCmd = new Deno.Command("launchctl", {
+            args: ["kickstart", "-k", `gui/${uid}/com.tempestdx.atlas`],
+            stdout: "piped",
+            stderr: "piped",
+          });
+
+          const kickstartResult = await kickstartCmd.output();
+          serviceStarted = kickstartResult.success;
+
+          if (kickstartResult.success) {
+            logger.debug("Service started with launchctl kickstart fallback");
+          }
+        } catch (error) {
+          logger.debug("launchctl kickstart fallback failed", {
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
       }
-    } catch {
-      // If direct start fails, fall back to atlas service start
-      try {
-        const startCmd = new Deno.Command("atlas", {
-          args: ["service", "start"],
-        });
-        const startResult = await startCmd.output();
-        serviceStarted = startResult.success;
-      } catch {
-        serviceStarted = false;
-      }
+    } catch (error) {
+      logger.debug("Service start failed", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      serviceStarted = false;
     }
 
     if (!serviceStarted) {
