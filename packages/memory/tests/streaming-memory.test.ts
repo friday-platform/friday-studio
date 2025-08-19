@@ -252,7 +252,7 @@ Deno.test("AsyncMemoryQueue - capacity management", async () => {
 Deno.test("StreamingMemoryManager - basic streaming operations", async () => {
   const scope = new MockScope();
   const memoryAdapter = new InMemoryStorageAdapter();
-  const memory = createTestMemoryManager(scope as any, memoryAdapter);
+  const memory = createTestMemoryManager(scope, memoryAdapter);
   const manager = new StreamingMemoryManager(memory, {
     queue_max_size: 100,
     batch_size: 10,
@@ -291,7 +291,7 @@ Deno.test("StreamingMemoryManager - basic streaming operations", async () => {
 Deno.test("StreamingMemoryManager - batch streaming", async () => {
   const scope = new MockScope();
   const memoryAdapter = new InMemoryStorageAdapter();
-  const memory = createTestMemoryManager(scope as any, memoryAdapter);
+  const memory = createTestMemoryManager(scope, memoryAdapter);
   const manager = new StreamingMemoryManager(memory, {
     queue_max_size: 100,
     batch_size: 3,
@@ -340,7 +340,7 @@ Deno.test("StreamingMemoryManager - batch streaming", async () => {
 Deno.test("StreamingMemoryManager - episodic event streaming", async () => {
   const scope = new MockScope();
   const memoryAdapter = new InMemoryStorageAdapter();
-  const memory = createTestMemoryManager(scope as any, memoryAdapter);
+  const memory = createTestMemoryManager(scope, memoryAdapter);
   const manager = new StreamingMemoryManager(memory, {
     queue_max_size: 100,
     batch_size: 10,
@@ -379,7 +379,7 @@ Deno.test("StreamingMemoryManager - episodic event streaming", async () => {
 Deno.test("StreamingMemoryManager - performance tracking", async () => {
   const scope = new MockScope();
   const memoryAdapter = new InMemoryStorageAdapter();
-  const memory = createTestMemoryManager(scope as any, memoryAdapter);
+  const memory = createTestMemoryManager(scope, memoryAdapter);
   const manager = new StreamingMemoryManager(memory, {
     queue_max_size: 100,
     batch_size: 10,
@@ -428,7 +428,7 @@ Deno.test("StreamingMemoryManager - performance tracking", async () => {
 Deno.test("StreamingMemoryManager - dual write mode", async () => {
   const scope = new MockScope();
   const memoryAdapter = new InMemoryStorageAdapter();
-  const memory = createTestMemoryManager(scope as any, memoryAdapter);
+  const memory = createTestMemoryManager(scope, memoryAdapter);
   const manager = new StreamingMemoryManager(memory, {
     queue_max_size: 100,
     batch_size: 10,
@@ -473,7 +473,7 @@ Deno.test("StreamingMemoryManager - dual write mode", async () => {
 Deno.test("StreamingMemoryManager - error recovery", async () => {
   const scope = new MockScope();
   const memoryAdapter = new InMemoryStorageAdapter();
-  const memory = createTestMemoryManager(scope as any, memoryAdapter);
+  const memory = createTestMemoryManager(scope, memoryAdapter);
   const manager = new StreamingMemoryManager(memory, {
     queue_max_size: 100,
     batch_size: 10,
@@ -513,7 +513,7 @@ Deno.test("StreamingMemoryManager - error recovery", async () => {
 Deno.test("StreamingMemoryManager - cleanup", async () => {
   const scope = new MockScope();
   const memoryAdapter = new InMemoryStorageAdapter();
-  const memory = createTestMemoryManager(scope as any, memoryAdapter);
+  const memory = createTestMemoryManager(scope, memoryAdapter);
   const manager = new StreamingMemoryManager(memory, {
     queue_max_size: 100,
     batch_size: 10,
@@ -551,7 +551,7 @@ Deno.test("StreamingMemoryManager - cleanup", async () => {
 Deno.test("StreamingMemoryManager - session completion", async () => {
   const scope = new MockScope();
   const memoryAdapter = new InMemoryStorageAdapter();
-  const memory = createTestMemoryManager(scope as any, memoryAdapter);
+  const memory = createTestMemoryManager(scope, memoryAdapter);
   const manager = new StreamingMemoryManager(memory, {
     queue_max_size: 100,
     batch_size: 10,

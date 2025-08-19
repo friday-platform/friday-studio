@@ -209,11 +209,11 @@ export async function handleDaemonResponse(
         } (retry ${retryCount + 1}/${maxRetries})`,
       );
       // deno-lint-ignore no-explicit-any
-      (retryError as any).code = -32000;
+      retryError.code = -32000;
       // deno-lint-ignore no-explicit-any
-      (retryError as any).details = errorInfo;
+      retryError.details = errorInfo;
       // deno-lint-ignore no-explicit-any
-      (retryError as any).shouldRetry = true;
+      retryError.shouldRetry = true;
       throw retryError;
     }
 
@@ -224,11 +224,11 @@ export async function handleDaemonResponse(
       }${retryCount > 0 ? ` (failed after ${retryCount} retries)` : ""}`,
     );
     // deno-lint-ignore no-explicit-any
-    (error as any).code = -32000; // MCP server error code
+    error.code = -32000; // MCP server error code
     // deno-lint-ignore no-explicit-any
-    (error as any).details = errorInfo;
+    error.details = errorInfo;
     // deno-lint-ignore no-explicit-any
-    (error as any).shouldRetry = false;
+    error.shouldRetry = false;
     throw error;
   }
 
@@ -253,9 +253,9 @@ export async function handleDaemonResponse(
       }`,
     );
     // deno-lint-ignore no-explicit-any
-    (parseError as any).code = -32603; // Parse error code
+    parseError.code = -32603; // Parse error code
     // deno-lint-ignore no-explicit-any
-    (parseError as any).details = {
+    parseError.details = {
       operation,
       status: response.status,
       url: response.url,
@@ -265,7 +265,7 @@ export async function handleDaemonResponse(
     };
 
     // deno-lint-ignore no-explicit-any
-    logger.error(`Parse error for ${operation}`, (parseError as any).details);
+    logger.error(`Parse error for ${operation}`, parseError.details);
     throw parseError;
   }
 }
@@ -311,9 +311,9 @@ export async function fetchWithTimeout(
     if (error instanceof Error && error.name === "AbortError") {
       const timeoutError = new Error(`Request timeout after ${timeoutMs}ms: ${url}`);
       // deno-lint-ignore no-explicit-any
-      (timeoutError as any).code = -32000;
+      timeoutError.code = -32000;
       // deno-lint-ignore no-explicit-any
-      (timeoutError as any).details = {
+      timeoutError.details = {
         url,
         timeoutMs,
         timestamp: new Date().toISOString(),

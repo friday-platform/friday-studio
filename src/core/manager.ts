@@ -173,7 +173,7 @@ export class AtlasWorkspaceManager {
       const workspace = new Workspace(state.members);
 
       // Restore properties
-      (workspace as any).id = state.id;
+      workspace.id = state.id;
       workspace.signals = state.signals || {};
       workspace.workflows = state.workflows || {};
       workspace.sources = state.sources || {};

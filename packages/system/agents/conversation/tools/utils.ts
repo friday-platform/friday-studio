@@ -120,9 +120,9 @@ export async function fetchWithTimeout(
     if (error instanceof Error && error.name === "AbortError") {
       const timeoutError = new Error(`Request timeout after ${timeoutMs}ms: ${url}`);
       // deno-lint-ignore no-explicit-any
-      (timeoutError as any).code = -32000;
+      timeoutError.code = -32000;
       // deno-lint-ignore no-explicit-any
-      (timeoutError as any).details = {
+      timeoutError.details = {
         url,
         timeoutMs,
         timestamp: new Date().toISOString(),

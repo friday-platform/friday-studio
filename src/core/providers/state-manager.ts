@@ -36,7 +36,7 @@ export class ProviderStateManager {
       for (const providerId in this.state.providers) {
         const provider = this.state.providers[providerId];
         if (provider.lastHealthCheck) {
-          provider.lastHealthCheck = new Date(provider.lastHealthCheck as any);
+          provider.lastHealthCheck = new Date(provider.lastHealthCheck);
         }
       }
 

@@ -22,7 +22,7 @@ Deno.test("SendGrid Custom Headers - buildCustomHeaders includes all required he
       });
 
       // Access private method via type assertion for testing
-      const buildCustomHeaders = (provider as any).buildCustomHeaders.bind(provider);
+      const buildCustomHeaders = (provider).buildCustomHeaders.bind(provider);
       const headers = buildCustomHeaders();
 
       // Verify X-Atlas-Version header exists and matches expected version
@@ -44,7 +44,7 @@ Deno.test("SendGrid Custom Headers - buildCustomHeaders includes all required he
         sandboxMode: true,
       });
 
-      const buildCustomHeaders = (provider as any).buildCustomHeaders.bind(provider);
+      const buildCustomHeaders = (provider).buildCustomHeaders.bind(provider);
       const headers = buildCustomHeaders();
 
       // Verify X-Atlas-Hostname header exists
@@ -95,7 +95,7 @@ Deno.test("SendGrid Custom Headers - buildCustomHeaders includes all required he
         sandboxMode: true,
       });
 
-      const buildCustomHeaders = (provider as any).buildCustomHeaders.bind(provider);
+      const buildCustomHeaders = (provider).buildCustomHeaders.bind(provider);
       const headers = buildCustomHeaders();
 
       // Verify X-Atlas-User header is included with the email from JWT
@@ -123,7 +123,7 @@ Deno.test("SendGrid Custom Headers - buildCustomHeaders includes all required he
         sandboxMode: true,
       });
 
-      const buildCustomHeaders = (provider as any).buildCustomHeaders.bind(provider);
+      const buildCustomHeaders = (provider).buildCustomHeaders.bind(provider);
       const headers = buildCustomHeaders();
 
       // Verify X-Atlas-User header is not included when ATLAS_KEY is missing
@@ -153,7 +153,7 @@ Deno.test("SendGrid Custom Headers - JWT parsing handles edge cases", async (t) 
         sandboxMode: true,
       });
 
-      const extractUserFromJWT = (provider as any).extractUserFromJWT.bind(provider);
+      const extractUserFromJWT = (provider).extractUserFromJWT.bind(provider);
 
       // Test various invalid JWT formats
       assertEquals(extractUserFromJWT("invalid"), null);
@@ -178,7 +178,7 @@ Deno.test("SendGrid Custom Headers - JWT parsing handles edge cases", async (t) 
         sandboxMode: true,
       });
 
-      const extractUserFromJWT = (provider as any).extractUserFromJWT.bind(provider);
+      const extractUserFromJWT = (provider).extractUserFromJWT.bind(provider);
 
       // JWT with valid structure but no email field
       const payloadNoEmail = {
@@ -206,7 +206,7 @@ Deno.test("SendGrid Custom Headers - JWT parsing handles edge cases", async (t) 
         sandboxMode: true,
       });
 
-      const extractUserFromJWT = (provider as any).extractUserFromJWT.bind(provider);
+      const extractUserFromJWT = (provider).extractUserFromJWT.bind(provider);
 
       // JWT with invalid email format
       const payloadInvalidEmail = {
@@ -236,7 +236,7 @@ Deno.test("SendGrid Custom Headers - JWT parsing handles edge cases", async (t) 
         sandboxMode: true,
       });
 
-      const extractUserFromJWT = (provider as any).extractUserFromJWT.bind(provider);
+      const extractUserFromJWT = (provider).extractUserFromJWT.bind(provider);
 
       // Create base64url encoded JWT (with - and _ instead of + and /)
       const payload = {
@@ -272,7 +272,7 @@ Deno.test("SendGrid Custom Headers - buildEmailMessage includes headers", async 
         sandboxMode: true,
       });
 
-      const buildEmailMessage = (provider as any).buildEmailMessage.bind(provider);
+      const buildEmailMessage = (provider).buildEmailMessage.bind(provider);
 
       const emailParams: EmailParams = {
         to: "recipient@example.com",
@@ -306,7 +306,7 @@ Deno.test("SendGrid Custom Headers - buildEmailMessage includes headers", async 
         templateId: "d-default-template",
       });
 
-      const buildEmailMessage = (provider as any).buildEmailMessage.bind(provider);
+      const buildEmailMessage = (provider).buildEmailMessage.bind(provider);
 
       const emailParams: EmailParams = {
         to: "recipient@example.com",
@@ -344,7 +344,7 @@ Deno.test("SendGrid Custom Headers - buildEmailMessage includes headers", async 
         sandboxMode: true,
       });
 
-      const buildEmailMessage = (provider as any).buildEmailMessage.bind(provider);
+      const buildEmailMessage = (provider).buildEmailMessage.bind(provider);
 
       const emailParams: EmailParams = {
         to: "recipient@example.com",

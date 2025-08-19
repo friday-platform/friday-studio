@@ -120,8 +120,8 @@ const buildHttpConfigMarkdown = (signal: Record<string, unknown>): string => {
 
   if (config.retry_config) {
     content += "\n**Retry Configuration:**\n";
-    content += `- Max retries: ${(config.retry_config as any).max_retries || "N/A"}\n`;
-    content += `- Retry delay: ${(config.retry_config as any).retry_delay_ms || "N/A"}ms\n`;
+    content += `- Max retries: ${config.retry_config.max_retries || "N/A"}\n`;
+    content += `- Retry delay: ${config.retry_config.retry_delay_ms || "N/A"}ms\n`;
   }
 
   return content;
@@ -309,12 +309,12 @@ export const SignalDetails = ({
   // Build markdown content
   let markdown = `# ${signalId}\n\n`;
 
-  if ((signalData as any).description) {
-    markdown += `${(signalData as any).description}\n`;
+  if (signalData.description) {
+    markdown += `${signalData.description}\n`;
   }
 
   // Provider
-  const provider = (signalData as any).provider as string;
+  const provider = signalData.provider as string;
   markdown += `Provider: ${provider || "Unknown"}\n\n`;
 
   // Provider-specific configuration
@@ -341,8 +341,8 @@ export const SignalDetails = ({
   }
 
   // Schema Documentation
-  if ((signalData as any).schema) {
-    const validatedSchema = validateSignalSchema((signalData as any).schema);
+  if (signalData.schema) {
+    const validatedSchema = validateSignalSchema(signalData.schema);
     if (validatedSchema) {
       const properties = Object.entries(validatedSchema.properties).map(
         ([name, prop]) =>
@@ -376,7 +376,7 @@ export const SignalDetails = ({
 
   // Raw Configuration (fallback for unknown providers)
   if (
-    (signalData as any).config &&
+    signalData.config &&
     ![
       "http",
       "http-webhook",
@@ -386,7 +386,7 @@ export const SignalDetails = ({
       "cron",
     ].includes(provider)
   ) {
-    const rawConfig = JSON.stringify((signalData as any).config, null, 2);
+    const rawConfig = JSON.stringify(signalData.config, null, 2);
     markdown = appendSection(
       markdown,
       "Raw Configuration",

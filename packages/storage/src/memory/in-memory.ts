@@ -20,7 +20,7 @@ export class InMemoryStorageAdapter implements ICoALAMemoryStorageAdapter {
     const organizedData: Record<string, any> = {};
 
     for (const [key, memory] of Object.entries(data)) {
-      const memoryType = (memory as any).memoryType || "working";
+      const memoryType = memory.memoryType || "working";
       if (!organizedData[memoryType]) {
         organizedData[memoryType] = {};
       }

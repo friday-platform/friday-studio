@@ -568,8 +568,8 @@ function createReasoningResult<TUserContext extends BaseReasoningContext>(
       return acc;
     },
     {
-      agentsExecuted: [] as any[],
-      toolsExecuted: [] as any[],
+      agentsExecuted: [],
+      toolsExecuted: [],
       metrics: initialMetrics,
     },
   );

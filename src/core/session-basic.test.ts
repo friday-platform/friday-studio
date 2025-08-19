@@ -56,7 +56,7 @@ Deno.test("Session - should create with basic properties", async () => {
     }
 
     // Dispose of memory
-    const memory = (session as any).memory;
+    const memory = session.memory;
     if (memory && typeof memory.dispose === "function") {
       await memory.dispose();
     }
@@ -98,7 +98,7 @@ Deno.test("WorkspaceSession - should create with single signal", async () => {
     }
 
     // Dispose of memory
-    const memory = (workspaceSession as any).memory;
+    const memory = (workspaceSession ).memory;
     if (memory && typeof memory.dispose === "function") {
       await memory.dispose();
     }

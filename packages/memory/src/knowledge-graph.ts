@@ -268,8 +268,8 @@ export class KnowledgeGraphManager {
     });
     const facts = await this.storageAdapter.queryFacts({ workspaceId: this.workspaceId });
 
-    const entityTypes: Record<KnowledgeEntityType, number> = {} as any;
-    const relationshipTypes: Record<KnowledgeRelationType, number> = {} as any;
+    const entityTypes: Record<KnowledgeEntityType, number> = {};
+    const relationshipTypes: Record<KnowledgeRelationType, number> = {};
 
     entities.forEach((entity) => {
       entityTypes[entity.type] = (entityTypes[entity.type] || 0) + 1;

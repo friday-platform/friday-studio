@@ -38,11 +38,6 @@ export { createMemoryKVStorage, MemoryKVStorage } from "./memory-kv-storage.ts";
 // Domain-specific adapters
 export { RegistryStorageAdapter } from "./registry-storage-adapter.ts";
 export { LibraryStorageAdapter, type LibraryStorageConfig } from "./library-storage-adapter.ts";
-export {
-  type WorkspaceDraft,
-  WorkspaceDraftStorageAdapter,
-} from "./workspace-draft-storage-adapter.ts";
-export { type ConversationDraft, ConversationDraftAdapter } from "./conversation-draft-adapter.ts";
 
 // Factory functions for common configurations
 export async function createRegistryStorage(

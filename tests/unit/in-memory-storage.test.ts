@@ -83,7 +83,7 @@ Deno.test("AtlasScope with InMemoryStorage - should use in-memory storage when p
   scope.memory.remember("test-key", "test-value");
 
   // Force immediate commit
-  await (scope.memory as any).commitToStorage();
+  await (scope.memory).commitToStorage();
 
   // Check that data is stored in the in-memory adapter
   const allData = storage.getAllData();
@@ -94,14 +94,14 @@ Deno.test("AtlasScope with InMemoryStorage - should use in-memory storage when p
   assertEquals(types.length > 0, true);
 
   // Clean up
-  await (scope.memory as any).dispose();
+  await (scope.memory).dispose();
 });
 
 Deno.test("AtlasScope with InMemoryStorage - should support CoALA memory operations", async () => {
   const { scope, storage } = createTestScope();
 
   // Use CoALA-specific memory operations
-  const memory = scope.memory as any; // Cast to access CoALA methods
+  const memory = scope.memory; // Cast to access CoALA methods
 
   memory.rememberWithMetadata(
     "important-fact",
@@ -152,13 +152,13 @@ Deno.test("Session with InMemoryStorage - should create session with in-memory s
   session.memory.remember("session-data", { status: "initialized" });
 
   // Force immediate commit
-  await (session.memory as any).commitToStorage();
+  await (session.memory).commitToStorage();
 
   const data = await storage.load();
   assertExists(data["session-data"]);
 
   // Clean up
-  await (session.memory as any).dispose();
+  await (session.memory).dispose();
 });
 
 Deno.test("Session with InMemoryStorage - should preserve memory across session lifecycle", async () => {
@@ -185,7 +185,7 @@ Deno.test("Session with InMemoryStorage - should preserve memory across session 
 
   // Add some memory to ensure there's data
   session.memory.remember("session-lifecycle", { phase: "started" });
-  await (session.memory as any).commitToStorage();
+  await (session.memory).commitToStorage();
 
   // Check that initialization data was stored
   const types = await storage.listMemoryTypes();
@@ -196,7 +196,7 @@ Deno.test("Session with InMemoryStorage - should preserve memory across session 
   assertEquals(session.status, WorkspaceSessionStatus.PENDING);
 
   // Clean up
-  await (session.memory as any).dispose();
+  await (session.memory).dispose();
 });
 
 Deno.test("Session with InMemoryStorage - should support memory isolation between sessions", async () => {
@@ -258,8 +258,8 @@ Deno.test("Session with InMemoryStorage - should support memory isolation betwee
   assertEquals(data2, "session2-data");
 
   // Clean up
-  await (session1.memory as any).dispose();
-  await (session2.memory as any).dispose();
+  await (session1.memory).dispose();
+  await (session2.memory).dispose();
 });
 
 // Import Session class for the last test

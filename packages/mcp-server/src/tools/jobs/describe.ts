@@ -43,7 +43,7 @@ export function registerJobsDescribeTool(server: McpServer, ctx: ToolContext) {
           `Job '${jobName}' is not discoverable in workspace '${workspaceId}'. Add it to discoverable.jobs in workspace.yml to access job details.`,
         );
         // deno-lint-ignore no-explicit-any
-        (error as any).code = -32000;
+        error.code = -32000;
         throw error;
       }
 

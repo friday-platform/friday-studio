@@ -332,7 +332,7 @@ export function extractSearchTerms(content: unknown): string {
     ];
 
     for (const field of textFields) {
-      const value = (content as any)[field];
+      const value = content[field];
       if (typeof value === "string" && value.trim().length > 0) {
         return value;
       }

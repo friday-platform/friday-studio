@@ -583,7 +583,7 @@ export class WorkspaceSupervisorActor implements BaseActor {
 
     try {
       await this.streamingMemoryManager.streamEpisodicEvent(
-        eventType as any,
+        eventType,
         description,
         participants,
         outcome,

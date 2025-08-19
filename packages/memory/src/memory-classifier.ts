@@ -705,7 +705,7 @@ export class AtlasMemoryClassifier implements MemoryClassifier {
    */
   private calculateAccessRelevance(memory: MemoryEntry): number {
     // Simple access count normalization
-    return Math.min(1.0, (memory as any).accessCount / 10);
+    return Math.min(1.0, memory.accessCount / 10);
   }
 
   /**

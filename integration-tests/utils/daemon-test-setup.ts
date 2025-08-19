@@ -29,14 +29,14 @@ export function setupDaemonCapabilities(): DaemonExecutionContext {
   };
 
   // Set the mock daemon instance
-  DaemonCapabilityRegistry.setDaemonInstance(mockDaemon as any);
+  DaemonCapabilityRegistry.setDaemonInstance(mockDaemon);
 
   // Return mock execution context
   const mockContext: DaemonExecutionContext = {
     sessionId: "test-session-123",
     agentId: "test-agent-456",
     workspaceId: "test-workspace-789",
-    daemon: mockDaemon as any,
+    daemon: mockDaemon,
     conversationId: "test-conversation-abc",
     streams: createStreamsImplementation(),
   };

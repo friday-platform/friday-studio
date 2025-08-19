@@ -86,8 +86,8 @@ const originalSetInterval = globalThis.setInterval;
 const originalClearInterval = globalThis.clearInterval;
 
 // Mock timers to prevent actual intervals
-globalThis.setInterval = (() => 123) as any;
-globalThis.clearInterval = (() => {}) as any;
+globalThis.setInterval = (() => 123);
+globalThis.clearInterval = (() => {});
 
 // Mock console methods that don't work in this environment
 const originalConsoleWarn = console.warn;
@@ -108,7 +108,7 @@ Deno.test("CoALAMemoryManager - basic instantiation", async () => {
   const adapter = new InMemoryStorageAdapter();
 
   // Should be able to create without throwing
-  const memory = createTestMemoryManager(scope as any, adapter as any);
+  const memory = createTestMemoryManager(scope, adapter);
   expect(memory).toBeDefined();
 });
 
@@ -116,7 +116,7 @@ Deno.test("CoALAMemoryManager - remember and recall", async () => {
   const scope = new MockAtlasScope();
   const adapter = new InMemoryStorageAdapter();
 
-  const memory = createTestMemoryManager(scope as any, adapter as any);
+  const memory = createTestMemoryManager(scope, adapter);
 
   // Test basic remember/recall
   memory.remember("test-key", "test-value");
@@ -129,7 +129,7 @@ Deno.test("CoALAMemoryManager - remember with metadata", async () => {
   const scope = new MockAtlasScope();
   const adapter = new InMemoryStorageAdapter();
 
-  const memory = createTestMemoryManager(scope as any, adapter as any);
+  const memory = createTestMemoryManager(scope, adapter);
 
   // Test remember with metadata
   memory.rememberWithMetadata("metadata-key", "metadata-value", {
@@ -148,7 +148,7 @@ Deno.test("CoALAMemoryManager - query memories", async () => {
   const scope = new MockAtlasScope();
   const adapter = new InMemoryStorageAdapter();
 
-  const memory = createTestMemoryManager(scope as any, adapter as any);
+  const memory = createTestMemoryManager(scope, adapter);
 
   // Add some memories
   memory.rememberWithMetadata("semantic-1", "semantic content 1", {
@@ -184,7 +184,7 @@ Deno.test("CoALAMemoryManager - get memories by type", async () => {
   const scope = new MockAtlasScope();
   const adapter = new InMemoryStorageAdapter();
 
-  const memory = createTestMemoryManager(scope as any, adapter as any);
+  const memory = createTestMemoryManager(scope, adapter);
 
   // Add memories of different types
   memory.rememberWithMetadata("episodic-1", "episodic content", {
@@ -212,7 +212,7 @@ Deno.test("CoALAMemoryManager - forget memories", async () => {
   const scope = new MockAtlasScope();
   const adapter = new InMemoryStorageAdapter();
 
-  const memory = createTestMemoryManager(scope as any, adapter as any);
+  const memory = createTestMemoryManager(scope, adapter);
 
   // Add a memory
   memory.remember("forget-me", "temporary content");
@@ -233,7 +233,7 @@ Deno.test("CoALAMemoryManager - cognitive loop methods", async () => {
   const scope = new MockAtlasScope();
   const adapter = new InMemoryStorageAdapter();
 
-  const memory = createTestMemoryManager(scope as any, adapter as any);
+  const memory = createTestMemoryManager(scope, adapter);
 
   // Add some memories for reflection
   memory.rememberWithMetadata("reflect-1", "reflection content 1", {
@@ -263,7 +263,7 @@ Deno.test("CoALAMemoryManager - memory access patterns", async () => {
   const scope = new MockAtlasScope();
   const adapter = new InMemoryStorageAdapter();
 
-  const memory = createTestMemoryManager(scope as any, adapter as any);
+  const memory = createTestMemoryManager(scope, adapter);
 
   // Add a memory
   memory.remember("access-test", "access content");
@@ -283,7 +283,7 @@ Deno.test("CoALAMemoryManager - disposal", async () => {
   const scope = new MockAtlasScope();
   const adapter = new InMemoryStorageAdapter();
 
-  const memory = createTestMemoryManager(scope as any, adapter as any);
+  const memory = createTestMemoryManager(scope, adapter);
 
   // Add some memories
   memory.remember("dispose-test-1", "content 1");

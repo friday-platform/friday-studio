@@ -48,7 +48,7 @@ export class TestAgentRegistry extends InMemoryAgentRegistry {
   private getInternalAgentsMap(): Map<string, AtlasAgent> {
     // Access the private agents map through reflection
     // This is for testing only
-    return (this as any).agents;
+    return (this).agents;
   }
 
   /**

@@ -40,7 +40,7 @@ export class CoALALocalFileStorageAdapter implements ICoALAMemoryStorageAdapter 
     const dataByType: Record<string, any> = {};
 
     for (const [key, memory] of Object.entries(data)) {
-      const memoryType = (memory as any).memoryType || "working";
+      const memoryType = memory.memoryType || "working";
       if (!dataByType[memoryType]) {
         dataByType[memoryType] = {};
       }
@@ -263,7 +263,7 @@ export class CoALALocalFileStorageAdapter implements ICoALAMemoryStorageAdapter 
       const stats: Record<string, any> = {};
 
       for (const [memoryType, data] of Object.entries(allData)) {
-        const entries = Object.values(data as any);
+        const entries = Object.values(data);
         stats[memoryType] = {
           count: entries.length,
           latestTimestamp: this.getLatestTimestamp(entries),
@@ -291,7 +291,7 @@ export class CoALALocalFileStorageAdapter implements ICoALAMemoryStorageAdapter 
     let removedCount = 0;
 
     for (const [key, memory] of Object.entries(data)) {
-      const memoryObj = memory as any;
+      const memoryObj = memory;
       if (memoryObj.relevanceScore >= 0.1) {
         filteredData[key] = memory;
       } else {

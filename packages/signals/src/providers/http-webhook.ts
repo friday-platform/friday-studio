@@ -106,7 +106,7 @@ class HttpWebhookRuntimeSignal extends AtlasScope implements IWorkspaceSignal {
   constructor(signalConfig: IProviderSignal) {
     super();
     this.signalConfig = signalConfig;
-    (this as any).id = signalConfig.id;
+    (this).id = signalConfig.id;
     this.provider = {
       id: signalConfig.providerId,
       name: "HTTP Webhook",

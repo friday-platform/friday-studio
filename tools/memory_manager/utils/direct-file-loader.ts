@@ -65,7 +65,7 @@ export class DirectFileMemoryLoader implements MemoryStorage {
       const entries: Record<string, MemoryEntry> = {};
 
       for (const [key, rawEntry] of Object.entries(data)) {
-        const entry = rawEntry as any;
+        const entry = rawEntry;
         entries[key] = {
           id: entry.id || key,
           content: entry.content,

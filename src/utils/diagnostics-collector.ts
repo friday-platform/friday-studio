@@ -7,7 +7,6 @@ import { getAtlasClient } from "@atlas/client";
 import { stringify } from "@std/yaml";
 import { getVersionInfo } from "./version.ts";
 import { ReleaseChannel } from "./release-channel.ts";
-import type { WorkspaceDraft } from "../core/storage/workspace-draft-storage-adapter.ts";
 
 export class DiagnosticsCollector {
   private tempDir: string;
@@ -190,9 +189,6 @@ export class DiagnosticsCollector {
               }
             }
           }
-
-          // Also collect draft workspaces from KV
-          await this.collectDraftWorkspaces(kv);
         } finally {
           kv.close();
         }
@@ -276,63 +272,6 @@ export class DiagnosticsCollector {
     } catch (err) {
       console.warn(
         "Failed to collect system workspaces:",
-        err instanceof Error ? err.message : String(err),
-      );
-    }
-  }
-
-  private async collectDraftWorkspaces(kv: Deno.Kv): Promise<void> {
-    try {
-      // Create drafts directory
-      const draftsDir = join(this.tempDir, "drafts");
-      await ensureDir(draftsDir);
-
-      // List all drafts from KV
-      const drafts = kv.list({ prefix: ["drafts"] });
-      let draftCount = 0;
-
-      for await (const entry of drafts) {
-        if (entry.value && typeof entry.value === "object") {
-          draftCount++;
-          const draft = entry.value as WorkspaceDraft;
-          const draftId = entry.key[entry.key.length - 1] as string;
-
-          try {
-            // Create draft subdirectory
-            const draftDir = join(draftsDir, draftId);
-            await ensureDir(draftDir);
-
-            // Save draft data as JSON
-            const draftPath = join(draftDir, "draft.json");
-            await Deno.writeTextFile(draftPath, JSON.stringify(draft, null, 2));
-
-            // If draft has config, also save as YAML
-            if (draft.config) {
-              const yamlPath = join(draftDir, "draft-config.yml");
-              const yamlContent = stringify(draft.config);
-              await Deno.writeTextFile(yamlPath, yamlContent);
-            }
-          } catch (err) {
-            console.warn(
-              `Failed to collect draft ${draftId}:`,
-              err instanceof Error ? err.message : String(err),
-            );
-          }
-        }
-      }
-
-      if (draftCount > 0) {
-        // Save summary of drafts
-        const summaryPath = join(draftsDir, "README.txt");
-        await Deno.writeTextFile(
-          summaryPath,
-          `Found ${draftCount} draft workspace(s) in KV storage.\n` +
-            `Each draft directory contains the full draft data.\n`,
-        );
-      }
-    } catch (err) {
-      console.warn(
-        "Failed to collect draft workspaces:",
         err instanceof Error ? err.message : String(err),
       );
     }

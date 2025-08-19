@@ -59,7 +59,7 @@ export class AtlasMemoryOperations implements MemoryOperations {
 
     // Also save directly to CoALA manager for vector indexing
     try {
-      const loader = this.storage as any;
+      const loader = this.storage;
       if (loader.getCoALAManagerPublic) {
         const manager = await loader.getCoALAManagerPublic();
         await manager.remember(key, content, {
@@ -131,7 +131,7 @@ export class AtlasMemoryOperations implements MemoryOperations {
 
     if (vectorIndexedTypes.has(type)) {
       try {
-        const loader = this.storage as any;
+        const loader = this.storage;
         if (loader.getCoALAManagerPublic) {
           const manager = await loader.getCoALAManagerPublic();
 
@@ -300,7 +300,7 @@ export class AtlasMemoryOperations implements MemoryOperations {
   async vectorSearch(query: string): Promise<VectorSearchResult[]> {
     try {
       // Use the storage's CoALA manager directly for vector search
-      const loader = this.storage as any;
+      const loader = this.storage;
       if (loader.getCoALAManagerPublic) {
         const manager = await loader.getCoALAManagerPublic();
 
@@ -370,8 +370,8 @@ export class AtlasMemoryOperations implements MemoryOperations {
 
       // Convert date strings back to Date objects
       for (const [memoryType, entries] of Object.entries(importedData)) {
-        for (const [key, entry] of Object.entries(entries as any)) {
-          const typedEntry = entry as any;
+        for (const [key, entry] of Object.entries(entries)) {
+          const typedEntry = entry;
           typedEntry.timestamp = new Date(typedEntry.timestamp);
           typedEntry.lastAccessed = new Date(typedEntry.lastAccessed);
         }
@@ -390,7 +390,7 @@ export class AtlasMemoryOperations implements MemoryOperations {
    */
   async getVectorSearchStats(): Promise<unknown> {
     try {
-      const loader = this.storage as any;
+      const loader = this.storage;
       if (loader.getCoALAManagerPublic) {
         const manager = await loader.getCoALAManagerPublic();
         return await manager.getVectorSearchStats();
@@ -407,7 +407,7 @@ export class AtlasMemoryOperations implements MemoryOperations {
    */
   async rebuildVectorIndex(): Promise<void> {
     try {
-      const loader = this.storage as any;
+      const loader = this.storage;
       if (loader.getCoALAManagerPublic) {
         const manager = await loader.getCoALAManagerPublic();
         await manager.rebuildVectorIndex();
@@ -432,7 +432,7 @@ export class AtlasMemoryOperations implements MemoryOperations {
     const { memoryTypes, limit = 20, minSimilarity = 0.3 } = options || {};
 
     try {
-      const loader = this.storage as any;
+      const loader = this.storage;
       if (loader.getCoALAManagerPublic) {
         const manager = await loader.getCoALAManagerPublic();
 

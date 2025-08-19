@@ -1,5 +1,4 @@
 import { z } from "zod/v4";
-import type { WorkspaceConfig } from "@atlas/config";
 
 // Single source of truth for workspace types
 export const WorkspaceStatusSchema = z.enum([
@@ -25,10 +24,10 @@ export const WorkspaceEntrySchema = z.object({
   configPath: z.string(),
   configHash: z.string().optional(),
   status: WorkspaceStatusSchema,
-  createdAt: z.string().datetime(),
-  lastSeen: z.string().datetime(),
-  startedAt: z.string().datetime().optional(),
-  stoppedAt: z.string().datetime().optional(),
+  createdAt: z.iso.datetime(),
+  lastSeen: z.iso.datetime(),
+  startedAt: z.iso.datetime().optional(),
+  stoppedAt: z.iso.datetime().optional(),
   pid: z.number().optional(),
   port: z.number().optional(),
   metadata: WorkspaceMetadataSchema.optional(),
@@ -47,43 +46,3 @@ export const WorkspaceStatusEnum = {
   CRASHED: "crashed",
   UNKNOWN: "unknown",
 } as const;
-
-// Draft-related types
-export interface WorkspaceDraft {
-  id: string;
-  name: string;
-  description: string;
-  config: Partial<WorkspaceConfig>;
-  iterations: Array<{
-    timestamp: string;
-    operation: string;
-    config: Record<string, unknown>;
-    summary: string;
-  }>;
-  createdAt: string;
-  updatedAt: string;
-  status: "draft" | "published" | "abandoned";
-  sessionId: string;
-  conversationId?: string;
-  userId: string;
-}
-
-export interface DraftLock {
-  draftId: string;
-  lockedBy: string;
-  lockedAt: string;
-  expiresAt: string;
-  operation: string;
-}
-
-export interface LockResult {
-  success: boolean;
-  lock?: DraftLock;
-  error?: string;
-}
-
-export interface ValidationResult {
-  valid: boolean;
-  errors: string[];
-  warnings: string[];
-}

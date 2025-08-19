@@ -91,8 +91,8 @@ class MockDaemonServer {
         }
 
         const results = {
-          added: [] as any[],
-          failed: [] as any[],
+          added: [],
+          failed: [],
         };
 
         for (const path of paths) {

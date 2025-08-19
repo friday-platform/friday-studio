@@ -90,7 +90,7 @@ const result = await withExponentialBackoff(
     },
     initialDelay: (error) => {
       // Rate limits might have a retry-after header
-      const retryAfter = (error as any)?.retryAfter;
+      const retryAfter = error?.retryAfter;
       if (retryAfter) return retryAfter * 1000;
       return 1000; // Default 1 second
     },

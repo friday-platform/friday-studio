@@ -12,18 +12,18 @@ import { ConversationContext, MemorySource, MemoryType } from "../src/mecmf-inte
 
 // Helper to track and close MessageChannels created by onnxruntime-web during tests
 async function runWithMessageChannelCleanup<T>(fn: () => Promise<T>): Promise<T> {
-  const OriginalMessageChannel = (globalThis as any).MessageChannel as typeof MessageChannel | undefined;
+  const OriginalMessageChannel = (globalThis ).MessageChannel as typeof MessageChannel | undefined;
   if (!OriginalMessageChannel) {
     return await fn();
   }
 
   const created: MessageChannel[] = [];
   // Patch global MessageChannel to track instances
-  (globalThis as any).MessageChannel = function PatchedMessageChannel(this: unknown): MessageChannel {
-    const mc = new (OriginalMessageChannel as any)();
+  (globalThis ).MessageChannel = function PatchedMessageChannel(this: unknown): MessageChannel {
+    const mc = new (OriginalMessageChannel )();
     created.push(mc);
     return mc as unknown as MessageChannel;
-  } as any;
+  } ;
 
   try {
     return await fn();
@@ -34,7 +34,7 @@ async function runWithMessageChannelCleanup<T>(fn: () => Promise<T>): Promise<T>
       try { mc.port2.close(); } catch (_) { /* noop */ }
     }
     // Restore original constructor
-    (globalThis as any).MessageChannel = OriginalMessageChannel;
+    (globalThis ).MessageChannel = OriginalMessageChannel;
   }
 }
 

@@ -75,7 +75,7 @@ export async function setupMECMF(
   // Enable debug logging if environment variable is set
   if (typeof Deno !== "undefined" && Deno.env.get("MECMF_DEBUG") === "true") {
     enableMECMFDebugLogging({
-      logLevel: Deno.env.get("MECMF_DEBUG_LEVEL") as any || "detailed",
+      logLevel: Deno.env.get("MECMF_DEBUG_LEVEL") || "detailed",
       includeMemoryContent: true,
     });
   }

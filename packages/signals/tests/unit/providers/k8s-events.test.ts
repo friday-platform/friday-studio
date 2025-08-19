@@ -109,13 +109,13 @@ Deno.test("K8sEventsSignalProvider - Configuration validation", async (t) => {
 
   await t.step("should reject null/undefined configuration", () => {
     assertThrows(
-      () => provider.createSignal(null as any),
+      () => provider.createSignal(null),
       Error,
       "Invalid configuration object",
     );
 
     assertThrows(
-      () => provider.createSignal(undefined as any),
+      () => provider.createSignal(undefined),
       Error,
       "Invalid configuration object",
     );
@@ -364,7 +364,7 @@ Deno.test("SecureLogger - Credential sanitization", async (t) => {
       timeout_ms: -1, // This will cause validation to fail and log
     };
 
-    assertThrows(() => provider.createSignal(invalidConfig as any));
+    assertThrows(() => provider.createSignal(invalidConfig));
 
     // The error should be logged, but tokens should be sanitized
     // We can't directly test SecureLogger since it's not exported,

@@ -9,7 +9,7 @@
  * - Provides clean separation between system and user workspaces
  */
 
-import { ConfigLoader, MergedConfig } from "@atlas/config";
+import { ConfigLoader, MergedConfig, WorkspaceConfig } from "@atlas/config";
 import { FilesystemConfigAdapter } from "@atlas/storage";
 import {
   createRegistryStorage,
@@ -133,7 +133,7 @@ export class WorkspaceManager {
 
     try {
       config = await configLoader.load();
-      configHash = await this.hashConfig(config);
+      configHash = await this.hashConfig(config.workspace);
     } catch (error) {
       const errorDetails = error instanceof Error
         ? { message: error.message, stack: error.stack }
@@ -179,13 +179,7 @@ export class WorkspaceManager {
     logger.info("Registering system workspaces...");
 
     for (const [id, config] of Object.entries(SYSTEM_WORKSPACES)) {
-      const configHash = await this.hashConfig({
-        version: config.version,
-        workspace: config.workspace,
-        signals: config.signals || {},
-        jobs: config.jobs || {},
-        agents: config.agents || {},
-      });
+      const configHash = await this.hashConfig(config);
 
       const entry: WorkspaceEntry = {
         id,
@@ -423,7 +417,7 @@ export class WorkspaceManager {
     return generateUniqueWorkspaceName(existingIds);
   }
 
-  private async hashConfig(config: unknown): Promise<string> {
+  private async hashConfig(config: WorkspaceConfig): Promise<string> {
     const configJson = JSON.stringify(config, Object.keys(config).sort());
     const encoder = new TextEncoder();
     const data = encoder.encode(configJson);

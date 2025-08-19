@@ -4,9 +4,7 @@
   "exports": {
     ".": "./mod.ts",
     "./manager": "./src/manager.ts",
-    "./drafts": "./src/drafts.ts",
-    "./types": "./src/types.ts",
-    "./utils": "./src/utils.ts"
+    "./types": "./src/types.ts"
   },
   "imports": {
     "@atlas/config": "../config/mod.ts",

@@ -232,7 +232,7 @@ Deno.test("WorkspaceManager - Runtime management", async () => {
       getState: () => "running",
       getSessions: () => [],
       getWorkers: () => [],
-    } as any;
+    };
 
     // Register runtime
     await manager.registerRuntime(workspace.id, mockRuntime);

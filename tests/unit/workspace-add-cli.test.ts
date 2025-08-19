@@ -35,7 +35,7 @@ Deno.test({
     };
 
     // Run the builder
-    builder(mockYargs as any);
+    builder(mockYargs);
 
     // Verify check function was registered
     assertExists(checkFunction);
@@ -130,7 +130,7 @@ Deno.test({
       },
     };
 
-    builder(mockYargs as any);
+    builder(mockYargs);
   },
 });
 
@@ -190,7 +190,7 @@ Deno.test({
       },
     };
 
-    builder(mockYargs as any);
+    builder(mockYargs);
   },
 });
 
@@ -237,7 +237,7 @@ Deno.test({
       },
     };
 
-    builder(mockYargs as any);
+    builder(mockYargs);
 
     // Check positional arguments
     assertExists(positionals.paths);

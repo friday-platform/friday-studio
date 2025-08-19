@@ -643,7 +643,7 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
 
     // Use type-specific storage if available
     if ("commitAll" in this.store && typeof this.store.commitAll === "function") {
-      await (this.store as any).commitAll(dataByType);
+      await this.store.commitAll(dataByType);
     } else {
       // Fallback to legacy storage (combine all types)
       const allMemories = Object.fromEntries(
@@ -664,7 +664,7 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
     try {
       // Try to load type-specific data first
       if ("loadAll" in this.store && typeof this.store.loadAll === "function") {
-        const dataByType = await (this.store as any).loadAll();
+        const dataByType = await this.store.loadAll();
 
         for (const [memoryType, typeData] of Object.entries(dataByType)) {
           const memoryTypeEnum = memoryType as CoALAMemoryType;
@@ -672,7 +672,7 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
 
           if (typeMap && typeData) {
             for (const [key, serializedMemory] of Object.entries(typeData)) {
-              const memory = serializedMemory as any;
+              const memory = serializedMemory;
               const restoredMemory = {
                 ...memory,
                 timestamp: new Date(memory.timestamp),
@@ -690,7 +690,7 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
         const data = await (this.store as ITempestMemoryStorageAdapter).load();
         if (data) {
           for (const [key, serializedMemory] of Object.entries(data)) {
-            const memory = serializedMemory as any;
+            const memory = serializedMemory;
             const restoredMemory = {
               ...memory,
               timestamp: new Date(memory.timestamp),
@@ -746,11 +746,11 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
 
   async compactMemoryType(memoryType: CoALAMemoryType): Promise<number> {
     if ("compactMemoryType" in this.store && typeof this.store.compactMemoryType === "function") {
-      await (this.store as any).compactMemoryType(memoryType);
+      await this.store.compactMemoryType(memoryType);
 
       // Reload the specific memory type to reflect compaction
       if ("loadByType" in this.store && typeof this.store.loadByType === "function") {
-        const typeData = await (this.store as any).loadByType(memoryType);
+        const typeData = await this.store.loadByType(memoryType);
         const typeMap = this.memoriesByType.get(memoryType);
 
         if (typeMap && typeData) {
@@ -766,7 +766,7 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
 
           // Reload compacted memories
           for (const [key, serializedMemory] of Object.entries(typeData)) {
-            const memory = serializedMemory as any;
+            const memory = serializedMemory;
             const restoredMemory = {
               ...memory,
               timestamp: new Date(memory.timestamp),
@@ -789,7 +789,7 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
     if (
       "getMemoryStatistics" in this.store && typeof this.store.getMemoryStatistics === "function"
     ) {
-      return await (this.store as any).getMemoryStatistics();
+      return await this.store.getMemoryStatistics();
     }
 
     return {
@@ -1839,14 +1839,14 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
           updatedAt: new Date(),
         };
         // Remove memory-specific fields that storage doesn't have
-        const { source, timestamp, ...entityForStorage } = storageEntity as any;
+        const { source, timestamp, ...entityForStorage } = storageEntity;
         await storageAdapter.storeEntity(entityForStorage);
       },
       getEntity: async (id: string) => {
         const entity = await storageAdapter.getEntity(id);
         if (!entity) return null;
         // Convert storage entity to memory entity
-        const { createdAt, updatedAt, ...baseEntity } = entity as any;
+        const { createdAt, updatedAt, ...baseEntity } = entity;
         return {
           ...baseEntity,
           source: "storage",
@@ -1867,7 +1867,7 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
       },
       updateEntity: async (id: string, updates: Partial<MemoryKnowledgeEntity>) => {
         // Convert updates to storage format
-        const { source, timestamp, ...storageUpdates } = updates as any;
+        const { source, timestamp, ...storageUpdates } = updates;
         await storageAdapter.updateEntity(id, {
           ...storageUpdates,
           updatedAt: new Date(),

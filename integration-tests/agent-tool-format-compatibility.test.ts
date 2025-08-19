@@ -43,7 +43,7 @@ Deno.test({
 
             // Should not have old mcp_servers property
             assertEquals(
-              (agent as any).mcp_servers,
+              agent.mcp_servers,
               undefined,
               `Agent ${agentId} in ${workspaceName} should not use deprecated mcp_servers property`,
             );
