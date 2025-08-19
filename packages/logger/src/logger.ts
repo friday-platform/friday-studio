@@ -48,8 +48,19 @@ export class AtlasLoggerV2 implements Logger {
 
     const finalContext = { ...this.baseContext, ...context };
 
-    // Write to console (never fails)
-    const consoleOutput = this.formatConsoleOutput(level, message, finalContext);
+    // Create log entry once for potential reuse
+    const entry = this.formatLogEntry(level, message, finalContext);
+
+    // Determine output format based on TTY status and environment variable
+    // ATLAS_LOG_FORMAT can be "json" (force JSON) or "pretty" (force human-readable)
+    const forceFormat = Deno.env.get("ATLAS_LOG_FORMAT");
+    const isJson = forceFormat === "json" ||
+      (forceFormat !== "pretty" && !Deno.stdout.isTerminal());
+
+    const consoleOutput = isJson
+      ? JSON.stringify(entry)
+      : this.formatConsoleOutput(level, message, finalContext);
+
     switch (level) {
       case "error":
       case "fatal":
@@ -69,7 +80,6 @@ export class AtlasLoggerV2 implements Logger {
 
     // Write to file (ignore failures)
     try {
-      const entry = this.formatLogEntry(level, message, finalContext);
       const jsonLine = JSON.stringify(entry);
       await this.writeToFile(jsonLine, finalContext.workspaceId);
     } catch {
@@ -128,11 +138,9 @@ export class AtlasLoggerV2 implements Logger {
   }
 
   private formatConsoleOutput(level: string, message: string, context: LogContext): string {
-    const fullTimestamp = new Date().toISOString();
-    // Use full timestamp for file logs (non-TTY), shorter format for console
-    const timestamp = Deno.stdout.isTerminal()
-      ? fullTimestamp.slice(11, 23) // HH:MM:SS.mmm for interactive console
-      : fullTimestamp; // Full ISO for service logs/files
+    const now = new Date();
+    // Use local timezone for TTY console output
+    const timestamp = this.formatLocalTime(now); // HH:MM:SS.mmm in local timezone
     const component = this.getComponentName(context);
 
     // Process context to serialize Error objects for console output
@@ -165,6 +173,15 @@ export class AtlasLoggerV2 implements Logger {
     const componentColor = "\x1b[2m"; // dim
 
     return `${color}[${timestamp}] ${level.toUpperCase()}${reset} ${componentColor}(${component})${reset}: ${message}${contextStr}`;
+  }
+
+  private formatLocalTime(date: Date): string {
+    // Format as HH:MM:SS.mmm in local timezone for TTY output
+    const hours = date.getHours().toString().padStart(2, "0");
+    const minutes = date.getMinutes().toString().padStart(2, "0");
+    const seconds = date.getSeconds().toString().padStart(2, "0");
+    const milliseconds = date.getMilliseconds().toString().padStart(3, "0");
+    return `${hours}:${minutes}:${seconds}.${milliseconds}`;
   }
 
   private shouldColorizeOutput(): boolean {

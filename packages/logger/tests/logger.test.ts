@@ -376,12 +376,14 @@ Deno.test.ignore("Logger - console color coding enabled", async () => {
   const originalNoColor = Deno.env.get("NO_COLOR");
   const originalTesting = Deno.env.get("DENO_TESTING");
   const originalForceColor = Deno.env.get("FORCE_COLOR");
+  const originalLogFormat = Deno.env.get("ATLAS_LOG_FORMAT");
 
   try {
-    // Force colors on for testing
+    // Force colors and pretty format for testing
     Deno.env.set("FORCE_COLOR", "1");
     Deno.env.delete("NO_COLOR");
     Deno.env.set("DENO_TESTING", "false");
+    Deno.env.set("ATLAS_LOG_FORMAT", "pretty"); // Force pretty format
 
     const testLogger = createLogger();
 
@@ -465,6 +467,11 @@ Deno.test.ignore("Logger - console color coding enabled", async () => {
     } else {
       Deno.env.delete("FORCE_COLOR");
     }
+    if (originalLogFormat) {
+      Deno.env.set("ATLAS_LOG_FORMAT", originalLogFormat);
+    } else {
+      Deno.env.delete("ATLAS_LOG_FORMAT");
+    }
   }
 });
 
@@ -472,12 +479,14 @@ Deno.test.ignore("Logger - console color coding disabled by NO_COLOR", async () 
   // Save original environment
   const originalNoColor = Deno.env.get("NO_COLOR");
   const originalTesting = Deno.env.get("DENO_TESTING");
+  const originalLogFormat = Deno.env.get("ATLAS_LOG_FORMAT");
   const tempDir = setupTempLogsDir();
 
   try {
-    // Disable colors with NO_COLOR
+    // Disable colors with NO_COLOR but force pretty format
     Deno.env.set("NO_COLOR", "1");
     Deno.env.set("DENO_TESTING", "false"); // Set to false to allow file operations but disable colors
+    Deno.env.set("ATLAS_LOG_FORMAT", "pretty"); // Force pretty format to test color disabling
 
     const testLogger = createLogger();
 
@@ -497,7 +506,8 @@ Deno.test.ignore("Logger - console color coding disabled by NO_COLOR", async () 
         false,
         `Should not contain ANSI color codes. Got: ${capturedOutput}`,
       );
-      assertEquals(capturedOutput.includes("ERROR"), true, "Should still contain log level");
+      // We forced pretty format, so should see ERROR text
+      assertEquals(capturedOutput.includes("ERROR"), true, "Should contain ERROR in pretty format");
     } finally {
       console.error = originalConsoleError;
     }
@@ -509,6 +519,11 @@ Deno.test.ignore("Logger - console color coding disabled by NO_COLOR", async () 
       Deno.env.delete("NO_COLOR");
     }
     if (originalTesting) Deno.env.set("DENO_TESTING", originalTesting);
+    if (originalLogFormat) {
+      Deno.env.set("ATLAS_LOG_FORMAT", originalLogFormat);
+    } else {
+      Deno.env.delete("ATLAS_LOG_FORMAT");
+    }
     cleanupTempLogsDir(tempDir);
   }
 });
@@ -534,7 +549,14 @@ Deno.test.ignore("Logger - console color coding disabled during testing", () => 
         false,
         `Should not contain ANSI color codes during testing. Got: ${capturedOutput}`,
       );
-      assertEquals(capturedOutput.includes("ERROR"), true, "Should still contain log level");
+      // In non-TTY mode (tests), we output JSON
+      const isJson = capturedOutput.startsWith("{");
+      if (isJson) {
+        const parsed = JSON.parse(capturedOutput);
+        assertEquals(parsed.level, "error", "Should contain error level in JSON");
+      } else {
+        assertEquals(capturedOutput.includes("ERROR"), true, "Should contain ERROR in pretty format");
+      }
     } finally {
       console.error = originalConsoleError;
     }

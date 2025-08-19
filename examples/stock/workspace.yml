@@ -8,23 +8,7 @@ tools:
       timeout:
         progressTimeout: 2m
         maxTotalTimeout: 30m
-    servers:
-      atlas-platform:
-        transport:
-          type: http
-          url: "http://localhost:8080/mcp"
-        tools:
-          allow:
-            - atlas_fetch
-            - atlas_notify_email
-            - web_session_create
-            - web_session_navigate
-            - web_session_handle_consent
-            - web_session_extract
-            - web_session_close
-            - web_session_click
-            - web_session_wait_for_element
-            - web_session_list
+    servers: {} # Atlas Platform is automatically provided - no need to configure it here
 signals:
   fetch-stocks:
     description: Manually trigger stock fetching and email process
