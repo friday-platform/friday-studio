@@ -29,12 +29,57 @@ export interface WorkspaceManagerOptions {
   registerSystemWorkspaces?: boolean;
 }
 
+/**
+ * Hook function called after workspace registration
+ * Receives the registered workspace entry
+ * Should not throw - errors are logged but don't fail registration
+ */
+export type WorkspaceRegistrationHook = (entry: WorkspaceEntry) => Promise<void>;
+
 export class WorkspaceManager {
   private registry: RegistryStorageAdapter;
   private runtimes = new Map<string, WorkspaceRuntime>();
+  private registrationHooks: WorkspaceRegistrationHook[] = [];
 
   constructor(registry: RegistryStorageAdapter) {
     this.registry = registry;
+  }
+
+  /**
+   * Add a hook to be called after workspace registration
+   * Hooks are called in the order they were added
+   * Hook errors are logged but don't fail the registration
+   */
+  public addRegistrationHook(hook: WorkspaceRegistrationHook): void {
+    this.registrationHooks.push(hook);
+    logger.debug("Added workspace registration hook", {
+      totalHooks: this.registrationHooks.length,
+    });
+  }
+
+  /**
+   * Execute all registration hooks for a workspace
+   * Errors are logged but don't propagate
+   */
+  private async executeRegistrationHooks(entry: WorkspaceEntry): Promise<void> {
+    if (this.registrationHooks.length === 0) return;
+
+    for (const [index, hook] of this.registrationHooks.entries()) {
+      try {
+        await hook(entry);
+        logger.debug("Registration hook executed successfully", {
+          hookIndex: index,
+          workspaceId: entry.id,
+        });
+      } catch (error) {
+        // Log error but continue with other hooks
+        logger.error("Registration hook failed", {
+          hookIndex: index,
+          workspaceId: entry.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
   }
 
   async initialize(options: WorkspaceManagerOptions = {}): Promise<void> {
@@ -121,6 +166,9 @@ export class WorkspaceManager {
     await this.registry.registerWorkspace(entry);
     logger.info(`Workspace registered: ${entry.name}`, { id: entry.id });
 
+    // Execute post-registration hooks
+    await this.executeRegistrationHooks(entry);
+
     return entry;
   }
 
@@ -160,6 +208,9 @@ export class WorkspaceManager {
       if (!existing) {
         await this.registry.registerWorkspace(entry);
         logger.info(`System workspace registered: ${entry.name}`);
+
+        // Execute post-registration hooks for system workspaces too
+        await this.executeRegistrationHooks(entry);
       }
     }
   }

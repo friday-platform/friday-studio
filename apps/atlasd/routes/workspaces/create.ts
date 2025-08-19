@@ -89,6 +89,8 @@ createWorkspace.post(
           description: validatedConfig.workspace.description,
         });
 
+        // Cron signals are now automatically registered via WorkspaceManager hooks
+
         return c.json({
           success: true,
           workspace,

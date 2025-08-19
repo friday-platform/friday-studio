@@ -151,6 +151,18 @@ export class AtlasDaemon implements AppContext {
     this.workspaceManager = new WorkspaceManager(registry);
     await this.workspaceManager.initialize();
 
+    // Register cron signal hook for automatic timer registration
+    this.workspaceManager.addRegistrationHook(async (entry) => {
+      // Skip system workspaces as they don't have cron signals
+      if (!entry.metadata?.system) {
+        logger.debug("Executing cron registration hook for workspace", {
+          workspaceId: entry.id,
+          workspacePath: entry.path,
+        });
+        await this.registerWorkspaceCronSignals(entry.id, entry.path);
+      }
+    });
+
     // System workspaces are now registered automatically during manager.initialize()
 
     // Initialize LibraryStorage with hybrid storage
@@ -565,8 +577,7 @@ export class AtlasDaemon implements AppContext {
           description: workspaceDescription,
         });
 
-        // Extract and register cron signals
-        await this.registerWorkspaceCronSignals(entry.id, path);
+        // Cron signals are now automatically registered via WorkspaceManager hooks
 
         // Convert to API response format
         const workspaceInfo = {
@@ -697,8 +708,7 @@ export class AtlasDaemon implements AppContext {
                 description: workspaceDescription,
               });
 
-              // Extract and register cron signals
-              await this.registerWorkspaceCronSignals(entry.id, path);
+              // Cron signals are now automatically registered via WorkspaceManager hooks
 
               results.added.push({
                 id: entry.id,
@@ -795,8 +805,7 @@ export class AtlasDaemon implements AppContext {
           description,
         });
 
-        // Extract and register cron signals
-        await this.registerWorkspaceCronSignals(entry.id, workspacePath);
+        // Cron signals are now automatically registered via WorkspaceManager hooks
 
         return c.json(
           {
@@ -2228,7 +2237,7 @@ export class AtlasDaemon implements AppContext {
   /**
    * Extract and register cron signals from a workspace configuration
    */
-  private async registerWorkspaceCronSignals(
+  public async registerWorkspaceCronSignals(
     workspaceId: string,
     workspacePath: string,
   ): Promise<void> {
