@@ -20,6 +20,7 @@ import type { WorkspaceRuntime } from "../../../src/core/workspace-runtime.ts";
 import { logger } from "@atlas/logger";
 import { WorkspaceEntry, WorkspaceStatus } from "./types/workspace.ts";
 import { createRegistryStorage, StorageConfigs } from "../../../src/core/storage/index.ts";
+import { getWorkspaceDiscoveryDirs } from "../../../src/utils/paths.ts";
 
 export interface WorkspaceManagerOptions {
   autoImport?: boolean;
@@ -399,14 +400,9 @@ export class WorkspaceManager {
 
   private async importExistingWorkspaces(): Promise<number> {
     const workspaces: string[] = [];
-    const rootPath = Deno.cwd();
-    const commonPaths = [
-      join(rootPath, "examples", "workspaces"),
-      join(rootPath, "workspaces"),
-      rootPath,
-    ];
+    const discoveryDirs = getWorkspaceDiscoveryDirs();
 
-    for (const basePath of commonPaths) {
+    for (const basePath of discoveryDirs) {
       if (await exists(basePath)) {
         await this.scanDirectory(basePath, workspaces, 3);
       }

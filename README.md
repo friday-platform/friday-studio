@@ -108,6 +108,12 @@ export ANTHROPIC_API_KEY="your-api-key-here"
 
 # Optional: Configure custom model defaults
 export ATLAS_DEFAULT_MODEL="claude-3-7-sonnet-latest"
+
+# Optional: Specify custom directories for workspace discovery
+# Unix/Linux/macOS (use colon separator for multiple paths)
+export ATLAS_WORKSPACES_DIR="/path/to/workspaces:/another/path"
+# Windows (use semicolon separator for multiple paths)  
+export ATLAS_WORKSPACES_DIR="C:\path\to\workspaces;D:\another\path"
 ```
 
 2. **Start the Atlas daemon**

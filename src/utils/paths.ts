@@ -185,3 +185,33 @@ export function getMECMFCacheDir(): string {
 export function getWorkspaceMECMFCacheDir(workspaceId: string): string {
   return join(getWorkspaceMemoryDir(workspaceId), ".cache");
 }
+
+/**
+ * Get directories to scan for workspace discovery
+ * Can be overridden with ATLAS_WORKSPACES_DIR environment variable
+ *
+ * @returns Array of directory paths to scan for workspaces
+ */
+export function getWorkspaceDiscoveryDirs(): string[] {
+  const envDirs = Deno.env.get("ATLAS_WORKSPACES_DIR");
+
+  if (envDirs) {
+    // Support multiple paths separated by platform-specific delimiter
+    const delimiter = Deno.build.os === "windows" ? ";" : ":";
+    const dirs = envDirs.split(delimiter)
+      .map((dir) => dir.trim())
+      .filter((dir) => dir.length > 0);
+
+    if (dirs.length > 0) {
+      return dirs;
+    }
+  }
+
+  // Fall back to default paths if env var not set or empty
+  const rootPath = Deno.cwd();
+  return [
+    join(rootPath, "examples", "workspaces"),
+    join(rootPath, "workspaces"),
+    rootPath,
+  ];
+}

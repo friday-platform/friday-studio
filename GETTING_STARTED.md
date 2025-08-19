@@ -91,6 +91,12 @@ export ATLAS_DEFAULT_MODEL="claude-3-7-sonnet-latest"
 
 # Optional: Atlas configuration directory
 export ATLAS_HOME="$HOME/.atlas"
+
+# Optional: Custom workspace discovery directories
+# Unix/Linux/macOS (colon-separated paths)
+export ATLAS_WORKSPACES_DIR="/path/to/workspaces:/another/workspace/dir"
+# Windows (semicolon-separated paths)
+export ATLAS_WORKSPACES_DIR="C:\workspaces;D:\projects\atlas-workspaces"
 ```
 
 ## 🤖 Daemon Management
