@@ -3,7 +3,7 @@
  */
 
 import { assertEquals, assertExists, assertStringIncludes } from "@std/assert";
-import { WorkspaceConfigSchema } from "@atlas/config";
+import { type WorkspaceConfig, WorkspaceConfigSchema } from "@atlas/config";
 import { generateWorkspace } from "../packages/system/agents/conversation/tools/workspace-creation/generation.ts";
 
 // Realistic test scenarios for comprehensive validation
@@ -133,8 +133,22 @@ for (const scenario of testScenarios) {
       console.log(`\n⏱️  Starting workspace generation...`);
       const startTime = Date.now();
 
-      let result;
+      let result: {
+        success: boolean;
+        config: WorkspaceConfig;
+        reasoning: string;
+        workspaceName: string;
+        created: boolean;
+        summary: {
+          signals: number;
+          agents: number;
+          jobs: number;
+          mcpServers: number;
+        };
+      };
       try {
+        // The execute function requires a context parameter but may return AsyncIterable
+        // We assert the type since we know with createWorkspace=false it returns a direct object
         result = await generateWorkspace.execute!({
           workspaceName: scenario.name,
           // In tests we don't actually want to create the workspace.
@@ -146,7 +160,19 @@ for (const scenario of testScenarios) {
         }, {
           toolCallId: "test-integration-call-id",
           messages: [],
-        });
+        }) as {
+          success: boolean;
+          config: WorkspaceConfig;
+          reasoning: string;
+          workspaceName: string;
+          created: boolean;
+          summary: {
+            signals: number;
+            agents: number;
+            jobs: number;
+            mcpServers: number;
+          };
+        };
       } catch (error) {
         const duration = Date.now() - startTime;
         console.log(`❌ Generation FAILED after ${duration}ms`);
