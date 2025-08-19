@@ -56,7 +56,10 @@ Deno.test("Configuration should flow correctly from WorkspaceRuntime to Workspac
       tools: {
         mcp: {
           client_config: {
-            timeout: "30s",
+            timeout: {
+              progressTimeout: "30s",
+              maxTotalTimeout: "60s",
+            },
           },
           servers: {
             filesystem: {
@@ -186,8 +189,13 @@ Deno.test("Configuration should flow correctly from WorkspaceRuntime to Workspac
 
   // Verify structure is maintained
   assertEquals(workspaceSupervisorConfig.workspace.name, "Test Workspace");
-  assertEquals(workspaceSupervisorConfig.signals["test-signal"].provider, "http");
-  assertEquals(workspaceSupervisorConfig.jobs["test-job"].execution.agents[0], "test-agent");
+  const testSignal = workspaceSupervisorConfig.signals["test-signal"];
+  assertExists(testSignal);
+  assertEquals(testSignal?.provider, "http");
+
+  const testJob = workspaceSupervisorConfig.jobs["test-job"];
+  assertExists(testJob);
+  assertEquals(testJob?.execution.agents[0], "test-agent");
   assertEquals(workspaceSupervisorConfig.tools?.mcp?.servers?.filesystem?.transport?.type, "stdio");
 });
 
@@ -264,7 +272,10 @@ Deno.test("Configuration should flow correctly from WorkspaceSupervisor to Sessi
     tools: {
       mcp: {
         client_config: {
-          timeout: "30s",
+          timeout: {
+            progressTimeout: "30s",
+            maxTotalTimeout: "60s",
+          },
         },
         servers: {
           filesystem: { transport: { type: "stdio", command: "fs-server" } },
@@ -283,6 +294,7 @@ Deno.test("Configuration should flow correctly from WorkspaceSupervisor to Sessi
         provider: "openai",
         model: "gpt-4",
         prompt: "You are a helpful assistant.",
+        temperature: 0.7,
         tools: ["filesystem"],
       },
     },
@@ -290,13 +302,18 @@ Deno.test("Configuration should flow correctly from WorkspaceSupervisor to Sessi
       description: "System agent for scripts",
       type: "system",
       agent: "script-runner",
-      config: { script: "test.ts" },
+      config: {
+        temperature: 0.5,
+        model: "gpt-4",
+      },
     },
   };
 
   // Create SessionSupervisorConfig slice
+  const testJob = workspaceSupervisorConfig.jobs["test-job"];
+  assertExists(testJob);
   const sessionSupervisorConfig: SessionSupervisorConfig = {
-    job: workspaceSupervisorConfig.jobs["test-job"],
+    job: testJob!,
     agents: agents,
     memory: workspaceSupervisorConfig.memory,
     tools: workspaceSupervisorConfig.tools,
@@ -307,8 +324,13 @@ Deno.test("Configuration should flow correctly from WorkspaceSupervisor to Sessi
   assertExists(sessionSupervisorConfig.agents);
   assertEquals(sessionSupervisorConfig.job.name, "test-job");
   assertEquals(Object.keys(sessionSupervisorConfig.agents).length, 2);
-  assertEquals(sessionSupervisorConfig.agents["agent-1"].type, "llm");
-  assertEquals(sessionSupervisorConfig.agents["agent-2"].type, "system");
+  const agent1 = sessionSupervisorConfig.agents["agent-1"];
+  assertExists(agent1);
+  assertEquals(agent1?.type, "llm");
+
+  const agent2 = sessionSupervisorConfig.agents["agent-2"];
+  assertExists(agent2);
+  assertEquals(agent2?.type, "system");
   assertExists(sessionSupervisorConfig.memory);
   assertExists(sessionSupervisorConfig.tools);
 });
@@ -332,6 +354,7 @@ Deno.test("Configuration should flow correctly from SessionSupervisor to AgentEx
           provider: "openai",
           model: "gpt-4",
           prompt: "You are a helpful assistant.",
+          temperature: 0.7,
           tools: ["filesystem", "commands"],
         },
       },
@@ -390,7 +413,10 @@ Deno.test("Configuration should flow correctly from SessionSupervisor to AgentEx
     tools: {
       mcp: {
         client_config: {
-          timeout: "30s",
+          timeout: {
+            progressTimeout: "30s",
+            maxTotalTimeout: "60s",
+          },
         },
         servers: {
           filesystem: { transport: { type: "stdio", command: "fs-server" } },
@@ -402,11 +428,13 @@ Deno.test("Configuration should flow correctly from SessionSupervisor to AgentEx
 
   const agentId = "agent-1";
   const agentConfig = sessionSupervisorConfig.agents[agentId];
+  assertExists(agentConfig);
 
   // Create AgentExecutionConfig slice
   const agentExecutionConfig: AgentExecutionConfig = {
-    agent: agentConfig,
-    tools: agentConfig.config.tools,
+    agentId: agentId,
+    agent: agentConfig!,
+    tools: agentConfig?.type === "llm" && agentConfig.config ? agentConfig.config.tools : undefined,
     memory: sessionSupervisorConfig.memory,
   };
 
@@ -505,6 +533,7 @@ Deno.test("MCP tools should be normalized from array format to mcpServers", () =
       provider: "openai",
       model: "gpt-4",
       prompt: "You are a helpful assistant.",
+      temperature: 0.7,
       tools: ["filesystem", "commands"],
     },
   };
@@ -512,9 +541,13 @@ Deno.test("MCP tools should be normalized from array format to mcpServers", () =
   // After normalization (simulating config loader behavior)
   const normalizedAgent = {
     ...agentWithArrayTools,
-    mcpServers: agentWithArrayTools.config.tools,
+    mcpServers: agentWithArrayTools.type === "llm" && agentWithArrayTools.config
+      ? agentWithArrayTools.config.tools
+      : undefined,
     tools: {
-      mcpServers: agentWithArrayTools.config.tools,
+      mcpServers: agentWithArrayTools.type === "llm" && agentWithArrayTools.config
+        ? agentWithArrayTools.config.tools
+        : undefined,
     },
   };
 
@@ -531,7 +564,10 @@ Deno.test("MCP tools configuration should pass through actor hierarchy", () => {
   const workspaceTools = {
     mcp: {
       client_config: {
-        timeout: "30s",
+        timeout: {
+          progressTimeout: "30s",
+          maxTotalTimeout: "60s",
+        },
       },
       servers: {
         filesystem: {
@@ -564,12 +600,15 @@ Deno.test("MCP tools configuration should pass through actor hierarchy", () => {
       provider: "openai",
       model: "gpt-4",
       prompt: "You are a helpful assistant.",
+      temperature: 0.7,
       tools: ["filesystem", "commands"], // Agent only gets these two
     },
   };
 
   // Simulate tool filtering for agent
-  const agentTools = agentConfig.config.tools;
+  const agentTools = agentConfig.type === "llm" && agentConfig.config
+    ? agentConfig.config.tools
+    : undefined;
   const availableServers = workspaceTools.mcp.servers;
 
   // Agent should only have access to requested tools
@@ -581,7 +620,7 @@ Deno.test("MCP tools configuration should pass through actor hierarchy", () => {
 
   // Verify agent can access tool configurations
   if (agentTools) {
-    agentTools.forEach((toolName) => {
+    agentTools.forEach((toolName: string) => {
       assertExists(availableServers[toolName as keyof typeof availableServers]);
     });
   }
@@ -665,18 +704,22 @@ Deno.test("Reasoning context should flow from signal to agent execution", () => 
   // Verify reasoning at each level
   assertExists(workspaceReasoning);
   assertExists(executionPlan.reasoning);
-  assertExists(executionPlan.tasks[0].reasoning);
-  assertExists(executionPlan.tasks[1].reasoning);
+  const firstTask = executionPlan.tasks[0];
+  assertExists(firstTask);
+  assertExists(firstTask?.reasoning);
+  const secondTask = executionPlan.tasks[1];
+  assertExists(secondTask);
+  assertExists(secondTask?.reasoning);
 
   // Create agent payload with full context
   const agentPayload: AgentExecutePayload = {
-    agentId: executionPlan.tasks[0].agentId,
+    agentId: firstTask!.agentId,
     input: signal.payload,
     sessionContext: {
       sessionId: executionPlan.sessionId,
       workspaceId: "ws-789",
-      task: executionPlan.tasks[0].task,
-      reasoning: executionPlan.tasks[0].reasoning,
+      task: firstTask!.task,
+      reasoning: firstTask!.reasoning,
     },
   };
 
@@ -711,6 +754,7 @@ Deno.test("Configuration errors should be caught early with clear messages", () 
           provider: "openai",
           model: "gpt-4",
           prompt: "You are a helpful assistant.",
+          temperature: 0.7,
         },
       },
       // agent-missing is not defined
