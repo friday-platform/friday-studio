@@ -73,7 +73,7 @@ memory:
       max_age_days: 30
       max_entries: 1000
       cleanup_interval_hours: 24
-  
+
   agent:
     enabled: true
     scope: "agent"
@@ -87,7 +87,7 @@ memory:
         enabled: true
         max_age_hours: 2
         max_entries: 50
-  
+
   session:
     enabled: true
     scope: "session"
@@ -101,7 +101,7 @@ memory:
         enabled: true
         max_age_hours: 24
         max_entries: 100
-  
+
   workspace:
     enabled: true
     scope: "workspace"
@@ -135,7 +135,7 @@ agents:
       provider: "google"
       prompt: "You are a test LLM agent that helps with workspace tasks"
       tools: ["workspace.memory.recall", "workspace.jobs.trigger"]
-    
+
   test-system-agent:
     type: "system"
     description: "Test system agent"
@@ -143,7 +143,7 @@ agents:
     config:
       model: "claude-3-7-sonnet-latest"
       temperature: 0.7
-      
+
   test-remote-agent:
     type: "remote"
     description: "Test remote agent"
@@ -160,7 +160,7 @@ signals:
     provider: "http"
     config:
       path: "/webhook"
-    
+
   schedule-signal:
     description: "Test schedule signal"
     provider: "schedule"
@@ -238,27 +238,54 @@ Deno.test("Integration: ConfigLoader with FilesystemAdapter - complete workflow"
     // Test agents - CORRECTED structure
     expect(config.workspace.agents).toBeDefined();
     expect(Object.keys(config.workspace.agents!)).toHaveLength(3);
-    expect(config.workspace.agents!["test-llm-agent"].type).toBe("llm");
 
-    // Type-safe access to LLM agent config
-    const llmAgent = config.workspace.agents!["test-llm-agent"];
-    if (llmAgent.type === "llm") {
-      expect(llmAgent.config.model).toBe("claude-3-7-sonnet-latest");
+    // Type-safe access to agents with null checks
+    const agents = config.workspace.agents;
+    expect(agents).toBeDefined();
+
+    if (agents) {
+      const llmAgent = agents["test-llm-agent"];
+      expect(llmAgent).toBeDefined();
+      expect(llmAgent?.type).toBe("llm");
+
+      if (llmAgent?.type === "llm" && llmAgent.config) {
+        expect(llmAgent.config.model).toBe("claude-3-7-sonnet-latest");
+      }
+
+      const systemAgent = agents["test-system-agent"];
+      expect(systemAgent).toBeDefined();
+      expect(systemAgent?.type).toBe("system");
+
+      const remoteAgent = agents["test-remote-agent"];
+      expect(remoteAgent).toBeDefined();
+      expect(remoteAgent?.type).toBe("remote");
     }
-
-    expect(config.workspace.agents!["test-system-agent"].type).toBe("system");
-    expect(config.workspace.agents!["test-remote-agent"].type).toBe("remote");
 
     // Test signals - CORRECTED structure
     expect(config.workspace.signals).toBeDefined();
     expect(Object.keys(config.workspace.signals!)).toHaveLength(2);
-    expect(config.workspace.signals!["webhook"].provider).toBe("http");
-    expect(config.workspace.signals!["schedule-signal"].provider).toBe("schedule");
+
+    const signals = config.workspace.signals;
+    if (signals) {
+      const webhook = signals["webhook"];
+      expect(webhook).toBeDefined();
+      expect(webhook?.provider).toBe("http");
+
+      const scheduleSignal = signals["schedule-signal"];
+      expect(scheduleSignal).toBeDefined();
+      expect(scheduleSignal?.provider).toBe("schedule");
+    }
 
     // Test jobs - only inline jobs are loaded by ConfigLoader
     expect(config.workspace.jobs).toBeDefined();
     expect(Object.keys(config.workspace.jobs!)).toHaveLength(1); // Only inline job
-    expect(config.workspace.jobs!["inline-job"].name).toBe("inline-test-job");
+
+    const jobs = config.workspace.jobs;
+    if (jobs) {
+      const inlineJob = jobs["inline-job"];
+      expect(inlineJob).toBeDefined();
+      expect(inlineJob?.name).toBe("inline-test-job");
+    }
 
     // Note: ConfigLoader doesn't load external job files
     // External job loading would need to be handled separately
@@ -375,7 +402,7 @@ memory:
       max_age_days: 30
       max_entries: 1000
       cleanup_interval_hours: 24
-      
+
   agent:
     enabled: true
     scope: "agent"
@@ -389,7 +416,7 @@ memory:
         enabled: true
         max_age_hours: 2
         max_entries: 50
-        
+
   session:
     enabled: true
     scope: "session"
@@ -403,7 +430,7 @@ memory:
         enabled: true
         max_age_hours: 24
         max_entries: 100
-        
+
   workspace:
     enabled: true
     scope: "workspace"
@@ -592,7 +619,7 @@ memory:
       max_age_days: 30
       max_entries: 1000
       cleanup_interval_hours: 24
-  
+
   agent:
     enabled: true
     scope: "agent"
@@ -606,7 +633,7 @@ memory:
         enabled: true
         max_age_hours: 2
         max_entries: 50
-  
+
   session:
     enabled: true
     scope: "session"
@@ -620,7 +647,7 @@ memory:
         enabled: true
         max_age_hours: 24
         max_entries: 100
-  
+
   workspace:
     enabled: true
     scope: "workspace"
@@ -707,7 +734,7 @@ memory:
       max_age_days: 30
       max_entries: 1000
       cleanup_interval_hours: 24
-  
+
   agent:
     enabled: true
     scope: "agent"
@@ -721,7 +748,7 @@ memory:
         enabled: true
         max_age_hours: 2
         max_entries: 50
-  
+
   session:
     enabled: true
     scope: "session"
@@ -735,7 +762,7 @@ memory:
         enabled: true
         max_age_hours: 24
         max_entries: 100
-  
+
   workspace:
     enabled: true
     scope: "workspace"
@@ -758,16 +785,24 @@ memory:
 
     // Check that environment variables are properly configured
     expect(config.workspace.tools?.mcp?.servers?.["test-server"]).toBeDefined();
-    const serverConfig = config.workspace.tools!.mcp!.servers!["test-server"];
-    expect(serverConfig.env).toBeDefined();
-    expect(serverConfig.env!["API_KEY"]).toBe("secret-key-123");
-    expect(serverConfig.env!["ENDPOINT"]).toBe("https://test.example.com");
-    expect(serverConfig.env!["STATIC_VALUE"]).toBe("static-config");
+    const serverConfig = config.workspace.tools?.mcp?.servers?.["test-server"];
+    expect(serverConfig).toBeDefined();
+
+    if (serverConfig) {
+      expect(serverConfig.env).toBeDefined();
+      if (serverConfig.env) {
+        expect(serverConfig.env["API_KEY"]).toBe("secret-key-123");
+        expect(serverConfig.env["ENDPOINT"]).toBe("https://test.example.com");
+        expect(serverConfig.env["STATIC_VALUE"]).toBe("static-config");
+      }
+    }
 
     // Check agent auth configuration - type-safe access
-    const agent = config.workspace.agents!["env-aware-agent"];
-    if (agent.type === "remote") {
-      expect(agent.config.auth?.token_env).toBe("TEST_API_KEY");
+    const agent = config.workspace.agents?.["env-aware-agent"];
+    if (agent?.type === "remote" && agent.config) {
+      if ("auth" in agent.config && agent.config.auth) {
+        expect(agent.config.auth.token_env).toBe("TEST_API_KEY");
+      }
     }
   } finally {
     // Clean up environment variables
