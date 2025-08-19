@@ -247,7 +247,9 @@ export class KnowledgeGraphLocalStorageAdapter implements IKnowledgeGraphStorage
 
     findNeighborsRecursive(entityId, 0);
 
-    return Array.from(neighborIds).map((id) => entities[id]).filter(Boolean);
+    return Array.from(neighborIds)
+      .map((id) => entities[id])
+      .filter((entity): entity is KnowledgeEntity => entity !== undefined);
   }
 
   // Helper methods

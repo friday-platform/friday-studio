@@ -195,6 +195,26 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/user": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Retrieve current user
+     * @description Get the current user for the session
+     */
+    get: operations["GETApiUser"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/todos": {
     parameters: {
       query?: never;
@@ -376,17 +396,31 @@ export interface operations {
             name: string;
             /** @description Workspace description */
             description?: string;
-            /**
-             * @description Current status of the workspace
-             * @enum {string}
-             */
-            status: "stopped" | "starting" | "running" | "stopping" | "crashed" | "unknown";
+            /** @enum {string} */
+            status:
+              | "stopped"
+              | "starting"
+              | "running"
+              | "stopping"
+              | "crashed"
+              | "failed"
+              | "unknown";
             /** @description Filesystem path to the workspace */
             path: string;
             /** @description ISO 8601 timestamp when workspace was created */
             createdAt: string;
             /** @description ISO 8601 timestamp when workspace was last seen */
             lastSeen: string;
+            metadata?: {
+              description?: string;
+              tags?: string[];
+              system?: boolean;
+              atlasVersion?: string;
+              lastError?: string;
+              /** Format: date-time */
+              lastErrorAt?: string;
+              failureCount?: number;
+            };
           }[];
         };
       };
@@ -432,17 +466,31 @@ export interface operations {
             name: string;
             /** @description Workspace description */
             description?: string;
-            /**
-             * @description Current status of the workspace
-             * @enum {string}
-             */
-            status: "stopped" | "starting" | "running" | "stopping" | "crashed" | "unknown";
+            /** @enum {string} */
+            status:
+              | "stopped"
+              | "starting"
+              | "running"
+              | "stopping"
+              | "crashed"
+              | "failed"
+              | "unknown";
             /** @description Filesystem path to the workspace */
             path: string;
             /** @description ISO 8601 timestamp when workspace was created */
             createdAt: string;
             /** @description ISO 8601 timestamp when workspace was last seen */
             lastSeen: string;
+            metadata?: {
+              description?: string;
+              tags?: string[];
+              system?: boolean;
+              atlasVersion?: string;
+              lastError?: string;
+              /** Format: date-time */
+              lastErrorAt?: string;
+              failureCount?: number;
+            };
             /** @description Full workspace configuration */
             config: unknown;
             /** @description Runtime information if the workspace is active */
@@ -963,6 +1011,8 @@ export interface operations {
                   type: "atlas";
                   /** @description Atlas agent ID from registry */
                   agent: string;
+                  /** @description Agent description */
+                  description: string;
                   /** @description Agent version (defaults to latest) */
                   version?: string;
                   /** @description Agent-specific configuration passed to the agent */
@@ -1230,17 +1280,31 @@ export interface operations {
               name: string;
               /** @description Workspace description */
               description?: string;
-              /**
-               * @description Current status of the workspace
-               * @enum {string}
-               */
-              status: "stopped" | "starting" | "running" | "stopping" | "crashed" | "unknown";
+              /** @enum {string} */
+              status:
+                | "stopped"
+                | "starting"
+                | "running"
+                | "stopping"
+                | "crashed"
+                | "failed"
+                | "unknown";
               /** @description Filesystem path to the workspace */
               path: string;
               /** @description ISO 8601 timestamp when workspace was created */
               createdAt: string;
               /** @description ISO 8601 timestamp when workspace was last seen */
               lastSeen: string;
+              metadata?: {
+                description?: string;
+                tags?: string[];
+                system?: boolean;
+                atlasVersion?: string;
+                lastError?: string;
+                /** Format: date-time */
+                lastErrorAt?: string;
+                failureCount?: number;
+              };
             };
             backupPath?: string;
             filesModified?: string[];
@@ -1322,17 +1386,31 @@ export interface operations {
               name: string;
               /** @description Workspace description */
               description?: string;
-              /**
-               * @description Current status of the workspace
-               * @enum {string}
-               */
-              status: "stopped" | "starting" | "running" | "stopping" | "crashed" | "unknown";
+              /** @enum {string} */
+              status:
+                | "stopped"
+                | "starting"
+                | "running"
+                | "stopping"
+                | "crashed"
+                | "failed"
+                | "unknown";
               /** @description Filesystem path to the workspace */
               path: string;
               /** @description ISO 8601 timestamp when workspace was created */
               createdAt: string;
               /** @description ISO 8601 timestamp when workspace was last seen */
               lastSeen: string;
+              metadata?: {
+                description?: string;
+                tags?: string[];
+                system?: boolean;
+                atlasVersion?: string;
+                lastError?: string;
+                /** Format: date-time */
+                lastErrorAt?: string;
+                failureCount?: number;
+              };
             };
             workspacePath?: string;
             filesCreated?: string[];
@@ -1646,6 +1724,51 @@ export interface operations {
         };
       };
       /** @description Conversation not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error: string;
+          };
+        };
+      };
+      /** @description Internal server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error: string;
+          };
+        };
+      };
+    };
+  };
+  GETApiUser: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description User retrieved successfully */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            success: boolean;
+            user: string;
+          };
+        };
+      };
+      /** @description User not found */
       404: {
         headers: {
           [name: string]: unknown;

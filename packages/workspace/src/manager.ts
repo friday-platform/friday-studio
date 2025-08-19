@@ -410,6 +410,17 @@ export class WorkspaceManager {
     await this.registry.updateWorkspaceLastSeen(workspaceId);
   }
 
+  /**
+   * Update workspace status
+   */
+  async updateWorkspaceStatus(
+    workspaceId: string,
+    status: WorkspaceStatus,
+    updates?: Partial<WorkspaceEntry>,
+  ): Promise<void> {
+    await this.registry.updateWorkspaceStatus(workspaceId, status, updates);
+  }
+
   // Private helper methods
   private async generateUniqueId(): Promise<string> {
     const existingWorkspaces = await this.registry.listWorkspaces();

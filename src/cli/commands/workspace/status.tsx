@@ -275,7 +275,19 @@ function WorkspaceStatusCommand({
     ? "green"
     : workspace.status === "stopped"
     ? "yellow"
+    : workspace.status === "failed"
+    ? "red"
     : "red";
+
+  // Extract metadata for error display - it's directly on workspace now
+  type WorkspaceWithErrorTracking = typeof workspace & {
+    metadata?: {
+      lastError?: string;
+      lastErrorAt?: string;
+      failureCount?: number;
+    };
+  };
+  const metadata = (workspace as WorkspaceWithErrorTracking).metadata;
 
   return (
     <Box flexDirection="column" paddingY={1}>
@@ -319,6 +331,30 @@ function WorkspaceStatusCommand({
             {workspace.status === "running" ? "Yes" : "No"}
           </Text>
         </Box>
+
+        {workspace.status === "failed" && metadata?.lastError && (
+          <Box flexDirection="column" marginTop={1}>
+            <Text bold color="red">Failure Details:</Text>
+            <Box paddingLeft={2} flexDirection="column">
+              <Box>
+                <Text>Error:</Text>
+                <Text color="red">{metadata.lastError}</Text>
+              </Box>
+              {metadata.lastErrorAt && (
+                <Box>
+                  <Text>Failed at:</Text>
+                  <Text dimColor>{new Date(metadata.lastErrorAt).toLocaleString()}</Text>
+                </Box>
+              )}
+              {metadata.failureCount && (
+                <Box>
+                  <Text>Failure count:</Text>
+                  <Text color="yellow">{metadata.failureCount}</Text>
+                </Box>
+              )}
+            </Box>
+          </Box>
+        )}
 
         {workspace.runtime && (
           <Box flexDirection="column" marginTop={1}>

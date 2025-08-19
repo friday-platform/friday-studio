@@ -257,7 +257,9 @@ export class RegistryStorageAdapter {
         if (status === WorkspaceStatusEnum.RUNNING) {
           updatedWorkspace.startedAt = new Date().toISOString();
         } else if (
-          status === WorkspaceStatusEnum.STOPPED || status === WorkspaceStatusEnum.CRASHED
+          status === WorkspaceStatusEnum.STOPPED ||
+          status === WorkspaceStatusEnum.CRASHED ||
+          status === WorkspaceStatusEnum.FAILED
         ) {
           updatedWorkspace.stoppedAt = new Date().toISOString();
           updatedWorkspace.pid = undefined;

@@ -7,6 +7,7 @@ export const WorkspaceStatusSchema = z.enum([
   "running",
   "stopping",
   "crashed",
+  "failed", // Workspace is running but unable to process signals due to errors (e.g., MCP init failure)
   "unknown",
 ]);
 
@@ -15,6 +16,10 @@ export const WorkspaceMetadataSchema = z.object({
   tags: z.array(z.string()).optional(),
   system: z.boolean().optional(),
   atlasVersion: z.string().optional(),
+  // Error tracking fields
+  lastError: z.string().optional(),
+  lastErrorAt: z.string().datetime().optional(),
+  failureCount: z.number().optional(),
 });
 
 export const WorkspaceEntrySchema = z.object({
@@ -44,5 +49,6 @@ export const WorkspaceStatusEnum = {
   RUNNING: "running",
   STOPPING: "stopping",
   CRASHED: "crashed",
+  FAILED: "failed",
   UNKNOWN: "unknown",
 } as const;

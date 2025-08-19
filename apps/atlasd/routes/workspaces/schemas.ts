@@ -1,5 +1,6 @@
 import { z } from "zod/v4";
 import { WorkspaceConfigSchema } from "@atlas/config";
+import { WorkspaceMetadataSchema, WorkspaceStatusSchema } from "@atlas/workspace";
 
 // ============================================================================
 // Shared Parameter Schemas
@@ -10,19 +11,8 @@ export const workspaceIdParamSchema = z.object({
 });
 
 // ============================================================================
-// Status and Base Schemas
+// Base Schemas
 // ============================================================================
-
-export const workspaceStatusSchema = z.enum([
-  "stopped",
-  "starting",
-  "running",
-  "stopping",
-  "crashed",
-  "unknown",
-]).meta({
-  description: "Current status of the workspace",
-});
 
 export const workspaceRuntimeSchema = z.object({
   status: z.string().meta({ description: "Runtime status" }),
@@ -41,10 +31,13 @@ export const workspaceResponseSchema = z.object({
   id: z.string().meta({ description: "Unique workspace identifier (Docker-style name)" }),
   name: z.string().meta({ description: "Human-readable workspace name" }),
   description: z.string().optional().meta({ description: "Workspace description" }),
-  status: workspaceStatusSchema,
+  status: WorkspaceStatusSchema.meta({ description: "Current status of the workspace" }),
   path: z.string().meta({ description: "Filesystem path to the workspace" }),
   createdAt: z.string().meta({ description: "ISO 8601 timestamp when workspace was created" }),
   lastSeen: z.string().meta({ description: "ISO 8601 timestamp when workspace was last seen" }),
+  metadata: WorkspaceMetadataSchema.optional().meta({
+    description: "Workspace metadata including error tracking",
+  }),
 }).meta({
   description: "Workspace information",
 });
@@ -53,10 +46,13 @@ export const workspaceDetailsResponseSchema = z.object({
   id: z.string().meta({ description: "Unique workspace identifier (Docker-style name)" }),
   name: z.string().meta({ description: "Human-readable workspace name" }),
   description: z.string().optional().meta({ description: "Workspace description" }),
-  status: workspaceStatusSchema,
+  status: WorkspaceStatusSchema.meta({ description: "Current status of the workspace" }),
   path: z.string().meta({ description: "Filesystem path to the workspace" }),
   createdAt: z.string().meta({ description: "ISO 8601 timestamp when workspace was created" }),
   lastSeen: z.string().meta({ description: "ISO 8601 timestamp when workspace was last seen" }),
+  metadata: WorkspaceMetadataSchema.optional().meta({
+    description: "Workspace metadata including error tracking",
+  }),
   config: z.unknown().meta({ description: "Full workspace configuration" }),
   runtime: workspaceRuntimeSchema.optional().meta({
     description: "Runtime information if the workspace is active",

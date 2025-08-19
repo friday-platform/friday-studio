@@ -2,6 +2,7 @@ import { Box, render, Text, useStdout } from "ink";
 import React from "react";
 import { createAtlasClient, type paths } from "@atlas/oapi-client";
 import { YargsInstance } from "../../utils/yargs.ts";
+import { WorkspaceStatusEnum } from "@atlas/workspace";
 
 // Extract WorkspaceResponse type from OpenAPI generated types
 type WorkspaceResponse =
@@ -127,12 +128,23 @@ function WorkspaceList({
 
   // Format runtime status
   const formatRuntimeStatus = (workspace: WorkspaceResponse): string => {
-    if (workspace.status === "running") {
-      return "Running";
-    } else if (workspace.status === "stopped") {
-      return "Stopped";
-    } else {
-      return workspace.status;
+    switch (workspace.status) {
+      case WorkspaceStatusEnum.RUNNING:
+        return "Running";
+      case WorkspaceStatusEnum.STOPPED:
+        return "Stopped";
+      case WorkspaceStatusEnum.FAILED:
+        return "Failed";
+      case WorkspaceStatusEnum.CRASHED:
+        return "Crashed";
+      case WorkspaceStatusEnum.STARTING:
+        return "Starting";
+      case WorkspaceStatusEnum.STOPPING:
+        return "Stopping";
+      case WorkspaceStatusEnum.UNKNOWN:
+        return "Unknown";
+      default:
+        return workspace.status;
     }
   };
 
@@ -163,14 +175,19 @@ function WorkspaceList({
 
       {/* Table Rows */}
       {registeredWorkspaces.map((workspace, i) => {
-        const statusColor = workspace.status === "running"
+        // Cast to our actual status type since OpenAPI types aren't regenerated yet
+        const status = workspace
+          .status as typeof WorkspaceStatusEnum[keyof typeof WorkspaceStatusEnum];
+        const statusColor = status === WorkspaceStatusEnum.RUNNING
           ? "green"
-          : workspace.status === "crashed"
+          : status === WorkspaceStatusEnum.CRASHED
           ? "red"
+          : status === WorkspaceStatusEnum.FAILED
+          ? "yellow"
           : "gray";
 
         const runtimeDisplay = formatRuntimeStatus(workspace);
-        const runtimeColor = workspace.status === "running" ? "green" : "gray";
+        const runtimeColor = status === WorkspaceStatusEnum.RUNNING ? "green" : "gray";
 
         // Format last seen time with date and time
         const lastSeenDate = new Date(workspace.lastSeen);
@@ -187,7 +204,7 @@ function WorkspaceList({
             <Text>
               <Text color="blue">{padRight(workspace.id, 30)}</Text>
               <Text color="yellow">{padRight(workspace.name, 50)}</Text>
-              <Text color={statusColor}>{padRight(workspace.status, 10)}</Text>
+              <Text color={statusColor}>{padRight(status, 10)}</Text>
               <Text color={runtimeColor}>{padRight(runtimeDisplay, 10)}</Text>
               <Text color="cyan">{padRight(lastSeenDisplay, 18)}</Text>
             </Text>

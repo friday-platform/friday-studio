@@ -250,6 +250,38 @@ export class AtlasDaemon implements AppContext {
           workspaceId,
           signalId,
         });
+
+        // Store error details and clean up immediately
+        try {
+          const manager = this.getWorkspaceManager();
+          const workspace = await manager.find({ id: workspaceId });
+
+          // Update status with error tracking
+          await manager.updateWorkspaceStatus(workspaceId, "failed", {
+            metadata: {
+              ...workspace?.metadata,
+              lastError: error instanceof Error ? error.message : String(error),
+              lastErrorAt: new Date().toISOString(),
+              failureCount: ((workspace?.metadata?.failureCount || 0) + 1),
+            },
+          });
+
+          logger.info("Marked workspace as failed with error details", {
+            workspaceId,
+            signalId,
+            error: error instanceof Error ? error.message : String(error),
+            failureCount: (workspace?.metadata?.failureCount || 0) + 1,
+          });
+
+          // Clean up the failed runtime immediately
+          await this.destroyWorkspaceRuntime(workspaceId);
+          logger.info("Cleaned up failed workspace runtime", { workspaceId });
+        } catch (statusError) {
+          logger.error("Failed to update workspace status or cleanup", {
+            workspaceId,
+            statusError,
+          });
+        }
       }
     };
 
@@ -1697,6 +1729,29 @@ export class AtlasDaemon implements AppContext {
         return runtime;
       }
 
+      // Get workspace manager
+      const manager = this.getWorkspaceManager();
+
+      // Check if workspace is in failed state and clear error fields on recovery
+      let workspace = await manager.find({ id: workspaceId });
+      if (workspace?.status === "failed") {
+        logger.info("Recovering failed workspace, clearing error fields", {
+          workspaceId,
+          lastError: workspace.metadata?.lastError,
+          failureCount: workspace.metadata?.failureCount,
+        });
+
+        // Clear error fields since we're attempting recovery
+        await manager.updateWorkspaceStatus(workspaceId, "starting", {
+          metadata: {
+            ...workspace.metadata,
+            lastError: undefined,
+            lastErrorAt: undefined,
+            failureCount: undefined,
+          },
+        });
+      }
+
       // Check concurrent workspace limit
       if (this.runtimes.size >= this.options.maxConcurrentWorkspaces!) {
         logger.warn(
@@ -1721,12 +1776,12 @@ export class AtlasDaemon implements AppContext {
         }
       }
 
-      // Find workspace in registry (manager already initialized at daemon startup)
+      // Find workspace in registry (if not already found)
       logger.debug("Looking up workspace in registry", { workspaceId });
-      const manager = this.getWorkspaceManager();
-
-      const workspace = (await manager.find({ id: workspaceId })) ||
-        (await manager.find({ name: workspaceId }));
+      if (!workspace) {
+        workspace = (await manager.find({ id: workspaceId })) ||
+          (await manager.find({ name: workspaceId }));
+      }
 
       if (!workspace) {
         const error = "Workspace not found";
@@ -1842,7 +1897,39 @@ export class AtlasDaemon implements AppContext {
         workspaceId,
       });
 
-      // Status update will be handled by WorkspaceManager if needed
+      // Clean up on failure to prevent inconsistent state
+      try {
+        // Remove runtime from local registry if it was added
+        if (this.runtimes.has(workspaceId)) {
+          this.runtimes.delete(workspaceId);
+          logger.debug("Removed failed runtime from daemon registry", { workspaceId });
+        }
+
+        // Unregister from WorkspaceManager and revert status to stopped
+        try {
+          await manager.unregisterRuntime(workspaceId);
+          logger.debug("Unregistered failed runtime from WorkspaceManager", { workspaceId });
+        } catch (unregisterError) {
+          // Runtime might not have been registered yet
+          logger.debug("Could not unregister runtime (may not have been registered)", {
+            workspaceId,
+            error: unregisterError,
+          });
+        }
+
+        // Clear idle timeout if it was set
+        const timeoutId = this.idleTimeouts.get(workspaceId);
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+          this.idleTimeouts.delete(workspaceId);
+          logger.debug("Cleared idle timeout for failed workspace", { workspaceId });
+        }
+      } catch (cleanupError) {
+        logger.error("Error during failed workspace cleanup", {
+          workspaceId,
+          cleanupError,
+        });
+      }
 
       throw error;
     }
@@ -1984,8 +2071,30 @@ export class AtlasDaemon implements AppContext {
       filePath,
     });
 
-    // Reuse existing runtime destruction logic
+    // Check if the workspace is in a failed state
+    const manager = this.getWorkspaceManager();
+    const workspace = await manager.find({ id: workspaceId });
+    const wasFailed = workspace?.status === "failed";
+
+    // Destroy the existing runtime
     await this.destroyWorkspaceRuntime(workspaceId);
+
+    // If the workspace was in a failed state, try to restart it
+    // This gives immediate feedback if the config fix worked
+    if (wasFailed) {
+      logger.info("Attempting to restart previously failed workspace", { workspaceId });
+      try {
+        await this.getOrCreateWorkspaceRuntime(workspaceId);
+        logger.info("Successfully restarted workspace after config change", { workspaceId });
+      } catch (error) {
+        logger.error("Failed to restart workspace after config change", {
+          workspaceId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        // The workspace will remain stopped, which is fine
+        // The next timer trigger will try again
+      }
+    }
   }
 
   private setupSignalHandlers() {
