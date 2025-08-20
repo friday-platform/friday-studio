@@ -167,13 +167,22 @@ export class MCPManager {
             {
               requestInit: {
                 headers: this.buildAuthHeaders(validatedConfig.auth),
+                // Add timeout for HTTP requests to prevent hanging
+                signal: AbortSignal.timeout(5000), // 5 second timeout
               },
             },
           );
 
-          mcpClient = await createMCPClient({
-            transport,
-          });
+          // Wrap createMCPClient in a timeout to prevent hanging
+          mcpClient = await Promise.race([
+            createMCPClient({ transport }),
+            new Promise<never>((_, reject) =>
+              setTimeout(
+                () => reject(new Error(`HTTP MCP client creation timeout for ${config.id}`)),
+                5000,
+              )
+            ),
+          ]);
           break;
         }
       }
@@ -211,12 +220,27 @@ export class MCPManager {
         error instanceof Error ? error.message : String(error),
       );
 
-      logger.error(`Failed to register MCP server: ${config.id}`, {
-        operation: "mcp_server_registration",
-        serverId: config.id,
-        error: error instanceof Error ? error.message : String(error),
-        transport: config.transport,
-      });
+      // For platform server connection issues, log at debug level (not critical)
+      const isPlatformConnectionIssue = config.id === "atlas-platform" &&
+        error instanceof Error &&
+        (error.message.includes("timeout") || error.message.includes("connection"));
+
+      if (isPlatformConnectionIssue) {
+        logger.debug(`Platform MCP server temporarily unavailable: ${config.id}`, {
+          operation: "mcp_server_registration",
+          serverId: config.id,
+          reason: error instanceof Error ? error.message : String(error),
+          transport: config.transport,
+        });
+      } else {
+        logger.error(`Failed to register MCP server: ${config.id}`, {
+          operation: "mcp_server_registration",
+          serverId: config.id,
+          error: error instanceof Error ? error.message : String(error),
+          transport: config.transport,
+        });
+      }
+
       throw new Error(
         `MCP server registration failed: ${error instanceof Error ? error.message : String(error)}`,
       );

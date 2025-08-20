@@ -119,11 +119,13 @@ export const workspaceRuntimeMachineSetup = setup({
       { context: WorkspaceRuntimeContext }
     >(async ({ input }) => {
       const { context } = input;
+      const startTime = Date.now();
 
       logger.info("Initializing workspace runtime", {
         workspaceId: context.workspace.id,
         hasConfig: !!context.config,
         workspacePath: context.options.workspacePath,
+        timestamp: new Date().toISOString(),
       });
 
       // Load workspace .env file if available
@@ -276,11 +278,21 @@ export const workspaceRuntimeMachineSetup = setup({
       // Pass orchestrator to workspace supervisor
       supervisor.setAgentOrchestrator(agentOrchestrator);
 
+      const initDuration = Date.now() - startTime;
       logger.info("Workspace supervisor actor initialized", {
         workspaceId: context.workspace.id,
         supervisorId: "supervisor-" + context.workspace.id,
         agentsCount: Object.keys(mergedConfig.workspace.agents || {}).length,
+        initDurationMs: initDuration,
+        timestamp: new Date().toISOString(),
       });
+
+      if (initDuration > 15000) {
+        logger.warn("Workspace initialization took longer than expected", {
+          workspaceId: context.workspace.id,
+          initDurationMs: initDuration,
+        });
+      }
 
       return { supervisor, mergedConfig, agentOrchestrator };
     }),
@@ -979,10 +991,20 @@ async function registerMCPServers(config: MergedConfig, workspaceId: string): Pr
 
     // Initialize MCPServerRegistry to handle merging platform and workspace configs
     // This will inject atlas-platform configuration
-    await MCPServerRegistry.initialize(
-      config.atlas || undefined, // Platform config - convert null to undefined
-      config.workspace, // Workspace config
-    );
+    // The registry now handles concurrent initialization and retries internally
+    try {
+      await MCPServerRegistry.initialize(
+        config.atlas || undefined, // Platform config - convert null to undefined
+        config.workspace, // Workspace config
+      );
+    } catch (error) {
+      logger.error("MCPServerRegistry initialization failed", {
+        operation: "mcp_server_registration",
+        workspaceId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      // Continue without MCP servers rather than blocking workspace initialization
+    }
 
     // Get server IDs from workspace configuration
     const workspaceServerIds = Object.keys(config.workspace.tools?.mcp?.servers || {});
@@ -1008,10 +1030,15 @@ async function registerMCPServers(config: MergedConfig, workspaceId: string): Pr
     // Get MCPManager instance from LLMProvider
     const mcpManager = LLMProvider.getMCPManager();
 
-    // Register each server
+    // Register each server (manager handles timeouts internally)
     const registrationPromises = serverConfigs.map(async (serverConfig) => {
       try {
+        // MCPManager.registerServer already has timeout protection internally:
+        // - HTTP transport: 5 second timeout
+        // - Platform tools fetch: retry with exponential backoff
+        // - Registers server without tool filtering if tools unavailable
         await mcpManager.registerServer(serverConfig);
+
         logger.info(`Successfully registered MCP server: ${serverConfig.id}`, {
           operation: "mcp_server_registration",
           workspaceId,
@@ -1019,12 +1046,29 @@ async function registerMCPServers(config: MergedConfig, workspaceId: string): Pr
           transport: serverConfig.transport.type,
         });
       } catch (error) {
-        logger.error(`Failed to register MCP server: ${serverConfig.id}`, {
-          operation: "mcp_server_registration",
-          workspaceId,
-          serverId: serverConfig.id,
-          error: error instanceof Error ? error.message : String(error),
-        });
+        // Only log at debug level for expected connection issues
+        // The MCP manager already handles retries gracefully
+        const isConnectionIssue = error instanceof Error &&
+          (error.message.includes("timeout") ||
+            error.message.includes("connection") ||
+            error.message.includes("fetch platform tools"));
+
+        if (isConnectionIssue) {
+          logger.debug(`MCP server registration skipped (server unavailable): ${serverConfig.id}`, {
+            operation: "mcp_server_registration",
+            workspaceId,
+            serverId: serverConfig.id,
+            reason: error instanceof Error ? error.message : String(error),
+          });
+        } else {
+          // Only log actual errors at error level
+          logger.error(`Failed to register MCP server: ${serverConfig.id}`, {
+            operation: "mcp_server_registration",
+            workspaceId,
+            serverId: serverConfig.id,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
         // Don't throw - continue with other servers
       }
     });
