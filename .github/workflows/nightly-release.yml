@@ -9,7 +9,7 @@ on:
       force_release:
         description: "Force release even if no changes"
         required: false
-        default: "false"
+        default: false
         type: boolean
 
 permissions:
