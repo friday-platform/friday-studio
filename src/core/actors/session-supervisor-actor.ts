@@ -392,7 +392,11 @@ export class SessionSupervisorActor implements BaseActor {
       });
 
       void this.baseStreamEmitter.end();
+      this.baseStreamEmitter = undefined;
     }
+
+    // Clear heavy memory objects to prevent leaks
+    this.cleanupMemoryObjects();
   }
 
   /**
@@ -425,6 +429,56 @@ export class SessionSupervisorActor implements BaseActor {
       });
       // Don't rethrow - memory cleanup failure shouldn't break shutdown
     }
+  }
+
+  /**
+   * Clean up heavy memory objects that cause leaks
+   */
+  private cleanupMemoryObjects(): void {
+    try {
+      // Clear stream metrics that accumulate over time
+      this.streamMetrics.agentMetrics.clear();
+      this.streamMetrics.totalEvents = 0;
+      this.streamMetrics.filteredEvents = 0;
+      this.streamMetrics.errorEvents = 0;
+
+      // Clear validation map that stores per-agent confidence data
+      this.validationMap.clear();
+
+      // Clear agent results that contain full execution data
+      this.agentResults = undefined;
+
+      // Clear cached execution plan
+      this.cachedPlan = undefined;
+
+      // Clear session context
+      this.sessionContext = undefined;
+
+      this.logger.debug("Memory objects cleaned up", {
+        sessionId: this.sessionId,
+        clearedObjects: [
+          "streamMetrics",
+          "validationMap",
+          "agentResults",
+          "cachedPlan",
+          "sessionContext",
+        ],
+      });
+    } catch (error) {
+      this.logger.warn("Memory object cleanup failed", {
+        sessionId: this.sessionId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  /**
+   * Public wrapper to release heavy memory objects without changing status
+   * or emitting lifecycle events. Intended for workspace-level cleanup while
+   * preserving session history.
+   */
+  public releaseHeavyMemoryObjects(): void {
+    this.cleanupMemoryObjects();
   }
 
   async initializeSession(context: SessionContext): Promise<void> {

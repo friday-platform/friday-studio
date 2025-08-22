@@ -242,6 +242,9 @@ export class WorkspaceSupervisorActor implements BaseActor {
               sessionInfo.status = sessionSummary.status === ReasoningResultStatus.COMPLETED
                 ? WorkspaceSessionStatus.COMPLETED
                 : WorkspaceSessionStatus.FAILED;
+
+              // Clean up session after completion
+              this.cleanupSession(sessionId);
             },
             (error) => {
               this.logger.error("Session execution failed", {
@@ -250,6 +253,9 @@ export class WorkspaceSupervisorActor implements BaseActor {
                 error: error instanceof Error ? error.message : String(error),
               });
               sessionInfo.status = WorkspaceSessionStatus.FAILED;
+
+              // Clean up session after failure
+              this.cleanupSession(sessionId);
             },
           );
         } catch (error) {
@@ -335,13 +341,25 @@ export class WorkspaceSupervisorActor implements BaseActor {
 
   cleanupSession(sessionId: string): void {
     const sessionInfo = this.sessions.get(sessionId);
-    if (sessionInfo) {
-      this.logger.info("Cleaning up session", {
-        sessionId,
-        status: sessionInfo.status,
-      });
+    if (!sessionInfo) return;
 
-      this.sessions.delete(sessionId);
+    this.logger.info("Cleaning up session memory objects (preserving history)", {
+      sessionId,
+      status: sessionInfo.status,
+      hasActor: !!sessionInfo.actor,
+    });
+
+    // Clean up heavy memory objects via the session actor, but keep the session entry for history
+    if (sessionInfo.actor) {
+      try {
+        // Only release heavy memory; do not change status or emit events
+        sessionInfo.actor.releaseHeavyMemoryObjects();
+      } catch (error) {
+        this.logger.warn("Error during session actor shutdown", {
+          sessionId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
   }
 
@@ -377,12 +395,23 @@ export class WorkspaceSupervisorActor implements BaseActor {
           sessionInfo.status === WorkspaceSessionStatus.FAILED) &&
         now - sessionInfo.createdAt > maxAge
       ) {
-        this.logger.debug("Cleaning up old session", {
+        this.logger.debug("Releasing heavy memory objects for old session", {
           sessionId,
           status: sessionInfo.status,
           age: now - sessionInfo.createdAt,
         });
-        this.sessions.delete(sessionId);
+        // Only release the actor to reduce memory; keep session record for history
+        if (sessionInfo.actor) {
+          try {
+            // Only release heavy memory; do not change status or emit events
+            sessionInfo.actor.releaseHeavyMemoryObjects();
+          } catch (error) {
+            this.logger.warn("Error shutting down old session actor", {
+              sessionId,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
+        }
       }
     }
   }
