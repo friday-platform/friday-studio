@@ -98,7 +98,7 @@ export class WorkspaceManager {
       path: absolutePath,
       configPath: join(absolutePath, "workspace.yml"),
       configHash,
-      status: "stopped",
+      status: "inactive",
       createdAt: new Date().toISOString(),
       lastSeen: new Date().toISOString(),
       metadata: {
@@ -135,7 +135,7 @@ export class WorkspaceManager {
         path: `system://${id}`, // Clean system prefix
         configPath: `system://${id}/workspace.yml`,
         configHash,
-        status: "stopped",
+        status: "inactive",
         createdAt: new Date().toISOString(),
         lastSeen: new Date().toISOString(),
         metadata: {

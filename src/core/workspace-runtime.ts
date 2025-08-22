@@ -22,6 +22,13 @@ export interface WorkspaceRuntimeOptions {
   libraryStorage?: LibraryStorageAdapter;
   mcpServerPool?: GlobalMCPServerPool;
   daemonUrl?: string;
+  onSessionFinished?: (data: {
+    workspaceId: string;
+    sessionId: string;
+    status: "completed" | "failed";
+    finishedAt: string;
+    summary?: string;
+  }) => void | Promise<void>;
 }
 
 /**
@@ -53,6 +60,7 @@ export class WorkspaceRuntime {
       libraryStorage: options.libraryStorage,
       mcpServerPool: options.mcpServerPool,
       daemonUrl: options.daemonUrl,
+      onSessionFinished: options.onSessionFinished,
     };
 
     // Create and start the state machine

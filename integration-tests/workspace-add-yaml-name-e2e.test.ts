@@ -92,10 +92,11 @@ Deno.test({
       await daemon.startNonBlocking();
 
       // Create test workspace with specific name in YAML
+      const uniqueName = `My Custom Workspace Name ${Date.now()}`;
       const workspacePath = await createTestWorkspaceWithYaml(
         testDir,
         "directory-name",
-        "My Custom Workspace Name",
+        uniqueName,
         "This is my workspace description",
       );
 
@@ -107,9 +108,9 @@ Deno.test({
 
       // Verify it used the name from workspace.yml, not the directory name
       assertExists(result.id);
-      assertEquals(result.name, "My Custom Workspace Name");
+      assertEquals(result.name, uniqueName);
       assertEquals(result.description, "This is my workspace description");
-      assertEquals(result.status, "stopped");
+      assertEquals(result.status, "inactive");
 
       // Clean up
       await client.deleteWorkspace(result.id);

@@ -35,7 +35,7 @@ export function convertLLMAgentToSDK(
 }
 
 export { convertYAMLToAgent } from "./from-yaml.ts";
-export { convertLLMToAgent } from "./from-llm.ts";
+export type { WrappedAgent, WrappedAgentResult } from "./from-llm.ts";
 export type { YAMLAgentDefinition } from "./yaml/schema.ts";
 export type { LLMAgentConfig } from "@atlas/config";
 export { parseYAMLAgentContent } from "./yaml/parser.ts";

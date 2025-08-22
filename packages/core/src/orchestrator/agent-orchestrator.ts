@@ -25,9 +25,9 @@ import { StreamContentNotificationSchema, StreamEvent } from "../types/streaming
 import { z } from "zod";
 import { createAgentContextBuilder } from "../agent-context/index.ts";
 import { GlobalMCPServerPool } from "../mcp-server-pool.ts";
-import { WrappedAgentResult } from "../agent-conversion/from-llm.ts";
 import type { AgentToolParams } from "../agent-server/types.ts";
 import { CoALAMemoryManager, CoALAMemoryType, IMemoryScope } from "@atlas/memory";
+import { WrappedAgentResult } from "../agent-conversion/from-llm.ts";
 
 // FIXME: this is wrong.
 const MCPToolResultSchema = z.object({

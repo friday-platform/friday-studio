@@ -43,6 +43,13 @@ export interface WorkspaceRuntimeContext {
     libraryStorage?: LibraryStorageAdapter;
     mcpServerPool?: GlobalMCPServerPool;
     daemonUrl?: string;
+    onSessionFinished?: (data: {
+      workspaceId: string;
+      sessionId: string;
+      status: "completed" | "failed";
+      finishedAt: string;
+      summary?: string;
+    }) => void | Promise<void>;
   };
   mcpServerPool?: GlobalMCPServerPool;
   daemonUrl?: string;
@@ -100,6 +107,13 @@ export interface WorkspaceRuntimeMachineInput {
   libraryStorage?: LibraryStorageAdapter;
   mcpServerPool?: GlobalMCPServerPool;
   daemonUrl?: string;
+  onSessionFinished?: (data: {
+    workspaceId: string;
+    sessionId: string;
+    status: "completed" | "failed";
+    finishedAt: string;
+    summary?: string;
+  }) => void | Promise<void>;
 }
 
 // Setup the machine with proper typing
@@ -530,6 +544,7 @@ export function createWorkspaceRuntimeMachine(
         libraryStorage: input.libraryStorage,
         mcpServerPool: input.mcpServerPool,
         daemonUrl: input.daemonUrl,
+        onSessionFinished: input.onSessionFinished,
       },
       mcpServerPool: input.mcpServerPool,
       daemonUrl: input.daemonUrl,
@@ -850,16 +865,46 @@ export function createWorkspaceRuntimeMachine(
           },
 
           SESSION_COMPLETED: {
-            actions: "updateSessionCompletedStats",
+            actions: [
+              "updateSessionCompletedStats",
+              ({ context, event }) => {
+                const cb = context.options.onSessionFinished;
+                if (cb && event.sessionId) {
+                  const summary = context.sessions.get(event.sessionId)?.summarize?.();
+                  Promise.resolve(
+                    cb({
+                      workspaceId: context.workspace.id,
+                      sessionId: event.sessionId,
+                      status: "completed",
+                      finishedAt: new Date().toISOString(),
+                      summary,
+                    }),
+                  ).catch(() => {});
+                }
+              },
+            ],
           },
 
           SESSION_FAILED: {
             actions: [
               "updateSessionCompletedStats",
-              ({ event }) => {
+              ({ context, event }) => {
                 logger.error(`Session failed: ${event.sessionId}`, {
                   error: event.error,
                 });
+                const cb = context.options.onSessionFinished;
+                if (cb && event.sessionId) {
+                  const summary = context.sessions.get(event.sessionId)?.summarize?.();
+                  Promise.resolve(
+                    cb({
+                      workspaceId: context.workspace.id,
+                      sessionId: event.sessionId,
+                      status: "failed",
+                      finishedAt: new Date().toISOString(),
+                      summary,
+                    }),
+                  ).catch(() => {});
+                }
               },
             ],
           },

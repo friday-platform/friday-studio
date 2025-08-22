@@ -60,11 +60,13 @@ export type {
 // Agent Conversion Layer
 export {
   convertLLMAgentToSDK,
-  convertLLMToAgent,
   convertYAMLAgentToSDK,
   convertYAMLToAgent,
 } from "./src/agent-conversion/index.ts";
+// Export strongly-typed LLM converter directly to preserve WrappedAgentResult generic
+export { convertLLMToAgent } from "./src/agent-conversion/from-llm.ts";
 export type { LLMAgentConfig, YAMLAgentDefinition } from "./src/agent-conversion/index.ts";
+export type { WrappedAgentResult } from "./src/agent-conversion/from-llm.ts";
 
 // Agent Loader and Registry
 export { AgentLoader, AgentRegistry } from "./src/agent-loader/index.ts";

@@ -52,7 +52,7 @@ Deno.test("WorkspaceManager - System workspace registration", async () => {
     assertEquals(conversationWorkspace.name, "atlas-conversation");
     assertEquals(conversationWorkspace.path, "system://atlas-conversation");
     assertEquals(conversationWorkspace.metadata?.system, true);
-    assertEquals(conversationWorkspace.status, "stopped");
+    assertEquals(conversationWorkspace.status, "inactive");
 
     // Verify system workspaces are excluded by default
     const userWorkspaces = await manager.list();
@@ -292,9 +292,9 @@ workspace:
       assertEquals(runningWorkspaces.length, 1);
       assertEquals(runningWorkspaces[0].id, workspace1.id);
 
-      const stoppedWorkspaces = await manager.list({ status: WorkspaceStatusEnum.STOPPED });
-      assertEquals(stoppedWorkspaces.length, 1);
-      assertEquals(stoppedWorkspaces[0].id, workspace2.id);
+      const inactiveWorkspaces = await manager.list({ status: WorkspaceStatusEnum.INACTIVE });
+      assertEquals(inactiveWorkspaces.length, 1);
+      assertEquals(inactiveWorkspaces[0].id, workspace2.id);
     } finally {
       // Cleanup test workspace 2
       try {

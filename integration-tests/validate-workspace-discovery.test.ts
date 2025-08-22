@@ -43,16 +43,22 @@ Deno.test("validate-examples - workspace discovery logic", async () => {
 
   // Get discovered workspaces
   const discoveredWorkspaces = await manager.list();
-  console.log(`\n📋 WorkspaceManager discovered ${discoveredWorkspaces.length} workspaces:`);
-  discoveredWorkspaces.forEach((ws) => {
+  const normalize = (p: string) => p.replace(/^\/private/, "");
+  const filteredWorkspaces = discoveredWorkspaces.filter((ws) =>
+    normalize(ws.path).startsWith(normalize(examplesDir))
+  );
+  console.log(
+    `\n📋 WorkspaceManager discovered ${filteredWorkspaces.length} workspaces in examples:`,
+  );
+  filteredWorkspaces.forEach((ws) => {
     console.log(`   - ${ws.name} (${ws.id}) - ${ws.path}`);
   });
 
   // Assert equality
   assertEquals(
-    discoveredWorkspaces.length,
+    filteredWorkspaces.length,
     expectedWorkspaceCount,
-    `Expected WorkspaceManager to discover ${expectedWorkspaceCount} workspaces, but only found ${discoveredWorkspaces.length}. Check logs for validation errors.`,
+    `Expected WorkspaceManager to discover ${expectedWorkspaceCount} workspaces in examples, but found ${filteredWorkspaces.length}. Check logs for validation errors.`,
   );
 
   console.log("\n✅ Workspace discovery test passed!");

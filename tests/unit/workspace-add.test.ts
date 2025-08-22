@@ -63,7 +63,7 @@ class MockDaemonServer {
           id,
           name: name || path.split("/").pop(),
           description,
-          status: "stopped",
+          status: "inactive",
           path,
           createdAt: new Date().toISOString(),
           lastSeen: new Date().toISOString(),
@@ -110,7 +110,7 @@ class MockDaemonServer {
           const workspace = {
             id,
             name: path.split("/").pop(),
-            status: "stopped",
+            status: "inactive",
             path,
             createdAt: new Date().toISOString(),
             lastSeen: new Date().toISOString(),
@@ -155,7 +155,7 @@ class MockDaemonServer {
     const workspace = {
       id,
       name: name || path.split("/").pop(),
-      status: "stopped",
+      status: "inactive",
       path,
       createdAt: new Date().toISOString(),
       lastSeen: new Date().toISOString(),

@@ -253,13 +253,12 @@ export class RegistryStorageAdapter {
           Object.assign(updatedWorkspace, updates);
         }
 
-        // Update timestamps based on status
+        // Update timestamps based on status (3-state model)
         if (status === WorkspaceStatusEnum.RUNNING) {
           updatedWorkspace.startedAt = new Date().toISOString();
         } else if (
           status === WorkspaceStatusEnum.STOPPED ||
-          status === WorkspaceStatusEnum.CRASHED ||
-          status === WorkspaceStatusEnum.FAILED
+          status === WorkspaceStatusEnum.INACTIVE
         ) {
           updatedWorkspace.stoppedAt = new Date().toISOString();
           updatedWorkspace.pid = undefined;

@@ -111,7 +111,7 @@ Deno.test({
       assertEquals(result.name, uniqueName);
       // Handle macOS symlink path resolution
       assertEquals(result.path.replace(/^\/private/, ""), workspacePath.replace(/^\/private/, ""));
-      assertEquals(result.status, "stopped");
+      assertEquals(result.status, "inactive");
 
       // Try to add again - should fail with 409
       let failed = false;

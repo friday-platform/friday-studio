@@ -2,13 +2,9 @@ import { z } from "zod/v4";
 
 // Single source of truth for workspace types
 export const WorkspaceStatusSchema = z.enum([
-  "stopped",
-  "starting",
+  "inactive",
   "running",
-  "stopping",
-  "crashed",
-  "failed", // Workspace is running but unable to process signals due to errors (e.g., MCP init failure)
-  "unknown",
+  "stopped",
 ]);
 
 export const WorkspaceMetadataSchema = z.object({
@@ -20,6 +16,15 @@ export const WorkspaceMetadataSchema = z.object({
   lastError: z.string().optional(),
   lastErrorAt: z.string().datetime().optional(),
   failureCount: z.number().optional(),
+  // Session tracking fields
+  lastFinishedSession: z
+    .object({
+      id: z.string(),
+      status: z.enum(["completed", "failed"]),
+      finishedAt: z.string().datetime(),
+      summary: z.string().optional(),
+    })
+    .optional(),
 });
 
 export const WorkspaceEntrySchema = z.object({
@@ -44,11 +49,7 @@ export type WorkspaceMetadata = z.infer<typeof WorkspaceMetadataSchema>;
 
 // Export enum for convenience
 export const WorkspaceStatusEnum = {
-  STOPPED: "stopped",
-  STARTING: "starting",
+  INACTIVE: "inactive",
   RUNNING: "running",
-  STOPPING: "stopping",
-  CRASHED: "crashed",
-  FAILED: "failed",
-  UNKNOWN: "unknown",
+  STOPPED: "stopped",
 } as const;

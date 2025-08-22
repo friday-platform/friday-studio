@@ -256,8 +256,8 @@ export class AtlasDaemon implements AppContext {
           const manager = this.getWorkspaceManager();
           const workspace = await manager.find({ id: workspaceId });
 
-          // Update status with error tracking
-          await manager.updateWorkspaceStatus(workspaceId, "failed", {
+          // Update status with error tracking (mark as inactive)
+          await manager.updateWorkspaceStatus(workspaceId, "inactive", {
             metadata: {
               ...workspace?.metadata,
               lastError: error instanceof Error ? error.message : String(error),
@@ -1732,17 +1732,17 @@ export class AtlasDaemon implements AppContext {
       // Get workspace manager
       const manager = this.getWorkspaceManager();
 
-      // Check if workspace is in failed state and clear error fields on recovery
+      // Check if workspace is inactive due to prior error and clear error fields on recovery
       let workspace = await manager.find({ id: workspaceId });
-      if (workspace?.status === "failed") {
-        logger.info("Recovering failed workspace, clearing error fields", {
+      if (workspace?.status === "inactive") {
+        logger.info("Recovering inactive workspace, clearing error fields", {
           workspaceId,
           lastError: workspace.metadata?.lastError,
           failureCount: workspace.metadata?.failureCount,
         });
 
         // Clear error fields since we're attempting recovery
-        await manager.updateWorkspaceStatus(workspaceId, "starting", {
+        await manager.updateWorkspaceStatus(workspaceId, "inactive", {
           metadata: {
             ...workspace.metadata,
             lastError: undefined,
@@ -1859,6 +1859,48 @@ export class AtlasDaemon implements AppContext {
         libraryStorage: this.libraryStorage || undefined, // Share daemon's library storage
         mcpServerPool: this.mcpServerPool || undefined, // Share daemon's MCP server pool
         daemonUrl: `http://localhost:${this.options.port}`, // Pass daemon URL for MCP tool fetching
+        onSessionFinished: async ({ workspaceId, sessionId, status, finishedAt, summary }) => {
+          try {
+            const mgr = this.getWorkspaceManager();
+            const ws = await mgr.find({ id: workspaceId });
+
+            // Always mark workspace as inactive when a session finishes
+            await mgr.updateWorkspaceStatus(workspaceId, "inactive", {
+              metadata: {
+                ...ws?.metadata,
+                lastFinishedSession: {
+                  id: sessionId,
+                  status,
+                  finishedAt,
+                  summary,
+                },
+              },
+            });
+
+            // If there are no active sessions left, destroy the runtime so status won't be overridden to "running"
+            const currentRuntime = this.runtimes.get(workspaceId);
+            if (currentRuntime) {
+              const sessions = currentRuntime.getSessions();
+              const hasActive = sessions.some((s) =>
+                s.status === WorkspaceSessionStatus.EXECUTING ||
+                s.status === WorkspaceSessionStatus.PENDING
+              );
+
+              if (!hasActive) {
+                await this.destroyWorkspaceRuntime(workspaceId);
+              } else {
+                // Still active sessions; keep idle timer fresh
+                this.resetIdleTimeout(workspaceId);
+              }
+            }
+          } catch (e) {
+            logger.warn("Failed to persist lastFinishedSession or update status", {
+              workspaceId,
+              sessionId,
+              error: e instanceof Error ? e.message : String(e),
+            });
+          }
+        },
       });
       logger.debug("WorkspaceRuntime created", { workspaceId: workspace.id });
 
@@ -1907,7 +1949,8 @@ export class AtlasDaemon implements AppContext {
 
         // Unregister from WorkspaceManager and revert status to stopped
         try {
-          await manager.unregisterRuntime(workspaceId);
+          const mgr = this.getWorkspaceManager();
+          await mgr.unregisterRuntime(workspaceId);
           logger.debug("Unregistered failed runtime from WorkspaceManager", { workspaceId });
         } catch (unregisterError) {
           // Runtime might not have been registered yet
@@ -2047,6 +2090,16 @@ export class AtlasDaemon implements AppContext {
     const manager = this.getWorkspaceManager();
     await manager.unregisterRuntime(workspaceId);
 
+    // Ensure final status reflects inactivity after teardown
+    try {
+      await manager.updateWorkspaceStatus(workspaceId, "inactive");
+    } catch (error) {
+      logger.warn("Failed to set workspace inactive after destroy", {
+        workspaceId,
+        error,
+      });
+    }
+
     // Clear idle timeout
     const timeoutId = this.idleTimeouts.get(workspaceId);
     if (timeoutId) {
@@ -2071,18 +2124,18 @@ export class AtlasDaemon implements AppContext {
       filePath,
     });
 
-    // Check if the workspace is in a failed state
+    // Check if the workspace is in an inactive state
     const manager = this.getWorkspaceManager();
     const workspace = await manager.find({ id: workspaceId });
-    const wasFailed = workspace?.status === "failed";
+    const wasInactive = workspace?.status === "inactive";
 
     // Destroy the existing runtime
     await this.destroyWorkspaceRuntime(workspaceId);
 
-    // If the workspace was in a failed state, try to restart it
+    // If the workspace was inactive due to prior error, try to restart it
     // This gives immediate feedback if the config fix worked
-    if (wasFailed) {
-      logger.info("Attempting to restart previously failed workspace", { workspaceId });
+    if (wasInactive) {
+      logger.info("Attempting to restart previously inactive workspace", { workspaceId });
       try {
         await this.getOrCreateWorkspaceRuntime(workspaceId);
         logger.info("Successfully restarted workspace after config change", { workspaceId });

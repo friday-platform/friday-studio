@@ -89,7 +89,7 @@ class MockDaemonServer {
           id: `ws_${Date.now()}`,
           name: workspaceName,
           description: workspaceDescription,
-          status: "stopped",
+          status: "inactive",
           path,
           createdAt: new Date().toISOString(),
           lastSeen: new Date().toISOString(),

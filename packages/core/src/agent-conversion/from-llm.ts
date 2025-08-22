@@ -27,19 +27,47 @@ export type WrappedAgent = AtlasAgent<WrappedAgentResult>;
  * Extract tool calls and results from generateText response.
  * Falls back to manual extraction from steps when direct access returns empty arrays.
  */
-function extractToolData(res: any): { toolCalls: string[]; toolResults: ToolResult[] } {
+interface GenerateTextLikeResultStepContent {
+  type: string;
+  toolName?: string;
+  isError?: boolean;
+  input?: unknown;
+}
+
+interface GenerateTextLikeResultStep {
+  content?: GenerateTextLikeResultStepContent[];
+}
+
+interface GenerateTextLikeResult {
+  toolCalls?: Array<{ toolName?: string; name?: string }>;
+  toolResults?: Array<
+    {
+      toolName?: string;
+      name?: string;
+      isError?: boolean;
+      error?: unknown;
+      input?: unknown;
+      args?: unknown;
+    }
+  >;
+  steps?: GenerateTextLikeResultStep[];
+}
+
+function extractToolData(
+  res: GenerateTextLikeResult,
+): { toolCalls: string[]; toolResults: ToolResult[] } {
   let toolCalls: string[] = [];
   let toolResults: ToolResult[] = [];
 
   // Try direct access first and transform to required format
   if (res.toolCalls && Array.isArray(res.toolCalls) && res.toolCalls.length > 0) {
-    toolCalls = res.toolCalls.map((call: any) => call.toolName || call.name || "").filter(Boolean);
+    toolCalls = res.toolCalls.map((call) => call.toolName || call.name || "").filter(Boolean);
   }
   if (res.toolResults && Array.isArray(res.toolResults) && res.toolResults.length > 0) {
-    toolResults = res.toolResults.map((result: any) => ({
+    toolResults = res.toolResults.map((result) => ({
       toolName: result.toolName || result.name || "",
       isError: Boolean(result.isError || result.error),
-      input: result.input || result.args || {},
+      input: result.input ?? result.args ?? {},
     })).filter((result: ToolResult) => result.toolName);
   }
 
