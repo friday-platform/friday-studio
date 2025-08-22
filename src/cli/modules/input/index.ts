@@ -5,3 +5,15 @@ export {
   useTextInputState,
   type UseTextInputStateProps,
 } from "./use-text-input-state.ts";
+export {
+  createFileAttachmentPlaceholder,
+  type DetectedPath,
+  detectFilePaths,
+  extractFileName,
+  extractFilePaths,
+  hasFileExtension,
+  isFilePath,
+  matchesAnyPattern,
+  UNIX_PATH_PATTERNS,
+  WINDOWS_PATH_PATTERNS,
+} from "./file-path-detector.ts";

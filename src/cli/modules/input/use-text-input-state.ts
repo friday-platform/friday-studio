@@ -1,4 +1,5 @@
 import { type Reducer, useCallback, useEffect, useMemo, useReducer, useState } from "react";
+import { detectFilePaths, hasFileExtension } from "./file-path-detector.ts";
 
 // Helper functions for multi-line text handling
 const getLines = (text: string): string[] => text.split(/[\n\r]/);
@@ -156,7 +157,9 @@ type InsertAction = {
 type InsertAttachmentAction = {
   type: "insert-attachment";
   text: string;
-  lineCount: number;
+  lineCount?: number;
+  attachmentType: "text" | "file";
+  fileName?: string;
 };
 
 type SetAttachmentsAction = {
@@ -332,6 +335,8 @@ const reducer: Reducer<State, Action> = (state, action) => {
         attachments: new Map(state.attachments).set(state.attachmentCounter, {
           content: action.text,
           lineCount: action.lineCount,
+          type: action.attachmentType,
+          fileName: action.fileName,
         }),
         attachmentCounter: state.attachmentCounter + 1,
       };
@@ -399,8 +404,10 @@ const reducer: Reducer<State, Action> = (state, action) => {
 };
 
 export type AttachmentData = {
-  content: string;
-  lineCount: number;
+  content: string; // For text: the actual text content. For files: the full file path
+  lineCount?: number; // Only for text attachments
+  type: "text" | "file";
+  fileName?: string; // Only for file attachments - the extracted file/folder name
 };
 
 export type UseTextInputStateProps = {
@@ -527,32 +534,84 @@ export const useTextInputState = ({
 
   const insertAttachment = useCallback(
     (text: string) => {
-      // Count lines in the text
+      // Count lines to determine if this should be a text attachment
       const newlineCount = (text.match(/[\n\r]/g) || []).length;
+      const shouldBeTextAttachment = enableAttachments && newlineCount >= 10;
 
-      if (!enableAttachments || newlineCount < 10) {
+      // Check if the pasted content contains file paths
+      const detectedPaths = detectFilePaths(text);
+
+      // Special case: If the ENTIRE paste is just file paths (one per line),
+      // treat them as file attachments. Otherwise, if it's large text with
+      // some file paths mixed in, treat the whole thing as a text attachment
+      const lines = text.trim().split(/[\n\r]+/);
+      const isOnlyFilePaths = lines.length > 0 &&
+        lines.length === detectedPaths.length &&
+        detectedPaths.every((path) => lines.includes(path.originalText.trim()));
+
+      // If it's purely file paths, handle as file attachments
+      if (enableAttachments && detectedPaths.length > 0 && isOnlyFilePaths) {
+        let processedText = text;
+        const attachmentIds: number[] = [];
+
+        // Process each detected file path
+        detectedPaths.forEach((pathInfo) => {
+          const attachmentId = state.attachmentCounter + attachmentIds.length;
+          const isDirectory = !hasFileExtension(pathInfo.originalText);
+          const separator = Deno.build.os === "windows" ? "\\" : "/";
+          const placeholder = isDirectory
+            ? `[#${attachmentId} ${pathInfo.fileName}${separator}]`
+            : `[#${attachmentId} ${pathInfo.fileName}]`;
+
+          // Store the attachment
+          dispatch({
+            type: "insert-attachment",
+            text: pathInfo.originalText,
+            attachmentType: "file",
+            fileName: pathInfo.fileName,
+          });
+
+          attachmentIds.push(attachmentId);
+
+          // Replace the original path with the placeholder
+          processedText = processedText.replace(pathInfo.originalText, placeholder);
+        });
+
+        // Insert the processed text with placeholders
         dispatch({
           type: "insert",
-          text,
+          text: processedText,
         });
 
         return;
       }
 
-      // Always create a new attachment for each paste
-      const attachmentId = state.attachmentCounter;
-      const placeholder = `[#${attachmentId} ${newlineCount} lines of text]`;
+      // Original text attachment logic - for large text blocks
+      if (shouldBeTextAttachment) {
+        // Always create a new attachment for each paste
+        const attachmentId = state.attachmentCounter;
+        const placeholder = `[#${attachmentId} ${newlineCount} lines of text]`;
 
-      dispatch({
-        type: "insert-attachment",
-        text,
-        lineCount: newlineCount,
-      });
+        dispatch({
+          type: "insert-attachment",
+          text,
+          lineCount: newlineCount,
+          attachmentType: "text",
+        });
 
-      // Insert placeholder with ID and line count
+        // Insert placeholder with ID and line count
+        dispatch({
+          type: "insert",
+          text: placeholder,
+        });
+
+        return;
+      }
+
+      // For small pastes or when attachments are disabled, just insert as-is
       dispatch({
         type: "insert",
-        text: placeholder,
+        text,
       });
     },
     [enableAttachments, state.attachmentCounter],
@@ -580,7 +639,17 @@ export const useTextInputState = ({
 
       // Check each attachment to see if its placeholder still exists
       state.attachments.forEach((attachmentData, id) => {
-        const placeholder = `[#${id} ${attachmentData.lineCount} lines of text]`;
+        let placeholder: string;
+        if (attachmentData.type === "file") {
+          const isDirectory = attachmentData.fileName && !hasFileExtension(attachmentData.content);
+          const separator = Deno.build.os === "windows" ? "\\" : "/";
+          placeholder = isDirectory
+            ? `[#${id} ${attachmentData.fileName}${separator}]`
+            : `[#${id} ${attachmentData.fileName}]`;
+        } else {
+          placeholder = `[#${id} ${attachmentData.lineCount} lines of text]`;
+        }
+
         if (newValue.includes(placeholder)) {
           remainingAttachmentIds.add(id);
         }

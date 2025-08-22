@@ -18,6 +18,7 @@ export interface OutputEntry {
   timestamp?: string;
   content?: string;
   currentlyStreaming?: boolean;
+  metadata?: Record<string, unknown>;
 }
 
 // Command context for handlers

@@ -555,7 +555,11 @@ Deno.test.ignore("Logger - console color coding disabled during testing", () => 
         const parsed = JSON.parse(capturedOutput);
         assertEquals(parsed.level, "error", "Should contain error level in JSON");
       } else {
-        assertEquals(capturedOutput.includes("ERROR"), true, "Should contain ERROR in pretty format");
+        assertEquals(
+          capturedOutput.includes("ERROR"),
+          true,
+          "Should contain ERROR in pretty format",
+        );
       }
     } finally {
       console.error = originalConsoleError;

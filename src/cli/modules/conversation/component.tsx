@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Box, useInput } from "ink";
 import { CommandInput } from "../../components/command-input.tsx";
-import { MessageBuffer } from "../../components/message-buffer.tsx";
+import { MessageBuffer } from "../messages/message-buffer.tsx";
 import { useAppContext } from "../../contexts/app-context.tsx";
 import { useResponsiveDimensions } from "../../utils/useResponsiveDimensions.ts";
 import { getAtlasClient } from "@atlas/client";
@@ -183,9 +183,9 @@ export function Component() {
     // Check command registry
     const commandDef = COMMAND_REGISTRY[parsed.command || ""];
     if (!commandDef) {
-      console.error(
-        `Unknown command: /${parsed.command}. Type /help for available commands.`,
-      );
+      // Instead of showing an error, send unknown slash commands to LLM
+      // This allows the LLM to potentially handle custom commands or provide help
+      handleLLMInput(input);
       return;
     }
   };

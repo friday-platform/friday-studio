@@ -148,7 +148,21 @@ export const CommandInput = ({
     // Find all placeholders and their corresponding attachments
     let expandedCommand = commandToSubmit;
     finalAttachments.forEach((attachmentData, id) => {
-      const placeholder = `[#${id} ${attachmentData.lineCount} lines of text]`;
+      let placeholder: string;
+
+      if (attachmentData.type === "file") {
+        // For file attachments, reconstruct the placeholder based on the file name
+        const hasExt = attachmentData.fileName && /\.[a-zA-Z0-9]+$/.test(attachmentData.fileName);
+        const isDirectory = !hasExt;
+        const separator = Deno.build.os === "windows" ? "\\" : "/";
+        placeholder = isDirectory
+          ? `[#${id} ${attachmentData.fileName}${separator}]`
+          : `[#${id} ${attachmentData.fileName}]`;
+      } else {
+        // For text attachments, use the original format
+        placeholder = `[#${id} ${attachmentData.lineCount} lines of text]`;
+      }
+
       if (expandedCommand.includes(placeholder)) {
         expandedCommand = expandedCommand.replace(
           placeholder,

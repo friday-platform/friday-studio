@@ -26,7 +26,10 @@ type MessageHistory = {
  * Based on existing conversation-agent.ts buildSystemPrompt logic
  */
 function getSystemPrompt(
-  history?: { messages: Array<{ role: string; content: string }>; historyContext: string },
+  history?: {
+    messages: Array<{ role: string; content: string }>;
+    historyContext: string;
+  },
   customPrompt?: string,
 ): string {
   let prompt = customPrompt || SYSTEM_PROMPT;
@@ -94,7 +97,9 @@ function shouldFilterThinkingContent(content: string): boolean {
  * @param sseEvent - Server-sent event containing tool execution data
  * @returns Metadata object for tool events, undefined for other event types
  */
-function extractSSEMetadata(sseEvent: SSEEvent): Record<string, unknown> | undefined {
+function extractSSEMetadata(
+  sseEvent: SSEEvent,
+): Record<string, unknown> | undefined {
   if (sseEvent.type === "tool_call") {
     return {
       toolName: sseEvent.data.toolName,
@@ -156,15 +161,24 @@ export const conversationAgent = createAgent({
     };
 
     try {
-      const result = await conversationStorageTool.execute?.({
-        operation: "retrieve",
-        streamId: session.streamId,
-      }, { messages: [], toolCallId: crypto.randomUUID() });
+      const result = await conversationStorageTool.execute?.(
+        {
+          operation: "retrieve",
+          streamId: session.streamId,
+        },
+        { messages: [], toolCallId: crypto.randomUUID() },
+      );
 
-      if (result?.success && result.operation === "retrieve" && result?.result.messageCount > 0) {
+      if (
+        result?.success &&
+        result.operation === "retrieve" &&
+        result?.result.messageCount > 0
+      ) {
         const messages = result.result.messages;
         const historyContext = messages
-          .map((m: { role: string; content: string }) => `${m.role}: ${m.content}`)
+          .map(
+            (m: { role: string; content: string }) => `${m.role}: ${m.content}`,
+          )
           .join("\n");
 
         history = { messages, historyContext };
@@ -178,7 +192,10 @@ export const conversationAgent = createAgent({
         streamId: session.streamId,
         operation: "store",
         message: { role: "user", content: prompt },
-        metadata: { userId: session.userId, timestamp: new Date().toISOString() },
+        metadata: {
+          userId: session.userId,
+          timestamp: new Date().toISOString(),
+        },
       },
       { toolCallId: crypto.randomUUID(), messages: [] },
     );
@@ -212,7 +229,12 @@ export const conversationAgent = createAgent({
 
     // I think this can be simpplified.
     const executionFlow = {
-      steps: [] as Array<{ type: string; tool?: string; args?: unknown; timestamp: string }>,
+      steps: [] as Array<{
+        type: string;
+        tool?: string;
+        args?: unknown;
+        timestamp: string;
+      }>,
       reasoning: [] as string[],
       responseBuffer: "",
       thinkingBuffer: "",
@@ -225,13 +247,20 @@ export const conversationAgent = createAgent({
       prevChunk = chunk;
 
       if (!sseEvent) {
-        logger.debug("Skipped null event from chunk", { chunkType: chunk.type });
+        logger.debug("Skipped null event from chunk", {
+          chunkType: chunk.type,
+        });
         continue;
       }
 
       // Filter thinking content before streaming and processing
-      if (sseEvent.type === "thinking" && shouldFilterThinkingContent(sseEvent.data.content)) {
-        logger.debug("Filtered thinking content containing system prompt information");
+      if (
+        sseEvent.type === "thinking" &&
+        shouldFilterThinkingContent(sseEvent.data.content)
+      ) {
+        logger.debug(
+          "Filtered thinking content containing system prompt information",
+        );
         continue; // Skip this event entirely
       }
 
@@ -284,7 +313,11 @@ export const conversationAgent = createAgent({
     );
 
     // Fallback: if no text chunks were streamed (e.g., only finish), emit final text once
-    if ((!executionFlow.responseBuffer || executionFlow.responseBuffer.length === 0) && finalText) {
+    if (
+      (!executionFlow.responseBuffer ||
+        executionFlow.responseBuffer.length === 0) &&
+      finalText
+    ) {
       await streamEvent.execute(
         {
           id: crypto.randomUUID(),

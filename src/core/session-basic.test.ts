@@ -98,7 +98,7 @@ Deno.test("WorkspaceSession - should create with single signal", async () => {
     }
 
     // Dispose of memory
-    const memory = (workspaceSession ).memory;
+    const memory = workspaceSession.memory;
     if (memory && typeof memory.dispose === "function") {
       await memory.dispose();
     }

@@ -169,7 +169,7 @@ Deno.test("CoALAMemoryManager - cognitive loop reflection", async () => {
 
   // Simulate time passing to make memories old enough for reflection
   // Access the internal memories to manipulate timestamp for testing
-  const memories = (memory).memories;
+  const memories = memory.memories;
   const memory1 = memories.get("reflect1");
   const memory2 = memories.get("reflect2");
 

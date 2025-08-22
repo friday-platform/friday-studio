@@ -12,29 +12,33 @@ import { ConversationContext, MemorySource, MemoryType } from "../src/mecmf-inte
 
 // Helper to track and close MessageChannels created by onnxruntime-web during tests
 async function runWithMessageChannelCleanup<T>(fn: () => Promise<T>): Promise<T> {
-  const OriginalMessageChannel = (globalThis ).MessageChannel as typeof MessageChannel | undefined;
+  const OriginalMessageChannel = globalThis.MessageChannel as typeof MessageChannel | undefined;
   if (!OriginalMessageChannel) {
     return await fn();
   }
 
   const created: MessageChannel[] = [];
   // Patch global MessageChannel to track instances
-  (globalThis ).MessageChannel = function PatchedMessageChannel(this: unknown): MessageChannel {
-    const mc = new (OriginalMessageChannel )();
+  globalThis.MessageChannel = function PatchedMessageChannel(this: unknown): MessageChannel {
+    const mc = new OriginalMessageChannel();
     created.push(mc);
     return mc as unknown as MessageChannel;
-  } ;
+  };
 
   try {
     return await fn();
   } finally {
     // Close any remaining ports to satisfy Deno leak detection
     for (const mc of created) {
-      try { mc.port1.close(); } catch (_) { /* noop */ }
-      try { mc.port2.close(); } catch (_) { /* noop */ }
+      try {
+        mc.port1.close();
+      } catch (_) { /* noop */ }
+      try {
+        mc.port2.close();
+      } catch (_) { /* noop */ }
     }
     // Restore original constructor
-    (globalThis ).MessageChannel = OriginalMessageChannel;
+    globalThis.MessageChannel = OriginalMessageChannel;
   }
 }
 
@@ -116,114 +120,114 @@ Deno.test("CoALA Memory - Default Source Assignment", async () => {
 Deno.test({
   name: "MECMF Memory - Source-Aware Classification and Storage",
   fn: async () => {
-  await runWithMessageChannelCleanup(async () => {
-  const scope = createTestScope("mecmf-test");
-  const config = { workspaceId: "mecmf-test" };
-  const mecmfManager = new MECMFMemoryManager(scope, config);
+    await runWithMessageChannelCleanup(async () => {
+      const scope = createTestScope("mecmf-test");
+      const config = { workspaceId: "mecmf-test" };
+      const mecmfManager = new MECMFMemoryManager(scope, config);
 
-  await mecmfManager.initialize();
+      await mecmfManager.initialize();
 
-  const context = createConversationContext("test-session", "mecmf-test");
-  const sourceMetadata = { agentId: "test-agent", sessionId: "test-session" };
+      const context = createConversationContext("test-session", "mecmf-test");
+      const sourceMetadata = { agentId: "test-agent", sessionId: "test-session" };
 
-  // Test different sources
-  const testCases = [
-    {
-      content: "User provided their email: user@example.com",
-      source: MemorySource.USER_INPUT,
-      expectedPII: true,
-    },
-    {
-      content: "Agent found email: scraped@web.com",
-      source: MemorySource.AGENT_OUTPUT,
-      expectedPII: false,
-    },
-    {
-      content: "Tool extracted: contact@website.com",
-      source: MemorySource.TOOL_OUTPUT,
-      expectedPII: false,
-    },
-  ];
+      // Test different sources
+      const testCases = [
+        {
+          content: "User provided their email: user@example.com",
+          source: MemorySource.USER_INPUT,
+          expectedPII: true,
+        },
+        {
+          content: "Agent found email: scraped@web.com",
+          source: MemorySource.AGENT_OUTPUT,
+          expectedPII: false,
+        },
+        {
+          content: "Tool extracted: contact@website.com",
+          source: MemorySource.TOOL_OUTPUT,
+          expectedPII: false,
+        },
+      ];
 
-  const storedIds = [];
+      const storedIds = [];
 
-  for (const testCase of testCases) {
-    const memoryId = await mecmfManager.classifyAndStore(
-      testCase.content,
-      context,
-      testCase.source,
-      sourceMetadata,
-    );
+      for (const testCase of testCases) {
+        const memoryId = await mecmfManager.classifyAndStore(
+          testCase.content,
+          context,
+          testCase.source,
+          sourceMetadata,
+        );
 
-    storedIds.push(memoryId);
+        storedIds.push(memoryId);
 
-    // Verify memory was stored
-    const retrievedMemory = await mecmfManager.retrieveMemory(memoryId);
-    assertExists(retrievedMemory);
-    assertEquals(retrievedMemory.source, testCase.source);
-    assertEquals(retrievedMemory.sourceMetadata, sourceMetadata);
-  }
+        // Verify memory was stored
+        const retrievedMemory = await mecmfManager.retrieveMemory(memoryId);
+        assertExists(retrievedMemory);
+        assertEquals(retrievedMemory.source, testCase.source);
+        assertEquals(retrievedMemory.sourceMetadata, sourceMetadata);
+      }
 
-  // Clean up stored memories
-  for (const id of storedIds) {
-    await mecmfManager.deleteMemory(id);
-  }
+      // Clean up stored memories
+      for (const id of storedIds) {
+        await mecmfManager.deleteMemory(id);
+      }
 
-  await mecmfManager.dispose();
-  });
-  }
+      await mecmfManager.dispose();
+    });
+  },
 });
 
 Deno.test({
   name: "MECMF Memory - Source Statistics and Filtering",
   fn: async () => {
-  await runWithMessageChannelCleanup(async () => {
-  const scope = createTestScope("mecmf-stats");
-  const config = { workspaceId: "mecmf-stats" };
-  const mecmfManager = new MECMFMemoryManager(scope, config);
+    await runWithMessageChannelCleanup(async () => {
+      const scope = createTestScope("mecmf-stats");
+      const config = { workspaceId: "mecmf-stats" };
+      const mecmfManager = new MECMFMemoryManager(scope, config);
 
-  await mecmfManager.initialize();
+      await mecmfManager.initialize();
 
-  const context = createConversationContext("test-session", "mecmf-stats");
+      const context = createConversationContext("test-session", "mecmf-stats");
 
-  // Store memories from different sources
-  const sources = [
-    MemorySource.USER_INPUT,
-    MemorySource.AGENT_OUTPUT,
-    MemorySource.TOOL_OUTPUT,
-    MemorySource.SYSTEM_GENERATED,
-  ];
+      // Store memories from different sources
+      const sources = [
+        MemorySource.USER_INPUT,
+        MemorySource.AGENT_OUTPUT,
+        MemorySource.TOOL_OUTPUT,
+        MemorySource.SYSTEM_GENERATED,
+      ];
 
-  const storedIds = [];
+      const storedIds = [];
 
-  for (let i = 0; i < sources.length; i++) {
-    const memoryId = await mecmfManager.classifyAndStore(
-      `Test content ${i}`,
-      context,
-      sources[i],
-      { sessionId: "test-session" },
-    );
-    storedIds.push(memoryId);
-  }
+      for (let i = 0; i < sources.length; i++) {
+        const memoryId = await mecmfManager.classifyAndStore(
+          `Test content ${i}`,
+          context,
+          sources[i],
+          { sessionId: "test-session" },
+        );
+        storedIds.push(memoryId);
+      }
 
-  // Verify different sources were used
-  const memories = await Promise.all(
-    storedIds.map((id) => mecmfManager.retrieveMemory(id)),
-  );
+      // Verify different sources were used
+      const memories = await Promise.all(
+        storedIds.map((id) => mecmfManager.retrieveMemory(id)),
+      );
 
-  const uniqueSources = new Set(
-    memories.filter((m) => m !== null).map((m) => m!.source),
-  );
-  assertEquals(uniqueSources.size, sources.length);
+      const uniqueSources = new Set(
+        memories.filter((m) => m !== null).map((m) => m!.source),
+      );
+      assertEquals(uniqueSources.size, sources.length);
 
-  // Clean up
-  for (const id of storedIds) {
-    await mecmfManager.deleteMemory(id);
-  }
+      // Clean up
+      for (const id of storedIds) {
+        await mecmfManager.deleteMemory(id);
+      }
 
-  await mecmfManager.dispose();
-  });
-  }
+      await mecmfManager.dispose();
+    });
+  },
 });
 
 Deno.test("Memory Source Migration - Basic Functionality", async () => {
@@ -371,50 +375,50 @@ Deno.test("Source Tracking with Memory Consolidation", async () => {
 Deno.test({
   name: "Source-Based Memory Retrieval and Filtering",
   fn: async () => {
-  await runWithMessageChannelCleanup(async () => {
-  const scope = createTestScope("filtering-test");
-  const config = { workspaceId: "filtering-test" };
-  const mecmfManager = new MECMFMemoryManager(scope, config);
+    await runWithMessageChannelCleanup(async () => {
+      const scope = createTestScope("filtering-test");
+      const config = { workspaceId: "filtering-test" };
+      const mecmfManager = new MECMFMemoryManager(scope, config);
 
-  await mecmfManager.initialize();
+      await mecmfManager.initialize();
 
-  const context = createConversationContext("test-session", "filtering-test");
+      const context = createConversationContext("test-session", "filtering-test");
 
-  // Store memories from different sources
-  const testMemories = [
-    { content: "User input memory", source: MemorySource.USER_INPUT },
-    { content: "Agent output memory", source: MemorySource.AGENT_OUTPUT },
-    { content: "Tool output memory", source: MemorySource.TOOL_OUTPUT },
-    { content: "System generated memory", source: MemorySource.SYSTEM_GENERATED },
-  ];
+      // Store memories from different sources
+      const testMemories = [
+        { content: "User input memory", source: MemorySource.USER_INPUT },
+        { content: "Agent output memory", source: MemorySource.AGENT_OUTPUT },
+        { content: "Tool output memory", source: MemorySource.TOOL_OUTPUT },
+        { content: "System generated memory", source: MemorySource.SYSTEM_GENERATED },
+      ];
 
-  const storedIds = [];
-  for (const mem of testMemories) {
-    const id = await mecmfManager.classifyAndStore(
-      mem.content,
-      context,
-      mem.source,
-      { sessionId: "test-session" },
-    );
-    storedIds.push({ id, source: mem.source });
-  }
+      const storedIds = [];
+      for (const mem of testMemories) {
+        const id = await mecmfManager.classifyAndStore(
+          mem.content,
+          context,
+          mem.source,
+          { sessionId: "test-session" },
+        );
+        storedIds.push({ id, source: mem.source });
+      }
 
-  // Test retrieval and verify sources preserved
-  for (const { id, source } of storedIds) {
-    const retrieved = await mecmfManager.retrieveMemory(id);
-    assertExists(retrieved);
-    assertEquals(retrieved.source, source);
-    assertEquals(retrieved.sourceMetadata?.sessionId, "test-session");
-  }
+      // Test retrieval and verify sources preserved
+      for (const { id, source } of storedIds) {
+        const retrieved = await mecmfManager.retrieveMemory(id);
+        assertExists(retrieved);
+        assertEquals(retrieved.source, source);
+        assertEquals(retrieved.sourceMetadata?.sessionId, "test-session");
+      }
 
-  // Clean up
-  for (const { id } of storedIds) {
-    await mecmfManager.deleteMemory(id);
-  }
+      // Clean up
+      for (const { id } of storedIds) {
+        await mecmfManager.deleteMemory(id);
+      }
 
-  await mecmfManager.dispose();
-  });
-  }
+      await mecmfManager.dispose();
+    });
+  },
 });
 
 Deno.test("Backward Compatibility - Legacy Memory Access", async () => {

@@ -19,11 +19,7 @@
     "jsx": "react-jsx",
     "jsxImportSource": "react"
   },
-  "exclude": [
-    "**/*.test.ts",
-    "!integration-tests/**/*.test.ts",
-    "apps/web-client/.svelte-kit"
-  ],
+  "exclude": ["!integration-tests/**/*.test.ts", "apps/web-client/.svelte-kit"],
   "unstable": [
     "broadcast-channel",
     "worker-options",

@@ -86,8 +86,8 @@ const originalSetInterval = globalThis.setInterval;
 const originalClearInterval = globalThis.clearInterval;
 
 // Mock timers to prevent actual intervals
-globalThis.setInterval = (() => 123);
-globalThis.clearInterval = (() => {});
+globalThis.setInterval = () => 123;
+globalThis.clearInterval = () => {};
 
 // Mock console methods that don't work in this environment
 const originalConsoleWarn = console.warn;

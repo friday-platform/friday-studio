@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { Box, Static } from "ink";
-import { useAppContext } from "../contexts/app-context.tsx";
-import { ChatMessage } from "./chat-message.tsx";
-import { OutputEntry } from "../modules/conversation/types.ts";
-import { Header } from "./header.tsx";
-import { MessageHeader } from "./message-header.tsx";
-import { Spinner } from "@inkjs/ui";
-import { DAEMON_STATUS } from "../constants/daemon-status.ts";
+import { useAppContext } from "../../contexts/app-context.tsx";
+import { ChatMessage } from "../../components/chat-message.tsx";
+import { OutputEntry } from "../conversation/types.ts";
+import { Header } from "../../components/header.tsx";
+import { MessageHeader } from "../../components/message-header.tsx";
+import { ThinkingSpinner } from "../../components/thinking-spinner.tsx";
+import { DAEMON_STATUS } from "../../constants/daemon-status.ts";
 import { type SSEEvent, SSEEventSchema } from "@atlas/config";
+import { formatMessage, getGroupedMessages } from "./utils.ts";
+import { ToolCall } from "./components/tool-call.tsx";
 
 interface TypingState {
   isTyping: boolean;
@@ -140,42 +142,6 @@ export const MessageBuffer = () => {
     };
   }, [sseStream, sseAbortControllerRef]);
 
-  function formatMessage(messages: SSEEvent[]): OutputEntry | undefined {
-    const currentUser = Deno.env.get("USER") || Deno.env.get("USERNAME") || "You";
-
-    const firstMessage = messages[0];
-
-    if (!firstMessage) {
-      return;
-    }
-
-    const normalizedType = firstMessage.type;
-    return {
-      id: firstMessage.id,
-      type: normalizedType as OutputEntry["type"],
-      timestamp: firstMessage.timestamp,
-      author: normalizedType === "text" ? "Atlas" : currentUser,
-      content: messages.map((message) => message.data.content).join(""),
-    };
-  }
-
-  function getGroupedMessages(messageValues: SSEEvent[]) {
-    // Group messages by ID
-    return messageValues.reduce(
-      (groups, message) => {
-        const id = message.id;
-        if (!groups[id]) {
-          groups[id] = [];
-        }
-
-        groups[id].push(message);
-
-        return groups;
-      },
-      {} as Record<string, SSEEvent[]>,
-    );
-  }
-
   useEffect(() => {
     let interval: ReturnType<typeof setInterval> | null = null;
 
@@ -272,7 +238,7 @@ export const MessageBuffer = () => {
                 />
 
                 <ChatMessage
-                  message={entry.content}
+                  message={entry.content?.replace("## Current Request\n", "")}
                   author={entry.author}
                   authorColor="green"
                   date={entry.timestamp}
@@ -338,13 +304,7 @@ export const MessageBuffer = () => {
                 flexDirection="column"
               >
                 <Box height={1} />
-                <ChatMessage
-                  message={entry.content}
-                  dimColor
-                  showCollapsible
-                  hideHeader
-                  fixedHeight
-                />
+                <ToolCall metadata={entry.metadata} />
               </Box>
             );
           }
@@ -379,7 +339,7 @@ export const MessageBuffer = () => {
 
       {typingState.isTyping && (
         <Box paddingX={1} paddingTop={1} flexShrink={0}>
-          <Spinner label={`Thinking... (${typingState.elapsedSeconds}s)`} />
+          <ThinkingSpinner elapsedSeconds={typingState.elapsedSeconds} />
         </Box>
       )}
     </Box>
