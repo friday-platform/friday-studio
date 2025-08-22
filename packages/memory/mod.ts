@@ -92,10 +92,11 @@ export type {
   MemoryClassifier,
   MemoryEntry,
   MemoryStatistics,
-  MemoryType,
   RetrievalOptions,
   TokenBudgetManager,
 } from "./src/mecmf-interfaces.ts";
+// Export enum as a VALUE, not type-only, so it can be used at runtime
+export { MemoryType } from "./src/mecmf-interfaces.ts";
 
 export type { MECMFConfig } from "./src/mecmf-memory-manager.ts";
 

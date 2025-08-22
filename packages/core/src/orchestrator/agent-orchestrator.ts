@@ -27,7 +27,13 @@ import { createAgentContextBuilder } from "../agent-context/index.ts";
 import { GlobalMCPServerPool } from "../mcp-server-pool.ts";
 import type { AgentToolParams } from "../agent-server/types.ts";
 import { CoALAMemoryManager, CoALAMemoryType, IMemoryScope } from "@atlas/memory";
+import {
+  isTransientError,
+  withExponentialBackoff,
+} from "../../../../src/utils/exponential-backoff.ts";
+import type { ToolResult } from "@atlas/agent-sdk";
 import { WrappedAgentResult } from "../agent-conversion/from-llm.ts";
+import { ToolCall } from "../../../../src/core/services/hallucination-detector.ts";
 
 // FIXME: this is wrong.
 const MCPToolResultSchema = z.object({
@@ -79,13 +85,13 @@ export interface AgentOrchestratorConfig {
   agentsServerUrl: string;
   /** Headers to include in MCP requests */
   headers?: Record<string, string>;
-  /** Timeout for agent execution in ms */
-  executionTimeout?: number;
-  /** Max time to wait for approval in ms */
-  approvalTimeout?: number;
-  /** Global MCP server pool for workspace tools */
+  /** Timeout for MCP requests in milliseconds */
+  requestTimeoutMs?: number;
+  /** Approval timeout in milliseconds */
+  approvalTimeout: number;
+  /** Optional pre-provisioned MCP client pool */
   mcpServerPool?: GlobalMCPServerPool;
-  /** Daemon URL for fetching workspace config */
+  /** Optional daemon URL for MCP agents */
   daemonUrl?: string;
 }
 
@@ -189,7 +195,7 @@ export class AgentOrchestrator implements IAgentOrchestrator {
     this.config = {
       agentsServerUrl: config.agentsServerUrl,
       headers: config.headers || {},
-      executionTimeout: config.executionTimeout || 300000, // 5 minutes
+      requestTimeoutMs: config.requestTimeoutMs || 300000,
       approvalTimeout: config.approvalTimeout || 300000, // 5 minutes
       // Store new config fields
       mcpServerPool: config.mcpServerPool,
@@ -486,6 +492,21 @@ export class AgentOrchestrator implements IAgentOrchestrator {
         ? executionResult.result
         : executionResult;
 
+      // Pass through tool metadata from the completed result payload
+      let mappedCalls: ToolCall[] | undefined;
+      let mappedResults: ToolResult[] | undefined;
+      if (
+        typeof output === "object" && output !== null && "toolCalls" in output &&
+        "toolResults" in output
+      ) {
+        // @FIXME: tool calls should be parsed.
+        // `agents-should-produce-structured-output`
+        mappedCalls = output.toolCalls;
+        // @FIXME: tool results should be parsed.
+        // `agents-should-produce-structured-output`
+        mappedResults = output.toolResults;
+      }
+
       this.logger.info(`Agent ${agentId} execution completed with result:`, {
         executionResultType: executionResult.type,
         output: JSON.stringify(output),
@@ -502,8 +523,8 @@ export class AgentOrchestrator implements IAgentOrchestrator {
         output,
         duration: Date.now() - startTime,
         timestamp: new Date().toISOString(),
-        toolCalls: undefined,
-        toolResults: undefined,
+        toolCalls: mappedCalls && mappedCalls.length > 0 ? mappedCalls : undefined,
+        toolResults: mappedResults && mappedResults.length > 0 ? mappedResults : undefined,
       };
     } catch (error) {
       if (error instanceof AwaitingSupervisorDecision) {
@@ -603,6 +624,17 @@ export class AgentOrchestrator implements IAgentOrchestrator {
         ? executionResult.result
         : executionResult;
 
+      let mappedCalls: ToolCall[] | undefined;
+      let mappedResults: ToolResult[] | undefined;
+      if (typeof output === "object" && output !== null) {
+        const rec = output as {
+          toolCalls?: typeof mappedCalls;
+          toolResults?: typeof mappedResults;
+        };
+        mappedCalls = rec.toolCalls;
+        mappedResults = rec.toolResults;
+      }
+
       return {
         agentId: pending.agentId,
         task: "Resume with approval",
@@ -610,6 +642,8 @@ export class AgentOrchestrator implements IAgentOrchestrator {
         output,
         duration: Date.now() - startTime,
         timestamp: new Date().toISOString(),
+        toolCalls: mappedCalls && mappedCalls.length > 0 ? mappedCalls : undefined,
+        toolResults: mappedResults && mappedResults.length > 0 ? mappedResults : undefined,
       };
     } catch (error) {
       if (error instanceof AwaitingSupervisorDecision) {
@@ -736,10 +770,6 @@ export class AgentOrchestrator implements IAgentOrchestrator {
           env: {},
         };
       }
-
-      const { withExponentialBackoff, isTransientError } = await import(
-        "../../../../src/utils/exponential-backoff.ts"
-      );
 
       const result = await withExponentialBackoff(
         () => agent.execute(finalPrompt, agentContext),

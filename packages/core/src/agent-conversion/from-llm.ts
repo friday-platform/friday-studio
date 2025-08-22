@@ -9,7 +9,7 @@
 import { generateText, stepCountIs } from "ai";
 import { APICallError } from "@ai-sdk/provider";
 import { createAgent } from "@atlas/agent-sdk";
-import type { AgentContext, AtlasAgent, ToolResult } from "@atlas/agent-sdk";
+import type { AgentContext, AtlasAgent, ToolCall, ToolResult } from "@atlas/agent-sdk";
 import type { LLMAgentConfig } from "@atlas/config";
 import { registry, validateProviderConfig } from "../llm-provider-registry/index.ts";
 import type { Logger } from "@atlas/logger";
@@ -18,91 +18,12 @@ import { ensureSourceAttributionProtocol } from "../prompts/source-attribution.t
 export type WrappedAgentResult = {
   response: string;
   reasoning?: string;
-  toolCalls?: string[];
+  toolCalls?: ToolCall[];
   toolResults?: ToolResult[];
 };
 export type WrappedAgent = AtlasAgent<WrappedAgentResult>;
 
-/**
- * Extract tool calls and results from generateText response.
- * Falls back to manual extraction from steps when direct access returns empty arrays.
- */
-interface GenerateTextLikeResultStepContent {
-  type: string;
-  toolName?: string;
-  isError?: boolean;
-  input?: unknown;
-}
-
-interface GenerateTextLikeResultStep {
-  content?: GenerateTextLikeResultStepContent[];
-}
-
-interface GenerateTextLikeResult {
-  toolCalls?: Array<{ toolName?: string; name?: string }>;
-  toolResults?: Array<
-    {
-      toolName?: string;
-      name?: string;
-      isError?: boolean;
-      error?: unknown;
-      input?: unknown;
-      args?: unknown;
-    }
-  >;
-  steps?: GenerateTextLikeResultStep[];
-}
-
-function extractToolData(
-  res: GenerateTextLikeResult,
-): { toolCalls: string[]; toolResults: ToolResult[] } {
-  let toolCalls: string[] = [];
-  let toolResults: ToolResult[] = [];
-
-  // Try direct access first and transform to required format
-  if (res.toolCalls && Array.isArray(res.toolCalls) && res.toolCalls.length > 0) {
-    toolCalls = res.toolCalls.map((call) => call.toolName || call.name || "").filter(Boolean);
-  }
-  if (res.toolResults && Array.isArray(res.toolResults) && res.toolResults.length > 0) {
-    toolResults = res.toolResults.map((result) => ({
-      toolName: result.toolName || result.name || "",
-      isError: Boolean(result.isError || result.error),
-      input: result.input ?? result.args ?? {},
-    })).filter((result: ToolResult) => result.toolName);
-  }
-
-  // If no direct data available, extract from steps
-  if (toolCalls.length === 0 && res.steps) {
-    const toolCallsFromSteps: string[] = [];
-    const toolResultsFromSteps: ToolResult[] = [];
-
-    for (const step of res.steps) {
-      if (step.content && Array.isArray(step.content)) {
-        for (const contentItem of step.content) {
-          if (contentItem.type === "tool-call" && contentItem.toolName) {
-            toolCallsFromSteps.push(contentItem.toolName);
-          }
-          if (contentItem.type === "tool-result" && contentItem.toolName) {
-            toolResultsFromSteps.push({
-              toolName: contentItem.toolName,
-              isError: Boolean(contentItem.isError),
-              input: contentItem.input || {},
-            });
-          }
-        }
-      }
-    }
-
-    if (toolCallsFromSteps.length > 0) {
-      toolCalls = toolCallsFromSteps;
-    }
-    if (toolResultsFromSteps.length > 0) {
-      toolResults = toolResultsFromSteps;
-    }
-  }
-
-  return { toolCalls, toolResults };
-}
+// use shared helper from SDK to extract canonical tool metadata
 
 /**
  * Convert workspace LLM config to AtlasAgent.
@@ -150,8 +71,9 @@ export function convertLLMToAgent(
           ...(config.config.provider_options || {}),
         });
 
-        // Extract tool calls and results using the helper function
-        const { toolCalls, toolResults } = extractToolData(res);
+        // Pass through tool metadata directly (AI SDK types)
+        const toolCalls = Array.isArray(res.toolCalls) ? res.toolCalls : [];
+        const toolResults: ToolResult[] = Array.isArray(res.toolResults) ? res.toolResults : [];
 
         return {
           reasoning: res.reasoningText,

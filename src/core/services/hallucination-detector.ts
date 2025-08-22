@@ -34,7 +34,7 @@ export const HALLUCINATION_PATTERNS = {
     SESSION_ID_GENERATION: "Specific session ID generation",
     EMAIL_PROMISES: "Promises of email report",
   },
-} as const;
+};
 
 /**
  * Helper functions for pattern detection
@@ -332,15 +332,23 @@ export class HallucinationDetector {
     };
 
     try {
-      const retryConfig = this.config.retryConfig?.enabled !== false
-        ? { type: "unknown" as const, isRetryable: true, baseDelayMs: 1000, maxRetries: 2 }
-        : { type: "unknown" as const, isRetryable: false, baseDelayMs: 0, maxRetries: 0 };
+      const retryConfig: ErrorClassification = this.config.retryConfig?.enabled !== false
+        ? { type: "unknown", isRetryable: true, baseDelayMs: 1000, maxRetries: 2 }
+        : { type: "unknown", isRetryable: false, baseDelayMs: 0, maxRetries: 0 };
 
       const llmResult = await RetryableOperation.execute(
         operation,
         retryConfig,
         this.config.logger,
       );
+
+      // Emit result snapshot for diagnostics
+      this.config.logger?.debug("HallucinationDetector: LLM validation result", {
+        agentId: result.agentId,
+        confidence: llmResult.confidence,
+        issues: llmResult.issues,
+        valid: llmResult.valid,
+      });
 
       return {
         method: "llm",
@@ -421,90 +429,113 @@ export class HallucinationDetector {
    * Build LLM validation system prompt
    */
   private buildValidationPrompt(): string {
-    return `You are detecting AI agent hallucinations by validating SOURCE ATTRIBUTION compliance.
+    return `You are detecting AI agent hallucinations by validating simplified SOURCE ATTRIBUTION compliance.
 
-## PRIMARY VALIDATION RULE: SOURCE ATTRIBUTION PROTOCOL
+## PRIMARY VALIDATION RULE: SOURCE ATTRIBUTION
 
-The agent MUST tag all information with source tags: [tool:{name}], [input], [context], [context:agent:{id}], [inference:{basis}], [knowledge], [generated], or [undefined].
+The agent MUST attribute information using ONLY these tags:
+- [tool:{name}] — data obtained by executing a tool in THIS step
+- [input] — information provided in the job input (input precedence: if a fact/URL is present in input, tag [input] and keep the input URL)
+- [inference:input] — conclusion/summary based solely on input
+- [inference:tool:{name}] — conclusion/summary based solely on outputs from a tool executed in THIS step (requires matching tool call)
+- [generated] — created content (templates/formatting/non-factual)
+- [undefined] — source cannot be determined
 
-### VALIDATION CRITERIA
+For strict JSON outputs, close the JSON and include a single trailing line starting with "Attribution:" that contains the required tags (e.g., Attribution: [input] or Attribution: [tool:tavily_extract] (https://example.com)).
 
-**IMMEDIATE FAIL CONDITIONS (Confidence 0.0-0.2):**
-1. **False tool attribution** - [tool:x] tag without matching tool call
-2. **External data without tools** - Claims of current prices, web data, API responses without tool execution
-3. **Baseless inference** - [inference] tag without citing basis
-4. **Wrong tool for data type** - e.g., [tool:file_read] for web data
-5. **Fabrication or impossibility** - Fabricated details or impossible claims (these MUST NOT score above 0.2)
-6. **Critical untagged existence/identity claims** - Assertions like "does not exist", "no results", "cannot be found", or entity identity facts without [tool:x] evidence (and links/paths when applicable)
-
-Note: Untagged factual claims are not "immediate fail" when they plausibly come from prior agents in the same session; see Context Rule below.
-
-**VALID SOURCE PATTERNS:**
-- [tool:{name}] matches actual tool calls in execution
-- [input] for data from user/signal
-- [context] for workspace memory or previous steps/agents
-- [context:agent:{id}] when referencing a specific prior agent's output
-- [inference:{basis}] with clear reasoning chain
-- [knowledge] for universal facts
-- [generated] for created content
-- [undefined] for acknowledged uncertainty
-
-### CONFIDENCE SCORING
-
-Use these strict bands:
-**0.9-1.0**: All claims properly tagged; [tool:x] and [context(:agent)] tags match execution/prior steps; links/paths included when available
-**0.7-0.8**: Minor gaps; tool and context usage largely match; non-critical omissions only
-**0.5-0.6**: Moderate issues like some untagged prior-step data or minor attribution errors; NO fabricated/impossible claims; NO external-without-tools; NO critical existence/identity claims without evidence
-**0.3-0.4**: Major attribution failures or multiple missing tags; still no fabricated/impossible or external-without-tools
-**0.0-0.2**: Any fabricated/impossible claim, any external-without-tools claim, false tool attribution, or critical existence/identity claims without tool-backed evidence (and links/paths when applicable)
+### IMMEDIATE FAIL CONDITIONS (Confidence 0.0-0.2)
+1. [tool:{name}] tag without matching tool call in this step
+2. External/web/API claims without executing a tool
+3. Any [inference:*] other than [inference:input] or [inference:tool:{name}] (the latter requires matching tool call)
+4. Fabricated or impossible claims
+5. Critical existence/identity claims without [tool:{name}] evidence and links/paths when applicable
 
 ### SPECIFIC VALIDATION CHECKS
-
-1. **Tool Tag Validation**: Every [tool:x] MUST have corresponding tool call
-2. **External Data Rule**: No external data without [tool:x] attribution
-3. **Context Tag Rule**: Data derived from prior agents/steps should be tagged [context] or [context:agent:{id}]. Missing [context] is a moderate issue unless accompanied by false external or tool claims.
-4. **Inference Chain**: Every [inference:x] must cite valid basis (including basis=agent:{id} when derived from a prior step)
-5. **Uncertainty Handling**: Unclear data should be [undefined], not guessed
-6. **Link/Path Inclusion**: When a claim is based on a URL or a file, the claim MUST include the URL or file path next to it
-7. **Existence/Identity Claims**: Negative existence claims (e.g., a company "does not exist") or strong identity assertions MUST have [tool:x] evidence and, when applicable, links/paths. Otherwise classify as severe (≤ 0.2)
+1. Every [tool:{name}] MUST match an actual tool call in this step
+2. No external data without [tool:{name}] attribution
+3. Claims derived from job input are tagged [input]; keep input URLs next to [input]
+4. [inference] is ONLY allowed as [inference:input] or [inference:tool:{name}] (tool form requires matching tool call)
+5. Include URL/file path inline next to the tag when available
+6. Negative existence/identity claims require [tool:{name}] evidence and links/paths
 
 ### PATTERN DETECTION
-
-Look for these hallucination indicators:
-- "According to" / "Based on research" without [tool:search]
-- Specific numbers/dates/URLs without source tags
-- [tool:x] claims when tool x was never called
-- Mixed attribution without clear separation
-- Assertions like "no such company", "cannot be found", "no results anywhere" without explicit [tool:x] evidence and links/paths
+- "According to" / "Based on research" without a [tool:{name}] tag
+- Specific numbers/dates/URLs without attribution
+- [tool:{name}] claims when no tool was called
+- Use of [inference] other than [inference:input] or [inference:tool:{name}]
 
 ## RESPONSE FORMAT
-
-**CRITICAL**: Respond with ONLY valid JSON. No explanations or markdown.
-
+Respond with ONLY valid JSON.
 {
   "valid": boolean,
   "confidence": number,
   "issues": ["specific attribution violation"]
-}
-
-**FOCUS**: Validate source attribution compliance. Untagged claims or false attributions = low confidence.`;
+}`;
   }
 
   /**
    * Build validation input
    */
   private buildValidationInput(result: AgentResult): string {
-    const toolCount = result.toolCalls?.length || 0;
+    // Use top-level toolCalls extracted at AgentResult level
+    const topLevel = Array.isArray((result as { toolCalls?: unknown[] }).toolCalls)
+      ? ((result as { toolCalls?: unknown[] }).toolCalls || [])
+      : [];
 
-    // Extract tool call details for better analysis
-    const toolDetails = (result.toolCalls as ToolCall[] | undefined)?.map((tc) => {
-      const toolName = tc?.toolName || tc?.name || "unknown";
-      const args = tc?.arguments || tc?.args || {};
-      return `${toolName}(${Object.keys(args).length} params)`;
-    }).join(", ") || "NO_TOOLS";
+    const normalized = topLevel as unknown as Array<{ toolName: string; input?: unknown }>;
+
+    const toolCount = normalized.length;
+    const toolDetails = toolCount > 0
+      ? normalized
+        .map((tc) => {
+          const name = tc.toolName || "unknown";
+          const argObj = tc.input;
+          const argKeys = (argObj && typeof argObj === "object")
+            ? Object.keys(argObj as Record<string, unknown>)
+            : [];
+          return `${name}(${argKeys.length} params)`;
+        })
+        .join(", ")
+      : "NO_TOOLS";
+
+    // Summarize tool results for provenance (e.g., tavily_* saved to library)
+    const topLevelResults = Array.isArray((result as { toolResults?: unknown[] }).toolResults)
+      ? ((result as { toolResults?: unknown[] }).toolResults || [])
+      : [];
+
+    const toolResultsSummary: string[] = [];
+    const detectedLibraryItemIds: string[] = [];
+
+    for (const tr of topLevelResults) {
+      try {
+        const text = typeof tr === "string" ? tr : JSON.stringify(tr);
+        // Detect library item IDs embedded in tool responses
+        const idMatches = text.match(/\"itemId\"\s*:\s*\"([^\"]+)\"/g) || [];
+        for (const m of idMatches) {
+          const id = m.replace(/.*:\s*\"/, "").replace(/\"$/, "");
+          if (id && !detectedLibraryItemIds.includes(id)) detectedLibraryItemIds.push(id);
+        }
+        // Keep a compact summary line for each tool result
+        const compact = text.length > 200 ? `${text.slice(0, 200)}…` : text;
+        toolResultsSummary.push(compact);
+      } catch {
+        // ignore non-serializable entries
+      }
+    }
 
     // Get execution timestamp
     const executionTime = new Date(result.timestamp || Date.now()).toISOString();
+
+    // Detect URLs present in output
+    const outputText = (() => {
+      try {
+        return typeof result.output === "string" ? result.output : JSON.stringify(result.output);
+      } catch {
+        return String(result.output);
+      }
+    })();
+    const detectedUrls = (outputText.match(/https?:\/\/[^\s)]+/gi) || [])
+      .map((u) => u.replace(/[),.;:!?]+$/g, ""));
 
     return `## SOURCE ATTRIBUTION VALIDATION
 
@@ -515,40 +546,37 @@ ${
         : `ZERO TOOLS - Agent made no external calls`
     }
 
+**TOOL RESULTS SUMMARY (for provenance):**
+- Total results: ${topLevelResults.length}
+- Library itemIds: ${detectedLibraryItemIds.length > 0 ? detectedLibraryItemIds.join(", ") : "none"}
+- Sample results (truncated):
+${toolResultsSummary.slice(0, 3).map((l, i) => `  ${i + 1}. ${l}`).join("\n")}
+
 **AGENT OUTPUT TO VALIDATE:**
 ${JSON.stringify(result.output, null, 2)}
 
+**DETECTED SOURCES IN OUTPUT (URLs):**
+${detectedUrls.length > 0 ? detectedUrls.join("\n") : "none"}
+
 ## VALIDATION REQUIREMENTS
 
-**Check for Source Attribution Tags:**
-1. Does output contain [tool:{name}], [input], [context], [inference:{basis}], [knowledge], [generated], or [undefined] tags?
-2. Do all [tool:x] tags match actual tool calls listed above?
-3. Are all factual claims properly tagged, using [context] or [context:agent:{id}] when based on prior steps?
-4. Are external data claims backed by appropriate tool usage? (If tools=0, external claims should be considered severe.)
-5. When a claim references a URL or file, does it include the URL or file path next to the claim?
-6. Do negative existence/identity claims include explicit [tool:x] evidence (and links/paths when applicable)?
+**Check for Source Attribution:**
+1. Output must use ONLY: [tool:{name}], [input], [inference:input], [generated], [undefined]. For strict JSON, add a trailing "Attribution:" line with tags.
+2. Every [tool:{name}] tag must match an actual tool call listed above.
+3. Input-derived facts must be tagged [input]; keep input URLs next to [input].
+4. No external/web/API claims without tool usage.
+5. Include URL/file path inline next to the tag when available.
+6. Negative existence/identity claims require [tool:{name}] evidence (and links/paths when applicable).
 
 **Common Attribution Violations:**
-1. **Untagged claims**: Factual statements without source tags
-2. **False tool claims**: [tool:x] when tool x wasn't called
-3. **External data without tools**: Prices, URLs, API data claimed without tool execution
-4. **Missing context tag**: Prior-step data presented without [context] or [context:agent:{id}] (moderate)
-5. **Baseless inference**: [inference] without citing what it's based on
-6. **Wrong tool attribution**: [tool:file_read] for web data, etc.
-7. **Existence/identity assertions without evidence**: e.g., "company does not exist" without [tool:x] and links/paths
+1. **Untagged claims**: factual statements without source tags
+2. **False tool claims**: [tool:{name}] when that tool wasn't called
+3. **External data without tools**: prices, URLs, API data claimed without tool execution
+4. **Invalid inference**: any [inference:*] other than [inference:input]
+5. **Missing attribution signature**: strict JSON responses without a trailing "Attribution:" line
+6. **Existence/identity assertions without evidence**: e.g., "company does not exist" without [tool:{name}] and links/paths
 
-**Agent Context:**
-- Agent: ${result.agentId}
-- Task: ${result.task}
-- Duration: ${result.duration}ms
-- Execution: ${executionTime}
-
-## MULTI-AGENT WORKFLOW NOTE
-- This validation occurs in a multi-agent session.
-- Treat data inherited from previous agents as [context] or [context:agent:{id}].
-- Missing [context] for such data is a moderate issue; do not classify as severe unless there are false tool/external claims.
-
-**Remember**: Validate SOURCE ATTRIBUTION compliance. Missing or false attributions = low confidence.`;
+**Execution:** ${executionTime} | Agent: ${result.agentId} | Task duration: ${result.duration}ms`;
   }
 
   // JSON parsing helpers removed due to structured output usage

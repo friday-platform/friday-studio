@@ -33,6 +33,7 @@ export type {
   MCPTransportConfig,
   StreamEmitter,
   StreamEvent,
+  ToolCall,
   ToolContext,
   ToolResult,
 } from "./types.ts";

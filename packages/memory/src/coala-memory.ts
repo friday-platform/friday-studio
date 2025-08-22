@@ -495,6 +495,10 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
     return this.memories.size;
   }
 
+  getMemoryById(id: string): CoALAMemoryEntry | undefined {
+    return this.memories.get(id);
+  }
+
   forget(key: string): void {
     const memory = this.memories.get(key);
     if (memory) {

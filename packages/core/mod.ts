@@ -70,3 +70,10 @@ export type { WrappedAgentResult } from "./src/agent-conversion/from-llm.ts";
 
 // Agent Loader and Registry
 export { AgentLoader, AgentRegistry } from "./src/agent-loader/index.ts";
+
+// Source Attribution helpers
+export {
+  ensureSourceAttributionProtocol,
+  SOURCE_ATTRIBUTION_PROTOCOL_HEADER,
+  stripSourceAttributionTags,
+} from "./src/prompts/source-attribution.ts";

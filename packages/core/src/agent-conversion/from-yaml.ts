@@ -118,7 +118,6 @@ async function handleStreamingResponse(
 ): Promise<unknown> {
   const result = streamText(options);
   let fullText = "";
-  const toolCalls: Array<{ id: string; name: string; args: unknown }> = [];
   for await (const chunk of result.textStream) {
     fullText += chunk;
     const textEvent: StreamEvent = {
@@ -138,11 +137,6 @@ async function handleStreamingResponse(
         args: toolCall.input,
       };
       context.stream!.emit(toolCallEvent);
-      toolCalls.push({
-        id: toolCall.toolCallId,
-        name: toolCall.toolName,
-        args: toolCall.input,
-      });
     }
   }
 
@@ -164,7 +158,8 @@ async function handleStreamingResponse(
 
   return {
     response: fullText,
-    toolCalls,
+    toolCalls: finalResult.toolCalls || [],
+    toolResults: finalResult.toolResults || [],
     usage: usage
       ? {
         promptTokens: usage.inputTokens,
@@ -181,15 +176,10 @@ async function handleNonStreamingResponse(
 ): Promise<unknown> {
   const result = await generateText(options);
 
-  const toolCalls = result.toolCalls?.map((tc) => ({
-    id: tc.toolCallId,
-    name: tc.toolName,
-    args: tc.input,
-  })) || [];
-
   return {
     response: result.text,
-    toolCalls,
+    toolCalls: result.toolCalls || [],
+    toolResults: result.toolResults || [],
     usage: result.usage
       ? {
         promptTokens: result.usage.inputTokens,

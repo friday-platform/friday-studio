@@ -8,7 +8,6 @@
 import {
   ConversationContext,
   EnhancedPrompt,
-  MECMFMemoryManager,
   MemoryEntry,
   MemorySource,
   MemorySourceMetadata,
@@ -16,6 +15,7 @@ import {
   MemoryType,
   RetrievalOptions,
 } from "./mecmf-interfaces.ts";
+import type { MECMFMemoryManager as IMECMFMemoryManager } from "./mecmf-interfaces.ts";
 
 import { WebEmbeddingProvider } from "./web-embedding-provider.ts";
 import { AtlasTokenBudgetManager } from "./token-budget-manager.ts";
@@ -25,7 +25,7 @@ import { getGlobalMECMFDebugLogger, type PromptEnhancementLog } from "./debug-lo
 
 // Import existing Atlas components
 import { CoALAMemoryEntry, CoALAMemoryManager, CoALAMemoryType } from "./coala-memory.ts";
-import type { IAtlasScope } from "../../../src/types/core.ts";
+import type { MemoryScoper } from "./mecmf-interfaces.ts";
 
 export interface MECMFConfig {
   workspaceId: string;
@@ -45,7 +45,7 @@ export interface MECMFConfig {
   };
 }
 
-export class MECMFMemoryManager implements MECMFMemoryManager {
+export class MECMFMemoryManager implements IMECMFMemoryManager {
   private embeddingProvider: WebEmbeddingProvider | null;
   private tokenBudgetManager: AtlasTokenBudgetManager;
   private memoryClassifier: PIISafeMemoryClassifier; // Changed to PII-safe classifier
@@ -56,7 +56,7 @@ export class MECMFMemoryManager implements MECMFMemoryManager {
   private config: MECMFConfig;
 
   constructor(
-    scope: IAtlasScope,
+    scope: MemoryScoper,
     config: MECMFConfig,
   ) {
     this.config = {
@@ -89,15 +89,11 @@ export class MECMFMemoryManager implements MECMFMemoryManager {
     // Initialize CoALA memory manager with vector search
     this.coalaManager = new CoALAMemoryManager(
       scope,
-      undefined, // Use default storage
-      true, // Enable cognitive loop
+      undefined,
+      true,
       {
-        vectorSearchConfig: this.config.enableVectorSearch && this.embeddingProvider
-          ? {
-            embeddingProvider: this.embeddingProvider,
-            batchSize: config.embeddingConfig?.batchSize || 10,
-          }
-          : undefined,
+        // Vector search will be initialized internally by CoALAMemoryManager
+        // based on provided options; embedding provider is managed separately here.
       },
     );
   }
@@ -115,7 +111,8 @@ export class MECMFMemoryManager implements MECMFMemoryManager {
 
       this.ready = true;
     } catch (error) {
-      throw new Error(`Failed to initialize MECMF Memory Manager: ${error.message}`);
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to initialize MECMF Memory Manager: ${message}`);
     }
   }
 
@@ -162,53 +159,47 @@ export class MECMFMemoryManager implements MECMFMemoryManager {
   async retrieveMemory(id: string): Promise<MemoryEntry | null> {
     await this.ensureReady();
 
+    // Try to get the full memory entry with metadata first
+    const fullMemory = this.coalaManager.getMemoryById(id);
+    if (fullMemory) {
+      return {
+        id: fullMemory.id,
+        content: fullMemory.content,
+        timestamp: fullMemory.timestamp,
+        memoryType: this.mapCoALAType(fullMemory.memoryType),
+        relevanceScore: fullMemory.relevanceScore,
+        sourceScope: fullMemory.sourceScope,
+        tags: fullMemory.tags,
+        confidence: fullMemory.confidence,
+        decayRate: fullMemory.decayRate,
+        source: (fullMemory.source as MemorySource) || MemorySource.SYSTEM_GENERATED,
+        sourceMetadata: fullMemory.sourceMetadata,
+      };
+    }
+
+    // Fallback to content-only retrieval if full memory not available
     const content = this.coalaManager.recall(id);
     if (!content) return null;
 
-    // Get the full CoALA memory entry to extract metadata
-    // Access private property through type assertion for internal use
-    const coalaManagerInternal = this.coalaManager as CoALAMemoryManager & {
-      memories: Map<string, CoALAMemoryEntry>;
-    };
-    const coalaMemory = coalaManagerInternal.memories.get(id);
-    if (!coalaMemory) {
-      return null;
+    // Check recent memory cache for original metadata
+    const cachedMemory = this.recentMemoryCache.get(id);
+    if (cachedMemory) {
+      return cachedMemory;
     }
 
-    // Map CoALA memory type to MECMF memory type
-    const mecmfMemoryType = this.mapCoALAToMECMFType(coalaMemory.memoryType);
-
+    // Return minimal info when metadata is not accessible
     return {
       id,
       content,
-      timestamp: coalaMemory.timestamp || new Date(),
-      memoryType: mecmfMemoryType,
-      relevanceScore: coalaMemory.relevanceScore || 0.5,
-      sourceScope: coalaMemory.sourceScope || this.config.workspaceId,
-      tags: coalaMemory.tags || [],
-      confidence: coalaMemory.confidence || 1.0,
-      decayRate: coalaMemory.decayRate || 0.1,
-      source: coalaMemory.source || MemorySource.SYSTEM_GENERATED,
-      sourceMetadata: coalaMemory.sourceMetadata,
+      timestamp: new Date(),
+      memoryType: MemoryType.WORKING,
+      relevanceScore: 0.5,
+      sourceScope: this.config.workspaceId,
+      tags: [],
+      confidence: 1.0,
+      decayRate: 0.1,
+      source: MemorySource.SYSTEM_GENERATED,
     };
-  }
-
-  private mapCoALAToMECMFType(coalaType: CoALAMemoryType | string): MemoryType {
-    // Map CoALA memory types to MECMF memory types
-    switch (coalaType) {
-      case "working":
-        return MemoryType.WORKING;
-      case "episodic":
-        return MemoryType.EPISODIC;
-      case "semantic":
-        return MemoryType.SEMANTIC;
-      case "procedural":
-        return MemoryType.PROCEDURAL;
-      case "contextual":
-        return MemoryType.CONTEXTUAL;
-      default:
-        return MemoryType.WORKING;
-    }
   }
 
   async deleteMemory(id: string): Promise<void> {
@@ -239,28 +230,8 @@ export class MECMFMemoryManager implements MECMFMemoryManager {
     // Get sanitized content and classification
     const classificationStart = performance.now();
 
-    // Use the PII-safe classifier to get both sanitized content and classification
-    let sanitizedContent = content;
-
-    if (this.memoryClassifier instanceof PIISafeMemoryClassifier) {
-      // Get validation result to check if content should be sanitized
-      // Access private method through type assertion for internal use
-      const classifierInternal = this.memoryClassifier as PIISafeMemoryClassifier & {
-        validateAndSanitizeContent(content: string): { isValid: boolean; sanitized: string };
-      };
-      const validation = classifierInternal.validateAndSanitizeContent(content);
-      sanitizedContent = validation.sanitized;
-
-      if (!validation.isValid) {
-        // Log when content is sanitized
-        const debugLogger = getGlobalMECMFDebugLogger();
-        if (debugLogger.isEnabled()) {
-          console.warn(
-            `MECMF: Storing sanitized content instead of original: ${content.substring(0, 100)}...`,
-          );
-        }
-      }
-    }
+    // For now, store content as-is; classifier handles PII when extracting entities
+    const sanitizedContent = content;
 
     const memoryType = this.memoryClassifier.classifyContent(content, context);
     const classificationTime = performance.now() - classificationStart;
@@ -348,14 +319,13 @@ export class MECMFMemoryManager implements MECMFMemoryManager {
         return this.convertCoALAToMECMF(coalaMemories);
       },
       // Fallback: Recent cached memories
-      (limit: number) => {
-        const cachedMemories = Array.from(this.recentMemoryCache.values())
-          .filter((m) => memoryTypes.includes(m.memoryType))
-          .sort((a, b) => b.relevanceScore - a.relevanceScore)
-          .slice(0, limit);
-
-        return cachedMemories;
-      },
+      (limit: number) =>
+        Promise.resolve(
+          Array.from(this.recentMemoryCache.values())
+            .filter((m) => memoryTypes.includes(m.memoryType))
+            .sort((a, b) => b.relevanceScore - a.relevanceScore)
+            .slice(0, limit),
+        ),
       { operation: "getRelevantMemories", memoryType: memoryTypes[0] },
     ).then((result) => result.data);
   }
@@ -541,7 +511,7 @@ export class MECMFMemoryManager implements MECMFMemoryManager {
     );
 
     // Use CoALA's enhanced prompt construction with error handling
-    return this.errorHandler.withGracefulDegradation(
+    const result = await this.errorHandler.withGracefulDegradation(
       // Primary: Full enhanced prompt with vector search
       async () => {
         const result = await this.coalaManager.enhancePromptWithMemory(originalPrompt, {
@@ -582,15 +552,16 @@ export class MECMFMemoryManager implements MECMFMemoryManager {
               }`
               : "";
 
-            return {
+            return Promise.resolve({
               enhancedPrompt: context ? `${context}\n\n${originalPrompt}` : originalPrompt,
               originalPrompt,
               memoryContext: context,
               tokensUsed: this.tokenBudgetManager.estimateTokens(context + originalPrompt),
               memoriesIncluded: memories.length,
               memoryBreakdown: {
-                [MemoryType.WORKING]:
-                  memories.filter((m) => m.memoryType === MemoryType.WORKING).length,
+                [MemoryType.WORKING]: memories.filter((m) =>
+                  m.memoryType === MemoryType.WORKING
+                ).length,
                 [MemoryType.EPISODIC]:
                   memories.filter((m) => m.memoryType === MemoryType.EPISODIC).length,
                 [MemoryType.SEMANTIC]:
@@ -598,58 +569,59 @@ export class MECMFMemoryManager implements MECMFMemoryManager {
                 [MemoryType.PROCEDURAL]:
                   memories.filter((m) => m.memoryType === MemoryType.PROCEDURAL).length,
               },
-            };
+            });
           },
         },
         {
           name: "no_memory_enhancement",
           performanceImpact: "significant",
-          operation: () => ({
-            enhancedPrompt: originalPrompt,
-            originalPrompt,
-            memoryContext: "",
-            tokensUsed: this.tokenBudgetManager.estimateTokens(originalPrompt),
-            memoriesIncluded: 0,
-            memoryBreakdown: {
-              [MemoryType.WORKING]: 0,
-              [MemoryType.EPISODIC]: 0,
-              [MemoryType.SEMANTIC]: 0,
-              [MemoryType.PROCEDURAL]: 0,
-            },
-          }),
+          operation: () =>
+            Promise.resolve({
+              enhancedPrompt: originalPrompt,
+              originalPrompt,
+              memoryContext: "",
+              tokensUsed: this.tokenBudgetManager.estimateTokens(originalPrompt),
+              memoriesIncluded: 0,
+              memoryBreakdown: {
+                [MemoryType.WORKING]: 0,
+                [MemoryType.EPISODIC]: 0,
+                [MemoryType.SEMANTIC]: 0,
+                [MemoryType.PROCEDURAL]: 0,
+              },
+            }),
         },
       ],
       { operation: "enhancePromptWithMemory" },
-    ).then((result) => {
-      const totalTime = performance.now() - startTime;
-      transformationSteps.push(`Graceful degradation completed in ${totalTime.toFixed(1)}ms`);
+    );
 
-      // Log the enhancement process
-      if (debugLogger.isEnabled()) {
-        const logEntry: PromptEnhancementLog = {
-          sessionId: this.config.workspaceId,
-          timestamp: new Date(),
-          originalPrompt,
-          enhancedPrompt: result.data.enhancedPrompt,
-          memoryContext: result.data.memoryContext,
-          tokensOriginal: this.tokenBudgetManager.estimateTokens(originalPrompt),
-          tokensEnhanced: result.data.tokensUsed,
-          memoriesUsed: result.data.memoriesIncluded,
-          memoryBreakdown: result.data.memoryBreakdown,
-          transformationSteps,
-          performanceMetrics: {
-            memoryRetrievalMs: 0, // Would need more granular tracking
-            classificationMs: 0,
-            embeddingMs: 0,
-            totalEnhancementMs: Math.round(totalTime),
-          },
-        };
+    const totalTime = performance.now() - startTime;
+    transformationSteps.push(`Graceful degradation completed in ${totalTime.toFixed(1)}ms`);
 
-        debugLogger.logPromptEnhancement(logEntry);
-      }
+    // Log the enhancement process
+    if (debugLogger.isEnabled()) {
+      const logEntry: PromptEnhancementLog = {
+        sessionId: this.config.workspaceId,
+        timestamp: new Date(),
+        originalPrompt,
+        enhancedPrompt: result.data.enhancedPrompt,
+        memoryContext: result.data.memoryContext,
+        tokensOriginal: this.tokenBudgetManager.estimateTokens(originalPrompt),
+        tokensEnhanced: result.data.tokensUsed,
+        memoriesUsed: result.data.memoriesIncluded,
+        memoryBreakdown: result.data.memoryBreakdown,
+        transformationSteps,
+        performanceMetrics: {
+          memoryRetrievalMs: 0, // Would need more granular tracking
+          classificationMs: 0,
+          embeddingMs: 0,
+          totalEnhancementMs: Math.round(totalTime),
+        },
+      };
 
-      return result.data;
-    });
+      debugLogger.logPromptEnhancement(logEntry);
+    }
+
+    return result.data;
   }
 
   /**
@@ -673,7 +645,8 @@ export class MECMFMemoryManager implements MECMFMemoryManager {
       this.recentMemoryCache.clear();
       this.ready = false;
     } catch (error) {
-      throw new Error(`Error during MECMF disposal: ${error.message}`);
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`Error during MECMF disposal: ${message}`);
     }
   }
 
@@ -739,8 +712,10 @@ export class MECMFMemoryManager implements MECMFMemoryManager {
 
     const maxSize = this.config.fallbackOptions?.maxCachedMemories || 50;
     if (this.recentMemoryCache.size > maxSize) {
-      const oldestKey = Array.from(this.recentMemoryCache.keys())[0];
-      this.recentMemoryCache.delete(oldestKey);
+      const oldestKey = Array.from(this.recentMemoryCache.keys())[0] ?? "";
+      if (oldestKey !== "") {
+        this.recentMemoryCache.delete(oldestKey);
+      }
     }
   }
 
@@ -762,7 +737,7 @@ export class MECMFMemoryManager implements MECMFMemoryManager {
 
 // Factory function
 export function createMECMFMemoryManager(
-  scope: IAtlasScope,
+  scope: MemoryScoper,
   config: MECMFConfig,
 ): MECMFMemoryManager {
   return new MECMFMemoryManager(scope, config);

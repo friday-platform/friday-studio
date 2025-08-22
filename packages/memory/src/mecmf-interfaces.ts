@@ -13,6 +13,12 @@ export interface ConversationContext {
   activeAgents: string[];
 }
 
+// Minimal identity for memory scoping used by MECMF/CoALA
+export interface MemoryScoper {
+  id: string;
+  workspaceId?: string;
+}
+
 export enum MemorySource {
   USER_INPUT = "user_input",
   AGENT_OUTPUT = "agent_output",
@@ -32,12 +38,12 @@ export interface Entity {
   name: string;
   type: string;
   confidence: number;
-  attributes?: Record<string, any>;
+  attributes?: Record<string, unknown>;
 }
 
 export interface MemoryEntry {
   id: string;
-  content: any;
+  content: unknown;
   timestamp: Date;
   memoryType: MemoryType;
   relevanceScore: number;
@@ -219,6 +225,17 @@ export interface MECMFMemoryManager {
   // Token-aware operations
   buildTokenAwarePrompt(originalPrompt: string, tokenBudget: number): Promise<EnhancedPrompt>;
   optimizeMemoryForTokens(memories: MemoryEntry[], budget: number): MemoryEntry[];
+
+  // Enhanced prompt construction with memory context
+  enhancePromptWithMemory(
+    originalPrompt: string,
+    options?: {
+      tokenBudget?: number;
+      contextFormat?: "detailed" | "summary" | "bullets";
+      includeTypes?: MemoryType[];
+      maxMemories?: number;
+    },
+  ): Promise<EnhancedPrompt>;
 
   // Memory consolidation and pruning
   consolidateWorkingMemory(): Promise<void>;

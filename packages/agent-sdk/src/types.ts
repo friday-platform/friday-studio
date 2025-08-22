@@ -6,7 +6,7 @@
  */
 
 import { z } from "zod/v4";
-import type { Tool } from "ai";
+import type { Tool, TypedToolCall, TypedToolResult } from "ai";
 import type { Logger } from "@atlas/logger";
 
 // ==============================================================================
@@ -235,12 +235,9 @@ export interface ToolContext {
   messages: Array<{ role: string; content: string }>;
 }
 
-/** Tool execution result from agent runs */
-export interface ToolResult {
-  toolName: string;
-  isError: boolean;
-  input: unknown;
-}
+/** Tool call/result types are re-exports of AI SDK branded types */
+export type ToolCall<T extends AtlasTools = AtlasTools> = TypedToolCall<T>;
+export type ToolResult<T extends AtlasTools = AtlasTools> = TypedToolResult<T>;
 
 /**
  * Stream events that agents can emit back to Atlas
@@ -515,6 +512,8 @@ export interface AgentResult {
   input: unknown;
   /** Output produced by the agent */
   output: unknown;
+  /** Model or agent reasoning text, when available */
+  reasoning?: string;
   /** Error message if execution failed */
   error?: string;
   /** Execution duration in milliseconds */
@@ -522,9 +521,9 @@ export interface AgentResult {
   /** ISO timestamp of execution */
   timestamp: string;
   /** Tool calls made during execution */
-  toolCalls?: unknown[];
+  toolCalls?: ToolCall[];
   /** Results from tool executions */
-  toolResults?: unknown[];
+  toolResults?: ToolResult[];
   /** Memory context (optional, used by some services) */
   memory?: unknown[];
 }

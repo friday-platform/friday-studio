@@ -6,6 +6,7 @@
  */
 
 import type { AgentContext, AgentSessionData, AtlasAgent, AtlasTool } from "@atlas/agent-sdk";
+import { stripSourceAttributionTags } from "../prompts/source-attribution.ts";
 import type { MCPServerConfig, WorkspaceConfig } from "@atlas/config";
 import type { Logger } from "@atlas/logger";
 import { CoALAMemoryManager, CoALAMemoryType, MemorySource } from "@atlas/memory";
@@ -266,8 +267,8 @@ async function enrichPromptWithMemories(
     const memoryResults = await sessionMemory.getRelevantMemoriesForPrompt(
       originalPrompt, // Use original prompt for memory search
       {
-        limit: 50, // Get more candidates for better selection
-        minSimilarity: 0.25, // Lower threshold for more coverage
+        limit: 10, // Fewer candidates to reduce context size
+        minSimilarity: 0.6, // Higher threshold for tighter relevance
         includeWorking: true,
         includeEpisodic: true,
         includeSemantic: true,
@@ -276,10 +277,22 @@ async function enrichPromptWithMemories(
     );
 
     // Compose prompt: Original Request + Recent Context + Relevant Memories
+    // Sanitize any prior content to avoid leaking/replicating source tags
+    const sanitizedRecent = recentWorkingMemory
+      ? {
+        content: stripSourceAttributionTags(recentWorkingMemory.content),
+        timestamp: recentWorkingMemory.timestamp,
+      }
+      : null;
+    const sanitizedMemories = memoryResults.memories.map((m) => ({
+      ...m,
+      content: stripSourceAttributionTags(m.content),
+    }));
+
     const enrichedPrompt = buildMemoryEnhancedPrompt(
       originalPrompt,
-      recentWorkingMemory,
-      memoryResults.memories,
+      sanitizedRecent,
+      sanitizedMemories,
       maxTokens,
       logger,
     );

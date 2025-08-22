@@ -29,17 +29,7 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { z } from "zod/v4";
 import type { IWorkspaceArtifact, IWorkspaceSignal } from "../../types/core.ts";
 
-// Interface for tool call objects
-interface ToolCallObject {
-  toolName: string;
-  args: unknown;
-}
-
-// Interface for tool result objects
-interface ToolResultObject {
-  toolName: string;
-  result: unknown;
-}
+// Canonical tool metadata types are provided by @atlas/agent-sdk
 
 // Interface for agent plan from AI tool calls
 interface AgentPlanInput {
@@ -103,15 +93,36 @@ import {
   HallucinationDetector,
   HallucinationPatternDetector,
 } from "../services/hallucination-detector.ts";
-import { AgentResult, AwaitingSupervisorDecision, StreamEmitter } from "@atlas/agent-sdk";
+import { stripSourceAttributionTags } from "@atlas/core";
+import {
+  type JeopardyValidationResult,
+  JeopardyValidator,
+} from "../services/jeopardy-validator.ts";
+import {
+  AgentResult,
+  AwaitingSupervisorDecision,
+  StreamEmitter,
+  ToolCall,
+  ToolResult,
+} from "@atlas/agent-sdk";
+import type { StreamEvent } from "@atlas/agent-sdk";
 import { HTTPStreamEmitter, NoOpStreamEmitter } from "@atlas/core";
 import {
+  CoALAMemoryManager,
+  CoALAMemoryType,
   createConversationContext,
   type MECMFMemoryManager,
   MemorySource,
   MemoryType,
   setupMECMF,
 } from "@atlas/memory";
+import {
+  type FactSourceType,
+  type SemanticFact,
+  SemanticFactExtractor,
+} from "../services/semantic-fact-extractor.ts";
+import { CoALALocalFileStorageAdapter } from "@atlas/storage";
+import { getWorkspaceMemoryDir } from "../../utils/paths.ts";
 
 export interface SessionContext {
   sessionId: string;
@@ -159,19 +170,10 @@ export interface SessionSummary {
   results: AgentResult[];
   failureReason?: string;
   confidence?: number;
-}
-
-// Helper types/guard to safely access optional tool metadata
-interface ToolMetadata {
-  toolCalls?: unknown[];
-  toolResults?: unknown[];
-}
-
-function hasToolMetadata(value: unknown): value is ToolMetadata {
-  return typeof value === "object" && value !== null && (
-    "toolCalls" in (value as Record<string, unknown>) ||
-    "toolResults" in (value as Record<string, unknown>)
-  );
+  validation?: Record<
+    string,
+    { confidence: number; jeopardyValidation?: JeopardyValidationResult }
+  >;
 }
 
 export interface ConfidenceAnalysis {
@@ -190,7 +192,7 @@ export interface LLMValidationResult {
 }
 
 export class SessionSupervisorActor implements BaseActor {
-  readonly type = "session" as const;
+  readonly type: "session" = "session";
   private sessionId: string;
   private workspaceId?: string;
   private logger: Logger;
@@ -206,8 +208,17 @@ export class SessionSupervisorActor implements BaseActor {
     apiKey: Deno.env.get("ANTHROPIC_API_KEY"),
   });
   private hallucinationDetector: HallucinationDetector;
-  private validationMap = new Map<string, { confidence: number; issues: string[] }>();
+  // Observation-only Jeopardy validator: logs results, never affects control flow
+  private jeopardyValidator!: JeopardyValidator;
+  private validationMap = new Map<
+    string,
+    { confidence: number; issues: string[]; jeopardyValidation?: JeopardyValidationResult }
+  >();
   private hallucinationTermination?: { agentId: string; confidence: number; issues: string[] };
+  // Track last validation details for feedback-driven retries
+  private lastValidationMetaByAgent = new Map<string, { confidence: number; issues: string[] }>();
+  // Track single retry attempts per agent to avoid loops
+  private retryAttempts = new Map<string, number>();
 
   // Private state tracking for new Session integration
   private hasStarted: boolean = false;
@@ -249,12 +260,11 @@ export class SessionSupervisorActor implements BaseActor {
 
     // Initialize hallucination detection system
     const supervisionConfig = getSupervisionConfig(this.supervisionLevel);
-    const isTestEnvironment = Deno.env.get("DENO_TESTING") === "true";
 
     this.hallucinationDetector = new HallucinationDetector({
       supervisionLevel: this.supervisionLevel,
       logger: this.logger.child({ component: "hallucination-detector" }),
-      enableLLMValidation: isTestEnvironment ? false : supervisionConfig.postExecutionValidation,
+      enableLLMValidation: supervisionConfig.postExecutionValidation,
     });
 
     this.logger.info("Session supervisor actor initialized");
@@ -300,12 +310,23 @@ export class SessionSupervisorActor implements BaseActor {
 
     // Determine supervision level first
     this.supervisionLevel = this.getSupervisionLevel();
+
+    // Initialize supervision services
+
     // Ensure detector threshold aligns with current level
     this.hallucinationDetector.setSupervisionLevel(this.supervisionLevel);
+
+    // Initialize Jeopardy validator (observation-only)
+    this.jeopardyValidator = new JeopardyValidator({
+      logger: this.logger.child({ component: "jeopardy-validator", mode: "observation-only" }),
+      model: "claude-3-5-haiku-latest",
+      llmProvider: (model: string) => this.llmProvider(model),
+    });
 
     this.logger.info("Session supervisor actor initialized", {
       supervisionLevel: this.supervisionLevel,
       workspaceId: this.workspaceId || "global",
+      jeopardyValidation: "observation-only",
     });
   }
 
@@ -597,7 +618,12 @@ export class SessionSupervisorActor implements BaseActor {
     // Create tools for agent execution
     const planningTools = this.createPlanningTools();
 
-    const result = await generateText({
+    const result: {
+      text: string;
+      reasoningText?: string;
+      toolCalls?: ToolCall[];
+      toolResults?: ToolResult[];
+    } = await generateText({
       model: this.llmProvider("claude-3-7-sonnet-20250219"),
       system: this.buildExecutionPlanningPrompt(this.sessionContext),
       messages: [{
@@ -619,12 +645,15 @@ export class SessionSupervisorActor implements BaseActor {
       },
     });
 
-    // Parse the plan from the response including tool calls
+    // Pass through tool calls/results from AI SDK
+    const toolCalls: ToolCall[] = result.toolCalls ?? [];
+    const toolResults: ToolResult[] = result.toolResults ?? [];
+
     const plan = this.parsePlanFromResponse(
       result.text,
       result.reasoningText,
-      result.toolCalls,
-      result.toolResults,
+      toolCalls,
+      toolResults,
     );
 
     const duration = Date.now() - startTime;
@@ -632,6 +661,10 @@ export class SessionSupervisorActor implements BaseActor {
       planId: plan.id,
       duration,
       phases: plan.phases.length,
+      reasoning: result.reasoningText,
+      text: result.text,
+      toolCalls: toolCalls,
+      toolResults: toolResults,
     });
 
     // Cache the plan for subsequent calls
@@ -861,6 +894,30 @@ export class SessionSupervisorActor implements BaseActor {
         resultCount: allResults.length,
         sessionId: this.sessionId,
       });
+
+      // Also store validation results if available
+      if (this.validationMap.size > 0) {
+        const validationData = Array.from(this.validationMap.entries()).map(([agentId, v]) => ({
+          agentId,
+          confidence: v.confidence,
+          jeopardyValidation: v.jeopardyValidation,
+        }));
+
+        const validationArtifact: IWorkspaceArtifact = {
+          id: crypto.randomUUID(),
+          type: "validation_results",
+          data: validationData,
+          createdAt: new Date(),
+          createdBy: this.sessionId,
+        };
+        this.artifacts.push(validationArtifact);
+
+        this.logger.info("Stored validation results as artifact", {
+          artifactId: validationArtifact.id,
+          validatedAgents: validationData.length,
+          sessionId: this.sessionId,
+        });
+      }
     }
 
     // Generate session summary
@@ -907,20 +964,24 @@ export class SessionSupervisorActor implements BaseActor {
           phase.name,
         );
         phaseResults.push(result);
-
-        // CRITICAL: Validate agent result immediately after execution
-        const shouldContinueAfterAgent = await this.validateAgentResult(result, [
-          ...previousResults,
-          ...phaseResults,
-        ]);
-        if (!shouldContinueAfterAgent) {
-          this.logger.error("Agent validation failed - terminating session immediately", {
-            agentId: agentTask.agentId,
-            phaseIndex: phase.id,
-            reason: "Hallucination detected in agent output",
-          });
-          return phaseResults; // Stop phase execution immediately
-        }
+        this.logger.debug("Agent result", {
+          agentId: agentTask.agentId,
+          task: result.task,
+          output: result.output,
+        });
+        const continuePhase = await this.handlePostExecutionValidation(
+          agentTask,
+          result,
+          previousResults,
+          phaseResults,
+          phase,
+          "sequential",
+          (updated) => {
+            phaseResults.pop();
+            phaseResults.push(updated);
+          },
+        );
+        if (!continuePhase) return phaseResults;
       }
     } else {
       const promises = phase.agents.map((agentTask) =>
@@ -928,25 +989,123 @@ export class SessionSupervisorActor implements BaseActor {
       );
       const parallelResults = await Promise.all(promises);
       phaseResults.push(...parallelResults);
-
-      // CRITICAL: Validate all parallel results immediately after execution
-      for (const result of parallelResults) {
-        const shouldContinueAfterAgent = await this.validateAgentResult(result, [
-          ...previousResults,
-          ...phaseResults,
-        ]);
-        if (!shouldContinueAfterAgent) {
-          this.logger.error("Parallel agent validation failed - terminating session immediately", {
+      // Validate all parallel results immediately after execution
+      const tasksById = new Map(phase.agents.map((a) => [a.agentId, a] as const));
+      const baseIndex = phaseResults.length - parallelResults.length;
+      for (let i = 0; i < parallelResults.length; i++) {
+        const result = parallelResults[i];
+        if (!result) {
+          this.logger.error("Parallel agent result is undefined - terminating session", {
+            phaseIndex: phase.id,
+          });
+          return phaseResults; // Terminate phase due to inconsistency
+        }
+        const agentTask = tasksById.get(result.agentId);
+        if (!agentTask) {
+          this.logger.error("Cannot retry parallel agent - task not found", {
             agentId: result.agentId,
             phaseIndex: phase.id,
-            reason: "Hallucination detected in parallel agent output",
           });
-          return phaseResults; // Stop phase execution immediately
+          return phaseResults; // Terminate phase due to inconsistency
         }
+        const continuePhase = await this.handlePostExecutionValidation(
+          agentTask,
+          result,
+          previousResults,
+          phaseResults,
+          phase,
+          "parallel",
+          (updated) => {
+            parallelResults[i] = updated;
+            phaseResults[baseIndex + i] = updated;
+          },
+        );
+        if (!continuePhase) return phaseResults;
       }
     }
 
     return phaseResults;
+  }
+
+  private async handlePostExecutionValidation(
+    agentTask: AgentTask,
+    currentResult: AgentResult,
+    previousResults: AgentResult[],
+    phaseResults: AgentResult[],
+    phase: ExecutionPhase,
+    context: "sequential" | "parallel",
+    replaceResult: (updated: AgentResult) => void,
+  ): Promise<boolean> {
+    // Initial validation on current result
+    const shouldContinueAfterAgent = await this.validateAgentResult(currentResult, [
+      ...previousResults,
+      ...phaseResults,
+    ]);
+    if (shouldContinueAfterAgent) {
+      return true;
+    }
+
+    const retryCount = this.retryAttempts.get(currentResult.agentId) ?? 0;
+    if (retryCount === 0) {
+      this.logger.warn(
+        context === "sequential"
+          ? "Agent validation failed - issuing single retry with feedback"
+          : "Parallel agent validation failed - issuing single retry with feedback",
+        {
+          agentId: currentResult.agentId,
+          phaseIndex: phase.id,
+        },
+      );
+      this.retryAttempts.set(currentResult.agentId, 1);
+
+      // Retry once with feedback
+      const retryResult = await this.executeAgent(
+        { ...agentTask },
+        [...previousResults, ...phaseResults],
+        phaseResults,
+        phase.name,
+      );
+
+      // Replace the corresponding stored result(s)
+      replaceResult(retryResult);
+
+      const shouldContinueAfterRetry = await this.validateAgentResult(retryResult, [
+        ...previousResults,
+        ...phaseResults,
+      ]);
+      if (!shouldContinueAfterRetry) {
+        this.logger.error(
+          context === "sequential"
+            ? "Agent validation failed after retry - terminating session"
+            : "Parallel agent validation failed after retry - terminating session",
+          {
+            agentId: currentResult.agentId,
+            phaseIndex: phase.id,
+            reason: context === "sequential"
+              ? "Repeated hallucination detected in agent output"
+              : "Repeated hallucination detected in parallel agent output",
+          },
+        );
+        return false; // terminate phase
+      }
+
+      return true; // continue on successful retry
+    }
+
+    // Already retried before → terminate
+    this.logger.error(
+      context === "sequential"
+        ? "Agent validation failed with prior retry - terminating session immediately"
+        : "Parallel agent validation failed with prior retry - terminating session immediately",
+      {
+        agentId: currentResult.agentId,
+        phaseIndex: phase.id,
+        reason: context === "sequential"
+          ? "Hallucination detected in agent output"
+          : "Hallucination detected in parallel agent output",
+      },
+    );
+    return false; // terminate phase
   }
 
   private async executeAgent(
@@ -1007,16 +1166,18 @@ export class SessionSupervisorActor implements BaseActor {
 
     // Use orchestrator if available (new MCP-based execution)
     this.logger.info("Using orchestrator for execution");
+    // Ensure prompt string is available outside the try block to avoid
+    // accidentally referencing the global Deno prompt() function.
+    let prompt: string = "";
     try {
       // @deprecated Check if this is a system agent that expects objects
       // System agents should receive input as-is, not stringified
       const agentConfig = this.config?.agents?.[agentTask.agentId];
       const isSystemAgent = agentConfig?.type === "system";
       // System agents are referenced by ID
-      let agentId = isSystemAgent ? agentConfig.agent : agentTask.agentId;
+      const agentId = isSystemAgent ? agentConfig.agent : agentTask.agentId;
 
       // Extract the actual message/input to send to the agent
-      let prompt: string;
 
       /**
        * @FIXME: this is really rough code.
@@ -1057,8 +1218,8 @@ export class SessionSupervisorActor implements BaseActor {
         // Build facts section with current context
         const facts = this.buildFactsSection();
 
-        // Combine all sections: Facts + Input + Prompt
-        // Structure: Facts (always present) -> Input (if available) -> Agent Instructions
+        // Combine all sections: Facts + Input + Prompt (+ optional feedback)
+        // Structure: Facts -> Input -> Agent Instructions -> Retry Feedback (if present)
         const promptSections = [];
 
         // Always include facts section first
@@ -1066,32 +1227,48 @@ export class SessionSupervisorActor implements BaseActor {
 
         // Include input if available
         if (inputText) {
-          promptSections.push(inputLabel + inputText);
+          const sanitizedInput = stripSourceAttributionTags(inputText);
+          promptSections.push(inputLabel + sanitizedInput);
         }
 
         // Add the agent's configured prompt instructions
         promptSections.push(agentConfig.config.prompt);
+
+        // If we are retrying due to a previous validation failure for this agent, append feedback
+        const priorIssues = this.lastValidationMetaByAgent.get(agentTask.agentId);
+        const retryCount = this.retryAttempts.get(agentTask.agentId) ?? 0;
+        if (priorIssues && retryCount > 0) {
+          const feedbackHeader = "## Validation Feedback (address in this retry):";
+          const issuesList = priorIssues.issues && priorIssues.issues.length
+            ? priorIssues.issues.map((i) => `- ${i}`).join("\n")
+            : "- Low confidence without specific issues provided";
+          const feedbackBody = `${feedbackHeader}\nConfidence: ${
+            priorIssues.confidence.toFixed(2)
+          }\nIssues:\n${issuesList}`;
+          promptSections.push(feedbackBody);
+        }
 
         // Join all sections with clear separation
         prompt = promptSections.join("\n\n");
 
         this.logger.debug("Using agent configured prompt with facts and input", {
           agentId: agentTask.agentId,
-          promptLength: agentConfig.config.prompt.length,
           inputLength: inputText.length,
           factsLength: facts.length,
-          combinedLength: prompt.length,
+          combinedLength: prompt.length || 0,
           inputSource: agentTask.inputSource,
         });
       } else if (typeof input === "string") {
         // Direct string input (e.g., from previous agent)
-        prompt = input;
+        prompt = stripSourceAttributionTags(input);
       } else if (typeof input === "object" && input !== null && "message" in input) {
-        // Extract message from signal payload
-        prompt = input.message;
+        // Extract message from signal payload safely
+        const msgValue = (input as Record<string, unknown>)["message"];
+        prompt = typeof msgValue === "string" ? msgValue : JSON.stringify(msgValue);
       } else if (typeof input === "object" && input !== null && "text" in input) {
-        // Extract text from signal payload (common field name)
-        prompt = input.text;
+        // Extract text from signal payload (common field name) safely
+        const textValue = (input as Record<string, unknown>)["text"];
+        prompt = typeof textValue === "string" ? textValue : JSON.stringify(textValue);
       } else {
         // Fallback to JSON representation
         prompt = JSON.stringify(input);
@@ -1101,15 +1278,6 @@ export class SessionSupervisorActor implements BaseActor {
       // Enhance prompt with MECMF memory context
       if (this.mecmfManager) {
         try {
-          const _conversationContext = createConversationContext(
-            this.sessionId,
-            this.workspaceId || "global",
-            {
-              currentTask: agentTask.task,
-              activeAgents: [agentTask.agentId],
-            },
-          );
-
           const enhancedPrompt = await this.mecmfManager.enhancePromptWithMemory(
             String(prompt), // Ensure prompt is a string
             {
@@ -1131,7 +1299,7 @@ export class SessionSupervisorActor implements BaseActor {
               originalLength: prompt.length,
               enhancedLength: enhancedPrompt.enhancedPrompt.length,
               memoriesIncluded: enhancedPrompt.memoriesIncluded,
-              tokenUsage: enhancedPrompt.tokenUsage,
+              tokensUsed: enhancedPrompt.tokensUsed,
               agentId: agentTask.agentId,
             });
             prompt = enhancedPrompt.enhancedPrompt;
@@ -1144,7 +1312,7 @@ export class SessionSupervisorActor implements BaseActor {
         }
       }
 
-      const orchestratorResult = await this.agentOrchestrator.executeAgent(
+      const orchestratorResult: unknown = await this.agentOrchestrator.executeAgent(
         agentId,
         prompt,
         {
@@ -1158,31 +1326,43 @@ export class SessionSupervisorActor implements BaseActor {
             reasoning: agentTask.reasoning,
           },
           // Pass callback for stream events
-          onStreamEvent: (event) => {
-            this.handleAgentStreamEvent(
-              agentTask.agentId,
-              phaseName,
-              event as { type: string; [key: string]: unknown },
-            );
+          onStreamEvent: (event: unknown): void => {
+            // Normalize unknown events to a minimal shape without using any-casts
+            let normalized: { type: string; [key: string]: unknown };
+            if (
+              typeof event === "object" && event !== null &&
+              "type" in event && typeof (event as Record<string, unknown>)["type"] === "string"
+            ) {
+              const evtObj = event as Record<string, unknown>;
+              normalized = { type: String(evtObj["type"]), ...evtObj } as {
+                type: string;
+                [key: string]: unknown;
+              };
+            } else {
+              normalized = { type: "custom", data: event };
+            }
+            this.handleAgentStreamEvent(agentTask.agentId, phaseName, normalized);
           },
         },
       );
 
       // Extract output and preserve tool metadata from orchestrator result
+      type OrchestratorExecResult = {
+        output?: unknown;
+        duration?: number;
+        toolCalls?: ToolCall[];
+        toolResults?: ToolResult[];
+      };
+      const isExecResult = (v: unknown): v is OrchestratorExecResult =>
+        typeof v === "object" && v !== null;
+      const or = isExecResult(orchestratorResult) ? orchestratorResult : {};
       result = {
-        output: orchestratorResult.output,
-        duration: orchestratorResult.duration,
-        ...(hasToolMetadata(orchestratorResult)
-          ? {
-            toolCalls: orchestratorResult.toolCalls,
-            toolResults: orchestratorResult.toolResults,
-          }
-          : {}),
-      } as {
-        output: unknown;
-        duration: number;
-        toolCalls?: unknown[];
-        toolResults?: unknown[];
+        output: isExecResult(orchestratorResult) ? or.output : undefined,
+        duration: isExecResult(orchestratorResult) && typeof or.duration === "number"
+          ? or.duration
+          : Number((isExecResult(orchestratorResult) ? or.duration : 0) ?? 0),
+        toolCalls: isExecResult(orchestratorResult) ? or.toolCalls : undefined,
+        toolResults: isExecResult(orchestratorResult) ? or.toolResults : undefined,
       };
 
       // Stream agent completion
@@ -1242,8 +1422,8 @@ export class SessionSupervisorActor implements BaseActor {
       output: result.output,
       duration,
       timestamp: new Date().toISOString(),
-      toolCalls: hasToolMetadata(result) ? result.toolCalls : undefined,
-      toolResults: hasToolMetadata(result) ? result.toolResults : undefined,
+      toolCalls: (result as { toolCalls?: ToolCall[] }).toolCalls,
+      toolResults: (result as { toolResults?: ToolResult[] }).toolResults,
     };
 
     this.logger.info("Agent execution completed", {
@@ -1303,7 +1483,7 @@ export class SessionSupervisorActor implements BaseActor {
             : JSON.stringify(result.output);
 
           // Extract entities using the memory classifier
-          const classifier = this.mecmfManager as {
+          const classifier = (this.mecmfManager as unknown) as {
             memoryClassifier?: {
               extractKeyEntities(
                 text: string,
@@ -1355,34 +1535,24 @@ export class SessionSupervisorActor implements BaseActor {
     }
 
     // Stream tool calls and results to working memory if present
-    if (result.toolCalls && Array.isArray(result.toolCalls)) {
-      for (const toolCall of result.toolCalls) {
-        if (toolCall && typeof toolCall === "object" && "toolName" in toolCall) {
-          const typedToolCall = toolCall as ToolCallObject;
-          await this.streamToolCallToMemory(
-            agentTask.agentId,
-            typedToolCall.toolName,
-            typedToolCall.args,
-          );
-        }
+    if (result.toolCalls?.length) {
+      for (const { toolName, input } of result.toolCalls) {
+        await this.streamToolCallToMemory(agentTask.agentId, toolName, input);
       }
     }
 
-    if (result.toolResults && Array.isArray(result.toolResults)) {
-      for (const toolResult of result.toolResults) {
-        if (toolResult && typeof toolResult === "object" && "toolName" in toolResult) {
-          const typedToolResult = toolResult as ToolResultObject;
-          await this.streamToolResultToMemory(
-            agentTask.agentId,
-            typedToolResult.toolName,
-            typedToolResult.result,
-          );
-        }
+    if (result.toolResults?.length) {
+      for (
+        const { toolName, output: toolOutput } of result.toolResults as Array<
+          { toolName: string; output?: unknown }
+        >
+      ) {
+        await this.streamToolResultToMemory(agentTask.agentId, toolName, toolOutput);
       }
     }
 
     // Stream agent result to workspace memory system for automatic processing
-    await this.streamAgentResultToMemory(agentResult, true, result.tokensUsed);
+    await this.streamAgentResultToMemory(agentResult, true);
 
     return agentResult;
   }
@@ -1425,7 +1595,7 @@ export class SessionSupervisorActor implements BaseActor {
 
     // Skip hallucination detection for conversation agents
     // They use natural language without source attribution, causing false positives
-    if (result.agentId === "conversation-agent") {
+    if (result.agentId === "conversation" || result.agentId === "conversation-agent") {
       this.logger.debug("Skipping hallucination validation for conversation agent", {
         agentId: result.agentId,
         reason: "Conversation agents use natural language without source attribution",
@@ -1449,6 +1619,7 @@ export class SessionSupervisorActor implements BaseActor {
       const analysis: HallucinationAnalysis = await this.hallucinationDetector.analyzeResults(
         singleAgentResults,
       );
+      const effectiveAnalysis: HallucinationAnalysis = analysis;
       const confidenceThreshold = this.hallucinationDetector.getThreshold();
 
       this.logger.info("Single agent confidence validation", {
@@ -1459,43 +1630,99 @@ export class SessionSupervisorActor implements BaseActor {
         issuesCount: analysis.issues.length,
       });
 
-      // Check for immediate severe hallucinations that should stop execution
+      // Check for immediate severe hallucinations
       const isSevere = analysis.averageConfidence < 0.3 ||
         HallucinationPatternDetector.containsSeverePatterns(analysis.issues);
 
       if (isSevere) {
         const severeIssues = HallucinationPatternDetector.getSevereIssues(analysis.issues);
-        this.logger.error("SEVERE HALLUCINATION DETECTED - BLOCKING FURTHER EXECUTION", {
+        const retryCount = this.retryAttempts.get(result.agentId) ?? 0;
+        // Record issues for feedback-driven retry
+        this.lastValidationMetaByAgent.set(result.agentId, {
+          confidence: analysis.averageConfidence,
+          issues: severeIssues.length > 0 ? severeIssues : analysis.issues,
+        });
+        this.logger.error("SEVERE HALLUCINATION DETECTED", {
           agentId: result.agentId,
           confidence: analysis.averageConfidence,
           threshold: confidenceThreshold,
           severeIssues,
           allIssues: analysis.issues,
+          retryCount,
         });
-        this.hallucinationTermination = {
-          agentId: result.agentId,
-          confidence: analysis.averageConfidence,
-          issues: severeIssues.length > 0 ? severeIssues : analysis.issues,
-        };
-        return false; // Stop execution immediately
+        if (retryCount > 0) {
+          // Second failure → mark termination
+          this.hallucinationTermination = {
+            agentId: result.agentId,
+            confidence: analysis.averageConfidence,
+            issues: severeIssues.length > 0 ? severeIssues : analysis.issues,
+          };
+        }
+        return false; // Signal caller to retry or terminate
       }
+
+      // Run Jeopardy validation (observation-only): log and stream, do not affect control flow
+      let jeopardyResult: JeopardyValidationResult | undefined;
+      try {
+        jeopardyResult = await this.jeopardyValidator.validate({
+          originalTask: result.task,
+          agentOutput: result.output,
+          agentId: result.agentId,
+        });
+        this.streamSessionEvent("jeopardy.validation", {
+          agentId: result.agentId,
+          answersTask: jeopardyResult.answersTask,
+          completeness: jeopardyResult.completeness,
+          confidence: jeopardyResult.confidence,
+          issues: jeopardyResult.issues,
+          note: "observation-only; no retries or termination",
+        });
+        if (jeopardyResult.issues.some((i) => i.severity === "critical")) {
+          this.logger.warn("Jeopardy critical issues detected (observation-only)", {
+            agentId: result.agentId,
+            issues: jeopardyResult.issues,
+            completeness: jeopardyResult.completeness,
+            answersTask: jeopardyResult.answersTask,
+          });
+        }
+        this.logger.info("Jeopardy validation completed (observation-only)", {
+          agentId: result.agentId,
+          isValid: jeopardyResult.isValid,
+          answersTask: jeopardyResult.answersTask,
+          completeness: jeopardyResult.completeness,
+          confidence: jeopardyResult.confidence,
+        });
+      } catch (error) {
+        this.logger.warn("Jeopardy validation failed (observation-only)", {
+          agentId: result.agentId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+
+      // Confidence is hallucination-only; Jeopardy does not affect control flow
+      const combinedConfidence = effectiveAnalysis.averageConfidence;
 
       // Cache validation results for later aggregation
       this.validationMap.set(result.agentId, {
-        confidence: analysis.averageConfidence,
-        issues: analysis.issues,
+        confidence: combinedConfidence,
+        issues: effectiveAnalysis.issues,
+        jeopardyValidation: jeopardyResult,
       });
 
       // For non-severe cases, still log but continue
-      if (analysis.averageConfidence < confidenceThreshold) {
-        this.logger.warn("Low confidence agent detected but not severe - continuing", {
+      if (combinedConfidence < confidenceThreshold) {
+        this.logger.warn("Low combined confidence detected but not severe - continuing", {
           agentId: result.agentId,
-          confidence: analysis.averageConfidence,
+          combinedConfidence,
+          hallucinationConfidence: effectiveAnalysis.averageConfidence,
           threshold: confidenceThreshold,
-          issues: analysis.issues,
+          issues: effectiveAnalysis.issues,
         });
       }
 
+      // Success path → clear any previous retry state for this agent
+      this.retryAttempts.delete(result.agentId);
+      this.lastValidationMetaByAgent.delete(result.agentId);
       return true; // Continue execution
     } catch (error) {
       this.logger.error("Failed to validate agent result", {
@@ -1593,6 +1820,16 @@ export class SessionSupervisorActor implements BaseActor {
       results,
       failureReason,
       confidence: confidenceResults?.averageConfidence ?? this.computeAggregateConfidence(),
+      validation: (() => {
+        const map: Record<
+          string,
+          { confidence: number; jeopardyValidation?: JeopardyValidationResult }
+        > = {};
+        for (const [agentId, v] of this.validationMap.entries()) {
+          map[agentId] = { confidence: v.confidence, jeopardyValidation: v.jeopardyValidation };
+        }
+        return Object.keys(map).length > 0 ? map : undefined;
+      })(),
     };
   }
 
@@ -1665,6 +1902,8 @@ export class SessionSupervisorActor implements BaseActor {
     }
   }
 
+  // Jeopardy validation removed
+
   private buildExecutionPlanningPrompt(context: SessionContext): string {
     return `You are an execution planning supervisor for Atlas workspace sessions.
 
@@ -1726,8 +1965,8 @@ Think step by step about the best approach to handle this signal, then use the t
   private parsePlanFromResponse(
     text: string,
     reasoning: string | undefined,
-    toolCalls?: Array<unknown>,
-    toolResults?: Array<unknown>,
+    toolCalls?: ToolCall[],
+    toolResults?: ToolResult[],
   ): ExecutionPlan {
     type PlanningToolInput = {
       phase?: string;
@@ -1737,7 +1976,7 @@ Think step by step about the best approach to handle this signal, then use the t
       inputSource?: string;
       dependencies?: string[];
     };
-    type PlanningToolCall = { toolName?: string; input?: PlanningToolInput };
+
     // Log the AI response for debugging
     this.logger.debug("AI Planning Response", {
       text: text?.substring(0, 500),
@@ -1757,13 +1996,49 @@ Think step by step about the best approach to handle this signal, then use the t
       // Group tool calls by phase
       const phaseMap = new Map<string, Array<AgentPlanInput>>();
 
-      for (const toolCall of toolCalls as PlanningToolCall[]) {
+      for (const toolCall of toolCalls) {
         if (toolCall.toolName === "plan_agent_execution") {
-          const phase = toolCall.input?.phase || "Default Phase";
+          const input = toolCall.input as PlanningToolInput | undefined;
+          const phase = input?.phase || "Default Phase";
           if (!phaseMap.has(phase)) {
             phaseMap.set(phase, []);
           }
-          phaseMap.get(phase)!.push(toolCall.input);
+
+          if (!input) {
+            continue;
+          }
+
+          const agentId = typeof input.agentId === "string" && input.agentId.trim().length > 0
+            ? input.agentId
+            : "";
+          const task = typeof input.task === "string" && input.task.trim().length > 0
+            ? input.task
+            : "";
+          if (!agentId || !task) {
+            // Skip malformed planning entries
+            continue;
+          }
+
+          const inputSource: "signal" | "previous" | "combined" =
+            input.inputSource === "previous" || input.inputSource === "combined"
+              ? input.inputSource
+              : "signal";
+
+          const executionStrategy: "sequential" | "parallel" =
+            input.executionStrategy === "parallel" ? "parallel" : "sequential";
+
+          const dependencies = Array.isArray(input.dependencies) ? input.dependencies : undefined;
+
+          const normalized: AgentPlanInput = {
+            agentId,
+            task,
+            inputSource,
+            dependencies,
+            phase,
+            executionStrategy,
+          };
+
+          phaseMap.get(phase)!.push(normalized);
         }
       }
 
@@ -1801,7 +2076,7 @@ Think step by step about the best approach to handle this signal, then use the t
       }
     }
 
-    // Fallback: parse the text response for planning information
+    // Fallback: parse the text response for planning
     this.logger.warn("No tool calls found - parsing text response for planning", {
       hasText: !!text,
       hasReasoning: !!reasoning,
@@ -1948,13 +2223,189 @@ Think step by step about the best approach to handle this signal, then use the t
   }
 
   private async extractAndStoreSemanticFacts(summary: SessionSummary): Promise<void> {
-    // TODO: Replace with new SDK-based fact extraction
-    // The FactExtractor system agent was removed in favor of SDK agents
-    // This functionality needs to be reimplemented using the new conversation agent tools
-    this.logger.info("Semantic fact extraction temporarily disabled", {
-      sessionId: this.sessionId,
-      reason: "FactExtractor migrated to SDK - reimplementation pending",
-    });
+    try {
+      this.logger.info("Starting semantic fact extraction", {
+        sessionId: this.sessionId,
+        totalAgents: summary.totalAgents,
+      });
+
+      // Initialize MECMF manager if not already (should be set in initializeSession)
+      if (!this.mecmfManager && this.workspaceId) {
+        try {
+          const scope = {
+            id: this.workspaceId,
+            type: "workspace" as const,
+            name: `Workspace ${this.workspaceId}`,
+          };
+          this.mecmfManager = await setupMECMF(scope, {
+            workspaceId: this.workspaceId,
+            enableVectorSearch: true,
+          });
+        } catch (e) {
+          this.logger.warn("MECMF manager unavailable for fact storage", {
+            error: e instanceof Error ? e.message : String(e),
+          });
+        }
+      }
+
+      // Build batches: session summary, payload, and per-agent IO
+      const batches: Array<{
+        text: string;
+        sourceType: FactSourceType;
+        sourceAgentId?: string;
+      }> = [];
+
+      // Session summary batch
+      const summaryBlock = [
+        `Status: ${summary.status}`,
+        `Reasoning: ${summary.reasoning || ""}`,
+        `FailureReason: ${summary.failureReason || ""}`,
+        `Agents: ${summary.totalAgents}, Phases: ${summary.totalPhases}`,
+      ].join("\n");
+      batches.push({ text: summaryBlock, sourceType: "session_summary" });
+
+      // Payload batch (stringify safely)
+      try {
+        const payloadText = this.sessionContext
+          ? JSON.stringify(this.sessionContext.payload ?? {}, null, 2)
+          : "{}";
+        if (payloadText && payloadText !== "{}") {
+          batches.push({ text: payloadText, sourceType: "payload" });
+        }
+      } catch {
+        // ignore payload stringify issues
+      }
+
+      // Agent inputs/outputs
+      for (const r of summary.results) {
+        // Input batch
+        if (r.input !== undefined && r.input !== null) {
+          const inputText = typeof r.input === "string"
+            ? r.input
+            : JSON.stringify(r.input, null, 2);
+          batches.push({ text: inputText, sourceType: "agent_input", sourceAgentId: r.agentId });
+        }
+        // Output batch
+        if (r.output !== undefined && r.output !== null) {
+          const outputText = typeof r.output === "string"
+            ? r.output
+            : JSON.stringify(r.output, null, 2);
+          batches.push({ text: outputText, sourceType: "agent_output", sourceAgentId: r.agentId });
+        }
+      }
+
+      // Create extractor with small model similar to JeopardyValidator
+      const extractor = new SemanticFactExtractor({
+        logger: this.logger.child({ component: "semantic-fact-extractor" }),
+        enabled: true,
+        model: "claude-3-5-haiku-latest",
+        confidenceThreshold: 0.6,
+        llmProvider: (model: string) => this.llmProvider(model),
+        temperature: 0.1,
+        maxOutputTokens: 1200,
+        timeoutMs: 20000,
+      });
+
+      // Process batches in sequence to limit cost; could be parallelized if needed
+      const allFacts: Array<SemanticFact> = [];
+      for (const batch of batches) {
+        const result = await extractor.extractFromBatch(batch);
+        if (result.facts.length > 0) {
+          allFacts.push(...result.facts);
+        }
+      }
+
+      // Deduplicate across batches (extractor already dedups per batch)
+      const seen = new Set<string>();
+      const uniqueFacts = allFacts.filter((f) => {
+        const key = [
+          f.subject.trim().toLowerCase(),
+          f.predicate.trim().toLowerCase(),
+          f.object.trim().toLowerCase(),
+        ].join("|");
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+
+      // Store facts using MECMF
+      const conversationContext = createConversationContext(
+        this.sessionId,
+        this.workspaceId || "global",
+        {
+          currentTask: "semantic_fact_extraction",
+          activeAgents: summary.results.map((r) => r.agentId),
+        },
+      );
+
+      let stored = 0;
+      for (const fact of uniqueFacts) {
+        try {
+          if (this.mecmfManager) {
+            await this.mecmfManager.classifyAndStore(
+              JSON.stringify(fact),
+              conversationContext,
+              MemorySource.SYSTEM_GENERATED,
+              {
+                sessionId: this.sessionId,
+                workspaceId: this.workspaceId,
+                agentId: fact.sourceAgentId,
+              },
+            );
+            stored++;
+          } else {
+            // Fallback lightweight CoALA storage for current session scope
+            const workspaceId = this.workspaceId || "default";
+            const memoryPath = getWorkspaceMemoryDir(workspaceId);
+            const memoryAdapter = new CoALALocalFileStorageAdapter(memoryPath);
+            const scope = { id: this.sessionId, workspaceId, type: "session" as const };
+            const tempManager = new CoALAMemoryManager(scope, memoryAdapter, false, {
+              commitDebounceDelay: 0,
+            });
+            await tempManager.rememberWithMetadata(
+              `semantic-fact-${crypto.randomUUID()}`,
+              fact,
+              {
+                memoryType: CoALAMemoryType.SEMANTIC,
+                tags: [
+                  fact.predicate,
+                  fact.sourceType,
+                  fact.subject.split(" ")[0],
+                  fact.object.split(" ")[0],
+                ].filter((t): t is string => Boolean(t)),
+                relevanceScore: Math.min(0.9, Math.max(0.6, fact.confidence)),
+                confidence: fact.confidence,
+                associations: [this.sessionId, ...(fact.sourceAgentId ? [fact.sourceAgentId] : [])],
+                source: MemorySource.SYSTEM_GENERATED,
+                sourceMetadata: {
+                  sessionId: this.sessionId,
+                  workspaceId: this.workspaceId,
+                  agentId: fact.sourceAgentId,
+                },
+              },
+            );
+            await tempManager.dispose();
+            stored++;
+          }
+        } catch (storeError) {
+          this.logger.warn("Failed to store semantic fact", {
+            error: storeError instanceof Error ? storeError.message : String(storeError),
+          });
+        }
+      }
+
+      this.logger.info("Semantic fact extraction completed", {
+        sessionId: this.sessionId,
+        batches: batches.length,
+        extracted: allFacts.length,
+        stored,
+      });
+    } catch (error) {
+      this.logger.error("Semantic fact extraction failed", {
+        sessionId: this.sessionId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   private async generateWorkingMemorySummary(summary: SessionSummary): Promise<void> {
@@ -1963,11 +2414,6 @@ Think step by step about the best approach to handle this signal, then use the t
         sessionId: this.sessionId,
         totalAgents: summary.totalAgents,
       });
-
-      // Import memory manager dynamically
-      const { CoALAMemoryManager, CoALAMemoryType } = await import("@atlas/memory");
-      const { getWorkspaceMemoryDir } = await import("../../utils/paths.ts");
-      const { CoALALocalFileStorageAdapter } = await import("@atlas/storage");
 
       // Initialize memory manager for the workspace
       const workspaceId = this.workspaceId || "default";
@@ -2050,71 +2496,30 @@ Think step by step about the best approach to handle this signal, then use the t
     }
   }
 
-  private buildSessionContentForFactExtraction(summary: SessionSummary): string {
-    const content = [
-      `# Session Execution Summary`,
-      `Session ID: ${this.sessionId}`,
-      `Status: ${summary.status}`,
-      `Duration: ${summary.duration}ms`,
-      `Total Phases: ${summary.totalPhases}`,
-      `Total Agents: ${summary.totalAgents}`,
-      ``,
-      `## Session Reasoning`,
-      summary.reasoning,
-      ``,
-      `## Agent Execution Results`,
-    ];
-
-    for (const result of summary.results) {
-      content.push(`### Agent: ${result.agentId}`);
-      content.push(`Task: ${result.task}`);
-      content.push(`Duration: ${result.duration}ms`);
-      content.push(`Timestamp: ${result.timestamp}`);
-
-      if (result.reasoning) {
-        content.push(`Reasoning: ${result.reasoning}`);
-      }
-
-      if (result.output) {
-        content.push(`Output: ${JSON.stringify(result.output, null, 2)}`);
-      }
-
-      if (result.toolCalls && result.toolCalls.length > 0) {
-        content.push(`Tool Calls: ${result.toolCalls.length} calls executed`);
-      }
-
-      content.push("");
-    }
-
-    return content.join("\n");
-  }
-
-  private buildWorkingMemorySummary(summary: SessionSummary): object {
+  /**
+   * Build a concise working memory summary from the session summary.
+   * Avoids heavy nesting and keeps relevant fields for later retrieval.
+   */
+  private buildWorkingMemorySummary(summary: SessionSummary): Record<string, unknown> {
     return {
-      sessionId: this.sessionId,
-      workspaceId: this.workspaceId,
+      sessionId: summary.sessionId,
       status: summary.status,
-      duration: summary.duration,
       totalPhases: summary.totalPhases,
       totalAgents: summary.totalAgents,
+      completedPhases: summary.completedPhases,
+      executedAgents: summary.executedAgents,
+      durationMs: summary.duration,
       reasoning: summary.reasoning,
-      completionTime: new Date().toISOString(),
-      agentIds: summary.results.map((r) => r.agentId),
-      averageDuration: summary.results.length > 0
-        ? summary.results.reduce((sum, r) => sum + r.duration, 0) / summary.results.length
-        : 0,
-      toolUsage: summary.results.reduce((total, r) => total + (r.toolCalls?.length || 0), 0),
-      signal: {
-        id: this.sessionContext?.signal?.id,
-        provider: this.sessionContext?.signal?.provider?.name,
-      },
+      // Store only essential per-agent data to keep memory light
+      agentResults: summary.results.map((r) => ({
+        agentId: r.agentId,
+        task: r.task,
+        hasOutput: r.output !== undefined && r.output !== null,
+        durationMs: r.duration,
+        timestamp: r.timestamp,
+        toolCalls: r.toolCalls?.length || 0,
+      })),
     };
-  }
-
-  private getWorkingMemoryEntries(): unknown[] {
-    // For now, return empty array - could be enhanced to actually fetch working memory
-    // This would require access to the workspace memory manager
-    return [];
   }
 
   /**
@@ -2172,6 +2577,8 @@ Think step by step about the best approach to handle this signal, then use the t
     // Format the facts section
     return "## Context Facts\n" + facts.map((fact) => `- ${fact}`).join("\n");
   }
+
+  // Sanitizer now imported from @atlas/core
 
   /**
    * Stream agent result to workspace memory system for automatic procedural pattern learning
@@ -2511,6 +2918,8 @@ Think step by step about the best approach to handle this signal, then use the t
     };
   }
 
+  // Jeopardy auto-repair removed; validator is observation-only
+
   // Central stream event handler - all agent streams flow through here
   private handleAgentStreamEvent(
     agentId: string,
@@ -2560,36 +2969,41 @@ Think step by step about the best approach to handle this signal, then use the t
     if (event.type === "text") {
       return {
         type: "text",
-        content: `[${agentId}]: ${event.content}`,
-        metadata: sessionMetadata,
-      } as StreamEvent & { metadata: typeof sessionMetadata };
+        content: `[${agentId}]: ${String((event as { content?: unknown }).content ?? "")}`,
+      } as StreamEvent;
     }
 
     // For other event types, add metadata if supported
     if (event.type === "custom") {
       return {
-        ...event,
+        type: "custom",
+        eventType: typeof (event as { eventType?: unknown }).eventType === "string"
+          ? String((event as { eventType?: unknown }).eventType)
+          : "custom",
         data: {
-          ...((typeof event.data === "object" && event.data !== null)
-            ? event.data as Record<string, unknown>
-            : { originalData: event.data }),
+          ...((typeof (event as { data?: unknown }).data === "object" &&
+              (event as { data?: unknown }).data !== null)
+            ? (event as { data?: Record<string, unknown> }).data!
+            : { originalData: (event as { data?: unknown }).data }),
           metadata: sessionMetadata,
         },
-      };
+      } as StreamEvent;
     }
 
-    // For events that don't support metadata, return as-is
-    return event;
+    // For events that don't support metadata, map to a generic custom event
+    return {
+      type: "custom",
+      eventType: "unknown",
+      data: { original: event },
+    } as StreamEvent;
   }
 
   // Stream session-level events
   private streamSessionEvent(eventType: string, data: unknown): void {
-    this.baseStreamEmitter?.emit(
-      {
-        type: "custom",
-        eventType: `session.${eventType}`,
-        data,
-      } as import("@atlas/agent-sdk").StreamEvent,
-    );
+    this.baseStreamEmitter?.emit({
+      type: "custom",
+      eventType: `session.${eventType}`,
+      data,
+    });
   }
 }

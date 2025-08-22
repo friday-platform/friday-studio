@@ -29,7 +29,7 @@ export {
 export type { MECMFDebugConfig, PromptEnhancementLog } from "./debug-logger.ts";
 
 // === Integration Helpers ===
-import type { IAtlasScope } from "../../../src/types/core.ts";
+import type { MemoryScoper } from "./mecmf-interfaces.ts";
 import {
   createMECMFMemoryManager,
   MECMFConfig,
@@ -43,11 +43,12 @@ import { getMECMFCacheDir } from "../../../src/utils/paths.ts";
  * Quick setup function for MECMF in Atlas workspaces
  */
 export async function setupMECMF(
-  scope: IAtlasScope,
+  scope: MemoryScoper,
   options?: Partial<MECMFConfig>,
 ): Promise<MECMFMemoryManager> {
   const config: MECMFConfig = {
-    workspaceId: scope.id,
+    // Prefer explicit workspaceId, fall back to id for workspace-scoped usage
+    workspaceId: scope.workspaceId ?? scope.id,
     enableVectorSearch: true,
     embeddingConfig: {
       cacheDirectory: getMECMFCacheDir(),
@@ -82,7 +83,6 @@ export async function setupMECMF(
 
   const manager = createMECMFMemoryManager(scope, config);
   await manager.initialize();
-
   return manager;
 }
 
