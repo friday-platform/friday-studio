@@ -286,12 +286,7 @@ export class DenoKVStorage implements KVStorage {
     const isConnected = await this.health();
 
     if (!isConnected) {
-      return {
-        totalKeys: 0,
-        totalSize: 0,
-        isConnected: false,
-        lastError: "Storage not connected",
-      };
+      return { totalKeys: 0, totalSize: 0, isConnected: false, lastError: "Storage not connected" };
     }
 
     try {
@@ -306,11 +301,7 @@ export class DenoKVStorage implements KVStorage {
         totalSize += JSON.stringify(_entry.value).length;
       }
 
-      return {
-        totalKeys,
-        totalSize,
-        isConnected: true,
-      };
+      return { totalKeys, totalSize, isConnected: true };
     } catch (error) {
       return {
         totalKeys: 0,

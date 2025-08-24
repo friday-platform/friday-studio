@@ -1,11 +1,11 @@
+import { createLogger } from "@atlas/logger";
 import { assert, assertEquals, assertFalse } from "@std/assert";
+import { MockLanguageModelV2 } from "ai/test";
 import {
   type JeopardyValidationRequest,
   type JeopardyValidationResult,
   JeopardyValidator,
 } from "../../src/core/services/jeopardy-validator.ts";
-import { MockLanguageModelV2 } from "ai/test";
-import { createLogger } from "@atlas/logger";
 
 // Silence logger output and file writes during tests
 Deno.env.set("DENO_TESTING", "true");
@@ -23,10 +23,12 @@ function createValidator(
         doGenerate: async () => ({
           finishReason: "stop",
           usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
-          content: [{
-            type: "text",
-            text: `{"answersTask":true,"completeness":1,"confidence":1,"issues":[],"reasoning":""}`,
-          }],
+          content: [
+            {
+              type: "text",
+              text: `{"answersTask":true,"completeness":1,"confidence":1,"issues":[],"reasoning":""}`,
+            },
+          ],
           warnings: [],
         }),
       }) as unknown as import("ai").LanguageModel,
@@ -37,11 +39,7 @@ function createValidator(
 
 Deno.test("jeopardy: returns disabled result when disabled", async () => {
   const v = createValidator({ enabled: false });
-  const res = await v.validate({
-    originalTask: "Do X",
-    agentOutput: "some output",
-    agentId: "a1",
-  });
+  const res = await v.validate({ originalTask: "Do X", agentOutput: "some output", agentId: "a1" });
   assert(res.isValid);
   assert(res.answersTask);
   assertEquals(res.confidence, 0.5);
@@ -55,11 +53,12 @@ Deno.test("jeopardy: combines structured issues with task-derived source checks;
         doGenerate: async () => ({
           finishReason: "stop",
           usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
-          content: [{
-            type: "text",
-            text:
-              `{"answersTask":true,"completeness":0.4,"confidence":0.6,"issues":[{"type":"incomplete","description":"missing key fields","severity":"medium"}],"reasoning":"partial"}`,
-          }],
+          content: [
+            {
+              type: "text",
+              text: `{"answersTask":true,"completeness":0.4,"confidence":0.6,"issues":[{"type":"incomplete","description":"missing key fields","severity":"medium"}],"reasoning":"partial"}`,
+            },
+          ],
           warnings: [],
         }),
       }) as unknown as import("ai").LanguageModel,
@@ -89,11 +88,12 @@ Deno.test("jeopardy: respects task-derived allowedSources; isValid true when no 
         doGenerate: async () => ({
           finishReason: "stop",
           usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
-          content: [{
-            type: "text",
-            text:
-              `{"answersTask":true,"completeness":0.9,"confidence":0.9,"issues":[],"reasoning":"good"}`,
-          }],
+          content: [
+            {
+              type: "text",
+              text: `{"answersTask":true,"completeness":0.9,"confidence":0.9,"issues":[],"reasoning":"good"}`,
+            },
+          ],
           warnings: [],
         }),
       }) as unknown as import("ai").LanguageModel,
@@ -107,7 +107,10 @@ Deno.test("jeopardy: respects task-derived allowedSources; isValid true when no 
   const res = await v.validate(req);
   // Domain allowed -> no wrong_source; valid overall
   assert(res.isValid);
-  assertEquals(res.issues.find((i) => i.type === "wrong_source"), undefined);
+  assertEquals(
+    res.issues.find((i) => i.type === "wrong_source"),
+    undefined,
+  );
 });
 
 Deno.test("jeopardy: returns error result when LLM call fails", async () => {

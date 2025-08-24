@@ -1,17 +1,17 @@
-import { load } from "@std/dotenv";
 import { AtlasDaemon } from "@atlas/atlasd";
-import { errorOutput, infoOutput, successOutput } from "../../utils/output.ts";
-import { YargsInstance } from "../../utils/yargs.ts";
+import { CredentialFetcher } from "@atlas/core";
+import { AtlasLogger } from "@atlas/logger";
+import { load } from "@std/dotenv";
+import { exists } from "@std/fs";
+import { join } from "@std/path";
+import { getAtlasHome } from "../../../utils/paths.ts";
 import {
   displayDaemonStatus,
   fetchDaemonStatus,
   getLocalDaemonClient,
 } from "../../utils/daemon-status.ts";
-import { getAtlasHome } from "../../../utils/paths.ts";
-import { join } from "@std/path";
-import { exists } from "@std/fs";
-import { CredentialFetcher } from "@atlas/core";
-import { AtlasLogger } from "@atlas/logger";
+import { errorOutput, infoOutput, successOutput } from "../../utils/output.ts";
+import type { YargsInstance } from "../../utils/yargs.ts";
 
 interface StartArgs {
   port?: number;
@@ -42,11 +42,7 @@ export function builder(y: YargsInstance) {
       describe: "Port to run the daemon on",
       default: 8080,
     })
-    .option("hostname", {
-      type: "string",
-      describe: "Hostname to bind to",
-      default: "localhost",
-    })
+    .option("hostname", { type: "string", describe: "Hostname to bind to", default: "localhost" })
     .option("detached", {
       type: "boolean",
       alias: "d",
@@ -76,10 +72,7 @@ export function builder(y: YargsInstance) {
     .example("$0 daemon start", "Start daemon on default port 8080")
     .example("$0 daemon start --port 3000", "Start daemon on specific port")
     .example("$0 daemon start --detached", "Start daemon in background mode")
-    .example(
-      "$0 daemon start --max-workspaces 20",
-      "Start with higher workspace limit",
-    )
+    .example("$0 daemon start --max-workspaces 20", "Start with higher workspace limit")
     .example(
       "$0 daemon start --atlas-config /path/to/config",
       "Start with custom atlas config path",
@@ -90,9 +83,7 @@ export const handler = async (argv: StartArgs): Promise<void> => {
   try {
     // Validate port
     if (argv.port && (argv.port < 1 || argv.port > 65535)) {
-      errorOutput(
-        `Invalid port number: ${argv.port}. Port must be between 1 and 65535.`,
-      );
+      errorOutput(`Invalid port number: ${argv.port}. Port must be between 1 and 65535.`);
       Deno.exit(1);
     }
 
@@ -167,23 +158,17 @@ export const handler = async (argv: StartArgs): Promise<void> => {
         logger.error("Continuing with existing environment variables...");
 
         errorOutput("\nFailed to fetch credentials with ATLAS_KEY.");
-        errorOutput(
-          "Please check your ATLAS_KEY in ~/.atlas/.env and restart the daemon.",
-        );
+        errorOutput("Please check your ATLAS_KEY in ~/.atlas/.env and restart the daemon.");
         Deno.exit(1);
       }
     } else if (atlasKey && localOnlyMode) {
-      logger.info(
-        "ATLAS_LOCAL_ONLY mode enabled - skipping Atlas API credential fetch",
-      );
+      logger.info("ATLAS_LOCAL_ONLY mode enabled - skipping Atlas API credential fetch");
       logger.info("Using only locally configured environment variables");
       logger.info(
         "Ensure all required API keys (ANTHROPIC_API_KEY, etc.) are set in your environment",
       );
     } else if (localOnlyMode) {
-      logger.info(
-        "ATLAS_LOCAL_ONLY mode enabled - using only local environment variables",
-      );
+      logger.info("ATLAS_LOCAL_ONLY mode enabled - using only local environment variables");
     }
 
     // Set atlas config path if provided
@@ -220,9 +205,8 @@ async function startDetached(argv: StartArgs): Promise<void> {
   const mainModule = Deno.mainModule;
 
   // Check if we're running as a compiled binary
-  const isCompiledBinary = execPath.endsWith("atlas-test") ||
-    execPath.endsWith("atlas") ||
-    execPath.endsWith("atlas.exe");
+  const isCompiledBinary =
+    execPath.endsWith("atlas-test") || execPath.endsWith("atlas") || execPath.endsWith("atlas.exe");
 
   // On Windows, we need to use a different approach for true background process
   if (Deno.build.os === "windows") {
@@ -249,10 +233,7 @@ async function startDetached(argv: StartArgs): Promise<void> {
         ...(argv.logLevel ? ["--log-level", argv.logLevel] : []),
         ...(argv.atlasConfig ? ["--atlas-config", argv.atlasConfig] : []),
       ],
-      env: {
-        ...Deno.env.toObject(),
-        ATLAS_DETACHED: "true",
-      },
+      env: { ...Deno.env.toObject(), ATLAS_DETACHED: "true" },
       stdout: "null",
       stderr: "null",
       stdin: "null",
@@ -281,10 +262,7 @@ async function startDetached(argv: StartArgs): Promise<void> {
         ...(argv.logLevel ? ["--log-level", argv.logLevel] : []),
         ...(argv.atlasConfig ? ["--atlas-config", argv.atlasConfig] : []),
       ],
-      env: {
-        ...Deno.env.toObject(),
-        ATLAS_DETACHED: "true",
-      },
+      env: { ...Deno.env.toObject(), ATLAS_DETACHED: "true" },
       stdout: "null",
       stderr: "null",
       stdin: "null",

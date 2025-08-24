@@ -1,5 +1,5 @@
-import { type SSEEvent } from "@atlas/config";
-import { OutputEntry } from "../conversation/types.ts";
+import type { SSEEvent } from "@atlas/config";
+import type { OutputEntry } from "../conversation/types.ts";
 
 export function formatMessage(messages: SSEEvent[]): OutputEntry | undefined {
   const currentUser = Deno.env.get("USER") || Deno.env.get("USERNAME") || "You";

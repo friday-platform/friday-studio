@@ -1,5 +1,1 @@
-{
-  "name": "@atlas/storage",
-  "version": "1.0.0",
-  "exports": "./mod.ts"
-}
+{ "name": "@atlas/storage", "version": "1.0.0", "exports": "./mod.ts" }

@@ -3,30 +3,30 @@
  * Replaces worker-based supervisor management with direct actor orchestration
  */
 
-import { ConfigLoader, MergedConfig } from "@atlas/config";
+import { ConfigLoader, type MergedConfig } from "@atlas/config";
+import type { WorkspaceSupervisorConfig } from "@atlas/core";
+import {
+  AgentOrchestrator,
+  convertLLMToAgent,
+  type GlobalMCPServerPool,
+  LLMProvider,
+  WorkspaceSessionStatus,
+} from "@atlas/core";
+import { logger } from "@atlas/logger";
+import { MCPServerRegistry } from "@atlas/mcp";
+import { type ISignalProvider, ProviderRegistry, ProviderType } from "@atlas/signals";
 import { FilesystemConfigAdapter } from "@atlas/storage";
 import { load } from "@std/dotenv";
 import { exists } from "@std/fs";
 import { join } from "@std/path";
 import { assign, fromPromise, setup } from "xstate";
 import type { IWorkspace, IWorkspaceSession, IWorkspaceSignal } from "../types/core.ts";
-import type { WorkspaceSupervisorConfig } from "@atlas/core";
-import { logger } from "@atlas/logger";
 import {
-  ProcessSignalResult,
+  type ProcessSignalResult,
   WorkspaceSupervisorActor,
 } from "./actors/workspace-supervisor-actor.ts";
-import { type ISignalProvider, ProviderRegistry, ProviderType } from "@atlas/signals";
 import { Session } from "./session.ts";
-import { LLMProvider } from "@atlas/core";
-import { MCPServerRegistry } from "@atlas/mcp";
 import type { LibraryStorageAdapter } from "./storage/library-storage-adapter.ts";
-import {
-  AgentOrchestrator,
-  convertLLMToAgent,
-  GlobalMCPServerPool,
-  WorkspaceSessionStatus,
-} from "@atlas/core";
 
 interface StreamSignalData {
   runtimeSignal: unknown; // Runtime signal instance
@@ -69,13 +69,13 @@ export interface WorkspaceRuntimeContext {
 export type WorkspaceRuntimeEvent =
   | { type: "INITIALIZE" }
   | {
-    type: "PROCESS_SIGNAL";
-    signal: IWorkspaceSignal;
-    payload: Record<string, unknown>;
-    sessionId?: string;
-    streamId?: string;
-    traceHeaders?: Record<string, string>;
-  }
+      type: "PROCESS_SIGNAL";
+      signal: IWorkspaceSignal;
+      payload: Record<string, unknown>;
+      sessionId?: string;
+      streamId?: string;
+      traceHeaders?: Record<string, string>;
+    }
   | { type: "SESSION_CREATED"; sessionId: string }
   | { type: "SESSION_COMPLETED"; sessionId: string; result?: Record<string, unknown> }
   | { type: "SESSION_FAILED"; sessionId: string; error: string }
@@ -83,21 +83,18 @@ export type WorkspaceRuntimeEvent =
   | { type: "ERROR"; error: Error }
   | { type: "STORE_SESSION_RESULT"; sessionId: string; result: ProcessSignalResult }
   | {
-    type: "xstate.done.actor.initializeWorkspace";
-    output: {
-      supervisor: WorkspaceSupervisorActor;
-      mergedConfig: MergedConfig;
-      agentOrchestrator: AgentOrchestrator;
-    };
-  }
+      type: "xstate.done.actor.initializeWorkspace";
+      output: {
+        supervisor: WorkspaceSupervisorActor;
+        mergedConfig: MergedConfig;
+        agentOrchestrator: AgentOrchestrator;
+      };
+    }
   | {
-    type: "xstate.done.actor.initializeStreams";
-    output: { activeStreamSignals: Map<string, StreamSignalData> };
-  }
-  | {
-    type: "xstate.done.actor.shutdownWorkspace";
-    output: { shutdown: boolean };
-  };
+      type: "xstate.done.actor.initializeStreams";
+      output: { activeStreamSignals: Map<string, StreamSignalData> };
+    }
+  | { type: "xstate.done.actor.shutdownWorkspace"; output: { shutdown: boolean } };
 
 // Define input type for the machine
 export interface WorkspaceRuntimeMachineInput {
@@ -165,14 +162,10 @@ export const workspaceRuntimeMachineSetup = setup({
       let mergedConfig: MergedConfig;
       if (context.config) {
         mergedConfig = context.config;
-        logger.debug("Using provided configuration", {
-          workspaceId: context.workspace.id,
-        });
+        logger.debug("Using provided configuration", { workspaceId: context.workspace.id });
       } else {
         // Load configuration from disk
-        logger.debug("Loading configuration from disk", {
-          workspaceId: context.workspace.id,
-        });
+        logger.debug("Loading configuration from disk", { workspaceId: context.workspace.id });
         const workspacePath = context.options.workspacePath || Deno.cwd();
         const adapter = new FilesystemConfigAdapter(workspacePath);
         const configLoader = new ConfigLoader(adapter, workspacePath);
@@ -201,9 +194,7 @@ export const workspaceRuntimeMachineSetup = setup({
       );
 
       // Initialize supervisor with standard params
-      supervisor.initialize({
-        actorId: supervisor.id,
-      });
+      supervisor.initialize({ actorId: supervisor.id });
 
       // Set agents from the merged config
       if (mergedConfig.workspace.agents) {
@@ -219,36 +210,25 @@ export const workspaceRuntimeMachineSetup = setup({
       const agentOrchestrator = new AgentOrchestrator(
         {
           agentsServerUrl: `http://localhost:8080/agents`,
-          headers: {
-            "X-Atlas-Workspace-ID": context.workspace.id,
-          },
+          headers: { "X-Atlas-Workspace-ID": context.workspace.id },
           executionTimeout: mergedConfig.atlas?.execution?.agent_timeout
             ? mergedConfig.atlas.execution.agent_timeout * 1000
             : 300000,
           mcpServerPool: context.options.mcpServerPool,
           daemonUrl: context.options.daemonUrl,
         },
-        logger.child({
-          component: "AgentOrchestrator",
-          workspaceId: context.workspace.id,
-        }),
+        logger.child({ component: "AgentOrchestrator", workspaceId: context.workspace.id }),
       );
 
       // Initialize the orchestrator
       await agentOrchestrator.initialize();
 
-      logger.info("Agent orchestrator initialized", {
-        workspaceId: context.workspace.id,
-      });
+      logger.info("Agent orchestrator initialized", { workspaceId: context.workspace.id });
 
       // Auto-wrap LLM agents from workspace config
       if (mergedConfig.workspace.agents) {
         let wrappedCount = 0;
-        for (
-          const [agentId, agentConfig] of Object.entries(
-            mergedConfig.workspace.agents,
-          )
-        ) {
+        for (const [agentId, agentConfig] of Object.entries(mergedConfig.workspace.agents)) {
           if (agentConfig.type === "llm") {
             logger.info(`Auto-wrapping LLM agent: ${agentId}`, {
               workspaceId: context.workspace.id,
@@ -326,11 +306,7 @@ export const workspaceRuntimeMachineSetup = setup({
 
       // Initialize stream signals
       if (context.config?.workspace.signals) {
-        for (
-          const [signalId, signalConfig] of Object.entries(
-            context.config.workspace.signals,
-          )
-        ) {
+        for (const [signalId, signalConfig] of Object.entries(context.config.workspace.signals)) {
           if (isStreamSignal(signalConfig)) {
             try {
               logger.info(`Initializing real-time signal: ${signalId}`, {
@@ -371,74 +347,74 @@ export const workspaceRuntimeMachineSetup = setup({
 
       return { activeStreamSignals };
     }),
-    shutdownWorkspace: fromPromise<
-      { shutdown: boolean },
-      { context: WorkspaceRuntimeContext }
-    >(async ({ input }) => {
-      const { context } = input;
+    shutdownWorkspace: fromPromise<{ shutdown: boolean }, { context: WorkspaceRuntimeContext }>(
+      async ({ input }) => {
+        const { context } = input;
 
-      logger.info("Shutting down workspace runtime", {
-        workspaceId: context.workspace.id,
-        activeSessions: context.stats.activeSessionCount,
-        activeStreams: context.activeStreamSignals.size,
-      });
+        logger.info("Shutting down workspace runtime", {
+          workspaceId: context.workspace.id,
+          activeSessions: context.stats.activeSessionCount,
+          activeStreams: context.activeStreamSignals.size,
+        });
 
-      // First, cleanup stream signals to stop new events
-      for (const [signalId, streamData] of context.activeStreamSignals) {
-        try {
-          logger.info(`Cleaning up stream signal: ${signalId}`);
-          if (
-            streamData.runtimeSignal && typeof streamData.runtimeSignal === "object" &&
-            "teardown" in streamData.runtimeSignal
-          ) {
-            await (streamData.runtimeSignal as { teardown(): Promise<void> }).teardown();
-          }
-        } catch (error) {
-          logger.error(`Failed to cleanup stream signal: ${signalId}`, {
-            error: error instanceof Error ? error.message : String(error),
-          });
-        }
-      }
-
-      // Clean up all sessions (cancel active ones, cleanup resources for completed ones)
-      for (const [sessionId, session] of context.sessions) {
-        try {
-          const sessionStatus = session.status;
-
-          if (
-            sessionStatus === WorkspaceSessionStatus.COMPLETED ||
-            sessionStatus === WorkspaceSessionStatus.FAILED
-          ) {
-            // For completed/failed sessions, only clean up resources without changing status
-            logger.debug("Cleaning up completed session resources", {
-              workspaceId: context.workspace.id,
-              sessionId,
-              status: sessionStatus,
+        // First, cleanup stream signals to stop new events
+        for (const [signalId, streamData] of context.activeStreamSignals) {
+          try {
+            logger.info(`Cleaning up stream signal: ${signalId}`);
+            if (
+              streamData.runtimeSignal &&
+              typeof streamData.runtimeSignal === "object" &&
+              "teardown" in streamData.runtimeSignal
+            ) {
+              await (streamData.runtimeSignal as { teardown(): Promise<void> }).teardown();
+            }
+          } catch (error) {
+            logger.error(`Failed to cleanup stream signal: ${signalId}`, {
+              error: error instanceof Error ? error.message : String(error),
             });
-            session.cleanup();
-          } else {
-            // For active sessions, cancel them
-            logger.debug("Cancelling active session", {
-              workspaceId: context.workspace.id,
-              sessionId,
-              status: sessionStatus,
-            });
-            session.cancel();
           }
-        } catch (error) {
-          logger.error(`Failed to cleanup session: ${sessionId}`, {
-            error: error instanceof Error ? error.message : String(error),
-          });
         }
-      }
 
-      // Cleanup supervisor
-      if (context.supervisor) {
-        await context.supervisor.cleanup();
-      }
+        // Clean up all sessions (cancel active ones, cleanup resources for completed ones)
+        for (const [sessionId, session] of context.sessions) {
+          try {
+            const sessionStatus = session.status;
 
-      return { shutdown: true };
-    }),
+            if (
+              sessionStatus === WorkspaceSessionStatus.COMPLETED ||
+              sessionStatus === WorkspaceSessionStatus.FAILED
+            ) {
+              // For completed/failed sessions, only clean up resources without changing status
+              logger.debug("Cleaning up completed session resources", {
+                workspaceId: context.workspace.id,
+                sessionId,
+                status: sessionStatus,
+              });
+              session.cleanup();
+            } else {
+              // For active sessions, cancel them
+              logger.debug("Cancelling active session", {
+                workspaceId: context.workspace.id,
+                sessionId,
+                status: sessionStatus,
+              });
+              session.cancel();
+            }
+          } catch (error) {
+            logger.error(`Failed to cleanup session: ${sessionId}`, {
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
+        }
+
+        // Cleanup supervisor
+        if (context.supervisor) {
+          await context.supervisor.cleanup();
+        }
+
+        return { shutdown: true };
+      },
+    ),
   },
   actions: {
     updateSignalStats: assign({
@@ -473,7 +449,7 @@ export const workspaceRuntimeMachineSetup = setup({
         eventType: event.type,
         eventKeys: Object.keys(event),
         hasOutput: !!(event as { output?: unknown }).output,
-        hasSupervisor: !!((event as { output?: { supervisor?: unknown } }).output?.supervisor),
+        hasSupervisor: !!(event as { output?: { supervisor?: unknown } }).output?.supervisor,
       });
 
       if (event.type === "xstate.done.actor.initializeWorkspace") {
@@ -495,15 +471,11 @@ export const workspaceRuntimeMachineSetup = setup({
     }),
     assignActiveStreamSignals: assign(({ event }) => {
       if (event.type === "xstate.done.actor.initializeStreams") {
-        return {
-          activeStreamSignals: event.output.activeStreamSignals,
-        };
+        return { activeStreamSignals: event.output.activeStreamSignals };
       }
       return {};
     }),
-    setShuttingDown: assign({
-      isShuttingDown: () => true,
-    }),
+    setShuttingDown: assign({ isShuttingDown: () => true }),
     assignError: assign({
       error: ({ event }) => {
         if ("error" in event) {
@@ -519,21 +491,21 @@ export const workspaceRuntimeMachineSetup = setup({
 function isStreamSignal(
   signal: unknown,
 ): signal is { provider: string; config?: Record<string, unknown> } {
-  return typeof signal === "object" &&
+  return (
+    typeof signal === "object" &&
     signal !== null &&
     "provider" in signal &&
     typeof (signal as { provider?: unknown }).provider === "string" &&
     ((signal as { provider?: string }).provider === "stream" ||
-      (signal as { provider?: string }).provider === "k8s-events");
+      (signal as { provider?: string }).provider === "k8s-events")
+  );
 }
 
 // Export the machine type
 export type WorkspaceRuntimeMachine = typeof workspaceRuntimeMachineSetup;
 
 // Factory function creates machine from setup
-export function createWorkspaceRuntimeMachine(
-  _input: WorkspaceRuntimeMachineInput,
-) {
+export function createWorkspaceRuntimeMachine(_input: WorkspaceRuntimeMachineInput) {
   return workspaceRuntimeMachineSetup.createMachine({
     id: "workspaceRuntime",
     context: ({ input }) => ({
@@ -551,22 +523,13 @@ export function createWorkspaceRuntimeMachine(
       sessions: new Map(),
       activeStreamSignals: new Map(),
       isShuttingDown: false,
-      stats: {
-        totalSignalsProcessed: 0,
-        totalSessionsCreated: 0,
-        activeSessionCount: 0,
-      },
+      stats: { totalSignalsProcessed: 0, totalSessionsCreated: 0, activeSessionCount: 0 },
     }),
 
     initial: "uninitialized",
 
     states: {
-      uninitialized: {
-        on: {
-          INITIALIZE: "initializing",
-          SHUTDOWN: "terminated",
-        },
-      },
+      uninitialized: { on: { INITIALIZE: "initializing", SHUTDOWN: "terminated" } },
 
       initializing: {
         invoke: {
@@ -582,10 +545,7 @@ export function createWorkspaceRuntimeMachine(
                   hasSupervisor: !!event.output?.supervisor,
                   supervisorId: event.output?.supervisor?.id,
                 });
-                return {
-                  supervisor: event.output.supervisor,
-                  config: event.output.mergedConfig,
-                };
+                return { supervisor: event.output.supervisor, config: event.output.mergedConfig };
               }),
               ({ context }) => {
                 logger.info("After direct assignment - checking context", {
@@ -600,9 +560,7 @@ export function createWorkspaceRuntimeMachine(
             target: "error",
             actions: [
               ({ event }) => {
-                logger.error("Failed to initialize workspace runtime", {
-                  error: event.error,
-                });
+                logger.error("Failed to initialize workspace runtime", { error: event.error });
               },
               "assignError",
             ],
@@ -627,7 +585,8 @@ export function createWorkspaceRuntimeMachine(
                 // Initialize stream connections after entering ready state
                 for (const [signalId, streamData] of context.activeStreamSignals) {
                   if (
-                    streamData.runtimeSignal && typeof streamData.runtimeSignal === "object" &&
+                    streamData.runtimeSignal &&
+                    typeof streamData.runtimeSignal === "object" &&
                     "initialize" in streamData.runtimeSignal
                   ) {
                     (streamData.runtimeSignal as { initialize(config: unknown): void }).initialize({
@@ -663,20 +622,19 @@ export function createWorkspaceRuntimeMachine(
             actions: [
               ({ event, context }) => {
                 logger.error("Stream signal initialization failed", {
-                  error: event.error instanceof Error
-                    ? {
-                      message: event.error.message,
-                      stack: event.error.stack,
-                      name: event.error.name,
-                    }
-                    : event.error,
+                  error:
+                    event.error instanceof Error
+                      ? {
+                          message: event.error.message,
+                          stack: event.error.stack,
+                          name: event.error.name,
+                        }
+                      : event.error,
                   workspaceId: context.workspace.id,
                 });
               },
               "assignError",
-              assign({
-                activeStreamSignals: () => new Map(),
-              }),
+              assign({ activeStreamSignals: () => new Map() }),
             ],
           },
         },
@@ -735,11 +693,7 @@ export function createWorkspaceRuntimeMachine(
                                 result,
                               });
                               // Remove session from the sessions map when it completes
-                              self.send({
-                                type: "SESSION_COMPLETED",
-                                sessionId,
-                                result,
-                              });
+                              self.send({ type: "SESSION_COMPLETED", sessionId, result });
                             },
                             onError: (error) => {
                               logger.error("Session failed", {
@@ -826,18 +780,11 @@ export function createWorkspaceRuntimeMachine(
                         const { sessionId, result } = snapshot.output;
 
                         // Update stats
-                        self.send({
-                          type: "SESSION_CREATED",
-                          sessionId,
-                        });
+                        self.send({ type: "SESSION_CREATED", sessionId });
 
                         // Store result if available
                         if (result) {
-                          self.send({
-                            type: "STORE_SESSION_RESULT",
-                            sessionId,
-                            result,
-                          });
+                          self.send({ type: "STORE_SESSION_RESULT", sessionId, result });
                         }
                       }
                     },
@@ -860,9 +807,7 @@ export function createWorkspaceRuntimeMachine(
             ],
           },
 
-          SESSION_CREATED: {
-            actions: "updateSessionCreatedStats",
-          },
+          SESSION_CREATED: { actions: "updateSessionCreatedStats" },
 
           SESSION_COMPLETED: {
             actions: [
@@ -889,9 +834,7 @@ export function createWorkspaceRuntimeMachine(
             actions: [
               "updateSessionCompletedStats",
               ({ context, event }) => {
-                logger.error(`Session failed: ${event.sessionId}`, {
-                  error: event.error,
-                });
+                logger.error(`Session failed: ${event.sessionId}`, { error: event.error });
                 const cb = context.options.onSessionFinished;
                 if (cb && event.sessionId) {
                   const summary = context.sessions.get(event.sessionId)?.summarize?.();
@@ -913,50 +856,43 @@ export function createWorkspaceRuntimeMachine(
             actions: ({ context, event }) => {
               // Store session results in library if available
               if (context.options.libraryStorage && event.result) {
-                context.options.libraryStorage.storeItem({
-                  id: crypto.randomUUID(),
-                  type: "session_archive",
-                  name: `Session Archive - ${event.sessionId.slice(0, 8)}`,
-                  description: `Complete session data and results from session ${event.sessionId}`,
-                  content: JSON.stringify(
-                    {
+                context.options.libraryStorage
+                  .storeItem({
+                    id: crypto.randomUUID(),
+                    type: "session_archive",
+                    name: `Session Archive - ${event.sessionId.slice(0, 8)}`,
+                    description: `Complete session data and results from session ${event.sessionId}`,
+                    content: JSON.stringify(
+                      {
+                        sessionId: event.sessionId,
+                        workspaceId: context.workspace.id,
+                        result: event.result,
+                        timestamp: new Date().toISOString(),
+                      },
+                      null,
+                      2,
+                    ),
+                    metadata: { format: "json", source: "system", session_id: event.sessionId },
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                    tags: ["session-archive", "automated"],
+                    workspace_id: context.workspace.id,
+                  })
+                  .catch((error: unknown) => {
+                    logger.error("Failed to store session results", {
                       sessionId: event.sessionId,
-                      workspaceId: context.workspace.id,
-                      result: event.result,
-                      timestamp: new Date().toISOString(),
-                    },
-                    null,
-                    2,
-                  ),
-                  metadata: {
-                    format: "json",
-                    source: "system",
-                    session_id: event.sessionId,
-                  },
-                  created_at: new Date().toISOString(),
-                  updated_at: new Date().toISOString(),
-                  tags: ["session-archive", "automated"],
-                  workspace_id: context.workspace.id,
-                }).catch((error: unknown) => {
-                  logger.error("Failed to store session results", {
-                    sessionId: event.sessionId,
-                    error: error instanceof Error ? error.message : String(error),
+                      error: error instanceof Error ? error.message : String(error),
+                    });
                   });
-                });
               }
             },
           },
 
-          SHUTDOWN: {
-            target: "shuttingDown",
-            actions: "setShuttingDown",
-          },
+          SHUTDOWN: { target: "shuttingDown", actions: "setShuttingDown" },
 
           ERROR: {
             actions: ({ event }) => {
-              logger.error("Runtime error", {
-                error: event.error,
-              });
+              logger.error("Runtime error", { error: event.error });
             },
           },
         },
@@ -966,15 +902,11 @@ export function createWorkspaceRuntimeMachine(
         invoke: {
           src: "shutdownWorkspace",
           input: ({ context }) => ({ context }),
-          onDone: {
-            target: "terminated",
-          },
+          onDone: { target: "terminated" },
           onError: {
             target: "terminated",
             actions: ({ event }) => {
-              logger.error("Shutdown failed", {
-                error: event.error,
-              });
+              logger.error("Shutdown failed", { error: event.error });
             },
           },
         },
@@ -988,11 +920,7 @@ export function createWorkspaceRuntimeMachine(
         },
       },
 
-      error: {
-        on: {
-          SHUTDOWN: "shuttingDown",
-        },
-      },
+      error: { on: { SHUTDOWN: "shuttingDown" } },
 
       terminated: {
         type: "final",
@@ -1093,7 +1021,8 @@ async function registerMCPServers(config: MergedConfig, workspaceId: string): Pr
       } catch (error) {
         // Only log at debug level for expected connection issues
         // The MCP manager already handles retries gracefully
-        const isConnectionIssue = error instanceof Error &&
+        const isConnectionIssue =
+          error instanceof Error &&
           (error.message.includes("timeout") ||
             error.message.includes("connection") ||
             error.message.includes("fetch platform tools"));

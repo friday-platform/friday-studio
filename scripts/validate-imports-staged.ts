@@ -40,7 +40,8 @@ async function getStagedFiles(): Promise<string[]> {
     return [];
   }
 
-  const files = new TextDecoder().decode(stdout)
+  const files = new TextDecoder()
+    .decode(stdout)
     .split("\n")
     .filter((file) => file.trim().length > 0)
     .filter((file) => EXTENSIONS.includes(extname(file)))
@@ -150,9 +151,7 @@ async function validateImport(
         if (stat.isFile) {
           return null; // Import is valid
         }
-      } catch {
-        continue;
-      }
+      } catch {}
     }
 
     // Try as directory with index file
@@ -163,9 +162,7 @@ async function validateImport(
         if (stat.isFile) {
           return null; // Import is valid
         }
-      } catch {
-        continue;
-      }
+      } catch {}
     }
 
     // Import is invalid
@@ -251,9 +248,7 @@ if (import.meta.main) {
       console.log("Staged import validation completed successfully!");
     }
   } catch (error) {
-    console.error(
-      `Validation failed: ${error instanceof Error ? error.message : String(error)}`,
-    );
+    console.error(`Validation failed: ${error instanceof Error ? error.message : String(error)}`);
     Deno.exit(1);
   }
 }

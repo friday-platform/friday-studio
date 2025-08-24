@@ -44,9 +44,7 @@ class MockConfigAdapter {
 Deno.test("Edge Cases - should reject invalid version", () => {
   const invalidConfig = {
     version: "2.0", // Invalid version
-    workspace: {
-      name: "test",
-    },
+    workspace: { name: "test" },
   };
 
   const result = WorkspaceConfigSchema.safeParse(invalidConfig);
@@ -55,28 +53,19 @@ Deno.test("Edge Cases - should reject invalid version", () => {
 
 Deno.test("Edge Cases - should reject missing required fields", () => {
   // Missing version
-  const noVersion = {
-    workspace: {
-      name: "test",
-    },
-  };
+  const noVersion = { workspace: { name: "test" } };
 
   const result1 = WorkspaceConfigSchema.safeParse(noVersion);
   assertEquals(result1.success, false);
 
   // Missing workspace
-  const noWorkspace = {
-    version: "1.0",
-  };
+  const noWorkspace = { version: "1.0" };
 
   const result2 = WorkspaceConfigSchema.safeParse(noWorkspace);
   assertEquals(result2.success, false);
 
   // Missing workspace name
-  const noName = {
-    version: "1.0",
-    workspace: {},
-  };
+  const noName = { version: "1.0", workspace: {} };
 
   const result3 = WorkspaceConfigSchema.safeParse(noName);
   assertEquals(result3.success, false);
@@ -157,12 +146,7 @@ Deno.test("Edge Cases - should reject invalid signal providers", () => {
   const invalidProvider = {
     version: "1.0",
     workspace: { name: "test" },
-    signals: {
-      "bad-signal": {
-        provider: "invalid",
-        description: "Bad provider",
-      },
-    },
+    signals: { "bad-signal": { provider: "invalid", description: "Bad provider" } },
   };
 
   const result = WorkspaceConfigSchema.safeParse(invalidProvider);
@@ -249,11 +233,7 @@ Deno.test("Edge Cases - should handle circular references gracefully", async () 
       "agent-a": {
         type: "llm",
         description: "Agent A",
-        config: {
-          provider: "anthropic",
-          model: "claude-3-5-haiku-latest",
-          prompt: "Agent A",
-        },
+        config: { provider: "anthropic", model: "claude-3-5-haiku-latest", prompt: "Agent A" },
       },
     },
     jobs: {
@@ -273,11 +253,7 @@ Deno.test("Edge Cases - should handle circular references gracefully", async () 
 
   const loader = new ConfigLoader(adapter, "/test");
 
-  await assertRejects(
-    () => loader.load(),
-    Error,
-    "references undefined agent",
-  );
+  await assertRejects(() => loader.load(), Error, "references undefined agent");
 });
 
 // Helper Function Tests
@@ -288,10 +264,7 @@ Deno.test("Edge Cases - getJob helper should handle missing jobs", () => {
     jobs: {
       "existing-job": {
         description: "Exists",
-        execution: {
-          strategy: "sequential",
-          agents: ["test"],
-        },
+        execution: { strategy: "sequential", agents: ["test"] },
       },
     },
   };
@@ -299,10 +272,7 @@ Deno.test("Edge Cases - getJob helper should handle missing jobs", () => {
   const parsed = WorkspaceConfigSchema.parse(config);
 
   // Create merged config for helper function
-  const mergedConfig: MergedConfig = {
-    atlas: null,
-    workspace: parsed,
-  };
+  const mergedConfig: MergedConfig = { atlas: null, workspace: parsed };
 
   // Should find existing job
   const existingJob = getJob(mergedConfig, "existing-job");
@@ -313,15 +283,9 @@ Deno.test("Edge Cases - getJob helper should handle missing jobs", () => {
   assertEquals(missingJob, undefined);
 
   // Should handle undefined jobs section
-  const emptyConfig = {
-    version: "1.0",
-    workspace: { name: "test" },
-  };
+  const emptyConfig = { version: "1.0", workspace: { name: "test" } };
   const emptyParsed = WorkspaceConfigSchema.parse(emptyConfig);
-  const emptyMerged: MergedConfig = {
-    atlas: null,
-    workspace: emptyParsed,
-  };
+  const emptyMerged: MergedConfig = { atlas: null, workspace: emptyParsed };
   const noJobs = getJob(emptyMerged, "any");
   assertEquals(noJobs, undefined);
 });
@@ -331,21 +295,14 @@ Deno.test("Edge Cases - getSignal helper should handle missing signals", () => {
     version: "1.0",
     workspace: { name: "test" },
     signals: {
-      "existing-signal": {
-        provider: "http",
-        description: "Exists",
-        config: { path: "/test" },
-      },
+      "existing-signal": { provider: "http", description: "Exists", config: { path: "/test" } },
     },
   };
 
   const parsed = WorkspaceConfigSchema.parse(config);
 
   // Create merged config for helper function
-  const mergedConfig: MergedConfig = {
-    atlas: null,
-    workspace: parsed,
-  };
+  const mergedConfig: MergedConfig = { atlas: null, workspace: parsed };
 
   // Should find existing signal
   const existingSignal = getSignal(mergedConfig, "existing-signal");
@@ -364,11 +321,7 @@ Deno.test("Edge Cases - getAgent helper should handle missing agents", () => {
       "existing-agent": {
         type: "llm",
         description: "Exists",
-        config: {
-          provider: "anthropic",
-          model: "claude-3-5-haiku-latest",
-          prompt: "Test",
-        },
+        config: { provider: "anthropic", model: "claude-3-5-haiku-latest", prompt: "Test" },
       },
     },
   };
@@ -376,10 +329,7 @@ Deno.test("Edge Cases - getAgent helper should handle missing agents", () => {
   const parsed = WorkspaceConfigSchema.parse(config);
 
   // Create merged config for helper function
-  const mergedConfig: MergedConfig = {
-    atlas: null,
-    workspace: parsed,
-  };
+  const mergedConfig: MergedConfig = { atlas: null, workspace: parsed };
 
   // Should find existing agent
   const existingAgent = getAgent(mergedConfig, "existing-agent");
@@ -395,21 +345,12 @@ Deno.test("Edge Cases - should validate complex memory configuration", () => {
   // Test workspace memory config instead
   const complexMemory = {
     version: "1.0",
-    workspace: {
-      name: "Test Workspace",
-    },
+    workspace: { name: "Test Workspace" },
     memory: {
       enabled: true,
       scope: "workspace",
-      retention: {
-        max_age_days: 30,
-        max_entries: 1000,
-        cleanup_interval_hours: 24,
-      },
-      session: {
-        include_in_context: true,
-        max_context_entries: 100,
-      },
+      retention: { max_age_days: 30, max_entries: 1000, cleanup_interval_hours: 24 },
+      session: { include_in_context: true, max_context_entries: 100 },
       include_types: ["working", "procedural", "episodic"],
     },
   };
@@ -421,9 +362,7 @@ Deno.test("Edge Cases - should validate complex memory configuration", () => {
 Deno.test("Edge Cases - should accept any string for model names", () => {
   const supervisorConfig = {
     version: "1.0",
-    workspace: {
-      name: "Test",
-    },
+    workspace: { name: "Test" },
     supervisors: {
       workspace: {
         model: "any-model-name-123", // Should accept any string
@@ -431,10 +370,7 @@ Deno.test("Edge Cases - should accept any string for model names", () => {
         supervision: {
           level: "minimal",
           cache_enabled: true,
-          timeouts: {
-            analysis: "30s",
-            validation: "10s",
-          },
+          timeouts: { analysis: "30s", validation: "10s" },
         },
         prompts: {},
       },
@@ -443,10 +379,7 @@ Deno.test("Edge Cases - should accept any string for model names", () => {
         supervision: {
           level: "standard",
           cache_enabled: true,
-          timeouts: {
-            analysis: "30s",
-            validation: "10s",
-          },
+          timeouts: { analysis: "30s", validation: "10s" },
         },
         prompts: {},
       },
@@ -455,10 +388,7 @@ Deno.test("Edge Cases - should accept any string for model names", () => {
         supervision: {
           level: "detailed",
           cache_enabled: true,
-          timeouts: {
-            analysis: "30s",
-            validation: "10s",
-          },
+          timeouts: { analysis: "30s", validation: "10s" },
         },
         prompts: {},
       },
@@ -473,26 +403,14 @@ Deno.test("Edge Cases - should accept any string for model names", () => {
 // Tool Name Validation
 Deno.test("Edge Cases - should validate MCP tool name constraints", () => {
   // Valid names
-  const validNames = [
-    "analyze-data",
-    "process_info",
-    "tool123",
-    "UPPERCASE",
-    "mix_Case-123",
-  ];
+  const validNames = ["analyze-data", "process_info", "tool123", "UPPERCASE", "mix_Case-123"];
 
   for (const name of validNames) {
     const config = {
       version: "1.0",
       workspace: { name: "test" },
       jobs: {
-        [name]: {
-          description: "Test",
-          execution: {
-            strategy: "sequential",
-            agents: ["test"],
-          },
-        },
+        [name]: { description: "Test", execution: { strategy: "sequential", agents: ["test"] } },
       },
     };
 
@@ -501,26 +419,14 @@ Deno.test("Edge Cases - should validate MCP tool name constraints", () => {
   }
 
   // Invalid names
-  const invalidNames = [
-    "has spaces",
-    "has!special",
-    "has@symbol",
-    "has.period",
-    "has/slash",
-  ];
+  const invalidNames = ["has spaces", "has!special", "has@symbol", "has.period", "has/slash"];
 
   for (const name of invalidNames) {
     const config = {
       version: "1.0",
       workspace: { name: "test" },
       jobs: {
-        [name]: {
-          description: "Test",
-          execution: {
-            strategy: "sequential",
-            agents: ["test"],
-          },
-        },
+        [name]: { description: "Test", execution: { strategy: "sequential", agents: ["test"] } },
       },
     };
 
@@ -558,9 +464,7 @@ Deno.test("Edge Cases - should handle large configurations efficiently", () => {
     largeConfig.signals[`signal-${i}`] = {
       provider: "http",
       description: `Signal ${i}`,
-      config: {
-        path: `/webhook/${i}`,
-      },
+      config: { path: `/webhook/${i}` },
     };
   }
 
@@ -568,10 +472,7 @@ Deno.test("Edge Cases - should handle large configurations efficiently", () => {
   for (let i = 0; i < 50; i++) {
     largeConfig.jobs[`job-${i}`] = {
       description: `Job ${i}`,
-      execution: {
-        strategy: "sequential",
-        agents: [`agent-${i % 100}`],
-      },
+      execution: { strategy: "sequential", agents: [`agent-${i % 100}`] },
     };
   }
 
@@ -616,11 +517,7 @@ Deno.test("Edge Cases - should handle unknown fields gracefully", () => {
       "test-agent": {
         type: "llm",
         description: "Test",
-        config: {
-          provider: "anthropic",
-          model: "claude-3-5-haiku-latest",
-          prompt: "Test",
-        },
+        config: { provider: "anthropic", model: "claude-3-5-haiku-latest", prompt: "Test" },
       },
     },
   };

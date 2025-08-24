@@ -1,8 +1,8 @@
-import * as list from "./agent/list.tsx";
-import * as describe from "./agent/describe.tsx";
-import * as test from "./agent/test.tsx";
-import { YargsInstance } from "../utils/yargs.ts";
 import { formatResourceHelp } from "../utils/resource-help.ts";
+import type { YargsInstance } from "../utils/yargs.ts";
+import * as describe from "./agent/describe.tsx";
+import * as list from "./agent/list.tsx";
+import * as test from "./agent/test.tsx";
 
 export const command = "agent <action>";
 export const desc = "Manage workspace agents";

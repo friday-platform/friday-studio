@@ -26,11 +26,7 @@ export function Header() {
       </Box>
 
       <Box paddingLeft={2} flexDirection="column">
-        <MessageHeader
-          author="Atlas"
-          date={new Date().toISOString()}
-          authorColor="blue"
-        />
+        <MessageHeader author="Atlas" date={new Date().toISOString()} authorColor="blue" />
         <Text>Welcome to Atlas! What can I help you build?</Text>
       </Box>
     </Box>

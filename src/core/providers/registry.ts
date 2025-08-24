@@ -1,13 +1,10 @@
-import type { IProvider, IProviderRegistry, ProviderConfig, ProviderType } from "./types.ts";
 import { PROVIDER_CLASSES } from "@atlas/signals";
+import type { IProvider, IProviderRegistry, ProviderConfig, ProviderType } from "./types.ts";
 
 export class ProviderRegistry implements IProviderRegistry {
   private static instance: ProviderRegistry;
   private providers: Map<string, IProvider> = new Map();
-  private factories: Map<
-    string,
-    (config: ProviderConfig) => Promise<IProvider>
-  > = new Map();
+  private factories: Map<string, (config: ProviderConfig) => Promise<IProvider>> = new Map();
 
   private constructor() {}
 
@@ -20,9 +17,7 @@ export class ProviderRegistry implements IProviderRegistry {
 
   register(provider: IProvider): void {
     this.providers.set(provider.id, provider);
-    console.log(
-      `[ProviderRegistry] Registered provider: ${provider.id} (${provider.type})`,
-    );
+    console.log(`[ProviderRegistry] Registered provider: ${provider.id} (${provider.type})`);
   }
 
   get(id: string): IProvider | undefined {

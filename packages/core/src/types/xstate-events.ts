@@ -71,12 +71,12 @@ export type AgentExecutionEvent =
 export type WorkspaceRuntimeEvent =
   | { type: "INITIALIZE" }
   | {
-    type: "PROCESS_SIGNAL";
-    signal: unknown;
-    payload: Record<string, unknown>;
-    sessionId?: string;
-    traceHeaders?: Record<string, string>;
-  }
+      type: "PROCESS_SIGNAL";
+      signal: unknown;
+      payload: Record<string, unknown>;
+      sessionId?: string;
+      traceHeaders?: Record<string, string>;
+    }
   | { type: "SESSION_CREATED"; sessionId: string }
   | { type: "SESSION_COMPLETED"; sessionId: string; result?: Record<string, unknown> }
   | { type: "SESSION_FAILED"; sessionId: string; error: string }
@@ -92,29 +92,27 @@ export type WorkspaceRuntimeEvent =
  * Type guard for error events
  */
 export function isErrorEvent(event: unknown): event is { type: "ERROR"; error: Error } {
-  return typeof event === "object" &&
+  return (
+    typeof event === "object" &&
     event !== null &&
     "type" in event &&
     event.type === "ERROR" &&
-    "error" in event;
+    "error" in event
+  );
 }
 
 /**
  * Type guard for shutdown events
  */
 export function isShutdownEvent(event: unknown): event is { type: "SHUTDOWN" } {
-  return typeof event === "object" &&
-    event !== null &&
-    "type" in event &&
-    event.type === "SHUTDOWN";
+  return (
+    typeof event === "object" && event !== null && "type" in event && event.type === "SHUTDOWN"
+  );
 }
 
 /**
  * Type guard for abort events
  */
 export function isAbortEvent(event: unknown): event is { type: "ABORT"; reason?: string } {
-  return typeof event === "object" &&
-    event !== null &&
-    "type" in event &&
-    event.type === "ABORT";
+  return typeof event === "object" && event !== null && "type" in event && event.type === "ABORT";
 }

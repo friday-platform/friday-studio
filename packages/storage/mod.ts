@@ -13,6 +13,13 @@
 
 export const STORAGE_VERSION = "1.0.0";
 
+// Knowledge graph storage adapters
+export { KnowledgeGraphLocalStorageAdapter } from "./src/knowledge-graph/knowledge-graph-local.ts";
+// Memory storage adapters
+export { CoALALocalFileStorageAdapter } from "./src/memory/coala-local.ts";
+export { FileWriteCoordinator } from "./src/memory/file-write-coordinator.ts";
+export { InMemoryStorageAdapter } from "./src/memory/in-memory.ts";
+export { LocalFileStorageAdapter } from "./src/memory/local.ts";
 // Core storage interfaces
 export type {
   ICoALAMemoryStorageAdapter,
@@ -25,7 +32,6 @@ export type {
   KnowledgeRelationship,
   KnowledgeRelationType,
 } from "./src/types/core.ts";
-
 // Vector search interfaces
 export type {
   IEmbeddingProvider,
@@ -36,18 +42,8 @@ export type {
   VectorSearchQuery,
   VectorSearchResult,
 } from "./src/types/vector-search.ts";
-
-// Memory storage adapters
-export { CoALALocalFileStorageAdapter } from "./src/memory/coala-local.ts";
-export { InMemoryStorageAdapter } from "./src/memory/in-memory.ts";
-export { LocalFileStorageAdapter } from "./src/memory/local.ts";
-export { FileWriteCoordinator } from "./src/memory/file-write-coordinator.ts";
-
 // Vector search storage adapters
 export { VectorSearchLocalStorageAdapter } from "./src/vector/vector-search-local.ts";
-
-// Knowledge graph storage adapters
-export { KnowledgeGraphLocalStorageAdapter } from "./src/knowledge-graph/knowledge-graph-local.ts";
 
 // General storage interface
 export interface StorageAdapter {
@@ -80,17 +76,16 @@ export class MemoryStorage implements StorageAdapter {
   }
 }
 
+export { FilesystemConfigAdapter } from "./src/adapters/config/fs.ts";
 // Export configuration adapters
 export type { ConfigurationAdapter } from "./src/adapters/config/mod.ts";
-export { FilesystemConfigAdapter } from "./src/adapters/config/fs.ts";
-
+export { FilesystemTemplateAdapter } from "./src/adapters/filesystem-template-adapter.ts";
 // Export template adapters
 export type {
   Template,
   TemplateInfo,
   TemplateStorageAdapter,
 } from "./src/adapters/template-adapter.ts";
-export { FilesystemTemplateAdapter } from "./src/adapters/filesystem-template-adapter.ts";
 
 // Export workspace creation adapters
 export type { WorkspaceCreationAdapter } from "./src/adapters/workspace-creation-adapter.ts";

@@ -1,10 +1,10 @@
 <script lang="ts">
-  import type { Snippet } from "svelte";
-  import { getContext } from "./context";
+import type { Snippet } from "svelte";
+import { getContext } from "./context";
 
-  const { trigger } = getContext();
+const { trigger } = getContext();
 
-  let { children }: { children: Snippet } = $props();
+const { children }: { children: Snippet } = $props();
 </script>
 
 <button data-tempest {...$trigger} use:trigger>

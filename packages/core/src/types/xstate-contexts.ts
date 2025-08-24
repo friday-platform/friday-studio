@@ -5,6 +5,7 @@
  * state-specific context shapes for type narrowing.
  */
 
+import type { WorkspaceAgentConfig } from "@atlas/config";
 import type {
   ActorRefMap,
   AgentExecutionConfig,
@@ -13,7 +14,6 @@ import type {
   WorkspaceSupervisorConfig,
 } from "./actors.ts";
 import type { AgentExecutionResult, AgentTask, ExecutionPlan } from "./agent-execution.ts";
-import type { WorkspaceAgentConfig } from "@atlas/config";
 
 // Type alias for clarity
 type AgentConfig = WorkspaceAgentConfig;
@@ -27,15 +27,9 @@ type AgentConfig = WorkspaceAgentConfig;
  */
 export interface WorkspaceSupervisorIdleContext {
   config: WorkspaceSupervisorConfig;
-  activeSessions: Map<string, {
-    info: SessionInfo;
-    actorRef: ActorRefMap["session"];
-  }>;
+  activeSessions: Map<string, { info: SessionInfo; actorRef: ActorRefMap["session"] }>;
   lastSignalTime?: number;
-  stats: {
-    totalSignalsProcessed: number;
-    totalSessionsCreated: number;
-  };
+  stats: { totalSignalsProcessed: number; totalSessionsCreated: number };
 }
 
 /**
@@ -91,17 +85,11 @@ export interface SessionSupervisorPlanningContext extends SessionSupervisorIdleC
  */
 export interface SessionSupervisorExecutingContext extends SessionSupervisorIdleContext {
   executionPlan: ExecutionPlan;
-  activeAgents: Map<string, {
-    task: AgentTask;
-    config: AgentConfig;
-    actorRef: ActorRefMap["agent"];
-    startTime: number;
-  }>;
-  completedAgents: Map<string, {
-    task: AgentTask;
-    result: AgentExecutionResult;
-    duration: number;
-  }>;
+  activeAgents: Map<
+    string,
+    { task: AgentTask; config: AgentConfig; actorRef: ActorRefMap["agent"]; startTime: number }
+  >;
+  completedAgents: Map<string, { task: AgentTask; result: AgentExecutionResult; duration: number }>;
   executionStartTime: number;
 }
 
@@ -154,18 +142,9 @@ export interface AgentExecutionIdleContext {
 export interface AgentExecutionExecutingContext extends AgentExecutionIdleContext {
   taskId: string;
   input: unknown;
-  sessionContext: {
-    sessionId: string;
-    workspaceId: string;
-    task?: string;
-    reasoning?: string;
-  };
+  sessionContext: { sessionId: string; workspaceId: string; task?: string; reasoning?: string };
   startTime: number;
-  toolCalls?: Array<{
-    toolName: string;
-    params: unknown;
-    result?: unknown;
-  }>;
+  toolCalls?: Array<{ toolName: string; params: unknown; result?: unknown }>;
 }
 
 /**

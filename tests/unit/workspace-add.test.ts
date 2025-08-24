@@ -1,7 +1,7 @@
+import { AtlasClient } from "@atlas/client";
+import { WorkspaceManager } from "@atlas/core";
 import { assertEquals, assertExists, assertRejects } from "@std/assert";
 import { join } from "@std/path";
-import { WorkspaceManager } from "@atlas/core";
-import { AtlasClient } from "@atlas/client";
 
 // Mock server for testing daemon endpoints
 class MockDaemonServer {
@@ -34,25 +34,17 @@ class MockDaemonServer {
         if (this.workspacesByPath.has(path)) {
           return new Response(
             JSON.stringify({ error: `Workspace already registered at path: ${path}` }),
-            {
-              status: 409,
-              headers: { "Content-Type": "application/json" },
-            },
+            { status: 409, headers: { "Content-Type": "application/json" } },
           );
         }
 
         // Check if name conflicts
         if (name) {
-          const existingByName = Array.from(this.workspaces.values()).find(
-            (w) => w.name === name,
-          );
+          const existingByName = Array.from(this.workspaces.values()).find((w) => w.name === name);
           if (existingByName) {
             return new Response(
               JSON.stringify({ error: `Workspace with name '${name}' already exists` }),
-              {
-                status: 409,
-                headers: { "Content-Type": "application/json" },
-              },
+              { status: 409, headers: { "Content-Type": "application/json" } },
             );
           }
         }
@@ -90,18 +82,12 @@ class MockDaemonServer {
           });
         }
 
-        const results = {
-          added: [],
-          failed: [],
-        };
+        const results = { added: [], failed: [] };
 
         for (const path of paths) {
           // Check if already exists
           if (this.workspacesByPath.has(path)) {
-            results.failed.push({
-              path,
-              error: `Workspace already registered at path: ${path}`,
-            });
+            results.failed.push({ path, error: `Workspace already registered at path: ${path}` });
             continue;
           }
 
@@ -210,9 +196,7 @@ Deno.test({
       // Try to add at the same path
       await assertRejects(
         async () => {
-          await client.addWorkspace({
-            path: "/tmp/existing-workspace",
-          });
+          await client.addWorkspace({ path: "/tmp/existing-workspace" });
         },
         Error,
         "Workspace already registered at path",
@@ -240,10 +224,7 @@ Deno.test({
       // Try to add another workspace with the same name
       await assertRejects(
         async () => {
-          await client.addWorkspace({
-            path: "/tmp/workspace2",
-            name: "unique-name",
-          });
+          await client.addWorkspace({ path: "/tmp/workspace2", name: "unique-name" });
         },
         Error,
         "Workspace with name 'unique-name' already exists",
@@ -303,10 +284,7 @@ Deno.test({
       assertEquals(result.added[0].path, "/tmp/new1");
       assertEquals(result.added[1].path, "/tmp/new2");
       assertEquals(result.failed[0].path, "/tmp/existing");
-      assertEquals(
-        result.failed[0].error,
-        "Workspace already registered at path: /tmp/existing",
-      );
+      assertEquals(result.failed[0].error, "Workspace already registered at path: /tmp/existing");
     } finally {
       await mockServer.stop();
     }
@@ -326,9 +304,7 @@ Deno.test({
 
       await assertRejects(
         async () => {
-          await client.addWorkspaces({
-            paths: [],
-          });
+          await client.addWorkspaces({ paths: [] });
         },
         Error,
         "Paths array is required",
@@ -350,9 +326,7 @@ Deno.test({
     try {
       const client = new AtlasClient({ url: `http://localhost:${port}` });
 
-      const result = await client.addWorkspace({
-        path: "/tmp/my-awesome-project",
-      });
+      const result = await client.addWorkspace({ path: "/tmp/my-awesome-project" });
 
       assertEquals(result.name, "my-awesome-project");
     } finally {

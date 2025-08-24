@@ -1,10 +1,11 @@
 /**
  * Basic session tests - simplified version to avoid hanging issues
  */
-import { assertEquals, assertExists } from "@std/assert";
-import { Session, WorkspaceSession } from "./session.ts";
+
 import { WorkspaceSessionStatus } from "@atlas/core";
 import { InMemoryStorageAdapter } from "@atlas/storage";
+import { assertEquals, assertExists } from "@std/assert";
+import { Session, WorkspaceSession } from "./session.ts";
 
 // Disable LLM validation for all tests
 Deno.env.set("DENO_TESTING", "true");
@@ -28,10 +29,7 @@ Deno.test("Session - should create with basic properties", async () => {
   const memoryAdapter = new InMemoryStorageAdapter();
   const session = new Session(
     "test-workspace",
-    {
-      triggers: [mockSignal],
-      callback: mockCallback,
-    },
+    { triggers: [mockSignal], callback: mockCallback },
     undefined,
     undefined,
     undefined,

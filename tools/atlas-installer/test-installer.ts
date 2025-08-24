@@ -19,12 +19,7 @@ const INSTALLER_DIR = dirname(new URL(import.meta.url).pathname);
 /**
  * List of JavaScript files that should be validated for consistent module usage
  */
-const JS_FILES_TO_VALIDATE = [
-  "main.js",
-  "optimize-electron.js",
-  "preload.js",
-  "renderer.js",
-];
+const JS_FILES_TO_VALIDATE = ["main.js", "optimize-electron.js", "preload.js", "renderer.js"];
 
 /**
  * Prohibited patterns that caused the original issue
@@ -63,9 +58,9 @@ Deno.test("installer JavaScript files do not contain prohibited ES6 import patte
       assertEquals(
         matches,
         null,
-        `${filename} contains prohibited import pattern: ${pattern}. Found: ${
-          matches?.join(", ")
-        }\n` +
+        `${filename} contains prohibited import pattern: ${pattern}. Found: ${matches?.join(
+          ", ",
+        )}\n` +
           `This pattern caused "require is not defined in ES module scope" errors.\n` +
           `Use require() for CommonJS or convert entire file to ES modules.`,
       );
@@ -174,7 +169,7 @@ Deno.test("installer binary path resolution works correctly", () => {
 
   assertStringIncludes(
     content,
-    'path.join(\n      resourcesPath,\n      "app.asar.unpacked",\n      "atlas-binary",\n      binaryName,\n    );',
+    'path.join(resourcesPath, "app.asar.unpacked", "atlas-binary", binaryName);',
     "Should correctly construct path to binary in packaged app",
   );
 

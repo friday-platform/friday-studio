@@ -1,15 +1,15 @@
 <script lang="ts">
-	const IMAGE_URL = '.';
+const IMAGE_URL = ".";
 
-	type Props = {
-		src: string;
-		alt?: string;
-		role?: 'presentation' | 'img';
-		isPublic?: boolean;
-		cover?: boolean;
-	};
+type Props = {
+  src: string;
+  alt?: string;
+  role?: "presentation" | "img";
+  isPublic?: boolean;
+  cover?: boolean;
+};
 
-	let { src, alt, role = 'img', isPublic = false, cover = false }: Props = $props();
+const { src, alt, role = "img", isPublic = false, cover = false }: Props = $props();
 </script>
 
 {#if src.includes('base64') || src.includes('https')}

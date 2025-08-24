@@ -23,14 +23,10 @@ Deno.test({
     try {
       setup = await setupTestServers();
 
-      const result = await setup.orchestrator.executeAgent(
-        "non-existent-agent",
-        "echo test",
-        {
-          sessionId: "error-session-1",
-          workspaceId: "test-workspace",
-        },
-      );
+      const result = await setup.orchestrator.executeAgent("non-existent-agent", "echo test", {
+        sessionId: "error-session-1",
+        workspaceId: "test-workspace",
+      });
 
       assertExists(result.error, "Should have an error for non-existent agent");
       assertEquals(result.output, null, "Output should be null when error occurs");
@@ -59,10 +55,7 @@ Deno.test({
       const result = await setup.orchestrator.executeAgent(
         "", // Empty agent ID
         "echo test",
-        {
-          sessionId: "validation-session-1",
-          workspaceId: "test-workspace",
-        },
+        { sessionId: "validation-session-1", workspaceId: "test-workspace" },
       );
 
       assertExists(result.error, "Should have an error for empty agent ID");
@@ -89,26 +82,18 @@ Deno.test({
     try {
       setup = await setupTestServers();
 
-      const result1 = await setup.orchestrator.executeAgent(
-        "test-agent",
-        "echo test",
-        {
-          sessionId: "", // Invalid empty session ID
-          workspaceId: "test-workspace",
-        },
-      );
+      const result1 = await setup.orchestrator.executeAgent("test-agent", "echo test", {
+        sessionId: "", // Invalid empty session ID
+        workspaceId: "test-workspace",
+      });
 
       assertExists(result1.error, "Should have an error for empty session ID");
       assertEquals(result1.output, null, "Output should be null when error occurs");
 
-      const result2 = await setup.orchestrator.executeAgent(
-        "test-agent",
-        "echo test",
-        {
-          sessionId: "valid-session",
-          workspaceId: "", // Invalid empty workspace ID
-        },
-      );
+      const result2 = await setup.orchestrator.executeAgent("test-agent", "echo test", {
+        sessionId: "valid-session",
+        workspaceId: "", // Invalid empty workspace ID
+      });
 
       assertExists(result2.error, "Should have an error for empty workspace ID");
       assertEquals(result2.output, null, "Output should be null when error occurs");

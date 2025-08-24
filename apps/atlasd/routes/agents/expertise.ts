@@ -1,7 +1,7 @@
-import { daemonFactory } from "../../src/factory.ts";
-import { describeRoute, resolver, validator } from "hono-openapi";
-import { agentExpertiseSchema, agentIdParamsSchema, errorResponseSchema } from "./schemas.ts";
 import { AgentRegistry } from "@atlas/core";
+import { describeRoute, resolver, validator } from "hono-openapi";
+import { daemonFactory } from "../../src/factory.ts";
+import { agentExpertiseSchema, agentIdParamsSchema, errorResponseSchema } from "./schemas.ts";
 
 const getAgentExpertise = daemonFactory.createApp();
 
@@ -15,27 +15,15 @@ getAgentExpertise.get(
     responses: {
       200: {
         description: "Successfully retrieved agent expertise",
-        content: {
-          "application/json": {
-            schema: resolver(agentExpertiseSchema),
-          },
-        },
+        content: { "application/json": { schema: resolver(agentExpertiseSchema) } },
       },
       404: {
         description: "Agent expertise not found",
-        content: {
-          "application/json": {
-            schema: resolver(errorResponseSchema),
-          },
-        },
+        content: { "application/json": { schema: resolver(errorResponseSchema) } },
       },
       500: {
         description: "Internal server error",
-        content: {
-          "application/json": {
-            schema: resolver(errorResponseSchema),
-          },
-        },
+        content: { "application/json": { schema: resolver(errorResponseSchema) } },
       },
     },
   }),
@@ -52,10 +40,7 @@ getAgentExpertise.get(
         return c.json({ error: "Agent expertise not found" }, 404);
       }
 
-      const response = {
-        agentId: id,
-        ...agent.metadata.expertise,
-      };
+      const response = { agentId: id, ...agent.metadata.expertise };
 
       return c.json(response);
     } catch (error) {

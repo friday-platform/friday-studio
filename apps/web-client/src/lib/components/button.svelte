@@ -1,38 +1,38 @@
 <script lang="ts">
-  import { IconSmall } from "$lib/components/icons/small";
-  import type { Snippet } from "svelte";
-  import type { HTMLAnchorAttributes, HTMLButtonAttributes } from "svelte/elements";
+import type { Snippet } from "svelte";
+import type { HTMLAnchorAttributes, HTMLButtonAttributes } from "svelte/elements";
+import { IconSmall } from "$lib/components/icons/small";
 
-  type Props = {
-    children: Snippet;
-    prepend?: Snippet;
-    append?: Snippet;
-    isDropdown?: boolean;
-    variant?: "primary" | "default" | "none" | "fill";
-    accent?: "primary" | "destructive" | "information" | "faded" | "none" | "text";
-    size?: "regular" | "small" | "icon" | "icon-small" | "large";
-    font?: "regular" | "monospace";
-    type?: "button" | "reset" | "submit";
-    cursor?: "default" | "hand";
-    href?: string;
-    noninteractive?: boolean;
-  };
+type Props = {
+  children: Snippet;
+  prepend?: Snippet;
+  append?: Snippet;
+  isDropdown?: boolean;
+  variant?: "primary" | "default" | "none" | "fill";
+  accent?: "primary" | "destructive" | "information" | "faded" | "none" | "text";
+  size?: "regular" | "small" | "icon" | "icon-small" | "large";
+  font?: "regular" | "monospace";
+  type?: "button" | "reset" | "submit";
+  cursor?: "default" | "hand";
+  href?: string;
+  noninteractive?: boolean;
+};
 
-  let {
-    children,
-    prepend = undefined,
-    append = undefined,
-    isDropdown = false,
-    variant = "default",
-    accent = "none",
-    size = "regular",
-    font = "regular",
-    type = "button",
-    cursor,
-    href = undefined,
-    noninteractive = false,
-    ...rest
-  }: Props & HTMLButtonAttributes & HTMLAnchorAttributes = $props();
+const {
+  children,
+  prepend = undefined,
+  append = undefined,
+  isDropdown = false,
+  variant = "default",
+  accent = "none",
+  size = "regular",
+  font = "regular",
+  type = "button",
+  cursor,
+  href = undefined,
+  noninteractive = false,
+  ...rest
+}: Props & HTMLButtonAttributes & HTMLAnchorAttributes = $props();
 </script>
 
 {#snippet contents()}

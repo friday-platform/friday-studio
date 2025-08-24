@@ -5,18 +5,14 @@
  * to match the workspace IDs stored in the registry.
  */
 
-import { join } from "@std/path";
 import { exists, move } from "@std/fs";
-import { getAtlasMemoryDir } from "./paths.ts";
+import { join } from "@std/path";
 import { createRegistryStorage, StorageConfigs } from "../core/storage/index.ts";
+import { getAtlasMemoryDir } from "./paths.ts";
 
 export interface MemoryIdMigrationResult {
   success: boolean;
-  migratedDirectories: Array<{
-    oldPath: string;
-    newPath: string;
-    workspaceName: string;
-  }>;
+  migratedDirectories: Array<{ oldPath: string; newPath: string; workspaceName: string }>;
   errors: string[];
   warnings: string[];
 }

@@ -1,5 +1,5 @@
-import { useEffect } from "react";
 import process from "node:process";
+import { useEffect } from "react";
 
 const ENABLE_BRACKETED_PASTE = "\x1b[?2004h";
 const DISABLE_BRACKETED_PASTE = "\x1b[?2004l";

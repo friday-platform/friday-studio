@@ -1,11 +1,7 @@
 import { z } from "zod/v4";
 
 // Single source of truth for workspace types
-export const WorkspaceStatusSchema = z.enum([
-  "inactive",
-  "running",
-  "stopped",
-]);
+export const WorkspaceStatusSchema = z.enum(["inactive", "running", "stopped"]);
 
 export const WorkspaceMetadataSchema = z.object({
   description: z.string().optional(),

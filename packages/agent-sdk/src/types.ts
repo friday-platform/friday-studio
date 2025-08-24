@@ -5,9 +5,9 @@
  * Used by TypeScript agents.
  */
 
-import { z } from "zod/v4";
-import type { Tool, TypedToolCall, TypedToolResult } from "ai";
 import type { Logger } from "@atlas/logger";
+import type { Tool, TypedToolCall, TypedToolResult } from "ai";
+import { z } from "zod/v4";
 
 // ==============================================================================
 // BASE UTILITY SCHEMAS
@@ -16,21 +16,21 @@ import type { Logger } from "@atlas/logger";
 /**
  * Duration format validation (e.g., "30s", "5m", "2h")
  */
-export const DurationSchema = z.string().regex(/^\d+[smh]$/, {
-  message: "Duration must be in format: number + s/m/h (e.g., '30s', '5m', '2h')",
-});
+export const DurationSchema = z
+  .string()
+  .regex(/^\d+[smh]$/, {
+    message: "Duration must be in format: number + s/m/h (e.g., '30s', '5m', '2h')",
+  });
 export type Duration = z.infer<typeof DurationSchema>;
 
 /**
  * Allow/Deny filter with mutual exclusion validation
  */
-export const AllowDenyFilterSchema = z.strictObject({
-  allow: z.array(z.string()).optional(),
-  deny: z.array(z.string()).optional(),
-}).refine(
-  (data) => !(data.allow && data.deny),
-  { message: "Cannot specify both allow and deny lists" },
-);
+export const AllowDenyFilterSchema = z
+  .strictObject({ allow: z.array(z.string()).optional(), deny: z.array(z.string()).optional() })
+  .refine((data) => !(data.allow && data.deny), {
+    message: "Cannot specify both allow and deny lists",
+  });
 export type AllowDenyFilter = z.infer<typeof AllowDenyFilterSchema>;
 
 /**
@@ -40,9 +40,7 @@ export const WorkspaceTimeoutConfigSchema = z.strictObject({
   progressTimeout: DurationSchema.default("2m").describe(
     "Time allowed between progress signals before cancelling for inactivity",
   ),
-  maxTotalTimeout: DurationSchema.default("30m").describe(
-    "Hard upper limit for any operation",
-  ),
+  maxTotalTimeout: DurationSchema.default("30m").describe("Hard upper limit for any operation"),
 });
 export type WorkspaceTimeoutConfig = z.infer<typeof WorkspaceTimeoutConfigSchema>;
 
@@ -59,15 +57,9 @@ const MCPTransportStdioSchema = z.strictObject({
   args: z.array(z.string()).optional(),
 });
 
-const MCPTransportHTTPSchema = z.strictObject({
-  type: z.literal("http"),
-  url: z.url(),
-});
+const MCPTransportHTTPSchema = z.strictObject({ type: z.literal("http"), url: z.url() });
 
-const MCPTransportSSESchema = z.strictObject({
-  type: z.literal("sse"),
-  url: z.url(),
-});
+const MCPTransportSSESchema = z.strictObject({ type: z.literal("sse"), url: z.url() });
 
 export const MCPTransportConfigSchema = z.discriminatedUnion("type", [
   MCPTransportStdioSchema,
@@ -101,28 +93,29 @@ export type MCPServerToolFilter = z.infer<typeof MCPServerToolFilterSchema>;
  */
 export const MCPServerConfigSchema = z.strictObject({
   transport: MCPTransportConfigSchema,
-  client_config: z.strictObject({
-    timeout: WorkspaceTimeoutConfigSchema.optional(),
-  }).optional(),
+  client_config: z.strictObject({ timeout: WorkspaceTimeoutConfigSchema.optional() }).optional(),
   auth: MCPAuthConfigSchema.optional(),
   tools: MCPServerToolFilterSchema.optional(),
-  env: z.record(z.string(), z.string()).optional().describe(
-    "Environment variables for the server process",
-  ),
+  env: z
+    .record(z.string(), z.string())
+    .optional()
+    .describe("Environment variables for the server process"),
 });
 export type MCPServerConfig = z.infer<typeof MCPServerConfigSchema>;
 
 /** Agent expertise - used by Atlas session supervisor for task matching */
 export const AgentExpertiseSchema = z.object({
   /** Domains this agent handles */
-  domains: z.array(z.string()).min(1, {
-    message: "Agent must specify at least one domain",
-  }).describe("Domains this agent handles"),
+  domains: z
+    .array(z.string())
+    .min(1, { message: "Agent must specify at least one domain" })
+    .describe("Domains this agent handles"),
 
   /** What the agent can do */
-  capabilities: z.array(z.string()).min(1, {
-    message: "Agent must specify at least one capability",
-  }).describe("What the agent can do"),
+  capabilities: z
+    .array(z.string())
+    .min(1, { message: "Agent must specify at least one capability" })
+    .describe("What the agent can do"),
 
   /** Example prompts for users */
   examples: z.array(z.string()).describe("Example prompts for users"),
@@ -133,39 +126,46 @@ export type AgentExpertise = z.infer<typeof AgentExpertiseSchema>;
 /** Agent metadata - stored in Atlas registry for discovery */
 export const AgentMetadataSchema = z.object({
   /** Agent ID used for registration and access - lowercase with hyphens and underscores */
-  id: z.string().regex(/^[a-z][a-z0-9-_]*$/, {
-    message:
-      "Invalid agent ID. Must be lowercase and follow domain naming pattern (e.g., 'my-agent', 'github_scanner', 'my_cool_agent')",
-  }).describe("Agent ID used for registration and access - lowercase with hyphens and underscores"),
+  id: z
+    .string()
+    .regex(/^[a-z][a-z0-9-_]*$/, {
+      message:
+        "Invalid agent ID. Must be lowercase and follow domain naming pattern (e.g., 'my-agent', 'github_scanner', 'my_cool_agent')",
+    })
+    .describe("Agent ID used for registration and access - lowercase with hyphens and underscores"),
 
   /** Display name for the agent - human-readable format */
-  displayName: z.string().optional().describe(
-    "Display name for the agent - human-readable format",
-  ),
+  displayName: z.string().optional().describe("Display name for the agent - human-readable format"),
 
   /** Semantic version */
-  version: z.string().regex(/^\d+\.\d+\.\d+/, {
-    message: "Invalid version. Must follow semantic versioning (e.g., '1.0.0', '2.1.3')",
-  }).describe("Semantic version"),
+  version: z
+    .string()
+    .regex(/^\d+\.\d+\.\d+/, {
+      message: "Invalid version. Must follow semantic versioning (e.g., '1.0.0', '2.1.3')",
+    })
+    .describe("Semantic version"),
 
   /** What this agent does */
-  description: z.string().min(1, {
-    message: "Description is required",
-  }).describe("What this agent does"),
+  description: z
+    .string()
+    .min(1, { message: "Description is required" })
+    .describe("What this agent does"),
 
   /** Agent's domains and capabilities */
   expertise: AgentExpertiseSchema,
 
   /** Optional tags and author info */
-  metadata: z.object({
-    tags: z.array(z.string()).optional(),
-    author: z.object({
-      name: z.string(),
-      email: z.email({
-        message: "Invalid email format",
-      }).optional(),
-    }).optional(),
-  }).optional(),
+  metadata: z
+    .object({
+      tags: z.array(z.string()).optional(),
+      author: z
+        .object({
+          name: z.string(),
+          email: z.email({ message: "Invalid email format" }).optional(),
+        })
+        .optional(),
+    })
+    .optional(),
 });
 
 export type AgentMetadata = z.infer<typeof AgentMetadataSchema>;
@@ -175,47 +175,56 @@ export type AgentMCPServerConfig = MCPServerConfig;
 
 /** Environment variables needed by an agent */
 export const AgentEnvironmentConfigSchema = z.object({
-  required: z.array(z.object({
-    name: z.string().min(1, { message: "Environment variable name is required" }),
-    description: z.string().min(1, { message: "Environment variable description is required" }),
-    validation: z.string().optional().refine(
-      (val: string | undefined) => {
-        if (!val) return true;
-        try {
-          new RegExp(val);
-          return true;
-        } catch {
-          return false;
-        }
-      },
-      {
-        message: "Invalid validation regex pattern",
-      },
-    ),
-  })).optional(),
-  optional: z.array(z.object({
-    name: z.string().min(1, { message: "Environment variable name is required" }),
-    description: z.string().optional(),
-    default: z.string().optional(),
-  })).optional(),
+  required: z
+    .array(
+      z.object({
+        name: z.string().min(1, { message: "Environment variable name is required" }),
+        description: z.string().min(1, { message: "Environment variable description is required" }),
+        validation: z
+          .string()
+          .optional()
+          .refine(
+            (val: string | undefined) => {
+              if (!val) return true;
+              try {
+                new RegExp(val);
+                return true;
+              } catch {
+                return false;
+              }
+            },
+            { message: "Invalid validation regex pattern" },
+          ),
+      }),
+    )
+    .optional(),
+  optional: z
+    .array(
+      z.object({
+        name: z.string().min(1, { message: "Environment variable name is required" }),
+        description: z.string().optional(),
+        default: z.string().optional(),
+      }),
+    )
+    .optional(),
 });
 
 export type AgentEnvironmentConfig = z.infer<typeof AgentEnvironmentConfigSchema>;
 
 /** LLM settings for configuration-based agents (TypeScript agents bring their own) */
 export const AgentLLMConfigSchema = z.object({
-  provider: z.enum(["anthropic", "openai", "google"], {
-    message: "Provider must be 'anthropic', 'openai', or 'google'",
-  }).optional(),
+  provider: z
+    .enum(["anthropic", "openai", "google"], {
+      message: "Provider must be 'anthropic', 'openai', or 'google'",
+    })
+    .optional(),
   model: z.string().optional(),
-  temperature: z.number().min(0, {
-    message: "Temperature must be at least 0",
-  }).max(2, {
-    message: "Temperature must be at most 2",
-  }).optional(),
-  max_tokens: z.number().positive({
-    message: "Max tokens must be a positive number",
-  }).optional(),
+  temperature: z
+    .number()
+    .min(0, { message: "Temperature must be at least 0" })
+    .max(2, { message: "Temperature must be at most 2" })
+    .optional(),
+  max_tokens: z.number().positive({ message: "Max tokens must be a positive number" }).optional(),
 });
 
 export type AgentLLMConfig = z.infer<typeof AgentLLMConfigSchema>;
@@ -246,32 +255,12 @@ export type ToolResult<T extends AtlasTools = AtlasTools> = TypedToolResult<T>;
  * Used by agent handlers to provide real-time feedback.
  */
 export const StreamEventSchema = z.discriminatedUnion("type", [
-  z.object({
-    type: z.literal("text"),
-    content: z.string(),
-  }),
-  z.object({
-    type: z.literal("tool-call"),
-    toolName: z.string(),
-    args: z.unknown(),
-  }),
-  z.object({
-    type: z.literal("tool-result"),
-    toolName: z.string(),
-    result: z.unknown(),
-  }),
-  z.object({
-    type: z.literal("thinking"),
-    content: z.string(),
-  }),
-  z.object({
-    type: z.literal("error"),
-    error: z.union([z.instanceof(Error), z.string()]),
-  }),
-  z.object({
-    type: z.literal("finish"),
-    reason: z.string().optional(),
-  }),
+  z.object({ type: z.literal("text"), content: z.string() }),
+  z.object({ type: z.literal("tool-call"), toolName: z.string(), args: z.unknown() }),
+  z.object({ type: z.literal("tool-result"), toolName: z.string(), result: z.unknown() }),
+  z.object({ type: z.literal("thinking"), content: z.string() }),
+  z.object({ type: z.literal("error"), error: z.union([z.instanceof(Error), z.string()]) }),
+  z.object({ type: z.literal("finish"), reason: z.string().optional() }),
   z.object({
     type: z.literal("usage"),
     tokens: z.object({
@@ -281,16 +270,8 @@ export const StreamEventSchema = z.discriminatedUnion("type", [
       total: z.number().optional(),
     }),
   }),
-  z.object({
-    type: z.literal("progress"),
-    message: z.string(),
-    percentage: z.number().optional(),
-  }),
-  z.object({
-    type: z.literal("custom"),
-    eventType: z.string(),
-    data: z.unknown(),
-  }),
+  z.object({ type: z.literal("progress"), message: z.string(), percentage: z.number().optional() }),
+  z.object({ type: z.literal("custom"), eventType: z.string(), data: z.unknown() }),
 ]);
 
 export type StreamEvent = z.infer<typeof StreamEventSchema>;
@@ -342,10 +323,7 @@ export interface AgentContext {
  * This is where agents interpret requests and decide what to do.
  * No action routing or structured inputs - just natural language.
  */
-export type AgentHandler<T extends unknown = unknown> = (
-  prompt: string,
-  context: AgentContext,
-) => Promise<T>;
+export type AgentHandler<T = unknown> = (prompt: string, context: AgentContext) => Promise<T>;
 
 /**
  * Config for createAgent() function
@@ -353,7 +331,7 @@ export type AgentHandler<T extends unknown = unknown> = (
  * TypeScript interface because handler functions can't be validated with Zod.
  * Use CreateAgentConfigValidationSchema for validating the non-function parts.
  */
-export interface CreateAgentConfig<T extends unknown = unknown> extends AgentMetadata {
+export interface CreateAgentConfig<T = unknown> extends AgentMetadata {
   /** Handler that processes all prompts for this agent */
   handler: AgentHandler<T>;
 
@@ -380,7 +358,7 @@ export const CreateAgentConfigValidationSchema = AgentMetadataSchema.extend({
  * Created by createAgent() function.
  * Stored in registry and executed by AtlasAgentsMCPServer.
  */
-export interface AtlasAgent<T extends unknown = unknown> {
+export interface AtlasAgent<T = unknown> {
   /** Agent metadata for registry */
   metadata: AgentMetadata;
 
@@ -402,11 +380,9 @@ export const AgentSessionStateSchema = z.object({
   id: z.string(),
   agentId: z.string(),
   memory: z.record(z.string(), z.unknown()),
-  lastExecution: z.object({
-    prompt: z.string(),
-    timestamp: z.number(),
-    result: z.unknown().optional(),
-  }).optional(),
+  lastExecution: z
+    .object({ prompt: z.string(), timestamp: z.number(), result: z.unknown().optional() })
+    .optional(),
 });
 
 export type AgentSessionState = z.infer<typeof AgentSessionStateSchema>;
@@ -446,10 +422,7 @@ export class AwaitingSupervisorDecision extends Error {
 
 /** Agent registry - used by AtlasAgentsMCPServer for agent management */
 export interface AgentRegistry {
-  listAgents(filters?: {
-    domains?: string[];
-    tags?: string[];
-  }): Promise<AgentMetadata[]>;
+  listAgents(filters?: { domains?: string[]; tags?: string[] }): Promise<AgentMetadata[]>;
 
   getAgent(id: string): Promise<AtlasAgent | undefined>;
 
@@ -483,12 +456,14 @@ export const AtlasAgentConfigSchema = z.object({
   agent: z.string().describe("Atlas agent ID from registry"),
   description: z.string().describe("Agent description"),
   version: z.string().optional().describe("Agent version (defaults to latest)"),
-  config: z.record(z.string(), z.unknown()).optional().describe(
-    "Agent-specific configuration passed to the agent",
-  ),
-  environment: z.record(z.string(), z.string()).optional().describe(
-    "Environment variables for the agent (supports ${VAR} interpolation)",
-  ),
+  config: z
+    .record(z.string(), z.unknown())
+    .optional()
+    .describe("Agent-specific configuration passed to the agent"),
+  environment: z
+    .record(z.string(), z.string())
+    .optional()
+    .describe("Environment variables for the agent (supports ${VAR} interpolation)"),
 });
 
 export type AtlasAgentConfig = z.infer<typeof AtlasAgentConfigSchema>;

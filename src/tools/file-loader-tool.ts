@@ -46,8 +46,14 @@ export class FileLoaderTool {
     this.config = {
       maxFileSize: config.maxFileSize ?? 50 * 1024, // 50KB default
       maxTotalSize: config.maxTotalSize ?? 500 * 1024, // 500KB default
-      allowedExtensions: config.allowedExtensions ??
-        [".ts", ".js", ".md", ".json", ".yml", ".yaml"],
+      allowedExtensions: config.allowedExtensions ?? [
+        ".ts",
+        ".js",
+        ".md",
+        ".json",
+        ".yml",
+        ".yaml",
+      ],
       basePath: config.basePath ?? ".",
     };
   }
@@ -103,12 +109,7 @@ export class FileLoaderTool {
         }
       }
 
-      return {
-        success: true,
-        files,
-        totalSize,
-        truncated,
-      };
+      return { success: true, files, totalSize, truncated };
     } catch (error) {
       return {
         success: false,
@@ -156,13 +157,11 @@ export class FileLoaderTool {
 
         if (this.isGlobPattern(pattern)) {
           // Use glob expansion
-          for await (
-            const entry of expandGlob(fullPattern, {
-              root: this.config.basePath,
-              includeDirs: false,
-              globstar: true,
-            })
-          ) {
+          for await (const entry of expandGlob(fullPattern, {
+            root: this.config.basePath,
+            includeDirs: false,
+            globstar: true,
+          })) {
             if (this.isAllowedFile(entry.name)) {
               allPaths.add(entry.path);
             }
@@ -276,9 +275,9 @@ export class FileLoaderTool {
       return markdown;
     }
 
-    markdown += `Loaded ${result.files.length} file(s), total size: ${
-      this.formatSize(result.totalSize)
-    }`;
+    markdown += `Loaded ${result.files.length} file(s), total size: ${this.formatSize(
+      result.totalSize,
+    )}`;
     if (result.truncated) {
       markdown += " (truncated due to limits)";
     }

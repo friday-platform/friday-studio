@@ -3,10 +3,10 @@
  * These tests verify the complete flow from CLI modules through AtlasClient to the daemon API
  */
 
-import { assertEquals, assertExists } from "@std/assert";
-import { fetchSessions } from "../src/cli/modules/sessions/fetcher.ts";
-import { fetchLibraryItems } from "../src/cli/modules/library/fetcher.ts";
 import { getAtlasClient, resetAtlasClientForTesting } from "@atlas/client";
+import { assertEquals, assertExists } from "@std/assert";
+import { fetchLibraryItems } from "../src/cli/modules/library/fetcher.ts";
+import { fetchSessions } from "../src/cli/modules/sessions/fetcher.ts";
 
 /**
  * Simple mock server for testing
@@ -26,13 +26,10 @@ class MockServer {
 
       if (route) {
         const response = route.handler ? route.handler(req) : route.response;
-        return new Response(
-          JSON.stringify(response),
-          {
-            status: route.status || 200,
-            headers: route.headers || { "Content-Type": "application/json" },
-          },
-        );
+        return new Response(JSON.stringify(response), {
+          status: route.status || 200,
+          headers: route.headers || { "Content-Type": "application/json" },
+        });
       }
 
       return new Response("Not found", { status: 404 });
@@ -135,10 +132,7 @@ Deno.test("Atlas Client E2E - should handle workspace filtering end-to-end", asy
       ],
     });
 
-    const result = await fetchSessions({
-      port: serverPort,
-      workspace: "workspace_a",
-    });
+    const result = await fetchSessions({ port: serverPort, workspace: "workspace_a" });
 
     assertEquals(result.success, true);
     if (result.success) {
@@ -177,10 +171,7 @@ Deno.test("Atlas Client E2E - should fetch library items through the complete st
               type: "document",
               name: "API Guide",
               description: "Complete API documentation",
-              metadata: {
-                format: "markdown",
-                source: "manual",
-              },
+              metadata: { format: "markdown", source: "manual" },
               created_at: "2024-01-01T10:00:00Z",
               updated_at: "2024-01-01T10:00:00Z",
               tags: ["technical", "api"],
@@ -189,11 +180,7 @@ Deno.test("Atlas Client E2E - should fetch library items through the complete st
             },
           ],
           total: 1,
-          query: {
-            type: "document",
-            tags: ["technical", "api"],
-            limit: 10,
-          },
+          query: { type: "document", tags: ["technical", "api"], limit: 10 },
           took_ms: 25,
         };
       },
@@ -226,11 +213,7 @@ Deno.test("Atlas Client E2E - should trigger workspace signal end-to-end", async
   const serverPort = await mockServer.start();
 
   try {
-    const signalData = {
-      event: "deployment",
-      environment: "production",
-      version: "1.2.3",
-    };
+    const signalData = { event: "deployment", environment: "production", version: "1.2.3" };
 
     mockServer.addRoute("/signals/deploy-signal", {
       method: "POST",
@@ -241,15 +224,9 @@ Deno.test("Atlas Client E2E - should trigger workspace signal end-to-end", async
       },
     });
 
-    const client = getAtlasClient({
-      url: `http://localhost:${serverPort}`,
-    });
+    const client = getAtlasClient({ url: `http://localhost:${serverPort}` });
 
-    const result = await client.triggerWorkspaceSignal(
-      serverPort,
-      "deploy-signal",
-      signalData,
-    );
+    const result = await client.triggerWorkspaceSignal(serverPort, "deploy-signal", signalData);
 
     assertEquals(result.success, true);
     assertEquals(result.sessionId, "sess_signal_123");
@@ -314,10 +291,7 @@ Deno.test("Atlas Client E2E - should reuse client instance across modules", asyn
 
   try {
     // Set up mock routes
-    mockServer.addRoute("/api/sessions", {
-      method: "GET",
-      response: [],
-    });
+    mockServer.addRoute("/api/sessions", { method: "GET", response: [] });
 
     mockServer.addRoute("/api/library/search", {
       method: "GET",

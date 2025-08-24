@@ -1,16 +1,17 @@
-import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { getAtlasDaemonUrl } from "@atlas/atlasd";
+import { getAtlasClient } from "@atlas/client";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { ConversationClient } from "../utils/conversation-client.ts";
-import { getDaemonClient } from "../utils/daemon-client.ts";
-import { getAtlasDaemonUrl } from "@atlas/atlasd";
-import { DiagnosticsCollector } from "../../utils/diagnostics-collector.ts";
-import { getAtlasClient } from "@atlas/client";
-import { useStdout } from "ink";
 import ansiEscapes from "ansi-escapes";
-import { setupTerminal } from "../modules/enable-multiline/index.ts";
+import { useStdout } from "ink";
+import type React from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { DiagnosticsCollector } from "../../utils/diagnostics-collector.ts";
 import { DAEMON_STATUS, type DaemonStatus } from "../constants/daemon-status.ts";
 import { DIAGNOSTICS_STATUS, type DiagnosticsStatus } from "../constants/diagnostics-status.ts";
+import { setupTerminal } from "../modules/enable-multiline/index.ts";
+import { ConversationClient } from "../utils/conversation-client.ts";
+import { getDaemonClient } from "../utils/daemon-client.ts";
 
 interface ConversationDisplayPrefs {
   showReasoningSteps: boolean;
@@ -33,9 +34,7 @@ interface AppContextType {
   mcpClient: Client | null;
   initializeMcpClient: () => Promise<void>;
   conversationClient: ConversationClient | null;
-  setConversationClient: React.Dispatch<
-    React.SetStateAction<ConversationClient | null>
-  >;
+  setConversationClient: React.Dispatch<React.SetStateAction<ConversationClient | null>>;
   conversationSessionId: string | null;
   setConversationSessionId: React.Dispatch<React.SetStateAction<string | null>>;
   sseAbortControllerRef: React.RefObject<AbortController | null>;
@@ -65,25 +64,17 @@ export const AppProvider = ({ children }: AppProviderProps) => {
     apiKey: "",
     daemonPort: "8080",
     streamMessages: true,
-    conversationDisplay: {
-      showReasoningSteps: true,
-      showToolCalls: true,
-      showToolResults: true,
-    },
+    conversationDisplay: { showReasoningSteps: true, showToolCalls: true, showToolResults: true },
   });
   const [mcpClient, setMcpClient] = useState<Client | null>(null);
 
   const [conversationClient, setConversationClient] = useState<ConversationClient | null>(null);
-  const [conversationSessionId, setConversationSessionId] = useState<
-    string | null
-  >(null);
+  const [conversationSessionId, setConversationSessionId] = useState<string | null>(null);
   const sseAbortControllerRef = useRef<AbortController | null>(null);
 
   const [isInitializing, setIsInitializing] = useState(false);
   const [hasInitialized, setHasInitialized] = useState(false);
-  const [daemonStatus, setDaemonStatusState] = useState<DaemonStatus>(
-    DAEMON_STATUS.IDLE,
-  );
+  const [daemonStatus, setDaemonStatusState] = useState<DaemonStatus>(DAEMON_STATUS.IDLE);
   const [diagnosticsStatus, setDiagnosticsStatus] = useState<DiagnosticsStatus>(
     DIAGNOSTICS_STATUS.IDLE,
   );
@@ -202,15 +193,10 @@ export const AppProvider = ({ children }: AppProviderProps) => {
 
   const initializeMcpClient = async () => {
     try {
-      const client = new Client({
-        name: "atlas-mcp-client",
-        version: "1.0.0",
-      });
+      const client = new Client({ name: "atlas-mcp-client", version: "1.0.0" });
 
       const daemonUrl = getAtlasDaemonUrl();
-      const transport = new StreamableHTTPClientTransport(
-        new URL(`${daemonUrl}/mcp`),
-      );
+      const transport = new StreamableHTTPClientTransport(new URL(`${daemonUrl}/mcp`));
 
       mcpTransportRef.current = transport;
       await client.connect(transport);
@@ -322,9 +308,7 @@ export const AppProvider = ({ children }: AppProviderProps) => {
       const fileInfo = await Deno.stat(gzipPath);
       if (fileInfo.size > 100 * 1024 * 1024) {
         // 100MB
-        throw new Error(
-          "Diagnostic archive too large (>100MB). Please contact support.",
-        );
+        throw new Error("Diagnostic archive too large (>100MB). Please contact support.");
       }
 
       setDiagnosticsStatus(DIAGNOSTICS_STATUS.UPLOADING);

@@ -19,31 +19,19 @@ function detectFeedbackLoop(toolName: string): void {
   }
 }
 
-const server = new McpServer({
-  name: "file-tools-mock-server",
-  version: "1.0.0",
-});
+const server = new McpServer({ name: "file-tools-mock-server", version: "1.0.0" });
 
 // Register file tools with Zod schemas
 server.registerTool(
   "file_read",
   {
     description: "Read file contents",
-    inputSchema: {
-      path: z.string().describe("Path to the file to read"),
-    },
+    inputSchema: { path: z.string().describe("Path to the file to read") },
   },
   ({ path }) => {
     detectFeedbackLoop("file_read");
 
-    return {
-      content: [
-        {
-          type: "text",
-          text: `Mock file contents for: ${path}`,
-        },
-      ],
-    };
+    return { content: [{ type: "text", text: `Mock file contents for: ${path}` }] };
   },
 );
 
@@ -59,14 +47,7 @@ server.registerTool(
   ({ path, content: _content }) => {
     detectFeedbackLoop("file_write");
 
-    return {
-      content: [
-        {
-          type: "text",
-          text: `Successfully wrote to file: ${path}`,
-        },
-      ],
-    };
+    return { content: [{ type: "text", text: `Successfully wrote to file: ${path}` }] };
   },
 );
 

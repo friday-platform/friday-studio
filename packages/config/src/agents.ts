@@ -2,6 +2,7 @@
  * Agent configuration schemas with tagged unions
  */
 
+import { AtlasAgentConfigSchema } from "@atlas/agent-sdk";
 import { z } from "zod/v4";
 import {
   DurationSchema,
@@ -10,7 +11,6 @@ import {
   SuccessConfigSchema,
 } from "./base.ts";
 import { MCPAuthConfigSchema } from "./mcp.ts";
-import { AtlasAgentConfigSchema } from "@atlas/agent-sdk";
 
 // ==============================================================================
 // BASE AGENT SCHEMA
@@ -24,11 +24,7 @@ const BaseAgentConfigSchema = z.strictObject({
 // LLM AGENT
 // ==============================================================================
 
-const LLMToolChoiceSchema = z.union([
-  z.literal("auto"),
-  z.literal("required"),
-  z.literal("none"),
-]);
+const LLMToolChoiceSchema = z.union([z.literal("auto"), z.literal("required"), z.literal("none")]);
 
 const LLMAgentConfigSchema = BaseAgentConfigSchema.extend({
   type: z.literal("llm"),
@@ -41,22 +37,30 @@ const LLMAgentConfigSchema = BaseAgentConfigSchema.extend({
     prompt: z.string().describe("System prompt for the agent"),
 
     // LLM parameters
-    temperature: z.coerce.number().min(0).max(1).optional().default(0.3).describe(
-      "Temperature (0-1 range)",
-    ),
+    temperature: z.coerce
+      .number()
+      .min(0)
+      .max(1)
+      .optional()
+      .default(0.3)
+      .describe("Temperature (0-1 range)"),
     max_tokens: z.coerce.number().int().positive().optional(),
-    max_steps: z.coerce.number().int().positive().optional().describe(
-      "Max steps for multi-step tool calling",
-    ),
+    max_steps: z.coerce
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe("Max steps for multi-step tool calling"),
 
     // Tool configuration
     tool_choice: LLMToolChoiceSchema.optional(),
     tools: z.array(z.string()).optional().describe("Available tools (simple array)"),
 
     // Provider-specific options
-    provider_options: z.record(z.string(), z.unknown()).optional().describe(
-      "Provider-specific options passed directly to the LLM SDK",
-    ),
+    provider_options: z
+      .record(z.string(), z.unknown())
+      .optional()
+      .describe("Provider-specific options passed directly to the LLM SDK"),
 
     // Success/error handlers
     success: SuccessConfigSchema.optional(),
@@ -73,24 +77,35 @@ const LLMAgentConfigSchema = BaseAgentConfigSchema.extend({
 // ==============================================================================
 
 // Specific schema based on conversation agent usage
-const SystemAgentConfigObjectSchema = z.strictObject({
-  // LLM Configuration
-  model: z.string().optional().describe("LLM model to use"),
-  temperature: z.coerce.number().min(0).max(1).optional().default(0.3).describe("LLM temperature"),
-  max_tokens: z.coerce.number().min(1).optional().describe("Maximum tokens for LLM response"),
+const SystemAgentConfigObjectSchema = z
+  .strictObject({
+    // LLM Configuration
+    model: z.string().optional().describe("LLM model to use"),
+    temperature: z.coerce
+      .number()
+      .min(0)
+      .max(1)
+      .optional()
+      .default(0.3)
+      .describe("LLM temperature"),
+    max_tokens: z.coerce.number().min(1).optional().describe("Maximum tokens for LLM response"),
 
-  // Tools Configuration
-  tools: z.array(z.string()).optional().describe("Array of tool names available to the agent"),
+    // Tools Configuration
+    tools: z.array(z.string()).optional().describe("Array of tool names available to the agent"),
 
-  // Reasoning Configuration
-  use_reasoning: z.boolean().optional().describe("Enable reasoning capabilities"),
-  max_reasoning_steps: z.coerce.number().min(1).max(20).optional().describe(
-    "Maximum reasoning steps",
-  ),
+    // Reasoning Configuration
+    use_reasoning: z.boolean().optional().describe("Enable reasoning capabilities"),
+    max_reasoning_steps: z.coerce
+      .number()
+      .min(1)
+      .max(20)
+      .optional()
+      .describe("Maximum reasoning steps"),
 
-  // Prompt Configuration
-  prompt: z.string().describe("System prompt for the agent").optional(),
-}).describe("System agent configuration");
+    // Prompt Configuration
+    prompt: z.string().describe("System prompt for the agent").optional(),
+  })
+  .describe("System agent configuration");
 
 const SystemAgentConfigSchema = BaseAgentConfigSchema.extend({
   type: z.literal("system"),
@@ -110,9 +125,9 @@ const RemoteAgentConfigSchema = BaseAgentConfigSchema.extend({
     endpoint: z.url(),
 
     // ACP-specific config (flattened since protocol is fixed)
-    agent_name: z.string().regex(/^[a-z0-9-]+$/, {
-      message: "Agent name must be lowercase with hyphens",
-    }),
+    agent_name: z
+      .string()
+      .regex(/^[a-z0-9-]+$/, { message: "Agent name must be lowercase with hyphens" }),
     default_mode: z.enum(["sync", "async", "stream"]).default("async"),
     health_check_interval: DurationSchema.default("30s"),
 
@@ -125,12 +140,14 @@ const RemoteAgentConfigSchema = BaseAgentConfigSchema.extend({
     prompt: z.string().describe("System prompt for the agent").optional(),
 
     // Schema validation
-    schema: z.strictObject({
-      validate_input: z.boolean().default(false),
-      validate_output: z.boolean().default(false),
-      input: SchemaObjectSchema.optional(),
-      output: SchemaObjectSchema.optional(),
-    }).optional(),
+    schema: z
+      .strictObject({
+        validate_input: z.boolean().default(false),
+        validate_output: z.boolean().default(false),
+        input: SchemaObjectSchema.optional(),
+        output: SchemaObjectSchema.optional(),
+      })
+      .optional(),
 
     // Success/error handlers
     success: SuccessConfigSchema.optional(),

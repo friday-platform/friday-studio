@@ -25,11 +25,7 @@ Deno.test("LocalFileStorageAdapter - should store and retrieve data", async () =
   const adapter = new LocalFileStorageAdapter(tempDir);
 
   try {
-    const testData = {
-      key1: "value1",
-      key2: { nested: "value2" },
-      key3: [1, 2, 3],
-    };
+    const testData = { key1: "value1", key2: { nested: "value2" }, key3: [1, 2, 3] };
 
     await adapter.commit(testData);
     const loaded = await adapter.load();
@@ -63,13 +59,15 @@ Deno.test("LocalFileStorageAdapter - should create directory if it doesn't exist
     await adapter.commit(testData);
 
     // Check that directory was created
-    const dirExists = await Deno.stat(nonExistentDir).then(() => true).catch(() => false);
+    const dirExists = await Deno.stat(nonExistentDir)
+      .then(() => true)
+      .catch(() => false);
     assertEquals(dirExists, true);
 
     // Check that file was created
-    const fileExists = await Deno.stat(join(nonExistentDir, "memory.json")).then(() => true).catch(
-      () => false,
-    );
+    const fileExists = await Deno.stat(join(nonExistentDir, "memory.json"))
+      .then(() => true)
+      .catch(() => false);
     assertEquals(fileExists, true);
 
     // Check that data can be loaded
@@ -139,22 +137,13 @@ Deno.test("LocalFileStorageAdapter - should handle complex nested data", async (
     const complexData = {
       user: {
         name: "John Doe",
-        preferences: {
-          theme: "dark",
-          notifications: {
-            email: true,
-            push: false,
-          },
-        },
+        preferences: { theme: "dark", notifications: { email: true, push: false } },
       },
       sessions: [
         { id: 1, timestamp: new Date().toISOString(), data: { key: "value" } },
         { id: 2, timestamp: new Date().toISOString(), data: { key: "value2" } },
       ],
-      metadata: {
-        version: "1.0.0",
-        lastModified: new Date().toISOString(),
-      },
+      metadata: { version: "1.0.0", lastModified: new Date().toISOString() },
     };
 
     await adapter.commit(complexData);

@@ -1,5 +1,5 @@
-import { type Browser, type BrowserContext, chromium, type Page } from "playwright";
 import { join } from "@std/path";
+import { type Browser, type BrowserContext, chromium, type Page } from "playwright";
 
 interface WebSession {
   id: string;
@@ -26,17 +26,23 @@ export class WebSessionManager {
     if (!this.isStarted) {
       this.isStarted = true;
       // Clean up expired sessions every 5 minutes
-      this.cleanupInterval = setInterval(() => {
-        this.cleanupExpiredSessions();
-      }, 5 * 60 * 1000);
+      this.cleanupInterval = setInterval(
+        () => {
+          this.cleanupExpiredSessions();
+        },
+        5 * 60 * 1000,
+      );
     }
   }
 
-  async createSession(sessionId: string, options: {
-    userAgent?: string;
-    viewport?: { width: number; height: number };
-    locale?: string;
-  } = {}): Promise<WebSession> {
+  async createSession(
+    sessionId: string,
+    options: {
+      userAgent?: string;
+      viewport?: { width: number; height: number };
+      locale?: string;
+    } = {},
+  ): Promise<WebSession> {
     // Ensure the cleanup timer is started
     this.ensureStarted();
 
@@ -64,7 +70,8 @@ export class WebSessionManager {
     });
 
     const context = await browser.newContext({
-      userAgent: options.userAgent ||
+      userAgent:
+        options.userAgent ||
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
       viewport: options.viewport || { width: 1920, height: 1080 },
       locale: options.locale || "en-US",

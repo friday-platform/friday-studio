@@ -37,10 +37,7 @@ export interface BatchTriggerResult {
     workspaceId: string;
     workspaceName: string;
     success: boolean;
-    result?: {
-      sessionId?: string;
-      status?: string;
-    };
+    result?: { sessionId?: string; status?: string };
     error?: string;
   }>;
 }
@@ -52,9 +49,7 @@ export function validateSignalPayload(data: string): Record<string, unknown> {
   try {
     return { payload: JSON.parse(data) };
   } catch (err) {
-    throw new Error(
-      `Invalid JSON data: ${err instanceof Error ? err.message : String(err)}`,
-    );
+    throw new Error(`Invalid JSON data: ${err instanceof Error ? err.message : String(err)}`);
   }
 }
 
@@ -90,18 +85,13 @@ export async function resolveWorkspaceTargets(
       } catch (error) {
         // Try to find by name if ID lookup failed
         const allWorkspaces = await client.listWorkspaces();
-        const foundWorkspace = allWorkspaces.find(
-          (w) => w.name === workspaceName,
-        );
+        const foundWorkspace = allWorkspaces.find((w) => w.name === workspaceName);
         if (
           foundWorkspace &&
           !excludeSet.has(foundWorkspace.id) &&
           !excludeSet.has(foundWorkspace.name)
         ) {
-          targetWorkspaces.push({
-            id: foundWorkspace.id,
-            name: foundWorkspace.name,
-          });
+          targetWorkspaces.push({ id: foundWorkspace.id, name: foundWorkspace.name });
         } else {
           throw new Error(`Workspace '${workspaceName}' not found`);
         }
@@ -112,31 +102,19 @@ export async function resolveWorkspaceTargets(
     const currentWorkspaceName = await getCurrentWorkspaceName();
 
     if (!currentWorkspaceName) {
-      throw new Error(
-        "No workspace.yml found in current directory. Specify target workspace.",
-      );
+      throw new Error("No workspace.yml found in current directory. Specify target workspace.");
     }
 
     // Find workspace by name in daemon
     const allWorkspaces = await client.listWorkspaces();
-    const currentWorkspace = allWorkspaces.find(
-      (w) => w.name === currentWorkspaceName,
-    );
+    const currentWorkspace = allWorkspaces.find((w) => w.name === currentWorkspaceName);
 
     if (!currentWorkspace) {
-      throw new Error(
-        `Current workspace '${currentWorkspaceName}' not found in daemon.`,
-      );
+      throw new Error(`Current workspace '${currentWorkspaceName}' not found in daemon.`);
     }
 
-    if (
-      !excludeSet.has(currentWorkspace.id) &&
-      !excludeSet.has(currentWorkspace.name)
-    ) {
-      targetWorkspaces.push({
-        id: currentWorkspace.id,
-        name: currentWorkspace.name,
-      });
+    if (!excludeSet.has(currentWorkspace.id) && !excludeSet.has(currentWorkspace.name)) {
+      targetWorkspaces.push({ id: currentWorkspace.id, name: currentWorkspace.name });
     }
   }
 
@@ -150,9 +128,7 @@ export async function resolveWorkspaceTargets(
 /**
  * Triggers a signal on a single workspace
  */
-export async function triggerSignal(
-  options: TriggerSignalOptions,
-): Promise<TriggerSignalResult> {
+export async function triggerSignal(options: TriggerSignalOptions): Promise<TriggerSignalResult> {
   const startTime = performance.now();
 
   try {
@@ -213,21 +189,12 @@ export async function batchTriggerSignal(
       workspaceId: workspace.id,
       workspaceName: workspace.name,
       success: result.success,
-      result: result.success
-        ? {
-          sessionId: result.sessionId,
-          status: result.status,
-        }
-        : undefined,
+      result: result.success ? { sessionId: result.sessionId, status: result.status } : undefined,
       error: result.error,
     });
   }
 
-  return {
-    signal: options.signalName,
-    timestamp: new Date().toISOString(),
-    results,
-  };
+  return { signal: options.signalName, timestamp: new Date().toISOString(), results };
 }
 
 /**
@@ -240,9 +207,5 @@ export async function triggerSignalSimple(
 ): Promise<TriggerSignalResult> {
   const parsedPayload = payload ? validateSignalPayload(payload) : undefined;
 
-  return await triggerSignal({
-    workspaceId,
-    signalName,
-    payload: parsedPayload,
-  });
+  return await triggerSignal({ workspaceId, signalName, payload: parsedPayload });
 }

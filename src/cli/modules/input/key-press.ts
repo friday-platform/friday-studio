@@ -1,8 +1,8 @@
-import { useEffect, useRef } from "react";
-import { useStdin } from "ink";
-import stream from "node:stream";
 import { Buffer } from "node:buffer";
 import readline from "node:readline";
+import stream from "node:stream";
+import { useStdin } from "ink";
+import { useEffect, useRef } from "react";
 
 export interface Key {
   name: string;
@@ -16,10 +16,7 @@ export interface Key {
 const START_BUFFER_CHARACTER = "\x1B[200~";
 const END_BUFFER_CHARACTER = "\x1B[201~";
 
-export function useKeypress(
-  onKeypress: (key: Key) => void,
-  { isActive }: { isActive: boolean },
-) {
+export function useKeypress(onKeypress: (key: Key) => void, { isActive }: { isActive: boolean }) {
   const { stdin, setRawMode } = useStdin();
   const onKeypressRef = useRef(onKeypress);
 
@@ -98,9 +95,7 @@ export function useKeypress(
         if (nextData.length > 0) {
           keypressStream.write(nextData);
         }
-        const createPasteKeyEvent = (
-          name: "paste-start" | "paste-end",
-        ): Key => ({
+        const createPasteKeyEvent = (name: "paste-start" | "paste-end"): Key => ({
           name,
           ctrl: false,
           meta: false,

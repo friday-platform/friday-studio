@@ -2,9 +2,9 @@
  * Shared types for modular MCP tools
  */
 
-import type { Logger } from "../platform-server.ts";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { LoggingMessageNotification } from "@modelcontextprotocol/sdk/types.js";
+import type { Logger } from "../platform-server.ts";
 
 /**
  * Context provided to all tool handlers
@@ -22,12 +22,7 @@ export function createErrorResponse(error: unknown): {
   content: Array<{ type: "text"; text: string }>;
 } {
   const errorMessage = error instanceof Error ? error.message : String(error);
-  return {
-    content: [{
-      type: "text",
-      text: JSON.stringify({ error: errorMessage }, null, 2),
-    }],
-  };
+  return { content: [{ type: "text", text: JSON.stringify({ error: errorMessage }, null, 2) }] };
 }
 
 /**
@@ -37,10 +32,9 @@ export function createSuccessResponse(data: unknown): {
   content: Array<{ type: "text"; text: string }>;
 } {
   return {
-    content: [{
-      type: "text",
-      text: typeof data === "string" ? data : JSON.stringify(data, null, 2),
-    }],
+    content: [
+      { type: "text", text: typeof data === "string" ? data : JSON.stringify(data, null, 2) },
+    ],
   };
 }
 
@@ -105,10 +99,7 @@ function sanitizeNotificationForLogging(params: unknown): unknown {
         if (parsedData.type === "library_content_chunk" && parsedData.content) {
           const sanitized = { ...parsedData };
           sanitized.content = `[CONTENT REDACTED - ${parsedData.content?.length || 0} chars]`;
-          return {
-            ...paramsObj,
-            data: JSON.stringify(sanitized),
-          };
+          return { ...paramsObj, data: JSON.stringify(sanitized) };
         }
       }
     } catch {

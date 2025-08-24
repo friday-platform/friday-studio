@@ -1,9 +1,9 @@
+import type { WorkspaceEntry } from "@atlas/workspace";
+import { WorkspaceStatusEnum } from "@atlas/workspace";
 import { assertEquals, assertExists } from "@std/assert";
 import { delay } from "@std/async";
 import { join } from "@std/path";
 import { WorkspaceFileWatcher } from "./workspace-file-watcher.ts";
-import type { WorkspaceEntry } from "@atlas/workspace";
-import { WorkspaceStatusEnum } from "@atlas/workspace";
 
 Deno.test("WorkspaceFileWatcher - detects workspace.yml changes", async () => {
   // Use a deterministic test directory instead of temp dir for CI compatibility

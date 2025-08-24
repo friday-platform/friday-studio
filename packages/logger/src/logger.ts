@@ -1,7 +1,7 @@
 import { ensureDir } from "@std/fs";
 import { dirname, join } from "@std/path";
-import type { LogContext, LogEntry, Logger, LogLevel } from "./types.ts";
 import { getAtlasLogsDir } from "./paths.ts";
+import type { LogContext, LogEntry, Logger, LogLevel } from "./types.ts";
 
 /**
  * Atlas logger that writes JSON to disk files and human-readable output to console
@@ -54,8 +54,8 @@ export class AtlasLoggerV2 implements Logger {
     // Determine output format based on TTY status and environment variable
     // ATLAS_LOG_FORMAT can be "json" (force JSON) or "pretty" (force human-readable)
     const forceFormat = Deno.env.get("ATLAS_LOG_FORMAT");
-    const isJson = forceFormat === "json" ||
-      (forceFormat !== "pretty" && !Deno.stdout.isTerminal());
+    const isJson =
+      forceFormat === "json" || (forceFormat !== "pretty" && !Deno.stdout.isTerminal());
 
     const consoleOutput = isJson
       ? JSON.stringify(entry)
@@ -94,12 +94,7 @@ export class AtlasLoggerV2 implements Logger {
       processedContext.error = this.serializeError(processedContext.error);
     }
 
-    return {
-      timestamp: new Date().toISOString(),
-      level,
-      message,
-      context: processedContext,
-    };
+    return { timestamp: new Date().toISOString(), level, message, context: processedContext };
   }
 
   private serializeError(error: unknown): unknown {
@@ -149,9 +144,10 @@ export class AtlasLoggerV2 implements Logger {
       processedContext.error = this.serializeError(processedContext.error);
     }
 
-    const contextStr = Object.keys(processedContext).length > 0
-      ? " " + JSON.stringify(processedContext, null, 0)
-      : "";
+    const contextStr =
+      Object.keys(processedContext).length > 0
+        ? " " + JSON.stringify(processedContext, null, 0)
+        : "";
 
     // Color coding for console output
     const shouldColorize = this.shouldColorizeOutput();

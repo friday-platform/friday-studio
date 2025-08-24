@@ -1,6 +1,7 @@
 // Export responsive hooks
-export { useResponsiveDimensions } from "./useResponsiveDimensions.ts";
+
 export type {
   ResponsiveDimensions,
   ResponsiveDimensionsOptions,
 } from "./useResponsiveDimensions.ts";
+export { useResponsiveDimensions } from "./useResponsiveDimensions.ts";

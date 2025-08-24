@@ -3,11 +3,11 @@
  * Handles cron expressions with timezone support for scheduled task execution
  */
 
+import { logger } from "@atlas/logger";
+import { CronExpressionParser } from "cron-parser";
+import type { KVStorage } from "../../../../src/core/storage/kv-storage.ts";
 import type { HealthStatus, IProvider, ProviderState } from "./types.ts";
 import { ProviderStatus, ProviderType } from "./types.ts";
-import { logger } from "@atlas/logger";
-import type { KVStorage } from "../../../../src/core/storage/kv-storage.ts";
-import { CronExpressionParser } from "cron-parser";
 
 export interface TimerSignalConfig {
   id: string;
@@ -57,16 +57,11 @@ export class TimerSignalProvider implements IProvider {
 
   constructor(config: TimerSignalConfig, storage?: KVStorage) {
     this.validateConfig(config);
-    this.config = {
-      ...config,
-      timezone: config.timezone || "UTC",
-    };
+    this.config = { ...config, timezone: config.timezone || "UTC" };
     this.id = config.id;
     this.storage = storage;
     this.storageKey = ["timer_signals", config.id];
-    this.state = {
-      status: ProviderStatus.NOT_CONFIGURED,
-    };
+    this.state = { status: ProviderStatus.NOT_CONFIGURED };
   }
 
   private validateConfig(config: TimerSignalConfig): void {
@@ -112,23 +107,25 @@ export class TimerSignalProvider implements IProvider {
     this.state.config = this.config;
 
     // Handle async operations in background
-    this.setupAsync().then(() => {
-      // Only set to READY after async setup completes successfully
-      this.state.status = ProviderStatus.READY;
-      logger.info("Timer signal provider setup completed", {
-        signalId: this.config.id,
-        schedule: this.config.schedule,
-        timezone: this.config.timezone,
-        nextExecution: this.nextExecution?.toISOString(),
+    this.setupAsync()
+      .then(() => {
+        // Only set to READY after async setup completes successfully
+        this.state.status = ProviderStatus.READY;
+        logger.info("Timer signal provider setup completed", {
+          signalId: this.config.id,
+          schedule: this.config.schedule,
+          timezone: this.config.timezone,
+          nextExecution: this.nextExecution?.toISOString(),
+        });
+      })
+      .catch((error) => {
+        logger.error("Failed to complete timer signal provider async setup", {
+          signalId: this.config.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        this.state.status = ProviderStatus.ERROR;
+        this.state.error = error instanceof Error ? error.message : String(error);
       });
-    }).catch((error) => {
-      logger.error("Failed to complete timer signal provider async setup", {
-        signalId: this.config.id,
-        error: error instanceof Error ? error.message : String(error),
-      });
-      this.state.status = ProviderStatus.ERROR;
-      this.state.error = error instanceof Error ? error.message : String(error);
-    });
 
     logger.info("Timer signal provider setup initiated", {
       signalId: this.config.id,
@@ -180,25 +177,20 @@ export class TimerSignalProvider implements IProvider {
       });
     });
 
-    logger.info("Timer signal provider torn down", {
-      signalId: this.config.id,
-    });
+    logger.info("Timer signal provider torn down", { signalId: this.config.id });
   }
 
   getState(): ProviderState {
     return {
       ...this.state,
       lastHealthCheck: new Date(),
-      config: {
-        ...this.config,
-        nextExecution: this.nextExecution?.toISOString(),
-      },
+      config: { ...this.config, nextExecution: this.nextExecution?.toISOString() },
     };
   }
 
   checkHealth(): Promise<HealthStatus> {
-    const isHealthy = this.state.status === ProviderStatus.READY &&
-      this.nextExecution !== undefined;
+    const isHealthy =
+      this.state.status === ProviderStatus.READY && this.nextExecution !== undefined;
 
     return Promise.resolve({
       healthy: isHealthy,
@@ -391,10 +383,7 @@ export class TimerSignalProvider implements IProvider {
         id: this.config.id,
         type: "timer",
         timestamp: new Date().toISOString(),
-        data: {
-          scheduled: this.config.schedule,
-          timezone: this.config.timezone,
-        },
+        data: { scheduled: this.config.schedule, timezone: this.config.timezone },
       };
 
       // Calculate next run for the signal data
@@ -427,9 +416,7 @@ export class TimerSignalProvider implements IProvider {
           // Continue execution despite callback error
         }
       } else {
-        logger.warn("Timer signal triggered but no callback set", {
-          signalId: this.config.id,
-        });
+        logger.warn("Timer signal triggered but no callback set", { signalId: this.config.id });
       }
 
       // Schedule the next execution
@@ -456,10 +443,7 @@ export class TimerSignalProvider implements IProvider {
       id: this.config.id,
       type: "timer",
       timestamp: new Date().toISOString(),
-      data: {
-        scheduled: this.config.schedule,
-        timezone: this.config.timezone,
-      },
+      data: { scheduled: this.config.schedule, timezone: this.config.timezone },
     };
 
     if (this.signalCallback) {

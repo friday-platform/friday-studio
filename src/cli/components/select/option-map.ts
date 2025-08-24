@@ -1,4 +1,4 @@
-import { Option, OptionMapItem } from "./types.ts";
+import type { Option, OptionMapItem } from "./types.ts";
 
 export default class OptionMap extends Map<string, OptionMapItem> {
   public first?: OptionMapItem;
@@ -9,11 +9,7 @@ export default class OptionMap extends Map<string, OptionMapItem> {
     let previousItem: OptionMapItem | undefined;
 
     for (const [index, option] of options.entries()) {
-      const item: OptionMapItem = {
-        ...option,
-        index,
-        previous: previousItem,
-      };
+      const item: OptionMapItem = { ...option, index, previous: previousItem };
 
       if (previousItem) {
         previousItem.next = item;

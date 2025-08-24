@@ -129,32 +129,12 @@ Deno.test("Memory configuration structure", () => {
     enabled: true,
     scope: "agent",
     include_in_context: true,
-    context_limits: {
-      relevant_memories: 5,
-      past_successes: 3,
-      past_failures: 2,
-    },
+    context_limits: { relevant_memories: 5, past_successes: 3, past_failures: 2 },
     memory_types: {
-      working: {
-        enabled: true,
-        max_age_hours: 8,
-        max_entries: 100,
-      },
-      episodic: {
-        enabled: true,
-        max_age_days: 7,
-        max_entries: 200,
-      },
-      semantic: {
-        enabled: true,
-        max_age_days: 30,
-        max_entries: 500,
-      },
-      procedural: {
-        enabled: true,
-        max_age_days: 90,
-        max_entries: 400,
-      },
+      working: { enabled: true, max_age_hours: 8, max_entries: 100 },
+      episodic: { enabled: true, max_age_days: 7, max_entries: 200 },
+      semantic: { enabled: true, max_age_days: 30, max_entries: 500 },
+      procedural: { enabled: true, max_age_days: 90, max_entries: 400 },
     },
   };
 

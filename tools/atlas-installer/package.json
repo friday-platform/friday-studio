@@ -4,10 +4,7 @@
   "description": "Cross-platform installer for Atlas CLI",
   "main": "main.js",
   "homepage": "https://atlas.tempestdx.com",
-  "author": {
-    "name": "Tempest Labs, Inc.",
-    "email": "support@tempestdx.com"
-  },
+  "author": { "name": "Tempest Labs, Inc.", "email": "support@tempestdx.com" },
   "scripts": {
     "start": "electron .",
     "build": "electron-builder",
@@ -29,16 +26,11 @@
     "validate": "deno test --allow-read test-installer.ts"
   },
   "license": "PROPRIETARY",
-  "devDependencies": {
-    "electron": "^37.3.1",
-    "electron-builder": "^26.0.12"
-  },
+  "devDependencies": { "electron": "^37.3.1", "electron-builder": "^26.0.12" },
   "build": {
     "appId": "com.tempestdx.atlas-installer",
     "productName": "Atlas Installer",
-    "directories": {
-      "output": "dist"
-    },
+    "directories": { "output": "dist" },
     "files": [
       "main.js",
       "renderer.js",
@@ -57,19 +49,10 @@
       "!**/*.test.js",
       "!**/*.spec.js"
     ],
-    "extraResources": [
-      {
-        "from": "../../EULA.txt",
-        "to": "EULA.txt"
-      }
-    ],
+    "extraResources": [{ "from": "../../EULA.txt", "to": "EULA.txt" }],
     "asar": true,
-    "asarUnpack": [
-      "atlas-binary/**/*"
-    ],
-    "electronLanguages": [
-      "en"
-    ],
+    "asarUnpack": ["atlas-binary/**/*"],
+    "electronLanguages": ["en"],
     "mac": {
       "target": "zip",
       "category": "public.app-category.developer-tools",
@@ -87,9 +70,7 @@
         "NSMicrophoneUsageDescription": false,
         "NSAppleEventsUsageDescription": "Atlas Installer needs to run administrative commands to install the Atlas binary to /usr/local/bin/",
         "NSSystemAdministrationUsageDescription": "Atlas Installer needs administrative access to install the Atlas binary to /usr/local/bin/",
-        "NSAppTransportSecurity": {
-          "NSAllowsArbitraryLoads": false
-        }
+        "NSAppTransportSecurity": { "NSAllowsArbitraryLoads": false }
       }
     },
     "buildDependenciesFromSource": false,
@@ -98,17 +79,8 @@
     "removePackageKeywords": true,
     "nodeGypRebuild": false,
     "npmRebuild": false,
-    "win": {
-      "target": "portable",
-      "icon": "icons/icon.ico"
-    },
-    "linux": {
-      "target": "AppImage",
-      "category": "Development",
-      "icon": "icons"
-    },
-    "electronDownload": {
-      "cache": "./electron-cache"
-    }
+    "win": { "target": "portable", "icon": "icons/icon.ico" },
+    "linux": { "target": "AppImage", "category": "Development", "icon": "icons" },
+    "electronDownload": { "cache": "./electron-cache" }
   }
 }

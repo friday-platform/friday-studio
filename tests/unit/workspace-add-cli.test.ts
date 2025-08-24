@@ -198,9 +198,7 @@ Deno.test({
   name: "Workspace Add CLI - Command configuration",
   async fn() {
     // Import command properties directly
-    const { command, desc, aliases } = await import(
-      "../../src/cli/commands/workspace/add.tsx"
-    );
+    const { command, desc, aliases } = await import("../../src/cli/commands/workspace/add.tsx");
 
     assertEquals(command, "add [paths..]");
     assertEquals(desc, "Add existing workspace(s) to Atlas registry");

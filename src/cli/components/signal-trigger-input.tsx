@@ -1,7 +1,7 @@
 import { Box, Text, useInput } from "ink";
 import { useState } from "react";
-import { useResponsiveDimensions } from "../utils/useResponsiveDimensions.ts";
 import { TextInput } from "../modules/input/text-input.tsx";
+import { useResponsiveDimensions } from "../utils/useResponsiveDimensions.ts";
 
 interface SignalTriggerInputProps {
   signalId: string;
@@ -9,11 +9,7 @@ interface SignalTriggerInputProps {
   onSubmit: (input: string) => void;
 }
 
-export const SignalTriggerInput = ({
-  signalId,
-  onEscape,
-  onSubmit,
-}: SignalTriggerInputProps) => {
+export const SignalTriggerInput = ({ signalId, onEscape, onSubmit }: SignalTriggerInputProps) => {
   const [inputKey] = useState(0);
   const dimensions = useResponsiveDimensions({ minHeight: 24, padding: 1 });
 

@@ -183,7 +183,8 @@ textarea::placeholder {
   color: #9ca3af;
 }
 [role="button"],
-button {}
+button {
+}
 :disabled {
   cursor: default;
 }

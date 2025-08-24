@@ -3,9 +3,9 @@
  * Lists available agents within a workspace through the daemon API
  */
 
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { ToolContext } from "../types.ts";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { createSuccessResponse } from "../types.ts";
 
 export function registerAgentsListTool(server: McpServer, ctx: ToolContext) {
@@ -13,9 +13,7 @@ export function registerAgentsListTool(server: McpServer, ctx: ToolContext) {
     "atlas_workspace_agents_list",
     {
       description: "List all agents in a workspace through daemon API",
-      inputSchema: {
-        workspaceId: z.string().describe("Workspace ID to list agents for"),
-      },
+      inputSchema: { workspaceId: z.string().describe("Workspace ID to list agents for") },
     },
     async ({ workspaceId }) => {
       ctx.logger.info("MCP workspace_agents_list called", { workspaceId });

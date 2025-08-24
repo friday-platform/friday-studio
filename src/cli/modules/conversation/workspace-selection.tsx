@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
+import type { WorkspaceEntry, WorkspaceStatus } from "@atlas/core";
 import { Box, Text, useInput } from "ink";
+import { useEffect, useState } from "react";
 import { Select } from "../../components/select/index.ts";
-import { type WorkspaceEntry, type WorkspaceStatus } from "@atlas/core";
 import { getDaemonClient } from "../../utils/daemon-client.ts";
 import { useResponsiveDimensions } from "../../utils/useResponsiveDimensions.ts";
 
@@ -10,10 +10,7 @@ interface WorkspaceSelectionProps {
   onWorkspaceSelect: (workspaceId: string) => void;
 }
 
-export const WorkspaceSelection = ({
-  onEscape,
-  onWorkspaceSelect,
-}: WorkspaceSelectionProps) => {
+export const WorkspaceSelection = ({ onEscape, onWorkspaceSelect }: WorkspaceSelectionProps) => {
   const [workspaces, setWorkspaces] = useState<WorkspaceEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>("");
@@ -33,9 +30,7 @@ export const WorkspaceSelection = ({
           status: w.status as WorkspaceStatus,
           createdAt: w.createdAt,
           lastSeen: w.lastSeen,
-          metadata: {
-            description: w.description,
-          },
+          metadata: { description: w.description },
         }));
         setWorkspaces(compatibleWorkspaces);
         setError("");
@@ -89,10 +84,7 @@ export const WorkspaceSelection = ({
   // Create options for Select component
   const options = [
     // Add "none" option first
-    {
-      label: "(none)",
-      value: "none",
-    },
+    { label: "(none)", value: "none" },
     // Then add all workspaces
     ...workspaces.map((workspace) => ({
       label: `${workspace.name} (${workspace.id})`,
@@ -107,11 +99,7 @@ export const WorkspaceSelection = ({
   return (
     <Box flexDirection="column" marginTop={1} width={dimensions.paddedWidth}>
       <Box borderStyle="round" borderColor="gray" paddingX={1}>
-        <Select
-          options={options}
-          onChange={handleSelect}
-          visibleOptionCount={8}
-        />
+        <Select options={options} onChange={handleSelect} visibleOptionCount={8} />
       </Box>
       <Box marginTop={1}>
         <Text dimColor>Press Escape to go back</Text>

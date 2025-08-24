@@ -4,7 +4,7 @@
  */
 
 import { assertEquals } from "@std/assert";
-import { K8sAuthConfig, K8sAuthManager } from "../../../src/providers/k8s-auth.ts";
+import { type K8sAuthConfig, K8sAuthManager } from "../../../src/providers/k8s-auth.ts";
 
 Deno.test("K8sAuthManager - HTTP headers", async (t) => {
   await t.step("should create proper auth headers with token", () => {
@@ -21,9 +21,7 @@ Deno.test("K8sAuthManager - HTTP headers", async (t) => {
   });
 
   await t.step("should create headers without token", () => {
-    const authConfig: K8sAuthConfig = {
-      server: "https://kubernetes.example.com",
-    };
+    const authConfig: K8sAuthConfig = { server: "https://kubernetes.example.com" };
 
     const headers = K8sAuthManager.createAuthHeaders(authConfig);
 
@@ -33,10 +31,7 @@ Deno.test("K8sAuthManager - HTTP headers", async (t) => {
   });
 
   await t.step("should not create auth header with empty token", () => {
-    const authConfig: K8sAuthConfig = {
-      server: "https://kubernetes.example.com",
-      token: "",
-    };
+    const authConfig: K8sAuthConfig = { server: "https://kubernetes.example.com", token: "" };
 
     const headers = K8sAuthManager.createAuthHeaders(authConfig);
 

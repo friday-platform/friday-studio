@@ -1,5 +1,1 @@
-{
-  "name": "@atlas/reasoning",
-  "version": "0.1.0",
-  "exports": "./mod.ts"
-}
+{ "name": "@atlas/reasoning", "version": "0.1.0", "exports": "./mod.ts" }

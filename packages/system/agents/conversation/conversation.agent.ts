@@ -8,13 +8,13 @@
  * - Task tracking with todos
  */
 
-import { createAgent } from "@atlas/agent-sdk";
 import { createAnthropic } from "@ai-sdk/anthropic";
-import { stepCountIs, streamText, type TextStreamPart, ToolSet } from "ai";
-import { convertAIStreamToSSE, createRequestEvent } from "@atlas/core";
+import { createAgent } from "@atlas/agent-sdk";
 import type { SSEEvent } from "@atlas/config";
-import { conversationStorageTool, conversationTools, streamEvent } from "./tools/mod.ts";
+import { convertAIStreamToSSE, createRequestEvent } from "@atlas/core";
+import { stepCountIs, streamText, type TextStreamPart, type ToolSet } from "ai";
 import SYSTEM_PROMPT from "./prompt.txt" with { type: "text" };
+import { conversationStorageTool, conversationTools, streamEvent } from "./tools/mod.ts";
 
 type MessageHistory = {
   messages: Array<{ role: "user" | "assistant"; content: string }>;
@@ -26,10 +26,7 @@ type MessageHistory = {
  * Based on existing conversation-agent.ts buildSystemPrompt logic
  */
 function getSystemPrompt(
-  history?: {
-    messages: Array<{ role: string; content: string }>;
-    historyContext: string;
-  },
+  history?: { messages: Array<{ role: string; content: string }>; historyContext: string },
   customPrompt?: string,
 ): string {
   let prompt = customPrompt || SYSTEM_PROMPT;
@@ -97,9 +94,7 @@ function shouldFilterThinkingContent(content: string): boolean {
  * @param sseEvent - Server-sent event containing tool execution data
  * @returns Metadata object for tool events, undefined for other event types
  */
-function extractSSEMetadata(
-  sseEvent: SSEEvent,
-): Record<string, unknown> | undefined {
+function extractSSEMetadata(sseEvent: SSEEvent): Record<string, unknown> | undefined {
   if (sseEvent.type === "tool_call") {
     return {
       toolName: sseEvent.data.toolName,
@@ -124,11 +119,7 @@ export const conversationAgent = createAgent({
   version: "1.0.0",
   description: "Interactive conversation agent for workspace collaboration",
 
-  expertise: {
-    domains: ["conversation"],
-    capabilities: ["interactive-chat"],
-    examples: [],
-  },
+  expertise: { domains: ["conversation"], capabilities: ["interactive-chat"], examples: [] },
 
   /**
    * Main conversation handler that processes user prompts with streaming responses.
@@ -143,42 +134,25 @@ export const conversationAgent = createAgent({
       throw new Error("Stream ID is required");
     }
 
-    const anthropic = createAnthropic({
-      apiKey: Deno.env.get("ANTHROPIC_API_KEY"),
-    });
+    const anthropic = createAnthropic({ apiKey: Deno.env.get("ANTHROPIC_API_KEY") });
 
-    const allTools = {
-      ...tools,
-      ...conversationTools,
-    };
+    const allTools = { ...tools, ...conversationTools };
 
     /**
      * @FIXME: this is the wrong level of abstraction. Retrieval should be much more automatic here.
      */
-    let history: MessageHistory = {
-      messages: [],
-      historyContext: "",
-    };
+    let history: MessageHistory = { messages: [], historyContext: "" };
 
     try {
       const result = await conversationStorageTool.execute?.(
-        {
-          operation: "retrieve",
-          streamId: session.streamId,
-        },
+        { operation: "retrieve", streamId: session.streamId },
         { messages: [], toolCallId: crypto.randomUUID() },
       );
 
-      if (
-        result?.success &&
-        result.operation === "retrieve" &&
-        result?.result.messageCount > 0
-      ) {
+      if (result?.success && result.operation === "retrieve" && result?.result.messageCount > 0) {
         const messages = result.result.messages;
         const historyContext = messages
-          .map(
-            (m: { role: string; content: string }) => `${m.role}: ${m.content}`,
-          )
+          .map((m: { role: string; content: string }) => `${m.role}: ${m.content}`)
           .join("\n");
 
         history = { messages, historyContext };
@@ -192,10 +166,7 @@ export const conversationAgent = createAgent({
         streamId: session.streamId,
         operation: "store",
         message: { role: "user", content: prompt },
-        metadata: {
-          userId: session.userId,
-          timestamp: new Date().toISOString(),
-        },
+        metadata: { userId: session.userId, timestamp: new Date().toISOString() },
       },
       { toolCallId: crypto.randomUUID(), messages: [] },
     );
@@ -222,45 +193,31 @@ export const conversationAgent = createAgent({
       temperature: 0.3,
       maxOutputTokens: 12000,
       maxRetries: 3, // Enable retries for API resilience (e.g., 529 errors)
-      providerOptions: {
-        anthropic: { thinking: { type: "enabled", budgetTokens: 25000 } },
-      },
+      providerOptions: { anthropic: { thinking: { type: "enabled", budgetTokens: 25000 } } },
     });
 
     // I think this can be simpplified.
     const executionFlow = {
-      steps: [] as Array<{
-        type: string;
-        tool?: string;
-        args?: unknown;
-        timestamp: string;
-      }>,
+      steps: [] as Array<{ type: string; tool?: string; args?: unknown; timestamp: string }>,
       reasoning: [] as string[],
       responseBuffer: "",
       thinkingBuffer: "",
     };
 
-    let prevChunk: TextStreamPart<ToolSet> | undefined = undefined;
+    let prevChunk: TextStreamPart<ToolSet> | undefined;
 
     for await (const chunk of fullStream) {
       const sseEvent = convertAIStreamToSSE(chunk, prevChunk);
       prevChunk = chunk;
 
       if (!sseEvent) {
-        logger.debug("Skipped null event from chunk", {
-          chunkType: chunk.type,
-        });
+        logger.debug("Skipped null event from chunk", { chunkType: chunk.type });
         continue;
       }
 
       // Filter thinking content before streaming and processing
-      if (
-        sseEvent.type === "thinking" &&
-        shouldFilterThinkingContent(sseEvent.data.content)
-      ) {
-        logger.debug(
-          "Filtered thinking content containing system prompt information",
-        );
+      if (sseEvent.type === "thinking" && shouldFilterThinkingContent(sseEvent.data.content)) {
+        logger.debug("Filtered thinking content containing system prompt information");
         continue; // Skip this event entirely
       }
 
@@ -313,11 +270,7 @@ export const conversationAgent = createAgent({
     );
 
     // Fallback: if no text chunks were streamed (e.g., only finish), emit final text once
-    if (
-      (!executionFlow.responseBuffer ||
-        executionFlow.responseBuffer.length === 0) &&
-      finalText
-    ) {
+    if ((!executionFlow.responseBuffer || executionFlow.responseBuffer.length === 0) && finalText) {
       await streamEvent.execute(
         {
           id: crypto.randomUUID(),
@@ -331,9 +284,10 @@ export const conversationAgent = createAgent({
     }
 
     // Convert reasoning to proper format - prioritize collected reasoning if AI SDK reasoning is empty
-    const processedReasoning = finalReasoning.length > 0
-      ? finalReasoning.map((item) => item.text).join("\n")
-      : executionFlow.reasoning.join("\n");
+    const processedReasoning =
+      finalReasoning.length > 0
+        ? finalReasoning.map((item) => item.text).join("\n")
+        : executionFlow.reasoning.join("\n");
 
     logger.debug("🎉", {
       text: finalText || executionFlow.responseBuffer,
@@ -351,8 +305,6 @@ export const conversationAgent = createAgent({
   },
   environment: {
     required: [{ name: "ANTHROPIC_API_KEY", description: "Claude API key" }],
-    optional: [
-      { name: "ATLAS_DAEMON_URL", description: "Platform MCP server URL" },
-    ],
+    optional: [{ name: "ATLAS_DAEMON_URL", description: "Platform MCP server URL" }],
   },
 });

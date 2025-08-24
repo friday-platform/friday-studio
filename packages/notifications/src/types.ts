@@ -81,11 +81,7 @@ export interface NotificationManagerConfig {
   /**
    * Global retry configuration
    */
-  retryConfig?: {
-    attempts: number;
-    delay: number;
-    backoff: number;
-  };
+  retryConfig?: { attempts: number; delay: number; backoff: number };
 
   /**
    * Global timeout configuration
@@ -115,11 +111,7 @@ export interface SendNotificationParams {
   /**
    * Override retry configuration
    */
-  retryConfig?: {
-    attempts: number;
-    delay: number;
-    backoff: number;
-  };
+  retryConfig?: { attempts: number; delay: number; backoff: number };
 
   /**
    * Override timeout

@@ -1,7 +1,7 @@
+import type { LibrarySearchResult } from "@atlas/client";
+import { AtlasApiError } from "@atlas/client";
 import { assertEquals, assertExists } from "@std/assert";
 import { fetchLibraryItems, type LibraryFetchError } from "./fetcher.ts";
-import { AtlasApiError } from "@atlas/client";
-import type { LibrarySearchResult } from "@atlas/client";
 
 // Mock response helper function
 function mockResponse(body: unknown, options: ResponseInit = {}): Response {
@@ -80,10 +80,7 @@ Deno.test("fetchLibraryItems - should handle empty tags string", async () => {
   };
 
   try {
-    await fetchLibraryItems({
-      type: "document",
-      tags: "",
-    });
+    await fetchLibraryItems({ type: "document", tags: "" });
 
     assertExists(capturedRequest);
     const url = new URL(capturedRequest.url);
@@ -117,9 +114,7 @@ Deno.test("fetchLibraryItems - should handle undefined parameters", async () => 
   };
 
   try {
-    await fetchLibraryItems({
-      type: "document",
-    });
+    await fetchLibraryItems({ type: "document" });
 
     assertExists(capturedRequest);
     const url = new URL(capturedRequest.url);
@@ -142,11 +137,7 @@ Deno.test("fetchLibraryItems - should transform API response to UI format", asyn
         type: "document",
         name: "Technical Spec",
         description: "API documentation",
-        metadata: {
-          format: "markdown",
-          source: "manual",
-          custom_fields: { version: "1.0" },
-        },
+        metadata: { format: "markdown", source: "manual", custom_fields: { version: "1.0" } },
         created_at: "2024-01-01T10:00:00Z",
         updated_at: "2024-01-01T10:00:00Z",
         tags: ["api", "docs"],
@@ -158,11 +149,7 @@ Deno.test("fetchLibraryItems - should transform API response to UI format", asyn
         type: "analysis",
         name: "Performance Report",
         description: "Q1 analysis",
-        metadata: {
-          format: "json",
-          source: "automated",
-          session_id: "sess_123",
-        },
+        metadata: { format: "json", source: "automated", session_id: "sess_123" },
         created_at: "2024-01-02T10:00:00Z",
         updated_at: "2024-01-02T10:00:00Z",
         tags: ["performance", "quarterly"],
@@ -178,11 +165,7 @@ Deno.test("fetchLibraryItems - should transform API response to UI format", asyn
   globalThis.fetch = async () => mockResponse(mockLibraryResult);
 
   try {
-    const result = await fetchLibraryItems({
-      type: "document",
-      tags: "api",
-      limit: 10,
-    });
+    const result = await fetchLibraryItems({ type: "document", tags: "api", limit: 10 });
 
     assertEquals(result.success, true);
 
@@ -211,12 +194,7 @@ Deno.test("fetchLibraryItems - should transform API response to UI format", asyn
 Deno.test("fetchLibraryItems - should handle empty results", async () => {
   const originalFetch = globalThis.fetch;
 
-  const mockEmptyResult: LibrarySearchResult = {
-    items: [],
-    total: 0,
-    query: {},
-    took_ms: 5,
-  };
+  const mockEmptyResult: LibrarySearchResult = { items: [], total: 0, query: {}, took_ms: 5 };
 
   globalThis.fetch = async () => mockResponse(mockEmptyResult);
 
@@ -284,12 +262,7 @@ Deno.test("fetchLibraryItems - should handle timeout error", async () => {
 Deno.test("fetchLibraryItems - should use the configured client port", async () => {
   const originalFetch = globalThis.fetch;
 
-  const mockResult: LibrarySearchResult = {
-    items: [],
-    total: 0,
-    query: {},
-    took_ms: 5,
-  };
+  const mockResult: LibrarySearchResult = { items: [], total: 0, query: {}, took_ms: 5 };
 
   let capturedUrl: string | undefined;
 
@@ -318,12 +291,7 @@ Deno.test("fetchLibraryItems - should use the configured client port", async () 
 Deno.test("fetchLibraryItems - should convert tags string to array in query params", async () => {
   const originalFetch = globalThis.fetch;
 
-  const mockResult: LibrarySearchResult = {
-    items: [],
-    total: 0,
-    query: {},
-    took_ms: 5,
-  };
+  const mockResult: LibrarySearchResult = { items: [], total: 0, query: {}, took_ms: 5 };
 
   let capturedRequest: Request | undefined;
 
@@ -456,10 +424,7 @@ Deno.test("fetchLibraryItems - should handle missing optional fields in API resp
         type: "document",
         name: "Basic Item",
         // description is optional
-        metadata: {
-          format: "text",
-          source: "manual",
-        },
+        metadata: { format: "text", source: "manual" },
         created_at: "2024-01-01T10:00:00Z",
         updated_at: "2024-01-01T10:00:00Z",
         tags: [],
@@ -510,11 +475,7 @@ Deno.test("fetchLibraryItems - should preserve all required fields in transforma
           engine: "claude-3",
           template_id: "template_1",
           created_by: "user_1",
-          custom_fields: {
-            version: "2.0",
-            priority: "high",
-            category: "performance",
-          },
+          custom_fields: { version: "2.0", priority: "high", category: "performance" },
         },
         created_at: "2024-01-01T10:00:00Z",
         updated_at: "2024-01-02T15:30:00Z",

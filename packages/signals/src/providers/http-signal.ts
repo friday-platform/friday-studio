@@ -43,14 +43,9 @@ export class HTTPSignalProvider implements IProvider {
 
   constructor(config: HTTPSignalConfig) {
     this.validateConfig(config);
-    this.config = {
-      ...config,
-      method: config.method || "POST",
-    };
+    this.config = { ...config, method: config.method || "POST" };
     this.id = config.id;
-    this.state = {
-      status: ProviderStatus.NOT_CONFIGURED,
-    };
+    this.state = { status: ProviderStatus.NOT_CONFIGURED };
   }
 
   private validateConfig(config: HTTPSignalConfig): void {
@@ -83,9 +78,10 @@ export class HTTPSignalProvider implements IProvider {
     return Promise.resolve({
       healthy: this.state.status === ProviderStatus.READY,
       lastCheck: new Date(),
-      message: this.state.status === ProviderStatus.READY
-        ? "HTTP signal provider ready"
-        : `Provider status: ${this.state.status}`,
+      message:
+        this.state.status === ProviderStatus.READY
+          ? "HTTP signal provider ready"
+          : `Provider status: ${this.state.status}`,
     });
   }
 
@@ -116,11 +112,7 @@ export class HTTPSignalProvider implements IProvider {
   getRoutePattern(): HTTPRoutePattern {
     const path = this.config.path.startsWith("/") ? this.config.path : `/${this.config.path}`;
 
-    return {
-      path,
-      method: this.getMethod(),
-      signalId: this.config.id,
-    };
+    return { path, method: this.getMethod(), signalId: this.config.id };
   }
 
   /**

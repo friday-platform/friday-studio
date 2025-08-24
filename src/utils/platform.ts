@@ -1,4 +1,4 @@
-import { Platform } from "../services/types.ts";
+import type { Platform } from "../services/types.ts";
 
 /**
  * Detect the current platform
@@ -64,7 +64,7 @@ export function getPlatformPaths() {
         logDir: `${homeDir}/.atlas/logs`,
         binaryPath: "/usr/local/bin/atlas",
       };
-    case "windows":
+    case "windows": {
       const userProfile = homeDir;
       return {
         serviceDir: "", // Windows services don't use file-based configs like launchd/systemd
@@ -72,6 +72,7 @@ export function getPlatformPaths() {
         logDir: `${homeDir}\\.atlas\\logs`,
         binaryPath: `${userProfile}\\AppData\\Local\\Atlas\\atlas.exe`,
       };
+    }
     default:
       return {
         serviceDir: "",
@@ -87,9 +88,9 @@ export function getPlatformPaths() {
  */
 export function isCompiledBinary(): boolean {
   const execPath = Deno.execPath();
-  return execPath.endsWith("atlas-test") ||
-    execPath.endsWith("atlas") ||
-    execPath.endsWith("atlas.exe");
+  return (
+    execPath.endsWith("atlas-test") || execPath.endsWith("atlas") || execPath.endsWith("atlas.exe")
+  );
 }
 
 /**

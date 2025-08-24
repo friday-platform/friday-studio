@@ -1,8 +1,8 @@
 import { Box, Text } from "ink";
-import { useTextInputState } from "./use-text-input-state.ts";
-import type { AttachmentData } from "./use-text-input-state.ts";
-import { useTextInput } from "./use-text-input.ts";
 import { useResponsiveDimensions } from "../../utils/useResponsiveDimensions.ts";
+import { useTextInput } from "./use-text-input.ts";
+import type { AttachmentData } from "./use-text-input-state.ts";
+import { useTextInputState } from "./use-text-input-state.ts";
 
 export type TextInputProps = {
   /** When disabled, user input is ignored. @default false */
@@ -21,16 +21,10 @@ export type TextInputProps = {
   readonly enableAttachments?: boolean;
 
   /** Callback when input value changes. */
-  readonly onChange?: (
-    value: string,
-    attachments?: Map<number, AttachmentData>,
-  ) => void;
+  readonly onChange?: (value: string, attachments?: Map<number, AttachmentData>) => void;
 
   /** Callback when enter is pressed. First argument is input value. */
-  readonly onSubmit?: (
-    value: string,
-    attachments?: Map<number, AttachmentData>,
-  ) => void;
+  readonly onSubmit?: (value: string, attachments?: Map<number, AttachmentData>) => void;
 
   /** Callback when tab is pressed and should change focus instead of accepting suggestion. */
   readonly onTabFocus?: () => void;
@@ -61,22 +55,13 @@ export function TextInput({
     exitApp,
   });
 
-  const { inputValue } = useTextInput({
-    isDisabled,
-    placeholder,
-    state,
-    onTabFocus,
-  });
+  const { inputValue } = useTextInput({ isDisabled, placeholder, state, onTabFocus });
 
   // Split the input value by both \n and \r and render each line separately
   const lines = inputValue.split(/[\n\r]/);
 
   return (
-    <Box
-      flexDirection="column"
-      width={dimensions.paddedWidth - 6}
-      flexWrap="wrap"
-    >
+    <Box flexDirection="column" width={dimensions.paddedWidth - 6} flexWrap="wrap">
       {lines.map((line, index) => (
         <Box key={index} overflow="hidden" width="100%">
           <Text wrap="wrap">{line}&nbsp;</Text>

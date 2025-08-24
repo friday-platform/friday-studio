@@ -1,10 +1,10 @@
-import { assertEquals, assertNotEquals } from "@std/assert";
-import {
-  AgentExecutionContext,
-  AgentOrchestrator,
-} from "../../src/orchestrator/agent-orchestrator.ts";
 import type { AgentContext, StreamEvent } from "@atlas/agent-sdk";
 import { createLogger } from "@atlas/logger";
+import { assertEquals, assertNotEquals } from "@std/assert";
+import {
+  type AgentExecutionContext,
+  AgentOrchestrator,
+} from "../../src/orchestrator/agent-orchestrator.ts";
 
 /**
  * Tests workspace isolation in Atlas streaming architecture.
@@ -29,10 +29,7 @@ Deno.test("Multi-Workspace Streaming", async (t) => {
      * Core test: Verifies workspace isolation with same session IDs.
      * This can happen when different teams use similar naming conventions.
      */
-    const config = {
-      agentsServerUrl: "http://localhost:8081/mcp",
-      executionTimeout: 10000,
-    };
+    const config = { agentsServerUrl: "http://localhost:8081/mcp", executionTimeout: 10000 };
     const logger = createLogger({ level: "error" });
     const orchestrator = new AgentOrchestrator(config, logger);
     orchestrator.initialize();
@@ -106,10 +103,7 @@ Deno.test("Multi-Workspace Streaming", async (t) => {
      * Stress test: Multiple workspaces executing the same agent concurrently.
      * Tests that execution order doesn't affect isolation.
      */
-    const config = {
-      agentsServerUrl: "http://localhost:8081/mcp",
-      executionTimeout: 10000,
-    };
+    const config = { agentsServerUrl: "http://localhost:8081/mcp", executionTimeout: 10000 };
     const logger = createLogger({ level: "error" });
     const orchestrator = new AgentOrchestrator(config, logger);
     orchestrator.initialize();
@@ -125,10 +119,7 @@ Deno.test("Multi-Workspace Streaming", async (t) => {
       streamId: `stream-${index}`,
       onStreamEvent: (event: StreamEvent) => {
         if (event.type === "text") {
-          executionLog.push({
-            workspace: wsId,
-            event: event.content,
-          });
+          executionLog.push({ workspace: wsId, event: event.content });
         }
       },
     }));
@@ -198,10 +189,7 @@ Deno.test("Multi-Workspace Streaming", async (t) => {
      * Tests different handler behaviors per workspace.
      * Each workspace processes stream events differently based on its needs.
      */
-    const config = {
-      agentsServerUrl: "http://localhost:8081/mcp",
-      executionTimeout: 10000,
-    };
+    const config = { agentsServerUrl: "http://localhost:8081/mcp", executionTimeout: 10000 };
     const logger = createLogger({ level: "error" });
     const orchestrator = new AgentOrchestrator(config, logger);
     orchestrator.initialize();

@@ -3,9 +3,9 @@
  * Lists available jobs within a workspace through the daemon API
  */
 
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { ToolContext } from "../types.ts";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { createSuccessResponse } from "../types.ts";
 import { checkJobDiscoverable } from "../utils.ts";
 
@@ -16,9 +16,9 @@ export function registerJobsListTool(server: McpServer, ctx: ToolContext) {
       description:
         "Discover all automated tasks (jobs) available within a specific workspace. Jobs represent reusable workflows that can be triggered to perform operations like builds, deployments, data processing, or custom automation. Only shows jobs marked as discoverable.",
       inputSchema: {
-        workspaceId: z.string().describe(
-          "Unique identifier of the workspace whose jobs you want to explore",
-        ),
+        workspaceId: z
+          .string()
+          .describe("Unique identifier of the workspace whose jobs you want to explore"),
       },
     },
     async ({ workspaceId }) => {

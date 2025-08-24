@@ -5,10 +5,10 @@
  * for agents, sessions, and workspaces with proper scoping and limits.
  */
 
-import { CoALAMemoryManager, CoALAMemoryType } from "@atlas/memory";
-import type { IAtlasScope } from "../types/core.ts";
-import { InMemoryStorageAdapter } from "@atlas/storage";
 import { logger } from "@atlas/logger";
+import { CoALAMemoryManager, type CoALAMemoryType } from "@atlas/memory";
+import { InMemoryStorageAdapter } from "@atlas/storage";
+import type { IAtlasScope } from "../types/core.ts";
 
 export interface MemoryLimits {
   relevant_memories: number;
@@ -136,14 +136,10 @@ export class MemoryConfigManager {
       scopeConfig,
     );
 
-    const pastFailures = this.getFilteredFailures(
-      memoryManager,
-      limits.past_failures,
-      scopeConfig,
-    );
+    const pastFailures = this.getFilteredFailures(memoryManager, limits.past_failures, scopeConfig);
 
     let systemContext = "";
-    let userContext = "";
+    const userContext = "";
 
     // Build context based on available memories
     if (relevantMemories.length > 0) {
@@ -195,11 +191,7 @@ export class MemoryConfigManager {
     }
 
     // Apply scope-specific tags
-    const scopedTags = [
-      ...tags,
-      memoryScope,
-      `scope:${memoryScope}`,
-    ];
+    const scopedTags = [...tags, memoryScope, `scope:${memoryScope}`];
 
     memoryManager.rememberWithMetadata(key, content, {
       memoryType,
@@ -250,7 +242,7 @@ export class MemoryConfigManager {
 
   private findWorkspaceId(scope: IAtlasScope): string {
     // Navigate up the scope hierarchy to find workspace ID
-    let currentScope = scope;
+    const currentScope = scope;
     while (currentScope.parentScopeId) {
       // In a real implementation, we'd traverse the scope hierarchy
       // For now, use a simple heuristic
@@ -264,27 +256,20 @@ export class MemoryConfigManager {
     _config: MemoryConfiguration,
   ): CoALAMemoryManager {
     // Use InMemoryStorageAdapter in test environments to prevent resource leaks
-    const storageAdapter = Deno.env.get("DENO_TESTING") === "true"
-      ? new InMemoryStorageAdapter()
-      : undefined; // Use default storage
+    const storageAdapter =
+      Deno.env.get("DENO_TESTING") === "true" ? new InMemoryStorageAdapter() : undefined; // Use default storage
 
     // Disable cognitive loop in test environments to prevent resource leaks
-    const enableCognitiveLoop = Deno.env.get("DENO_TESTING") === "true"
-      ? false
-      : this.config.default.cognitive_loop;
+    const enableCognitiveLoop =
+      Deno.env.get("DENO_TESTING") === "true" ? false : this.config.default.cognitive_loop;
 
-    return new CoALAMemoryManager(
-      scope,
-      storageAdapter,
-      enableCognitiveLoop,
-    );
+    return new CoALAMemoryManager(scope, storageAdapter, enableCognitiveLoop);
   }
 
   private createDisabledMemoryManager(scope: IAtlasScope): CoALAMemoryManager {
     // Use InMemoryStorageAdapter in test environments to prevent resource leaks
-    const storageAdapter = Deno.env.get("DENO_TESTING") === "true"
-      ? new InMemoryStorageAdapter()
-      : undefined;
+    const storageAdapter =
+      Deno.env.get("DENO_TESTING") === "true" ? new InMemoryStorageAdapter() : undefined;
 
     return new CoALAMemoryManager(
       scope,
@@ -307,11 +292,7 @@ export class MemoryConfigManager {
       return [];
     }
 
-    return memoryManager.queryMemories({
-      content: userPrompt,
-      minRelevance: 0.3,
-      limit,
-    });
+    return memoryManager.queryMemories({ content: userPrompt, minRelevance: 0.3, limit });
   }
 
   private getFilteredSuccesses(
@@ -323,11 +304,7 @@ export class MemoryConfigManager {
       return [];
     }
 
-    return memoryManager.queryMemories({
-      tags: ["success"],
-      minRelevance: 0.5,
-      limit,
-    });
+    return memoryManager.queryMemories({ tags: ["success"], minRelevance: 0.5, limit });
   }
 
   private getFilteredFailures(
@@ -339,11 +316,7 @@ export class MemoryConfigManager {
       return [];
     }
 
-    return memoryManager.queryMemories({
-      tags: ["failure"],
-      minRelevance: 0.5,
-      limit,
-    });
+    return memoryManager.queryMemories({ tags: ["failure"], minRelevance: 0.5, limit });
   }
 
   private calculateDecayRate(typeConfig: MemoryTypeConfig): number {

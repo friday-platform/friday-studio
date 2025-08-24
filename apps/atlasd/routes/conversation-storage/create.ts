@@ -1,5 +1,5 @@
-import { daemonFactory } from "../../src/factory.ts";
 import { describeRoute, resolver, validator } from "hono-openapi";
+import { daemonFactory } from "../../src/factory.ts";
 import {
   errorResponseSchema,
   storeDataSchema,
@@ -18,27 +18,15 @@ createMessage.post(
     responses: {
       200: {
         description: "Message stored successfully",
-        content: {
-          "application/json": {
-            schema: resolver(storeResponseSchema),
-          },
-        },
+        content: { "application/json": { schema: resolver(storeResponseSchema) } },
       },
       400: {
         description: "Invalid request data",
-        content: {
-          "application/json": {
-            schema: resolver(errorResponseSchema),
-          },
-        },
+        content: { "application/json": { schema: resolver(errorResponseSchema) } },
       },
       500: {
         description: "Internal server error",
-        content: {
-          "application/json": {
-            schema: resolver(errorResponseSchema),
-          },
-        },
+        content: { "application/json": { schema: resolver(errorResponseSchema) } },
       },
     },
   }),
@@ -62,19 +50,13 @@ createMessage.post(
         content: data.message.content,
         timestamp: data.timestamp,
         role: data.message.role,
-        metadata: {
-          streamId,
-          ...data.metadata,
-        },
+        metadata: { streamId, ...data.metadata },
       };
 
       // Save the message
       storage.saveMessage(streamId, messageObj);
 
-      return c.json({
-        success: true,
-        messageId: messageObj.messageId,
-      });
+      return c.json({ success: true, messageId: messageObj.messageId });
     } catch (error) {
       return c.json(
         { success: false, error: error instanceof Error ? error.message : String(error) },

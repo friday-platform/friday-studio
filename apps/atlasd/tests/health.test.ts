@@ -16,11 +16,7 @@ function createMockContext(activeWorkspaces = 0, startTime = Date.now()): AppCon
     mockRuntimes.set(`workspace-${i}`, {});
   }
 
-  return {
-    runtimes: mockRuntimes,
-    startTime: startTime,
-    sseClients: new Map(),
-  };
+  return { runtimes: mockRuntimes, startTime: startTime, sseClients: new Map() };
 }
 
 function createTestApp(activeWorkspaces = 0, uptime = 0) {

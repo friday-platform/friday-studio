@@ -135,9 +135,7 @@ export function SessionListComponent({
             <Text>{formatTime(session.startedAt || "")}</Text>
           </Box>
           <Box width={11} justifyContent="flex-end">
-            <Text>
-              {formatDuration(session.startedAt || "", session.completedAt)}
-            </Text>
+            <Text>{formatDuration(session.startedAt || "", session.completedAt)}</Text>
           </Box>
         </Box>
       ))}

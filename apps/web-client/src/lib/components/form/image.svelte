@@ -1,39 +1,39 @@
 <script lang="ts">
-	import Button from '$lib/components/button.svelte';
-	import Dropzone from '$lib/components/dropzone/dropzone.svelte';
-	import { CustomIcons } from '$lib/components/icons/custom';
-	import SafeImage from '$lib/components/safe-image.svelte';
-	import { hasContext } from 'svelte';
-	import { FIELD_CONTEXT, getFieldContext } from './context';
+import { hasContext } from "svelte";
+import Button from "$lib/components/button.svelte";
+import Dropzone from "$lib/components/dropzone/dropzone.svelte";
+import { CustomIcons } from "$lib/components/icons/custom";
+import SafeImage from "$lib/components/safe-image.svelte";
+import { FIELD_CONTEXT, getFieldContext } from "./context";
 
-	const MAX_UPLOAD_SIZE = 1024 * 1024 * 10;
+const MAX_UPLOAD_SIZE = 1024 * 1024 * 10;
 
-	type Props = {
-		uploadLabel?: string;
-		name?: string;
-		onChange?: (value: File) => void;
-		required?: boolean;
-		radius?: 'square' | 'circle';
-		src?: string;
-		isPublic?: boolean;
-	};
+type Props = {
+  uploadLabel?: string;
+  name?: string;
+  onChange?: (value: File) => void;
+  required?: boolean;
+  radius?: "square" | "circle";
+  src?: string;
+  isPublic?: boolean;
+};
 
-	let {
-		uploadLabel = 'Select Image',
-		onChange,
-		name,
-		required,
-		radius = 'square',
-		src = '',
-		isPublic = false
-	}: Props = $props();
+const {
+  uploadLabel = "Select Image",
+  onChange,
+  name,
+  required,
+  radius = "square",
+  src = "",
+  isPublic = false,
+}: Props = $props();
 
-	let preview = $state<string>(src);
-	let id = $state<string>();
+const preview = $state<string>(src);
+let id = $state<string>();
 
-	if (hasContext(FIELD_CONTEXT)) {
-		id = getFieldContext().id;
-	}
+if (hasContext(FIELD_CONTEXT)) {
+  id = getFieldContext().id;
+}
 </script>
 
 <div class="photo radius--{radius}">

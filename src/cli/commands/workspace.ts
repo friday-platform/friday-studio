@@ -1,12 +1,12 @@
-import * as init from "./workspace/init.tsx";
-import * as list from "./workspace/list.tsx";
-import * as status from "./workspace/status.tsx";
-import * as remove from "./workspace/remove.tsx";
-import * as logs from "./workspace/logs.tsx";
+import { formatResourceHelp } from "../utils/resource-help.ts";
+import type { YargsInstance } from "../utils/yargs.ts";
 import * as add from "./workspace/add.tsx";
 import * as cleanup from "./workspace/cleanup.tsx";
-import { YargsInstance } from "../utils/yargs.ts";
-import { formatResourceHelp } from "../utils/resource-help.ts";
+import * as init from "./workspace/init.tsx";
+import * as list from "./workspace/list.tsx";
+import * as logs from "./workspace/logs.tsx";
+import * as remove from "./workspace/remove.tsx";
+import * as status from "./workspace/status.tsx";
 
 export const command = "workspace <action>";
 export const desc = "Manage Atlas workspaces";

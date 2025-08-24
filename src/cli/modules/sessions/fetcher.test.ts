@@ -1,6 +1,6 @@
+import type { SessionInfo } from "@atlas/client";
 import { assertEquals, assertExists } from "@std/assert";
 import { fetchSessions } from "./fetcher.ts";
-import type { SessionInfo } from "@atlas/client";
 
 // Mock response helper function
 function mockResponse(body: unknown, options: ResponseInit = {}): Response {

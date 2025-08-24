@@ -1,15 +1,11 @@
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { ToolContext } from "../types.ts";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { createSuccessResponse } from "../types.ts";
 
 async function isCommandAvailable(command: string): Promise<boolean> {
   try {
-    const cmd = new Deno.Command(command, {
-      args: ["--version"],
-      stdout: "null",
-      stderr: "null",
-    });
+    const cmd = new Deno.Command(command, { args: ["--version"], stdout: "null", stderr: "null" });
     const { code } = await cmd.output();
     return code === 0;
   } catch {
@@ -28,11 +24,7 @@ async function runRipgrep(
   }
   args.push(searchPath);
 
-  const command = new Deno.Command("rg", {
-    args: args,
-    stdout: "piped",
-    stderr: "piped",
-  });
+  const command = new Deno.Command("rg", { args: args, stdout: "piped", stderr: "piped" });
 
   return await command.output();
 }
@@ -58,20 +50,12 @@ async function runGrep(
       "{}",
       "+",
     ];
-    const command = new Deno.Command("find", {
-      args: findArgs,
-      stdout: "piped",
-      stderr: "piped",
-    });
+    const command = new Deno.Command("find", { args: findArgs, stdout: "piped", stderr: "piped" });
     return await command.output();
   } else {
     // Simple recursive grep
     const args = ["-rn", pattern, searchPath];
-    const command = new Deno.Command("grep", {
-      args: args,
-      stdout: "piped",
-      stderr: "piped",
-    });
+    const command = new Deno.Command("grep", { args: args, stdout: "piped", stderr: "piped" });
     return await command.output();
   }
 }
@@ -90,15 +74,15 @@ export function registerGrepTool(server: McpServer, _ctx: ToolContext) {
 - If you need to identify/count the number of matches within files, use the Bash tool with \`rg\` (ripgrep) if available
 - When you are doing an open ended search that may require multiple rounds of globbing and grepping, use the Agent tool instead`,
       inputSchema: {
-        pattern: z.string().describe(
-          "The regex pattern to search for in file contents",
-        ),
-        path: z.string().optional().describe(
-          "The directory to search in. Defaults to the current working directory.",
-        ),
-        include: z.string().optional().describe(
-          'File pattern to include in the search (e.g. "*.js", "*.{ts,tsx}")',
-        ),
+        pattern: z.string().describe("The regex pattern to search for in file contents"),
+        path: z
+          .string()
+          .optional()
+          .describe("The directory to search in. Defaults to the current working directory."),
+        include: z
+          .string()
+          .optional()
+          .describe('File pattern to include in the search (e.g. "*.js", "*.{ts,tsx}")'),
       },
     },
     async (params) => {
@@ -159,12 +143,7 @@ export function registerGrepTool(server: McpServer, _ctx: ToolContext) {
           continue;
         }
 
-        matches.push({
-          path: filePath,
-          modTime: modTime,
-          lineNum,
-          lineText,
-        });
+        matches.push({ path: filePath, modTime: modTime, lineNum, lineText });
       }
 
       matches.sort((a, b) => b.modTime - a.modTime);
@@ -204,10 +183,7 @@ export function registerGrepTool(server: McpServer, _ctx: ToolContext) {
 
       return createSuccessResponse({
         title: params.pattern,
-        metadata: {
-          matches: finalMatches.length,
-          truncated,
-        },
+        metadata: { matches: finalMatches.length, truncated },
         output: outputLines.join("\n"),
       });
     },

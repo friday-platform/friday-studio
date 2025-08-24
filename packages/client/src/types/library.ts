@@ -52,11 +52,7 @@ export interface LibraryStats {
     items_modified: number;
     size_added_bytes?: number;
   }>;
-  storage_stats?: {
-    used_bytes: number;
-    limit_bytes?: number;
-    percentage_used?: number;
-  };
+  storage_stats?: { used_bytes: number; limit_bytes?: number; percentage_used?: number };
 }
 
 export interface TemplateConfig {

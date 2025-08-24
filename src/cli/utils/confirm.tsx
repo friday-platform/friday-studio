@@ -6,21 +6,14 @@ import { cancel, confirm, isCancel } from "./prompts.tsx";
  */
 export async function confirmAction(
   message: string,
-  options?: {
-    force?: boolean;
-    yes?: boolean;
-    defaultValue?: boolean;
-  },
+  options?: { force?: boolean; yes?: boolean; defaultValue?: boolean },
 ): Promise<boolean> {
   // Skip confirmation if force or yes flags are provided
   if (options?.force || options?.yes) {
     return true;
   }
 
-  const confirmed = await confirm({
-    message,
-    defaultValue: options?.defaultValue ?? false,
-  });
+  const confirmed = await confirm({ message, defaultValue: options?.defaultValue ?? false });
 
   // Handle cancellation
   if (isCancel(confirmed)) {

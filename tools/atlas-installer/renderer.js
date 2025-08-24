@@ -20,19 +20,13 @@ class AtlasInstaller {
   }
 
   initializeEventListeners() {
-    document
-      .getElementById("next-btn")
-      .addEventListener("click", () => this.handleNext());
+    document.getElementById("next-btn").addEventListener("click", () => this.handleNext());
 
-    document
-      .getElementById("back-btn")
-      .addEventListener("click", () => this.handleBack());
+    document.getElementById("back-btn").addEventListener("click", () => this.handleBack());
 
-    document
-      .getElementById("license-checkbox")
-      .addEventListener("change", (e) => {
-        this.updateNextButton();
-      });
+    document.getElementById("license-checkbox").addEventListener("change", (e) => {
+      this.updateNextButton();
+    });
 
     document.getElementById("api-key").addEventListener("input", (e) => {
       this.handleAtlasKeyInput(e.target.value);
@@ -77,13 +71,7 @@ class AtlasInstaller {
       const payload = JSON.parse(atob(payload64));
 
       // Check for required claims
-      if (
-        !payload.email ||
-        !payload.iss ||
-        !payload.sub ||
-        !payload.exp ||
-        !payload.iat
-      ) {
+      if (!payload.email || !payload.iss || !payload.sub || !payload.exp || !payload.iat) {
         return false;
       }
 
@@ -192,11 +180,7 @@ class AtlasInstaller {
     const nextBtn = document.getElementById("next-btn");
 
     // Back button
-    if (
-      this.currentStep > 1 &&
-      this.currentStep < this.totalSteps &&
-      !this.isInstalling
-    ) {
+    if (this.currentStep > 1 && this.currentStep < this.totalSteps && !this.isInstalling) {
       backBtn.classList.remove("hidden");
     } else {
       backBtn.classList.add("hidden");
@@ -216,19 +200,23 @@ class AtlasInstaller {
         nextBtn.className = "btn btn-primary";
         break;
 
-      case 1: // License
+      case 1: {
+        // License
         const licenseAccepted = document.getElementById("license-checkbox").checked;
         nextBtn.textContent = "Agree & Continue";
         nextBtn.disabled = !licenseAccepted;
         nextBtn.className = "btn btn-primary";
         break;
+      }
 
-      case 2: // Atlas Access Key
+      case 2: {
+        // Atlas Access Key
         const isAtlasKeyValid = this.isAtlasKeyValid();
         nextBtn.textContent = "Continue";
         nextBtn.disabled = !isAtlasKeyValid;
         nextBtn.className = "btn btn-primary";
         break;
+      }
 
       case 3: // Installation
         if (this.isInstalling) {
@@ -326,11 +314,7 @@ class AtlasInstaller {
         message: "Setting up PATH...",
         action: () => globalThis.electronAPI.setupPath(),
       },
-      {
-        progress: 80,
-        message: "Starting Atlas service...",
-        action: () => this.manageDaemon(),
-      },
+      { progress: 80, message: "Starting Atlas service...", action: () => this.manageDaemon() },
       {
         progress: 100,
         message: "Installation complete!",
@@ -348,12 +332,7 @@ class AtlasInstaller {
         const result = await step.action();
         if (result.success) {
           if (result.warning) {
-            log += `⚠ ${
-              step.message.replace(
-                "...",
-                " completed with warning",
-              )
-            }\n`;
+            log += `⚠ ${step.message.replace("...", " completed with warning")}\n`;
             log += `  ${result.warning}\n`;
           } else {
             log += `✓ ${step.message.replace("...", " completed")}\n`;
@@ -388,15 +367,10 @@ class AtlasInstaller {
       if (this.validateAtlasKey(atlasKey)) {
         try {
           // Save the Atlas Access Key to .env file
-          const saveResult = await globalThis.electronAPI.saveAtlasKey(
-            atlasKey.trim(),
-          );
+          const saveResult = await globalThis.electronAPI.saveAtlasKey(atlasKey.trim());
           return saveResult;
         } catch (error) {
-          return {
-            success: false,
-            error: `Failed to save Atlas Access Key: ${error.message}`,
-          };
+          return { success: false, error: `Failed to save Atlas Access Key: ${error.message}` };
         }
       } else {
         return {
@@ -406,10 +380,7 @@ class AtlasInstaller {
       }
     } else {
       // No Atlas Access Key provided - skip configuration step
-      return {
-        success: true,
-        message: "Atlas Access Key configuration skipped - no changes made",
-      };
+      return { success: true, message: "Atlas Access Key configuration skipped - no changes made" };
     }
   }
 
@@ -433,10 +404,9 @@ class AtlasInstaller {
       if (!binaryCheck.exists) {
         return {
           success: false,
-          error:
-            `Atlas binary not found at expected location. Binary installation may have failed: ${
-              binaryCheck.error || "Binary not accessible"
-            }`,
+          error: `Atlas binary not found at expected location. Binary installation may have failed: ${
+            binaryCheck.error || "Binary not accessible"
+          }`,
         };
       }
 
@@ -444,9 +414,10 @@ class AtlasInstaller {
       const startResult = await globalThis.electronAPI.manageService("start");
       if (!startResult.success) {
         const platform = navigator.userAgent.includes("Windows") ? "windows" : "unix";
-        const manualCommand = platform === "windows"
-          ? "Run installer as Administrator or manually create scheduled task"
-          : "atlas service install && atlas service start";
+        const manualCommand =
+          platform === "windows"
+            ? "Run installer as Administrator or manually create scheduled task"
+            : "atlas service install && atlas service start";
         return {
           success: true,
           warning: `Service start failed: ${startResult.error}. ${manualCommand}`,
@@ -457,8 +428,7 @@ class AtlasInstaller {
       // If daemon management fails, continue with warning
       return {
         success: true,
-        warning:
-          `Daemon management error: ${error.message}. Start manually with 'atlas daemon start'.`,
+        warning: `Daemon management error: ${error.message}. Start manually with 'atlas daemon start'.`,
       };
     }
   }
@@ -500,8 +470,7 @@ class AtlasInstaller {
         }
       } else if (
         installLog.includes("✗ Error:") &&
-        installLog.lastIndexOf("✗ Error:") >
-          installLog.lastIndexOf("Starting Atlas daemon...")
+        installLog.lastIndexOf("✗ Error:") > installLog.lastIndexOf("Starting Atlas daemon...")
       ) {
         // Daemon step failed
         daemonStatus.textContent = "❌ Atlas daemon - start manually with 'atlas daemon start'";

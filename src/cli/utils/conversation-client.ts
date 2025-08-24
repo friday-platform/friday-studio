@@ -1,19 +1,14 @@
+import { createAtlasClient } from "@atlas/oapi-client";
 import {
   createEventSource,
-  EventSourceMessage,
+  type EventSourceMessage,
 } from "../../core/agents/remote/adapters/sse-utils.ts";
-import { createAtlasClient } from "@atlas/oapi-client";
 import { DaemonClient } from "./daemon-client.ts";
 
 export interface ConversationSession {
   sessionId: string;
   mode: "private" | "shared";
-  participants: Array<{
-    userId: string;
-    clientType: string;
-    joinedAt: string;
-    lastSeen: string;
-  }>;
+  participants: Array<{ userId: string; clientType: string; joinedAt: string; lastSeen: string }>;
   sseUrl: string;
 }
 
@@ -52,9 +47,7 @@ export class ConversationClient {
     // Create session without sending an initial message
     const body = {
       userId: options?.userId || this.userId,
-      scope: options?.scope || {
-        workspaceId: this.workspaceId,
-      },
+      scope: options?.scope || { workspaceId: this.workspaceId },
       createOnly: options?.createOnly ?? true, // Just create session, don't send a message
     };
 
@@ -66,9 +59,7 @@ export class ConversationClient {
 
     if (!response.ok) {
       const errorText = await response.text().catch(() => response.statusText);
-      throw new Error(
-        `Failed to create conversation session (${response.status}): ${errorText}`,
-      );
+      throw new Error(`Failed to create conversation session (${response.status}): ${errorText}`);
     }
 
     const result = await response.json();
@@ -99,9 +90,7 @@ export class ConversationClient {
 
     try {
       const workspaces = await this.daemonClient.listWorkspaces();
-      const conversationWorkspace = workspaces.find(
-        (w) => w.id === "atlas-conversation",
-      );
+      const conversationWorkspace = workspaces.find((w) => w.id === "atlas-conversation");
 
       if (!conversationWorkspace) {
         throw new Error(
@@ -129,22 +118,19 @@ export class ConversationClient {
     const workspaceId = await this.getConversationWorkspaceId();
     const client = createAtlasClient();
 
-    const response = await client.POST(
-      "/api/workspaces/{workspaceId}/signals/{signalId}",
-      {
-        params: { path: { workspaceId, signalId: "conversation-stream" } },
-        body: {
+    const response = await client.POST("/api/workspaces/{workspaceId}/signals/{signalId}", {
+      params: { path: { workspaceId, signalId: "conversation-stream" } },
+      body: {
+        streamId: sessionId,
+        payload: {
           streamId: sessionId,
-          payload: {
-            streamId: sessionId,
-            message,
-            userId: this.userId,
-            type,
-            ...(conversationId && { conversationId }), // Include conversationId if provided
-          },
+          message,
+          userId: this.userId,
+          type,
+          ...(conversationId && { conversationId }), // Include conversationId if provided
         },
       },
-    );
+    });
 
     if (response.error) {
       throw new Error(
@@ -152,10 +138,7 @@ export class ConversationClient {
       );
     }
 
-    return {
-      messageId: response.data.message || crypto.randomUUID(),
-      status: "processing",
-    };
+    return { messageId: response.data.message || crypto.randomUUID(), status: "processing" };
   }
 
   /**
@@ -163,28 +146,16 @@ export class ConversationClient {
    */
   async sendPrompt(
     sessionId: string,
-    parameters: {
-      promptName: string;
-    } & Record<string, unknown>,
+    parameters: { promptName: string } & Record<string, unknown>,
   ): Promise<ConversationMessage> {
     // Get the conversation workspace ID
     const workspaceId = await this.getConversationWorkspaceId();
     const client = createAtlasClient();
 
-    const response = await client.POST(
-      "/api/workspaces/{workspaceId}/signals/{signalId}",
-      {
-        params: { path: { workspaceId, signalId: "conversation-stream" } },
-        body: {
-          streamId: sessionId,
-          payload: {
-            type: "prompt",
-            streamId: sessionId,
-            parameters,
-          },
-        },
-      },
-    );
+    const response = await client.POST("/api/workspaces/{workspaceId}/signals/{signalId}", {
+      params: { path: { workspaceId, signalId: "conversation-stream" } },
+      body: { streamId: sessionId, payload: { type: "prompt", streamId: sessionId, parameters } },
+    });
 
     if (response.error) {
       throw new Error(
@@ -192,10 +163,7 @@ export class ConversationClient {
       );
     }
 
-    return {
-      messageId: response.data.message || crypto.randomUUID(),
-      status: "processing",
-    };
+    return { messageId: response.data.message || crypto.randomUUID(), status: "processing" };
   }
 
   /**
@@ -209,8 +177,8 @@ export class ConversationClient {
     abortSignal?: AbortSignal,
   ): AsyncIterableIterator<unknown> {
     // Use the SSE URL from the session if not provided
-    const streamUrl = sseUrl ||
-      `${this.daemonUrl}/system/conversation/sessions/${sessionId}/stream`;
+    const streamUrl =
+      sseUrl || `${this.daemonUrl}/system/conversation/sessions/${sessionId}/stream`;
 
     let eventSource: {
       response: Response;
@@ -303,9 +271,7 @@ export class ConversationClient {
     }
 
     if (!response.ok) {
-      throw new Error(
-        `Failed to get session: ${response.status} ${response.statusText}`,
-      );
+      throw new Error(`Failed to get session: ${response.status} ${response.statusText}`);
     }
 
     return await response.json();
@@ -330,9 +296,7 @@ export class ConversationClient {
    * Get workspace information to verify workspace exists
    */
   async getWorkspace(): Promise<{ id: string; name: string; status: string }> {
-    const response = await fetch(
-      `${this.daemonUrl}/api/workspaces/${this.workspaceId}`,
-    );
+    const response = await fetch(`${this.daemonUrl}/api/workspaces/${this.workspaceId}`);
 
     if (!response.ok) {
       const errorText = await response.text().catch(() => response.statusText);

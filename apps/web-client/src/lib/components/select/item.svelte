@@ -1,13 +1,13 @@
 <script lang="ts">
-  import { Icons } from "$lib/components/icons";
-  import type { Snippet } from "svelte";
-  import { getContext } from "./context";
+import type { Snippet } from "svelte";
+import { Icons } from "$lib/components/icons";
+import { getContext } from "./context";
 
-  const { option, isSelected } = getContext();
+const { option, isSelected } = getContext();
 
-  type Props = { children: Snippet; value: string | null; label?: string; disabled?: boolean };
+type Props = { children: Snippet; value: string | null; label?: string; disabled?: boolean };
 
-  let { children, label, value, disabled = false }: Props = $props();
+const { children, label, value, disabled = false }: Props = $props();
 </script>
 
 <div class="option" {...$option({ value, label: label || String(value), disabled })} use:option>

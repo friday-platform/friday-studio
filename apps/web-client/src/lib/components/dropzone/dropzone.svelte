@@ -1,106 +1,106 @@
 <script lang="ts">
-	import { type Snippet } from 'svelte';
+import type { Snippet } from "svelte";
 
-	type Props = {
-		accept: string[];
-		maxSize: number;
-		onDrop: (file: File) => void;
-		children?: Snippet;
-		showHighlight?: boolean;
-		name?: string;
-		id?: string;
-		required?: boolean;
-		label?: string;
-	};
+type Props = {
+  accept: string[];
+  maxSize: number;
+  onDrop: (file: File) => void;
+  children?: Snippet;
+  showHighlight?: boolean;
+  name?: string;
+  id?: string;
+  required?: boolean;
+  label?: string;
+};
 
-	let {
-		accept,
-		onDrop,
-		maxSize,
-		children,
-		showHighlight = true,
-		name,
-		id,
-		required,
-		label = 'File Upload'
-	}: Props = $props();
-	let isDraggingOver = $state(false);
+const {
+  accept,
+  onDrop,
+  maxSize,
+  children,
+  showHighlight = true,
+  name,
+  id,
+  required,
+  label = "File Upload",
+}: Props = $props();
+let isDraggingOver = $state(false);
 
-	function validateFile(file: File) {
-		// Verify the file size is below the maximum.
-		if (file.size > maxSize) {
-			return 'invalid_size';
-		}
+function validateFile(file: File) {
+  // Verify the file size is below the maximum.
+  if (file.size > maxSize) {
+    return "invalid_size";
+  }
 
-		// Verify that the MIME type is allowed.
-		let isValidType = accept.some((mimeType) => {
-			switch (mimeType) {
-				case '*':
-					return true;
-				case 'image/*':
-					return file.type.startsWith('image/');
-				case 'text/*':
-					return file.type.startsWith('text/');
-				default:
-					return file.type === mimeType;
-			}
-		});
+  // Verify that the MIME type is allowed.
+  const isValidType = accept.some((mimeType) => {
+    switch (mimeType) {
+      case "*":
+        return true;
+      case "image/*":
+        return file.type.startsWith("image/");
+      case "text/*":
+        return file.type.startsWith("text/");
+      default:
+        return file.type === mimeType;
+    }
+  });
 
-		if (!isValidType) {
-			return 'invalid_type';
-		}
+  if (!isValidType) {
+    return "invalid_type";
+  }
 
-		return 'valid';
-	}
+  return "valid";
+}
 
-	function handleDrop(e: DragEvent) {
-		e.preventDefault();
-		e.stopPropagation();
+function handleDrop(e: DragEvent) {
+  e.preventDefault();
+  e.stopPropagation();
 
-		isDraggingOver = false;
+  isDraggingOver = false;
 
-		if (!e.dataTransfer?.items) {
-			return;
-		}
-		const file = Array.from(e.dataTransfer.files)[0];
-		if (file) {
-			const validation = validateFile(file);
+  if (!e.dataTransfer?.items) {
+    return;
+  }
+  const file = Array.from(e.dataTransfer.files)[0];
+  if (file) {
+    const validation = validateFile(file);
 
-			if (validation === 'invalid_size') {
-				alert('Please upload an file smaller than 20MB');
-			} else if (validation === 'invalid_type') {
-				alert('Invalid file type');
-			} else {
-				onDrop(file);
-			}
-		}
-	}
+    if (validation === "invalid_size") {
+      alert("Please upload an file smaller than 20MB");
+    } else if (validation === "invalid_type") {
+      alert("Invalid file type");
+    } else {
+      onDrop(file);
+    }
+  }
+}
 
-	function handleChange(e: Event) {
-		const target = e?.target as HTMLInputElement;
+function handleChange(e: Event) {
+  const target = e?.target as HTMLInputElement;
 
-		if (!target.files) {
-			return;
-		}
+  if (!target.files) {
+    return;
+  }
 
-		const file = target.files[0];
+  const file = target.files[0];
 
-		if (!file) {
-			alert('Unable to upload file');
-		}
+  if (!file) {
+    alert("Unable to upload file");
+  }
 
-		const validation = validateFile(file);
+  const validation = validateFile(file);
 
-		if (validation === 'invalid_size') {
-			alert('Please upload an image smaller than 20MB');
-			target.value = '';
-		} else if (validation === 'invalid_type') {
-			alert('Only png, jpg, and svg images are supported');
-			target.value = '';
-		} else {
-			onDrop(file);
-		}
-	}
+  if (validation === "invalid_size") {
+    alert("Please upload an image smaller than 20MB");
+    target.value = "";
+  } else if (validation === "invalid_type") {
+    alert("Only png, jpg, and svg images are supported");
+    target.value = "";
+  } else {
+    onDrop(file);
+  }
+}
 </script>
 
 <figure class={isDraggingOver ? 'dragging' : ''} class:showHighlight>

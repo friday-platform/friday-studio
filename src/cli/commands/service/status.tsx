@@ -1,6 +1,6 @@
-import { errorOutput, infoOutput, successOutput } from "../../utils/output.ts";
-import { YargsInstance } from "../../utils/yargs.ts";
 import { ServiceManager } from "../../../services/service-manager.ts";
+import { errorOutput, infoOutput, successOutput } from "../../utils/output.ts";
+import type { YargsInstance } from "../../utils/yargs.ts";
 
 interface StatusArgs {
   json?: boolean;
@@ -16,11 +16,7 @@ export const examples = [
 
 export function builder(y: YargsInstance) {
   return y
-    .option("json", {
-      type: "boolean",
-      describe: "Output status as JSON",
-      default: false,
-    })
+    .option("json", { type: "boolean", describe: "Output status as JSON", default: false })
     .example("$0 service status", "Check service status")
     .example("$0 service status --json", "JSON output");
 }
@@ -33,20 +29,22 @@ export const handler = async (argv: StatusArgs): Promise<void> => {
     const status = await serviceManager.getStatus();
 
     if (argv.json) {
-      console.log(JSON.stringify(
-        {
-          installed: isInstalled,
-          running: status.running,
-          platform: status.platform,
-          serviceName: status.serviceName,
-          pid: status.pid,
-          port: status.port,
-          uptime: status.uptime,
-          error: status.error,
-        },
-        null,
-        2,
-      ));
+      console.log(
+        JSON.stringify(
+          {
+            installed: isInstalled,
+            running: status.running,
+            platform: status.platform,
+            serviceName: status.serviceName,
+            pid: status.pid,
+            port: status.port,
+            uptime: status.uptime,
+            error: status.error,
+          },
+          null,
+          2,
+        ),
+      );
       return;
     }
 
@@ -79,15 +77,17 @@ export const handler = async (argv: StatusArgs): Promise<void> => {
     infoOutput(`Service name: ${status.serviceName}`);
   } catch (error) {
     if (argv.json) {
-      console.log(JSON.stringify(
-        {
-          installed: false,
-          running: false,
-          error: error instanceof Error ? error.message : String(error),
-        },
-        null,
-        2,
-      ));
+      console.log(
+        JSON.stringify(
+          {
+            installed: false,
+            running: false,
+            error: error instanceof Error ? error.message : String(error),
+          },
+          null,
+          2,
+        ),
+      );
     } else {
       errorOutput(
         `Failed to check service status: ${error instanceof Error ? error.message : String(error)}`,

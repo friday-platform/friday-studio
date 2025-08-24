@@ -19,52 +19,39 @@
  * - Production-ready performance optimizations
  */
 
-// Core memory manager and types
-export { CoALAMemoryManager, CoALAMemoryType } from "./src/coala-memory.ts";
+export type {
+  CrossScopeMemorySync,
+  MemoryConsolidationStrategy,
+} from "./src/coala-consolidation.ts";
+// Memory consolidation
+export { WorkspaceMemoryConsolidator } from "./src/coala-consolidation.ts";
 export type {
   CoALACognitiveLoop,
   CoALAMemoryEntry,
   CoALAMemoryQuery,
   IMemoryScope,
 } from "./src/coala-memory.ts";
-
-// Knowledge graph functionality
-export { KnowledgeGraphManager } from "./src/knowledge-graph.ts";
-export type { ExtractedFact, KnowledgeGraphQuery } from "./src/knowledge-graph.ts";
-export { KnowledgeEntityType, KnowledgeRelationType } from "./src/knowledge-graph.ts";
+// Core memory manager and types
+export { CoALAMemoryManager, CoALAMemoryType } from "./src/coala-memory.ts";
 export type {
+  ExtractedFact,
   IKnowledgeGraphStorageAdapter,
   KnowledgeEntity,
   KnowledgeFact,
+  KnowledgeGraphQuery,
   KnowledgeRelationship,
 } from "./src/knowledge-graph.ts";
-
-// Memory consolidation
-export { WorkspaceMemoryConsolidator } from "./src/coala-consolidation.ts";
-export type {
-  CrossScopeMemorySync,
-  MemoryConsolidationStrategy,
-} from "./src/coala-consolidation.ts";
+// Knowledge graph functionality
+export {
+  KnowledgeEntityType,
+  KnowledgeGraphManager,
+  KnowledgeRelationType,
+} from "./src/knowledge-graph.ts";
 
 // Fact extraction capabilities moved to packages/system/agents/fact-extractor.ts
 // to avoid circular dependency with BaseAgent
 
-// Memory coordination for supervisors
-export { SupervisorMemoryCoordinator } from "./src/supervisor-memory-coordinator.ts";
-
-// Streaming memory processing
-export { StreamingMemoryManager } from "./src/streaming/streaming-memory-manager.ts";
-export type { StreamingMemoryConfig } from "./src/streaming/streaming-memory-manager.ts";
-
 export { AsyncMemoryQueue } from "./src/streaming/async-memory-queue.ts";
-
-export {
-  AgentResultProcessor,
-  EpisodicEventProcessor,
-  ProceduralPatternProcessor,
-  SemanticFactProcessor,
-} from "./src/streaming/memory-stream-processors.ts";
-
 export type {
   AgentResultStream,
   ContextualUpdateStream,
@@ -76,12 +63,30 @@ export type {
   SessionCompleteStream,
   StreamingConfig,
 } from "./src/streaming/memory-stream.ts";
+export {
+  AgentResultProcessor,
+  EpisodicEventProcessor,
+  ProceduralPatternProcessor,
+  SemanticFactProcessor,
+} from "./src/streaming/memory-stream-processors.ts";
+export type { StreamingMemoryConfig } from "./src/streaming/streaming-memory-manager.ts";
+// Streaming memory processing
+export { StreamingMemoryManager } from "./src/streaming/streaming-memory-manager.ts";
+// Memory coordination for supervisors
+export { SupervisorMemoryCoordinator } from "./src/supervisor-memory-coordinator.ts";
 
 // === MECMF (Memory-Enhanced Context Management Framework) ===
 
+export type { MECMFDebugConfig, PromptEnhancementLog } from "./src/debug-logger.ts";
+// Debug logging functionality
+export {
+  disableMECMFDebugLogging,
+  enableMECMFDebugLogging,
+  getGlobalMECMFDebugLogger,
+  MECMFDebugLogger,
+} from "./src/debug-logger.ts";
 // Main MECMF exports with factory functions
 export * from "./src/mecmf.ts";
-
 // Component-specific exports (also available through mecmf.ts)
 export type {
   ConversationContext,
@@ -97,14 +102,4 @@ export type {
 } from "./src/mecmf-interfaces.ts";
 // Export enum as a VALUE, not type-only, so it can be used at runtime
 export { MemoryType } from "./src/mecmf-interfaces.ts";
-
 export type { MECMFConfig } from "./src/mecmf-memory-manager.ts";
-
-// Debug logging functionality
-export {
-  disableMECMFDebugLogging,
-  enableMECMFDebugLogging,
-  getGlobalMECMFDebugLogger,
-  MECMFDebugLogger,
-} from "./src/debug-logger.ts";
-export type { MECMFDebugConfig, PromptEnhancementLog } from "./src/debug-logger.ts";

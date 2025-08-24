@@ -3,9 +3,9 @@
  * These tests require a valid SendGrid API key to be set in environment variables
  */
 
+import type { EmailParams } from "@atlas/config";
 import { assertEquals } from "@std/assert";
 import { SendGridProvider } from "../src/providers/sendgrid-provider.ts";
-import type { EmailParams } from "@atlas/config";
 
 // Skip integration tests if no API key is provided
 const hasApiKey = Deno.env.get("SENDGRID_API_KEY_TEST");
@@ -86,10 +86,7 @@ Deno.test({
       subject: "Atlas Notification Test with Template",
       content: "Fallback content",
       template_id: "d-123456789", // Test template ID
-      template_data: {
-        name: "Test User",
-        message: "This is a test notification",
-      },
+      template_data: { name: "Test User", message: "This is a test notification" },
     };
 
     const result = await provider.sendEmail(emailParams);

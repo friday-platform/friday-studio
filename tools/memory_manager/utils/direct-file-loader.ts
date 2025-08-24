@@ -5,8 +5,8 @@
  */
 
 import { join } from "@std/path";
-import { CoALAMemoryType, type MemoryEntry, type MemoryStorage } from "../types/memory-types.ts";
 import { getWorkspaceMemoryDir } from "../../../src/utils/paths.ts";
+import { CoALAMemoryType, type MemoryEntry, type MemoryStorage } from "../types/memory-types.ts";
 
 export class DirectFileMemoryLoader implements MemoryStorage {
   private workspaceId: string;
@@ -36,9 +36,7 @@ export class DirectFileMemoryLoader implements MemoryStorage {
     return result;
   }
 
-  async saveAll(
-    data: Record<CoALAMemoryType, Record<string, MemoryEntry>>,
-  ): Promise<void> {
+  async saveAll(data: Record<CoALAMemoryType, Record<string, MemoryEntry>>): Promise<void> {
     // Not implemented for direct file approach
     throw new Error("Direct file saving not implemented");
   }
@@ -92,26 +90,17 @@ export class DirectFileMemoryLoader implements MemoryStorage {
     }
   }
 
-  async saveByType(
-    type: CoALAMemoryType,
-    data: Record<string, MemoryEntry>,
-  ): Promise<void> {
+  async saveByType(type: CoALAMemoryType, data: Record<string, MemoryEntry>): Promise<void> {
     // Not implemented for direct file approach
     throw new Error("Direct file saving not implemented");
   }
 
   async getStorageStats(): Promise<{
     path: string;
-    memoryTypes: Record<
-      CoALAMemoryType,
-      { count: number; lastModified?: Date; size?: number }
-    >;
+    memoryTypes: Record<CoALAMemoryType, { count: number; lastModified?: Date; size?: number }>;
   }> {
     const memoryDir = getWorkspaceMemoryDir(this.workspaceId);
-    const stats: Record<
-      CoALAMemoryType,
-      { count: number; lastModified?: Date; size?: number }
-    > = {
+    const stats: Record<CoALAMemoryType, { count: number; lastModified?: Date; size?: number }> = {
       [CoALAMemoryType.WORKING]: { count: 0 },
       [CoALAMemoryType.EPISODIC]: { count: 0 },
       [CoALAMemoryType.SEMANTIC]: { count: 0 },
@@ -126,18 +115,16 @@ export class DirectFileMemoryLoader implements MemoryStorage {
 
         stats[memoryType] = {
           count: entries.length,
-          lastModified: entries.length > 0
-            ? new Date(Math.max(...entries.map((e) => e.lastAccessed.getTime())))
-            : undefined,
+          lastModified:
+            entries.length > 0
+              ? new Date(Math.max(...entries.map((e) => e.lastAccessed.getTime())))
+              : undefined,
         };
       } catch {
         stats[memoryType] = { count: 0 };
       }
     }
 
-    return {
-      path: memoryDir,
-      memoryTypes: stats,
-    };
+    return { path: memoryDir, memoryTypes: stats };
   }
 }

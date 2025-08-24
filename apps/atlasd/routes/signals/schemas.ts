@@ -5,12 +5,8 @@ import { z } from "zod/v4";
 // ============================================================================
 
 export const signalPathSchema = z.object({
-  workspaceId: z.string().meta({
-    description: "Workspace identifier (ID or name)",
-  }),
-  signalId: z.string().meta({
-    description: "Signal name as defined in workspace configuration",
-  }),
+  workspaceId: z.string().meta({ description: "Workspace identifier (ID or name)" }),
+  signalId: z.string().meta({ description: "Signal name as defined in workspace configuration" }),
 });
 
 // ============================================================================
@@ -23,21 +19,13 @@ export const signalTriggerResponseSchema = z
     status: z.literal("processing").meta({ description: "Processing status" }),
     workspaceId: z.string().meta({ description: "Workspace identifier" }),
     signalId: z.string().meta({ description: "Signal identifier" }),
-    sessionId: z
-      .string()
-      .meta({ description: "Created session ID" }),
+    sessionId: z.string().meta({ description: "Created session ID" }),
   })
-  .meta({
-    description: "Signal trigger response",
-  });
+  .meta({ description: "Signal trigger response" });
 
 export const errorResponseSchema = z
-  .object({
-    error: z.string().meta({ description: "Error message" }),
-  })
-  .meta({
-    description: "Error response",
-  });
+  .object({ error: z.string().meta({ description: "Error message" }) })
+  .meta({ description: "Error response" });
 
 // ============================================================================
 // Type Exports

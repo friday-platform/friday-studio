@@ -177,11 +177,11 @@ svg {
   --shadow-1:
     0px 0px 0px 1px rgba(0, 1, 165, 0.06), 0px 2px 3px -1px rgba(26, 83, 204, 0.06), 0px 3px 12px
     -4px rgba(26, 83, 204, 0.05), 0px 4px 16px -8px rgba(26, 83, 204, 0.05), 0px 0px 0px 1px rgba(
-    225,
-    225,
-    239,
-    0.5
-  );
+      225,
+      225,
+      239,
+      0.5
+    );
   --shadow-1s:
     0px 0px 0px 1px #ddddf3, 0px 2px 3px -1px #f3f5fc, 0px 3px 12px -4px #f3f5fc, 0px 4px 16px -8px
     #f3f5fc, 0px 0px 0px 1px #efeff7;
@@ -192,11 +192,11 @@ svg {
   --shadow-3:
     0px 0px 0px 1px rgba(0, 1, 165, 0.06), 0px 2px 3px -1px rgba(26, 83, 204, 0.06), 0px 3px 12px
     -4px rgba(26, 83, 204, 0.05), 0px 4px 16px -8px rgba(26, 83, 204, 0.05), 0px 0px 0px 1px rgba(
-    225,
-    225,
-    239,
-    0.5
-  );
+      225,
+      225,
+      239,
+      0.5
+    );
 
   --shadow-4: 0px 8px 18px -6px rgba(24, 39, 75, 0.12), 0px 12px 42px -4px rgba(24, 39, 75, 0.12);
 
@@ -335,11 +335,11 @@ body {
     --shadow-1:
       0px 0px 0px 1px rgba(0, 0, 0, 0.12), 0px 2px 3px -1px rgba(0, 0, 0, 0.12), 0px 3px 12px -4px
       rgba(0, 0, 0, 0.12), 0px 4px 16px -8px rgba(0, 0, 0, 0.12), 0px 0px 0px 1px rgba(
-      237,
-      234,
-      223,
-      0.2
-    );
+        237,
+        234,
+        223,
+        0.2
+      );
     --shadow-1s:
       0px 0px 0px 1px #3f4041, 0px 0px 0px 1px #121216, 0px 2px 3px -1px #121216, 0px 3px 12px -4px
       #121216, 0px 4px 16px -8px #121216;
@@ -347,20 +347,20 @@ body {
     --shadow-2:
       0px 0px 0px 1px rgba(0, 0, 0, 0.12), 0px 2px 3px -1px rgba(0, 0, 0, 0.12), 0px 3px 12px -4px
       rgba(0, 0, 0, 0.12), 0px 4px 16px -8px rgba(0, 0, 0, 0.12), 0px 0px 0px 1px rgba(
-      237,
-      234,
-      223,
-      0.12
-    );
+        237,
+        234,
+        223,
+        0.12
+      );
 
     --shadow-3:
       0px 0px 0px 1px rgba(0, 0, 0, 0.12), 0px 2px 3px -1px rgba(0, 0, 0, 0.12), 0px 3px 12px -4px
       rgba(0, 0, 0, 0.12), 0px 4px 16px -8px rgba(0, 0, 0, 0.12), 0px 0px 0px 1px rgba(
-      237,
-      234,
-      223,
-      0.12
-    );
+        237,
+        234,
+        223,
+        0.12
+      );
 
     --shadow-4: 0px 8px 18px -6px rgba(24, 39, 75, 0.12), 0px 12px 42px -4px rgba(24, 39, 75, 0.12);
 

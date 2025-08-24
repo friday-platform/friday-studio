@@ -2,9 +2,9 @@
  * Apple Terminal setup implementation
  */
 
-import { SetupResult } from "./types.ts";
-import { execCommand, fileExists, getHomeDir } from "./utils.ts";
 import { join } from "@std/path";
+import type { SetupResult } from "./types.ts";
+import { execCommand, fileExists, getHomeDir } from "./utils.ts";
 
 /**
  * Get the Terminal.app preferences plist path
@@ -22,13 +22,9 @@ async function createTerminalBackup(): Promise<string | null> {
 
   try {
     // Export current preferences to backup
-    const { success } = await execCommand("defaults", [
-      "export",
-      "com.apple.Terminal",
-      backupPath,
-    ]);
+    const { success } = await execCommand("defaults", ["export", "com.apple.Terminal", backupPath]);
 
-    if (success && await fileExists(backupPath)) {
+    if (success && (await fileExists(backupPath))) {
       return backupPath;
     }
   } catch (error) {
@@ -114,10 +110,7 @@ export async function setupAppleTerminal(): Promise<SetupResult> {
     // Create backup
     const backupPath = await createTerminalBackup();
     if (!backupPath) {
-      return {
-        success: false,
-        error: "Failed to create backup of Terminal.app preferences",
-      };
+      return { success: false, error: "Failed to create backup of Terminal.app preferences" };
     }
 
     // Get default and startup profiles
@@ -125,11 +118,7 @@ export async function setupAppleTerminal(): Promise<SetupResult> {
     const startupProfile = await getStartupProfile();
 
     if (!defaultProfile) {
-      return {
-        success: false,
-        error: "Failed to read Terminal.app default profile",
-        backupPath,
-      };
+      return { success: false, error: "Failed to read Terminal.app default profile", backupPath };
     }
 
     let modified = false;
@@ -159,10 +148,7 @@ export async function setupAppleTerminal(): Promise<SetupResult> {
     // Refresh preferences daemon
     await refreshPreferences();
 
-    return {
-      success: true,
-      backupPath,
-    };
+    return { success: true, backupPath };
   } catch (error) {
     console.error("Apple Terminal setup failed:", error);
 
@@ -179,33 +165,21 @@ export async function setupAppleTerminal(): Promise<SetupResult> {
  * Restore Apple Terminal from backup
  */
 export async function restoreAppleTerminal(backupPath: string): Promise<SetupResult> {
-  if (!await fileExists(backupPath)) {
-    return {
-      success: false,
-      error: "Backup file no longer exists",
-    };
+  if (!(await fileExists(backupPath))) {
+    return { success: false, error: "Backup file no longer exists" };
   }
 
   try {
-    const { success } = await execCommand("defaults", [
-      "import",
-      "com.apple.Terminal",
-      backupPath,
-    ]);
+    const { success } = await execCommand("defaults", ["import", "com.apple.Terminal", backupPath]);
 
     if (!success) {
-      return {
-        success: false,
-        error: "Failed to restore Terminal.app settings",
-      };
+      return { success: false, error: "Failed to restore Terminal.app settings" };
     }
 
     // Refresh preferences
     await refreshPreferences();
 
-    return {
-      success: true,
-    };
+    return { success: true };
   } catch (error) {
     return {
       success: false,

@@ -23,22 +23,15 @@ Deno.test({
       setup = await setupTestServers();
 
       // Execute a simple command
-      const result = await setup.orchestrator.executeAgent(
-        "test-agent",
-        "echo MCP parsing test",
-        {
-          sessionId: "parse-test-1",
-          workspaceId: "test-workspace",
-        },
-      );
+      const result = await setup.orchestrator.executeAgent("test-agent", "echo MCP parsing test", {
+        sessionId: "parse-test-1",
+        workspaceId: "test-workspace",
+      });
 
       assertExists(result.output);
       assertEquals(typeof result.output, "object", "Output should be parsed object, not string");
 
-      assertObjectMatch(result.output, {
-        type: "echo",
-        message: "MCP parsing test",
-      });
+      assertObjectMatch(result.output, { type: "echo", message: "MCP parsing test" });
     } finally {
       if (setup) {
         await cleanupTestServers(setup);
@@ -63,18 +56,11 @@ Deno.test({
       const calcResult = await setup.orchestrator.executeAgent(
         "test-agent",
         "calculate 123 + 456",
-        {
-          sessionId: "type-test-1",
-          workspaceId: "test-workspace",
-        },
+        { sessionId: "type-test-1", workspaceId: "test-workspace" },
       );
 
       assertObjectMatch(calcResult, {
-        output: {
-          type: "calculation",
-          result: 579,
-          expression: "123 + 456",
-        },
+        output: { type: "calculation", result: 579, expression: "123 + 456" },
       });
     } finally {
       if (setup) {
@@ -100,18 +86,10 @@ Deno.test({
       const emptyResult = await setup.orchestrator.executeAgent(
         "test-agent",
         "echo ", // Empty message after "echo"
-        {
-          sessionId: "edge-test-1",
-          workspaceId: "test-workspace",
-        },
+        { sessionId: "edge-test-1", workspaceId: "test-workspace" },
       );
 
-      assertObjectMatch(emptyResult, {
-        output: {
-          type: "echo",
-          message: "No message to echo",
-        },
-      });
+      assertObjectMatch(emptyResult, { output: { type: "echo", message: "No message to echo" } });
     } finally {
       if (setup) {
         await cleanupTestServers(setup);
@@ -136,10 +114,7 @@ Deno.test({
       const result = await setup.orchestrator.executeAgent(
         "test-agent",
         "invalid command that agent doesn't understand",
-        {
-          sessionId: "error-test-1",
-          workspaceId: "test-workspace",
-        },
+        { sessionId: "error-test-1", workspaceId: "test-workspace" },
       );
 
       assertExists(result.output);
@@ -173,14 +148,10 @@ Deno.test({
 
       const beforeExecution = Date.now();
 
-      const result = await setup.orchestrator.executeAgent(
-        "test-agent",
-        "echo metadata test",
-        {
-          sessionId: "metadata-test-1",
-          workspaceId: "test-workspace",
-        },
-      );
+      const result = await setup.orchestrator.executeAgent("test-agent", "echo metadata test", {
+        sessionId: "metadata-test-1",
+        workspaceId: "test-workspace",
+      });
 
       const afterExecution = Date.now();
 
@@ -197,9 +168,7 @@ Deno.test({
       );
 
       assertExists(result.output, "Agent output should be preserved");
-      assertObjectMatch(result.output, {
-        type: "echo",
-      });
+      assertObjectMatch(result.output, { type: "echo" });
     } finally {
       if (setup) {
         await cleanupTestServers(setup);

@@ -1,5 +1,5 @@
-import { type LibraryItem } from "./library-list-component.tsx";
 import { AtlasApiError, getAtlasClient, type LibrarySearchQuery } from "@atlas/client";
+import type { LibraryItem } from "./library-list-component.tsx";
 
 export interface LibraryFetchOptions {
   type?: string;
@@ -38,9 +38,10 @@ export async function fetchLibraryItems(
     // Convert LibraryFetchOptions to LibrarySearchQuery format
     const searchQuery: LibrarySearchQuery = {
       type: options.type,
-      tags: options.tags && options.tags.trim()
-        ? options.tags.split(",").map((tag) => tag.trim())
-        : undefined,
+      tags:
+        options.tags && options.tags.trim()
+          ? options.tags.split(",").map((tag) => tag.trim())
+          : undefined,
       since: options.since,
       limit: options.limit,
     };
@@ -51,20 +52,19 @@ export async function fetchLibraryItems(
     const result = await client.searchLibrary(searchQuery);
 
     // Convert the result to match the expected format
-    const items = result.items.map((item): LibraryItem => ({
-      id: item.id,
-      type: item.type,
-      name: item.name,
-      description: item.description,
-      created_at: item.created_at,
-      tags: item.tags,
-      size_bytes: item.size_bytes,
-    }));
+    const items = result.items.map(
+      (item): LibraryItem => ({
+        id: item.id,
+        type: item.type,
+        name: item.name,
+        description: item.description,
+        created_at: item.created_at,
+        tags: item.tags,
+        size_bytes: item.size_bytes,
+      }),
+    );
 
-    return {
-      success: true,
-      items,
-    };
+    return { success: true, items };
   } catch (error) {
     if (error instanceof AtlasApiError) {
       // Handle AtlasApiError with status codes
@@ -79,18 +79,10 @@ export async function fetchLibraryItems(
       }
 
       if (error.status >= 400 && error.status < 500) {
-        return {
-          success: false,
-          error: error.message,
-          reason: "api_error",
-        };
+        return { success: false, error: error.message, reason: "api_error" };
       }
 
-      return {
-        success: false,
-        error: error.message,
-        reason: "network_error",
-      };
+      return { success: false, error: error.message, reason: "network_error" };
     }
 
     if (error instanceof Error) {
@@ -116,17 +108,9 @@ export async function fetchLibraryItems(
         };
       }
 
-      return {
-        success: false,
-        error: error.message,
-        reason: "network_error",
-      };
+      return { success: false, error: error.message, reason: "network_error" };
     }
 
-    return {
-      success: false,
-      error: String(error),
-      reason: "network_error",
-    };
+    return { success: false, error: String(error), reason: "network_error" };
   }
 }

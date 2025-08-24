@@ -11,11 +11,7 @@ Deno.test("findAvailablePort - respects preferred port if available", () => {
   const availablePort = findAvailablePort({ startPort: 9000, endPort: 9100 });
 
   // Request that specific port as preferred
-  const port = findAvailablePort({
-    preferredPort: availablePort,
-    startPort: 9000,
-    endPort: 9100,
-  });
+  const port = findAvailablePort({ preferredPort: availablePort, startPort: 9000, endPort: 9100 });
 
   assertEquals(port, availablePort, "Should return preferred port when available");
 });
@@ -48,18 +44,10 @@ Deno.test("findAvailablePort - handles fully occupied range", () => {
   }
 
   try {
-    const port = findAvailablePort({
-      startPort: 19300,
-      endPort: 19302,
-      host: "localhost",
-    });
+    const port = findAvailablePort({ startPort: 19300, endPort: 19302, host: "localhost" });
 
     // Should fall back to random port outside the range
-    assertEquals(
-      port < 19300 || port > 19302,
-      true,
-      "Should find port outside occupied range",
-    );
+    assertEquals(port < 19300 || port > 19302, true, "Should find port outside occupied range");
   } finally {
     listeners.forEach((l) => l.close());
   }
@@ -78,11 +66,7 @@ Deno.test("getNextAvailablePort - finds next available port", () => {
 });
 
 Deno.test("findAvailablePort - respects custom host", () => {
-  const port = findAvailablePort({
-    host: "127.0.0.1",
-    startPort: 9500,
-    endPort: 9510,
-  });
+  const port = findAvailablePort({ host: "127.0.0.1", startPort: 9500, endPort: 9510 });
 
   assertEquals(port >= 9500 && port <= 9510, true, "Should find port in range");
 

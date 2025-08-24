@@ -40,19 +40,11 @@ export async function createEventSource({
       }
 
       if (!response.ok) {
-        throw new SSEError(
-          `Non-200 status code (${response.status})`,
-          response,
-        );
+        throw new SSEError(`Non-200 status code (${response.status})`, response);
       }
 
-      if (
-        !response.headers.get("content-type")?.startsWith("text/event-stream")
-      ) {
-        throw new SSEError(
-          'Invalid content type, expected "text/event-stream"',
-          response,
-        );
+      if (!response.headers.get("content-type")?.startsWith("text/event-stream")) {
+        throw new SSEError('Invalid content type, expected "text/event-stream"', response);
       }
 
       if (!response.body) {
@@ -113,9 +105,7 @@ export function createSSEAbortController(timeoutMs?: number): AbortController {
   if (timeoutMs && timeoutMs > 0) {
     setTimeout(() => {
       if (!controller.signal.aborted) {
-        controller.abort(
-          new Error(`SSE connection timed out after ${timeoutMs}ms`),
-        );
+        controller.abort(new Error(`SSE connection timed out after ${timeoutMs}ms`));
       }
     }, timeoutMs);
   }
@@ -128,11 +118,7 @@ export function createSSEAbortController(timeoutMs?: number): AbortController {
  */
 export async function* createRetryableSSEStream(
   params: EventSourceParams,
-  options: {
-    maxRetries?: number;
-    retryDelayMs?: number;
-    timeoutMs?: number;
-  } = {},
+  options: { maxRetries?: number; retryDelayMs?: number; timeoutMs?: number } = {},
 ): AsyncIterableIterator<EventSourceMessage> {
   const { maxRetries = 3, retryDelayMs = 1000, timeoutMs } = options;
   let retryCount = 0;
@@ -142,10 +128,7 @@ export async function* createRetryableSSEStream(
       const controller = createSSEAbortController(timeoutMs);
       const eventSource = await createEventSource({
         ...params,
-        options: {
-          ...params.options,
-          signal: controller.signal,
-        },
+        options: { ...params.options, signal: controller.signal },
       });
 
       for await (const message of eventSource.consume()) {

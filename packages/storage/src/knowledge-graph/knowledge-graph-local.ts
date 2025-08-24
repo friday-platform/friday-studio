@@ -69,7 +69,8 @@ export class KnowledgeGraphLocalStorageAdapter implements IKnowledgeGraphStorage
       if (
         query.entityNames &&
         !query.entityNames.some((name) => entity.name.toLowerCase().includes(name.toLowerCase()))
-      ) return false;
+      )
+        return false;
       if (query.minConfidence && entity.confidence < query.minConfidence) return false;
       if (query.search && !this.entityMatchesSearch(entity, query.search)) return false;
       return true;
@@ -126,8 +127,8 @@ export class KnowledgeGraphLocalStorageAdapter implements IKnowledgeGraphStorage
 
   async getEntityRelationships(entityId: string): Promise<KnowledgeRelationship[]> {
     const relationships = await this.readJsonFile<KnowledgeRelationship>(this.relationshipsFile);
-    return Object.values(relationships).filter((rel) =>
-      rel.sourceEntityId === entityId || rel.targetEntityId === entityId
+    return Object.values(relationships).filter(
+      (rel) => rel.sourceEntityId === entityId || rel.targetEntityId === entityId,
     );
   }
 
@@ -255,14 +256,18 @@ export class KnowledgeGraphLocalStorageAdapter implements IKnowledgeGraphStorage
   // Helper methods
   private entityMatchesSearch(entity: KnowledgeEntity, search: string): boolean {
     const searchLower = search.toLowerCase();
-    return entity.name.toLowerCase().includes(searchLower) ||
-      JSON.stringify(entity.attributes).toLowerCase().includes(searchLower);
+    return (
+      entity.name.toLowerCase().includes(searchLower) ||
+      JSON.stringify(entity.attributes).toLowerCase().includes(searchLower)
+    );
   }
 
   private factMatchesSearch(fact: KnowledgeFact, search: string): boolean {
     const searchLower = search.toLowerCase();
-    return fact.statement.toLowerCase().includes(searchLower) ||
-      fact.tags.some((tag) => tag.toLowerCase().includes(searchLower));
+    return (
+      fact.statement.toLowerCase().includes(searchLower) ||
+      fact.tags.some((tag) => tag.toLowerCase().includes(searchLower))
+    );
   }
 
   // Index management for faster queries

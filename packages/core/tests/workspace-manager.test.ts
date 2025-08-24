@@ -1,7 +1,7 @@
+import type { WorkspaceStatus } from "@atlas/workspace";
+import { WorkspaceManager, WorkspaceStatusEnum } from "@atlas/workspace";
 import { assertEquals, assertExists, assertRejects } from "@std/assert";
 import { join } from "@std/path";
-import { WorkspaceManager, WorkspaceStatusEnum } from "@atlas/workspace";
-import type { WorkspaceStatus } from "@atlas/workspace";
 import { createKVStorage, StorageConfigs } from "../../../src/core/storage/index.ts";
 import { RegistryStorageAdapter } from "../../../src/core/storage/registry-storage-adapter.ts";
 
@@ -39,10 +39,7 @@ Deno.test("WorkspaceManager - System workspace registration", async () => {
 
   try {
     // Initialize with system workspace registration
-    await manager.initialize({
-      autoImport: false,
-      registerSystemWorkspaces: true,
-    });
+    await manager.initialize({ autoImport: false, registerSystemWorkspaces: true });
 
     // Check that system workspaces are registered
     const systemWorkspaces = await manager.list({ includeSystem: true });
@@ -66,10 +63,7 @@ Deno.test("WorkspaceManager - Register filesystem workspace", async () => {
   const { manager, cleanup } = await createTestManager();
 
   try {
-    await manager.initialize({
-      autoImport: false,
-      registerSystemWorkspaces: false,
-    });
+    await manager.initialize({ autoImport: false, registerSystemWorkspaces: false });
 
     // Register a test workspace
     const workspace = await manager.registerWorkspace(testWorkspacePath, {
@@ -100,10 +94,7 @@ Deno.test("WorkspaceManager - Find workspace by different criteria", async () =>
   const { manager, cleanup } = await createTestManager();
 
   try {
-    await manager.initialize({
-      autoImport: false,
-      registerSystemWorkspaces: false,
-    });
+    await manager.initialize({ autoImport: false, registerSystemWorkspaces: false });
 
     const workspace = await manager.registerWorkspace(testWorkspacePath);
 
@@ -134,10 +125,7 @@ Deno.test("WorkspaceManager - Load workspace configuration", async () => {
   const { manager, cleanup } = await createTestManager();
 
   try {
-    await manager.initialize({
-      autoImport: false,
-      registerSystemWorkspaces: true,
-    });
+    await manager.initialize({ autoImport: false, registerSystemWorkspaces: true });
 
     // Test loading system workspace config
     const systemConfig = await manager.getWorkspaceConfig("atlas-conversation");
@@ -170,10 +158,7 @@ Deno.test("WorkspaceManager - Delete workspace", async () => {
   const { manager, cleanup } = await createTestManager();
 
   try {
-    await manager.initialize({
-      autoImport: false,
-      registerSystemWorkspaces: true,
-    });
+    await manager.initialize({ autoImport: false, registerSystemWorkspaces: true });
 
     // Register a workspace
     const workspace = await manager.registerWorkspace(testWorkspacePath);
@@ -215,10 +200,7 @@ Deno.test("WorkspaceManager - Runtime management", async () => {
   const { manager, cleanup } = await createTestManager();
 
   try {
-    await manager.initialize({
-      autoImport: false,
-      registerSystemWorkspaces: false,
-    });
+    await manager.initialize({ autoImport: false, registerSystemWorkspaces: false });
 
     const workspace = await manager.registerWorkspace(testWorkspacePath);
 
@@ -254,10 +236,7 @@ Deno.test("WorkspaceManager - List with filtering", async () => {
   const { manager, registry, cleanup } = await createTestManager();
 
   try {
-    await manager.initialize({
-      autoImport: false,
-      registerSystemWorkspaces: true,
-    });
+    await manager.initialize({ autoImport: false, registerSystemWorkspaces: true });
 
     // Register multiple workspaces
     const workspace1 = await manager.registerWorkspace(testWorkspacePath);

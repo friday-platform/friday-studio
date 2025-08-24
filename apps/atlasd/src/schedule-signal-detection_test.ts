@@ -40,10 +40,7 @@ Deno.test("Schedule Signal Detection", async (t) => {
     // This is the actual structure from workspace.yml
     const signalConfig = {
       provider: "schedule",
-      config: {
-        schedule: "0 9 * * *",
-        timezone: "America/Los_Angeles",
-      },
+      config: { schedule: "0 9 * * *", timezone: "America/Los_Angeles" },
     };
 
     const shouldRegister = shouldRegisterAsTimer(signalConfig);
@@ -71,20 +68,10 @@ Deno.test("Schedule Signal Detection", async (t) => {
   });
 
   await t.step("should handle http provider signals correctly", () => {
-    const signalConfig = {
-      provider: "http",
-      config: {
-        path: "/webhook",
-        method: "POST",
-      },
-    };
+    const signalConfig = { provider: "http", config: { path: "/webhook", method: "POST" } };
 
     const shouldRegister = shouldRegisterAsTimer(signalConfig);
-    assertEquals(
-      shouldRegister,
-      false,
-      "Should NOT register http provider as timer",
-    );
+    assertEquals(shouldRegister, false, "Should NOT register http provider as timer");
   });
 
   await t.step("should handle missing config object", () => {
@@ -94,25 +81,14 @@ Deno.test("Schedule Signal Detection", async (t) => {
     };
 
     const shouldRegister = shouldRegisterAsTimer(signalConfig);
-    assertEquals(
-      shouldRegister,
-      false,
-      "Should NOT register when config object is missing",
-    );
+    assertEquals(shouldRegister, false, "Should NOT register when config object is missing");
   });
 
   await t.step("should handle null config", () => {
-    const signalConfig = {
-      provider: "schedule",
-      config: null,
-    };
+    const signalConfig = { provider: "schedule", config: null };
 
     const shouldRegister = shouldRegisterAsTimer(signalConfig);
-    assertEquals(
-      shouldRegister,
-      false,
-      "Should NOT register when config is null",
-    );
+    assertEquals(shouldRegister, false, "Should NOT register when config is null");
   });
 
   await t.step("should handle config without schedule property", () => {
@@ -125,11 +101,7 @@ Deno.test("Schedule Signal Detection", async (t) => {
     };
 
     const shouldRegister = shouldRegisterAsTimer(signalConfig);
-    assertEquals(
-      shouldRegister,
-      false,
-      "Should NOT register when schedule property is missing",
-    );
+    assertEquals(shouldRegister, false, "Should NOT register when schedule property is missing");
   });
 
   await t.step("should handle non-string schedule value", () => {
@@ -142,20 +114,13 @@ Deno.test("Schedule Signal Detection", async (t) => {
     };
 
     const shouldRegister = shouldRegisterAsTimer(signalConfig);
-    assertEquals(
-      shouldRegister,
-      false,
-      "Should NOT register when schedule is not a string",
-    );
+    assertEquals(shouldRegister, false, "Should NOT register when schedule is not a string");
   });
 
   await t.step("should extract schedule and timezone correctly", () => {
     const signalConfig = {
       provider: "schedule",
-      config: {
-        schedule: "0 9 * * *",
-        timezone: "America/Los_Angeles",
-      },
+      config: { schedule: "0 9 * * *", timezone: "America/Los_Angeles" },
     };
 
     if (shouldRegisterAsTimer(signalConfig)) {
@@ -164,11 +129,7 @@ Deno.test("Schedule Signal Detection", async (t) => {
       const timezone = signalConfig.config?.timezone || "UTC";
 
       assertEquals(schedule, "0 9 * * *", "Should extract correct schedule");
-      assertEquals(
-        timezone,
-        "America/Los_Angeles",
-        "Should extract correct timezone",
-      );
+      assertEquals(timezone, "America/Los_Angeles", "Should extract correct timezone");
     }
   });
 
@@ -232,11 +193,7 @@ Deno.test("Signal Type Compatibility", async (t) => {
 
     // Test that spread creates a plain object (satisfies Record<string, unknown>)
     const isPlainObject = Object.getPrototypeOf(spreadData) === Object.prototype;
-    assertEquals(
-      isPlainObject,
-      true,
-      "Spread should create a plain object",
-    );
+    assertEquals(isPlainObject, true, "Spread should create a plain object");
   });
 
   await t.step("should maintain type compatibility with triggerSignal", () => {

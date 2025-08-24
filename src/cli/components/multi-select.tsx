@@ -76,10 +76,7 @@ export const MultiSelect = ({
 
         return (
           <Box key={option.value}>
-            <Text
-              color={isFocused ? "yellow" : undefined}
-              dimColor={isDisabled || !isSelected}
-            >
+            <Text color={isFocused ? "yellow" : undefined} dimColor={isDisabled || !isSelected}>
               {options.length < 10 ? `${index + 1}. ` : ""}
               {isSelected ? "●" : "○"}
               &nbsp;{option.label}

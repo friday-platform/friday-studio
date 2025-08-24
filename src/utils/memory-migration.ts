@@ -5,8 +5,8 @@
  * to workspace-specific storage (~/.atlas/memory/{workspace}/*)
  */
 
-import { join } from "@std/path";
 import { ensureDir, exists, move } from "@std/fs";
+import { join } from "@std/path";
 import { getAtlasMemoryDir, getWorkspaceMemoryDir } from "./paths.ts";
 
 export interface MigrationResult {
@@ -50,17 +50,9 @@ export async function needsMigration(): Promise<boolean> {
  */
 export async function migrateGlobalMemoriesToWorkspace(
   workspaceId: string,
-  options: {
-    backup?: boolean;
-    dryRun?: boolean;
-  } = {},
+  options: { backup?: boolean; dryRun?: boolean } = {},
 ): Promise<MigrationResult> {
-  const result: MigrationResult = {
-    success: false,
-    migratedFiles: [],
-    errors: [],
-    warnings: [],
-  };
+  const result: MigrationResult = { success: false, migratedFiles: [], errors: [], warnings: [] };
 
   try {
     const memoryDir = getAtlasMemoryDir();
@@ -81,10 +73,7 @@ export async function migrateGlobalMemoriesToWorkspace(
     ];
 
     // Directories to migrate
-    const dirsToMigrate = [
-      "vectors",
-      "knowledge-graph",
-    ];
+    const dirsToMigrate = ["vectors", "knowledge-graph"];
 
     // Ensure workspace memory directory exists
     if (!options.dryRun) {
@@ -228,10 +217,7 @@ export async function getMemoryUsageStats(): Promise<{
     });
   }
 
-  return {
-    totalWorkspaces: workspaces.length,
-    workspaceStats,
-  };
+  return { totalWorkspaces: workspaces.length, workspaceStats };
 }
 
 /**

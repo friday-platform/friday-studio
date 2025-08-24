@@ -27,13 +27,15 @@ function runTest(name: string, testFn: () => void | Promise<void>) {
   try {
     const result = testFn();
     if (result instanceof Promise) {
-      return result.then(() => {
-        console.log(`✅ ${name}`);
-        testsPassed++;
-      }).catch((error) => {
-        console.log(`❌ ${name}: ${error.message}`);
-        testsFailed++;
-      });
+      return result
+        .then(() => {
+          console.log(`✅ ${name}`);
+          testsPassed++;
+        })
+        .catch((error) => {
+          console.log(`❌ ${name}: ${error.message}`);
+          testsFailed++;
+        });
     } else {
       console.log(`✅ ${name}`);
       testsPassed++;
@@ -156,11 +158,7 @@ await runTest("Memory Configuration Structure", () => {
     enabled: true,
     scope: "agent",
     include_in_context: true,
-    context_limits: {
-      relevant_memories: 5,
-      past_successes: 3,
-      past_failures: 2,
-    },
+    context_limits: { relevant_memories: 5, past_successes: 3, past_failures: 2 },
     memory_types: {
       working: { enabled: true, max_age_hours: 8, max_entries: 100 },
       episodic: { enabled: true, max_age_days: 7, max_entries: 200 },

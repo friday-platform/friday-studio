@@ -4,8 +4,8 @@
  */
 
 import { assertEquals } from "@std/assert";
-import { HTTPSignalProvider } from "../../../src/providers/http-signal.ts";
 import type { HTTPSignalConfig } from "../../../src/providers/http-signal.ts";
+import { HTTPSignalProvider } from "../../../src/providers/http-signal.ts";
 
 Deno.test("HTTPSignalProvider - initialization", async (t) => {
   await t.step("should initialize with valid HTTP config", () => {
@@ -171,9 +171,7 @@ Deno.test("HTTPSignalProvider - signal processing", async (t) => {
 
     const provider = new HTTPSignalProvider(config);
 
-    const mockRequest = new Request("http://localhost:8080/test", {
-      method: "GET",
-    });
+    const mockRequest = new Request("http://localhost:8080/test", { method: "GET" });
 
     const signal = await provider.processRequest(mockRequest);
 
@@ -193,12 +191,9 @@ Deno.test("HTTPSignalProvider - signal processing", async (t) => {
 
     const provider = new HTTPSignalProvider(config);
 
-    const mockRequest = new Request(
-      "http://localhost:8080/test?param1=value1&param2=value2",
-      {
-        method: "GET",
-      },
-    );
+    const mockRequest = new Request("http://localhost:8080/test?param1=value1&param2=value2", {
+      method: "GET",
+    });
 
     const signal = await provider.processRequest(mockRequest);
 
@@ -219,10 +214,7 @@ Deno.test("HTTPSignalProvider - signal processing", async (t) => {
 
     const mockRequest = new Request("http://localhost:8080/test", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Custom-Header": "test-value",
-      },
+      headers: { "Content-Type": "application/json", "X-Custom-Header": "test-value" },
     });
 
     const signal = await provider.processRequest(mockRequest);
@@ -268,9 +260,7 @@ Deno.test("HTTPSignalProvider - error handling", async (t) => {
 
     const provider = new HTTPSignalProvider(config);
 
-    const mockRequest = new Request("http://localhost:8080/test", {
-      method: "POST",
-    });
+    const mockRequest = new Request("http://localhost:8080/test", { method: "POST" });
 
     const signal = await provider.processRequest(mockRequest);
 

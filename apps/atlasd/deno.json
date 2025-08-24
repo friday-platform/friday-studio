@@ -2,7 +2,5 @@
   "name": "@atlas/atlasd",
   "version": "1.0.0",
   "exports": "./mod.ts",
-  "imports": {
-    "zod-openapi": "npm:zod-openapi@^5.1.0"
-  }
+  "imports": { "zod-openapi": "npm:zod-openapi@^5.1.0" }
 }

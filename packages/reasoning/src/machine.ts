@@ -2,6 +2,7 @@
  * XState reasoning machine using the setup API for Think→Act→Observe loops
  */
 
+import { ReasoningResultStatus, type ReasoningResultStatusType } from "@atlas/core";
 import { type ActorRefFrom, assign, emit, fromPromise, setup } from "xstate";
 import type {
   BaseReasoningContext,
@@ -11,23 +12,13 @@ import type {
   ReasoningResult,
   ReasoningThinking,
 } from "./types.ts";
-import { ReasoningResultStatus, type ReasoningResultStatusType } from "@atlas/core";
 
 // Define the output types for actors
-type ThinkOutput = {
-  thinking: ReasoningThinking;
-  confidence: number;
-};
+type ThinkOutput = { thinking: ReasoningThinking; confidence: number };
 
-type ExecuteActionOutput = {
-  result: unknown;
-  observation: string;
-  duration?: number;
-};
+type ExecuteActionOutput = { result: unknown; observation: string; duration?: number };
 
-type EvaluateOutput = {
-  isComplete: boolean;
-};
+type EvaluateOutput = { isComplete: boolean };
 
 // Define event types for the machine, including done/error events from invoked actors
 type ReasoningEvents =
@@ -63,35 +54,30 @@ export function createReasoningMachine<TUserContext extends BaseReasoningContext
 
     // Define actors
     actors: {
-      think: fromPromise<
-        ThinkOutput,
-        { context: ReasoningContext<TUserContext> }
-      >(async ({ input }) => {
-        return await callbacks.think(input.context);
-      }),
+      think: fromPromise<ThinkOutput, { context: ReasoningContext<TUserContext> }>(
+        async ({ input }) => {
+          return await callbacks.think(input.context);
+        },
+      ),
 
       executeAction: fromPromise<
         ExecuteActionOutput,
         { action: ReasoningAction; context: ReasoningContext<TUserContext> }
       >(async ({ input }) => {
         const startTime = Date.now();
-        const result = await callbacks.executeAction(
-          input.action,
-          input.context,
-        );
+        const result = await callbacks.executeAction(input.action, input.context);
         const duration = Date.now() - startTime;
         return { ...result, duration };
       }),
 
-      evaluate: fromPromise<
-        EvaluateOutput,
-        { context: ReasoningContext<TUserContext> }
-      >(async ({ input }) => {
-        if (!callbacks.evaluate) {
-          throw new Error("Evaluate callback not provided");
-        }
-        return await callbacks.evaluate(input.context);
-      }),
+      evaluate: fromPromise<EvaluateOutput, { context: ReasoningContext<TUserContext> }>(
+        async ({ input }) => {
+          if (!callbacks.evaluate) {
+            throw new Error("Evaluate callback not provided");
+          }
+          return await callbacks.evaluate(input.context);
+        },
+      ),
     },
 
     // Define actions
@@ -308,7 +294,8 @@ export function createReasoningMachine<TUserContext extends BaseReasoningContext
     output: ({ context, event }) => {
       // Determine status based on final state and context
       const lastStep = context.steps[context.steps.length - 1];
-      const isCompleted = context.currentStep?.isComplete === true ||
+      const isCompleted =
+        context.currentStep?.isComplete === true ||
         lastStep?.action?.type === "complete" ||
         (event.type === "xstate.done.state.reasoning.evaluating" &&
           context.currentStep?.isComplete);
@@ -321,26 +308,14 @@ export function createReasoningMachine<TUserContext extends BaseReasoningContext
 
     states: {
       thinking: {
-        entry: [
-          emit({ type: "reasoning.thinking.started" }),
-          "onThinkingStart",
-        ],
+        entry: [emit({ type: "reasoning.thinking.started" }), "onThinkingStart"],
 
         invoke: {
           id: "thinkActor",
           src: "think",
           input: ({ context }) => ({ context }),
-          onDone: {
-            target: "evaluating",
-            actions: [
-              "assignThinkingResult",
-              "onThinkingUpdate",
-            ],
-          },
-          onError: {
-            target: "error",
-            actions: "assignThinkingError",
-          },
+          onDone: { target: "evaluating", actions: ["assignThinkingResult", "onThinkingUpdate"] },
+          onError: { target: "error", actions: "assignThinkingError" },
         },
       },
 
@@ -358,11 +333,7 @@ export function createReasoningMachine<TUserContext extends BaseReasoningContext
 
         always: [
           // If action is to complete, go to observing to record the step, then complete.
-          {
-            target: "observing",
-            guard: "isComplete",
-            actions: "assignObservationToStep",
-          },
+          { target: "observing", guard: "isComplete", actions: "assignObservationToStep" },
           // If there's an action, execute it.
           {
             target: "executing",
@@ -375,22 +346,11 @@ export function createReasoningMachine<TUserContext extends BaseReasoningContext
             ],
           },
           // If there is NO action, check if the thinking step decided we are done.
-          {
-            target: "completed",
-            guard: ({ context }) => context.currentStep?.isComplete === true,
-          },
+          { target: "completed", guard: ({ context }) => context.currentStep?.isComplete === true },
           // Check max iterations
-          {
-            target: "completed",
-            guard: "shouldTerminate",
-          },
-          {
-            target: "executing",
-            guard: "hasValidAction",
-          },
-          {
-            target: "stuck",
-          },
+          { target: "completed", guard: "shouldTerminate" },
+          { target: "executing", guard: "hasValidAction" },
+          { target: "stuck" },
         ],
       },
 
@@ -399,7 +359,7 @@ export function createReasoningMachine<TUserContext extends BaseReasoningContext
           emit(({ context }) =>
             context.currentStep?.action
               ? { type: "reasoning.execution.started", action: context.currentStep.action }
-              : { type: "reasoning.execution.no_action" }
+              : { type: "reasoning.execution.no_action" },
           ),
           "onExecutionStart",
         ],
@@ -407,46 +367,23 @@ export function createReasoningMachine<TUserContext extends BaseReasoningContext
         invoke: {
           id: "executeActionActor",
           src: "executeAction",
-          input: ({ context }) => ({
-            action: context.currentStep!.action!,
-            context,
-          }),
-          onDone: {
-            target: "observing",
-            actions: [
-              "assignActionResult",
-              "onObservation",
-            ],
-          },
-          onError: {
-            target: "observing",
-            actions: "assignExecutionError",
-          },
+          input: ({ context }) => ({ action: context.currentStep!.action!, context }),
+          onDone: { target: "observing", actions: ["assignActionResult", "onObservation"] },
+          onError: { target: "observing", actions: "assignExecutionError" },
         },
       },
 
       observing: {
         entry: [
           "addStepToHistory",
-          emit(({ context }) => ({
-            type: "reasoning.step.completed",
-            step: context.currentStep!,
-          })),
+          emit(({ context }) => ({ type: "reasoning.step.completed", step: context.currentStep! })),
           "notifySupervisor",
         ],
         // Transition after processing the observation
         always: [
-          {
-            target: "completed",
-            guard: "hasCompletedStep",
-          },
-          {
-            target: "evaluatingGoal",
-            guard: () => typeof callbacks.evaluate === "function",
-          },
-          {
-            target: "thinking",
-          },
+          { target: "completed", guard: "hasCompletedStep" },
+          { target: "evaluatingGoal", guard: () => typeof callbacks.evaluate === "function" },
+          { target: "thinking" },
         ],
       },
 
@@ -465,9 +402,7 @@ export function createReasoningMachine<TUserContext extends BaseReasoningContext
                 return event.output.isComplete;
               },
             },
-            {
-              target: "thinking",
-            },
+            { target: "thinking" },
           ],
           onError: {
             target: "thinking", // Fallback to thinking on evaluation error
@@ -496,28 +431,15 @@ export function createReasoningMachine<TUserContext extends BaseReasoningContext
 
       stuck: {
         entry: emit({ type: "reasoning.stuck" }),
-        on: {
-          PROVIDE_HINT: {
-            target: "thinking",
-            actions: "assignExternalHint",
-          },
-        },
+        on: { PROVIDE_HINT: { target: "thinking", actions: "assignExternalHint" } },
       },
 
-      error: {
-        type: "final",
-      },
+      error: { type: "final" },
 
-      completed: {
-        type: "final",
-        entry: emit({ type: "reasoning.completed" }),
-      },
+      completed: { type: "final", entry: emit({ type: "reasoning.completed" }) },
     },
 
-    on: {
-      PAUSE: ".paused",
-      ABORT: ".completed",
-    },
+    on: { PAUSE: ".paused", ABORT: ".completed" },
   });
 }
 
@@ -540,11 +462,7 @@ function createReasoningResult<TUserContext extends BaseReasoningContext>(
   const lastStep = steps[steps.length - 1];
 
   // Aggregate execution details and metrics from all steps
-  const initialMetrics = {
-    agentCalls: 0,
-    toolCalls: 0,
-    totalDuration: 0,
-  };
+  const initialMetrics = { agentCalls: 0, toolCalls: 0, totalDuration: 0 };
 
   const { agentsExecuted, toolsExecuted, metrics } = steps.reduce(
     (acc, step) => {
@@ -567,11 +485,7 @@ function createReasoningResult<TUserContext extends BaseReasoningContext>(
       }
       return acc;
     },
-    {
-      agentsExecuted: [],
-      toolsExecuted: [],
-      metrics: initialMetrics,
-    },
+    { agentsExecuted: [], toolsExecuted: [], metrics: initialMetrics },
   );
 
   const finalThinking = lastStep?.thinking;
@@ -582,30 +496,23 @@ function createReasoningResult<TUserContext extends BaseReasoningContext>(
     reasoning: {
       steps: steps,
       totalIterations: context.currentIteration,
-      finalThinking: typeof finalThinking === "string"
-        ? finalThinking
-        : finalThinking
-        ? JSON.stringify(finalThinking)
-        : "No final thinking.",
+      finalThinking:
+        typeof finalThinking === "string"
+          ? finalThinking
+          : finalThinking
+            ? JSON.stringify(finalThinking)
+            : "No final thinking.",
       confidence: finalConfidence,
     },
-    execution: {
-      agentsExecuted,
-      toolsExecuted,
-      totalDuration: metrics.totalDuration,
-    },
+    execution: { agentsExecuted, toolsExecuted, totalDuration: metrics.totalDuration },
     jobResults: {
       goal: jobGoal || "Process signal",
       achieved: status === ReasoningResultStatus.COMPLETED,
       output: lastStep?.result || lastStep?.observation || null,
       artifacts: Object.fromEntries(
-        Array.from(workingMemory.entries())
-          .filter(([key]) => key.startsWith("result_")),
+        Array.from(workingMemory.entries()).filter(([key]) => key.startsWith("result_")),
       ),
     },
-    metrics: {
-      agentCalls: metrics.agentCalls,
-      toolCalls: metrics.toolCalls,
-    },
+    metrics: { agentCalls: metrics.agentCalls, toolCalls: metrics.toolCalls },
   };
 }

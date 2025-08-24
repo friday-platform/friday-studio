@@ -1,6 +1,6 @@
-import { daemonFactory } from "../../src/factory.ts";
 import { describeRoute, resolver, validator } from "hono-openapi";
 import { InMemoryTodoStorage } from "../../../../src/core/daemon-capabilities.ts";
+import { daemonFactory } from "../../src/factory.ts";
 import {
   errorResponseSchema,
   storeResponseSchema,
@@ -19,27 +19,15 @@ createTodos.post(
     responses: {
       200: {
         description: "Todos stored successfully",
-        content: {
-          "application/json": {
-            schema: resolver(storeResponseSchema),
-          },
-        },
+        content: { "application/json": { schema: resolver(storeResponseSchema) } },
       },
       400: {
         description: "Invalid request data",
-        content: {
-          "application/json": {
-            schema: resolver(errorResponseSchema),
-          },
-        },
+        content: { "application/json": { schema: resolver(errorResponseSchema) } },
       },
       500: {
         description: "Internal server error",
-        content: {
-          "application/json": {
-            schema: resolver(errorResponseSchema),
-          },
-        },
+        content: { "application/json": { schema: resolver(errorResponseSchema) } },
       },
     },
   }),
@@ -53,10 +41,7 @@ createTodos.post(
       const storage = InMemoryTodoStorage.getInstance();
       storage.storeTodos(streamId, todos);
 
-      return c.json({
-        success: true,
-        message: `${todos.length} todos stored successfully`,
-      });
+      return c.json({ success: true, message: `${todos.length} todos stored successfully` });
     } catch (error) {
       return c.json(
         { success: false, error: error instanceof Error ? error.message : String(error) },

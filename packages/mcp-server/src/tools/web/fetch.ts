@@ -1,11 +1,11 @@
-import { z } from "zod";
-import type { ToolContext } from "../types.ts";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { createSuccessResponse } from "../types.ts";
-import TurndownService from "turndown";
+import { join } from "@std/path";
 import { HTMLRewriter } from "@worker-tools/html-rewriter";
 import { chromium } from "playwright";
-import { join } from "@std/path";
+import TurndownService from "turndown";
+import { z } from "zod";
+import type { ToolContext } from "../types.ts";
+import { createSuccessResponse } from "../types.ts";
 
 const MAX_RESPONSE_SIZE = 5 * 1024 * 1024; // 5MB
 const DEFAULT_TIMEOUT = 30 * 1000; // 30 seconds
@@ -361,11 +361,7 @@ Usage notes:
           operation: "atlas_fetch_success",
         });
 
-        return createSuccessResponse({
-          output,
-          title,
-          metadata: {},
-        });
+        return createSuccessResponse({ output, title, metadata: {} });
       } catch (error) {
         ctx.logger.error("atlas_fetch failed with unhandled error", {
           url: params.url,

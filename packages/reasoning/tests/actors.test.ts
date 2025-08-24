@@ -3,8 +3,12 @@
  */
 
 import { assertEquals } from "@std/assert";
-import type { ReasoningAction, ReasoningCallbacks, ReasoningContext } from "../src/types.ts";
-import type { BaseReasoningContext } from "../src/types.ts";
+import type {
+  BaseReasoningContext,
+  ReasoningAction,
+  ReasoningCallbacks,
+  ReasoningContext,
+} from "../src/types.ts";
 
 // Test context type
 interface TestContext extends BaseReasoningContext {
@@ -41,10 +45,7 @@ Deno.test("actors: think actor logic should work correctly", async () => {
     think: (context) => {
       thinkCalled = true;
       receivedContext = context;
-      return Promise.resolve({
-        thinking: "Test thinking result",
-        confidence: 0.85,
-      });
+      return Promise.resolve({ thinking: "Test thinking result", confidence: 0.85 });
     },
     parseAction: () => null,
     executeAction: () => Promise.resolve({ observation: "", result: {} }),
@@ -56,10 +57,7 @@ Deno.test("actors: think actor logic should work correctly", async () => {
   // Verify results
   assertEquals(thinkCalled, true);
   assertEquals(receivedContext, testContext);
-  assertEquals(result, {
-    thinking: "Test thinking result",
-    confidence: 0.85,
-  });
+  assertEquals(result, { thinking: "Test thinking result", confidence: 0.85 });
 });
 
 Deno.test("actors: think actor should handle errors", async () => {
@@ -171,10 +169,7 @@ Deno.test("actors: executeAction actor should include duration in result", async
     executeAction: async () => {
       // Add artificial delay
       await new Promise((resolve) => setTimeout(resolve, 50));
-      return {
-        observation: "Action executed with delay",
-        result: { data: "test-result" },
-      };
+      return { observation: "Action executed with delay", result: { data: "test-result" } };
     },
   };
 

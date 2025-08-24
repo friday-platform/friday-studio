@@ -1,7 +1,7 @@
-import { useState } from "react";
-import { Box, render, Text, useApp, useInput } from "ink";
-import { Alert, ConfirmInput, MultiSelect, Spinner, StatusMessage, TextInput } from "@inkjs/ui";
 import process from "node:process";
+import { Alert, ConfirmInput, MultiSelect, Spinner, StatusMessage, TextInput } from "@inkjs/ui";
+import { Box, render, Text, useApp, useInput } from "ink";
+import { useState } from "react";
 
 // Types for our prompt utilities
 export interface PromptOptions {
@@ -39,9 +39,7 @@ export const spinner = () => {
 };
 
 // Text input prompt
-export const text = async (
-  options: PromptOptions,
-): Promise<string | symbol> => {
+export const text = async (options: PromptOptions): Promise<string | symbol> => {
   return new Promise((resolve) => {
     const TextPrompt = () => {
       const { exit } = useApp();
@@ -81,9 +79,7 @@ export const text = async (
 };
 
 // Confirm prompt
-export const confirm = async (
-  options: PromptOptions,
-): Promise<boolean | symbol> => {
+export const confirm = async (options: PromptOptions): Promise<boolean | symbol> => {
   return new Promise((resolve) => {
     const ConfirmPrompt = () => {
       const { exit } = useApp();

@@ -1,8 +1,8 @@
-import { daemonFactory } from "../../src/factory.ts";
-import { describeRoute, resolver, validator } from "hono-openapi";
+import { WorkspaceConfigSchema } from "@atlas/config";
 import { FilesystemWorkspaceCreationAdapter } from "@atlas/storage";
 import { stringify } from "@std/yaml";
-import { WorkspaceConfigSchema } from "@atlas/config";
+import { describeRoute, resolver, validator } from "hono-openapi";
+import { daemonFactory } from "../../src/factory.ts";
 import {
   createWorkspaceFromConfigResponseSchema,
   createWorkspaceFromConfigSchema,
@@ -21,26 +21,16 @@ createWorkspace.post(
       200: {
         description: "Workspace created successfully",
         content: {
-          "application/json": {
-            schema: resolver(createWorkspaceFromConfigResponseSchema),
-          },
+          "application/json": { schema: resolver(createWorkspaceFromConfigResponseSchema) },
         },
       },
       400: {
         description: "Invalid configuration",
-        content: {
-          "application/json": {
-            schema: resolver(errorResponseSchema),
-          },
-        },
+        content: { "application/json": { schema: resolver(errorResponseSchema) } },
       },
       500: {
         description: "Creation failed",
-        content: {
-          "application/json": {
-            schema: resolver(errorResponseSchema),
-          },
-        },
+        content: { "application/json": { schema: resolver(errorResponseSchema) } },
       },
     },
   }),
@@ -52,21 +42,21 @@ createWorkspace.post(
       // Validate configuration
       const validationResult = WorkspaceConfigSchema.safeParse(config);
       if (!validationResult.success) {
-        return c.json({
-          success: false,
-          error: `Invalid workspace configuration: ${
-            validationResult.error.issues.map((issue) => issue.message).join(", ")
-          }`,
-        }, 400);
+        return c.json(
+          {
+            success: false,
+            error: `Invalid workspace configuration: ${validationResult.error.issues
+              .map((issue) => issue.message)
+              .join(", ")}`,
+          },
+          400,
+        );
       }
 
       const validatedConfig = validationResult.data;
 
       // Convert config to YAML
-      const yamlConfig = stringify(validatedConfig, {
-        indent: 2,
-        lineWidth: 100,
-      });
+      const yamlConfig = stringify(validatedConfig, { indent: 2, lineWidth: 100 });
 
       // Create workspace files
       const workspaceAdapter = new FilesystemWorkspaceCreationAdapter();
@@ -98,18 +88,21 @@ createWorkspace.post(
           filesCreated: ["workspace.yml", ".env"],
         });
       } catch (creationError) {
-        return c.json({
-          success: false,
-          error: `Failed to create workspace files: ${
-            creationError instanceof Error ? creationError.message : String(creationError)
-          }`,
-        }, 500);
+        return c.json(
+          {
+            success: false,
+            error: `Failed to create workspace files: ${
+              creationError instanceof Error ? creationError.message : String(creationError)
+            }`,
+          },
+          500,
+        );
       }
     } catch (error) {
-      return c.json({
-        success: false,
-        error: error instanceof Error ? error.message : String(error),
-      }, 500);
+      return c.json(
+        { success: false, error: error instanceof Error ? error.message : String(error) },
+        500,
+      );
     }
   },
 );

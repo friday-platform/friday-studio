@@ -1,5 +1,5 @@
-import type { StreamEmitter } from "../types.ts";
 import type { StreamTextResult, ToolSet } from "ai";
+import type { StreamEmitter } from "../types.ts";
 
 /**
  * Maps a Vercel AI SDK fullStream result to Atlas stream events.
@@ -63,11 +63,7 @@ export async function streamResults(
       }
 
       case "tool-call": {
-        atlasStream.emit({
-          type: "tool-call",
-          toolName: event.toolName,
-          args: event.input,
-        });
+        atlasStream.emit({ type: "tool-call", toolName: event.toolName, args: event.input });
         break;
       }
 
@@ -76,29 +72,19 @@ export async function streamResults(
         atlasStream.emit({
           type: "custom",
           eventType: "source",
-          data: {
-            sourceType: event.sourceType,
-            id: event.id,
-            title: event.title,
-          },
+          data: { sourceType: event.sourceType, id: event.id, title: event.title },
         });
         break;
       }
 
       case "start-step": {
         currentStep++;
-        atlasStream.emit({
-          type: "progress",
-          message: `Starting step ${currentStep}`,
-        });
+        atlasStream.emit({ type: "progress", message: `Starting step ${currentStep}` });
         break;
       }
 
       case "finish-step": {
-        atlasStream.emit({
-          type: "progress",
-          message: `Completed step ${currentStep}`,
-        });
+        atlasStream.emit({ type: "progress", message: `Completed step ${currentStep}` });
         break;
       }
 
@@ -133,18 +119,11 @@ export async function streamResults(
 
       default: {
         // Handle any unknown event types as custom events
-        atlasStream.emit({
-          type: "custom",
-          eventType: event.type,
-          data: event,
-        });
+        atlasStream.emit({ type: "custom", eventType: event.type, data: event });
         break;
       }
     }
   }
 
-  return {
-    response: fullText,
-    metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
-  };
+  return { response: fullText, metadata: Object.keys(metadata).length > 0 ? metadata : undefined };
 }

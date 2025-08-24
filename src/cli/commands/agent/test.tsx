@@ -1,10 +1,10 @@
+import { ConfigLoader } from "@atlas/config";
+import { FilesystemConfigAdapter } from "@atlas/storage";
 import {
   checkDaemonRunning,
   createDaemonNotRunningError,
   getDaemonClient,
 } from "../../utils/daemon-client.ts";
-import { ConfigLoader } from "@atlas/config";
-import { FilesystemConfigAdapter } from "@atlas/storage";
 import { errorOutput, infoOutput, warningOutput } from "../../utils/output.ts";
 import { isCancel, spinner, text } from "../../utils/prompts.tsx";
 
@@ -20,26 +20,10 @@ export const desc = "Test an agent with a message";
 export const aliases = ["try", "run"];
 
 export const builder = {
-  name: {
-    type: "string" as const,
-    describe: "Agent name to test",
-    demandOption: true,
-  },
-  message: {
-    type: "string" as const,
-    alias: "m",
-    describe: "Message to send to the agent",
-  },
-  workspace: {
-    type: "string" as const,
-    alias: "w",
-    describe: "Workspace ID or name",
-  },
-  json: {
-    type: "boolean" as const,
-    describe: "Output test result as JSON",
-    default: false,
-  },
+  name: { type: "string" as const, describe: "Agent name to test", demandOption: true },
+  message: { type: "string" as const, alias: "m", describe: "Message to send to the agent" },
+  workspace: { type: "string" as const, alias: "w", describe: "Workspace ID or name" },
+  json: { type: "boolean" as const, describe: "Output test result as JSON", default: false },
 };
 
 export const handler = async (argv: TestArgs): Promise<void> => {
@@ -113,7 +97,7 @@ export const handler = async (argv: TestArgs): Promise<void> => {
     // Get message either from flag or prompt
     let message = argv.message;
     if (!message) {
-      message = await text({
+      message = (await text({
         message: `Enter message to send to ${argv.name}:`,
         placeholder: "Hello, agent!",
         validate: (value) => {
@@ -121,7 +105,7 @@ export const handler = async (argv: TestArgs): Promise<void> => {
             return "Message cannot be empty";
           }
         },
-      }) as string;
+      })) as string;
 
       if (isCancel(message)) {
         infoOutput("Agent test cancelled");

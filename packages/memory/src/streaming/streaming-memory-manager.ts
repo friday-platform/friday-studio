@@ -1,13 +1,6 @@
 import { logger } from "@atlas/logger";
 import type { CoALAMemoryManager } from "../coala-memory.ts";
 import { AsyncMemoryQueue } from "./async-memory-queue.ts";
-import {
-  AgentResultProcessor,
-  EpisodicEventProcessor,
-  ProceduralPatternProcessor,
-  SemanticFactProcessor,
-  WorkingContextProcessor,
-} from "./memory-stream-processors.ts";
 import type {
   AgentResultStream,
   EpisodicEventStream,
@@ -16,6 +9,13 @@ import type {
   SessionCompleteStream,
   StreamingConfig,
 } from "./memory-stream.ts";
+import {
+  AgentResultProcessor,
+  EpisodicEventProcessor,
+  ProceduralPatternProcessor,
+  SemanticFactProcessor,
+  WorkingContextProcessor,
+} from "./memory-stream-processors.ts";
 
 /**
  * Configuration for streaming memory manager
@@ -150,12 +150,7 @@ export class StreamingMemoryManager {
     const stream: SemanticFactStream = {
       id: `semantic-fact-${crypto.randomUUID()}`,
       type: "semantic_fact",
-      data: {
-        fact,
-        confidence,
-        source,
-        context,
-      },
+      data: { fact, confidence, source, context },
       timestamp: Date.now(),
       sessionId: this.context.sessionId || "unknown",
       agentId,
@@ -230,13 +225,7 @@ export class StreamingMemoryManager {
     const stream: EpisodicEventStream = {
       id: `episodic-event-${crypto.randomUUID()}`,
       type: "episodic_event",
-      data: {
-        event_type: eventType,
-        description,
-        participants,
-        outcome,
-        significance,
-      },
+      data: { event_type: eventType, description, participants, outcome, significance },
       timestamp: Date.now(),
       sessionId: this.context.sessionId || "unknown",
       priority: significance > 0.7 ? "high" : "normal",
@@ -269,13 +258,7 @@ export class StreamingMemoryManager {
       // Store directly as working memory
       this.memoryManager.rememberWorking(
         sessionId,
-        {
-          kind: "tool_call",
-          agentId,
-          toolName,
-          arguments: args,
-          timestamp: Date.now(),
-        },
+        { kind: "tool_call", agentId, toolName, arguments: args, timestamp: Date.now() },
         {
           tags: ["working", "session", "tool", "tool_call", agentId, toolName],
           relevanceScore: 0.7,
@@ -283,11 +266,7 @@ export class StreamingMemoryManager {
         },
       );
 
-      logger.debug("Tool call stored in working memory", {
-        sessionId,
-        agentId,
-        toolName,
-      });
+      logger.debug("Tool call stored in working memory", { sessionId, agentId, toolName });
     } catch (error) {
       logger.warn("Failed to store tool call in working memory", {
         sessionId,
@@ -313,13 +292,7 @@ export class StreamingMemoryManager {
       // Store directly as working memory
       this.memoryManager.rememberWorking(
         sessionId,
-        {
-          kind: "tool_result",
-          agentId,
-          toolName,
-          result,
-          timestamp: Date.now(),
-        },
+        { kind: "tool_result", agentId, toolName, result, timestamp: Date.now() },
         {
           tags: ["working", "session", "tool", "tool_result", agentId, toolName],
           relevanceScore: 0.75,
@@ -331,7 +304,7 @@ export class StreamingMemoryManager {
       if (result && typeof result === "object") {
         const resultStr = JSON.stringify(result);
         const classifier = await import("../memory-classifier.ts").then((m) =>
-          m.createMemoryClassifier()
+          m.createMemoryClassifier(),
         );
         const entities = classifier.extractKeyEntities(resultStr);
 
@@ -473,9 +446,7 @@ export class StreamingMemoryManager {
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
 
-    logger.info("Streaming memory queue flushed", {
-      sessionId: this.context.sessionId,
-    });
+    logger.info("Streaming memory queue flushed", { sessionId: this.context.sessionId });
   }
 
   /**
@@ -505,9 +476,7 @@ export class StreamingMemoryManager {
    */
   enableDualWrite(): void {
     this.config.dual_write_enabled = true;
-    logger.info("Dual-write mode enabled", {
-      sessionId: this.context.sessionId,
-    });
+    logger.info("Dual-write mode enabled", { sessionId: this.context.sessionId });
   }
 
   /**
@@ -515,8 +484,6 @@ export class StreamingMemoryManager {
    */
   disableDualWrite(): void {
     this.config.dual_write_enabled = false;
-    logger.info("Dual-write mode disabled", {
-      sessionId: this.context.sessionId,
-    });
+    logger.info("Dual-write mode disabled", { sessionId: this.context.sessionId });
   }
 }

@@ -3,19 +3,19 @@
  * Tests agent creation, registration, and execution through the complete system.
  */
 
-import { assertEquals, assertExists } from "@std/assert";
 import {
   type AgentMetadata,
   type AgentRegistry,
   type AtlasAgent,
   createAgent,
 } from "@atlas/agent-sdk";
-import { TestAtlasAgentsMCPServer } from "./test-server.ts";
-import { createLogger } from "@atlas/logger";
-import type { Logger } from "@atlas/logger";
 import type { MCPServerConfig } from "@atlas/config";
+import type { Logger } from "@atlas/logger";
+import { createLogger } from "@atlas/logger";
 import { MCPManager } from "@atlas/mcp";
+import { assertEquals, assertExists } from "@std/assert";
 import { GlobalMCPServerPool } from "../../src/mcp-server-pool.ts";
+import { TestAtlasAgentsMCPServer } from "./test-server.ts";
 
 Deno.env.set("DENO_TESTING", "true");
 
@@ -62,9 +62,9 @@ class MockAgentRegistry implements AgentRegistry {
   searchAgents(query: string): Promise<AgentMetadata[]> {
     return Promise.resolve(
       Array.from(this.agents.values())
-        .filter((agent) =>
-          agent.metadata.id.includes(query) ||
-          agent.metadata.description.includes(query)
+        .filter(
+          (agent) =>
+            agent.metadata.id.includes(query) || agent.metadata.description.includes(query),
         )
         .map((agent) => agent.metadata),
     );
@@ -162,19 +162,12 @@ Deno.test({
         };
 
         // Execute echo command
-        const result1 = await server.executeAgent(
-          "test-agent",
-          "echo Hello, World!",
-          sessionData,
-        );
+        const result1 = await server.executeAgent("test-agent", "echo Hello, World!", sessionData);
 
         assertExists(result1);
         assertEquals(result1, {
           type: "completed",
-          result: {
-            response: "Echo: Hello, World!",
-            sessionData: sessionData,
-          },
+          result: { response: "Echo: Hello, World!", sessionData: sessionData },
         });
       });
 
@@ -193,10 +186,7 @@ Deno.test({
         );
         assertEquals(result1, {
           type: "completed",
-          result: {
-            response: "Word count: 4",
-            totalSoFar: 4,
-          },
+          result: { response: "Word count: 4", totalSoFar: 4 },
         });
 
         // Second count - should accumulate
@@ -207,10 +197,7 @@ Deno.test({
         );
         assertEquals(result2, {
           type: "completed",
-          result: {
-            response: "Word count: 3",
-            totalSoFar: 7,
-          },
+          result: { response: "Word count: 3", totalSoFar: 7 },
         });
       });
 
@@ -232,16 +219,12 @@ Deno.test({
             examples: ["scan my repo for security issues"],
           },
           environment: {
-            required: [{
-              name: "GITHUB_TOKEN",
-              description: "GitHub API token",
-              validation: "^ghp_",
-            }],
-            optional: [{
-              name: "GITHUB_ORG",
-              description: "Default GitHub organization",
-              default: "my-org",
-            }],
+            required: [
+              { name: "GITHUB_TOKEN", description: "GitHub API token", validation: "^ghp_" },
+            ],
+            optional: [
+              { name: "GITHUB_ORG", description: "Default GitHub organization", default: "my-org" },
+            ],
           },
           mcp: {
             github: {
@@ -250,10 +233,7 @@ Deno.test({
                 command: "npx",
                 args: ["-y", "@modelcontextprotocol/server-github"],
               },
-              auth: {
-                type: "bearer",
-                token_env: "GITHUB_TOKEN",
-              },
+              auth: { type: "bearer", token_env: "GITHUB_TOKEN" },
             },
           },
           handler: (prompt, context) => {
@@ -320,38 +300,27 @@ Deno.test({
         await server.registerAgent(errorAgent);
 
         try {
-          await server.executeAgent(
-            "error-agent",
-            "cause an error",
-            {
-              sessionId: "test",
-              workspaceId: "test",
-              userId: "test-user",
-            },
-          );
+          await server.executeAgent("error-agent", "cause an error", {
+            sessionId: "test",
+            workspaceId: "test",
+            userId: "test-user",
+          });
           throw new Error("Should have thrown");
         } catch (error) {
           assertExists(error);
           if (error instanceof Error) {
-            assertEquals(
-              error.message,
-              "Intentional test error",
-            );
+            assertEquals(error.message, "Intentional test error");
           }
         }
       });
 
       await t.step("Handle non-existent agent", async () => {
         try {
-          await server.executeAgent(
-            "non-existent",
-            "test",
-            {
-              sessionId: "test",
-              workspaceId: "test",
-              userId: "test-user",
-            },
-          );
+          await server.executeAgent("non-existent", "test", {
+            sessionId: "test",
+            workspaceId: "test",
+            userId: "test-user",
+          });
           throw new Error("Should have thrown");
         } catch (error) {
           assertExists(error);

@@ -36,10 +36,7 @@ export class AsyncMemoryQueue implements MemoryStreamQueue {
     }
 
     // Add stream with timestamp
-    const timestampedStream = {
-      ...stream,
-      timestamp: stream.timestamp || Date.now(),
-    };
+    const timestampedStream = { ...stream, timestamp: stream.timestamp || Date.now() };
 
     // Priority queue: high priority items go to front
     if (stream.priority === "high") {
@@ -107,10 +104,7 @@ export class AsyncMemoryQueue implements MemoryStreamQueue {
     const clearedCount = this.queue.length;
     this.queue = [];
 
-    logger.info("Memory stream queue cleared", {
-      clearedCount,
-      sessionId: this.context.sessionId,
-    });
+    logger.info("Memory stream queue cleared", { clearedCount, sessionId: this.context.sessionId });
   }
 
   /**
@@ -293,8 +287,6 @@ export class AsyncMemoryQueue implements MemoryStreamQueue {
       await this.processIfNeeded();
     }
 
-    logger.info("Memory stream queue shutdown complete", {
-      sessionId: this.context.sessionId,
-    });
+    logger.info("Memory stream queue shutdown complete", { sessionId: this.context.sessionId });
   }
 }

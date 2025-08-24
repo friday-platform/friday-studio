@@ -170,7 +170,7 @@ export class VectorSearchLocalStorageAdapter implements IVectorSearchStorageAdap
     // Filter by tags
     if (query.tags && query.tags.length > 0) {
       candidates = candidates.filter((e) =>
-        query.tags!.some((tag) => e.metadata.tags.includes(tag))
+        query.tags!.some((tag) => e.metadata.tags.includes(tag)),
       );
     }
 
@@ -245,16 +245,10 @@ export class VectorSearchLocalStorageAdapter implements IVectorSearchStorageAdap
 
     // Save embeddings
     const embeddingsArray = Array.from(this.embeddings.values());
-    await Deno.writeTextFile(
-      this.indexFile,
-      JSON.stringify(embeddingsArray, null, 2),
-    );
+    await Deno.writeTextFile(this.indexFile, JSON.stringify(embeddingsArray, null, 2));
 
     // Save stats
     const stats = await this.getStats();
-    await Deno.writeTextFile(
-      this.statsFile,
-      JSON.stringify(stats, null, 2),
-    );
+    await Deno.writeTextFile(this.statsFile, JSON.stringify(stats, null, 2));
   }
 }

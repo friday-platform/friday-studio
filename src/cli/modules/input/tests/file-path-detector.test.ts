@@ -206,10 +206,7 @@ Deno.test("Mixed Content Detection - Paths must be on their own lines", () => {
       input: "The config is at:\n~/config.json\nAnd logs at:\n/var/log/app.log",
       expectedPaths: ["~/config.json", "/var/log/app.log"], // Paths on their own lines
     },
-    {
-      input: "No paths here, just regular text",
-      expectedPaths: [],
-    },
+    { input: "No paths here, just regular text", expectedPaths: [] },
     {
       input: "Here is my file:\n/Users/dwoolf/test.txt\nThat's it",
       expectedPaths: ["/Users/dwoolf/test.txt"], // Middle line is a path

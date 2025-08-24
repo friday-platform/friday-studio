@@ -1,5 +1,5 @@
-import { infoOutput, successOutput } from "./output.ts";
 import { type AtlasClient, getAtlasClient } from "@atlas/client";
+import { infoOutput, successOutput } from "./output.ts";
 
 /**
  * Get a client for local daemon management on a specific port.
@@ -20,14 +20,9 @@ export function getLocalDaemonClient(port: number = 8080, timeout?: number): Atl
 export interface DaemonStatus {
   uptime: number;
   activeWorkspaces: number;
-  configuration: {
-    maxConcurrentWorkspaces: number;
-    idleTimeoutMs: number;
-  };
+  configuration: { maxConcurrentWorkspaces: number; idleTimeoutMs: number };
   workspaces: string[];
-  memoryUsage: {
-    rss: number;
-  };
+  memoryUsage: { rss: number };
 }
 
 export function formatUptime(ms: number): string {

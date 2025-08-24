@@ -3,17 +3,17 @@
  * Replaces worker-based orchestration with direct actor management
  */
 
-import { MergedConfig, WorkspaceSignalConfig } from "@atlas/config";
+import type { MergedConfig, WorkspaceSignalConfig } from "@atlas/config";
+import type { AgentOrchestrator, GlobalMCPServerPool } from "@atlas/core";
+import { logger } from "@atlas/logger";
 import { type ActorRefFrom, createActor } from "xstate";
 import type { IWorkspace, IWorkspaceSession, IWorkspaceSignal } from "../types/core.ts";
-import { logger } from "@atlas/logger";
 import { AtlasTelemetry } from "../utils/telemetry.ts";
 import type { LibraryStorageAdapter } from "./storage/library-storage-adapter.ts";
 import {
   createWorkspaceRuntimeMachine,
   type WorkspaceRuntimeMachineInput,
 } from "./workspace-runtime-machine.ts";
-import { AgentOrchestrator, GlobalMCPServerPool } from "@atlas/core";
 
 export interface WorkspaceRuntimeOptions {
   lazy?: boolean;
@@ -41,11 +41,7 @@ export class WorkspaceRuntime {
   private stateMachine: ActorRefFrom<ReturnType<typeof createWorkspaceRuntimeMachine>>;
   private fsmId: string;
 
-  constructor(
-    workspace: IWorkspace,
-    config: MergedConfig,
-    options: WorkspaceRuntimeOptions = {},
-  ) {
+  constructor(workspace: IWorkspace, config: MergedConfig, options: WorkspaceRuntimeOptions = {}) {
     this.workspace = workspace;
     this.config = config;
 
@@ -66,9 +62,7 @@ export class WorkspaceRuntime {
     // Create and start the state machine
     const machine = createWorkspaceRuntimeMachine(machineInput);
 
-    this.stateMachine = createActor(machine, {
-      input: machineInput,
-    });
+    this.stateMachine = createActor(machine, { input: machineInput });
 
     // Subscribe to state changes for debugging
     this.stateMachine.subscribe((state) => {
@@ -127,9 +121,7 @@ export class WorkspaceRuntime {
       "workspace.processSignal",
       async (span) => {
         // Add workspace and signal attributes
-        AtlasTelemetry.addComponentAttributes(span, "workspace", {
-          id: this.workspace.id,
-        });
+        AtlasTelemetry.addComponentAttributes(span, "workspace", { id: this.workspace.id });
         AtlasTelemetry.addComponentAttributes(span, "signal", {
           id: signal.id,
           type: signal.provider?.name || signal.provider?.id || "unknown",
@@ -180,9 +172,7 @@ export class WorkspaceRuntime {
                 hasConfig: !!freshState.context.config,
                 hasOptions: !!freshState.context.options,
               });
-              throw new Error(
-                "Workspace reached ready state but supervisor is not initialized",
-              );
+              throw new Error("Workspace reached ready state but supervisor is not initialized");
             }
 
             logger.info("Workspace initialization complete", {
@@ -201,7 +191,8 @@ export class WorkspaceRuntime {
         });
 
         // Use session ID from payload (for conversation continuity), otherwise generate new one
-        const sessionId = (typeof payload?.sessionId === "string" ? payload.sessionId : null) ||
+        const sessionId =
+          (typeof payload?.sessionId === "string" ? payload.sessionId : null) ||
           crypto.randomUUID();
 
         // Create trace headers for supervisor communication
@@ -244,10 +235,7 @@ export class WorkspaceRuntime {
 
         return session;
       },
-      {
-        "workspace.state": this.getState(),
-        "signal.payload.size": JSON.stringify(payload).length,
-      },
+      { "workspace.state": this.getState(), "signal.payload.size": JSON.stringify(payload).length },
     );
   }
 
@@ -257,9 +245,7 @@ export class WorkspaceRuntime {
   private waitForState(targetStates: string[], timeout = 30000): Promise<void> {
     return new Promise((resolve, reject) => {
       const timeoutId = setTimeout(() => {
-        reject(
-          new Error(`Timeout waiting for states: ${targetStates.join(", ")}`),
-        );
+        reject(new Error(`Timeout waiting for states: ${targetStates.join(", ")}`));
       }, timeout);
 
       const checkState = () => {
@@ -371,25 +357,18 @@ export class WorkspaceRuntime {
     };
 
     // TODO: Implement actual persistence
-    logger.debug("State checkpoint saved", {
-      workspaceId: this.workspace.id,
-      checkpoint: state,
-    });
+    logger.debug("State checkpoint saved", { workspaceId: this.workspace.id, checkpoint: state });
   }
 
   /**
    * List all jobs in the workspace
    */
   listJobs(): Array<{ name: string; description?: string }> {
-    const jobs = ((this.config?.workspace as Record<string, unknown>)?.jobs as Record<
-      string,
-      unknown
-    >) || {};
+    const jobs =
+      ((this.config?.workspace as Record<string, unknown>)?.jobs as Record<string, unknown>) || {};
     return Object.entries(jobs).map(([name, config]) => ({
       name,
-      description: (config as Record<string, unknown>)?.description as
-        | string
-        | undefined,
+      description: (config as Record<string, unknown>)?.description as string | undefined,
     }));
   }
 
@@ -400,34 +379,24 @@ export class WorkspaceRuntime {
     jobName: string,
     payload?: Record<string, unknown>,
   ): Promise<{ sessionId: string }> {
-    const jobs = ((this.config?.workspace as Record<string, unknown>)?.jobs as Record<
-      string,
-      unknown
-    >) || {};
+    const jobs =
+      ((this.config?.workspace as Record<string, unknown>)?.jobs as Record<string, unknown>) || {};
     if (!jobs[jobName]) {
       throw new Error(`Job '${jobName}' not found`);
     }
 
     // Find signal that triggers this job
-    const signals = ((this.config?.workspace as Record<string, unknown>)?.signals as Record<
-      string,
-      unknown
-    >) || {};
+    const signals =
+      ((this.config?.workspace as Record<string, unknown>)?.signals as Record<string, unknown>) ||
+      {};
     for (const [signalName, signalConfig] of Object.entries(signals)) {
       const jobConfig = jobs[jobName];
-      const triggers = ((jobConfig as Record<string, unknown>)?.triggers as Array<{
-        signal: string;
-      }>) || [];
-      const hasMatchingTrigger = triggers.some(
-        (trigger) => trigger.signal === signalName,
-      );
+      const triggers =
+        ((jobConfig as Record<string, unknown>)?.triggers as Array<{ signal: string }>) || [];
+      const hasMatchingTrigger = triggers.some((trigger) => trigger.signal === signalName);
 
       if (hasMatchingTrigger) {
-        const signal = {
-          id: signalName,
-          name: signalName,
-          ...(signalConfig as object),
-        };
+        const signal = { id: signalName, name: signalName, ...(signalConfig as object) };
         const result = await this.processSignal(signal, payload || {});
         return { sessionId: result.id || crypto.randomUUID() };
       }
@@ -440,10 +409,8 @@ export class WorkspaceRuntime {
    * Get detailed information about a job
    */
   describeJob(jobName: string): Record<string, unknown> {
-    const jobs = ((this.config?.workspace as Record<string, unknown>)?.jobs as Record<
-      string,
-      unknown
-    >) || {};
+    const jobs =
+      ((this.config?.workspace as Record<string, unknown>)?.jobs as Record<string, unknown>) || {};
     if (!jobs[jobName]) {
       throw new Error(`Job '${jobName}' not found`);
     }
@@ -488,10 +455,7 @@ export class WorkspaceRuntime {
   /**
    * Trigger a signal in the workspace
    */
-  async triggerSignal(
-    signalName: string,
-    payload?: Record<string, unknown>,
-  ): Promise<void> {
+  async triggerSignal(signalName: string, payload?: Record<string, unknown>): Promise<void> {
     await this.triggerSignalWithSession(signalName, payload);
     // Original method returns void, discarding session
   }
@@ -504,19 +468,14 @@ export class WorkspaceRuntime {
     payload?: Record<string, unknown>,
     streamId?: string,
   ): Promise<IWorkspaceSession> {
-    const signals = ((this.config?.workspace as Record<string, unknown>)?.signals as Record<
-      string,
-      unknown
-    >) || {};
+    const signals =
+      ((this.config?.workspace as Record<string, unknown>)?.signals as Record<string, unknown>) ||
+      {};
     const signalConfig = signals[signalName];
     if (!signalConfig) {
       throw new Error(`Signal '${signalName}' not found`);
     }
-    const signal = {
-      id: signalName,
-      name: signalName,
-      ...(signalConfig as object),
-    };
+    const signal = { id: signalName, name: signalName, ...(signalConfig as object) };
     return await this.processSignal(signal, payload || {}, undefined, streamId);
   }
 
@@ -524,16 +483,13 @@ export class WorkspaceRuntime {
    * List all agents in the workspace
    */
   listAgents(): Array<{ id: string; type: string; purpose?: string }> {
-    const agents = ((this.config?.workspace as Record<string, unknown>)?.agents as Record<
-      string,
-      unknown
-    >) || {};
+    const agents =
+      ((this.config?.workspace as Record<string, unknown>)?.agents as Record<string, unknown>) ||
+      {};
     return Object.entries(agents).map(([id, config]) => ({
       id,
       type: ((config as Record<string, unknown>)?.type as string) || "unknown",
-      purpose: (config as Record<string, unknown>)?.purpose as
-        | string
-        | undefined,
+      purpose: (config as Record<string, unknown>)?.purpose as string | undefined,
     }));
   }
 
@@ -541,10 +497,9 @@ export class WorkspaceRuntime {
    * Get detailed information about an agent
    */
   describeAgent(agentId: string): Record<string, unknown> {
-    const agents = ((this.config?.workspace as Record<string, unknown>)?.agents as Record<
-      string,
-      unknown
-    >) || {};
+    const agents =
+      ((this.config?.workspace as Record<string, unknown>)?.agents as Record<string, unknown>) ||
+      {};
     if (!agents[agentId]) {
       throw new Error(`Agent '${agentId}' not found`);
     }
@@ -565,9 +520,7 @@ export class WorkspaceRuntime {
       return;
     }
 
-    logger.info("Manually initializing runtime", {
-      workspaceId: this.workspace.id,
-    });
+    logger.info("Manually initializing runtime", { workspaceId: this.workspace.id });
 
     this.stateMachine.send({ type: "INITIALIZE" });
 
@@ -583,9 +536,7 @@ export class WorkspaceRuntime {
 
     // Check if already shutting down or terminated
     if (state.value === "shuttingDown" || state.value === "terminated") {
-      logger.warn("Already shutting down or terminated", {
-        workspaceId: this.workspace.id,
-      });
+      logger.warn("Already shutting down or terminated", { workspaceId: this.workspace.id });
       return;
     }
 
@@ -609,9 +560,7 @@ export class WorkspaceRuntime {
         id: `supervisor-${this.workspace.id}`,
         type: "supervisor",
         state: "ready",
-        metadata: {
-          workspaceId: this.workspace.id,
-        },
+        metadata: { workspaceId: this.workspace.id },
       });
     }
 
@@ -621,9 +570,7 @@ export class WorkspaceRuntime {
         id: sessionId,
         type: "session",
         state: session.status,
-        metadata: {
-          workspaceId: this.workspace.id,
-        },
+        metadata: { workspaceId: this.workspace.id },
       });
     }
 

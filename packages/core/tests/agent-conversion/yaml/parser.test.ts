@@ -48,11 +48,7 @@ agent:
     domains: ["testing"]
 `;
 
-      assertThrows(
-        () => parseYAMLAgentContent(invalidYaml),
-        Error,
-        "Failed to parse YAML agent",
-      );
+      assertThrows(() => parseYAMLAgentContent(invalidYaml), Error, "Failed to parse YAML agent");
     });
 
     it("should handle environment variable interpolation", () => {
@@ -78,17 +74,11 @@ llm:
   prompt: You are a test agent
 `;
 
-      const env = {
-        API_KEY: "sk-12345",
-        MODEL_NAME: "claude-3-opus-20240229",
-      };
+      const env = { API_KEY: "sk-12345", MODEL_NAME: "claude-3-opus-20240229" };
 
       const result = parseYAMLAgentContent(yamlContent, { env });
 
-      assertEquals(
-        result.environment?.required?.[0]?.description,
-        "API key is sk-12345",
-      );
+      assertEquals(result.environment?.required?.[0]?.description, "API key is sk-12345");
       assertEquals(result.llm.model, "claude-3-opus-20240229");
     });
 
@@ -154,7 +144,7 @@ llm:
 
   describe("interpolateEnvironmentVariables", () => {
     it("should interpolate simple variables", () => {
-      const content = "Hello \${NAME}, your key is \${API_KEY}";
+      const content = "Hello ${NAME}, your key is ${API_KEY}";
       const env = { NAME: "Alice", API_KEY: "secret123" };
 
       const result = interpolateEnvironmentVariables(content, env);
@@ -162,7 +152,7 @@ llm:
     });
 
     it("should handle defaults", () => {
-      const content = "Model: \${MODEL:-gpt-4}, Region: \${REGION:-us-east-1}";
+      const content = "Model: ${MODEL:-gpt-4}, Region: ${REGION:-us-east-1}";
       const env = { MODEL: "claude" };
 
       const result = interpolateEnvironmentVariables(content, env);
@@ -170,10 +160,10 @@ llm:
     });
 
     it("should leave unmatched variables as-is", () => {
-      const content = "Missing: \${UNDEFINED_VAR}";
+      const content = "Missing: ${UNDEFINED_VAR}";
 
       const result = interpolateEnvironmentVariables(content, {});
-      assertEquals(result, "Missing: \${UNDEFINED_VAR}");
+      assertEquals(result, "Missing: ${UNDEFINED_VAR}");
     });
   });
 
@@ -184,21 +174,13 @@ llm:
           id: "test",
           version: "1.0.0",
           description: "Test",
-          expertise: {
-            domains: ["test"],
-            capabilities: ["test"],
-            examples: [],
-          },
+          expertise: { domains: ["test"], capabilities: ["test"], examples: [] },
         },
         mcp_servers: {
           github: { transport: { type: "stdio", command: "test" } },
           slack: { transport: { type: "stdio", command: "test" } },
         },
-        llm: {
-          provider: "anthropic",
-          model: "claude-3-sonnet-20240229",
-          prompt: "Test",
-        },
+        llm: { provider: "anthropic", model: "claude-3-sonnet-20240229", prompt: "Test" },
       };
 
       const names = extractMCPServerNames(definition);
@@ -211,17 +193,9 @@ llm:
           id: "test",
           version: "1.0.0",
           description: "Test",
-          expertise: {
-            domains: ["test"],
-            capabilities: ["test"],
-            examples: [],
-          },
+          expertise: { domains: ["test"], capabilities: ["test"], examples: [] },
         },
-        llm: {
-          provider: "anthropic",
-          model: "claude-3-sonnet-20240229",
-          prompt: "Test",
-        },
+        llm: { provider: "anthropic", model: "claude-3-sonnet-20240229", prompt: "Test" },
       };
 
       const names = extractMCPServerNames(definition);
@@ -236,25 +210,15 @@ llm:
           id: "test",
           version: "1.0.0",
           description: "Test",
-          expertise: {
-            domains: ["test"],
-            capabilities: ["test"],
-            examples: [],
-          },
+          expertise: { domains: ["test"], capabilities: ["test"], examples: [] },
         },
         mcp_servers: {
           github: {
             transport: { type: "stdio", command: "test" },
-            tools: {
-              allow: ["search_code", "get_file"],
-            },
+            tools: { allow: ["search_code", "get_file"] },
           },
         },
-        llm: {
-          provider: "anthropic",
-          model: "claude-3-sonnet-20240229",
-          prompt: "Test",
-        },
+        llm: { provider: "anthropic", model: "claude-3-sonnet-20240229", prompt: "Test" },
       };
 
       const allowlist = extractToolAllowlist(definition, "github");
@@ -267,22 +231,10 @@ llm:
           id: "test",
           version: "1.0.0",
           description: "Test",
-          expertise: {
-            domains: ["test"],
-            capabilities: ["test"],
-            examples: [],
-          },
+          expertise: { domains: ["test"], capabilities: ["test"], examples: [] },
         },
-        mcp_servers: {
-          github: {
-            transport: { type: "stdio", command: "test" },
-          },
-        },
-        llm: {
-          provider: "anthropic",
-          model: "claude-3-sonnet-20240229",
-          prompt: "Test",
-        },
+        mcp_servers: { github: { transport: { type: "stdio", command: "test" } } },
+        llm: { provider: "anthropic", model: "claude-3-sonnet-20240229", prompt: "Test" },
       };
 
       const allowlist = extractToolAllowlist(definition, "github");

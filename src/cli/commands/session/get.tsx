@@ -1,6 +1,6 @@
+import { getAtlasClient, type SessionDetailedInfo } from "@atlas/client";
 import { Box, render, Text } from "ink";
 import { StatusBadge } from "../../../cli/components/status-badge.tsx";
-import { getAtlasClient, SessionDetailedInfo } from "@atlas/client";
 
 interface GetArgs {
   id: string;
@@ -26,16 +26,8 @@ export const desc = "Get details for a specific session";
 export const aliases = ["show", "describe"];
 
 export const builder = {
-  id: {
-    type: "string" as const,
-    describe: "Session ID to retrieve",
-    demandOption: true,
-  },
-  json: {
-    type: "boolean" as const,
-    describe: "Output session details as JSON",
-    default: false,
-  },
+  id: { type: "string" as const, describe: "Session ID to retrieve", demandOption: true },
+  json: { type: "boolean" as const, describe: "Output session details as JSON", default: false },
   port: {
     type: "number" as const,
     alias: "p",
@@ -75,9 +67,7 @@ export const handler = async (argv: GetArgs): Promise<void> => {
         completedAt: session.endTime,
         result: session.results,
       };
-      const { unmount } = render(
-        <SessionDetailCommand session={sessionDetail} />,
-      );
+      const { unmount } = render(<SessionDetailCommand session={sessionDetail} />);
 
       // Give a moment for render then exit
       setTimeout(() => {
@@ -85,9 +75,7 @@ export const handler = async (argv: GetArgs): Promise<void> => {
       }, 100);
     }
   } catch (error) {
-    console.error(
-      `Error: ${error instanceof Error ? error.message : String(error)}`,
-    );
+    console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
     Deno.exit(1);
   }
 };
@@ -113,24 +101,16 @@ function SessionDetailCommand({ session }: { session: SessionDetail }) {
         Signal: <Text color="white">{session.signal || "manual"}</Text>
       </Text>
       <Text>
-        Started:{" "}
-        <Text color="white">
-          {new Date(session.startedAt).toLocaleString()}
-        </Text>
+        Started: <Text color="white">{new Date(session.startedAt).toLocaleString()}</Text>
       </Text>
       {session.completedAt && (
         <Text>
-          Completed:{" "}
-          <Text color="white">
-            {new Date(session.completedAt).toLocaleString()}
-          </Text>
+          Completed: <Text color="white">{new Date(session.completedAt).toLocaleString()}</Text>
         </Text>
       )}
       <Text>
         Duration:{" "}
-        <Text color="white">
-          {formatDuration(session.startedAt, session.completedAt)}
-        </Text>
+        <Text color="white">{formatDuration(session.startedAt, session.completedAt)}</Text>
       </Text>
 
       {session.agents && session.agents.length > 0 && (

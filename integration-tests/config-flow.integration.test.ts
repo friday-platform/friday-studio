@@ -30,138 +30,75 @@ Deno.test("Configuration should flow correctly from WorkspaceRuntime to Workspac
   const mergedConfig: MergedConfig = {
     workspace: {
       version: "1.0",
-      workspace: {
-        name: "Test Workspace",
-        description: "Integration test workspace",
-      },
+      workspace: { name: "Test Workspace", description: "Integration test workspace" },
       signals: {
         "test-signal": {
           description: "Test signal",
           provider: "http",
-          config: {
-            path: "/test-signal",
-          },
+          config: { path: "/test-signal" },
         },
       },
       jobs: {
         "test-job": {
           name: "test-job",
           description: "Test job",
-          execution: {
-            strategy: "sequential",
-            agents: ["test-agent"],
-          },
+          execution: { strategy: "sequential", agents: ["test-agent"] },
         },
       },
       tools: {
         mcp: {
-          client_config: {
-            timeout: {
-              progressTimeout: "30s",
-              maxTotalTimeout: "60s",
-            },
-          },
-          servers: {
-            filesystem: {
-              transport: {
-                type: "stdio",
-                command: "fs-server",
-              },
-            },
-          },
+          client_config: { timeout: { progressTimeout: "30s", maxTotalTimeout: "60s" } },
+          servers: { filesystem: { transport: { type: "stdio", command: "fs-server" } } },
         },
       },
     },
     atlas: {
       version: "1.0",
-      workspace: {
-        name: "Test Workspace",
-        description: "Integration test workspace",
-      },
+      workspace: { name: "Test Workspace", description: "Integration test workspace" },
       memory: {
         default: {
           enabled: true,
           storage: "filesystem",
           cognitive_loop: false,
-          retention: {
-            max_age_days: 30,
-            cleanup_interval_hours: 24,
-            max_entries: 1000,
-          },
+          retention: { max_age_days: 30, cleanup_interval_hours: 24, max_entries: 1000 },
         },
         agent: {
           enabled: true,
           scope: "workspace",
           include_in_context: true,
-          context_limits: {
-            relevant_memories: 10,
-            past_successes: 5,
-            past_failures: 5,
-          },
-          memory_types: {
-            working: { enabled: true },
-          },
+          context_limits: { relevant_memories: 10, past_successes: 5, past_failures: 5 },
+          memory_types: { working: { enabled: true } },
         },
         session: {
           enabled: true,
           scope: "session",
           include_in_context: true,
-          context_limits: {
-            relevant_memories: 5,
-            past_successes: 3,
-            past_failures: 2,
-          },
-          memory_types: {
-            episodic: { enabled: true },
-          },
+          context_limits: { relevant_memories: 5, past_successes: 3, past_failures: 2 },
+          memory_types: { episodic: { enabled: true } },
         },
         workspace: {
           enabled: true,
           scope: "workspace",
           include_in_context: false,
-          context_limits: {
-            relevant_memories: 20,
-            past_successes: 10,
-            past_failures: 10,
-          },
-          memory_types: {
-            semantic: { enabled: true },
-          },
+          context_limits: { relevant_memories: 20, past_successes: 10, past_failures: 10 },
+          memory_types: { semantic: { enabled: true } },
         },
       },
       supervisors: {
         workspace: {
           model: "gpt-4",
-          supervision: {
-            level: "standard",
-            cache_enabled: true,
-          },
-          prompts: {
-            system: "You are a workspace supervisor.",
-            analysis: "Analyze this signal",
-          },
+          supervision: { level: "standard", cache_enabled: true },
+          prompts: { system: "You are a workspace supervisor.", analysis: "Analyze this signal" },
         },
         session: {
           model: "gpt-4",
-          supervision: {
-            level: "standard",
-            cache_enabled: true,
-          },
-          prompts: {
-            system: "You are a session supervisor.",
-            planning: "Create execution plan",
-          },
+          supervision: { level: "standard", cache_enabled: true },
+          prompts: { system: "You are a session supervisor.", planning: "Create execution plan" },
         },
         agent: {
           model: "gpt-4",
-          supervision: {
-            level: "minimal",
-            cache_enabled: false,
-          },
-          prompts: {
-            system: "You are an agent supervisor.",
-            analysis: "Assess safety",
-          },
+          supervision: { level: "minimal", cache_enabled: false },
+          prompts: { system: "You are an agent supervisor.", analysis: "Assess safety" },
         },
       },
     },
@@ -203,19 +140,13 @@ Deno.test("Configuration should flow correctly from WorkspaceSupervisor to Sessi
   // Mock WorkspaceSupervisor config
   const workspaceSupervisorConfig: WorkspaceSupervisorConfig = {
     workspaceId: "ws-test-123",
-    workspace: {
-      name: "Test Workspace",
-      description: "Test",
-    },
+    workspace: { name: "Test Workspace", description: "Test" },
     signals: {},
     jobs: {
       "test-job": {
         name: "test-job",
         description: "Test job",
-        execution: {
-          strategy: "sequential",
-          agents: ["agent-1", "agent-2"],
-        },
+        execution: { strategy: "sequential", agents: ["agent-1", "agent-2"] },
       },
     },
     memory: {
@@ -223,60 +154,33 @@ Deno.test("Configuration should flow correctly from WorkspaceSupervisor to Sessi
         enabled: true,
         storage: "filesystem",
         cognitive_loop: false,
-        retention: {
-          max_age_days: 30,
-          cleanup_interval_hours: 24,
-          max_entries: 1000,
-        },
+        retention: { max_age_days: 30, cleanup_interval_hours: 24, max_entries: 1000 },
       },
       agent: {
         enabled: true,
         scope: "workspace",
         include_in_context: true,
-        context_limits: {
-          relevant_memories: 10,
-          past_successes: 5,
-          past_failures: 5,
-        },
-        memory_types: {
-          working: { enabled: true },
-        },
+        context_limits: { relevant_memories: 10, past_successes: 5, past_failures: 5 },
+        memory_types: { working: { enabled: true } },
       },
       session: {
         enabled: true,
         scope: "session",
         include_in_context: true,
-        context_limits: {
-          relevant_memories: 5,
-          past_successes: 3,
-          past_failures: 2,
-        },
-        memory_types: {
-          episodic: { enabled: true },
-        },
+        context_limits: { relevant_memories: 5, past_successes: 3, past_failures: 2 },
+        memory_types: { episodic: { enabled: true } },
       },
       workspace: {
         enabled: true,
         scope: "workspace",
         include_in_context: false,
-        context_limits: {
-          relevant_memories: 20,
-          past_successes: 10,
-          past_failures: 10,
-        },
-        memory_types: {
-          semantic: { enabled: true },
-        },
+        context_limits: { relevant_memories: 20, past_successes: 10, past_failures: 10 },
+        memory_types: { semantic: { enabled: true } },
       },
     },
     tools: {
       mcp: {
-        client_config: {
-          timeout: {
-            progressTimeout: "30s",
-            maxTotalTimeout: "60s",
-          },
-        },
+        client_config: { timeout: { progressTimeout: "30s", maxTotalTimeout: "60s" } },
         servers: {
           filesystem: { transport: { type: "stdio", command: "fs-server" } },
           commands: { transport: { type: "stdio", command: "cmd-server" } },
@@ -302,10 +206,7 @@ Deno.test("Configuration should flow correctly from WorkspaceSupervisor to Sessi
       description: "System agent for scripts",
       type: "system",
       agent: "script-runner",
-      config: {
-        temperature: 0.5,
-        model: "gpt-4",
-      },
+      config: { temperature: 0.5, model: "gpt-4" },
     },
   };
 
@@ -341,10 +242,7 @@ Deno.test("Configuration should flow correctly from SessionSupervisor to AgentEx
     job: {
       name: "test-job",
       description: "Test",
-      execution: {
-        strategy: "sequential",
-        agents: ["agent-1"],
-      },
+      execution: { strategy: "sequential", agents: ["agent-1"] },
     },
     agents: {
       "agent-1": {
@@ -364,60 +262,33 @@ Deno.test("Configuration should flow correctly from SessionSupervisor to AgentEx
         enabled: true,
         storage: "filesystem",
         cognitive_loop: false,
-        retention: {
-          max_age_days: 30,
-          cleanup_interval_hours: 24,
-          max_entries: 1000,
-        },
+        retention: { max_age_days: 30, cleanup_interval_hours: 24, max_entries: 1000 },
       },
       agent: {
         enabled: true,
         scope: "workspace",
         include_in_context: true,
-        context_limits: {
-          relevant_memories: 10,
-          past_successes: 5,
-          past_failures: 5,
-        },
-        memory_types: {
-          working: { enabled: true },
-        },
+        context_limits: { relevant_memories: 10, past_successes: 5, past_failures: 5 },
+        memory_types: { working: { enabled: true } },
       },
       session: {
         enabled: true,
         scope: "session",
         include_in_context: true,
-        context_limits: {
-          relevant_memories: 5,
-          past_successes: 3,
-          past_failures: 2,
-        },
-        memory_types: {
-          episodic: { enabled: true },
-        },
+        context_limits: { relevant_memories: 5, past_successes: 3, past_failures: 2 },
+        memory_types: { episodic: { enabled: true } },
       },
       workspace: {
         enabled: true,
         scope: "workspace",
         include_in_context: false,
-        context_limits: {
-          relevant_memories: 20,
-          past_successes: 10,
-          past_failures: 10,
-        },
-        memory_types: {
-          semantic: { enabled: true },
-        },
+        context_limits: { relevant_memories: 20, past_successes: 10, past_failures: 10 },
+        memory_types: { semantic: { enabled: true } },
       },
     },
     tools: {
       mcp: {
-        client_config: {
-          timeout: {
-            progressTimeout: "30s",
-            maxTotalTimeout: "60s",
-          },
-        },
+        client_config: { timeout: { progressTimeout: "30s", maxTotalTimeout: "60s" } },
         servers: {
           filesystem: { transport: { type: "stdio", command: "fs-server" } },
           commands: { transport: { type: "stdio", command: "cmd-server" } },
@@ -477,10 +348,7 @@ Deno.test("AgentExecutePayload should validate correctly with Zod schema", () =>
   const minimalPayload = {
     agentId: "agent-2",
     input: null,
-    sessionContext: {
-      sessionId: "sess-789",
-      workspaceId: "ws-000",
-    },
+    sessionContext: { sessionId: "sess-789", workspaceId: "ws-000" },
   };
 
   const minimalResult = AgentExecutePayloadSchema.safeParse(minimalPayload);
@@ -491,27 +359,13 @@ Deno.test("AgentExecutePayload should reject invalid payloads", () => {
   // Missing required fields
   const invalidPayloads = [
     // Missing agentId
-    {
-      input: {},
-      sessionContext: { sessionId: "s1", workspaceId: "w1" },
-    },
+    { input: {}, sessionContext: { sessionId: "s1", workspaceId: "w1" } },
     // Missing sessionContext
-    {
-      agentId: "agent-1",
-      input: {},
-    },
+    { agentId: "agent-1", input: {} },
     // Missing sessionId in context
-    {
-      agentId: "agent-1",
-      input: {},
-      sessionContext: { workspaceId: "w1" },
-    },
+    { agentId: "agent-1", input: {}, sessionContext: { workspaceId: "w1" } },
     // Missing workspaceId in context
-    {
-      agentId: "agent-1",
-      input: {},
-      sessionContext: { sessionId: "s1" },
-    },
+    { agentId: "agent-1", input: {}, sessionContext: { sessionId: "s1" } },
   ];
 
   invalidPayloads.forEach((payload, index) => {
@@ -541,13 +395,15 @@ Deno.test("MCP tools should be normalized from array format to mcpServers", () =
   // After normalization (simulating config loader behavior)
   const normalizedAgent = {
     ...agentWithArrayTools,
-    mcpServers: agentWithArrayTools.type === "llm" && agentWithArrayTools.config
-      ? agentWithArrayTools.config.tools
-      : undefined,
-    tools: {
-      mcpServers: agentWithArrayTools.type === "llm" && agentWithArrayTools.config
+    mcpServers:
+      agentWithArrayTools.type === "llm" && agentWithArrayTools.config
         ? agentWithArrayTools.config.tools
         : undefined,
+    tools: {
+      mcpServers:
+        agentWithArrayTools.type === "llm" && agentWithArrayTools.config
+          ? agentWithArrayTools.config.tools
+          : undefined,
     },
   };
 
@@ -563,31 +419,11 @@ Deno.test("MCP tools configuration should pass through actor hierarchy", () => {
   // Start with workspace-level tools configuration
   const workspaceTools = {
     mcp: {
-      client_config: {
-        timeout: {
-          progressTimeout: "30s",
-          maxTotalTimeout: "60s",
-        },
-      },
+      client_config: { timeout: { progressTimeout: "30s", maxTotalTimeout: "60s" } },
       servers: {
-        filesystem: {
-          transport: {
-            type: "stdio",
-            command: "fs-server",
-          },
-        },
-        commands: {
-          transport: {
-            type: "stdio",
-            command: "cmd-server",
-          },
-        },
-        github: {
-          transport: {
-            type: "stdio",
-            command: "gh-server",
-          },
-        },
+        filesystem: { transport: { type: "stdio", command: "fs-server" } },
+        commands: { transport: { type: "stdio", command: "cmd-server" } },
+        github: { transport: { type: "stdio", command: "gh-server" } },
       },
     },
   };
@@ -606,9 +442,8 @@ Deno.test("MCP tools configuration should pass through actor hierarchy", () => {
   };
 
   // Simulate tool filtering for agent
-  const agentTools = agentConfig.type === "llm" && agentConfig.config
-    ? agentConfig.config.tools
-    : undefined;
+  const agentTools =
+    agentConfig.type === "llm" && agentConfig.config ? agentConfig.config.tools : undefined;
   const availableServers = workspaceTools.mcp.servers;
 
   // Agent should only have access to requested tools
@@ -667,13 +502,7 @@ Deno.test("Reasoning should be preserved through the actor chain", () => {
 
 Deno.test("Reasoning context should flow from signal to agent execution", () => {
   // Signal triggers workspace with initial context
-  const signal = {
-    type: "github-pr",
-    payload: {
-      action: "opened",
-      pr_number: 123,
-    },
-  };
+  const signal = { type: "github-pr", payload: { action: "opened", pr_number: 123 } };
 
   // WorkspaceSupervisor analyzes signal and adds reasoning
   const workspaceReasoning = "New PR needs code review and test validation";
@@ -786,10 +615,7 @@ Deno.test("Configuration types should prevent invalid assignments at compile tim
   // Valid configuration
   const validConfig: WorkspaceSupervisorConfig = {
     workspaceId: "ws-123",
-    workspace: {
-      name: "Valid Workspace",
-      description: "Valid description",
-    },
+    workspace: { name: "Valid Workspace", description: "Valid description" },
     signals: {},
     jobs: {},
   };

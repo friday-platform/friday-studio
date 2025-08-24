@@ -1,12 +1,12 @@
-import { stepCountIs, streamText } from "ai";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import type { WorkspaceConfig } from "@atlas/config";
-import { getWorkspaceManager } from "@atlas/workspace";
-import type { WorkspaceEntry } from "@atlas/workspace";
 import { logger } from "@atlas/logger";
+import type { WorkspaceEntry } from "@atlas/workspace";
+import { getWorkspaceManager } from "@atlas/workspace";
+import { stepCountIs, streamText } from "ai";
 import { WorkspaceBuilder } from "../workspace-creation/builder.ts";
-import { initializeUpdateBuilder, workspaceUpdateTools } from "./tools.ts";
 import SYSTEM_PROMPT from "./prompt.txt" with { type: "text" };
+import { initializeUpdateBuilder, workspaceUpdateTools } from "./tools.ts";
 
 interface AttemptResult {
   attempt: number;
@@ -25,9 +25,7 @@ export class WorkspaceUpdater {
   private attemptHistory: AttemptResult[] = [];
 
   constructor() {
-    this.anthropic = createAnthropic({
-      apiKey: Deno.env.get("ANTHROPIC_API_KEY"),
-    });
+    this.anthropic = createAnthropic({ apiKey: Deno.env.get("ANTHROPIC_API_KEY") });
   }
 
   async updateWorkspace(
@@ -92,11 +90,7 @@ export class WorkspaceUpdater {
           stopWhen: stepCountIs(40),
           temperature: this.getTemperatureForAttempt(attempt),
           maxRetries: 3, // Enable retries for API resilience (e.g., 529 errors)
-          providerOptions: {
-            anthropic: {
-              thinking: { type: "enabled", budgetTokens: 7000 },
-            },
-          },
+          providerOptions: { anthropic: { thinking: { type: "enabled", budgetTokens: 7000 } } },
           onChunk({ chunk }) {
             if (chunk.type === "tool-call") {
               logger.debug(`Tool call: ${chunk.toolName}`);
@@ -142,18 +136,12 @@ export class WorkspaceUpdater {
 
         // Record validation failure
         logger.debug(`Attempt ${attempt} failed validation: ${validation.errors.join(", ")}`);
-        this.attemptHistory.push({
-          attempt,
-          errors: validation.errors,
-        });
+        this.attemptHistory.push({ attempt, errors: validation.errors });
       } catch (error) {
         // Record execution error
         const errorMessage = error instanceof Error ? error.message : String(error);
         logger.debug(`Attempt ${attempt} threw error: ${errorMessage}`);
-        this.attemptHistory.push({
-          attempt,
-          error: errorMessage,
-        });
+        this.attemptHistory.push({ attempt, error: errorMessage });
       }
     }
 
@@ -311,8 +299,7 @@ Begin the update process now.`;
     if (attempt === 1) {
       reasoning += `✅ **Success**: Updated on first attempt\n\n`;
     } else {
-      reasoning +=
-        `✅ **Success**: Updated after ${attempt} attempts (previous attempts had validation issues)\n\n`;
+      reasoning += `✅ **Success**: Updated after ${attempt} attempts (previous attempts had validation issues)\n\n`;
     }
 
     if (toolCalls && toolCalls.length > 0) {
@@ -333,9 +320,9 @@ Begin the update process now.`;
   private buildFailureMessage(maxAttempts: number): string {
     const allErrors = this.attemptHistory.flatMap((h) => h.errors || (h.error ? [h.error] : []));
 
-    return `Failed to update workspace after ${maxAttempts} attempts. Errors encountered:\n${
-      allErrors.map((error, i) => `${i + 1}. ${error}`).join("\n")
-    }`;
+    return `Failed to update workspace after ${maxAttempts} attempts. Errors encountered:\n${allErrors
+      .map((error, i) => `${i + 1}. ${error}`)
+      .join("\n")}`;
   }
 
   // Helper method to get user-friendly error for the main tool

@@ -6,16 +6,11 @@
  */
 
 import { assert, assertEquals } from "@std/assert";
-import { CronManager, type CronTimerConfig } from "../mod.ts";
 import { MemoryKVStorage } from "../../../src/core/storage/memory-kv-storage.ts";
+import { CronManager, type CronTimerConfig } from "../mod.ts";
 
 // Mock logger for testing
-const mockLogger = {
-  info: () => {},
-  warn: () => {},
-  error: () => {},
-  debug: () => {},
-};
+const mockLogger = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} };
 
 function createTestTimerConfig(
   workspaceId = "test-workspace",

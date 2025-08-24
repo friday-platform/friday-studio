@@ -54,11 +54,7 @@ export function GitDiff({ diffContent, startingLine }: GitDiffProps) {
       });
       currentLineNumber++;
     } else {
-      diffLines.push({
-        type: "unchanged",
-        content: String(line),
-        lineNumber: currentLineNumber,
-      });
+      diffLines.push({ type: "unchanged", content: String(line), lineNumber: currentLineNumber });
       currentLineNumber++;
     }
   }
@@ -70,9 +66,7 @@ export function GitDiff({ diffContent, startingLine }: GitDiffProps) {
           <Box key={index} flexDirection="row" flexShrink={0}>
             {/* Line number column */}
             <Box width={4} justifyContent="flex-end" marginRight={1}>
-              <Text dimColor>
-                {diffLine.lineNumber.toString().padStart(3, " ")}
-              </Text>
+              <Text dimColor>{diffLine.lineNumber.toString().padStart(3, " ")}</Text>
             </Box>
 
             {/* Diff content with appropriate styling */}

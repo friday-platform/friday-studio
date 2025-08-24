@@ -7,9 +7,9 @@
 
 import type { IAtlasScope } from "../../../src/types/core.ts";
 import {
-  CoALAMemoryEntry,
-  CoALAMemoryManager,
-  CoALAMemoryQuery,
+  type CoALAMemoryEntry,
+  type CoALAMemoryManager,
+  type CoALAMemoryQuery,
   CoALAMemoryType,
 } from "./coala-memory.ts";
 
@@ -26,7 +26,8 @@ export interface CrossScopeMemorySync {
 }
 
 export class WorkspaceMemoryConsolidator
-  implements MemoryConsolidationStrategy, CrossScopeMemorySync {
+  implements MemoryConsolidationStrategy, CrossScopeMemorySync
+{
   private workspaceMemory: CoALAMemoryManager;
   private sessionMemories: Map<string, CoALAMemoryManager> = new Map();
 
@@ -40,9 +41,11 @@ export class WorkspaceMemoryConsolidator
     // 1. Frequently accessed (>5 times)
     // 2. High relevance (>0.7)
     // 3. Cross-session relevant (tagged as 'workspace-relevant')
-    return memory.accessCount > 5 ||
+    return (
+      memory.accessCount > 5 ||
       memory.relevanceScore > 0.7 ||
-      memory.tags.includes("workspace-relevant");
+      memory.tags.includes("workspace-relevant")
+    );
   }
 
   getConsolidationTarget(memory: CoALAMemoryEntry): CoALAMemoryType {
@@ -82,18 +85,14 @@ export class WorkspaceMemoryConsolidator
         tags: [...memory.tags, "consolidated", `from-${childScope.id}`],
       };
 
-      this.workspaceMemory.rememberWithMetadata(
-        consolidatedMemory.id,
-        consolidatedMemory.content,
-        {
-          memoryType: consolidatedMemory.memoryType,
-          tags: consolidatedMemory.tags,
-          relevanceScore: consolidatedMemory.relevanceScore,
-          associations: consolidatedMemory.associations,
-          confidence: consolidatedMemory.confidence,
-          decayRate: consolidatedMemory.decayRate,
-        },
-      );
+      this.workspaceMemory.rememberWithMetadata(consolidatedMemory.id, consolidatedMemory.content, {
+        memoryType: consolidatedMemory.memoryType,
+        tags: consolidatedMemory.tags,
+        relevanceScore: consolidatedMemory.relevanceScore,
+        associations: consolidatedMemory.associations,
+        confidence: consolidatedMemory.confidence,
+        decayRate: consolidatedMemory.decayRate,
+      });
     }
   }
 
@@ -125,8 +124,7 @@ export class WorkspaceMemoryConsolidator
       }
 
       // Share episodic memories if they're tagged as shareable
-      return memory.tags.includes("shareable") ||
-        memory.tags.includes(`shared:${targetScope.id}`);
+      return memory.tags.includes("shareable") || memory.tags.includes(`shared:${targetScope.id}`);
     });
   }
 
@@ -139,9 +137,7 @@ export class WorkspaceMemoryConsolidator
     const sessionMemory = this.sessionMemories.get(sessionId);
     if (sessionMemory) {
       // Consolidate important memories before cleanup
-      const importantMemories = sessionMemory.queryMemories({
-        minRelevance: 0.6,
-      });
+      const importantMemories = sessionMemory.queryMemories({ minRelevance: 0.6 });
 
       if (importantMemories.length > 0) {
         this.syncUp({ id: sessionId } as IAtlasScope, importantMemories);
@@ -208,18 +204,14 @@ export class WorkspaceMemoryConsolidator
     const patterns = this.detectPatterns();
     for (const pattern of patterns) {
       if (!this.workspaceMemory.recall(pattern.id)) {
-        this.workspaceMemory.rememberWithMetadata(
-          pattern.id,
-          pattern.content,
-          {
-            memoryType: pattern.memoryType,
-            tags: pattern.tags,
-            relevanceScore: pattern.relevanceScore,
-            associations: pattern.associations,
-            confidence: pattern.confidence,
-            decayRate: pattern.decayRate,
-          },
-        );
+        this.workspaceMemory.rememberWithMetadata(pattern.id, pattern.content, {
+          memoryType: pattern.memoryType,
+          tags: pattern.tags,
+          relevanceScore: pattern.relevanceScore,
+          associations: pattern.associations,
+          confidence: pattern.confidence,
+          decayRate: pattern.decayRate,
+        });
       }
     }
 

@@ -16,11 +16,7 @@ export interface AtlasClientConfig {
 export function createAtlasClient(config: AtlasClientConfig = {}) {
   const baseUrl = config.baseUrl || getAtlasDaemonUrl();
 
-  return createClient<paths>({
-    baseUrl,
-    headers: config.headers,
-    ...config.fetchOptions,
-  });
+  return createClient<paths>({ baseUrl, headers: config.headers, ...config.fetchOptions });
 }
 
 export type AtlasClient = ReturnType<typeof createAtlasClient>;

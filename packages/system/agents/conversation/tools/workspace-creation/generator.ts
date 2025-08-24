@@ -1,10 +1,10 @@
-import { stepCountIs, streamText } from "ai";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import type { WorkspaceConfig } from "@atlas/config";
-import { workspaceBuilder, workspaceBuilderTools } from "./tools.ts";
-import SYSTEM_PROMPT from "./prompt.txt" with { type: "text" };
-import type { WorkspaceRequirements } from "./generation.ts";
 import { logger } from "@atlas/logger";
+import { stepCountIs, streamText } from "ai";
+import type { WorkspaceRequirements } from "./generation.ts";
+import SYSTEM_PROMPT from "./prompt.txt" with { type: "text" };
+import { workspaceBuilder, workspaceBuilderTools } from "./tools.ts";
 
 interface AttemptResult {
   attempt: number;
@@ -22,9 +22,7 @@ export class WorkspaceGenerator {
   private attemptHistory: AttemptResult[] = [];
 
   constructor() {
-    this.anthropic = createAnthropic({
-      apiKey: Deno.env.get("ANTHROPIC_API_KEY"),
-    });
+    this.anthropic = createAnthropic({ apiKey: Deno.env.get("ANTHROPIC_API_KEY") });
   }
 
   async generateWorkspace(
@@ -69,11 +67,7 @@ export class WorkspaceGenerator {
           stopWhen: stepCountIs(60),
           temperature: this.getTemperatureForAttempt(attempt),
           maxRetries: 3, // Enable retries for API resilience (e.g., 529 errors)
-          providerOptions: {
-            anthropic: {
-              thinking: { type: "enabled", budgetTokens: 7000 },
-            },
-          },
+          providerOptions: { anthropic: { thinking: { type: "enabled", budgetTokens: 7000 } } },
           onChunk({ chunk }) {
             if (chunk.type === "tool-call") {
               logger.debug(`Tool call: ${chunk.toolName}`);
@@ -100,7 +94,9 @@ export class WorkspaceGenerator {
         // Check if we have minimum components for a functional workspace
         logger.debug("Analyzing generated workspace components");
         let hasMinimumComponents = false;
-        let signalCount = 0, agentCount = 0, jobCount = 0;
+        let signalCount = 0,
+          agentCount = 0,
+          jobCount = 0;
         try {
           const config = workspaceBuilder.exportConfig();
           signalCount = Object.keys(config.signals || {}).length;
@@ -120,13 +116,13 @@ export class WorkspaceGenerator {
 
         // Only validate if we have minimum components, otherwise force failure
         logger.debug("Running workspace validation");
-        const validation = hasMinimumComponents ? workspaceBuilder.validateWorkspace() : {
-          success: false,
-          errors: [
-            "Workspace incomplete - missing signals, agents, or jobs",
-          ],
-          warnings: [],
-        };
+        const validation = hasMinimumComponents
+          ? workspaceBuilder.validateWorkspace()
+          : {
+              success: false,
+              errors: ["Workspace incomplete - missing signals, agents, or jobs"],
+              warnings: [],
+            };
 
         if (validation.success) {
           logger.info(`Workspace generation attempt ${attempt} succeeded`);
@@ -148,18 +144,12 @@ export class WorkspaceGenerator {
 
         // Record validation failure
         logger.debug(`Attempt ${attempt} failed validation: ${validation.errors.join(", ")}`);
-        this.attemptHistory.push({
-          attempt,
-          errors: validation.errors,
-        });
+        this.attemptHistory.push({ attempt, errors: validation.errors });
       } catch (error) {
         // Record execution error
         const errorMessage = error instanceof Error ? error.message : String(error);
         logger.debug(`Attempt ${attempt} threw error: ${errorMessage}`);
-        this.attemptHistory.push({
-          attempt,
-          error: errorMessage,
-        });
+        this.attemptHistory.push({ attempt, error: errorMessage });
       }
     }
 
@@ -289,8 +279,7 @@ Begin construction now and call ALL necessary tools.`;
     if (attempt === 1) {
       reasoning += `✅ **Success**: Generated on first attempt\n\n`;
     } else {
-      reasoning +=
-        `✅ **Success**: Generated after ${attempt} attempts (previous attempts had validation issues)\n\n`;
+      reasoning += `✅ **Success**: Generated after ${attempt} attempts (previous attempts had validation issues)\n\n`;
     }
 
     if (toolCalls && toolCalls.length > 0) {
@@ -311,9 +300,9 @@ Begin construction now and call ALL necessary tools.`;
   private buildFailureMessage(maxAttempts: number): string {
     const allErrors = this.attemptHistory.flatMap((h) => h.errors || (h.error ? [h.error] : []));
 
-    return `Failed to generate valid workspace after ${maxAttempts} attempts. Errors encountered:\n${
-      allErrors.map((error, i) => `${i + 1}. ${error}`).join("\n")
-    }`;
+    return `Failed to generate valid workspace after ${maxAttempts} attempts. Errors encountered:\n${allErrors
+      .map((error, i) => `${i + 1}. ${error}`)
+      .join("\n")}`;
   }
 
   // Helper method to get user-friendly error for the main tool

@@ -24,7 +24,7 @@ class TestSecureLogger {
       const sensitiveKeys = ["token", "password", "key", "secret", "auth", "private"];
 
       if (Array.isArray(obj)) {
-        return obj.map((item) => this.sanitizeForLogging(item));
+        return obj.map((item) => TestSecureLogger.sanitizeForLogging(item));
       }
 
       const sanitized: Record<string, unknown> = {};
@@ -33,7 +33,7 @@ class TestSecureLogger {
         if (sensitiveKeys.some((sensitive) => keyLower.includes(sensitive))) {
           sanitized[key] = "[REDACTED]";
         } else {
-          sanitized[key] = this.sanitizeForLogging(value);
+          sanitized[key] = TestSecureLogger.sanitizeForLogging(value);
         }
       }
       return sanitized;
@@ -219,12 +219,7 @@ Deno.test("Security - Path traversal prevention", async (t) => {
 
 Deno.test("Security - Command injection prevention", async (t) => {
   await t.step("should accept whitelisted commands", () => {
-    const safeCommands = [
-      "kubectl",
-      "gcloud",
-      "/usr/bin/kubectl",
-      "/usr/local/bin/gcloud",
-    ];
+    const safeCommands = ["kubectl", "gcloud", "/usr/bin/kubectl", "/usr/local/bin/gcloud"];
 
     for (const command of safeCommands) {
       // Should not throw
@@ -233,14 +228,7 @@ Deno.test("Security - Command injection prevention", async (t) => {
   });
 
   await t.step("should reject unauthorized commands", () => {
-    const maliciousCommands = [
-      "rm",
-      "cat",
-      "curl",
-      "bash",
-      "/bin/rm",
-      "evil-script",
-    ];
+    const maliciousCommands = ["rm", "cat", "curl", "bash", "/bin/rm", "evil-script"];
 
     for (const command of maliciousCommands) {
       assertThrows(
@@ -253,11 +241,7 @@ Deno.test("Security - Command injection prevention", async (t) => {
   });
 
   await t.step("should validate safe command arguments", () => {
-    const safeArgs = [
-      ["config", "view", "--raw"],
-      ["get", "pods"],
-      ["--help"],
-    ];
+    const safeArgs = [["config", "view", "--raw"], ["get", "pods"], ["--help"]];
 
     for (const args of safeArgs) {
       // Should not throw
@@ -286,13 +270,7 @@ Deno.test("Security - Command injection prevention", async (t) => {
 
 Deno.test("Security - Environment variable validation", async (t) => {
   await t.step("should accept valid environment variable names", () => {
-    const validNames = [
-      "KUBECONFIG",
-      "MY_CUSTOM_VAR",
-      "API_TOKEN",
-      "_PRIVATE_VAR",
-      "VAR123",
-    ];
+    const validNames = ["KUBECONFIG", "MY_CUSTOM_VAR", "API_TOKEN", "_PRIVATE_VAR", "VAR123"];
 
     for (const name of validNames) {
       // Should not throw

@@ -3,6 +3,7 @@
  * Implements MCP protocol using the official TypeScript SDK
  */
 
+import { logger } from "@atlas/logger";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { CallToolResultSchema, ListToolsResultSchema } from "@modelcontextprotocol/sdk/types.js";
@@ -18,7 +19,6 @@ import type {
   RemoteExecutionResult,
   RemoteMessagePart,
 } from "../../../../src/core/agents/remote/types.ts";
-import { logger } from "@atlas/logger";
 
 export interface MCPAdapterConfig extends BaseRemoteAdapterConfig {
   timeout_ms?: number;
@@ -35,26 +35,17 @@ export class MCPAdapter extends BaseRemoteAdapter {
   private mcpConfig: MCPAdapterConfig;
   private mcpLogger = logger.child({ component: "MCPAdapter" });
   private connected = false;
-  private tools: Array<{
-    name: string;
-    description?: string;
-    inputSchema?: unknown;
-  }> = [];
+  private tools: Array<{ name: string; description?: string; inputSchema?: unknown }> = [];
 
   constructor(config: MCPAdapterConfig) {
     super(config);
     this.mcpConfig = config;
 
     // Create MCP client
-    this.client = new Client({
-      name: "atlas-mcp-client",
-      version: "1.0.0",
-    });
+    this.client = new Client({ name: "atlas-mcp-client", version: "1.0.0" });
 
     // Create HTTP transport
-    this.transport = new StreamableHTTPClientTransport(
-      new URL(config.connection.endpoint),
-    );
+    this.transport = new StreamableHTTPClientTransport(new URL(config.connection.endpoint));
   }
 
   async connect(): Promise<void> {
@@ -91,10 +82,7 @@ export class MCPAdapter extends BaseRemoteAdapter {
           capabilities: this.tools.map((t) => t.name),
           supported_modes: ["sync"],
           metadata: {
-            tools: this.tools.map((t) => ({
-              name: t.name,
-              description: t.description,
-            })),
+            tools: this.tools.map((t) => ({ name: t.name, description: t.description })),
             endpoint: this.mcpConfig.connection.endpoint,
             protocol: "mcp",
           },
@@ -102,9 +90,7 @@ export class MCPAdapter extends BaseRemoteAdapter {
       ];
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      this.mcpLogger.error("Failed to discover MCP agents", {
-        error: errorMessage,
-      });
+      this.mcpLogger.error("Failed to discover MCP agents", { error: errorMessage });
       throw new Error(`MCP discovery failed: ${errorMessage}`);
     }
   }
@@ -118,9 +104,7 @@ export class MCPAdapter extends BaseRemoteAdapter {
     return agent;
   }
 
-  async executeAgent(
-    request: RemoteExecutionRequest,
-  ): Promise<RemoteExecutionResult> {
+  async executeAgent(request: RemoteExecutionRequest): Promise<RemoteExecutionResult> {
     await this.connect();
 
     const startTime = performance.now();
@@ -130,17 +114,11 @@ export class MCPAdapter extends BaseRemoteAdapter {
       const toolCall = this.parseToolCall(request.input);
 
       // Check tool filtering
-      if (
-        this.mcpConfig.allowed_tools &&
-        !this.mcpConfig.allowed_tools.includes(toolCall.name)
-      ) {
+      if (this.mcpConfig.allowed_tools && !this.mcpConfig.allowed_tools.includes(toolCall.name)) {
         throw new Error(`Tool '${toolCall.name}' not in allowed tools list`);
       }
 
-      if (
-        this.mcpConfig.denied_tools &&
-        this.mcpConfig.denied_tools.includes(toolCall.name)
-      ) {
+      if (this.mcpConfig.denied_tools && this.mcpConfig.denied_tools.includes(toolCall.name)) {
         throw new Error(`Tool '${toolCall.name}' is denied by configuration`);
       }
 
@@ -150,13 +128,7 @@ export class MCPAdapter extends BaseRemoteAdapter {
       }
 
       const result = await this.client.request(
-        {
-          method: "tools/call",
-          params: {
-            name: toolCall.name,
-            arguments: toolCall.arguments,
-          },
-        },
+        { method: "tools/call", params: { name: toolCall.name, arguments: toolCall.arguments } },
         CallToolResultSchema,
       );
 
@@ -177,9 +149,7 @@ export class MCPAdapter extends BaseRemoteAdapter {
           agent_version: "1.0.0",
           session_id: request.sessionId,
           model_used: toolCall.name,
-          performance: {
-            processing_time_ms: executionTime,
-          },
+          performance: { processing_time_ms: executionTime },
         },
       };
     } catch (error) {
@@ -200,9 +170,7 @@ export class MCPAdapter extends BaseRemoteAdapter {
         metadata: {
           execution_time_ms: executionTime,
           session_id: request.sessionId,
-          performance: {
-            processing_time_ms: executionTime,
-          },
+          performance: { processing_time_ms: executionTime },
         },
       };
     }
@@ -226,21 +194,14 @@ export class MCPAdapter extends BaseRemoteAdapter {
       };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      yield {
-        type: "error",
-        error: errorMessage,
-      };
+      yield { type: "error", error: errorMessage };
     }
   }
 
   cancelExecution(executionId: string): Promise<void> {
     // MCP doesn't have built-in cancellation support
-    this.mcpLogger.warn("MCP execution cancellation not supported", {
-      executionId,
-    });
-    return Promise.reject(
-      new Error("Execution cancellation not supported by MCP protocol"),
-    );
+    this.mcpLogger.warn("MCP execution cancellation not supported", { executionId });
+    return Promise.reject(new Error("Execution cancellation not supported by MCP protocol"));
   }
 
   resumeExecution(
@@ -248,12 +209,8 @@ export class MCPAdapter extends BaseRemoteAdapter {
     _response: string | RemoteMessagePart[],
   ): Promise<RemoteExecutionResult> {
     // MCP doesn't support resuming executions
-    this.mcpLogger.warn("MCP execution resumption not supported", {
-      executionId,
-    });
-    return Promise.reject(
-      new Error("Execution resumption not supported by MCP protocol"),
-    );
+    this.mcpLogger.warn("MCP execution resumption not supported", { executionId });
+    return Promise.reject(new Error("Execution resumption not supported by MCP protocol"));
   }
 
   async healthCheck(): Promise<HealthStatus> {
@@ -262,13 +219,7 @@ export class MCPAdapter extends BaseRemoteAdapter {
       await this.connect();
 
       // Simple health check by listing tools
-      await this.client.request(
-        {
-          method: "tools/list",
-          params: {},
-        },
-        ListToolsResultSchema,
-      );
+      await this.client.request({ method: "tools/list", params: {} }, ListToolsResultSchema);
 
       const latency = performance.now() - startTime;
 
@@ -280,24 +231,15 @@ export class MCPAdapter extends BaseRemoteAdapter {
       };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      this.mcpLogger.error("MCP health check failed", {
-        error: errorMessage,
-      });
-      return {
-        status: "unhealthy",
-        error: errorMessage,
-        last_check: new Date(),
-      };
+      this.mcpLogger.error("MCP health check failed", { error: errorMessage });
+      return { status: "unhealthy", error: errorMessage, last_check: new Date() };
     }
   }
 
   private async loadTools(): Promise<void> {
     try {
       const toolsResult = await this.client.request(
-        {
-          method: "tools/list",
-          params: {},
-        },
+        { method: "tools/list", params: {} },
         ListToolsResultSchema,
       );
 
@@ -313,9 +255,7 @@ export class MCPAdapter extends BaseRemoteAdapter {
       });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      this.mcpLogger.error("Failed to load MCP tools", {
-        error: errorMessage,
-      });
+      this.mcpLogger.error("Failed to load MCP tools", { error: errorMessage });
       this.tools = [];
     }
   }
@@ -335,10 +275,7 @@ export class MCPAdapter extends BaseRemoteAdapter {
       };
     } catch {
       // Fallback: treat entire input as tool name
-      return {
-        name: inputStr.trim(),
-        arguments: {},
-      };
+      return { name: inputStr.trim(), arguments: {} };
     }
   }
 
@@ -351,9 +288,7 @@ export class MCPAdapter extends BaseRemoteAdapter {
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      this.mcpLogger.error("Error during MCP adapter disposal", {
-        error: errorMessage,
-      });
+      this.mcpLogger.error("Error during MCP adapter disposal", { error: errorMessage });
     }
   }
 }

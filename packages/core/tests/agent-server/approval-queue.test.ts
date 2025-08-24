@@ -3,16 +3,6 @@
  * they're suspended until a human supervisor makes an approval decision.
  */
 
-import { assert, assertEquals, assertExists } from "@std/assert";
-import { afterEach, beforeEach, describe, it } from "@std/testing/bdd";
-import { AgentExecutionManager } from "../../src/agent-server/agent-execution-manager.ts";
-import {
-  type ApprovalDecision,
-  createAgentExecutionMachine,
-} from "../../src/agent-server/agent-execution-machine.ts";
-import { createMockContextBuilder } from "./test-helpers.ts";
-import { ApprovalQueueManager } from "../../src/agent-server/approval-queue-manager.ts";
-import { createActor } from "xstate";
 import {
   type AgentContext,
   type AgentSessionData,
@@ -20,6 +10,16 @@ import {
   AwaitingSupervisorDecision,
 } from "@atlas/agent-sdk";
 import { createLogger } from "@atlas/logger";
+import { assert, assertEquals, assertExists } from "@std/assert";
+import { afterEach, beforeEach, describe, it } from "@std/testing/bdd";
+import { createActor } from "xstate";
+import {
+  type ApprovalDecision,
+  createAgentExecutionMachine,
+} from "../../src/agent-server/agent-execution-machine.ts";
+import { AgentExecutionManager } from "../../src/agent-server/agent-execution-manager.ts";
+import { ApprovalQueueManager } from "../../src/agent-server/approval-queue-manager.ts";
+import { createMockContextBuilder } from "./test-helpers.ts";
 
 Deno.env.set("DENO_TESTING", "true");
 
@@ -30,11 +30,7 @@ class ApprovalRequestAgent implements AtlasAgent {
     name: "Approval Agent",
     version: "1.0.0",
     description: "Agent that requests approval",
-    expertise: {
-      domains: ["testing"],
-      capabilities: ["approval"],
-      examples: ["test approval"],
-    },
+    expertise: { domains: ["testing"], capabilities: ["approval"], examples: ["test approval"] },
   };
 
   shouldRequestApproval = false;
@@ -124,11 +120,7 @@ describe("Approval Queue Flow", () => {
     };
 
     try {
-      await executionManager.executeAgent(
-        "approval-agent",
-        "Do something dangerous",
-        sessionData,
-      );
+      await executionManager.executeAgent("approval-agent", "Do something dangerous", sessionData);
 
       assert(false, "Expected AwaitingSupervisorDecision to be thrown");
     } catch (error) {
@@ -158,11 +150,7 @@ describe("Approval Queue Flow", () => {
 
     // First execution - trigger approval
     try {
-      await executionManager.executeAgent(
-        "approval-agent",
-        "Do something dangerous",
-        sessionData,
-      );
+      await executionManager.executeAgent("approval-agent", "Do something dangerous", sessionData);
     } catch (error) {
       assert(error instanceof AwaitingSupervisorDecision);
     }
@@ -172,10 +160,7 @@ describe("Approval Queue Flow", () => {
 
     // Resume with approval
     mockAgent.shouldRequestApproval = false; // Don't request approval on resume
-    const decision: ApprovalDecision = {
-      approved: true,
-      reason: "Approved for testing",
-    };
+    const decision: ApprovalDecision = { approved: true, reason: "Approved for testing" };
 
     const result = await executionManager.resumeAgentWithApproval("test-approval-id", decision);
     assertEquals(result, { result: "Executed without approval" });
@@ -195,21 +180,14 @@ describe("Approval Queue Flow", () => {
 
     // First execution - trigger approval
     try {
-      await executionManager.executeAgent(
-        "approval-agent",
-        "Do something dangerous",
-        sessionData,
-      );
+      await executionManager.executeAgent("approval-agent", "Do something dangerous", sessionData);
     } catch (error) {
       assert(error instanceof AwaitingSupervisorDecision);
     }
 
     // Resume with rejection
     mockAgent.shouldRequestApproval = false; // Don't request approval on resume
-    const decision: ApprovalDecision = {
-      approved: false,
-      reason: "Too risky for production",
-    };
+    const decision: ApprovalDecision = { approved: false, reason: "Too risky for production" };
 
     const result = await executionManager.resumeAgentWithApproval("test-approval-id", decision);
 
@@ -259,11 +237,7 @@ describe("Approval Queue Flow", () => {
 
     // First execution - first approval
     try {
-      await executionManager.executeAgent(
-        "approval-agent",
-        "Multi-step operation",
-        sessionData,
-      );
+      await executionManager.executeAgent("approval-agent", "Multi-step operation", sessionData);
     } catch (error) {
       assert(error instanceof AwaitingSupervisorDecision);
       if (error instanceof AwaitingSupervisorDecision) {

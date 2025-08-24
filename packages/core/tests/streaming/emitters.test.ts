@@ -126,9 +126,7 @@ Deno.test("Event Collection Without SSE", async (t) => {
     assertEquals(collectedEvents[8].type, "finish");
 
     // This is how the agent-execution-machine packages events
-    const resultMetadata = {
-      streamEvents: collectedEvents,
-    };
+    const resultMetadata = { streamEvents: collectedEvents };
 
     assertExists(resultMetadata.streamEvents);
     assertEquals(resultMetadata.streamEvents.length, 9);

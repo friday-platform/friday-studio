@@ -1,10 +1,10 @@
-import { spinner } from "../../utils/prompts.tsx";
-import { Box, render, Text } from "ink";
-import React from "react";
-import { YargsInstance } from "../../utils/yargs.ts";
-import { getAtlasClient } from "@atlas/client";
-import type { LibraryStats } from "@atlas/client";
 import process from "node:process";
+import type { LibraryStats } from "@atlas/client";
+import { getAtlasClient } from "@atlas/client";
+import { Box, render, Text } from "ink";
+import type React from "react";
+import { spinner } from "../../utils/prompts.tsx";
+import type { YargsInstance } from "../../utils/yargs.ts";
 
 interface StatsArgs {
   json: boolean;
@@ -16,17 +16,8 @@ export const desc = "Show library statistics";
 
 export function builder(y: YargsInstance) {
   return y
-    .option("json", {
-      type: "boolean",
-      description: "Output as JSON",
-      default: false,
-    })
-    .option("port", {
-      alias: "p",
-      type: "number",
-      description: "Server port",
-      default: 8080,
-    });
+    .option("json", { type: "boolean", description: "Output as JSON", default: false })
+    .option("port", { alias: "p", type: "number", description: "Server port", default: 8080 });
 }
 
 // Type already imported from client
@@ -51,9 +42,7 @@ export async function handler(argv: StatsArgs) {
     setTimeout(() => unmount(), 100);
   } catch (error) {
     s.stop("Failed to fetch statistics");
-    console.error(
-      `Error: ${error instanceof Error ? error.message : String(error)}`,
-    );
+    console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
     process.exit(1);
   }
 }
@@ -68,7 +57,7 @@ const StatsDisplay: React.FC<StatsDisplayProps> = ({ stats }) => {
     const k = 1024;
     const sizes = ["B", "KB", "MB", "GB", "TB"];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+    return parseFloat((bytes / k ** i).toFixed(2)) + " " + sizes[i];
   };
 
   const formatPercentage = (value: number): string => {
@@ -96,9 +85,7 @@ const StatsDisplay: React.FC<StatsDisplayProps> = ({ stats }) => {
               <Text>/ {formatBytes(stats.storage_stats.limit_bytes)}</Text>
             )}
             {stats.storage_stats.percentage_used !== undefined && (
-              <Text>
-                ({formatPercentage(stats.storage_stats.percentage_used)})
-              </Text>
+              <Text>({formatPercentage(stats.storage_stats.percentage_used)})</Text>
             )}
           </Text>
         </Box>

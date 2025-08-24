@@ -3,17 +3,17 @@
  * This demonstrates how the new schemas integrate with the configuration loading system
  */
 
-import { z } from "zod/v4";
 import {
   AtlasConfigSchema,
-  JobSpecificationSchema,
-  MergedConfig,
+  type JobSpecificationSchema,
+  type MergedConfig,
   validateSignalPayload,
-  WorkspaceAgentConfigSchema,
+  type WorkspaceAgentConfigSchema,
   WorkspaceConfigSchema,
-  WorkspaceSignalConfigSchema,
+  type WorkspaceSignalConfigSchema,
 } from "@atlas/config";
 import type { ConfigurationAdapter } from "@atlas/storage";
+import { z } from "zod/v4";
 
 /**
  * Configuration loader v2 with improved type safety
@@ -30,7 +30,7 @@ export class ConfigLoader {
   async loadWorkspace(): Promise<z.infer<typeof WorkspaceConfigSchema>> {
     const configPath = `${this.workspacePath}/workspace.yml`;
 
-    if (!await this.adapter.exists(configPath)) {
+    if (!(await this.adapter.exists(configPath))) {
       throw new Error(`Workspace configuration not found at ${configPath}`);
     }
 
@@ -39,10 +39,7 @@ export class ConfigLoader {
     // Parse with comprehensive validation
     const result = WorkspaceConfigSchema.safeParse(rawConfig);
     if (!result.success) {
-      throw new ConfigValidationError(
-        "Workspace configuration validation failed",
-        result.error,
-      );
+      throw new ConfigValidationError("Workspace configuration validation failed", result.error);
     }
 
     return result.data;
@@ -54,7 +51,7 @@ export class ConfigLoader {
   async loadAtlas(): Promise<z.infer<typeof AtlasConfigSchema> | null> {
     const configPath = `${this.workspacePath}/atlas.yml`;
 
-    if (!await this.adapter.exists(configPath)) {
+    if (!(await this.adapter.exists(configPath))) {
       return null; // Atlas config is optional
     }
 
@@ -68,10 +65,7 @@ export class ConfigLoader {
     // Parse with comprehensive validation
     const result = AtlasConfigSchema.safeParse(rawConfig);
     if (!result.success) {
-      throw new ConfigValidationError(
-        "Atlas configuration validation failed",
-        result.error,
-      );
+      throw new ConfigValidationError("Atlas configuration validation failed", result.error);
     }
 
     return result.data;
@@ -81,15 +75,9 @@ export class ConfigLoader {
    * Load both workspace.yml and atlas.yml, return them as separate configurations
    */
   async load(): Promise<MergedConfig> {
-    const [workspace, atlas] = await Promise.all([
-      this.loadWorkspace(),
-      this.loadAtlas(),
-    ]);
+    const [workspace, atlas] = await Promise.all([this.loadWorkspace(), this.loadAtlas()]);
 
-    const config: MergedConfig = {
-      atlas,
-      workspace,
-    };
+    const config: MergedConfig = { atlas, workspace };
 
     // Validate the configuration
     this.validateMergedConfig(config);
@@ -122,9 +110,7 @@ export class ConfigLoader {
     // System signals should only be in system workspaces
     for (const [name, signal] of Object.entries(allSignals)) {
       if (signal.provider === "system" && !this.isSystemWorkspace(config)) {
-        throw new Error(
-          `System signal '${name}' can only be used in system workspaces`,
-        );
+        throw new Error(`System signal '${name}' can only be used in system workspaces`);
       }
     }
 
@@ -133,9 +119,7 @@ export class ConfigLoader {
       for (const agent of job.execution.agents) {
         const agentId = typeof agent === "string" ? agent : agent.id;
         if (!allAgents[agentId]) {
-          throw new Error(
-            `Job '${jobName}' references undefined agent '${agentId}'`,
-          );
+          throw new Error(`Job '${jobName}' references undefined agent '${agentId}'`);
         }
       }
     }
@@ -145,9 +129,7 @@ export class ConfigLoader {
       if (job.triggers) {
         for (const trigger of job.triggers) {
           if (!allSignals[trigger.signal]) {
-            throw new Error(
-              `Job '${jobName}' references undefined signal '${trigger.signal}'`,
-            );
+            throw new Error(`Job '${jobName}' references undefined signal '${trigger.signal}'`);
           }
         }
       }
@@ -159,8 +141,10 @@ export class ConfigLoader {
    */
   private isSystemWorkspace(config: MergedConfig): boolean {
     // System workspaces are identified by their path or if it's the atlas platform
-    return this.workspacePath.includes("@atlas/system") ||
-      config.workspace.workspace.id === "atlas-platform";
+    return (
+      this.workspacePath.includes("@atlas/system") ||
+      config.workspace.workspace.id === "atlas-platform"
+    );
   }
 
   /**
@@ -168,8 +152,7 @@ export class ConfigLoader {
    */
   validateSignalPayload(signalName: string, payload: unknown, config: MergedConfig): void {
     // Check both atlas and workspace for the signal
-    const signal = config.workspace.signals?.[signalName] ||
-      config.atlas?.signals?.[signalName];
+    const signal = config.workspace.signals?.[signalName] || config.atlas?.signals?.[signalName];
 
     if (!signal) {
       throw new Error(`Unknown signal: ${signalName}`);

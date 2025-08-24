@@ -1,5 +1,5 @@
-import { formatSessionForJson, type Session } from "./session-list-component.tsx";
 import { AtlasApiError, getAtlasClient, type SessionInfo } from "@atlas/client";
+import { formatSessionForJson, type Session } from "./session-list-component.tsx";
 
 export interface SessionFetchOptions {
   workspace?: string;
@@ -33,26 +33,24 @@ export async function fetchSessions(
     const sessionInfos = await client.listSessions();
 
     // Convert SessionInfo[] to Session[] format expected by the UI
-    const sessions = sessionInfos.map((s: SessionInfo): Session => ({
-      id: s.id,
-      workspaceName: s.workspaceId, // Map workspaceId to workspaceName
-      signal: s.signal,
-      status: s.status,
-      startedAt: s.startTime,
-      completedAt: s.endTime,
-      // Note: SessionInfo doesn't have agents info, so we'll omit it
-    }));
+    const sessions = sessionInfos.map(
+      (s: SessionInfo): Session => ({
+        id: s.id,
+        workspaceName: s.workspaceId, // Map workspaceId to workspaceName
+        signal: s.signal,
+        status: s.status,
+        startedAt: s.startTime,
+        completedAt: s.endTime,
+        // Note: SessionInfo doesn't have agents info, so we'll omit it
+      }),
+    );
 
     // Filter by workspace if specified
     const filteredSessions = options.workspace
       ? sessions.filter((s) => s.workspaceName === options.workspace)
       : sessions;
 
-    return {
-      success: true,
-      sessions,
-      filteredSessions,
-    };
+    return { success: true, sessions, filteredSessions };
   } catch (error) {
     if (error instanceof AtlasApiError) {
       // Handle AtlasApiError with status codes
@@ -65,18 +63,10 @@ export async function fetchSessions(
       }
 
       if (error.status >= 400 && error.status < 500) {
-        return {
-          success: false,
-          error: error.message,
-          reason: "api_error",
-        };
+        return { success: false, error: error.message, reason: "api_error" };
       }
 
-      return {
-        success: false,
-        error: error.message,
-        reason: "network_error",
-      };
+      return { success: false, error: error.message, reason: "network_error" };
     }
 
     if (error instanceof Error) {
@@ -100,25 +90,14 @@ export async function fetchSessions(
         };
       }
 
-      return {
-        success: false,
-        error: error.message,
-        reason: "network_error",
-      };
+      return { success: false, error: error.message, reason: "network_error" };
     }
 
-    return {
-      success: false,
-      error: String(error),
-      reason: "network_error",
-    };
+    return { success: false, error: String(error), reason: "network_error" };
   }
 }
 
 // Export formatted sessions for JSON output
 export function formatSessionsForJson(sessions: Session[]) {
-  return {
-    sessions: sessions.map(formatSessionForJson),
-    count: sessions.length,
-  };
+  return { sessions: sessions.map(formatSessionForJson), count: sessions.length };
 }

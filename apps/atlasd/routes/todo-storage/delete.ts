@@ -1,6 +1,6 @@
-import { daemonFactory } from "../../src/factory.ts";
 import { describeRoute, resolver, validator } from "hono-openapi";
 import { InMemoryTodoStorage } from "../../../../src/core/daemon-capabilities.ts";
+import { daemonFactory } from "../../src/factory.ts";
 import { deleteResponseSchema, errorResponseSchema, streamIdParamSchema } from "./schemas.ts";
 
 const deleteTodos = daemonFactory.createApp();
@@ -14,27 +14,15 @@ deleteTodos.delete(
     responses: {
       200: {
         description: "Todos deleted successfully",
-        content: {
-          "application/json": {
-            schema: resolver(deleteResponseSchema),
-          },
-        },
+        content: { "application/json": { schema: resolver(deleteResponseSchema) } },
       },
       404: {
         description: "Stream not found",
-        content: {
-          "application/json": {
-            schema: resolver(errorResponseSchema),
-          },
-        },
+        content: { "application/json": { schema: resolver(errorResponseSchema) } },
       },
       500: {
         description: "Internal server error",
-        content: {
-          "application/json": {
-            schema: resolver(errorResponseSchema),
-          },
-        },
+        content: { "application/json": { schema: resolver(errorResponseSchema) } },
       },
     },
   }),
@@ -50,10 +38,7 @@ deleteTodos.delete(
 
       storage.clearTodos(streamId);
 
-      return c.json({
-        success: true,
-        deleted: existed,
-      });
+      return c.json({ success: true, deleted: existed });
     } catch (error) {
       return c.json(
         { success: false, error: error instanceof Error ? error.message : String(error) },

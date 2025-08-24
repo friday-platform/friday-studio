@@ -2,8 +2,8 @@
 Deno.env.set("DENO_TESTING", "true");
 
 import { assertEquals, assertExists } from "@std/assert";
-import { VectorSearchLocalStorageAdapter } from "../../src/vector/vector-search-local.ts";
 import type { VectorEmbedding } from "../../src/types/vector-search.ts";
+import { VectorSearchLocalStorageAdapter } from "../../src/vector/vector-search-local.ts";
 
 // Helper function to create temporary directory for tests
 async function createTempDir(): Promise<string> {
@@ -110,9 +110,18 @@ Deno.test("VectorSearchLocalStorageAdapter - should filter by memory type", asyn
     });
 
     assertEquals(results.length, 2);
-    assertEquals(results.some((r) => r.id === "test1"), true);
-    assertEquals(results.some((r) => r.id === "test2"), true);
-    assertEquals(results.some((r) => r.id === "test3"), false);
+    assertEquals(
+      results.some((r) => r.id === "test1"),
+      true,
+    );
+    assertEquals(
+      results.some((r) => r.id === "test2"),
+      true,
+    );
+    assertEquals(
+      results.some((r) => r.id === "test3"),
+      false,
+    );
   } finally {
     await cleanupTempDir(tempDir);
   }
@@ -161,8 +170,14 @@ Deno.test("VectorSearchLocalStorageAdapter - should get embeddings by type", asy
 
     assertEquals(semanticEmbeddings.length, 2);
     assertEquals(episodicEmbeddings.length, 1);
-    assertEquals(semanticEmbeddings.some((e) => e.id === "test1"), true);
-    assertEquals(semanticEmbeddings.some((e) => e.id === "test2"), true);
+    assertEquals(
+      semanticEmbeddings.some((e) => e.id === "test1"),
+      true,
+    );
+    assertEquals(
+      semanticEmbeddings.some((e) => e.id === "test2"),
+      true,
+    );
     assertEquals(episodicEmbeddings[0].id, "test3");
   } finally {
     await cleanupTempDir(tempDir);

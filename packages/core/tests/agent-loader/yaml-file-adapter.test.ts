@@ -1,8 +1,8 @@
 import { assertEquals, assertExists, assertRejects } from "@std/assert";
+import { ensureDir } from "@std/fs";
+import { join } from "@std/path";
 import { afterEach, beforeEach, describe, it } from "@std/testing/bdd";
 import { YAMLFileAdapter } from "../../src/agent-loader/adapters/yaml-file-adapter.ts";
-import { join } from "@std/path";
-import { ensureDir } from "@std/fs";
 
 describe("YAMLFileAdapter", () => {
   const testDir = join(Deno.cwd(), "test-yaml-agents");

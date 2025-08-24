@@ -1,21 +1,21 @@
 <script lang="ts">
-  import { hasContext } from "svelte";
-  import type { HTMLTextareaAttributes } from "svelte/elements";
-  import { FIELD_CONTEXT, getFieldContext } from "./context";
+import { hasContext } from "svelte";
+import type { HTMLTextareaAttributes } from "svelte/elements";
+import { FIELD_CONTEXT, getFieldContext } from "./context";
 
-  type Props = { value?: string; variant?: "regular" | "large" };
+type Props = { value?: string; variant?: "regular" | "large" };
 
-  let {
-    value = $bindable(),
-    variant = "regular",
-    ...rest
-  }: Props & HTMLTextareaAttributes = $props();
+const {
+  value = $bindable(),
+  variant = "regular",
+  ...rest
+}: Props & HTMLTextareaAttributes = $props();
 
-  let id = $state<string>();
+let id = $state<string>();
 
-  if (hasContext(FIELD_CONTEXT)) {
-    id = getFieldContext().id;
-  }
+if (hasContext(FIELD_CONTEXT)) {
+  id = getFieldContext().id;
+}
 </script>
 
 <textarea class="variant--{variant}" {id} bind:value data-1p-ignore="true" {...rest}></textarea>

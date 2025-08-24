@@ -8,6 +8,7 @@ import type {
   NotificationConfig,
   NotificationResult,
 } from "@atlas/config";
+import { defaultProviderRegistry } from "./providers/provider-factory.ts";
 import type {
   NotificationEvent,
   NotificationManagerConfig,
@@ -21,7 +22,6 @@ import {
   ProviderDisabledError,
   ProviderNotFoundError,
 } from "./types.ts";
-import { defaultProviderRegistry } from "./providers/provider-factory.ts";
 
 /**
  * Retry configuration
@@ -85,12 +85,14 @@ export class NotificationManager {
       defaultProvider: config.defaults?.provider,
       retryConfig: config.defaults
         ? {
-          attempts: config.defaults.retry_attempts,
-          delay: this.parseDuration(config.defaults.retry_delay),
-          backoff: config.defaults.retry_backoff,
-        }
+            attempts: config.defaults.retry_attempts,
+            delay: NotificationManager.parseDuration(config.defaults.retry_delay),
+            backoff: config.defaults.retry_backoff,
+          }
         : undefined,
-      timeout: config.defaults?.timeout ? this.parseDuration(config.defaults.timeout) : undefined,
+      timeout: config.defaults?.timeout
+        ? NotificationManager.parseDuration(config.defaults.timeout)
+        : undefined,
     });
   }
 
@@ -98,22 +100,14 @@ export class NotificationManager {
    * Send an email notification
    */
   async sendEmail(params: EmailParams, providerName?: string): Promise<NotificationResult> {
-    return await this.send({
-      provider: providerName,
-      type: "email",
-      params,
-    });
+    return await this.send({ provider: providerName, type: "email", params });
   }
 
   /**
    * Send a generic message notification
    */
   async sendMessage(params: MessageParams, providerName?: string): Promise<NotificationResult> {
-    return await this.send({
-      provider: providerName,
-      type: "message",
-      params,
-    });
+    return await this.send({ provider: providerName, type: "message", params });
   }
 
   /**
@@ -158,13 +152,7 @@ export class NotificationManager {
 
     try {
       // Send notification with retry logic
-      const result = await this.sendWithRetry(
-        provider,
-        params,
-        retryConfig,
-        timeout,
-        event,
-      );
+      const result = await this.sendWithRetry(provider, params, retryConfig, timeout, event);
 
       // Update event
       event.status = result.success ? "success" : "failure";
@@ -310,7 +298,7 @@ export class NotificationManager {
         event.status = "retry";
 
         // Wait before retry with exponential backoff
-        const delay = retryConfig.delay * Math.pow(retryConfig.backoff, attempt);
+        const delay = retryConfig.delay * retryConfig.backoff ** attempt;
         await this.sleep(delay);
       }
     }

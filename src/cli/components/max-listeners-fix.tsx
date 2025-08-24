@@ -1,5 +1,5 @@
-import { useEffect } from "react";
 import { useStdin } from "ink";
+import { useEffect } from "react";
 
 /**
  * Increases the max listeners limit for Ink's internal event emitter.
@@ -23,7 +23,7 @@ export const MaxListenersFix = () => {
 
   useEffect(() => {
     // Access Ink's internal event emitter through stdin context
-    // @ts-ignore - accessing internal property
+    // @ts-expect-error - accessing internal property
     const eventEmitter = stdin?.internal_eventEmitter;
 
     if (eventEmitter && typeof eventEmitter.setMaxListeners === "function") {

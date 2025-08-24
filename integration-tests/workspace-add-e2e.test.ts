@@ -8,6 +8,7 @@ import { AtlasApiError, AtlasClient } from "@atlas/client";
 import { assertEquals, assertExists } from "@std/assert";
 import { ensureDir, exists } from "@std/fs";
 import { join } from "@std/path";
+
 // Tests will use client API for verification instead of direct workspace manager access
 
 // Helper to create a test workspace directory with workspace.yml
@@ -116,9 +117,7 @@ Deno.test({
       // Try to add again - should fail with 409
       let failed = false;
       try {
-        await client.addWorkspace({
-          path: workspacePath,
-        });
+        await client.addWorkspace({ path: workspacePath });
       } catch (error) {
         failed = true;
         if (error instanceof AtlasApiError) {
@@ -193,7 +192,10 @@ Deno.test({
       const failedPaths = result2.failed.map((f) => f.path);
       assertEquals(failedPaths.includes(workspace1), true);
       assertEquals(failedPaths.includes(workspace2), true);
-      assertEquals(failedPaths.some((p) => p.includes("nonexistent")), true);
+      assertEquals(
+        failedPaths.some((p) => p.includes("nonexistent")),
+        true,
+      );
 
       // Clean up all added workspaces
       for (const added of result.added) {
@@ -229,9 +231,7 @@ Deno.test({
       // Test 1: Non-existent path
       let error: AtlasApiError | null = null;
       try {
-        await client.addWorkspace({
-          path: "/this/path/does/not/exist",
-        });
+        await client.addWorkspace({ path: "/this/path/does/not/exist" });
       } catch (e) {
         if (e instanceof AtlasApiError) {
           error = e;
@@ -246,9 +246,7 @@ Deno.test({
 
       error = null;
       try {
-        await client.addWorkspace({
-          path: filePath,
-        });
+        await client.addWorkspace({ path: filePath });
       } catch (e) {
         if (e instanceof AtlasApiError) {
           error = e;
@@ -263,9 +261,7 @@ Deno.test({
 
       error = null;
       try {
-        await client.addWorkspace({
-          path: noYmlDir,
-        });
+        await client.addWorkspace({ path: noYmlDir });
       } catch (e) {
         if (e instanceof AtlasApiError) {
           error = e;
@@ -309,20 +305,14 @@ Deno.test({
       const uniqueSharedName = `Shared Name ${Date.now()}`;
 
       // Add first workspace with custom name
-      const result1 = await client.addWorkspace({
-        path: workspace1,
-        name: uniqueSharedName,
-      });
+      const result1 = await client.addWorkspace({ path: workspace1, name: uniqueSharedName });
 
       assertEquals(result1.name, uniqueSharedName);
 
       // Try to add second workspace with same name - should fail
       let error: AtlasApiError | null = null;
       try {
-        await client.addWorkspace({
-          path: workspace2,
-          name: uniqueSharedName,
-        });
+        await client.addWorkspace({ path: workspace2, name: uniqueSharedName });
       } catch (e) {
         if (e instanceof AtlasApiError) {
           error = e;
@@ -337,9 +327,7 @@ Deno.test({
       );
 
       // But adding without custom name should work
-      const result2 = await client.addWorkspace({
-        path: workspace2,
-      });
+      const result2 = await client.addWorkspace({ path: workspace2 });
 
       assertEquals(result2.name, "workspace-b"); // Default name from directory
       assertExists(result2.id);
@@ -383,9 +371,7 @@ Deno.test({
 
       // Measure time for batch operation
       const start = Date.now();
-      const result = await client.addWorkspaces({
-        paths: workspacePaths,
-      });
+      const result = await client.addWorkspaces({ paths: workspacePaths });
       const duration = Date.now() - start;
 
       // All should succeed

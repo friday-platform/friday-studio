@@ -137,11 +137,7 @@ class FileWriteCoordinator {
       .filter(([_, processing]) => processing)
       .map(([path]) => path);
 
-    return {
-      activeMutexes: this.fileMutexes.size,
-      queuedWrites,
-      processingFiles,
-    };
+    return { activeMutexes: this.fileMutexes.size, queuedWrites, processingFiles };
   }
 }
 

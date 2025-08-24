@@ -4,44 +4,37 @@
  */
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { type PromptContext } from "./types.ts";
+import { registerAgentDescribePrompt } from "./agent/describe.ts";
 
 // Import agent prompts
 import { registerAgentListPrompt } from "./agent/list.ts";
-import { registerAgentDescribePrompt } from "./agent/describe.ts";
+import { registerJobDescribePrompt } from "./job/describe.ts";
 
 // Import job prompts
 import { registerJobListPrompt } from "./job/list.ts";
-import { registerJobDescribePrompt } from "./job/describe.ts";
+import { registerLibraryGetPrompt } from "./library/get.ts";
 
 // Import library prompts
 import { registerLibraryListPrompt } from "./library/list.ts";
-import { registerLibraryGetPrompt } from "./library/get.ts";
 import { registerLibrarySearchPrompt } from "./library/search.ts";
-
-// Import session prompts
-import { registerSessionListPrompt } from "./session/list.ts";
-import { registerSessionDescribePrompt } from "./session/describe.ts";
-
-// Import signals prompts
-import { registerSignalListPrompt } from "./signal/list.ts";
-import { registerSignalDescribePrompt } from "./signal/describe.ts";
-import { registerSignalTriggerPrompt } from "./signal/trigger.ts";
-
-// Import workspace prompts
-import { registerWorkspaceListPrompt } from "./workspace/list.ts";
-import { registerWorkspaceDescribePrompt } from "./workspace/describe.ts";
-
 // Import system prompts
 import { registerSystemVersionPrompt } from "./platform/version.ts";
+import { registerSessionDescribePrompt } from "./session/describe.ts";
+// Import session prompts
+import { registerSessionListPrompt } from "./session/list.ts";
+import { registerSignalDescribePrompt } from "./signal/describe.ts";
+// Import signals prompts
+import { registerSignalListPrompt } from "./signal/list.ts";
+import { registerSignalTriggerPrompt } from "./signal/trigger.ts";
+import type { PromptContext } from "./types.ts";
+import { registerWorkspaceDescribePrompt } from "./workspace/describe.ts";
+// Import workspace prompts
+import { registerWorkspaceListPrompt } from "./workspace/list.ts";
 
 /**
  * Register all prompts with the MCP server
  */
-export function registerPrompts(
-  server: McpServer,
-  context: PromptContext,
-): void {
+export function registerPrompts(server: McpServer, context: PromptContext): void {
   // Agent prompts
   registerAgentListPrompt(server, context);
   registerAgentDescribePrompt(server, context);

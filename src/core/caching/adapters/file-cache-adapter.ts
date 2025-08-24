@@ -101,9 +101,7 @@ export class FileCacheAdapter implements SupervisionCacheAdapter {
 
       // Check file size limits
       if (data.length > this.config.maxFileSize!) {
-        console.warn(
-          `Cache entry too large for key ${key}: ${data.length} bytes`,
-        );
+        console.warn(`Cache entry too large for key ${key}: ${data.length} bytes`);
         return;
       }
 
@@ -152,9 +150,7 @@ export class FileCacheAdapter implements SupervisionCacheAdapter {
     }
   }
 
-  async getMultiple(
-    keys: string[],
-  ): Promise<Map<string, SupervisionCacheEntry>> {
+  async getMultiple(keys: string[]): Promise<Map<string, SupervisionCacheEntry>> {
     const result = new Map<string, SupervisionCacheEntry>();
 
     // Process in parallel with concurrency limit
@@ -174,9 +170,7 @@ export class FileCacheAdapter implements SupervisionCacheAdapter {
     return result;
   }
 
-  async setMultiple(
-    entries: Map<string, SupervisionCacheEntry>,
-  ): Promise<void> {
+  async setMultiple(entries: Map<string, SupervisionCacheEntry>): Promise<void> {
     // Process in parallel with concurrency limit
     const concurrency = 10;
     const entryArray = Array.from(entries.entries());

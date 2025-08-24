@@ -9,12 +9,17 @@ import {
   MCPServerToolFilterSchema,
   MCPTransportConfigSchema,
 } from "@atlas/config";
+import { logger } from "@atlas/logger";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Span } from "@opentelemetry/api";
-import { experimental_createMCPClient as createMCPClient, JSONValue, Schema, Tool } from "ai";
+import {
+  experimental_createMCPClient as createMCPClient,
+  type JSONValue,
+  type Schema,
+  type Tool,
+} from "ai";
 import { Experimental_StdioMCPTransport as StdioMCPTransport } from "ai/mcp-stdio";
 import { z } from "zod/v4";
-import { logger } from "@atlas/logger";
 import { AtlasTelemetry } from "../../../src/utils/telemetry.ts";
 
 // ai doesn't export the MCPClient type, so we need to infer it.
@@ -60,9 +65,7 @@ export class MCPManager {
       async (span) => {
         return await this._registerServerInternal(config, span);
       },
-      {
-        serverName: config.id,
-      },
+      { serverName: config.id },
     );
   }
 
@@ -94,11 +97,7 @@ export class MCPManager {
         case "sse": {
           const { url } = validatedConfig.transport;
           mcpClient = await createMCPClient({
-            transport: {
-              type: "sse",
-              url,
-              headers: this.buildAuthHeaders(validatedConfig.auth),
-            },
+            transport: { type: "sse", url, headers: this.buildAuthHeaders(validatedConfig.auth) },
           });
           break;
         }
@@ -149,11 +148,7 @@ export class MCPManager {
           }
 
           mcpClient = await createMCPClient({
-            transport: new StdioMCPTransport({
-              command,
-              args: args || [],
-              env: processedEnv,
-            }),
+            transport: new StdioMCPTransport({ command, args: args || [], env: processedEnv }),
           });
           break;
         }
@@ -162,16 +157,13 @@ export class MCPManager {
           const { url } = validatedConfig.transport;
 
           // Create client with StreamableHTTPClientTransport with auth headers
-          const transport = new StreamableHTTPClientTransport(
-            new URL(url),
-            {
-              requestInit: {
-                headers: this.buildAuthHeaders(validatedConfig.auth),
-                // Add timeout for HTTP requests to prevent hanging
-                signal: AbortSignal.timeout(5000), // 5 second timeout
-              },
+          const transport = new StreamableHTTPClientTransport(new URL(url), {
+            requestInit: {
+              headers: this.buildAuthHeaders(validatedConfig.auth),
+              // Add timeout for HTTP requests to prevent hanging
+              signal: AbortSignal.timeout(5000), // 5 second timeout
             },
-          );
+          });
 
           // Wrap createMCPClient in a timeout to prevent hanging
           mcpClient = await Promise.race([
@@ -180,7 +172,7 @@ export class MCPManager {
               setTimeout(
                 () => reject(new Error(`HTTP MCP client creation timeout for ${config.id}`)),
                 5000,
-              )
+              ),
             ),
           ]);
           break;
@@ -221,7 +213,8 @@ export class MCPManager {
       );
 
       // For platform server connection issues, log at debug level (not critical)
-      const isPlatformConnectionIssue = config.id === "atlas-platform" &&
+      const isPlatformConnectionIssue =
+        config.id === "atlas-platform" &&
         error instanceof Error &&
         (error.message.includes("timeout") || error.message.includes("connection"));
 
@@ -259,10 +252,7 @@ export class MCPManager {
       async (span) => {
         return await this._getToolsForServersInternal(serverIds, span);
       },
-      {
-        serverNames: serverIds,
-        serversCount: serverIds.length,
-      },
+      { serverNames: serverIds, serversCount: serverIds.length },
     );
   }
 
@@ -341,8 +331,8 @@ export class MCPManager {
             firstToolType: typeof firstTool,
             firstToolKeys: firstTool && typeof firstTool === "object" ? Object.keys(firstTool) : [],
             hasParameters: firstTool && typeof firstTool === "object" && "parameters" in firstTool,
-            hasInputSchema: firstTool && typeof firstTool === "object" &&
-              "input_schema" in firstTool,
+            hasInputSchema:
+              firstTool && typeof firstTool === "object" && "input_schema" in firstTool,
           });
         }
 
@@ -354,14 +344,11 @@ export class MCPManager {
 
         successfulRetrievals++;
 
-        logger.debug(
-          `Loaded ${Object.keys(filteredTools).length} tools from ${serverId}`,
-          {
-            operation: "mcp_tools_retrieval",
-            serverId,
-            toolCount: Object.keys(filteredTools).length,
-          },
-        );
+        logger.debug(`Loaded ${Object.keys(filteredTools).length} tools from ${serverId}`, {
+          operation: "mcp_tools_retrieval",
+          serverId,
+          toolCount: Object.keys(filteredTools).length,
+        });
       } catch (error) {
         logger.error(`Failed to load tools from MCP server: ${serverId}`, {
           operation: "mcp_tools_retrieval",
@@ -422,10 +409,7 @@ export class MCPManager {
         // Create a new tool object with inputSchema instead of parameters
         // We destructure to exclude 'parameters' and rebuild with 'inputSchema'
         const { parameters, ...restTool } = tool as Tool & { parameters?: Schema<JSONValue> };
-        const convertedTool: Tool = {
-          ...restTool,
-          inputSchema: parameters as Schema<JSONValue>,
-        };
+        const convertedTool: Tool = { ...restTool, inputSchema: parameters as Schema<JSONValue> };
         filtered[toolName] = convertedTool;
       } else {
         filtered[toolName] = tool;
@@ -540,10 +524,7 @@ export class MCPManager {
       async (span) => {
         return await this._disposeInternal(serverIds, span);
       },
-      {
-        serversCount: serverIds.length,
-        serverNames: serverIds,
-      },
+      { serversCount: serverIds.length, serverNames: serverIds },
     );
   }
 
@@ -637,7 +618,7 @@ export class MCPManager {
             await Promise.race([
               client.tools(),
               new Promise((_, reject) =>
-                setTimeout(() => reject(new Error("Connection verification timeout")), 2000)
+                setTimeout(() => reject(new Error("Connection verification timeout")), 2000),
               ),
             ]);
 
@@ -670,12 +651,7 @@ export class MCPManager {
 
         logger.warn(
           `MCP server connection verification failed after ${maxRetries} attempts: ${serverId}`,
-          {
-            operation: "mcp_connection_verification",
-            serverId,
-            transportType,
-            success: false,
-          },
+          { operation: "mcp_connection_verification", serverId, transportType, success: false },
         );
 
         return false;
@@ -685,7 +661,7 @@ export class MCPManager {
           await Promise.race([
             client.tools(),
             new Promise((_, reject) =>
-              setTimeout(() => reject(new Error("Connection verification timeout")), 3000)
+              setTimeout(() => reject(new Error("Connection verification timeout")), 3000),
             ),
           ]);
 

@@ -21,7 +21,7 @@ export const formatBytes = (bytes: number): string => {
   const k = 1024;
   const sizes = ["B", "KB", "MB", "GB"];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
+  return parseFloat((bytes / k ** i).toFixed(1)) + " " + sizes[i];
 };
 
 export const formatDate = (dateString: string): string => {
@@ -41,8 +41,8 @@ export function LibraryListComponent({
     <Box flexDirection="column">
       <Box marginBottom={1}>
         <Text bold color="cyan">
-          {workspaceName ? `Library Items in workspace: ${workspaceName}` : "Library Items"}{" "}
-          ({items.length})
+          {workspaceName ? `Library Items in workspace: ${workspaceName}` : "Library Items"} (
+          {items.length})
         </Text>
       </Box>
 

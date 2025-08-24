@@ -25,7 +25,7 @@ export class FilesystemTemplateAdapter implements TemplateStorageAdapter {
   async getTemplate(templateId: string): Promise<Template> {
     const templatePath = join(this.templatesPath, templateId);
 
-    if (!await exists(templatePath)) {
+    if (!(await exists(templatePath))) {
       throw new Error(`Template '${templateId}' not found at ${templatePath}`);
     }
 
@@ -53,10 +53,7 @@ export class FilesystemTemplateAdapter implements TemplateStorageAdapter {
       files.set(".env.example", envContent);
     }
 
-    return {
-      info,
-      files,
-    };
+    return { info, files };
   }
 
   async copyTemplate(

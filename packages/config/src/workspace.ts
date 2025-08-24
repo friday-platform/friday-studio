@@ -3,7 +3,7 @@
  */
 
 import { z } from "zod/v4";
-import { FederationConfigSchema, MCPToolNameSchema, WorkspaceIdentitySchema } from "./base.ts";
+import { WorkspaceAgentConfigSchema } from "./agents.ts";
 import {
   AtlasServerConfigSchema,
   PlanningConfigSchema,
@@ -11,12 +11,12 @@ import {
   ServerConfigSchema,
   SupervisorsConfigSchema,
 } from "./atlas.ts";
-import { AtlasToolsConfigSchema, ToolsConfigSchema } from "./mcp.ts";
-import { WorkspaceSignalConfigSchema } from "./signals.ts";
-import { WorkspaceAgentConfigSchema } from "./agents.ts";
+import { FederationConfigSchema, MCPToolNameSchema, WorkspaceIdentitySchema } from "./base.ts";
 import { JobSpecificationSchema } from "./jobs.ts";
+import { AtlasToolsConfigSchema, ToolsConfigSchema } from "./mcp.ts";
 import { AtlasMemoryConfigSchema, WorkspaceMemoryConfigSchema } from "./memory.ts";
 import { NotificationConfigSchema } from "./notifications.ts";
+import { WorkspaceSignalConfigSchema } from "./signals.ts";
 
 // ==============================================================================
 // WORKSPACE CONFIGURATION (workspace.yml)

@@ -1,33 +1,25 @@
+import { describeRoute, resolver } from "hono-openapi";
 import { z } from "zod/v4";
 import { daemonFactory } from "../src/factory.ts";
-import { describeRoute, resolver } from "hono-openapi";
 
 export const healthResponseSchema = z
   .object({
-    activeWorkspaces: z.number().int().min(0).meta({
-      description: "Number of currently active workspaces",
-    }),
-    uptime: z.number().int().min(0).meta({
-      description: "Daemon uptime in milliseconds",
-    }),
-    timestamp: z.iso.datetime().meta({
-      description: "Current server timestamp in ISO 8601 format",
-    }),
+    activeWorkspaces: z
+      .number()
+      .int()
+      .min(0)
+      .meta({ description: "Number of currently active workspaces" }),
+    uptime: z.number().int().min(0).meta({ description: "Daemon uptime in milliseconds" }),
+    timestamp: z.iso
+      .datetime()
+      .meta({ description: "Current server timestamp in ISO 8601 format" }),
     version: z
       .object({
-        deno: z.string().meta({
-          description: "Deno runtime version",
-        }),
-        v8: z.string().meta({
-          description: "V8 engine version",
-        }),
-        typescript: z.string().meta({
-          description: "TypeScript version",
-        }),
+        deno: z.string().meta({ description: "Deno runtime version" }),
+        v8: z.string().meta({ description: "V8 engine version" }),
+        typescript: z.string().meta({ description: "TypeScript version" }),
       })
-      .meta({
-        description: "Version information for runtime components",
-      }),
+      .meta({ description: "Version information for runtime components" }),
   })
   .meta({
     id: "HealthResponse",
@@ -48,9 +40,7 @@ healthRoutes.get(
     responses: {
       200: {
         description: "Daemon is healthy and operational",
-        content: {
-          "application/json": { schema: resolver(healthResponseSchema) },
-        },
+        content: { "application/json": { schema: resolver(healthResponseSchema) } },
       },
     },
   }),

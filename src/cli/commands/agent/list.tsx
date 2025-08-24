@@ -1,3 +1,5 @@
+import { ConfigLoader } from "@atlas/config";
+import { FilesystemConfigAdapter } from "@atlas/storage";
 import { render } from "ink";
 import { AgentListComponent } from "../../modules/agents/agent-list-component.tsx";
 import {
@@ -5,8 +7,6 @@ import {
   createDaemonNotRunningError,
   getDaemonClient,
 } from "../../utils/daemon-client.ts";
-import { ConfigLoader } from "@atlas/config";
-import { FilesystemConfigAdapter } from "@atlas/storage";
 
 interface ListArgs {
   json?: boolean;
@@ -18,16 +18,8 @@ export const desc = "List workspace agents";
 export const aliases = ["ls"];
 
 export const builder = {
-  json: {
-    type: "boolean" as const,
-    describe: "Output agent list as JSON",
-    default: false,
-  },
-  workspace: {
-    type: "string" as const,
-    alias: "w",
-    describe: "Workspace ID or name",
-  },
+  json: { type: "boolean" as const, describe: "Output agent list as JSON", default: false },
+  workspace: { type: "string" as const, alias: "w", describe: "Workspace ID or name" },
 };
 
 export const handler = async (argv: ListArgs): Promise<void> => {
@@ -95,10 +87,7 @@ export const handler = async (argv: ListArgs): Promise<void> => {
       console.log(
         JSON.stringify(
           {
-            workspace: {
-              id: workspaceId,
-              name: workspaceName,
-            },
+            workspace: { id: workspaceId, name: workspaceName },
             agents: agents,
             count: agents.length,
             timestamp: new Date().toISOString(),
@@ -133,9 +122,7 @@ export const handler = async (argv: ListArgs): Promise<void> => {
       }, 100);
     }
   } catch (error) {
-    console.error(
-      `Error: ${error instanceof Error ? error.message : String(error)}`,
-    );
+    console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
     Deno.exit(1);
   }
 };

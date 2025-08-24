@@ -3,8 +3,8 @@
  * Discovers available Atlas workspaces through the daemon API
  */
 
-import type { ToolContext } from "../types.ts";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { ToolContext } from "../types.ts";
 import { createSuccessResponse } from "../types.ts";
 
 export function registerWorkspaceListTool(server: McpServer, ctx: ToolContext) {

@@ -1,8 +1,8 @@
-import * as list from "./session/list.tsx";
-import * as get from "./session/get.tsx";
-import * as cancel from "./session/cancel.tsx";
-import { YargsInstance } from "../utils/yargs.ts";
 import { formatResourceHelp } from "../utils/resource-help.ts";
+import type { YargsInstance } from "../utils/yargs.ts";
+import * as cancel from "./session/cancel.tsx";
+import * as get from "./session/get.tsx";
+import * as list from "./session/list.tsx";
 
 export const command = "session <action>";
 export const desc = "Manage Atlas sessions";

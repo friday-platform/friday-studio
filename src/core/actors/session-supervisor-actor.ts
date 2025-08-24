@@ -11,6 +11,7 @@
  * - Handles memory operations for fact extraction and summaries
  */
 
+import { createAnthropic } from "@ai-sdk/anthropic";
 import type { JobSpecification } from "@atlas/config";
 import type {
   ActorInitParams,
@@ -25,7 +26,6 @@ import type {
 } from "@atlas/core";
 import type { Tool } from "ai";
 import { generateText, stepCountIs } from "ai";
-import { createAnthropic } from "@ai-sdk/anthropic";
 import { z } from "zod/v4";
 import type { IWorkspaceArtifact, IWorkspaceSignal } from "../../types/core.ts";
 
@@ -80,33 +80,25 @@ export interface IWorkspaceSupervisorForSession {
     clearWorkingMemoryBySession(sessionId: string): Promise<number>;
   };
 }
-import { type Logger, logger } from "@atlas/logger";
-import { getSupervisionConfig, SupervisionLevel } from "../supervision-levels.ts";
+
+import type { StreamEvent } from "@atlas/agent-sdk";
 import {
+  type AgentResult,
+  AwaitingSupervisorDecision,
+  type StreamEmitter,
+  type ToolCall,
+  type ToolResult,
+} from "@atlas/agent-sdk";
+import {
+  HTTPStreamEmitter,
+  NoOpStreamEmitter,
   ReasoningResultStatus,
   type ReasoningResultStatusType,
   SessionSupervisorStatus,
   type SessionSupervisorStatusType,
+  stripSourceAttributionTags,
 } from "@atlas/core";
-import {
-  type HallucinationAnalysis,
-  HallucinationDetector,
-  HallucinationPatternDetector,
-} from "../services/hallucination-detector.ts";
-import { stripSourceAttributionTags } from "@atlas/core";
-import {
-  type JeopardyValidationResult,
-  JeopardyValidator,
-} from "../services/jeopardy-validator.ts";
-import {
-  AgentResult,
-  AwaitingSupervisorDecision,
-  StreamEmitter,
-  ToolCall,
-  ToolResult,
-} from "@atlas/agent-sdk";
-import type { StreamEvent } from "@atlas/agent-sdk";
-import { HTTPStreamEmitter, NoOpStreamEmitter } from "@atlas/core";
+import { type Logger, logger } from "@atlas/logger";
 import {
   CoALAMemoryManager,
   CoALAMemoryType,
@@ -116,13 +108,23 @@ import {
   MemoryType,
   setupMECMF,
 } from "@atlas/memory";
+import { CoALALocalFileStorageAdapter } from "@atlas/storage";
+import { getWorkspaceMemoryDir } from "../../utils/paths.ts";
+import {
+  type HallucinationAnalysis,
+  HallucinationDetector,
+  HallucinationPatternDetector,
+} from "../services/hallucination-detector.ts";
+import {
+  type JeopardyValidationResult,
+  JeopardyValidator,
+} from "../services/jeopardy-validator.ts";
 import {
   type FactSourceType,
   type SemanticFact,
   SemanticFactExtractor,
 } from "../services/semantic-fact-extractor.ts";
-import { CoALALocalFileStorageAdapter } from "@atlas/storage";
-import { getWorkspaceMemoryDir } from "../../utils/paths.ts";
+import { getSupervisionConfig, SupervisionLevel } from "../supervision-levels.ts";
 
 export interface SessionContext {
   sessionId: string;
@@ -133,10 +135,7 @@ export interface SessionContext {
   availableAgents: string[];
   constraints?: Record<string, unknown>;
   streamId?: string; // Optional streamId for streaming support
-  additionalPrompts?: {
-    planning?: string;
-    evaluation?: string;
-  };
+  additionalPrompts?: { planning?: string; evaluation?: string };
 }
 
 // NOTE: Use AgentResult from @atlas/agent-sdk
@@ -204,9 +203,7 @@ export class SessionSupervisorActor implements BaseActor {
   private cachedPlan?: ExecutionPlan;
   private agentOrchestrator?: IAgentOrchestrator; // Agent orchestrator for MCP-based execution
   private artifacts: IWorkspaceArtifact[] = []; // Store session artifacts
-  private llmProvider = createAnthropic({
-    apiKey: Deno.env.get("ANTHROPIC_API_KEY"),
-  });
+  private llmProvider = createAnthropic({ apiKey: Deno.env.get("ANTHROPIC_API_KEY") });
   private hallucinationDetector: HallucinationDetector;
   // Observation-only Jeopardy validator: logs results, never affects control flow
   private jeopardyValidator!: JeopardyValidator;
@@ -281,9 +278,7 @@ export class SessionSupervisorActor implements BaseActor {
 
   setAgentOrchestrator(orchestrator: IAgentOrchestrator): void {
     this.agentOrchestrator = orchestrator;
-    this.logger.info("Agent orchestrator set", {
-      sessionId: this.sessionId,
-    });
+    this.logger.info("Agent orchestrator set", { sessionId: this.sessionId });
   }
 
   setWorkspaceSupervisor(supervisor: IWorkspaceSupervisorForSession): void {
@@ -440,9 +435,7 @@ export class SessionSupervisorActor implements BaseActor {
       // Note: The actual clearing of working memory would need to be implemented
       // in the MECMF manager. For now, consolidation promotes important memories.
 
-      this.logger.info("Working memory cleanup completed", {
-        sessionId: this.sessionId,
-      });
+      this.logger.info("Working memory cleanup completed", { sessionId: this.sessionId });
     } catch (error) {
       this.logger.error("Failed to cleanup working memory", {
         sessionId: this.sessionId,
@@ -626,23 +619,21 @@ export class SessionSupervisorActor implements BaseActor {
     } = await generateText({
       model: this.llmProvider("claude-3-7-sonnet-20250219"),
       system: this.buildExecutionPlanningPrompt(this.sessionContext),
-      messages: [{
-        role: "user",
-        content: `Analyze this signal and create an execution plan: ${
-          JSON.stringify(this.sessionContext.signal)
-        }`,
-      }],
+      messages: [
+        {
+          role: "user",
+          content: `Analyze this signal and create an execution plan: ${JSON.stringify(
+            this.sessionContext.signal,
+          )}`,
+        },
+      ],
       tools: planningTools,
       toolChoice: "auto",
       stopWhen: stepCountIs(10),
       temperature: 0.3, // Lower temperature for more consistent planning
       maxOutputTokens: 4000,
       maxRetries: 3, // Enable retries for API resilience (e.g., 529 errors)
-      providerOptions: {
-        anthropic: {
-          thinking: { type: "enabled", budgetTokens: 15000 },
-        },
-      },
+      providerOptions: { anthropic: { thinking: { type: "enabled", budgetTokens: 15000 } } },
     });
 
     // Pass through tool calls/results from AI SDK
@@ -985,7 +976,7 @@ export class SessionSupervisorActor implements BaseActor {
       }
     } else {
       const promises = phase.agents.map((agentTask) =>
-        this.executeAgent(agentTask, previousResults, phaseResults, phase.name)
+        this.executeAgent(agentTask, previousResults, phaseResults, phase.name),
       );
       const parallelResults = await Promise.all(promises);
       phaseResults.push(...parallelResults);
@@ -1051,10 +1042,7 @@ export class SessionSupervisorActor implements BaseActor {
         context === "sequential"
           ? "Agent validation failed - issuing single retry with feedback"
           : "Parallel agent validation failed - issuing single retry with feedback",
-        {
-          agentId: currentResult.agentId,
-          phaseIndex: phase.id,
-        },
+        { agentId: currentResult.agentId, phaseIndex: phase.id },
       );
       this.retryAttempts.set(currentResult.agentId, 1);
 
@@ -1081,9 +1069,10 @@ export class SessionSupervisorActor implements BaseActor {
           {
             agentId: currentResult.agentId,
             phaseIndex: phase.id,
-            reason: context === "sequential"
-              ? "Repeated hallucination detected in agent output"
-              : "Repeated hallucination detected in parallel agent output",
+            reason:
+              context === "sequential"
+                ? "Repeated hallucination detected in agent output"
+                : "Repeated hallucination detected in parallel agent output",
           },
         );
         return false; // terminate phase
@@ -1100,9 +1089,10 @@ export class SessionSupervisorActor implements BaseActor {
       {
         agentId: currentResult.agentId,
         phaseIndex: phase.id,
-        reason: context === "sequential"
-          ? "Hallucination detected in agent output"
-          : "Hallucination detected in parallel agent output",
+        reason:
+          context === "sequential"
+            ? "Hallucination detected in agent output"
+            : "Hallucination detected in parallel agent output",
       },
     );
     return false; // terminate phase
@@ -1130,10 +1120,7 @@ export class SessionSupervisorActor implements BaseActor {
     } else if (agentTask.inputSource === "combined") {
       const combinedInput: CombinedAgentInput = {
         original: this.sessionContext?.payload || {},
-        previous: previousResults.map((r) => ({
-          agentId: r.agentId,
-          output: r.output,
-        })),
+        previous: previousResults.map((r) => ({ agentId: r.agentId, output: r.output })),
       };
       input = combinedInput;
     } else if (agentTask.dependencies?.length) {
@@ -1239,12 +1226,13 @@ export class SessionSupervisorActor implements BaseActor {
         const retryCount = this.retryAttempts.get(agentTask.agentId) ?? 0;
         if (priorIssues && retryCount > 0) {
           const feedbackHeader = "## Validation Feedback (address in this retry):";
-          const issuesList = priorIssues.issues && priorIssues.issues.length
-            ? priorIssues.issues.map((i) => `- ${i}`).join("\n")
-            : "- Low confidence without specific issues provided";
-          const feedbackBody = `${feedbackHeader}\nConfidence: ${
-            priorIssues.confidence.toFixed(2)
-          }\nIssues:\n${issuesList}`;
+          const issuesList =
+            priorIssues.issues && priorIssues.issues.length
+              ? priorIssues.issues.map((i) => `- ${i}`).join("\n")
+              : "- Low confidence without specific issues provided";
+          const feedbackBody = `${feedbackHeader}\nConfidence: ${priorIssues.confidence.toFixed(
+            2,
+          )}\nIssues:\n${issuesList}`;
           promptSections.push(feedbackBody);
         }
 
@@ -1321,17 +1309,16 @@ export class SessionSupervisorActor implements BaseActor {
           streamId: this.sessionContext?.streamId,
           previousResults,
           agentTools: agentExecutionConfig.tools, // Pass agent-specific tools
-          additionalContext: {
-            input,
-            reasoning: agentTask.reasoning,
-          },
+          additionalContext: { input, reasoning: agentTask.reasoning },
           // Pass callback for stream events
           onStreamEvent: (event: unknown): void => {
             // Normalize unknown events to a minimal shape without using any-casts
             let normalized: { type: string; [key: string]: unknown };
             if (
-              typeof event === "object" && event !== null &&
-              "type" in event && typeof (event as Record<string, unknown>)["type"] === "string"
+              typeof event === "object" &&
+              event !== null &&
+              "type" in event &&
+              typeof (event as Record<string, unknown>)["type"] === "string"
             ) {
               const evtObj = event as Record<string, unknown>;
               normalized = { type: String(evtObj["type"]), ...evtObj } as {
@@ -1358,9 +1345,10 @@ export class SessionSupervisorActor implements BaseActor {
       const or = isExecResult(orchestratorResult) ? orchestratorResult : {};
       result = {
         output: isExecResult(orchestratorResult) ? or.output : undefined,
-        duration: isExecResult(orchestratorResult) && typeof or.duration === "number"
-          ? or.duration
-          : Number((isExecResult(orchestratorResult) ? or.duration : 0) ?? 0),
+        duration:
+          isExecResult(orchestratorResult) && typeof or.duration === "number"
+            ? or.duration
+            : Number((isExecResult(orchestratorResult) ? or.duration : 0) ?? 0),
         toolCalls: isExecResult(orchestratorResult) ? or.toolCalls : undefined,
         toolResults: isExecResult(orchestratorResult) ? or.toolResults : undefined,
       };
@@ -1394,9 +1382,8 @@ export class SessionSupervisorActor implements BaseActor {
       await this.streamAgentResultToMemory(
         {
           agentId: agentTask.agentId,
-          task: String(prompt).length > 100
-            ? String(prompt).substring(0, 97) + "..."
-            : String(prompt), // Truncate long prompts
+          task:
+            String(prompt).length > 100 ? String(prompt).substring(0, 97) + "..." : String(prompt), // Truncate long prompts
           input,
           output: null,
           duration,
@@ -1439,10 +1426,7 @@ export class SessionSupervisorActor implements BaseActor {
         const conversationContext = createConversationContext(
           this.sessionId,
           this.workspaceId || "global",
-          {
-            currentTask: agentTask.task,
-            activeAgents: [agentTask.agentId],
-          },
+          { currentTask: agentTask.task, activeAgents: [agentTask.agentId] },
         );
 
         // Store agent prompt as working memory
@@ -1478,12 +1462,11 @@ export class SessionSupervisorActor implements BaseActor {
 
         // Extract and store semantic facts from agent output
         if (result.output) {
-          const outputText = typeof result.output === "string"
-            ? result.output
-            : JSON.stringify(result.output);
+          const outputText =
+            typeof result.output === "string" ? result.output : JSON.stringify(result.output);
 
           // Extract entities using the memory classifier
-          const classifier = (this.mecmfManager as unknown) as {
+          const classifier = this.mecmfManager as unknown as {
             memoryClassifier?: {
               extractKeyEntities(
                 text: string,
@@ -1495,8 +1478,7 @@ export class SessionSupervisorActor implements BaseActor {
 
             // Store each extracted entity as semantic memory
             for (const entity of entities) {
-              const semanticContent =
-                `Entity ${entity.type}: ${entity.name} (confidence: ${entity.confidence})`;
+              const semanticContent = `Entity ${entity.type}: ${entity.name} (confidence: ${entity.confidence})`;
               await this.mecmfManager.classifyAndStore(
                 semanticContent,
                 conversationContext,
@@ -1542,11 +1524,10 @@ export class SessionSupervisorActor implements BaseActor {
     }
 
     if (result.toolResults?.length) {
-      for (
-        const { toolName, output: toolOutput } of result.toolResults as Array<
-          { toolName: string; output?: unknown }
-        >
-      ) {
+      for (const { toolName, output: toolOutput } of result.toolResults as Array<{
+        toolName: string;
+        output?: unknown;
+      }>) {
         await this.streamToolResultToMemory(agentTask.agentId, toolName, toolOutput);
       }
     }
@@ -1557,10 +1538,7 @@ export class SessionSupervisorActor implements BaseActor {
     return agentResult;
   }
 
-  private evaluateProgress(
-    results: AgentResult[],
-    _plan: ExecutionPlan,
-  ): boolean {
+  private evaluateProgress(results: AgentResult[], _plan: ExecutionPlan): boolean {
     const supervisionConfig = getSupervisionConfig(this.supervisionLevel);
 
     if (!supervisionConfig.postExecutionValidation) {
@@ -1604,21 +1582,22 @@ export class SessionSupervisorActor implements BaseActor {
     }
 
     // Run hallucination detection on just this single agent result
-    const singleAgentResults: AgentResult[] = [{
-      agentId: result.agentId,
-      task: result.task,
-      input: result.input,
-      output: result.output,
-      duration: result.duration,
-      timestamp: result.timestamp,
-      toolCalls: result.toolCalls,
-      toolResults: result.toolResults,
-    }];
+    const singleAgentResults: AgentResult[] = [
+      {
+        agentId: result.agentId,
+        task: result.task,
+        input: result.input,
+        output: result.output,
+        duration: result.duration,
+        timestamp: result.timestamp,
+        toolCalls: result.toolCalls,
+        toolResults: result.toolResults,
+      },
+    ];
 
     try {
-      const analysis: HallucinationAnalysis = await this.hallucinationDetector.analyzeResults(
-        singleAgentResults,
-      );
+      const analysis: HallucinationAnalysis =
+        await this.hallucinationDetector.analyzeResults(singleAgentResults);
       const effectiveAnalysis: HallucinationAnalysis = analysis;
       const confidenceThreshold = this.hallucinationDetector.getThreshold();
 
@@ -1631,7 +1610,8 @@ export class SessionSupervisorActor implements BaseActor {
       });
 
       // Check for immediate severe hallucinations
-      const isSevere = analysis.averageConfidence < 0.3 ||
+      const isSevere =
+        analysis.averageConfidence < 0.3 ||
         HallucinationPatternDetector.containsSeverePatterns(analysis.issues);
 
       if (isSevere) {
@@ -1740,9 +1720,8 @@ export class SessionSupervisorActor implements BaseActor {
    */
   public async analyzeResultConfidence(results: AgentResult[]): Promise<ConfidenceAnalysis> {
     // Single-pass: analyze once using the detector on provided results
-    const analysis: HallucinationAnalysis = await this.hallucinationDetector.analyzeResults(
-      results,
-    );
+    const analysis: HallucinationAnalysis =
+      await this.hallucinationDetector.analyzeResults(results);
 
     // Cache per-agent confidence from detection methods
     for (const d of analysis.detectionMethods) {
@@ -1768,34 +1747,36 @@ export class SessionSupervisorActor implements BaseActor {
     let failureReason: string | undefined;
 
     // Check for hallucination first, regardless of output presence
-    const confidenceThreshold = this.supervisionLevel === SupervisionLevel.MINIMAL
-      ? 0.2
-      : this.supervisionLevel === SupervisionLevel.PARANOID
-      ? 0.7
-      : 0.5;
+    const confidenceThreshold =
+      this.supervisionLevel === SupervisionLevel.MINIMAL
+        ? 0.2
+        : this.supervisionLevel === SupervisionLevel.PARANOID
+          ? 0.7
+          : 0.5;
 
     if (this.hallucinationTermination) {
       status = ReasoningResultStatus.FAILED;
       const issuesSummary = this.hallucinationTermination.issues.slice(0, 3).join("; ");
-      failureReason =
-        `Severe hallucination detected in agent ${this.hallucinationTermination.agentId}: ${issuesSummary}`;
+      failureReason = `Severe hallucination detected in agent ${this.hallucinationTermination.agentId}: ${issuesSummary}`;
     } else if (confidenceResults && confidenceResults.averageConfidence < confidenceThreshold) {
       // Determine severity based on confidence level and issue types
-      const isSevere = confidenceResults.averageConfidence < 0.3 ||
+      const isSevere =
+        confidenceResults.averageConfidence < 0.3 ||
         HallucinationPatternDetector.containsSeverePatterns(confidenceResults.issues);
 
       status = isSevere ? ReasoningResultStatus.FAILED : ReasoningResultStatus.PARTIAL;
 
       // Build detailed failure reason with specific issues
-      const issuesSummary = confidenceResults.issues.length > 0
-        ? ` Issues: ${confidenceResults.issues.slice(0, 3).join("; ")}${
-          confidenceResults.issues.length > 3 ? "..." : ""
-        }`
-        : "";
+      const issuesSummary =
+        confidenceResults.issues.length > 0
+          ? ` Issues: ${confidenceResults.issues.slice(0, 3).join("; ")}${
+              confidenceResults.issues.length > 3 ? "..." : ""
+            }`
+          : "";
 
-      failureReason = `Hallucination detected: confidence ${
-        confidenceResults.averageConfidence.toFixed(2)
-      } below threshold ${confidenceThreshold}.${issuesSummary}`;
+      failureReason = `Hallucination detected: confidence ${confidenceResults.averageConfidence.toFixed(
+        2,
+      )} below threshold ${confidenceThreshold}.${issuesSummary}`;
     } else if (hasAllResults) {
       status = ReasoningResultStatus.COMPLETED;
     } else {
@@ -1855,25 +1836,29 @@ export class SessionSupervisorActor implements BaseActor {
 
     if (memoryConfig?.fact_extraction !== false) {
       memoryPromises.push(
-        this.extractAndStoreSemanticFacts(summary).then(() => {
-          this.logger.info("Semantic facts extracted and stored");
-        }).catch((error) => {
-          this.logger.warn("Failed to extract semantic facts", {
-            error: error instanceof Error ? error.message : String(error),
-          });
-        }),
+        this.extractAndStoreSemanticFacts(summary)
+          .then(() => {
+            this.logger.info("Semantic facts extracted and stored");
+          })
+          .catch((error) => {
+            this.logger.warn("Failed to extract semantic facts", {
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }),
       );
     }
 
     if (memoryConfig?.summary !== false) {
       memoryPromises.push(
-        this.generateWorkingMemorySummary(summary).then(() => {
-          this.logger.info("Working memory summary generated");
-        }).catch((error) => {
-          this.logger.warn("Failed to generate working memory summary", {
-            error: error instanceof Error ? error.message : String(error),
-          });
-        }),
+        this.generateWorkingMemorySummary(summary)
+          .then(() => {
+            this.logger.info("Working memory summary generated");
+          })
+          .catch((error) => {
+            this.logger.warn("Failed to generate working memory summary", {
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }),
       );
     }
 
@@ -1946,13 +1931,14 @@ Think step by step about the best approach to handle this signal, then use the t
           agentId: z.string().describe("The ID of the agent to execute"),
           task: z.string().describe("The task for the agent to perform"),
           inputSource: z.enum(["signal", "previous", "combined"]).describe("Source of input data"),
-          dependencies: z.array(z.string()).optional().describe(
-            "Agent IDs this execution depends on",
-          ),
+          dependencies: z
+            .array(z.string())
+            .optional()
+            .describe("Agent IDs this execution depends on"),
           phase: z.string().describe("Execution phase name"),
-          executionStrategy: z.enum(["sequential", "parallel"]).describe(
-            "How to execute agents in this phase",
-          ),
+          executionStrategy: z
+            .enum(["sequential", "parallel"])
+            .describe("How to execute agents in this phase"),
         }),
         execute: (params) => {
           // This tool is for planning only, not actual execution
@@ -2008,12 +1994,12 @@ Think step by step about the best approach to handle this signal, then use the t
             continue;
           }
 
-          const agentId = typeof input.agentId === "string" && input.agentId.trim().length > 0
-            ? input.agentId
-            : "";
-          const task = typeof input.task === "string" && input.task.trim().length > 0
-            ? input.task
-            : "";
+          const agentId =
+            typeof input.agentId === "string" && input.agentId.trim().length > 0
+              ? input.agentId
+              : "";
+          const task =
+            typeof input.task === "string" && input.task.trim().length > 0 ? input.task : "";
           if (!agentId || !task) {
             // Skip malformed planning entries
             continue;
@@ -2043,21 +2029,21 @@ Think step by step about the best approach to handle this signal, then use the t
       }
 
       // Convert phases to ExecutionPhase format`\
-      const phases: ExecutionPhase[] = Array.from(phaseMap.entries()).map((
-        [phaseName, agentPlans],
-      ) => ({
-        id: crypto.randomUUID(),
-        name: phaseName,
-        executionStrategy: (agentPlans as PlanningToolInput[])[0]?.executionStrategy ||
-          "sequential",
-        agents: (agentPlans as PlanningToolInput[]).map((plan) => ({
-          agentId: plan.agentId || "",
-          task: plan.task || "",
-          inputSource: plan.inputSource || "signal",
-          dependencies: plan.dependencies,
-          reasoning: `AI planned: ${plan.task || ""}`,
-        })),
-      }));
+      const phases: ExecutionPhase[] = Array.from(phaseMap.entries()).map(
+        ([phaseName, agentPlans]) => ({
+          id: crypto.randomUUID(),
+          name: phaseName,
+          executionStrategy:
+            (agentPlans as PlanningToolInput[])[0]?.executionStrategy || "sequential",
+          agents: (agentPlans as PlanningToolInput[]).map((plan) => ({
+            agentId: plan.agentId || "",
+            task: plan.task || "",
+            inputSource: plan.inputSource || "signal",
+            dependencies: plan.dependencies,
+            reasoning: `AI planned: ${plan.task || ""}`,
+          })),
+        }),
+      );
 
       if (phases.length > 0) {
         this.logger.info("Successfully parsed AI-planned execution", {
@@ -2092,17 +2078,19 @@ Think step by step about the best approach to handle this signal, then use the t
         intelligentOrder: intelligentOrder.join(" → "),
       });
 
-      const phases: ExecutionPhase[] = [{
-        id: crypto.randomUUID(),
-        name: "AI-Parsed Execution",
-        executionStrategy: "sequential",
-        agents: intelligentOrder.map((agentId) => ({
-          agentId,
-          task: `Execute ${agentId} based on AI analysis`,
-          inputSource: "signal" as const,
-          reasoning: "Extracted from AI text response",
-        })),
-      }];
+      const phases: ExecutionPhase[] = [
+        {
+          id: crypto.randomUUID(),
+          name: "AI-Parsed Execution",
+          executionStrategy: "sequential",
+          agents: intelligentOrder.map((agentId) => ({
+            agentId,
+            task: `Execute ${agentId} based on AI analysis`,
+            inputSource: "signal" as const,
+            reasoning: "Extracted from AI text response",
+          })),
+        },
+      ];
 
       return {
         id: planId,
@@ -2117,17 +2105,20 @@ Think step by step about the best approach to handle this signal, then use the t
     // Last resort: use input order
     this.logger.warn("Could not parse intelligent order - using input order as fallback");
 
-    const phases: ExecutionPhase[] = [{
-      id: crypto.randomUUID(),
-      name: "AI-Generated Execution",
-      executionStrategy: "sequential",
-      agents: this.sessionContext?.availableAgents.map((agentId) => ({
-        agentId,
-        task: "Process signal based on AI planning",
-        inputSource: "signal" as const,
-        reasoning: "Generated from AI planning",
-      })) || [],
-    }];
+    const phases: ExecutionPhase[] = [
+      {
+        id: crypto.randomUUID(),
+        name: "AI-Generated Execution",
+        executionStrategy: "sequential",
+        agents:
+          this.sessionContext?.availableAgents.map((agentId) => ({
+            agentId,
+            task: "Process signal based on AI planning",
+            inputSource: "signal" as const,
+            reasoning: "Generated from AI planning",
+          })) || [],
+      },
+    ];
 
     return {
       id: planId,
@@ -2150,8 +2141,8 @@ Think step by step about the best approach to handle this signal, then use the t
 
     const extractedAgents = matches
       .map((match) => match[1])
-      .filter((agent): agent is string =>
-        !!agent && this.sessionContext!.availableAgents.includes(agent)
+      .filter(
+        (agent): agent is string => !!agent && this.sessionContext!.availableAgents.includes(agent),
       );
 
     if (extractedAgents.length > 0) {
@@ -2164,10 +2155,9 @@ Think step by step about the best approach to handle this signal, then use the t
 
     // Alternative: Look for agent names mentioned in order
     const availableAgents = this.sessionContext.availableAgents;
-    const agentPositions = availableAgents.map((agent) => ({
-      agent,
-      position: text.toLowerCase().indexOf(agent.toLowerCase()),
-    })).filter((item) => item.position !== -1);
+    const agentPositions = availableAgents
+      .map((agent) => ({ agent, position: text.toLowerCase().indexOf(agent.toLowerCase()) }))
+      .filter((item) => item.position !== -1);
 
     // Sort by position in text to get the order the AI mentioned them
     agentPositions.sort((a, b) => a.position - b.position);
@@ -2195,23 +2185,25 @@ Think step by step about the best approach to handle this signal, then use the t
     const agents = jobSpec.execution?.agents || [];
 
     const executionStrategy = jobSpec.execution?.strategy || "sequential";
-    const phases: ExecutionPhase[] = [{
-      id: crypto.randomUUID(),
-      name: jobSpec.name || "Job Execution",
-      executionStrategy,
-      agents: agents.map((agent, index) => {
-        const agentId = typeof agent === "string" ? agent : agent.id;
-        const agentObj = typeof agent === "string" ? null : agent;
+    const phases: ExecutionPhase[] = [
+      {
+        id: crypto.randomUUID(),
+        name: jobSpec.name || "Job Execution",
+        executionStrategy,
+        agents: agents.map((agent, index) => {
+          const agentId = typeof agent === "string" ? agent : agent.id;
+          const agentObj = typeof agent === "string" ? null : agent;
 
-        return {
-          agentId,
-          task: agentObj?.context?.task || "Execute job task",
-          inputSource: executionStrategy === "sequential" && index > 0 ? "previous" : "signal",
-          dependencies: agentObj?.dependencies,
-          reasoning: "Defined by job configuration",
-        };
-      }),
-    }];
+          return {
+            agentId,
+            task: agentObj?.context?.task || "Execute job task",
+            inputSource: executionStrategy === "sequential" && index > 0 ? "previous" : "signal",
+            dependencies: agentObj?.dependencies,
+            reasoning: "Defined by job configuration",
+          };
+        }),
+      },
+    ];
 
     return {
       id: planId,
@@ -2249,11 +2241,8 @@ Think step by step about the best approach to handle this signal, then use the t
       }
 
       // Build batches: session summary, payload, and per-agent IO
-      const batches: Array<{
-        text: string;
-        sourceType: FactSourceType;
-        sourceAgentId?: string;
-      }> = [];
+      const batches: Array<{ text: string; sourceType: FactSourceType; sourceAgentId?: string }> =
+        [];
 
       // Session summary batch
       const summaryBlock = [
@@ -2280,16 +2269,14 @@ Think step by step about the best approach to handle this signal, then use the t
       for (const r of summary.results) {
         // Input batch
         if (r.input !== undefined && r.input !== null) {
-          const inputText = typeof r.input === "string"
-            ? r.input
-            : JSON.stringify(r.input, null, 2);
+          const inputText =
+            typeof r.input === "string" ? r.input : JSON.stringify(r.input, null, 2);
           batches.push({ text: inputText, sourceType: "agent_input", sourceAgentId: r.agentId });
         }
         // Output batch
         if (r.output !== undefined && r.output !== null) {
-          const outputText = typeof r.output === "string"
-            ? r.output
-            : JSON.stringify(r.output, null, 2);
+          const outputText =
+            typeof r.output === "string" ? r.output : JSON.stringify(r.output, null, 2);
           batches.push({ text: outputText, sourceType: "agent_output", sourceAgentId: r.agentId });
         }
       }
@@ -2362,28 +2349,24 @@ Think step by step about the best approach to handle this signal, then use the t
             const tempManager = new CoALAMemoryManager(scope, memoryAdapter, false, {
               commitDebounceDelay: 0,
             });
-            await tempManager.rememberWithMetadata(
-              `semantic-fact-${crypto.randomUUID()}`,
-              fact,
-              {
-                memoryType: CoALAMemoryType.SEMANTIC,
-                tags: [
-                  fact.predicate,
-                  fact.sourceType,
-                  fact.subject.split(" ")[0],
-                  fact.object.split(" ")[0],
-                ].filter((t): t is string => Boolean(t)),
-                relevanceScore: Math.min(0.9, Math.max(0.6, fact.confidence)),
-                confidence: fact.confidence,
-                associations: [this.sessionId, ...(fact.sourceAgentId ? [fact.sourceAgentId] : [])],
-                source: MemorySource.SYSTEM_GENERATED,
-                sourceMetadata: {
-                  sessionId: this.sessionId,
-                  workspaceId: this.workspaceId,
-                  agentId: fact.sourceAgentId,
-                },
+            await tempManager.rememberWithMetadata(`semantic-fact-${crypto.randomUUID()}`, fact, {
+              memoryType: CoALAMemoryType.SEMANTIC,
+              tags: [
+                fact.predicate,
+                fact.sourceType,
+                fact.subject.split(" ")[0],
+                fact.object.split(" ")[0],
+              ].filter((t): t is string => Boolean(t)),
+              relevanceScore: Math.min(0.9, Math.max(0.6, fact.confidence)),
+              confidence: fact.confidence,
+              associations: [this.sessionId, ...(fact.sourceAgentId ? [fact.sourceAgentId] : [])],
+              source: MemorySource.SYSTEM_GENERATED,
+              sourceMetadata: {
+                sessionId: this.sessionId,
+                workspaceId: this.workspaceId,
+                agentId: fact.sourceAgentId,
               },
-            );
+            });
             await tempManager.dispose();
             stored++;
           }
@@ -2420,11 +2403,7 @@ Think step by step about the best approach to handle this signal, then use the t
       const memoryPath = getWorkspaceMemoryDir(workspaceId);
       const memoryAdapter = new CoALALocalFileStorageAdapter(memoryPath);
 
-      const scope = {
-        id: this.sessionId,
-        workspaceId: workspaceId,
-        type: "session" as const,
-      };
+      const scope = { id: this.sessionId, workspaceId: workspaceId, type: "session" as const };
 
       const memoryManager = new CoALAMemoryManager(
         scope,
@@ -2531,23 +2510,19 @@ Think step by step about the best approach to handle this signal, then use the t
 
     // Build an array of facts - easy to extend with more facts later
     const facts: string[] = [
-      `Current Date: ${
-        now.toLocaleDateString("en-US", {
-          weekday: "long",
-          year: "numeric",
-          month: "long",
-          day: "numeric",
-        })
-      }`,
-      `Current Time: ${
-        now.toLocaleTimeString("en-US", {
-          hour12: true,
-          hour: "2-digit",
-          minute: "2-digit",
-          second: "2-digit",
-          timeZoneName: "short",
-        })
-      }`,
+      `Current Date: ${now.toLocaleDateString("en-US", {
+        weekday: "long",
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      })}`,
+      `Current Time: ${now.toLocaleTimeString("en-US", {
+        hour12: true,
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        timeZoneName: "short",
+      })}`,
       `Timestamp: ${now.toISOString()}`,
     ];
 
@@ -2591,7 +2566,8 @@ Think step by step about the best approach to handle this signal, then use the t
   ): Promise<void> {
     // Only stream if workspace supervisor with memory is available
     if (
-      !this.workspaceSupervisor || typeof this.workspaceSupervisor.streamAgentResult !== "function"
+      !this.workspaceSupervisor ||
+      typeof this.workspaceSupervisor.streamAgentResult !== "function"
     ) {
       this.logger.debug("Workspace supervisor not available for memory streaming", {
         sessionId: this.sessionId,
@@ -2608,10 +2584,7 @@ Think step by step about the best approach to handle this signal, then use the t
         agentResult.output,
         agentResult.duration,
         success,
-        {
-          tokensUsed,
-          error: errorMessage,
-        },
+        { tokensUsed, error: errorMessage },
       );
 
       this.logger.debug("Agent result streamed to workspace memory", {
@@ -2660,15 +2633,14 @@ Think step by step about the best approach to handle this signal, then use the t
           markImportant: summary.status === "completed", // Mark as important if session succeeded
         });
 
-        this.logger.info("Working memory consolidation completed", {
-          sessionId: this.sessionId,
-        });
+        this.logger.info("Working memory consolidation completed", { sessionId: this.sessionId });
       } catch (consolidationError) {
         this.logger.warn("Failed to consolidate working memories", {
           sessionId: this.sessionId,
-          error: consolidationError instanceof Error
-            ? consolidationError.message
-            : String(consolidationError),
+          error:
+            consolidationError instanceof Error
+              ? consolidationError.message
+              : String(consolidationError),
         });
       }
 
@@ -2696,8 +2668,8 @@ Think step by step about the best approach to handle this signal, then use the t
           summary.status === "completed"
             ? "success"
             : summary.status === "failed"
-            ? "failure"
-            : "partial",
+              ? "failure"
+              : "partial",
           summary.status === "completed" ? 0.9 : 0.7,
           {
             sessionId: this.sessionId,
@@ -2739,12 +2711,7 @@ Think step by step about the best approach to handle this signal, then use the t
     }
 
     try {
-      await this.workspaceSupervisor.streamToolCall(
-        this.sessionId,
-        agentId,
-        toolName,
-        args,
-      );
+      await this.workspaceSupervisor.streamToolCall(this.sessionId, agentId, toolName, args);
     } catch (error) {
       this.logger.debug("Failed to stream tool call to memory", {
         sessionId: this.sessionId,
@@ -2768,12 +2735,7 @@ Think step by step about the best approach to handle this signal, then use the t
     }
 
     try {
-      await this.workspaceSupervisor.streamToolResult(
-        this.sessionId,
-        agentId,
-        toolName,
-        result,
-      );
+      await this.workspaceSupervisor.streamToolResult(this.sessionId, agentId, toolName, result);
     } catch (error) {
       this.logger.debug("Failed to stream tool result to memory", {
         sessionId: this.sessionId,
@@ -2877,17 +2839,13 @@ Think step by step about the best approach to handle this signal, then use the t
     const { request, approvalId, agentId } = error;
 
     // Log the approval request for audit trail
-    this.logger.warn(
-      "Auto-approving agent request (temporary implementation)",
-      {
-        approvalId,
-        agentId,
-        request: request,
-        sessionId: this.sessionId,
-        disclaimer:
-          "This is a temporary auto-approval. Full approval handling not yet implemented.",
-      },
-    );
+    this.logger.warn("Auto-approving agent request (temporary implementation)", {
+      approvalId,
+      agentId,
+      request: request,
+      sessionId: this.sessionId,
+      disclaimer: "This is a temporary auto-approval. Full approval handling not yet implemented.",
+    });
 
     // Auto-approve with clear indication this is temporary
     const decision = {
@@ -2928,8 +2886,7 @@ Think step by step about the best approach to handle this signal, then use the t
   ): void {
     // Update metrics
     this.streamMetrics.totalEvents++;
-    const agentMetrics = this.streamMetrics.agentMetrics.get(agentId) ||
-      { events: 0, errors: 0 };
+    const agentMetrics = this.streamMetrics.agentMetrics.get(agentId) || { events: 0, errors: 0 };
     agentMetrics.events++;
 
     if (event.type === "error") {
@@ -2977,12 +2934,13 @@ Think step by step about the best approach to handle this signal, then use the t
     if (event.type === "custom") {
       return {
         type: "custom",
-        eventType: typeof (event as { eventType?: unknown }).eventType === "string"
-          ? String((event as { eventType?: unknown }).eventType)
-          : "custom",
+        eventType:
+          typeof (event as { eventType?: unknown }).eventType === "string"
+            ? String((event as { eventType?: unknown }).eventType)
+            : "custom",
         data: {
-          ...((typeof (event as { data?: unknown }).data === "object" &&
-              (event as { data?: unknown }).data !== null)
+          ...(typeof (event as { data?: unknown }).data === "object" &&
+          (event as { data?: unknown }).data !== null
             ? (event as { data?: Record<string, unknown> }).data!
             : { originalData: (event as { data?: unknown }).data }),
           metadata: sessionMetadata,
@@ -2991,19 +2949,11 @@ Think step by step about the best approach to handle this signal, then use the t
     }
 
     // For events that don't support metadata, map to a generic custom event
-    return {
-      type: "custom",
-      eventType: "unknown",
-      data: { original: event },
-    } as StreamEvent;
+    return { type: "custom", eventType: "unknown", data: { original: event } } as StreamEvent;
   }
 
   // Stream session-level events
   private streamSessionEvent(eventType: string, data: unknown): void {
-    this.baseStreamEmitter?.emit({
-      type: "custom",
-      eventType: `session.${eventType}`,
-      data,
-    });
+    this.baseStreamEmitter?.emit({ type: "custom", eventType: `session.${eventType}`, data });
   }
 }

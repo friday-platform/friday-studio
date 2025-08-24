@@ -7,17 +7,12 @@
  */
 
 import { assert, assertEquals } from "@std/assert";
-import { CronManager, type CronTimerConfig, type PersistedTimerData } from "../mod.ts";
+import type { KVEntry } from "../../../src/core/storage/kv-storage.ts";
 import { MemoryKVStorage } from "../../../src/core/storage/memory-kv-storage.ts";
-import { type KVEntry } from "../../../src/core/storage/kv-storage.ts";
+import { CronManager, type CronTimerConfig, type PersistedTimerData } from "../mod.ts";
 
 // Mock logger for testing
-const mockLogger = {
-  info: () => {},
-  warn: () => {},
-  error: () => {},
-  debug: () => {},
-};
+const mockLogger = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} };
 
 const validConfig: CronTimerConfig = {
   workspaceId: "test-workspace",
@@ -161,10 +156,7 @@ Deno.test("Timer Signal - Storage Persistence", async (t) => {
     };
 
     // Try to register another timer - should fail due to storage error
-    const anotherConfig: CronTimerConfig = {
-      ...validConfig,
-      signalId: "another-timer",
-    };
+    const anotherConfig: CronTimerConfig = { ...validConfig, signalId: "another-timer" };
 
     let registrationError = false;
     try {

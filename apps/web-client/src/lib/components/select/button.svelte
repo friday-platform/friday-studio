@@ -1,13 +1,13 @@
 <script lang="ts">
-  import type { Snippet } from "svelte";
-  import CaretDown from "../icons/caret-down.svelte";
-  import { getContext } from "./context";
+import type { Snippet } from "svelte";
+import CaretDown from "../icons/caret-down.svelte";
+import { getContext } from "./context";
 
-  type Props = { children: Snippet; variant?: "small" | "regular"; width?: "fill" | "auto" };
+type Props = { children: Snippet; variant?: "small" | "regular"; width?: "fill" | "auto" };
 
-  let { children, variant = "regular", width = "fill" }: Props = $props();
+const { children, variant = "regular", width = "fill" }: Props = $props();
 
-  const { selectedLabel } = getContext();
+const { selectedLabel } = getContext();
 </script>
 
 <div class="{variant} width--{width}">

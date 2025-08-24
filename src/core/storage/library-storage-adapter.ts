@@ -10,17 +10,17 @@
  * while maintaining complete storage backend independence.
  */
 
-import { dirname, join } from "@std/path";
 import { ensureDir } from "@std/fs";
-import { type KVStorage } from "./kv-storage.ts";
-import {
-  type LibraryItem,
-  type LibrarySearchQuery,
-  type LibrarySearchResult,
-  type LibraryStats,
-  type TemplateConfig,
-} from "../library/types.ts";
+import { dirname, join } from "@std/path";
 import { z } from "zod/v4";
+import type {
+  LibraryItem,
+  LibrarySearchQuery,
+  LibrarySearchResult,
+  LibraryStats,
+  TemplateConfig,
+} from "../library/types.ts";
+import type { KVStorage } from "./kv-storage.ts";
 
 /**
  * Library storage configuration
@@ -124,7 +124,10 @@ export class LibraryStorageAdapter {
   private config: Required<LibraryStorageConfig>;
   private contentDir: string;
 
-  constructor(private storage: KVStorage, config: LibraryStorageConfig = {}) {
+  constructor(
+    private storage: KVStorage,
+    config: LibraryStorageConfig = {},
+  ) {
     // Apply defaults to config
     this.config = {
       contentDir: config.contentDir || getDefaultLibraryDir(),
@@ -193,9 +196,10 @@ export class LibraryStorageAdapter {
     }
 
     // Calculate content size
-    const contentSize = typeof item.content === "string"
-      ? new TextEncoder().encode(item.content).length
-      : item.content.length;
+    const contentSize =
+      typeof item.content === "string"
+        ? new TextEncoder().encode(item.content).length
+        : item.content.length;
 
     // Generate content path using organized structure
     const contentPath = this.generateContentPath(
@@ -279,10 +283,7 @@ export class LibraryStorageAdapter {
     }
 
     // Convert metadata to LibraryItem format
-    const item: LibraryItem = {
-      ...metadata,
-      content_path: metadata.content_path,
-    };
+    const item: LibraryItem = { ...metadata, content_path: metadata.content_path };
 
     return { item };
   }
@@ -317,10 +318,7 @@ export class LibraryStorageAdapter {
     }
 
     // Convert metadata to LibraryItem format
-    const item: LibraryItem = {
-      ...metadata,
-      content_path: metadata.content_path,
-    };
+    const item: LibraryItem = { ...metadata, content_path: metadata.content_path };
 
     return { item, content };
   }
@@ -390,7 +388,8 @@ export class LibraryStorageAdapter {
 
       for (const type of types) {
         for await (const { key } of this.storage.list(["library", "indexes", "by_type", type])) {
-          if (key.length === 5) { // ['library', 'indexes', 'by_type', type, id]
+          if (key.length === 5) {
+            // ['library', 'indexes', 'by_type', type, id]
             const itemId = key[4];
             if (typeof itemId === "string") {
               typeIds.add(itemId);
@@ -408,7 +407,8 @@ export class LibraryStorageAdapter {
 
       for (const tag of query.tags) {
         for await (const { key } of this.storage.list(["library", "indexes", "by_tag", tag])) {
-          if (key.length === 5) { // ['library', 'indexes', 'by_tag', tag, id]
+          if (key.length === 5) {
+            // ['library', 'indexes', 'by_tag', tag, id]
             const itemId = key[4];
             if (typeof itemId === "string") {
               tagIds.add(itemId);
@@ -467,15 +467,16 @@ export class LibraryStorageAdapter {
     // Text search in name and description
     if (query.query) {
       const searchTerm = query.query.toLowerCase();
-      filteredItems = filteredItems.filter((item) =>
-        item.name.toLowerCase().includes(searchTerm) ||
-        (item.description && item.description.toLowerCase().includes(searchTerm))
+      filteredItems = filteredItems.filter(
+        (item) =>
+          item.name.toLowerCase().includes(searchTerm) ||
+          (item.description && item.description.toLowerCase().includes(searchTerm)),
       );
     }
 
     // Sort by created_at (newest first)
-    filteredItems.sort((a, b) =>
-      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    filteredItems.sort(
+      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
     );
 
     // Apply pagination
@@ -494,13 +495,15 @@ export class LibraryStorageAdapter {
   /**
    * List items with simple filtering
    */
-  async listItems(options: {
-    type?: string | string[];
-    tags?: string[];
-    workspace_id?: string;
-    since?: string;
-    limit?: number;
-  } = {}): Promise<LibraryItem[]> {
+  async listItems(
+    options: {
+      type?: string | string[];
+      tags?: string[];
+      workspace_id?: string;
+      since?: string;
+      limit?: number;
+    } = {},
+  ): Promise<LibraryItem[]> {
     const query: LibrarySearchQuery = {
       type: options.type,
       tags: options.tags,
@@ -586,9 +589,11 @@ export class LibraryStorageAdapter {
 
     // Get workspace-specific templates
     if (workspace_id) {
-      for await (
-        const { value } of this.storage.list<TemplateConfig>(["library", "templates", workspace_id])
-      ) {
+      for await (const { value } of this.storage.list<TemplateConfig>([
+        "library",
+        "templates",
+        workspace_id,
+      ])) {
         if (value) {
           templates.push(value);
         }
@@ -596,9 +601,11 @@ export class LibraryStorageAdapter {
     }
 
     // Get global templates
-    for await (
-      const { value } of this.storage.list<TemplateConfig>(["library", "templates", "global"])
-    ) {
+    for await (const { value } of this.storage.list<TemplateConfig>([
+      "library",
+      "templates",
+      "global",
+    ])) {
       if (value) {
         templates.push(value);
       }
@@ -708,11 +715,7 @@ export class LibraryStorageAdapter {
   /**
    * Check disk usage and cleanup if needed
    */
-  async getDiskUsage(): Promise<{
-    totalSize: number;
-    itemCount: number;
-    contentDir: string;
-  }> {
+  async getDiskUsage(): Promise<{ totalSize: number; itemCount: number; contentDir: string }> {
     let totalSize = 0;
     let itemCount = 0;
 
@@ -734,11 +737,7 @@ export class LibraryStorageAdapter {
       }
     }
 
-    return {
-      totalSize,
-      itemCount,
-      contentDir: this.contentDir,
-    };
+    return { totalSize, itemCount, contentDir: this.contentDir };
   }
 
   /**

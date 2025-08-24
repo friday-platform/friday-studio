@@ -1,6 +1,6 @@
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { ToolContext } from "../types.ts";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { createSuccessResponse } from "../types.ts";
 import { webSessionManager } from "./session-manager.ts";
 
@@ -19,10 +19,10 @@ export function registerWebSessionTools(server: McpServer, ctx: ToolContext) {
       inputSchema: {
         sessionId: z.string().describe("Unique identifier for the session"),
         userAgent: z.string().optional().describe("Custom user agent string"),
-        viewport: z.object({
-          width: z.number(),
-          height: z.number(),
-        }).optional().describe("Browser viewport size (default: 1920x1080)"),
+        viewport: z
+          .object({ width: z.number(), height: z.number() })
+          .optional()
+          .describe("Browser viewport size (default: 1920x1080)"),
         locale: z.string().optional().describe("Browser locale (default: en-US)"),
       },
     },
@@ -73,7 +73,9 @@ export function registerWebSessionTools(server: McpServer, ctx: ToolContext) {
       inputSchema: {
         sessionId: z.string().describe("Session identifier"),
         url: z.string().url().describe("URL to navigate to"),
-        waitUntil: z.enum(["load", "domcontentloaded", "networkidle"]).optional()
+        waitUntil: z
+          .enum(["load", "domcontentloaded", "networkidle"])
+          .optional()
           .describe("Wait condition (default: networkidle)"),
         timeout: z.number().optional().describe("Navigation timeout in seconds (default: 30)"),
       },
@@ -147,9 +149,10 @@ export function registerWebSessionTools(server: McpServer, ctx: ToolContext) {
       inputSchema: {
         sessionId: z.string().describe("Session identifier"),
         format: z.enum(["text", "markdown", "html"]).describe("Output format"),
-        selector: z.string().optional().describe(
-          "CSS selector to extract specific elements (optional)",
-        ),
+        selector: z
+          .string()
+          .optional()
+          .describe("CSS selector to extract specific elements (optional)"),
       },
     },
     async (params) => {
@@ -251,9 +254,10 @@ export function registerWebSessionTools(server: McpServer, ctx: ToolContext) {
         selector: z.string().optional().describe("CSS selector for the element"),
         text: z.string().optional().describe("Text content to click (partial match)"),
         role: z.string().optional().describe("ARIA role of element to click"),
-        button: z.enum(["left", "right", "middle"]).optional().describe(
-          "Mouse button (default: left)",
-        ),
+        button: z
+          .enum(["left", "right", "middle"])
+          .optional()
+          .describe("Mouse button (default: left)"),
         clickCount: z.number().optional().describe("Number of clicks (default: 1)"),
         timeout: z.number().optional().describe("Timeout in seconds (default: 10)"),
       },
@@ -320,12 +324,7 @@ export function registerWebSessionTools(server: McpServer, ctx: ToolContext) {
         return createSuccessResponse({
           output: result,
           title: "Element Clicked",
-          metadata: {
-            sessionId: params.sessionId,
-            beforeUrl,
-            afterUrl,
-            navigationOccurred,
-          },
+          metadata: { sessionId: params.sessionId, beforeUrl, afterUrl, navigationOccurred },
         });
       } catch (error) {
         ctx.logger.error("Click action failed", {
@@ -348,9 +347,7 @@ export function registerWebSessionTools(server: McpServer, ctx: ToolContext) {
 - Session cannot be used after closing
 - Automatically happens after 30 minutes of inactivity
 - Good practice to close sessions when done to save resources`,
-      inputSchema: {
-        sessionId: z.string().describe("Session identifier to close"),
-      },
+      inputSchema: { sessionId: z.string().describe("Session identifier to close") },
     },
     async (params) => {
       try {
@@ -405,13 +402,17 @@ export function registerWebSessionTools(server: McpServer, ctx: ToolContext) {
       try {
         const sessions = webSessionManager.listSessions();
 
-        const output = sessions.length === 0
-          ? "No active web sessions"
-          : sessions.map((session) =>
-            `Session: ${session.id}\n` +
-            `  Created: ${session.createdAt.toISOString()}\n` +
-            `  Last Used: ${session.lastUsed.toISOString()}`
-          ).join("\n\n");
+        const output =
+          sessions.length === 0
+            ? "No active web sessions"
+            : sessions
+                .map(
+                  (session) =>
+                    `Session: ${session.id}\n` +
+                    `  Created: ${session.createdAt.toISOString()}\n` +
+                    `  Last Used: ${session.lastUsed.toISOString()}`,
+                )
+                .join("\n\n");
 
         return createSuccessResponse({
           output,

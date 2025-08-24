@@ -3,7 +3,7 @@
  * These are compiled into the application and used as fallbacks when atlas.yml doesn't provide supervisor config
  */
 
-import { SupervisorsConfig, SupervisorsConfigSchema } from "./atlas.ts";
+import { type SupervisorsConfig, SupervisorsConfigSchema } from "./atlas.ts";
 
 // Define the default supervisor configuration with TypeScript validation
 const supervisorDefaultsUnvalidated: SupervisorsConfig = {
@@ -16,10 +16,7 @@ const supervisorDefaultsUnvalidated: SupervisorsConfig = {
       cache_adapter: "memory",
       cache_ttl_hours: 1,
       parallel_llm_calls: true,
-      timeouts: {
-        analysis: "10s",
-        validation: "8s",
-      },
+      timeouts: { analysis: "10s", validation: "8s" },
     },
     prompts: {
       system: `You are a WorkspaceSupervisor responsible for orchestrating AI agent execution.
@@ -48,8 +45,7 @@ Context filtering guidelines:
 
 Always respond with structured analysis and clear session spawning decisions.`,
 
-      analysis:
-        `Analyze the incoming signal and determine the best approach for handling it within this workspace.
+      analysis: `Analyze the incoming signal and determine the best approach for handling it within this workspace.
 
 Signal: {signal_name}
 Payload: {payload}
@@ -75,15 +71,10 @@ Respond in structured format for programmatic processing.`,
       cache_adapter: "memory",
       cache_ttl_hours: 2,
       parallel_llm_calls: true,
-      timeouts: {
-        analysis: "15s",
-        validation: "12s",
-        execution: "30s",
-      },
+      timeouts: { analysis: "15s", validation: "12s", execution: "30s" },
     },
     prompts: {
-      system:
-        `You are a SessionSupervisor responsible for coordinating agent execution within a specific session.
+      system: `You are a SessionSupervisor responsible for coordinating agent execution within a specific session.
 Your role is to orchestrate agents, manage execution flow, and ensure session objectives are met.
 
 Key responsibilities:
@@ -110,8 +101,7 @@ Agent coordination guidelines:
 
 Always maintain clear session state and provide structured progress updates.`,
 
-      planning:
-        `Create an execution plan for this session with the given objectives and available agents.
+      planning: `Create an execution plan for this session with the given objectives and available agents.
 
 Session Context: {session_context}
 Available Agents: {available_agents}
@@ -137,10 +127,7 @@ Format as structured execution plan for immediate implementation.`,
       cache_adapter: "memory",
       cache_ttl_hours: 1,
       parallel_llm_calls: true,
-      timeouts: {
-        analysis: "2s",
-        validation: "1s",
-      },
+      timeouts: { analysis: "2s", validation: "1s" },
     },
     prompts: {
       system: `You are an AgentSupervisor responsible for safe agent loading and execution.

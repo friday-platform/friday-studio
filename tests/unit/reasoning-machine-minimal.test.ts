@@ -3,8 +3,8 @@
  * Just verifies the XState machine works correctly, not LLM behavior
  */
 
-import { assertEquals } from "@std/assert";
 import { createReasoningMachine } from "@atlas/reasoning";
+import { assertEquals } from "@std/assert";
 import { createActor, toPromise } from "xstate";
 
 Deno.test("ReasoningMachine - State Machine Mechanics", async () => {
@@ -15,16 +15,9 @@ Deno.test("ReasoningMachine - State Machine Mechanics", async () => {
       confidence: 1.0,
     }),
 
-    parseAction: () => ({
-      type: "complete" as const,
-      parameters: {},
-      reasoning: "Test complete",
-    }),
+    parseAction: () => ({ type: "complete" as const, parameters: {}, reasoning: "Test complete" }),
 
-    executeAction: async () => ({
-      result: { done: true },
-      observation: "Completed",
-    }),
+    executeAction: async () => ({ result: { done: true }, observation: "Completed" }),
   });
 
   const actor = createActor(machine, { input: { test: true } });
@@ -44,22 +37,12 @@ Deno.test("ReasoningMachine - Pause/Resume Mechanics", async () => {
     think: async () => {
       // Slow think to allow pause
       await new Promise((resolve) => setTimeout(resolve, 100));
-      return {
-        thinking: "ACTION: complete",
-        confidence: 1.0,
-      };
+      return { thinking: "ACTION: complete", confidence: 1.0 };
     },
 
-    parseAction: () => ({
-      type: "complete" as const,
-      parameters: {},
-      reasoning: "Done",
-    }),
+    parseAction: () => ({ type: "complete" as const, parameters: {}, reasoning: "Done" }),
 
-    executeAction: async () => ({
-      result: null,
-      observation: "Done",
-    }),
+    executeAction: async () => ({ result: null, observation: "Done" }),
   });
 
   const actor = createActor(machine, { input: {} });

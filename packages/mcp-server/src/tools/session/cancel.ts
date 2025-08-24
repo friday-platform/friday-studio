@@ -3,9 +3,9 @@
  * Terminates active execution sessions through the daemon API
  */
 
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { ToolContext } from "../types.ts";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { createSuccessResponse } from "../types.ts";
 
 export function registerSessionCancelTool(server: McpServer, ctx: ToolContext) {
@@ -15,9 +15,11 @@ export function registerSessionCancelTool(server: McpServer, ctx: ToolContext) {
       description:
         "Terminate an active execution session gracefully across all workspaces. This is a global operation that searches for the session ID across all active workspaces and stops the running job while cleaning up associated resources. Use this when a session needs to be stopped due to errors, changed requirements, or resource constraints.",
       inputSchema: {
-        sessionId: z.string().describe(
-          "Unique identifier of the active session to terminate (can be from any workspace)",
-        ),
+        sessionId: z
+          .string()
+          .describe(
+            "Unique identifier of the active session to terminate (can be from any workspace)",
+          ),
       },
     },
     async ({ sessionId }) => {

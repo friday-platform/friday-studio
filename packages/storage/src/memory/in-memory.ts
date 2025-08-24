@@ -85,9 +85,6 @@ export class InMemoryStorageAdapter implements ICoALAMemoryStorageAdapter {
   }
 
   getAllData(): { legacy: any; byType: Record<string, any> } {
-    return {
-      legacy: { ...this.data },
-      byType: { ...this.dataByType },
-    };
+    return { legacy: { ...this.data }, byType: { ...this.dataByType } };
   }
 }

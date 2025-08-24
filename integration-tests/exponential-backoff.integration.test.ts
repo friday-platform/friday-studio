@@ -57,11 +57,7 @@ Deno.test("ConversationAgent overload scenario", async () => {
       const finalText = await text;
       const finalReasoning = await reasoning;
 
-      return {
-        text: finalText,
-        reasoning: finalReasoning,
-        responseBuffer,
-      };
+      return { text: finalText, reasoning: finalReasoning, responseBuffer };
     },
     {
       maxRetries: 10,

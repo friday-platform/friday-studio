@@ -1,6 +1,6 @@
 import type { AtlasAgent } from "@atlas/agent-sdk";
-import type { AgentAdapter, AgentSourceData, AgentSourceType, AgentSummary } from "./types.ts";
 import { createLogger } from "@atlas/logger";
+import type { AgentAdapter, AgentSourceData, AgentSourceType, AgentSummary } from "./types.ts";
 
 /**
  * Loads agents created programmatically using the Atlas SDK.
@@ -53,10 +53,7 @@ export class SDKAgentAdapter implements AgentAdapter {
       type: "sdk",
       id,
       agent,
-      metadata: {
-        sourceLocation: `sdk://${id}`,
-        version: agent.metadata.version,
-      },
+      metadata: { sourceLocation: `sdk://${id}`, version: agent.metadata.version },
     });
   }
 

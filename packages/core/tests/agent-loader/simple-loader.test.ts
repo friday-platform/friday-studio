@@ -1,8 +1,8 @@
+import { createAgent } from "@atlas/agent-sdk";
 import { assertEquals, assertExists } from "@std/assert";
 import { describe, it } from "@std/testing/bdd";
-import { AgentLoader } from "../../src/agent-loader/loader.ts";
 import { SDKAgentAdapter } from "../../src/agent-loader/adapters/sdk-adapter.ts";
-import { createAgent } from "@atlas/agent-sdk";
+import { AgentLoader } from "../../src/agent-loader/loader.ts";
 
 describe("Simple Agent Loader Test", () => {
   it("should work with SDK agents", async () => {

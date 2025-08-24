@@ -21,9 +21,7 @@ import type {
  * This structured approach allows approval requests to cross the MCP boundary
  * as successful responses with special structure.
  */
-export type AgentExecutionResult =
-  | CompletedAgentResult
-  | AwaitingApprovalResult;
+export type AgentExecutionResult = CompletedAgentResult | AwaitingApprovalResult;
 
 /**
  * Standard completed agent result
@@ -120,10 +118,7 @@ export interface AgentSessionManager {
    * @param agentId The agent ID
    * @returns The session state
    */
-  getOrCreateSessionState(
-    sessionKey: string,
-    agentId: string,
-  ): Record<string, unknown>;
+  getOrCreateSessionState(sessionKey: string, agentId: string): Record<string, unknown>;
 
   /**
    * Clear session state

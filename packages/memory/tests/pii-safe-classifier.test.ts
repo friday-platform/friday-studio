@@ -6,8 +6,8 @@
  */
 
 import { assertEquals, assertExists } from "@std/assert";
-import { DEFAULT_PII_CONFIG, PIISafeMemoryClassifier } from "../src/pii-safe-classifier.ts";
 import { MemorySource } from "../src/mecmf-interfaces.ts";
+import { DEFAULT_PII_CONFIG, PIISafeMemoryClassifier } from "../src/pii-safe-classifier.ts";
 
 // Test data with various PII types
 const TEST_CONTENT = {
@@ -57,10 +57,7 @@ Deno.test("PII Safe Classifier - User Input PII Extraction", () => {
   const classifier = new PIISafeMemoryClassifier();
 
   // User input should extract PII
-  const entities = classifier.extractKeyEntities(
-    TEST_CONTENT.userWithPII,
-    MemorySource.USER_INPUT,
-  );
+  const entities = classifier.extractKeyEntities(TEST_CONTENT.userWithPII, MemorySource.USER_INPUT);
 
   const emails = entities.filter((e) => e.type === "email");
   const phones = entities.filter((e) => e.type === "phone");
@@ -136,10 +133,7 @@ Deno.test("PII Safe Classifier - Mixed Content Processing", () => {
   const classifier = new PIISafeMemoryClassifier();
 
   // User input should extract both PII and non-PII
-  const userEntities = classifier.extractKeyEntities(
-    TEST_CONTENT.mixed,
-    MemorySource.USER_INPUT,
-  );
+  const userEntities = classifier.extractKeyEntities(TEST_CONTENT.mixed, MemorySource.USER_INPUT);
 
   // Agent output should only extract non-PII
   const agentEntities = classifier.extractKeyEntities(
@@ -194,10 +188,7 @@ Deno.test("PII Safe Classifier - Validation Report", () => {
   ];
 
   // Test with untrusted source
-  const validation = classifier.validatePIIExtraction(
-    entities,
-    MemorySource.TOOL_OUTPUT,
-  );
+  const validation = classifier.validatePIIExtraction(entities, MemorySource.TOOL_OUTPUT);
 
   assertEquals(validation.safe, false);
   assertEquals(validation.blockedEntities.length, 2); // email and phone
@@ -249,10 +240,7 @@ Deno.test("PII Safe Classifier - Configuration Updates", () => {
   // Disable email extraction
   classifier.updatePIIConfig({ extractEmails: false });
 
-  entities = classifier.extractKeyEntities(
-    "Contact: test@example.com",
-    MemorySource.USER_INPUT,
-  );
+  entities = classifier.extractKeyEntities("Contact: test@example.com", MemorySource.USER_INPUT);
   emails = entities.filter((e) => e.type === "email");
   assertEquals(emails.length, 0);
 });

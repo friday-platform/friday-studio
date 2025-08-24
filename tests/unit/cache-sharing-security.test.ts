@@ -96,10 +96,7 @@ Deno.test("Plan data sanitization", () => {
     privateKeys: "rsa-private-key",
     authTokens: "bearer-token",
     passwords: "admin123",
-    context: {
-      workspaceId: "workspace1",
-      privateKeys: "nested-secret",
-    },
+    context: { workspaceId: "workspace1", privateKeys: "nested-secret" },
   };
 
   const sanitized = sanitizePlan(sensitivePlan);
@@ -160,11 +157,7 @@ Deno.test("Plan structure validation", () => {
   }
 
   // Valid plan
-  const validPlan = {
-    type: "execution",
-    phases: [],
-    context: { workspaceId: "workspace1" },
-  };
+  const validPlan = { type: "execution", phases: [], context: { workspaceId: "workspace1" } };
   expect(validatePlanStructure(validPlan, "workspace1")).toBe(true);
 
   // Invalid plan structures
@@ -181,9 +174,6 @@ Deno.test("Plan structure validation", () => {
   expect(validatePlanStructure(wrongWorkspacePlan, "workspace1")).toBe(false);
 
   // Plan without workspace context should be valid
-  const noContextPlan = {
-    type: "execution",
-    phases: [],
-  };
+  const noContextPlan = { type: "execution", phases: [] };
   expect(validatePlanStructure(noContextPlan, "workspace1")).toBe(true);
 });

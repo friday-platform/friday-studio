@@ -7,11 +7,11 @@
  * Based on MECMF Section 3.5.1 specifications and existing /embeddings/main.ts implementation.
  */
 
-import ort from "onnxruntime-web";
 import { crypto } from "jsr:@std/crypto";
 import { ensureDir } from "@std/fs";
+import ort from "onnxruntime-web";
 import { getMECMFCacheDir } from "../../../src/utils/paths.ts";
-import { AtlasEmbeddingConfig, MECMFEmbeddingProvider } from "./mecmf-interfaces.ts";
+import type { AtlasEmbeddingConfig, MECMFEmbeddingProvider } from "./mecmf-interfaces.ts";
 
 export interface TokenizerConfig {
   vocab: Record<string, number>;
@@ -244,7 +244,8 @@ export class WebEmbeddingProvider implements MECMFEmbeddingProvider {
           handler?: { dispose?: () => Promise<void> };
         };
         if (
-          sessionWithHandler.handler && typeof sessionWithHandler.handler.dispose === "function"
+          sessionWithHandler.handler &&
+          typeof sessionWithHandler.handler.dispose === "function"
         ) {
           try {
             await sessionWithHandler.handler.dispose();
@@ -315,10 +316,10 @@ export class WebEmbeddingProvider implements MECMFEmbeddingProvider {
 
     // Create filename from URL hash
     const urlHash = Array.from(
-      new Uint8Array(
-        await crypto.subtle.digest("SHA-256", new TextEncoder().encode(url)),
-      ),
-    ).map((b) => b.toString(16).padStart(2, "0")).join("");
+      new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(url))),
+    )
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
 
     return `${cacheDir}/${urlHash.slice(0, 16)}${extension}`;
   }
@@ -366,10 +367,16 @@ export class WebEmbeddingProvider implements MECMFEmbeddingProvider {
     }
 
     // Extract special tokens
-    let padToken = "[PAD]", unkToken = "[UNK]", clsToken = "[CLS]";
-    let sepToken = "[SEP]", maskToken = "[MASK]";
-    let padTokenId = 0, unkTokenId = 100, clsTokenId = 101;
-    let sepTokenId = 102, maskTokenId = 103;
+    let padToken = "[PAD]",
+      unkToken = "[UNK]",
+      clsToken = "[CLS]";
+    let sepToken = "[SEP]",
+      maskToken = "[MASK]";
+    let padTokenId = 0,
+      unkTokenId = 100,
+      clsTokenId = 101;
+    let sepTokenId = 102,
+      maskTokenId = 103;
 
     // Process added_tokens if available
     if (tokenizerJson.added_tokens) {
@@ -470,7 +477,7 @@ export class WebEmbeddingProvider implements MECMFEmbeddingProvider {
   }
 
   private createAttentionMask(tokenIds: number[], padTokenId: number = 0): number[] {
-    return tokenIds.map((id) => id === padTokenId ? 0 : 1);
+    return tokenIds.map((id) => (id === padTokenId ? 0 : 1));
   }
 
   private async calculateEmbedding(
@@ -543,11 +550,7 @@ export class WebEmbeddingProvider implements MECMFEmbeddingProvider {
         embedding[j] /= validTokens;
       }
 
-      return {
-        modelName: this.MODEL_NAME,
-        time,
-        embedding,
-      };
+      return { modelName: this.MODEL_NAME, time, embedding };
     } catch (error) {
       throw error;
     }

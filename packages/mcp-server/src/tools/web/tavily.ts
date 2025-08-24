@@ -1,7 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { z } from "zod";
 import type { ToolContext } from "../types.ts";
 import { createSuccessResponse } from "../types.ts";
-import { z } from "zod";
 import { fetchWithTimeout, handleDaemonResponse } from "../utils.ts";
 
 /**
@@ -44,9 +44,7 @@ async function handleLargeResponse(
 
     const response = await fetchWithTimeout(`${ctx.daemonUrl}/api/library`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(libraryPayload),
     });
 
@@ -54,8 +52,7 @@ async function handleLargeResponse(
 
     if (result.success && result.itemId) {
       return {
-        message:
-          `Tool response saved in the atlas library under id ${result.itemId} (size: ${responseText.length} bytes).`,
+        message: `Tool response saved in the atlas library under id ${result.itemId} (size: ${responseText.length} bytes).`,
         itemId: result.itemId,
         originalSize: responseText.length,
       };
@@ -87,22 +84,29 @@ export function registerTavilyTools(server: McpServer, ctx: ToolContext) {
       description: "Search the web using Tavily's AI-powered search engine",
       inputSchema: {
         query: z.string().describe("The search query"),
-        search_depth: z.enum(["basic", "advanced"]).default("basic").describe(
-          "Search depth - basic or advanced",
-        ),
-        topic: z.enum(["general", "news"]).default("general").describe(
-          "Search topic - general or news",
-        ),
+        search_depth: z
+          .enum(["basic", "advanced"])
+          .default("basic")
+          .describe("Search depth - basic or advanced"),
+        topic: z
+          .enum(["general", "news"])
+          .default("general")
+          .describe("Search topic - general or news"),
         days: z.number().optional().describe("Number of recent days to search (for news topic)"),
-        max_results: z.number().min(1).max(20).default(5).describe(
-          "Maximum number of results to return",
-        ),
-        include_domains: z.array(z.string()).optional().describe(
-          "List of domains to include in search",
-        ),
-        exclude_domains: z.array(z.string()).optional().describe(
-          "List of domains to exclude from search",
-        ),
+        max_results: z
+          .number()
+          .min(1)
+          .max(20)
+          .default(5)
+          .describe("Maximum number of results to return"),
+        include_domains: z
+          .array(z.string())
+          .optional()
+          .describe("List of domains to include in search"),
+        exclude_domains: z
+          .array(z.string())
+          .optional()
+          .describe("List of domains to exclude from search"),
         include_answer: z.boolean().default(false).describe("Include AI-generated answer summary"),
         include_raw_content: z.boolean().default(false).describe("Include raw content from pages"),
         include_images: z.boolean().default(false).describe("Include images in search results"),
@@ -150,10 +154,7 @@ export function registerTavilyTools(server: McpServer, ctx: ToolContext) {
 
         const response = await fetch("https://api.tavily.com/search", {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${apiKey}`,
-          },
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
           body: JSON.stringify(searchParams),
         });
 
@@ -201,12 +202,14 @@ export function registerTavilyTools(server: McpServer, ctx: ToolContext) {
         urls: z.array(z.string().url()).describe("Array of URLs to extract content from"),
         include_images: z.boolean().default(false).describe("Include image URLs from pages"),
         include_favicon: z.boolean().default(false).describe("Include favicon URL"),
-        extract_depth: z.enum(["basic", "advanced"]).default("basic").describe(
-          "Extraction depth - basic or advanced",
-        ),
-        format: z.enum(["markdown", "text"]).default("markdown").describe(
-          "Content format - markdown or text",
-        ),
+        extract_depth: z
+          .enum(["basic", "advanced"])
+          .default("basic")
+          .describe("Extraction depth - basic or advanced"),
+        format: z
+          .enum(["markdown", "text"])
+          .default("markdown")
+          .describe("Content format - markdown or text"),
       },
     },
     async ({
@@ -224,17 +227,8 @@ export function registerTavilyTools(server: McpServer, ctx: ToolContext) {
 
         const response = await fetch("https://api.tavily.com/extract", {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${apiKey}`,
-          },
-          body: JSON.stringify({
-            urls,
-            include_images,
-            include_favicon,
-            extract_depth,
-            format,
-          }),
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+          body: JSON.stringify({ urls, include_images, include_favicon, extract_depth, format }),
         });
 
         if (!response.ok) {
@@ -273,12 +267,14 @@ export function registerTavilyTools(server: McpServer, ctx: ToolContext) {
       inputSchema: {
         url: z.string().url().describe("The URL to crawl"),
         max_depth: z.number().min(1).max(3).default(1).describe("Maximum crawl depth"),
-        exclude_domains: z.array(z.string()).optional().describe(
-          "Domains to exclude from crawling",
-        ),
-        include_raw_content: z.boolean().default(true).describe(
-          "Include raw content from crawled pages",
-        ),
+        exclude_domains: z
+          .array(z.string())
+          .optional()
+          .describe("Domains to exclude from crawling"),
+        include_raw_content: z
+          .boolean()
+          .default(true)
+          .describe("Include raw content from crawled pages"),
       },
     },
     async ({ url, max_depth = 1, exclude_domains, include_raw_content = true }) => {
@@ -288,11 +284,7 @@ export function registerTavilyTools(server: McpServer, ctx: ToolContext) {
           throw new Error("TAVILY_API_KEY environment variable is required");
         }
 
-        const crawlParams: Record<string, unknown> = {
-          url,
-          max_depth,
-          include_raw_content,
-        };
+        const crawlParams: Record<string, unknown> = { url, max_depth, include_raw_content };
 
         if (exclude_domains?.length) {
           crawlParams.exclude_domains = exclude_domains;
@@ -300,10 +292,7 @@ export function registerTavilyTools(server: McpServer, ctx: ToolContext) {
 
         const response = await fetch("https://api.tavily.com/crawl", {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${apiKey}`,
-          },
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
           body: JSON.stringify(crawlParams),
         });
 

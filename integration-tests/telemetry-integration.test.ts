@@ -47,42 +47,44 @@ async function simulateWorkerCommunication() {
 // Mock complex workflow simulation
 async function simulateWorkspaceFlow() {
   return await AtlasTelemetry.withSpan("workspace.process_signal", async (workspaceSpan) => {
-    AtlasTelemetry.addComponentAttributes(workspaceSpan, "workspace", { id: "ws-123" }, {
-      signal_type: "http_webhook",
-    });
+    AtlasTelemetry.addComponentAttributes(
+      workspaceSpan,
+      "workspace",
+      { id: "ws-123" },
+      { signal_type: "http_webhook" },
+    );
 
     // Simulate session supervisor
     const sessionResult = await AtlasTelemetry.withSpan(
       "session.create_plan",
       async (sessionSpan) => {
-        AtlasTelemetry.addComponentAttributes(sessionSpan, "supervisor", {
-          type: "session",
-          sessionId: "sess-456",
-          "atlas.session.id": "sess-456",
-        }, {
-          plan_type: "sequential",
-        });
+        AtlasTelemetry.addComponentAttributes(
+          sessionSpan,
+          "supervisor",
+          { type: "session", sessionId: "sess-456", "atlas.session.id": "sess-456" },
+          { plan_type: "sequential" },
+        );
 
         // Simulate multiple agents
         const agentResults = await Promise.all([
           AtlasTelemetry.withSpan("agent.llm_analyze", async (agentSpan) => {
-            AtlasTelemetry.addComponentAttributes(agentSpan, "agent", {
-              id: "agent-1",
-              type: "llm",
-            }, {
-              model: "claude-3-7-sonnet-latest",
-            });
+            AtlasTelemetry.addComponentAttributes(
+              agentSpan,
+              "agent",
+              { id: "agent-1", type: "llm" },
+              { model: "claude-3-7-sonnet-latest" },
+            );
             await delay(20);
             return "analysis-complete";
           }),
 
           AtlasTelemetry.withSpan("agent.remote_execute", async (agentSpan) => {
-            AtlasTelemetry.addComponentAttributes(agentSpan, "agent", {
-              id: "agent-2",
-              type: "remote",
-            }, {
-              endpoint: "http://agent-service/api",
-            });
+            AtlasTelemetry.addComponentAttributes(
+              agentSpan,
+              "agent",
+              { id: "agent-2", type: "remote" },
+              { endpoint: "http://agent-service/api" },
+            );
             await delay(15);
             return "execution-complete";
           }),
@@ -105,11 +107,11 @@ Deno.test({
       Deno.env.set("OTEL_DENO", "true");
 
       // Reset AtlasTelemetry state
-      // @ts-ignore: Accessing private members for testing
+      // @ts-expect-error: Accessing private members for testing
       AtlasTelemetry.tracer = null;
-      // @ts-ignore: Accessing private members for testing
+      // @ts-expect-error: Accessing private members for testing
       AtlasTelemetry.isEnabled = false;
-      // @ts-ignore: Accessing private members for testing
+      // @ts-expect-error: Accessing private members for testing
       AtlasTelemetry.initPromise = null;
 
       // Trigger initialization by creating a span
@@ -124,11 +126,11 @@ Deno.test({
       Deno.env.delete("OTEL_DENO");
 
       // Reset AtlasTelemetry state
-      // @ts-ignore: Accessing private members for testing
+      // @ts-expect-error: Accessing private members for testing
       AtlasTelemetry.tracer = null;
-      // @ts-ignore: Accessing private members for testing
+      // @ts-expect-error: Accessing private members for testing
       AtlasTelemetry.isEnabled = false;
-      // @ts-ignore: Accessing private members for testing
+      // @ts-expect-error: Accessing private members for testing
       AtlasTelemetry.initPromise = null;
 
       const result = await AtlasTelemetry.withSpan("test", () => "success");
@@ -204,13 +206,11 @@ Deno.test({
     });
 
     await t.step("should handle concurrent span creation", async () => {
-      const promises = Array.from(
-        { length: 10 },
-        (_, i) =>
-          AtlasTelemetry.withSpan(`concurrent-span-${i}`, async () => {
-            await delay(Math.random() * 20);
-            return `result-${i}`;
-          }),
+      const promises = Array.from({ length: 10 }, (_, i) =>
+        AtlasTelemetry.withSpan(`concurrent-span-${i}`, async () => {
+          await delay(Math.random() * 20);
+          return `result-${i}`;
+        }),
       );
 
       const results = await Promise.all(promises);
@@ -249,10 +249,7 @@ Deno.test({
         workspaceId: "ws-123",
         signalId: "sig-456",
         signalType: "webhook",
-        attributes: {
-          "signal.provider": "github",
-          "signal.event": "push",
-        },
+        attributes: { "signal.provider": "github", "signal.event": "push" },
       };
 
       const result = await AtlasTelemetry.withWorkerSpan(workspaceContext, () => "processed");
@@ -265,10 +262,7 @@ Deno.test({
         component: "session" as const,
         sessionId: "sess-789",
         workspaceId: "ws-123",
-        attributes: {
-          "plan.strategy": "sequential",
-          "plan.agent_count": 3,
-        },
+        attributes: { "plan.strategy": "sequential", "plan.agent_count": 3 },
       };
 
       const result = await AtlasTelemetry.withWorkerSpan(sessionContext, () => "plan-created");
@@ -283,10 +277,7 @@ Deno.test({
         agentType: "llm",
         sessionId: "sess-789",
         workerId: "worker-abc",
-        attributes: {
-          "agent.model": "claude-3-7-sonnet",
-          "agent.temperature": 0.7,
-        },
+        attributes: { "agent.model": "claude-3-7-sonnet", "agent.temperature": 0.7 },
       };
 
       const result = await AtlasTelemetry.withWorkerSpan(agentContext, () => "task-completed");
@@ -388,19 +379,18 @@ Deno.test({
       Deno.env.delete("OTEL_DENO");
 
       // Reset state
-      // @ts-ignore: Accessing private members for testing
+      // @ts-expect-error: Accessing private members for testing
       AtlasTelemetry.tracer = null;
-      // @ts-ignore: Accessing private members for testing
+      // @ts-expect-error: Accessing private members for testing
       AtlasTelemetry.isEnabled = false;
-      // @ts-ignore: Accessing private members for testing
+      // @ts-expect-error: Accessing private members for testing
       AtlasTelemetry.initPromise = null;
 
       const startTime = Date.now();
 
       // Run many operations
-      const promises = Array.from(
-        { length: 100 },
-        (_, i) => AtlasTelemetry.withSpan(`perf-test-${i}`, () => `result-${i}`),
+      const promises = Array.from({ length: 100 }, (_, i) =>
+        AtlasTelemetry.withSpan(`perf-test-${i}`, () => `result-${i}`),
       );
 
       const results = await Promise.all(promises);
@@ -422,14 +412,12 @@ Deno.test({
       const spanCount = 50;
       let completedSpans = 0;
 
-      const promises = Array.from(
-        { length: spanCount },
-        (_, i) =>
-          AtlasTelemetry.withSpan(`rapid-span-${i}`, async () => {
-            await delay(1); // Minimal delay
-            completedSpans++;
-            return i;
-          }),
+      const promises = Array.from({ length: spanCount }, (_, i) =>
+        AtlasTelemetry.withSpan(`rapid-span-${i}`, async () => {
+          await delay(1); // Minimal delay
+          completedSpans++;
+          return i;
+        }),
       );
 
       const results = await Promise.all(promises);

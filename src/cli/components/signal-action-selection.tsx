@@ -1,6 +1,6 @@
 import { Box, Text, useInput } from "ink";
-import { Select } from "./select/index.ts";
 import { useResponsiveDimensions } from "../utils/useResponsiveDimensions.ts";
+import { Select } from "./select/index.ts";
 
 interface SignalActionSelectionProps {
   signalId: string;
@@ -35,7 +35,9 @@ export const SignalActionSelection = ({
   return (
     <Box flexDirection="column" marginTop={1} width={dimensions.paddedWidth}>
       <Box marginBottom={1}>
-        <Text bold color="cyan">Signal: {signalId}</Text>
+        <Text bold color="cyan">
+          Signal: {signalId}
+        </Text>
       </Box>
       <Box marginBottom={1}>
         <Text dimColor>Choose an action:</Text>

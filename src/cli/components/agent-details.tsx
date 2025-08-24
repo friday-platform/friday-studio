@@ -77,15 +77,17 @@ export const AgentDetails = ({ workspaceId, agentId }: AgentDetailsProps) => {
 
     // For now, return a simplified version since we don't have the full job execution details
     // This would need to be enhanced based on the actual job data structure from the daemon API
-    return jobs.filter((job: any) => {
-      // This is a placeholder - the actual implementation would depend on
-      // how the daemon API returns job execution details with agent references
-      return job.agents?.includes(agentId) || job.agentIds?.includes(agentId);
-    }).map((job: any) => ({
-      id: job.name || job.id,
-      name: job.name || job.id,
-      description: job.description,
-    }));
+    return jobs
+      .filter((job: any) => {
+        // This is a placeholder - the actual implementation would depend on
+        // how the daemon API returns job execution details with agent references
+        return job.agents?.includes(agentId) || job.agentIds?.includes(agentId);
+      })
+      .map((job: any) => ({
+        id: job.name || job.id,
+        name: job.name || job.id,
+        description: job.description,
+      }));
   };
 
   // Helper function to find signals that trigger jobs using this agent
@@ -95,14 +97,16 @@ export const AgentDetails = ({ workspaceId, agentId }: AgentDetailsProps) => {
 
     // For now, return a simplified version
     // In a full implementation, this would need to query the daemon for signal-job relationships
-    return signals.filter((signal: any) => {
-      // Placeholder logic - would need to be based on actual signal-job trigger relationships
-      return jobsUsingAgent.some((job) => signal.triggers?.includes(job.id));
-    }).map((signal: any) => ({
-      id: signal.name,
-      description: signal.description,
-      provider: signal.provider,
-    }));
+    return signals
+      .filter((signal: any) => {
+        // Placeholder logic - would need to be based on actual signal-job trigger relationships
+        return jobsUsingAgent.some((job) => signal.triggers?.includes(job.id));
+      })
+      .map((signal: any) => ({
+        id: signal.name,
+        description: signal.description,
+        provider: signal.provider,
+      }));
   };
 
   if (loading) {

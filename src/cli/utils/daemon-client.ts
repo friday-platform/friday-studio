@@ -71,11 +71,7 @@ export interface LibraryStats {
   total_items: number;
   total_size_bytes: number;
   types: Record<string, number>;
-  recent_activity: Array<{
-    date: string;
-    items_added: number;
-    items_modified: number;
-  }>;
+  recent_activity: Array<{ date: string; items_added: number; items_modified: number }>;
 }
 
 export interface TemplateConfig {
@@ -105,9 +101,7 @@ export class DaemonClient {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), this.timeout);
 
-      const response = await fetch(`${this.daemonUrl}/health`, {
-        signal: controller.signal,
-      });
+      const response = await fetch(`${this.daemonUrl}/health`, { signal: controller.signal });
 
       clearTimeout(timeoutId);
       return response.ok;
@@ -140,14 +134,11 @@ export class DaemonClient {
   /**
    * Get detailed workspace information
    */
-  async getWorkspace(workspaceId: string): Promise<
+  async getWorkspace(
+    workspaceId: string,
+  ): Promise<
     WorkspaceInfo & {
-      runtime?: {
-        status: string;
-        startedAt: string;
-        sessions: number;
-        workers: number;
-      };
+      runtime?: { status: string; startedAt: string; sessions: number; workers: number };
     }
   > {
     const response = await this.makeRequest(`/api/workspaces/${workspaceId}`);
@@ -157,14 +148,10 @@ export class DaemonClient {
   /**
    * Create a new workspace
    */
-  async createWorkspace(
-    request: WorkspaceCreateRequest,
-  ): Promise<WorkspaceCreateResponse> {
+  async createWorkspace(request: WorkspaceCreateRequest): Promise<WorkspaceCreateResponse> {
     const response = await this.makeRequest("/api/workspaces", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(request),
     });
     return response;
@@ -173,18 +160,13 @@ export class DaemonClient {
   /**
    * Delete a workspace
    */
-  async deleteWorkspace(
-    workspaceId: string,
-    force: boolean = false,
-  ): Promise<{ message: string }> {
+  async deleteWorkspace(workspaceId: string, force: boolean = false): Promise<{ message: string }> {
     const url = new URL(`${this.daemonUrl}/api/workspaces/${workspaceId}`);
     if (force) {
       url.searchParams.set("force", "true");
     }
 
-    const response = await this.makeRequest(url.pathname + url.search, {
-      method: "DELETE",
-    });
+    const response = await this.makeRequest(url.pathname + url.search, { method: "DELETE" });
     return response;
   }
 
@@ -195,22 +177,12 @@ export class DaemonClient {
     workspaceId: string,
     signalId: string,
     payload: Record<string, unknown> = {},
-  ): Promise<{
-    message: string;
-    status: string;
-    workspaceId: string;
-    signalId: string;
-  }> {
-    const response = await this.makeRequest(
-      `/api/workspaces/${workspaceId}/signals/${signalId}`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      },
-    );
+  ): Promise<{ message: string; status: string; workspaceId: string; signalId: string }> {
+    const response = await this.makeRequest(`/api/workspaces/${workspaceId}/signals/${signalId}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
     return response;
   }
 
@@ -236,7 +208,9 @@ export class DaemonClient {
   /**
    * Get specific session details
    */
-  async getSession(sessionId: string): Promise<{
+  async getSession(
+    sessionId: string,
+  ): Promise<{
     id: string;
     workspaceId: string;
     status: string;
@@ -255,28 +229,18 @@ export class DaemonClient {
   /**
    * Cancel a session
    */
-  async cancelSession(
-    sessionId: string,
-  ): Promise<{ message: string; workspaceId: string }> {
-    const response = await this.makeRequest(`/api/sessions/${sessionId}`, {
-      method: "DELETE",
-    });
+  async cancelSession(sessionId: string): Promise<{ message: string; workspaceId: string }> {
+    const response = await this.makeRequest(`/api/sessions/${sessionId}`, { method: "DELETE" });
     return response;
   }
 
   /**
    * List agents in a workspace
    */
-  async listAgents(workspaceId: string): Promise<
-    Array<{
-      id: string;
-      type: string;
-      purpose?: string;
-    }>
-  > {
-    const response = await this.makeRequest(
-      `/api/workspaces/${workspaceId}/agents`,
-    );
+  async listAgents(
+    workspaceId: string,
+  ): Promise<Array<{ id: string; type: string; purpose?: string }>> {
+    const response = await this.makeRequest(`/api/workspaces/${workspaceId}/agents`);
     return response;
   }
 
@@ -284,55 +248,33 @@ export class DaemonClient {
    * Describe a specific agent in a workspace
    */
   async describeAgent(workspaceId: string, agentId: string): Promise<any> {
-    const response = await this.makeRequest(
-      `/api/workspaces/${workspaceId}/agents/${agentId}`,
-    );
+    const response = await this.makeRequest(`/api/workspaces/${workspaceId}/agents/${agentId}`);
     return response;
   }
 
   /**
    * List signals in a workspace
    */
-  async listSignals(workspaceId: string): Promise<
-    Array<{
-      name: string;
-      description?: string;
-    }>
-  > {
-    const response = await this.makeRequest(
-      `/api/workspaces/${workspaceId}/signals`,
-    );
+  async listSignals(workspaceId: string): Promise<Array<{ name: string; description?: string }>> {
+    const response = await this.makeRequest(`/api/workspaces/${workspaceId}/signals`);
     return response;
   }
 
   /**
    * List jobs in a workspace
    */
-  async listJobs(workspaceId: string): Promise<
-    Array<{
-      name: string;
-      description?: string;
-    }>
-  > {
-    const response = await this.makeRequest(
-      `/api/workspaces/${workspaceId}/jobs`,
-    );
+  async listJobs(workspaceId: string): Promise<Array<{ name: string; description?: string }>> {
+    const response = await this.makeRequest(`/api/workspaces/${workspaceId}/jobs`);
     return response;
   }
 
   /**
    * List sessions in a specific workspace
    */
-  async listWorkspaceSessions(workspaceId: string): Promise<
-    Array<{
-      id: string;
-      status: string;
-      startedAt: string;
-    }>
-  > {
-    const response = await this.makeRequest(
-      `/api/workspaces/${workspaceId}/sessions`,
-    );
+  async listWorkspaceSessions(
+    workspaceId: string,
+  ): Promise<Array<{ id: string; status: string; startedAt: string }>> {
+    const response = await this.makeRequest(`/api/workspaces/${workspaceId}/sessions`);
     return response;
   }
 
@@ -343,9 +285,7 @@ export class DaemonClient {
   /**
    * List library items
    */
-  async listLibraryItems(
-    query?: Partial<LibrarySearchQuery>,
-  ): Promise<LibrarySearchResult> {
+  async listLibraryItems(query?: Partial<LibrarySearchQuery>): Promise<LibrarySearchResult> {
     const params = new URLSearchParams();
     if (query?.query) params.set("q", query.query);
     if (query?.type) {
@@ -371,10 +311,7 @@ export class DaemonClient {
   async getLibraryItem(
     itemId: string,
     includeContent: boolean = false,
-  ): Promise<{
-    item: LibraryItem;
-    content?: string | Uint8Array;
-  }> {
+  ): Promise<{ item: LibraryItem; content?: string | Uint8Array }> {
     const params = new URLSearchParams();
     if (includeContent) params.set("content", "true");
 
@@ -426,14 +363,8 @@ export class DaemonClient {
   ): Promise<any> {
     const response = await this.makeRequest("/api/library/generate", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        templateId,
-        data,
-        options,
-      }),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ templateId, data, options }),
     });
     return response;
   }
@@ -450,9 +381,7 @@ export class DaemonClient {
    * Delete library item
    */
   async deleteLibraryItem(itemId: string): Promise<{ message: string }> {
-    const response = await this.makeRequest(`/api/library/${itemId}`, {
-      method: "DELETE",
-    });
+    const response = await this.makeRequest(`/api/library/${itemId}`, { method: "DELETE" });
     return response;
   }
 
@@ -460,28 +389,20 @@ export class DaemonClient {
    * Shutdown the daemon
    */
   async shutdown(): Promise<{ message: string }> {
-    const response = await this.makeRequest("/api/daemon/shutdown", {
-      method: "POST",
-    });
+    const response = await this.makeRequest("/api/daemon/shutdown", { method: "POST" });
     return response;
   }
 
   /**
    * Make a request to the daemon API with error handling
    */
-  private async makeRequest(
-    path: string,
-    options: RequestInit = {},
-  ): Promise<any> {
+  private async makeRequest(path: string, options: RequestInit = {}): Promise<any> {
     try {
       // Try the request first
       return await this.makeRequestInternal(path, options);
     } catch (error) {
       // If it's a connection error, provide a helpful message
-      if (
-        error instanceof DaemonApiError &&
-        error.status === 503
-      ) {
+      if (error instanceof DaemonApiError && error.status === 503) {
         // Replace the technical error with a user-friendly message
         throw new DaemonApiError(
           "Atlas daemon is not running. Please start it manually with 'atlas service start'",
@@ -496,10 +417,7 @@ export class DaemonClient {
   /**
    * Internal request method without auto-start logic
    */
-  private async makeRequestInternal(
-    path: string,
-    options: RequestInit = {},
-  ): Promise<any> {
+  private async makeRequestInternal(path: string, options: RequestInit = {}): Promise<any> {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), this.timeout);
 
@@ -515,8 +433,7 @@ export class DaemonClient {
         let errorMessage: string;
         try {
           const errorData = await response.json();
-          errorMessage = errorData.error ||
-            `HTTP ${response.status}: ${response.statusText}`;
+          errorMessage = errorData.error || `HTTP ${response.status}: ${response.statusText}`;
         } catch {
           errorMessage = `HTTP ${response.status}: ${response.statusText}`;
         }
@@ -550,7 +467,10 @@ export class DaemonClient {
 }
 
 export class DaemonApiError extends Error {
-  constructor(message: string, public status: number) {
+  constructor(
+    message: string,
+    public status: number,
+  ) {
     super(message);
     this.name = "DaemonApiError";
   }

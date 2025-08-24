@@ -1,3 +1,4 @@
+import { InMemoryStorageAdapter } from "@atlas/storage";
 import { expect } from "@std/expect";
 import { CoALAMemoryManager, CoALAMemoryType } from "../src/coala-memory.ts";
 import {
@@ -5,7 +6,6 @@ import {
   KnowledgeGraphManager,
   KnowledgeRelationType,
 } from "../src/knowledge-graph.ts";
-import { InMemoryStorageAdapter } from "@atlas/storage";
 import { MockAtlasScope, MockKnowledgeGraphStorageAdapter } from "./mocks/storage.ts";
 
 // Set testing environment to prevent logger file operations
@@ -31,17 +31,21 @@ Deno.test("Integration - CoALA memory with knowledge graph", async () => {
   const kg = new KnowledgeGraphManager(kgAdapter, scope.id);
 
   // Store a memory that should create knowledge graph entries
-  await memory.rememberWithMetadata("integration-test", {
-    content: "John works at Acme Corp",
-    entities: ["John", "Acme Corp"],
-    relationships: [{ from: "John", to: "Acme Corp", type: "works_at" }],
-  }, {
-    memoryType: CoALAMemoryType.SEMANTIC,
-    tags: ["entities", "work"],
-    relevanceScore: 0.9,
-    confidence: 0.95,
-    decayRate: 0.05,
-  });
+  await memory.rememberWithMetadata(
+    "integration-test",
+    {
+      content: "John works at Acme Corp",
+      entities: ["John", "Acme Corp"],
+      relationships: [{ from: "John", to: "Acme Corp", type: "works_at" }],
+    },
+    {
+      memoryType: CoALAMemoryType.SEMANTIC,
+      tags: ["entities", "work"],
+      relevanceScore: 0.9,
+      confidence: 0.95,
+      decayRate: 0.05,
+    },
+  );
 
   // Add corresponding knowledge graph entries
   await kgAdapter.storeEntity({
@@ -226,10 +230,7 @@ Deno.test("Integration - knowledge graph operations", async () => {
   expect(facts).toHaveLength(1);
 
   // Search operations
-  const searchResults = await kgAdapter.queryEntities({
-    workspaceId: scope.id,
-    search: "Alice",
-  });
+  const searchResults = await kgAdapter.queryEntities({ workspaceId: scope.id, search: "Alice" });
   expect(searchResults).toHaveLength(1);
   expect(searchResults[0].name).toBe("Alice");
 });
@@ -245,18 +246,22 @@ Deno.test("Integration - memory and knowledge graph together", async () => {
   // Store related information in both systems
 
   // Memory: Store context about a meeting
-  await memory.rememberWithMetadata("meeting-context", {
-    meetingId: "meeting123",
-    topic: "Project planning",
-    attendees: ["Alice", "Bob"],
-    decisions: ["Use React for frontend", "Deploy to AWS"],
-  }, {
-    memoryType: CoALAMemoryType.EPISODIC,
-    tags: ["meeting", "planning"],
-    relevanceScore: 0.9,
-    confidence: 0.95,
-    decayRate: 0.02,
-  });
+  await memory.rememberWithMetadata(
+    "meeting-context",
+    {
+      meetingId: "meeting123",
+      topic: "Project planning",
+      attendees: ["Alice", "Bob"],
+      decisions: ["Use React for frontend", "Deploy to AWS"],
+    },
+    {
+      memoryType: CoALAMemoryType.EPISODIC,
+      tags: ["meeting", "planning"],
+      relevanceScore: 0.9,
+      confidence: 0.95,
+      decayRate: 0.02,
+    },
+  );
 
   // Knowledge Graph: Store entities and relationships from the meeting
   await kgAdapter.storeEntity({
@@ -321,9 +326,9 @@ Deno.test("Integration - storage adapter functionality", async () => {
   // Test CoALA memory operations
   const testData = {
     "test-key": { data: "test-value", memoryType: CoALAMemoryType.WORKING },
-    "task1": { task: "debug", memoryType: CoALAMemoryType.WORKING },
-    "task2": { task: "test", memoryType: CoALAMemoryType.WORKING },
-    "concept1": { concept: "React", memoryType: CoALAMemoryType.SEMANTIC },
+    task1: { task: "debug", memoryType: CoALAMemoryType.WORKING },
+    task2: { task: "test", memoryType: CoALAMemoryType.WORKING },
+    concept1: { concept: "React", memoryType: CoALAMemoryType.SEMANTIC },
   };
 
   await memoryAdapter.commit(testData);

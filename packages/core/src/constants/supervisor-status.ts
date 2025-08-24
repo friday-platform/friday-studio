@@ -34,8 +34,8 @@ export const WorkspaceSessionStatus = {
 
 // Type exports
 export type SessionSupervisorStatusType =
-  typeof SessionSupervisorStatus[keyof typeof SessionSupervisorStatus];
+  (typeof SessionSupervisorStatus)[keyof typeof SessionSupervisorStatus];
 export type ReasoningResultStatusType =
-  typeof ReasoningResultStatus[keyof typeof ReasoningResultStatus];
+  (typeof ReasoningResultStatus)[keyof typeof ReasoningResultStatus];
 export type WorkspaceSessionStatusType =
-  typeof WorkspaceSessionStatus[keyof typeof WorkspaceSessionStatus];
+  (typeof WorkspaceSessionStatus)[keyof typeof WorkspaceSessionStatus];

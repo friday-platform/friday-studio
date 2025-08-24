@@ -1,9 +1,9 @@
 import { defaultTheme, extendTheme, ThemeProvider } from "@inkjs/ui";
 import { render } from "ink";
+import { MaxListenersFix } from "../components/max-listeners-fix.tsx";
 import { AppProvider } from "../contexts/app-context.tsx";
 import { Component } from "../modules/conversation/component.tsx";
-import { YargsInstance } from "../utils/yargs.ts";
-import { MaxListenersFix } from "../components/max-listeners-fix.tsx";
+import type { YargsInstance } from "../utils/yargs.ts";
 
 export const command = "$0";
 export const desc = "Launch interactive Atlas interface";
@@ -11,9 +11,7 @@ export const desc = "Launch interactive Atlas interface";
 export function builder(yargs: YargsInstance) {
   return yargs
     .example("$0", "Launch interactive Atlas interface")
-    .epilogue(
-      "The interactive interface provides a user-friendly way to manage workspaces",
-    );
+    .epilogue("The interactive interface provides a user-friendly way to manage workspaces");
 }
 
 // Custom theme with yellow highlights for Select components
@@ -38,8 +36,6 @@ export function handler() {
         <Component />
       </AppProvider>
     </ThemeProvider>,
-    {
-      exitOnCtrlC: false,
-    },
+    { exitOnCtrlC: false },
   );
 }

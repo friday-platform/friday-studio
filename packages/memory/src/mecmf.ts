@@ -5,20 +5,7 @@
  * for easy integration with Atlas workspaces and agents.
  */
 
-// === Core Interfaces ===
-export * from "./mecmf-interfaces.ts";
-
-// === Implementation Components ===
-export { createWebEmbeddingProvider, WebEmbeddingProvider } from "./web-embedding-provider.ts";
-export { AtlasTokenBudgetManager, createTokenBudgetManager } from "./token-budget-manager.ts";
-export { AtlasMemoryClassifier, createMemoryClassifier } from "./memory-classifier.ts";
-export { createErrorHandler, MECMFErrorHandler } from "./error-handling.ts";
-export {
-  createMECMFMemoryManager,
-  type MECMFConfig,
-  MECMFMemoryManager,
-} from "./mecmf-memory-manager.ts";
-
+export type { MECMFDebugConfig, PromptEnhancementLog } from "./debug-logger.ts";
 // === Debug Logging ===
 export {
   disableMECMFDebugLogging,
@@ -26,18 +13,29 @@ export {
   getGlobalMECMFDebugLogger,
   MECMFDebugLogger,
 } from "./debug-logger.ts";
-export type { MECMFDebugConfig, PromptEnhancementLog } from "./debug-logger.ts";
-
-// === Integration Helpers ===
-import type { MemoryScoper } from "./mecmf-interfaces.ts";
-import {
+export { createErrorHandler, MECMFErrorHandler } from "./error-handling.ts";
+// === Core Interfaces ===
+export * from "./mecmf-interfaces.ts";
+export {
   createMECMFMemoryManager,
-  MECMFConfig,
+  type MECMFConfig,
   MECMFMemoryManager,
 } from "./mecmf-memory-manager.ts";
-import { ConversationContext, MemoryType } from "./mecmf-interfaces.ts";
-import { enableMECMFDebugLogging } from "./debug-logger.ts";
+export { AtlasMemoryClassifier, createMemoryClassifier } from "./memory-classifier.ts";
+export { AtlasTokenBudgetManager, createTokenBudgetManager } from "./token-budget-manager.ts";
+// === Implementation Components ===
+export { createWebEmbeddingProvider, WebEmbeddingProvider } from "./web-embedding-provider.ts";
+
 import { getMECMFCacheDir } from "../../../src/utils/paths.ts";
+import { enableMECMFDebugLogging } from "./debug-logger.ts";
+// === Integration Helpers ===
+import type { MemoryScoper } from "./mecmf-interfaces.ts";
+import { type ConversationContext, MemoryType } from "./mecmf-interfaces.ts";
+import {
+  createMECMFMemoryManager,
+  type MECMFConfig,
+  type MECMFMemoryManager,
+} from "./mecmf-memory-manager.ts";
 
 /**
  * Quick setup function for MECMF in Atlas workspaces
@@ -50,10 +48,7 @@ export async function setupMECMF(
     // Prefer explicit workspaceId, fall back to id for workspace-scoped usage
     workspaceId: scope.workspaceId ?? scope.id,
     enableVectorSearch: true,
-    embeddingConfig: {
-      cacheDirectory: getMECMFCacheDir(),
-      batchSize: 10,
-    },
+    embeddingConfig: { cacheDirectory: getMECMFCacheDir(), batchSize: 10 },
     tokenBudgets: {
       defaultBudget: 8000,
       modelLimits: {
@@ -65,11 +60,7 @@ export async function setupMECMF(
         "gpt-3.5-turbo": 16000,
       },
     },
-    fallbackOptions: {
-      enableTextSearch: true,
-      cacheRecentMemories: true,
-      maxCachedMemories: 100,
-    },
+    fallbackOptions: { enableTextSearch: true, cacheRecentMemories: true, maxCachedMemories: 100 },
     ...options,
   };
 
@@ -92,11 +83,7 @@ export async function setupMECMF(
 export function createConversationContext(
   sessionId: string,
   workspaceId: string,
-  options?: {
-    currentTask?: string;
-    recentMessages?: string[];
-    activeAgents?: string[];
-  },
+  options?: { currentTask?: string; recentMessages?: string[]; activeAgents?: string[] },
 ): ConversationContext {
   return {
     sessionId,
@@ -284,7 +271,8 @@ export const MemoryUtils = {
       "might",
     ]);
 
-    const words = content.toLowerCase()
+    const words = content
+      .toLowerCase()
       .replace(/[^\w\s]/g, " ")
       .split(/\s+/)
       .filter((word) => word.length > 2 && !stopWords.has(word));
@@ -335,17 +323,17 @@ export const MECMFConstants = {
 
   // Token allocation defaults from MECMF spec
   DEFAULT_TOKEN_ALLOCATION: {
-    WORKING_MEMORY: 0.40,
+    WORKING_MEMORY: 0.4,
     PROCEDURAL_MEMORY: 0.25,
     SEMANTIC_MEMORY: 0.25,
-    EPISODIC_MEMORY: 0.10,
+    EPISODIC_MEMORY: 0.1,
   },
 
   // Resource thresholds
   RESOURCE_THRESHOLDS: {
     MEMORY_PRESSURE_WARNING: 0.85,
     MEMORY_PRESSURE_EMERGENCY: 0.95,
-    DISK_PRESSURE_WARNING: 0.90,
+    DISK_PRESSURE_WARNING: 0.9,
     DISK_PRESSURE_EMERGENCY: 0.98,
   },
 

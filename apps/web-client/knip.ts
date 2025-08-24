@@ -1,6 +1,6 @@
 import type { KnipConfig } from "knip";
-import { sveltePreprocess } from "svelte-preprocess";
 import { compile, preprocess } from "svelte/compiler";
+import { sveltePreprocess } from "svelte-preprocess";
 
 const sveltePreprocessor = sveltePreprocess();
 

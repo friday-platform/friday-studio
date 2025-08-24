@@ -1,5 +1,5 @@
 import { useInput } from "ink";
-import { SelectState } from "./use-select-state.ts";
+import type { SelectState } from "./use-select-state.ts";
 
 export interface UseSelectProps {
   /**

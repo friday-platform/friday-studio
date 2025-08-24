@@ -8,10 +8,7 @@
  * - Supports both MCP-based agents and wrapped LLM agents
  */
 
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js";
-import { Logger } from "@atlas/logger";
+import type { ToolResult } from "@atlas/agent-sdk";
 import {
   type AgentContext,
   type AgentMetadata,
@@ -20,34 +17,30 @@ import {
   type AtlasAgent,
   AwaitingSupervisorDecision,
 } from "@atlas/agent-sdk";
-import { CallbackStreamEmitter, NoOpStreamEmitter } from "../streaming/stream-emitters.ts";
-import { StreamContentNotificationSchema, StreamEvent } from "../types/streaming.ts";
+import type { Logger } from "@atlas/logger";
+import { CoALAMemoryManager, CoALAMemoryType, type IMemoryScope } from "@atlas/memory";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
-import { createAgentContextBuilder } from "../agent-context/index.ts";
-import { GlobalMCPServerPool } from "../mcp-server-pool.ts";
-import type { AgentToolParams } from "../agent-server/types.ts";
-import { CoALAMemoryManager, CoALAMemoryType, IMemoryScope } from "@atlas/memory";
+import type { ToolCall } from "../../../../src/core/services/hallucination-detector.ts";
 import {
   isTransientError,
   withExponentialBackoff,
 } from "../../../../src/utils/exponential-backoff.ts";
-import type { ToolResult } from "@atlas/agent-sdk";
-import { WrappedAgentResult } from "../agent-conversion/from-llm.ts";
-import { ToolCall } from "../../../../src/core/services/hallucination-detector.ts";
+import { createAgentContextBuilder } from "../agent-context/index.ts";
+import type { WrappedAgentResult } from "../agent-conversion/from-llm.ts";
+import type { AgentToolParams } from "../agent-server/types.ts";
+import type { GlobalMCPServerPool } from "../mcp-server-pool.ts";
+import { CallbackStreamEmitter, NoOpStreamEmitter } from "../streaming/stream-emitters.ts";
+import { StreamContentNotificationSchema, type StreamEvent } from "../types/streaming.ts";
 
 // FIXME: this is wrong.
 const MCPToolResultSchema = z.object({
   content: z.array(
     z.discriminatedUnion("type", [
-      z.object({
-        type: z.literal("text"),
-        text: z.string(),
-      }),
-      z.object({
-        type: z.literal("image"),
-        data: z.string(),
-        mimeType: z.string(),
-      }),
+      z.object({ type: z.literal("text"), text: z.string() }),
+      z.object({ type: z.literal("image"), data: z.string(), mimeType: z.string() }),
     ]),
   ),
 });
@@ -144,10 +137,7 @@ export interface IAgentOrchestrator {
   ): Promise<AgentResult>;
 
   /** Continue suspended agent after approval */
-  resumeWithApproval(
-    approvalId: string,
-    decision: ApprovalDecision,
-  ): Promise<AgentResult>;
+  resumeWithApproval(approvalId: string, decision: ApprovalDecision): Promise<AgentResult>;
 
   /** Clean up connections */
   shutdown(): Promise<void>;
@@ -171,9 +161,8 @@ interface MCPSessionSetup {
 export class AgentOrchestrator implements IAgentOrchestrator {
   private mcpSessions = new Map<string, MCPSessionSetup>(); // Per-session MCP clients
   private pendingApprovals = new Map<string, PendingApproval>();
-  private config:
-    & Required<Omit<AgentOrchestratorConfig, "mcpServerPool" | "daemonUrl">>
-    & Pick<AgentOrchestratorConfig, "mcpServerPool" | "daemonUrl">;
+  private config: Required<Omit<AgentOrchestratorConfig, "mcpServerPool" | "daemonUrl">> &
+    Pick<AgentOrchestratorConfig, "mcpServerPool" | "daemonUrl">;
   private logger: Logger;
   private approvalCleanupInterval?: number;
   private sessionCleanupInterval?: number;
@@ -256,10 +245,10 @@ export class AgentOrchestrator implements IAgentOrchestrator {
             | undefined;
           const expertise = meta?.expertise
             ? {
-              domains: meta.expertise.domains ?? [],
-              capabilities: meta.expertise.capabilities ?? [],
-              examples: meta.expertise.examples ?? [],
-            }
+                domains: meta.expertise.domains ?? [],
+                capabilities: meta.expertise.capabilities ?? [],
+                examples: meta.expertise.examples ?? [],
+              }
             : { domains: [], capabilities: [], examples: [] };
           const agentMetadata: AgentMetadata = {
             id: agentId,
@@ -386,19 +375,13 @@ export class AgentOrchestrator implements IAgentOrchestrator {
   /**
    * Get or create a CoALAMemoryManager for a given session within a workspace.
    */
-  private getOrCreateSessionMemory(
-    sessionId: string,
-    workspaceId: string,
-  ): CoALAMemoryManager {
+  private getOrCreateSessionMemory(sessionId: string, workspaceId: string): CoALAMemoryManager {
     const key = `${workspaceId}:${sessionId}`;
     const existing = this.sessionMemories.get(key);
     if (existing) return existing;
 
     // Create a properly typed scope for CoALAMemoryManager
-    const scope: IMemoryScope = {
-      id: sessionId,
-      workspaceId,
-    };
+    const scope: IMemoryScope = { id: sessionId, workspaceId };
     const memory = new CoALAMemoryManager(scope);
     this.sessionMemories.set(key, memory);
     return memory;
@@ -414,10 +397,7 @@ export class AgentOrchestrator implements IAgentOrchestrator {
     context: AgentExecutionContext,
   ): Promise<AgentResult> {
     const startTime = Date.now();
-    const logger = this.logger.child({
-      agentId,
-      sessionId: context.sessionId,
-    });
+    const logger = this.logger.child({ agentId, sessionId: context.sessionId });
 
     // Set up real-time event streaming if requested
     // Only register handler if both callback and streamId are provided
@@ -465,9 +445,7 @@ export class AgentOrchestrator implements IAgentOrchestrator {
         },
       };
 
-      const toolResult = await mcpSetup.client.callTool(
-        { name: agentId, arguments: toolCallArgs },
-      );
+      const toolResult = await mcpSetup.client.callTool({ name: agentId, arguments: toolCallArgs });
 
       const executionResult = this.parseAgentResponse(toolResult);
 
@@ -488,15 +466,16 @@ export class AgentOrchestrator implements IAgentOrchestrator {
         );
       }
 
-      const output = executionResult.type === "completed"
-        ? executionResult.result
-        : executionResult;
+      const output =
+        executionResult.type === "completed" ? executionResult.result : executionResult;
 
       // Pass through tool metadata from the completed result payload
       let mappedCalls: ToolCall[] | undefined;
       let mappedResults: ToolResult[] | undefined;
       if (
-        typeof output === "object" && output !== null && "toolCalls" in output &&
+        typeof output === "object" &&
+        output !== null &&
+        "toolCalls" in output &&
         "toolResults" in output
       ) {
         // @FIXME: tool calls should be parsed.
@@ -566,10 +545,7 @@ export class AgentOrchestrator implements IAgentOrchestrator {
    * Continue a suspended agent after supervisor approval.
    * Part of Atlas's human-in-the-loop safety system.
    */
-  async resumeWithApproval(
-    approvalId: string,
-    decision: ApprovalDecision,
-  ): Promise<AgentResult> {
+  async resumeWithApproval(approvalId: string, decision: ApprovalDecision): Promise<AgentResult> {
     const validatedDecision = ApprovalDecisionSchema.parse(decision);
     const pending = this.pendingApprovals.get(approvalId);
     if (!pending) {
@@ -594,10 +570,7 @@ export class AgentOrchestrator implements IAgentOrchestrator {
       };
 
       const toolResult = await mcpSetup.client.callTool(
-        {
-          name: pending.agentId,
-          arguments: resumeArgs,
-        },
+        { name: pending.agentId, arguments: resumeArgs },
         CallToolResultSchema,
       );
 
@@ -620,9 +593,8 @@ export class AgentOrchestrator implements IAgentOrchestrator {
         );
       }
 
-      const output = executionResult.type === "completed"
-        ? executionResult.result
-        : executionResult;
+      const output =
+        executionResult.type === "completed" ? executionResult.result : executionResult;
 
       let mappedCalls: ToolCall[] | undefined;
       let mappedResults: ToolResult[] | undefined;
@@ -681,19 +653,21 @@ export class AgentOrchestrator implements IAgentOrchestrator {
   ): Promise<AgentResult> {
     try {
       // Only enable streaming if both streamId and callback are provided
-      const streamEmitter = context.onStreamEvent && context.streamId
-        ? new CallbackStreamEmitter(
-          context.onStreamEvent,
-          () => {}, // end handled by session supervisor
-          (error) => logger.error("Agent stream error", { agentId, error }),
-        )
-        : new NoOpStreamEmitter();
+      const streamEmitter =
+        context.onStreamEvent && context.streamId
+          ? new CallbackStreamEmitter(
+              context.onStreamEvent,
+              () => {}, // end handled by session supervisor
+              (error) => logger.error("Agent stream error", { agentId, error }),
+            )
+          : new NoOpStreamEmitter();
 
       let agentContext: AgentContext;
       let finalPrompt = prompt;
 
       // Resolve session memory (caller-provided or orchestrator-managed)
-      const sessionMemory = context.memoryManager ??
+      const sessionMemory =
+        context.memoryManager ??
         this.getOrCreateSessionMemory(context.sessionId, context.workspaceId);
 
       if (this.buildAgentContext) {
@@ -771,21 +745,18 @@ export class AgentOrchestrator implements IAgentOrchestrator {
         };
       }
 
-      const result = await withExponentialBackoff(
-        () => agent.execute(finalPrompt, agentContext),
-        {
-          maxRetries: 10,
-          isRetryable: isTransientError,
-          onRetry: (attempt, delay, error) => {
-            logger.warn("Retrying wrapped agent execution due to transient LLM error", {
-              agentId,
-              attempt,
-              delay,
-              error: error instanceof Error ? error.message : String(error),
-            });
-          },
+      const result = await withExponentialBackoff(() => agent.execute(finalPrompt, agentContext), {
+        maxRetries: 10,
+        isRetryable: isTransientError,
+        onRetry: (attempt, delay, error) => {
+          logger.warn("Retrying wrapped agent execution due to transient LLM error", {
+            agentId,
+            attempt,
+            delay,
+            error: error instanceof Error ? error.message : String(error),
+          });
         },
-      );
+      });
 
       // Best-effort episodic persistence for wrapped-agent execution
       try {
@@ -848,21 +819,24 @@ export class AgentOrchestrator implements IAgentOrchestrator {
    * Remove expired pending approvals.
    */
   private startApprovalCleanup(): void {
-    this.approvalCleanupInterval = setInterval(() => {
-      const now = Date.now();
-      const timeout = this.config.approvalTimeout;
+    this.approvalCleanupInterval = setInterval(
+      () => {
+        const now = Date.now();
+        const timeout = this.config.approvalTimeout;
 
-      for (const [approvalId, pending] of this.pendingApprovals.entries()) {
-        if (now - pending.timestamp > timeout) {
-          this.logger.warn("Approval timed out", {
-            approvalId,
-            agentId: pending.agentId,
-            age: now - pending.timestamp,
-          });
-          this.pendingApprovals.delete(approvalId);
+        for (const [approvalId, pending] of this.pendingApprovals.entries()) {
+          if (now - pending.timestamp > timeout) {
+            this.logger.warn("Approval timed out", {
+              approvalId,
+              agentId: pending.agentId,
+              age: now - pending.timestamp,
+            });
+            this.pendingApprovals.delete(approvalId);
+          }
         }
-      }
-    }, Deno.env.get("DENO_ENV") === "test" ? 5000 : 60000); // 5s for tests, 1min for prod
+      },
+      Deno.env.get("DENO_ENV") === "test" ? 5000 : 60000,
+    ); // 5s for tests, 1min for prod
   }
 
   /**
@@ -877,10 +851,9 @@ export class AgentOrchestrator implements IAgentOrchestrator {
 
       const client = new Client({ name: "atlas-agent-orchestrator", version: "1.0.0" });
 
-      const transport = new StreamableHTTPClientTransport(
-        new URL(this.config.agentsServerUrl),
-        { requestInit: { headers: { ...this.config.headers, "mcp-session-id": sessionId } } },
-      );
+      const transport = new StreamableHTTPClientTransport(new URL(this.config.agentsServerUrl), {
+        requestInit: { headers: { ...this.config.headers, "mcp-session-id": sessionId } },
+      });
 
       await client.connect(transport);
 
@@ -931,9 +904,7 @@ export class AgentOrchestrator implements IAgentOrchestrator {
         throw error;
       }
 
-      this.logger.info("MCP client created for session", {
-        totalSessions: this.mcpSessions.size,
-      });
+      this.logger.info("MCP client created for session", { totalSessions: this.mcpSessions.size });
     } else {
       setup.lastActivity = Date.now();
     }

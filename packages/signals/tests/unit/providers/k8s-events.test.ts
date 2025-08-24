@@ -5,7 +5,7 @@
 
 import { assert, assertEquals, assertExists, assertRejects, assertThrows } from "@std/assert";
 import {
-  K8sEventsSignalConfig,
+  type K8sEventsSignalConfig,
   K8sEventsSignalProvider,
 } from "../../../src/providers/k8s-events.ts";
 import { ProviderStatus } from "../../../src/providers/types.ts";
@@ -41,10 +41,7 @@ function createValidConfig(): K8sEventsSignalConfig {
     kubeconfig: "/home/user/.kube/config",
     namespace: "default",
     timeout_ms: 30000,
-    retry_config: {
-      max_retries: 3,
-      retry_delay_ms: 1000,
-    },
+    retry_config: { max_retries: 3, retry_delay_ms: 1000 },
   };
 }
 
@@ -108,17 +105,9 @@ Deno.test("K8sEventsSignalProvider - Configuration validation", async (t) => {
   });
 
   await t.step("should reject null/undefined configuration", () => {
-    assertThrows(
-      () => provider.createSignal(null),
-      Error,
-      "Invalid configuration object",
-    );
+    assertThrows(() => provider.createSignal(null), Error, "Invalid configuration object");
 
-    assertThrows(
-      () => provider.createSignal(undefined),
-      Error,
-      "Invalid configuration object",
-    );
+    assertThrows(() => provider.createSignal(undefined), Error, "Invalid configuration object");
   });
 
   await t.step("should validate namespace format", () => {
@@ -136,32 +125,16 @@ Deno.test("K8sEventsSignalProvider - Configuration validation", async (t) => {
 
     // Invalid namespaces
     config.namespace = "INVALID";
-    assertThrows(
-      () => provider.createSignal(config),
-      Error,
-      "Invalid namespace format",
-    );
+    assertThrows(() => provider.createSignal(config), Error, "Invalid namespace format");
 
     config.namespace = "invalid_namespace";
-    assertThrows(
-      () => provider.createSignal(config),
-      Error,
-      "Invalid namespace format",
-    );
+    assertThrows(() => provider.createSignal(config), Error, "Invalid namespace format");
 
     config.namespace = "namespace-with-trailing-dash-";
-    assertThrows(
-      () => provider.createSignal(config),
-      Error,
-      "Invalid namespace format",
-    );
+    assertThrows(() => provider.createSignal(config), Error, "Invalid namespace format");
 
     config.namespace = "a".repeat(64); // Too long
-    assertThrows(
-      () => provider.createSignal(config),
-      Error,
-      "Namespace name too long",
-    );
+    assertThrows(() => provider.createSignal(config), Error, "Namespace name too long");
   });
 
   await t.step("should validate timeout", () => {
@@ -247,18 +220,10 @@ Deno.test("K8sEventsSignalProvider - Configuration validation", async (t) => {
 
     // Invalid URLs
     config.api_server = "ftp://invalid.com";
-    assertThrows(
-      () => provider.createSignal(config),
-      Error,
-      "must use HTTP or HTTPS",
-    );
+    assertThrows(() => provider.createSignal(config), Error, "must use HTTP or HTTPS");
 
     config.api_server = "not-a-url";
-    assertThrows(
-      () => provider.createSignal(config),
-      Error,
-      "Invalid API server URL format",
-    );
+    assertThrows(() => provider.createSignal(config), Error, "Invalid API server URL format");
   });
 
   await t.step("should validate environment variable names", () => {
@@ -273,18 +238,10 @@ Deno.test("K8sEventsSignalProvider - Configuration validation", async (t) => {
 
     // Invalid env var names
     config.kubeconfig_env = "123invalid";
-    assertThrows(
-      () => provider.createSignal(config),
-      Error,
-      "Invalid environment variable name",
-    );
+    assertThrows(() => provider.createSignal(config), Error, "Invalid environment variable name");
 
     config.kubeconfig_env = "invalid-name";
-    assertThrows(
-      () => provider.createSignal(config),
-      Error,
-      "Invalid environment variable name",
-    );
+    assertThrows(() => provider.createSignal(config), Error, "Invalid environment variable name");
   });
 });
 
@@ -292,27 +249,21 @@ Deno.test("K8sEventsSignalProvider - Signal validation", async (t) => {
   const provider = new K8sEventsSignalProvider();
 
   await t.step("should validate signal with kubeconfig", () => {
-    const config: K8sEventsSignalConfig = {
-      kubeconfig: "/home/user/.kube/config",
-    };
+    const config: K8sEventsSignalConfig = { kubeconfig: "/home/user/.kube/config" };
 
     const signal = provider.createSignal(config);
     assert(signal.validate());
   });
 
   await t.step("should validate signal with kubeconfig content", () => {
-    const config: K8sEventsSignalConfig = {
-      kubeconfig_content: "apiVersion: v1\nkind: Config",
-    };
+    const config: K8sEventsSignalConfig = { kubeconfig_content: "apiVersion: v1\nkind: Config" };
 
     const signal = provider.createSignal(config);
     assert(signal.validate());
   });
 
   await t.step("should validate signal with service account", () => {
-    const config: K8sEventsSignalConfig = {
-      use_service_account: true,
-    };
+    const config: K8sEventsSignalConfig = { use_service_account: true };
 
     const signal = provider.createSignal(config);
     assert(signal.validate());
@@ -329,9 +280,7 @@ Deno.test("K8sEventsSignalProvider - Signal validation", async (t) => {
   });
 
   await t.step("should reject signal without authentication", () => {
-    const config: K8sEventsSignalConfig = {
-      namespace: "default",
-    };
+    const config: K8sEventsSignalConfig = { namespace: "default" };
 
     const signal = provider.createSignal(config);
     assert(!signal.validate());

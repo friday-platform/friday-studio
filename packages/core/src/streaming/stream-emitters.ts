@@ -1,19 +1,14 @@
-import { StreamEmitter } from "@atlas/agent-sdk";
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import { Logger } from "@atlas/logger";
-import { StreamEvent } from "../types/streaming.ts";
+import type { StreamEmitter } from "@atlas/agent-sdk";
+import type { Logger } from "@atlas/logger";
+import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import type { StreamEvent } from "../types/streaming.ts";
 
 /**
  * MCP Content Item type for testing stream conversion
  */
-export type MCPContentItem = {
-  type: "text";
-  text: string;
-} | {
-  type: "image";
-  data: string;
-  mimeType: string;
-};
+export type MCPContentItem =
+  | { type: "text"; text: string }
+  | { type: "image"; data: string; mimeType: string };
 
 /**
  * Stream emitter that buffers events for later retrieval.
@@ -74,11 +69,7 @@ export class HTTPStreamEmitter implements StreamEmitter {
     private daemonUrl: string = "http://localhost:8080",
     logger: Logger,
   ) {
-    this.logger = logger.child({
-      component: "HTTPStreamEmitter",
-      streamId,
-      sessionId,
-    });
+    this.logger = logger.child({ component: "HTTPStreamEmitter", streamId, sessionId });
 
     // Batch events every 50ms to reduce HTTP requests
     this.flushInterval = setInterval(() => this.flush(), 50);
@@ -150,9 +141,7 @@ export class HTTPStreamEmitter implements StreamEmitter {
 
         await fetch(`${this.daemonUrl}/api/stream/${this.streamId}/emit`, {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         });
       }
@@ -183,9 +172,7 @@ export class HTTPStreamEmitter implements StreamEmitter {
       };
       await fetch(`${this.daemonUrl}/api/stream/${this.streamId}/emit`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
     } catch (error) {
@@ -257,11 +244,7 @@ export class MCPStreamEmitter implements StreamEmitter {
     private sessionId: string,
     logger: Logger,
   ) {
-    this.logger = logger.child({
-      component: "MCPStreamEmitter",
-      toolName,
-      sessionId,
-    });
+    this.logger = logger.child({ component: "MCPStreamEmitter", toolName, sessionId });
     this.flushInterval = setInterval(() => this.flush(), 50);
   }
 
@@ -286,19 +269,13 @@ export class MCPStreamEmitter implements StreamEmitter {
 
     const events = this.buffer.splice(0, this.buffer.length);
 
-    this.logger.debug("Flushing stream emitter events", {
-      eventTypes: events.map((e) => e.type),
-    });
+    this.logger.debug("Flushing stream emitter events", { eventTypes: events.map((e) => e.type) });
 
     try {
       try {
         await this.server.notification({
           method: "notifications/tool/streamContent",
-          params: {
-            toolName: this.toolName,
-            sessionId: this.sessionId,
-            events,
-          },
+          params: { toolName: this.toolName, sessionId: this.sessionId, events },
         });
       } catch (notifyError) {
         this.logger.error("Failed to stream Agent Server notification", { error: notifyError });

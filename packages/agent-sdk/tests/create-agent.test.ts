@@ -1,10 +1,10 @@
 /** createAgent() function tests */
 
+import { createLogger } from "@atlas/logger";
 import { assert, assertEquals, assertThrows } from "@std/assert";
+import { assertObjectMatch } from "@std/assert/object-match";
 import { createAgent } from "../src/create-agent.ts";
 import type { AgentContext } from "../src/types.ts";
-import { createLogger } from "@atlas/logger";
-import { assertObjectMatch } from "@std/assert/object-match";
 
 Deno.test("createAgent - creates agent with valid configuration", () => {
   const agent = createAgent({
@@ -37,11 +37,7 @@ Deno.test("createAgent - validates agent ID format", () => {
         displayName: "Test Agent",
         version: "1.0.0",
         description: "Invalid ID test",
-        expertise: {
-          domains: ["testing"],
-          capabilities: ["test"],
-          examples: ["test"],
-        },
+        expertise: { domains: ["testing"], capabilities: ["test"], examples: ["test"] },
         handler: () => Promise.resolve({}),
       });
     },
@@ -55,11 +51,7 @@ Deno.test("createAgent - validates agent ID format", () => {
     displayName: "Test Agent",
     version: "1.0.0",
     description: "Valid name test",
-    expertise: {
-      domains: ["testing"],
-      capabilities: ["test"],
-      examples: ["test"],
-    },
+    expertise: { domains: ["testing"], capabilities: ["test"], examples: ["test"] },
     handler: () => Promise.resolve({}),
   });
   assertEquals(agentWithUnderscore.metadata.id, "test_agent");
@@ -72,11 +64,7 @@ Deno.test("createAgent - validates agent ID format", () => {
         displayName: "Test Agent",
         version: "1.0.0",
         description: "Invalid ID test",
-        expertise: {
-          domains: ["testing"],
-          capabilities: ["test"],
-          examples: ["test"],
-        },
+        expertise: { domains: ["testing"], capabilities: ["test"], examples: ["test"] },
         handler: () => Promise.resolve({}),
       });
     },
@@ -93,11 +81,7 @@ Deno.test("createAgent - validates version format", () => {
         displayName: "Test Agent",
         version: "1.0", // Invalid: not semver
         description: "Invalid version test",
-        expertise: {
-          domains: ["testing"],
-          capabilities: ["test"],
-          examples: ["test"],
-        },
+        expertise: { domains: ["testing"], capabilities: ["test"], examples: ["test"] },
         handler: () => Promise.resolve({}),
       });
     },
@@ -154,25 +138,12 @@ Deno.test("createAgent - validates environment configuration", () => {
     displayName: "Test Agent",
     version: "1.0.0",
     description: "Environment config test",
-    expertise: {
-      domains: ["testing"],
-      capabilities: ["test"],
-      examples: ["test"],
-    },
+    expertise: { domains: ["testing"], capabilities: ["test"], examples: ["test"] },
     environment: {
       required: [
-        {
-          name: "API_KEY",
-          description: "API key for testing",
-          validation: "^[A-Z0-9]+$",
-        },
+        { name: "API_KEY", description: "API key for testing", validation: "^[A-Z0-9]+$" },
       ],
-      optional: [
-        {
-          name: "DEBUG",
-          default: "false",
-        },
-      ],
+      optional: [{ name: "DEBUG", default: "false" }],
     },
     handler: async () => {},
   });
@@ -190,11 +161,7 @@ Deno.test("createAgent - validates environment regex patterns", () => {
         displayName: "Test Agent",
         version: "1.0.0",
         description: "Invalid regex test",
-        expertise: {
-          domains: ["testing"],
-          capabilities: ["test"],
-          examples: ["test"],
-        },
+        expertise: { domains: ["testing"], capabilities: ["test"], examples: ["test"] },
         environment: {
           required: [
             {
@@ -224,11 +191,7 @@ Deno.test("createAgent - executes handler with context", async () => {
       examples: ["run test suite"],
     },
     handler: (prompt, context) => {
-      return Promise.resolve({
-        prompt,
-        hasContext: !!context,
-        hasStream: !!context.stream,
-      });
+      return Promise.resolve({ prompt, hasContext: !!context, hasStream: !!context.stream });
     },
   });
 
@@ -237,26 +200,24 @@ Deno.test("createAgent - executes handler with context", async () => {
     tools: {},
     logger: createLogger(),
     env: {},
-    session: {
-      sessionId: "test-session",
-      workspaceId: "test-workspace",
-      userId: "test-user",
-    },
+    session: { sessionId: "test-session", workspaceId: "test-workspace", userId: "test-user" },
     stream: {
-      emit: (_event) => {/* mock stream */},
-      end: () => {/* mock stream */},
-      error: (_error) => {/* mock stream */},
+      emit: (_event) => {
+        /* mock stream */
+      },
+      end: () => {
+        /* mock stream */
+      },
+      error: (_error) => {
+        /* mock stream */
+      },
     },
   };
 
   const result = await agent.execute("test prompt", mockContext);
 
   assert(typeof result === "object" && result !== null);
-  assertObjectMatch(result, {
-    prompt: "test prompt",
-    hasContext: true,
-    hasStream: true,
-  });
+  assertObjectMatch(result, { prompt: "test prompt", hasContext: true, hasStream: true });
 });
 
 Deno.test("createAgent - LLM-agnostic handler pattern", async () => {
@@ -276,17 +237,12 @@ Deno.test("createAgent - LLM-agnostic handler pattern", async () => {
       // For testing, we'll simulate the pattern
 
       // Simulate using own LLM library
-      const mockLLMResponse = {
-        text: `Processed: ${prompt}`,
-      };
+      const mockLLMResponse = { text: `Processed: ${prompt}` };
 
       // Stream events if needed
       context.stream?.emit({ type: "text", content: mockLLMResponse.text });
 
-      return Promise.resolve({
-        response: mockLLMResponse.text,
-        toolsUsed: [],
-      });
+      return Promise.resolve({ response: mockLLMResponse.text, toolsUsed: [] });
     },
   });
 
@@ -294,25 +250,24 @@ Deno.test("createAgent - LLM-agnostic handler pattern", async () => {
     tools: {},
     logger: createLogger(),
     env: {},
-    session: {
-      sessionId: "test-session",
-      workspaceId: "test-workspace",
-      userId: "test-user",
-    },
+    session: { sessionId: "test-session", workspaceId: "test-workspace", userId: "test-user" },
     stream: {
-      emit: (_event) => {/* mock stream */},
-      end: () => {/* mock stream */},
-      error: (_error) => {/* mock stream */},
+      emit: (_event) => {
+        /* mock stream */
+      },
+      end: () => {
+        /* mock stream */
+      },
+      error: (_error) => {
+        /* mock stream */
+      },
     },
   };
 
   const result = await agent.execute("analyze this", mockContext);
 
   assert(typeof result === "object" && result !== null);
-  assertObjectMatch(result, {
-    response: "Processed: analyze this",
-    toolsUsed: [],
-  });
+  assertObjectMatch(result, { response: "Processed: analyze this", toolsUsed: [] });
 });
 
 Deno.test("createAgent - agent stores MCP and LLM config", () => {
@@ -321,25 +276,9 @@ Deno.test("createAgent - agent stores MCP and LLM config", () => {
     displayName: "Test Agent",
     version: "1.0.0",
     description: "Config storage test",
-    expertise: {
-      domains: ["testing"],
-      capabilities: ["test"],
-      examples: ["test"],
-    },
-    mcp: {
-      testServer: {
-        transport: {
-          type: "stdio",
-          command: "test-server",
-          args: ["--test"],
-        },
-      },
-    },
-    llm: {
-      model: "test-model",
-      temperature: 0.5,
-      max_tokens: 1000,
-    },
+    expertise: { domains: ["testing"], capabilities: ["test"], examples: ["test"] },
+    mcp: { testServer: { transport: { type: "stdio", command: "test-server", args: ["--test"] } } },
+    llm: { model: "test-model", temperature: 0.5, max_tokens: 1000 },
     handler: async () => {},
   });
 

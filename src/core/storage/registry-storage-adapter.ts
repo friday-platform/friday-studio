@@ -6,10 +6,10 @@
  * while maintaining complete storage backend independence.
  */
 
-import { type KVStorage } from "./kv-storage.ts";
-import { WorkspaceEntry, WorkspaceEntrySchema, WorkspaceStatusEnum } from "@atlas/workspace";
-import type { WorkspaceStatus } from "@atlas/workspace";
 import { logger } from "@atlas/logger";
+import type { WorkspaceStatus } from "@atlas/workspace";
+import { type WorkspaceEntry, WorkspaceEntrySchema, WorkspaceStatusEnum } from "@atlas/workspace";
+import type { KVStorage } from "./kv-storage.ts";
 
 /**
  * Registry-specific storage operations
@@ -199,7 +199,7 @@ export class RegistryStorageAdapter {
 
         // Atomic commit failed - prepare for retry
         if (attempt < maxRetries - 1) {
-          const backoffMs = 10 * Math.pow(2, attempt);
+          const backoffMs = 10 * 2 ** attempt;
           logger.warn(
             `Failed to update lastSeen for workspace ${id} (attempt ${
               attempt + 1
@@ -217,7 +217,7 @@ export class RegistryStorageAdapter {
           return;
         }
         // Wait before retry
-        const backoffMs = 10 * Math.pow(2, attempt);
+        const backoffMs = 10 * 2 ** attempt;
         await new Promise((resolve) => setTimeout(resolve, backoffMs));
       }
     }
@@ -290,7 +290,7 @@ export class RegistryStorageAdapter {
 
         // Exponential backoff: wait 10ms, 20ms, 40ms
         if (attempt < maxRetries - 1) {
-          const backoffMs = 10 * Math.pow(2, attempt);
+          const backoffMs = 10 * 2 ** attempt;
           logger.warn(`${error.message}, retrying in ${backoffMs}ms...`);
           await new Promise((resolve) => setTimeout(resolve, backoffMs));
         }
@@ -300,14 +300,15 @@ export class RegistryStorageAdapter {
           throw lastError;
         }
         // Wait before retry for other types of errors too
-        const backoffMs = 10 * Math.pow(2, attempt);
+        const backoffMs = 10 * 2 ** attempt;
         await new Promise((resolve) => setTimeout(resolve, backoffMs));
       }
     }
 
     // If we get here, all retries failed
-    throw lastError ||
-      new Error(`Failed to update workspace ${id} status after ${maxRetries} attempts`);
+    throw (
+      lastError || new Error(`Failed to update workspace ${id} status after ${maxRetries} attempts`)
+    );
   }
 
   /**
@@ -321,10 +322,12 @@ export class RegistryStorageAdapter {
     version: string | null;
   }> {
     const workspaces = await this.listWorkspaces();
-    const runningWorkspaces =
-      workspaces.filter((w) => w.status === WorkspaceStatusEnum.RUNNING).length;
-    const stoppedWorkspaces =
-      workspaces.filter((w) => w.status === WorkspaceStatusEnum.STOPPED).length;
+    const runningWorkspaces = workspaces.filter(
+      (w) => w.status === WorkspaceStatusEnum.RUNNING,
+    ).length;
+    const stoppedWorkspaces = workspaces.filter(
+      (w) => w.status === WorkspaceStatusEnum.STOPPED,
+    ).length;
 
     const lastUpdated = await this.storage.get<string>(["registry", "lastUpdated"]);
     const version = await this.storage.get<string>(["registry", "version"]);

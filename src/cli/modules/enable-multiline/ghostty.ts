@@ -2,9 +2,9 @@
  * Ghostty terminal setup implementation
  */
 
-import { SetupResult } from "./types.ts";
-import { fileExists, getHomeDir } from "./utils.ts";
 import { dirname, join } from "@std/path";
+import type { SetupResult } from "./types.ts";
+import { fileExists, getHomeDir } from "./utils.ts";
 
 /**
  * Get possible Ghostty config paths
@@ -24,9 +24,7 @@ function getGhosttyConfigPaths(): string[] {
 
   // macOS-specific path
   if (Deno.build.os === "darwin") {
-    paths.push(
-      join(home, "Library", "Application Support", "com.mitchellh.ghostty", "config"),
-    );
+    paths.push(join(home, "Library", "Application Support", "com.mitchellh.ghostty", "config"));
   }
 
   return paths;
@@ -35,10 +33,7 @@ function getGhosttyConfigPaths(): string[] {
 /**
  * Find existing Ghostty config or determine where to create it
  */
-async function findGhosttyConfig(): Promise<{
-  path: string;
-  exists: boolean;
-}> {
+async function findGhosttyConfig(): Promise<{ path: string; exists: boolean }> {
   const paths = getGhosttyConfigPaths();
 
   // Check for existing config
@@ -93,7 +88,7 @@ export async function setupGhostty(): Promise<SetupResult> {
     const { path: configPath, exists: configExists } = await findGhosttyConfig();
 
     let content = "";
-    let backupPath: string | undefined = undefined;
+    let backupPath: string | undefined;
 
     if (configExists) {
       // Read existing config
@@ -101,18 +96,13 @@ export async function setupGhostty(): Promise<SetupResult> {
 
       // Check if keybinding already exists
       if (hasShiftEnterKeybinding(content)) {
-        return {
-          success: true,
-        };
+        return { success: true };
       }
 
       // Create backup
       backupPath = await createGhosttyBackup(configPath);
       if (!backupPath) {
-        return {
-          success: false,
-          error: "Failed to create backup of Ghostty config",
-        };
+        return { success: false, error: "Failed to create backup of Ghostty config" };
       }
     } else {
       // Create config directory if it doesn't exist
@@ -139,10 +129,7 @@ export async function setupGhostty(): Promise<SetupResult> {
     // Write updated config
     await Deno.writeTextFile(configPath, updatedContent);
 
-    return {
-      success: true,
-      backupPath,
-    };
+    return { success: true, backupPath };
   } catch (error) {
     console.error("Ghostty setup failed:", error);
 
@@ -159,20 +146,15 @@ export async function setupGhostty(): Promise<SetupResult> {
  * Restore Ghostty from backup
  */
 export async function restoreGhostty(backupPath: string): Promise<SetupResult> {
-  if (!await fileExists(backupPath)) {
-    return {
-      success: false,
-      error: "Backup file no longer exists",
-    };
+  if (!(await fileExists(backupPath))) {
+    return { success: false, error: "Backup file no longer exists" };
   }
 
   try {
     const { path: configPath } = await findGhosttyConfig();
     await Deno.copyFile(backupPath, configPath);
 
-    return {
-      success: true,
-    };
+    return { success: true };
   } catch (error) {
     return {
       success: false,

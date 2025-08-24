@@ -7,8 +7,8 @@
  */
 
 import { assertEquals, assertExists, assertObjectMatch } from "@std/assert";
-import { cleanupTestServers, setupTestServers, type TestSetup } from "./test-helpers.ts";
 import type { AgentResult } from "../../src/orchestrator/agent-orchestrator.ts";
+import { cleanupTestServers, setupTestServers, type TestSetup } from "./test-helpers.ts";
 
 /**
  * Core Atlas agent execution - tests orchestrator → MCP → agent → response flow.
@@ -28,11 +28,7 @@ Deno.test({
       const result: AgentResult = await setup.orchestrator.executeAgent(
         "test-agent",
         "echo Hello from orchestrator test!",
-        {
-          sessionId: "test-session-123",
-          workspaceId: "test-workspace",
-          userId: "test-user",
-        },
+        { sessionId: "test-session-123", workspaceId: "test-workspace", userId: "test-user" },
       );
 
       assertExists(result, "Result should exist");
@@ -69,11 +65,7 @@ Deno.test({
       const result: AgentResult = await setup.orchestrator.executeAgent(
         "test-agent",
         "calculate 42 + 58",
-        {
-          sessionId: "test-session-456",
-          workspaceId: "test-workspace",
-          userId: "test-user",
-        },
+        { sessionId: "test-session-456", workspaceId: "test-workspace", userId: "test-user" },
       );
 
       assertExists(result);
@@ -81,11 +73,7 @@ Deno.test({
       assertExists(result.output);
       assertEquals(result.error, undefined, "Should not have an error");
 
-      assertObjectMatch(result.output, {
-        type: "calculation",
-        expression: "42 + 58",
-        result: 100,
-      });
+      assertObjectMatch(result.output, { type: "calculation", expression: "42 + 58", result: 100 });
     } finally {
       if (setup) {
         await cleanupTestServers(setup);
@@ -110,11 +98,7 @@ Deno.test({
       const result: AgentResult = await setup.orchestrator.executeAgent(
         "test-agent",
         "do something unknown",
-        {
-          sessionId: "test-session-789",
-          workspaceId: "test-workspace",
-          userId: "test-user",
-        },
+        { sessionId: "test-session-789", workspaceId: "test-workspace", userId: "test-user" },
       );
 
       assertExists(result);
@@ -148,22 +132,13 @@ Deno.test({
     try {
       setup = await setupTestServers();
 
-      const result1 = await setup.orchestrator.executeAgent(
-        "test-agent",
-        "echo test with user",
-        {
-          sessionId: "session-with-user",
-          workspaceId: "workspace-1",
-          userId: "user-123",
-        },
-      );
-
-      assertObjectMatch(result1, {
-        output: {
-          type: "echo",
-          sessionId: "session-with-user",
-        },
+      const result1 = await setup.orchestrator.executeAgent("test-agent", "echo test with user", {
+        sessionId: "session-with-user",
+        workspaceId: "workspace-1",
+        userId: "user-123",
       });
+
+      assertObjectMatch(result1, { output: { type: "echo", sessionId: "session-with-user" } });
 
       const result2 = await setup.orchestrator.executeAgent(
         "test-agent",
@@ -175,12 +150,7 @@ Deno.test({
         },
       );
 
-      assertObjectMatch(result2, {
-        output: {
-          type: "echo",
-          sessionId: "session-no-user",
-        },
-      });
+      assertObjectMatch(result2, { output: { type: "echo", sessionId: "session-no-user" } });
     } finally {
       if (setup) {
         await cleanupTestServers(setup);
@@ -204,14 +174,10 @@ Deno.test({
 
       const startTime = Date.now();
 
-      const result = await setup.orchestrator.executeAgent(
-        "test-agent",
-        "echo timing test",
-        {
-          sessionId: "timing-session",
-          workspaceId: "test-workspace",
-        },
-      );
+      const result = await setup.orchestrator.executeAgent("test-agent", "echo timing test", {
+        sessionId: "timing-session",
+        workspaceId: "test-workspace",
+      });
 
       const endTime = Date.now();
       const totalDuration = endTime - startTime;
@@ -227,11 +193,7 @@ Deno.test({
 
       assertExists(result.timestamp, "Timestamp should exist");
       const timestamp = new Date(result.timestamp);
-      assertEquals(
-        isNaN(timestamp.getTime()),
-        false,
-        "Timestamp should be valid ISO string",
-      );
+      assertEquals(isNaN(timestamp.getTime()), false, "Timestamp should be valid ISO string");
     } finally {
       if (setup) {
         await cleanupTestServers(setup);

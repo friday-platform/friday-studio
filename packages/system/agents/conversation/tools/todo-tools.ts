@@ -5,10 +5,10 @@
  * Manages todo lists for conversation sessions with persistent memory
  */
 
+import { TodoItemSchema } from "@atlas/config";
+import { createAtlasClient } from "@atlas/oapi-client";
 import { tool } from "ai";
 import { z } from "zod/v4";
-import { createAtlasClient } from "@atlas/oapi-client";
-import { TodoItemSchema } from "@atlas/config";
 
 // Helper to safely extract error message from unknown error
 function getErrorMessage(error: unknown): string {
@@ -51,9 +51,11 @@ export const todoWriteTool = tool({
     "Create and manage structured task list for conversation session. Use this to track progress, store context about completed work, and plan multi-step tasks. Always provide the complete todo list to replace existing todos.",
   inputSchema: z.object({
     streamId: z.string().describe("Stream identifier for the conversation session"),
-    todos: z.array(TodoItemSchema).describe(
-      "Complete todo list to store. This replaces the existing list, so include all todos you want to keep.",
-    ),
+    todos: z
+      .array(TodoItemSchema)
+      .describe(
+        "Complete todo list to store. This replaces the existing list, so include all todos you want to keep.",
+      ),
   }),
   execute: async ({ streamId, todos }) => {
     try {

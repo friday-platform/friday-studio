@@ -8,11 +8,11 @@
  * PII-safe memory system.
  */
 
-import { join } from "@std/path";
-import { exists } from "@std/fs";
-import { MemorySource } from "../../packages/memory/src/mecmf-interfaces.ts";
-import { CoALAMemoryManager } from "../../packages/memory/src/coala-memory.ts";
 import { VectorSearchLocalStorageAdapter } from "@atlas/storage";
+import { exists } from "@std/fs";
+import { join } from "@std/path";
+import { CoALAMemoryManager } from "../../packages/memory/src/coala-memory.ts";
+import { MemorySource } from "../../packages/memory/src/mecmf-interfaces.ts";
 
 interface MigrationOptions {
   workspacePath: string;
@@ -43,7 +43,7 @@ export class MemorySourceMigrator {
     console.log("");
 
     // Check if workspace exists
-    if (!await exists(workspacePath)) {
+    if (!(await exists(workspacePath))) {
       throw new Error(`Workspace path does not exist: ${workspacePath}`);
     }
 
@@ -51,16 +51,12 @@ export class MemorySourceMigrator {
     const memoryDir = join(workspacePath, ".atlas", "memory");
     const vectorDir = join(workspacePath, ".atlas", "vectors");
 
-    if (!await exists(memoryDir)) {
+    if (!(await exists(memoryDir))) {
       console.log("⚠️  No memory directory found - nothing to migrate");
       return this.stats;
     }
 
-    const scope = {
-      id: workspacePath,
-      workspaceId: workspacePath,
-      type: "workspace" as const,
-    };
+    const scope = { id: workspacePath, workspaceId: workspacePath, type: "workspace" as const };
 
     const memoryManager = new CoALAMemoryManager(scope);
 
@@ -174,12 +170,13 @@ export class MemorySourceMigrator {
 
     // System-generated memories (rules, procedures, etc.)
     if (
-      tags.some((tag: string) =>
-        tag.includes("rule") ||
-        tag.includes("procedural") ||
-        tag.includes("system") ||
-        tag === "workspace" ||
-        tag === "initialization"
+      tags.some(
+        (tag: string) =>
+          tag.includes("rule") ||
+          tag.includes("procedural") ||
+          tag.includes("system") ||
+          tag === "workspace" ||
+          tag === "initialization",
       )
     ) {
       return MemorySource.SYSTEM_GENERATED;
@@ -210,8 +207,8 @@ export class MemorySourceMigrator {
     }
 
     // Try to extract agent ID from tags
-    const agentTag = tags.find((tag: string) =>
-      tag.startsWith("agent-") && !tag.includes("result")
+    const agentTag = tags.find(
+      (tag: string) => tag.startsWith("agent-") && !tag.includes("result"),
     );
     if (agentTag) {
       metadata.agentId = agentTag.replace("agent-", "");
@@ -264,11 +261,7 @@ Examples:
 
   try {
     const migrator = new MemorySourceMigrator();
-    await migrator.migrate({
-      workspacePath,
-      dryRun,
-      verbose,
-    });
+    await migrator.migrate({ workspacePath, dryRun, verbose });
   } catch (error) {
     console.error("Migration failed:", error);
     Deno.exit(1);

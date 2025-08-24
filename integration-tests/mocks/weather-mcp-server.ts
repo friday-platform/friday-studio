@@ -23,19 +23,14 @@ function detectFeedbackLoop(toolName: string): void {
   }
 }
 
-const server = new McpServer({
-  name: "weather-mock-server",
-  version: "1.0.0",
-});
+const server = new McpServer({ name: "weather-mock-server", version: "1.0.0" });
 
 // Register weather tools with Zod schemas
 server.registerTool(
   "get_weather",
   {
     description: "Get current weather for a location",
-    inputSchema: {
-      location: z.string().describe("The location to get weather for"),
-    },
+    inputSchema: { location: z.string().describe("The location to get weather for") },
   },
   ({ location }) => {
     detectFeedbackLoop("get_weather");
@@ -74,18 +69,7 @@ server.registerTool(
       conditions: ["sunny", "cloudy", "rainy"][Math.floor(Math.random() * 3)],
     }));
 
-    return {
-      content: [
-        {
-          type: "text",
-          text: JSON.stringify({
-            location,
-            days,
-            forecast,
-          }),
-        },
-      ],
-    };
+    return { content: [{ type: "text", text: JSON.stringify({ location, days, forecast }) }] };
   },
 );
 

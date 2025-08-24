@@ -1,6 +1,6 @@
+import { logger } from "@atlas/logger";
 import { ensureDir, exists } from "@std/fs";
 import { join } from "@std/path";
-import { logger } from "@atlas/logger";
 
 // Playwright browser download URLs and metadata
 const BROWSER_NAME = "chromium";
@@ -45,9 +45,7 @@ async function extractZip(zipPath: string, destDir: string): Promise<void> {
     });
   } else {
     // Use unzip on macOS and Linux
-    process = new Deno.Command("unzip", {
-      args: ["-q", "-o", zipPath, "-d", destDir],
-    });
+    process = new Deno.Command("unzip", { args: ["-q", "-o", zipPath, "-d", destDir] });
   }
 
   const { success, stderr } = await process.output();

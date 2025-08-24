@@ -177,11 +177,7 @@ export class KVStorageError extends Error {
   public readonly code: string;
   public override readonly cause?: Error;
 
-  constructor(
-    message: string,
-    code: string,
-    cause?: Error,
-  ) {
+  constructor(message: string, code: string, cause?: Error) {
     super(message);
     this.name = "KVStorageError";
     this.code = code;

@@ -1,9 +1,9 @@
 <script lang="ts">
-  import type { Snippet } from "svelte";
+import type { Snippet } from "svelte";
 
-  type Props = { children: Snippet; spacing?: "regular" | "large" };
+type Props = { children: Snippet; spacing?: "regular" | "large" };
 
-  let { children, spacing = "regular" }: Props = $props();
+const { children, spacing = "regular" }: Props = $props();
 </script>
 
 <div class="spacing-{spacing}">

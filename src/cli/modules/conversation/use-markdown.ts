@@ -1,7 +1,7 @@
-import { useResponsiveDimensions } from "../../utils/useResponsiveDimensions.ts";
+import chalk from "chalk";
 import { marked } from "marked";
 import TerminalRenderer from "marked-terminal";
-import chalk from "chalk";
+import { useResponsiveDimensions } from "../../utils/useResponsiveDimensions.ts";
 
 const BULLET_POINT_REGEX = "\\*";
 const NUMBERED_POINT_REGEX = "\\d+\\.";
@@ -31,14 +31,8 @@ function numberedPoint(n: number) {
 }
 function numberedLine(indent: number, line: string, num: number) {
   return isPointedLine(line, indent)
-    ? {
-      num: num + 1,
-      line: line.replace(BULLET_POINT, numberedPoint(num + 1)),
-    }
-    : {
-      num: num,
-      line: toSpaces(numberedPoint(num)) + line,
-    };
+    ? { num: num + 1, line: line.replace(BULLET_POINT, numberedPoint(num + 1)) }
+    : { num: num, line: toSpaces(numberedPoint(num)) + line };
 }
 
 function numberedLines(lines: string, indent: number) {
@@ -66,7 +60,7 @@ export function useMarkdown(message = "", isDim = false) {
       heading: isDim ? chalk.reset.bold.dim : chalk.reset.bold,
       firstHeading: isDim ? chalk.reset.bold.dim : chalk.reset.bold,
       hr: isDim ? chalk.reset.dim.dim : chalk.reset.dim,
-      list: function (body: string, ordered: boolean, indent: number) {
+      list: (body: string, ordered: boolean, indent: number) => {
         body = body.trim();
         body = ordered ? numberedLines(body, indent) : bulletPointLines(body, indent);
         return body;
@@ -84,11 +78,7 @@ export function useMarkdown(message = "", isDim = false) {
       link: isDim ? chalk.reset.dim : chalk.yellow,
       href: isDim ? chalk.reset.underline.dim : chalk.yellow.underline,
       tab: 2,
-      tableOptions: {
-        style: {
-          head: ["white", "bold"],
-        },
-      },
+      tableOptions: { style: { head: ["white", "bold"] } },
     }),
   });
 
@@ -97,15 +87,11 @@ export function useMarkdown(message = "", isDim = false) {
   const lines = markdownParsed
     .split("\n")
     .filter((line, index, array) =>
-      line === "" && (index === 0 || index === array.length - 1) ? false : true
+      line === "" && (index === 0 || index === array.length - 1) ? false : true,
     );
   const height = lines
     .map((line) => Math.max(1, Math.ceil(line.length / dimensions.paddedWidth)))
     .reduce((a, b) => a + b, 0);
 
-  return {
-    height,
-    totalLines: lines.length,
-    markdown: lines.join("\n"),
-  };
+  return { height, totalLines: lines.length, markdown: lines.join("\n") };
 }

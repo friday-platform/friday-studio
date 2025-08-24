@@ -1,6 +1,6 @@
+import { describeRoute, resolver } from "hono-openapi";
 import { z } from "zod/v4";
 import { daemonFactory } from "../../src/factory.ts";
-import { describeRoute, resolver } from "hono-openapi";
 import { errorResponseSchema, workspaceResponseSchema } from "./schemas.ts";
 
 const listWorkspaces = daemonFactory.createApp();
@@ -15,19 +15,11 @@ listWorkspaces.get(
     responses: {
       200: {
         description: "Successfully retrieved workspaces",
-        content: {
-          "application/json": {
-            schema: resolver(z.array(workspaceResponseSchema)),
-          },
-        },
+        content: { "application/json": { schema: resolver(z.array(workspaceResponseSchema)) } },
       },
       500: {
         description: "Internal server error",
-        content: {
-          "application/json": {
-            schema: resolver(errorResponseSchema),
-          },
-        },
+        content: { "application/json": { schema: resolver(errorResponseSchema) } },
       },
     },
   }),
@@ -38,11 +30,14 @@ listWorkspaces.get(
       const workspaces = await manager.list({ includeSystem: true });
       return c.json(workspaces);
     } catch (error) {
-      return c.json({
-        error: `Failed to list workspaces: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      }, 500);
+      return c.json(
+        {
+          error: `Failed to list workspaces: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        },
+        500,
+      );
     }
   },
 );

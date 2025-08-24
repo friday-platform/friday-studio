@@ -81,10 +81,7 @@ export const SignalTriggerRequestSchema = z.strictObject({
     .record(z.string(), z.unknown())
     .optional()
     .describe("Optional payload data for the signal"),
-  streamId: z
-    .string()
-    .optional()
-    .describe("Optional stream ID for UI progress feedback"),
+  streamId: z.string().optional().describe("Optional stream ID for UI progress feedback"),
 });
 
 export type SignalTriggerRequest = z.infer<typeof SignalTriggerRequestSchema>;

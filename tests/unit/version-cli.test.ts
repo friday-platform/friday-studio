@@ -40,11 +40,7 @@ Deno.test({
   fn() {
     // Test that all expected options are boolean type with proper defaults
     const expectedOptions = {
-      json: {
-        type: "boolean",
-        describe: "Output version information as JSON",
-        default: false,
-      },
+      json: { type: "boolean", describe: "Output version information as JSON", default: false },
       remote: {
         type: "boolean",
         describe: "Check for newer version from remote server",

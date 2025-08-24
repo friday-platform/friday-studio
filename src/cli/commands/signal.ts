@@ -1,8 +1,8 @@
+import { formatResourceHelp } from "../utils/resource-help.ts";
+import type { YargsInstance } from "../utils/yargs.ts";
+import * as history from "./signal/history.tsx";
 import * as list from "./signal/list.tsx";
 import * as trigger from "./signal/trigger.tsx";
-import * as history from "./signal/history.tsx";
-import { YargsInstance } from "../utils/yargs.ts";
-import { formatResourceHelp } from "../utils/resource-help.ts";
 
 export const command = "signal <action>";
 export const desc = "Manage workspace signals";

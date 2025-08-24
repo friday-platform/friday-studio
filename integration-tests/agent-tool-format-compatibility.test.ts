@@ -4,9 +4,9 @@
  * across the entire system without backwards compatibility issues.
  */
 
-import { assertEquals, assertExists } from "@std/assert";
 import { ConfigLoader } from "@atlas/config";
 import { FilesystemConfigAdapter } from "@atlas/storage";
+import { assertEquals, assertExists } from "@std/assert";
 
 /**
  * Test that all workspace examples load without configuration errors
@@ -28,11 +28,7 @@ Deno.test({
         const config = await loader.load();
 
         // Verify agents use new format
-        for (
-          const [agentId, agent] of Object.entries(
-            config.workspace.agents || {},
-          )
-        ) {
+        for (const [agentId, agent] of Object.entries(config.workspace.agents || {})) {
           // Agent tools should be simple array format ["tool1", "tool2"] or undefined
           if (agent.tools) {
             assertEquals(
@@ -52,9 +48,7 @@ Deno.test({
 
         // Configuration loaded successfully
       } catch (error) {
-        throw new Error(
-          `❌ ${workspaceName} workspace failed to load: ${error.message}`,
-        );
+        throw new Error(`❌ ${workspaceName} workspace failed to load: ${error.message}`);
       }
     }
   },
@@ -87,7 +81,7 @@ Deno.test({
 
         // Should contain workspace capabilities
         const hasWorkspaceCapability = agentSpec.tools.some((tool: string) =>
-          tool.startsWith("workspace.")
+          tool.startsWith("workspace."),
         );
         assertEquals(
           hasWorkspaceCapability,
@@ -104,17 +98,11 @@ Deno.test({
  */
 Deno.test("Agent tool checking validates simple array format", () => {
   // Test data with new simple array format
-  const agentWithMCPTools = {
-    tools: ["computer_use", "filesystem", "workspace.memory.recall"],
-  };
+  const agentWithMCPTools = { tools: ["computer_use", "filesystem", "workspace.memory.recall"] };
 
-  const agentWithWorkspaceTools = {
-    tools: ["computer_use", "workspace.sessions.describe"],
-  };
+  const agentWithWorkspaceTools = { tools: ["computer_use", "workspace.sessions.describe"] };
 
-  const agentWithNoTools = {
-    tools: [],
-  };
+  const agentWithNoTools = { tools: [] };
 
   // Simulate the tool checking logic used in SessionSupervisor
   function hasComputerUse(agent: any): boolean {
@@ -122,11 +110,7 @@ Deno.test("Agent tool checking validates simple array format", () => {
   }
 
   // Test assertions
-  assertEquals(
-    hasComputerUse(agentWithMCPTools),
-    true,
-    "Should detect computer_use in MCP tools",
-  );
+  assertEquals(hasComputerUse(agentWithMCPTools), true, "Should detect computer_use in MCP tools");
   assertEquals(
     hasComputerUse(agentWithWorkspaceTools),
     true,
@@ -161,10 +145,7 @@ Deno.test({
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
         // Look for agent-level mcp_servers (indented under an agent)
-        if (
-          line.includes("mcp_servers:") &&
-          (line.startsWith("    ") || line.startsWith("\t"))
-        ) {
+        if (line.includes("mcp_servers:") && (line.startsWith("    ") || line.startsWith("\t"))) {
           // Check if this is under an agent definition
           for (let j = i - 1; j >= 0; j--) {
             const prevLine = lines[j].trim();
@@ -226,15 +207,14 @@ Deno.test({
 
         // Check for agent-level tools configuration
         if (
-          inAgentSection && currentAgentName && line.startsWith("      tools:") &&
+          inAgentSection &&
+          currentAgentName &&
+          line.startsWith("      tools:") &&
           !line.includes("[")
         ) {
           // This might be old hierarchical format - check context
           const nextLines = lines.slice(i + 1, i + 3).join(" ");
-          if (
-            nextLines.includes("mcp:") ||
-            nextLines.includes("workspace:")
-          ) {
+          if (nextLines.includes("mcp:") || nextLines.includes("workspace:")) {
             throw new Error(
               `${workspaceFile}:${
                 i + 1

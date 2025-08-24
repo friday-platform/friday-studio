@@ -15,10 +15,7 @@ export class ProviderStateManager {
   constructor(workspaceId: string, atlasDir: string = ".atlas") {
     this.workspaceId = workspaceId;
     this.statePath = join(atlasDir, "provider-state.json");
-    this.state = {
-      providers: {},
-      lastUpdated: new Date(),
-    };
+    this.state = { providers: {}, lastUpdated: new Date() };
   }
 
   async load(): Promise<void> {
@@ -27,10 +24,7 @@ export class ProviderStateManager {
       const parsed = JSON.parse(data);
 
       // Convert date strings back to Date objects
-      this.state = {
-        providers: parsed.providers,
-        lastUpdated: new Date(parsed.lastUpdated),
-      };
+      this.state = { providers: parsed.providers, lastUpdated: new Date(parsed.lastUpdated) };
 
       // Convert lastHealthCheck dates
       for (const providerId in this.state.providers) {
@@ -47,9 +41,7 @@ export class ProviderStateManager {
       );
     } catch (error) {
       if (error instanceof Deno.errors.NotFound) {
-        console.log(
-          "[ProviderStateManager] No existing state file, starting fresh",
-        );
+        console.log("[ProviderStateManager] No existing state file, starting fresh");
       } else {
         console.error("[ProviderStateManager] Error loading state:", error);
       }
@@ -61,10 +53,7 @@ export class ProviderStateManager {
       await ensureDir(join(".", ".atlas"));
 
       this.state.lastUpdated = new Date();
-      await Deno.writeTextFile(
-        this.statePath,
-        JSON.stringify(this.state, null, 2),
-      );
+      await Deno.writeTextFile(this.statePath, JSON.stringify(this.state, null, 2));
 
       console.log("[ProviderStateManager] State saved");
     } catch (error) {
@@ -82,10 +71,7 @@ export class ProviderStateManager {
   }
 
   // Secure credential storage (in production, use OS keychain)
-  async storeCredentials(
-    providerId: string,
-    credentials: ProviderCredentials,
-  ): Promise<void> {
+  async storeCredentials(providerId: string, credentials: ProviderCredentials): Promise<void> {
     // For now, store in a separate encrypted file
     const credPath = join(".atlas", `${providerId}-credentials.enc`);
 
@@ -94,22 +80,10 @@ export class ProviderStateManager {
     const warning =
       "WARNING: Credentials stored in plain text. Use proper encryption in production!";
 
-    await Deno.writeTextFile(
-      credPath,
-      JSON.stringify(
-        {
-          warning,
-          credentials,
-        },
-        null,
-        2,
-      ),
-    );
+    await Deno.writeTextFile(credPath, JSON.stringify({ warning, credentials }, null, 2));
   }
 
-  async loadCredentials(
-    providerId: string,
-  ): Promise<ProviderCredentials | undefined> {
+  async loadCredentials(providerId: string): Promise<ProviderCredentials | undefined> {
     try {
       const credPath = join(".atlas", `${providerId}-credentials.enc`);
       const data = await Deno.readTextFile(credPath);

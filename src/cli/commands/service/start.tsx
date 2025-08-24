@@ -1,6 +1,6 @@
-import { errorOutput, infoOutput, successOutput } from "../../utils/output.ts";
-import { YargsInstance } from "../../utils/yargs.ts";
 import { ServiceManager } from "../../../services/service-manager.ts";
+import { errorOutput, infoOutput, successOutput } from "../../utils/output.ts";
+import type { YargsInstance } from "../../utils/yargs.ts";
 
 interface StartArgs {
   wait?: boolean;

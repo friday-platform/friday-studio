@@ -1,16 +1,16 @@
-import { join } from "@std/path";
 import { exists } from "@std/fs";
-import {
-  LaunchAgentConfig,
-  PlatformServiceManager,
-  ServiceConfig,
-  ServiceStatus,
-} from "../types.ts";
+import { join } from "@std/path";
 import {
   getAtlasBinaryPath,
   getDefaultServiceName,
   getPlatformPaths,
 } from "../../utils/platform.ts";
+import type {
+  LaunchAgentConfig,
+  PlatformServiceManager,
+  ServiceConfig,
+  ServiceStatus,
+} from "../types.ts";
 
 export class MacOSLaunchdService implements PlatformServiceManager {
   private readonly serviceName: string;
@@ -41,7 +41,7 @@ export class MacOSLaunchdService implements PlatformServiceManager {
     const binaryPath = getAtlasBinaryPath();
 
     // Verify binary exists
-    if (!await exists(binaryPath)) {
+    if (!(await exists(binaryPath))) {
       throw new Error(`Atlas binary not found at ${binaryPath}. Please install Atlas first.`);
     }
 
@@ -51,13 +51,7 @@ export class MacOSLaunchdService implements PlatformServiceManager {
 
     const launchAgentConfig: LaunchAgentConfig = {
       Label: this.serviceName,
-      ProgramArguments: [
-        binaryPath,
-        "daemon",
-        "start",
-        "--port",
-        config.port.toString(),
-      ],
+      ProgramArguments: [binaryPath, "daemon", "start", "--port", config.port.toString()],
       WorkingDirectory: getPlatformPaths().configDir,
       EnvironmentVariables: {
         PATH: "/usr/local/bin:/usr/bin:/bin",
@@ -235,21 +229,25 @@ export class MacOSLaunchdService implements PlatformServiceManager {
   }
 
   private generatePlistXml(config: LaunchAgentConfig): string {
-    const programArgs = config.ProgramArguments
-      .map((arg) => `\t\t<string>${this.escapeXml(arg)}</string>`)
-      .join("\n");
+    const programArgs = config.ProgramArguments.map(
+      (arg) => `\t\t<string>${this.escapeXml(arg)}</string>`,
+    ).join("\n");
 
     const environmentVars = config.EnvironmentVariables
       ? Object.entries(config.EnvironmentVariables)
-        .map(([key, value]) =>
-          `\t\t<key>${this.escapeXml(key)}</key>\n\t\t<string>${this.escapeXml(value)}</string>`
-        )
-        .join("\n")
+          .map(
+            ([key, value]) =>
+              `\t\t<key>${this.escapeXml(key)}</key>\n\t\t<string>${this.escapeXml(value)}</string>`,
+          )
+          .join("\n")
       : "";
 
-    const keepAlive = typeof config.KeepAlive === "boolean"
-      ? (config.KeepAlive ? "<true/>" : "<false/>")
-      : `<dict>
+    const keepAlive =
+      typeof config.KeepAlive === "boolean"
+        ? config.KeepAlive
+          ? "<true/>"
+          : "<false/>"
+        : `<dict>
 \t\t<key>SuccessfulExit</key>
 \t\t<${config.KeepAlive.SuccessfulExit ? "true" : "false"}/>
 \t</dict>`;
@@ -265,35 +263,31 @@ export class MacOSLaunchdService implements PlatformServiceManager {
 ${programArgs}
 \t</array>
 ${
-      config.WorkingDirectory
-        ? `\t<key>WorkingDirectory</key>\n\t<string>${
-          this.escapeXml(config.WorkingDirectory)
-        }</string>`
-        : ""
-    }
+  config.WorkingDirectory
+    ? `\t<key>WorkingDirectory</key>\n\t<string>${this.escapeXml(config.WorkingDirectory)}</string>`
+    : ""
+}
 ${
-      environmentVars
-        ? `\t<key>EnvironmentVariables</key>\n\t<dict>\n${environmentVars}\n\t</dict>`
-        : ""
-    }
+  environmentVars
+    ? `\t<key>EnvironmentVariables</key>\n\t<dict>\n${environmentVars}\n\t</dict>`
+    : ""
+}
 \t<key>RunAtLoad</key>
 \t<${config.RunAtLoad ? "true" : "false"}/>
 \t<key>KeepAlive</key>
 \t${keepAlive}
 ${
-      config.StandardOutPath
-        ? `\t<key>StandardOutPath</key>\n\t<string>${
-          this.escapeXml(config.StandardOutPath)
-        }</string>`
-        : ""
-    }
+  config.StandardOutPath
+    ? `\t<key>StandardOutPath</key>\n\t<string>${this.escapeXml(config.StandardOutPath)}</string>`
+    : ""
+}
 ${
-      config.StandardErrorPath
-        ? `\t<key>StandardErrorPath</key>\n\t<string>${
-          this.escapeXml(config.StandardErrorPath)
-        }</string>`
-        : ""
-    }
+  config.StandardErrorPath
+    ? `\t<key>StandardErrorPath</key>\n\t<string>${this.escapeXml(
+        config.StandardErrorPath,
+      )}</string>`
+    : ""
+}
 </dict>
 </plist>`;
   }

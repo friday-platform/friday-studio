@@ -1,6 +1,6 @@
-import { errorOutput, infoOutput, successOutput } from "../../utils/output.ts";
-import { YargsInstance } from "../../utils/yargs.ts";
 import { ServiceManager } from "../../../services/service-manager.ts";
+import { errorOutput, infoOutput, successOutput } from "../../utils/output.ts";
+import type { YargsInstance } from "../../utils/yargs.ts";
 
 interface InstallArgs {
   force?: boolean;
@@ -59,10 +59,7 @@ export const handler = async (argv: InstallArgs): Promise<void> => {
 
     infoOutput("Installing Atlas service...");
 
-    const config = {
-      port: argv.port || 8080,
-      autoStart: argv.autoStart ?? true,
-    };
+    const config = { port: argv.port || 8080, autoStart: argv.autoStart ?? true };
 
     await serviceManager.install(config);
     successOutput("Atlas service installed successfully");

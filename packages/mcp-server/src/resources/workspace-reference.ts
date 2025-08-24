@@ -7,10 +7,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { ResourceContext } from "./types.ts";
 import workspaceReferenceContent from "./workspace-reference.yml" with { type: "text" };
 
-export function registerWorkspaceReferenceResource(
-  server: McpServer,
-  context: ResourceContext,
-) {
+export function registerWorkspaceReferenceResource(server: McpServer, context: ResourceContext) {
   // Register resource
   server.registerResource(
     "workspace-reference",
@@ -22,11 +19,13 @@ export function registerWorkspaceReferenceResource(
     },
     () => {
       return {
-        contents: [{
-          uri: "atlas://reference/workspace",
-          mimeType: "text/yaml",
-          text: workspaceReferenceContent,
-        }],
+        contents: [
+          {
+            uri: "atlas://reference/workspace",
+            mimeType: "text/yaml",
+            text: workspaceReferenceContent,
+          },
+        ],
       };
     },
   );

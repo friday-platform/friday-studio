@@ -23,7 +23,7 @@ function isSystemService(): boolean {
 
   // Check if running as 'atlas' user
   try {
-    // @ts-ignore - userInfo is available in some Deno versions
+    // @ts-expect-error - userInfo is available in some Deno versions
     const userInfo = Deno.userInfo?.();
     if (userInfo?.username === "atlas") {
       return true;
@@ -198,7 +198,8 @@ export function getWorkspaceDiscoveryDirs(): string[] {
   if (envDirs) {
     // Support multiple paths separated by platform-specific delimiter
     const delimiter = Deno.build.os === "windows" ? ";" : ":";
-    const dirs = envDirs.split(delimiter)
+    const dirs = envDirs
+      .split(delimiter)
       .map((dir) => dir.trim())
       .filter((dir) => dir.length > 0);
 
@@ -209,9 +210,5 @@ export function getWorkspaceDiscoveryDirs(): string[] {
 
   // Fall back to default paths if env var not set or empty
   const rootPath = Deno.cwd();
-  return [
-    join(rootPath, "examples", "workspaces"),
-    join(rootPath, "workspaces"),
-    rootPath,
-  ];
+  return [join(rootPath, "examples", "workspaces"), join(rootPath, "workspaces"), rootPath];
 }

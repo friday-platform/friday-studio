@@ -3,9 +3,9 @@
  * Retrieves detailed information about Atlas workspaces through the daemon API
  */
 
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { ToolContext } from "../types.ts";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { createSuccessResponse } from "../types.ts";
 
 export function registerWorkspaceDescribeTool(server: McpServer, ctx: ToolContext) {
@@ -15,9 +15,9 @@ export function registerWorkspaceDescribeTool(server: McpServer, ctx: ToolContex
       description:
         "Retrieve comprehensive details about a specific Atlas workspace including its configuration, status, active sessions, and available resources. Use this to understand a workspace's current state and capabilities.",
       inputSchema: {
-        workspaceId: z.string().describe(
-          "Unique identifier of the workspace to examine (obtain from workspace_list)",
-        ),
+        workspaceId: z
+          .string()
+          .describe("Unique identifier of the workspace to examine (obtain from workspace_list)"),
       },
     },
     async ({ workspaceId }) => {

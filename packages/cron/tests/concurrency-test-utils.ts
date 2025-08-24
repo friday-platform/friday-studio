@@ -33,7 +33,9 @@ export async function stressTest<T>(
   iterations = 50,
   concurrency = 10,
 ): Promise<T[]> {
-  const operations = Array(iterations).fill(null).map(() => operation);
+  const operations = Array(iterations)
+    .fill(null)
+    .map(() => operation);
   const batches: Promise<T[]>[] = [];
 
   // Process in batches to control concurrency
@@ -56,11 +58,7 @@ export class MockTimer {
 
   setTimeout(callback: () => void, delay: number): number {
     const id = this.nextId++;
-    this.timers.set(id, {
-      callback,
-      delay,
-      created: this.currentTime,
-    });
+    this.timers.set(id, { callback, delay, created: this.currentTime });
     return id;
   }
 
@@ -76,7 +74,7 @@ export class MockTimer {
 
     const readyTimers = Array.from(this.timers.entries())
       .filter(([_, timer]) => this.currentTime >= timer.created + timer.delay)
-      .sort(([_1, a], [_2, b]) => (a.created + a.delay) - (b.created + b.delay));
+      .sort(([_1, a], [_2, b]) => a.created + a.delay - (b.created + b.delay));
 
     for (const [id, timer] of readyTimers) {
       this.timers.delete(id);
@@ -122,10 +120,7 @@ export class RaceConditionDetector {
    * Mark the start of an operation
    */
   startOperation(operationId: string, data?: unknown): void {
-    this.operations.set(operationId, {
-      start: performance.now(),
-      data,
-    });
+    this.operations.set(operationId, { start: performance.now(), data });
   }
 
   /**
@@ -160,11 +155,7 @@ export class RaceConditionDetector {
         const overlapEnd = Math.min(op1.end, op2.end);
 
         if (overlapStart < overlapEnd) {
-          this.overlaps.push({
-            op1: op1.id,
-            op2: op2.id,
-            overlap: overlapEnd - overlapStart,
-          });
+          this.overlaps.push({ op1: op1.id, op2: op2.id, overlap: overlapEnd - overlapStart });
         }
       }
     }
@@ -210,11 +201,7 @@ export class MockStorageWithContention {
   /**
    * Simulate a storage operation with potential contention
    */
-  async operation<T>(
-    key: string,
-    operation: () => Promise<T> | T,
-    timeout = 1000,
-  ): Promise<T> {
+  async operation<T>(key: string, operation: () => Promise<T> | T, timeout = 1000): Promise<T> {
     // Simulate random failures
     if (Math.random() < this.failureRate) {
       throw new Error(`Storage operation failed for key: ${key}`);
@@ -294,10 +281,7 @@ export class MockStorageWithContention {
 
     for (const [key, value] of this.storage.entries()) {
       if (key.startsWith(prefixStr)) {
-        yield {
-          key: key.split(":"),
-          value,
-        };
+        yield { key: key.split(":"), value };
       }
     }
   }
@@ -346,9 +330,7 @@ export async function assertDataConsistency<T>(
   const currentState = initialState;
 
   // Run all operations concurrently, each getting the initial state
-  const results = await runConcurrent(
-    operations.map((op) => () => op(currentState)),
-  );
+  const results = await runConcurrent(operations.map((op) => () => op(currentState)));
 
   // The final state should be consistent regardless of operation order
   // This is a simplified consistency check - real implementations may vary

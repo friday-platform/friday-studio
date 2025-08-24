@@ -1,7 +1,7 @@
-import { expect } from "@std/expect";
-import { CoALAMemoryManager, CoALAMemoryType } from "../src/coala-memory.ts";
-import { AtlasScope } from "../../../src/core/scope.ts";
 import { InMemoryStorageAdapter } from "@atlas/storage";
+import { expect } from "@std/expect";
+import { AtlasScope } from "../../../src/core/scope.ts";
+import { CoALAMemoryManager, CoALAMemoryType } from "../src/coala-memory.ts";
 
 // Set testing environment to prevent logger file operations
 Deno.env.set("DENO_TESTING", "true");
@@ -72,11 +72,7 @@ Deno.test("CoALAMemoryManager - memory queries", async () => {
   });
 
   // Query memories
-  const memories = memory.queryMemories({
-    tags: ["test"],
-    minRelevance: 0.5,
-    limit: 10,
-  });
+  const memories = memory.queryMemories({ tags: ["test"], minRelevance: 0.5, limit: 10 });
 
   expect(memories).toHaveLength(2);
 
@@ -276,11 +272,7 @@ Deno.test("CoALAMemoryManager - memory serialization", async () => {
   const memory = createTestMemoryManager(scope, new InMemoryStorageAdapter());
 
   // Store complex data
-  const complexData = {
-    text: "complex memory",
-    numbers: [1, 2, 3],
-    nested: { key: "value" },
-  };
+  const complexData = { text: "complex memory", numbers: [1, 2, 3], nested: { key: "value" } };
 
   memory.remember("complex-data", complexData);
   const retrieved = memory.recall("complex-data");

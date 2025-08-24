@@ -1,11 +1,11 @@
-import React, { useState } from "react";
-import { Box, render, Text, useApp } from "ink";
-import { Spinner, TextInput } from "@inkjs/ui";
-import { Select } from "../../components/select/index.ts";
-import { join, resolve } from "@std/path";
-import { YargsInstance } from "../../utils/yargs.ts";
 import { AtlasClient } from "@atlas/client";
+import { Spinner, TextInput } from "@inkjs/ui";
+import { join, resolve } from "@std/path";
+import { Box, render, Text, useApp } from "ink";
+import React, { useState } from "react";
+import { Select } from "../../components/select/index.ts";
 import { checkDaemonRunning } from "../../utils/daemon-client.ts";
+import type { YargsInstance } from "../../utils/yargs.ts";
 
 interface InitArgs {
   path?: string;
@@ -20,14 +20,8 @@ export function builder(y: YargsInstance) {
       type: "string",
       describe: "Directory path for the workspace (defaults to ./<workspace-name>)",
     })
-    .example(
-      "$0 workspace init",
-      "Initialize workspace interactively in current directory",
-    )
-    .example(
-      "$0 workspace init ~/projects/my-workspace",
-      "Create workspace at specific path",
-    )
+    .example("$0 workspace init", "Initialize workspace interactively in current directory")
+    .example("$0 workspace init ~/projects/my-workspace", "Create workspace at specific path")
     .example("$0 work init", "Short alias for workspace init")
     .help()
     .alias("help", "h");
@@ -39,11 +33,7 @@ interface Template {
   hint?: string;
 }
 
-const WorkspaceInitFlow = ({
-  targetPath,
-}: {
-  targetPath?: string;
-}) => {
+const WorkspaceInitFlow = ({ targetPath }: { targetPath?: string }) => {
   const { exit } = useApp();
   const [step, setStep] = useState("checkDaemon");
   const [templates, setTemplates] = useState<Template[]>([]);
@@ -188,11 +178,7 @@ const WorkspaceInitFlow = ({
         <Box marginBottom={1}>
           <Text>Select a template:</Text>
         </Box>
-        <Select
-          options={templates}
-          onChange={handleTemplateSelect}
-          visibleOptionCount={8}
-        />
+        <Select options={templates} onChange={handleTemplateSelect} visibleOptionCount={8} />
       </Box>
     );
   }
@@ -203,10 +189,7 @@ const WorkspaceInitFlow = ({
         <Box marginBottom={1}>
           <Text>Workspace name:</Text>
         </Box>
-        <TextInput
-          placeholder="my-workspace"
-          onSubmit={handleNameSubmit}
-        />
+        <TextInput placeholder="my-workspace" onSubmit={handleNameSubmit} />
         {error && (
           <Box marginTop={1}>
             <Text color="red">{error}</Text>

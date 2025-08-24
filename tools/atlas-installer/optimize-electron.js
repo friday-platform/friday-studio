@@ -14,9 +14,7 @@ function optimizeElectronFramework(appPath) {
 
   // Check if this is a macOS app bundle (.app directory)
   if (!appPath.endsWith(".app") || !fs.existsSync(appPath)) {
-    console.log(
-      "Not a macOS app bundle or path does not exist, skipping optimization",
-    );
+    console.log("Not a macOS app bundle or path does not exist, skipping optimization");
     return;
   }
 
@@ -30,9 +28,7 @@ function optimizeElectronFramework(appPath) {
   const resourcesPath = path.join(versionsPath, "Resources");
 
   if (!fs.existsSync(frameworkPath)) {
-    console.log(
-      "Electron Framework not found, skipping optimization (likely not macOS)",
-    );
+    console.log("Electron Framework not found, skipping optimization (likely not macOS)");
     return;
   }
 
@@ -52,9 +48,7 @@ function optimizeElectronFramework(appPath) {
         fs.unlinkSync(filePath);
       }
     }
-    console.log(
-      `Removed ${localeFiles.length - keepLocales.length} locale files`,
-    );
+    console.log(`Removed ${localeFiles.length - keepLocales.length} locale files`);
   }
 
   // Remove unnecessary helper applications
@@ -100,11 +94,7 @@ function optimizeElectronFramework(appPath) {
   }
 
   console.log(
-    `Optimization complete. Saved approximately ${
-      Math.round(
-        savedBytes / 1024 / 1024,
-      )
-    }MB`,
+    `Optimization complete. Saved approximately ${Math.round(savedBytes / 1024 / 1024)}MB`,
   );
 }
 

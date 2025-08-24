@@ -1,8 +1,8 @@
+import { getAtlasClient } from "@atlas/client";
 import { Box, Text } from "ink";
 import { useEffect, useState } from "react";
 import { z } from "zod/v4";
 import { checkDaemonRunning } from "../utils/daemon-client.ts";
-import { getAtlasClient } from "@atlas/client";
 import { MarkdownDisplay } from "./markdown-display.tsx";
 
 interface SignalDetailsProps {
@@ -11,11 +11,7 @@ interface SignalDetailsProps {
   workspacePath: string;
 }
 
-const appendSection = (
-  markdown: string,
-  title: string,
-  content: string,
-): string => {
+const appendSection = (markdown: string, title: string, content: string): string => {
   return `${markdown}## ${title}\n\n${content}\n\n`;
 };
 
@@ -62,14 +58,13 @@ const parseProperty = (
       type: "object",
       description: prop.description as string | undefined,
       required: isRequired,
-      properties: Object.entries(
-        prop.properties as Record<string, unknown>,
-      ).map(([propName, propDef]) =>
-        parseProperty(
-          propName,
-          propDef as Record<string, unknown>,
-          (prop.required as string[]) || [],
-        )
+      properties: Object.entries(prop.properties as Record<string, unknown>).map(
+        ([propName, propDef]) =>
+          parseProperty(
+            propName,
+            propDef as Record<string, unknown>,
+            (prop.required as string[]) || [],
+          ),
       ),
     };
   } else if (prop.type === "array" && prop.items) {
@@ -237,14 +232,8 @@ const buildSchemaMarkdown = (properties: PropertyInfo[]): string => {
   return content;
 };
 
-export const SignalDetails = ({
-  workspaceId,
-  signalId,
-  workspacePath,
-}: SignalDetailsProps) => {
-  const [signalData, setSignalData] = useState<Record<string, unknown> | null>(
-    null,
-  );
+export const SignalDetails = ({ workspaceId, signalId, workspacePath }: SignalDetailsProps) => {
+  const [signalData, setSignalData] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>("");
 
@@ -260,17 +249,11 @@ export const SignalDetails = ({
           }
 
           // Use the new client package method that avoids agent validation
-          const signalDetails = await client.describeSignal(
-            workspaceId,
-            signalId,
-            workspacePath,
-          );
+          const signalDetails = await client.describeSignal(workspaceId, signalId, workspacePath);
 
           setSignalData(signalDetails as unknown as Record<string, unknown>);
         } else {
-          setError(
-            "Daemon not running. Use 'atlas daemon start' to enable signal management.",
-          );
+          setError("Daemon not running. Use 'atlas daemon start' to enable signal management.");
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
@@ -330,9 +313,7 @@ export const SignalDetails = ({
     }
   } else if (
     provider &&
-    ["k8s-events", "http-webhook", "codebase-watcher", "cron"].includes(
-      provider,
-    )
+    ["k8s-events", "http-webhook", "codebase-watcher", "cron"].includes(provider)
   ) {
     const configContent = buildSpecializedConfigMarkdown(signalData, provider);
     if (configContent) {
@@ -344,13 +325,8 @@ export const SignalDetails = ({
   if (signalData.schema) {
     const validatedSchema = validateSignalSchema(signalData.schema);
     if (validatedSchema) {
-      const properties = Object.entries(validatedSchema.properties).map(
-        ([name, prop]) =>
-          parseProperty(
-            name,
-            prop as Record<string, unknown>,
-            validatedSchema.required || [],
-          ),
+      const properties = Object.entries(validatedSchema.properties).map(([name, prop]) =>
+        parseProperty(name, prop as Record<string, unknown>, validatedSchema.required || []),
       );
 
       const schemaContent = buildSchemaMarkdown(properties);
@@ -359,11 +335,7 @@ export const SignalDetails = ({
         if (validatedSchema.required && validatedSchema.required.length > 0) {
           finalSchemaContent += "\n* Required fields";
         }
-        markdown = appendSection(
-          markdown,
-          "Schema Documentation",
-          finalSchemaContent,
-        );
+        markdown = appendSection(markdown, "Schema Documentation", finalSchemaContent);
       }
     } else {
       markdown = appendSection(
@@ -377,21 +349,10 @@ export const SignalDetails = ({
   // Raw Configuration (fallback for unknown providers)
   if (
     signalData.config &&
-    ![
-      "http",
-      "http-webhook",
-      "cli",
-      "k8s-events",
-      "codebase-watcher",
-      "cron",
-    ].includes(provider)
+    !["http", "http-webhook", "cli", "k8s-events", "codebase-watcher", "cron"].includes(provider)
   ) {
     const rawConfig = JSON.stringify(signalData.config, null, 2);
-    markdown = appendSection(
-      markdown,
-      "Raw Configuration",
-      `\`\`\`\n${rawConfig}\n\`\`\``,
-    );
+    markdown = appendSection(markdown, "Raw Configuration", `\`\`\`\n${rawConfig}\n\`\`\``);
   }
 
   return (

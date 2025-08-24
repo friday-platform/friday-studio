@@ -22,10 +22,7 @@ export class ToolCallRecorder {
    * Record a tool call
    */
   recordCall(call: Omit<ToolCall, "timestamp">): void {
-    this.calls.push({
-      ...call,
-      timestamp: Date.now(),
-    });
+    this.calls.push({ ...call, timestamp: Date.now() });
   }
 
   /**
@@ -43,25 +40,13 @@ export class ToolCallRecorder {
       const result = await fn();
       const duration = Date.now() - startTime;
 
-      this.recordCall({
-        toolName,
-        serverName,
-        args,
-        result,
-        duration,
-      });
+      this.recordCall({ toolName, serverName, args, result, duration });
 
       return result;
     } catch (error) {
       const duration = Date.now() - startTime;
 
-      this.recordCall({
-        toolName,
-        serverName,
-        args,
-        error,
-        duration,
-      });
+      this.recordCall({ toolName, serverName, args, error, duration });
 
       throw error;
     }
@@ -112,22 +97,20 @@ export class ToolCallRecorder {
   /**
    * Verify a sequence of calls
    */
-  verifyCallSequence(
-    expectedSequence: Array<{
-      toolName: string;
-      serverName?: string;
-    }>,
-  ): boolean {
+  verifyCallSequence(expectedSequence: Array<{ toolName: string; serverName?: string }>): boolean {
     if (this.calls.length < expectedSequence.length) {
       return false;
     }
 
     let callIndex = 0;
     for (const expected of expectedSequence) {
-      const found = this.calls.slice(callIndex).findIndex((call) =>
-        call.toolName === expected.toolName &&
-        (!expected.serverName || call.serverName === expected.serverName)
-      );
+      const found = this.calls
+        .slice(callIndex)
+        .findIndex(
+          (call) =>
+            call.toolName === expected.toolName &&
+            (!expected.serverName || call.serverName === expected.serverName),
+        );
 
       if (found === -1) {
         return false;
@@ -193,25 +176,18 @@ export class ToolCallRecorder {
     stats: ReturnType<typeof this.getStats>;
     timestamp: number;
   } {
-    return {
-      calls: this.getCalls(),
-      stats: this.getStats(),
-      timestamp: Date.now(),
-    };
+    return { calls: this.getCalls(), stats: this.getStats(), timestamp: Date.now() };
   }
 
   /**
    * Assert tool was called with specific arguments
    */
-  assertToolCalledWith(
-    toolName: string,
-    expectedArgs: any,
-    serverName?: string,
-  ): void {
-    const found = this.calls.find((call) =>
-      call.toolName === toolName &&
-      (!serverName || call.serverName === serverName) &&
-      JSON.stringify(call.args) === JSON.stringify(expectedArgs)
+  assertToolCalledWith(toolName: string, expectedArgs: any, serverName?: string): void {
+    const found = this.calls.find(
+      (call) =>
+        call.toolName === toolName &&
+        (!serverName || call.serverName === serverName) &&
+        JSON.stringify(call.args) === JSON.stringify(expectedArgs),
     );
 
     if (!found) {
@@ -224,14 +200,9 @@ export class ToolCallRecorder {
   /**
    * Assert tool was called at least N times
    */
-  assertToolCalledTimes(
-    toolName: string,
-    expectedCount: number,
-    serverName?: string,
-  ): void {
-    const calls = this.calls.filter((call) =>
-      call.toolName === toolName &&
-      (!serverName || call.serverName === serverName)
+  assertToolCalledTimes(toolName: string, expectedCount: number, serverName?: string): void {
+    const calls = this.calls.filter(
+      (call) => call.toolName === toolName && (!serverName || call.serverName === serverName),
     );
 
     if (calls.length !== expectedCount) {

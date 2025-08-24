@@ -1,5 +1,5 @@
-import { join } from "@std/path";
 import type { LogEntry } from "@atlas/logger";
+import { join } from "@std/path";
 
 export interface LogFilters {
   level?: string;
@@ -24,13 +24,7 @@ export class WorkspaceLogReader {
 
   constructor(workspaceId: string) {
     const homeDir = Deno.env.get("HOME") || Deno.env.get("USERPROFILE") || Deno.cwd();
-    this.logPath = join(
-      homeDir,
-      ".atlas",
-      "logs",
-      "workspaces",
-      `${workspaceId}.log`,
-    );
+    this.logPath = join(homeDir, ".atlas", "logs", "workspaces", `${workspaceId}.log`);
   }
 
   async read(options: ReadOptions = {}): Promise<LogEntry[]> {
@@ -43,11 +37,9 @@ export class WorkspaceLogReader {
       // Could implement reverse reading from end of file for better performance
       if (fileInfo.size > 5 * 1024 * 1024) {
         console.warn(
-          `Warning: Log file is large (${
-            (fileInfo.size / 1024 / 1024).toFixed(
-              1,
-            )
-          }MB), this may be slow`,
+          `Warning: Log file is large (${(fileInfo.size / 1024 / 1024).toFixed(
+            1,
+          )}MB), this may be slow`,
         );
       }
 
@@ -212,9 +204,7 @@ export class WorkspaceLogReader {
 export function parseDuration(duration: string): Date {
   const match = duration.match(/^(\d+)([smhd])$/);
   if (!match) {
-    throw new Error(
-      `Invalid duration format: ${duration}. Use format like: 5m, 2h, 1d`,
-    );
+    throw new Error(`Invalid duration format: ${duration}. Use format like: 5m, 2h, 1d`);
   }
 
   const [, amount, unit] = match;
@@ -239,9 +229,7 @@ export function parseDuration(duration: string): Date {
   return now;
 }
 
-export function parseContextFilters(
-  filters?: string[],
-): Record<string, string> | undefined {
+export function parseContextFilters(filters?: string[]): Record<string, string> | undefined {
   if (!filters || filters.length === 0) return undefined;
 
   const result: Record<string, string> = {};

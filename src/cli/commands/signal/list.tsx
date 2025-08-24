@@ -1,7 +1,7 @@
 import { render } from "ink";
 import { SignalListComponent } from "../../modules/signals/SignalListComponent.tsx";
 import { loadWorkspaceConfig, resolveWorkspaceOnly } from "../../modules/workspaces/resolver.ts";
-import { YargsInstance } from "../../utils/yargs.ts";
+import type { YargsInstance } from "../../utils/yargs.ts";
 
 interface ListArgs {
   json?: boolean;
@@ -14,16 +14,8 @@ export const aliases = ["ls"];
 
 export function builder(y: YargsInstance) {
   return y
-    .option("json", {
-      type: "boolean",
-      describe: "Output signal list as JSON",
-      default: false,
-    })
-    .option("workspace", {
-      type: "string",
-      alias: "w",
-      describe: "Workspace ID or name",
-    })
+    .option("json", { type: "boolean", describe: "Output signal list as JSON", default: false })
+    .option("workspace", { type: "string", alias: "w", describe: "Workspace ID or name" })
     .example("$0 signal list", "List all configured signals")
     .example("$0 signal list --json", "Export signal configuration as JSON");
 }
@@ -38,11 +30,7 @@ export const handler = async (argv: ListArgs): Promise<void> => {
       console.log(
         JSON.stringify(
           {
-            workspace: {
-              id: workspace.id,
-              name: workspace.name,
-              path: workspace.path,
-            },
+            workspace: { id: workspace.id, name: workspace.name, path: workspace.path },
             signals: config.signals || {},
             count: Object.keys(config.signals || {}).length,
           },
@@ -65,9 +53,7 @@ export const handler = async (argv: ListArgs): Promise<void> => {
       }, 100);
     }
   } catch (error) {
-    console.error(
-      `Error: ${error instanceof Error ? error.message : String(error)}`,
-    );
+    console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
     Deno.exit(1);
   }
 };

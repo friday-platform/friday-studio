@@ -1,19 +1,19 @@
-import { useState } from "react";
+import { getAtlasClient } from "@atlas/client";
 import { Box, useInput } from "ink";
+import { useState } from "react";
 import { CommandInput } from "../../components/command-input.tsx";
-import { MessageBuffer } from "../messages/message-buffer.tsx";
 import { useAppContext } from "../../contexts/app-context.tsx";
 import { useResponsiveDimensions } from "../../utils/useResponsiveDimensions.ts";
-import { getAtlasClient } from "@atlas/client";
 import CreditsView from "../../views/CreditsView.tsx";
 import Help from "../../views/help.tsx";
-import { COMMAND_REGISTRY, parseSlashCommand } from "./index.ts";
-import { SignalCommand } from "./SignalCommand.tsx";
-import { AgentCommand } from "./AgentCommand.tsx";
-import { JobCommand } from "./JobCommand.tsx";
-import { SessionCommand } from "./SessionCommand.tsx";
-import { LibraryCommand } from "./LibraryCommand.tsx";
 import { useBracketedPaste } from "../input/use-bracketed-paste.ts";
+import { MessageBuffer } from "../messages/message-buffer.tsx";
+import { AgentCommand } from "./AgentCommand.tsx";
+import { COMMAND_REGISTRY, parseSlashCommand } from "./index.ts";
+import { JobCommand } from "./JobCommand.tsx";
+import { LibraryCommand } from "./LibraryCommand.tsx";
+import { SessionCommand } from "./SessionCommand.tsx";
+import { SignalCommand } from "./SignalCommand.tsx";
 
 export function Component() {
   useBracketedPaste();
@@ -27,9 +27,7 @@ export function Component() {
     setDaemonStatus,
     enableMultiline,
   } = useAppContext();
-  const [view, setView] = useState<
-    "help" | "command" | "init" | "config" | "credits"
-  >("command");
+  const [view, setView] = useState<"help" | "command" | "init" | "config" | "credits">("command");
   const [activeCommand, setActiveCommand] = useState<
     "signal" | "agent" | "job" | "session" | "workspaces" | "library" | null
   >(null);
@@ -86,9 +84,7 @@ export function Component() {
     if (!parsed) {
       // Send non-slash input to LLM (requires daemon)
       if (!conversationClient || !conversationSessionId) {
-        console.error(
-          "Cannot send message to LLM: Atlas daemon is not running",
-        );
+        console.error("Cannot send message to LLM: Atlas daemon is not running");
         return;
       }
       handleLLMInput(input);
@@ -96,11 +92,7 @@ export function Component() {
     }
 
     // Commands that work WITHOUT daemon connection
-    if (
-      parsed.command === "exit" ||
-      parsed.command === "quit" ||
-      parsed.command === "q"
-    ) {
+    if (parsed.command === "exit" || parsed.command === "quit" || parsed.command === "q") {
       exitApp();
       return;
     }
@@ -137,9 +129,7 @@ export function Component() {
 
     // Commands that REQUIRE daemon connection
     if (!conversationClient || !conversationSessionId) {
-      console.error(
-        `Cannot execute /${parsed.command}: Atlas daemon is not running`,
-      );
+      console.error(`Cannot execute /${parsed.command}: Atlas daemon is not running`);
       return;
     }
 
@@ -174,9 +164,7 @@ export function Component() {
     }
 
     if (parsed.command === "version") {
-      conversationClient.sendPrompt(conversationSessionId, {
-        promptName: "system_version",
-      });
+      conversationClient.sendPrompt(conversationSessionId, { promptName: "system_version" });
       return;
     }
 
@@ -191,12 +179,7 @@ export function Component() {
   };
 
   return (
-    <Box
-      flexDirection="column"
-      padding={1}
-      alignItems="flex-start"
-      width={dimensions.paddedWidth}
-    >
+    <Box flexDirection="column" padding={1} alignItems="flex-start" width={dimensions.paddedWidth}>
       {view === "command" && (
         <>
           {/* Message buffer for SSE handling and output display */}
@@ -204,34 +187,19 @@ export function Component() {
 
           {/* Command components */}
           {activeCommand === "signal" && (
-            <SignalCommand
-              key="signal-command"
-              onComplete={() => setActiveCommand(null)}
-            />
+            <SignalCommand key="signal-command" onComplete={() => setActiveCommand(null)} />
           )}
           {activeCommand === "agent" && (
-            <AgentCommand
-              key="agent-command"
-              onComplete={() => setActiveCommand(null)}
-            />
+            <AgentCommand key="agent-command" onComplete={() => setActiveCommand(null)} />
           )}
           {activeCommand === "job" && (
-            <JobCommand
-              key="job-command"
-              onComplete={() => setActiveCommand(null)}
-            />
+            <JobCommand key="job-command" onComplete={() => setActiveCommand(null)} />
           )}
           {activeCommand === "session" && (
-            <SessionCommand
-              key="session-command"
-              onComplete={() => setActiveCommand(null)}
-            />
+            <SessionCommand key="session-command" onComplete={() => setActiveCommand(null)} />
           )}
           {activeCommand === "library" && (
-            <LibraryCommand
-              key="library-command"
-              onComplete={() => setActiveCommand(null)}
-            />
+            <LibraryCommand key="library-command" onComplete={() => setActiveCommand(null)} />
           )}
 
           {/* Show command input when no active command */}

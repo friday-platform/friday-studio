@@ -7,12 +7,12 @@
  */
 
 import {
-  ConversationContext,
-  Entity,
+  type ConversationContext,
+  type Entity,
   MemorySource,
-  MemorySourceMetadata,
+  type MemorySourceMetadata,
 } from "./mecmf-interfaces.ts";
-import { AtlasMemoryClassifier, ClassificationResult } from "./memory-classifier.ts";
+import { AtlasMemoryClassifier, type ClassificationResult } from "./memory-classifier.ts";
 
 export interface PIIExtractionConfig {
   // PII types that require source filtering
@@ -83,9 +83,13 @@ export class PIISafeMemoryClassifier extends AtlasMemoryClassifier {
     const hasExtremelyLongLine = lines.some((line) => line.length > 1000);
 
     // Check if it's likely code by looking for code patterns in long lines
-    const looksLikeCode = hasExtremelyLongLine &&
-      (content.includes("function") || content.includes("const ") ||
-        content.includes("=>") || content.includes("{") || content.includes("}"));
+    const looksLikeCode =
+      hasExtremelyLongLine &&
+      (content.includes("function") ||
+        content.includes("const ") ||
+        content.includes("=>") ||
+        content.includes("{") ||
+        content.includes("}"));
 
     if (hasExtremelyLongLine && content.length > 2000 && looksLikeCode) {
       return {
@@ -164,10 +168,7 @@ export class PIISafeMemoryClassifier extends AtlasMemoryClassifier {
     const classification = this.classifyContentDetailed(contentToUse, context);
     const allowedEntities = this.extractKeyEntities(contentToUse, source);
 
-    return {
-      ...classification,
-      allowedEntities,
-    };
+    return { ...classification, allowedEntities };
   }
 
   /**
@@ -222,11 +223,7 @@ export class PIISafeMemoryClassifier extends AtlasMemoryClassifier {
   getSourceStatistics(): {
     piiTypesRestricted: string[];
     trustedSources: MemorySource[];
-    extractionSettings: {
-      emails: boolean;
-      phones: boolean;
-      names: boolean;
-    };
+    extractionSettings: { emails: boolean; phones: boolean; names: boolean };
     minConfidenceThreshold: number;
   } {
     return {
@@ -281,11 +278,7 @@ export class PIISafeMemoryClassifier extends AtlasMemoryClassifier {
   ): Array<Entity & { source: MemorySource; sourceMetadata?: MemorySourceMetadata }> {
     const entities = this.extractKeyEntities(content, source);
 
-    return entities.map((entity) => ({
-      ...entity,
-      source,
-      sourceMetadata,
-    }));
+    return entities.map((entity) => ({ ...entity, source, sourceMetadata }));
   }
 
   /**
@@ -306,11 +299,7 @@ export class PIISafeMemoryClassifier extends AtlasMemoryClassifier {
       }
     }
 
-    return {
-      safe: blockedEntities.length === 0,
-      blockedEntities,
-      allowedEntities,
-    };
+    return { safe: blockedEntities.length === 0, blockedEntities, allowedEntities };
   }
 
   /**
@@ -327,12 +316,7 @@ export class PIISafeMemoryClassifier extends AtlasMemoryClassifier {
     allowedEntities: Entity[];
     blockedEntities: Entity[];
     blockedReasons: Array<{ entity: Entity; reason: string }>;
-    summary: {
-      totalFound: number;
-      allowed: number;
-      blocked: number;
-      piiBlocked: number;
-    };
+    summary: { totalFound: number; allowed: number; blocked: number; piiBlocked: number };
   } {
     const allEntities = super.extractKeyEntities(content);
     const allowedEntities: Entity[] = [];
@@ -349,8 +333,7 @@ export class PIISafeMemoryClassifier extends AtlasMemoryClassifier {
         if (!this.isPIITypeEnabled(entity.type)) {
           reason = `PII type '${entity.type}' is disabled`;
         } else if (entity.confidence < this.config.minPIIConfidence) {
-          reason =
-            `Confidence ${entity.confidence} below threshold ${this.config.minPIIConfidence}`;
+          reason = `Confidence ${entity.confidence} below threshold ${this.config.minPIIConfidence}`;
         } else if (!this.isTrustedSource(source)) {
           reason = `Source '${source}' is not trusted for PII extraction`;
         } else {

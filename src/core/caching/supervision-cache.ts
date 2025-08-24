@@ -40,11 +40,7 @@ export interface AgentAnalysisResult {
 export interface OutputValidationResult {
   isValid: boolean;
   riskScore: number;
-  findings: Array<{
-    type: string;
-    severity: "low" | "medium" | "high";
-    description: string;
-  }>;
+  findings: Array<{ type: string; severity: "low" | "medium" | "high"; description: string }>;
   recommendations: string[];
   confidence: number;
 }
@@ -68,11 +64,7 @@ export interface CacheKeyContext {
   agentType: string;
   inputHash: string;
   supervisionLevel: SupervisionLevel;
-  sessionContext?: {
-    signal: string;
-    agentSequence: number;
-    previousOutputHash?: string;
-  };
+  sessionContext?: { signal: string; agentSequence: number; previousOutputHash?: string };
 }
 
 // Cache adapter interface
@@ -124,13 +116,7 @@ export class SupervisionCache {
     this.adapter = adapter;
     this.defaultTtl = options.defaultTtl || 60 * 60 * 1000;
     this.maxEntries = options.maxEntries || 10000;
-    this.stats = {
-      totalEntries: 0,
-      totalHits: 0,
-      totalMisses: 0,
-      hitRate: 0,
-      averageAge: 0,
-    };
+    this.stats = { totalEntries: 0, totalHits: 0, totalMisses: 0, hitRate: 0, averageAge: 0 };
   }
 
   // Generate cache keys
@@ -146,10 +132,7 @@ export class SupervisionCache {
     return this.hashObject(data);
   }
 
-  generateValidationKey(
-    context: CacheKeyContext,
-    outputHash: string,
-  ): string {
+  generateValidationKey(context: CacheKeyContext, outputHash: string): string {
     const data = {
       type: "validation",
       agentId: context.agentId,
@@ -164,12 +147,7 @@ export class SupervisionCache {
     agentSequence: number,
     outputHash: string,
   ): string {
-    const data = {
-      type: "session_eval",
-      sessionId,
-      agentSequence,
-      outputHash,
-    };
+    const data = { type: "session_eval", sessionId, agentSequence, outputHash };
     return this.hashObject(data);
   }
 
@@ -309,8 +287,9 @@ export class SupervisionCache {
     const keys = await this.adapter.keys();
     const entries = await this.adapter.getMultiple(keys);
 
-    const sortedEntries = Array.from(entries.entries())
-      .sort(([, a], [, b]) => a.timestamp - b.timestamp);
+    const sortedEntries = Array.from(entries.entries()).sort(
+      ([, a], [, b]) => a.timestamp - b.timestamp,
+    );
 
     const toEvict = Math.ceil(sortedEntries.length * 0.1);
     for (let i = 0; i < toEvict; i++) {
@@ -336,12 +315,6 @@ export class SupervisionCache {
 
   async clear(): Promise<void> {
     await this.adapter.clear();
-    this.stats = {
-      totalEntries: 0,
-      totalHits: 0,
-      totalMisses: 0,
-      hitRate: 0,
-      averageAge: 0,
-    };
+    this.stats = { totalEntries: 0, totalHits: 0, totalMisses: 0, hitRate: 0, averageAge: 0 };
   }
 }

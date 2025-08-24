@@ -3,9 +3,9 @@
  * Retrieves detailed information about execution sessions through the daemon API
  */
 
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { ToolContext } from "../types.ts";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { createSuccessResponse } from "../types.ts";
 
 export function registerSessionDescribeTool(server: McpServer, ctx: ToolContext) {
@@ -15,9 +15,11 @@ export function registerSessionDescribeTool(server: McpServer, ctx: ToolContext)
       description:
         "Examine a specific execution session across all workspaces to understand its current state, progress, logs, and results. This is a global operation that searches for the session ID across all active workspaces in the system. Sessions track the complete lifecycle of job executions, including their inputs, outputs, and any errors encountered.",
       inputSchema: {
-        sessionId: z.string().describe(
-          "Unique identifier of the session to examine (obtain from workspace_sessions_list or other session listings)",
-        ),
+        sessionId: z
+          .string()
+          .describe(
+            "Unique identifier of the session to examine (obtain from workspace_sessions_list or other session listings)",
+          ),
       },
     },
     async ({ sessionId }) => {
@@ -34,10 +36,7 @@ export function registerSessionDescribeTool(server: McpServer, ctx: ToolContext)
 
         const session = await response.json();
 
-        return createSuccessResponse({
-          session,
-          source: "daemon_api",
-        });
+        return createSuccessResponse({ session, source: "daemon_api" });
       } catch (error) {
         ctx.logger.error("MCP session_describe failed", { sessionId, error });
         throw error;

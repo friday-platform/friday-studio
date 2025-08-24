@@ -3,9 +3,7 @@
  */
 
 // Declare process for Node.js compatibility
-declare const process: {
-  env: Record<string, string | undefined>;
-} | undefined;
+declare const process: { env: Record<string, string | undefined> } | undefined;
 
 /**
  * Get the Atlas daemon URL from environment or default

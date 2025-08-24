@@ -7,16 +7,12 @@
  */
 
 import { createAgent } from "@atlas/agent-sdk";
-import { AgentOrchestrator } from "../../src/orchestrator/agent-orchestrator.ts";
 import { createLogger } from "@atlas/logger";
+import { AgentOrchestrator } from "../../src/orchestrator/agent-orchestrator.ts";
 import { MockMCPServer } from "./mock-mcp-server.ts";
 
 /** Base ports for test servers - incremented per test to avoid conflicts */
-export const TestPorts = {
-  daemon: 8765,
-  mcp: 9876,
-  platform: 8080,
-};
+export const TestPorts = { daemon: 8765, mcp: 9876, platform: 8080 };
 
 /** Test agent response types for echo, calculation, and unknown commands */
 export interface EchoResponse {
@@ -99,11 +95,7 @@ export interface TestSetup {
   orchestrator: AgentOrchestrator;
   daemonController: AbortController;
   platformController: AbortController;
-  ports: {
-    daemon: number;
-    mcp: number;
-    platform: number;
-  };
+  ports: { daemon: number; mcp: number; platform: number };
 }
 
 /** Sets up complete test environment: mock daemon/platform servers + mock MCP server/orchestrator */
@@ -140,9 +132,7 @@ export async function setupTestServers(): Promise<TestSetup> {
               mcp_servers: {},
             },
           }),
-          {
-            headers: { "Content-Type": "application/json" },
-          },
+          { headers: { "Content-Type": "application/json" } },
         );
       }
 
@@ -170,22 +160,13 @@ export async function setupTestServers(): Promise<TestSetup> {
   await new Promise((resolve) => setTimeout(resolve, 100));
 
   const orchestrator = new AgentOrchestrator(
-    {
-      agentsServerUrl: `http://localhost:${ports.mcp}`,
-      executionTimeout: 30000,
-    },
+    { agentsServerUrl: `http://localhost:${ports.mcp}`, executionTimeout: 30000 },
     testLogger,
   );
 
   await orchestrator.initialize();
 
-  return {
-    mcpServer,
-    orchestrator,
-    daemonController,
-    platformController,
-    ports,
-  };
+  return { mcpServer, orchestrator, daemonController, platformController, ports };
 }
 
 /** Properly shuts down all test components in correct order */

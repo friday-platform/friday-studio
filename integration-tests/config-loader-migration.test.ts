@@ -5,10 +5,10 @@
  * Tests the complete flow with real filesystem operations
  */
 
-import { expect } from "@std/expect";
-import { join } from "@std/path";
 import { ConfigLoader } from "@atlas/config";
 import { FilesystemConfigAdapter } from "@atlas/storage";
+import { expect } from "@std/expect";
+import { join } from "@std/path";
 
 // Helper to create test environment
 async function createTestEnvironment(): Promise<string> {

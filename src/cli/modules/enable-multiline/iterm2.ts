@@ -2,9 +2,9 @@
  * iTerm2 setup implementation
  */
 
-import { SetupResult } from "./types.ts";
-import { execCommand, fileExists, getHomeDir } from "./utils.ts";
 import { join } from "@std/path";
+import type { SetupResult } from "./types.ts";
+import { execCommand, fileExists, getHomeDir } from "./utils.ts";
 
 /**
  * Get the iTerm2 preferences plist path
@@ -22,11 +22,7 @@ async function createITerm2Backup(): Promise<string | null> {
 
   try {
     // Export current preferences
-    await execCommand("defaults", [
-      "export",
-      "com.googlecode.iterm2",
-      plistPath,
-    ]);
+    await execCommand("defaults", ["export", "com.googlecode.iterm2", plistPath]);
 
     // Create backup copy
     if (await fileExists(plistPath)) {
@@ -88,18 +84,13 @@ export async function setupITerm2(): Promise<SetupResult> {
   try {
     // Check if keybinding already exists
     if (await hasShiftEnterKeybinding()) {
-      return {
-        success: true,
-      };
+      return { success: true };
     }
 
     // Create backup
     const backupPath = await createITerm2Backup();
     if (!backupPath) {
-      return {
-        success: false,
-        error: "Failed to create backup of iTerm2 preferences",
-      };
+      return { success: false, error: "Failed to create backup of iTerm2 preferences" };
     }
 
     // Add Shift+Enter keybinding to GlobalKeyMap
@@ -122,16 +113,9 @@ export async function setupITerm2(): Promise<SetupResult> {
     }
 
     // Export updated preferences back to plist file
-    await execCommand("defaults", [
-      "export",
-      "com.googlecode.iterm2",
-      getITerm2PlistPath(),
-    ]);
+    await execCommand("defaults", ["export", "com.googlecode.iterm2", getITerm2PlistPath()]);
 
-    return {
-      success: true,
-      backupPath,
-    };
+    return { success: true, backupPath };
   } catch (error) {
     console.error("iTerm2 setup failed:", error);
 
@@ -148,11 +132,8 @@ export async function setupITerm2(): Promise<SetupResult> {
  * Restore iTerm2 from backup
  */
 export async function restoreITerm2(backupPath: string): Promise<SetupResult> {
-  if (!await fileExists(backupPath)) {
-    return {
-      success: false,
-      error: "Backup file no longer exists",
-    };
+  if (!(await fileExists(backupPath))) {
+    return { success: false, error: "Backup file no longer exists" };
   }
 
   try {
@@ -163,15 +144,10 @@ export async function restoreITerm2(backupPath: string): Promise<SetupResult> {
     ]);
 
     if (!success) {
-      return {
-        success: false,
-        error: "Failed to restore iTerm2 settings",
-      };
+      return { success: false, error: "Failed to restore iTerm2 settings" };
     }
 
-    return {
-      success: true,
-    };
+    return { success: true };
   } catch (error) {
     return {
       success: false,

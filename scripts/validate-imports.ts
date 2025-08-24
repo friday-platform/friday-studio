@@ -32,21 +32,19 @@ const IMPORT_PATTERNS = [
 async function findTypeScriptFiles(rootDir: string): Promise<string[]> {
   const files: string[] = [];
 
-  for await (
-    const entry of walk(rootDir, {
-      exts: EXTENSIONS,
-      skip: [
-        /node_modules/,
-        /\.git/,
-        /dist/,
-        /build/,
-        /coverage/,
-        /\.deno/,
-        /deno\.lock/,
-        /tools\/atlas-installer/,
-      ],
-    })
-  ) {
+  for await (const entry of walk(rootDir, {
+    exts: EXTENSIONS,
+    skip: [
+      /node_modules/,
+      /\.git/,
+      /dist/,
+      /build/,
+      /coverage/,
+      /\.deno/,
+      /deno\.lock/,
+      /tools\/atlas-installer/,
+    ],
+  })) {
     if (entry.isFile) {
       files.push(entry.path);
     }
@@ -81,7 +79,8 @@ function extractImports(content: string): Array<{ import: string; line: number }
 
       // Skip commented lines
       if (
-        lineContent && (lineContent.trim().startsWith("//") || lineContent.trim().startsWith("/*"))
+        lineContent &&
+        (lineContent.trim().startsWith("//") || lineContent.trim().startsWith("/*"))
       ) {
         continue;
       }
@@ -165,9 +164,7 @@ async function validateImport(
         if (stat.isFile) {
           return null; // Import is valid
         }
-      } catch {
-        continue;
-      }
+      } catch {}
     }
 
     // Try as directory with index file
@@ -178,9 +175,7 @@ async function validateImport(
         if (stat.isFile) {
           return null; // Import is valid
         }
-      } catch {
-        continue;
-      }
+      } catch {}
     }
 
     // Import is invalid
@@ -272,9 +267,7 @@ if (import.meta.main) {
       console.log("Import validation completed successfully!");
     }
   } catch (error) {
-    console.error(
-      `Validation failed: ${error instanceof Error ? error.message : String(error)}`,
-    );
+    console.error(`Validation failed: ${error instanceof Error ? error.message : String(error)}`);
     Deno.exit(1);
   }
 }

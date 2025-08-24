@@ -44,29 +44,17 @@ const parseSlashCommand = (input: string) => {
     return null;
   }
 
-  return {
-    command: args[0].toLowerCase(),
-    args: args.slice(1),
-    rawInput: input,
-  };
+  return { command: args[0].toLowerCase(), args: args.slice(1), rawInput: input };
 };
 
 Deno.test("parseSlashCommand - Basic command parsing", () => {
   const result = parseSlashCommand("/help");
-  assertEquals(result, {
-    command: "help",
-    args: [],
-    rawInput: "/help",
-  });
+  assertEquals(result, { command: "help", args: [], rawInput: "/help" });
 });
 
 Deno.test("parseSlashCommand - Command with single argument", () => {
   const result = parseSlashCommand("/signal list");
-  assertEquals(result, {
-    command: "signal",
-    args: ["list"],
-    rawInput: "/signal list",
-  });
+  assertEquals(result, { command: "signal", args: ["list"], rawInput: "/signal list" });
 });
 
 Deno.test("parseSlashCommand - Command with multiple arguments", () => {
@@ -129,20 +117,12 @@ Deno.test("parseSlashCommand - Command with mixed quotes and JSON", () => {
 
 Deno.test("parseSlashCommand - Command case insensitive", () => {
   const result = parseSlashCommand("/HELP");
-  assertEquals(result, {
-    command: "help",
-    args: [],
-    rawInput: "/HELP",
-  });
+  assertEquals(result, { command: "help", args: [], rawInput: "/HELP" });
 });
 
 Deno.test("parseSlashCommand - Command with extra whitespace", () => {
   const result = parseSlashCommand("/  signal   list   ");
-  assertEquals(result, {
-    command: "signal",
-    args: ["list"],
-    rawInput: "/  signal   list   ",
-  });
+  assertEquals(result, { command: "signal", args: ["list"], rawInput: "/  signal   list   " });
 });
 
 Deno.test("parseSlashCommand - Non-slash input returns null", () => {

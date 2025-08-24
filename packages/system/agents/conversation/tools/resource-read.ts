@@ -2,8 +2,8 @@
  * Atlas Resource Tools - AI SDK Compatible
  */
 
-import { z } from "zod/v4";
 import { tool } from "ai";
+import { z } from "zod/v4";
 
 const ATLAS_RESOURCES = {
   "atlas://guides/workspace-creation": {
@@ -28,8 +28,7 @@ const ATLAS_RESOURCES = {
 } as const;
 
 export const resourceReadTool = tool({
-  description:
-    `Read an Atlas documentation resource by URI. This tool provides access to comprehensive guides and documentation stored as Atlas resources.
+  description: `Read an Atlas documentation resource by URI. This tool provides access to comprehensive guides and documentation stored as Atlas resources.
 
 Available resources:
 - atlas://guides/workspace-creation - Comprehensive workspace creation guide with patterns and examples
@@ -38,9 +37,7 @@ Available resources:
 
 Use this tool to access detailed technical documentation when helping users with workspace creation, configuration, or troubleshooting.`,
   inputSchema: z.object({
-    uri: z.string().describe(
-      "The resource URI to read (e.g., atlas://guides/workspace-creation)",
-    ),
+    uri: z.string().describe("The resource URI to read (e.g., atlas://guides/workspace-creation)"),
   }),
   execute: async ({ uri }) => {
     const resource = ATLAS_RESOURCES[uri as keyof typeof ATLAS_RESOURCES];

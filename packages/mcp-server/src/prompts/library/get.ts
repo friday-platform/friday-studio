@@ -3,15 +3,12 @@
  * Retrieves a specific library item within a workspace through the daemon API
  */
 
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { PromptContext } from "../types.ts";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { createSuccessResponse } from "../types.ts";
 
-export function registerLibraryGetPrompt(
-  server: McpServer,
-  ctx: PromptContext,
-) {
+export function registerLibraryGetPrompt(server: McpServer, ctx: PromptContext) {
   server.registerPrompt(
     "library_get",
     {
@@ -19,9 +16,7 @@ export function registerLibraryGetPrompt(
       description:
         "Retrieve the full content of a specific library item including its metadata, content, and associated resources. Useful for accessing reports, session data, templates, and other workspace artifacts.",
       argsSchema: {
-        workspaceId: z
-          .string()
-          .describe("Workspace ID containing the library item"),
+        workspaceId: z.string().describe("Workspace ID containing the library item"),
         itemId: z.string().describe("Library item ID to retrieve"),
       },
     },

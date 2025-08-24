@@ -159,10 +159,7 @@ export class CoALALocalFileStorageAdapter implements ICoALAMemoryStorageAdapter 
     // Scan directory for additional memory type files
     try {
       for await (const dirEntry of Deno.readDir(this.storagePath)) {
-        if (
-          dirEntry.isFile && dirEntry.name.endsWith(".json") &&
-          dirEntry.name !== "index.json"
-        ) {
+        if (dirEntry.isFile && dirEntry.name.endsWith(".json") && dirEntry.name !== "index.json") {
           const memoryType = dirEntry.name.replace(".json", "");
           types.add(memoryType);
         }
@@ -178,10 +175,7 @@ export class CoALALocalFileStorageAdapter implements ICoALAMemoryStorageAdapter 
 
   // Helper methods
   private async createIndexFile(dataByType: Record<string, any>): Promise<void> {
-    const index = {
-      lastUpdated: new Date().toISOString(),
-      memoryTypes: {} as Record<string, any>,
-    };
+    const index = { lastUpdated: new Date().toISOString(), memoryTypes: {} as Record<string, any> };
 
     for (const [memoryType, data] of Object.entries(dataByType)) {
       if (data && typeof data === "object") {
@@ -209,10 +203,7 @@ export class CoALALocalFileStorageAdapter implements ICoALAMemoryStorageAdapter 
 
     try {
       for await (const dirEntry of Deno.readDir(this.storagePath)) {
-        if (
-          dirEntry.isFile && dirEntry.name.endsWith(".json") &&
-          dirEntry.name !== "index.json"
-        ) {
+        if (dirEntry.isFile && dirEntry.name.endsWith(".json") && dirEntry.name !== "index.json") {
           const memoryType = dirEntry.name.replace(".json", "");
           if (!this.memoryTypeFiles[memoryType]) {
             additionalTypes.push(memoryType);
@@ -232,7 +223,7 @@ export class CoALALocalFileStorageAdapter implements ICoALAMemoryStorageAdapter 
     const timestamps = entries
       .map((entry) => entry.timestamp || entry.lastAccessed)
       .filter((ts) => ts)
-      .map((ts) => typeof ts === "string" ? ts : ts.toISOString())
+      .map((ts) => (typeof ts === "string" ? ts : ts.toISOString()))
       .sort()
       .reverse();
 
@@ -271,10 +262,7 @@ export class CoALALocalFileStorageAdapter implements ICoALAMemoryStorageAdapter 
         };
       }
 
-      return {
-        lastUpdated: new Date().toISOString(),
-        memoryTypes: stats,
-      };
+      return { lastUpdated: new Date().toISOString(), memoryTypes: stats };
     }
   }
 

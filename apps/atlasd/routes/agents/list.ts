@@ -1,7 +1,7 @@
-import { daemonFactory } from "../../src/factory.ts";
-import { describeRoute, resolver } from "hono-openapi";
-import { agentListResponseSchema, errorResponseSchema } from "./schemas.ts";
 import { AgentRegistry } from "@atlas/core";
+import { describeRoute, resolver } from "hono-openapi";
+import { daemonFactory } from "../../src/factory.ts";
+import { agentListResponseSchema, errorResponseSchema } from "./schemas.ts";
 
 const listAgents = daemonFactory.createApp();
 
@@ -15,19 +15,11 @@ listAgents.get(
     responses: {
       200: {
         description: "Successfully retrieved agents",
-        content: {
-          "application/json": {
-            schema: resolver(agentListResponseSchema),
-          },
-        },
+        content: { "application/json": { schema: resolver(agentListResponseSchema) } },
       },
       500: {
         description: "Internal server error",
-        content: {
-          "application/json": {
-            schema: resolver(errorResponseSchema),
-          },
-        },
+        content: { "application/json": { schema: resolver(errorResponseSchema) } },
       },
     },
   }),
@@ -40,10 +32,7 @@ listAgents.get(
       // List all agents
       const agents = await registry.listAgents();
 
-      const response = {
-        agents,
-        total: agents.length,
-      };
+      const response = { agents, total: agents.length };
 
       return c.json(response);
     } catch (error) {

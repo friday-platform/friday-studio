@@ -3,10 +3,7 @@ import { Box, Text } from "ink";
 function generateTimestamp(date: string) {
   const now = new Date(date);
   return now
-    .toLocaleTimeString([], {
-      hour: "numeric",
-      minute: "2-digit",
-    })
+    .toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
     .toLowerCase()
     .replace(/\s/g, "");
 }

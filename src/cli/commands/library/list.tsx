@@ -1,13 +1,13 @@
+import process from "node:process";
 import { render } from "ink";
 import { LibraryListComponent } from "../../modules/library/library-list-component.tsx";
-import { YargsInstance } from "../../utils/yargs.ts";
-import { spinner } from "../../utils/prompts.tsx";
 import {
   checkDaemonRunning,
   createDaemonNotRunningError,
   getDaemonClient,
 } from "../../utils/daemon-client.ts";
-import process from "node:process";
+import { spinner } from "../../utils/prompts.tsx";
+import type { YargsInstance } from "../../utils/yargs.ts";
 
 interface ListArgs {
   type?: string;
@@ -24,15 +24,8 @@ export const desc = "List library items";
 
 export function builder(y: YargsInstance) {
   return y
-    .option("type", {
-      alias: "t",
-      type: "string",
-      description: "Filter by item type",
-    })
-    .option("tags", {
-      type: "string",
-      description: "Filter by tags (comma-separated)",
-    })
+    .option("type", { alias: "t", type: "string", description: "Filter by item type" })
+    .option("tags", { type: "string", description: "Filter by tags (comma-separated)" })
     .option("since", {
       alias: "s",
       type: "string",
@@ -44,22 +37,9 @@ export function builder(y: YargsInstance) {
       description: "Maximum number of items to display",
       default: 50,
     })
-    .option("workspace", {
-      alias: "w",
-      type: "string",
-      description: "Workspace directory",
-    })
-    .option("json", {
-      type: "boolean",
-      description: "Output as JSON",
-      default: false,
-    })
-    .option("port", {
-      alias: "p",
-      type: "number",
-      description: "Server port",
-      default: 8080,
-    });
+    .option("workspace", { alias: "w", type: "string", description: "Workspace directory" })
+    .option("json", { type: "boolean", description: "Output as JSON", default: false })
+    .option("port", { alias: "p", type: "number", description: "Server port", default: 8080 });
 }
 
 export async function handler(argv: ListArgs) {
@@ -114,9 +94,7 @@ export async function handler(argv: ListArgs) {
     setTimeout(() => unmount(), 100);
   } catch (error) {
     s.stop("Failed to fetch library items");
-    console.error(
-      `Error: ${error instanceof Error ? error.message : String(error)}`,
-    );
+    console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
     process.exit(1);
   }
 }

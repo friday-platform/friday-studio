@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
-import { Box, Text } from "ink";
 import { getAtlasClient } from "@atlas/client";
+import { Box, Text } from "ink";
+import { useEffect, useState } from "react";
 import { JobDetails } from "../../components/job-details.tsx";
 
 interface JobDetailsWithPathProps {
@@ -8,10 +8,7 @@ interface JobDetailsWithPathProps {
   jobName: string;
 }
 
-export const JobDetailsWithPath = ({
-  workspaceId,
-  jobName,
-}: JobDetailsWithPathProps) => {
+export const JobDetailsWithPath = ({ workspaceId, jobName }: JobDetailsWithPathProps) => {
   const [workspacePath, setWorkspacePath] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>("");
@@ -56,11 +53,5 @@ export const JobDetailsWithPath = ({
     );
   }
 
-  return (
-    <JobDetails
-      workspaceId={workspaceId}
-      jobName={jobName}
-      workspacePath={workspacePath}
-    />
-  );
+  return <JobDetails workspaceId={workspaceId} jobName={jobName} workspacePath={workspacePath} />;
 };

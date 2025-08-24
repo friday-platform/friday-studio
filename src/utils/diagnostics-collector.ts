@@ -1,12 +1,11 @@
-import { join } from "@std/path";
-import { ensureDir, exists } from "@std/fs";
-import { getAtlasHome, getAtlasLogsDir } from "./paths.ts";
-import { walk } from "@std/fs";
-import { TarStream, type TarStreamInput } from "@std/tar/tar-stream";
 import { getAtlasClient } from "@atlas/client";
+import { ensureDir, exists, walk } from "@std/fs";
+import { join } from "@std/path";
+import { TarStream, type TarStreamInput } from "@std/tar/tar-stream";
 import { stringify } from "@std/yaml";
-import { getVersionInfo } from "./version.ts";
+import { getAtlasHome, getAtlasLogsDir } from "./paths.ts";
 import { ReleaseChannel } from "./release-channel.ts";
+import { getVersionInfo } from "./version.ts";
 
 export class DiagnosticsCollector {
   private tempDir: string;
@@ -94,7 +93,9 @@ export class DiagnosticsCollector {
 
           for await (const entry of workspaces) {
             if (
-              entry.value && typeof entry.value === "object" && "path" in entry.value &&
+              entry.value &&
+              typeof entry.value === "object" &&
+              "path" in entry.value &&
               "name" in entry.value
             ) {
               const workspace = entry.value as { id?: string; name: string; path: string };
@@ -238,10 +239,7 @@ export class DiagnosticsCollector {
       } catch (_err) {
         // If we can't import system workspaces (e.g., running from source vs compiled),
         // try to read them from the filesystem
-        const systemWorkspacesPath = join(
-          Deno.cwd(),
-          "packages/system/workspaces",
-        );
+        const systemWorkspacesPath = join(Deno.cwd(), "packages/system/workspaces");
 
         if (await exists(systemWorkspacesPath)) {
           // Copy all YAML files from system workspaces directory
@@ -325,10 +323,7 @@ export class DiagnosticsCollector {
     // Terminal Information
     try {
       const size = Deno.consoleSize();
-      systemInfo.terminal = {
-        columns: size.columns,
-        rows: size.rows,
-      };
+      systemInfo.terminal = { columns: size.columns, rows: size.rows };
     } catch {
       systemInfo.terminal = { columns: "unknown", rows: "unknown" };
     }
@@ -407,9 +402,7 @@ export class DiagnosticsCollector {
     if (Deno.build.os === "darwin") {
       // macOS - use defaults command
       try {
-        const command = new Deno.Command("defaults", {
-          args: ["read", "-g", "AppleLocale"],
-        });
+        const command = new Deno.Command("defaults", { args: ["read", "-g", "AppleLocale"] });
         const { stdout } = await command.output();
         const locale = new TextDecoder().decode(stdout).trim();
 
@@ -427,12 +420,10 @@ export class DiagnosticsCollector {
     } else if (Deno.build.os === "linux") {
       // Linux - check locale
       try {
-        const command = new Deno.Command("sh", {
-          args: ["-c", "echo $LANG"],
-        });
+        const command = new Deno.Command("sh", { args: ["-c", "echo $LANG"] });
         const { stdout } = await command.output();
-        const currentLocale = new TextDecoder().decode(stdout).trim() || Deno.env.get("LANG") ||
-          "unknown";
+        const currentLocale =
+          new TextDecoder().decode(stdout).trim() || Deno.env.get("LANG") || "unknown";
 
         return currentLocale;
       } catch {
@@ -475,9 +466,7 @@ export class DiagnosticsCollector {
     if (Deno.build.os === "darwin") {
       // macOS
       try {
-        const command = new Deno.Command("system_profiler", {
-          args: ["SPDisplaysDataType"],
-        });
+        const command = new Deno.Command("system_profiler", { args: ["SPDisplaysDataType"] });
         const { stdout } = await command.output();
         const output = new TextDecoder().decode(stdout);
         const resolutionMatch = output.match(/Resolution: (\d+ x \d+)/);
@@ -489,9 +478,7 @@ export class DiagnosticsCollector {
       // Linux - try multiple methods
       // Method 1: xrandr (X11)
       try {
-        const command = new Deno.Command("xrandr", {
-          args: ["--current"],
-        });
+        const command = new Deno.Command("xrandr", { args: ["--current"] });
         const { stdout } = await command.output();
         const output = new TextDecoder().decode(stdout);
         const resolutionMatch = output.match(/(\d+x\d+)\s+\d+\.\d+\*/);
@@ -504,9 +491,7 @@ export class DiagnosticsCollector {
 
       // Method 2: Check /sys/class/drm for framebuffer info
       try {
-        const command = new Deno.Command("cat", {
-          args: ["/sys/class/graphics/fb0/virtual_size"],
-        });
+        const command = new Deno.Command("cat", { args: ["/sys/class/graphics/fb0/virtual_size"] });
         const { stdout } = await command.output();
         const output = new TextDecoder().decode(stdout).trim();
         if (output.match(/\d+,\d+/)) {
@@ -787,10 +772,10 @@ export class DiagnosticsCollector {
     const channel = versionInfo.isNightly
       ? ReleaseChannel.Nightly
       : versionInfo.isDev
-      ? ReleaseChannel.Edge
-      : versionInfo.isCompiled
-      ? ReleaseChannel.Stable
-      : ReleaseChannel.Edge;
+        ? ReleaseChannel.Edge
+        : versionInfo.isCompiled
+          ? ReleaseChannel.Stable
+          : ReleaseChannel.Edge;
 
     const metadata = {
       timestamp: new Date().toISOString(),

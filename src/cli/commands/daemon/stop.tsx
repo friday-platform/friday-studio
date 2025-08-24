@@ -1,6 +1,6 @@
-import { errorOutput, infoOutput, successOutput } from "../../utils/output.ts";
-import { YargsInstance } from "../../utils/yargs.ts";
 import { getLocalDaemonClient } from "../../utils/daemon-status.ts";
+import { errorOutput, infoOutput, successOutput } from "../../utils/output.ts";
+import type { YargsInstance } from "../../utils/yargs.ts";
 
 interface StopArgs {
   port?: number;

@@ -9,10 +9,7 @@ Deno.test({
     const testPath = "./test-workspace-current";
 
     try {
-      await createAndRegisterWorkspace({
-        name: "Test Workspace Current",
-        path: testPath,
-      });
+      await createAndRegisterWorkspace({ name: "Test Workspace Current", path: testPath });
 
       // Check that workspace.yml was created
       const workspaceFile = `${testPath}/workspace.yml`;
@@ -20,9 +17,7 @@ Deno.test({
 
       // Verify content contains expected values
       assertExists(content.match(/name: Test Workspace Current/));
-      assertExists(
-        content.match(/description: 'Atlas workspace: Test Workspace Current'/),
-      );
+      assertExists(content.match(/description: 'Atlas workspace: Test Workspace Current'/));
       assertExists(content.match(/version: '1.0'/));
     } finally {
       // Cleanup
@@ -55,9 +50,7 @@ Deno.test({
 
       // Verify content contains expected values
       assertExists(content.match(/name: Nested Test Workspace/));
-      assertExists(
-        content.match(/description: A test workspace in nested directories/),
-      );
+      assertExists(content.match(/description: A test workspace in nested directories/));
     } finally {
       // Cleanup
       try {
@@ -77,10 +70,7 @@ Deno.test({
     const testPath = `${Deno.cwd()}/test-workspace-absolute`;
 
     try {
-      await createAndRegisterWorkspace({
-        name: "Absolute Path Workspace",
-        path: testPath,
-      });
+      await createAndRegisterWorkspace({ name: "Absolute Path Workspace", path: testPath });
 
       // Check that workspace.yml was created
       const workspaceFile = `${testPath}/workspace.yml`;
@@ -111,10 +101,7 @@ Deno.test({
     const testPath = "./test-workspace-special";
 
     try {
-      await createAndRegisterWorkspace({
-        name: "My Workspace & Co. (v2.0)",
-        path: testPath,
-      });
+      await createAndRegisterWorkspace({ name: "My Workspace & Co. (v2.0)", path: testPath });
 
       // Check that workspace.yml was created
       const workspaceFile = `${testPath}/workspace.yml`;

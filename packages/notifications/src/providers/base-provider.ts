@@ -68,10 +68,7 @@ export abstract class BaseNotificationProvider implements NotificationProvider {
   protected getEnvVar(envVar: string): string {
     const value = Deno.env.get(envVar);
     if (!value) {
-      throw new ProviderConfigError(
-        this.name,
-        `Environment variable ${envVar} is not set`,
-      );
+      throw new ProviderConfigError(this.name, `Environment variable ${envVar} is not set`);
     }
     return value;
   }
@@ -83,11 +80,7 @@ export abstract class BaseNotificationProvider implements NotificationProvider {
     messageId?: string,
     metadata?: Record<string, unknown>,
   ): NotificationResult {
-    return {
-      success: true,
-      message_id: messageId,
-      metadata,
-    };
+    return { success: true, message_id: messageId, metadata };
   }
 
   /**
@@ -98,12 +91,7 @@ export abstract class BaseNotificationProvider implements NotificationProvider {
     retryCount?: number,
     metadata?: Record<string, unknown>,
   ): NotificationResult {
-    return {
-      success: false,
-      error,
-      retry_count: retryCount,
-      metadata,
-    };
+    return { success: false, error, retry_count: retryCount, metadata };
   }
 
   /**
@@ -138,11 +126,13 @@ export abstract class BaseNotificationProvider implements NotificationProvider {
    */
   protected isRetryableError(error: Error): boolean {
     // Default implementation - consider network errors retryable
-    return error.name === "NetworkError" ||
+    return (
+      error.name === "NetworkError" ||
       error.name === "TimeoutError" ||
       error.message.includes("ECONNRESET") ||
       error.message.includes("ENOTFOUND") ||
-      error.message.includes("ETIMEDOUT");
+      error.message.includes("ETIMEDOUT")
+    );
   }
 
   /**

@@ -30,11 +30,9 @@ export function registerWorkspaceCreationGuideResource(
       // content = content.replace("{{AVAILABLE_TOOLS}}", toolsList);
 
       return {
-        contents: [{
-          uri: "atlas://guides/workspace-creation",
-          mimeType: "text/markdown",
-          text: content,
-        }],
+        contents: [
+          { uri: "atlas://guides/workspace-creation", mimeType: "text/markdown", text: content },
+        ],
       };
     },
   );

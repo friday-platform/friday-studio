@@ -1,10 +1,10 @@
-import { type ReactNode } from "react";
 import { Box, Text } from "ink";
-import { Option } from "./types.ts";
+import type { ReactNode } from "react";
 import { SelectOption } from "./select-option.tsx";
-import { useSelectState } from "./use-select-state.ts";
-import { useSelect } from "./use-select.ts";
 import { theme } from "./theme.ts";
+import type { Option } from "./types.ts";
+import { useSelect } from "./use-select.ts";
+import { useSelectState } from "./use-select-state.ts";
 
 export interface SelectProps {
   /** When disabled, user input is ignored. */
@@ -34,12 +34,7 @@ export function Select({
   defaultValue,
   onChange,
 }: SelectProps) {
-  const state = useSelectState({
-    visibleOptionCount,
-    options,
-    defaultValue,
-    onChange,
-  });
+  const state = useSelectState({ visibleOptionCount, options, defaultValue, onChange });
 
   useSelect({ isDisabled, state });
 

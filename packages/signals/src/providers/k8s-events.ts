@@ -3,16 +3,16 @@
  * Provides direct integration with Kubernetes Events API for real-time event streaming
  */
 
+import { AtlasScope } from "../../../../src/core/scope.ts";
+import { type K8sAuthConfig, K8sAuthManager } from "./k8s-auth.ts";
 import {
-  HealthStatus,
-  IProviderSignal,
-  ISignalProvider,
-  ProviderState,
+  type HealthStatus,
+  type IProviderSignal,
+  type ISignalProvider,
+  type ProviderState,
   ProviderStatus,
   ProviderType,
 } from "./types.ts";
-import { AtlasScope } from "../../../../src/core/scope.ts";
-import { K8sAuthConfig, K8sAuthManager } from "./k8s-auth.ts";
 
 // SECURITY: Secure logging utilities to prevent credential exposure
 class SecureLogger {
@@ -24,7 +24,9 @@ class SecureLogger {
     if (typeof obj === "string") {
       // Check for potential credentials in strings
       if (
-        obj.length > 100 || obj.match(/^[A-Za-z0-9+/]+=*$/) || obj.includes("token") ||
+        obj.length > 100 ||
+        obj.match(/^[A-Za-z0-9+/]+=*$/) ||
+        obj.includes("token") ||
         obj.includes("key")
       ) {
         return "[REDACTED]";
@@ -48,7 +50,7 @@ class SecureLogger {
       ];
 
       if (Array.isArray(obj)) {
-        return obj.map((item) => this.sanitizeForLogging(item));
+        return obj.map((item) => SecureLogger.sanitizeForLogging(item));
       }
 
       const sanitized: Record<string, unknown> = {};
@@ -57,7 +59,7 @@ class SecureLogger {
         if (sensitiveKeys.some((sensitive) => keyLower.includes(sensitive))) {
           sanitized[key] = "[REDACTED]";
         } else {
-          sanitized[key] = this.sanitizeForLogging(value);
+          sanitized[key] = SecureLogger.sanitizeForLogging(value);
         }
       }
       return sanitized;
@@ -67,7 +69,7 @@ class SecureLogger {
   }
 
   static secureLog(level: "info" | "warn" | "error", message: string, data?: unknown): void {
-    const sanitizedData = data ? this.sanitizeForLogging(data) : undefined;
+    const sanitizedData = data ? SecureLogger.sanitizeForLogging(data) : undefined;
     if (level === "error") {
       if (sanitizedData !== undefined) {
         console.error(message, sanitizedData);
@@ -97,26 +99,15 @@ interface K8sWatchEvent {
 }
 
 interface K8sEvent {
-  metadata?: {
-    name?: string;
-    namespace?: string;
-    resourceVersion: string;
-  };
+  metadata?: { name?: string; namespace?: string; resourceVersion: string };
   reason: string;
   message: string;
   type?: string;
   count?: number;
   firstTimestamp?: string;
   lastTimestamp?: string;
-  involvedObject?: {
-    kind: string;
-    name: string;
-    namespace?: string;
-  };
-  source?: {
-    component?: string;
-    host?: string;
-  };
+  involvedObject?: { kind: string; name: string; namespace?: string };
+  source?: { component?: string; host?: string };
 }
 
 export interface K8sEventsSignalConfig {
@@ -137,10 +128,7 @@ export interface K8sEventsSignalConfig {
 
   // Connection settings
   timeout_ms?: number;
-  retry_config?: {
-    max_retries: number;
-    retry_delay_ms: number;
-  };
+  retry_config?: { max_retries: number; retry_delay_ms: number };
 }
 
 export class K8sEventsSignalProvider implements ISignalProvider {
@@ -149,9 +137,7 @@ export class K8sEventsSignalProvider implements ISignalProvider {
   readonly name = "Kubernetes Events Signal Provider";
   readonly version = "1.0.0";
 
-  private state: ProviderState = {
-    status: ProviderStatus.NOT_CONFIGURED,
-  };
+  private state: ProviderState = { status: ProviderStatus.NOT_CONFIGURED };
 
   setup(): Promise<void> {
     this.state.status = ProviderStatus.READY;
@@ -204,7 +190,8 @@ export class K8sEventsSignalProvider implements ISignalProvider {
     // Validate timeout
     if (config.timeout_ms !== undefined) {
       if (
-        typeof config.timeout_ms !== "number" || config.timeout_ms < 1000 ||
+        typeof config.timeout_ms !== "number" ||
+        config.timeout_ms < 1000 ||
         config.timeout_ms > 300000
       ) {
         throw new Error("Timeout must be between 1000ms and 300000ms (5 minutes)");
@@ -299,9 +286,7 @@ class K8sEventsProviderSignal implements IProviderSignal {
       this.config.use_service_account
     );
 
-    const hasDirectConfig = !!(
-      this.config.api_server && this.config.token
-    );
+    const hasDirectConfig = !!(this.config.api_server && this.config.token);
 
     return hasKubeconfig || hasDirectConfig;
   }
@@ -318,13 +303,17 @@ class K8sEventsRuntimeSignal extends AtlasScope {
   private isConnected = false;
   private authConfig?: K8sAuthConfig;
 
-  constructor(private providerId: string, private config: K8sEventsSignalConfig) {
+  constructor(
+    private providerId: string,
+    private config: K8sEventsSignalConfig,
+  ) {
     super(`${providerId}-k8s-events-signal`);
   }
 
-  async initialize(
-    context: { id: string; processSignal: (signalId: string, payload: unknown) => Promise<void> },
-  ): Promise<void> {
+  async initialize(context: {
+    id: string;
+    processSignal: (signalId: string, payload: unknown) => Promise<void>;
+  }): Promise<void> {
     this.signalId = context.id;
     this.signalProcessor = context.processSignal;
 
@@ -397,10 +386,7 @@ class K8sEventsRuntimeSignal extends AtlasScope {
     const safeUrl = watchUrl.replace(/\/\/[^@]*@/, "//[REDACTED]@");
     SecureLogger.secureLog("info", `🔍 Watching Kubernetes Events at ${safeUrl}`);
 
-    const retryConfig = this.config.retry_config || {
-      max_retries: 5,
-      retry_delay_ms: 1000,
-    };
+    const retryConfig = this.config.retry_config || { max_retries: 5, retry_delay_ms: 1000 };
 
     let retryCount = 0;
 
@@ -437,10 +423,7 @@ class K8sEventsRuntimeSignal extends AtlasScope {
     const headers = K8sAuthManager.createAuthHeaders(this.authConfig);
 
     // Build fetch options with proper SSL handling
-    const fetchOptions: RequestInit & { client?: Deno.HttpClient } = {
-      headers,
-      signal,
-    };
+    const fetchOptions: RequestInit & { client?: Deno.HttpClient } = { headers, signal };
 
     // SECURITY FIX: Secure TLS configuration with strict validation
     const clientOptions: Deno.CreateHttpClientOptions & { cert?: string; key?: string } = {};
@@ -452,10 +435,10 @@ class K8sEventsRuntimeSignal extends AtlasScope {
     }
 
     // SECURITY FIX: Only allow insecure connections in development mode with explicit warning
-    const isDevelopment = Deno.env.get("NODE_ENV") === "development" ||
-      Deno.env.get("DENO_ENV") === "development";
+    const isDevelopment =
+      Deno.env.get("NODE_ENV") === "development" || Deno.env.get("DENO_ENV") === "development";
 
-    if ((this.authConfig.insecure || this.config.insecure)) {
+    if (this.authConfig.insecure || this.config.insecure) {
       if (!isDevelopment) {
         throw new Error(
           "Insecure TLS connections are not allowed in production. " +

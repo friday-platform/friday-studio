@@ -17,7 +17,7 @@ function validateCacheKey(key: string): boolean {
   if (!parts[0].trim() || !parts[1].trim()) return false;
 
   // Check for dangerous characters
-  const dangerousPattern = /[\/\\\.\|\;\&\$\`\n\r\x00]/;
+  const dangerousPattern = /[/\\.|;&$`\n\r\x00]/;
   if (dangerousPattern.test(key)) return false;
 
   // Enforce maximum length
@@ -70,13 +70,7 @@ Deno.test("Cache Security - Validate cache key format", async (t) => {
   });
 
   await t.step("should reject empty parts", () => {
-    const invalidKeys = [
-      ":session",
-      "workspace:",
-      ":",
-      " :session",
-      "workspace: ",
-    ];
+    const invalidKeys = [":session", "workspace:", ":", " :session", "workspace: "];
 
     for (const key of invalidKeys) {
       expect(validateCacheKey(key)).toBe(false);
@@ -127,26 +121,17 @@ Deno.test("K8s Security - Validate authentication methods", async (t) => {
     const validKubeconfig = {
       apiVersion: "v1",
       kind: "Config",
-      clusters: [{
-        name: "test-cluster",
-        cluster: {
-          server: "https://k8s.example.com",
-          "certificate-authority-data": "base64-cert",
+      clusters: [
+        {
+          name: "test-cluster",
+          cluster: {
+            server: "https://k8s.example.com",
+            "certificate-authority-data": "base64-cert",
+          },
         },
-      }],
-      users: [{
-        name: "test-user",
-        user: {
-          token: "test-token",
-        },
-      }],
-      contexts: [{
-        name: "test-context",
-        context: {
-          cluster: "test-cluster",
-          user: "test-user",
-        },
-      }],
+      ],
+      users: [{ name: "test-user", user: { token: "test-token" } }],
+      contexts: [{ name: "test-context", context: { cluster: "test-cluster", user: "test-user" } }],
       "current-context": "test-context",
     };
 
@@ -229,10 +214,7 @@ Deno.test("Agent Security - Validate agent permissions", async (t) => {
 // API Security Tests
 Deno.test("API Security - Validate authentication and authorization", async (t) => {
   await t.step("should validate bearer token format", () => {
-    const validTokens = [
-      "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9",
-      "Bearer valid-token-123",
-    ];
+    const validTokens = ["Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9", "Bearer valid-token-123"];
 
     for (const token of validTokens) {
       expect(token.startsWith("Bearer ")).toBe(true);
@@ -297,7 +279,8 @@ Deno.test("Security - Input validation and sanitization", async (t) => {
     ];
 
     for (const pattern of xssPatterns) {
-      const isDangerous = pattern.includes("<") ||
+      const isDangerous =
+        pattern.includes("<") ||
         pattern.includes(">") ||
         pattern.includes("javascript:") ||
         pattern.includes("onerror=") ||
@@ -368,12 +351,7 @@ Deno.test("Security - Encryption and secrets management", async (t) => {
 
   await t.step("should validate environment variable names for secrets", () => {
     const validEnvVarPattern = /^[A-Z][A-Z0-9_]*$/;
-    const validNames = [
-      "API_TOKEN",
-      "DATABASE_PASSWORD",
-      "JWT_SECRET",
-      "ENCRYPTION_KEY",
-    ];
+    const validNames = ["API_TOKEN", "DATABASE_PASSWORD", "JWT_SECRET", "ENCRYPTION_KEY"];
 
     for (const name of validNames) {
       expect(validEnvVarPattern.test(name)).toBe(true);

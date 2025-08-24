@@ -1,37 +1,27 @@
 import { Box, Text, useInput } from "ink";
 import { useState } from "react";
-import { useResponsiveDimensions } from "../utils/useResponsiveDimensions.ts";
-import { TextInput } from "../modules/input/text-input.tsx";
-import { COMMAND_DEFINITIONS } from "../utils/command-definitions.ts";
-import type { AttachmentData } from "../modules/input/use-text-input-state.ts";
-import { useAppContext } from "../contexts/app-context.tsx";
 import { DAEMON_STATUS } from "../constants/daemon-status.ts";
 import { DIAGNOSTICS_STATUS } from "../constants/diagnostics-status.ts";
+import { useAppContext } from "../contexts/app-context.tsx";
+import { TextInput } from "../modules/input/text-input.tsx";
+import type { AttachmentData } from "../modules/input/use-text-input-state.ts";
+import { COMMAND_DEFINITIONS } from "../utils/command-definitions.ts";
+import { useResponsiveDimensions } from "../utils/useResponsiveDimensions.ts";
 
 export interface CommandInputProps {
   onSubmit: (command: string) => void;
   isDisabled?: boolean;
 }
 
-export const CommandInput = ({
-  onSubmit,
-  isDisabled = false,
-}: CommandInputProps) => {
-  const {
-    exitApp,
-    diagnosticsStatus,
-    daemonStatus,
-    multilineSetupStatus,
-    multilineTerminalType,
-  } = useAppContext();
+export const CommandInput = ({ onSubmit, isDisabled = false }: CommandInputProps) => {
+  const { exitApp, diagnosticsStatus, daemonStatus, multilineSetupStatus, multilineTerminalType } =
+    useAppContext();
 
   const [currentInput, setCurrentInput] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(-1);
   const [inputKey, setInputKey] = useState(0);
-  const [attachments, setAttachments] = useState<Map<number, AttachmentData>>(
-    new Map(),
-  );
+  const [attachments, setAttachments] = useState<Map<number, AttachmentData>>(new Map());
   const dimensions = useResponsiveDimensions({ minHeight: 24, padding: 1 });
 
   // Get all available suggestions with descriptions
@@ -49,7 +39,10 @@ export const CommandInput = ({
 
     return getAllSuggestionsWithDescriptions().filter((item) =>
       // Search within the command name (without the leading "/")
-      item.command.slice(1).toLowerCase().includes(searchTerm)
+      item.command
+        .slice(1)
+        .toLowerCase()
+        .includes(searchTerm),
     );
   };
 
@@ -59,12 +52,16 @@ export const CommandInput = ({
     if (showSuggestions) {
       if (key.upArrow) {
         const filteredSuggestions = getFilteredSuggestions();
-        setSelectedSuggestionIndex((prev) => prev <= 0 ? filteredSuggestions.length - 1 : prev - 1);
+        setSelectedSuggestionIndex((prev) =>
+          prev <= 0 ? filteredSuggestions.length - 1 : prev - 1,
+        );
         return;
       }
       if (key.downArrow) {
         const filteredSuggestions = getFilteredSuggestions();
-        setSelectedSuggestionIndex((prev) => prev >= filteredSuggestions.length - 1 ? 0 : prev + 1);
+        setSelectedSuggestionIndex((prev) =>
+          prev >= filteredSuggestions.length - 1 ? 0 : prev + 1,
+        );
         return;
       }
 
@@ -85,10 +82,7 @@ export const CommandInput = ({
   });
 
   // Handle input changes from TextInput
-  const handleInputChange = (
-    value: string,
-    textInputAttachments?: Map<number, AttachmentData>,
-  ) => {
+  const handleInputChange = (value: string, textInputAttachments?: Map<number, AttachmentData>) => {
     // If attachments are provided from TextInput, use them
     if (textInputAttachments) {
       setAttachments(textInputAttachments);
@@ -101,8 +95,8 @@ export const CommandInput = ({
       // Calculate filtered suggestions based on the new value
       // Remove the leading "/" for searching within command names
       const searchTerm = value.slice(1).toLowerCase();
-      const filteredSuggestions = getAllSuggestionsWithDescriptions().filter(
-        (item) => item.command.slice(1).toLowerCase().includes(searchTerm),
+      const filteredSuggestions = getAllSuggestionsWithDescriptions().filter((item) =>
+        item.command.slice(1).toLowerCase().includes(searchTerm),
       );
 
       // If there's only one item and we're already at index 0, only update input but skip other state changes
@@ -127,10 +121,7 @@ export const CommandInput = ({
   };
 
   // Enhanced submission handler
-  const handleSubmit = (
-    command: string,
-    submittedAttachments?: Map<number, AttachmentData>,
-  ) => {
+  const handleSubmit = (command: string, submittedAttachments?: Map<number, AttachmentData>) => {
     let commandToSubmit = command.trim();
 
     // If we have a selected suggestion, use that instead
@@ -164,10 +155,7 @@ export const CommandInput = ({
       }
 
       if (expandedCommand.includes(placeholder)) {
-        expandedCommand = expandedCommand.replace(
-          placeholder,
-          attachmentData.content,
-        );
+        expandedCommand = expandedCommand.replace(placeholder, attachmentData.content);
       }
     });
     commandToSubmit = expandedCommand;
@@ -187,11 +175,7 @@ export const CommandInput = ({
 
   return (
     <Box flexDirection="column" marginTop={1} width={dimensions.paddedWidth}>
-      <Box
-        borderStyle="round"
-        borderColor={isDisabled ? "gray" : "gray"}
-        paddingX={1}
-      >
+      <Box borderStyle="round" borderColor={isDisabled ? "gray" : "gray"} paddingX={1}>
         <Text dimColor>→&nbsp;</Text>
         <TextInput
           key={inputKey}
@@ -238,44 +222,36 @@ export const CommandInput = ({
         </Box>
 
         {/* Show diagnostics status if active, otherwise show daemon status */}
-        {diagnosticsStatus !== DIAGNOSTICS_STATUS.IDLE
-          ? (
-            <Box flexDirection="row" paddingX={2}>
-              {diagnosticsStatus === DIAGNOSTICS_STATUS.COLLECTING && (
-                <Text dimColor>Collecting...</Text>
-              )}
+        {diagnosticsStatus !== DIAGNOSTICS_STATUS.IDLE ? (
+          <Box flexDirection="row" paddingX={2}>
+            {diagnosticsStatus === DIAGNOSTICS_STATUS.COLLECTING && (
+              <Text dimColor>Collecting...</Text>
+            )}
 
-              {diagnosticsStatus === DIAGNOSTICS_STATUS.UPLOADING && (
-                <Text dimColor>Sending...</Text>
-              )}
+            {diagnosticsStatus === DIAGNOSTICS_STATUS.UPLOADING && <Text dimColor>Sending...</Text>}
 
-              {diagnosticsStatus === DIAGNOSTICS_STATUS.DONE && (
-                <Text color="green">Diagnostics sent</Text>
-              )}
+            {diagnosticsStatus === DIAGNOSTICS_STATUS.DONE && (
+              <Text color="green">Diagnostics sent</Text>
+            )}
 
-              {![
-                DIAGNOSTICS_STATUS.COLLECTING,
-                DIAGNOSTICS_STATUS.UPLOADING,
-                DIAGNOSTICS_STATUS.DONE,
-                // @ts-expect-error checking a string in another array of strings is perfectly valid
-              ].includes(diagnosticsStatus) && <Text color="red">Error: {diagnosticsStatus}</Text>}
-            </Box>
-          )
-          : daemonStatus !== DAEMON_STATUS.IDLE
-          ? (
-            <Box flexDirection="row" paddingX={2}>
-              {daemonStatus === DAEMON_STATUS.HEALTHY && (
-                <Text color="green">✓ Atlas daemon is running</Text>
-              )}
-              {daemonStatus === DAEMON_STATUS.UNHEALTHY && (
-                <Text color="yellow">◆ Atlas daemon is not running</Text>
-              )}
-              {daemonStatus === DAEMON_STATUS.ERROR && (
-                <Text color="red">Error: {daemonStatus}</Text>
-              )}
-            </Box>
-          )
-          : null}
+            {![
+              DIAGNOSTICS_STATUS.COLLECTING,
+              DIAGNOSTICS_STATUS.UPLOADING,
+              DIAGNOSTICS_STATUS.DONE,
+              // @ts-expect-error checking a string in another array of strings is perfectly valid
+            ].includes(diagnosticsStatus) && <Text color="red">Error: {diagnosticsStatus}</Text>}
+          </Box>
+        ) : daemonStatus !== DAEMON_STATUS.IDLE ? (
+          <Box flexDirection="row" paddingX={2}>
+            {daemonStatus === DAEMON_STATUS.HEALTHY && (
+              <Text color="green">✓ Atlas daemon is running</Text>
+            )}
+            {daemonStatus === DAEMON_STATUS.UNHEALTHY && (
+              <Text color="yellow">◆ Atlas daemon is not running</Text>
+            )}
+            {daemonStatus === DAEMON_STATUS.ERROR && <Text color="red">Error: {daemonStatus}</Text>}
+          </Box>
+        ) : null}
 
         {multilineSetupStatus !== "idle" && (
           <Box flexDirection="row" paddingX={2}>
@@ -289,8 +265,7 @@ export const CommandInput = ({
               </Text>
             )}
 
-            {multilineSetupStatus !== "running" &&
-              multilineSetupStatus !== "done" && (
+            {multilineSetupStatus !== "running" && multilineSetupStatus !== "done" && (
               <Text color="red">Error: {multilineSetupStatus}</Text>
             )}
           </Box>

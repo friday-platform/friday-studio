@@ -1,8 +1,8 @@
+import type { JobDetailedInfo } from "@atlas/client";
+import { getAtlasClient } from "@atlas/client";
 import { Box, Text } from "ink";
 import { useEffect, useState } from "react";
 import { checkDaemonRunning } from "../utils/daemon-client.ts";
-import { getAtlasClient } from "@atlas/client";
-import type { JobDetailedInfo } from "@atlas/client";
 import { MarkdownDisplay } from "./markdown-display.tsx";
 
 interface JobDetailsProps {
@@ -11,19 +11,11 @@ interface JobDetailsProps {
   workspacePath: string;
 }
 
-const appendSection = (
-  markdown: string,
-  title: string,
-  content: string,
-): string => {
+const appendSection = (markdown: string, title: string, content: string): string => {
   return `${markdown}## ${title}\n\n${content}\n\n`;
 };
 
-export const JobDetails = ({
-  workspaceId,
-  jobName,
-  workspacePath,
-}: JobDetailsProps) => {
+export const JobDetails = ({ workspaceId, jobName, workspacePath }: JobDetailsProps) => {
   const [jobData, setJobData] = useState<JobDetailedInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>("");
@@ -32,9 +24,7 @@ export const JobDetails = ({
     const loadJobDetails = async () => {
       try {
         if (!workspaceId || !jobName) {
-          setError(
-            `Missing required parameters: workspaceId=${workspaceId}, jobName=${jobName}`,
-          );
+          setError(`Missing required parameters: workspaceId=${workspaceId}, jobName=${jobName}`);
           return;
         }
 
@@ -47,17 +37,11 @@ export const JobDetails = ({
           const client = getAtlasClient();
 
           // Use the new client package method to get detailed job information
-          const jobDetails = await client.describeJob(
-            workspaceId,
-            jobName,
-            workspacePath,
-          );
+          const jobDetails = await client.describeJob(workspaceId, jobName, workspacePath);
 
           setJobData(jobDetails);
         } else {
-          setError(
-            "Daemon not running. Use 'atlas daemon start' to enable job management.",
-          );
+          setError("Daemon not running. Use 'atlas daemon start' to enable job management.");
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
@@ -150,17 +134,12 @@ export const JobDetails = ({
     let contextContent = "";
     if (jobData.execution.context.filesystem) {
       contextContent += "**Filesystem:**\n";
-      contextContent += `- Patterns: ${
-        jobData.execution.context.filesystem.patterns.join(
-          ", ",
-        )
-      }\n`;
+      contextContent += `- Patterns: ${jobData.execution.context.filesystem.patterns.join(", ")}\n`;
       if (jobData.execution.context.filesystem.base_path) {
         contextContent += `- Base Path: ${jobData.execution.context.filesystem.base_path}\n`;
       }
       if (jobData.execution.context.filesystem.max_file_size) {
-        contextContent +=
-          `- Max File Size: ${jobData.execution.context.filesystem.max_file_size}\n`;
+        contextContent += `- Max File Size: ${jobData.execution.context.filesystem.max_file_size}\n`;
       }
       if (jobData.execution.context.filesystem.include_content !== undefined) {
         contextContent += `- Include Content: ${
@@ -199,10 +178,7 @@ export const JobDetails = ({
   }
 
   // Success Criteria
-  if (
-    jobData.success_criteria &&
-    Object.keys(jobData.success_criteria).length > 0
-  ) {
+  if (jobData.success_criteria && Object.keys(jobData.success_criteria).length > 0) {
     let criteriaContent = "";
     Object.entries(jobData.success_criteria).forEach(([key, value]) => {
       const valueStr = typeof value === "object" ? JSON.stringify(value) : String(value);
@@ -224,8 +200,7 @@ export const JobDetails = ({
       errorContent += `- Timeout: ${jobData.error_handling.timeout_seconds}s\n`;
     }
     if (jobData.error_handling.stage_failure_strategy) {
-      errorContent +=
-        `- Stage Failure Strategy: ${jobData.error_handling.stage_failure_strategy}\n`;
+      errorContent += `- Stage Failure Strategy: ${jobData.error_handling.stage_failure_strategy}\n`;
     }
     if (errorContent) {
       markdown = appendSection(markdown, "Error Handling", errorContent);
@@ -236,8 +211,7 @@ export const JobDetails = ({
   if (jobData.resources) {
     let resourcesContent = "";
     if (jobData.resources.estimated_duration_seconds) {
-      resourcesContent +=
-        `- Estimated Duration: ${jobData.resources.estimated_duration_seconds}s\n`;
+      resourcesContent += `- Estimated Duration: ${jobData.resources.estimated_duration_seconds}s\n`;
     }
     if (jobData.resources.max_memory_mb) {
       resourcesContent += `- Max Memory: ${jobData.resources.max_memory_mb}MB\n`;
@@ -246,11 +220,9 @@ export const JobDetails = ({
       jobData.resources.required_capabilities &&
       jobData.resources.required_capabilities.length > 0
     ) {
-      resourcesContent += `- Required Capabilities: ${
-        jobData.resources.required_capabilities.join(
-          ", ",
-        )
-      }\n`;
+      resourcesContent += `- Required Capabilities: ${jobData.resources.required_capabilities.join(
+        ", ",
+      )}\n`;
     }
     if (jobData.resources.concurrent_agent_limit) {
       resourcesContent += `- Concurrent Agent Limit: ${jobData.resources.concurrent_agent_limit}\n`;
@@ -274,10 +246,7 @@ export const JobDetails = ({
 
   return (
     <Box flexDirection="column" flexShrink={0}>
-      <MarkdownDisplay
-        markdown={markdown}
-        totalLines={markdown.split("\n").length}
-      />
+      <MarkdownDisplay markdown={markdown} totalLines={markdown.split("\n").length} />
     </Box>
   );
 };

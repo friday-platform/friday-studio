@@ -1,9 +1,9 @@
 // Set testing mode to disable file logging
 Deno.env.set("DENO_TESTING", "true");
 
+import { CoALAMemoryType } from "@atlas/memory";
 import { assertEquals, assertExists } from "@std/assert";
 import { InMemoryStorageAdapter } from "../../src/memory/in-memory.ts";
-import { CoALAMemoryType } from "@atlas/memory";
 
 Deno.test("InMemoryStorageAdapter - should store and retrieve data", async () => {
   const adapter = new InMemoryStorageAdapter();
@@ -23,13 +23,9 @@ Deno.test("InMemoryStorageAdapter - should store and retrieve data", async () =>
 Deno.test("InMemoryStorageAdapter - should store and retrieve data by type", async () => {
   const adapter = new InMemoryStorageAdapter();
 
-  const workingMemory = {
-    task1: { description: "Current task", priority: 1 },
-  };
+  const workingMemory = { task1: { description: "Current task", priority: 1 } };
 
-  const semanticMemory = {
-    fact1: { knowledge: "The sky is blue", confidence: 0.9 },
-  };
+  const semanticMemory = { fact1: { knowledge: "The sky is blue", confidence: 0.9 } };
 
   await adapter.commitByType("working", workingMemory);
   await adapter.commitByType("semantic", semanticMemory);

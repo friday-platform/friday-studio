@@ -1,7 +1,8 @@
+import { createAtlasClient, type paths } from "@atlas/oapi-client";
 import { Box, render, Text, useStdout } from "ink";
 import React from "react";
-import { createAtlasClient, type paths } from "@atlas/oapi-client";
-import { YargsInstance } from "../../utils/yargs.ts";
+import type { YargsInstance } from "../../utils/yargs.ts";
+
 // Note: avoid enum coupling here; API types may lag. Treat status as string.
 
 // Extract WorkspaceResponse type from OpenAPI generated types
@@ -18,11 +19,7 @@ export const aliases = ["ls"];
 
 export function builder(y: YargsInstance) {
   return y
-    .option("json", {
-      type: "boolean",
-      describe: "Output workspace list as JSON",
-      default: false,
-    })
+    .option("json", { type: "boolean", describe: "Output workspace list as JSON", default: false })
     .example("$0 workspace list", "List all registered workspaces")
     .example("$0 workspace list --json", "Export workspace list as JSON");
 }
@@ -45,9 +42,11 @@ export const handler = async (argv: ListArgs): Promise<void> => {
 
     // Render appropriate view based on output format
     const renderResult = render(
-      argv.json
-        ? <JsonOutput workspaces={workspaces} />
-        : <WorkspaceList registeredWorkspaces={workspaces} />,
+      argv.json ? (
+        <JsonOutput workspaces={workspaces} />
+      ) : (
+        <WorkspaceList registeredWorkspaces={workspaces} />
+      ),
     );
 
     unmount = renderResult.unmount;
@@ -64,10 +63,7 @@ export const handler = async (argv: ListArgs): Promise<void> => {
 
     // Provide helpful error message if daemon is not running
     const errorMessage = error instanceof Error ? error.message : String(error);
-    if (
-      errorMessage.includes("Failed to fetch") ||
-      errorMessage.includes("NetworkError")
-    ) {
+    if (errorMessage.includes("Failed to fetch") || errorMessage.includes("NetworkError")) {
       console.error(
         "Error: Unable to connect to Atlas daemon. Make sure it's running with 'atlas daemon start'",
       );
@@ -83,14 +79,7 @@ function JsonOutput({ workspaces }: { workspaces: WorkspaceResponse[] }) {
   const { write } = useStdout();
 
   React.useEffect(() => {
-    const output = JSON.stringify(
-      {
-        workspaces,
-        count: workspaces.length,
-      },
-      null,
-      2,
-    );
+    const output = JSON.stringify({ workspaces, count: workspaces.length }, null, 2);
     write(output);
   }, [workspaces, write]);
 
@@ -98,11 +87,7 @@ function JsonOutput({ workspaces }: { workspaces: WorkspaceResponse[] }) {
 }
 
 // Component for rendering workspace list
-function WorkspaceList({
-  registeredWorkspaces,
-}: {
-  registeredWorkspaces: WorkspaceResponse[];
-}) {
+function WorkspaceList({ registeredWorkspaces }: { registeredWorkspaces: WorkspaceResponse[] }) {
   const hasRegistered = registeredWorkspaces && registeredWorkspaces.length > 0;
 
   if (!hasRegistered) {
@@ -164,11 +149,8 @@ function WorkspaceList({
       {registeredWorkspaces.map((workspace, i) => {
         // Cast to our actual status type since OpenAPI types aren't regenerated yet
         const statusStr = String(workspace.status);
-        const statusColor = statusStr === "running"
-          ? "green"
-          : statusStr === "inactive"
-          ? "yellow"
-          : "gray";
+        const statusColor =
+          statusStr === "running" ? "green" : statusStr === "inactive" ? "yellow" : "gray";
 
         const runtimeDisplay = formatRuntimeStatus(workspace);
         const runtimeColor = statusStr === "running" ? "green" : "gray";

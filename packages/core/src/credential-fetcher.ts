@@ -1,5 +1,5 @@
-import { z } from "zod/v4";
 import { logger } from "@atlas/logger";
+import { z } from "zod/v4";
 import { getCredentialsApiUrl } from "./atlas-config.ts";
 
 // JWT payload schema
@@ -67,12 +67,12 @@ export class CredentialFetcher {
     const {
       atlasKey,
       apiUrl = getCredentialsApiUrl(),
-      retries = this.DEFAULT_RETRIES,
-      retryDelay = this.DEFAULT_RETRY_DELAY,
+      retries = CredentialFetcher.DEFAULT_RETRIES,
+      retryDelay = CredentialFetcher.DEFAULT_RETRY_DELAY,
     } = options;
 
     // Validate JWT before making request
-    const validation = this.validateJWT(atlasKey);
+    const validation = CredentialFetcher.validateJWT(atlasKey);
     if (!validation.valid) {
       throw new Error(validation.error);
     }
@@ -83,15 +83,12 @@ export class CredentialFetcher {
       try {
         const response = await fetch(apiUrl, {
           method: "POST",
-          headers: {
-            "Authorization": `Bearer ${atlasKey}`,
-            "Content-Type": "application/json",
-          },
+          headers: { Authorization: `Bearer ${atlasKey}`, "Content-Type": "application/json" },
           signal: AbortSignal.timeout(30000), // 30 second timeout
         });
 
         if (!response.ok) {
-          const errorMessage = this.getErrorMessage(response);
+          const errorMessage = CredentialFetcher.getErrorMessage(response);
           throw new Error(errorMessage);
         }
 
@@ -110,8 +107,10 @@ export class CredentialFetcher {
         // Don't retry on client errors (4xx)
         const errorMessage = error instanceof Error ? error.message : String(error);
         if (
-          errorMessage.includes("401") || errorMessage.includes("403") ||
-          errorMessage.includes("404") || errorMessage.includes("Invalid")
+          errorMessage.includes("401") ||
+          errorMessage.includes("403") ||
+          errorMessage.includes("404") ||
+          errorMessage.includes("Invalid")
         ) {
           throw error;
         }

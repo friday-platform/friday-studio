@@ -1,7 +1,7 @@
-import { daemonFactory } from "../../src/factory.ts";
-import { describeRoute, resolver, validator } from "hono-openapi";
-import { agentIdParamsSchema, agentMetadataSchema, errorResponseSchema } from "./schemas.ts";
 import { AgentRegistry } from "@atlas/core";
+import { describeRoute, resolver, validator } from "hono-openapi";
+import { daemonFactory } from "../../src/factory.ts";
+import { agentIdParamsSchema, agentMetadataSchema, errorResponseSchema } from "./schemas.ts";
 
 const getAgent = daemonFactory.createApp();
 
@@ -14,27 +14,15 @@ getAgent.get(
     responses: {
       200: {
         description: "Successfully retrieved agent",
-        content: {
-          "application/json": {
-            schema: resolver(agentMetadataSchema),
-          },
-        },
+        content: { "application/json": { schema: resolver(agentMetadataSchema) } },
       },
       404: {
         description: "Agent not found",
-        content: {
-          "application/json": {
-            schema: resolver(errorResponseSchema),
-          },
-        },
+        content: { "application/json": { schema: resolver(errorResponseSchema) } },
       },
       500: {
         description: "Internal server error",
-        content: {
-          "application/json": {
-            schema: resolver(errorResponseSchema),
-          },
-        },
+        content: { "application/json": { schema: resolver(errorResponseSchema) } },
       },
     },
   }),
@@ -54,9 +42,7 @@ getAgent.get(
       return c.json(agent.metadata);
     } catch (error) {
       return c.json(
-        {
-          error: `Failed to get agent: ${error instanceof Error ? error.message : String(error)}`,
-        },
+        { error: `Failed to get agent: ${error instanceof Error ? error.message : String(error)}` },
         500,
       );
     }

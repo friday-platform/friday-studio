@@ -1,9 +1,9 @@
+import type { AgentContext, StreamEvent } from "@atlas/agent-sdk";
+import { createLogger } from "@atlas/logger";
 import { assertEquals, assertExists } from "@std/assert";
 import { restore, stub } from "@std/testing/mock";
 import { AgentOrchestrator } from "../../src/orchestrator/agent-orchestrator.ts";
 import { HTTPStreamEmitter, MCPStreamEmitter } from "../../src/streaming/stream-emitters.ts";
-import { createLogger } from "@atlas/logger";
-import type { AgentContext, StreamEvent } from "@atlas/agent-sdk";
 
 /**
  * Tests streaming resilience - ensures Atlas continues working when streaming fails.
@@ -29,10 +29,7 @@ Deno.test("Streaming Error Recovery", async (t) => {
     });
 
     try {
-      const config = {
-        agentsServerUrl: "http://localhost:8081/mcp",
-        executionTimeout: 10000,
-      };
+      const config = { agentsServerUrl: "http://localhost:8081/mcp", executionTimeout: 10000 };
       const logger = createLogger({ level: "error" });
       const orchestrator = new AgentOrchestrator(config, logger);
       orchestrator.initialize();
@@ -75,9 +72,7 @@ Deno.test("Streaming Error Recovery", async (t) => {
 
   await t.step("should handle MCP notification errors gracefully", async () => {
     // MOCK: MCP server that rejects all notifications
-    const mockServer = {
-      notification: () => Promise.reject(new Error("MCP error")),
-    };
+    const mockServer = { notification: () => Promise.reject(new Error("MCP error")) };
 
     const logger = createLogger({ level: "error" });
     const emitter = new MCPStreamEmitter(
@@ -148,10 +143,7 @@ Deno.test("Streaming Error Recovery", async (t) => {
      * Tests that streaming captures partial events even when agent crashes.
      * In Atlas, supervisors need visibility into agent failures for debugging.
      */
-    const config = {
-      agentsServerUrl: "http://localhost:8081/mcp",
-      executionTimeout: 10000,
-    };
+    const config = { agentsServerUrl: "http://localhost:8081/mcp", executionTimeout: 10000 };
     const logger = createLogger({ level: "error" });
     const orchestrator = new AgentOrchestrator(config, logger);
     orchestrator.initialize();
@@ -236,10 +228,7 @@ Deno.test("Streaming Error Recovery", async (t) => {
      * Stress test: Multiple agents streaming concurrently with random failures.
      * Tests that streaming errors don't cause cascading failures in Atlas.
      */
-    const config = {
-      agentsServerUrl: "http://localhost:8081/mcp",
-      executionTimeout: 10000,
-    };
+    const config = { agentsServerUrl: "http://localhost:8081/mcp", executionTimeout: 10000 };
     const logger = createLogger({ level: "error" });
     const orchestrator = new AgentOrchestrator(config, logger);
     orchestrator.initialize();

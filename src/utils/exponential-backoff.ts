@@ -41,8 +41,7 @@ export function isOverloadError(error: unknown): boolean {
   const errorMessage = error instanceof Error ? error.message : String(error);
   const errorObj = error as { type?: string; message?: string };
 
-  return errorMessage.toLowerCase().includes("overload") ||
-    errorObj?.type === "overloaded_error";
+  return errorMessage.toLowerCase().includes("overload") || errorObj?.type === "overloaded_error";
 }
 
 /**
@@ -52,10 +51,12 @@ export function isRateLimitError(error: unknown): boolean {
   const errorMessage = error instanceof Error ? error.message : String(error);
   const errorObj = error as { type?: string; message?: string; status?: number };
 
-  return errorObj?.type === "rate_limit_error" ||
+  return (
+    errorObj?.type === "rate_limit_error" ||
     errorObj?.status === 429 ||
     errorMessage.toLowerCase().includes("rate limit") ||
-    errorMessage.toLowerCase().includes("429");
+    errorMessage.toLowerCase().includes("429")
+  );
 }
 
 /**
@@ -90,15 +91,11 @@ export function calculateBackoffDelay(
   attempt: number,
   options: Pick<ExponentialBackoffOptions, "initialDelay" | "maxDelay" | "multiplier"> = {},
 ): number {
-  const {
-    initialDelay = 1000,
-    maxDelay = 30000,
-    multiplier = 2,
-  } = options;
+  const { initialDelay = 1000, maxDelay = 30000, multiplier = 2 } = options;
 
   if (attempt <= 0) return 0;
 
-  const delay = initialDelay * Math.pow(multiplier, attempt - 1);
+  const delay = initialDelay * multiplier ** (attempt - 1);
   return Math.min(delay, maxDelay);
 }
 
@@ -146,9 +143,8 @@ export async function withExponentialBackoff<T>(
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       // Calculate delay for this attempt
-      const delay = attempt > 0
-        ? calculateBackoffDelay(attempt, { initialDelay, maxDelay, multiplier })
-        : 0;
+      const delay =
+        attempt > 0 ? calculateBackoffDelay(attempt, { initialDelay, maxDelay, multiplier }) : 0;
 
       // Wait if this is a retry
       if (delay > 0) {
@@ -192,10 +188,7 @@ export async function withExponentialBackoff<T>(
  * ```
  */
 export function createRetryWrapper(defaultOptions: ExponentialBackoffOptions) {
-  return <T>(
-    fn: () => Promise<T>,
-    overrideOptions?: ExponentialBackoffOptions,
-  ): Promise<T> => {
+  return <T>(fn: () => Promise<T>, overrideOptions?: ExponentialBackoffOptions): Promise<T> => {
     return withExponentialBackoff(fn, { ...defaultOptions, ...overrideOptions });
   };
 }

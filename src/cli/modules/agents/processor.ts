@@ -1,5 +1,5 @@
-import { type WorkspaceConfig } from "@atlas/config";
-import { type Agent } from "./agent-list-component.tsx";
+import type { WorkspaceConfig } from "@atlas/config";
+import type { Agent } from "./agent-list-component.tsx";
 
 // Transform workspace config agents into Agent array
 export function processAgentsFromConfig(config: WorkspaceConfig): Agent[] {
@@ -13,12 +13,7 @@ export function processAgentsFromConfig(config: WorkspaceConfig): Agent[] {
           status: "ready",
         };
       default:
-        return {
-          name: id,
-          type: agent.type,
-          model: "unknown",
-          status: "unknown",
-        };
+        return { name: id, type: agent.type, model: "unknown", status: "unknown" };
     }
   });
 }

@@ -1,11 +1,10 @@
-import React from "react";
-import { render } from "ink";
-import { Box, Text } from "ink";
-import { spinner } from "../../utils/prompts.tsx";
-import { YargsInstance } from "../../utils/yargs.ts";
-import { getAtlasClient } from "@atlas/client";
-import type { LibraryItemWithContent } from "@atlas/client";
 import process from "node:process";
+import type { LibraryItemWithContent } from "@atlas/client";
+import { getAtlasClient } from "@atlas/client";
+import { Box, render, Text } from "ink";
+import type React from "react";
+import { spinner } from "../../utils/prompts.tsx";
+import type { YargsInstance } from "../../utils/yargs.ts";
 
 interface GetArgs {
   id: string;
@@ -19,27 +18,15 @@ export const desc = "Get library item details";
 
 export function builder(y: YargsInstance) {
   return y
-    .positional("id", {
-      describe: "Library item ID",
-      type: "string",
-    })
+    .positional("id", { describe: "Library item ID", type: "string" })
     .option("content", {
       alias: "c",
       type: "boolean",
       description: "Include item content",
       default: false,
     })
-    .option("json", {
-      type: "boolean",
-      description: "Output as JSON",
-      default: false,
-    })
-    .option("port", {
-      alias: "p",
-      type: "number",
-      description: "Server port",
-      default: 8080,
-    });
+    .option("json", { type: "boolean", description: "Output as JSON", default: false })
+    .option("port", { alias: "p", type: "number", description: "Server port", default: 8080 });
 }
 
 // Type already imported from client
@@ -70,10 +57,7 @@ export async function handler(argv: GetArgs) {
 
         if (matchingItem) {
           // Try again with the full ID
-          itemDetail = await client.getLibraryItem(
-            matchingItem.id,
-            argv.content,
-          );
+          itemDetail = await client.getLibraryItem(matchingItem.id, argv.content);
         } else {
           throw error;
         }
@@ -90,17 +74,12 @@ export async function handler(argv: GetArgs) {
     }
 
     const { unmount } = render(
-      <ItemDetailDisplay
-        itemDetail={itemDetail}
-        includeContent={argv.content}
-      />,
+      <ItemDetailDisplay itemDetail={itemDetail} includeContent={argv.content} />,
     );
     setTimeout(() => unmount(), 100);
   } catch (error) {
     s.stop("Failed to fetch item");
-    console.error(
-      `Error: ${error instanceof Error ? error.message : String(error)}`,
-    );
+    console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
     process.exit(1);
   }
 }
@@ -110,10 +89,7 @@ interface ItemDetailDisplayProps {
   includeContent: boolean;
 }
 
-const ItemDetailDisplay: React.FC<ItemDetailDisplayProps> = ({
-  itemDetail,
-  includeContent,
-}) => {
+const ItemDetailDisplay: React.FC<ItemDetailDisplayProps> = ({ itemDetail, includeContent }) => {
   const { item } = itemDetail;
 
   const formatBytes = (bytes: number): string => {
@@ -121,7 +97,7 @@ const ItemDetailDisplay: React.FC<ItemDetailDisplayProps> = ({
     const k = 1024;
     const sizes = ["B", "KB", "MB", "GB"];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
+    return parseFloat((bytes / k ** i).toFixed(1)) + " " + sizes[i];
   };
 
   const formatDate = (dateString: string): string => {

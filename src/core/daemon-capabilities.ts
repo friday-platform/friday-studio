@@ -3,13 +3,13 @@
  * These are orthogonal to workspaces and handle daemon-level operations
  */
 
-import { z } from "zod/v4";
-import { ValidationError } from "../utils/errors.ts";
-import type { AtlasDaemon } from "../../apps/atlasd/src/atlas-daemon.ts";
-import { Tool } from "ai";
-import { AtlasLogger } from "@atlas/logger";
 import { getAtlasDaemonUrl } from "@atlas/atlasd";
 import { type TodoItem, TodoItemSchema } from "@atlas/config";
+import { AtlasLogger } from "@atlas/logger";
+import type { Tool } from "ai";
+import { z } from "zod/v4";
+import type { AtlasDaemon } from "../../apps/atlasd/src/atlas-daemon.ts";
+import { ValidationError } from "../utils/errors.ts";
 
 const ConversationMessageSchema = z.object({
   messageId: z.string().uuid(),
@@ -27,10 +27,10 @@ export class InMemoryConversationStorage {
   private conversations = new Map<string, ConversationMessage[]>();
 
   static getInstance(): InMemoryConversationStorage {
-    if (!this.instance) {
-      this.instance = new InMemoryConversationStorage();
+    if (!InMemoryConversationStorage.instance) {
+      InMemoryConversationStorage.instance = new InMemoryConversationStorage();
     }
-    return this.instance;
+    return InMemoryConversationStorage.instance;
   }
 
   getConversationHistory(streamId: string) {
@@ -54,9 +54,11 @@ export class InMemoryConversationStorage {
     return this.conversations.delete(streamId);
   }
 
-  listConversations(): Array<
-    { streamId: string; messageCount: number; lastMessage?: ConversationMessage }
-  > {
+  listConversations(): Array<{
+    streamId: string;
+    messageCount: number;
+    lastMessage?: ConversationMessage;
+  }> {
     const conversations = [];
     for (const [streamId, messages] of this.conversations.entries()) {
       conversations.push({
@@ -74,10 +76,10 @@ export class InMemoryTodoStorage {
   private todos = new Map<string, TodoItem[]>();
 
   static getInstance(): InMemoryTodoStorage {
-    if (!this.instance) {
-      this.instance = new InMemoryTodoStorage();
+    if (!InMemoryTodoStorage.instance) {
+      InMemoryTodoStorage.instance = new InMemoryTodoStorage();
     }
-    return this.instance;
+    return InMemoryTodoStorage.instance;
   }
 
   getTodos(streamId: string): TodoItem[] {
@@ -115,24 +117,30 @@ export interface DaemonExecutionContext {
   daemon: AtlasDaemon;
   conversationId?: string;
   streams: {
-    send: (streamId: string, event: {
-      type: string;
-      content: string;
-      metadata?: Record<string, unknown>;
-      conversationId?: string;
-    }) => Promise<void>;
+    send: (
+      streamId: string,
+      event: {
+        type: string;
+        content: string;
+        metadata?: Record<string, unknown>;
+        conversationId?: string;
+      },
+    ) => Promise<void>;
   };
 }
 
 // Helper function to create streams implementation
 export function createStreamsImplementation(): DaemonExecutionContext["streams"] {
   return {
-    send: async (streamId: string, event: {
-      type: string;
-      content: string;
-      metadata?: Record<string, unknown>;
-      conversationId?: string;
-    }) => {
+    send: async (
+      streamId: string,
+      event: {
+        type: string;
+        content: string;
+        metadata?: Record<string, unknown>;
+        conversationId?: string;
+      },
+    ) => {
       const messageId = crypto.randomUUID();
       const { type, content, metadata, conversationId } = event;
 
@@ -145,11 +153,7 @@ export function createStreamsImplementation(): DaemonExecutionContext["streams"]
 
         const chunkEvent = {
           type: "message_chunk",
-          data: {
-            content: currentContent,
-            partial: i < words.length - 1,
-            conversationId,
-          },
+          data: { content: currentContent, partial: i < words.length - 1, conversationId },
           timestamp: new Date().toISOString(),
           messageId,
           sessionId: streamId,
@@ -198,12 +202,7 @@ export function createStreamsImplementation(): DaemonExecutionContext["streams"]
       // Send completion event
       const completionEvent = {
         type: "message_complete",
-        data: {
-          messageId,
-          conversationId,
-          complete: true,
-          closeConnection: false,
-        },
+        data: { messageId, conversationId, complete: true, closeConnection: false },
         timestamp: new Date().toISOString(),
         messageId,
         sessionId: streamId,
@@ -236,25 +235,25 @@ export class DaemonCapabilityRegistry {
       component: "DaemonCapabilityRegistry",
       hasDaemon: !!daemon,
     });
-    this.daemonInstance = daemon;
+    DaemonCapabilityRegistry.daemonInstance = daemon;
     AtlasLogger.getInstance().debug("Daemon instance set successfully", {
       component: "DaemonCapabilityRegistry",
-      hasDaemonInstance: !!this.daemonInstance,
+      hasDaemonInstance: !!DaemonCapabilityRegistry.daemonInstance,
     });
   }
 
   static getDaemonInstance(): AtlasDaemon | null {
     AtlasLogger.getInstance().debug("Getting daemon instance", {
       component: "DaemonCapabilityRegistry",
-      hasDaemonInstance: !!this.daemonInstance,
+      hasDaemonInstance: !!DaemonCapabilityRegistry.daemonInstance,
     });
-    return this.daemonInstance;
+    return DaemonCapabilityRegistry.daemonInstance;
   }
 
   static initialize(): void {
-    if (this.initialized) return;
+    if (DaemonCapabilityRegistry.initialized) return;
 
-    this.registerCapability({
+    DaemonCapabilityRegistry.registerCapability({
       id: "stream_reply",
       name: "Stream Reply",
       description: "Send a streaming reply to a stream via SSE",
@@ -286,7 +285,7 @@ export class DaemonCapabilityRegistry {
       },
     });
 
-    this.registerCapability({
+    DaemonCapabilityRegistry.registerCapability({
       id: "conversation_storage",
       name: "Conversation Storage",
       description: "Manage conversation history using stream_id as key",
@@ -297,12 +296,18 @@ export class DaemonCapabilityRegistry {
           parameters: z.object({
             action: z.enum(["load_history", "save_message"]).describe("Action to perform"),
             stream_id: z.string().min(1).describe("Stream ID as the key for conversation history"),
-            message: z.object({
-              role: z.enum(["user", "assistant"]).describe("Role of the message sender"),
-              content: z.string().min(1).describe("Content of the message"),
-              userId: z.string().optional().describe("Optional user ID"),
-              metadata: z.record(z.string(), z.unknown()).optional().describe("Optional metadata"),
-            }).optional().describe("Message object for save_message action"),
+            message: z
+              .object({
+                role: z.enum(["user", "assistant"]).describe("Role of the message sender"),
+                content: z.string().min(1).describe("Content of the message"),
+                userId: z.string().optional().describe("Optional user ID"),
+                metadata: z
+                  .record(z.string(), z.unknown())
+                  .optional()
+                  .describe("Optional metadata"),
+              })
+              .optional()
+              .describe("Message object for save_message action"),
           }),
           execute: async (args) => {
             // Validation already handled by AI SDK
@@ -327,9 +332,10 @@ export class DaemonCapabilityRegistry {
                   success: true,
                   messages,
                   messageCount: messages.length,
-                  historyContext: messages.length > 0
-                    ? conversationStorage.formatHistoryForContext(messages)
-                    : "",
+                  historyContext:
+                    messages.length > 0
+                      ? conversationStorage.formatHistoryForContext(messages)
+                      : "",
                 };
               }
 
@@ -362,17 +368,10 @@ export class DaemonCapabilityRegistry {
                   `[conversation_storage] Saved ${message.role} message to stream ${stream_id}`,
                 );
 
-                return {
-                  success: true,
-                  messageId: messageObj.messageId,
-                  saved: true,
-                };
+                return { success: true, messageId: messageObj.messageId, saved: true };
               }
 
-              return {
-                success: false,
-                error: "Invalid action or missing message data",
-              };
+              return { success: false, error: "Invalid action or missing message data" };
             } catch (error) {
               AtlasLogger.getInstance().error(`[conversation_storage] Error:`, { error });
               return {
@@ -385,25 +384,25 @@ export class DaemonCapabilityRegistry {
       },
     });
 
-    this.initialized = true;
+    DaemonCapabilityRegistry.initialized = true;
   }
 
   static registerCapability(capability: DaemonCapability): void {
-    this.capabilities.set(capability.id, capability);
+    DaemonCapabilityRegistry.capabilities.set(capability.id, capability);
   }
 
   static getAllCapabilities(): DaemonCapability[] {
-    this.initialize();
-    return Array.from(this.capabilities.values());
+    DaemonCapabilityRegistry.initialize();
+    return Array.from(DaemonCapabilityRegistry.capabilities.values());
   }
 
   static getCapability(id: string): DaemonCapability | undefined {
-    this.initialize();
-    return this.capabilities.get(id);
+    DaemonCapabilityRegistry.initialize();
+    return DaemonCapabilityRegistry.capabilities.get(id);
   }
 
   static reset(): void {
-    this.capabilities.clear();
-    this.initialized = false;
+    DaemonCapabilityRegistry.capabilities.clear();
+    DaemonCapabilityRegistry.initialized = false;
   }
 }

@@ -1,5 +1,5 @@
-import { z } from "zod/v4";
 import { tool } from "ai";
+import { z } from "zod/v4";
 
 /**
  * Environment variable save tool - Save environment variables to .env file
@@ -16,9 +16,7 @@ export const atlas_save_env_var = tool({
         ),
       value: z
         .union([z.string(), z.number(), z.boolean()])
-        .describe(
-          "Environment variable value. Will be converted to string for storage.",
-        ),
+        .describe("Environment variable value. Will be converted to string for storage."),
     })
     .refine((data) => {
       // Validate environment variable key format
@@ -68,10 +66,7 @@ export const atlas_save_env_var = tool({
 
       // Add new key if not found
       if (!keyFound) {
-        if (
-          updatedLines.length > 0 &&
-          updatedLines[updatedLines.length - 1] !== ""
-        ) {
+        if (updatedLines.length > 0 && updatedLines[updatedLines.length - 1] !== "") {
           updatedLines.push(""); // Add blank line before new env var
         }
         updatedLines.push(`${key}=${stringValue}`);

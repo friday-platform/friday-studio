@@ -14,9 +14,7 @@ Deno.test("HTTP Signal Configuration Schema - Basic validation", async (t) => {
     const config = {
       description: "Test HTTP signal",
       provider: "http",
-      config: {
-        path: "/webhook/deploy",
-      },
+      config: { path: "/webhook/deploy" },
     };
 
     const result = HttpSignalConfigSchema.safeParse(config);
@@ -32,9 +30,7 @@ Deno.test("HTTP Signal Configuration Schema - Basic validation", async (t) => {
     const config = {
       description: "Test signal",
       provider: "invalid", // Invalid provider
-      config: {
-        path: "/webhook/deploy",
-      },
+      config: { path: "/webhook/deploy" },
     };
 
     const result = HttpSignalConfigSchema.safeParse(config);
@@ -78,10 +74,7 @@ Deno.test("HTTP Signal Configuration Schema - Timeout validation", async (t) => 
     const config = {
       description: "Test HTTP signal",
       provider: "http",
-      config: {
-        path: "/webhook/deploy",
-        timeout: "30s",
-      },
+      config: { path: "/webhook/deploy", timeout: "30s" },
     };
 
     const result = HttpSignalConfigSchema.safeParse(config);
@@ -96,9 +89,7 @@ Deno.test("HTTP Signal Configuration Schema - Timeout validation", async (t) => 
     const config = {
       description: "Test HTTP signal",
       provider: "http",
-      config: {
-        path: "/webhook/status",
-      },
+      config: { path: "/webhook/status" },
     };
 
     const result = HttpSignalConfigSchema.safeParse(config);
@@ -143,15 +134,10 @@ Deno.test("HTTP Signal Configuration Schema - Schema validation", async (t) => {
     const config = {
       description: "Test HTTP signal",
       provider: "http",
-      config: {
-        path: "/webhook/deploy",
-      },
+      config: { path: "/webhook/deploy" },
       schema: {
         type: "object",
-        properties: {
-          environment: { type: "string" },
-          force: { type: "boolean" },
-        },
+        properties: { environment: { type: "string" }, force: { type: "boolean" } },
         required: ["environment"],
       },
     };
@@ -169,9 +155,7 @@ Deno.test("HTTP Signal Configuration Schema - Schema validation", async (t) => {
     const config = {
       description: "Test HTTP signal",
       provider: "http",
-      config: {
-        path: "/webhook/status",
-      },
+      config: { path: "/webhook/status" },
     };
 
     const result = HttpSignalConfigSchema.safeParse(config);
@@ -186,9 +170,7 @@ Deno.test("HTTP Signal Configuration Schema - Schema validation", async (t) => {
     const config = {
       description: "Test HTTP signal",
       provider: "http",
-      config: {
-        path: "/webhook/test",
-      },
+      config: { path: "/webhook/test" },
       schema: {
         type: "object",
         properties: {
@@ -208,9 +190,7 @@ Deno.test("HTTP Signal Configuration Schema - Schema validation", async (t) => {
     const config = {
       description: "Test HTTP signal",
       provider: "http",
-      config: {
-        path: "/webhook/test",
-      },
+      config: { path: "/webhook/test" },
       schema: "invalid-schema", // Should be object
     };
 
@@ -222,9 +202,7 @@ Deno.test("HTTP Signal Configuration Schema - Schema validation", async (t) => {
     const config = {
       description: "Test HTTP signal",
       provider: "http",
-      config: {
-        path: "/webhook/deploy",
-      },
+      config: { path: "/webhook/deploy" },
       schema: ["invalid", "array", "schema"], // Should be object
     };
 
@@ -233,78 +211,57 @@ Deno.test("HTTP Signal Configuration Schema - Schema validation", async (t) => {
   });
 });
 
-Deno.test(
-  "HTTP Signal Configuration Schema - Complex configurations",
-  async (t) => {
-    await t.step("should validate complete HTTP configuration", () => {
-      const config = {
-        description: "Complete HTTP deployment signal",
-        provider: "http",
-        config: {
-          path: "/webhook/deploy",
-          timeout: "30s",
-        },
-        schema: {
-          type: "object",
-          properties: {
-            environment: { type: "string" },
-            force: { type: "boolean" },
-          },
-          required: ["environment"],
-        },
-      };
+Deno.test("HTTP Signal Configuration Schema - Complex configurations", async (t) => {
+  await t.step("should validate complete HTTP configuration", () => {
+    const config = {
+      description: "Complete HTTP deployment signal",
+      provider: "http",
+      config: { path: "/webhook/deploy", timeout: "30s" },
+      schema: {
+        type: "object",
+        properties: { environment: { type: "string" }, force: { type: "boolean" } },
+        required: ["environment"],
+      },
+    };
+
+    const result = HttpSignalConfigSchema.safeParse(config);
+    assertEquals(result.success, true);
+
+    if (result.success) {
+      assertEquals(result.data.provider, "http");
+      assertEquals(result.data.config.path, "/webhook/deploy");
+      assertEquals(result.data.config.timeout, "30s");
+      assertEquals(result.data.schema?.type, "object");
+      assertEquals(result.data.schema?.required?.length, 1);
+    }
+  });
+
+  await t.step("should reject extra fields in strict mode", () => {
+    const config = {
+      description: "Test HTTP signal",
+      provider: "http",
+      config: { path: "/webhook/deploy" },
+      invalidExtraField: "should-not-be-allowed", // Extra field
+    };
+
+    const result = HttpSignalConfigSchema.safeParse(config);
+    assertEquals(result.success, false);
+  });
+
+  await t.step("should validate path naming conventions", () => {
+    const validPaths = [
+      "/webhook/deploy",
+      "/api/v1/build-and-deploy",
+      "/hooks/k8s-restart",
+      "/trigger/cleanup_old_logs",
+      "/status",
+    ];
+
+    validPaths.forEach((path) => {
+      const config = { description: "Test HTTP signal", provider: "http", config: { path } };
 
       const result = HttpSignalConfigSchema.safeParse(config);
-      assertEquals(result.success, true);
-
-      if (result.success) {
-        assertEquals(result.data.provider, "http");
-        assertEquals(result.data.config.path, "/webhook/deploy");
-        assertEquals(result.data.config.timeout, "30s");
-        assertEquals(result.data.schema?.type, "object");
-        assertEquals(result.data.schema?.required?.length, 1);
-      }
+      assertEquals(result.success, true, `Path '${path}' should be valid`);
     });
-
-    await t.step("should reject extra fields in strict mode", () => {
-      const config = {
-        description: "Test HTTP signal",
-        provider: "http",
-        config: {
-          path: "/webhook/deploy",
-        },
-        invalidExtraField: "should-not-be-allowed", // Extra field
-      };
-
-      const result = HttpSignalConfigSchema.safeParse(config);
-      assertEquals(result.success, false);
-    });
-
-    await t.step("should validate path naming conventions", () => {
-      const validPaths = [
-        "/webhook/deploy",
-        "/api/v1/build-and-deploy",
-        "/hooks/k8s-restart",
-        "/trigger/cleanup_old_logs",
-        "/status",
-      ];
-
-      validPaths.forEach((path) => {
-        const config = {
-          description: "Test HTTP signal",
-          provider: "http",
-          config: {
-            path,
-          },
-        };
-
-        const result = HttpSignalConfigSchema.safeParse(config);
-        assertEquals(
-          result.success,
-          true,
-          `Path '${path}' should be valid`,
-        );
-      });
-    });
-  },
-);
+  });
+});

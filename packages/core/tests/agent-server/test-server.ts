@@ -5,8 +5,8 @@
 
 import { AtlasAgentsMCPServer } from "../../src/agent-server/server.ts";
 import type { AgentServerDependencies } from "../../src/agent-server/types.ts";
-import { createMockContextBuilder } from "./test-helpers.ts";
 import { TestAgentExecutionManager } from "./test-agent-execution-manager.ts";
+import { createMockContextBuilder } from "./test-helpers.ts";
 
 export class TestAtlasAgentsMCPServer extends AtlasAgentsMCPServer {
   private testExecutionManager: TestAgentExecutionManager;

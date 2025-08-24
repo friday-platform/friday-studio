@@ -1,11 +1,11 @@
+import { ConfigLoader } from "@atlas/config";
+import { FilesystemConfigAdapter } from "@atlas/storage";
 import { Box, render, Text } from "ink";
 import {
   checkDaemonRunning,
   createDaemonNotRunningError,
   getDaemonClient,
 } from "../../utils/daemon-client.ts";
-import { ConfigLoader } from "@atlas/config";
-import { FilesystemConfigAdapter } from "@atlas/storage";
 
 interface HistoryArgs {
   json?: boolean;
@@ -19,21 +19,9 @@ export const desc = "Show signal trigger history";
 export const aliases = ["log", "hist"];
 
 export const builder = {
-  json: {
-    type: "boolean" as const,
-    describe: "Output history as JSON",
-    default: false,
-  },
-  workspace: {
-    type: "string" as const,
-    alias: "w",
-    describe: "Workspace ID or name",
-  },
-  signal: {
-    type: "string" as const,
-    alias: "s",
-    describe: "Filter by specific signal name",
-  },
+  json: { type: "boolean" as const, describe: "Output history as JSON", default: false },
+  workspace: { type: "string" as const, alias: "w", describe: "Workspace ID or name" },
+  signal: { type: "string" as const, alias: "s", describe: "Filter by specific signal name" },
   limit: {
     type: "number" as const,
     alias: "n",
@@ -106,11 +94,7 @@ export const handler = async (argv: HistoryArgs): Promise<void> => {
     // TODO: Implement actual signal history retrieval from daemon API
     // For now, show placeholder message but use daemon-resolved workspace info
     const historyData = {
-      workspace: {
-        id: workspaceId,
-        name: workspaceName,
-        path: workspacePath,
-      },
+      workspace: { id: workspaceId, name: workspaceName, path: workspacePath },
       filter: argv.signal,
       limit: argv.limit,
       entries: [],
@@ -129,20 +113,14 @@ export const handler = async (argv: HistoryArgs): Promise<void> => {
       }, 100);
     }
   } catch (error) {
-    console.error(
-      `Error: ${error instanceof Error ? error.message : String(error)}`,
-    );
+    console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
     Deno.exit(1);
   }
 };
 
 // Component that renders the signal history
 interface HistoryData {
-  workspace: {
-    id: string;
-    name: string;
-    path: string;
-  };
+  workspace: { id: string; name: string; path: string };
   filter?: string;
   limit?: number;
   entries: unknown[];
@@ -155,9 +133,7 @@ function SignalHistoryCommand({ data }: { data: HistoryData }) {
       <Text bold color="cyan">
         Signal History - {data.workspace.name}
       </Text>
-      <Text color="gray">
-        ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-      </Text>
+      <Text color="gray">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</Text>
       <Text color="yellow">{data.message}</Text>
       <Text></Text>
       <Text color="gray">When implemented, this will show:</Text>

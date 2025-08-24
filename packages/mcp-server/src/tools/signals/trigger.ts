@@ -3,9 +3,9 @@
  * Triggers workspace signals through the daemon API
  */
 
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { ToolContext } from "../types.ts";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { createSuccessResponse } from "../types.ts";
 
 export function registerSignalsTriggerTool(server: McpServer, ctx: ToolContext) {
@@ -17,9 +17,10 @@ export function registerSignalsTriggerTool(server: McpServer, ctx: ToolContext) 
       inputSchema: {
         workspaceId: z.string().describe("Workspace ID"),
         signalName: z.string().describe("Signal name to trigger"),
-        payload: z.record(z.string(), z.unknown()).optional().describe(
-          "Signal payload data used for job routing and agent input",
-        ),
+        payload: z
+          .record(z.string(), z.unknown())
+          .optional()
+          .describe("Signal payload data used for job routing and agent input"),
       },
     },
     ({ workspaceId, signalName, payload }) => {
@@ -29,16 +30,11 @@ export function registerSignalsTriggerTool(server: McpServer, ctx: ToolContext) 
        * TEMPORARILY DISABLED WHILE TRACKING DOWN HANGING PROMISE.
        */
       try {
-        fetch(
-          `${ctx.daemonUrl}/api/workspaces/${workspaceId}/signals/${signalName}`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify(payload || {}),
-          },
-        );
+        fetch(`${ctx.daemonUrl}/api/workspaces/${workspaceId}/signals/${signalName}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload || {}),
+        });
 
         // if (!response.ok) {
         //   const errorData = await response.json().catch(() => ({}));

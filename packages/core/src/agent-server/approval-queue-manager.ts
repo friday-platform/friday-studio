@@ -22,13 +22,13 @@ import type {
   AtlasAgent,
   AwaitingSupervisorDecision,
 } from "@atlas/agent-sdk";
+import type { Logger } from "@atlas/logger";
+import type { CoALAMemoryManager } from "@atlas/memory";
+import { createActor, type Snapshot } from "xstate";
 import {
   type AgentExecutionMachineActor,
   createAgentExecutionMachine,
 } from "./agent-execution-machine.ts";
-import { CoALAMemoryManager } from "@atlas/memory";
-import type { Logger } from "@atlas/logger";
-import { createActor, type Snapshot } from "xstate";
 
 /**
  * Information about a suspended agent execution awaiting approval
@@ -93,10 +93,7 @@ export class ApprovalQueueManager {
    * Suspend an agent execution that's requesting approval.
    * Captures the current state for later restoration.
    */
-  suspendExecution(
-    actor: AgentExecutionMachineActor,
-    error: AwaitingSupervisorDecision,
-  ): void {
+  suspendExecution(actor: AgentExecutionMachineActor, error: AwaitingSupervisorDecision): void {
     // Capture the actor's state before stopping it
     const snapshot = actor.getPersistedSnapshot();
     const currentSnapshot = actor.getSnapshot();
@@ -114,10 +111,7 @@ export class ApprovalQueueManager {
     // Stop the actor - it's now suspended
     actor.stop();
 
-    this.logger.info("Suspended agent", {
-      agentId: error.agentId,
-      approvalId: error.approvalId,
-    });
+    this.logger.info("Suspended agent", { agentId: error.agentId, approvalId: error.approvalId });
   }
 
   /**
@@ -135,10 +129,7 @@ export class ApprovalQueueManager {
       return Promise.resolve(null);
     }
 
-    this.logger.info("Resuming agent with decision", {
-      agentId: suspended.agentId,
-      decision,
-    });
+    this.logger.info("Resuming agent with decision", { agentId: suspended.agentId, decision });
 
     // Recreate the state machine and restore from snapshot
     const machine = createAgentExecutionMachine(
@@ -148,17 +139,11 @@ export class ApprovalQueueManager {
       this.logger,
     );
 
-    const actor = createActor(machine, {
-      snapshot: suspended.snapshot,
-    });
+    const actor = createActor(machine, { snapshot: suspended.snapshot });
 
     // Start the actor and send the approval decision
     actor.start();
-    actor.send({
-      type: "RESUME_WITH_APPROVAL",
-      approvalId,
-      decision,
-    });
+    actor.send({ type: "RESUME_WITH_APPROVAL", approvalId, decision });
 
     // Remove from queue
     this.suspendedExecutions.delete(approvalId);
@@ -241,7 +226,8 @@ export class ApprovalQueueManager {
    * Remove expired approvals based on age.
    * Returns the number of approvals removed.
    */
-  cleanupExpiredApprovals(maxAgeMs: number = 3600000): number { // 1 hour default
+  cleanupExpiredApprovals(maxAgeMs: number = 3600000): number {
+    // 1 hour default
     const now = Date.now();
     let removed = 0;
 

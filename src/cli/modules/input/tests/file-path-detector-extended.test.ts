@@ -39,36 +39,11 @@ C:\\Windows\\System32\\config.sys
 
 Deno.test("createFileAttachmentPlaceholder - creates proper placeholders", () => {
   const testCases = [
-    {
-      path: "/Users/dwoolf/report.pdf",
-      id: 1,
-      os: "darwin" as const,
-      expected: "[#1 report.pdf]",
-    },
-    {
-      path: "/Users/dwoolf/Documents",
-      id: 2,
-      os: "darwin" as const,
-      expected: "[#2 Documents/]",
-    },
-    {
-      path: "C:\\Users\\file.txt",
-      id: 3,
-      os: "windows" as const,
-      expected: "[#3 file.txt]",
-    },
-    {
-      path: "C:\\Users\\Desktop",
-      id: 4,
-      os: "windows" as const,
-      expected: "[#4 Desktop\\]",
-    },
-    {
-      path: "/Users/dwoolf/Projects/atlas/",
-      id: 5,
-      os: "linux" as const,
-      expected: "[#5 atlas/]",
-    },
+    { path: "/Users/dwoolf/report.pdf", id: 1, os: "darwin" as const, expected: "[#1 report.pdf]" },
+    { path: "/Users/dwoolf/Documents", id: 2, os: "darwin" as const, expected: "[#2 Documents/]" },
+    { path: "C:\\Users\\file.txt", id: 3, os: "windows" as const, expected: "[#3 file.txt]" },
+    { path: "C:\\Users\\Desktop", id: 4, os: "windows" as const, expected: "[#4 Desktop\\]" },
+    { path: "/Users/dwoolf/Projects/atlas/", id: 5, os: "linux" as const, expected: "[#5 atlas/]" },
   ];
 
   testCases.forEach(({ path, id, os, expected }) => {
@@ -150,12 +125,7 @@ Deno.test("createFileAttachmentPlaceholder - handles dotfiles correctly", () => 
       os: "darwin" as const,
       expected: "[#1 .gitignore/]", // No extension, treated as directory
     },
-    {
-      path: "/Users/dwoolf/.config",
-      id: 2,
-      os: "darwin" as const,
-      expected: "[#2 .config/]",
-    },
+    { path: "/Users/dwoolf/.config", id: 2, os: "darwin" as const, expected: "[#2 .config/]" },
     {
       path: "/Users/dwoolf/.env.local",
       id: 3,

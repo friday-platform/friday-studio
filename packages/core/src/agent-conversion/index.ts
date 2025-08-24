@@ -8,11 +8,11 @@
  */
 
 import type { AtlasAgent } from "@atlas/agent-sdk";
-import type { YAMLAgentDefinition } from "./yaml/schema.ts";
 import type { LLMAgentConfig } from "@atlas/config";
 import type { Logger } from "@atlas/logger";
-import { convertYAMLToAgent } from "./from-yaml.ts";
 import { convertLLMToAgent } from "./from-llm.ts";
+import { convertYAMLToAgent } from "./from-yaml.ts";
+import type { YAMLAgentDefinition } from "./yaml/schema.ts";
 
 /**
  * Convert parsed YAML definition to AtlasAgent.
@@ -34,8 +34,8 @@ export function convertLLMAgentToSDK(
   return convertLLMToAgent(config, agentId, logger);
 }
 
-export { convertYAMLToAgent } from "./from-yaml.ts";
-export type { WrappedAgent, WrappedAgentResult } from "./from-llm.ts";
-export type { YAMLAgentDefinition } from "./yaml/schema.ts";
 export type { LLMAgentConfig } from "@atlas/config";
+export type { WrappedAgent, WrappedAgentResult } from "./from-llm.ts";
+export { convertYAMLToAgent } from "./from-yaml.ts";
 export { parseYAMLAgentContent } from "./yaml/parser.ts";
+export type { YAMLAgentDefinition } from "./yaml/schema.ts";

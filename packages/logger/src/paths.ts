@@ -18,7 +18,7 @@ function isSystemService(): boolean {
   }
 
   try {
-    // @ts-ignore - userInfo is available in some Deno versions
+    // @ts-expect-error - userInfo is available in some Deno versions
     const userInfo = Deno.userInfo?.();
     if (userInfo?.username === "atlas") {
       return true;

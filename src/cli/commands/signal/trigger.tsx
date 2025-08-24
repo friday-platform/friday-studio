@@ -1,7 +1,7 @@
-import { confirm, isCancel, text } from "../../utils/prompts.tsx";
-import { errorOutput } from "../../utils/output.ts";
 import { batchTriggerSignal, validateSignalPayload } from "../../modules/signals/trigger.ts";
-import { YargsInstance } from "../../utils/yargs.ts";
+import { errorOutput } from "../../utils/output.ts";
+import { confirm, isCancel, text } from "../../utils/prompts.tsx";
+import type { YargsInstance } from "../../utils/yargs.ts";
 
 interface TriggerArgs {
   name: string;
@@ -19,16 +19,8 @@ export const aliases = ["fire", "send"];
 
 export function builder(y: YargsInstance) {
   return y
-    .positional("name", {
-      type: "string",
-      describe: "Signal name to trigger",
-      demandOption: true,
-    })
-    .option("data", {
-      type: "string",
-      alias: "d",
-      describe: "JSON payload data for the signal",
-    })
+    .positional("name", { type: "string", describe: "Signal name to trigger", demandOption: true })
+    .option("data", { type: "string", alias: "d", describe: "JSON payload data for the signal" })
     .option("port", {
       type: "number",
       alias: "p",
@@ -51,48 +43,21 @@ export function builder(y: YargsInstance) {
       type: "string",
       alias: "x",
       describe: "Workspace ID(s) or name(s) to exclude (comma-separated)",
-      coerce: (value: string) => value ? value.split(",").map((v) => v.trim()) : [],
+      coerce: (value: string) => (value ? value.split(",").map((v) => v.trim()) : []),
     })
-    .option("json", {
-      type: "boolean",
-      describe: "Output trigger result as JSON",
-      default: false,
-    })
-    .example(
-      "$0 signal trigger manual",
-      "Trigger 'manual' signal interactively",
-    )
-    .example(
-      '$0 signal trigger webhook --data \'{"user":"john"}\'',
-      "Trigger with JSON data",
-    )
-    .example(
-      "$0 sig fire deploy --workspace prod",
-      "Trigger in specific workspace",
-    )
-    .example(
-      "$0 signal trigger deploy --all",
-      "Trigger on all running workspaces",
-    )
-    .example(
-      "$0 signal trigger test --all --exclude dev",
-      "Trigger on all except dev workspace",
-    )
-    .example(
-      "$0 signal trigger refresh --workspace prod,staging",
-      "Trigger on multiple workspaces",
-    )
-    .example(
-      "$0 signal trigger test --json",
-      "Trigger and output result as JSON",
-    )
+    .option("json", { type: "boolean", describe: "Output trigger result as JSON", default: false })
+    .example("$0 signal trigger manual", "Trigger 'manual' signal interactively")
+    .example('$0 signal trigger webhook --data \'{"user":"john"}\'', "Trigger with JSON data")
+    .example("$0 sig fire deploy --workspace prod", "Trigger in specific workspace")
+    .example("$0 signal trigger deploy --all", "Trigger on all running workspaces")
+    .example("$0 signal trigger test --all --exclude dev", "Trigger on all except dev workspace")
+    .example("$0 signal trigger refresh --workspace prod,staging", "Trigger on multiple workspaces")
+    .example("$0 signal trigger test --json", "Trigger and output result as JSON")
     .help()
     .alias("help", "h");
 }
 
-async function getSignalPayload(
-  args: TriggerArgs,
-): Promise<Record<string, unknown>> {
+async function getSignalPayload(args: TriggerArgs): Promise<Record<string, unknown>> {
   let payload: Record<string, unknown> = {};
 
   if (args.data) {
@@ -142,11 +107,15 @@ export const handler = async (argv: TriggerArgs): Promise<void> => {
 
     // Prepare workspace targeting options
     const workspaceIds = argv.workspace
-      ? Array.isArray(argv.workspace) ? argv.workspace : [argv.workspace]
+      ? Array.isArray(argv.workspace)
+        ? argv.workspace
+        : [argv.workspace]
       : undefined;
 
     const exclude = argv.exclude
-      ? Array.isArray(argv.exclude) ? argv.exclude : [argv.exclude]
+      ? Array.isArray(argv.exclude)
+        ? argv.exclude
+        : [argv.exclude]
       : undefined;
 
     // Trigger signal using abstracted function
@@ -163,9 +132,7 @@ export const handler = async (argv: TriggerArgs): Promise<void> => {
       console.log(JSON.stringify(batchResult, null, 2));
     } else {
       const { results } = batchResult;
-      console.log(
-        `\n✨ Signal '${argv.name}' triggered on ${results.length} workspace(s)\n`,
-      );
+      console.log(`\n✨ Signal '${argv.name}' triggered on ${results.length} workspace(s)\n`);
 
       const successful = results.filter((r) => r.success);
       const failed = results.filter((r) => !r.success);

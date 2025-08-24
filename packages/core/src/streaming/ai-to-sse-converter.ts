@@ -5,7 +5,6 @@
  * to the SSE event format expected by the message buffer in the CLI.
  */
 
-import type { TextStreamPart, ToolSet } from "ai";
 import type {
   ErrorEvent,
   FinishEvent,
@@ -15,17 +14,12 @@ import type {
   ThinkingEvent,
   ToolCallEvent,
 } from "@atlas/config";
+import type { TextStreamPart, ToolSet } from "ai";
 
 // Track unique IDs for streaming events that share the same ID
 let currentStreamId: string | undefined;
 
-type NormalizedType =
-  | "text"
-  | "reasoning"
-  | "tool_call"
-  | "tool_result"
-  | "finish"
-  | "error";
+type NormalizedType = "text" | "reasoning" | "tool_call" | "tool_result" | "finish" | "error";
 
 interface TextChunk {
   type: "text";
@@ -80,9 +74,7 @@ function normalizeType(type?: string): NormalizedType | undefined {
   return undefined;
 }
 
-function toNormalizedChunk(
-  part: TextStreamPart<ToolSet>,
-): NormalizedChunk | undefined {
+function toNormalizedChunk(part: TextStreamPart<ToolSet>): NormalizedChunk | undefined {
   const anyPart = part as unknown as Record<string, unknown> & {
     type?: string;
     text?: unknown;
@@ -223,9 +215,7 @@ export function createRequestEvent(content: string): RequestEvent {
   return {
     id: crypto.randomUUID(),
     type: "request",
-    data: {
-      content,
-    },
+    data: { content },
     timestamp: new Date().toISOString(),
   };
 }

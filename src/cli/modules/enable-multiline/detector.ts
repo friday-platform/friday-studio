@@ -2,7 +2,7 @@
  * Terminal detection logic
  */
 
-import { TerminalContext, TerminalInfo } from "./types.ts";
+import type { TerminalContext, TerminalInfo } from "./types.ts";
 import { execCommand, fileExists, getHomeDir } from "./utils.ts";
 
 /**
@@ -15,8 +15,7 @@ export async function detectTerminal(): Promise<TerminalInfo> {
       type: "unknown",
       isSupported: false,
       confidence: "high",
-      detectionMethod:
-        `Platform ${Deno.build.os} is not supported - only macOS (darwin) is supported`,
+      detectionMethod: `Platform ${Deno.build.os} is not supported - only macOS (darwin) is supported`,
     };
   }
 
@@ -45,10 +44,7 @@ export async function detectTerminal(): Promise<TerminalInfo> {
   // Method 2: Terminal-specific environment variables
 
   // iTerm2 detection via alternative env vars
-  if (
-    Deno.env.get("LC_TERMINAL") === "iTerm2" ||
-    Deno.env.get("ITERM_SESSION_ID")
-  ) {
+  if (Deno.env.get("LC_TERMINAL") === "iTerm2" || Deno.env.get("ITERM_SESSION_ID")) {
     return {
       type: "iTerm.app",
       isSupported: true,
@@ -112,12 +108,7 @@ async function detectViaProcessTree(): Promise<TerminalInfo | null> {
     if (!ppid) return null;
 
     // Use ps to get process tree
-    const { stdout } = await execCommand("ps", [
-      "-p",
-      String(ppid),
-      "-o",
-      "comm=",
-    ]);
+    const { stdout } = await execCommand("ps", ["-p", String(ppid), "-o", "comm="]);
 
     const processName = stdout.trim();
 
@@ -191,12 +182,7 @@ async function detectViaProcessTree(): Promise<TerminalInfo | null> {
  */
 async function getParentProcess(pid: number): Promise<string | null> {
   try {
-    const { stdout } = await execCommand("ps", [
-      "-p",
-      String(pid),
-      "-o",
-      "ppid=,comm=",
-    ]);
+    const { stdout } = await execCommand("ps", ["-p", String(pid), "-o", "ppid=,comm="]);
 
     const output = stdout.trim();
     const [, comm] = output.split(/\s+/, 2);
@@ -345,12 +331,5 @@ export async function getTerminalContext(): Promise<TerminalContext> {
     warnings.push("Docker container detected - terminal setup may not persist");
   }
 
-  return {
-    terminal,
-    isSSH,
-    isTmux,
-    isScreen,
-    isDocker,
-    warnings,
-  };
+  return { terminal, isSSH, isTmux, isScreen, isDocker, warnings };
 }

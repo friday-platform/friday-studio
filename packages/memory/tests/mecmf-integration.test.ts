@@ -6,6 +6,7 @@
  */
 
 import { assertEquals, assertExists, assertGreater } from "@std/assert";
+import type { IAtlasScope } from "../../../src/types/core.ts";
 import {
   createConversationContext,
   MECMFConstants,
@@ -15,7 +16,6 @@ import {
 } from "../src/mecmf.ts";
 import { createMemoryClassifier } from "../src/memory-classifier.ts";
 import { createTokenBudgetManager } from "../src/token-budget-manager.ts";
-import type { IAtlasScope } from "../../../src/types/core.ts";
 
 // Mock Atlas scope for testing
 const mockScope: IAtlasScope = {
@@ -124,8 +124,11 @@ Deno.test("MECMF Constants and Configuration", () => {
 
   // Verify token allocations sum to 1.0
   const allocations = MECMFConstants.DEFAULT_TOKEN_ALLOCATION;
-  const total = allocations.WORKING_MEMORY + allocations.PROCEDURAL_MEMORY +
-    allocations.SEMANTIC_MEMORY + allocations.EPISODIC_MEMORY;
+  const total =
+    allocations.WORKING_MEMORY +
+    allocations.PROCEDURAL_MEMORY +
+    allocations.SEMANTIC_MEMORY +
+    allocations.EPISODIC_MEMORY;
   assertEquals(total, 1.0);
 
   // Verify vector search configuration

@@ -19,12 +19,8 @@ export function customFailHandler(msg: string, err: Error | null): void {
       const denoArgs = Deno.args.filter((arg) => !arg.startsWith("-"));
       const commandPath = denoArgs.join(" ");
 
-      console.error(
-        `Error: Missing required argument for 'atlas ${commandPath}'`,
-      );
-      console.error(
-        `\nRun 'atlas ${commandPath} --help' for usage information.`,
-      );
+      console.error(`Error: Missing required argument for 'atlas ${commandPath}'`);
+      console.error(`\nRun 'atlas ${commandPath} --help' for usage information.`);
       Deno.exit(1);
     }
   }
@@ -60,25 +56,14 @@ export function customFailHandler(msg: string, err: Error | null): void {
         const mainCommand = denoArgs[0];
         const subCommand = denoArgs[1];
 
-        if (
-          mainCommand &&
-          isValidCommand(mainCommand) &&
-          SUBCOMMANDS?.[mainCommand]
-        ) {
+        if (mainCommand && isValidCommand(mainCommand) && SUBCOMMANDS?.[mainCommand]) {
           // Check if the subcommand exists
-          const validSubcommands = SUBCOMMANDS?.[mainCommand]?.map(
-            (sc) => sc.command,
-          );
+          const validSubcommands = SUBCOMMANDS?.[mainCommand]?.map((sc) => sc.command);
           if (subCommand && !validSubcommands?.includes(subCommand)) {
             // This is an unknown subcommand
-            const suggestions = findClosestCommand(
-              subCommand,
-              SUBCOMMANDS[mainCommand],
-            );
+            const suggestions = findClosestCommand(subCommand, SUBCOMMANDS[mainCommand]);
 
-            console.error(
-              `Error: Unknown ${mainCommand} command: '${subCommand}'`,
-            );
+            console.error(`Error: Unknown ${mainCommand} command: '${subCommand}'`);
 
             if (suggestions.length > 0) {
               console.error(formatSuggestions(suggestions));
@@ -87,9 +72,7 @@ export function customFailHandler(msg: string, err: Error | null): void {
               for (const sub of SUBCOMMANDS[mainCommand]) {
                 console.error(`  ${sub.command} - ${sub.description}`);
               }
-              console.error(
-                `\nRun 'atlas ${mainCommand} --help' for more information.`,
-              );
+              console.error(`\nRun 'atlas ${mainCommand} --help' for more information.`);
             }
 
             Deno.exit(1);
@@ -118,10 +101,7 @@ export function customFailHandler(msg: string, err: Error | null): void {
     // Clean up Yargs error messages
     const cleanMsg = msg
       .replace(/Unknown arguments?:/, "Unknown command:")
-      .replace(
-        /Not enough non-option arguments.*/,
-        "You need to specify a command",
-      );
+      .replace(/Not enough non-option arguments.*/, "You need to specify a command");
 
     console.error(`Error: ${cleanMsg}`);
   }

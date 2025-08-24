@@ -8,4 +8,4 @@ export const DAEMON_STATUS = {
   IDLE: "idle",
 } as const;
 
-export type DaemonStatus = typeof DAEMON_STATUS[keyof typeof DAEMON_STATUS];
+export type DaemonStatus = (typeof DAEMON_STATUS)[keyof typeof DAEMON_STATUS];

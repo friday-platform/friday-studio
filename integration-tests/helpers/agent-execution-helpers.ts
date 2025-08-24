@@ -29,32 +29,34 @@ export function createTestAgent(config: {
       examples: ["test something"],
     },
     mcp: config.mcpServers,
-    handler: config.handler || (async (prompt, context) => {
-      // Default handler that lists available MCP tools
-      const tools: Record<string, any> = {};
+    handler:
+      config.handler ||
+      (async (prompt, context) => {
+        // Default handler that lists available MCP tools
+        const tools: Record<string, any> = {};
 
-      // Get tools from all MCP servers
-      if (context.mcp) {
-        const servers = config.mcpServers ? Object.keys(config.mcpServers) : [];
-        for (const serverName of servers) {
-          try {
-            const serverTools = await context.mcp.getTools(serverName);
-            Object.assign(tools, serverTools);
-          } catch (error) {
-            console.error(`Error getting tools from ${serverName}:`, error);
+        // Get tools from all MCP servers
+        if (context.mcp) {
+          const servers = config.mcpServers ? Object.keys(config.mcpServers) : [];
+          for (const serverName of servers) {
+            try {
+              const serverTools = await context.mcp.getTools(serverName);
+              Object.assign(tools, serverTools);
+            } catch (error) {
+              console.error(`Error getting tools from ${serverName}:`, error);
+            }
           }
         }
-      }
 
-      return {
-        type: "text",
-        content: JSON.stringify({
-          prompt,
-          availableTools: Object.keys(tools),
-          mcpServers: config.mcpServers ? Object.keys(config.mcpServers) : [],
-        }),
-      };
-    }),
+        return {
+          type: "text",
+          content: JSON.stringify({
+            prompt,
+            availableTools: Object.keys(tools),
+            mcpServers: config.mcpServers ? Object.keys(config.mcpServers) : [],
+          }),
+        };
+      }),
   });
 }
 
@@ -96,10 +98,7 @@ export function createMCPToolAgent(config: {
         }
       }
 
-      return {
-        type: "text",
-        content: `Available tools: ${tools.join(", ")}`,
-      };
+      return { type: "text", content: `Available tools: ${tools.join(", ")}` };
     },
   });
 }
@@ -190,15 +189,11 @@ export class AgentExecutionValidator {
  */
 export async function batchExecuteAgents(
   server: AtlasAgentsMCPServer,
-  executions: Array<{
-    agentId: string;
-    prompt: string;
-    sessionData?: Partial<AgentSessionData>;
-  }>,
+  executions: Array<{ agentId: string; prompt: string; sessionData?: Partial<AgentSessionData> }>,
 ): Promise<AgentExecutionResult[]> {
   return await Promise.all(
     executions.map(({ agentId, prompt, sessionData }) =>
-      executeAgent(server, agentId, prompt, sessionData)
+      executeAgent(server, agentId, prompt, sessionData),
     ),
   );
 }

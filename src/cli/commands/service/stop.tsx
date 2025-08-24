@@ -1,6 +1,6 @@
-import { errorOutput, infoOutput, successOutput } from "../../utils/output.ts";
-import { YargsInstance } from "../../utils/yargs.ts";
 import { ServiceManager } from "../../../services/service-manager.ts";
+import { errorOutput, infoOutput, successOutput } from "../../utils/output.ts";
+import type { YargsInstance } from "../../utils/yargs.ts";
 
 interface StopArgs {
   force?: boolean;
@@ -18,11 +18,7 @@ export const examples = [
 
 export function builder(y: YargsInstance) {
   return y
-    .option("force", {
-      type: "boolean",
-      describe: "Force stop the service",
-      default: false,
-    })
+    .option("force", { type: "boolean", describe: "Force stop the service", default: false })
     .option("wait", {
       type: "boolean",
       describe: "Wait for service to fully stop before returning",

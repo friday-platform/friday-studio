@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from "react";
+import { type LogEntry as AtlasLogEntry, getAtlasClient } from "@atlas/client";
 import { Box, Text, useInput } from "ink";
-import { getAtlasClient, type LogEntry as AtlasLogEntry } from "@atlas/client";
+import React, { useEffect, useState } from "react";
 
 export interface LogEntry {
   timestamp: string;
@@ -14,25 +14,17 @@ export interface LogViewerProps {
   sessionId?: string;
   follow?: boolean;
   tail?: number;
-  filter?: {
-    agent?: string;
-    level?: string;
-  };
+  filter?: { agent?: string; level?: string };
 }
 
-const levelColors = {
-  info: "white",
-  warn: "yellow",
-  error: "red",
-  debug: "gray",
-};
+const levelColors = { info: "white", warn: "yellow", error: "red", debug: "gray" };
 
 const componentColors: Record<string, string> = {
-  "SUPERVISOR": "cyan",
-  "SESSION": "blue",
-  "AGENT": "green",
-  "WORKER": "magenta",
-  "SERVER": "yellow",
+  SUPERVISOR: "cyan",
+  SESSION: "blue",
+  AGENT: "green",
+  WORKER: "magenta",
+  SERVER: "yellow",
 };
 
 function formatTimestamp(timestamp: string): string {
@@ -56,9 +48,7 @@ function getComponentColor(component: string): string {
   return "white";
 }
 
-export function LogViewer(
-  { sessionId, follow = true, tail = 100, filter }: LogViewerProps,
-) {
+export function LogViewer({ sessionId, follow = true, tail = 100, filter }: LogViewerProps) {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [isFollowing, setIsFollowing] = useState(follow);
 
@@ -77,19 +67,18 @@ export function LogViewer(
     const fetchLogs = async () => {
       try {
         const client = getAtlasClient();
-        const logEntries = await client.getSessionLogs(sessionId, {
-          tail,
-          follow: isFollowing,
-        });
+        const logEntries = await client.getSessionLogs(sessionId, { tail, follow: isFollowing });
 
         // Convert AtlasLogEntry to LogEntry format
-        const convertedLogs = logEntries.map((entry: AtlasLogEntry): LogEntry => ({
-          timestamp: entry.timestamp,
-          component: entry.component,
-          level: entry.level as "info" | "warn" | "error" | "debug",
-          message: entry.message,
-          metadata: entry.metadata,
-        }));
+        const convertedLogs = logEntries.map(
+          (entry: AtlasLogEntry): LogEntry => ({
+            timestamp: entry.timestamp,
+            component: entry.component,
+            level: entry.level as "info" | "warn" | "error" | "debug",
+            message: entry.message,
+            metadata: entry.metadata,
+          }),
+        );
 
         setLogs(convertedLogs);
       } catch (err) {
@@ -121,9 +110,7 @@ export function LogViewer(
       {filteredLogs.map((log: LogEntry, i: number) => (
         <Box key={i}>
           <Text color="gray">[{formatTimestamp(log.timestamp)}]</Text>
-          <Text color={getComponentColor(log.component)}>
-            [{log.component}]
-          </Text>
+          <Text color={getComponentColor(log.component)}>[{log.component}]</Text>
           <Text color={levelColors[log.level]}>{log.message}</Text>
         </Box>
       ))}

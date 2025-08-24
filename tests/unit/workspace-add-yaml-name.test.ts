@@ -2,10 +2,10 @@
  * Unit tests for workspace add functionality that reads workspace name from workspace.yml
  */
 
-import { assertEquals } from "@std/assert";
 import { AtlasClient } from "@atlas/client";
-import { join } from "@std/path";
+import { assertEquals } from "@std/assert";
 import { ensureDir } from "@std/fs";
+import { join } from "@std/path";
 
 // Mock daemon server that simulates the workspace add endpoint
 class MockDaemonServer {
@@ -149,11 +149,7 @@ signals:
     provider: cli
 `;
 
-      const workspacePath = await createTestWorkspaceWithConfig(
-        testDir,
-        "telephone",
-        workspaceYml,
-      );
+      const workspacePath = await createTestWorkspaceWithConfig(testDir, "telephone", workspaceYml);
 
       const client = new AtlasClient({ url: `http://localhost:${port}` });
       const result = await client.addWorkspace({ path: workspacePath });

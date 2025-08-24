@@ -2,8 +2,8 @@
  * Integration Test Suite for Advanced Workspace Creation (Part 1)
  */
 
-import { assertEquals, assertExists, assertStringIncludes } from "@std/assert";
 import { type WorkspaceConfig, WorkspaceConfigSchema } from "@atlas/config";
+import { assertEquals, assertExists, assertStringIncludes } from "@std/assert";
 import { generateWorkspace } from "../packages/system/agents/conversation/tools/workspace-creation/generation.ts";
 
 // Realistic test scenarios for comprehensive validation
@@ -31,7 +31,8 @@ const testScenarios = [
   {
     name: "GitHub release monitoring",
     userIntent: "Monitor GitHub releases for my repositories and send email alerts",
-    conversationContext: "User wants to track new releases across multiple repositories. " +
+    conversationContext:
+      "User wants to track new releases across multiple repositories. " +
       "Needs email notifications with release notes summary. Should check every hour during business hours.",
     requirements: {
       triggers: ["schedule - hourly during business hours"],
@@ -90,7 +91,8 @@ const testScenarios = [
   {
     name: "API integration webhook",
     userIntent: "Process incoming webhook data from external service and transform it",
-    conversationContext: "User receives webhook notifications from a third-party CRM system. " +
+    conversationContext:
+      "User receives webhook notifications from a third-party CRM system. " +
       "Needs to validate, transform, and forward the data to multiple internal systems.",
     requirements: {
       triggers: ["HTTP webhook"],
@@ -109,7 +111,9 @@ const testScenarios = [
 ];
 
 // Skip these tests in CI or when no API key is available (they require real LLM)
-const skipIfNoKey = !Deno.env.get("ANTHROPIC_API_KEY") || Deno.env.get("CI") === "true" ||
+const skipIfNoKey =
+  !Deno.env.get("ANTHROPIC_API_KEY") ||
+  Deno.env.get("CI") === "true" ||
   Deno.env.get("ATLAS_USE_LLM_MOCKS") === "true";
 
 // Test each scenario with comprehensive validation
@@ -139,39 +143,29 @@ for (const scenario of testScenarios) {
         reasoning: string;
         workspaceName: string;
         created: boolean;
-        summary: {
-          signals: number;
-          agents: number;
-          jobs: number;
-          mcpServers: number;
-        };
+        summary: { signals: number; agents: number; jobs: number; mcpServers: number };
       };
       try {
         // The execute function requires a context parameter but may return AsyncIterable
         // We assert the type since we know with createWorkspace=false it returns a direct object
-        result = await generateWorkspace.execute!({
-          workspaceName: scenario.name,
-          // In tests we don't actually want to create the workspace.
-          createWorkspace: false,
-          userIntent: scenario.userIntent,
-          conversationContext: scenario.conversationContext,
-          requirements: scenario.requirements,
-          debugLevel: "detailed",
-        }, {
-          toolCallId: "test-integration-call-id",
-          messages: [],
-        }) as {
+        result = (await generateWorkspace.execute!(
+          {
+            workspaceName: scenario.name,
+            // In tests we don't actually want to create the workspace.
+            createWorkspace: false,
+            userIntent: scenario.userIntent,
+            conversationContext: scenario.conversationContext,
+            requirements: scenario.requirements,
+            debugLevel: "detailed",
+          },
+          { toolCallId: "test-integration-call-id", messages: [] },
+        )) as {
           success: boolean;
           config: WorkspaceConfig;
           reasoning: string;
           workspaceName: string;
           created: boolean;
-          summary: {
-            signals: number;
-            agents: number;
-            jobs: number;
-            mcpServers: number;
-          };
+          summary: { signals: number; agents: number; jobs: number; mcpServers: number };
         };
       } catch (error) {
         const duration = Date.now() - startTime;
@@ -503,15 +497,8 @@ for (const scenario of testScenarios) {
             validation: {
               schemaCompliant: true,
               referenceIntegrity: true,
-              componentCounts: {
-                signals: signalCount,
-                agents: agentCount,
-                jobs: jobCount,
-              },
-              signalTypes: {
-                schedule: hasScheduleSignal,
-                webhook: hasWebhookSignal,
-              },
+              componentCounts: { signals: signalCount, agents: agentCount, jobs: jobCount },
+              signalTypes: { schedule: hasScheduleSignal, webhook: hasWebhookSignal },
             },
           },
           null,

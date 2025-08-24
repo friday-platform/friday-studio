@@ -3,10 +3,10 @@
  * Tests verify that Atlas tracking headers are properly added to emails
  */
 
-import { assertEquals, assertExists } from "@std/assert";
-import { SendGridProvider } from "../src/providers/sendgrid-provider.ts";
-import { getAtlasVersion } from "../../../src/utils/version.ts";
 import type { EmailParams } from "@atlas/config";
+import { assertEquals, assertExists } from "@std/assert";
+import { getAtlasVersion } from "../../../src/utils/version.ts";
+import { SendGridProvider } from "../src/providers/sendgrid-provider.ts";
 
 Deno.test("SendGrid Custom Headers - buildCustomHeaders includes all required headers", async (t) => {
   await t.step("includes X-Atlas-Version header", () => {
@@ -79,9 +79,9 @@ Deno.test("SendGrid Custom Headers - buildCustomHeaders includes all required he
       exp: Math.floor(Date.now() / 1000) + 3600, // Valid for 1 hour
       iat: Math.floor(Date.now() / 1000),
     };
-    const mockJWT = `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.${
-      btoa(JSON.stringify(mockPayload))
-    }.mock-signature`;
+    const mockJWT = `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.${btoa(
+      JSON.stringify(mockPayload),
+    )}.mock-signature`;
 
     const originalKey = Deno.env.get("ATLAS_KEY");
     Deno.env.set("ATLAS_KEY", mockJWT);
@@ -248,9 +248,7 @@ Deno.test("SendGrid Custom Headers - JWT parsing handles edge cases", async (t) 
       };
 
       // Create base64url by replacing + with - and / with _
-      const base64url = btoa(JSON.stringify(payload))
-        .replace(/\+/g, "-")
-        .replace(/\//g, "_");
+      const base64url = btoa(JSON.stringify(payload)).replace(/\+/g, "-").replace(/\//g, "_");
       const jwtBase64url = `header.${base64url}.signature`;
 
       assertEquals(extractUserFromJWT(jwtBase64url), "user@example.com");
@@ -313,9 +311,7 @@ Deno.test("SendGrid Custom Headers - buildEmailMessage includes headers", async 
         subject: "Test Email",
         content: "Test content",
         template_id: "d-specific-template",
-        template_data: {
-          name: "Test User",
-        },
+        template_data: { name: "Test User" },
       };
 
       const message = buildEmailMessage(emailParams);

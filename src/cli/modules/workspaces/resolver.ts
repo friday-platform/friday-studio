@@ -1,13 +1,12 @@
-import { exists } from "@std/fs";
-import { ConfigLoader, WorkspaceConfig } from "@atlas/config";
+import { ConfigLoader, type WorkspaceConfig } from "@atlas/config";
 import { FilesystemConfigAdapter } from "@atlas/storage";
 import { getWorkspaceManager } from "@atlas/workspace"; // TODO: Use @atlas/client instead
+import { exists } from "@std/fs";
 
 // Helper function to resolve workspace and load config
-export async function resolveWorkspaceAndConfig(workspaceId?: string): Promise<{
-  workspace: { path: string; id: string; name: string };
-  config: WorkspaceConfig;
-}> {
+export async function resolveWorkspaceAndConfig(
+  workspaceId?: string,
+): Promise<{ workspace: { path: string; id: string; name: string }; config: WorkspaceConfig }> {
   const registry = await getWorkspaceManager();
   await registry.initialize();
 
@@ -16,8 +15,8 @@ export async function resolveWorkspaceAndConfig(workspaceId?: string): Promise<{
 
   if (workspaceId) {
     // Find workspace by ID or name in the registry
-    const targetWorkspace = (await registry.find({ id: workspaceId })) ||
-      (await registry.find({ name: workspaceId }));
+    const targetWorkspace =
+      (await registry.find({ id: workspaceId })) || (await registry.find({ name: workspaceId }));
 
     if (!targetWorkspace) {
       throw new Error(
@@ -64,10 +63,9 @@ export async function resolveWorkspaceAndConfig(workspaceId?: string): Promise<{
 }
 
 // Alternative resolver that doesn't change directories (for interactive use)
-export async function resolveWorkspaceAndConfigNoCwd(workspaceId: string): Promise<{
-  workspace: { path: string; id: string; name: string };
-  config: WorkspaceConfig;
-}> {
+export async function resolveWorkspaceAndConfigNoCwd(
+  workspaceId: string,
+): Promise<{ workspace: { path: string; id: string; name: string }; config: WorkspaceConfig }> {
   const registry = await getWorkspaceManager();
   await registry.initialize();
   const targetWorkspace = await registry.find({ id: workspaceId });
@@ -91,18 +89,16 @@ export async function resolveWorkspaceAndConfigNoCwd(workspaceId: string): Promi
 }
 
 // Enhanced workspace resolution (cleaner separation)
-export async function resolveWorkspaceOnly(workspaceId?: string): Promise<{
-  path: string;
-  id: string;
-  name: string;
-}> {
+export async function resolveWorkspaceOnly(
+  workspaceId?: string,
+): Promise<{ path: string; id: string; name: string }> {
   const registry = await getWorkspaceManager();
   await registry.initialize();
 
   if (workspaceId) {
     // Find by ID or name in registry
-    const workspace = (await registry.find({ id: workspaceId })) ||
-      (await registry.find({ name: workspaceId }));
+    const workspace =
+      (await registry.find({ id: workspaceId })) || (await registry.find({ name: workspaceId }));
 
     if (!workspace) {
       throw new Error(
@@ -111,32 +107,20 @@ export async function resolveWorkspaceOnly(workspaceId?: string): Promise<{
       );
     }
 
-    return {
-      path: workspace.path,
-      id: workspace.id,
-      name: workspace.name,
-    };
+    return { path: workspace.path, id: workspace.id, name: workspace.name };
   } else {
     // Try current directory
     const currentWorkspace = await registry.find({ path: Deno.cwd() });
 
     if (currentWorkspace) {
-      return {
-        path: currentWorkspace.path,
-        id: currentWorkspace.id,
-        name: currentWorkspace.name,
-      };
+      return { path: currentWorkspace.path, id: currentWorkspace.id, name: currentWorkspace.name };
     }
 
     // Fallback to checking for workspace.yml in current directory
     if (await exists("workspace.yml")) {
       // Register this workspace if not already registered
       const workspace = await registry.registerWorkspace(Deno.cwd());
-      return {
-        path: workspace.path,
-        id: workspace.id,
-        name: workspace.name,
-      };
+      return { path: workspace.path, id: workspace.id, name: workspace.name };
     }
 
     throw new Error(

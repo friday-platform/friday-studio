@@ -1,9 +1,9 @@
-import { z } from "zod";
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { ensureDir } from "@std/fs";
 import * as path from "@std/path";
 import { dirname } from "@std/path";
-import { ensureDir } from "@std/fs";
+import { z } from "zod";
 import type { ToolContext } from "../types.ts";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { createSuccessResponse } from "../types.ts";
 
 export function registerWriteTool(server: McpServer, _ctx: ToolContext) {
@@ -22,9 +22,9 @@ Usage:
 - NEVER proactively create documentation files (*.md) or README files. Only create documentation files if explicitly requested by the User
 - Only use emojis if the user explicitly requests it. Avoid writing emojis to files unless asked`,
       inputSchema: {
-        filePath: z.string().describe(
-          "The path to the file to write (can be absolute or relative)",
-        ),
+        filePath: z
+          .string()
+          .describe("The path to the file to write (can be absolute or relative)"),
         content: z.string().describe("The content to write to the file"),
       },
     },

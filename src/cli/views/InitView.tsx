@@ -1,21 +1,13 @@
-import { Box, Text, useInput } from "ink";
-import { defaultTheme, extendTheme, Spinner, TextInput, ThemeProvider } from "@inkjs/ui";
-import { useCallback, useState } from "react";
 import process from "node:process";
-import { createAndRegisterWorkspace } from "../modules/workspaces/creator.ts";
+import { defaultTheme, extendTheme, Spinner, TextInput, ThemeProvider } from "@inkjs/ui";
+import { Box, Text, useInput } from "ink";
+import { useCallback, useState } from "react";
 import { MultiSelect } from "../components/multi-select.tsx";
+import { createAndRegisterWorkspace } from "../modules/workspaces/creator.ts";
 
 // Custom theme with yellow highlights for Select and Spinner components
 const customTheme = extendTheme(defaultTheme, {
-  components: {
-    Spinner: {
-      styles: {
-        frame: () => ({
-          color: "yellow",
-        }),
-      },
-    },
-  },
+  components: { Spinner: { styles: { frame: () => ({ color: "yellow" }) } } },
 });
 
 interface WorkspaceConfig {
@@ -40,14 +32,7 @@ const InitViewContent = ({ onExit }: InitViewProps) => {
   });
 
   const [focusedField, setFocusedField] = useState<
-    | "name"
-    | "path"
-    | "description"
-    | "agents"
-    | "signals"
-    | "submit"
-    | "yes"
-    | "no"
+    "name" | "path" | "description" | "agents" | "signals" | "submit" | "yes" | "no"
   >("name");
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
@@ -184,14 +169,10 @@ const InitViewContent = ({ onExit }: InitViewProps) => {
           <Text>Description: {config.description || "(none)"}</Text>
         </Box>
         <Box>
-          <Text>
-            Agents: {config.agents.length > 0 ? config.agents.join(", ") : "(none)"}
-          </Text>
+          <Text>Agents: {config.agents.length > 0 ? config.agents.join(", ") : "(none)"}</Text>
         </Box>
         <Box>
-          <Text>
-            Signals: {config.signals.length > 0 ? config.signals.join(", ") : "(none)"}
-          </Text>
+          <Text>Signals: {config.signals.length > 0 ? config.signals.join(", ") : "(none)"}</Text>
         </Box>
 
         <Box marginTop={2} flexDirection="row" gap={4}>
@@ -265,18 +246,9 @@ const InitViewContent = ({ onExit }: InitViewProps) => {
         <MultiSelect
           isDisabled={focusedField !== "agents"}
           options={[
-            {
-              label: "LLM Agent (For AI-powered tasks with Anthropic Claude)",
-              value: "llm",
-            },
-            {
-              label: "Tempest Agent (Built-in agent for system operations)",
-              value: "tempest",
-            },
-            {
-              label: "Remote Agent (Connect to external HTTP agents)",
-              value: "remote",
-            },
+            { label: "LLM Agent (For AI-powered tasks with Anthropic Claude)", value: "llm" },
+            { label: "Tempest Agent (Built-in agent for system operations)", value: "tempest" },
+            { label: "Remote Agent (Connect to external HTTP agents)", value: "remote" },
           ]}
           onChange={handleAgentsChange}
           defaultValue={config.agents}
@@ -291,18 +263,9 @@ const InitViewContent = ({ onExit }: InitViewProps) => {
         <MultiSelect
           isDisabled={focusedField !== "signals"}
           options={[
-            {
-              label: "CLI Trigger (Manual triggering from command line)",
-              value: "cli",
-            },
-            {
-              label: "HTTP Webhook (Trigger via HTTP POST requests)",
-              value: "http",
-            },
-            {
-              label: "Scheduled (Time-based automatic triggers)",
-              value: "schedule",
-            },
+            { label: "CLI Trigger (Manual triggering from command line)", value: "cli" },
+            { label: "HTTP Webhook (Trigger via HTTP POST requests)", value: "http" },
+            { label: "Scheduled (Time-based automatic triggers)", value: "schedule" },
           ]}
           onChange={handleSignalsChange}
           defaultValue={config.signals}

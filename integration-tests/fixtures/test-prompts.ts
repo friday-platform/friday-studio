@@ -39,10 +39,7 @@ export const TestPrompts = {
       multiplication: "calculate 10 * 5",
       complex: "calculate (10 + 5) * 2 - 8",
     },
-    random: {
-      default: "random_number",
-      range: "random_number 1 100",
-    },
+    random: { default: "random_number", range: "random_number 1 100" },
     statistics: {
       simple: "statistics [1, 2, 3, 4, 5]",
       large: "statistics [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]",
@@ -51,17 +48,9 @@ export const TestPrompts = {
 
   // API operations
   api: {
-    fetchUser: {
-      valid: "fetch_user user-1",
-      invalid: "fetch_user nonexistent",
-    },
-    createPost: {
-      simple: "create_post user-1 'Test Title' 'Test content'",
-    },
-    listItems: {
-      all: "list_items",
-      filtered: "list_items maxPrice=15",
-    },
+    fetchUser: { valid: "fetch_user user-1", invalid: "fetch_user nonexistent" },
+    createPost: { simple: "create_post user-1 'Test Title' 'Test content'" },
+    listItems: { all: "list_items", filtered: "list_items maxPrice=15" },
   },
 
   // File operations

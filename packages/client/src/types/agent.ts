@@ -17,24 +17,19 @@ export interface JobDetailedInfo {
   name: string;
   description?: string;
   task_template?: string;
-  triggers?: Array<{
-    signal: string;
-    condition?: string | Record<string, unknown>;
-  }>;
-  session_prompts?: {
-    planning?: string;
-    evaluation?: string;
-  };
+  triggers?: Array<{ signal: string; condition?: string | Record<string, unknown> }>;
+  session_prompts?: { planning?: string; evaluation?: string };
   execution: {
     strategy: "sequential" | "parallel";
     agents: Array<
-      string | {
-        id: string;
-        task?: string;
-        input_source?: "signal" | "previous" | "combined" | "filesystem_context";
-        dependencies?: string[];
-        tools?: string[];
-      }
+      | string
+      | {
+          id: string;
+          task?: string;
+          input_source?: "signal" | "previous" | "combined" | "filesystem_context";
+          dependencies?: string[];
+          tools?: string[];
+        }
     >;
     context?: {
       filesystem?: {
@@ -43,10 +38,7 @@ export interface JobDetailedInfo {
         max_file_size?: number;
         include_content?: boolean;
       };
-      memory?: {
-        recall_limit?: number;
-        strategy?: string;
-      };
+      memory?: { recall_limit?: number; strategy?: string };
     };
     timeout_seconds?: number;
     max_iterations?: number;

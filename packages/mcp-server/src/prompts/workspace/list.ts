@@ -3,15 +3,12 @@
  * Lists available workspaces through the daemon API
  */
 
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { PromptContext } from "../types.ts";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { createSuccessResponse } from "../types.ts";
 
-export function registerWorkspaceListPrompt(
-  server: McpServer,
-  ctx: PromptContext,
-) {
+export function registerWorkspaceListPrompt(server: McpServer, ctx: PromptContext) {
   server.registerPrompt(
     "workspace_list",
     {
@@ -23,10 +20,7 @@ export function registerWorkspaceListPrompt(
           .string()
           .optional()
           .describe("Filter by workspace status (active, inactive, etc.)"),
-        limit: z
-          .string()
-          .optional()
-          .describe("Maximum number of workspaces to return"),
+        limit: z.string().optional().describe("Maximum number of workspaces to return"),
       },
     },
     ({ status, limit }) => {

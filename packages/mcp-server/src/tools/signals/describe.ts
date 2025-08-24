@@ -3,15 +3,12 @@
  * Triggers workspace signals through the daemon API
  */
 
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { ToolContext } from "../types.ts";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { createSuccessResponse } from "../types.ts";
 
-export function registerSignalsDescribeTool(
-  server: McpServer,
-  ctx: ToolContext,
-) {
+export function registerSignalsDescribeTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(
     "atlas_workspace_signals_describe",
     {
@@ -23,19 +20,14 @@ export function registerSignalsDescribeTool(
       },
     },
     async ({ workspaceId, signalName }) => {
-      ctx.logger.info("MCP workspace_signals_describe called", {
-        workspaceId,
-        signalName,
-      });
+      ctx.logger.info("MCP workspace_signals_describe called", { workspaceId, signalName });
 
       try {
         const response = await fetch(
           `${ctx.daemonUrl}/api/workspaces/${workspaceId}/signals/${signalName}`,
           {
             method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload || {}),
           },
         );

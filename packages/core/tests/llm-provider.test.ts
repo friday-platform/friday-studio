@@ -4,9 +4,9 @@
  */
 
 import { expect } from "@std/expect";
-import { type LLMOptions, LLMProvider, type LLMResponse } from "../src/llm-provider.ts";
-import { Tool } from "ai";
+import type { Tool } from "ai";
 import { z } from "zod/v4";
+import { type LLMOptions, LLMProvider, type LLMResponse } from "../src/llm-provider.ts";
 
 // Test constants
 const TEST_PROMPT = "What is 2+2? Answer with just the number.";
@@ -17,11 +17,11 @@ class MockLLMProvider {
   private static mockResponses = new Map<string, string>();
 
   static setMockResponse(pattern: string, response: string) {
-    this.mockResponses.set(pattern, response);
+    MockLLMProvider.mockResponses.set(pattern, response);
   }
 
   static getMockResponse(prompt: string): string {
-    for (const [pattern, response] of this.mockResponses) {
+    for (const [pattern, response] of MockLLMProvider.mockResponses) {
       if (prompt.includes(pattern)) {
         return response;
       }
@@ -30,7 +30,7 @@ class MockLLMProvider {
   }
 
   static reset() {
-    this.mockResponses.clear();
+    MockLLMProvider.mockResponses.clear();
   }
 }
 
@@ -99,10 +99,7 @@ function setupMockLLMProvider() {
           toolName,
           args: { operation: "multiply", a: 15, b: 7 },
         });
-        toolResults.push({
-          toolCallId: "mock-tool-call-123",
-          result: { result: 105 },
-        });
+        toolResults.push({ toolCallId: "mock-tool-call-123", result: { result: 105 } });
       } else if (options.tool_choice === "required") {
         // Force tool use when required
         toolCalls.push({
@@ -110,19 +107,11 @@ function setupMockLLMProvider() {
           toolName,
           args: { operation: "add", a: 2, b: 2 },
         });
-        toolResults.push({
-          toolCallId: "mock-tool-call-123",
-          result: { result: 4 },
-        });
+        toolResults.push({ toolCallId: "mock-tool-call-123", result: { result: 4 } });
       }
     }
 
-    return Promise.resolve({
-      text: responseText,
-      toolCalls,
-      toolResults,
-      steps,
-    });
+    return Promise.resolve({ text: responseText, toolCalls, toolResults, steps });
   };
 
   LLMProvider.generateTextStream = function* (
@@ -184,9 +173,9 @@ function withMockLLMProvider(testFn: () => Promise<void>) {
 const mockCalculatorTool: Tool = {
   description: "Perform basic calculations",
   inputSchema: z.object({
-    operation: z.enum(["add", "subtract", "multiply", "divide"]).describe(
-      "The operation to perform",
-    ),
+    operation: z
+      .enum(["add", "subtract", "multiply", "divide"])
+      .describe("The operation to perform"),
     a: z.number().describe("First number"),
     b: z.number().describe("Second number"),
   }),
@@ -380,9 +369,7 @@ Deno.test({
     const options: LLMOptions = {
       provider: "anthropic",
       model: "claude-3-5-haiku-latest",
-      tools: {
-        calculator: mockCalculatorTool,
-      },
+      tools: { calculator: mockCalculatorTool },
       tool_choice: "auto",
       max_steps: 5,
       max_tokens: 200,
@@ -426,9 +413,7 @@ Deno.test({
     const options: LLMOptions = {
       provider: "anthropic",
       model: "claude-3-5-haiku-latest",
-      tools: {
-        calculator: mockCalculatorTool,
-      },
+      tools: { calculator: mockCalculatorTool },
       tool_choice: "required", // Force tool use
       max_steps: 1,
       max_tokens: 200,
@@ -452,9 +437,7 @@ Deno.test({
     const options: LLMOptions = {
       provider: "anthropic",
       model: "claude-3-5-haiku-latest",
-      tools: {
-        calculator: mockCalculatorTool,
-      },
+      tools: { calculator: mockCalculatorTool },
       tool_choice: "auto",
       max_steps: 5,
       max_tokens: 100,
@@ -646,9 +629,7 @@ Deno.test({
       provider: "anthropic",
       model: "claude-3-5-haiku-latest",
       max_tokens: 100,
-      tools: {
-        calculator: mockCalculatorTool,
-      },
+      tools: { calculator: mockCalculatorTool },
       tool_choice: "none", // Prevent tool calls to avoid validation errors
     };
     const toolResult = await LLMProvider.generateText(

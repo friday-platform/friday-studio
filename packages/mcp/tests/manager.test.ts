@@ -57,9 +57,7 @@ Deno.test({
           command: "deno",
           args: ["run", "--allow-all", "integration-tests/mocks/weather-mcp-server.ts"],
         },
-        tools: {
-          allow: ["get_weather"],
-        },
+        tools: { allow: ["get_weather"] },
       });
 
       const tools = await manager.getToolsForServers(["filtered-server"]);
@@ -176,11 +174,7 @@ Deno.test({
     try {
       await manager.registerServer({
         id: "invalid-server",
-        transport: {
-          type: "stdio",
-          command: "nonexistent-command",
-          args: ["--invalid"],
-        },
+        transport: { type: "stdio", command: "nonexistent-command", args: ["--invalid"] },
       });
     } catch (error) {
       caughtError = true;
@@ -206,27 +200,14 @@ Deno.test({
       // Test that authentication configurations are parsed correctly
       const bearerConfig = {
         id: "auth-test-bearer",
-        transport: {
-          type: "sse" as const,
-          url: "https://example.com/mcp",
-        },
-        auth: {
-          type: "bearer" as const,
-          token_env: "TEST_TOKEN",
-        },
+        transport: { type: "sse" as const, url: "https://example.com/mcp" },
+        auth: { type: "bearer" as const, token_env: "TEST_TOKEN" },
       };
 
       const apiKeyConfig = {
         id: "auth-test-apikey",
-        transport: {
-          type: "sse" as const,
-          url: "https://example.com/mcp2",
-        },
-        auth: {
-          type: "api_key" as const,
-          token_env: "TEST_API_KEY",
-          header: "X-API-Key",
-        },
+        transport: { type: "sse" as const, url: "https://example.com/mcp2" },
+        auth: { type: "api_key" as const, token_env: "TEST_API_KEY", header: "X-API-Key" },
       };
 
       // Verify configurations are valid
@@ -260,9 +241,7 @@ Deno.test({
           command: "deno",
           args: ["run", "--allow-all", "integration-tests/mocks/weather-mcp-server.ts"],
         },
-        tools: {
-          allow: ["get_weather"],
-        },
+        tools: { allow: ["get_weather"] },
       });
 
       // Register a server with denied tools filter
@@ -273,9 +252,7 @@ Deno.test({
           command: "deno",
           args: ["run", "--allow-all", "integration-tests/mocks/weather-mcp-server.ts"],
         },
-        tools: {
-          deny: ["get_forecast"],
-        },
+        tools: { deny: ["get_forecast"] },
       });
 
       // Test allowed list filtering
@@ -311,9 +288,7 @@ Deno.test({
           command: "deno",
           args: ["run", "--allow-all", "integration-tests/mocks/weather-mcp-server.ts"],
         },
-        tools: {
-          allow: [],
-        },
+        tools: { allow: [] },
       });
 
       // Register a server with empty deny list (should allow ALL tools)
@@ -324,9 +299,7 @@ Deno.test({
           command: "deno",
           args: ["run", "--allow-all", "integration-tests/mocks/weather-mcp-server.ts"],
         },
-        tools: {
-          deny: [],
-        },
+        tools: { deny: [] },
       });
 
       // Test empty allow list (should have NO tools)
@@ -361,10 +334,7 @@ Deno.test({
     try {
       await manager.registerServer({
         id: "http-test-server",
-        transport: {
-          type: "http",
-          url: "http://localhost:8080/mcp",
-        },
+        transport: { type: "http", url: "http://localhost:8080/mcp" },
       });
 
       registrationSucceeded = true;
@@ -408,10 +378,7 @@ Deno.test({
       try {
         await manager.registerServer({
           id: "http-server",
-          transport: {
-            type: "http",
-            url: "http://localhost:8080/mcp",
-          },
+          transport: { type: "http", url: "http://localhost:8080/mcp" },
         });
         httpRegistered = true;
       } catch {
@@ -479,14 +446,8 @@ Deno.test({
       try {
         await manager.registerServer({
           id: "http-bearer-auth-server",
-          transport: {
-            type: "http",
-            url: "http://localhost:8080/mcp",
-          },
-          auth: {
-            type: "bearer",
-            token_env: "TEST_HTTP_TOKEN",
-          },
+          transport: { type: "http", url: "http://localhost:8080/mcp" },
+          auth: { type: "bearer", token_env: "TEST_HTTP_TOKEN" },
         });
         bearerRegistrationAttempted = true;
       } catch (error) {
@@ -499,15 +460,8 @@ Deno.test({
       try {
         await manager.registerServer({
           id: "http-apikey-auth-server",
-          transport: {
-            type: "http",
-            url: "http://localhost:8081/mcp",
-          },
-          auth: {
-            type: "api_key",
-            token_env: "TEST_HTTP_API_KEY",
-            header: "X-Custom-API-Key",
-          },
+          transport: { type: "http", url: "http://localhost:8081/mcp" },
+          auth: { type: "api_key", token_env: "TEST_HTTP_API_KEY", header: "X-Custom-API-Key" },
         });
         apiKeyRegistrationAttempted = true;
       } catch (error) {
@@ -540,14 +494,8 @@ Deno.test({
     try {
       await manager.registerServer({
         id: "http-missing-token-server",
-        transport: {
-          type: "http",
-          url: "http://localhost:8080/mcp",
-        },
-        auth: {
-          type: "bearer",
-          token_env: "NONEXISTENT_TOKEN_VAR",
-        },
+        transport: { type: "http", url: "http://localhost:8080/mcp" },
+        auth: { type: "bearer", token_env: "NONEXISTENT_TOKEN_VAR" },
       });
     } catch {
       // Expected to fail, but should handle missing token gracefully

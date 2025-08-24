@@ -5,7 +5,6 @@
  * AgentExecutionActor with MCP-based communication.
  */
 
-export { AgentOrchestrator } from "./agent-orchestrator.ts";
 export type {
   AgentExecutionContext,
   AgentExecutionResult,
@@ -18,3 +17,4 @@ export type {
   CompletedAgentResult,
   IAgentOrchestrator,
 } from "./agent-orchestrator.ts";
+export { AgentOrchestrator } from "./agent-orchestrator.ts";

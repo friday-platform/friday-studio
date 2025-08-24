@@ -49,11 +49,7 @@ app.on("activate", () => {
 
 // IPC handlers for installation
 ipcMain.handle("get-platform", () => {
-  return {
-    platform: process.platform,
-    arch: process.arch,
-    homedir: os.homedir(),
-  };
+  return { platform: process.platform, arch: process.arch, homedir: os.homedir() };
 });
 
 ipcMain.handle("create-atlas-dir", async () => {
@@ -78,10 +74,9 @@ ipcMain.handle("check-existing-api-key", async () => {
     }
 
     const envContent = fs.readFileSync(envFile, "utf8");
-    const hasAtlasKey = envContent.includes("ATLAS_KEY=") &&
-      envContent.match(
-        /ATLAS_KEY=eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/,
-      );
+    const hasAtlasKey =
+      envContent.includes("ATLAS_KEY=") &&
+      envContent.match(/ATLAS_KEY=eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/);
 
     return { exists: !!hasAtlasKey };
   } catch (error) {
@@ -110,9 +105,7 @@ ipcMain.handle("save-atlas-key", async (event, atlasKey) => {
     }
 
     // Filter out any existing ATLAS_KEY line
-    const filteredLines = existingLines.filter(
-      (line) => !line.trim().startsWith("ATLAS_KEY="),
-    );
+    const filteredLines = existingLines.filter((line) => !line.trim().startsWith("ATLAS_KEY="));
 
     // Add the new ATLAS_KEY
     filteredLines.push(`ATLAS_KEY=${atlasKey}`);
@@ -128,11 +121,7 @@ ipcMain.handle("save-atlas-key", async (event, atlasKey) => {
       fs.chmodSync(envFile, 0o600);
     }
 
-    return {
-      success: true,
-      path: envFile,
-      message: "Atlas Access Key saved successfully",
-    };
+    return { success: true, path: envFile, message: "Atlas Access Key saved successfully" };
   } catch (error) {
     return { success: false, error: error.message };
   }
@@ -149,12 +138,7 @@ ipcMain.handle("install-atlas-binary", async () => {
     // When packaged with asar, __dirname is inside the asar file, so we need to
     // get the actual Resources directory path
     const resourcesPath = process.resourcesPath || path.dirname(path.dirname(__dirname));
-    binarySource = path.join(
-      resourcesPath,
-      "app.asar.unpacked",
-      "atlas-binary",
-      binaryName,
-    );
+    binarySource = path.join(resourcesPath, "app.asar.unpacked", "atlas-binary", binaryName);
 
     if (!fs.existsSync(binarySource)) {
       // Fallback to development location
@@ -163,10 +147,7 @@ ipcMain.handle("install-atlas-binary", async () => {
 
     // Check if source binary exists
     if (!binarySource || !fs.existsSync(binarySource)) {
-      return {
-        success: false,
-        error: "Atlas binary not found in installer package",
-      };
+      return { success: false, error: "Atlas binary not found in installer package" };
     }
 
     // Determine installation path based on platform
@@ -174,13 +155,7 @@ ipcMain.handle("install-atlas-binary", async () => {
     if (process.platform === "win32") {
       // Windows: Install to user's local app data to avoid admin permissions
       const userProfile = process.env.USERPROFILE || process.env.HOME || "C:\\Users\\Default";
-      installPath = path.join(
-        userProfile,
-        "AppData",
-        "Local",
-        "Atlas",
-        "atlas.exe",
-      );
+      installPath = path.join(userProfile, "AppData", "Local", "Atlas", "atlas.exe");
       const installDir = path.dirname(installPath);
 
       // Create directory if it doesn't exist
@@ -194,17 +169,11 @@ ipcMain.handle("install-atlas-binary", async () => {
           // Try to stop the daemon gracefully first
           const { execSync } = require("child_process");
           try {
-            execSync(`"${installPath}" daemon stop`, {
-              timeout: 5000,
-              stdio: "ignore",
-            });
+            execSync(`"${installPath}" daemon stop`, { timeout: 5000, stdio: "ignore" });
           } catch {
             // If daemon stop fails, force kill atlas processes
             try {
-              execSync("taskkill /F /IM atlas.exe", {
-                timeout: 5000,
-                stdio: "ignore",
-              });
+              execSync("taskkill /F /IM atlas.exe", { timeout: 5000, stdio: "ignore" });
             } catch {
               // Ignore if no processes to kill
             }
@@ -230,10 +199,7 @@ ipcMain.handle("install-atlas-binary", async () => {
           }
         `.trim();
 
-        execSync(`powershell -Command "${psCommand}"`, {
-          windowsHide: true,
-          stdio: "ignore",
-        });
+        execSync(`powershell -Command "${psCommand}"`, { windowsHide: true, stdio: "ignore" });
       } catch {
         // PATH update failed silently
       }
@@ -252,27 +218,18 @@ ipcMain.handle("install-atlas-binary", async () => {
           if (fs.existsSync(systemBinaryPath)) {
             try {
               // Try to stop the service first (which manages the daemon)
-              execSync(`"${systemBinaryPath}" service stop`, {
-                timeout: 5000,
-                stdio: "ignore",
-              });
+              execSync(`"${systemBinaryPath}" service stop`, { timeout: 5000, stdio: "ignore" });
               // Wait for service to stop
               await new Promise((resolve) => setTimeout(resolve, 2000));
             } catch {
               // If service stop fails, try to stop the daemon directly
               try {
-                execSync(`"${systemBinaryPath}" daemon stop`, {
-                  timeout: 5000,
-                  stdio: "ignore",
-                });
+                execSync(`"${systemBinaryPath}" daemon stop`, { timeout: 5000, stdio: "ignore" });
                 await new Promise((resolve) => setTimeout(resolve, 2000));
               } catch {
                 // If both fail, kill any atlas processes
                 try {
-                  execSync("pkill -f atlas", {
-                    timeout: 5000,
-                    stdio: "ignore",
-                  });
+                  execSync("pkill -f atlas", { timeout: 5000, stdio: "ignore" });
                   await new Promise((resolve) => setTimeout(resolve, 1000));
                 } catch {
                   // Ignore if no processes to kill
@@ -291,10 +248,7 @@ ipcMain.handle("install-atlas-binary", async () => {
           if (fs.existsSync(userBinaryPath)) {
             try {
               // Try to stop any running instance using the user binary
-              execSync(`"${userBinaryPath}" daemon stop`, {
-                timeout: 5000,
-                stdio: "ignore",
-              });
+              execSync(`"${userBinaryPath}" daemon stop`, { timeout: 5000, stdio: "ignore" });
               await new Promise((resolve) => setTimeout(resolve, 1000));
             } catch {
               // Ignore errors, process might not be running
@@ -326,16 +280,14 @@ ipcMain.handle("install-atlas-binary", async () => {
             installCommand = `ln -sf ${userBinaryPath} ${systemBinaryPath}`;
           } else if (fs.existsSync(systemBinaryPath)) {
             // If direct binary exists, replace with symlink
-            installCommand =
-              `rm -f ${systemBinaryPath} && ln -sf ${userBinaryPath} ${systemBinaryPath}`;
+            installCommand = `rm -f ${systemBinaryPath} && ln -sf ${userBinaryPath} ${systemBinaryPath}`;
           } else {
             // Fresh installation
             installCommand = `ln -sf ${userBinaryPath} ${systemBinaryPath}`;
           }
 
           // Execute with admin privileges using proper escaping
-          const script =
-            `do shell script "${installCommand}" with administrator privileges with prompt "Atlas Installer needs administrator access to create a symlink in /usr/local/bin/"`;
+          const script = `do shell script "${installCommand}" with administrator privileges with prompt "Atlas Installer needs administrator access to create a symlink in /usr/local/bin/"`;
           execSync(`osascript -e '${script}'`);
 
           // Update installPath to reflect the actual binary location
@@ -344,31 +296,20 @@ ipcMain.handle("install-atlas-binary", async () => {
           // Provide more detailed error information
           return {
             success: false,
-            error:
-              `Installation failed: ${execError.message}. Binary source: ${binarySource}, User path: ${userBinaryPath}`,
+            error: `Installation failed: ${execError.message}. Binary source: ${binarySource}, User path: ${userBinaryPath}`,
           };
         }
       } else {
         // Unsupported platform
-        return {
-          success: false,
-          error: `Unsupported platform: ${process.platform}`,
-        };
+        return { success: false, error: `Unsupported platform: ${process.platform}` };
       }
     }
 
     // Verify the installation
     if (fs.existsSync(installPath)) {
-      return {
-        success: true,
-        path: installPath,
-        message: "Atlas binary installed successfully",
-      };
+      return { success: true, path: installPath, message: "Atlas binary installed successfully" };
     } else {
-      return {
-        success: false,
-        error: "Binary installation failed - file not found after copy",
-      };
+      return { success: false, error: "Binary installation failed - file not found after copy" };
     }
   } catch (error) {
     return { success: false, error: error.message };
@@ -420,10 +361,7 @@ ipcMain.handle("setup-path", async () => {
         } catch {
           // Fallback to batch file if PowerShell fails
           const atlasShortcut = `@echo off\nstart "" "${binaryPath}"`;
-          fs.writeFileSync(
-            path.join(startMenuPath, "Atlas.bat"),
-            atlasShortcut,
-          );
+          fs.writeFileSync(path.join(startMenuPath, "Atlas.bat"), atlasShortcut);
         }
 
         // Try to update PATH using PowerShell (more reliable than setx)
@@ -436,10 +374,7 @@ ipcMain.handle("setup-path", async () => {
             }
           `.trim();
 
-          execSync(`powershell -Command "${psCommand}"`, {
-            windowsHide: true,
-            stdio: "ignore",
-          });
+          execSync(`powershell -Command "${psCommand}"`, { windowsHide: true, stdio: "ignore" });
 
           // Also update PATH for current process and all child processes
           // This ensures immediate availability in new terminals
@@ -464,14 +399,10 @@ ipcMain.handle("setup-path", async () => {
 
         return {
           success: true,
-          message:
-            `Atlas has been added to your PATH and Start Menu.\n\nYou can now use 'atlas' from any new command prompt or PowerShell window.\n\nNote: If 'atlas' is not recognized in existing terminals, please close and reopen them.`,
+          message: `Atlas has been added to your PATH and Start Menu.\n\nYou can now use 'atlas' from any new command prompt or PowerShell window.\n\nNote: If 'atlas' is not recognized in existing terminals, please close and reopen them.`,
         };
       } catch (error) {
-        return {
-          success: true,
-          message: `Setup completed. Atlas installed at ${atlasDir}`,
-        };
+        return { success: true, message: `Setup completed. Atlas installed at ${atlasDir}` };
       }
     } else {
       // macOS/Linux: PATH setup not needed for /usr/local/bin
@@ -523,10 +454,7 @@ ipcMain.handle("check-atlas-binary", async () => {
 
     // Check if binary exists
     if (!fs.existsSync(binaryPath)) {
-      return {
-        exists: false,
-        error: `Binary not found at ${binaryPath}`,
-      };
+      return { exists: false, error: `Binary not found at ${binaryPath}` };
     }
 
     // Check if binary is accessible (especially important on Unix systems)
@@ -538,31 +466,19 @@ ipcMain.handle("check-atlas-binary", async () => {
         // Try to get basic info about the file
         const stats = fs.statSync(binaryPath);
         if (!stats.isFile()) {
-          return {
-            exists: false,
-            error: `Path exists but is not a file: ${binaryPath}`,
-          };
+          return { exists: false, error: `Path exists but is not a file: ${binaryPath}` };
         }
       } else {
         // On Unix, check execute permissions
         fs.accessSync(binaryPath, fs.constants.X_OK);
       }
     } catch (accessError) {
-      return {
-        exists: false,
-        error: `Binary not accessible: ${accessError.message}`,
-      };
+      return { exists: false, error: `Binary not accessible: ${accessError.message}` };
     }
 
-    return {
-      exists: true,
-      path: binaryPath,
-    };
+    return { exists: true, path: binaryPath };
   } catch (error) {
-    return {
-      exists: false,
-      error: `Failed to check binary: ${error.message}`,
-    };
+    return { exists: false, error: `Failed to check binary: ${error.message}` };
   }
 });
 
@@ -596,20 +512,13 @@ ipcMain.handle("check-daemon-status", async () => {
       env: { ...process.env, ...getAtlasEnv() },
     });
 
-    return {
-      success: true,
-      running: true,
-      status: JSON.parse(result),
-    };
+    return { success: true, running: true, status: JSON.parse(result) };
   } catch (error) {
     // daemon status returns exit code 1 when not running
     if (error.status === 1) {
       return { success: true, running: false };
     }
-    return {
-      success: false,
-      error: `Failed to check daemon status: ${error.message}`,
-    };
+    return { success: false, error: `Failed to check daemon status: ${error.message}` };
   }
 });
 
@@ -623,9 +532,10 @@ ipcMain.handle("manage-atlas-service", async (event, action = "start") => {
     const envConfig = {
       ...process.env,
       ...getAtlasEnv(),
-      PATH: process.platform === "win32"
-        ? `${path.dirname(binaryPath)};${process.env.PATH}`
-        : `${path.dirname(binaryPath)}:${process.env.PATH}`,
+      PATH:
+        process.platform === "win32"
+          ? `${path.dirname(binaryPath)};${process.env.PATH}`
+          : `${path.dirname(binaryPath)}:${process.env.PATH}`,
       HOME: os.homedir(),
       USER: process.env.USER || os.userInfo().username,
     };
@@ -739,27 +649,19 @@ ipcMain.handle("manage-atlas-service", async (event, action = "start") => {
 
             // Delete existing task if any
             try {
-              execSync('schtasks /delete /tn "AtlasDaemon" /f', {
-                stdio: "ignore",
-              });
+              execSync('schtasks /delete /tn "AtlasDaemon" /f', { stdio: "ignore" });
             } catch {
               // Task doesn't exist
             }
 
             // Create the task to run service start on logon (service is pre-installed above)
-            execSync(
-              `schtasks /create /xml "${taskXmlPath}" /tn "AtlasDaemon"`,
-              {
-                encoding: "utf8",
-                stdio: "ignore",
-              },
-            );
-
-            // Start the task immediately (runs: atlas service start)
-            execSync('schtasks /run /tn "AtlasDaemon"', {
+            execSync(`schtasks /create /xml "${taskXmlPath}" /tn "AtlasDaemon"`, {
               encoding: "utf8",
               stdio: "ignore",
             });
+
+            // Start the task immediately (runs: atlas service start)
+            execSync('schtasks /run /tn "AtlasDaemon"', { encoding: "utf8", stdio: "ignore" });
 
             // Clean up XML file
             try {
@@ -772,8 +674,7 @@ ipcMain.handle("manage-atlas-service", async (event, action = "start") => {
             return {
               success: false,
               action,
-              error:
-                `Failed to create Windows Task Scheduler entry for Atlas service: ${taskError.message}. Please run 'atlas service install' manually after installation.`,
+              error: `Failed to create Windows Task Scheduler entry for Atlas service: ${taskError.message}. Please run 'atlas service install' manually after installation.`,
             };
           }
 
@@ -809,10 +710,7 @@ ipcMain.handle("manage-atlas-service", async (event, action = "start") => {
           } catch {
             // Fallback to batch file if PowerShell fails
             const atlasShortcut = `@echo off\nstart "" "${binaryPath}"`;
-            fs.writeFileSync(
-              path.join(startMenuPath, "Atlas.bat"),
-              atlasShortcut,
-            );
+            fs.writeFileSync(path.join(startMenuPath, "Atlas.bat"), atlasShortcut);
           }
 
           // Wait for daemon to start
@@ -820,28 +718,23 @@ ipcMain.handle("manage-atlas-service", async (event, action = "start") => {
 
           // Verify daemon is running
           try {
-            const statusResult = execSync(
-              `"${binaryPath}" daemon status --json`,
-              {
-                encoding: "utf8",
-                env: envConfig,
-                timeout: 5000,
-              },
-            );
+            const statusResult = execSync(`"${binaryPath}" daemon status --json`, {
+              encoding: "utf8",
+              env: envConfig,
+              timeout: 5000,
+            });
 
             return {
               success: true,
               action,
-              message:
-                `Atlas service started successfully!\n\nAtlas has been added to your PATH and Start Menu.\nYou can now use 'atlas' from any new command prompt or PowerShell window.`,
+              message: `Atlas service started successfully!\n\nAtlas has been added to your PATH and Start Menu.\nYou can now use 'atlas' from any new command prompt or PowerShell window.`,
             };
           } catch {
             // Daemon might be starting, consider it success
             return {
               success: true,
               action,
-              message:
-                `Atlas service is starting...\n\nAtlas has been added to your PATH and Start Menu.\nYou can now use 'atlas' from any new command prompt or PowerShell window.`,
+              message: `Atlas service is starting...\n\nAtlas has been added to your PATH and Start Menu.\nYou can now use 'atlas' from any new command prompt or PowerShell window.`,
             };
           }
         } catch (error) {
@@ -869,16 +762,10 @@ ipcMain.handle("manage-atlas-service", async (event, action = "start") => {
 
         // Remove scheduled task
         try {
-          execSync('schtasks /delete /tn "AtlasDaemon" /f', {
-            stdio: "ignore",
-          });
+          execSync('schtasks /delete /tn "AtlasDaemon" /f', { stdio: "ignore" });
         } catch {}
 
-        return {
-          success: true,
-          action,
-          message: `Atlas daemon stopped successfully`,
-        };
+        return { success: true, action, message: `Atlas daemon stopped successfully` };
       }
     } else if (process.platform === "darwin") {
       // macOS: use the service command approach
@@ -893,8 +780,7 @@ ipcMain.handle("manage-atlas-service", async (event, action = "start") => {
           return {
             success: false,
             action,
-            error:
-              `Atlas binary not accessible at ${binaryPath}. Please verify installation completed successfully.`,
+            error: `Atlas binary not accessible at ${binaryPath}. Please verify installation completed successfully.`,
           };
         }
 
@@ -936,23 +822,18 @@ ipcMain.handle("manage-atlas-service", async (event, action = "start") => {
             return {
               success: false,
               action,
-              error:
-                `Service install failed: ${errorDetails}. The LaunchAgent may not have been created at ~/Library/LaunchAgents/com.tempestdx.atlas.plist`,
+              error: `Service install failed: ${errorDetails}. The LaunchAgent may not have been created at ~/Library/LaunchAgents/com.tempestdx.atlas.plist`,
             };
           }
         }
 
         // Verify the plist was actually created
-        const plistPath = path.join(
-          os.homedir(),
-          "Library/LaunchAgents/com.tempestdx.atlas.plist",
-        );
+        const plistPath = path.join(os.homedir(), "Library/LaunchAgents/com.tempestdx.atlas.plist");
         if (!fs.existsSync(plistPath)) {
           return {
             success: false,
             action,
-            error:
-              `Service install command succeeded but LaunchAgent plist was not created at ${plistPath}. Please run 'atlas service install' manually after installation.`,
+            error: `Service install command succeeded but LaunchAgent plist was not created at ${plistPath}. Please run 'atlas service install' manually after installation.`,
           };
         }
       }
@@ -966,24 +847,13 @@ ipcMain.handle("manage-atlas-service", async (event, action = "start") => {
         cwd: os.homedir(),
       });
 
-      return {
-        success: true,
-        action,
-        message: `Atlas service ${action} completed successfully`,
-      };
+      return { success: true, action, message: `Atlas service ${action} completed successfully` };
     } else {
       // Unsupported platform
-      return {
-        success: false,
-        error: `Unsupported platform: ${process.platform}`,
-      };
+      return { success: false, error: `Unsupported platform: ${process.platform}` };
     }
   } catch (error) {
-    return {
-      success: false,
-      action,
-      error: `Service ${action} failed: ${error.message}`,
-    };
+    return { success: false, action, error: `Service ${action} failed: ${error.message}` };
   }
 });
 
@@ -1020,10 +890,7 @@ ipcMain.handle("manage-atlas-daemon", async (event, action = "start") => {
       execSync(`"${binaryPath}" daemon status --json`, {
         encoding: "utf8",
         timeout: 5000,
-        env: {
-          ...process.env,
-          ...getAtlasEnv(),
-        },
+        env: { ...process.env, ...getAtlasEnv() },
       });
       isAlreadyRunning = true;
     } catch {
@@ -1032,11 +899,7 @@ ipcMain.handle("manage-atlas-daemon", async (event, action = "start") => {
     }
 
     if (isAlreadyRunning && action === "start") {
-      return {
-        success: true,
-        action,
-        message: "Daemon is already running",
-      };
+      return { success: true, action, message: "Daemon is already running" };
     }
 
     // Handle daemon start vs restart differently
@@ -1046,9 +909,10 @@ ipcMain.handle("manage-atlas-daemon", async (event, action = "start") => {
         const { spawn } = require("child_process");
 
         // Use service start instead of daemon start for proper background execution
-        const serviceArgs = process.platform === "win32"
-          ? ["service", "start"] // Windows: use service
-          : ["daemon", "start"]; // Unix: daemon can detach properly
+        const serviceArgs =
+          process.platform === "win32"
+            ? ["service", "start"] // Windows: use service
+            : ["daemon", "start"]; // Unix: daemon can detach properly
 
         const daemonProcess = spawn(binaryPath, serviceArgs, {
           detached: true,
@@ -1056,9 +920,10 @@ ipcMain.handle("manage-atlas-daemon", async (event, action = "start") => {
           env: {
             ...process.env,
             ...getAtlasEnv(),
-            PATH: process.platform === "win32"
-              ? `${path.dirname(binaryPath)};${process.env.PATH}`
-              : `${path.dirname(binaryPath)}:${process.env.PATH}`,
+            PATH:
+              process.platform === "win32"
+                ? `${path.dirname(binaryPath)};${process.env.PATH}`
+                : `${path.dirname(binaryPath)}:${process.env.PATH}`,
             HOME: os.homedir(),
             USER: process.env.USER || os.userInfo().username,
           },
@@ -1080,11 +945,7 @@ ipcMain.handle("manage-atlas-daemon", async (event, action = "start") => {
           };
         }
       } catch (spawnError) {
-        return {
-          success: false,
-          action,
-          error: `Failed to spawn daemon: ${spawnError.message}`,
-        };
+        return { success: false, action, error: `Failed to spawn daemon: ${spawnError.message}` };
       }
     } else if (action === "restart") {
       // For restart, first stop then start
@@ -1111,9 +972,10 @@ ipcMain.handle("manage-atlas-daemon", async (event, action = "start") => {
           env: {
             ...process.env,
             ...getAtlasEnv(),
-            PATH: process.platform === "win32"
-              ? `${path.dirname(binaryPath)};${process.env.PATH}`
-              : `${path.dirname(binaryPath)}:${process.env.PATH}`,
+            PATH:
+              process.platform === "win32"
+                ? `${path.dirname(binaryPath)};${process.env.PATH}`
+                : `${path.dirname(binaryPath)}:${process.env.PATH}`,
             HOME: os.homedir(),
             USER: process.env.USER || os.userInfo().username,
           },
@@ -1123,17 +985,10 @@ ipcMain.handle("manage-atlas-daemon", async (event, action = "start") => {
         const errorMessage = `Stdout: ${execError.stdout || "N/A"}\nStderr: ${
           execError.stderr || "N/A"
         }\nError: ${execError.message}`;
-        return {
-          success: false,
-          action,
-          error: `Failed to ${action} daemon: ${errorMessage}`,
-        };
+        return { success: false, action, error: `Failed to ${action} daemon: ${errorMessage}` };
       }
     } else {
-      return {
-        success: false,
-        error: `Unknown daemon action: ${action}`,
-      };
+      return { success: false, error: `Unknown daemon action: ${action}` };
     }
 
     // Wait for daemon to start (give it more time to fully initialize)
@@ -1147,20 +1002,17 @@ ipcMain.handle("manage-atlas-daemon", async (event, action = "start") => {
         env: {
           ...process.env,
           ...getAtlasEnv(),
-          PATH: process.platform === "win32"
-            ? `${path.dirname(binaryPath)};${process.env.PATH}`
-            : `${path.dirname(binaryPath)}:${process.env.PATH}`,
+          PATH:
+            process.platform === "win32"
+              ? `${path.dirname(binaryPath)};${process.env.PATH}`
+              : `${path.dirname(binaryPath)}:${process.env.PATH}`,
           HOME: os.homedir(),
           USER: process.env.USER || os.userInfo().username,
         },
         cwd: os.homedir(),
       });
 
-      return {
-        success: true,
-        action,
-        status: JSON.parse(status),
-      };
+      return { success: true, action, status: JSON.parse(status) };
     } catch (statusError) {
       // If status check fails, the daemon didn't start properly
       const errorDetails = `Status check failed - Stdout: ${statusError.stdout || "N/A"}, Stderr: ${
@@ -1170,8 +1022,7 @@ ipcMain.handle("manage-atlas-daemon", async (event, action = "start") => {
       return {
         success: false,
         action,
-        error:
-          `Failed to start daemon: ${errorDetails}. Please start manually with 'atlas daemon start'.`,
+        error: `Failed to start daemon: ${errorDetails}. Please start manually with 'atlas daemon start'.`,
       };
     }
   } catch (error) {

@@ -1,9 +1,9 @@
-import { Box, Text, useInput } from "ink";
-import { Select } from "./select/index.ts";
-import { useEffect, useState } from "react";
-import { useResponsiveDimensions } from "../utils/useResponsiveDimensions.ts";
-import { checkDaemonRunning } from "../utils/daemon-client.ts";
 import { getAtlasClient } from "@atlas/client";
+import { Box, Text, useInput } from "ink";
+import { useEffect, useState } from "react";
+import { checkDaemonRunning } from "../utils/daemon-client.ts";
+import { useResponsiveDimensions } from "../utils/useResponsiveDimensions.ts";
+import { Select } from "./select/index.ts";
 
 interface SessionSelectionProps {
   workspaceId: string;

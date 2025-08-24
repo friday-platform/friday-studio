@@ -3,10 +3,10 @@
  * Checks for newer versions from the Atlas update server with daily caching
  */
 
-import { getVersionInfo } from "./version.ts";
-import { ensureDir, existsSync } from "@std/fs";
 import { getAtlasBaseUrl } from "@atlas/core";
+import { ensureDir, existsSync } from "@std/fs";
 import { ReleaseChannel } from "./release-channel.ts";
+import { getVersionInfo } from "./version.ts";
 
 export interface VersionResponse {
   channel: string;
@@ -79,10 +79,7 @@ function parseVersionDate(version: string): Date | null {
 /**
  * Check if current version is older than server version
  */
-function isVersionOlder(
-  currentVersion: string,
-  serverVersion: string,
-): boolean {
+function isVersionOlder(currentVersion: string, serverVersion: string): boolean {
   const currentDate = parseVersionDate(currentVersion);
   const serverDate = parseVersionDate(serverVersion);
 
@@ -166,10 +163,7 @@ async function saveCache(result: VersionCheckResult): Promise<void> {
     const cacheDir = getCacheDir();
     await ensureDir(cacheDir);
 
-    const cache: VersionCache = {
-      timestamp: Date.now(),
-      result,
-    };
+    const cache: VersionCache = { timestamp: Date.now(), result };
 
     const cacheFile = getCacheFilePath();
     await Deno.writeTextFile(cacheFile, JSON.stringify(cache));
@@ -181,20 +175,13 @@ async function saveCache(result: VersionCheckResult): Promise<void> {
 /**
  * Fetch version information from the Atlas update server
  */
-async function fetchLatestVersion(
-  channel: string,
-): Promise<VersionResponse | null> {
+async function fetchLatestVersion(channel: string): Promise<VersionResponse | null> {
   try {
-    const response = await fetch(
-      `${getAtlasBaseUrl()}/version/${channel}`,
-      {
-        method: "GET",
-        headers: {
-          "User-Agent": "Atlas-CLI",
-        },
-        signal: AbortSignal.timeout(2000), // 2 second timeout (reduced from 5)
-      },
-    );
+    const response = await fetch(`${getAtlasBaseUrl()}/version/${channel}`, {
+      method: "GET",
+      headers: { "User-Agent": "Atlas-CLI" },
+      signal: AbortSignal.timeout(2000), // 2 second timeout (reduced from 5)
+    });
 
     if (!response.ok) {
       return null;
@@ -211,28 +198,20 @@ async function fetchLatestVersion(
  * Check for available updates with daily caching
  * @param forceCheck Skip cache and force fresh remote check
  */
-export async function checkForUpdates(
-  forceCheck: boolean = false,
-): Promise<VersionCheckResult> {
+export async function checkForUpdates(forceCheck: boolean = false): Promise<VersionCheckResult> {
   const versionInfo = getVersionInfo();
   const currentVersion = versionInfo.version;
 
   // Skip version checking for dev builds
   if (versionInfo.isDev) {
-    return {
-      hasUpdate: false,
-      currentVersion,
-    };
+    return { hasUpdate: false, currentVersion };
   }
 
   // Check cache first - only check once per day (unless forced)
   if (!forceCheck) {
     const cached = await loadCache();
     if (cached && cached.result.currentVersion === currentVersion) {
-      return {
-        ...cached.result,
-        fromCache: true,
-      };
+      return { ...cached.result, fromCache: true };
     }
   }
 
@@ -323,18 +302,15 @@ export async function checkForUpdate(channel?: string): Promise<UpdateInfo> {
     channel = versionInfo.isNightly
       ? ReleaseChannel.Nightly
       : versionInfo.isDev
-      ? ReleaseChannel.Edge
-      : ReleaseChannel.Edge;
+        ? ReleaseChannel.Edge
+        : ReleaseChannel.Edge;
   }
 
   try {
     const serverResponse = await fetchLatestVersion(channel);
     if (!serverResponse) {
       console.error(`No server response for channel: ${channel}`);
-      return {
-        updateAvailable: false,
-        currentVersion,
-      };
+      return { updateAvailable: false, currentVersion };
     }
 
     const latestVersion = serverResponse.latest.version;
@@ -343,11 +319,8 @@ export async function checkForUpdate(channel?: string): Promise<UpdateInfo> {
     const hasUpdate = versionInfo.isDev ? true : isVersionOlder(currentVersion, latestVersion);
 
     // Build download URL for current platform
-    const platform = Deno.build.os === "darwin"
-      ? "darwin"
-      : Deno.build.os === "linux"
-      ? "linux"
-      : "windows";
+    const platform =
+      Deno.build.os === "darwin" ? "darwin" : Deno.build.os === "linux" ? "linux" : "windows";
     const arch = Deno.build.arch === "x86_64" ? "amd64" : "arm64";
     const platformKey = `${platform}_${arch}`;
 
@@ -372,16 +345,8 @@ export async function checkForUpdate(channel?: string): Promise<UpdateInfo> {
       downloadUrl = `${getAtlasBaseUrl()}${downloadUrl}`;
     }
 
-    return {
-      updateAvailable: hasUpdate,
-      currentVersion,
-      latestVersion,
-      downloadUrl,
-    };
+    return { updateAvailable: hasUpdate, currentVersion, latestVersion, downloadUrl };
   } catch {
-    return {
-      updateAvailable: false,
-      currentVersion,
-    };
+    return { updateAvailable: false, currentVersion };
   }
 }

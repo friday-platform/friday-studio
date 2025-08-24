@@ -36,10 +36,8 @@ export function Table({ columns, data, borderColor = "gray" }: TableProps) {
               {col.align === "right"
                 ? col.label.padStart(width - 2)
                 : col.align === "center"
-                ? col.label
-                  .padStart((width - 2 + col.label.length) / 2)
-                  .padEnd(width - 2)
-                : col.label.padEnd(width - 2)}
+                  ? col.label.padStart((width - 2 + col.label.length) / 2).padEnd(width - 2)
+                  : col.label.padEnd(width - 2)}
             </Text>
           </Box>
         );
@@ -48,15 +46,13 @@ export function Table({ columns, data, borderColor = "gray" }: TableProps) {
   );
 
   // Render row
-  const renderRow = (
-    row: Record<string, string | number>,
-    rowIndex: number,
-  ) => (
+  const renderRow = (row: Record<string, string | number>, rowIndex: number) => (
     <Box key={rowIndex}>
       {columns.map((col) => {
         const width = getColumnWidth(col, data);
         const value = String(row[col.key] || "");
-        const color = col.color ||
+        const color =
+          col.color ||
           (typeof row[col.key + "Color"] === "string"
             ? (row[col.key + "Color"] as string)
             : "white");
@@ -64,11 +60,11 @@ export function Table({ columns, data, borderColor = "gray" }: TableProps) {
         return (
           <Box key={col.key} width={width} paddingRight={1}>
             <Text color={color}>
-              {col.align === "right" ? value.padStart(width - 2) : col.align === "center"
-                ? value
-                  .padStart((width - 2 + value.length) / 2)
-                  .padEnd(width - 2)
-                : value.padEnd(width - 2)}
+              {col.align === "right"
+                ? value.padStart(width - 2)
+                : col.align === "center"
+                  ? value.padStart((width - 2 + value.length) / 2).padEnd(width - 2)
+                  : value.padEnd(width - 2)}
             </Text>
           </Box>
         );
@@ -78,9 +74,7 @@ export function Table({ columns, data, borderColor = "gray" }: TableProps) {
 
   // Render separator
   const renderSeparator = () => {
-    const line = columns
-      .map((col) => "─".repeat(getColumnWidth(col, data) - 1))
-      .join("─");
+    const line = columns.map((col) => "─".repeat(getColumnWidth(col, data) - 1)).join("─");
     return <Text color={borderColor}>{line}</Text>;
   };
 

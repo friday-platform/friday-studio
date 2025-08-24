@@ -4,38 +4,9 @@
  */
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { type ToolContext } from "./types.ts";
-
-// Import workspace tools
-import { registerWorkspaceCreateTool } from "./workspace/create.ts";
-import { registerWorkspaceDeleteTool } from "./workspace/delete.ts";
-import { registerWorkspaceDescribeTool } from "./workspace/describe.ts";
-import { registerWorkspaceListTool } from "./workspace/list.ts";
-
-// Import session tools
-import { registerSessionCancelTool } from "./session/cancel.ts";
-import { registerSessionDescribeTool } from "./session/describe.ts";
-
-// Import job tools
-import { registerJobsDescribeTool } from "./jobs/describe.ts";
-import { registerJobsListTool } from "./jobs/list.ts";
-
-// Import signal tools
-import { registerSignalsListTool } from "./signals/list.ts";
-import { registerSignalsTriggerTool } from "./signals/trigger.ts";
-
 // Import agent tools
 import { registerAgentsDescribeTool } from "./agents/describe.ts";
 import { registerAgentsListTool } from "./agents/list.ts";
-
-// Import library tools
-import { registerLibraryGetTool } from "./library/get.ts";
-import { registerLibraryGetStreamTool } from "./library/get-stream.ts";
-import { registerLibraryListTool } from "./library/list.ts";
-import { registerLibraryStatsTool } from "./library/stats.ts";
-import { registerLibraryStoreTool } from "./library/store.ts";
-import { registerLibraryTemplatesTool } from "./library/templates.ts";
-
 // Import filesystem tools
 import { registerGlobTool } from "./fs/glob.ts";
 import { registerGrepTool } from "./fs/grep.ts";
@@ -43,17 +14,36 @@ import { registerLsTool } from "./fs/ls.ts";
 import { registerReadTool } from "./fs/read.ts";
 import { registerWriteTool } from "./fs/write.ts";
 
-// Import web tools
-import { registerWebTools } from "./web/index.ts";
-
-// Import system tools
-import { registerBashTool } from "./system/bash.ts";
-
+// Import job tools
+import { registerJobsDescribeTool } from "./jobs/describe.ts";
+import { registerJobsListTool } from "./jobs/list.ts";
+// Import library tools
+import { registerLibraryGetTool } from "./library/get.ts";
+import { registerLibraryGetStreamTool } from "./library/get-stream.ts";
+import { registerLibraryListTool } from "./library/list.ts";
+import { registerLibraryStatsTool } from "./library/stats.ts";
+import { registerLibraryStoreTool } from "./library/store.ts";
+import { registerLibraryTemplatesTool } from "./library/templates.ts";
 // Import notification tools
 import { registerEmailNotificationTool } from "./notifications/email.ts";
-
 // Import platform tools
 import { registerVersionTool } from "./platform/version.ts";
+// Import session tools
+import { registerSessionCancelTool } from "./session/cancel.ts";
+import { registerSessionDescribeTool } from "./session/describe.ts";
+// Import signal tools
+import { registerSignalsListTool } from "./signals/list.ts";
+import { registerSignalsTriggerTool } from "./signals/trigger.ts";
+// Import system tools
+import { registerBashTool } from "./system/bash.ts";
+import type { ToolContext } from "./types.ts";
+// Import web tools
+import { registerWebTools } from "./web/index.ts";
+// Import workspace tools
+import { registerWorkspaceCreateTool } from "./workspace/create.ts";
+import { registerWorkspaceDeleteTool } from "./workspace/delete.ts";
+import { registerWorkspaceDescribeTool } from "./workspace/describe.ts";
+import { registerWorkspaceListTool } from "./workspace/list.ts";
 
 /**
  * Register all tools with the MCP server

@@ -4,28 +4,20 @@
  * Mirrors the pattern established in LLMProviderManager
  */
 
-import { logger } from "@atlas/logger";
 import { getAtlasDaemonUrl } from "@atlas/atlasd";
-import { type MCPServerConfig } from "./manager.ts";
+import { logger } from "@atlas/logger";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { experimental_createMCPClient as createMCPClient } from "ai";
+import type { MCPServerConfig } from "./manager.ts";
 
 // Type definitions for configuration sources
 export interface AtlasConfig {
-  tools?: {
-    mcp?: {
-      servers?: Record<string, Partial<MCPServerConfig>>;
-    };
-  };
+  tools?: { mcp?: { servers?: Record<string, Partial<MCPServerConfig>> } };
   [key: string]: unknown;
 }
 
 export interface WorkspaceConfig {
-  tools?: {
-    mcp?: {
-      servers?: Record<string, Partial<MCPServerConfig>>;
-    };
-  };
+  tools?: { mcp?: { servers?: Record<string, Partial<MCPServerConfig>> } };
   [key: string]: unknown;
 }
 
@@ -35,10 +27,7 @@ export interface AgentConfig {
 }
 
 export interface MCPServerOverrides {
-  tools?: {
-    allow?: string[];
-    deny?: string[];
-  };
+  tools?: { allow?: string[]; deny?: string[] };
   timeout_ms?: number;
 }
 
@@ -68,25 +57,28 @@ export class MCPServerRegistry {
     workspaceConfig?: WorkspaceConfig,
   ): Promise<void> {
     // If already initialized, return immediately
-    if (this.initialized) return;
+    if (MCPServerRegistry.initialized) return;
 
     // If initialization is in progress, wait for it to complete
-    if (this.initializationPromise) {
+    if (MCPServerRegistry.initializationPromise) {
       logger.debug("MCPServerRegistry initialization already in progress, waiting...", {
         operation: "mcp_registry_initialization",
       });
-      return await this.initializationPromise;
+      return await MCPServerRegistry.initializationPromise;
     }
 
     // Start initialization and store the promise to prevent concurrent initialization
-    this.initializationPromise = this.doInitialize(atlasConfig, workspaceConfig);
+    MCPServerRegistry.initializationPromise = MCPServerRegistry.doInitialize(
+      atlasConfig,
+      workspaceConfig,
+    );
 
     try {
-      await this.initializationPromise;
-      this.initialized = true;
+      await MCPServerRegistry.initializationPromise;
+      MCPServerRegistry.initialized = true;
     } catch (error) {
       // Clear the promise so initialization can be retried
-      this.initializationPromise = null;
+      MCPServerRegistry.initializationPromise = null;
       throw error;
     }
   }
@@ -110,35 +102,38 @@ export class MCPServerRegistry {
     });
 
     // Get platform tools with retry logic
-    const platformTools = await this.getAllPlatformToolsWithRetry();
+    const platformTools = await MCPServerRegistry.getAllPlatformToolsWithRetry();
 
-    const atlasConfigWithPlatform = this.injectPlatformServer(atlasConfig, platformTools);
+    const atlasConfigWithPlatform = MCPServerRegistry.injectPlatformServer(
+      atlasConfig,
+      platformTools,
+    );
 
     // 1. Load platform-level MCP servers from atlas.yml (now includes atlas-platform)
-    const platformServers = this.extractPlatformMCPServers(atlasConfigWithPlatform);
+    const platformServers = MCPServerRegistry.extractPlatformMCPServers(atlasConfigWithPlatform);
 
     // 2. Load workspace-level MCP servers from workspace.yml
-    const workspaceServers = this.extractWorkspaceMCPServers(workspaceConfig);
+    const workspaceServers = MCPServerRegistry.extractWorkspaceMCPServers(workspaceConfig);
 
     // 3. Merge with workspace overriding platform (hierarchical resolution)
-    const mergedServers = this.mergeServerConfigurations(
+    const mergedServers = MCPServerRegistry.mergeServerConfigurations(
       platformServers,
       workspaceServers,
     );
 
     // 4. Register all servers in the registry
     for (const [serverId, config] of mergedServers) {
-      this.serverConfigs.set(serverId, config);
+      MCPServerRegistry.serverConfigs.set(serverId, config);
     }
 
     logger.info(
-      `MCP Server Registry initialized with ${this.serverConfigs.size} servers`,
+      `MCP Server Registry initialized with ${MCPServerRegistry.serverConfigs.size} servers`,
       {
         operation: "mcp_registry_initialization",
         platformServerCount: platformServers.size,
         workspaceServerCount: workspaceServers.size,
-        totalServerCount: this.serverConfigs.size,
-        serverIds: Array.from(this.serverConfigs.keys()),
+        totalServerCount: MCPServerRegistry.serverConfigs.size,
+        serverIds: Array.from(MCPServerRegistry.serverConfigs.keys()),
         platformToolCount: platformTools.length,
       },
     );
@@ -222,10 +217,7 @@ export class MCPServerRegistry {
 
     // 1. Add all platform servers first
     for (const [serverId, config] of platformServers) {
-      merged.set(serverId, {
-        ...config,
-        scope: "platform",
-      });
+      merged.set(serverId, { ...config, scope: "platform" });
     }
 
     // 2. Override with workspace servers (workspace takes precedence)
@@ -234,23 +226,17 @@ export class MCPServerRegistry {
 
       if (platformConfig) {
         // Merge platform and workspace configs intelligently
-        merged.set(serverId, this.mergeServerConfig(platformConfig, config));
+        merged.set(serverId, MCPServerRegistry.mergeServerConfig(platformConfig, config));
 
-        logger.debug(
-          `Merged platform and workspace config for server: ${serverId}`,
-          {
-            operation: "mcp_config_merge",
-            serverId,
-            hasPlatformConfig: true,
-            hasWorkspaceConfig: true,
-          },
-        );
+        logger.debug(`Merged platform and workspace config for server: ${serverId}`, {
+          operation: "mcp_config_merge",
+          serverId,
+          hasPlatformConfig: true,
+          hasWorkspaceConfig: true,
+        });
       } else {
         // Workspace-only server
-        merged.set(serverId, {
-          ...config,
-          scope: "workspace",
-        });
+        merged.set(serverId, { ...config, scope: "workspace" });
       }
     }
 
@@ -279,12 +265,8 @@ export class MCPServerRegistry {
       auth: workspaceConfig.auth || platformConfig.auth,
       // Merge tools: workspace denied list appends to platform denied list
       tools: {
-        allow: workspaceConfig.tools?.allow ||
-          platformConfig.tools?.allow,
-        deny: [
-          ...(platformConfig.tools?.deny || []),
-          ...(workspaceConfig.tools?.deny || []),
-        ],
+        allow: workspaceConfig.tools?.allow || platformConfig.tools?.allow,
+        deny: [...(platformConfig.tools?.deny || []), ...(workspaceConfig.tools?.deny || [])],
       },
       // Workspace timeout overrides platform timeout
       timeout_ms: workspaceConfig.timeout_ms || platformConfig.timeout_ms,
@@ -296,7 +278,7 @@ export class MCPServerRegistry {
    * Get server configuration with proper error handling
    */
   static getServerConfig(serverId: string): MCPServerConfig | undefined {
-    if (!this.initialized) {
+    if (!MCPServerRegistry.initialized) {
       logger.warn("MCP Server Registry not initialized", {
         operation: "mcp_registry_access",
         serverId,
@@ -305,14 +287,14 @@ export class MCPServerRegistry {
       return undefined;
     }
 
-    return this.serverConfigs.get(serverId);
+    return MCPServerRegistry.serverConfigs.get(serverId);
   }
 
   /**
    * Get server configurations for multiple servers with availability checking
    */
   static getServerConfigs(serverIds: string[]): MCPServerConfig[] {
-    if (!this.initialized) {
+    if (!MCPServerRegistry.initialized) {
       logger.warn("MCP Server Registry not initialized", {
         operation: "mcp_registry_access",
         serverIds,
@@ -322,7 +304,7 @@ export class MCPServerRegistry {
     }
 
     return serverIds
-      .map((id) => this.serverConfigs.get(id))
+      .map((id) => MCPServerRegistry.serverConfigs.get(id))
       .filter((config): config is MCPServerConfig => config !== undefined);
   }
 
@@ -330,34 +312,32 @@ export class MCPServerRegistry {
    * Check if the registry has been initialized
    */
   static isInitialized(): boolean {
-    return this.initialized;
+    return MCPServerRegistry.initialized;
   }
 
   /**
    * List all registered server IDs
    */
   static listServers(): string[] {
-    return Array.from(this.serverConfigs.keys());
+    return Array.from(MCPServerRegistry.serverConfigs.keys());
   }
 
   /**
    * Get the status of all registered MCP servers
    */
   static getRegisteredServers(): Map<string, MCPServerConfig> {
-    return new Map(this.serverConfigs);
+    return new Map(MCPServerRegistry.serverConfigs);
   }
 
   /**
    * Clear the registry (for testing purposes)
    */
   static reset(): void {
-    this.serverConfigs.clear();
-    this.initialized = false;
-    this.initializationPromise = null;
-    this.cachedPlatformTools = null;
-    logger.debug("MCP Server Registry reset", {
-      operation: "mcp_registry_reset",
-    });
+    MCPServerRegistry.serverConfigs.clear();
+    MCPServerRegistry.initialized = false;
+    MCPServerRegistry.initializationPromise = null;
+    MCPServerRegistry.cachedPlatformTools = null;
+    logger.debug("MCP Server Registry reset", { operation: "mcp_registry_reset" });
   }
 
   /**
@@ -365,36 +345,37 @@ export class MCPServerRegistry {
    */
   private static async getAllPlatformToolsWithRetry(maxRetries = 3): Promise<string[]> {
     // Return cached tools if available
-    if (this.cachedPlatformTools && this.cachedPlatformTools.length > 0) {
+    if (MCPServerRegistry.cachedPlatformTools && MCPServerRegistry.cachedPlatformTools.length > 0) {
       logger.debug("Using cached platform tools", {
         operation: "mcp_registry_initialization",
-        toolCount: this.cachedPlatformTools.length,
+        toolCount: MCPServerRegistry.cachedPlatformTools.length,
       });
-      return this.cachedPlatformTools;
+      return MCPServerRegistry.cachedPlatformTools;
     }
 
     // If we're already fetching tools, wait for that to complete
     // This prevents multiple concurrent fetches
-    if (this.platformToolsFetchPromise) {
+    if (MCPServerRegistry.platformToolsFetchPromise) {
       logger.debug("Platform tools fetch already in progress, waiting...", {
         operation: "mcp_registry_initialization",
       });
       try {
-        return await this.platformToolsFetchPromise;
+        return await MCPServerRegistry.platformToolsFetchPromise;
       } catch {
         // If the concurrent fetch failed, we'll try again below
       }
     }
 
     // Start fetching tools
-    this.platformToolsFetchPromise = this.fetchPlatformToolsWithRetry(maxRetries);
+    MCPServerRegistry.platformToolsFetchPromise =
+      MCPServerRegistry.fetchPlatformToolsWithRetry(maxRetries);
 
     try {
-      const tools = await this.platformToolsFetchPromise;
+      const tools = await MCPServerRegistry.platformToolsFetchPromise;
       return tools;
     } finally {
       // Clear the promise so future calls can retry if needed
-      this.platformToolsFetchPromise = null;
+      MCPServerRegistry.platformToolsFetchPromise = null;
     }
   }
 
@@ -407,10 +388,10 @@ export class MCPServerRegistry {
       try {
         // Use a reasonable timeout that gives the server time to respond
         const timeout = 3000; // 3 seconds - consistent timeout
-        const tools = await this.getAllPlatformTools(timeout);
+        const tools = await MCPServerRegistry.getAllPlatformTools(timeout);
 
         // Cache the tools for future use
-        this.cachedPlatformTools = tools;
+        MCPServerRegistry.cachedPlatformTools = tools;
         logger.info("Successfully fetched platform tools", {
           operation: "mcp_registry_initialization",
           attempt,
@@ -437,7 +418,7 @@ export class MCPServerRegistry {
 
         // Wait before retrying with exponential backoff
         if (attempt < maxRetries) {
-          const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000); // 1s, 2s, 4s (max 5s)
+          const delay = Math.min(1000 * 2 ** (attempt - 1), 5000); // 1s, 2s, 4s (max 5s)
           await new Promise((resolve) => setTimeout(resolve, delay));
         }
       }
@@ -453,7 +434,7 @@ export class MCPServerRegistry {
 
     // Return empty array but still register the server
     // The server can still work, just without pre-filtered tools
-    this.cachedPlatformTools = [];
+    MCPServerRegistry.cachedPlatformTools = [];
     return [];
   }
 
@@ -470,15 +451,12 @@ export class MCPServerRegistry {
       });
 
       // Create MCP client with HTTP transport WITH TIMEOUT
-      const transport = new StreamableHTTPClientTransport(
-        new URL(`${daemonUrl}/mcp`),
-        {
-          requestInit: {
-            // Add timeout to prevent hanging when daemon is busy
-            signal: AbortSignal.timeout(timeoutMs),
-          },
+      const transport = new StreamableHTTPClientTransport(new URL(`${daemonUrl}/mcp`), {
+        requestInit: {
+          // Add timeout to prevent hanging when daemon is busy
+          signal: AbortSignal.timeout(timeoutMs),
         },
-      );
+      });
 
       // Wrap client creation with timeout
       const mcpClient = await Promise.race([
@@ -487,7 +465,7 @@ export class MCPServerRegistry {
           setTimeout(
             () => reject(new Error("Platform tools MCP client creation timeout")),
             timeoutMs,
-          )
+          ),
         ),
       ]);
 
@@ -495,7 +473,7 @@ export class MCPServerRegistry {
       const tools = await Promise.race([
         mcpClient.tools(),
         new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error("Platform tools fetch timeout")), timeoutMs)
+          setTimeout(() => reject(new Error("Platform tools fetch timeout")), timeoutMs),
         ),
       ]);
       const toolNames = Object.keys(tools);
@@ -538,17 +516,12 @@ export class MCPServerRegistry {
     // Create the platform MCP server configuration
     // Even if we don't have the tools list yet, we still register the server
     const platformMCPServer: Partial<MCPServerConfig> = {
-      transport: {
-        type: "http" as const,
-        url: `${getAtlasDaemonUrl()}/mcp`,
-      },
+      transport: { type: "http" as const, url: `${getAtlasDaemonUrl()}/mcp` },
     };
 
     // Only add tool filtering if we have the list
     if (platformTools.length > 0) {
-      platformMCPServer.tools = {
-        allow: platformTools,
-      };
+      platformMCPServer.tools = { allow: platformTools };
       logger.debug("Platform server configured with tool filtering", {
         operation: "mcp_registry_initialization",
         toolCount: platformTools.length,
@@ -561,15 +534,7 @@ export class MCPServerRegistry {
 
     // Merge platform server into atlas config
     if (!atlasConfig) {
-      return {
-        tools: {
-          mcp: {
-            servers: {
-              "atlas-platform": platformMCPServer,
-            },
-          },
-        },
-      };
+      return { tools: { mcp: { servers: { "atlas-platform": platformMCPServer } } } };
     }
 
     return {
@@ -578,10 +543,7 @@ export class MCPServerRegistry {
         ...atlasConfig.tools,
         mcp: {
           ...atlasConfig.tools?.mcp,
-          servers: {
-            ...atlasConfig.tools?.mcp?.servers,
-            "atlas-platform": platformMCPServer,
-          },
+          servers: { ...atlasConfig.tools?.mcp?.servers, "atlas-platform": platformMCPServer },
         },
       },
     };

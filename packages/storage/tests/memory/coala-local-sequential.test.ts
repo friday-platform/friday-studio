@@ -28,7 +28,7 @@ Deno.test("CoALALocalFileStorageAdapter - should write files sequentially not co
 
   // Override writeTextFile to track concurrency
   const originalWriteTextFile = Deno.writeTextFile;
-  Deno.writeTextFile = async function (path, data, options) {
+  Deno.writeTextFile = async (path, data, options) => {
     const startTime = Date.now();
     writeStartTimes.push(startTime);
 
@@ -96,7 +96,7 @@ Deno.test("CoALALocalFileStorageAdapter - should compact memory types sequential
 
   const originalWriteTextFile = Deno.writeTextFile;
 
-  Deno.writeTextFile = async function (path, data, options) {
+  Deno.writeTextFile = async (path, data, options) => {
     concurrentWrites++;
     maxConcurrent = Math.max(maxConcurrent, concurrentWrites);
 

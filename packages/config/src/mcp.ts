@@ -6,8 +6,6 @@
  * 2. Platform MCP - Atlas exposing its capabilities (external systems calling in)
  */
 
-import { z } from "zod/v4";
-import { WorkspaceTimeoutConfigSchema } from "./base.ts";
 import {
   type MCPAuthConfig,
   MCPAuthConfigSchema,
@@ -18,6 +16,8 @@ import {
   type MCPTransportConfig,
   MCPTransportConfigSchema,
 } from "@atlas/agent-sdk";
+import { z } from "zod/v4";
+import { WorkspaceTimeoutConfigSchema } from "./base.ts";
 
 // ==============================================================================
 // PROTOCOL MCP - External tool integration (agents calling MCP servers)
@@ -30,17 +30,14 @@ import {
  * MCP client configuration for calling external MCP servers
  */
 export const MCPClientConfigSchema = z.strictObject({
-  client_config: z.strictObject({
-    timeout: WorkspaceTimeoutConfigSchema.default({
-      progressTimeout: "2m",
-      maxTotalTimeout: "30m",
-    }).describe("Watchdog timeout configuration"),
-  }).default({
-    timeout: {
-      progressTimeout: "2m",
-      maxTotalTimeout: "30m",
-    },
-  }),
+  client_config: z
+    .strictObject({
+      timeout: WorkspaceTimeoutConfigSchema.default({
+        progressTimeout: "2m",
+        maxTotalTimeout: "30m",
+      }).describe("Watchdog timeout configuration"),
+    })
+    .default({ timeout: { progressTimeout: "2m", maxTotalTimeout: "30m" } }),
   servers: z.record(z.string(), MCPServerConfigSchema).optional(),
 });
 export type MCPClientConfig = z.infer<typeof MCPClientConfigSchema>;
@@ -54,12 +51,15 @@ export type MCPClientConfig = z.infer<typeof MCPClientConfigSchema>;
  */
 export const PlatformMCPConfigSchema = z.strictObject({
   enabled: z.boolean().default(false),
-  discoverable: z.strictObject({
-    capabilities: z.array(z.string()).optional().describe(
-      "Capability patterns to expose (e.g., 'workspace_*')",
-    ),
-    jobs: z.array(z.string()).optional().describe("Job patterns to expose as MCP tools"),
-  }).optional(),
+  discoverable: z
+    .strictObject({
+      capabilities: z
+        .array(z.string())
+        .optional()
+        .describe("Capability patterns to expose (e.g., 'workspace_*')"),
+      jobs: z.array(z.string()).optional().describe("Job patterns to expose as MCP tools"),
+    })
+    .optional(),
 });
 export type PlatformMCPConfig = z.infer<typeof PlatformMCPConfigSchema>;
 
@@ -68,14 +68,18 @@ export type PlatformMCPConfig = z.infer<typeof PlatformMCPConfigSchema>;
  */
 export const AtlasPlatformMCPConfigSchema = PlatformMCPConfigSchema.extend({
   transport: MCPTransportConfigSchema.optional(),
-  auth: z.strictObject({
-    required: z.boolean().default(false),
-    providers: z.array(z.string()).optional(),
-  }).optional(),
-  rate_limits: z.strictObject({
-    requests_per_hour: z.number().int().positive().optional(),
-    concurrent_sessions: z.number().int().positive().optional(),
-  }).optional(),
+  auth: z
+    .strictObject({
+      required: z.boolean().default(false),
+      providers: z.array(z.string()).optional(),
+    })
+    .optional(),
+  rate_limits: z
+    .strictObject({
+      requests_per_hour: z.number().int().positive().optional(),
+      concurrent_sessions: z.number().int().positive().optional(),
+    })
+    .optional(),
 });
 export type AtlasPlatformMCPConfig = z.infer<typeof AtlasPlatformMCPConfigSchema>;
 
@@ -96,23 +100,26 @@ export type ToolsConfig = z.infer<typeof ToolsConfigSchema>;
  */
 export const AtlasToolsConfigSchema = ToolsConfigSchema.extend({
   mcp: MCPClientConfigSchema.extend({
-    tool_policy: z.strictObject({
-      type: z.enum(["allowlist", "denylist"]).default("allowlist"),
-      allow: z.array(z.string()).optional(),
-      deny: z.array(z.string()).optional(),
-    }).optional().describe("Platform-level MCP tool security policies"),
+    tool_policy: z
+      .strictObject({
+        type: z.enum(["allowlist", "denylist"]).default("allowlist"),
+        allow: z.array(z.string()).optional(),
+        deny: z.array(z.string()).optional(),
+      })
+      .optional()
+      .describe("Platform-level MCP tool security policies"),
   }).optional(),
 });
 export type AtlasToolsConfig = z.infer<typeof AtlasToolsConfigSchema>;
 
 // Re-export MCP types from agent-sdk for backward compatibility
 export {
-  MCPAuthConfig,
+  type MCPAuthConfig,
   MCPAuthConfigSchema,
-  MCPServerConfig,
+  type MCPServerConfig,
   MCPServerConfigSchema,
-  MCPServerToolFilter,
+  type MCPServerToolFilter,
   MCPServerToolFilterSchema,
-  MCPTransportConfig,
+  type MCPTransportConfig,
   MCPTransportConfigSchema,
 };

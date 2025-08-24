@@ -5,9 +5,9 @@
  * they're parsed as strings but schemas expect numbers. Zod coercion fixes this.
  */
 
+import { WorkspaceAgentConfigSchema, WorkspaceConfigSchema } from "@atlas/config";
 import { assertEquals } from "@std/assert";
 import { parse as parseYaml } from "@std/yaml";
-import { WorkspaceAgentConfigSchema, WorkspaceConfigSchema } from "@atlas/config";
 
 interface YamlWorkspaceData {
   agents: Record<string, unknown>;

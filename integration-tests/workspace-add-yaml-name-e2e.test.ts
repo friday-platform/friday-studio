@@ -2,11 +2,12 @@
  * End-to-end integration test for workspace add reading name from workspace.yml
  */
 
-import { assertEquals, assertExists } from "@std/assert";
-import { join } from "@std/path";
-import { ensureDir } from "@std/fs";
 import { AtlasDaemon } from "@atlas/atlasd";
 import { AtlasClient } from "@atlas/client";
+import { assertEquals, assertExists } from "@std/assert";
+import { ensureDir } from "@std/fs";
+import { join } from "@std/path";
+
 // Tests will use client API for verification instead of direct workspace manager access
 
 // Helper to create a test workspace directory with workspace.yml
@@ -102,9 +103,7 @@ Deno.test({
 
       // Add workspace without providing a name
       const client = new AtlasClient({ url: `http://localhost:${port}` });
-      const result = await client.addWorkspace({
-        path: workspacePath,
-      });
+      const result = await client.addWorkspace({ path: workspacePath });
 
       // Verify it used the name from workspace.yml, not the directory name
       assertExists(result.id);
@@ -202,9 +201,7 @@ Deno.test({
 
       // Batch add all workspaces
       const client = new AtlasClient({ url: `http://localhost:${port}` });
-      const result = await client.addWorkspaces({
-        paths: [workspace1, workspace2, workspace3],
-      });
+      const result = await client.addWorkspaces({ paths: [workspace1, workspace2, workspace3] });
 
       // Verify all were added with names from YAML
       assertEquals(result.added.length, 3);

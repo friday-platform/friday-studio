@@ -3,8 +3,12 @@
  */
 
 import { assertEquals } from "@std/assert";
-import type { ReasoningCallbacks, ReasoningContext, ReasoningStep } from "../src/types.ts";
-import type { BaseReasoningContext } from "../src/types.ts";
+import type {
+  BaseReasoningContext,
+  ReasoningCallbacks,
+  ReasoningContext,
+  ReasoningStep,
+} from "../src/types.ts";
 
 // Test context type
 interface TestContext extends BaseReasoningContext {
@@ -45,12 +49,7 @@ function createTestStep(): ReasoningStep {
 
 Deno.test("actions: assignThinkingResult logic should create new current step", () => {
   const context = createTestContext();
-  const event = {
-    output: {
-      thinking: "New thinking result",
-      confidence: 0.9,
-    },
-  };
+  const event = { output: { thinking: "New thinking result", confidence: 0.9 } };
 
   // Simulate the action logic
   const newCurrentStep = {
@@ -105,12 +104,7 @@ Deno.test("actions: assignActionResult logic should update step with execution r
   const context = createTestContext();
   context.currentStep = createTestStep();
 
-  const event = {
-    output: {
-      result: { data: "test result" },
-      observation: "Test observation",
-    },
-  };
+  const event = { output: { result: { data: "test result" }, observation: "Test observation" } };
 
   // Mock callback
   const callbacks: Partial<ReasoningCallbacks<TestContext>> = {
@@ -184,9 +178,7 @@ Deno.test("actions: assignExecutionError logic should update step with error", (
   const context = createTestContext();
   context.currentStep = createTestStep();
 
-  const event = {
-    error: new Error("Execution failed"),
-  };
+  const event = { error: new Error("Execution failed") };
 
   // Simulate the action logic
   const newCurrentStep = {
@@ -202,10 +194,7 @@ Deno.test("actions: assignExecutionError logic should update step with error", (
 
 Deno.test("actions: assignExternalHint logic should add hint to working memory", () => {
   const context = createTestContext();
-  const event = {
-    type: "PROVIDE_HINT" as const,
-    hint: "Try using the search tool",
-  };
+  const event = { type: "PROVIDE_HINT" as const, hint: "Try using the search tool" };
 
   // Simulate the action logic
   const newWorkingMemory = new Map(context.workingMemory);
@@ -227,11 +216,7 @@ Deno.test("actions: callback actions should invoke callbacks correctly", () => {
 
   const callbacks: ReasoningCallbacks<TestContext> = {
     think: () => Promise.resolve({ thinking: "", confidence: 0 }),
-    parseAction: () => ({
-      type: "complete",
-      parameters: {},
-      reasoning: "test",
-    }),
+    parseAction: () => ({ type: "complete", parameters: {}, reasoning: "test" }),
     executeAction: () => Promise.resolve({ observation: "", result: {} }),
     onThinkingStart: (userContext) => {
       onThinkingStartCalled = true;
@@ -271,11 +256,7 @@ Deno.test("actions: callback actions should invoke callbacks correctly", () => {
   assertEquals(onActionDeterminedCalled, true);
 
   // Test onExecutionStart
-  context.currentStep.action = {
-    type: "complete",
-    parameters: {},
-    reasoning: "test",
-  };
+  context.currentStep.action = { type: "complete", parameters: {}, reasoning: "test" };
   if (context.currentStep?.action) {
     callbacks.onExecutionStart?.(context.currentStep.action);
   }

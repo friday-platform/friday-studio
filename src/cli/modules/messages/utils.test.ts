@@ -1,6 +1,6 @@
+import type { SSEEvent } from "@atlas/config";
 import { assertEquals, assertExists } from "@std/assert";
 import { formatMessage, getGroupedMessages } from "./utils.ts";
-import { type SSEEvent } from "@atlas/config";
 
 Deno.test("formatMessage - returns undefined for empty messages array", () => {
   const result = formatMessage([]);
@@ -56,24 +56,9 @@ Deno.test("formatMessage - formats request message with current user", () => {
 
 Deno.test("formatMessage - concatenates multiple message parts", () => {
   const messages: SSEEvent[] = [
-    {
-      id: "msg-1",
-      type: "text",
-      timestamp: "2024-01-01T12:00:00Z",
-      data: { content: "Part 1" },
-    },
-    {
-      id: "msg-1",
-      type: "text",
-      timestamp: "2024-01-01T12:00:01Z",
-      data: { content: " Part 2" },
-    },
-    {
-      id: "msg-1",
-      type: "text",
-      timestamp: "2024-01-01T12:00:02Z",
-      data: { content: " Part 3" },
-    },
+    { id: "msg-1", type: "text", timestamp: "2024-01-01T12:00:00Z", data: { content: "Part 1" } },
+    { id: "msg-1", type: "text", timestamp: "2024-01-01T12:00:01Z", data: { content: " Part 2" } },
+    { id: "msg-1", type: "text", timestamp: "2024-01-01T12:00:02Z", data: { content: " Part 3" } },
   ];
 
   const result = formatMessage(messages);
@@ -168,24 +153,9 @@ Deno.test("getGroupedMessages - groups messages by id", () => {
 
 Deno.test("getGroupedMessages - maintains message order within groups", () => {
   const messages: SSEEvent[] = [
-    {
-      id: "msg-1",
-      type: "text",
-      timestamp: "2024-01-01T12:00:00Z",
-      data: { content: "First" },
-    },
-    {
-      id: "msg-1",
-      type: "text",
-      timestamp: "2024-01-01T12:00:01Z",
-      data: { content: "Second" },
-    },
-    {
-      id: "msg-1",
-      type: "text",
-      timestamp: "2024-01-01T12:00:02Z",
-      data: { content: "Third" },
-    },
+    { id: "msg-1", type: "text", timestamp: "2024-01-01T12:00:00Z", data: { content: "First" } },
+    { id: "msg-1", type: "text", timestamp: "2024-01-01T12:00:01Z", data: { content: "Second" } },
+    { id: "msg-1", type: "text", timestamp: "2024-01-01T12:00:02Z", data: { content: "Third" } },
   ];
 
   const result = getGroupedMessages(messages);

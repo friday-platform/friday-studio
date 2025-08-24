@@ -17,7 +17,7 @@ export function isRetryableError(status: number): boolean {
  */
 export function calculateRetryDelay(retryCount: number): number {
   // Exponential backoff: 1s, 2s, 4s, 8s, etc. with jitter
-  const baseDelay = Math.pow(2, retryCount) * 1000;
+  const baseDelay = 2 ** retryCount * 1000;
   const jitter = Math.random() * 0.3 * baseDelay; // 30% jitter
   return Math.min(baseDelay + jitter, 30000); // Cap at 30 seconds
 }
@@ -69,7 +69,7 @@ export async function handleDaemonResponse<T = unknown>(response: Response): Pro
   }
 
   try {
-    return await response.json() as T;
+    return (await response.json()) as T;
   } catch (error) {
     throw new Error(
       `Failed to parse daemon API response: ${
@@ -108,10 +108,7 @@ export async function fetchWithTimeout(
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const response = await fetch(url, {
-      ...options,
-      signal: controller.signal,
-    });
+    const response = await fetch(url, { ...options, signal: controller.signal });
     clearTimeout(timeoutId);
     return response;
   } catch (error) {
@@ -122,11 +119,7 @@ export async function fetchWithTimeout(
       // deno-lint-ignore no-explicit-any
       timeoutError.code = -32000;
       // deno-lint-ignore no-explicit-any
-      timeoutError.details = {
-        url,
-        timeoutMs,
-        timestamp: new Date().toISOString(),
-      };
+      timeoutError.details = { url, timeoutMs, timestamp: new Date().toISOString() };
       throw timeoutError;
     }
 

@@ -2,7 +2,6 @@
  * Unit tests for WorkspaceBuilder class
  */
 
-import { assertEquals, assertExists, assertStringIncludes } from "@std/assert";
 import type {
   JobSpecification,
   MCPServerConfig,
@@ -10,6 +9,7 @@ import type {
   WorkspaceConfig,
   WorkspaceSignalConfig,
 } from "@atlas/config";
+import { assertEquals, assertExists, assertStringIncludes } from "@std/assert";
 import { WorkspaceBuilder } from "../tools/workspace-creation/builder.ts";
 
 function createBuilder(): WorkspaceBuilder {
@@ -61,10 +61,7 @@ Deno.test({
     const signalConfig: WorkspaceSignalConfig = {
       provider: "schedule",
       description: "Test schedule signal",
-      config: {
-        schedule: "0 * * * *",
-        timezone: "UTC",
-      },
+      config: { schedule: "0 * * * *", timezone: "UTC" },
     };
 
     const result = builder.addSignal("test-signal", signalConfig);
@@ -80,9 +77,7 @@ Deno.test({
     const signalConfig: WorkspaceSignalConfig = {
       provider: "http",
       description: "Test HTTP signal",
-      config: {
-        path: "/webhook/test",
-      },
+      config: { path: "/webhook/test" },
     };
 
     const result = builder.addSignal("http-signal", signalConfig);
@@ -229,10 +224,7 @@ Deno.test({
     const jobConfig: JobSpecification = {
       description: "Test job",
       triggers: [{ signal: "test-signal" }],
-      execution: {
-        strategy: "sequential",
-        agents: ["test-agent"],
-      },
+      execution: { strategy: "sequential", agents: ["test-agent"] },
     };
 
     const result = builder.addJob("test-job", jobConfig);
@@ -248,10 +240,7 @@ Deno.test({
     const jobConfig: JobSpecification = {
       description: "Test job with invalid signal",
       triggers: [{ signal: "nonexistent-signal" }],
-      execution: {
-        strategy: "sequential",
-        agents: ["test-agent"],
-      },
+      execution: { strategy: "sequential", agents: ["test-agent"] },
     };
 
     const result = builder.addJob("invalid-job", jobConfig);
@@ -268,10 +257,7 @@ Deno.test({
     const jobConfig: JobSpecification = {
       description: "Test job with invalid agent",
       triggers: [{ signal: "test-signal" }],
-      execution: {
-        strategy: "sequential",
-        agents: ["nonexistent-agent"],
-      },
+      execution: { strategy: "sequential", agents: ["nonexistent-agent"] },
     };
 
     const result = builder.addJob("invalid-job", jobConfig);
@@ -288,10 +274,7 @@ Deno.test({
     const jobConfig: JobSpecification = {
       description: "Test job",
       triggers: [{ signal: "test-signal" }],
-      execution: {
-        strategy: "sequential",
-        agents: ["test-agent"],
-      },
+      execution: { strategy: "sequential", agents: ["test-agent"] },
     };
 
     builder.addJob("duplicate-job", jobConfig);
@@ -309,14 +292,8 @@ Deno.test({
   fn() {
     const builder = createInitializedBuilder();
     const mcpConfig: MCPServerConfig = {
-      transport: {
-        type: "stdio",
-        command: "deno",
-        args: ["run", "--allow-all", "server.ts"],
-      },
-      env: {
-        TEST_VAR: "test-value",
-      },
+      transport: { type: "stdio", command: "deno", args: ["run", "--allow-all", "server.ts"] },
+      env: { TEST_VAR: "test-value" },
     };
 
     const result = builder.addMCPIntegration("test-server", mcpConfig);
@@ -330,11 +307,7 @@ Deno.test({
   fn() {
     const builder = createInitializedBuilder();
     const mcpConfig: MCPServerConfig = {
-      transport: {
-        type: "stdio",
-        command: "deno",
-        args: ["run", "server.ts"],
-      },
+      transport: { type: "stdio", command: "deno", args: ["run", "server.ts"] },
     };
 
     builder.addMCPIntegration("duplicate-server", mcpConfig);
@@ -373,10 +346,7 @@ Deno.test({
     builder.addJob("processing-job", {
       description: "Process scheduled data",
       triggers: [{ signal: "schedule-signal" }],
-      execution: {
-        strategy: "sequential",
-        agents: ["llm-agent"],
-      },
+      execution: { strategy: "sequential", agents: ["llm-agent"] },
     });
 
     const result = builder.validateWorkspace();
@@ -425,11 +395,7 @@ Deno.test({
     builder.initialize({ name: "mcp-test", description: "MCP test workspace" });
 
     builder.addMCPIntegration("test-server", {
-      transport: {
-        type: "stdio",
-        command: "deno",
-        args: ["run", "server.ts"],
-      },
+      transport: { type: "stdio", command: "deno", args: ["run", "server.ts"] },
     });
 
     const config = builder.exportConfig();
@@ -467,18 +433,12 @@ Deno.test({
 function createExistingConfig(): WorkspaceConfig {
   return {
     version: "1.0",
-    workspace: {
-      name: "existing-workspace",
-      description: "Existing workspace for testing",
-    },
+    workspace: { name: "existing-workspace", description: "Existing workspace for testing" },
     signals: {
       "existing-signal": {
         provider: "schedule",
         description: "Existing schedule signal",
-        config: {
-          schedule: "0 9 * * *",
-          timezone: "UTC",
-        },
+        config: { schedule: "0 9 * * *", timezone: "UTC" },
       },
     },
     agents: {
@@ -497,27 +457,15 @@ function createExistingConfig(): WorkspaceConfig {
       "existing-job": {
         description: "Existing job",
         triggers: [{ signal: "existing-signal" }],
-        execution: {
-          strategy: "sequential",
-          agents: ["existing-agent"],
-        },
+        execution: { strategy: "sequential", agents: ["existing-agent"] },
       },
     },
     tools: {
       mcp: {
-        client_config: {
-          timeout: {
-            progressTimeout: "2m",
-            maxTotalTimeout: "30m",
-          },
-        },
+        client_config: { timeout: { progressTimeout: "2m", maxTotalTimeout: "30m" } },
         servers: {
           "existing-server": {
-            transport: {
-              type: "stdio",
-              command: "deno",
-              args: ["run", "server.ts"],
-            },
+            transport: { type: "stdio", command: "deno", args: ["run", "server.ts"] },
           },
         },
       },
@@ -559,9 +507,7 @@ Deno.test({
   fn() {
     const configWithoutDescription: WorkspaceConfig = {
       version: "1.0",
-      workspace: {
-        name: "no-description-workspace",
-      },
+      workspace: { name: "no-description-workspace" },
       signals: {},
       agents: {},
       jobs: {},
@@ -580,10 +526,7 @@ Deno.test({
   fn() {
     const minimalConfig: WorkspaceConfig = {
       version: "1.0",
-      workspace: {
-        name: "minimal-workspace",
-        description: "Minimal config",
-      },
+      workspace: { name: "minimal-workspace", description: "Minimal config" },
       signals: {},
       agents: {},
       jobs: {},
@@ -622,10 +565,7 @@ function createBuilderWithComponents(): WorkspaceBuilder {
   builder.addJob("test-job", {
     description: "Original job",
     triggers: [{ signal: "test-signal" }],
-    execution: {
-      strategy: "sequential",
-      agents: ["test-agent"],
-    },
+    execution: { strategy: "sequential", agents: ["test-agent"] },
   });
 
   return builder;
@@ -688,9 +628,7 @@ Deno.test({
   fn() {
     const builder = createBuilderWithComponents();
 
-    const result = builder.updateAgent("test-agent", {
-      description: "Updated agent description",
-    });
+    const result = builder.updateAgent("test-agent", { description: "Updated agent description" });
 
     assertEquals(result.success, true);
     assertEquals(result.errors.length, 0);
@@ -705,9 +643,7 @@ Deno.test({
   fn() {
     const builder = createBuilderWithComponents();
 
-    const result = builder.updateAgent("nonexistent-agent", {
-      description: "Updated description",
-    });
+    const result = builder.updateAgent("nonexistent-agent", { description: "Updated description" });
 
     assertEquals(result.success, false);
     assertEquals(result.errors.length > 0, true);
@@ -723,10 +659,7 @@ Deno.test({
 
     const result = builder.updateJob("test-job", {
       description: "Updated job description",
-      execution: {
-        strategy: "parallel",
-        agents: ["test-agent"],
-      },
+      execution: { strategy: "parallel", agents: ["test-agent"] },
     });
 
     assertEquals(result.success, true);
@@ -743,9 +676,7 @@ Deno.test({
   fn() {
     const builder = createBuilderWithComponents();
 
-    const result = builder.updateJob("nonexistent-job", {
-      description: "Updated description",
-    });
+    const result = builder.updateJob("nonexistent-job", { description: "Updated description" });
 
     assertEquals(result.success, false);
     assertEquals(result.errors.length > 0, true);
@@ -758,9 +689,7 @@ Deno.test({
   fn() {
     const builder = createBuilderWithComponents();
 
-    const result = builder.updateJob("test-job", {
-      triggers: [{ signal: "nonexistent-signal" }],
-    });
+    const result = builder.updateJob("test-job", { triggers: [{ signal: "nonexistent-signal" }] });
 
     assertEquals(result.success, false);
     assertEquals(result.errors.length > 0, true);
@@ -774,10 +703,7 @@ Deno.test({
     const builder = createBuilderWithComponents();
 
     const result = builder.updateJob("test-job", {
-      execution: {
-        strategy: "sequential",
-        agents: ["nonexistent-agent"],
-      },
+      execution: { strategy: "sequential", agents: ["nonexistent-agent"] },
     });
 
     assertEquals(result.success, false);
@@ -828,10 +754,7 @@ function createBuilderWithRemovalComponents(): WorkspaceBuilder {
   builder.addJob("test-job", {
     description: "Test job",
     triggers: [{ signal: "test-signal" }],
-    execution: {
-      strategy: "sequential",
-      agents: ["test-agent"],
-    },
+    execution: { strategy: "sequential", agents: ["test-agent"] },
   });
 
   return builder;
@@ -957,20 +880,14 @@ function createBuilderWithBrokenReferences(): WorkspaceBuilder {
   // Create a workspace with broken references by directly manipulating the internal state
   const existingConfig: WorkspaceConfig = {
     version: "1.0",
-    workspace: {
-      name: "broken-refs",
-      description: "Broken references test",
-    },
+    workspace: { name: "broken-refs", description: "Broken references test" },
     signals: {}, // No signals defined
     agents: {}, // No agents defined
     jobs: {
       "job-with-broken-refs": {
         description: "Job that references nonexistent components",
         triggers: [{ signal: "nonexistent-signal" }],
-        execution: {
-          strategy: "sequential",
-          agents: ["nonexistent-agent"],
-        },
+        execution: { strategy: "sequential", agents: ["nonexistent-agent"] },
       },
     },
   };
@@ -1039,10 +956,10 @@ Deno.test({
     assertEquals(repairResult.repairs.length >= 2, true); // At least signal and job removal repair
 
     const hasSignalRepair = repairResult.repairs.some((repair) =>
-      repair.includes("broken signal reference")
+      repair.includes("broken signal reference"),
     );
-    const hasJobRemoval = repairResult.repairs.some((repair) =>
-      repair.includes("Removed job") && repair.includes("due to no valid")
+    const hasJobRemoval = repairResult.repairs.some(
+      (repair) => repair.includes("Removed job") && repair.includes("due to no valid"),
     );
 
     assertEquals(hasSignalRepair, true);

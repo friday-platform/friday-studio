@@ -1,10 +1,10 @@
-import { expect } from "@std/expect";
-import { StreamingMemoryManager } from "../src/streaming/streaming-memory-manager.ts";
-import { AsyncMemoryQueue } from "../src/streaming/async-memory-queue.ts";
-import { CoALAMemoryManager, CoALAMemoryType } from "../src/coala-memory.ts";
-import { AtlasScope } from "../../../src/core/scope.ts";
 import { InMemoryStorageAdapter } from "@atlas/storage";
+import { expect } from "@std/expect";
+import { AtlasScope } from "../../../src/core/scope.ts";
+import { CoALAMemoryManager, CoALAMemoryType } from "../src/coala-memory.ts";
+import { AsyncMemoryQueue } from "../src/streaming/async-memory-queue.ts";
 import type { MemoryStream, StreamingConfig } from "../src/streaming/memory-stream.ts";
+import { StreamingMemoryManager } from "../src/streaming/streaming-memory-manager.ts";
 
 // Set testing environment to prevent logger file operations
 Deno.env.set("DENO_TESTING", "true");

@@ -1,5 +1,5 @@
-import { type ReactNode } from "react";
 import { Box, Text } from "ink";
+import type { ReactNode } from "react";
 import { theme } from "./theme.ts";
 
 export interface SelectOptionProps {
@@ -13,11 +13,7 @@ export interface SelectOptionProps {
   readonly children: ReactNode;
 }
 
-export function SelectOption({
-  isFocused,
-  isSelected,
-  children,
-}: SelectOptionProps) {
+export function SelectOption({ isFocused, isSelected, children }: SelectOptionProps) {
   const { styles } = theme;
 
   return (

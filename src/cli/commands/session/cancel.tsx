@@ -1,8 +1,8 @@
+import { getAtlasClient } from "@atlas/client";
+import { WorkspaceSessionStatus } from "@atlas/core";
 import { confirmAction } from "../../utils/confirm.tsx";
 import { errorOutput, infoOutput, successOutput } from "../../utils/output.ts";
 import { spinner } from "../../utils/prompts.tsx";
-import { getAtlasClient } from "@atlas/client";
-import { WorkspaceSessionStatus } from "@atlas/core";
 
 interface CancelArgs {
   id: string;
@@ -16,11 +16,7 @@ export const desc = "Cancel a running session";
 export const aliases = ["kill", "stop"];
 
 export const builder = {
-  id: {
-    type: "string" as const,
-    describe: "Session ID to cancel",
-    demandOption: true,
-  },
+  id: { type: "string" as const, describe: "Session ID to cancel", demandOption: true },
   force: {
     type: "boolean" as const,
     alias: "f",
@@ -70,10 +66,10 @@ export const handler = async (argv: CancelArgs): Promise<void> => {
     }
 
     // Confirm cancellation
-    const confirmed = await confirmAction(
-      `Cancel session '${argv.id}'?`,
-      { force: argv.force, yes: argv.yes },
-    );
+    const confirmed = await confirmAction(`Cancel session '${argv.id}'?`, {
+      force: argv.force,
+      yes: argv.yes,
+    });
 
     if (!confirmed) {
       infoOutput("Session cancellation aborted");

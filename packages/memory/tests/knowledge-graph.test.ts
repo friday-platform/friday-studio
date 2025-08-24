@@ -357,10 +357,7 @@ Deno.test("KnowledgeGraphManager - fact queries", async () => {
   });
 
   // Query facts by search
-  const physicsFacts = await adapter.queryFacts({
-    workspaceId: "test-workspace",
-    search: "boils",
-  });
+  const physicsFacts = await adapter.queryFacts({ workspaceId: "test-workspace", search: "boils" });
 
   expect(physicsFacts).toHaveLength(1);
   expect(physicsFacts[0].statement).toContain("boils");

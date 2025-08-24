@@ -6,13 +6,13 @@
  * as standalone .agent.yml files.
  */
 
-import { generateText, stepCountIs } from "ai";
 import { APICallError } from "@ai-sdk/provider";
-import { createAgent } from "@atlas/agent-sdk";
 import type { AgentContext, AtlasAgent, ToolCall, ToolResult } from "@atlas/agent-sdk";
+import { createAgent } from "@atlas/agent-sdk";
 import type { LLMAgentConfig } from "@atlas/config";
-import { registry, validateProviderConfig } from "../llm-provider-registry/index.ts";
 import type { Logger } from "@atlas/logger";
+import { generateText, stepCountIs } from "ai";
+import { registry, validateProviderConfig } from "../llm-provider-registry/index.ts";
 import { ensureSourceAttributionProtocol } from "../prompts/source-attribution.ts";
 
 export type WrappedAgentResult = {
@@ -75,12 +75,7 @@ export function convertLLMToAgent(
         const toolCalls = Array.isArray(res.toolCalls) ? res.toolCalls : [];
         const toolResults: ToolResult[] = Array.isArray(res.toolResults) ? res.toolResults : [];
 
-        return {
-          reasoning: res.reasoningText,
-          response: res.text,
-          toolCalls,
-          toolResults,
-        };
+        return { reasoning: res.reasoningText, response: res.text, toolCalls, toolResults };
         // if (streaming && context.stream) {
         //   return await handleStreamingResponse(commonOptions, context);
         // } else {
@@ -97,7 +92,8 @@ export function convertLLMToAgent(
           statusCode: isAPIError ? error.statusCode : undefined,
           isRetryable: isAPIError ? error.isRetryable : false,
           // Specific handling for 529 Overloaded errors
-          isOverloaded: (isAPIError && error.statusCode === 529) ||
+          isOverloaded:
+            (isAPIError && error.statusCode === 529) ||
             (error instanceof Error && error.message.includes("Overloaded")),
         };
 

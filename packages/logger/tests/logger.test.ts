@@ -1,6 +1,6 @@
 import { assertEquals, assertExists } from "@std/assert";
-import { join } from "@std/path";
 import { exists } from "@std/fs";
+import { join } from "@std/path";
 import { createLogger, logger } from "../mod.ts";
 
 /**
@@ -73,7 +73,10 @@ Deno.test.ignore("Logger - file output for global logs", async () => {
     assertEquals(logExists, true);
 
     const logContent = await Deno.readTextFile(globalLogPath);
-    const entries = logContent.trim().split("\n").map((line) => JSON.parse(line));
+    const entries = logContent
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
 
     assertEquals(entries.length, 1);
     const entry = entries[0];
@@ -103,7 +106,10 @@ Deno.test.ignore("Logger - file output for workspace logs", async () => {
     assertEquals(logExists, true);
 
     const logContent = await Deno.readTextFile(workspaceLogPath);
-    const entries = logContent.trim().split("\n").map((line) => JSON.parse(line));
+    const entries = logContent
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
 
     assertEquals(entries.length, 1);
     const entry = entries[0];
@@ -196,7 +202,10 @@ Deno.test.ignore("Logger - multiple log levels", async () => {
 
     const globalLogPath = join(tempDir, "global.log");
     const logContent = await Deno.readTextFile(globalLogPath);
-    const entries = logContent.trim().split("\n").map((line) => JSON.parse(line));
+    const entries = logContent
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
 
     assertEquals(entries.length, 6);
 
@@ -352,7 +361,10 @@ Deno.test.ignore("Logger - Non-Error objects passed as error", async () => {
 
     const globalLogPath = join(tempDir, "global.log");
     const logContent = await Deno.readTextFile(globalLogPath);
-    const entries = logContent.trim().split("\n").map((line) => JSON.parse(line));
+    const entries = logContent
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
 
     assertEquals(entries.length, 3);
 

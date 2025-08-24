@@ -19,7 +19,6 @@ node_modules/
 Thumbs.db
 
 # IDE
-.vscode/
 .idea/
 *.code-workspace
 

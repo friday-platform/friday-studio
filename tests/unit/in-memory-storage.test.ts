@@ -1,16 +1,16 @@
 // Set testing mode to disable file logging
 Deno.env.set("DENO_TESTING", "true");
 
-import { assertEquals, assertExists } from "@std/assert";
-import { InMemoryStorageAdapter } from "@atlas/storage";
 import { WorkspaceSessionStatus } from "@atlas/core";
+import { CoALAMemoryType } from "@atlas/memory";
+import { InMemoryStorageAdapter } from "@atlas/storage";
+import { assertEquals, assertExists } from "@std/assert";
 import {
   createTestScope,
   createTestSession,
   MockAgent,
   MockSignal,
 } from "../../src/testing/helpers.ts";
-import { CoALAMemoryType } from "@atlas/memory";
 
 Deno.test("InMemoryStorageAdapter - should store and retrieve data", async () => {
   const adapter = new InMemoryStorageAdapter();
@@ -30,13 +30,9 @@ Deno.test("InMemoryStorageAdapter - should store and retrieve data", async () =>
 Deno.test("InMemoryStorageAdapter - should store and retrieve data by type", async () => {
   const adapter = new InMemoryStorageAdapter();
 
-  const workingMemory = {
-    task1: { description: "Current task", priority: 1 },
-  };
+  const workingMemory = { task1: { description: "Current task", priority: 1 } };
 
-  const semanticMemory = {
-    fact1: { knowledge: "The sky is blue", confidence: 0.9 },
-  };
+  const semanticMemory = { fact1: { knowledge: "The sky is blue", confidence: 0.9 } };
 
   await adapter.commitByType("working", workingMemory);
   await adapter.commitByType("semantic", semanticMemory);
@@ -163,22 +159,19 @@ Deno.test("Session with InMemoryStorage - should create session with in-memory s
 
 Deno.test("Session with InMemoryStorage - should preserve memory across session lifecycle", async () => {
   const mockSignal = new MockSignal();
-  const { session, storage } = createTestSession(
-    "test-workspace",
-    {
-      triggers: [mockSignal],
-      callback: {
-        onSuccess: (result) => {
-          // Store result in memory
-          session.memory.remember("result", result);
-        },
-        onError: () => {},
-        onComplete: () => {},
-        execute: () => {},
-        validate: () => true,
+  const { session, storage } = createTestSession("test-workspace", {
+    triggers: [mockSignal],
+    callback: {
+      onSuccess: (result) => {
+        // Store result in memory
+        session.memory.remember("result", result);
       },
+      onError: () => {},
+      onComplete: () => {},
+      execute: () => {},
+      validate: () => true,
     },
-  );
+  });
 
   // Start the session
   await session.start();

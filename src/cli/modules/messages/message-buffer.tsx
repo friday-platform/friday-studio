@@ -1,15 +1,15 @@
-import { useEffect, useRef, useState } from "react";
+import { type SSEEvent, SSEEventSchema } from "@atlas/config";
 import { Box, Static } from "ink";
-import { useAppContext } from "../../contexts/app-context.tsx";
+import { useEffect, useRef, useState } from "react";
 import { ChatMessage } from "../../components/chat-message.tsx";
-import { OutputEntry } from "../conversation/types.ts";
 import { Header } from "../../components/header.tsx";
 import { MessageHeader } from "../../components/message-header.tsx";
 import { ThinkingSpinner } from "../../components/thinking-spinner.tsx";
 import { DAEMON_STATUS } from "../../constants/daemon-status.ts";
-import { type SSEEvent, SSEEventSchema } from "@atlas/config";
-import { formatMessage, getGroupedMessages } from "./utils.ts";
+import { useAppContext } from "../../contexts/app-context.tsx";
+import type { OutputEntry } from "../conversation/types.ts";
 import { ToolCall } from "./components/tool-call.tsx";
+import { formatMessage, getGroupedMessages } from "./utils.ts";
 
 interface TypingState {
   isTyping: boolean;
@@ -26,13 +26,9 @@ export const MessageBuffer = () => {
     setDaemonStatusState,
   } = useAppContext();
   const sseListenerStarted = useRef(false);
-  const [sseStream, setSseStream] = useState<AsyncIterable<unknown> | null>(
-    null,
-  );
+  const [sseStream, setSseStream] = useState<AsyncIterable<unknown> | null>(null);
 
-  const [sseMessages, setSseMessages] = useState<Map<string, SSEEvent>>(
-    new Map(),
-  );
+  const [sseMessages, setSseMessages] = useState<Map<string, SSEEvent>>(new Map());
   const [output, setOutput] = useState<OutputEntry[]>([]);
 
   const [typingState, setTypingState] = useState<TypingState>({
@@ -42,11 +38,7 @@ export const MessageBuffer = () => {
 
   // Create SSE stream when conversation session is ready
   useEffect(() => {
-    if (
-      !conversationClient ||
-      !conversationSessionId ||
-      !conversationClient.sseUrl
-    ) {
+    if (!conversationClient || !conversationSessionId || !conversationClient.sseUrl) {
       return;
     }
 
@@ -114,17 +106,12 @@ export const MessageBuffer = () => {
             !errorMessage.includes("Bad resource ID")
           ) {
             // Stop the thinking spinner immediately when connection is lost
-            setTypingState({
-              isTyping: false,
-              elapsedSeconds: 0,
-            });
+            setTypingState({ isTyping: false, elapsedSeconds: 0 });
 
             // Handle daemon connection loss with user-friendly message
             if (errorMessage.includes("Connection to Atlas daemon lost")) {
               setDaemonStatusState(DAEMON_STATUS.UNHEALTHY);
-            } else if (
-              errorMessage.includes("Network connection to Atlas daemon failed")
-            ) {
+            } else if (errorMessage.includes("Network connection to Atlas daemon failed")) {
               setDaemonStatusState(DAEMON_STATUS.UNHEALTHY);
             } else {
               // Any other SSE error means connection is lost - always notify and reconnect
@@ -147,10 +134,7 @@ export const MessageBuffer = () => {
 
     if (typingState.isTyping) {
       interval = setInterval(() => {
-        setTypingState((prev) => ({
-          ...prev,
-          elapsedSeconds: prev.elapsedSeconds + 1,
-        }));
+        setTypingState((prev) => ({ ...prev, elapsedSeconds: prev.elapsedSeconds + 1 }));
       }, 1000);
     } else {
       if (interval) {
@@ -172,17 +156,11 @@ export const MessageBuffer = () => {
     const latestMessage = messageValues[messageValues.length - 1];
 
     if (latestMessage?.type === "request") {
-      setTypingState({
-        isTyping: true,
-        elapsedSeconds: 0,
-      });
+      setTypingState({ isTyping: true, elapsedSeconds: 0 });
     }
 
     if (latestMessage?.type === "finish" || latestMessage?.type === "error") {
-      setTypingState({
-        isTyping: false,
-        elapsedSeconds: 0,
-      });
+      setTypingState({ isTyping: false, elapsedSeconds: 0 });
     }
 
     if (latestMessage?.type === "text" || latestMessage?.type === "thinking") {
@@ -211,11 +189,7 @@ export const MessageBuffer = () => {
       <Static
         key={staticKey}
         items={[
-          {
-            type: "header",
-            id: "atlas-header",
-            content: "",
-          } as unknown as OutputEntry,
+          { type: "header", id: "atlas-header", content: "" } as unknown as OutputEntry,
           ...output,
         ].map((entry) => {
           if (entry.type === "header") {
@@ -224,18 +198,9 @@ export const MessageBuffer = () => {
 
           if (entry.type === "request") {
             return (
-              <Box
-                key={entry.id}
-                flexShrink={0}
-                paddingX={2}
-                flexDirection="column"
-              >
+              <Box key={entry.id} flexShrink={0} paddingX={2} flexDirection="column">
                 <Box height={1} />
-                <MessageHeader
-                  author={entry.author}
-                  date={entry.timestamp}
-                  authorColor="green"
-                />
+                <MessageHeader author={entry.author} date={entry.timestamp} authorColor="green" />
 
                 <ChatMessage
                   message={entry.content?.replace("## Current Request\n", "")}
@@ -251,18 +216,9 @@ export const MessageBuffer = () => {
           // response
           if (entry.type === "text") {
             return (
-              <Box
-                key={entry.id}
-                flexShrink={0}
-                paddingX={2}
-                flexDirection="column"
-              >
+              <Box key={entry.id} flexShrink={0} paddingX={2} flexDirection="column">
                 <Box height={1} />
-                <MessageHeader
-                  author="Atlas"
-                  date={entry.timestamp}
-                  authorColor="blue"
-                />
+                <MessageHeader author="Atlas" date={entry.timestamp} authorColor="blue" />
 
                 <ChatMessage
                   message={entry.content}
@@ -277,12 +233,7 @@ export const MessageBuffer = () => {
 
           if (entry.type === "thinking") {
             return (
-              <Box
-                key={entry.id}
-                flexShrink={0}
-                paddingX={2}
-                flexDirection="column"
-              >
+              <Box key={entry.id} flexShrink={0} paddingX={2} flexDirection="column">
                 <Box height={1} />
                 <ChatMessage
                   message={entry.content}
@@ -297,12 +248,7 @@ export const MessageBuffer = () => {
 
           if (entry.type === "tool_call" || entry.type === "tool_result") {
             return (
-              <Box
-                key={entry.id}
-                flexShrink={0}
-                paddingX={2}
-                flexDirection="column"
-              >
+              <Box key={entry.id} flexShrink={0} paddingX={2} flexDirection="column">
                 <Box height={1} />
                 <ToolCall metadata={entry.metadata} />
               </Box>
@@ -311,12 +257,7 @@ export const MessageBuffer = () => {
 
           if (entry.type === "error") {
             return (
-              <Box
-                key={entry.id}
-                flexShrink={0}
-                paddingX={2}
-                flexDirection="column"
-              >
+              <Box key={entry.id} flexShrink={0} paddingX={2} flexDirection="column">
                 <Box height={1} />
                 <ChatMessage
                   message={entry.content}

@@ -2,11 +2,11 @@
  * Internal types for the Atlas Agent MCP Server
  */
 
-import { z } from "zod";
 import type { AgentRegistry } from "@atlas/agent-sdk";
 import type { Logger } from "@atlas/logger";
-import type { GlobalMCPServerPool } from "../mcp-server-pool.ts";
+import { z } from "zod";
 import type { AtlasDaemon } from "../../../../apps/atlasd/src/atlas-daemon.ts";
+import type { GlobalMCPServerPool } from "../mcp-server-pool.ts";
 
 /**
  * Dependencies for the agent server

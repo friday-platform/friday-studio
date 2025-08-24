@@ -3,9 +3,9 @@
  * Lists available agents within a workspace through the daemon API
  */
 
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { PromptContext } from "../types.ts";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { createSuccessResponse } from "../types.ts";
 
 export function registerAgentListPrompt(server: McpServer, ctx: PromptContext) {
@@ -15,9 +15,7 @@ export function registerAgentListPrompt(server: McpServer, ctx: PromptContext) {
       title: "List Agents",
       description:
         "View all agents within a workspace including their configurations, capabilities, and current status. Agents are AI-powered workers that execute tasks and coordinate with other agents in the workspace.",
-      argsSchema: {
-        workspaceId: z.string().describe("Workspace ID to list agents for"),
-      },
+      argsSchema: { workspaceId: z.string().describe("Workspace ID to list agents for") },
     },
     ({ workspaceId }) => {
       ctx.logger.info("MCP workspace_agents_list called", { workspaceId });

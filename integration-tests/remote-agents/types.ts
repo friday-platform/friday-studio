@@ -14,11 +14,7 @@ export interface Message {
 export interface Agent {
   name: string;
   description: string;
-  metadata?: {
-    capabilities?: string[];
-    version?: string;
-    [key: string]: unknown;
-  };
+  metadata?: { capabilities?: string[]; version?: string; [key: string]: unknown };
 }
 
 export interface AgentsListResponse {

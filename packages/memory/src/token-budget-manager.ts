@@ -7,12 +7,12 @@
  */
 
 import {
-  EnhancedPrompt,
-  Memory,
-  MemoryEntry,
+  type EnhancedPrompt,
+  type Memory,
+  type MemoryEntry,
   MemoryType,
-  TokenAllocation,
-  TokenBudgetManager,
+  type TokenAllocation,
+  type TokenBudgetManager,
 } from "./mecmf-interfaces.ts";
 
 export interface TokenEstimate {
@@ -39,18 +39,18 @@ export interface PromptComponents {
 export class AtlasTokenBudgetManager implements TokenBudgetManager {
   // Default token allocation percentages based on MECMF specification
   private readonly DEFAULT_ALLOCATION = {
-    working_memory: 0.40, // 40% - immediate context
+    working_memory: 0.4, // 40% - immediate context
     procedural_memory: 0.25, // 25% - guidance and procedures
     semantic_memory: 0.25, // 25% - knowledge and facts
-    episodic_memory: 0.10, // 10% - experiences
+    episodic_memory: 0.1, // 10% - experiences
   };
 
   // Reserved token percentages for different prompt components
   private readonly PROMPT_ALLOCATION = {
-    original_prompt: 0.30, // 30% - user request
-    memory_content: 0.40, // 40% - memory context
-    recent_context: 0.20, // 20% - conversation history
-    buffer: 0.10, // 10% - safety buffer
+    original_prompt: 0.3, // 30% - user request
+    memory_content: 0.4, // 40% - memory context
+    recent_context: 0.2, // 20% - conversation history
+    buffer: 0.1, // 10% - safety buffer
   };
 
   // Token estimation constants (approximate)
@@ -182,14 +182,15 @@ export class AtlasTokenBudgetManager implements TokenBudgetManager {
 
     // Calculate memory breakdown
     const memoryBreakdown = {
-      [MemoryType.WORKING]:
-        selectedMemories.filter((m) => m.memoryType === MemoryType.WORKING).length,
-      [MemoryType.EPISODIC]:
-        selectedMemories.filter((m) => m.memoryType === MemoryType.EPISODIC).length,
-      [MemoryType.SEMANTIC]:
-        selectedMemories.filter((m) => m.memoryType === MemoryType.SEMANTIC).length,
-      [MemoryType.PROCEDURAL]:
-        selectedMemories.filter((m) => m.memoryType === MemoryType.PROCEDURAL).length,
+      [MemoryType.WORKING]: selectedMemories.filter((m) => m.memoryType === MemoryType.WORKING)
+        .length,
+      [MemoryType.EPISODIC]: selectedMemories.filter((m) => m.memoryType === MemoryType.EPISODIC)
+        .length,
+      [MemoryType.SEMANTIC]: selectedMemories.filter((m) => m.memoryType === MemoryType.SEMANTIC)
+        .length,
+      [MemoryType.PROCEDURAL]: selectedMemories.filter(
+        (m) => m.memoryType === MemoryType.PROCEDURAL,
+      ).length,
     };
 
     return {
@@ -220,10 +221,10 @@ export class AtlasTokenBudgetManager implements TokenBudgetManager {
     }
 
     // Calculate adaptive weights based on content availability and relevance
-    let workingWeight = Math.max(0.20, Math.min(0.50, distribution.working / totalMemories));
+    let workingWeight = Math.max(0.2, Math.min(0.5, distribution.working / totalMemories));
     let proceduralWeight = Math.max(0.15, Math.min(0.35, distribution.procedural / totalMemories));
     let semanticWeight = Math.max(0.15, Math.min(0.35, distribution.semantic / totalMemories));
-    let episodicWeight = Math.max(0.05, Math.min(0.20, distribution.episodic / totalMemories));
+    let episodicWeight = Math.max(0.05, Math.min(0.2, distribution.episodic / totalMemories));
 
     // Normalize weights to sum to 1.0
     const totalWeight = workingWeight + proceduralWeight + semanticWeight + episodicWeight;
@@ -429,7 +430,9 @@ export class AtlasTokenBudgetManager implements TokenBudgetManager {
       }
 
       if (!text) {
-        text = JSON.stringify(content).replace(/[{}[\]"]/g, " ").replace(/,/g, " ");
+        text = JSON.stringify(content)
+          .replace(/[{}[\]"]/g, " ")
+          .replace(/,/g, " ");
       }
     } else {
       text = String(content);
@@ -481,9 +484,8 @@ export class AtlasTokenBudgetManager implements TokenBudgetManager {
     if (compressed) {
       return {
         ...memory,
-        content: typeof memory.content === "string"
-          ? compressed
-          : { ...memory.content, text: compressed },
+        content:
+          typeof memory.content === "string" ? compressed : { ...memory.content, text: compressed },
       };
     }
 
@@ -494,9 +496,7 @@ export class AtlasTokenBudgetManager implements TokenBudgetManager {
    * Summarize multiple memories into a concise string
    */
   private summarizeMemories(memories: MemoryEntry[]): string {
-    return memories
-      .map((m) => this.extractContentText(m.content, 60))
-      .join("; ");
+    return memories.map((m) => this.extractContentText(m.content, 60)).join("; ");
   }
 
   /**
@@ -510,14 +510,17 @@ export class AtlasTokenBudgetManager implements TokenBudgetManager {
     let { originalPrompt, memoryContext, recentContext, systemInstructions } = components;
 
     // Initial token estimate
-    let currentTokens = this.estimateTokens(originalPrompt) +
+    const currentTokens =
+      this.estimateTokens(originalPrompt) +
       this.estimateTokens(memoryContext) +
       this.estimateTokens(recentContext || "") +
       this.estimateTokens(systemInstructions || "");
 
     // Phase 1: Compress memory context
     if (currentTokens > targetTokens && memoryContext) {
-      const memoryBudget = targetTokens - this.estimateTokens(originalPrompt) -
+      const memoryBudget =
+        targetTokens -
+        this.estimateTokens(originalPrompt) -
         this.estimateTokens(recentContext || "") -
         this.estimateTokens(systemInstructions || "");
 
@@ -532,7 +535,9 @@ export class AtlasTokenBudgetManager implements TokenBudgetManager {
 
     // Phase 2: Truncate recent context
     if (currentTokens > targetTokens && recentContext) {
-      const contextBudget = targetTokens - this.estimateTokens(originalPrompt) -
+      const contextBudget =
+        targetTokens -
+        this.estimateTokens(originalPrompt) -
         this.estimateTokens(memoryContext) -
         this.estimateTokens(systemInstructions || "");
 
@@ -546,21 +551,14 @@ export class AtlasTokenBudgetManager implements TokenBudgetManager {
     }
 
     // Build optimized prompt
-    const parts = [
-      systemInstructions,
-      memoryContext,
-      recentContext,
-      originalPrompt,
-    ].filter(Boolean);
+    const parts = [systemInstructions, memoryContext, recentContext, originalPrompt].filter(
+      Boolean,
+    );
 
     const optimizedPrompt = parts.join("\n\n");
     const finalTokens = this.estimateTokens(optimizedPrompt);
 
-    return {
-      optimizedPrompt,
-      tokensUsed: finalTokens,
-      optimizations,
-    };
+    return { optimizedPrompt, tokensUsed: finalTokens, optimizations };
   }
 }
 

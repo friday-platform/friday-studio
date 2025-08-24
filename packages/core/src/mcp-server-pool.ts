@@ -6,9 +6,9 @@
  * Manages lifecycle with reference counting and automatic cleanup.
  */
 
-import { MCPManager } from "@atlas/mcp";
 import type { MCPServerConfig } from "@atlas/config";
 import type { Logger } from "@atlas/logger";
+import { MCPManager } from "@atlas/mcp";
 
 interface PooledMCPManager {
   manager: MCPManager;
@@ -68,12 +68,7 @@ export class GlobalMCPServerPool {
         }
       }
 
-      pooled = {
-        manager,
-        serverConfigs: serverConfigMap,
-        refCount: 0,
-        lastUsed: Date.now(),
-      };
+      pooled = { manager, serverConfigs: serverConfigMap, refCount: 0, lastUsed: Date.now() };
 
       this.pooledManagers.set(configKey, pooled);
       this.logger.info(`Created new MCP server pool entry`, {
@@ -193,22 +188,20 @@ export class GlobalMCPServerPool {
     }
 
     // Dispose all pooled managers
-    const disposePromises = Array.from(this.pooledManagers.entries()).map(
-      async ([key, pooled]) => {
-        if (pooled.cleanupTimer) {
-          clearTimeout(pooled.cleanupTimer);
-        }
-        try {
-          await pooled.manager.dispose();
-        } catch (error) {
-          this.logger.error(`Error disposing pooled MCP manager: ${key}`, {
-            operation: "mcp_server_pool_dispose",
-            configKey: key,
-            error: error instanceof Error ? error.message : String(error),
-          });
-        }
-      },
-    );
+    const disposePromises = Array.from(this.pooledManagers.entries()).map(async ([key, pooled]) => {
+      if (pooled.cleanupTimer) {
+        clearTimeout(pooled.cleanupTimer);
+      }
+      try {
+        await pooled.manager.dispose();
+      } catch (error) {
+        this.logger.error(`Error disposing pooled MCP manager: ${key}`, {
+          operation: "mcp_server_pool_dispose",
+          configKey: key,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    });
 
     await Promise.allSettled(disposePromises);
     this.pooledManagers.clear();
@@ -262,7 +255,7 @@ export class GlobalMCPServerPool {
       const cleanupPromises: Promise<void>[] = [];
 
       for (const [key, pooled] of this.pooledManagers.entries()) {
-        if (pooled.refCount <= 0 && (now - pooled.lastUsed) > this.cleanupInterval) {
+        if (pooled.refCount <= 0 && now - pooled.lastUsed > this.cleanupInterval) {
           cleanupPromises.push(this.cleanupPooledManager(key));
         }
       }

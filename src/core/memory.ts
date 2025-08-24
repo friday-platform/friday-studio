@@ -1,5 +1,5 @@
-import type { ITempestMemoryManager, ITempestMemoryStorageAdapter } from "../types/core.ts";
 import { LocalFileStorageAdapter } from "@atlas/storage";
+import type { ITempestMemoryManager, ITempestMemoryStorageAdapter } from "../types/core.ts";
 
 export class MemoryManager implements ITempestMemoryManager {
   private store: ITempestMemoryStorageAdapter;
@@ -11,11 +11,7 @@ export class MemoryManager implements ITempestMemoryManager {
   }
 
   remember(key: string, value: any): void {
-    this.memoryData.set(key, {
-      value,
-      timestamp: new Date(),
-      type: typeof value,
-    });
+    this.memoryData.set(key, { value, timestamp: new Date(), type: typeof value });
     this.store.commit(Object.fromEntries(this.memoryData));
   }
 
@@ -30,15 +26,18 @@ export class MemoryManager implements ITempestMemoryManager {
       return "No memories stored.";
     }
 
-    const summary = entries.map(([key, memory]) => {
-      const age = Date.now() - memory.timestamp.getTime();
-      const ageStr = age < 60000
-        ? "just now"
-        : age < 3600000
-        ? `${Math.floor(age / 60000)}m ago`
-        : `${Math.floor(age / 3600000)}h ago`;
-      return `${key}: ${memory.type} (${ageStr})`;
-    }).join("\n");
+    const summary = entries
+      .map(([key, memory]) => {
+        const age = Date.now() - memory.timestamp.getTime();
+        const ageStr =
+          age < 60000
+            ? "just now"
+            : age < 3600000
+              ? `${Math.floor(age / 60000)}m ago`
+              : `${Math.floor(age / 3600000)}h ago`;
+        return `${key}: ${memory.type} (${ageStr})`;
+      })
+      .join("\n");
 
     return `Memory Summary (${entries.length} items):\n${summary}`;
   }

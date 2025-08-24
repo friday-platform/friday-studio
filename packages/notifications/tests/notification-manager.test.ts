@@ -2,11 +2,11 @@
  * Tests for NotificationManager
  */
 
+import type { EmailParams, MessageParams, NotificationResult } from "@atlas/config";
 import { assertEquals, assertRejects } from "@std/assert";
 import { NotificationManager } from "../src/notification-manager.ts";
 import { BaseNotificationProvider } from "../src/providers/base-provider.ts";
 import { ProviderDisabledError, ProviderNotFoundError } from "../src/types.ts";
-import type { EmailParams, MessageParams, NotificationResult } from "@atlas/config";
 
 // Mock provider for testing
 class MockProvider extends BaseNotificationProvider {
@@ -105,10 +105,7 @@ Deno.test("NotificationManager - sendEmail with specific provider", async () => 
   const mockProvider1 = new MockProvider("provider1");
   const mockProvider2 = new MockProvider("provider2");
   const manager = new NotificationManager({
-    providers: {
-      "provider1": mockProvider1,
-      "provider2": mockProvider2,
-    },
+    providers: { provider1: mockProvider1, provider2: mockProvider2 },
     defaultProvider: "provider1",
     retryConfig: { attempts: 0, delay: 0, backoff: 1 }, // No retries in tests
     timeout: 0, // No timeout in tests
@@ -136,10 +133,7 @@ Deno.test("NotificationManager - sendMessage success", async () => {
     timeout: 0, // No timeout in tests
   });
 
-  const messageParams: MessageParams = {
-    content: "Test message",
-    channel: "#test-channel",
-  };
+  const messageParams: MessageParams = { content: "Test message", channel: "#test-channel" };
 
   const result = await manager.sendMessage(messageParams);
 
@@ -149,9 +143,7 @@ Deno.test("NotificationManager - sendMessage success", async () => {
 });
 
 Deno.test("NotificationManager - provider not found", async () => {
-  const manager = new NotificationManager({
-    providers: {},
-  });
+  const manager = new NotificationManager({ providers: {} });
 
   const emailParams: EmailParams = {
     to: "test@example.com",
@@ -168,9 +160,7 @@ Deno.test("NotificationManager - provider not found", async () => {
 
 Deno.test("NotificationManager - provider disabled", async () => {
   const mockProvider = new MockProvider("test-provider", false); // disabled
-  const manager = new NotificationManager({
-    providers: { "test-provider": mockProvider },
-  });
+  const manager = new NotificationManager({ providers: { "test-provider": mockProvider } });
 
   const emailParams: EmailParams = {
     to: "test@example.com",
@@ -186,9 +176,7 @@ Deno.test("NotificationManager - provider disabled", async () => {
 });
 
 Deno.test("NotificationManager - no default provider", async () => {
-  const manager = new NotificationManager({
-    providers: {},
-  });
+  const manager = new NotificationManager({ providers: {} });
 
   const emailParams: EmailParams = {
     to: "test@example.com",
@@ -205,9 +193,7 @@ Deno.test("NotificationManager - no default provider", async () => {
 
 Deno.test("NotificationManager - getProviderStatus", async () => {
   const mockProvider = new MockProvider("test-provider");
-  const manager = new NotificationManager({
-    providers: { "test-provider": mockProvider },
-  });
+  const manager = new NotificationManager({ providers: { "test-provider": mockProvider } });
 
   const status = await manager.getProviderStatus("test-provider");
 
@@ -221,9 +207,7 @@ Deno.test("NotificationManager - getProviderStatus", async () => {
 Deno.test("NotificationManager - getProviderStatus unhealthy", async () => {
   const mockProvider = new MockProvider("test-provider");
   mockProvider.shouldFailConnection = true;
-  const manager = new NotificationManager({
-    providers: { "test-provider": mockProvider },
-  });
+  const manager = new NotificationManager({ providers: { "test-provider": mockProvider } });
 
   const status = await manager.getProviderStatus("test-provider");
 
@@ -240,10 +224,7 @@ Deno.test("NotificationManager - getAllProviderStatuses", async () => {
   mockProvider2.shouldFailConnection = true;
 
   const manager = new NotificationManager({
-    providers: {
-      "provider1": mockProvider1,
-      "provider2": mockProvider2,
-    },
+    providers: { provider1: mockProvider1, provider2: mockProvider2 },
   });
 
   const statuses = await manager.getAllProviderStatuses();

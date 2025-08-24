@@ -47,10 +47,7 @@ export interface WorkspaceBatchAddRequest {
 
 export interface WorkspaceBatchAddResponse {
   added: WorkspaceInfo[];
-  failed: Array<{
-    path: string;
-    error: string;
-  }>;
+  failed: Array<{ path: string; error: string }>;
 }
 
 export interface WorkspaceTemplateInfo {

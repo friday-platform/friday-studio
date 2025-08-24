@@ -1,7 +1,7 @@
 import { logger } from "@atlas/logger";
+import type { WorkspaceEntry } from "@atlas/workspace";
 import { debounce } from "@std/async";
 import { resolve } from "@std/path";
-import type { WorkspaceEntry } from "@atlas/workspace";
 
 interface WorkspaceFileWatcherOptions {
   onConfigChange: (workspaceId: string, filePath: string) => Promise<void>;
@@ -51,24 +51,21 @@ export class WorkspaceFileWatcher {
       this.watchers.set(workspace.id, watcher);
 
       // Create debounced handler for this workspace
-      const debouncedHandler = debounce(
-        async (event: Deno.FsEvent) => {
-          // Check if any of the changed paths match the workspace's config file
-          // Normalize all paths for consistent comparison
-          const matchingPath = event.paths.find((p) => {
-            const normalizedEventPath = resolve(p);
-            return normalizedEventPath === absoluteConfigPath;
-          });
+      const debouncedHandler = debounce(async (event: Deno.FsEvent) => {
+        // Check if any of the changed paths match the workspace's config file
+        // Normalize all paths for consistent comparison
+        const matchingPath = event.paths.find((p) => {
+          const normalizedEventPath = resolve(p);
+          return normalizedEventPath === absoluteConfigPath;
+        });
 
-          if (matchingPath) {
-            const hasChanged = await this.hasFileChanged(configPath);
-            if (hasChanged) {
-              await this.handleConfigChange(workspace.id, configPath);
-            }
+        if (matchingPath) {
+          const hasChanged = await this.hasFileChanged(configPath);
+          if (hasChanged) {
+            await this.handleConfigChange(workspace.id, configPath);
           }
-        },
-        this.options.debounceMs || 1000,
-      );
+        }
+      }, this.options.debounceMs || 1000);
 
       this.debouncedHandlers.set(workspace.id, debouncedHandler);
 
@@ -209,10 +206,7 @@ export class WorkspaceFileWatcher {
       }
 
       const content = await Deno.readTextFile(filePath);
-      const hash = await crypto.subtle.digest(
-        "SHA-256",
-        new TextEncoder().encode(content),
-      );
+      const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(content));
       const hashHex = Array.from(new Uint8Array(hash))
         .map((b) => b.toString(16).padStart(2, "0"))
         .join("");

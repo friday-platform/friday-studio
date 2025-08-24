@@ -240,10 +240,7 @@ Deno.test("createRetryWrapper - creates reusable retry function", async () => {
 });
 
 Deno.test("createRetryWrapper - override options", async () => {
-  const retryWrapper = createRetryWrapper({
-    maxRetries: 5,
-    initialDelay: 100,
-  });
+  const retryWrapper = createRetryWrapper({ maxRetries: 5, initialDelay: 100 });
 
   let callCount = 0;
   const result = await retryWrapper(

@@ -52,10 +52,7 @@ export class RedisCacheAdapter implements SupervisionCacheAdapter {
       const { createClient } = await import("redis");
 
       this.redis = createClient({
-        socket: {
-          host: this.config.host,
-          port: this.config.port,
-        },
+        socket: { host: this.config.host, port: this.config.port },
         password: this.config.password,
         database: this.config.db,
       });

@@ -10,18 +10,16 @@ import {
 } from "../src/core/actors/session-supervisor-actor.ts";
 
 // Skip tests in CI or when no API key is available
-const skipIfNoKey = !Deno.env.get("ANTHROPIC_API_KEY") || Deno.env.get("CI") === "true" ||
+const skipIfNoKey =
+  !Deno.env.get("ANTHROPIC_API_KEY") ||
+  Deno.env.get("CI") === "true" ||
   Deno.env.get("GITHUB_ACTIONS") === "true";
 
 // Helper function to create basic session context
 const createTestSessionContext = (overrides: Partial<SessionContext> = {}): SessionContext => ({
   sessionId: "test-session-123",
   workspaceId: "test-workspace",
-  signal: {
-    id: "sig-123",
-    type: "test",
-    payload: { message: "test signal" },
-  },
+  signal: { id: "sig-123", type: "test", payload: { message: "test signal" } },
   payload: { message: "test signal" },
   availableAgents: ["agent1", "agent2"],
   ...overrides,
@@ -59,7 +57,8 @@ Deno.test({
     // Verify reasoning is present and meaningful
     assertEquals(plan.reasoning.length > 20, true, "Plan reasoning should be substantial");
     // Should contain planning-related content
-    const hasValidContent = plan.reasoning.toLowerCase().includes("execution") ||
+    const hasValidContent =
+      plan.reasoning.toLowerCase().includes("execution") ||
       plan.reasoning.toLowerCase().includes("plan") ||
       plan.reasoning.toLowerCase().includes("agent") ||
       plan.reasoning.toLowerCase().includes("phase");
@@ -98,10 +97,7 @@ Deno.test({
     const context = createTestSessionContext({
       jobSpec: {
         name: "test-job",
-        execution: {
-          strategy: "parallel",
-          agents: ["agent1", "agent2"],
-        },
+        execution: { strategy: "parallel", agents: ["agent1", "agent2"] },
       },
     });
 

@@ -4,16 +4,16 @@
 
 import type { AgentSessionData, AtlasAgent } from "@atlas/agent-sdk";
 import { AwaitingSupervisorDecision } from "@atlas/agent-sdk";
-import type { CoALAMemoryManager } from "@atlas/memory";
 import type { Logger } from "@atlas/logger";
-import type { ApprovalQueueManager } from "../../src/agent-server/approval-queue-manager.ts";
-import type { BuildAgentContext } from "../../src/agent-server/agent-execution-manager.ts";
-import { createTestAgentExecutionMachine } from "./test-execution-machine.ts";
+import type { CoALAMemoryManager } from "@atlas/memory";
 import { createActor } from "xstate";
 import type {
   AgentExecutionMachineActor,
   ApprovalDecision,
 } from "../../src/agent-server/agent-execution-machine.ts";
+import type { BuildAgentContext } from "../../src/agent-server/agent-execution-manager.ts";
+import type { ApprovalQueueManager } from "../../src/agent-server/approval-queue-manager.ts";
+import { createTestAgentExecutionMachine } from "./test-execution-machine.ts";
 
 // Test execution manager with deterministic state machines
 export class TestAgentExecutionManager {
@@ -47,9 +47,7 @@ export class TestAgentExecutionManager {
         this.sessionMemory,
         this.logger,
       );
-      const actor = createActor(machine, {
-        input: { agentId },
-      });
+      const actor = createActor(machine, { input: { agentId } });
 
       actor.start();
       this.activeAgents.set(agentId, actor);
@@ -59,11 +57,7 @@ export class TestAgentExecutionManager {
   }
 
   // Execute agent and handle approval workflow
-  executeAgent(
-    agentId: string,
-    prompt: string,
-    sessionData: AgentSessionData,
-  ): Promise<unknown> {
+  executeAgent(agentId: string, prompt: string, sessionData: AgentSessionData): Promise<unknown> {
     const actor = this.getOrCreateExecutionActor(agentId);
 
     return new Promise((resolve, reject) => {
@@ -98,25 +92,18 @@ export class TestAgentExecutionManager {
   }
 
   // Resume suspended agent with supervisor approval decision
-  async resumeAgentWithApproval(
-    approvalId: string,
-    decision: ApprovalDecision,
-  ): Promise<unknown> {
+  async resumeAgentWithApproval(approvalId: string, decision: ApprovalDecision): Promise<unknown> {
     if (!this.approvalQueue) {
       this.logger.error("No approval queue configured");
       return null;
     }
 
     // Get suspended actor and restore with approval decision
-    const actor = await this.approvalQueue.restoreAndResume(
-      approvalId,
-      decision,
-      {
-        loadAgentFn: this.loadAgentFn,
-        contextBuilder: this.contextBuilder,
-        sessionMemory: this.sessionMemory,
-      },
-    );
+    const actor = await this.approvalQueue.restoreAndResume(approvalId, decision, {
+      loadAgentFn: this.loadAgentFn,
+      contextBuilder: this.contextBuilder,
+      sessionMemory: this.sessionMemory,
+    });
 
     if (!actor) {
       return null;
@@ -172,10 +159,7 @@ export class TestAgentExecutionManager {
   }
 
   // Get execution statistics for monitoring
-  getStats(): {
-    activeAgents: number;
-    agentStates: Record<string, string>;
-  } {
+  getStats(): { activeAgents: number; agentStates: Record<string, string> } {
     const agentStates: Record<string, string> = {};
 
     for (const [agentId, actor] of this.activeAgents) {
@@ -185,10 +169,7 @@ export class TestAgentExecutionManager {
       }
     }
 
-    return {
-      activeAgents: this.activeAgents.size,
-      agentStates,
-    };
+    return { activeAgents: this.activeAgents.size, agentStates };
   }
 
   // Shutdown all active agents

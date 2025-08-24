@@ -119,9 +119,7 @@ Deno.test("KnowledgeGraphLocalStorageAdapter - should query entities by type", a
     await adapter.storeEntity(person2);
     await adapter.storeEntity(org1);
 
-    const people = await adapter.queryEntities({
-      entityTypes: ["person" as KnowledgeEntityType],
-    });
+    const people = await adapter.queryEntities({ entityTypes: ["person" as KnowledgeEntityType] });
 
     const orgs = await adapter.queryEntities({
       entityTypes: ["organization" as KnowledgeEntityType],
@@ -129,8 +127,14 @@ Deno.test("KnowledgeGraphLocalStorageAdapter - should query entities by type", a
 
     assertEquals(people.length, 2);
     assertEquals(orgs.length, 1);
-    assertEquals(people.some((p) => p.name === "John Doe"), true);
-    assertEquals(people.some((p) => p.name === "Jane Smith"), true);
+    assertEquals(
+      people.some((p) => p.name === "John Doe"),
+      true,
+    );
+    assertEquals(
+      people.some((p) => p.name === "Jane Smith"),
+      true,
+    );
     assertEquals(orgs[0].name, "Acme Corp");
   } finally {
     await cleanupTempDir(tempDir);
@@ -195,8 +199,14 @@ Deno.test("KnowledgeGraphLocalStorageAdapter - should get entity relationships",
 
     const relationships = await adapter.getEntityRelationships("person1");
     assertEquals(relationships.length, 2);
-    assertEquals(relationships.some((r) => r.type === "works_for"), true);
-    assertEquals(relationships.some((r) => r.type === "collaborates_with"), true);
+    assertEquals(
+      relationships.some((r) => r.type === "works_for"),
+      true,
+    );
+    assertEquals(
+      relationships.some((r) => r.type === "collaborates_with"),
+      true,
+    );
   } finally {
     await cleanupTempDir(tempDir);
   }
@@ -238,13 +248,17 @@ Deno.test("KnowledgeGraphLocalStorageAdapter - should query facts by search term
     await adapter.storeFact(fact2);
     await adapter.storeFact(fact3);
 
-    const skyFacts = await adapter.queryFacts({
-      search: "sky",
-    });
+    const skyFacts = await adapter.queryFacts({ search: "sky" });
 
     assertEquals(skyFacts.length, 2);
-    assertEquals(skyFacts.some((f) => f.statement.includes("blue")), true);
-    assertEquals(skyFacts.some((f) => f.statement.includes("red")), true);
+    assertEquals(
+      skyFacts.some((f) => f.statement.includes("blue")),
+      true,
+    );
+    assertEquals(
+      skyFacts.some((f) => f.statement.includes("red")),
+      true,
+    );
   } finally {
     await cleanupTempDir(tempDir);
   }
@@ -381,8 +395,14 @@ Deno.test("KnowledgeGraphLocalStorageAdapter - should get neighbors", async () =
 
     const neighbors = await adapter.getNeighbors("A", 1);
     assertEquals(neighbors.length, 2);
-    assertEquals(neighbors.some((n) => n.id === "B"), true);
-    assertEquals(neighbors.some((n) => n.id === "C"), true);
+    assertEquals(
+      neighbors.some((n) => n.id === "B"),
+      true,
+    );
+    assertEquals(
+      neighbors.some((n) => n.id === "C"),
+      true,
+    );
   } finally {
     await cleanupTempDir(tempDir);
   }
@@ -410,9 +430,7 @@ Deno.test("KnowledgeGraphLocalStorageAdapter - should query with confidence thre
     await adapter.storeEntity(highConfidenceEntity);
     await adapter.storeEntity(lowConfidenceEntity);
 
-    const results = await adapter.queryEntities({
-      minConfidence: 0.5,
-    });
+    const results = await adapter.queryEntities({ minConfidence: 0.5 });
 
     assertEquals(results.length, 1);
     assertEquals(results[0].id, "high");
@@ -431,9 +449,7 @@ Deno.test("KnowledgeGraphLocalStorageAdapter - should query with limit", async (
       await adapter.storeEntity(entity);
     }
 
-    const results = await adapter.queryEntities({
-      limit: 5,
-    });
+    const results = await adapter.queryEntities({ limit: 5 });
 
     assertEquals(results.length, 5);
   } finally {
@@ -462,13 +478,9 @@ Deno.test("KnowledgeGraphLocalStorageAdapter - should handle workspace isolation
     await adapter.storeEntity(entity1);
     await adapter.storeEntity(entity2);
 
-    const workspace1Results = await adapter.queryEntities({
-      workspaceId: "workspace1",
-    });
+    const workspace1Results = await adapter.queryEntities({ workspaceId: "workspace1" });
 
-    const workspace2Results = await adapter.queryEntities({
-      workspaceId: "workspace2",
-    });
+    const workspace2Results = await adapter.queryEntities({ workspaceId: "workspace2" });
 
     assertEquals(workspace1Results.length, 1);
     assertEquals(workspace2Results.length, 1);

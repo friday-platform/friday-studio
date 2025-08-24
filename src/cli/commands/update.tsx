@@ -1,11 +1,11 @@
-import { logger } from "@atlas/logger";
 import { getAtlasClient } from "@atlas/client";
+import { logger } from "@atlas/logger";
 import { ensureDir, exists } from "@std/fs";
 import { join } from "@std/path";
 import { getAtlasVersion } from "../../utils/version.ts";
 import { checkForUpdate } from "../../utils/version-checker.ts";
 import { errorOutput, infoOutput, successOutput, warningOutput } from "../utils/output.ts";
-import { YargsInstance } from "../utils/yargs.ts";
+import type { YargsInstance } from "../utils/yargs.ts";
 
 interface UpdateOptions {
   check?: boolean;
@@ -98,14 +98,8 @@ export const handler = async (options: UpdateOptions) => {
     // Check for active sessions and daemon status
     const daemonStatus = await checkDaemonStatus();
 
-    if (
-      daemonStatus.running &&
-      daemonStatus.activeSessions > 0 &&
-      !options.force
-    ) {
-      warningOutput(
-        `Atlas daemon has ${daemonStatus.activeSessions} active session(s)`,
-      );
+    if (daemonStatus.running && daemonStatus.activeSessions > 0 && !options.force) {
+      warningOutput(`Atlas daemon has ${daemonStatus.activeSessions} active session(s)`);
     }
 
     // Confirm update (unless quiet mode)
@@ -134,19 +128,13 @@ export const handler = async (options: UpdateOptions) => {
       errorOutput(
         `Invalid package type for ${isMacOS ? "macOS" : "Linux"}: ${updateInfo.downloadUrl}`,
       );
-      errorOutput(
-        "Update process requires .tar.gz binary packages, not installer packages",
-      );
+      errorOutput("Update process requires .tar.gz binary packages, not installer packages");
       return;
     }
 
     if (isWindows && !updateInfo.downloadUrl.endsWith(".zip")) {
-      errorOutput(
-        `Invalid package type for Windows: ${updateInfo.downloadUrl}`,
-      );
-      errorOutput(
-        "Update process requires .zip binary packages, not .exe installers",
-      );
+      errorOutput(`Invalid package type for Windows: ${updateInfo.downloadUrl}`);
+      errorOutput("Update process requires .zip binary packages, not .exe installers");
       return;
     }
 
@@ -175,10 +163,7 @@ export const handler = async (options: UpdateOptions) => {
       successOutput(`Atlas updated to ${result.toVersion}`);
 
       // If channel was switched, save preference
-      if (
-        options.channel &&
-        options.channel !== getCurrentChannel(currentVersion)
-      ) {
+      if (options.channel && options.channel !== getCurrentChannel(currentVersion)) {
         await saveChannelPreference(options.channel);
         infoOutput(`Switched to ${options.channel} channel`);
       }
@@ -192,9 +177,7 @@ export const handler = async (options: UpdateOptions) => {
       Deno.exit(1);
     }
   } catch (error) {
-    errorOutput(
-      `Update failed: ${error instanceof Error ? error.message : String(error)}`,
-    );
+    errorOutput(`Update failed: ${error instanceof Error ? error.message : String(error)}`);
     Deno.exit(1);
   }
 };
@@ -206,10 +189,7 @@ function getCurrentChannel(version: string): string {
   return "stable";
 }
 
-async function checkDaemonStatus(): Promise<{
-  running: boolean;
-  activeSessions: number;
-}> {
+async function checkDaemonStatus(): Promise<{ running: boolean; activeSessions: number }> {
   try {
     const client = getAtlasClient();
     const isHealthy = await client.isHealthy();
@@ -217,10 +197,7 @@ async function checkDaemonStatus(): Promise<{
     if (isHealthy) {
       const status = await client.getDaemonStatus();
 
-      return {
-        running: true,
-        activeSessions: status.activeWorkspaces || 0,
-      };
+      return { running: true, activeSessions: status.activeWorkspaces || 0 };
     }
   } catch {
     // Daemon not running
@@ -281,23 +258,23 @@ async function performUpdate(params: {
     await downloadBinary({
       url: downloadUrl,
       destination: downloadPath,
-      onProgress: quiet ? undefined : (bytes, total) => {
-        const percent = Math.round((bytes / total) * 100);
-        const mb = (bytes / 1024 / 1024).toFixed(1);
-        const totalMb = (total / 1024 / 1024).toFixed(1);
+      onProgress: quiet
+        ? undefined
+        : (bytes, total) => {
+            const percent = Math.round((bytes / total) * 100);
+            const mb = (bytes / 1024 / 1024).toFixed(1);
+            const totalMb = (total / 1024 / 1024).toFixed(1);
 
-        // Create progress bar
-        const barLength = 40;
-        const filledLength = Math.round((barLength * percent) / 100);
-        const bar = "█".repeat(filledLength) + "░".repeat(barLength - filledLength);
+            // Create progress bar
+            const barLength = 40;
+            const filledLength = Math.round((barLength * percent) / 100);
+            const bar = "█".repeat(filledLength) + "░".repeat(barLength - filledLength);
 
-        // Clear line and redraw progress bar
-        Deno.stdout.writeSync(
-          new TextEncoder().encode(
-            `\r  ${bar} ${percent}% (${mb}/${totalMb} MB)`,
-          ),
-        );
-      },
+            // Clear line and redraw progress bar
+            Deno.stdout.writeSync(
+              new TextEncoder().encode(`\r  ${bar} ${percent}% (${mb}/${totalMb} MB)`),
+            );
+          },
     });
 
     if (!quiet) {
@@ -311,10 +288,7 @@ async function performUpdate(params: {
       infoOutput("Verifying checksum...");
     }
 
-    const checksumValid = await downloadAndVerifyChecksum(
-      downloadUrl,
-      downloadPath,
-    );
+    const checksumValid = await downloadAndVerifyChecksum(downloadUrl, downloadPath);
     if (!checksumValid) {
       throw new Error("Checksum verification failed");
     }
@@ -324,10 +298,7 @@ async function performUpdate(params: {
     }
 
     // Extract binary
-    const extractedBinaryPath = await extractBinary(
-      downloadPath,
-      platform.platform,
-    );
+    const extractedBinaryPath = await extractBinary(downloadPath, platform.platform);
 
     // Test new binary
     if (!quiet) {
@@ -363,9 +334,7 @@ async function performUpdate(params: {
           if (!current.running || current.activeSessions === 0) break;
 
           if (!quiet) {
-            infoOutput(
-              `Waiting for ${current.activeSessions} session(s) to complete...`,
-            );
+            infoOutput(`Waiting for ${current.activeSessions} session(s) to complete...`);
           }
 
           await new Promise((resolve) => setTimeout(resolve, 5000));
@@ -374,9 +343,7 @@ async function performUpdate(params: {
 
       // Stop service-managed daemon first
       if (daemonStatus.running) {
-        const stopCmd = new Deno.Command("atlas", {
-          args: ["service", "stop"],
-        });
+        const stopCmd = new Deno.Command("atlas", { args: ["service", "stop"] });
         await stopCmd.output();
       }
 
@@ -414,7 +381,8 @@ async function performUpdate(params: {
       permissionCheck.actualBinaryPath || permissionCheck.binaryPath,
     );
 
-    const isUpdatingSelf = normalizedCurrent !== "" &&
+    const isUpdatingSelf =
+      normalizedCurrent !== "" &&
       (normalizedCurrent === normalizedTarget ||
         normalizedCurrent === normalizePath(permissionCheck.binaryPath));
 
@@ -432,9 +400,7 @@ async function performUpdate(params: {
     if (!quiet) {
       successOutput("Update installed");
       if (permissionCheck.isSymlink) {
-        infoOutput(
-          `Updated binary through symlink: ${permissionCheck.actualBinaryPath}`,
-        );
+        infoOutput(`Updated binary through symlink: ${permissionCheck.actualBinaryPath}`);
       }
     }
 
@@ -453,22 +419,15 @@ async function performUpdate(params: {
     // Post-installation verification - skip when self-updating on macOS
     // When the binary updates itself, macOS applies security attributes that cause
     // the first run to fail, but subsequent runs work fine
-    if (
-      !isSelfUpdatingWindows &&
-      (!isUpdatingSelf || Deno.build.os !== "darwin")
-    ) {
+    if (!isSelfUpdatingWindows && (!isUpdatingSelf || Deno.build.os !== "darwin")) {
       if (!quiet) {
         infoOutput("Verifying installation...");
       }
 
-      const postInstallTest = await testInstalledBinary(
-        permissionCheck.binaryPath,
-      );
+      const postInstallTest = await testInstalledBinary(permissionCheck.binaryPath);
       if (!postInstallTest.success) {
         warningOutput("Post-installation verification had issues");
-        warningOutput(
-          `The binary may require manual verification: ${postInstallTest.error}`,
-        );
+        warningOutput(`The binary may require manual verification: ${postInstallTest.error}`);
       } else if (!quiet) {
         successOutput("Installation verified");
       }
@@ -479,9 +438,7 @@ async function performUpdate(params: {
     if (isSelfUpdatingWindows) {
       if (!quiet) {
         infoOutput("Finishing update in background...");
-        warningOutput(
-          "\n⚠️  IMPORTANT: After the update completes, manually restart the service:",
-        );
+        warningOutput("\n⚠️  IMPORTANT: After the update completes, manually restart the service:");
         infoOutput("   atlas.exe service start --wait\n");
       }
       return {
@@ -512,9 +469,7 @@ async function performUpdate(params: {
       }
 
       // Use atlas service start for all platforms - it has platform-specific logic internally
-      const startCmd = new Deno.Command("atlas", {
-        args: ["service", "start"],
-      });
+      const startCmd = new Deno.Command("atlas", { args: ["service", "start"] });
       const startResult = await startCmd.output();
       serviceStarted = startResult.success;
 
@@ -523,10 +478,7 @@ async function performUpdate(params: {
       if (!serviceStarted && platform.platform === "darwin") {
         try {
           // Get the current user ID for launchctl kickstart
-          const idCmd = new Deno.Command("id", {
-            args: ["-u"],
-            stdout: "piped",
-          });
+          const idCmd = new Deno.Command("id", { args: ["-u"], stdout: "piped" });
           const idResult = await idCmd.output();
           const uid = new TextDecoder().decode(idResult.stdout).trim();
 
@@ -572,15 +524,11 @@ async function performUpdate(params: {
           await new Promise((resolve) => setTimeout(resolve, checkInterval));
 
           try {
-            const statusCmd = new Deno.Command("atlas", {
-              args: ["service", "status"],
-            });
+            const statusCmd = new Deno.Command("atlas", { args: ["service", "status"] });
             const statusResult = await statusCmd.output();
 
             if (statusResult.success) {
-              const statusOutput = new TextDecoder().decode(
-                statusResult.stdout,
-              );
+              const statusOutput = new TextDecoder().decode(statusResult.stdout);
               if (statusOutput.includes("Service is running")) {
                 successOutput("Atlas service is now running");
                 serviceRunning = true;
@@ -593,9 +541,7 @@ async function performUpdate(params: {
         }
 
         if (!serviceRunning) {
-          infoOutput(
-            "Service is still starting. Check status with 'atlas service status'",
-          );
+          infoOutput("Service is still starting. Check status with 'atlas service status'");
         }
       }
     }
@@ -629,11 +575,8 @@ interface PlatformInfo {
 }
 
 function getPlatformInfo(): PlatformInfo {
-  const platform = Deno.build.os === "darwin"
-    ? "darwin"
-    : Deno.build.os === "linux"
-    ? "linux"
-    : "windows";
+  const platform =
+    Deno.build.os === "darwin" ? "darwin" : Deno.build.os === "linux" ? "linux" : "windows";
   const arch = Deno.build.arch === "x86_64" ? "amd64" : "arm64";
   return { platform, arch };
 }
@@ -671,9 +614,7 @@ async function checkBinaryWritePermission(): Promise<{
   } else {
     // Otherwise, find binary location using platform-specific command
     const findCmd = Deno.build.os === "windows" ? "where" : "which";
-    const result = await new Deno.Command(findCmd, {
-      args: ["atlas"],
-    }).output();
+    const result = await new Deno.Command(findCmd, { args: ["atlas"] }).output();
 
     if (!result.success) {
       throw new Error("Atlas binary not found in PATH");
@@ -712,17 +653,16 @@ async function checkBinaryWritePermission(): Promise<{
     // Can't write to directory, check if we can overwrite the file itself
     try {
       // Check file ownership on the actual binary
-      const statCmd = Deno.build.os === "darwin"
-        ? ["stat", "-f", "%Su", actualBinaryPath]
-        : Deno.build.os === "windows"
-        ? null
-        : ["stat", "-c", "%U", actualBinaryPath];
+      const statCmd =
+        Deno.build.os === "darwin"
+          ? ["stat", "-f", "%Su", actualBinaryPath]
+          : Deno.build.os === "windows"
+            ? null
+            : ["stat", "-c", "%U", actualBinaryPath];
 
       let owner: string | undefined;
       if (statCmd && statCmd[0]) {
-        const ownerResult = await new Deno.Command(statCmd[0], {
-          args: statCmd.slice(1),
-        }).output();
+        const ownerResult = await new Deno.Command(statCmd[0], { args: statCmd.slice(1) }).output();
         owner = new TextDecoder().decode(ownerResult.stdout).trim();
       }
 
@@ -730,22 +670,10 @@ async function checkBinaryWritePermission(): Promise<{
 
       if (owner === currentUser) {
         // We own the file, we should be able to replace it
-        return {
-          canWrite: true,
-          binaryPath,
-          actualBinaryPath,
-          isSymlink,
-          owner,
-        };
+        return { canWrite: true, binaryPath, actualBinaryPath, isSymlink, owner };
       }
 
-      return {
-        canWrite: false,
-        binaryPath,
-        actualBinaryPath,
-        isSymlink,
-        owner,
-      };
+      return { canWrite: false, binaryPath, actualBinaryPath, isSymlink, owner };
     } catch {
       return { canWrite: false, binaryPath, actualBinaryPath, isSymlink };
     }
@@ -757,14 +685,10 @@ async function downloadBinary(options: {
   destination: string;
   onProgress?: (bytes: number, total: number) => void;
 }): Promise<void> {
-  const response = await fetch(options.url, {
-    redirect: "follow",
-  });
+  const response = await fetch(options.url, { redirect: "follow" });
 
   if (!response.ok) {
-    throw new Error(
-      `Failed to download: ${response.status} ${response.statusText}`,
-    );
+    throw new Error(`Failed to download: ${response.status} ${response.statusText}`);
   }
 
   // Check if we got HTML instead of binary (login page, error page, etc)
@@ -782,10 +706,7 @@ async function downloadBinary(options: {
   const reader = response.body?.getReader();
   if (!reader) throw new Error("No response body");
 
-  const writer = await Deno.open(options.destination, {
-    write: true,
-    create: true,
-  });
+  const writer = await Deno.open(options.destination, { write: true, create: true });
 
   let receivedBytes = 0;
   while (true) {
@@ -803,10 +724,7 @@ async function downloadBinary(options: {
   writer.close();
 }
 
-async function downloadAndVerifyChecksum(
-  binaryUrl: string,
-  binaryPath: string,
-): Promise<boolean> {
+async function downloadAndVerifyChecksum(binaryUrl: string, binaryPath: string): Promise<boolean> {
   // Download checksum file
   const checksumUrl = `${binaryUrl}.sha256`;
   const checksumPath = `${binaryPath}.sha256`;
@@ -814,23 +732,16 @@ async function downloadAndVerifyChecksum(
   const checksumResponse = await fetch(checksumUrl);
   if (!checksumResponse.ok) {
     warningOutput(`Checksum file not available (${checksumResponse.status})`);
-    warningOutput(
-      "Proceeding without checksum verification - use at your own risk",
-    );
+    warningOutput("Proceeding without checksum verification - use at your own risk");
     return true; // Skip verification if checksum not available
   }
 
   const checksumContent = await checksumResponse.text();
 
   // Check if we got HTML instead of a checksum (404 page, login redirect, etc)
-  if (
-    checksumContent.trim().startsWith("<") ||
-    checksumContent.includes("doctype")
-  ) {
+  if (checksumContent.trim().startsWith("<") || checksumContent.includes("doctype")) {
     warningOutput("Checksum file returned HTML content (likely not found)");
-    warningOutput(
-      "Proceeding without checksum verification - use at your own risk",
-    );
+    warningOutput("Proceeding without checksum verification - use at your own risk");
     return true;
   }
 
@@ -860,10 +771,7 @@ async function downloadAndVerifyChecksum(
   return true;
 }
 
-async function extractBinary(
-  archivePath: string,
-  platform: string,
-): Promise<string> {
+async function extractBinary(archivePath: string, platform: string): Promise<string> {
   const tempDir = await Deno.makeTempDir();
 
   if (platform === "windows") {
@@ -892,9 +800,7 @@ async function extractBinary(
     return binaryPath;
   } else {
     // Extract from tar.gz (macOS and Linux)
-    const tarCmd = new Deno.Command("tar", {
-      args: ["-xzf", archivePath, "-C", tempDir],
-    });
+    const tarCmd = new Deno.Command("tar", { args: ["-xzf", archivePath, "-C", tempDir] });
     const result = await tarCmd.output();
     if (!result.success) {
       const stderr = new TextDecoder().decode(result.stderr);
@@ -922,9 +828,7 @@ async function extractBinary(
   }
 }
 
-async function testNewBinary(
-  binaryPath: string,
-): Promise<{ success: boolean; error?: string }> {
+async function testNewBinary(binaryPath: string): Promise<{ success: boolean; error?: string }> {
   try {
     // Make binary executable
     if (Deno.build.os !== "windows") {
@@ -932,9 +836,7 @@ async function testNewBinary(
     }
 
     // Test binary execution
-    const cmd = new Deno.Command(binaryPath, {
-      args: ["--version"],
-    });
+    const cmd = new Deno.Command(binaryPath, { args: ["--version"] });
 
     const result = await cmd.output();
 
@@ -945,10 +847,7 @@ async function testNewBinary(
 
     return { success: true };
   } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : String(error),
-    };
+    return { success: false, error: error instanceof Error ? error.message : String(error) };
   }
 }
 
@@ -986,10 +885,7 @@ async function testInstalledBinary(
     // Also verify the output looks reasonable
     const stdout = new TextDecoder().decode(result.stdout);
     if (!stdout.includes("Atlas")) {
-      return {
-        success: false,
-        error: "Binary output does not look like Atlas CLI",
-      };
+      return { success: false, error: "Binary output does not look like Atlas CLI" };
     }
 
     return { success: true };
@@ -1004,10 +900,7 @@ async function testInstalledBinary(
         error: "Binary killed by system. This indicates code signing or security policy issues.",
       };
     }
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : String(error),
-    };
+    return { success: false, error: error instanceof Error ? error.message : String(error) };
   }
 }
 
@@ -1038,10 +931,7 @@ async function replaceBinary(
     // Double-check if it's a symlink (redundant but safe)
     if (isSymlink && actualBinaryPath) {
       targetPath = actualBinaryPath;
-      logger.debug("Updating through symlink", {
-        symlink: binaryPath,
-        target: targetPath,
-      });
+      logger.debug("Updating through symlink", { symlink: binaryPath, target: targetPath });
     } else {
       // Additional symlink check as fallback
       try {
@@ -1062,10 +952,7 @@ async function replaceBinary(
             );
           }
 
-          logger.debug("Symlink resolved", {
-            symlink: binaryPath,
-            target: targetPath,
-          });
+          logger.debug("Symlink resolved", { symlink: binaryPath, target: targetPath });
         }
       } catch (error) {
         // If lstat fails, the binary path doesn't exist
@@ -1114,9 +1001,7 @@ async function replaceBinary(
 
     // First, try using ditto for the replacement
     try {
-      const dittoCmd = new Deno.Command("ditto", {
-        args: [newBinaryPath, targetPath],
-      });
+      const dittoCmd = new Deno.Command("ditto", { args: [newBinaryPath, targetPath] });
       const result = await dittoCmd.output();
 
       if (!result.success) {
@@ -1162,16 +1047,12 @@ async function replaceBinary(
       await Deno.remove(targetPath);
 
       // Use ditto to copy to the now-empty location
-      const dittoCmd = new Deno.Command("ditto", {
-        args: [newBinaryPath, targetPath],
-      });
+      const dittoCmd = new Deno.Command("ditto", { args: [newBinaryPath, targetPath] });
       const result = await dittoCmd.output();
 
       if (!result.success) {
         // If ditto still fails, just move the file
-        logger.debug("ditto failed on regular file, using rename", {
-          target: targetPath,
-        });
+        logger.debug("ditto failed on regular file, using rename", { target: targetPath });
         await Deno.rename(newBinaryPath, targetPath);
       }
 
@@ -1191,15 +1072,11 @@ async function replaceBinary(
 
       try {
         // Copy new binary to temp location
-        const dittoCmd = new Deno.Command("ditto", {
-          args: [newBinaryPath, tempPath],
-        });
+        const dittoCmd = new Deno.Command("ditto", { args: [newBinaryPath, tempPath] });
         const result = await dittoCmd.output();
 
         if (!result.success) {
-          logger.debug("ditto to temp location failed, using copyFile", {
-            tempPath,
-          });
+          logger.debug("ditto to temp location failed, using copyFile", { tempPath });
           await Deno.copyFile(newBinaryPath, tempPath);
         }
 
@@ -1209,9 +1086,7 @@ async function replaceBinary(
         // Atomically replace old with new
         await Deno.rename(tempPath, targetPath);
 
-        logger.debug("Binary replaced successfully with atomic swap", {
-          target: targetPath,
-        });
+        logger.debug("Binary replaced successfully with atomic swap", { target: targetPath });
       } catch (error) {
         // Clean up temp file if it exists
         try {
@@ -1260,19 +1135,13 @@ async function replaceBinary(
   if (Deno.build.os !== "windows") {
     const targetPath = isSymlink && actualBinaryPath ? actualBinaryPath : binaryPath;
     await Deno.chmod(targetPath, 0o755);
-    logger.debug("Binary permissions set", {
-      target: targetPath,
-      permissions: "0755",
-    });
+    logger.debug("Binary permissions set", { target: targetPath, permissions: "0755" });
   }
 }
 
 // Windows self-replacement: stage a detached batch that waits for this process to exit,
 // copies the new binary over the running one, starts the service, and cleans up.
-async function windowsSelfReplace(
-  tempBinaryPath: string,
-  targetBinaryPath: string,
-): Promise<void> {
+async function windowsSelfReplace(tempBinaryPath: string, targetBinaryPath: string): Promise<void> {
   // Create a temporary directory to hold scripts
   const tempDir = await Deno.makeTempDir();
   const updaterBat = join(tempDir, "atlas-self-update.bat");
@@ -1405,15 +1274,9 @@ async function checkAnyAtlasProcesses(): Promise<boolean> {
     } catch {
       // pgrep not available, fall back to ps
       try {
-        const result = await new Deno.Command("ps", {
-          args: ["aux"],
-        }).output();
+        const result = await new Deno.Command("ps", { args: ["aux"] }).output();
         const output = new TextDecoder().decode(result.stdout);
-        return (
-          output.includes("atlas") &&
-          output.includes("daemon") &&
-          output.includes("start")
-        );
+        return output.includes("atlas") && output.includes("daemon") && output.includes("start");
       } catch {
         // Unable to check processes
       }
@@ -1450,10 +1313,7 @@ async function checkAnyAtlasProcesses(): Promise<boolean> {
   return false;
 }
 
-async function killAllAtlasProcesses(
-  platform: string,
-  quiet: boolean,
-): Promise<void> {
+async function killAllAtlasProcesses(platform: string, quiet: boolean): Promise<void> {
   if (platform === "windows") {
     // On Windows, enumerate atlas.exe PIDs and kill each, excluding the current process
     try {
@@ -1485,10 +1345,7 @@ async function killAllAtlasProcesses(
           }).output();
           if (!res.success && !quiet) {
             const stderr = new TextDecoder().decode(res.stderr);
-            if (
-              !stderr.includes("not found") &&
-              !stderr.includes("No such process")
-            ) {
+            if (!stderr.includes("not found") && !stderr.includes("No such process")) {
               warningOutput(`Failed to kill atlas PID ${pid}: ${stderr}`);
             }
           }
@@ -1508,9 +1365,7 @@ async function killAllAtlasProcesses(
       }).output();
 
       // Also try to kill any deno processes running atlas
-      await new Deno.Command("pkill", {
-        args: ["-f", "deno.*atlas.*daemon.*start"],
-      }).output();
+      await new Deno.Command("pkill", { args: ["-f", "deno.*atlas.*daemon.*start"] }).output();
 
       if (!pkillResult.success && !quiet) {
         // pkill exit code 1 means no processes found, which is OK
@@ -1522,26 +1377,18 @@ async function killAllAtlasProcesses(
     } catch {
       // pkill not available, try using ps and kill
       try {
-        const psResult = await new Deno.Command("ps", {
-          args: ["aux"],
-        }).output();
+        const psResult = await new Deno.Command("ps", { args: ["aux"] }).output();
 
         const output = new TextDecoder().decode(psResult.stdout);
         const lines = output.split("\n");
 
         for (const line of lines) {
-          if (
-            line.includes("atlas") &&
-            line.includes("daemon") &&
-            line.includes("start")
-          ) {
+          if (line.includes("atlas") && line.includes("daemon") && line.includes("start")) {
             const parts = line.trim().split(/\s+/);
             const pid = parts[1];
             if (pid && /^\d+$/.test(pid)) {
               try {
-                await new Deno.Command("kill", {
-                  args: ["-9", pid],
-                }).output();
+                await new Deno.Command("kill", { args: ["-9", pid] }).output();
               } catch {
                 // Failed to kill this process, continue with others
               }

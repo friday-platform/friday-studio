@@ -77,9 +77,10 @@ export type JobExecutionAgent = z.infer<typeof JobExecutionAgentSchema>;
 export const JobExecutionSchema = z.strictObject({
   strategy: ExecutionStrategy.default("sequential"),
   agents: z.array(JobExecutionAgentSchema).min(1).describe("Agent pipeline"),
-  context: z.strictObject({
-    files: FileContextSchema.optional(),
-  }).optional().describe("Execution-level context"),
+  context: z
+    .strictObject({ files: FileContextSchema.optional() })
+    .optional()
+    .describe("Execution-level context"),
 });
 export type JobExecution = z.infer<typeof JobExecutionSchema>;
 
@@ -89,15 +90,19 @@ export type JobExecution = z.infer<typeof JobExecutionSchema>;
 
 export const JobConfigSchema = z.strictObject({
   timeout: DurationSchema.optional(),
-  supervision: z.strictObject({
-    level: SupervisionLevel.optional(),
-    skip_planning: z.boolean().optional().describe("Skip planning phase for simple jobs"),
-  }).optional(),
-  memory: z.strictObject({
-    enabled: z.boolean().optional().default(true),
-    fact_extraction: z.boolean().optional().default(true),
-    summary: z.boolean().optional().default(true).describe("Include summary in session receipt"),
-  }).optional(),
+  supervision: z
+    .strictObject({
+      level: SupervisionLevel.optional(),
+      skip_planning: z.boolean().optional().describe("Skip planning phase for simple jobs"),
+    })
+    .optional(),
+  memory: z
+    .strictObject({
+      enabled: z.boolean().optional().default(true),
+      fact_extraction: z.boolean().optional().default(true),
+      summary: z.boolean().optional().default(true).describe("Include summary in session receipt"),
+    })
+    .optional(),
 });
 export type JobConfig = z.infer<typeof JobConfigSchema>;
 
@@ -113,9 +118,9 @@ export const JobSpecificationSchema = z.strictObject({
   triggers: z.array(TriggerSpecificationSchema).optional(),
 
   // Context configuration
-  context: z.strictObject({
-    files: FileContextSchema.optional().describe("Job-level file context"),
-  }).optional(),
+  context: z
+    .strictObject({ files: FileContextSchema.optional().describe("Job-level file context") })
+    .optional(),
 
   // Prompt for supervisor guidance
   prompt: z.string().optional().describe("Single prompt string for supervisor"),
@@ -124,14 +129,14 @@ export const JobSpecificationSchema = z.strictObject({
   execution: JobExecutionSchema,
 
   // Terminal states
-  success: z.strictObject({
-    condition: ConditionSchema,
-    schema: SchemaObjectSchema.optional().describe("Structured output schema"),
-  }).optional(),
+  success: z
+    .strictObject({
+      condition: ConditionSchema,
+      schema: SchemaObjectSchema.optional().describe("Structured output schema"),
+    })
+    .optional(),
 
-  error: z.strictObject({
-    condition: ConditionSchema,
-  }).optional(),
+  error: z.strictObject({ condition: ConditionSchema }).optional(),
 
   // Job configuration
   config: JobConfigSchema.optional(),

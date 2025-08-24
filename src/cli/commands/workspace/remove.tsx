@@ -1,5 +1,5 @@
-import { checkAtlasRunning, createAtlasNotRunningError, getAtlasClient } from "@atlas/client";
 import type { WorkspaceInfo } from "@atlas/client";
+import { checkAtlasRunning, createAtlasNotRunningError, getAtlasClient } from "@atlas/client";
 // import { WorkspaceProcessManager } from "../../../core/workspace-process-manager.ts";
 import { confirmAction } from "../../utils/confirm.tsx";
 import { errorOutput, infoOutput, successOutput, warningOutput } from "../../utils/output.ts";
@@ -54,9 +54,7 @@ export const handler = async (argv: RemoveArgs): Promise<void> => {
     let workspace: WorkspaceInfo | undefined;
     if (argv.workspace) {
       // Find by ID or name
-      workspace = workspaces.find(
-        (w) => w.id === argv.workspace || w.name === argv.workspace,
-      );
+      workspace = workspaces.find((w) => w.id === argv.workspace || w.name === argv.workspace);
     } else {
       // Use current directory
       const currentPath = Deno.cwd();
@@ -76,10 +74,11 @@ export const handler = async (argv: RemoveArgs): Promise<void> => {
     if (workspace.status === "RUNNING" || workspace.status === "STARTING") {
       warningOutput(`Workspace '${workspace.name}' is currently running.`);
 
-      const confirmStop = await confirmAction(
-        "Do you want to stop it before removal?",
-        { force: argv.force, yes: argv.yes, defaultValue: true },
-      );
+      const confirmStop = await confirmAction("Do you want to stop it before removal?", {
+        force: argv.force,
+        yes: argv.yes,
+        defaultValue: true,
+      });
 
       if (!confirmStop) {
         infoOutput("Removal cancelled.");
@@ -115,8 +114,7 @@ export const handler = async (argv: RemoveArgs): Promise<void> => {
     // Confirm removal
     let confirmMessage = `Are you sure you want to remove workspace '${workspace.name}'?`;
     if (argv.deleteFiles) {
-      confirmMessage =
-        `Are you sure you want to remove workspace '${workspace.name}' AND delete all files at ${workspace.path}? This action cannot be undone!`;
+      confirmMessage = `Are you sure you want to remove workspace '${workspace.name}' AND delete all files at ${workspace.path}? This action cannot be undone!`;
     }
 
     const confirmed = await confirmAction(confirmMessage, {

@@ -3,15 +3,12 @@
  * Describes a specific agent within a workspace through the daemon API
  */
 
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { PromptContext } from "../types.ts";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { createSuccessResponse } from "../types.ts";
 
-export function registerSignalDescribePrompt(
-  server: McpServer,
-  ctx: PromptContext,
-) {
+export function registerSignalDescribePrompt(server: McpServer, ctx: PromptContext) {
   server.registerPrompt(
     "signal_describe",
     {
@@ -24,10 +21,7 @@ export function registerSignalDescribePrompt(
       },
     },
     ({ workspaceId, signalId }) => {
-      ctx.logger.info("MCP workspace_signals_describe called", {
-        workspaceId,
-        signalId,
-      });
+      ctx.logger.info("MCP workspace_signals_describe called", { workspaceId, signalId });
 
       return createSuccessResponse(
         `Use the \`atlas_workspace_signals_describe\` tool to describe a signal. The signal ID is ${signalId}, the workspace id is ${workspaceId}. Use markdown syntax to format the response.`,

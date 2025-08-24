@@ -21,15 +21,8 @@ export function createTestWorkspace(config: {
     name: config.name,
     version: "1.0.0",
     description: `Test workspace: ${config.name}`,
-    metadata: {
-      id: config.id,
-      path: config.path || `/test/workspaces/${config.id}`,
-    },
-    tools: {
-      mcp: {
-        servers: config.mcpServers || {},
-      },
-    },
+    metadata: { id: config.id, path: config.path || `/test/workspaces/${config.id}` },
+    tools: { mcp: { servers: config.mcpServers || {} } },
     agents: config.agents || [],
   };
 }
@@ -40,19 +33,9 @@ export function createTestWorkspace(config: {
 export function createStdioMCPConfig(
   command: string,
   args: string[],
-  tools?: {
-    allow?: string[];
-    deny?: string[];
-  },
+  tools?: { allow?: string[]; deny?: string[] },
 ): MCPServerConfig {
-  return {
-    transport: {
-      type: "stdio",
-      command,
-      args,
-    },
-    tools,
-  };
+  return { transport: { type: "stdio", command, args }, tools };
 }
 
 /**
@@ -60,18 +43,9 @@ export function createStdioMCPConfig(
  */
 export function createHttpMCPConfig(
   url: string,
-  tools?: {
-    allow?: string[];
-    deny?: string[];
-  },
+  tools?: { allow?: string[]; deny?: string[] },
 ): MCPServerConfig {
-  return {
-    transport: {
-      type: "sse",
-      url,
-    },
-    tools,
-  };
+  return { transport: { type: "sse", url }, tools };
 }
 
 /**
@@ -82,10 +56,11 @@ export function createWorkspaceWithFilesystemServer(id: string): WorkspaceConfig
     id,
     name: `Workspace with Filesystem - ${id}`,
     mcpServers: {
-      filesystem: createStdioMCPConfig(
-        "deno",
-        ["run", "--allow-all", "./integration-tests/mocks/file-tools-mcp-server.ts"],
-      ),
+      filesystem: createStdioMCPConfig("deno", [
+        "run",
+        "--allow-all",
+        "./integration-tests/mocks/file-tools-mcp-server.ts",
+      ]),
     },
   });
 }
@@ -98,18 +73,21 @@ export function createWorkspaceWithMultipleServers(id: string): WorkspaceConfig 
     id,
     name: `Multi-Server Workspace - ${id}`,
     mcpServers: {
-      filesystem: createStdioMCPConfig(
-        "deno",
-        ["run", "--allow-all", "./integration-tests/mocks/file-tools-mcp-server.ts"],
-      ),
-      weather: createStdioMCPConfig(
-        "deno",
-        ["run", "--allow-all", "./integration-tests/mocks/weather-mcp-server.ts"],
-      ),
-      math: createStdioMCPConfig(
-        "deno",
-        ["run", "--allow-all", "./integration-tests/mocks/math-mcp-server.ts"],
-      ),
+      filesystem: createStdioMCPConfig("deno", [
+        "run",
+        "--allow-all",
+        "./integration-tests/mocks/file-tools-mcp-server.ts",
+      ]),
+      weather: createStdioMCPConfig("deno", [
+        "run",
+        "--allow-all",
+        "./integration-tests/mocks/weather-mcp-server.ts",
+      ]),
+      math: createStdioMCPConfig("deno", [
+        "run",
+        "--allow-all",
+        "./integration-tests/mocks/math-mcp-server.ts",
+      ]),
     },
   });
 }
@@ -126,17 +104,13 @@ export function createWorkspaceWithFilteredServers(id: string): WorkspaceConfig 
       filesystem: createStdioMCPConfig(
         "deno",
         ["run", "--allow-all", "./integration-tests/mocks/file-tools-mcp-server.ts"],
-        {
-          deny: ["file_write", "file_delete"],
-        },
+        { deny: ["file_write", "file_delete"] },
       ),
       // Server with allow list
       echo: createStdioMCPConfig(
         "deno",
         ["run", "--allow-all", "./integration-tests/mocks/echo-mcp-server.ts"],
-        {
-          allow: ["echo", "reverse"],
-        },
+        { allow: ["echo", "reverse"] },
       ),
     },
   });

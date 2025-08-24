@@ -1,8 +1,8 @@
 import { ensureDir } from "@std/fs";
 import { join } from "@std/path";
 import * as yaml from "@std/yaml";
-import { checkDaemonRunning, getDaemonClient } from "../../utils/daemon-client.ts";
 import { generateUniqueWorkspaceName } from "../../../core/utils/id-generator.ts";
+import { checkDaemonRunning, getDaemonClient } from "../../utils/daemon-client.ts";
 
 interface WorkspaceCreationOptions {
   name: string;
@@ -12,11 +12,9 @@ interface WorkspaceCreationOptions {
   signals?: string[];
 }
 
-export async function createAndRegisterWorkspace(options: WorkspaceCreationOptions): Promise<{
-  id: string;
-  name: string;
-  path: string;
-}> {
+export async function createAndRegisterWorkspace(
+  options: WorkspaceCreationOptions,
+): Promise<{ id: string; name: string; path: string }> {
   const { name, path, description, agents = [], signals = [] } = options;
 
   // Ensure directory exists
@@ -25,10 +23,7 @@ export async function createAndRegisterWorkspace(options: WorkspaceCreationOptio
   // Build workspace config object (without ID - daemon will generate one)
   const workspaceConfig = {
     version: "1.0",
-    workspace: {
-      name: name,
-      description: description || `Atlas workspace: ${name}`,
-    },
+    workspace: { name: name, description: description || `Atlas workspace: ${name}` },
     signals: {} as Record<string, unknown>,
     jobs: {} as Record<string, unknown>,
     agents: {} as Record<string, unknown>,
@@ -46,18 +41,13 @@ export async function createAndRegisterWorkspace(options: WorkspaceCreationOptio
         workspaceConfig.signals["webhook"] = {
           provider: "http",
           description: "HTTP webhook trigger",
-          config: {
-            port: 8080,
-            path: "/webhook",
-          },
+          config: { port: 8080, path: "/webhook" },
         };
       } else if (signal === "schedule") {
         workspaceConfig.signals["scheduled"] = {
           provider: "schedule",
           description: "Scheduled trigger",
-          config: {
-            cron: "0 0 * * *",
-          },
+          config: { cron: "0 0 * * *" },
         };
       }
     }
@@ -95,10 +85,7 @@ export async function createAndRegisterWorkspace(options: WorkspaceCreationOptio
       description: "Example job for workspace initialization",
       agents: agents.map((agent) => `${agent}-agent`),
       mappings: [
-        {
-          signal: Object.keys(workspaceConfig.signals)[0] || "manual-trigger",
-          conditions: [],
-        },
+        { signal: Object.keys(workspaceConfig.signals)[0] || "manual-trigger", conditions: [] },
       ],
     };
   }
@@ -143,9 +130,5 @@ export async function createAndRegisterWorkspace(options: WorkspaceCreationOptio
     workspaceName = name;
   }
 
-  return {
-    id: workspaceId,
-    name: workspaceName,
-    path: path,
-  };
+  return { id: workspaceId, name: workspaceName, path: path };
 }

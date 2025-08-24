@@ -1,11 +1,11 @@
+import type { AgentContext } from "@atlas/agent-sdk";
+import { createLogger } from "@atlas/logger";
 import { assertEquals } from "@std/assert";
 import { assertSpyCall, assertSpyCalls, spy } from "@std/testing/mock";
 import {
-  AgentExecutionContext,
+  type AgentExecutionContext,
   AgentOrchestrator,
 } from "../../src/orchestrator/agent-orchestrator.ts";
-import { createLogger } from "@atlas/logger";
-import type { AgentContext } from "@atlas/agent-sdk";
 
 /**
  * Tests session isolation - the most critical aspect of Atlas streaming.
@@ -30,10 +30,7 @@ import type { AgentContext } from "@atlas/agent-sdk";
  */
 Deno.test("Session Isolation with Shared MCP Client", async (t) => {
   await t.step("should properly isolate stream events between concurrent sessions", async () => {
-    const config = {
-      agentsServerUrl: "http://localhost:8081/mcp",
-      executionTimeout: 10000,
-    };
+    const config = { agentsServerUrl: "http://localhost:8081/mcp", executionTimeout: 10000 };
     const logger = createLogger({ level: "error" });
     const orchestrator = new AgentOrchestrator(config, logger);
     orchestrator.initialize();
@@ -108,10 +105,7 @@ Deno.test("Session Isolation with Shared MCP Client", async (t) => {
      * Memory leak test: Verifies activeStreamHandlers cleanup.
      * Without proper cleanup, handler references would accumulate.
      */
-    const config = {
-      agentsServerUrl: "http://localhost:8081/mcp",
-      executionTimeout: 10000,
-    };
+    const config = { agentsServerUrl: "http://localhost:8081/mcp", executionTimeout: 10000 };
     const logger = createLogger({ level: "error" });
     const orchestrator = new AgentOrchestrator(config, logger);
     orchestrator.initialize();
@@ -150,8 +144,9 @@ Deno.test("Session Isolation with Shared MCP Client", async (t) => {
       // Verify handler cleanup after execution
       // Note: Accessing private field for leak detection test
       assertEquals(
-        (orchestrator as unknown as { activeStreamHandlers: Map<string, unknown> })
-          .activeStreamHandlers.has(`${sessionId}:agent`),
+        (
+          orchestrator as unknown as { activeStreamHandlers: Map<string, unknown> }
+        ).activeStreamHandlers.has(`${sessionId}:agent`),
         false,
       );
     }
@@ -172,10 +167,7 @@ Deno.test("Session Isolation with Shared MCP Client", async (t) => {
      * Complex scenario: Multiple agents in multiple sessions.
      * Tests the composite key routing (sessionId:agentId).
      */
-    const config = {
-      agentsServerUrl: "http://localhost:8081/mcp",
-      executionTimeout: 10000,
-    };
+    const config = { agentsServerUrl: "http://localhost:8081/mcp", executionTimeout: 10000 };
     const logger = createLogger({ level: "error" });
     const orchestrator = new AgentOrchestrator(config, logger);
     orchestrator.initialize();
@@ -185,16 +177,8 @@ Deno.test("Session Isolation with Shared MCP Client", async (t) => {
     const session1Agent2Handler = spy();
     const session2Agent1Handler = spy();
     const session2Agent2Handler = spy();
-    const session1 = {
-      sessionId: "session-1",
-      workspaceId: "workspace-1",
-      streamId: "stream-1",
-    };
-    const session2 = {
-      sessionId: "session-2",
-      workspaceId: "workspace-1",
-      streamId: "stream-2",
-    };
+    const session1 = { sessionId: "session-1", workspaceId: "workspace-1", streamId: "stream-1" };
+    const session2 = { sessionId: "session-2", workspaceId: "workspace-1", streamId: "stream-2" };
 
     // MOCK: Two different agents that identify themselves in events
     ["agent-1", "agent-2"].forEach((agentId) => {

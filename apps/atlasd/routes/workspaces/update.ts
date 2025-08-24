@@ -1,11 +1,11 @@
-import { daemonFactory } from "../../src/factory.ts";
-import { describeRoute, resolver, validator } from "hono-openapi";
+import { WorkspaceConfigSchema } from "@atlas/config";
+import { WorkspaceSessionStatus } from "@atlas/core";
+import { logger } from "@atlas/logger";
 import { join } from "@std/path";
 import { stringify } from "@std/yaml";
-import { WorkspaceConfigSchema } from "@atlas/config";
-import { logger } from "@atlas/logger";
-import { WorkspaceSessionStatus } from "@atlas/core";
+import { describeRoute, resolver, validator } from "hono-openapi";
 import type { IWorkspaceSession } from "../../../../src/types/core.ts";
+import { daemonFactory } from "../../src/factory.ts";
 import {
   errorResponseSchema,
   updateWorkspaceResponseSchema,
@@ -25,27 +25,15 @@ updateWorkspace.post(
     responses: {
       200: {
         description: "Workspace updated successfully",
-        content: {
-          "application/json": {
-            schema: resolver(updateWorkspaceResponseSchema),
-          },
-        },
+        content: { "application/json": { schema: resolver(updateWorkspaceResponseSchema) } },
       },
       400: {
         description: "Invalid configuration or workspace not found",
-        content: {
-          "application/json": {
-            schema: resolver(errorResponseSchema),
-          },
-        },
+        content: { "application/json": { schema: resolver(errorResponseSchema) } },
       },
       500: {
         description: "Update failed",
-        content: {
-          "application/json": {
-            schema: resolver(errorResponseSchema),
-          },
-        },
+        content: { "application/json": { schema: resolver(errorResponseSchema) } },
       },
     },
   }),
@@ -63,30 +51,27 @@ updateWorkspace.post(
       // Find the workspace
       const workspace = await manager.find({ id: workspaceId });
       if (!workspace) {
-        return c.json({
-          success: false,
-          error: `Workspace not found: ${workspaceId}`,
-        }, 400);
+        return c.json({ success: false, error: `Workspace not found: ${workspaceId}` }, 400);
       }
 
       // Validate configuration
       const validationResult = WorkspaceConfigSchema.safeParse(config);
       if (!validationResult.success) {
-        return c.json({
-          success: false,
-          error: `Invalid workspace configuration: ${
-            validationResult.error.issues.map((issue) => issue.message).join(", ")
-          }`,
-        }, 400);
+        return c.json(
+          {
+            success: false,
+            error: `Invalid workspace configuration: ${validationResult.error.issues
+              .map((issue) => issue.message)
+              .join(", ")}`,
+          },
+          400,
+        );
       }
 
       const validatedConfig = validationResult.data;
 
       // Convert config to YAML
-      const yamlConfig = stringify(validatedConfig, {
-        indent: 2,
-        lineWidth: 100,
-      });
+      const yamlConfig = stringify(validatedConfig, { indent: 2, lineWidth: 100 });
 
       const workspacePath = workspace.path;
       const workspaceYmlPath = join(workspacePath, "workspace.yml");
@@ -103,12 +88,15 @@ updateWorkspace.post(
             const existingContent = await Deno.readTextFile(workspaceYmlPath);
             await Deno.writeTextFile(backupPath, existingContent);
           } catch (backupError) {
-            return c.json({
-              success: false,
-              error: `Failed to create backup: ${
-                backupError instanceof Error ? backupError.message : String(backupError)
-              }`,
-            }, 500);
+            return c.json(
+              {
+                success: false,
+                error: `Failed to create backup: ${
+                  backupError instanceof Error ? backupError.message : String(backupError)
+                }`,
+              },
+              500,
+            );
           }
         }
 
@@ -132,9 +120,10 @@ updateWorkspace.post(
           try {
             // Wait for active sessions with timeout
             const sessions = runtime.getSessions();
-            const activeSessions = sessions.filter((s: IWorkspaceSession) =>
-              s.status === WorkspaceSessionStatus.EXECUTING ||
-              s.status === WorkspaceSessionStatus.PENDING
+            const activeSessions = sessions.filter(
+              (s: IWorkspaceSession) =>
+                s.status === WorkspaceSessionStatus.EXECUTING ||
+                s.status === WorkspaceSessionStatus.PENDING,
             );
 
             if (activeSessions.length > 0) {
@@ -150,8 +139,8 @@ updateWorkspace.post(
               const startTime = Date.now();
 
               while (
-                activeSessions.some((s: IWorkspaceSession) =>
-                  s.status === WorkspaceSessionStatus.EXECUTING
+                activeSessions.some(
+                  (s: IWorkspaceSession) => s.status === WorkspaceSessionStatus.EXECUTING,
                 ) &&
                 Date.now() - startTime < timeout
               ) {
@@ -162,8 +151,8 @@ updateWorkspace.post(
                 logger.warn("Timeout waiting for sessions, forcing shutdown", {
                   workspaceId,
                   workspaceActualId: workspace.id,
-                  remainingSessionCount: activeSessions.filter((s: IWorkspaceSession) =>
-                    s.status === WorkspaceSessionStatus.EXECUTING
+                  remainingSessionCount: activeSessions.filter(
+                    (s: IWorkspaceSession) => s.status === WorkspaceSessionStatus.EXECUTING,
                   ).length,
                 });
               }
@@ -205,10 +194,7 @@ updateWorkspace.post(
             });
           }
         } else {
-          logger.info("No runtime to reload", {
-            workspaceId,
-            workspaceActualId: workspace.id,
-          });
+          logger.info("No runtime to reload", { workspaceId, workspaceActualId: workspace.id });
 
           return c.json({
             success: true,
@@ -221,18 +207,21 @@ updateWorkspace.post(
           });
         }
       } catch (updateError) {
-        return c.json({
-          success: false,
-          error: `Failed to update workspace files: ${
-            updateError instanceof Error ? updateError.message : String(updateError)
-          }`,
-        }, 500);
+        return c.json(
+          {
+            success: false,
+            error: `Failed to update workspace files: ${
+              updateError instanceof Error ? updateError.message : String(updateError)
+            }`,
+          },
+          500,
+        );
       }
     } catch (error) {
-      return c.json({
-        success: false,
-        error: error instanceof Error ? error.message : String(error),
-      }, 500);
+      return c.json(
+        { success: false, error: error instanceof Error ? error.message : String(error) },
+        500,
+      );
     }
   },
 );

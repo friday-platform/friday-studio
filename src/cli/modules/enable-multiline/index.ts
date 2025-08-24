@@ -2,18 +2,18 @@
  * Terminal setup module exports
  */
 
-export * from "./types.ts";
-export * from "./detector.ts";
-export * from "./utils.ts";
 export { restoreAppleTerminal, setupAppleTerminal } from "./apple-terminal.ts";
-export { restoreITerm2, setupITerm2 } from "./iterm2.ts";
+export * from "./detector.ts";
 export { restoreGhostty, setupGhostty } from "./ghostty.ts";
+export { restoreITerm2, setupITerm2 } from "./iterm2.ts";
+export * from "./types.ts";
+export * from "./utils.ts";
 
-import { getTerminalContext } from "./detector.ts";
 import { setupAppleTerminal } from "./apple-terminal.ts";
-import { setupITerm2 } from "./iterm2.ts";
+import { getTerminalContext } from "./detector.ts";
 import { setupGhostty } from "./ghostty.ts";
-import { PreFlightCheckResult, SetupResult } from "./types.ts";
+import { setupITerm2 } from "./iterm2.ts";
+import type { PreFlightCheckResult, SetupResult } from "./types.ts";
 import { execCommand, fileExists, getHomeDir, isCI } from "./utils.ts";
 
 /**
@@ -23,10 +23,7 @@ export async function setupTerminal(): Promise<SetupResult> {
   // Run pre-flight checks
   const preFlightResult = await preFlightCheck();
   if (!preFlightResult.canProceed) {
-    return {
-      success: false,
-      error: preFlightResult.issues.join("; "),
-    };
+    return { success: false, error: preFlightResult.issues.join("; ") };
   }
 
   // Warnings are available but not displayed in app context mode
@@ -63,16 +60,10 @@ export async function setupTerminal(): Promise<SetupResult> {
     }
 
     case "unknown":
-      return {
-        success: false,
-        error: "Could not detect terminal type",
-      };
+      return { success: false, error: "Could not detect terminal type" };
 
     default:
-      return {
-        success: false,
-        error: `Terminal "${terminal.type}" is not supported`,
-      };
+      return { success: false, error: `Terminal "${terminal.type}" is not supported` };
   }
 }
 
@@ -90,9 +81,7 @@ export async function preFlightCheck(): Promise<PreFlightCheckResult> {
 
   // Check platform - only macOS is supported
   if (Deno.build.os !== "darwin") {
-    issues.push(
-      `Platform "${Deno.build.os}" is not supported - only macOS (darwin) is supported`,
-    );
+    issues.push(`Platform "${Deno.build.os}" is not supported - only macOS (darwin) is supported`);
   }
 
   // Check permissions for macOS preference files
@@ -115,7 +104,7 @@ export async function preFlightCheck(): Promise<PreFlightCheckResult> {
         if (!success) {
           // For PlistBuddy, check directly since it might not be in PATH
           if (cmd === "/usr/libexec/PlistBuddy") {
-            if (!await fileExists(cmd)) {
+            if (!(await fileExists(cmd))) {
               issues.push(`Required command "${cmd}" not found`);
             }
           } else {
@@ -125,7 +114,7 @@ export async function preFlightCheck(): Promise<PreFlightCheckResult> {
       } catch {
         // For PlistBuddy, check directly
         if (cmd === "/usr/libexec/PlistBuddy") {
-          if (!await fileExists(cmd)) {
+          if (!(await fileExists(cmd))) {
             issues.push(`Required command "${cmd}" not found`);
           }
         } else {
@@ -149,9 +138,5 @@ export async function preFlightCheck(): Promise<PreFlightCheckResult> {
     warnings.push("Docker container detected - changes may not persist");
   }
 
-  return {
-    canProceed: issues.length === 0,
-    issues,
-    warnings,
-  };
+  return { canProceed: issues.length === 0, issues, warnings };
 }

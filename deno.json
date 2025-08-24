@@ -3,13 +3,7 @@
   "version": "1.0.0",
   "workspace": ["./apps/*", "./packages/*", "./tools/memory_manager"],
   "compilerOptions": {
-    "lib": [
-      "deno.window",
-      "deno.worker",
-      "deno.unstable",
-      "dom",
-      "dom.iterable"
-    ],
+    "lib": ["deno.window", "deno.worker", "deno.unstable", "dom", "dom.iterable"],
     "types": [],
     "noImplicitAny": true,
     "strict": true,
@@ -20,13 +14,7 @@
     "jsxImportSource": "react"
   },
   "exclude": ["!integration-tests/**/*.test.ts", "apps/web-client/.svelte-kit"],
-  "unstable": [
-    "broadcast-channel",
-    "worker-options",
-    "otel",
-    "kv",
-    "raw-imports"
-  ],
+  "unstable": ["broadcast-channel", "worker-options", "otel", "kv", "raw-imports"],
   "nodeModulesDir": "auto",
   "tasks": {
     "prepare": "deno run -A  npm:husky@^9",
@@ -38,7 +26,8 @@
     "test": "OTEL_DENO=true deno test --allow-all --unstable-raw-imports --no-check --env-file",
     "test:unit": "OTEL_DENO=true deno test --allow-all --env-file --no-check --ignore='integration-tests/**/*.test.ts' --ignore='packages/mcp/tests/manager.test.ts'",
     "test:integration": "OTEL_DENO=true ATLAS_USE_LLM_MOCKS=true deno test --allow-all --env-file --no-check 'integration-tests/**/*.test.ts' 'packages/mcp/tests/manager.test.ts'",
-    "fmt": "deno fmt",
+    "fmt": "deno run -A npm:@biomejs/biome format --write",
+    "biome": "deno run -A npm:@biomejs/biome check --write",
     "lint": "deno lint",
     "example-acp-server": "deno run --allow-net --allow-env examples/workspaces/remote-agents/server.ts",
     "example-playwright-mcp-server": "deno run --allow-all --unstable-broadcast-channel --unstable-worker-options examples/workspaces/playwright-mcp/server.ts",
@@ -51,6 +40,7 @@
   },
   "imports": {
     "@ai-sdk/provider": "npm:@ai-sdk/provider@^2.0.0",
+    "@biomejs/biome": "npm:@biomejs/biome@^2.2.2",
     "@hono/mcp": "npm:@hono/mcp@^0.1.0",
     "@hono/standard-validator": "npm:@hono/standard-validator@^0.1.4",
     "@modelcontextprotocol/sdk": "npm:@modelcontextprotocol/sdk@^1.15.0",
@@ -97,13 +87,5 @@
     "cron-parser": "npm:cron-parser@^5.3.0",
     "yargs": "https://deno.land/x/yargs@v18.0.0-deno/deno.ts"
   },
-  "fmt": {
-    "lineWidth": 100
-  },
-  "lint": {
-    "rules": {
-      "tags": ["recommended"],
-      "exclude": ["apps/web-client/.vite/**/*"]
-    }
-  }
+  "lint": { "rules": { "tags": ["recommended"], "exclude": ["apps/web-client/.vite/**/*"] } }
 }

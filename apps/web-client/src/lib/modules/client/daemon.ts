@@ -70,11 +70,7 @@ export interface LibraryStats {
   total_items: number;
   total_size_bytes: number;
   types: Record<string, number>;
-  recent_activity: Array<{
-    date: string;
-    items_added: number;
-    items_modified: number;
-  }>;
+  recent_activity: Array<{ date: string; items_added: number; items_modified: number }>;
 }
 
 export interface TemplateConfig {
@@ -140,14 +136,11 @@ export class DaemonClient {
   /**
    * Get detailed workspace information
    */
-  async getWorkspace(workspaceId: string): Promise<
+  async getWorkspace(
+    workspaceId: string,
+  ): Promise<
     WorkspaceInfo & {
-      runtime?: {
-        status: string;
-        startedAt: string;
-        sessions: number;
-        workers: number;
-      };
+      runtime?: { status: string; startedAt: string; sessions: number; workers: number };
     }
   > {
     const response = await this.makeRequest(`/api/workspaces/${workspaceId}`);
@@ -160,9 +153,7 @@ export class DaemonClient {
   async createWorkspace(request: WorkspaceCreateRequest): Promise<WorkspaceCreateResponse> {
     const response = await this.makeRequest("/api/workspaces", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(request),
     });
     return response;
@@ -177,9 +168,7 @@ export class DaemonClient {
       url.searchParams.set("force", "true");
     }
 
-    const response = await this.makeRequest(url.pathname + url.search, {
-      method: "DELETE",
-    });
+    const response = await this.makeRequest(url.pathname + url.search, { method: "DELETE" });
     return response;
   }
 
@@ -190,17 +179,10 @@ export class DaemonClient {
     workspaceId: string,
     signalId: string,
     payload: Record<string, unknown> = {},
-  ): Promise<{
-    message: string;
-    status: string;
-    workspaceId: string;
-    signalId: string;
-  }> {
+  ): Promise<{ message: string; status: string; workspaceId: string; signalId: string }> {
     const response = await this.makeRequest(`/api/workspaces/${workspaceId}/signals/${signalId}`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
     return response;
@@ -228,7 +210,9 @@ export class DaemonClient {
   /**
    * Get specific session details
    */
-  async getSession(sessionId: string): Promise<{
+  async getSession(
+    sessionId: string,
+  ): Promise<{
     id: string;
     workspaceId: string;
     status: string;
@@ -248,22 +232,16 @@ export class DaemonClient {
    * Cancel a session
    */
   async cancelSession(sessionId: string): Promise<{ message: string; workspaceId: string }> {
-    const response = await this.makeRequest(`/api/sessions/${sessionId}`, {
-      method: "DELETE",
-    });
+    const response = await this.makeRequest(`/api/sessions/${sessionId}`, { method: "DELETE" });
     return response;
   }
 
   /**
    * List agents in a workspace
    */
-  async listAgents(workspaceId: string): Promise<
-    Array<{
-      id: string;
-      type: string;
-      purpose?: string;
-    }>
-  > {
+  async listAgents(
+    workspaceId: string,
+  ): Promise<Array<{ id: string; type: string; purpose?: string }>> {
     const response = await this.makeRequest(`/api/workspaces/${workspaceId}/agents`);
     return response;
   }
@@ -279,12 +257,7 @@ export class DaemonClient {
   /**
    * List signals in a workspace
    */
-  async listSignals(workspaceId: string): Promise<
-    Array<{
-      name: string;
-      description?: string;
-    }>
-  > {
+  async listSignals(workspaceId: string): Promise<Array<{ name: string; description?: string }>> {
     const response = await this.makeRequest(`/api/workspaces/${workspaceId}/signals`);
     return response;
   }
@@ -292,12 +265,7 @@ export class DaemonClient {
   /**
    * List jobs in a workspace
    */
-  async listJobs(workspaceId: string): Promise<
-    Array<{
-      name: string;
-      description?: string;
-    }>
-  > {
+  async listJobs(workspaceId: string): Promise<Array<{ name: string; description?: string }>> {
     const response = await this.makeRequest(`/api/workspaces/${workspaceId}/jobs`);
     return response;
   }
@@ -305,13 +273,9 @@ export class DaemonClient {
   /**
    * List sessions in a specific workspace
    */
-  async listWorkspaceSessions(workspaceId: string): Promise<
-    Array<{
-      id: string;
-      status: string;
-      startedAt: string;
-    }>
-  > {
+  async listWorkspaceSessions(
+    workspaceId: string,
+  ): Promise<Array<{ id: string; status: string; startedAt: string }>> {
     const response = await this.makeRequest(`/api/workspaces/${workspaceId}/sessions`);
     return response;
   }
@@ -349,10 +313,7 @@ export class DaemonClient {
   async getLibraryItem(
     itemId: string,
     includeContent: boolean = false,
-  ): Promise<{
-    item: LibraryItem;
-    content?: string | Uint8Array;
-  }> {
+  ): Promise<{ item: LibraryItem; content?: string | Uint8Array }> {
     const params = new URLSearchParams();
     if (includeContent) params.set("content", "true");
 
@@ -404,14 +365,8 @@ export class DaemonClient {
   ): Promise<any> {
     const response = await this.makeRequest("/api/library/generate", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        templateId,
-        data,
-        options,
-      }),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ templateId, data, options }),
     });
     return response;
   }
@@ -428,9 +383,7 @@ export class DaemonClient {
    * Delete library item
    */
   async deleteLibraryItem(itemId: string): Promise<{ message: string }> {
-    const response = await this.makeRequest(`/api/library/${itemId}`, {
-      method: "DELETE",
-    });
+    const response = await this.makeRequest(`/api/library/${itemId}`, { method: "DELETE" });
     return response;
   }
 
@@ -438,9 +391,7 @@ export class DaemonClient {
    * Shutdown the daemon
    */
   async shutdown(): Promise<{ message: string }> {
-    const response = await this.makeRequest("/api/daemon/shutdown", {
-      method: "POST",
-    });
+    const response = await this.makeRequest("/api/daemon/shutdown", { method: "POST" });
     return response;
   }
 

@@ -8,10 +8,10 @@
  * AI SDK stack (Anthropic provider + zod structured parsing) for consistency.
  */
 
-import { z } from "zod/v4";
-import { generateObject, type LanguageModel } from "ai";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import type { Logger } from "@atlas/logger";
+import { generateObject, type LanguageModel } from "ai";
+import { z } from "zod/v4";
 
 // =============================
 // Types
@@ -68,15 +68,13 @@ export interface JeopardyValidatorConfig {
 // =============================
 
 const ValidationIssueSchema = z.object({
-  type: z.enum(
-    [
-      "off_topic",
-      "wrong_source",
-      "format_mismatch",
-      "incomplete",
-      "incorrect",
-    ] as const,
-  ),
+  type: z.enum([
+    "off_topic",
+    "wrong_source",
+    "format_mismatch",
+    "incomplete",
+    "incorrect",
+  ] as const),
   description: z.string(),
   severity: z.enum(["low", "medium", "high", "critical"] as const),
   evidence: z.string().optional(),
@@ -167,10 +165,7 @@ export class JeopardyValidator {
         allowedSources,
       );
 
-      const allIssues: ValidationIssue[] = [
-        ...structured.issues,
-        ...taskSourceIssues,
-      ];
+      const allIssues: ValidationIssue[] = [...structured.issues, ...taskSourceIssues];
 
       const isValid = structured.answersTask && allIssues.every((i) => i.severity !== "critical");
 
@@ -181,9 +176,9 @@ export class JeopardyValidator {
         confidence: structured.confidence,
         completeness: structured.completeness,
         totalIssues: allIssues.length,
-        criticalIssues: allIssues.filter((i) => i.severity === "critical").map((i) =>
-          i.description
-        ),
+        criticalIssues: allIssues
+          .filter((i) => i.severity === "critical")
+          .map((i) => i.description),
       });
 
       return {
@@ -264,9 +259,9 @@ export class JeopardyValidator {
   }
 
   private buildValidationPrompt(request: JeopardyValidationRequest): string {
-    return `ORIGINAL TASK:\n${request.originalTask}\n\nAGENT OUTPUT:\n${
-      safeStringify(request.agentOutput)
-    }\n\nVALIDATION INSTRUCTIONS:\nAnalyze whether the output fully answers the original task. Check for:\n1. Completeness - Does it address all aspects of the task?\n2. Accuracy - Is the information correct?\n3. Relevance - Is the response on-topic and focused?\n4. Task Source Compliance (when provided by task) - If the task specifies allowed domains, any URLs in the output must match those domains; otherwise this is a critical wrong_source.\nFocus strictly on task satisfaction and output quality.\n\nCRITICAL: Respond with ONLY a JSON object that matches the required shape and types described in the system instructions; no markdown, no code fences, no extra keys.`;
+    return `ORIGINAL TASK:\n${request.originalTask}\n\nAGENT OUTPUT:\n${safeStringify(
+      request.agentOutput,
+    )}\n\nVALIDATION INSTRUCTIONS:\nAnalyze whether the output fully answers the original task. Check for:\n1. Completeness - Does it address all aspects of the task?\n2. Accuracy - Is the information correct?\n3. Relevance - Is the response on-topic and focused?\n4. Task Source Compliance (when provided by task) - If the task specifies allowed domains, any URLs in the output must match those domains; otherwise this is a critical wrong_source.\nFocus strictly on task satisfaction and output quality.\n\nCRITICAL: Respond with ONLY a JSON object that matches the required shape and types described in the system instructions; no markdown, no code fences, no extra keys.`;
   }
 
   // =============================
@@ -289,8 +284,9 @@ export class JeopardyValidator {
         // Strip common trailing punctuation that often appears in prose
         const url = raw.replace(/[),.;:!?]+$/g, "");
         const hostname = new URL(url).hostname;
-        const matches = allowedSources.some((domain) =>
-          hostname === domain || hostname.endsWith(`.${domain}`) || hostname.endsWith(domain)
+        const matches = allowedSources.some(
+          (domain) =>
+            hostname === domain || hostname.endsWith(`.${domain}`) || hostname.endsWith(domain),
         );
         if (!matches) {
           issues.push({
@@ -329,11 +325,9 @@ export class JeopardyValidator {
       answersTask: true,
       completeness: 1,
       confidence: 0.5,
-      issues: [{
-        type: "incomplete",
-        description: "Jeopardy validation disabled",
-        severity: "low",
-      }],
+      issues: [
+        { type: "incomplete", description: "Jeopardy validation disabled", severity: "low" },
+      ],
       reasoning: "Validation disabled by configuration.",
     };
   }
@@ -348,12 +342,14 @@ export class JeopardyValidator {
       answersTask: true,
       completeness: 1,
       confidence: 0.5,
-      issues: [{
-        type: "incomplete",
-        description: `Validator unavailable or parsing failed: ${errorMessage}`,
-        severity: "low",
-        evidence: errorMessage,
-      }],
+      issues: [
+        {
+          type: "incomplete",
+          description: `Validator unavailable or parsing failed: ${errorMessage}`,
+          severity: "low",
+          evidence: errorMessage,
+        },
+      ],
       reasoning: "Validator call failed; defaulting to permissive result.",
     };
   }
@@ -370,7 +366,7 @@ function safeStringify(value: unknown): string {
 // Extract domain-like tokens from the task text (e.g., "airbnb.com", "hotels.com")
 function extractAllowedSourcesFromTask(task: string): string[] {
   const domains = (task.match(/\b(?:[a-z0-9-]+\.)+[a-z]{2,}\b/gi) || []).map((d) =>
-    d.toLowerCase()
+    d.toLowerCase(),
   );
   return Array.from(new Set(domains));
 }

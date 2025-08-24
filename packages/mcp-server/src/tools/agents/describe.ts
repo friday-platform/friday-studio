@@ -3,9 +3,9 @@
  * Retrieves detailed information about a specific agent through the daemon API
  */
 
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { ToolContext } from "../types.ts";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { createSuccessResponse } from "../types.ts";
 
 export function registerAgentsDescribeTool(server: McpServer, ctx: ToolContext) {
@@ -34,17 +34,9 @@ export function registerAgentsDescribeTool(server: McpServer, ctx: ToolContext) 
 
         const agent = await response.json();
 
-        return createSuccessResponse({
-          agent,
-          workspaceId,
-          source: "daemon_api",
-        });
+        return createSuccessResponse({ agent, workspaceId, source: "daemon_api" });
       } catch (error) {
-        ctx.logger.error("MCP workspace_agents_describe failed", {
-          workspaceId,
-          agentId,
-          error,
-        });
+        ctx.logger.error("MCP workspace_agents_describe failed", { workspaceId, agentId, error });
         throw error;
       }
     },

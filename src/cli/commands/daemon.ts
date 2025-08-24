@@ -1,9 +1,9 @@
-import * as start from "./daemon/start.tsx";
-import * as stop from "./daemon/stop.tsx";
-import * as status from "./daemon/status.tsx";
-import * as restart from "./daemon/restart.tsx";
-import { YargsInstance } from "../utils/yargs.ts";
 import { formatResourceHelp } from "../utils/resource-help.ts";
+import type { YargsInstance } from "../utils/yargs.ts";
+import * as restart from "./daemon/restart.tsx";
+import * as start from "./daemon/start.tsx";
+import * as status from "./daemon/status.tsx";
+import * as stop from "./daemon/stop.tsx";
 
 export const command = "daemon <action>";
 export const desc = "Manage Atlas daemon";

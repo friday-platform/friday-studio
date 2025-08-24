@@ -20,15 +20,15 @@
  *                              awaiting ← (approval needed)
  */
 
-import { type ActorRefFrom, assign, fromPromise, setup } from "xstate";
 import {
   type AgentContext,
   type AgentSessionData,
   type AtlasAgent,
   AwaitingSupervisorDecision,
 } from "@atlas/agent-sdk";
-import { CoALAMemoryManager, CoALAMemoryType } from "@atlas/memory";
 import type { Logger } from "@atlas/logger";
+import { type CoALAMemoryManager, CoALAMemoryType } from "@atlas/memory";
+import { type ActorRefFrom, assign, fromPromise, setup } from "xstate";
 import type { CollectableStreamEmitter } from "../streaming/stream-emitters.ts";
 
 // === Input/Output Types for State Machine Actors ===
@@ -36,30 +36,14 @@ import type { CollectableStreamEmitter } from "../streaming/stream-emitters.ts";
 type LoadAgentInput = { agentId: string };
 type LoadAgentOutput = AtlasAgent;
 
-type PrepareContextInput = {
-  agent: AtlasAgent;
-  prompt: string;
-  sessionData: AgentSessionData;
-};
+type PrepareContextInput = { agent: AtlasAgent; prompt: string; sessionData: AgentSessionData };
 
-export type PrepareContextOutput = {
-  context: AgentContext;
-  enrichedPrompt: string;
-};
+export type PrepareContextOutput = { context: AgentContext; enrichedPrompt: string };
 
-type ExecuteAgentInput = {
-  agent: AtlasAgent;
-  prompt: string;
-  context: AgentContext;
-};
+type ExecuteAgentInput = { agent: AtlasAgent; prompt: string; context: AgentContext };
 type ExecuteAgentOutput = unknown;
 
-type PersistResultsInput = {
-  agentId: string;
-  prompt: string;
-  result: unknown;
-  duration: number;
-};
+type PersistResultsInput = { agentId: string; prompt: string; result: unknown; duration: number };
 type PersistResultsOutput = void;
 
 // === External Dependencies ===
@@ -147,46 +131,31 @@ export function createAgentExecutionMachine(
     },
 
     actors: {
-      loadAgent: fromPromise<LoadAgentOutput, LoadAgentInput>(
-        async ({ input }) => {
-          return await loadAgentFn(input.agentId);
-        },
-      ),
+      loadAgent: fromPromise<LoadAgentOutput, LoadAgentInput>(async ({ input }) => {
+        return await loadAgentFn(input.agentId);
+      }),
 
-      prepareContext: fromPromise<PrepareContextOutput, PrepareContextInput>(
-        async ({ input }) => {
-          return await contextBuilder(
-            input.agent,
-            input.sessionData,
-            sessionMemory,
-            input.prompt,
-          );
-        },
-      ),
+      prepareContext: fromPromise<PrepareContextOutput, PrepareContextInput>(async ({ input }) => {
+        return await contextBuilder(input.agent, input.sessionData, sessionMemory, input.prompt);
+      }),
 
-      executeAgent: fromPromise<ExecuteAgentOutput, ExecuteAgentInput>(
-        async ({ input }) => {
-          // Execute agent and return raw result
-          const result = await input.agent.execute(input.prompt, input.context);
+      executeAgent: fromPromise<ExecuteAgentOutput, ExecuteAgentInput>(async ({ input }) => {
+        // Execute agent and return raw result
+        const result = await input.agent.execute(input.prompt, input.context);
 
-          // Check if we used a CollectingStreamEmitter and include events
-          if (input.context.stream && "getCollectedEvents" in input.context.stream) {
-            const collectedEvents = (input.context.stream as CollectableStreamEmitter)
-              .getCollectedEvents();
-            if (collectedEvents && collectedEvents.length > 0) {
-              // Include stream events in the result metadata
-              return {
-                result,
-                metadata: {
-                  streamEvents: collectedEvents,
-                },
-              };
-            }
+        // Check if we used a CollectingStreamEmitter and include events
+        if (input.context.stream && "getCollectedEvents" in input.context.stream) {
+          const collectedEvents = (
+            input.context.stream as CollectableStreamEmitter
+          ).getCollectedEvents();
+          if (collectedEvents && collectedEvents.length > 0) {
+            // Include stream events in the result metadata
+            return { result, metadata: { streamEvents: collectedEvents } };
           }
+        }
 
-          return result;
-        },
-      ),
+        return result;
+      }),
 
       persistResults: fromPromise<PersistResultsOutput, PersistResultsInput>(({ input }) => {
         try {
@@ -307,38 +276,26 @@ export function createAgentExecutionMachine(
       },
 
       logPersisting: ({ context }) => {
-        const duration = context.endTime && context.startTime
-          ? context.endTime - context.startTime
-          : 0;
-        logger.info("Persisting results", {
-          agentId: context.agentId,
-          duration,
-        });
+        const duration =
+          context.endTime && context.startTime ? context.endTime - context.startTime : 0;
+        logger.info("Persisting results", { agentId: context.agentId, duration });
       },
 
       logCompleted: ({ context }) => {
-        const duration = context.endTime && context.startTime
-          ? context.endTime - context.startTime
-          : 0;
-        logger.info("Agent completed", {
-          agentId: context.agentId,
-          duration,
-        });
+        const duration =
+          context.endTime && context.startTime ? context.endTime - context.startTime : 0;
+        logger.info("Agent completed", { agentId: context.agentId, duration });
       },
 
       logError: ({ context }) => {
-        logger.error("Agent error", {
-          agentId: context.agentId,
-          error: context.error,
-        });
+        logger.error("Agent error", { agentId: context.agentId, error: context.error });
       },
     },
 
     guards: {
       isLoaded: ({ context }) => context.agent !== undefined,
       hasExecutionParams: ({ context }) =>
-        context.currentPrompt !== undefined &&
-        context.sessionData !== undefined,
+        context.currentPrompt !== undefined && context.sessionData !== undefined,
     },
   });
 
@@ -355,13 +312,8 @@ export function createAgentExecutionMachine(
     states: {
       idle: {
         on: {
-          LOAD: {
-            target: "loading",
-          },
-          EXECUTE: {
-            target: "loading",
-            actions: "assignExecutionParams",
-          },
+          LOAD: { target: "loading" },
+          EXECUTE: { target: "loading", actions: "assignExecutionParams" },
         },
       },
 
@@ -372,39 +324,19 @@ export function createAgentExecutionMachine(
           id: "loadAgent",
           src: "loadAgent",
           input: ({ context }) => ({ agentId: context.agentId }),
-          onDone: {
-            target: "ready",
-            actions: ["assignAgent", "logLoaded"],
-          },
-          onError: {
-            target: "failed",
-            actions: ["assignError", "logError"],
-          },
+          onDone: { target: "ready", actions: ["assignAgent", "logLoaded"] },
+          onError: { target: "failed", actions: ["assignError", "logError"] },
         },
 
-        on: {
-          CANCEL: {
-            target: "idle",
-          },
-        },
+        on: { CANCEL: { target: "idle" } },
       },
 
       ready: {
-        always: [
-          {
-            target: "preparing",
-            guard: "hasExecutionParams",
-          },
-        ],
+        always: [{ target: "preparing", guard: "hasExecutionParams" }],
 
         on: {
-          EXECUTE: {
-            target: "preparing",
-            actions: "assignExecutionParams",
-          },
-          UNLOAD: {
-            target: "idle",
-          },
+          EXECUTE: { target: "preparing", actions: "assignExecutionParams" },
+          UNLOAD: { target: "idle" },
         },
       },
 
@@ -419,21 +351,11 @@ export function createAgentExecutionMachine(
             prompt: context.currentPrompt!,
             sessionData: context.sessionData!,
           }),
-          onDone: {
-            target: "executing",
-            actions: "assignPreparedContext",
-          },
-          onError: {
-            target: "failed",
-            actions: ["assignError", "logError"],
-          },
+          onDone: { target: "executing", actions: "assignPreparedContext" },
+          onError: { target: "failed", actions: ["assignError", "logError"] },
         },
 
-        on: {
-          CANCEL: {
-            target: "ready",
-          },
-        },
+        on: { CANCEL: { target: "ready" } },
       },
 
       executing: {
@@ -447,10 +369,7 @@ export function createAgentExecutionMachine(
             prompt: context.enrichedPrompt || context.currentPrompt!,
             context: context.preparedContext!,
           }),
-          onDone: {
-            target: "persisting",
-            actions: ["assignExecutionResult"],
-          },
+          onDone: { target: "persisting", actions: ["assignExecutionResult"] },
           onError: [
             {
               // Check if it's an approval request
@@ -478,14 +397,7 @@ export function createAgentExecutionMachine(
         //   },
         // },
 
-        on: {
-          CANCEL: {
-            target: "ready",
-          },
-          AWAIT_INPUT: {
-            target: "awaiting",
-          },
-        },
+        on: { CANCEL: { target: "ready" }, AWAIT_INPUT: { target: "awaiting" } },
       },
 
       awaiting: {
@@ -493,15 +405,11 @@ export function createAgentExecutionMachine(
         on: {
           RESUME_WITH_APPROVAL: {
             target: "executing",
-            actions: assign({
-              approvalDecision: ({ event }) => event.decision,
-            }),
+            actions: assign({ approvalDecision: ({ event }) => event.decision }),
           },
           CANCEL: {
             target: "failed",
-            actions: assign({
-              error: () => new Error("Approval cancelled"),
-            }),
+            actions: assign({ error: () => new Error("Approval cancelled") }),
           },
         },
       },
@@ -518,10 +426,7 @@ export function createAgentExecutionMachine(
             result: context.result!,
             duration: context.endTime! - context.startTime!,
           }),
-          onDone: {
-            target: "completed",
-            actions: "logCompleted",
-          },
+          onDone: { target: "completed", actions: "logCompleted" },
           onError: {
             // Don't fail the whole execution if persistence fails
             target: "completed",
@@ -534,13 +439,8 @@ export function createAgentExecutionMachine(
 
       completed: {
         on: {
-          EXECUTE: {
-            target: "preparing",
-            actions: "assignExecutionParams",
-          },
-          UNLOAD: {
-            target: "idle",
-          },
+          EXECUTE: { target: "preparing", actions: "assignExecutionParams" },
+          UNLOAD: { target: "idle" },
         },
       },
 
@@ -548,16 +448,9 @@ export function createAgentExecutionMachine(
         entry: "logError",
 
         on: {
-          LOAD: {
-            target: "loading",
-          },
-          EXECUTE: {
-            target: "loading",
-            actions: "assignExecutionParams",
-          },
-          UNLOAD: {
-            target: "idle",
-          },
+          LOAD: { target: "loading" },
+          EXECUTE: { target: "loading", actions: "assignExecutionParams" },
+          UNLOAD: { target: "idle" },
         },
       },
     },

@@ -3,7 +3,7 @@
  * @type {import('lint-staged').Configuration}
  */
 export default {
-  "**/*": () => "deno fmt",
+  "**/*": () => "deno task fmt",
   "**/*.{ts,tsx,js,jsx,mjs}": () =>
     "deno run --allow-read --allow-write --allow-run scripts/validate-imports-staged.ts",
 };

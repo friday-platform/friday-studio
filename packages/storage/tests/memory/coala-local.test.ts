@@ -1,10 +1,10 @@
 // Set testing mode to disable file logging
 Deno.env.set("DENO_TESTING", "true");
 
+import { CoALAMemoryType } from "@atlas/memory";
 import { assertEquals, assertExists } from "@std/assert";
 import { join } from "@std/path";
 import { CoALALocalFileStorageAdapter } from "../../src/memory/coala-local.ts";
-import { CoALAMemoryType } from "@atlas/memory";
 
 // Helper function to create temporary directory for tests
 async function createTempDir(): Promise<string> {
@@ -46,13 +46,9 @@ Deno.test("CoALALocalFileStorageAdapter - should store data by memory type", asy
   const adapter = new CoALALocalFileStorageAdapter(tempDir);
 
   try {
-    const workingMemory = {
-      task1: { description: "Current task", priority: 1 },
-    };
+    const workingMemory = { task1: { description: "Current task", priority: 1 } };
 
-    const semanticMemory = {
-      fact1: { knowledge: "The sky is blue", confidence: 0.9 },
-    };
+    const semanticMemory = { fact1: { knowledge: "The sky is blue", confidence: 0.9 } };
 
     await adapter.commitByType("working", workingMemory);
     await adapter.commitByType("semantic", semanticMemory);
@@ -66,8 +62,12 @@ Deno.test("CoALALocalFileStorageAdapter - should store data by memory type", asy
     // Check that files were created
     const workingFile = join(tempDir, "working.json");
     const semanticFile = join(tempDir, "semantic.json");
-    const workingExists = await Deno.stat(workingFile).then(() => true).catch(() => false);
-    const semanticExists = await Deno.stat(semanticFile).then(() => true).catch(() => false);
+    const workingExists = await Deno.stat(workingFile)
+      .then(() => true)
+      .catch(() => false);
+    const semanticExists = await Deno.stat(semanticFile)
+      .then(() => true)
+      .catch(() => false);
 
     assertEquals(workingExists, true);
     assertEquals(semanticExists, true);
@@ -101,16 +101,15 @@ Deno.test("CoALALocalFileStorageAdapter - should create index file", async () =>
   const adapter = new CoALALocalFileStorageAdapter(tempDir);
 
   try {
-    const dataByType = {
-      working: { task: "current task" },
-      semantic: { fact: "important fact" },
-    };
+    const dataByType = { working: { task: "current task" }, semantic: { fact: "important fact" } };
 
     await adapter.commitAll(dataByType);
 
     // Check that index file was created
     const indexFile = join(tempDir, "index.json");
-    const indexExists = await Deno.stat(indexFile).then(() => true).catch(() => false);
+    const indexExists = await Deno.stat(indexFile)
+      .then(() => true)
+      .catch(() => false);
     assertEquals(indexExists, true);
 
     // Check index content
@@ -169,9 +168,7 @@ Deno.test("CoALALocalFileStorageAdapter - should get memory statistics", async (
         task1: { description: "task", relevanceScore: 0.8, timestamp: new Date() },
         task2: { description: "task2", relevanceScore: 0.9, timestamp: new Date() },
       },
-      semantic: {
-        fact1: { knowledge: "fact", relevanceScore: 0.95, timestamp: new Date() },
-      },
+      semantic: { fact1: { knowledge: "fact", relevanceScore: 0.95, timestamp: new Date() } },
     };
 
     await adapter.commitAll(dataByType);

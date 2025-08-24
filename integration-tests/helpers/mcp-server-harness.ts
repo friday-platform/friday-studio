@@ -5,8 +5,8 @@
  * during integration testing.
  */
 
-import { findAvailablePort } from "../../src/utils/port-finder.ts";
 import type { MCPServerConfig } from "@atlas/config";
+import { findAvailablePort } from "../../src/utils/port-finder.ts";
 
 export interface TestMCPServerInstance {
   id: string;
@@ -33,13 +33,7 @@ export class MCPServerTestHarness {
     command: string,
     args: string[],
   ): Promise<TestMCPServerInstance> {
-    const config: MCPServerConfig = {
-      transport: {
-        type: "stdio",
-        command,
-        args,
-      },
-    };
+    const config: MCPServerConfig = { transport: { type: "stdio", command, args } };
 
     const processCommand = new Deno.Command(command, {
       args,
@@ -78,19 +72,11 @@ export class MCPServerTestHarness {
   /**
    * Spawn an HTTP/SSE-based MCP server
    */
-  async spawnHttpServer(
-    id: string,
-    serverModule: string,
-  ): Promise<TestMCPServerInstance> {
+  async spawnHttpServer(id: string, serverModule: string): Promise<TestMCPServerInstance> {
     const port = findAvailablePort();
     const url = `http://localhost:${port}/mcp`;
 
-    const config: MCPServerConfig = {
-      transport: {
-        type: "sse",
-        url,
-      },
-    };
+    const config: MCPServerConfig = { transport: { type: "sse", url } };
 
     // For HTTP servers, we'd need to spawn them differently
     // This is a simplified version - in practice you'd spawn a Deno process
@@ -202,11 +188,7 @@ export class MCPServerTestHarness {
   /**
    * Get statistics about running servers
    */
-  getStats(): {
-    total: number;
-    running: number;
-    stopped: number;
-  } {
+  getStats(): { total: number; running: number; stopped: number } {
     let running = 0;
     let stopped = 0;
 
@@ -218,11 +200,7 @@ export class MCPServerTestHarness {
       }
     }
 
-    return {
-      total: this.servers.size,
-      running,
-      stopped,
-    };
+    return { total: this.servers.size, running, stopped };
   }
 
   /**

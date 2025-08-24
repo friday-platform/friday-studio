@@ -9,20 +9,20 @@
  * - Provides clean separation between system and user workspaces
  */
 
-import { ConfigLoader, MergedConfig, WorkspaceConfig } from "@atlas/config";
+import { ConfigLoader, type MergedConfig, type WorkspaceConfig } from "@atlas/config";
+import { logger } from "@atlas/logger";
 import { FilesystemConfigAdapter } from "@atlas/storage";
-import {
-  createRegistryStorage,
-  RegistryStorageAdapter,
-  StorageConfigs,
-} from "../../../src/core/storage/index.ts";
 import { SYSTEM_WORKSPACES } from "@packages/system/workspaces";
 import { exists } from "@std/fs";
 import { basename, join } from "@std/path";
+import {
+  createRegistryStorage,
+  type RegistryStorageAdapter,
+  StorageConfigs,
+} from "../../../src/core/storage/index.ts";
 import { generateUniqueWorkspaceName } from "../../../src/core/utils/id-generator.ts";
 import type { WorkspaceRuntime } from "../../../src/core/workspace-runtime.ts";
-import { logger } from "@atlas/logger";
-import { WorkspaceEntry, WorkspaceStatus } from "./types.ts";
+import type { WorkspaceEntry, WorkspaceStatus } from "./types.ts";
 
 export interface WorkspaceManagerOptions {
   autoImport?: boolean;
@@ -110,11 +110,7 @@ export class WorkspaceManager {
    */
   async registerWorkspace(
     workspacePath: string,
-    metadata?: {
-      name?: string;
-      description?: string;
-      tags?: string[];
-    },
+    metadata?: { name?: string; description?: string; tags?: string[] },
   ): Promise<WorkspaceEntry> {
     const absolutePath = await Deno.realPath(workspacePath);
 
@@ -135,13 +131,11 @@ export class WorkspaceManager {
       config = await configLoader.load();
       configHash = await this.hashConfig(config.workspace);
     } catch (error) {
-      const errorDetails = error instanceof Error
-        ? { message: error.message, stack: error.stack }
-        : { message: String(error) };
-      logger.error("Invalid workspace configuration", {
-        path: absolutePath,
-        error: errorDetails,
-      });
+      const errorDetails =
+        error instanceof Error
+          ? { message: error.message, stack: error.stack }
+          : { message: String(error) };
+      logger.error("Invalid workspace configuration", { path: absolutePath, error: errorDetails });
       throw error;
     }
 
@@ -190,11 +184,7 @@ export class WorkspaceManager {
         status: "inactive",
         createdAt: new Date().toISOString(),
         lastSeen: new Date().toISOString(),
-        metadata: {
-          description: config.workspace.description,
-          system: true,
-          tags: ["system"],
-        },
+        metadata: { description: config.workspace.description, system: true, tags: ["system"] },
       };
 
       // Check if already registered
@@ -243,11 +233,7 @@ export class WorkspaceManager {
   /**
    * Unified find method
    */
-  async find(query: {
-    id?: string;
-    name?: string;
-    path?: string;
-  }): Promise<WorkspaceEntry | null> {
+  async find(query: { id?: string; name?: string; path?: string }): Promise<WorkspaceEntry | null> {
     let workspace: WorkspaceEntry | null = null;
 
     if (query.id) {
@@ -255,9 +241,7 @@ export class WorkspaceManager {
     } else if (query.name) {
       workspace = await this.registry.findWorkspaceByName(query.name);
     } else if (query.path) {
-      const normalizedPath = await Deno.realPath(query.path).catch(
-        () => query.path ?? "",
-      );
+      const normalizedPath = await Deno.realPath(query.path).catch(() => query.path ?? "");
       workspace = await this.registry.findWorkspaceByPath(normalizedPath);
     }
 
@@ -309,10 +293,7 @@ export class WorkspaceManager {
    */
   async deleteWorkspace(
     id: string,
-    options?: {
-      force?: boolean;
-      removeDirectory?: boolean;
-    },
+    options?: { force?: boolean; removeDirectory?: boolean },
   ): Promise<void> {
     const workspace = await this.registry.getWorkspace(id);
     if (!workspace) {
@@ -321,9 +302,7 @@ export class WorkspaceManager {
 
     // Prevent deletion of system workspaces
     if (workspace.metadata?.system && !options?.force) {
-      throw new Error(
-        `Cannot delete system workspace '${id}'. Use force=true to override.`,
-      );
+      throw new Error(`Cannot delete system workspace '${id}'. Use force=true to override.`);
     }
 
     // Stop runtime if active
@@ -340,16 +319,9 @@ export class WorkspaceManager {
     if (options?.removeDirectory && !workspace.path.startsWith("system://")) {
       try {
         await Deno.remove(workspace.path, { recursive: true });
-        logger.info("Workspace directory removed", {
-          id,
-          path: workspace.path,
-        });
+        logger.info("Workspace directory removed", { id, path: workspace.path });
       } catch (error) {
-        logger.warn("Failed to remove workspace directory", {
-          id,
-          path: workspace.path,
-          error,
-        });
+        logger.warn("Failed to remove workspace directory", { id, path: workspace.path, error });
       }
     }
 

@@ -1,9 +1,9 @@
 <script lang="ts">
-  import type { Snippet } from "svelte";
+import type { Snippet } from "svelte";
 
-  type Props = { children: Snippet; onSubmit: (data: FormData) => void | Promise<void> };
+type Props = { children: Snippet; onSubmit: (data: FormData) => void | Promise<void> };
 
-  let { children, onSubmit }: Props = $props();
+const { children, onSubmit }: Props = $props();
 </script>
 
 <form

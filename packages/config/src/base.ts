@@ -30,9 +30,11 @@ export type MemoryScope = z.infer<typeof MemoryScope>;
 /**
  * Duration format validation (e.g., "30s", "5m", "2h")
  */
-export const DurationSchema = z.string().regex(/^\d+[smh]$/, {
-  message: "Duration must be in format: number + s/m/h (e.g., '30s', '5m', '2h')",
-});
+export const DurationSchema = z
+  .string()
+  .regex(/^\d+[smh]$/, {
+    message: "Duration must be in format: number + s/m/h (e.g., '30s', '5m', '2h')",
+  });
 export type Duration = z.infer<typeof DurationSchema>;
 
 /**
@@ -64,9 +66,11 @@ export function parseDuration(duration: Duration): number {
 /**
  * MCP-compliant tool name (letters, numbers, underscore, hyphen)
  */
-export const MCPToolNameSchema = z.string().regex(/^[a-zA-Z0-9_-]+$/, {
-  message: "Must contain only letters, numbers, underscores, and hyphens",
-});
+export const MCPToolNameSchema = z
+  .string()
+  .regex(/^[a-zA-Z0-9_-]+$/, {
+    message: "Must contain only letters, numbers, underscores, and hyphens",
+  });
 export type MCPToolName = z.infer<typeof MCPToolNameSchema>;
 
 /**
@@ -78,26 +82,26 @@ export type SchemaObject = z.infer<typeof SchemaObjectSchema>;
 /**
  * Condition schema supporting both JSONLogic and natural language prompts
  */
-export const ConditionSchema = z.union([
-  z.strictObject({
-    jsonlogic: z.unknown().describe("JSONLogic expression (cached and executed at runtime)"),
-  }),
-  z.strictObject({
-    prompt: z.string().describe("Natural language prompt (converted to JSONLogic and cached)"),
-  }),
-]).describe("Condition that can be either JSONLogic or a natural language prompt");
+export const ConditionSchema = z
+  .union([
+    z.strictObject({
+      jsonlogic: z.unknown().describe("JSONLogic expression (cached and executed at runtime)"),
+    }),
+    z.strictObject({
+      prompt: z.string().describe("Natural language prompt (converted to JSONLogic and cached)"),
+    }),
+  ])
+  .describe("Condition that can be either JSONLogic or a natural language prompt");
 export type Condition = z.infer<typeof ConditionSchema>;
 
 /**
  * Allow/Deny filter with mutual exclusion validation
  */
-export const AllowDenyFilterSchema = z.strictObject({
-  allow: z.array(z.string()).optional(),
-  deny: z.array(z.string()).optional(),
-}).refine(
-  (data) => !(data.allow && data.deny),
-  { message: "Cannot specify both allow and deny lists" },
-);
+export const AllowDenyFilterSchema = z
+  .strictObject({ allow: z.array(z.string()).optional(), deny: z.array(z.string()).optional() })
+  .refine((data) => !(data.allow && data.deny), {
+    message: "Cannot specify both allow and deny lists",
+  });
 export type AllowDenyFilter = z.infer<typeof AllowDenyFilterSchema>;
 
 /**
@@ -112,9 +116,7 @@ export type SuccessConfig = z.infer<typeof SuccessConfigSchema>;
 /**
  * Error configuration with condition
  */
-export const ErrorConfigSchema = z.strictObject({
-  condition: ConditionSchema,
-});
+export const ErrorConfigSchema = z.strictObject({ condition: ConditionSchema });
 export type ErrorConfig = z.infer<typeof ErrorConfigSchema>;
 
 // ==============================================================================
@@ -128,9 +130,7 @@ export const WorkspaceTimeoutConfigSchema = z.strictObject({
   progressTimeout: DurationSchema.default("2m").describe(
     "Time allowed between progress signals before cancelling for inactivity",
   ),
-  maxTotalTimeout: DurationSchema.default("30m").describe(
-    "Hard upper limit for any operation",
-  ),
+  maxTotalTimeout: DurationSchema.default("30m").describe("Hard upper limit for any operation"),
 });
 export type WorkspaceTimeoutConfig = z.infer<typeof WorkspaceTimeoutConfigSchema>;
 
@@ -150,16 +150,12 @@ export type WorkspaceIdentity = z.infer<typeof WorkspaceIdentitySchema>;
 // FEDERATION
 // ==============================================================================
 
-export const ScopeSchema = z.union([
-  z.string(),
-  z.array(z.string()),
-]).describe("Single scope or array of scopes");
+export const ScopeSchema = z
+  .union([z.string(), z.array(z.string())])
+  .describe("Single scope or array of scopes");
 export type Scope = z.infer<typeof ScopeSchema>;
 
-export const FederationGrantSchema = z.strictObject({
-  workspace: z.string(),
-  scopes: ScopeSchema,
-});
+export const FederationGrantSchema = z.strictObject({ workspace: z.string(), scopes: ScopeSchema });
 export type FederationGrant = z.infer<typeof FederationGrantSchema>;
 
 export const FederationSharingEntrySchema = z.strictObject({

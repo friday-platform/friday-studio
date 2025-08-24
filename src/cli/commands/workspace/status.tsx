@@ -1,8 +1,8 @@
+import { ConfigLoader } from "@atlas/config";
+import { createAtlasClient, type paths } from "@atlas/oapi-client";
+import { FilesystemConfigAdapter } from "@atlas/storage";
 import { Box, render, Text, useStdout } from "ink";
 import React from "react";
-import { createAtlasClient, type paths } from "@atlas/oapi-client";
-import { ConfigLoader } from "@atlas/config";
-import { FilesystemConfigAdapter } from "@atlas/storage";
 
 interface StatusArgs {
   json?: boolean;
@@ -17,11 +17,7 @@ export const builder = {
     type: "string" as const,
     describe: "Workspace ID or name (defaults to current directory)",
   },
-  json: {
-    type: "boolean" as const,
-    describe: "Output status information as JSON",
-    default: false,
-  },
+  json: { type: "boolean" as const, describe: "Output status information as JSON", default: false },
 };
 
 // Extract response types from OpenAPI
@@ -63,14 +59,9 @@ export const handler = async (argv: StatusArgs): Promise<void> => {
 
     if (argv.workspace) {
       // Use specified workspace - try to find by ID or name
-      const getWorkspaceResult = await client.GET(
-        "/api/workspaces/{workspaceId}",
-        {
-          params: {
-            path: { workspaceId: argv.workspace },
-          },
-        },
-      );
+      const getWorkspaceResult = await client.GET("/api/workspaces/{workspaceId}", {
+        params: { path: { workspaceId: argv.workspace } },
+      });
 
       if (getWorkspaceResult.data) {
         workspaceId = getWorkspaceResult.data.id;
@@ -79,14 +70,10 @@ export const handler = async (argv: StatusArgs): Promise<void> => {
         const listResult = await client.GET("/api/workspaces");
 
         if (listResult.error) {
-          throw new Error(
-            listResult.error.error || "Failed to list workspaces",
-          );
+          throw new Error(listResult.error.error || "Failed to list workspaces");
         }
 
-        const foundWorkspace = listResult.data?.find(
-          (w) => w.name === argv.workspace,
-        );
+        const foundWorkspace = listResult.data?.find((w) => w.name === argv.workspace);
         if (foundWorkspace) {
           workspaceId = foundWorkspace.id;
         } else {
@@ -105,14 +92,10 @@ export const handler = async (argv: StatusArgs): Promise<void> => {
         const listResult = await client.GET("/api/workspaces");
 
         if (listResult.error) {
-          throw new Error(
-            listResult.error.error || "Failed to list workspaces",
-          );
+          throw new Error(listResult.error.error || "Failed to list workspaces");
         }
 
-        const currentWorkspace = listResult.data?.find(
-          (w) => w.name === currentWorkspaceName,
-        );
+        const currentWorkspace = listResult.data?.find((w) => w.name === currentWorkspaceName);
 
         if (currentWorkspace) {
           workspaceId = currentWorkspace.id;
@@ -130,15 +113,11 @@ export const handler = async (argv: StatusArgs): Promise<void> => {
 
     // Get detailed workspace information from daemon
     const workspaceResult = await client.GET("/api/workspaces/{workspaceId}", {
-      params: {
-        path: { workspaceId },
-      },
+      params: { path: { workspaceId } },
     });
 
     if (workspaceResult.error) {
-      throw new Error(
-        workspaceResult.error.error || "Failed to get workspace details",
-      );
+      throw new Error(workspaceResult.error.error || "Failed to get workspace details");
     }
 
     const workspace = workspaceResult.data;
@@ -159,25 +138,23 @@ export const handler = async (argv: StatusArgs): Promise<void> => {
 
     // Render appropriate view based on output format
     const { unmount } = render(
-      argv.json
-        ? (
-          <JsonOutput
-            workspace={workspace}
-            agents={agents}
-            signals={signals}
-            jobs={jobs}
-            sessions={sessions}
-          />
-        )
-        : (
-          <WorkspaceStatusCommand
-            workspace={workspace}
-            agents={agents}
-            signals={signals}
-            jobs={jobs}
-            sessions={sessions}
-          />
-        ),
+      argv.json ? (
+        <JsonOutput
+          workspace={workspace}
+          agents={agents}
+          signals={signals}
+          jobs={jobs}
+          sessions={sessions}
+        />
+      ) : (
+        <WorkspaceStatusCommand
+          workspace={workspace}
+          agents={agents}
+          signals={signals}
+          jobs={jobs}
+          sessions={sessions}
+        />
+      ),
     );
 
     // Give a moment for render then exit
@@ -188,10 +165,7 @@ export const handler = async (argv: StatusArgs): Promise<void> => {
     const errorMessage = error instanceof Error ? error.message : String(error);
 
     // Check for connection errors
-    if (
-      errorMessage.includes("Failed to fetch") ||
-      errorMessage.includes("NetworkError")
-    ) {
+    if (errorMessage.includes("Failed to fetch") || errorMessage.includes("NetworkError")) {
       console.error(
         "Error: Unable to connect to Atlas daemon. Make sure it's running with 'atlas daemon start'",
       );
@@ -230,22 +204,10 @@ function JsonOutput({
         runtime: workspace.runtime,
         createdAt: workspace.createdAt,
         lastSeen: workspace.lastSeen,
-        agents: {
-          count: agents.length,
-          list: agents,
-        },
-        signals: {
-          count: signals.length,
-          list: signals,
-        },
-        jobs: {
-          count: jobs.length,
-          list: jobs,
-        },
-        sessions: {
-          count: sessions.length,
-          active: sessions,
-        },
+        agents: { count: agents.length, list: agents },
+        signals: { count: signals.length, list: signals },
+        jobs: { count: jobs.length, list: jobs },
+        sessions: { count: sessions.length, active: sessions },
         timestamp: new Date().toISOString(),
       },
       null,
@@ -271,19 +233,12 @@ function WorkspaceStatusCommand({
   jobs: WorkspaceJob[];
   sessions: WorkspaceSession[];
 }) {
-  const statusColor = workspace.status === "running"
-    ? "green"
-    : workspace.status === "stopped"
-    ? "gray"
-    : "yellow";
+  const statusColor =
+    workspace.status === "running" ? "green" : workspace.status === "stopped" ? "gray" : "yellow";
 
   // Extract metadata for error display - it's directly on workspace now
   type WorkspaceWithErrorTracking = typeof workspace & {
-    metadata?: {
-      lastError?: string;
-      lastErrorAt?: string;
-      failureCount?: number;
-    };
+    metadata?: { lastError?: string; lastErrorAt?: string; failureCount?: number };
   };
   const metadata = (workspace as WorkspaceWithErrorTracking).metadata;
 
@@ -332,7 +287,9 @@ function WorkspaceStatusCommand({
 
         {String(workspace.status) === "inactive" && metadata?.lastError && (
           <Box flexDirection="column" marginTop={1}>
-            <Text bold color="yellow">Last Error:</Text>
+            <Text bold color="yellow">
+              Last Error:
+            </Text>
             <Box paddingLeft={2} flexDirection="column">
               <Box>
                 <Text>Error:</Text>
@@ -363,9 +320,7 @@ function WorkspaceStatusCommand({
               </Text>
             </Box>
             <Box paddingLeft={2}>
-              <Text>
-                Started: {new Date(workspace.runtime.startedAt).toLocaleString()}
-              </Text>
+              <Text>Started: {new Date(workspace.runtime.startedAt).toLocaleString()}</Text>
             </Box>
             <Box paddingLeft={2}>
               <Text>Sessions: {workspace.runtime.sessions}</Text>
@@ -395,14 +350,10 @@ function WorkspaceStatusCommand({
         <Box flexDirection="column" marginTop={1}>
           <Text bold>Timestamps:</Text>
           <Box paddingLeft={2}>
-            <Text>
-              Created: {new Date(workspace.createdAt).toLocaleString()}
-            </Text>
+            <Text>Created: {new Date(workspace.createdAt).toLocaleString()}</Text>
           </Box>
           <Box paddingLeft={2}>
-            <Text>
-              Last Seen: {new Date(workspace.lastSeen).toLocaleString()}
-            </Text>
+            <Text>Last Seen: {new Date(workspace.lastSeen).toLocaleString()}</Text>
           </Box>
         </Box>
       </Box>

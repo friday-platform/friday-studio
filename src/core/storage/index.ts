@@ -15,6 +15,8 @@
  * - Clean testing with mock adapters
  */
 
+// Storage implementations
+export { createDenoKVStorage, DenoKVStorage } from "./deno-kv-storage.ts";
 // Core interfaces
 export type {
   AtomicOperation,
@@ -23,21 +25,16 @@ export type {
   KVStorageConfig,
   WatchEvent,
 } from "./kv-storage.ts";
-
 export {
   createKVStorage,
   KVConnectionError,
   KVStorageError,
   KVTransactionError,
 } from "./kv-storage.ts";
-
-// Storage implementations
-export { createDenoKVStorage, DenoKVStorage } from "./deno-kv-storage.ts";
+export { LibraryStorageAdapter, type LibraryStorageConfig } from "./library-storage-adapter.ts";
 export { createMemoryKVStorage, MemoryKVStorage } from "./memory-kv-storage.ts";
-
 // Domain-specific adapters
 export { RegistryStorageAdapter } from "./registry-storage-adapter.ts";
-export { LibraryStorageAdapter, type LibraryStorageConfig } from "./library-storage-adapter.ts";
 
 // Factory functions for common configurations
 export async function createRegistryStorage(
@@ -93,28 +90,20 @@ export const StorageConfigs = {
    */
   defaultKV(): import("./kv-storage.ts").KVStorageConfig {
     const homeDir = Deno.env.get("HOME") || Deno.env.get("USERPROFILE") || Deno.cwd();
-    return {
-      type: "deno-kv",
-      connection: `${homeDir}/.atlas/storage.db`,
-    };
+    return { type: "deno-kv", connection: `${homeDir}/.atlas/storage.db` };
   },
 
   /**
    * In-memory storage for testing
    */
   memory(): import("./kv-storage.ts").KVStorageConfig {
-    return {
-      type: "memory",
-    };
+    return { type: "memory" };
   },
 
   /**
    * Custom Deno KV path
    */
   customKV(path: string): import("./kv-storage.ts").KVStorageConfig {
-    return {
-      type: "deno-kv",
-      connection: path,
-    };
+    return { type: "deno-kv", connection: path };
   },
 } as const;

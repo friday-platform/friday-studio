@@ -1,18 +1,10 @@
-import { CommandDefinition } from "./types.ts";
+import type { CommandDefinition } from "./types.ts";
 
 // Command registry
 export const COMMAND_REGISTRY: Record<string, CommandDefinition> = {
-  signal: {
-    name: "signal",
-    description: "View workspace signals",
-    usage: "/signal list",
-  },
+  signal: { name: "signal", description: "View workspace signals", usage: "/signal list" },
 
-  agent: {
-    name: "agent",
-    description: "View workspace agents",
-    usage: "/agent list",
-  },
+  agent: { name: "agent", description: "View workspace agents", usage: "/agent list" },
 
   library: {
     name: "library",
@@ -20,29 +12,13 @@ export const COMMAND_REGISTRY: Record<string, CommandDefinition> = {
     usage: "/library [open <item_id>]",
   },
 
-  session: {
-    name: "session",
-    description: "View workspace sessions",
-    usage: "/session list",
-  },
+  session: { name: "session", description: "View workspace sessions", usage: "/session list" },
 
-  version: {
-    name: "version",
-    description: "Show Atlas version information",
-    usage: "/version",
-  },
+  version: { name: "version", description: "Show Atlas version information", usage: "/version" },
 
-  clear: {
-    name: "clear",
-    description: "Clear the output buffer",
-    usage: "/clear",
-  },
+  clear: { name: "clear", description: "Clear the output buffer", usage: "/clear" },
 
-  init: {
-    name: "init",
-    description: "Initialize a new workspace",
-    usage: "/init",
-  },
+  init: { name: "init", description: "Initialize a new workspace", usage: "/init" },
 
   credits: {
     name: "credits",
@@ -50,11 +26,7 @@ export const COMMAND_REGISTRY: Record<string, CommandDefinition> = {
     usage: "/credits",
   },
 
-  status: {
-    name: "status",
-    description: "Status of the Atlas daemon",
-    usage: "/status",
-  },
+  status: { name: "status", description: "Status of the Atlas daemon", usage: "/status" },
 
   // config: {
   //   name: "config",

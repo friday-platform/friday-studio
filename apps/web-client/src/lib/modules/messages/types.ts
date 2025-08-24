@@ -18,36 +18,28 @@ import { z } from "zod/v4";
 const RequestEventSchema = z.object({
   id: z.string(),
   type: z.literal("request"),
-  data: z.object({
-    content: z.string(),
-  }),
+  data: z.object({ content: z.string() }),
   timestamp: z.string(),
 });
 
 const MessageEventSchema = z.object({
   id: z.string(),
   type: z.literal("text"),
-  data: z.object({
-    content: z.string(),
-  }),
+  data: z.object({ content: z.string() }),
   timestamp: z.string(),
 });
 
 const FinishEventSchema = z.object({
   id: z.string(),
   type: z.literal("finish"),
-  data: z.object({
-    content: z.string(),
-  }),
+  data: z.object({ content: z.string() }),
   timestamp: z.string(),
 });
 
 const ErrorEventSchema = z.object({
   id: z.string(),
   type: z.literal("error"),
-  data: z.object({
-    content: z.string(),
-  }),
+  data: z.object({ content: z.string() }),
   timestamp: z.string(),
 });
 
@@ -78,9 +70,7 @@ const ToolResultEventSchema = z.object({
 const ThinkingEventSchema = z.object({
   id: z.string(),
   type: z.literal("thinking"),
-  data: z.object({
-    content: z.string(),
-  }),
+  data: z.object({ content: z.string() }),
   timestamp: z.string(),
 });
 

@@ -2,21 +2,14 @@
  * Utility functions for terminal setup
  */
 
-import { CommandResult } from "./types.ts";
+import type { CommandResult } from "./types.ts";
 
 /**
  * Execute a command and return results
  */
-export async function execCommand(
-  command: string,
-  args: string[],
-): Promise<CommandResult> {
+export async function execCommand(command: string, args: string[]): Promise<CommandResult> {
   try {
-    const cmd = new Deno.Command(command, {
-      args,
-      stdout: "piped",
-      stderr: "piped",
-    });
+    const cmd = new Deno.Command(command, { args, stdout: "piped", stderr: "piped" });
 
     const { stdout, stderr, code, success } = await cmd.output();
 

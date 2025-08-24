@@ -4,27 +4,24 @@
  */
 
 import {
-  HealthStatus,
-  IProviderSignal,
-  ISignalProvider,
-  ProviderState,
-  ProviderStatus,
-  ProviderType,
-} from "./types.ts";
-import {
   createRetryableSSEStream,
   parseSSEData,
 } from "../../../../src/core/agents/remote/adapters/sse-utils.ts";
 import { AtlasScope } from "../../../../src/core/scope.ts";
+import {
+  type HealthStatus,
+  type IProviderSignal,
+  type ISignalProvider,
+  type ProviderState,
+  ProviderStatus,
+  ProviderType,
+} from "./types.ts";
 
 export interface StreamSignalConfig {
   source: string;
   endpoint: string;
   timeout_ms?: number;
-  retry_config?: {
-    max_retries: number;
-    retry_delay_ms: number;
-  };
+  retry_config?: { max_retries: number; retry_delay_ms: number };
 }
 
 export interface StreamEvent {
@@ -39,9 +36,7 @@ export class StreamSignalProvider implements ISignalProvider {
   readonly name = "Stream Signal Provider";
   readonly version = "1.0.0";
 
-  private state: ProviderState = {
-    status: ProviderStatus.NOT_CONFIGURED,
-  };
+  private state: ProviderState = { status: ProviderStatus.NOT_CONFIGURED };
 
   setup(): void {
     this.state.status = ProviderStatus.READY;
@@ -95,13 +90,17 @@ class StreamRuntimeSignal extends AtlasScope {
   private abortController?: AbortController;
   private isConnected = false;
 
-  constructor(private providerId: string, private config: StreamSignalConfig) {
+  constructor(
+    private providerId: string,
+    private config: StreamSignalConfig,
+  ) {
     super(`${providerId}-stream-signal`);
   }
 
-  async initialize(
-    context: { id: string; processSignal: (signalId: string, payload: any) => Promise<void> },
-  ): Promise<void> {
+  async initialize(context: {
+    id: string;
+    processSignal: (signalId: string, payload: any) => Promise<void>;
+  }): Promise<void> {
     this.signalId = context.id; // Signal ID provided by the workspace configuration
     this.signalProcessor = context.processSignal;
     await this.startEventStream();
@@ -112,17 +111,14 @@ class StreamRuntimeSignal extends AtlasScope {
     const sseEndpoint = `${this.config.endpoint}/events/stream`;
 
     try {
-      const retryConfig = this.config.retry_config || {
-        max_retries: 5,
-        retry_delay_ms: 1000,
-      };
+      const retryConfig = this.config.retry_config || { max_retries: 5, retry_delay_ms: 1000 };
 
       const stream = createRetryableSSEStream(
         {
           url: sseEndpoint,
           fetch: globalThis.fetch,
           options: {
-            headers: { "Accept": "text/event-stream" },
+            headers: { Accept: "text/event-stream" },
             signal: this.abortController.signal,
           },
         },

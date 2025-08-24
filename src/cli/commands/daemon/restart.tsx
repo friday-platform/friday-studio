@@ -1,6 +1,6 @@
-import { errorOutput, infoOutput, successOutput } from "../../utils/output.ts";
-import { YargsInstance } from "../../utils/yargs.ts";
 import { getAtlasClient } from "@atlas/client";
+import { errorOutput, infoOutput, successOutput } from "../../utils/output.ts";
+import type { YargsInstance } from "../../utils/yargs.ts";
 
 interface RestartArgs {
   port?: number;
@@ -21,11 +21,7 @@ export function builder(y: YargsInstance) {
       describe: "Port to run the daemon on",
       default: 8080,
     })
-    .option("hostname", {
-      type: "string",
-      describe: "Hostname to bind to",
-      default: "localhost",
-    })
+    .option("hostname", { type: "string", describe: "Hostname to bind to", default: "localhost" })
     .option("max-workspaces", {
       type: "number",
       describe: "Maximum number of concurrent workspace runtimes",
@@ -44,10 +40,7 @@ export function builder(y: YargsInstance) {
     })
     .example("$0 daemon restart", "Restart daemon with same settings")
     .example("$0 daemon restart --force", "Force restart daemon")
-    .example(
-      "$0 daemon restart --max-workspaces 20",
-      "Restart with higher workspace limit",
-    );
+    .example("$0 daemon restart --max-workspaces 20", "Restart with higher workspace limit");
 }
 
 export const handler = async (argv: RestartArgs): Promise<void> => {
@@ -58,10 +51,7 @@ export const handler = async (argv: RestartArgs): Promise<void> => {
     infoOutput("Checking daemon status...");
 
     let wasRunning = false;
-    const client = getAtlasClient({
-      url: `http://localhost:${port}`,
-      timeout: 5000,
-    });
+    const client = getAtlasClient({ url: `http://localhost:${port}`, timeout: 5000 });
     try {
       const status = await client.getDaemonStatus();
       wasRunning = true;

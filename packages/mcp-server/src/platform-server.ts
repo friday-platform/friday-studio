@@ -4,14 +4,14 @@
  * Routes all operations through the daemon for consistency
  */
 
+import { getAtlasDaemonUrl } from "@atlas/atlasd";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { registerTools } from "./tools/index.ts";
-import type { ToolContext } from "./tools/types.ts";
+import { registerPrompts } from "./prompts/index.ts";
+import type { PromptContext } from "./prompts/types.ts";
 import { registerResources } from "./resources/index.ts";
 import type { ResourceContext } from "./resources/types.ts";
-import { PromptContext } from "./prompts/types.ts";
-import { registerPrompts } from "./prompts/index.ts";
-import { getAtlasDaemonUrl } from "@atlas/atlasd";
+import { registerTools } from "./tools/index.ts";
+import type { ToolContext } from "./tools/types.ts";
 
 // Logger interface for dependency injection
 export interface Logger {
@@ -40,12 +40,7 @@ export class PlatformMCPServer {
     this.server = new McpServer({
       name: "atlas-platform",
       version: "1.0.0",
-      capabilities: {
-        prompts: {},
-        tools: {},
-        resources: {},
-        logging: {},
-      },
+      capabilities: { prompts: {}, tools: {}, resources: {}, logging: {} },
     });
 
     // Create shared context for all tools
@@ -59,16 +54,11 @@ export class PlatformMCPServer {
     registerTools(this.server, toolContext);
 
     // Register resources with same DI pattern
-    const resourceContext: ResourceContext = {
-      logger: this.logger,
-    };
+    const resourceContext: ResourceContext = { logger: this.logger };
     registerResources(this.server, resourceContext);
 
     // Register prompts with same DI pattern
-    const promptContext: PromptContext = {
-      daemonUrl: this.daemonUrl,
-      logger: this.logger,
-    };
+    const promptContext: PromptContext = { daemonUrl: this.daemonUrl, logger: this.logger };
     registerPrompts(this.server, promptContext);
 
     // Setup logging request handler

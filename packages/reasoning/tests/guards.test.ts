@@ -1,6 +1,5 @@
 import { assertEquals } from "@std/assert";
-import type { ReasoningContext, ReasoningStep } from "../src/types.ts";
-import type { BaseReasoningContext } from "../src/types.ts";
+import type { BaseReasoningContext, ReasoningContext, ReasoningStep } from "../src/types.ts";
 
 // Test user context
 interface TestUserContext extends BaseReasoningContext {
@@ -118,9 +117,7 @@ Deno.test("guards - isComplete", async (t) => {
   });
 
   await t.step("returns false when action is null", () => {
-    const context = createTestContext({
-      currentStep: createTestStep({ action: null }),
-    });
+    const context = createTestContext({ currentStep: createTestStep({ action: null }) });
 
     assertEquals(guards.isComplete({ context }), false);
   });
@@ -133,10 +130,7 @@ Deno.test("guards - isComplete", async (t) => {
 
 Deno.test("guards - shouldTerminate", async (t) => {
   await t.step("returns true when custom isComplete returns true", () => {
-    const customCallbacks = {
-      ...mockCallbacks,
-      isComplete: () => true,
-    };
+    const customCallbacks = { ...mockCallbacks, isComplete: () => true };
     const guards = getGuards(customCallbacks);
     const context = createTestContext();
 
@@ -145,44 +139,29 @@ Deno.test("guards - shouldTerminate", async (t) => {
 
   await t.step("returns true when currentIteration >= maxIterations", () => {
     const guards = getGuards();
-    const context = createTestContext({
-      currentIteration: 10,
-      maxIterations: 10,
-    });
+    const context = createTestContext({ currentIteration: 10, maxIterations: 10 });
 
     assertEquals(guards.shouldTerminate({ context }), true);
   });
 
   await t.step("returns true when currentIteration exceeds maxIterations", () => {
     const guards = getGuards();
-    const context = createTestContext({
-      currentIteration: 15,
-      maxIterations: 10,
-    });
+    const context = createTestContext({ currentIteration: 15, maxIterations: 10 });
 
     assertEquals(guards.shouldTerminate({ context }), true);
   });
 
   await t.step("returns false when neither condition is met", () => {
     const guards = getGuards();
-    const context = createTestContext({
-      currentIteration: 5,
-      maxIterations: 10,
-    });
+    const context = createTestContext({ currentIteration: 5, maxIterations: 10 });
 
     assertEquals(guards.shouldTerminate({ context }), false);
   });
 
   await t.step("returns false when isComplete is undefined", () => {
-    const customCallbacks = {
-      ...mockCallbacks,
-      isComplete: undefined,
-    };
+    const customCallbacks = { ...mockCallbacks, isComplete: undefined };
     const guards = getGuards(customCallbacks);
-    const context = createTestContext({
-      currentIteration: 5,
-      maxIterations: 10,
-    });
+    const context = createTestContext({ currentIteration: 5, maxIterations: 10 });
 
     assertEquals(guards.shouldTerminate({ context }), false);
   });
@@ -207,9 +186,7 @@ Deno.test("guards - hasValidAction", async (t) => {
   });
 
   await t.step("returns false when action is null", () => {
-    const context = createTestContext({
-      currentStep: createTestStep({ action: null }),
-    });
+    const context = createTestContext({ currentStep: createTestStep({ action: null }) });
 
     assertEquals(guards.hasValidAction({ context }), false);
   });
@@ -259,19 +236,13 @@ Deno.test("guards - hasCompletedStep", async (t) => {
       },
       timestamp: 12345,
     });
-    const context = createTestContext({
-      currentStep: step,
-      steps: [step],
-    });
+    const context = createTestContext({ currentStep: step, steps: [step] });
 
     assertEquals(guards.hasCompletedStep({ context }), false);
   });
 
   await t.step("returns false when currentStep is null", () => {
-    const context = createTestContext({
-      currentStep: null,
-      steps: [],
-    });
+    const context = createTestContext({ currentStep: null, steps: [] });
 
     assertEquals(guards.hasCompletedStep({ context }), false);
   });

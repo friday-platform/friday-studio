@@ -8,12 +8,7 @@
  * - Cognitive loops for memory consolidation and adaptation
  */
 
-import type {
-  IAtlasScope,
-  ICoALAMemoryStorageAdapter,
-  ITempestMemoryManager,
-  ITempestMemoryStorageAdapter,
-} from "../../../src/types/core.ts";
+import { logger } from "@atlas/logger";
 import {
   CoALALocalFileStorageAdapter,
   type IVectorSearchStorageAdapter,
@@ -23,22 +18,27 @@ import {
   VectorSearchLocalStorageAdapter,
   type VectorSearchQuery,
 } from "@atlas/storage";
-import { logger } from "@atlas/logger";
+import { createEmbeddingProvider } from "../../../src/core/embedding/mock-embedding-provider.ts";
+import type {
+  IAtlasScope,
+  ICoALAMemoryStorageAdapter,
+  ITempestMemoryManager,
+  ITempestMemoryStorageAdapter,
+} from "../../../src/types/core.ts";
+import type { IEmbeddingProvider } from "../../../src/types/vector-search.ts";
 import {
   getWorkspaceKnowledgeGraphDir,
   getWorkspaceMemoryDir,
   getWorkspaceVectorDir,
 } from "../../../src/utils/paths.ts";
-import {
-  ExtractedFact,
-  type IKnowledgeGraphStorageAdapter,
-  type KnowledgeEntity as MemoryKnowledgeEntity,
-  KnowledgeGraphManager,
-  KnowledgeGraphQuery,
-} from "./knowledge-graph.ts";
-import type { IEmbeddingProvider } from "../../../src/types/vector-search.ts";
-import { createEmbeddingProvider } from "../../../src/core/embedding/mock-embedding-provider.ts";
 import { type ProcessedPrompt, tokenizePrompt } from "../../../src/utils/prompt-tokenizer.ts";
+import {
+  type ExtractedFact,
+  type IKnowledgeGraphStorageAdapter,
+  KnowledgeGraphManager,
+  type KnowledgeGraphQuery,
+  type KnowledgeEntity as MemoryKnowledgeEntity,
+} from "./knowledge-graph.ts";
 
 export interface CoALAMemoryEntry {
   id: string;
@@ -120,10 +120,7 @@ export class CoALAMemoryManager implements ITempestMemoryManager, CoALACognitive
     scope: IMemoryScope | IAtlasScope,
     storageAdapter?: ITempestMemoryStorageAdapter | ICoALAMemoryStorageAdapter,
     enableCognitiveLoop: boolean = true,
-    options?: {
-      vectorSearchConfig?: Partial<VectorSearchConfig>;
-      commitDebounceDelay?: number;
-    },
+    options?: { vectorSearchConfig?: Partial<VectorSearchConfig>; commitDebounceDelay?: number },
   ) {
     this.scope = scope;
 
@@ -311,11 +308,12 @@ export class CoALAMemoryManager implements ITempestMemoryManager, CoALACognitive
     const toDelete: string[] = [];
     for (const [key, memory] of typeMap.entries()) {
       // Prefer explicit sessionId on content; also support key prefix match
-      const contentSessionId = (memory?.content && typeof memory.content === "object")
-        ? (memory.content.sessionId as string | undefined)
-        : undefined;
-      const belongsToSession = contentSessionId === sessionId ||
-        key.startsWith(`wrk:${sessionId}:`);
+      const contentSessionId =
+        memory?.content && typeof memory.content === "object"
+          ? (memory.content.sessionId as string | undefined)
+          : undefined;
+      const belongsToSession =
+        contentSessionId === sessionId || key.startsWith(`wrk:${sessionId}:`);
       if (belongsToSession) {
         toDelete.push(key);
       }
@@ -366,7 +364,7 @@ export class CoALAMemoryManager implements ITempestMemoryManager, CoALACognitive
     // Content-based search
     if (query.content) {
       results = results.filter((m) =>
-        JSON.stringify(m.content).toLowerCase().includes(query.content!.toLowerCase())
+        JSON.stringify(m.content).toLowerCase().includes(query.content!.toLowerCase()),
       );
     }
 
@@ -383,15 +381,16 @@ export class CoALAMemoryManager implements ITempestMemoryManager, CoALACognitive
   // Cognitive Loop Implementation
   reflect(): CoALAMemoryEntry[] {
     // Identify memories that need attention
-    const candidatesForReflection = Array.from(this.memories.values())
-      .filter((memory) => {
-        const age = Date.now() - memory.timestamp.getTime();
-        const timeSinceAccess = Date.now() - memory.lastAccessed.getTime();
+    const candidatesForReflection = Array.from(this.memories.values()).filter((memory) => {
+      const age = Date.now() - memory.timestamp.getTime();
+      const timeSinceAccess = Date.now() - memory.lastAccessed.getTime();
 
-        // Reflect on frequently accessed memories or old unaccessed ones
-        return (memory.accessCount > 5 && age > 3600000) || // 1 hour old, frequently accessed
-          (timeSinceAccess > 86400000); // 24 hours since last access
-      });
+      // Reflect on frequently accessed memories or old unaccessed ones
+      return (
+        (memory.accessCount > 5 && age > 3600000) || // 1 hour old, frequently accessed
+        timeSinceAccess > 86400000
+      ); // 24 hours since last access
+    });
 
     // Update relevance scores based on reflection
     for (const memory of candidatesForReflection) {
@@ -421,14 +420,13 @@ export class CoALAMemoryManager implements ITempestMemoryManager, CoALACognitive
 
   prune(): void {
     // Remove low-relevance, old memories to maintain performance
-    const memoriesToPrune = Array.from(this.memories.values())
-      .filter((memory) => {
-        const age = Date.now() - memory.timestamp.getTime();
-        const decayedRelevance = memory.relevanceScore *
-          Math.exp(-memory.decayRate * age / 86400000); // Daily decay
+    const memoriesToPrune = Array.from(this.memories.values()).filter((memory) => {
+      const age = Date.now() - memory.timestamp.getTime();
+      const decayedRelevance =
+        memory.relevanceScore * Math.exp((-memory.decayRate * age) / 86400000); // Daily decay
 
-        return decayedRelevance < 0.1 && age > 604800000; // 1 week old, very low relevance
-      });
+      return decayedRelevance < 0.1 && age > 604800000; // 1 week old, very low relevance
+    });
 
     for (const memory of memoriesToPrune) {
       // Remove from both global and type-specific maps
@@ -462,7 +460,7 @@ export class CoALAMemoryManager implements ITempestMemoryManager, CoALACognitive
       );
       memory.confidence = Math.max(
         0,
-        Math.min(1, memory.confidence + (feedback.relevanceAdjustment * 0.1)),
+        Math.min(1, memory.confidence + feedback.relevanceAdjustment * 0.1),
       );
     }
   }
@@ -736,12 +734,12 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
 
       stats[memoryType] = {
         count: memories.length,
-        avgRelevance: relevanceScores.length > 0
-          ? relevanceScores.reduce((sum, score) => sum + score, 0) / relevanceScores.length
-          : 0,
-        oldestEntry: timestamps.length > 0
-          ? new Date(Math.min(...timestamps.map((t) => t.getTime())))
-          : null,
+        avgRelevance:
+          relevanceScores.length > 0
+            ? relevanceScores.reduce((sum, score) => sum + score, 0) / relevanceScores.length
+            : 0,
+        oldestEntry:
+          timestamps.length > 0 ? new Date(Math.min(...timestamps.map((t) => t.getTime()))) : null,
       };
     }
 
@@ -791,15 +789,13 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
 
   async getStorageStatistics(): Promise<any> {
     if (
-      "getMemoryStatistics" in this.store && typeof this.store.getMemoryStatistics === "function"
+      "getMemoryStatistics" in this.store &&
+      typeof this.store.getMemoryStatistics === "function"
     ) {
       return await this.store.getMemoryStatistics();
     }
 
-    return {
-      lastUpdated: new Date().toISOString(),
-      memoryTypes: this.getMemoryTypeStatistics(),
-    };
+    return { lastUpdated: new Date().toISOString(), memoryTypes: this.getMemoryTypeStatistics() };
   }
 
   // Initialize knowledge graph for semantic memory enhancement
@@ -819,11 +815,7 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
       this.knowledgeGraph = new KnowledgeGraphManager(kgStorageAdapter, this.scope.id);
     } catch (error) {
       logger.warn("Failed to initialize knowledge graph for semantic memory", {
-        error: {
-          name: error.name,
-          message: error.message,
-          stack: error.stack,
-        },
+        error: { name: error.name, message: error.message, stack: error.stack },
       });
     }
   }
@@ -850,11 +842,9 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
   }
 
   // Query knowledge graph for semantic memory enhancement
-  async queryKnowledgeGraph(query: KnowledgeGraphQuery): Promise<{
-    entities: any[];
-    relationships: any[];
-    facts: any[];
-  }> {
+  async queryKnowledgeGraph(
+    query: KnowledgeGraphQuery,
+  ): Promise<{ entities: any[]; relationships: any[]; facts: any[] }> {
     if (!this.knowledgeGraph) {
       return { entities: [], relationships: [], facts: [] };
     }
@@ -874,10 +864,7 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
     }
 
     try {
-      const results = await this.knowledgeGraph.queryKnowledge({
-        search: searchTerm,
-        limit,
-      });
+      const results = await this.knowledgeGraph.queryKnowledge({ search: searchTerm, limit });
       return results.facts;
     } catch (error) {
       logger.error("Error getting semantic facts", { error });
@@ -900,14 +887,18 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
   }
 
   // Enhanced semantic memory storage that also updates knowledge graph
-  async rememberSemanticFact(key: string, fact: any, metadata?: {
-    memoryType: CoALAMemoryType;
-    tags: string[];
-    relevanceScore: number;
-    associations?: string[];
-    confidence?: number;
-    decayRate?: number;
-  }): Promise<void> {
+  async rememberSemanticFact(
+    key: string,
+    fact: any,
+    metadata?: {
+      memoryType: CoALAMemoryType;
+      tags: string[];
+      relevanceScore: number;
+      associations?: string[];
+      confidence?: number;
+      decayRate?: number;
+    },
+  ): Promise<void> {
     // Store in regular semantic memory
     if (metadata) {
       await this.rememberWithMetadata(key, fact, metadata);
@@ -929,9 +920,7 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
   // Check if a fact is structured enough for knowledge graph
   private isStructuredFact(fact: any): boolean {
     return (
-      fact &&
-      (fact.statement || fact.entities || fact.relationships) &&
-      typeof fact === "object"
+      fact && (fact.statement || fact.entities || fact.relationships) && typeof fact === "object"
     );
   }
 
@@ -943,14 +932,16 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
     }
 
     // Convert simple fact to ExtractedFact format
-    return [{
-      type: "general_fact",
-      statement: fact.statement || JSON.stringify(fact),
-      entities: fact.entities || [],
-      relationships: fact.relationships || [],
-      confidence: fact.confidence || 0.7,
-      context: `Stored as semantic memory: ${key}`,
-    }];
+    return [
+      {
+        type: "general_fact",
+        statement: fact.statement || JSON.stringify(fact),
+        entities: fact.entities || [],
+        relationships: fact.relationships || [],
+        confidence: fact.confidence || 0.7,
+        context: `Stored as semantic memory: ${key}`,
+      },
+    ];
   }
 
   // === STREAMING MEMORY METHODS ===
@@ -970,20 +961,24 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
     context?: Record<string, any>;
   }): Promise<void> {
     // Store as semantic memory with high confidence
-    this.rememberWithMetadata(fact.id, {
-      statement: fact.content,
-      confidence: fact.confidence,
-      source: fact.source,
-      timestamp: fact.timestamp,
-      sessionId: fact.sessionId,
-      agentId: fact.agentId,
-      context: fact.context,
-    }, {
-      memoryType: CoALAMemoryType.SEMANTIC,
-      tags: ["fact", "streaming", fact.source],
-      relevanceScore: fact.confidence,
-      confidence: fact.confidence,
-    });
+    this.rememberWithMetadata(
+      fact.id,
+      {
+        statement: fact.content,
+        confidence: fact.confidence,
+        source: fact.source,
+        timestamp: fact.timestamp,
+        sessionId: fact.sessionId,
+        agentId: fact.agentId,
+        context: fact.context,
+      },
+      {
+        memoryType: CoALAMemoryType.SEMANTIC,
+        tags: ["fact", "streaming", fact.source],
+        relevanceScore: fact.confidence,
+        confidence: fact.confidence,
+      },
+    );
   }
 
   /**
@@ -1019,21 +1014,25 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
     timestamp: number;
     sessionId: string;
   }): Promise<void> {
-    this.rememberWithMetadata(pattern.id, {
-      type: pattern.type,
-      agentId: pattern.agentId,
-      strategy: pattern.strategy,
-      duration: pattern.duration,
-      inputCharacteristics: pattern.inputCharacteristics,
-      outcome: pattern.outcome,
-      timestamp: pattern.timestamp,
-      sessionId: pattern.sessionId,
-    }, {
-      memoryType: CoALAMemoryType.PROCEDURAL,
-      tags: ["pattern", pattern.type, pattern.strategy],
-      relevanceScore: pattern.outcome.success ? 0.8 : 0.6,
-      confidence: 0.9,
-    });
+    this.rememberWithMetadata(
+      pattern.id,
+      {
+        type: pattern.type,
+        agentId: pattern.agentId,
+        strategy: pattern.strategy,
+        duration: pattern.duration,
+        inputCharacteristics: pattern.inputCharacteristics,
+        outcome: pattern.outcome,
+        timestamp: pattern.timestamp,
+        sessionId: pattern.sessionId,
+      },
+      {
+        memoryType: CoALAMemoryType.PROCEDURAL,
+        tags: ["pattern", pattern.type, pattern.strategy],
+        relevanceScore: pattern.outcome.success ? 0.8 : 0.6,
+        confidence: 0.9,
+      },
+    );
   }
 
   /**
@@ -1069,20 +1068,24 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
     timestamp: number;
     sessionId: string;
   }): Promise<void> {
-    this.rememberWithMetadata(episode.id, {
-      eventType: episode.eventType,
-      description: episode.description,
-      participants: episode.participants,
-      outcome: episode.outcome,
-      significance: episode.significance,
-      timestamp: episode.timestamp,
-      sessionId: episode.sessionId,
-    }, {
-      memoryType: CoALAMemoryType.EPISODIC,
-      tags: ["episode", episode.eventType, episode.outcome],
-      relevanceScore: episode.significance,
-      confidence: 0.8,
-    });
+    this.rememberWithMetadata(
+      episode.id,
+      {
+        eventType: episode.eventType,
+        description: episode.description,
+        participants: episode.participants,
+        outcome: episode.outcome,
+        significance: episode.significance,
+        timestamp: episode.timestamp,
+        sessionId: episode.sessionId,
+      },
+      {
+        memoryType: CoALAMemoryType.EPISODIC,
+        tags: ["episode", episode.eventType, episode.outcome],
+        relevanceScore: episode.significance,
+        confidence: 0.8,
+      },
+    );
   }
 
   /**
@@ -1116,19 +1119,23 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
     summary?: string;
     timestamp: number;
   }): Promise<void> {
-    this.rememberWithMetadata(summary.id, {
-      sessionId: summary.sessionId,
-      totalDuration: summary.totalDuration,
-      agentCount: summary.agentCount,
-      successRate: summary.successRate,
-      summary: summary.summary,
-      timestamp: summary.timestamp,
-    }, {
-      memoryType: CoALAMemoryType.EPISODIC,
-      tags: ["session", "summary", "completion"],
-      relevanceScore: summary.successRate,
-      confidence: 0.9,
-    });
+    this.rememberWithMetadata(
+      summary.id,
+      {
+        sessionId: summary.sessionId,
+        totalDuration: summary.totalDuration,
+        agentCount: summary.agentCount,
+        successRate: summary.successRate,
+        summary: summary.summary,
+        timestamp: summary.timestamp,
+      },
+      {
+        memoryType: CoALAMemoryType.EPISODIC,
+        tags: ["session", "summary", "completion"],
+        relevanceScore: summary.successRate,
+        confidence: 0.9,
+      },
+    );
   }
 
   // === VECTOR SEARCH METHODS ===
@@ -1139,10 +1146,7 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
   private initializeVectorSearch(config?: Partial<VectorSearchConfig>): void {
     try {
       // Initialize embedding provider
-      this.embeddingProvider = createEmbeddingProvider({
-        provider: "mock",
-        dimension: 384,
-      });
+      this.embeddingProvider = createEmbeddingProvider({ provider: "mock", dimension: 384 });
 
       // Initialize vector storage
       const basePath = this.getVectorSearchBasePath();
@@ -1178,7 +1182,8 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
    */
   private async indexMemoryInVectorSearch(memory: CoALAMemoryEntry): Promise<void> {
     if (
-      !this.vectorSearch || !this.embeddingProvider ||
+      !this.vectorSearch ||
+      !this.embeddingProvider ||
       !this.vectorIndexedTypes.has(memory.memoryType)
     ) {
       return;
@@ -1250,12 +1255,15 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
   /**
    * Search memories using vector similarity
    */
-  async searchMemoriesByVector(query: string, options?: {
-    memoryTypes?: CoALAMemoryType[];
-    tags?: string[];
-    limit?: number;
-    minSimilarity?: number;
-  }): Promise<Array<CoALAMemoryEntry & { similarity: number }>> {
+  async searchMemoriesByVector(
+    query: string,
+    options?: {
+      memoryTypes?: CoALAMemoryType[];
+      tags?: string[];
+      limit?: number;
+      minSimilarity?: number;
+    },
+  ): Promise<Array<CoALAMemoryEntry & { similarity: number }>> {
     if (!this.vectorSearch || !this.embeddingProvider) {
       logger.warn("Vector search not available");
       return [];
@@ -1284,10 +1292,7 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
       for (const result of results) {
         const memory = this.memories.get(result.memoryId);
         if (memory) {
-          memoryResults.push({
-            ...memory,
-            similarity: result.similarity,
-          });
+          memoryResults.push({ ...memory, similarity: result.similarity });
         }
       }
 
@@ -1351,15 +1356,15 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
         tags,
       });
 
-      allMemories.push(...workingMemories.map((memory) => ({
-        ...memory,
-        source: "working" as const,
-      })));
+      allMemories.push(
+        ...workingMemories.map((memory) => ({ ...memory, source: "working" as const })),
+      );
     }
 
     // Get vector-indexed memories (EPISODIC, SEMANTIC, PROCEDURAL)
     if (
-      this.vectorSearch && this.embeddingProvider &&
+      this.vectorSearch &&
+      this.embeddingProvider &&
       (includeEpisodic || includeSemantic || includeProcedural)
     ) {
       const vectorMemoryTypes: CoALAMemoryType[] = [];
@@ -1382,15 +1387,14 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
         // Filter by age if specified
         const filteredVectorResults = maxAge
           ? vectorResults.filter((memory) => {
-            const age = Date.now() - memory.timestamp.getTime();
-            return age <= maxAge;
-          })
+              const age = Date.now() - memory.timestamp.getTime();
+              return age <= maxAge;
+            })
           : vectorResults;
 
-        allMemories.push(...filteredVectorResults.map((memory) => ({
-          ...memory,
-          source: "vector" as const,
-        })));
+        allMemories.push(
+          ...filteredVectorResults.map((memory) => ({ ...memory, source: "vector" as const })),
+        );
       } catch (error) {
         logger.warn("Vector search failed, falling back to text search", { error });
 
@@ -1403,10 +1407,9 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
           tags,
         }).filter((memory) => vectorMemoryTypes.includes(memory.memoryType));
 
-        allMemories.push(...fallbackMemories.map((memory) => ({
-          ...memory,
-          source: "vector" as const,
-        })));
+        allMemories.push(
+          ...fallbackMemories.map((memory) => ({ ...memory, source: "vector" as const })),
+        );
       }
     }
 
@@ -1417,10 +1420,7 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
       return bScore - aScore;
     });
 
-    return {
-      memories: allMemories.slice(0, limit),
-      processedPrompt,
-    };
+    return { memories: allMemories.slice(0, limit), processedPrompt };
   }
 
   /**
@@ -1445,8 +1445,8 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
       CoALAMemoryType.PROCEDURAL,
     ];
 
-    const shouldUseVectorSearch = !query.memoryType ||
-      vectorIndexedTypes.includes(query.memoryType);
+    const shouldUseVectorSearch =
+      !query.memoryType || vectorIndexedTypes.includes(query.memoryType);
 
     if (shouldUseVectorSearch) {
       try {
@@ -1533,17 +1533,14 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
     } = options || {};
 
     // Get relevant memories using vector search
-    const memoryResults = await this.getRelevantMemoriesForPrompt(
-      originalPrompt,
-      {
-        includeWorking,
-        includeEpisodic,
-        includeSemantic,
-        includeProcedural,
-        limit: maxMemories,
-        minSimilarity,
-      },
-    );
+    const memoryResults = await this.getRelevantMemoriesForPrompt(originalPrompt, {
+      includeWorking,
+      includeEpisodic,
+      includeSemantic,
+      includeProcedural,
+      limit: maxMemories,
+      minSimilarity,
+    });
 
     if (memoryResults.memories.length === 0) {
       return {
@@ -1555,10 +1552,7 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
     }
 
     // Format memory context based on requested format
-    const memoryContext = this.formatMemoryContext(
-      memoryResults.memories,
-      contextFormat,
-    );
+    const memoryContext = this.formatMemoryContext(memoryResults.memories, contextFormat);
 
     // Create enhanced prompt with memory context
     const enhancedPrompt = this.buildEnhancedPrompt(
@@ -1608,9 +1602,12 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
     return context;
   }
 
-  private formatDetailedContext(
-    memoryTypeGroups: { working: any[]; procedural: any[]; semantic: any[]; episodic: any[] },
-  ): string {
+  private formatDetailedContext(memoryTypeGroups: {
+    working: any[];
+    procedural: any[];
+    semantic: any[];
+    episodic: any[];
+  }): string {
     let context = "\n## RELEVANT MEMORY CONTEXT\n\n";
 
     if ((memoryTypeGroups.working || []).length > 0) {
@@ -1656,55 +1653,55 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
     return context;
   }
 
-  private formatSummaryContext(
-    memoryTypeGroups: { working: any[]; procedural: any[]; semantic: any[]; episodic: any[] },
-  ): string {
+  private formatSummaryContext(memoryTypeGroups: {
+    working: any[];
+    procedural: any[];
+    semantic: any[];
+    episodic: any[];
+  }): string {
     const contextParts: string[] = [];
 
     if ((memoryTypeGroups.working || []).length > 0) {
       contextParts.push(
-        `Current context: ${
-          (memoryTypeGroups.working || []).map((m) => this.extractMemoryContent(m.content, 100))
-            .join("; ")
-        }`,
+        `Current context: ${(memoryTypeGroups.working || [])
+          .map((m) => this.extractMemoryContent(m.content, 100))
+          .join("; ")}`,
       );
     }
 
     if ((memoryTypeGroups.procedural || []).length > 0) {
       contextParts.push(
-        `Relevant procedures: ${
-          (memoryTypeGroups.procedural || []).map((m) => this.extractMemoryContent(m.content, 100))
-            .join(
-              "; ",
-            )
-        }`,
+        `Relevant procedures: ${(memoryTypeGroups.procedural || [])
+          .map((m) => this.extractMemoryContent(m.content, 100))
+          .join("; ")}`,
       );
     }
 
     if ((memoryTypeGroups.semantic || []).length > 0) {
       contextParts.push(
-        `Related knowledge: ${
-          (memoryTypeGroups.semantic || []).map((m) => this.extractMemoryContent(m.content, 100))
-            .join("; ")
-        }`,
+        `Related knowledge: ${(memoryTypeGroups.semantic || [])
+          .map((m) => this.extractMemoryContent(m.content, 100))
+          .join("; ")}`,
       );
     }
 
     if ((memoryTypeGroups.episodic || []).length > 0) {
       contextParts.push(
-        `Past experiences: ${
-          (memoryTypeGroups.episodic || []).map((m) => this.extractMemoryContent(m.content, 100))
-            .join("; ")
-        }`,
+        `Past experiences: ${(memoryTypeGroups.episodic || [])
+          .map((m) => this.extractMemoryContent(m.content, 100))
+          .join("; ")}`,
       );
     }
 
     return contextParts.length > 0 ? `\n[Memory Context: ${contextParts.join(" | ")}]\n\n` : "";
   }
 
-  private formatBulletContext(
-    memoryTypeGroups: { working: any[]; procedural: any[]; semantic: any[]; episodic: any[] },
-  ): string {
+  private formatBulletContext(memoryTypeGroups: {
+    working: any[];
+    procedural: any[];
+    semantic: any[];
+    episodic: any[];
+  }): string {
     const bullets: string[] = [];
 
     (memoryTypeGroups.working || []).forEach((m) => {
@@ -1872,10 +1869,7 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
       updateEntity: async (id: string, updates: Partial<MemoryKnowledgeEntity>) => {
         // Convert updates to storage format
         const { source, timestamp, ...storageUpdates } = updates;
-        await storageAdapter.updateEntity(id, {
-          ...storageUpdates,
-          updatedAt: new Date(),
-        });
+        await storageAdapter.updateEntity(id, { ...storageUpdates, updatedAt: new Date() });
       },
       deleteEntity: async (id: string) => {
         await storageAdapter.deleteEntity(id);

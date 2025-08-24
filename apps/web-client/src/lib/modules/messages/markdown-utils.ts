@@ -1,5 +1,5 @@
-import { parser } from "@lezer/markdown";
 import type { TreeCursor } from "@lezer/common";
+import { parser } from "@lezer/markdown";
 
 // Configure parser with GFM extensions
 const markdownParser = parser.configure([
@@ -92,10 +92,7 @@ export function cleanMarkdownSyntax(node: ASTNode): string {
  */
 export function extractLinkData(content: string): { text: string; href: string } {
   const match = content.match(/\[([^\]]+)\]\(([^)]+)\)/);
-  return {
-    text: match?.[1] ?? content,
-    href: match?.[2] ?? "#",
-  };
+  return { text: match?.[1] ?? content, href: match?.[2] ?? "#" };
 }
 
 /**
@@ -195,13 +192,14 @@ export function astToHTML(node: ASTNode | null, parentType: string = ""): string
     case "OrderedList":
       return `<ol>${renderChildren()}</ol>`;
 
-    case "ListItem":
+    case "ListItem": {
       // Skip ListMark children and unwrap Paragraph children
       const listContent = node.children
         .filter((child) => child.type !== "ListMark")
         .map((child) => astToHTML(child, "ListItem"))
         .join("");
       return `<li>${listContent}</li>`;
+    }
 
     case "StrongEmphasis":
       // These are handled in reconstructParagraphContent when inside paragraphs
@@ -218,9 +216,10 @@ export function astToHTML(node: ASTNode | null, parentType: string = ""): string
       // This is a fallback for standalone usage
       return `<del>${cleanMarkdownSyntax(node)}</del>`;
 
-    case "Link":
+    case "Link": {
       const linkData = extractLinkData(node.content);
       return `<a href="${linkData.href}">${linkData.text}</a>`;
+    }
 
     case "InlineCode":
       return `<code>${cleanMarkdownSyntax(node)}</code>`;

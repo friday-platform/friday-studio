@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
-import { useStdout } from "ink";
 import process from "node:process";
+import { useStdout } from "ink";
+import { useEffect, useState } from "react";
 
 import { useAppContext } from "../contexts/app-context.tsx";
 

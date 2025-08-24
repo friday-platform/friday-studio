@@ -1,7 +1,7 @@
 import type { AtlasAgent } from "@atlas/agent-sdk";
-import type { AgentAdapter, AgentSourceData, AgentSummary } from "./adapters/types.ts";
-import { convertYAMLAgentToSDK, parseYAMLAgentContent } from "../agent-conversion/index.ts";
 import { createLogger } from "@atlas/logger";
+import { convertYAMLAgentToSDK, parseYAMLAgentContent } from "../agent-conversion/index.ts";
+import type { AgentAdapter, AgentSourceData, AgentSummary } from "./adapters/types.ts";
 
 /** Options for configuring the agent loader */
 export interface LoaderOptions {
@@ -118,10 +118,10 @@ export class AgentLoader {
             seen.add(agent.id);
             allAgents.push(agent);
           } else {
-            this.logger.debug(
-              "Skipping duplicate agent from adapter",
-              { agentId: agent.id, adapterName: adapter.adapterName },
-            );
+            this.logger.debug("Skipping duplicate agent from adapter", {
+              agentId: agent.id,
+              adapterName: adapter.adapterName,
+            });
           }
         }
       } catch (error) {
@@ -219,10 +219,6 @@ export class AgentLoader {
       }
     }
 
-    this.agentCache.set(id, {
-      agent,
-      loadedAt: Date.now(),
-      sourceType,
-    });
+    this.agentCache.set(id, { agent, loadedAt: Date.now(), sourceType });
   }
 }

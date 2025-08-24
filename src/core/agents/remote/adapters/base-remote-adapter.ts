@@ -3,6 +3,7 @@
  * Provides common abstraction for different protocols (ACP)
  */
 
+import { logger } from "@atlas/logger";
 import type {
   CircuitBreakerState,
   HealthStatus,
@@ -16,21 +17,13 @@ import type {
   RemoteMessagePart,
   RetryConfig,
 } from "../types.ts";
-import { logger } from "@atlas/logger";
 
 export interface BaseRemoteAdapterConfig {
   connection: RemoteConnectionConfig;
   auth?: RemoteAuthConfig;
   retry?: RetryConfig;
-  circuit_breaker?: {
-    failure_threshold: number;
-    timeout_ms: number;
-    half_open_max_calls: number;
-  };
-  monitoring?: {
-    enabled: boolean;
-    health_check_interval_ms: number;
-  };
+  circuit_breaker?: { failure_threshold: number; timeout_ms: number; half_open_max_calls: number };
+  monitoring?: { enabled: boolean; health_check_interval_ms: number };
 }
 
 /**
@@ -150,8 +143,8 @@ export abstract class BaseRemoteAdapter {
     const currentAverage = this.metrics.average_latency_ms;
 
     // Calculate new average using running average formula
-    this.metrics.average_latency_ms = ((currentAverage * (totalRequests - 1)) + latencyMs) /
-      totalRequests;
+    this.metrics.average_latency_ms =
+      (currentAverage * (totalRequests - 1) + latencyMs) / totalRequests;
   }
 
   /**
@@ -171,10 +164,7 @@ export abstract class BaseRemoteAdapter {
    * Initialize circuit breaker with default state
    */
   private initializeCircuitBreaker(): CircuitBreakerState {
-    return {
-      state: "closed",
-      failure_count: 0,
-    };
+    return { state: "closed", failure_count: 0 };
   }
 
   /**
@@ -199,11 +189,7 @@ export abstract class BaseRemoteAdapter {
       const timeoutId = setTimeout(() => controller.abort(), timeout);
 
       try {
-        const response = await fetch(url, {
-          ...init,
-          headers,
-          signal: controller.signal,
-        });
+        const response = await fetch(url, { ...init, headers, signal: controller.signal });
 
         clearTimeout(timeoutId);
         return response;
@@ -308,7 +294,7 @@ export abstract class BaseRemoteAdapter {
 
         // Calculate delay with exponential backoff
         const delay = Math.min(
-          retryConfig.base_delay_ms * Math.pow(retryConfig.backoff_multiplier, attempt - 1),
+          retryConfig.base_delay_ms * retryConfig.backoff_multiplier ** (attempt - 1),
           retryConfig.max_delay_ms,
         );
 
@@ -334,8 +320,8 @@ export abstract class BaseRemoteAdapter {
   private isRetryableError(error: Error, retryConfig: RetryConfig): boolean {
     // If specific retryable errors are configured, check against them
     if (retryConfig.retryable_errors && retryConfig.retryable_errors.length > 0) {
-      return retryConfig.retryable_errors.some((pattern) =>
-        error.message.includes(pattern) || error.name.includes(pattern)
+      return retryConfig.retryable_errors.some(
+        (pattern) => error.message.includes(pattern) || error.name.includes(pattern),
       );
     }
 

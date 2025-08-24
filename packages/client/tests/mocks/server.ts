@@ -17,7 +17,8 @@ export function createMockAtlasServer() {
       activeWorkspaces: 2,
       uptime: 3600,
       workspaces: ["workspace-1", "workspace-2"],
-    }));
+    }),
+  );
 
   // Workspaces
   app.get("/api/workspaces", (c) =>
@@ -31,7 +32,8 @@ export function createMockAtlasServer() {
         createdAt: new Date().toISOString(),
         lastSeen: new Date().toISOString(),
       },
-    ]));
+    ]),
+  );
 
   // Sessions
   app.get("/api/sessions", (c) =>
@@ -45,7 +47,8 @@ export function createMockAtlasServer() {
         startTime: new Date().toISOString(),
         progress: 50,
       },
-    ]));
+    ]),
+  );
 
   return app;
 }

@@ -1,14 +1,11 @@
+import { type AgentExecutionContext, AgentOrchestrator } from "@atlas/core";
+import { createLogger } from "@atlas/logger";
 import { assertEquals, assertExists } from "@std/assert";
 import { assertSpyCall, assertSpyCalls, spy } from "@std/testing/mock";
-import { AgentExecutionContext, AgentOrchestrator } from "@atlas/core";
-import { createLogger } from "@atlas/logger";
 
 Deno.test("Explicit StreamId Management", async (t) => {
   await t.step("should only stream when supervisor provides explicit streamId", async () => {
-    const config = {
-      agentsServerUrl: "http://localhost:8081/mcp",
-      executionTimeout: 10000,
-    };
+    const config = { agentsServerUrl: "http://localhost:8081/mcp", executionTimeout: 10000 };
     const logger = createLogger({ level: "error" });
     const orchestrator = new AgentOrchestrator(config, logger);
     orchestrator.initialize();
@@ -23,11 +20,7 @@ Deno.test("Explicit StreamId Management", async (t) => {
 
     // Mock agent that emits events
     const mockAgent = {
-      metadata: {
-        id: "agent",
-        displayName: "Test Agent",
-        expertise: { domains: ["testing"] },
-      },
+      metadata: { id: "agent", displayName: "Test Agent", expertise: { domains: ["testing"] } },
       execute: async (prompt: string, context: any) => {
         // Try to emit - should be using NoOpStreamEmitter
         context.stream.emit({ type: "text", content: "test" });
@@ -54,18 +47,13 @@ Deno.test("Explicit StreamId Management", async (t) => {
 
     // Verify streaming occurred
     assertSpyCalls(onStreamEventWithStream, 1);
-    assertSpyCall(onStreamEventWithStream, 0, {
-      args: [{ type: "text", content: "test" }],
-    });
+    assertSpyCall(onStreamEventWithStream, 0, { args: [{ type: "text", content: "test" }] });
 
     await orchestrator.shutdown();
   });
 
   await t.step("should respect explicit streamId over generated one", async () => {
-    const config = {
-      agentsServerUrl: "http://localhost:8081/mcp",
-      executionTimeout: 10000,
-    };
+    const config = { agentsServerUrl: "http://localhost:8081/mcp", executionTimeout: 10000 };
     const logger = createLogger({ level: "error" });
     const orchestrator = new AgentOrchestrator(config, logger);
     orchestrator.initialize();
@@ -81,20 +69,19 @@ Deno.test("Explicit StreamId Management", async (t) => {
 
     // Mock MCP client
     let capturedToolCallArgs: any;
-    // @ts-ignore - mocking private method
+    // @ts-expect-error - mocking private method
     orchestrator["getOrCreateSessionClient"] = async (sessionId: string) => {
       return {
         client: {
           callTool: async (args: any) => {
             capturedToolCallArgs = args;
             return {
-              content: [{
-                type: "text",
-                text: JSON.stringify({
-                  type: "completed",
-                  result: { success: true },
-                }),
-              }],
+              content: [
+                {
+                  type: "text",
+                  text: JSON.stringify({ type: "completed", result: { success: true } }),
+                },
+              ],
             };
           },
         },
@@ -107,19 +94,13 @@ Deno.test("Explicit StreamId Management", async (t) => {
 
     // Verify explicit streamId was used, not generated
     assertExists(capturedToolCallArgs);
-    assertEquals(
-      capturedToolCallArgs.arguments._sessionContext.streamId,
-      explicitStreamId,
-    );
+    assertEquals(capturedToolCallArgs.arguments._sessionContext.streamId, explicitStreamId);
 
     await orchestrator.shutdown();
   });
 
   await t.step("should handle wrapped agents without streamId correctly", async () => {
-    const config = {
-      agentsServerUrl: "http://localhost:8081/mcp",
-      executionTimeout: 10000,
-    };
+    const config = { agentsServerUrl: "http://localhost:8081/mcp", executionTimeout: 10000 };
     const logger = createLogger({ level: "error" });
     const orchestrator = new AgentOrchestrator(config, logger);
     orchestrator.initialize();
@@ -127,11 +108,7 @@ Deno.test("Explicit StreamId Management", async (t) => {
     // Track which stream emitter type was used
     let streamEmitterType = "";
     const mockAgent = {
-      metadata: {
-        id: "agent",
-        displayName: "Test Agent",
-        expertise: { domains: ["testing"] },
-      },
+      metadata: { id: "agent", displayName: "Test Agent", expertise: { domains: ["testing"] } },
       execute: async (prompt: string, context: any) => {
         streamEmitterType = context.stream.constructor.name;
         return { result: "done" };

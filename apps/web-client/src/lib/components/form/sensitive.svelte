@@ -1,20 +1,20 @@
 <script lang="ts">
-  import { CustomIcons } from "$lib/components/icons/custom";
-  import { hasContext } from "svelte";
-  import type { HTMLInputAttributes } from "svelte/elements";
-  import { FIELD_CONTEXT, getFieldContext } from "./context";
+import { hasContext } from "svelte";
+import type { HTMLInputAttributes } from "svelte/elements";
+import { CustomIcons } from "$lib/components/icons/custom";
+import { FIELD_CONTEXT, getFieldContext } from "./context";
 
-  type Props = { value?: string | number; variant?: "small" | "regular" };
+type Props = { value?: string | number; variant?: "small" | "regular" };
 
-  let { value = $bindable(), variant = "regular", ...rest }: Props & HTMLInputAttributes = $props();
+const { value = $bindable(), variant = "regular", ...rest }: Props & HTMLInputAttributes = $props();
 
-  let id = $state<string>();
+let id = $state<string>();
 
-  if (hasContext(FIELD_CONTEXT)) {
-    id = getFieldContext().id;
-  }
+if (hasContext(FIELD_CONTEXT)) {
+  id = getFieldContext().id;
+}
 
-  let visible = $state(false);
+const visible = $state(false);
 </script>
 
 <div>

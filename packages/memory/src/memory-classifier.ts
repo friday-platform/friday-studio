@@ -7,11 +7,11 @@
  */
 
 import {
-  ClassificationRules,
-  ConversationContext,
-  Entity,
-  MemoryClassifier,
-  MemoryEntry,
+  type ClassificationRules,
+  type ConversationContext,
+  type Entity,
+  type MemoryClassifier,
+  type MemoryEntry,
   MemoryType,
 } from "./mecmf-interfaces.ts";
 
@@ -166,7 +166,7 @@ export class AtlasMemoryClassifier implements MemoryClassifier {
     emails.forEach((email) => entities.push({ name: email, type: "email", confidence: 0.95 }));
 
     // URLs
-    const urlRegex = /https?:\/\/[\w.-]+(?:\/[\w\-.\/\?%&=]*)?/g;
+    const urlRegex = /https?:\/\/[\w.-]+(?:\/[\w\-./?%&=]*)?/g;
     const urls = Array.from(new Set(text.match(urlRegex) || []));
     urls.forEach((u) => entities.push({ name: u, type: "url", confidence: 0.9 }));
 
@@ -228,10 +228,8 @@ export class AtlasMemoryClassifier implements MemoryClassifier {
     const typeScore = this.calculateTypeRelevance(memory.memoryType, query);
 
     // Weighted combination
-    const relevanceScore = (semanticScore * 0.4) +
-      (temporalScore * 0.2) +
-      (accessScore * 0.2) +
-      (typeScore * 0.2);
+    const relevanceScore =
+      semanticScore * 0.4 + temporalScore * 0.2 + accessScore * 0.2 + typeScore * 0.2;
 
     return Math.min(1.0, Math.max(0.0, relevanceScore));
   }
@@ -449,10 +447,12 @@ export class AtlasMemoryClassifier implements MemoryClassifier {
       "enables",
     ];
 
-    const factualMatches =
-      factualIndicators.filter((indicator) => content.toLowerCase().includes(indicator)).length;
-    const knowledgeMatches =
-      knowledgeIndicators.filter((indicator) => content.toLowerCase().includes(indicator)).length;
+    const factualMatches = factualIndicators.filter((indicator) =>
+      content.toLowerCase().includes(indicator),
+    ).length;
+    const knowledgeMatches = knowledgeIndicators.filter((indicator) =>
+      content.toLowerCase().includes(indicator),
+    ).length;
 
     // Consider factual if it has factual indicators OR knowledge indicators that suggest technical/semantic content
     return factualMatches >= 1 || knowledgeMatches >= 2;
@@ -553,8 +553,10 @@ export class AtlasMemoryClassifier implements MemoryClassifier {
       "comprised of",
     ];
 
-    return structureIndicators.filter((indicator) => content.toLowerCase().includes(indicator))
-      .length >= 1;
+    return (
+      structureIndicators.filter((indicator) => content.toLowerCase().includes(indicator)).length >=
+      1
+    );
   }
 
   /**

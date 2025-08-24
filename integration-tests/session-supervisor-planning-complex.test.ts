@@ -3,15 +3,17 @@
  * Tests multi-agent scenarios, error handling, and advanced planning features
  */
 
+import type { SessionSupervisorConfig } from "@atlas/core";
 import { assertEquals, assertExists } from "@std/assert";
 import {
   type SessionContext,
   SessionSupervisorActor,
 } from "../src/core/actors/session-supervisor-actor.ts";
-import type { SessionSupervisorConfig } from "@atlas/core";
 
 // Skip tests in CI or when no API key is available
-const skipIfNoKey = !Deno.env.get("ANTHROPIC_API_KEY") || Deno.env.get("CI") === "true" ||
+const skipIfNoKey =
+  !Deno.env.get("ANTHROPIC_API_KEY") ||
+  Deno.env.get("CI") === "true" ||
   Deno.env.get("GITHUB_ACTIONS") === "true";
 
 // Helper function to create session context with multiple agents
@@ -46,45 +48,24 @@ const createComplexSessionContext = (overrides: Partial<SessionContext> = {}): S
 
 // Helper function to create supervisor config
 const createTestSupervisorConfig = (): SessionSupervisorConfig => ({
-  job: {
-    name: "test-job",
-    execution: {
-      strategy: "sequential",
-    },
-  },
+  job: { name: "test-job", execution: { strategy: "sequential" } },
   agents: {
     "data-extractor": {
       type: "llm",
-      config: {
-        model: "claude-3-7-sonnet-20250219",
-        tools: ["file-reader", "api-client"],
-      },
+      config: { model: "claude-3-7-sonnet-20250219", tools: ["file-reader", "api-client"] },
     },
     "data-transformer": {
       type: "llm",
-      config: {
-        model: "claude-3-7-sonnet-20250219",
-        tools: ["data-processor"],
-      },
+      config: { model: "claude-3-7-sonnet-20250219", tools: ["data-processor"] },
     },
-    "data-validator": {
-      type: "system",
-      config: {
-        tools: ["schema-validator"],
-      },
-    },
+    "data-validator": { type: "system", config: { tools: ["schema-validator"] } },
     "data-loader": {
       type: "llm",
-      config: {
-        model: "claude-3-7-sonnet-20250219",
-        tools: ["database-client"],
-      },
+      config: { model: "claude-3-7-sonnet-20250219", tools: ["database-client"] },
     },
     "notification-sender": {
       type: "system",
-      config: {
-        tools: ["email-sender", "slack-notifier"],
-      },
+      config: { tools: ["email-sender", "slack-notifier"] },
     },
   },
 });
@@ -220,12 +201,7 @@ Deno.test({
             },
           },
         },
-        configuration: {
-          batch_size: 1000,
-          parallel_workers: 4,
-          timeout: 3600,
-          retry_attempts: 3,
-        },
+        configuration: { batch_size: 1000, parallel_workers: 4, timeout: 3600, retry_attempts: 3 },
       },
     });
 
@@ -373,7 +349,8 @@ Deno.test({
       // Check that we have substantive reasoning (not just placeholder text)
       assertEquals(planReasoning.length > 50, true, "Plan reasoning should be substantial");
       // Should contain planning-related terms
-      const hasValidContent = planReasoning.toLowerCase().includes("execution") ||
+      const hasValidContent =
+        planReasoning.toLowerCase().includes("execution") ||
         planReasoning.toLowerCase().includes("phase") ||
         planReasoning.toLowerCase().includes("data") ||
         planReasoning.toLowerCase().includes("etl");
@@ -399,14 +376,12 @@ Deno.test({
         id: "validation-signal",
         type: "etl-pipeline",
         payload: {
-          task:
-            "Process user data: extract from database, clean and transform data, validate results, load into warehouse, notify stakeholders",
+          task: "Process user data: extract from database, clean and transform data, validate results, load into warehouse, notify stakeholders",
           priority: "high",
         },
       },
       payload: {
-        task:
-          "Process user data: extract from database, clean and transform data, validate results, load into warehouse, notify stakeholders",
+        task: "Process user data: extract from database, clean and transform data, validate results, load into warehouse, notify stakeholders",
         priority: "high",
       },
       // Deliberately provide agents in WRONG order to test AI reordering
@@ -454,7 +429,7 @@ Deno.test({
       const notifierPos = actualOrder.indexOf("notification-sender");
 
       let logicalSequence = true;
-      let sequenceIssues = [];
+      const sequenceIssues = [];
 
       if (extractorPos > transformerPos) {
         logicalSequence = false;

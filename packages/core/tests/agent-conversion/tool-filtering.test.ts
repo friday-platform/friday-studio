@@ -5,10 +5,10 @@
  * Covers allow/deny lists, tool merging, and edge cases.
  */
 
+import type { AtlasTool } from "@atlas/agent-sdk";
 import { assertEquals } from "@std/assert";
 import { describe, it } from "@std/testing/bdd";
 import { filterTools, mergeTools } from "../../src/agent-conversion/shared/tool-converter.ts";
-import type { AtlasTool } from "@atlas/agent-sdk";
 
 describe("Tool Filtering", () => {
   // Helper to create mock tools
@@ -141,17 +141,11 @@ describe("Tool Filtering", () => {
     });
 
     it("should merge multiple sources in order", () => {
-      const tools1: Record<string, AtlasTool> = {
-        shared: { description: "From source 1" },
-      };
+      const tools1: Record<string, AtlasTool> = { shared: { description: "From source 1" } };
 
-      const tools2: Record<string, AtlasTool> = {
-        shared: { description: "From source 2" },
-      };
+      const tools2: Record<string, AtlasTool> = { shared: { description: "From source 2" } };
 
-      const tools3: Record<string, AtlasTool> = {
-        shared: { description: "From source 3" },
-      };
+      const tools3: Record<string, AtlasTool> = { shared: { description: "From source 3" } };
 
       const merged = mergeTools(tools1, tools2, tools3);
 
@@ -226,7 +220,7 @@ describe("Tool Filtering", () => {
     it("should handle special characters in tool names", () => {
       const tools: Record<string, AtlasTool> = {
         "tool-with-dashes": { description: "Tool with dashes" },
-        "tool_with_underscores": { description: "Tool with underscores" },
+        tool_with_underscores: { description: "Tool with underscores" },
         "tool.with.dots": { description: "Tool with dots" },
         "tool@with@symbols": { description: "Tool with symbols" },
       };

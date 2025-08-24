@@ -10,6 +10,7 @@
  * - Resource allocation and cleanup
  */
 
+import type { JobSpecification, WorkspaceAgentConfig } from "@atlas/config";
 import type {
   ActorInitParams,
   BaseActor,
@@ -17,15 +18,14 @@ import type {
   SessionSupervisorConfig,
   WorkspaceSupervisorConfig,
 } from "@atlas/core";
-import type { IWorkspaceSignal } from "../../types/core.ts";
-import type { JobSpecification, WorkspaceAgentConfig } from "@atlas/config";
-import { type Logger, logger } from "@atlas/logger";
-import { type SessionContext, SessionSupervisorActor } from "./session-supervisor-actor.ts";
 import {
   ReasoningResultStatus,
   WorkspaceSessionStatus,
   type WorkspaceSessionStatusType,
 } from "@atlas/core";
+import { type Logger, logger } from "@atlas/logger";
+import type { IWorkspaceSignal } from "../../types/core.ts";
+import { type SessionContext, SessionSupervisorActor } from "./session-supervisor-actor.ts";
 
 export interface SessionInfo {
   sessionId: string;
@@ -162,13 +162,10 @@ export class WorkspaceSupervisorActor implements BaseActor {
       // but more explicit about the intent to defer work.
       queueMicrotask(() => {
         try {
-          this.logger.info("Analyzing signal", {
-            sessionId,
-            signalId: signal.id,
-          });
+          this.logger.info("Analyzing signal", { sessionId, signalId: signal.id });
 
           // Match signal to job configuration
-          let jobSpec: JobSpecification | undefined = undefined;
+          let jobSpec: JobSpecification | undefined;
           if (this.config.jobs) {
             for (const [jobId, job] of Object.entries(this.config.jobs)) {
               if (job.triggers.some((trigger) => trigger.signal === signal.id)) {
@@ -184,10 +181,7 @@ export class WorkspaceSupervisorActor implements BaseActor {
           }
 
           if (!jobSpec) {
-            this.logger.warn("No job found for signal", {
-              signalId: signal.id,
-              sessionId,
-            });
+            this.logger.warn("No job found for signal", { signalId: signal.id, sessionId });
             sessionInfo.status = WorkspaceSessionStatus.FAILED;
             return;
           }
@@ -205,7 +199,7 @@ export class WorkspaceSupervisorActor implements BaseActor {
 
           // Extract agent IDs from job specification
           const availableAgents: string[] = jobSpec.execution.agents.map((agent) =>
-            typeof agent === "string" ? agent : agent.id
+            typeof agent === "string" ? agent : agent.id,
           );
 
           const sessionContext: SessionContext = {
@@ -239,9 +233,10 @@ export class WorkspaceSupervisorActor implements BaseActor {
                 duration: sessionSummary.duration,
               });
 
-              sessionInfo.status = sessionSummary.status === ReasoningResultStatus.COMPLETED
-                ? WorkspaceSessionStatus.COMPLETED
-                : WorkspaceSessionStatus.FAILED;
+              sessionInfo.status =
+                sessionSummary.status === ReasoningResultStatus.COMPLETED
+                  ? WorkspaceSessionStatus.COMPLETED
+                  : WorkspaceSessionStatus.FAILED;
 
               // Clean up session after completion
               this.cleanupSession(sessionId);
@@ -332,11 +327,7 @@ export class WorkspaceSupervisorActor implements BaseActor {
     const session = this.sessions.get(sessionId);
     if (!session) return undefined;
 
-    return {
-      id: session.sessionId,
-      status: session.status,
-      startTime: session.createdAt,
-    };
+    return { id: session.sessionId, status: session.status, startTime: session.createdAt };
   }
 
   cleanupSession(sessionId: string): void {
@@ -380,8 +371,8 @@ export class WorkspaceSupervisorActor implements BaseActor {
   }
 
   getActiveSessionCount(): number {
-    return Array.from(this.sessions.values()).filter((s) =>
-      s.status === WorkspaceSessionStatus.EXECUTING
+    return Array.from(this.sessions.values()).filter(
+      (s) => s.status === WorkspaceSessionStatus.EXECUTING,
     ).length;
   }
 
@@ -543,18 +534,9 @@ export class WorkspaceSupervisorActor implements BaseActor {
     }
 
     try {
-      await this.streamingMemoryManager.streamToolCall(
-        sessionId,
-        agentId,
-        toolName,
-        args,
-      );
+      await this.streamingMemoryManager.streamToolCall(sessionId, agentId, toolName, args);
 
-      this.logger.debug("Tool call streamed to memory", {
-        sessionId,
-        agentId,
-        toolName,
-      });
+      this.logger.debug("Tool call streamed to memory", { sessionId, agentId, toolName });
     } catch (error) {
       this.logger.warn("Failed to stream tool call to memory", {
         sessionId,
@@ -576,18 +558,9 @@ export class WorkspaceSupervisorActor implements BaseActor {
     }
 
     try {
-      await this.streamingMemoryManager.streamToolResult(
-        sessionId,
-        agentId,
-        toolName,
-        result,
-      );
+      await this.streamingMemoryManager.streamToolResult(sessionId, agentId, toolName, result);
 
-      this.logger.debug("Tool result streamed to memory", {
-        sessionId,
-        agentId,
-        toolName,
-      });
+      this.logger.debug("Tool result streamed to memory", { sessionId, agentId, toolName });
     } catch (error) {
       this.logger.warn("Failed to stream tool result to memory", {
         sessionId,
@@ -658,9 +631,7 @@ export class WorkspaceSupervisorActor implements BaseActor {
 
           // Also initialize MECMF for better procedural memory classification
           const { setupMECMF, createConversationContext, MemorySource, CoALAMemoryType } =
-            await import(
-              "@atlas/memory"
-            );
+            await import("@atlas/memory");
           const workspaceScope = {
             id: this.workspaceId,
             workspaceId: this.workspaceId,
@@ -672,13 +643,9 @@ export class WorkspaceSupervisorActor implements BaseActor {
             enableVectorSearch: false, // Procedural memory doesn't need vectors
           });
 
-          const context = createConversationContext(
-            "workspace-init",
-            this.workspaceId,
-            {
-              currentTask: "Loading workspace procedural rules",
-            },
-          );
+          const context = createConversationContext("workspace-init", this.workspaceId, {
+            currentTask: "Loading workspace procedural rules",
+          });
 
           // Store each section as a procedural memory entry
           for (const section of sections) {
@@ -705,8 +672,7 @@ export class WorkspaceSupervisorActor implements BaseActor {
             );
 
             // Also store in MECMF for enhanced retrieval during prompt construction
-            const proceduralContent =
-              `Workspace Procedural Rule - ${section.title}:\n${section.content}`;
+            const proceduralContent = `Workspace Procedural Rule - ${section.title}:\n${section.content}`;
             await mecmfManager.classifyAndStore(
               proceduralContent,
               context,
@@ -758,15 +724,12 @@ export class WorkspaceSupervisorActor implements BaseActor {
 
         // Start new section
         const title = headingMatch[1].trim();
-        const slug = title.toLowerCase()
+        const slug = title
+          .toLowerCase()
           .replace(/[^a-z0-9]+/g, "-")
           .replace(/^-|-$/g, "");
 
-        currentSection = {
-          slug,
-          title,
-          content: "",
-        };
+        currentSection = { slug, title, content: "" };
       } else if (currentSection) {
         // Add content to current section
         currentSection.content += line + "\n";
@@ -780,11 +743,7 @@ export class WorkspaceSupervisorActor implements BaseActor {
 
     // If no sections found, treat entire content as one section
     if (sections.length === 0 && content.trim()) {
-      sections.push({
-        slug: "general-rules",
-        title: "General Rules",
-        content: content,
-      });
+      sections.push({ slug: "general-rules", title: "General Rules", content: content });
     }
 
     return sections;
@@ -793,11 +752,9 @@ export class WorkspaceSupervisorActor implements BaseActor {
   /**
    * Analyze signal with memory context to provide better session planning
    */
-  async analyzeSignalWithMemory(signal: IWorkspaceSignal): Promise<{
-    relevantMemories: any[];
-    analysisContext: string;
-    suggestedAgents: string[];
-  }> {
+  async analyzeSignalWithMemory(
+    signal: IWorkspaceSignal,
+  ): Promise<{ relevantMemories: any[]; analysisContext: string; suggestedAgents: string[] }> {
     if (!this.memoryCoordinator) {
       this.logger.debug("Memory coordinator not available - using fallback signal analysis");
       return {

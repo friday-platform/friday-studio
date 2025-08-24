@@ -1,7 +1,7 @@
-import { z } from "zod";
-import * as path from "@std/path";
-import type { ToolContext } from "../types.ts";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import * as path from "@std/path";
+import { z } from "zod";
+import type { ToolContext } from "../types.ts";
 import { createSuccessResponse } from "../types.ts";
 
 const MAX_READ_SIZE = 250 * 1024;
@@ -12,8 +12,7 @@ export function registerReadTool(server: McpServer, _ctx: ToolContext) {
   server.registerTool(
     "atlas_read",
     {
-      description:
-        `Reads a file from the local filesystem. You can access any file directly by using this tool.
+      description: `Reads a file from the local filesystem. You can access any file directly by using this tool.
 Assume this tool is able to read all files on the machine. If the User provides a path to a file assume that path is valid. It is okay to read a file that does not exist; an error will be returned.
 
 Usage:
@@ -27,15 +26,9 @@ Usage:
 - You will regularly be asked to read screenshots. If the user provides a path to a screenshot ALWAYS use this tool to view the file at the path. This tool will work with all temporary file paths like /var/folders/123/abc/T/TemporaryItems/NSIRD_screencaptureui_ZfB1tD/Screenshot.png
 - If you read a file that exists but has empty contents you will receive a system reminder warning in place of file contents.`,
       inputSchema: {
-        filePath: z.string().describe(
-          "The path to the file to read",
-        ),
-        offset: z.number().optional().describe(
-          "The line number to start reading from (0-based)",
-        ),
-        limit: z.number().optional().describe(
-          "The number of lines to read (defaults to 2000)",
-        ),
+        filePath: z.string().describe("The path to the file to read"),
+        offset: z.number().optional().describe("The line number to start reading from (0-based)"),
+        limit: z.number().optional().describe("The number of lines to read (defaults to 2000)"),
       },
     },
     async (params) => {
@@ -70,9 +63,9 @@ Usage:
 
             if (suggestions.length > 0) {
               throw new Error(
-                `File not found: ${filePath}\n\nDid you mean one of these?\n${
-                  suggestions.join("\n")
-                }`,
+                `File not found: ${filePath}\n\nDid you mean one of these?\n${suggestions.join(
+                  "\n",
+                )}`,
               );
             }
           } catch {
@@ -119,9 +112,7 @@ Usage:
       return createSuccessResponse({
         title: path.relative(Deno.cwd(), filePath),
         output,
-        metadata: {
-          preview,
-        },
+        metadata: { preview },
       });
     },
   );

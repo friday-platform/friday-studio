@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
-import { Box, Text } from "ink";
 import { getAtlasClient } from "@atlas/client";
+import { Box, Text } from "ink";
+import { useEffect, useState } from "react";
 import { SignalDetails } from "../../components/signal-details.tsx";
 
 interface SignalDetailsWithPathProps {
@@ -8,10 +8,7 @@ interface SignalDetailsWithPathProps {
   signalId: string;
 }
 
-export const SignalDetailsWithPath = ({
-  workspaceId,
-  signalId,
-}: SignalDetailsWithPathProps) => {
+export const SignalDetailsWithPath = ({ workspaceId, signalId }: SignalDetailsWithPathProps) => {
   const [workspacePath, setWorkspacePath] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>("");
@@ -57,10 +54,6 @@ export const SignalDetailsWithPath = ({
   }
 
   return (
-    <SignalDetails
-      workspaceId={workspaceId}
-      signalId={signalId}
-      workspacePath={workspacePath}
-    />
+    <SignalDetails workspaceId={workspaceId} signalId={signalId} workspacePath={workspacePath} />
   );
 };

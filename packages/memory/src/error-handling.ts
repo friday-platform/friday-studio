@@ -5,7 +5,7 @@
  * degradation when memory operations encounter failures or resource constraints.
  */
 
-import { FailureRecoveryStrategies, MemoryType } from "./mecmf-interfaces.ts";
+import type { FailureRecoveryStrategies, MemoryType } from "./mecmf-interfaces.ts";
 
 export interface ErrorDetails {
   error?: string;
@@ -105,11 +105,7 @@ export class MECMFErrorHandler {
           circuitBreaker.reset();
         }
 
-        return {
-          data: result,
-          usedFallback: false,
-          performanceImpact: "none",
-        };
+        return { data: result, usedFallback: false, performanceImpact: "none" };
       } catch (error) {
         this.recordError({
           operation: context.operation || "embedding_operation",
@@ -143,7 +139,7 @@ export class MECMFErrorHandler {
         }
 
         // Wait before retry (exponential backoff)
-        await this.sleep(Math.pow(2, attempt) * 100);
+        await this.sleep(2 ** attempt * 100);
       }
     }
 
@@ -163,11 +159,7 @@ export class MECMFErrorHandler {
 
     try {
       const result = await this.withTimeout(searchOperation, timeout);
-      return {
-        data: result,
-        usedFallback: false,
-        performanceImpact: "none",
-      };
+      return { data: result, usedFallback: false, performanceImpact: "none" };
     } catch (error) {
       this.recordError({
         operation: context.operation || "vector_search",
@@ -225,15 +217,12 @@ export class MECMFErrorHandler {
     }
 
     // Perform emergency pruning to reach 70% capacity target
-    const targetPercentage = 0.70;
+    const targetPercentage = 0.7;
 
     try {
       const pruneResult = await performEmergencyPrune(targetPercentage);
 
-      return {
-        ...pruneResult,
-        backupCreated,
-      };
+      return { ...pruneResult, backupCreated };
     } catch (pruneError) {
       throw new Error(
         `Storage capacity exceeded and emergency pruning failed: ${pruneError.message}`,
@@ -297,7 +286,7 @@ export class MECMFErrorHandler {
       // Check disk pressure
       if (metrics.diskUsage >= 0.98) {
         await onDiskPressure("emergency");
-      } else if (metrics.diskUsage >= 0.90) {
+      } else if (metrics.diskUsage >= 0.9) {
         await onDiskPressure("warning");
       }
     } catch (_error) {
@@ -320,11 +309,7 @@ export class MECMFErrorHandler {
     // Try primary operation first
     try {
       const result = await primaryOperation();
-      return {
-        data: result,
-        usedFallback: false,
-        performanceImpact: "none",
-      };
+      return { data: result, usedFallback: false, performanceImpact: "none" };
     } catch (primaryError) {
       // Try fallback operations in order
       for (const fallback of fallbackOperations) {
@@ -336,10 +321,7 @@ export class MECMFErrorHandler {
             errorType: "primary_operation_failure",
             timestamp: new Date(),
             retryCount: 1,
-            details: {
-              primaryError: primaryError.message,
-              usedFallback: fallback.name,
-            },
+            details: { primaryError: primaryError.message, usedFallback: fallback.name },
             ...context,
           });
 
@@ -350,9 +332,7 @@ export class MECMFErrorHandler {
             originalError: primaryError as Error,
             performanceImpact: fallback.performanceImpact,
           };
-        } catch (_fallbackError) {
-          continue;
-        }
+        } catch (_fallbackError) {}
       }
 
       // All operations failed
@@ -367,8 +347,8 @@ export class MECMFErrorHandler {
     const stats: Record<string, ErrorStatistic> = {};
 
     for (const [operation, errors] of this.errorHistory.entries()) {
-      const recentErrors = errors.filter((e) =>
-        Date.now() - e.timestamp.getTime() < 24 * 60 * 60 * 1000 // Last 24 hours
+      const recentErrors = errors.filter(
+        (e) => Date.now() - e.timestamp.getTime() < 24 * 60 * 60 * 1000, // Last 24 hours
       );
 
       stats[operation] = {
@@ -403,10 +383,7 @@ export class MECMFErrorHandler {
     });
 
     try {
-      const result = await Promise.race([
-        operation(),
-        timeoutPromise,
-      ]);
+      const result = await Promise.race([operation(), timeoutPromise]);
 
       // Clear the timeout if the operation completed successfully
       if (timeoutId !== undefined) {
@@ -465,12 +442,7 @@ class CircuitBreaker {
   private failureCount = 0;
   private lastFailureTime?: Date;
 
-  constructor(
-    private options: {
-      failureThreshold: number;
-      resetTimeout: number;
-    },
-  ) {}
+  constructor(private options: { failureThreshold: number; resetTimeout: number }) {}
 
   recordFailure(): void {
     this.failureCount++;

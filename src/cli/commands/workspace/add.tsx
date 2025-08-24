@@ -1,10 +1,14 @@
-import { AtlasClient, WorkspaceAddRequest, WorkspaceBatchAddRequest } from "@atlas/client";
+import {
+  AtlasClient,
+  type WorkspaceAddRequest,
+  type WorkspaceBatchAddRequest,
+} from "@atlas/client";
 import { Spinner } from "@inkjs/ui";
 import { exists, walk } from "@std/fs";
 import { basename, dirname, join, resolve } from "@std/path";
 import { Box, render, Text } from "ink";
 import { useEffect, useState } from "react";
-import { YargsInstance } from "../../utils/yargs.ts";
+import type { YargsInstance } from "../../utils/yargs.ts";
 
 interface AddArgs {
   paths?: string[];
@@ -26,28 +30,14 @@ export function builder(y: YargsInstance) {
       array: true,
       describe: "Path(s) to workspace directories or workspace.yml files",
     })
-    .option("scan", {
-      type: "string",
-      describe: "Scan directory recursively for workspaces",
-    })
-    .option("depth", {
-      type: "number",
-      describe: "Maximum depth for --scan",
-      default: 3,
-    })
-    .option("name", {
-      type: "string",
-      describe: "Override workspace name (single workspace only)",
-    })
+    .option("scan", { type: "string", describe: "Scan directory recursively for workspaces" })
+    .option("depth", { type: "number", describe: "Maximum depth for --scan", default: 3 })
+    .option("name", { type: "string", describe: "Override workspace name (single workspace only)" })
     .option("description", {
       type: "string",
       describe: "Add workspace description (single workspace only)",
     })
-    .option("json", {
-      type: "boolean",
-      describe: "Output results as JSON",
-      default: false,
-    })
+    .option("json", { type: "boolean", describe: "Output results as JSON", default: false })
     .check((argv: AddArgs) => {
       // Validate depth
       if (argv.depth && (argv.depth < 1 || argv.depth > 10)) {
@@ -60,27 +50,16 @@ export function builder(y: YargsInstance) {
       }
 
       // Ensure name/description only used for single workspace
-      if (
-        (argv.name || argv.description) &&
-        (argv.scan || (argv.paths && argv.paths.length > 1))
-      ) {
-        throw new Error(
-          "--name and --description can only be used when adding a single workspace",
-        );
+      if ((argv.name || argv.description) && (argv.scan || (argv.paths && argv.paths.length > 1))) {
+        throw new Error("--name and --description can only be used when adding a single workspace");
       }
 
       return true;
     })
     .example("$0 workspace add ~/my-workspace", "Add a single workspace")
     .example("$0 workspace add ~/proj1 ~/proj2", "Add multiple workspaces")
-    .example(
-      "$0 workspace add ~/my-workspace/workspace.yml",
-      "Add using workspace.yml path",
-    )
-    .example(
-      "$0 workspace add --scan ~/projects",
-      "Scan directory for workspaces",
-    )
+    .example("$0 workspace add ~/my-workspace/workspace.yml", "Add using workspace.yml path")
+    .example("$0 workspace add --scan ~/projects", "Scan directory for workspaces")
     .example("$0 workspace add ~/work --name my-work", "Add with custom name")
     .help()
     .alias("help", "h");
@@ -94,13 +73,7 @@ interface WorkspaceAddResult {
   error?: string;
 }
 
-const WorkspaceAddUI = ({
-  args,
-  onComplete,
-}: {
-  args: AddArgs;
-  onComplete: () => void;
-}) => {
+const WorkspaceAddUI = ({ args, onComplete }: { args: AddArgs; onComplete: () => void }) => {
   const [status, setStatus] = useState("initializing");
   const [results, setResults] = useState<WorkspaceAddResult[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -122,13 +95,11 @@ const WorkspaceAddUI = ({
 
           const maxDepth = args.depth || 3;
 
-          for await (
-            const entry of walk(scanPath, {
-              maxDepth,
-              includeDirs: true,
-              includeFiles: false,
-            })
-          ) {
+          for await (const entry of walk(scanPath, {
+            maxDepth,
+            includeDirs: true,
+            includeFiles: false,
+          })) {
             const depth = entry.path.split("/").length - scanPath.split("/").length;
             if (depth > maxDepth) continue;
 
@@ -214,34 +185,17 @@ const WorkspaceAddUI = ({
             ]);
           } catch (err) {
             const errorMessage = err instanceof Error ? err.message : String(err);
-            setResults([
-              {
-                path: workspacePaths[0] || "",
-                success: false,
-                error: errorMessage,
-              },
-            ]);
+            setResults([{ path: workspacePaths[0] || "", success: false, error: errorMessage }]);
           }
         } else {
           // Batch add
-          const request: WorkspaceBatchAddRequest = {
-            paths: workspacePaths,
-          };
+          const request: WorkspaceBatchAddRequest = { paths: workspacePaths };
 
           const response = await client.addWorkspaces(request);
 
           const allResults: WorkspaceAddResult[] = [
-            ...response.added.map((w) => ({
-              path: w.path,
-              success: true,
-              id: w.id,
-              name: w.name,
-            })),
-            ...response.failed.map((f) => ({
-              path: f.path,
-              success: false,
-              error: f.error,
-            })),
+            ...response.added.map((w) => ({ path: w.path, success: true, id: w.id, name: w.name })),
+            ...response.failed.map((f) => ({ path: f.path, success: false, error: f.error })),
           ];
 
           setResults(allResults);
@@ -283,15 +237,7 @@ const WorkspaceAddUI = ({
         ),
       );
     } else if (status === "error") {
-      console.log(
-        JSON.stringify(
-          {
-            error: error,
-          },
-          null,
-          2,
-        ),
-      );
+      console.log(JSON.stringify({ error: error }, null, 2));
     }
     return null;
   }
@@ -374,25 +320,23 @@ const WorkspaceAddUI = ({
 
         {results.map((result, i) => (
           <Box key={i} flexDirection="column" marginLeft={2}>
-            {result.success
-              ? (
+            {result.success ? (
+              <Box>
+                <Text color="green">{`✓ `}</Text>
+                <Text bold>{result.name || basename(result.path)}</Text>
+                <Text dimColor>{` (${result.id})`}</Text>
+              </Box>
+            ) : (
+              <Box flexDirection="column">
                 <Box>
-                  <Text color="green">{`✓ `}</Text>
-                  <Text bold>{result.name || basename(result.path)}</Text>
-                  <Text dimColor>{` (${result.id})`}</Text>
+                  <Text color="red">✗</Text>
+                  <Text>{basename(result.path)}</Text>
                 </Box>
-              )
-              : (
-                <Box flexDirection="column">
-                  <Box>
-                    <Text color="red">✗</Text>
-                    <Text>{basename(result.path)}</Text>
-                  </Box>
-                  <Box marginLeft={2}>
-                    <Text dimColor>→ {result.error}</Text>
-                  </Box>
+                <Box marginLeft={2}>
+                  <Text dimColor>→ {result.error}</Text>
                 </Box>
-              )}
+              </Box>
+            )}
             <Box marginLeft={2}>
               <Text dimColor>Path: {result.path}</Text>
             </Box>

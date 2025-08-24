@@ -76,9 +76,10 @@ export type MessagePriority = z.infer<typeof MessagePrioritySchema>;
 export type MessageSource = z.infer<typeof MessageSourceSchema>;
 export type MessageDestination = z.infer<typeof MessageDestinationSchema>;
 export type MessageError = z.infer<typeof MessageErrorSchema>;
-export type AtlasMessageEnvelope<T = unknown> =
-  & Omit<z.infer<typeof AtlasMessageEnvelopeSchema>, "payload">
-  & { payload: T };
+export type AtlasMessageEnvelope<T = unknown> = Omit<
+  z.infer<typeof AtlasMessageEnvelopeSchema>,
+  "payload"
+> & { payload: T };
 
 // ===== MESSAGE TYPE CONSTANTS =====
 
@@ -142,15 +143,8 @@ export const ATLAS_MESSAGE_DOMAINS = {
       "lifecycle.shutdown",
       "lifecycle.terminated",
     ],
-    WORKSPACE_OPS: [
-      "workspace.set_workspace",
-      "workspace.process_signal",
-      "workspace.get_status",
-    ],
-    SESSION_MANAGEMENT: [
-      "workspace.session_complete",
-      "workspace.session_error",
-    ],
+    WORKSPACE_OPS: ["workspace.set_workspace", "workspace.process_signal", "workspace.get_status"],
+    SESSION_MANAGEMENT: ["workspace.session_complete", "workspace.session_error"],
     COMMUNICATION: ["communication.join_channel", "communication.set_port"],
   },
   SESSION: {
@@ -167,17 +161,8 @@ export const ATLAS_MESSAGE_DOMAINS = {
       "session.invoke_agent",
       "session.complete",
     ],
-    TASK_PROCESSING: [
-      "task.execute",
-      "task.result",
-      "task.error",
-      "task.progress",
-    ],
-    COMMUNICATION: [
-      "communication.join_channel",
-      "communication.set_port",
-      "session.broadcast",
-    ],
+    TASK_PROCESSING: ["task.execute", "task.result", "task.error", "task.progress"],
+    COMMUNICATION: ["communication.join_channel", "communication.set_port", "session.broadcast"],
   },
   AGENT: {
     LIFECYCLE: [
@@ -188,12 +173,7 @@ export const ATLAS_MESSAGE_DOMAINS = {
       "lifecycle.terminated",
     ],
     AGENT_OPS: ["agent.execute", "agent.complete", "agent.execution_complete"],
-    TASK_PROCESSING: [
-      "task.execute",
-      "task.result",
-      "task.error",
-      "task.progress",
-    ],
+    TASK_PROCESSING: ["task.execute", "task.result", "task.error", "task.progress"],
     LOGGING: ["agent.log"],
     SYSTEM: ["system.heartbeat", "system.health_check", "system.metrics"],
   },
@@ -230,10 +210,10 @@ export const AgentExecutionCompletePayloadSchema = z.object({
   agent_id: z.string(),
   result: z.unknown(),
   execution_time_ms: z.number(),
-  metadata: z.object({
-    tokens_used: z.number().optional(),
-    cost: z.number().optional(),
-  }).passthrough().optional(),
+  metadata: z
+    .object({ tokens_used: z.number().optional(), cost: z.number().optional() })
+    .passthrough()
+    .optional(),
 });
 
 export const AgentLogPayloadSchema = z.object({
@@ -287,21 +267,16 @@ export function filterMessagesForDomain<T>(
   messages: AtlasMessageEnvelope<T>[],
   domain: keyof typeof ATLAS_MESSAGE_DOMAINS,
 ): AtlasMessageEnvelope<T>[] {
-  return messages.filter((msg) =>
-    msg.domain === domain.toLowerCase() ||
-    isValidMessageForDomain(msg.type, domain)
+  return messages.filter(
+    (msg) => msg.domain === domain.toLowerCase() || isValidMessageForDomain(msg.type, domain),
   );
 }
 
 // ===== VALIDATION FUNCTIONS =====
 
-export function validateEnvelope<T>(envelope: unknown): {
-  success: true;
-  data: AtlasMessageEnvelope<T>;
-} | {
-  success: false;
-  error: z.ZodError;
-} {
+export function validateEnvelope<T>(
+  envelope: unknown,
+): { success: true; data: AtlasMessageEnvelope<T> } | { success: false; error: z.ZodError } {
   const result = AtlasMessageEnvelopeSchema.safeParse(envelope);
   if (result.success) {
     return { success: true, data: result.data as AtlasMessageEnvelope<T> };
@@ -309,13 +284,9 @@ export function validateEnvelope<T>(envelope: unknown): {
   return { success: false, error: result.error };
 }
 
-export function validateAgentExecutePayload(payload: unknown): {
-  success: true;
-  data: AgentExecutePayload;
-} | {
-  success: false;
-  error: z.ZodError;
-} {
+export function validateAgentExecutePayload(
+  payload: unknown,
+): { success: true; data: AgentExecutePayload } | { success: false; error: z.ZodError } {
   const result = AgentExecutePayloadSchema.safeParse(payload);
   if (result.success) {
     return { success: true, data: result.data };
@@ -323,13 +294,9 @@ export function validateAgentExecutePayload(payload: unknown): {
   return { success: false, error: result.error };
 }
 
-export function validateAgentExecutionCompletePayload(payload: unknown): {
-  success: true;
-  data: AgentExecutionCompletePayload;
-} | {
-  success: false;
-  error: z.ZodError;
-} {
+export function validateAgentExecutionCompletePayload(
+  payload: unknown,
+): { success: true; data: AgentExecutionCompletePayload } | { success: false; error: z.ZodError } {
   const result = AgentExecutionCompletePayloadSchema.safeParse(payload);
   if (result.success) {
     return { success: true, data: result.data };
@@ -405,10 +372,7 @@ export function createAgentMessage<T>(
   source: MessageSource,
   options?: MessageCreationOptions,
 ): AtlasMessageEnvelope<T> {
-  return createMessage(type, payload, source, {
-    ...options,
-    domain: "agent",
-  });
+  return createMessage(type, payload, source, { ...options, domain: "agent" });
 }
 
 export function createWorkspaceMessage<T>(
@@ -417,10 +381,7 @@ export function createWorkspaceMessage<T>(
   source: MessageSource,
   options?: MessageCreationOptions,
 ): AtlasMessageEnvelope<T> {
-  return createMessage(type, payload, source, {
-    ...options,
-    domain: "workspace",
-  });
+  return createMessage(type, payload, source, { ...options, domain: "workspace" });
 }
 
 export function createSessionMessage<T>(
@@ -429,10 +390,7 @@ export function createSessionMessage<T>(
   source: MessageSource,
   options?: MessageCreationOptions,
 ): AtlasMessageEnvelope<T> {
-  return createMessage(type, payload, source, {
-    ...options,
-    domain: "session",
-  });
+  return createMessage(type, payload, source, { ...options, domain: "session" });
 }
 
 export function createManagerMessage<T>(
@@ -441,10 +399,7 @@ export function createManagerMessage<T>(
   source: MessageSource,
   options?: MessageCreationOptions,
 ): AtlasMessageEnvelope<T> {
-  return createMessage(type, payload, source, {
-    ...options,
-    domain: "manager",
-  });
+  return createMessage(type, payload, source, { ...options, domain: "manager" });
 }
 
 export function createResponseMessage<T>(
@@ -503,16 +458,11 @@ export function createAgentExecuteMessage(
     );
   }
 
-  return createAgentMessage(
-    ATLAS_MESSAGE_TYPES.AGENT.EXECUTE,
-    payload,
-    source,
-    {
-      priority: "normal",
-      acknowledgmentRequired: true,
-      ...options,
-    },
-  );
+  return createAgentMessage(ATLAS_MESSAGE_TYPES.AGENT.EXECUTE, payload, source, {
+    priority: "normal",
+    acknowledgmentRequired: true,
+    ...options,
+  });
 }
 
 export function createAgentExecutionCompleteMessage(
@@ -549,16 +499,11 @@ export function createAgentLogMessage(
     throw new Error(`Invalid agent log payload: ${validation.error.message}`);
   }
 
-  return createAgentMessage(
-    ATLAS_MESSAGE_TYPES.AGENT.LOG,
-    payload,
-    source,
-    {
-      priority: payload.level === "error" ? "high" : "low",
-      channel: "broadcast",
-      ...options,
-    },
-  );
+  return createAgentMessage(ATLAS_MESSAGE_TYPES.AGENT.LOG, payload, source, {
+    priority: payload.level === "error" ? "high" : "low",
+    channel: "broadcast",
+    ...options,
+  });
 }
 
 export function createAgentProgressMessage(
@@ -571,16 +516,11 @@ export function createAgentProgressMessage(
     throw new Error(`Invalid agent progress payload: ${validation.error.message}`);
   }
 
-  return createAgentMessage(
-    ATLAS_MESSAGE_TYPES.TASK.PROGRESS,
-    payload,
-    source,
-    {
-      priority: "low",
-      correlationId,
-      channel: "broadcast",
-    },
-  );
+  return createAgentMessage(ATLAS_MESSAGE_TYPES.TASK.PROGRESS, payload, source, {
+    priority: "low",
+    correlationId,
+    channel: "broadcast",
+  });
 }
 
 // ===== UTILITY FUNCTIONS =====
@@ -614,10 +554,9 @@ export function serializeEnvelope(envelope: AtlasMessageEnvelope): string {
   return JSON.stringify(envelope);
 }
 
-export function deserializeEnvelope<T = unknown>(data: string): {
-  envelope?: AtlasMessageEnvelope<T>;
-  error?: string;
-} {
+export function deserializeEnvelope<T = unknown>(
+  data: string,
+): { envelope?: AtlasMessageEnvelope<T>; error?: string } {
   try {
     const parsed = JSON.parse(data);
     const validation = validateEnvelope<T>(parsed);
@@ -640,7 +579,7 @@ export function deserializeEnvelope<T = unknown>(data: string): {
 
 export function isMessageTimedOut(envelope: AtlasMessageEnvelope): boolean {
   if (!envelope.timeout) return false;
-  return (Date.now() - envelope.timestamp) > envelope.timeout;
+  return Date.now() - envelope.timestamp > envelope.timeout;
 }
 
 export function createTimeoutResponse(
@@ -669,8 +608,9 @@ export function isAgentExecuteMessage(
 export function isAgentExecutionCompleteMessage(
   envelope: AtlasMessageEnvelope,
 ): envelope is AtlasMessageEnvelope<AgentExecutionCompletePayload> {
-  return envelope.type === ATLAS_MESSAGE_TYPES.AGENT.EXECUTION_COMPLETE &&
-    envelope.domain === "agent";
+  return (
+    envelope.type === ATLAS_MESSAGE_TYPES.AGENT.EXECUTION_COMPLETE && envelope.domain === "agent"
+  );
 }
 
 export function isAgentLogMessage(

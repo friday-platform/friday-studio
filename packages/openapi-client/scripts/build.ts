@@ -1,7 +1,6 @@
-import { AtlasDaemon, OPENAPI_DOCUMENTATION } from "@atlas/atlasd";
+import { AtlasDaemon, getAtlasDaemonUrl, OPENAPI_DOCUMENTATION } from "@atlas/atlasd";
 import { generateSpecs } from "hono-openapi";
 import openapiTS, { astToString } from "openapi-typescript";
-import { getAtlasDaemonUrl } from "@atlas/atlasd";
 
 /**
  * Generate TypeScript types from the Atlas daemon OpenAPI spec
@@ -13,9 +12,7 @@ const app = new AtlasDaemon({ port: 0 }).getApp();
 const spec = await generateSpecs(app, {
   documentation: {
     ...OPENAPI_DOCUMENTATION,
-    servers: [
-      { url: getAtlasDaemonUrl(), description: "Atlas Daemon Server" },
-    ],
+    servers: [{ url: getAtlasDaemonUrl(), description: "Atlas Daemon Server" }],
   },
 });
 

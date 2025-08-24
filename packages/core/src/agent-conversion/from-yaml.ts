@@ -5,8 +5,6 @@
  * provider setup, tool filtering, and environment validation.
  */
 
-import { generateText, streamText } from "ai";
-import { createAgent } from "@atlas/agent-sdk";
 import type {
   AgentContext,
   AgentHandler,
@@ -14,9 +12,11 @@ import type {
   AtlasTool,
   StreamEvent,
 } from "@atlas/agent-sdk";
-import type { YAMLAgentDefinition } from "./yaml/schema.ts";
-import { extractToolAllowlist, extractToolDenylist } from "./yaml/parser.ts";
+import { createAgent } from "@atlas/agent-sdk";
+import { generateText, streamText } from "ai";
 import { registry, validateProviderConfig } from "../llm-provider-registry/index.ts";
+import { extractToolAllowlist, extractToolDenylist } from "./yaml/parser.ts";
+import type { YAMLAgentDefinition } from "./yaml/schema.ts";
 
 /**
  * Convert parsed YAML definition to AtlasAgent.
@@ -120,10 +120,7 @@ async function handleStreamingResponse(
   let fullText = "";
   for await (const chunk of result.textStream) {
     fullText += chunk;
-    const textEvent: StreamEvent = {
-      type: "text",
-      content: chunk,
-    };
+    const textEvent: StreamEvent = { type: "text", content: chunk };
     context.stream!.emit(textEvent);
   }
 
@@ -144,11 +141,7 @@ async function handleStreamingResponse(
   if (usage) {
     const usageEvent: StreamEvent = {
       type: "usage",
-      tokens: {
-        input: usage.inputTokens,
-        output: usage.outputTokens,
-        total: usage.totalTokens,
-      },
+      tokens: { input: usage.inputTokens, output: usage.outputTokens, total: usage.totalTokens },
     };
     context.stream!.emit(usageEvent);
   }
@@ -162,10 +155,10 @@ async function handleStreamingResponse(
     toolResults: finalResult.toolResults || [],
     usage: usage
       ? {
-        promptTokens: usage.inputTokens,
-        completionTokens: usage.outputTokens,
-        totalTokens: usage.totalTokens,
-      }
+          promptTokens: usage.inputTokens,
+          completionTokens: usage.outputTokens,
+          totalTokens: usage.totalTokens,
+        }
       : undefined,
   };
 }
@@ -182,10 +175,10 @@ async function handleNonStreamingResponse(
     toolResults: result.toolResults || [],
     usage: result.usage
       ? {
-        promptTokens: result.usage.inputTokens,
-        completionTokens: result.usage.outputTokens,
-        totalTokens: result.usage.totalTokens,
-      }
+          promptTokens: result.usage.inputTokens,
+          completionTokens: result.usage.outputTokens,
+          totalTokens: result.usage.totalTokens,
+        }
       : undefined,
   };
 }

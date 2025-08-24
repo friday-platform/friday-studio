@@ -6,7 +6,8 @@
 // Main exports
 export { AtlasClient, getAtlasClient, resetAtlasClientForTesting } from "./src/client.ts";
 export { AtlasApiError } from "./src/errors.ts";
-
+// Schema exports (for advanced usage)
+export * from "./src/schemas.ts";
 // Type exports
 export type {
   AtlasClientOptions,
@@ -29,9 +30,5 @@ export type {
   WorkspaceCreateResponse,
   WorkspaceInfo,
 } from "./src/types/index.ts";
-
 // Utility exports
 export { checkAtlasRunning, createAtlasNotRunningError } from "./src/utils.ts";
-
-// Schema exports (for advanced usage)
-export * from "./src/schemas.ts";

@@ -4,15 +4,8 @@ export const command = "ps";
 export const desc = "List active sessions (alias for 'session list')";
 
 export const builder = {
-  json: {
-    type: "boolean" as const,
-    describe: "Output session list as JSON",
-    default: false,
-  },
-  workspace: {
-    type: "string" as const,
-    describe: "Filter sessions by workspace name",
-  },
+  json: { type: "boolean" as const, describe: "Output session list as JSON", default: false },
+  workspace: { type: "string" as const, describe: "Filter sessions by workspace name" },
   port: {
     type: "number" as const,
     alias: "p",

@@ -1,3 +1,4 @@
+import { CoALAMemoryManager, CoALAMemoryType } from "@atlas/memory";
 import type {
   IAtlasGate,
   IAtlasScope,
@@ -9,7 +10,6 @@ import type {
   IWorkspaceSupervisor,
 } from "../types/core.ts";
 import { ContextManager } from "./context.ts";
-import { CoALAMemoryManager, CoALAMemoryType } from "@atlas/memory";
 import { MessageManager } from "./messages.ts";
 
 export interface AtlasScopeOptions {
@@ -80,16 +80,9 @@ export class AtlasScope implements IAtlasScope {
     this.parentScopeId = actualParentScopeId;
     this.supervisor = actualSupervisor;
     this.context = new ContextManager();
-    this.memory = new CoALAMemoryManager(
-      this,
-      actualStorageAdapter,
-      actualEnableCognitiveLoop,
-    );
+    this.memory = new CoALAMemoryManager(this, actualStorageAdapter, actualEnableCognitiveLoop);
     this.messages = new MessageManager();
-    this.prompts = {
-      system: "",
-      user: "",
-    };
+    this.prompts = { system: "", user: "" };
   }
 
   newConversation(): ITempestMessageManager {
@@ -104,17 +97,13 @@ export class AtlasScope implements IAtlasScope {
   archiveConversation(): void {
     // Store current conversation in CoALA memory with appropriate metadata
     const coalaMemory = this.memory as CoALAMemoryManager;
-    coalaMemory.rememberWithMetadata(
-      `conversation_${Date.now()}`,
-      this.messages.getHistory(),
-      {
-        memoryType: CoALAMemoryType.EPISODIC,
-        tags: ["conversation", "archived", "historical"],
-        relevanceScore: 0.5,
-        confidence: 1.0,
-        decayRate: 0.05, // Conversations decay slowly
-      },
-    );
+    coalaMemory.rememberWithMetadata(`conversation_${Date.now()}`, this.messages.getHistory(), {
+      memoryType: CoALAMemoryType.EPISODIC,
+      tags: ["conversation", "archived", "historical"],
+      relevanceScore: 0.5,
+      confidence: 1.0,
+      decayRate: 0.05, // Conversations decay slowly
+    });
     this.messages = new MessageManager();
   }
 

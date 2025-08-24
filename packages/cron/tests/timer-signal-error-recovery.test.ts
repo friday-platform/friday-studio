@@ -7,16 +7,11 @@
  */
 
 import { assert, assertEquals } from "@std/assert";
-import { CronManager, type CronTimerConfig } from "../mod.ts";
 import { MemoryKVStorage } from "../../../src/core/storage/memory-kv-storage.ts";
+import { CronManager, type CronTimerConfig } from "../mod.ts";
 
 // Mock logger for testing
-const mockLogger = {
-  info: () => {},
-  warn: () => {},
-  error: () => {},
-  debug: () => {},
-};
+const mockLogger = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} };
 
 const validConfig: CronTimerConfig = {
   workspaceId: "test-workspace",
@@ -123,10 +118,7 @@ Deno.test("Timer Signal - Error State Recovery", async (t) => {
     await setup();
 
     // Try to register timer with invalid cron expression
-    const invalidConfig: CronTimerConfig = {
-      ...validConfig,
-      schedule: "invalid-cron-expression",
-    };
+    const invalidConfig: CronTimerConfig = { ...validConfig, schedule: "invalid-cron-expression" };
 
     let registrationError = false;
     try {

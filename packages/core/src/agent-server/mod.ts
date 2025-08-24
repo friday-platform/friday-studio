@@ -15,8 +15,8 @@
  *   Approval Queue Manager (stores suspended states)
  */
 
-export { AtlasAgentsMCPServer } from "./server.ts";
-export { ApprovalQueueManager } from "./approval-queue-manager.ts";
 export { AgentExecutionManager } from "./agent-execution-manager.ts";
+export { ApprovalQueueManager } from "./approval-queue-manager.ts";
 export { InMemoryAgentRegistry } from "./in-memory-registry.ts";
+export { AtlasAgentsMCPServer } from "./server.ts";
 export type { AgentServerDependencies, AgentSessionState, PendingPrompt } from "./types.ts";

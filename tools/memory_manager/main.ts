@@ -11,9 +11,9 @@
 
 import { parseArgs } from "@std/cli";
 import { join as _join } from "@std/path";
+import { MemoryManagerTUI } from "./src/tui.ts";
 import { AtlasMemoryLoader } from "./utils/memory-loader.ts";
 import { AtlasMemoryOperations } from "./utils/memory-operations.ts";
-import { MemoryManagerTUI } from "./src/tui.ts";
 
 interface Args {
   help?: boolean;
@@ -29,14 +29,7 @@ async function main() {
   const args = parseArgs(Deno.args, {
     string: ["workspace"],
     boolean: ["help", "stats", "export", "import", "validate"],
-    alias: {
-      w: "workspace",
-      h: "help",
-      s: "stats",
-      e: "export",
-      i: "import",
-      v: "validate",
-    },
+    alias: { w: "workspace", h: "help", s: "stats", e: "export", i: "import", v: "validate" },
   }) as Args;
 
   if (args.help) {
@@ -127,9 +120,7 @@ async function main() {
     const tui = new MemoryManagerTUI(operations);
     await tui.start();
   } catch (error) {
-    console.error(
-      `Error: ${error instanceof Error ? error.message : String(error)}`,
-    );
+    console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
     Deno.exit(1);
   }
 }
@@ -179,10 +170,7 @@ EXAMPLES:
 `);
 }
 
-async function showStats(
-  operations: AtlasMemoryOperations,
-  loader: AtlasMemoryLoader,
-) {
+async function showStats(operations: AtlasMemoryOperations, loader: AtlasMemoryLoader) {
   console.log(`\nMemory Statistics:`);
   console.log(`─────────────────`);
 
@@ -193,9 +181,8 @@ async function showStats(
   console.log();
 
   for (const [memoryType, typeStats] of Object.entries(stats)) {
-    const storageInfo = storageStats.memoryTypes[
-      memoryType as keyof typeof storageStats.memoryTypes
-    ];
+    const storageInfo =
+      storageStats.memoryTypes[memoryType as keyof typeof storageStats.memoryTypes];
 
     console.log(`${memoryType.toUpperCase()} Memory:`);
     console.log(`  Entries: ${typeStats.count}`);
@@ -203,9 +190,7 @@ async function showStats(
     console.log(
       `  File Size: ${storageInfo?.size ? Math.round(storageInfo.size / 1024) + " KB" : "N/A"}`,
     );
-    console.log(
-      `  Last Modified: ${storageInfo?.lastModified?.toLocaleString() || "Never"}`,
-    );
+    console.log(`  Last Modified: ${storageInfo?.lastModified?.toLocaleString() || "Never"}`);
 
     if (typeStats.mostRecent) {
       console.log(`  Most Recent: ${typeStats.mostRecent.toLocaleString()}`);
@@ -216,10 +201,7 @@ async function showStats(
     console.log();
   }
 
-  const totalEntries = Object.values(stats).reduce(
-    (sum, s) => sum + s.count,
-    0,
-  );
+  const totalEntries = Object.values(stats).reduce((sum, s) => sum + s.count, 0);
   console.log(`Total Entries: ${totalEntries}`);
 }
 
@@ -248,9 +230,7 @@ function validateMemory(operations: AtlasMemoryOperations) {
     }
 
     if (typeErrors === 0) {
-      console.log(
-        `  ✅ ${Object.keys(entries).length} entries validated successfully`,
-      );
+      console.log(`  ✅ ${Object.keys(entries).length} entries validated successfully`);
     } else {
       console.log(`  ❌ ${typeErrors} validation errors found`);
     }

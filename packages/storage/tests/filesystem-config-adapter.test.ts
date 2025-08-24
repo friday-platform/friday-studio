@@ -1,6 +1,6 @@
 import { expect } from "@std/expect";
-import { FilesystemConfigAdapter } from "../src/adapters/config/fs.ts";
 import { join } from "@std/path";
+import { FilesystemConfigAdapter } from "../src/adapters/config/fs.ts";
 
 // Set testing environment to prevent logger file operations
 Deno.env.set("DENO_TESTING", "true");
@@ -22,11 +22,7 @@ Deno.test("FilesystemConfigAdapter - reads YAML files", async () => {
     await Deno.writeTextFile(testFile, "name: test\nvalue: 123\nlist:\n  - item1\n  - item2");
 
     const content = await adapter.readYaml(testFile);
-    expect(content).toEqual({
-      name: "test",
-      value: 123,
-      list: ["item1", "item2"],
-    });
+    expect(content).toEqual({ name: "test", value: 123, list: ["item1", "item2"] });
   } finally {
     await Deno.remove(tempDir, { recursive: true });
   }
@@ -144,15 +140,7 @@ nested:
           ],
         },
       },
-      nested: {
-        deeply: {
-          nested: {
-            value: 42,
-            array: [1, 2, 3],
-            object: { key: "value" },
-          },
-        },
-      },
+      nested: { deeply: { nested: { value: 42, array: [1, 2, 3], object: { key: "value" } } } },
     });
   } finally {
     await Deno.remove(tempDir, { recursive: true });

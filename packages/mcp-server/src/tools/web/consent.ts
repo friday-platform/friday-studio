@@ -1,6 +1,6 @@
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { ToolContext } from "../types.ts";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { createSuccessResponse } from "../types.ts";
 import { webSessionManager } from "./session-manager.ts";
 
@@ -99,14 +99,15 @@ export function registerConsentTools(server: McpServer, ctx: ToolContext) {
 - Works with the current page in an active web session`,
       inputSchema: {
         sessionId: z.string().describe("Session identifier"),
-        action: z.enum(["accept", "reject", "detect"]).describe(
-          "Action to take (accept/reject cookies or just detect)",
-        ),
+        action: z
+          .enum(["accept", "reject", "detect"])
+          .describe("Action to take (accept/reject cookies or just detect)"),
         customSelector: z.string().optional().describe("Custom CSS selector for consent button"),
         timeout: z.number().optional().describe("Timeout in seconds (default: 10)"),
-        waitAfterClick: z.number().optional().describe(
-          "Seconds to wait after clicking (default: 2)",
-        ),
+        waitAfterClick: z
+          .number()
+          .optional()
+          .describe("Seconds to wait after clicking (default: 2)"),
       },
     },
     async (params) => {
@@ -133,11 +134,7 @@ export function registerConsentTools(server: McpServer, ctx: ToolContext) {
           return createSuccessResponse({
             output: "No cookie consent banners detected on the current page",
             title: "No Consent Banner Found",
-            metadata: {
-              sessionId: params.sessionId,
-              action: params.action,
-              bannersFound: 0,
-            },
+            metadata: { sessionId: params.sessionId, action: params.action, bannersFound: 0 },
           });
         }
 
@@ -150,9 +147,9 @@ export function registerConsentTools(server: McpServer, ctx: ToolContext) {
 
         if (params.action === "detect") {
           return createSuccessResponse({
-            output: `Found ${detectedBanners.length} cookie consent banner(s):\n${
-              detectedBanners.join("\n")
-            }`,
+            output: `Found ${detectedBanners.length} cookie consent banner(s):\n${detectedBanners.join(
+              "\n",
+            )}`,
             title: "Consent Banners Detected",
             metadata: {
               sessionId: params.sessionId,
@@ -178,9 +175,10 @@ export function registerConsentTools(server: McpServer, ctx: ToolContext) {
           }
         } else {
           // Use predefined patterns
-          const selectors = params.action === "accept"
-            ? CONSENT_PATTERNS.acceptSelectors
-            : CONSENT_PATTERNS.rejectSelectors;
+          const selectors =
+            params.action === "accept"
+              ? CONSENT_PATTERNS.acceptSelectors
+              : CONSENT_PATTERNS.rejectSelectors;
 
           for (const selector of selectors) {
             try {
@@ -197,10 +195,7 @@ export function registerConsentTools(server: McpServer, ctx: ToolContext) {
                   break;
                 }
               }
-            } catch {
-              // Continue to next selector
-              continue;
-            }
+            } catch {}
           }
         }
 
@@ -273,9 +268,9 @@ export function registerConsentTools(server: McpServer, ctx: ToolContext) {
       inputSchema: {
         sessionId: z.string().describe("Session identifier"),
         selector: z.string().describe("CSS selector for the element to wait for"),
-        state: z.enum(["visible", "hidden", "attached", "detached"]).describe(
-          "Element state to wait for",
-        ),
+        state: z
+          .enum(["visible", "hidden", "attached", "detached"])
+          .describe("Element state to wait for"),
         timeout: z.number().optional().describe("Timeout in seconds (default: 30)"),
       },
     },
@@ -295,10 +290,7 @@ export function registerConsentTools(server: McpServer, ctx: ToolContext) {
 
         const timeout = (params.timeout || 30) * 1000;
 
-        await session.page.locator(params.selector).waitFor({
-          state: params.state,
-          timeout,
-        });
+        await session.page.locator(params.selector).waitFor({ state: params.state, timeout });
 
         ctx.logger.info("Element wait completed", {
           sessionId: params.sessionId,
@@ -310,11 +302,7 @@ export function registerConsentTools(server: McpServer, ctx: ToolContext) {
         return createSuccessResponse({
           output: `Element '${params.selector}' is now ${params.state}`,
           title: "Element Wait Complete",
-          metadata: {
-            sessionId: params.sessionId,
-            selector: params.selector,
-            state: params.state,
-          },
+          metadata: { sessionId: params.sessionId, selector: params.selector, state: params.state },
         });
       } catch (error) {
         ctx.logger.error("Element wait failed", {
@@ -345,10 +333,7 @@ async function detectConsentBanners(page: unknown, _timeout: number): Promise<st
           foundBanners.push(selector);
         }
       }
-    } catch {
-      // Ignore errors for individual selectors
-      continue;
-    }
+    } catch {}
   }
 
   return foundBanners;

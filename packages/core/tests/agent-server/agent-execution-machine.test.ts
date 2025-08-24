@@ -3,17 +3,17 @@
  * idle → loading → ready → preparing → executing → persisting → completed
  */
 
+import type { AgentContext, AgentSessionData, AtlasAgent } from "@atlas/agent-sdk";
+import type { Logger } from "@atlas/logger";
+import { createLogger } from "@atlas/logger";
+import { CoALAMemoryType } from "@atlas/memory";
 import { assert, assertEquals, assertExists } from "@std/assert";
 import { afterEach, beforeEach, describe, it } from "@std/testing/bdd";
-import { AgentExecutionManager } from "../../src/agent-server/agent-execution-manager.ts";
+import { createActor } from "xstate";
 import { createAgentExecutionMachine } from "../../src/agent-server/agent-execution-machine.ts";
+import { AgentExecutionManager } from "../../src/agent-server/agent-execution-manager.ts";
 import { ApprovalQueueManager } from "../../src/agent-server/approval-queue-manager.ts";
 import { createMockContextBuilder } from "./test-helpers.ts";
-import { createActor } from "xstate";
-import type { AgentContext, AgentSessionData, AtlasAgent } from "@atlas/agent-sdk";
-import { createLogger } from "@atlas/logger";
-import type { Logger } from "@atlas/logger";
-import { CoALAMemoryType } from "@atlas/memory";
 
 Deno.env.set("DENO_TESTING", "true");
 
@@ -23,8 +23,8 @@ class MockMemoryManager {
 
   getRelevantMemoriesForPrompt(_prompt: string, options: { sourceScope: string }) {
     return Promise.resolve({
-      memories: Array.from(this.memories.values()).filter((m) =>
-        m.sourceScope === options.sourceScope
+      memories: Array.from(this.memories.values()).filter(
+        (m) => m.sourceScope === options.sourceScope,
       ),
     });
   }
@@ -49,11 +49,7 @@ class MockAgent implements AtlasAgent {
     name: "Test Agent",
     version: "1.0.0",
     description: "Mock agent for testing",
-    expertise: {
-      domains: ["testing"],
-      capabilities: ["mock"],
-      examples: ["test example"],
-    },
+    expertise: { domains: ["testing"], capabilities: ["mock"], examples: ["test example"] },
   };
 
   executeCallCount = 0;
@@ -114,9 +110,7 @@ describe("Enhanced Agent Execution Machine", () => {
   it("should execute full state machine lifecycle including context preparation", async () => {
     const logger = createLogger();
     const machine = createAgentExecutionMachine(loadAgentFn, contextBuilder, null, logger);
-    const actor = createActor(machine, {
-      input: { agentId: "test-agent" },
-    });
+    const actor = createActor(machine, { input: { agentId: "test-agent" } });
 
     actor.start();
 
@@ -148,9 +142,7 @@ describe("Enhanced Agent Execution Machine", () => {
   it("should build agent context but not expose memory to agent handlers", async () => {
     const logger = createLogger();
     const machine = createAgentExecutionMachine(loadAgentFn, contextBuilder, null, logger);
-    const actor = createActor(machine, {
-      input: { agentId: "test-agent" },
-    });
+    const actor = createActor(machine, { input: { agentId: "test-agent" } });
 
     actor.start();
 
@@ -191,9 +183,7 @@ describe("Enhanced Agent Execution Machine", () => {
 
     const logger = createLogger();
     const machine = createAgentExecutionMachine(loadAgentFn, contextBuilder, null, logger);
-    const actor = createActor(machine, {
-      input: { agentId: "test-agent" },
-    });
+    const actor = createActor(machine, { input: { agentId: "test-agent" } });
 
     actor.start();
 
@@ -203,10 +193,7 @@ describe("Enhanced Agent Execution Machine", () => {
     };
 
     // Set up mock result with tool calls
-    mockAgent.mockResult = {
-      result: "success",
-      toolCalls: [{ name: "tool1" }, { name: "tool2" }],
-    };
+    mockAgent.mockResult = { result: "success", toolCalls: [{ name: "tool1" }, { name: "tool2" }] };
 
     const promise = new Promise<void>((resolve) => {
       const subscription = actor.subscribe((snapshot) => {
@@ -244,15 +231,8 @@ describe("Enhanced Agent Execution Machine", () => {
     };
 
     const logger = createLogger();
-    const machine = createAgentExecutionMachine(
-      loadAgentFn,
-      failingContextBuilder,
-      null,
-      logger,
-    );
-    const actor = createActor(machine, {
-      input: { agentId: "test-agent" },
-    });
+    const machine = createAgentExecutionMachine(loadAgentFn, failingContextBuilder, null, logger);
+    const actor = createActor(machine, { input: { agentId: "test-agent" } });
 
     actor.start();
 
@@ -314,11 +294,7 @@ describe("Enhanced Agent Execution Manager", () => {
       workspaceId: "test-workspace",
     };
 
-    const result = await manager.executeAgent(
-      "test-agent",
-      "test prompt",
-      sessionData,
-    );
+    const result = await manager.executeAgent("test-agent", "test prompt", sessionData);
     assertEquals(result, { result: "Executed: test prompt" });
     assertEquals(mockAgent.executeCallCount, 1);
 
@@ -342,11 +318,7 @@ describe("Enhanced Agent Execution Manager", () => {
       sourceScope: "agent:test-agent",
     });
 
-    await manager.executeAgent(
-      "test-agent",
-      "test prompt",
-      sessionData,
-    );
+    await manager.executeAgent("test-agent", "test prompt", sessionData);
 
     // Verify agent received enriched prompt (mocked getRelevantMemoriesForPrompt returns memories)
     const executedPrompt = mockAgent.lastPrompt;
@@ -373,11 +345,7 @@ describe("Enhanced Agent Execution Manager", () => {
     };
 
     // Should not throw - persistence failures are logged but don't fail execution
-    const result = await manager.executeAgent(
-      "test-agent",
-      "test prompt",
-      sessionData,
-    );
+    const result = await manager.executeAgent("test-agent", "test prompt", sessionData);
     assertEquals(result, { result: "Executed: test prompt" });
   });
 });

@@ -1,11 +1,11 @@
 <script lang="ts">
-	import type { OutputEntry } from './types';
-	import { markdownToHTML } from './markdown-utils';
+import { markdownToHTML } from "./markdown-utils";
+import type { OutputEntry } from "./types";
 
-	let { message }: { message: OutputEntry } = $props();
+const { message }: { message: OutputEntry } = $props();
 
-	// Convert markdown to HTML
-	const htmlContent = $derived(message.content ? markdownToHTML(message.content) : '');
+// Convert markdown to HTML
+const htmlContent = $derived(message.content ? markdownToHTML(message.content) : "");
 </script>
 
 {#if message.author}

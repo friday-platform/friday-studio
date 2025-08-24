@@ -2,10 +2,7 @@
  * Port finder utility for dynamic port allocation
  */
 
-const DEFAULT_PORT_RANGE = {
-  start: 8080,
-  end: 8180,
-};
+const DEFAULT_PORT_RANGE = { start: 8080, end: 8180 };
 
 export interface PortFinderOptions {
   preferredPort?: number;
@@ -75,13 +72,6 @@ export function findAvailablePort(options: PortFinderOptions = {}): number {
 /**
  * Get the next available port starting from a given port
  */
-export function getNextAvailablePort(
-  startPort: number,
-  host: string = "localhost",
-): number {
-  return findAvailablePort({
-    startPort: startPort + 1,
-    endPort: 65535,
-    host,
-  });
+export function getNextAvailablePort(startPort: number, host: string = "localhost"): number {
+  return findAvailablePort({ startPort: startPort + 1, endPort: 65535, host });
 }

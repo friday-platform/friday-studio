@@ -1,5 +1,5 @@
 <script lang="ts">
-	import logo from '$lib/assets/logo.png';
+import logo from "$lib/assets/logo.png";
 </script>
 
 <aside>

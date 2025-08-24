@@ -8,9 +8,33 @@ export interface AtlasClientOptions {
   timeout?: number;
 }
 
+export type { AgentInfo, JobDetailedInfo, JobInfo } from "./agent.ts";
 // Re-export all types
 export type { DaemonStatus } from "./daemon.ts";
+export type {
+  DeleteLibraryItemResponse,
+  GenerateFromTemplateRequest,
+  LibraryItem,
+  LibraryItemWithContent,
+  LibrarySearchQuery,
+  LibrarySearchResult,
+  LibraryStats,
+  TemplateConfig,
+} from "./library.ts";
+export type {
+  CancelSessionResponse,
+  LogEntry,
+  SessionDetailedInfo,
+  SessionInfo,
+  WorkspaceSessionInfo,
+} from "./session.ts";
 
+export type {
+  SignalDetailedInfo,
+  SignalInfo,
+  SignalResponse,
+  SignalTriggerResponse,
+} from "./signal.ts";
 export type {
   CreateWorkspaceFromTemplateRequest,
   CreateWorkspaceFromTemplateResponse,
@@ -24,31 +48,3 @@ export type {
   WorkspaceRuntime,
   WorkspaceTemplateInfo,
 } from "./workspace.ts";
-
-export type {
-  CancelSessionResponse,
-  LogEntry,
-  SessionDetailedInfo,
-  SessionInfo,
-  WorkspaceSessionInfo,
-} from "./session.ts";
-
-export type {
-  DeleteLibraryItemResponse,
-  GenerateFromTemplateRequest,
-  LibraryItem,
-  LibraryItemWithContent,
-  LibrarySearchQuery,
-  LibrarySearchResult,
-  LibraryStats,
-  TemplateConfig,
-} from "./library.ts";
-
-export type {
-  SignalDetailedInfo,
-  SignalInfo,
-  SignalResponse,
-  SignalTriggerResponse,
-} from "./signal.ts";
-
-export type { AgentInfo, JobDetailedInfo, JobInfo } from "./agent.ts";

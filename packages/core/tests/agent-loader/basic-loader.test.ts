@@ -1,10 +1,10 @@
+import { createAgent } from "@atlas/agent-sdk";
 import { assertEquals, assertExists } from "@std/assert";
 import { describe, it } from "@std/testing/bdd";
+import { BundledAgentAdapter } from "../../src/agent-loader/adapters/bundled-adapter.ts";
+import { SystemAgentAdapter } from "../../src/agent-loader/adapters/system-adapter.ts";
 import { AgentLoader } from "../../src/agent-loader/loader.ts";
 import { AgentRegistry } from "../../src/agent-loader/registry.ts";
-import { SystemAgentAdapter } from "../../src/agent-loader/adapters/system-adapter.ts";
-import { BundledAgentAdapter } from "../../src/agent-loader/adapters/bundled-adapter.ts";
-import { createAgent } from "@atlas/agent-sdk";
 
 describe("Agent Loader Architecture", () => {
   describe("AgentLoader", () => {

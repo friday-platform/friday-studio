@@ -102,7 +102,7 @@ export class MemoryCacheAdapter implements SupervisionCacheAdapter {
     let cleaned = 0;
 
     for (const [key, entry] of this.cache) {
-      if (entry.ttl && (now - entry.timestamp) > entry.ttl) {
+      if (entry.ttl && now - entry.timestamp > entry.ttl) {
         this.cache.delete(key);
         cleaned++;
       }

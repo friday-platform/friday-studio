@@ -2,8 +2,8 @@
  * Comprehensive tests for the Atlas client
  */
 
-import { expect } from "@std/expect";
 import { AtlasApiError, AtlasClient, getAtlasClient } from "@atlas/client";
+import { expect } from "@std/expect";
 
 // Helper to create response mocks
 function mockResponse(body: unknown, options: ResponseInit = {}): Response {
@@ -20,10 +20,7 @@ Deno.test("AtlasClient - constructor with default options", () => {
 });
 
 Deno.test("AtlasClient - constructor with custom options", () => {
-  const client = new AtlasClient({
-    url: "http://localhost:9090",
-    timeout: 30000,
-  });
+  const client = new AtlasClient({ url: "http://localhost:9090", timeout: 30000 });
   expect(client).toBeInstanceOf(AtlasClient);
 });
 
@@ -53,32 +50,35 @@ Deno.test("AtlasClient - isHealthy returns false when server is unhealthy", asyn
   }
 });
 
-Deno.test("AtlasClient - isHealthy returns false on network error", {
-  sanitizeResources: false,
-  sanitizeOps: false,
-}, async () => {
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = () => Promise.reject(new Error("Network error"));
+Deno.test(
+  "AtlasClient - isHealthy returns false on network error",
+  { sanitizeResources: false, sanitizeOps: false },
+  async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = () => Promise.reject(new Error("Network error"));
 
-  try {
-    const client = new AtlasClient({ timeout: 100 });
-    const isHealthy = await client.isHealthy();
-    expect(isHealthy).toBe(false);
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
-});
+    try {
+      const client = new AtlasClient({ timeout: 100 });
+      const isHealthy = await client.isHealthy();
+      expect(isHealthy).toBe(false);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  },
+);
 
 Deno.test("AtlasClient - handles successful API responses", async () => {
   // Create a properly formatted workspace response
-  const mockWorkspaces = [{
-    id: "workspace_1",
-    name: "Test Workspace",
-    status: "executing",
-    path: "/test/workspace",
-    createdAt: "2024-01-01T10:00:00Z",
-    lastSeen: "2024-01-01T10:00:00Z",
-  }];
+  const mockWorkspaces = [
+    {
+      id: "workspace_1",
+      name: "Test Workspace",
+      status: "executing",
+      path: "/test/workspace",
+      createdAt: "2024-01-01T10:00:00Z",
+      lastSeen: "2024-01-01T10:00:00Z",
+    },
+  ];
   const originalFetch = globalThis.fetch;
   globalThis.fetch = () => Promise.resolve(mockResponse(mockWorkspaces));
 
@@ -122,11 +122,7 @@ Deno.test("AtlasClient - triggerWorkspaceSignal triggers signal on workspace ser
 
   try {
     const client = new AtlasClient();
-    const result = await client.triggerWorkspaceSignal(
-      8080,
-      "test-signal",
-      { data: "test" },
-    );
+    const result = await client.triggerWorkspaceSignal(8080, "test-signal", { data: "test" });
     expect(result.success).toBe(true);
     expect(capturedUrl).toBe("http://localhost:8080/signals/test-signal");
   } finally {
@@ -153,10 +149,7 @@ Deno.test("AtlasClient - streamSessionLogs streams logs using Server-Sent Events
   const originalFetch = globalThis.fetch;
   globalThis.fetch = () =>
     Promise.resolve(
-      new Response(stream, {
-        status: 200,
-        headers: { "Content-Type": "text/event-stream" },
-      }),
+      new Response(stream, { status: 200, headers: { "Content-Type": "text/event-stream" } }),
     );
 
   try {
@@ -197,9 +190,9 @@ Deno.test("AtlasClient - describeJob loads job configuration", async () => {
   // Mock the job list API call
   globalThis.fetch = (url) => {
     if (typeof url === "string" && url.includes("/api/workspaces/test-workspace/jobs")) {
-      return Promise.resolve(mockResponse([
-        { name: "test-job", description: "Test job description" },
-      ]));
+      return Promise.resolve(
+        mockResponse([{ name: "test-job", description: "Test job description" }]),
+      );
     }
     return Promise.reject(new Error(`Unexpected URL: ${url}`));
   };
@@ -274,11 +267,7 @@ Deno.test("AtlasClient - listWorkspaceLibraryItems returns workspace library ite
         type: "document",
         name: "Test Document",
         description: "Test description",
-        metadata: {
-          format: "markdown",
-          source: "user",
-          session_id: "sess_123",
-        },
+        metadata: { format: "markdown", source: "user", session_id: "sess_123" },
         created_at: "2024-01-01T10:00:00Z",
         updated_at: "2024-01-01T10:00:00Z",
         tags: ["test", "document"],
@@ -323,10 +312,7 @@ Deno.test("AtlasClient - searchWorkspaceLibrary searches within workspace", asyn
         id: "lib_search_1",
         type: "code",
         name: "Search Result",
-        metadata: {
-          format: "typescript",
-          source: "agent",
-        },
+        metadata: { format: "typescript", source: "agent" },
         created_at: "2024-01-01T11:00:00Z",
         updated_at: "2024-01-01T11:00:00Z",
         tags: ["search", "test"],
@@ -371,10 +357,7 @@ Deno.test("AtlasClient - getWorkspaceLibraryItem retrieves specific item", async
       type: "config",
       name: "Configuration File",
       description: "Test config",
-      metadata: {
-        format: "yaml",
-        source: "user",
-      },
+      metadata: { format: "yaml", source: "user" },
       created_at: "2024-01-01T12:00:00Z",
       updated_at: "2024-01-01T12:00:00Z",
       tags: ["config"],
@@ -386,7 +369,8 @@ Deno.test("AtlasClient - getWorkspaceLibraryItem retrieves specific item", async
 
   globalThis.fetch = (url) => {
     if (
-      typeof url === "string" && url.includes("/api/workspaces/test-workspace/library/lib_item_1")
+      typeof url === "string" &&
+      url.includes("/api/workspaces/test-workspace/library/lib_item_1")
     ) {
       return Promise.resolve(mockResponse(mockLibraryItem));
     }
@@ -417,10 +401,7 @@ Deno.test("AtlasClient - getWorkspaceLibraryItem without content", async () => {
       id: "lib_item_2",
       type: "document",
       name: "Document Without Content",
-      metadata: {
-        format: "markdown",
-        source: "agent",
-      },
+      metadata: { format: "markdown", source: "agent" },
       created_at: "2024-01-01T13:00:00Z",
       updated_at: "2024-01-01T13:00:00Z",
       tags: ["document"],
@@ -432,7 +413,8 @@ Deno.test("AtlasClient - getWorkspaceLibraryItem without content", async () => {
 
   globalThis.fetch = (url) => {
     if (
-      typeof url === "string" && url.includes("/api/workspaces/test-workspace/library/lib_item_2")
+      typeof url === "string" &&
+      url.includes("/api/workspaces/test-workspace/library/lib_item_2")
     ) {
       // Verify that content=true is NOT in the URL when includeContent is false
       expect(url).not.toContain("content=true");

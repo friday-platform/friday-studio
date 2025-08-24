@@ -1,4 +1,4 @@
-import { WorkspaceConfig } from "@atlas/config";
+import type { WorkspaceConfig } from "@atlas/config";
 import type {
   IWorkspace,
   IWorkspaceAction,
@@ -149,10 +149,7 @@ export class Workspace extends AtlasScope implements IWorkspace {
       // Handle object format from YAML
       for (const [id, signalConfig] of Object.entries(config.signals)) {
         const typedSignalConfig = signalConfig as Record<string, any>;
-        workspace.addSignal({
-          id,
-          ...typedSignalConfig,
-        } as IWorkspaceSignal);
+        workspace.addSignal({ id, ...typedSignalConfig } as IWorkspaceSignal);
       }
     }
 

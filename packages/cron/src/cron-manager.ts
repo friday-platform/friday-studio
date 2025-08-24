@@ -68,9 +68,11 @@ export interface CronTimerSignalData {
 /**
  * Callback interface for workspace wake-up
  */
-export interface WorkspaceWakeupCallback {
-  (workspaceId: string, signalId: string, signalData: CronTimerSignalData): Promise<void> | void;
-}
+export type WorkspaceWakeupCallback = (
+  workspaceId: string,
+  signalId: string,
+  signalData: CronTimerSignalData,
+) => Promise<void> | void;
 
 /**
  * Logger interface for dependency injection
@@ -251,9 +253,7 @@ export class CronManager {
 
       // Validate cron expression
       try {
-        CronExpressionParser.parse(config.schedule, {
-          tz: config.timezone || "UTC",
-        });
+        CronExpressionParser.parse(config.schedule, { tz: config.timezone || "UTC" });
       } catch (error) {
         const errorMsg = `Invalid cron expression '${config.schedule}': ${
           error instanceof Error ? error.message : String(error)
@@ -359,8 +359,9 @@ export class CronManager {
   async unregisterWorkspaceTimers(workspaceId: string): Promise<void> {
     this.logger.info("Unregistering all timers for workspace", { workspaceId });
 
-    const workspaceTimers = Array.from(this.timers.entries())
-      .filter(([_, timer]) => timer.workspaceId === workspaceId);
+    const workspaceTimers = Array.from(this.timers.entries()).filter(
+      ([_, timer]) => timer.workspaceId === workspaceId,
+    );
 
     for (const [_timerKey, timer] of workspaceTimers) {
       await this.unregisterTimer(timer.workspaceId, timer.signalId);
@@ -461,9 +462,7 @@ export class CronManager {
     if (delay <= 0) {
       // Execution time has passed, calculate next execution
       try {
-        const cronExpression = CronExpressionParser.parse(timer.schedule, {
-          tz: timer.timezone,
-        });
+        const cronExpression = CronExpressionParser.parse(timer.schedule, { tz: timer.timezone });
         timer.nextExecution = cronExpression.next().toDate();
         await this.persistTimer(timerKey, timer);
         return this.scheduleTimer(timerKey, timer);
@@ -518,9 +517,7 @@ export class CronManager {
         timer.lastExecution = new Date();
 
         // Calculate next execution
-        const cronExpression = CronExpressionParser.parse(timer.schedule, {
-          tz: timer.timezone,
-        });
+        const cronExpression = CronExpressionParser.parse(timer.schedule, { tz: timer.timezone });
         timer.nextExecution = cronExpression.next().toDate();
 
         // Persist updated timer state
@@ -670,9 +667,7 @@ export class CronManager {
         }
       }
 
-      this.logger.info("Persisted timers loaded successfully", {
-        loadedCount: this.timers.size,
-      });
+      this.logger.info("Persisted timers loaded successfully", { loadedCount: this.timers.size });
     } catch (error) {
       this.logger.error("Failed to load persisted timers", { error });
       throw error;
@@ -710,7 +705,7 @@ export class CronManager {
         lastError = error instanceof Error ? error : new Error(String(error));
 
         if (attempt < retries) {
-          const delayMs = Math.min(1000 * Math.pow(2, attempt - 1), 5000); // Exponential backoff, max 5s
+          const delayMs = Math.min(1000 * 2 ** (attempt - 1), 5000); // Exponential backoff, max 5s
           this.logger.warn("Storage operation failed, retrying", {
             timerKey,
             attempt,
@@ -748,7 +743,7 @@ export class CronManager {
 
     // Use allSettled to handle individual failures gracefully
     const persistPromises = Array.from(this.timers.entries()).map(([timerKey, timer]) =>
-      this.persistTimer(timerKey, timer).catch((error) => ({ timerKey, error }))
+      this.persistTimer(timerKey, timer).catch((error) => ({ timerKey, error })),
     );
 
     try {
@@ -770,15 +765,9 @@ export class CronManager {
             const entry = Array.from(this.timers.entries())[index];
             if (entry) {
               const [timerKey] = entry;
-              this.logger.error("Timer persistence failed", {
-                timerKey,
-                error: result.reason,
-              });
+              this.logger.error("Timer persistence failed", { timerKey, error: result.reason });
             } else {
-              this.logger.error("Timer persistence failed", {
-                index,
-                error: result.reason,
-              });
+              this.logger.error("Timer persistence failed", { index, error: result.reason });
             }
           }
         });

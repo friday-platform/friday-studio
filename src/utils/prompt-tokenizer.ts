@@ -218,7 +218,7 @@ export function tokenizePrompt(text: string, options: TokenizationOptions = {}):
     // Replace multiple spaces with single space
     .replace(/\s+/g, " ")
     // Remove special characters but keep alphanumeric and some punctuation
-    .replace(/[^\w\s\-\.\/]/g, " ")
+    .replace(/[^\w\s\-./]/g, " ")
     // Clean up extra spaces
     .replace(/\s+/g, " ");
 
@@ -260,13 +260,7 @@ export function tokenizePrompt(text: string, options: TokenizationOptions = {}):
   // Reconstruct processed text
   const processed = finalTokens.join(" ");
 
-  return {
-    original: text,
-    processed,
-    tokens: finalTokens,
-    keyPhrases,
-    technicalTerms,
-  };
+  return { original: text, processed, tokens: finalTokens, keyPhrases, technicalTerms };
 }
 
 /**
@@ -297,9 +291,10 @@ function extractKeyPhrases(words: string[], removeStopWords: boolean): string[] 
     if (word1.length < 2 || word2.length < 2 || word3.length < 2) continue;
 
     // Only include 3-word phrases if they contain technical terms or important words
-    const hasImportantWord = [word1, word2, word3].some((word) =>
-      TECHNICAL_TERMS.has(word) ||
-      (!removeStopWords || !STOP_WORDS.has(word)) && word.length > 4
+    const hasImportantWord = [word1, word2, word3].some(
+      (word) =>
+        TECHNICAL_TERMS.has(word) ||
+        ((!removeStopWords || !STOP_WORDS.has(word)) && word.length > 4),
     );
 
     if (hasImportantWord) {

@@ -1,10 +1,10 @@
 import { assertEquals } from "@std/assert";
-import { join } from "@std/path";
 import { walk } from "@std/fs";
+import { join } from "@std/path";
+import { parse } from "@std/yaml";
+import { WorkspaceConfigSchema } from "../packages/config/src/workspace.ts";
 import { WorkspaceManager } from "../packages/core/src/workspace-manager.ts";
 import { createRegistryStorage, StorageConfigs } from "../src/core/storage/index.ts";
-import { WorkspaceConfigSchema } from "../packages/config/src/workspace.ts";
-import { parse } from "@std/yaml";
 
 Deno.test("validate-examples - workspace discovery logic", async () => {
   console.log("\n🔍 Testing workspace discovery logic directly...");
@@ -45,7 +45,7 @@ Deno.test("validate-examples - workspace discovery logic", async () => {
   const discoveredWorkspaces = await manager.list();
   const normalize = (p: string) => p.replace(/^\/private/, "");
   const filteredWorkspaces = discoveredWorkspaces.filter((ws) =>
-    normalize(ws.path).startsWith(normalize(examplesDir))
+    normalize(ws.path).startsWith(normalize(examplesDir)),
   );
   console.log(
     `\n📋 WorkspaceManager discovered ${filteredWorkspaces.length} workspaces in examples:`,

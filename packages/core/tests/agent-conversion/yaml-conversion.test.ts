@@ -77,11 +77,7 @@ describe("YAML to Agent Conversion", () => {
           id: "custom-id",
           version: "1.0.0",
           description: "Test agent",
-          expertise: {
-            domains: ["testing"],
-            capabilities: ["test"],
-            examples: [],
-          },
+          expertise: { domains: ["testing"], capabilities: ["test"], examples: [] },
         },
       });
       const agent = convertYAMLToAgent(yaml);
@@ -97,20 +93,8 @@ describe("YAML to Agent Conversion", () => {
 
       const yaml = createMinimalYAML({
         environment: {
-          required: [
-            {
-              name: "API_KEY",
-              description: "Required API key",
-              validation: "^sk-",
-            },
-          ],
-          optional: [
-            {
-              name: "TIMEOUT",
-              description: "Optional timeout",
-              default: "30",
-            },
-          ],
+          required: [{ name: "API_KEY", description: "Required API key", validation: "^sk-" }],
+          optional: [{ name: "TIMEOUT", description: "Optional timeout", default: "30" }],
         },
       });
       const agent = convertYAMLToAgent(yaml);
@@ -239,11 +223,7 @@ describe("YAML to Agent Conversion", () => {
       }
 
       const yaml = createMinimalYAML({
-        llm: {
-          provider: "anthropic",
-          model: "claude-3-sonnet-20240229",
-          prompt: "Test prompt",
-        },
+        llm: { provider: "anthropic", model: "claude-3-sonnet-20240229", prompt: "Test prompt" },
       });
 
       const agent = convertYAMLToAgent(yaml);
@@ -285,10 +265,7 @@ describe("YAML to Agent Conversion", () => {
           provider: "anthropic",
           model: "claude-3-sonnet-20240229",
           prompt: "Test prompt",
-          timeout: {
-            progressTimeout: "60s",
-            maxTotalTimeout: "5m",
-          },
+          timeout: { progressTimeout: "60s", maxTotalTimeout: "5m" },
         },
       });
 
@@ -307,10 +284,7 @@ describe("YAML to Agent Conversion", () => {
         },
       });
 
-      assertThrows(
-        () => convertYAMLToAgent(yaml),
-        Error,
-      );
+      assertThrows(() => convertYAMLToAgent(yaml), Error);
     });
 
     it("should require domains and capabilities", () => {
@@ -324,23 +298,12 @@ describe("YAML to Agent Conversion", () => {
           id: "minimal",
           version: "1.0.0",
           description: "Minimal agent",
-          expertise: {
-            domains: [],
-            capabilities: [],
-            examples: [],
-          },
+          expertise: { domains: [], capabilities: [], examples: [] },
         },
-        llm: {
-          provider: "anthropic",
-          model: "claude-3-sonnet-20240229",
-          prompt: "Minimal prompt",
-        },
+        llm: { provider: "anthropic", model: "claude-3-sonnet-20240229", prompt: "Minimal prompt" },
       };
 
-      assertThrows(
-        () => convertYAMLToAgent(yaml),
-        Error,
-      );
+      assertThrows(() => convertYAMLToAgent(yaml), Error);
     });
   });
 
@@ -356,16 +319,9 @@ describe("YAML to Agent Conversion", () => {
           id: "test-agent",
           version: "1.0.0",
           description: "Test agent",
-          expertise: {
-            domains: ["testing"],
-            capabilities: ["test"],
-            examples: [],
-          },
+          expertise: { domains: ["testing"], capabilities: ["test"], examples: [] },
           metadata: {
-            author: {
-              name: "Test Author",
-              email: "test@example.com",
-            },
+            author: { name: "Test Author", email: "test@example.com" },
             tags: ["test", "example"],
           },
         },

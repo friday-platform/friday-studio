@@ -1,27 +1,34 @@
-import { z } from "zod/v4";
-import { tool } from "ai";
 import { createAtlasClient } from "@atlas/oapi-client";
+import { tool } from "ai";
+import { z } from "zod/v4";
 import { WorkspaceGenerator } from "./generator.ts";
 
 /**
  * Schema for workspace generation requirements
  */
-export const WorkspaceRequirementsSchema = z.object({
-  triggers: z.array(z.string()).optional().describe(
-    "Specific trigger requirements (e.g., 'every 30 minutes', 'on webhook')",
-  ),
-  integrations: z.array(z.string()).optional().describe(
-    "Required external integrations (e.g., 'Discord', 'Stripe API', 'HubSpot')",
-  ),
-  outputs: z.array(z.string()).optional().describe(
-    "Desired output formats or destinations (e.g., 'Discord notifications', 'email alerts')",
-  ),
-  credentials: z.array(z.string()).optional().describe(
-    "Known credential requirements (e.g., 'Discord webhook URL', 'API keys')",
-  ),
-}).optional().describe(
-  "Structured requirements object for workspace generation",
-);
+export const WorkspaceRequirementsSchema = z
+  .object({
+    triggers: z
+      .array(z.string())
+      .optional()
+      .describe("Specific trigger requirements (e.g., 'every 30 minutes', 'on webhook')"),
+    integrations: z
+      .array(z.string())
+      .optional()
+      .describe("Required external integrations (e.g., 'Discord', 'Stripe API', 'HubSpot')"),
+    outputs: z
+      .array(z.string())
+      .optional()
+      .describe(
+        "Desired output formats or destinations (e.g., 'Discord notifications', 'email alerts')",
+      ),
+    credentials: z
+      .array(z.string())
+      .optional()
+      .describe("Known credential requirements (e.g., 'Discord webhook URL', 'API keys')"),
+  })
+  .optional()
+  .describe("Structured requirements object for workspace generation");
 
 export type WorkspaceRequirements = z.infer<typeof WorkspaceRequirementsSchema>;
 
@@ -36,26 +43,39 @@ export const generateWorkspace = tool({
   description:
     "Generate and optionally create complete Atlas workspace using AI orchestration with multi-attempt validation",
   inputSchema: z.object({
-    userIntent: z.string().describe(
-      "User's natural language description of their automation needs and goals",
-    ),
-    conversationContext: z.string().optional().describe(
-      "Additional context from the conversation that provides relevant details",
-    ),
+    userIntent: z
+      .string()
+      .describe("User's natural language description of their automation needs and goals"),
+    conversationContext: z
+      .string()
+      .optional()
+      .describe("Additional context from the conversation that provides relevant details"),
     requirements: WorkspaceRequirementsSchema,
-    debugLevel: z.enum(["minimal", "detailed"]).default("minimal").describe(
-      "Level of technical detail to include in the response",
-    ),
-    createWorkspace: z.boolean().default(true).describe(
-      "Whether to create workspace files after generation (true) or just generate config (false)",
-    ),
-    workspaceName: z.string().optional().describe(
-      "Custom workspace directory name (defaults to generated name, will auto-resolve conflicts with -2, -3, etc.)",
-    ),
+    debugLevel: z
+      .enum(["minimal", "detailed"])
+      .default("minimal")
+      .describe("Level of technical detail to include in the response"),
+    createWorkspace: z
+      .boolean()
+      .default(true)
+      .describe(
+        "Whether to create workspace files after generation (true) or just generate config (false)",
+      ),
+    workspaceName: z
+      .string()
+      .optional()
+      .describe(
+        "Custom workspace directory name (defaults to generated name, will auto-resolve conflicts with -2, -3, etc.)",
+      ),
   }),
-  execute: async (
-    { userIntent, conversationContext, requirements, debugLevel, createWorkspace, workspaceName },
-  ) => {
+  execute: async ({
+    userIntent,
+    conversationContext,
+    requirements,
+    debugLevel,
+    createWorkspace,
+    workspaceName,
+  }) => {
     const generator = new WorkspaceGenerator();
 
     try {
@@ -72,10 +92,7 @@ export const generateWorkspace = tool({
         try {
           const client = createAtlasClient();
           const response = await client.POST("/api/workspaces/create", {
-            body: {
-              config,
-              workspaceName: workspaceName || config.workspace.name,
-            },
+            body: { config, workspaceName: workspaceName || config.workspace.name },
           });
 
           if (response.error) {
@@ -93,9 +110,10 @@ export const generateWorkspace = tool({
           return {
             success: true,
             config,
-            reasoning: debugLevel === "detailed"
-              ? reasoning
-              : "Workspace generated and created successfully",
+            reasoning:
+              debugLevel === "detailed"
+                ? reasoning
+                : "Workspace generated and created successfully",
             workspaceName: config.workspace.name,
             created: true,
             workspace: creationResult.workspace,
@@ -135,9 +153,12 @@ export const generateWorkspace = tool({
         },
       };
     } catch (error) {
-      const errorMessage = debugLevel === "detailed"
-        ? (error instanceof Error ? error.message : String(error))
-        : getUserFriendlyError(error);
+      const errorMessage =
+        debugLevel === "detailed"
+          ? error instanceof Error
+            ? error.message
+            : String(error)
+          : getUserFriendlyError(error);
       throw new Error(
         `Workspace ${createWorkspace ? "creation" : "generation"} failed: ${errorMessage}`,
       );

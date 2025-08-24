@@ -15,18 +15,18 @@
  *   Approval Queue Manager (stores suspended states)
  */
 
-import { createActor } from "xstate";
 import type { AgentContext, AgentSessionData, AtlasAgent } from "@atlas/agent-sdk";
 import { AwaitingSupervisorDecision } from "@atlas/agent-sdk";
-import { CoALAMemoryManager } from "@atlas/memory";
 import type { Logger } from "@atlas/logger";
-import type { ApprovalQueueManager } from "./approval-queue-manager.ts";
+import type { CoALAMemoryManager } from "@atlas/memory";
+import { createActor } from "xstate";
 import {
   type AgentExecutionMachineActor,
   type ApprovalDecision,
   createAgentExecutionMachine,
   type PrepareContextOutput,
 } from "./agent-execution-machine.ts";
+import type { ApprovalQueueManager } from "./approval-queue-manager.ts";
 
 export type BuildAgentContext = (
   agent: AtlasAgent,
@@ -100,9 +100,7 @@ export class AgentExecutionManager {
         this.sessionMemory,
         this.logger,
       );
-      const actor = createActor(machine, {
-        input: { agentId },
-      });
+      const actor = createActor(machine, { input: { agentId } });
 
       actor.start();
       this.activeAgents.set(agentId, actor);
@@ -157,25 +155,18 @@ export class AgentExecutionManager {
    * Resume a suspended agent execution with an approval decision.
    * Used when supervisor approves/denies an agent's request.
    */
-  async resumeAgentWithApproval(
-    approvalId: string,
-    decision: ApprovalDecision,
-  ): Promise<unknown> {
+  async resumeAgentWithApproval(approvalId: string, decision: ApprovalDecision): Promise<unknown> {
     if (!this.approvalQueue) {
       this.logger.error("No approval queue configured");
       return null;
     }
 
     // Restore the suspended actor from approval queue
-    const actor = await this.approvalQueue.restoreAndResume(
-      approvalId,
-      decision,
-      {
-        loadAgentFn: this.loadAgentFn,
-        contextBuilder: this.contextBuilder,
-        sessionMemory: this.sessionMemory,
-      },
-    );
+    const actor = await this.approvalQueue.restoreAndResume(approvalId, decision, {
+      loadAgentFn: this.loadAgentFn,
+      contextBuilder: this.contextBuilder,
+      sessionMemory: this.sessionMemory,
+    });
 
     if (!actor) {
       return null;
@@ -238,20 +229,14 @@ export class AgentExecutionManager {
   /**
    * Get statistics about active agent executions.
    */
-  getStats(): {
-    activeAgents: number;
-    agentStates: Record<string, string>;
-  } {
+  getStats(): { activeAgents: number; agentStates: Record<string, string> } {
     const agentStates: Record<string, string> = {};
 
     for (const [agentId, actor] of this.activeAgents) {
       agentStates[agentId] = actor.getSnapshot().value as string;
     }
 
-    return {
-      activeAgents: this.activeAgents.size,
-      agentStates,
-    };
+    return { activeAgents: this.activeAgents.size, agentStates };
   }
 
   /**

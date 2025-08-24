@@ -6,13 +6,10 @@
  * resolution, proxy functionality, and remote adapter functionality.
  */
 
-export { MCPManager, MCPServerConfigSchema } from "./src/manager.ts";
-export { MCPServerRegistry } from "./src/registry.ts";
 export { MCPAdapter } from "./src/adapters/mcp-adapter.ts";
-
 // Re-export types that consumers might need
 export type { MCPServerConfig } from "./src/manager.ts";
-
+export { MCPManager, MCPServerConfigSchema } from "./src/manager.ts";
 export type {
   AgentConfig,
   AtlasConfig,
@@ -20,3 +17,4 @@ export type {
   SessionContext,
   WorkspaceConfig,
 } from "./src/registry.ts";
+export { MCPServerRegistry } from "./src/registry.ts";

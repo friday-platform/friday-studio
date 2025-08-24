@@ -11,22 +11,20 @@ import type { AgentMetadata, AgentRegistry, AtlasAgent } from "@atlas/agent-sdk"
 export class InMemoryAgentRegistry implements AgentRegistry {
   private agents = new Map<string, AtlasAgent>();
 
-  listAgents(filters?: {
-    domains?: string[];
-    tags?: string[];
-  }): Promise<AgentMetadata[]> {
+  listAgents(filters?: { domains?: string[]; tags?: string[] }): Promise<AgentMetadata[]> {
     let agents = Array.from(this.agents.values());
 
     // Apply filters if provided
     if (filters?.domains && filters.domains.length > 0) {
       agents = agents.filter((agent) =>
-        agent.metadata.expertise.domains.some((domain) => filters.domains!.includes(domain))
+        agent.metadata.expertise.domains.some((domain) => filters.domains!.includes(domain)),
       );
     }
 
     if (filters?.tags && filters.tags.length > 0) {
-      agents = agents.filter((agent) =>
-        agent.metadata.metadata?.tags?.some((tag) => filters.tags!.includes(tag)) ?? false
+      agents = agents.filter(
+        (agent) =>
+          agent.metadata.metadata?.tags?.some((tag) => filters.tags!.includes(tag)) ?? false,
       );
     }
 

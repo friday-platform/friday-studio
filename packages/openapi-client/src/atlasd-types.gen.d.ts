@@ -1,11 +1,6 @@
 export interface paths {
   "/health": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
+    parameters: { query?: never; header?: never; path?: never; cookie?: never };
     /**
      * Health check
      * @description Returns the current health status of the Atlas daemon including runtime metrics
@@ -20,12 +15,7 @@ export interface paths {
     trace?: never;
   };
   "/api/workspaces": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
+    parameters: { query?: never; header?: never; path?: never; cookie?: never };
     /**
      * List all workspaces
      * @description Returns a list of all registered workspaces with their current status and runtime information
@@ -40,12 +30,7 @@ export interface paths {
     trace?: never;
   };
   "/api/workspaces/{workspaceId}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
+    parameters: { query?: never; header?: never; path?: never; cookie?: never };
     /**
      * Get workspace details
      * @description Returns detailed information about a specific workspace including its configuration and runtime status
@@ -60,12 +45,7 @@ export interface paths {
     trace?: never;
   };
   "/api/workspaces/{workspaceId}/config": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
+    parameters: { query?: never; header?: never; path?: never; cookie?: never };
     /**
      * Get workspace configuration
      * @description Returns the complete workspace configuration for agent server consumption, including MCP server configurations and agent definitions
@@ -80,12 +60,7 @@ export interface paths {
     trace?: never;
   };
   "/api/workspaces/{workspaceId}/update": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
+    parameters: { query?: never; header?: never; path?: never; cookie?: never };
     get?: never;
     put?: never;
     /**
@@ -100,12 +75,7 @@ export interface paths {
     trace?: never;
   };
   "/api/workspaces/create": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
+    parameters: { query?: never; header?: never; path?: never; cookie?: never };
     get?: never;
     put?: never;
     /**
@@ -120,12 +90,7 @@ export interface paths {
     trace?: never;
   };
   "/api/workspaces/{workspaceId}/signals/{signalId}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
+    parameters: { query?: never; header?: never; path?: never; cookie?: never };
     get?: never;
     put?: never;
     /**
@@ -148,12 +113,7 @@ export interface paths {
     trace?: never;
   };
   "/api/conversation-storage": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
+    parameters: { query?: never; header?: never; path?: never; cookie?: never };
     /**
      * List conversations
      * @description Get a list of all conversations with summary information
@@ -168,12 +128,7 @@ export interface paths {
     trace?: never;
   };
   "/api/conversation-storage/{streamId}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
+    parameters: { query?: never; header?: never; path?: never; cookie?: never };
     /**
      * Retrieve conversation history
      * @description Get the complete conversation history for the given stream ID
@@ -196,12 +151,7 @@ export interface paths {
     trace?: never;
   };
   "/api/user": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
+    parameters: { query?: never; header?: never; path?: never; cookie?: never };
     /**
      * Retrieve current user
      * @description Get the current user for the session
@@ -216,12 +166,7 @@ export interface paths {
     trace?: never;
   };
   "/api/todos": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
+    parameters: { query?: never; header?: never; path?: never; cookie?: never };
     /**
      * List all todo streams
      * @description Get a list of all stream IDs that have todo data (admin endpoint)
@@ -236,12 +181,7 @@ export interface paths {
     trace?: never;
   };
   "/api/todos/{streamId}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
+    parameters: { query?: never; header?: never; path?: never; cookie?: never };
     /**
      * Retrieve todo list
      * @description Get the todo list for the given stream ID
@@ -264,12 +204,7 @@ export interface paths {
     trace?: never;
   };
   "/api/agents": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
+    parameters: { query?: never; header?: never; path?: never; cookie?: never };
     /**
      * List all available agents
      * @description Returns a list of all agents available in the system, including their metadata and expertise information
@@ -284,12 +219,7 @@ export interface paths {
     trace?: never;
   };
   "/api/agents/{id}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
+    parameters: { query?: never; header?: never; path?: never; cookie?: never };
     /**
      * Get agent details
      * @description Returns detailed information about a specific agent
@@ -304,12 +234,7 @@ export interface paths {
     trace?: never;
   };
   "/api/agents/{id}/expertise": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
+    parameters: { query?: never; header?: never; path?: never; cookie?: never };
     /**
      * Get agent expertise
      * @description Returns expertise information for a specific agent including domains, capabilities, and example prompts
@@ -336,19 +261,12 @@ export interface components {
 export type $defs = Record<string, never>;
 export interface operations {
   GETHealth: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
+    parameters: { query?: never; header?: never; path?: never; cookie?: never };
     requestBody?: never;
     responses: {
       /** @description Daemon is healthy and operational */
       200: {
-        headers: {
-          [name: string]: unknown;
-        };
+        headers: { [name: string]: unknown };
         content: {
           "application/json": {
             /** @description Number of currently active workspaces */
@@ -375,19 +293,12 @@ export interface operations {
     };
   };
   GETApiWorkspaces: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
+    parameters: { query?: never; header?: never; path?: never; cookie?: never };
     requestBody?: never;
     responses: {
       /** @description Successfully retrieved workspaces */
       200: {
-        headers: {
-          [name: string]: unknown;
-        };
+        headers: { [name: string]: unknown };
         content: {
           "application/json": {
             /** @description Unique workspace identifier (Docker-style name) */
@@ -426,9 +337,7 @@ export interface operations {
       };
       /** @description Internal server error */
       500: {
-        headers: {
-          [name: string]: unknown;
-        };
+        headers: { [name: string]: unknown };
         content: {
           "application/json": {
             /** @description Error message */
@@ -443,21 +352,12 @@ export interface operations {
     };
   };
   "GETApiWorkspaces:workspaceId": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        workspaceId: string;
-      };
-      cookie?: never;
-    };
+    parameters: { query?: never; header?: never; path: { workspaceId: string }; cookie?: never };
     requestBody?: never;
     responses: {
       /** @description Successfully retrieved workspace details */
       200: {
-        headers: {
-          [name: string]: unknown;
-        };
+        headers: { [name: string]: unknown };
         content: {
           "application/json": {
             /** @description Unique workspace identifier (Docker-style name) */
@@ -509,9 +409,7 @@ export interface operations {
       };
       /** @description Workspace not found */
       404: {
-        headers: {
-          [name: string]: unknown;
-        };
+        headers: { [name: string]: unknown };
         content: {
           "application/json": {
             /** @description Error message */
@@ -525,9 +423,7 @@ export interface operations {
       };
       /** @description Internal server error */
       500: {
-        headers: {
-          [name: string]: unknown;
-        };
+        headers: { [name: string]: unknown };
         content: {
           "application/json": {
             /** @description Error message */
@@ -542,21 +438,12 @@ export interface operations {
     };
   };
   "GETApiWorkspaces:workspaceIdConfig": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        workspaceId: string;
-      };
-      cookie?: never;
-    };
+    parameters: { query?: never; header?: never; path: { workspaceId: string }; cookie?: never };
     requestBody?: never;
     responses: {
       /** @description Successfully retrieved workspace configuration */
       200: {
-        headers: {
-          [name: string]: unknown;
-        };
+        headers: { [name: string]: unknown };
         content: {
           "application/json": {
             config: {
@@ -632,22 +519,25 @@ export interface operations {
                   };
                   servers?: {
                     [key: string]: {
-                      transport: {
-                        /** @constant */
-                        type: "stdio";
-                        command: string;
-                        args?: string[];
-                      } | {
-                        /** @constant */
-                        type: "http";
-                        /** Format: uri */
-                        url: string;
-                      } | {
-                        /** @constant */
-                        type: "sse";
-                        /** Format: uri */
-                        url: string;
-                      };
+                      transport:
+                        | {
+                            /** @constant */
+                            type: "stdio";
+                            command: string;
+                            args?: string[];
+                          }
+                        | {
+                            /** @constant */
+                            type: "http";
+                            /** Format: uri */
+                            url: string;
+                          }
+                        | {
+                            /** @constant */
+                            type: "sse";
+                            /** Format: uri */
+                            url: string;
+                          };
                       client_config?: {
                         timeout?: {
                           /**
@@ -675,59 +565,51 @@ export interface operations {
                         password_env?: string;
                       };
                       /** @description Filter which tools to allow or deny from this MCP server */
-                      tools?: {
-                        allow?: string[];
-                        deny?: string[];
-                      };
+                      tools?: { allow?: string[]; deny?: string[] };
                       /** @description Environment variables for the server process */
-                      env?: {
-                        [key: string]: string;
-                      };
+                      env?: { [key: string]: string };
                     };
                   };
                 };
               };
               signals?: {
-                [key: string]: {
-                  description: string;
-                  /** @description JSON Schema for signal payload validation */
-                  schema?: {
-                    [key: string]: unknown;
-                  };
-                  /** @constant */
-                  provider: "http";
-                  config: {
-                    /** @description HTTP path for the webhook (method is always POST) */
-                    path: string;
-                    /** @description Timeout for signal processing */
-                    timeout?: string;
-                  };
-                } | {
-                  description: string;
-                  /** @description JSON Schema for signal payload validation */
-                  schema?: {
-                    [key: string]: unknown;
-                  };
-                  /** @constant */
-                  provider: "schedule";
-                  config: {
-                    /** @description Cron expression (e.g., '0 9 * * *' for daily at 9 AM) */
-                    schedule: string;
-                    /**
-                     * @description Timezone for the schedule
-                     * @default UTC
-                     */
-                    timezone: string;
-                  };
-                } | {
-                  description: string;
-                  /** @description JSON Schema for signal payload validation */
-                  schema?: {
-                    [key: string]: unknown;
-                  };
-                  /** @constant */
-                  provider: "system";
-                };
+                [key: string]:
+                  | {
+                      description: string;
+                      /** @description JSON Schema for signal payload validation */
+                      schema?: { [key: string]: unknown };
+                      /** @constant */
+                      provider: "http";
+                      config: {
+                        /** @description HTTP path for the webhook (method is always POST) */
+                        path: string;
+                        /** @description Timeout for signal processing */
+                        timeout?: string;
+                      };
+                    }
+                  | {
+                      description: string;
+                      /** @description JSON Schema for signal payload validation */
+                      schema?: { [key: string]: unknown };
+                      /** @constant */
+                      provider: "schedule";
+                      config: {
+                        /** @description Cron expression (e.g., '0 9 * * *' for daily at 9 AM) */
+                        schedule: string;
+                        /**
+                         * @description Timezone for the schedule
+                         * @default UTC
+                         */
+                        timezone: string;
+                      };
+                    }
+                  | {
+                      description: string;
+                      /** @description JSON Schema for signal payload validation */
+                      schema?: { [key: string]: unknown };
+                      /** @constant */
+                      provider: "system";
+                    };
               };
               jobs?: {
                 [key: string]: {
@@ -738,13 +620,15 @@ export interface operations {
                     /** @description Signal name that triggers this job */
                     signal: string;
                     /** @description Condition for triggering */
-                    condition?: {
-                      /** @description JSONLogic expression (cached and executed at runtime) */
-                      jsonlogic: unknown;
-                    } | {
-                      /** @description Natural language prompt (converted to JSONLogic and cached) */
-                      prompt: string;
-                    };
+                    condition?:
+                      | {
+                          /** @description JSONLogic expression (cached and executed at runtime) */
+                          jsonlogic: unknown;
+                        }
+                      | {
+                          /** @description Natural language prompt (converted to JSONLogic and cached) */
+                          prompt: string;
+                        };
                   }[];
                   context?: {
                     /** @description Job-level file context */
@@ -766,34 +650,34 @@ export interface operations {
                      */
                     strategy: "sequential" | "parallel";
                     /** @description Agent pipeline */
-                    agents: (string | {
-                      /** @description Agent ID */
-                      id: string;
-                      /** @description Optional nickname for reference */
-                      nickname?: string;
-                      context?: {
-                        /** @description Include signal data */
-                        signal?: boolean;
-                        /**
-                         * @description Include step outputs
-                         * @enum {string}
-                         */
-                        steps?: "previous" | "all";
-                        /** @description Specific agent outputs to include */
-                        agents?: string[];
-                        /** @description Include filesystem context */
-                        files?: boolean;
-                        /** @description Additional task description appended to prompt */
-                        task?: string;
-                      };
-                      /** @description Explicit agent dependencies */
-                      dependencies?: string[];
-                      /** @description Tool access override for this agent */
-                      tools?: {
-                        allow?: string[];
-                        deny?: string[];
-                      };
-                    })[];
+                    agents: (
+                      | string
+                      | {
+                          /** @description Agent ID */
+                          id: string;
+                          /** @description Optional nickname for reference */
+                          nickname?: string;
+                          context?: {
+                            /** @description Include signal data */
+                            signal?: boolean;
+                            /**
+                             * @description Include step outputs
+                             * @enum {string}
+                             */
+                            steps?: "previous" | "all";
+                            /** @description Specific agent outputs to include */
+                            agents?: string[];
+                            /** @description Include filesystem context */
+                            files?: boolean;
+                            /** @description Additional task description appended to prompt */
+                            task?: string;
+                          };
+                          /** @description Explicit agent dependencies */
+                          dependencies?: string[];
+                          /** @description Tool access override for this agent */
+                          tools?: { allow?: string[]; deny?: string[] };
+                        }
+                    )[];
                     /** @description Execution-level context */
                     context?: {
                       files?: {
@@ -808,27 +692,29 @@ export interface operations {
                   };
                   success?: {
                     /** @description Condition that can be either JSONLogic or a natural language prompt */
-                    condition: {
-                      /** @description JSONLogic expression (cached and executed at runtime) */
-                      jsonlogic: unknown;
-                    } | {
-                      /** @description Natural language prompt (converted to JSONLogic and cached) */
-                      prompt: string;
-                    };
+                    condition:
+                      | {
+                          /** @description JSONLogic expression (cached and executed at runtime) */
+                          jsonlogic: unknown;
+                        }
+                      | {
+                          /** @description Natural language prompt (converted to JSONLogic and cached) */
+                          prompt: string;
+                        };
                     /** @description Structured output schema */
-                    schema?: {
-                      [key: string]: unknown;
-                    };
+                    schema?: { [key: string]: unknown };
                   };
                   error?: {
                     /** @description Condition that can be either JSONLogic or a natural language prompt */
-                    condition: {
-                      /** @description JSONLogic expression (cached and executed at runtime) */
-                      jsonlogic: unknown;
-                    } | {
-                      /** @description Natural language prompt (converted to JSONLogic and cached) */
-                      prompt: string;
-                    };
+                    condition:
+                      | {
+                          /** @description JSONLogic expression (cached and executed at runtime) */
+                          jsonlogic: unknown;
+                        }
+                      | {
+                          /** @description Natural language prompt (converted to JSONLogic and cached) */
+                          prompt: string;
+                        };
                   };
                   config?: {
                     timeout?: string;
@@ -853,177 +739,175 @@ export interface operations {
                 };
               };
               agents?: {
-                [key: string]: {
-                  /** @description Agent purpose/description */
-                  description: string;
-                  /** @constant */
-                  type: "llm";
-                  config: {
-                    /** @enum {string} */
-                    provider: "anthropic" | "openai" | "google";
-                    /** @description Model identifier (e.g., 'claude-3-7-sonnet-latest') */
-                    model: string;
-                    /** @description System prompt for the agent */
-                    prompt: string;
-                    /**
-                     * @description Temperature (0-1 range)
-                     * @default 0.3
-                     */
-                    temperature: number;
-                    max_tokens?: number;
-                    /** @description Max steps for multi-step tool calling */
-                    max_steps?: number;
-                    tool_choice?: "auto" | "required" | "none";
-                    /** @description Available tools (simple array) */
-                    tools?: string[];
-                    /** @description Provider-specific options passed directly to the LLM SDK */
-                    provider_options?: {
-                      [key: string]: unknown;
-                    };
-                    success?: {
-                      /** @description Condition that can be either JSONLogic or a natural language prompt */
-                      condition: {
-                        /** @description JSONLogic expression (cached and executed at runtime) */
-                        jsonlogic: unknown;
-                      } | {
-                        /** @description Natural language prompt (converted to JSONLogic and cached) */
+                [key: string]:
+                  | {
+                      /** @description Agent purpose/description */
+                      description: string;
+                      /** @constant */
+                      type: "llm";
+                      config: {
+                        /** @enum {string} */
+                        provider: "anthropic" | "openai" | "google";
+                        /** @description Model identifier (e.g., 'claude-3-7-sonnet-latest') */
+                        model: string;
+                        /** @description System prompt for the agent */
                         prompt: string;
+                        /**
+                         * @description Temperature (0-1 range)
+                         * @default 0.3
+                         */
+                        temperature: number;
+                        max_tokens?: number;
+                        /** @description Max steps for multi-step tool calling */
+                        max_steps?: number;
+                        tool_choice?: "auto" | "required" | "none";
+                        /** @description Available tools (simple array) */
+                        tools?: string[];
+                        /** @description Provider-specific options passed directly to the LLM SDK */
+                        provider_options?: { [key: string]: unknown };
+                        success?: {
+                          /** @description Condition that can be either JSONLogic or a natural language prompt */
+                          condition:
+                            | {
+                                /** @description JSONLogic expression (cached and executed at runtime) */
+                                jsonlogic: unknown;
+                              }
+                            | {
+                                /** @description Natural language prompt (converted to JSONLogic and cached) */
+                                prompt: string;
+                              };
+                          /** @description Structured output schema */
+                          schema?: { [key: string]: unknown };
+                        };
+                        error?: {
+                          /** @description Condition that can be either JSONLogic or a natural language prompt */
+                          condition:
+                            | {
+                                /** @description JSONLogic expression (cached and executed at runtime) */
+                                jsonlogic: unknown;
+                              }
+                            | {
+                                /** @description Natural language prompt (converted to JSONLogic and cached) */
+                                prompt: string;
+                              };
+                        };
+                        max_retries?: number;
+                        timeout?: string;
                       };
-                      /** @description Structured output schema */
-                      schema?: {
-                        [key: string]: unknown;
+                    }
+                  | {
+                      /** @description Agent purpose/description */
+                      description: string;
+                      /** @constant */
+                      type: "system";
+                      /** @description System agent identifier */
+                      agent: string;
+                      /** @description System agent configuration */
+                      config?: {
+                        /** @description LLM model to use */
+                        model?: string;
+                        /**
+                         * @description LLM temperature
+                         * @default 0.3
+                         */
+                        temperature: number;
+                        /** @description Maximum tokens for LLM response */
+                        max_tokens?: number;
+                        /** @description Array of tool names available to the agent */
+                        tools?: string[];
+                        /** @description Enable reasoning capabilities */
+                        use_reasoning?: boolean;
+                        /** @description Maximum reasoning steps */
+                        max_reasoning_steps?: number;
+                        /** @description System prompt for the agent */
+                        prompt?: string;
                       };
+                    }
+                  | {
+                      /** @description Agent purpose/description */
+                      description: string;
+                      /** @constant */
+                      type: "remote";
+                      config: {
+                        /** @constant */
+                        protocol: "acp";
+                        /** Format: uri */
+                        endpoint: string;
+                        agent_name: string;
+                        /**
+                         * @default async
+                         * @enum {string}
+                         */
+                        default_mode: "sync" | "async" | "stream";
+                        /** @default 30s */
+                        health_check_interval: string;
+                        auth?: {
+                          /** @enum {string} */
+                          type: "bearer" | "api_key" | "basic";
+                          /** @description Header name for the token */
+                          header?: string;
+                          /** @description Environment variable containing the token */
+                          token_env?: string;
+                          /** @description For basic auth */
+                          username_env?: string;
+                          /** @description For basic auth */
+                          password_env?: string;
+                        };
+                        timeout?: string;
+                        /** @default 2 */
+                        max_retries: number;
+                        /** @description System prompt for the agent */
+                        prompt?: string;
+                        schema?: {
+                          /** @default false */
+                          validate_input: boolean;
+                          /** @default false */
+                          validate_output: boolean;
+                          input?: { [key: string]: unknown };
+                          output?: { [key: string]: unknown };
+                        };
+                        success?: {
+                          /** @description Condition that can be either JSONLogic or a natural language prompt */
+                          condition:
+                            | {
+                                /** @description JSONLogic expression (cached and executed at runtime) */
+                                jsonlogic: unknown;
+                              }
+                            | {
+                                /** @description Natural language prompt (converted to JSONLogic and cached) */
+                                prompt: string;
+                              };
+                          /** @description Structured output schema */
+                          schema?: { [key: string]: unknown };
+                        };
+                        error?: {
+                          /** @description Condition that can be either JSONLogic or a natural language prompt */
+                          condition:
+                            | {
+                                /** @description JSONLogic expression (cached and executed at runtime) */
+                                jsonlogic: unknown;
+                              }
+                            | {
+                                /** @description Natural language prompt (converted to JSONLogic and cached) */
+                                prompt: string;
+                              };
+                        };
+                      };
+                    }
+                  | {
+                      /** @constant */
+                      type: "atlas";
+                      /** @description Atlas agent ID from registry */
+                      agent: string;
+                      /** @description Agent description */
+                      description: string;
+                      /** @description Agent version (defaults to latest) */
+                      version?: string;
+                      /** @description Agent-specific configuration passed to the agent */
+                      config?: { [key: string]: unknown };
+                      /** @description Environment variables for the agent (supports ${VAR} interpolation) */
+                      environment?: { [key: string]: string };
                     };
-                    error?: {
-                      /** @description Condition that can be either JSONLogic or a natural language prompt */
-                      condition: {
-                        /** @description JSONLogic expression (cached and executed at runtime) */
-                        jsonlogic: unknown;
-                      } | {
-                        /** @description Natural language prompt (converted to JSONLogic and cached) */
-                        prompt: string;
-                      };
-                    };
-                    max_retries?: number;
-                    timeout?: string;
-                  };
-                } | {
-                  /** @description Agent purpose/description */
-                  description: string;
-                  /** @constant */
-                  type: "system";
-                  /** @description System agent identifier */
-                  agent: string;
-                  /** @description System agent configuration */
-                  config?: {
-                    /** @description LLM model to use */
-                    model?: string;
-                    /**
-                     * @description LLM temperature
-                     * @default 0.3
-                     */
-                    temperature: number;
-                    /** @description Maximum tokens for LLM response */
-                    max_tokens?: number;
-                    /** @description Array of tool names available to the agent */
-                    tools?: string[];
-                    /** @description Enable reasoning capabilities */
-                    use_reasoning?: boolean;
-                    /** @description Maximum reasoning steps */
-                    max_reasoning_steps?: number;
-                    /** @description System prompt for the agent */
-                    prompt?: string;
-                  };
-                } | {
-                  /** @description Agent purpose/description */
-                  description: string;
-                  /** @constant */
-                  type: "remote";
-                  config: {
-                    /** @constant */
-                    protocol: "acp";
-                    /** Format: uri */
-                    endpoint: string;
-                    agent_name: string;
-                    /**
-                     * @default async
-                     * @enum {string}
-                     */
-                    default_mode: "sync" | "async" | "stream";
-                    /** @default 30s */
-                    health_check_interval: string;
-                    auth?: {
-                      /** @enum {string} */
-                      type: "bearer" | "api_key" | "basic";
-                      /** @description Header name for the token */
-                      header?: string;
-                      /** @description Environment variable containing the token */
-                      token_env?: string;
-                      /** @description For basic auth */
-                      username_env?: string;
-                      /** @description For basic auth */
-                      password_env?: string;
-                    };
-                    timeout?: string;
-                    /** @default 2 */
-                    max_retries: number;
-                    /** @description System prompt for the agent */
-                    prompt?: string;
-                    schema?: {
-                      /** @default false */
-                      validate_input: boolean;
-                      /** @default false */
-                      validate_output: boolean;
-                      input?: {
-                        [key: string]: unknown;
-                      };
-                      output?: {
-                        [key: string]: unknown;
-                      };
-                    };
-                    success?: {
-                      /** @description Condition that can be either JSONLogic or a natural language prompt */
-                      condition: {
-                        /** @description JSONLogic expression (cached and executed at runtime) */
-                        jsonlogic: unknown;
-                      } | {
-                        /** @description Natural language prompt (converted to JSONLogic and cached) */
-                        prompt: string;
-                      };
-                      /** @description Structured output schema */
-                      schema?: {
-                        [key: string]: unknown;
-                      };
-                    };
-                    error?: {
-                      /** @description Condition that can be either JSONLogic or a natural language prompt */
-                      condition: {
-                        /** @description JSONLogic expression (cached and executed at runtime) */
-                        jsonlogic: unknown;
-                      } | {
-                        /** @description Natural language prompt (converted to JSONLogic and cached) */
-                        prompt: string;
-                      };
-                    };
-                  };
-                } | {
-                  /** @constant */
-                  type: "atlas";
-                  /** @description Atlas agent ID from registry */
-                  agent: string;
-                  /** @description Agent description */
-                  description: string;
-                  /** @description Agent version (defaults to latest) */
-                  version?: string;
-                  /** @description Agent-specific configuration passed to the agent */
-                  config?: {
-                    [key: string]: unknown;
-                  };
-                  /** @description Environment variables for the agent (supports ${VAR} interpolation) */
-                  environment?: {
-                    [key: string]: string;
-                  };
-                };
               };
               memory?: {
                 /** @default true */
@@ -1038,120 +922,121 @@ export interface operations {
                   max_entries: number;
                   cleanup_interval_hours?: number;
                 };
-                session?: {
-                  include_in_context?: boolean;
-                  max_context_entries?: number;
-                };
+                session?: { include_in_context?: boolean; max_context_entries?: number };
                 /** @description Types of memory to track */
                 include_types?: string[];
               };
               notifications?: {
                 /** @description Notification providers by name */
                 providers?: {
-                  [key: string]: {
-                    /**
-                     * @description Whether this provider is enabled
-                     * @default true
-                     */
-                    enabled: boolean;
-                    /** @description Human-readable description of this provider */
-                    description?: string;
-                    /** @constant */
-                    provider: "sendgrid";
-                    config: {
-                      /** @description Environment variable containing SendGrid API key */
-                      api_key_env: string;
-                      /**
-                       * Format: email
-                       * @description Default from email address
-                       */
-                      from_email: string;
-                      /** @description Default from name */
-                      from_name?: string;
-                      /** @description Default template ID */
-                      template_id?: string;
-                      /**
-                       * @description Request timeout
-                       * @default 30s
-                       */
-                      timeout: string;
-                      /**
-                       * @description Enable sandbox mode for testing
-                       * @default false
-                       */
-                      sandbox_mode: boolean;
-                    };
-                  } | {
-                    /**
-                     * @description Whether this provider is enabled
-                     * @default true
-                     */
-                    enabled: boolean;
-                    /** @description Human-readable description of this provider */
-                    description?: string;
-                    /** @constant */
-                    provider: "slack";
-                    config: {
-                      /** @description Environment variable containing Slack webhook URL */
-                      webhook_url_env: string;
-                      /** @description Default channel (e.g., '#general') */
-                      channel?: string;
-                      /** @description Bot username */
-                      username?: string;
-                      /** @description Bot icon emoji */
-                      icon_emoji?: string;
-                      /**
-                       * @description Request timeout
-                       * @default 30s
-                       */
-                      timeout: string;
-                    };
-                  } | {
-                    /**
-                     * @description Whether this provider is enabled
-                     * @default true
-                     */
-                    enabled: boolean;
-                    /** @description Human-readable description of this provider */
-                    description?: string;
-                    /** @constant */
-                    provider: "teams";
-                    config: {
-                      /** @description Environment variable containing Teams webhook URL */
-                      webhook_url_env: string;
-                      /**
-                       * @description Request timeout
-                       * @default 30s
-                       */
-                      timeout: string;
-                    };
-                  } | {
-                    /**
-                     * @description Whether this provider is enabled
-                     * @default true
-                     */
-                    enabled: boolean;
-                    /** @description Human-readable description of this provider */
-                    description?: string;
-                    /** @constant */
-                    provider: "discord";
-                    config: {
-                      /** @description Environment variable containing Discord webhook URL */
-                      webhook_url_env: string;
-                      /** @description Bot username */
-                      username?: string;
-                      /**
-                       * Format: uri
-                       * @description Bot avatar URL
-                       */
-                      avatar_url?: string;
-                      /**
-                       * @description Request timeout
-                       * @default 30s
-                       */
-                      timeout: string;
-                    };
-                  };
+                  [key: string]:
+                    | {
+                        /**
+                         * @description Whether this provider is enabled
+                         * @default true
+                         */
+                        enabled: boolean;
+                        /** @description Human-readable description of this provider */
+                        description?: string;
+                        /** @constant */
+                        provider: "sendgrid";
+                        config: {
+                          /** @description Environment variable containing SendGrid API key */
+                          api_key_env: string;
+                          /**
+                           * Format: email
+                           * @description Default from email address
+                           */
+                          from_email: string;
+                          /** @description Default from name */
+                          from_name?: string;
+                          /** @description Default template ID */
+                          template_id?: string;
+                          /**
+                           * @description Request timeout
+                           * @default 30s
+                           */
+                          timeout: string;
+                          /**
+                           * @description Enable sandbox mode for testing
+                           * @default false
+                           */
+                          sandbox_mode: boolean;
+                        };
+                      }
+                    | {
+                        /**
+                         * @description Whether this provider is enabled
+                         * @default true
+                         */
+                        enabled: boolean;
+                        /** @description Human-readable description of this provider */
+                        description?: string;
+                        /** @constant */
+                        provider: "slack";
+                        config: {
+                          /** @description Environment variable containing Slack webhook URL */
+                          webhook_url_env: string;
+                          /** @description Default channel (e.g., '#general') */
+                          channel?: string;
+                          /** @description Bot username */
+                          username?: string;
+                          /** @description Bot icon emoji */
+                          icon_emoji?: string;
+                          /**
+                           * @description Request timeout
+                           * @default 30s
+                           */
+                          timeout: string;
+                        };
+                      }
+                    | {
+                        /**
+                         * @description Whether this provider is enabled
+                         * @default true
+                         */
+                        enabled: boolean;
+                        /** @description Human-readable description of this provider */
+                        description?: string;
+                        /** @constant */
+                        provider: "teams";
+                        config: {
+                          /** @description Environment variable containing Teams webhook URL */
+                          webhook_url_env: string;
+                          /**
+                           * @description Request timeout
+                           * @default 30s
+                           */
+                          timeout: string;
+                        };
+                      }
+                    | {
+                        /**
+                         * @description Whether this provider is enabled
+                         * @default true
+                         */
+                        enabled: boolean;
+                        /** @description Human-readable description of this provider */
+                        description?: string;
+                        /** @constant */
+                        provider: "discord";
+                        config: {
+                          /** @description Environment variable containing Discord webhook URL */
+                          webhook_url_env: string;
+                          /** @description Bot username */
+                          username?: string;
+                          /**
+                           * Format: uri
+                           * @description Bot avatar URL
+                           */
+                          avatar_url?: string;
+                          /**
+                           * @description Request timeout
+                           * @default 30s
+                           */
+                          timeout: string;
+                        };
+                      };
                 };
                 /** @description Default notification settings */
                 defaults?: {
@@ -1197,9 +1082,7 @@ export interface operations {
                     }[];
                   };
                 };
-                scope_sets?: {
-                  [key: string]: string[];
-                };
+                scope_sets?: { [key: string]: string[] };
               };
             };
           };
@@ -1207,9 +1090,7 @@ export interface operations {
       };
       /** @description Workspace not found */
       404: {
-        headers: {
-          [name: string]: unknown;
-        };
+        headers: { [name: string]: unknown };
         content: {
           "application/json": {
             /** @description Error message */
@@ -1223,9 +1104,7 @@ export interface operations {
       };
       /** @description Internal server error */
       500: {
-        headers: {
-          [name: string]: unknown;
-        };
+        headers: { [name: string]: unknown };
         content: {
           "application/json": {
             /** @description Error message */
@@ -1240,21 +1119,12 @@ export interface operations {
     };
   };
   "POSTApiWorkspaces:workspaceIdUpdate": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        workspaceId: string;
-      };
-      cookie?: never;
-    };
+    parameters: { query?: never; header?: never; path: { workspaceId: string }; cookie?: never };
     requestBody?: {
       content: {
         "application/json": {
           /** @description Updated workspace configuration */
-          config: {
-            [key: string]: unknown;
-          };
+          config: { [key: string]: unknown };
           /**
            * @description Create backup before updating
            * @default true
@@ -1266,9 +1136,7 @@ export interface operations {
     responses: {
       /** @description Workspace updated successfully */
       200: {
-        headers: {
-          [name: string]: unknown;
-        };
+        headers: { [name: string]: unknown };
         content: {
           "application/json": {
             success: boolean;
@@ -1318,9 +1186,7 @@ export interface operations {
       };
       /** @description Invalid configuration or workspace not found */
       400: {
-        headers: {
-          [name: string]: unknown;
-        };
+        headers: { [name: string]: unknown };
         content: {
           "application/json": {
             /** @description Error message */
@@ -1334,9 +1200,7 @@ export interface operations {
       };
       /** @description Update failed */
       500: {
-        headers: {
-          [name: string]: unknown;
-        };
+        headers: { [name: string]: unknown };
         content: {
           "application/json": {
             /** @description Error message */
@@ -1351,19 +1215,12 @@ export interface operations {
     };
   };
   POSTApiWorkspacesCreate: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
+    parameters: { query?: never; header?: never; path?: never; cookie?: never };
     requestBody?: {
       content: {
         "application/json": {
           /** @description Generated workspace configuration */
-          config: {
-            [key: string]: unknown;
-          };
+          config: { [key: string]: unknown };
           /** @description Custom workspace directory name (auto-resolves conflicts with -2, -3, etc.) */
           workspaceName?: string;
         };
@@ -1372,9 +1229,7 @@ export interface operations {
     responses: {
       /** @description Workspace created successfully */
       200: {
-        headers: {
-          [name: string]: unknown;
-        };
+        headers: { [name: string]: unknown };
         content: {
           "application/json": {
             success: boolean;
@@ -1420,9 +1275,7 @@ export interface operations {
       };
       /** @description Invalid configuration */
       400: {
-        headers: {
-          [name: string]: unknown;
-        };
+        headers: { [name: string]: unknown };
         content: {
           "application/json": {
             /** @description Error message */
@@ -1436,9 +1289,7 @@ export interface operations {
       };
       /** @description Creation failed */
       500: {
-        headers: {
-          [name: string]: unknown;
-        };
+        headers: { [name: string]: unknown };
         content: {
           "application/json": {
             /** @description Error message */
@@ -1456,19 +1307,14 @@ export interface operations {
     parameters: {
       query?: never;
       header?: never;
-      path: {
-        workspaceId: string;
-        signalId: string;
-      };
+      path: { workspaceId: string; signalId: string };
       cookie?: never;
     };
     requestBody?: {
       content: {
         "application/json": {
           /** @description Optional payload data for the signal */
-          payload?: {
-            [key: string]: unknown;
-          };
+          payload?: { [key: string]: unknown };
           /** @description Optional stream ID for UI progress feedback */
           streamId?: string;
         };
@@ -1477,9 +1323,7 @@ export interface operations {
     responses: {
       /** @description Signal accepted for processing */
       200: {
-        headers: {
-          [name: string]: unknown;
-        };
+        headers: { [name: string]: unknown };
         content: {
           "application/json": {
             /** @description Status message */
@@ -1500,9 +1344,7 @@ export interface operations {
       };
       /** @description Invalid request body or signal configuration */
       400: {
-        headers: {
-          [name: string]: unknown;
-        };
+        headers: { [name: string]: unknown };
         content: {
           "application/json": {
             /** @description Error message */
@@ -1512,9 +1354,7 @@ export interface operations {
       };
       /** @description Workspace or signal not found */
       404: {
-        headers: {
-          [name: string]: unknown;
-        };
+        headers: { [name: string]: unknown };
         content: {
           "application/json": {
             /** @description Error message */
@@ -1524,9 +1364,7 @@ export interface operations {
       };
       /** @description Internal server error */
       500: {
-        headers: {
-          [name: string]: unknown;
-        };
+        headers: { [name: string]: unknown };
         content: {
           "application/json": {
             /** @description Error message */
@@ -1538,10 +1376,7 @@ export interface operations {
   };
   "GETApiConversation-storage": {
     parameters: {
-      query?: {
-        limit?: number;
-        offset?: number;
-      };
+      query?: { limit?: number; offset?: number };
       header?: never;
       path?: never;
       cookie?: never;
@@ -1550,9 +1385,7 @@ export interface operations {
     responses: {
       /** @description Conversation list retrieved successfully */
       200: {
-        headers: {
-          [name: string]: unknown;
-        };
+        headers: { [name: string]: unknown };
         content: {
           "application/json": {
             success: boolean;
@@ -1568,33 +1401,18 @@ export interface operations {
       };
       /** @description Internal server error */
       500: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": {
-            error: string;
-          };
-        };
+        headers: { [name: string]: unknown };
+        content: { "application/json": { error: string } };
       };
     };
   };
   "GETApiConversation-storage:streamId": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        streamId: string;
-      };
-      cookie?: never;
-    };
+    parameters: { query?: never; header?: never; path: { streamId: string }; cookie?: never };
     requestBody?: never;
     responses: {
       /** @description Conversation history retrieved successfully */
       200: {
-        headers: {
-          [name: string]: unknown;
-        };
+        headers: { [name: string]: unknown };
         content: {
           "application/json": {
             success: boolean;
@@ -1605,9 +1423,7 @@ export interface operations {
               timestamp: string;
               /** @enum {string} */
               role: "user" | "assistant";
-              metadata?: {
-                [key: string]: unknown;
-              };
+              metadata?: { [key: string]: unknown };
             }[];
             messageCount: number;
           };
@@ -1615,37 +1431,18 @@ export interface operations {
       };
       /** @description Conversation not found */
       404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": {
-            error: string;
-          };
-        };
+        headers: { [name: string]: unknown };
+        content: { "application/json": { error: string } };
       };
       /** @description Internal server error */
       500: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": {
-            error: string;
-          };
-        };
+        headers: { [name: string]: unknown };
+        content: { "application/json": { error: string } };
       };
     };
   };
   "POSTApiConversation-storage:streamId": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        streamId: string;
-      };
-      cookie?: never;
-    };
+    parameters: { query?: never; header?: never; path: { streamId: string }; cookie?: never };
     requestBody?: {
       content: {
         "application/json": {
@@ -1654,9 +1451,7 @@ export interface operations {
             role: "user" | "assistant";
             content: string;
           };
-          metadata?: {
-            [key: string]: unknown;
-          };
+          metadata?: { [key: string]: unknown };
           timestamp: string;
         };
       };
@@ -1664,185 +1459,86 @@ export interface operations {
     responses: {
       /** @description Message stored successfully */
       200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": {
-            success: boolean;
-            messageId?: string;
-            error?: string;
-          };
-        };
+        headers: { [name: string]: unknown };
+        content: { "application/json": { success: boolean; messageId?: string; error?: string } };
       };
       /** @description Invalid request data */
       400: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": {
-            error: string;
-          };
-        };
+        headers: { [name: string]: unknown };
+        content: { "application/json": { error: string } };
       };
       /** @description Internal server error */
       500: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": {
-            error: string;
-          };
-        };
+        headers: { [name: string]: unknown };
+        content: { "application/json": { error: string } };
       };
     };
   };
   "DELETEApiConversation-storage:streamId": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        streamId: string;
-      };
-      cookie?: never;
-    };
+    parameters: { query?: never; header?: never; path: { streamId: string }; cookie?: never };
     requestBody?: never;
     responses: {
       /** @description Conversation deleted successfully */
       200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": {
-            success: boolean;
-            deleted?: boolean;
-            error?: string;
-          };
-        };
+        headers: { [name: string]: unknown };
+        content: { "application/json": { success: boolean; deleted?: boolean; error?: string } };
       };
       /** @description Conversation not found */
       404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": {
-            error: string;
-          };
-        };
+        headers: { [name: string]: unknown };
+        content: { "application/json": { error: string } };
       };
       /** @description Internal server error */
       500: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": {
-            error: string;
-          };
-        };
+        headers: { [name: string]: unknown };
+        content: { "application/json": { error: string } };
       };
     };
   };
   GETApiUser: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
+    parameters: { query?: never; header?: never; path?: never; cookie?: never };
     requestBody?: never;
     responses: {
       /** @description User retrieved successfully */
       200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": {
-            success: boolean;
-            user: string;
-          };
-        };
+        headers: { [name: string]: unknown };
+        content: { "application/json": { success: boolean; user: string } };
       };
       /** @description User not found */
       404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": {
-            error: string;
-          };
-        };
+        headers: { [name: string]: unknown };
+        content: { "application/json": { error: string } };
       };
       /** @description Internal server error */
       500: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": {
-            error: string;
-          };
-        };
+        headers: { [name: string]: unknown };
+        content: { "application/json": { error: string } };
       };
     };
   };
   GETApiTodos: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
+    parameters: { query?: never; header?: never; path?: never; cookie?: never };
     requestBody?: never;
     responses: {
       /** @description Stream list retrieved successfully */
       200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": {
-            success: boolean;
-            streams: string[];
-            total: number;
-          };
-        };
+        headers: { [name: string]: unknown };
+        content: { "application/json": { success: boolean; streams: string[]; total: number } };
       };
       /** @description Internal server error */
       500: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": {
-            error: string;
-          };
-        };
+        headers: { [name: string]: unknown };
+        content: { "application/json": { error: string } };
       };
     };
   };
   "GETApiTodos:streamId": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        streamId: string;
-      };
-      cookie?: never;
-    };
+    parameters: { query?: never; header?: never; path: { streamId: string }; cookie?: never };
     requestBody?: never;
     responses: {
       /** @description Todo list retrieved successfully */
       200: {
-        headers: {
-          [name: string]: unknown;
-        };
+        headers: { [name: string]: unknown };
         content: {
           "application/json": {
             success: boolean;
@@ -1862,9 +1558,7 @@ export interface operations {
                */
               priority: "high" | "medium" | "low";
               /** @description Additional context (workspace names, IDs, etc.) */
-              metadata?: {
-                [key: string]: unknown;
-              };
+              metadata?: { [key: string]: unknown };
               /** @description ISO timestamp of creation */
               createdAt: string;
               /** @description ISO timestamp of last update */
@@ -1876,37 +1570,18 @@ export interface operations {
       };
       /** @description Stream not found */
       404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": {
-            error: string;
-          };
-        };
+        headers: { [name: string]: unknown };
+        content: { "application/json": { error: string } };
       };
       /** @description Internal server error */
       500: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": {
-            error: string;
-          };
-        };
+        headers: { [name: string]: unknown };
+        content: { "application/json": { error: string } };
       };
     };
   };
   "POSTApiTodos:streamId": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        streamId: string;
-      };
-      cookie?: never;
-    };
+    parameters: { query?: never; header?: never; path: { streamId: string }; cookie?: never };
     requestBody?: {
       content: {
         "application/json": {
@@ -1927,9 +1602,7 @@ export interface operations {
              */
             priority: "high" | "medium" | "low";
             /** @description Additional context (workspace names, IDs, etc.) */
-            metadata?: {
-              [key: string]: unknown;
-            };
+            metadata?: { [key: string]: unknown };
             /** @description ISO timestamp of creation */
             createdAt: string;
             /** @description ISO timestamp of last update */
@@ -1941,103 +1614,49 @@ export interface operations {
     responses: {
       /** @description Todos stored successfully */
       200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": {
-            success: boolean;
-            message?: string;
-            error?: string;
-          };
-        };
+        headers: { [name: string]: unknown };
+        content: { "application/json": { success: boolean; message?: string; error?: string } };
       };
       /** @description Invalid request data */
       400: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": {
-            error: string;
-          };
-        };
+        headers: { [name: string]: unknown };
+        content: { "application/json": { error: string } };
       };
       /** @description Internal server error */
       500: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": {
-            error: string;
-          };
-        };
+        headers: { [name: string]: unknown };
+        content: { "application/json": { error: string } };
       };
     };
   };
   "DELETEApiTodos:streamId": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        streamId: string;
-      };
-      cookie?: never;
-    };
+    parameters: { query?: never; header?: never; path: { streamId: string }; cookie?: never };
     requestBody?: never;
     responses: {
       /** @description Todos deleted successfully */
       200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": {
-            success: boolean;
-            deleted?: boolean;
-            error?: string;
-          };
-        };
+        headers: { [name: string]: unknown };
+        content: { "application/json": { success: boolean; deleted?: boolean; error?: string } };
       };
       /** @description Stream not found */
       404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": {
-            error: string;
-          };
-        };
+        headers: { [name: string]: unknown };
+        content: { "application/json": { error: string } };
       };
       /** @description Internal server error */
       500: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": {
-            error: string;
-          };
-        };
+        headers: { [name: string]: unknown };
+        content: { "application/json": { error: string } };
       };
     };
   };
   GETApiAgents: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
+    parameters: { query?: never; header?: never; path?: never; cookie?: never };
     requestBody?: never;
     responses: {
       /** @description Successfully retrieved agents */
       200: {
-        headers: {
-          [name: string]: unknown;
-        };
+        headers: { [name: string]: unknown };
         content: {
           "application/json": {
             agents: {
@@ -2047,14 +1666,8 @@ export interface operations {
               version?: string;
               /** @enum {string} */
               category: "system" | "bundled" | "sdk" | "yaml";
-              expertise?: {
-                domains: string[];
-                capabilities: string[];
-                examples: string[];
-              };
-              metadata?: {
-                [key: string]: unknown;
-              };
+              expertise?: { domains: string[]; capabilities: string[]; examples: string[] };
+              metadata?: { [key: string]: unknown };
             }[];
             total: number;
           };
@@ -2062,33 +1675,18 @@ export interface operations {
       };
       /** @description Internal server error */
       500: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": {
-            error: string;
-          };
-        };
+        headers: { [name: string]: unknown };
+        content: { "application/json": { error: string } };
       };
     };
   };
   "GETApiAgents:id": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        id: string;
-      };
-      cookie?: never;
-    };
+    parameters: { query?: never; header?: never; path: { id: string }; cookie?: never };
     requestBody?: never;
     responses: {
       /** @description Successfully retrieved agent */
       200: {
-        headers: {
-          [name: string]: unknown;
-        };
+        headers: { [name: string]: unknown };
         content: {
           "application/json": {
             id: string;
@@ -2097,57 +1695,30 @@ export interface operations {
             version?: string;
             /** @enum {string} */
             category: "system" | "bundled" | "sdk" | "yaml";
-            expertise?: {
-              domains: string[];
-              capabilities: string[];
-              examples: string[];
-            };
-            metadata?: {
-              [key: string]: unknown;
-            };
+            expertise?: { domains: string[]; capabilities: string[]; examples: string[] };
+            metadata?: { [key: string]: unknown };
           };
         };
       };
       /** @description Agent not found */
       404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": {
-            error: string;
-          };
-        };
+        headers: { [name: string]: unknown };
+        content: { "application/json": { error: string } };
       };
       /** @description Internal server error */
       500: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": {
-            error: string;
-          };
-        };
+        headers: { [name: string]: unknown };
+        content: { "application/json": { error: string } };
       };
     };
   };
   "GETApiAgents:idExpertise": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        id: string;
-      };
-      cookie?: never;
-    };
+    parameters: { query?: never; header?: never; path: { id: string }; cookie?: never };
     requestBody?: never;
     responses: {
       /** @description Successfully retrieved agent expertise */
       200: {
-        headers: {
-          [name: string]: unknown;
-        };
+        headers: { [name: string]: unknown };
         content: {
           "application/json": {
             agentId: string;
@@ -2160,25 +1731,13 @@ export interface operations {
       };
       /** @description Agent expertise not found */
       404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": {
-            error: string;
-          };
-        };
+        headers: { [name: string]: unknown };
+        content: { "application/json": { error: string } };
       };
       /** @description Internal server error */
       500: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": {
-            error: string;
-          };
-        };
+        headers: { [name: string]: unknown };
+        content: { "application/json": { error: string } };
       };
     };
   };

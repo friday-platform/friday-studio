@@ -3,18 +3,19 @@
  * All CLI commands should use this to communicate with the Atlas daemon
  */
 
-import { z } from "zod/v4";
-import { AtlasApiError } from "./errors.ts";
-import { DEFAULT_TIMEOUT } from "./constants.ts";
 import { getAtlasDaemonUrl } from "@atlas/atlasd";
+import { z } from "zod/v4";
+import { DEFAULT_TIMEOUT } from "./constants.ts";
+import { AtlasApiError } from "./errors.ts";
 import {
+  JobDetailedInfoSchema as _JobDetailedInfoSchema,
+  SignalDetailedInfoSchema as _SignalDetailedInfoSchema,
   AgentInfoSchema,
   CancelSessionResponseSchema,
   CreateWorkspaceFromTemplateRequestSchema,
   CreateWorkspaceFromTemplateResponseSchema,
   DaemonStatusSchema,
   DeleteResponseSchema,
-  JobDetailedInfoSchema as _JobDetailedInfoSchema,
   JobInfoSchema,
   LibraryItemWithContentSchema,
   LibrarySearchResultSchema,
@@ -23,7 +24,6 @@ import {
   SessionDetailedInfoSchema,
   SessionInfoSchema,
   SessionLogsResponseSchema,
-  SignalDetailedInfoSchema as _SignalDetailedInfoSchema,
   SignalInfoSchema,
   SignalTriggerResponseSchema,
   TemplateConfigSchema,
@@ -85,9 +85,7 @@ export class AtlasClient {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), this.timeout);
 
-      const response = await fetch(`${this.url}/health`, {
-        signal: controller.signal,
-      });
+      const response = await fetch(`${this.url}/health`, { signal: controller.signal });
 
       clearTimeout(timeoutId);
       return response.ok;
@@ -137,14 +135,10 @@ export class AtlasClient {
   /**
    * Create a new workspace
    */
-  async createWorkspace(
-    request: WorkspaceCreateRequest,
-  ): Promise<WorkspaceCreateResponse> {
+  async createWorkspace(request: WorkspaceCreateRequest): Promise<WorkspaceCreateResponse> {
     const response = await this.makeRequest("/api/workspaces", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(request),
     });
     return WorkspaceCreateResponseSchema.parse(response);
@@ -153,18 +147,13 @@ export class AtlasClient {
   /**
    * Delete a workspace
    */
-  async deleteWorkspace(
-    workspaceId: string,
-    force: boolean = false,
-  ): Promise<{ message: string }> {
+  async deleteWorkspace(workspaceId: string, force: boolean = false): Promise<{ message: string }> {
     const url = new URL(`${this.url}/api/workspaces/${workspaceId}`);
     if (force) {
       url.searchParams.set("force", "true");
     }
 
-    const response = await this.makeRequest(url.pathname + url.search, {
-      method: "DELETE",
-    });
+    const response = await this.makeRequest(url.pathname + url.search, { method: "DELETE" });
     return MessageResponseSchema.parse(response);
   }
 
@@ -174,9 +163,7 @@ export class AtlasClient {
   async addWorkspace(request: WorkspaceAddRequest): Promise<WorkspaceInfo> {
     const response = await this.makeRequest("/api/workspaces/add", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(WorkspaceAddRequestSchema.parse(request)),
     });
     return WorkspaceInfoSchema.parse(response);
@@ -185,14 +172,10 @@ export class AtlasClient {
   /**
    * Add multiple workspaces by paths (batch operation)
    */
-  async addWorkspaces(
-    request: WorkspaceBatchAddRequest,
-  ): Promise<WorkspaceBatchAddResponse> {
+  async addWorkspaces(request: WorkspaceBatchAddRequest): Promise<WorkspaceBatchAddResponse> {
     const response = await this.makeRequest("/api/workspaces/add-batch", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(WorkspaceBatchAddRequestSchema.parse(request)),
     });
     return WorkspaceBatchAddResponseSchema.parse(response);
@@ -212,18 +195,11 @@ export class AtlasClient {
   async createWorkspaceFromTemplate(
     request: CreateWorkspaceFromTemplateRequest,
   ): Promise<CreateWorkspaceFromTemplateResponse> {
-    const response = await this.makeRequest(
-      "/api/workspaces/create-from-template",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(
-          CreateWorkspaceFromTemplateRequestSchema.parse(request),
-        ),
-      },
-    );
+    const response = await this.makeRequest("/api/workspaces/create-from-template", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(CreateWorkspaceFromTemplateRequestSchema.parse(request)),
+    });
     return CreateWorkspaceFromTemplateResponseSchema.parse(response);
   }
 
@@ -236,16 +212,11 @@ export class AtlasClient {
     config: string;
     path?: string;
   }): Promise<WorkspaceCreateResponse> {
-    const response = await this.makeRequest(
-      "/api/workspaces/create-from-config",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(params),
-      },
-    );
+    const response = await this.makeRequest("/api/workspaces/create-from-config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(params),
+    });
     return WorkspaceCreateResponseSchema.parse(response);
   }
 
@@ -257,16 +228,11 @@ export class AtlasClient {
     signalId: string,
     payload: Record<string, unknown> = {},
   ): Promise<SignalTriggerResponse> {
-    const response = await this.makeRequest(
-      `/api/workspaces/${workspaceId}/signals/${signalId}`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      },
-    );
+    const response = await this.makeRequest(`/api/workspaces/${workspaceId}/signals/${signalId}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
     return SignalTriggerResponseSchema.parse(response);
   }
 
@@ -282,15 +248,12 @@ export class AtlasClient {
     const timeoutId = setTimeout(() => controller.abort(), this.timeout);
 
     try {
-      const response = await fetch(
-        `http://localhost:${port}/signals/${signalName}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-          signal: controller.signal,
-        },
-      );
+      const response = await fetch(`http://localhost:${port}/signals/${signalName}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      });
 
       clearTimeout(timeoutId);
 
@@ -352,9 +315,7 @@ export class AtlasClient {
    * Cancel a session
    */
   async cancelSession(sessionId: string): Promise<CancelSessionResponse> {
-    const response = await this.makeRequest(`/api/sessions/${sessionId}`, {
-      method: "DELETE",
-    });
+    const response = await this.makeRequest(`/api/sessions/${sessionId}`, { method: "DELETE" });
     return CancelSessionResponseSchema.parse(response);
   }
 
@@ -363,11 +324,7 @@ export class AtlasClient {
    */
   async getSessionLogs(
     sessionId: string,
-    options?: {
-      tail?: number;
-      follow?: boolean;
-      filter?: string;
-    },
+    options?: { tail?: number; follow?: boolean; filter?: string },
   ): Promise<LogEntry[]> {
     const params = new URLSearchParams();
     if (options?.tail) params.set("tail", options.tail.toString());
@@ -388,10 +345,7 @@ export class AtlasClient {
    */
   async *streamSessionLogs(
     sessionId: string,
-    options?: {
-      tail?: number;
-      filter?: string;
-    },
+    options?: { tail?: number; filter?: string },
   ): AsyncIterableIterator<LogEntry> {
     const params = new URLSearchParams();
     if (options?.tail) params.set("tail", options.tail.toString());
@@ -402,9 +356,7 @@ export class AtlasClient {
     const path = `/sessions/${sessionId}/logs?${queryString}`;
 
     const response = await fetch(`${this.url}${path}`, {
-      headers: {
-        Accept: "text/event-stream",
-      },
+      headers: { Accept: "text/event-stream" },
     });
 
     if (!response.ok) {
@@ -451,9 +403,7 @@ export class AtlasClient {
    * List agents in a workspace
    */
   async listAgents(workspaceId: string): Promise<AgentInfo[]> {
-    const response = await this.makeRequest(
-      `/api/workspaces/${workspaceId}/agents`,
-    );
+    const response = await this.makeRequest(`/api/workspaces/${workspaceId}/agents`);
     return z.array(AgentInfoSchema).parse(response);
   }
 
@@ -461,9 +411,7 @@ export class AtlasClient {
    * Describe a specific agent in a workspace
    */
   async describeAgent(workspaceId: string, agentId: string): Promise<unknown> {
-    const response = await this.makeRequest(
-      `/api/workspaces/${workspaceId}/agents/${agentId}`,
-    );
+    const response = await this.makeRequest(`/api/workspaces/${workspaceId}/agents/${agentId}`);
     return response;
   }
 
@@ -471,9 +419,7 @@ export class AtlasClient {
    * List signals in a workspace
    */
   async listSignals(workspaceId: string) {
-    const response = await this.makeRequest(
-      `/api/workspaces/${workspaceId}/signals`,
-    );
+    const response = await this.makeRequest(`/api/workspaces/${workspaceId}/signals`);
 
     return z.record(z.string(), SignalInfoSchema).parse(response);
   }
@@ -492,10 +438,7 @@ export class AtlasClient {
     const signal = signals[signalName] ?? undefined;
 
     if (!signal) {
-      throw new AtlasApiError(
-        `Signal '${signalName}' not found in workspace`,
-        404,
-      );
+      throw new AtlasApiError(`Signal '${signalName}' not found in workspace`, 404);
     }
 
     // Load signal configuration directly using provided workspace path
@@ -523,21 +466,14 @@ export class AtlasClient {
       const rawConfig = yaml.parse(yamlContent) as Record<string, unknown>;
 
       // Extract signal configuration (signals can be at root or under workspace)
-      const workspace = rawConfig.workspace as
-        | Record<string, unknown>
-        | undefined;
+      const workspace = rawConfig.workspace as Record<string, unknown> | undefined;
       const signals = (workspace?.signals || rawConfig.signals) as
         | Record<string, unknown>
         | undefined;
-      const signalConfig = signals?.[signalName] as
-        | Record<string, unknown>
-        | undefined;
+      const signalConfig = signals?.[signalName] as Record<string, unknown> | undefined;
 
       if (!signalConfig) {
-        throw new AtlasApiError(
-          `Signal '${signalName}' configuration not found`,
-          404,
-        );
+        throw new AtlasApiError(`Signal '${signalName}' configuration not found`, 404);
       }
 
       // Ensure required fields for SignalDetailedInfo schema
@@ -564,10 +500,7 @@ export class AtlasClient {
 
       // Handle file not found errors specifically
       if (error instanceof Deno.errors.NotFound) {
-        throw new AtlasApiError(
-          `Workspace configuration file not found at ${workspacePath}`,
-          404,
-        );
+        throw new AtlasApiError(`Workspace configuration file not found at ${workspacePath}`, 404);
       }
 
       throw new AtlasApiError(
@@ -597,19 +530,12 @@ export class AtlasClient {
       const rawConfig = yaml.parse(yamlContent) as Record<string, unknown>;
 
       // Extract job configuration from workspace.yml (jobs can be at root or under workspace)
-      const workspace = rawConfig.workspace as
-        | Record<string, unknown>
-        | undefined;
-      const jobs = (workspace?.jobs || rawConfig.jobs) as
-        | Record<string, unknown>
-        | undefined;
+      const workspace = rawConfig.workspace as Record<string, unknown> | undefined;
+      const jobs = (workspace?.jobs || rawConfig.jobs) as Record<string, unknown> | undefined;
       const jobConfig = jobs?.[jobName] as Record<string, unknown> | undefined;
 
       if (!jobConfig) {
-        throw new AtlasApiError(
-          `Job '${jobName}' configuration not found`,
-          404,
-        );
+        throw new AtlasApiError(`Job '${jobName}' configuration not found`, 404);
       }
 
       // Ensure required fields for JobDetailedInfo schema
@@ -633,10 +559,7 @@ export class AtlasClient {
 
       // Handle file not found errors specifically
       if (error instanceof Deno.errors.NotFound) {
-        throw new AtlasApiError(
-          `Workspace configuration file not found at ${workspacePath}`,
-          404,
-        );
+        throw new AtlasApiError(`Workspace configuration file not found at ${workspacePath}`, 404);
       }
 
       throw new AtlasApiError(
@@ -652,9 +575,7 @@ export class AtlasClient {
    * List jobs in a workspace
    */
   async listJobs(workspaceId: string): Promise<JobInfo[]> {
-    const response = await this.makeRequest(
-      `/api/workspaces/${workspaceId}/jobs`,
-    );
+    const response = await this.makeRequest(`/api/workspaces/${workspaceId}/jobs`);
     return z.array(JobInfoSchema).parse(response);
   }
 
@@ -685,12 +606,8 @@ export class AtlasClient {
   /**
    * List sessions in a specific workspace
    */
-  async listWorkspaceSessions(
-    workspaceId: string,
-  ): Promise<WorkspaceSessionInfo[]> {
-    const response = await this.makeRequest(
-      `/api/workspaces/${workspaceId}/sessions`,
-    );
+  async listWorkspaceSessions(workspaceId: string): Promise<WorkspaceSessionInfo[]> {
+    const response = await this.makeRequest(`/api/workspaces/${workspaceId}/sessions`);
     return z.array(WorkspaceSessionInfoSchema).parse(response);
   }
 
@@ -701,9 +618,7 @@ export class AtlasClient {
   /**
    * List library items
    */
-  async listLibraryItems(
-    query?: Partial<LibrarySearchQuery>,
-  ): Promise<LibrarySearchResult> {
+  async listLibraryItems(query?: Partial<LibrarySearchQuery>): Promise<LibrarySearchResult> {
     const params = new URLSearchParams();
     if (query?.query) params.set("q", query.query);
     if (query?.type) {
@@ -781,14 +696,8 @@ export class AtlasClient {
   ): Promise<unknown> {
     const response = await this.makeRequest("/api/library/generate", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        templateId,
-        data,
-        options,
-      }),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ templateId, data, options }),
     });
     return response;
   }
@@ -805,9 +714,7 @@ export class AtlasClient {
    * Delete library item
    */
   async deleteLibraryItem(itemId: string): Promise<DeleteLibraryItemResponse> {
-    const response = await this.makeRequest(`/api/library/${itemId}`, {
-      method: "DELETE",
-    });
+    const response = await this.makeRequest(`/api/library/${itemId}`, { method: "DELETE" });
     return DeleteResponseSchema.parse(response);
   }
 
@@ -898,9 +805,7 @@ export class AtlasClient {
     const { exists } = await import("@std/fs");
     const { load } = await import("@std/dotenv");
     const { getAtlasHome } = await import("../../../src/utils/paths.ts");
-    const { CredentialFetcher, getDiagnosticsApiUrl } = await import(
-      "@atlas/core"
-    );
+    const { CredentialFetcher, getDiagnosticsApiUrl } = await import("@atlas/core");
 
     const globalAtlasEnv = join(getAtlasHome(), ".env");
     if (await exists(globalAtlasEnv)) {
@@ -931,10 +836,7 @@ export class AtlasClient {
     // Send to diagnostic endpoint using centralized URL function
     const response = await fetch(getDiagnosticsApiUrl(filename), {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${atlasKey}`,
-        "Content-Type": "application/gzip",
-      },
+      headers: { Authorization: `Bearer ${atlasKey}`, "Content-Type": "application/gzip" },
       body: diagnosticData,
     });
 
@@ -957,27 +859,19 @@ export class AtlasClient {
    * Shutdown the daemon
    */
   async shutdown(): Promise<{ message: string }> {
-    const response = await this.makeRequest("/api/daemon/shutdown", {
-      method: "POST",
-    });
+    const response = await this.makeRequest("/api/daemon/shutdown", { method: "POST" });
     return MessageResponseSchema.parse(response);
   }
 
   /**
    * Make a request to the Atlas API with error handling
    */
-  private async makeRequest(
-    path: string,
-    options: RequestInit = {},
-  ): Promise<unknown> {
+  private async makeRequest(path: string, options: RequestInit = {}): Promise<unknown> {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), this.timeout);
 
     try {
-      const response = await fetch(`${this.url}${path}`, {
-        signal: controller.signal,
-        ...options,
-      });
+      const response = await fetch(`${this.url}${path}`, { signal: controller.signal, ...options });
 
       clearTimeout(timeoutId);
 
@@ -985,8 +879,7 @@ export class AtlasClient {
         let errorMessage: string;
         try {
           const errorData = await response.json();
-          errorMessage = errorData.error ||
-            `HTTP ${response.status}: ${response.statusText}`;
+          errorMessage = errorData.error || `HTTP ${response.status}: ${response.statusText}`;
         } catch {
           errorMessage = `HTTP ${response.status}: ${response.statusText}`;
         }
@@ -1022,11 +915,7 @@ export class AtlasClient {
    * Handle fetch errors in a standardized way
    * Used by consumer code for consistent error handling
    */
-  handleFetchError(error: unknown): {
-    success: false;
-    error: string;
-    reason?: string;
-  } {
+  handleFetchError(error: unknown): { success: false; error: string; reason?: string } {
     if (error instanceof AtlasApiError) {
       let reason: string | undefined;
       if (error.status === 503) {
@@ -1037,26 +926,14 @@ export class AtlasClient {
         reason = "network_error";
       }
 
-      return {
-        success: false,
-        error: error.message,
-        reason,
-      };
+      return { success: false, error: error.message, reason };
     }
 
     if (error instanceof Error) {
-      return {
-        success: false,
-        error: error.message,
-        reason: "network_error",
-      };
+      return { success: false, error: error.message, reason: "network_error" };
     }
 
-    return {
-      success: false,
-      error: String(error),
-      reason: "network_error",
-    };
+    return { success: false, error: String(error), reason: "network_error" };
   }
 }
 

@@ -5,10 +5,10 @@
  * Tests atlas.yml vs workspace.yml separation from docs/CONFIGURATION_ARCHITECTURE.md
  */
 
-import { expect } from "@std/expect";
-import { join } from "@std/path";
 import { ConfigLoader } from "@atlas/config";
 import { FilesystemConfigAdapter } from "@atlas/storage";
+import { expect } from "@std/expect";
+import { join } from "@std/path";
 
 // Test fixtures
 const validAtlasConfig = `version: "1.0"
@@ -248,10 +248,7 @@ async function createTestEnvironment() {
   await Deno.writeTextFile(join(tempDir, "atlas.yml"), validAtlasConfig);
 
   // Write workspace.yml
-  await Deno.writeTextFile(
-    join(tempDir, "workspace.yml"),
-    validWorkspaceConfig,
-  );
+  await Deno.writeTextFile(join(tempDir, "workspace.yml"), validWorkspaceConfig);
 
   // No need to create separate job files - jobs are now in workspace.yml
 
@@ -285,15 +282,9 @@ Deno.test("Atlas configuration loads platform settings", async () => {
     expect(mergedConfig.atlas!.workspace.id).toBe("atlas-platform");
 
     // Test supervisor configurations
-    expect(mergedConfig.atlas?.supervisors?.workspace?.model).toBe(
-      "claude-3-7-sonnet-latest",
-    );
-    expect(mergedConfig.atlas?.supervisors?.session?.model).toBe(
-      "claude-3-7-sonnet-latest",
-    );
-    expect(mergedConfig.atlas?.supervisors?.agent?.model).toBe(
-      "claude-3-7-sonnet-latest",
-    );
+    expect(mergedConfig.atlas?.supervisors?.workspace?.model).toBe("claude-3-7-sonnet-latest");
+    expect(mergedConfig.atlas?.supervisors?.session?.model).toBe("claude-3-7-sonnet-latest");
+    expect(mergedConfig.atlas?.supervisors?.agent?.model).toBe("claude-3-7-sonnet-latest");
 
     // Test supervisor prompts exist
     expect(mergedConfig.atlas?.supervisors?.workspace?.prompts?.system).toContain(
@@ -302,9 +293,7 @@ Deno.test("Atlas configuration loads platform settings", async () => {
     expect(mergedConfig.atlas?.supervisors?.session?.prompts?.system).toContain(
       "SessionSupervisor",
     );
-    expect(mergedConfig.atlas?.supervisors?.agent?.prompts?.system).toContain(
-      "AgentSupervisor",
-    );
+    expect(mergedConfig.atlas?.supervisors?.agent?.prompts?.system).toContain("AgentSupervisor");
 
     // Test platform agents exist
     expect(typeof mergedConfig.atlas?.agents).toBe("object");
@@ -348,9 +337,7 @@ Deno.test("Workspace configuration loads user-defined components", async () => {
     const workspaceConfig = mergedConfig.workspace;
 
     // Test workspace metadata
-    expect(workspaceConfig.workspace.id).toBe(
-      "7821d138-71a6-434c-bc64-10addcf33532",
-    );
+    expect(workspaceConfig.workspace.id).toBe("7821d138-71a6-434c-bc64-10addcf33532");
     expect(workspaceConfig.workspace.name).toBe("Test Workspace");
     expect(workspaceConfig.workspace.description).toBe(
       "A test workspace for configuration validation",
@@ -396,61 +383,54 @@ Deno.test("Workspace configuration loads user-defined components", async () => {
   }
 });
 
-Deno.test(
-  "Configuration merging combines atlas and workspace configs",
-  async () => {
-    // Test configuration hierarchy and merging
-    // - Atlas config provides platform defaults
-    // - Workspace config overrides where appropriate
-    // - Validation ensures compatibility
-    const originalCwd = Deno.cwd();
-    let tempDir: string | null = null;
+Deno.test("Configuration merging combines atlas and workspace configs", async () => {
+  // Test configuration hierarchy and merging
+  // - Atlas config provides platform defaults
+  // - Workspace config overrides where appropriate
+  // - Validation ensures compatibility
+  const originalCwd = Deno.cwd();
+  let tempDir: string | null = null;
 
-    try {
-      tempDir = await createTestEnvironment();
-      Deno.chdir(tempDir);
+  try {
+    tempDir = await createTestEnvironment();
+    Deno.chdir(tempDir);
 
-      const adapter = new FilesystemConfigAdapter(tempDir);
-      const configLoader = new ConfigLoader(adapter, tempDir);
-      const mergedConfig = await configLoader.load();
+    const adapter = new FilesystemConfigAdapter(tempDir);
+    const configLoader = new ConfigLoader(adapter, tempDir);
+    const mergedConfig = await configLoader.load();
 
-      // Verify atlas config is loaded
-      expect(mergedConfig.atlas?.workspace.name).toBe("Atlas Platform");
-      expect(mergedConfig.atlas?.supervisors?.workspace?.model).toBe(
-        "claude-3-7-sonnet-latest",
-      );
+    // Verify atlas config is loaded
+    expect(mergedConfig.atlas?.workspace.name).toBe("Atlas Platform");
+    expect(mergedConfig.atlas?.supervisors?.workspace?.model).toBe("claude-3-7-sonnet-latest");
 
-      // Verify workspace config is loaded
-      expect(mergedConfig.workspace.workspace.name).toBe("Test Workspace");
-      expect(Object.keys(mergedConfig.workspace.agents!).length).toBe(3);
-      expect(Object.keys(mergedConfig.workspace.signals!).length).toBe(1);
+    // Verify workspace config is loaded
+    expect(mergedConfig.workspace.workspace.name).toBe("Test Workspace");
+    expect(Object.keys(mergedConfig.workspace.agents!).length).toBe(3);
+    expect(Object.keys(mergedConfig.workspace.signals!).length).toBe(1);
 
-      // Verify jobs are loaded
-      expect(Object.keys(mergedConfig.workspace.jobs!).length).toBe(1);
-      expect(mergedConfig.workspace.jobs!["test-job"]).toBeDefined();
-      expect(mergedConfig.workspace.jobs!["test-job"].name).toBe("test-job");
-      expect(mergedConfig.workspace.jobs!["test-job"].execution?.strategy).toBe(
-        "sequential",
-      );
+    // Verify jobs are loaded
+    expect(Object.keys(mergedConfig.workspace.jobs!).length).toBe(1);
+    expect(mergedConfig.workspace.jobs!["test-job"]).toBeDefined();
+    expect(mergedConfig.workspace.jobs!["test-job"].name).toBe("test-job");
+    expect(mergedConfig.workspace.jobs!["test-job"].execution?.strategy).toBe("sequential");
 
-      // Verify agent references in jobs are valid
-      const testJob = mergedConfig.workspace.jobs!["test-job"];
-      if (testJob.execution?.agents) {
-        for (const agentRef of testJob.execution.agents) {
-          const agentId = typeof agentRef === "string" ? agentRef : agentRef.id;
-          const agentExists = mergedConfig.workspace.agents![agentId] ||
-            mergedConfig.atlas?.agents?.[agentId];
-          expect(agentExists).toBeDefined();
-        }
-      }
-    } finally {
-      Deno.chdir(originalCwd);
-      if (tempDir) {
-        await Deno.remove(tempDir, { recursive: true });
+    // Verify agent references in jobs are valid
+    const testJob = mergedConfig.workspace.jobs!["test-job"];
+    if (testJob.execution?.agents) {
+      for (const agentRef of testJob.execution.agents) {
+        const agentId = typeof agentRef === "string" ? agentRef : agentRef.id;
+        const agentExists =
+          mergedConfig.workspace.agents![agentId] || mergedConfig.atlas?.agents?.[agentId];
+        expect(agentExists).toBeDefined();
       }
     }
-  },
-);
+  } finally {
+    Deno.chdir(originalCwd);
+    if (tempDir) {
+      await Deno.remove(tempDir, { recursive: true });
+    }
+  }
+});
 
 Deno.test("Agent type configurations validate correctly", async () => {
   // Test different agent type validation
@@ -562,7 +542,7 @@ Deno.test("Job-owns-relationship architecture: triggers field is preserved", asy
     // Verify signal-to-job mapping works via triggers
     const signalId = "test-signal";
     const jobsForSignal = Object.values(mergedConfig.workspace.jobs!).filter((job) =>
-      job.triggers?.some((t) => t.signal === signalId)
+      job.triggers?.some((t) => t.signal === signalId),
     );
     expect(jobsForSignal.length).toBe(1);
     expect(jobsForSignal[0].name).toBe("test-job");
@@ -661,10 +641,7 @@ signals:
       path: "/test"
 `;
 
-    await Deno.writeTextFile(
-      join(tempDir, "workspace.yml"),
-      invalidWorkspaceContent,
-    );
+    await Deno.writeTextFile(join(tempDir, "workspace.yml"), invalidWorkspaceContent);
     Deno.chdir(tempDir);
 
     const adapter = new FilesystemConfigAdapter(tempDir);
@@ -738,10 +715,7 @@ signals:
       path: "/test"
 `;
 
-    await Deno.writeTextFile(
-      join(tempDir, "workspace.yml"),
-      invalidWorkspaceContent,
-    );
+    await Deno.writeTextFile(join(tempDir, "workspace.yml"), invalidWorkspaceContent);
     Deno.chdir(tempDir);
 
     const adapter = new FilesystemConfigAdapter(tempDir);

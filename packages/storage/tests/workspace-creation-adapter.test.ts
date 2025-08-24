@@ -1,6 +1,6 @@
 import { expect } from "@std/expect";
-import { FilesystemWorkspaceCreationAdapter } from "../src/adapters/workspace-creation-adapter.ts";
 import { join } from "@std/path";
+import { FilesystemWorkspaceCreationAdapter } from "../src/adapters/workspace-creation-adapter.ts";
 
 // Set testing environment to prevent logger file operations
 Deno.env.set("DENO_TESTING", "true");
@@ -272,12 +272,7 @@ Deno.test("WorkspaceCreationAdapter - handles unicode in workspace names", async
     const basePath = tempDir;
 
     // Test unicode characters
-    const unicodeNames = [
-      "workspace-café",
-      "workspace-日本語",
-      "workspace-🚀",
-      "workspace-Ñoño",
-    ];
+    const unicodeNames = ["workspace-café", "workspace-日本語", "workspace-🚀", "workspace-Ñoño"];
 
     for (const name of unicodeNames) {
       const workspacePath = await adapter.createWorkspaceDirectory(basePath, name);
@@ -350,9 +345,9 @@ Deno.test("WorkspaceCreationAdapter - concurrent collision handling", async () =
     const name = "concurrent";
 
     // Create multiple workspaces concurrently
-    const promises = Array(5).fill(null).map(() =>
-      adapter.createWorkspaceDirectory(basePath, name)
-    );
+    const promises = Array(5)
+      .fill(null)
+      .map(() => adapter.createWorkspaceDirectory(basePath, name));
 
     const paths = await Promise.all(promises);
 

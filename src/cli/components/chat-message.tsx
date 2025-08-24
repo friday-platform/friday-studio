@@ -1,9 +1,9 @@
 import { Box } from "ink";
-import { MarkdownDisplay } from "./markdown-display.tsx";
-import { useResponsiveDimensions } from "../utils/useResponsiveDimensions.ts";
-import { useMarkdown } from "../modules/conversation/use-markdown.ts";
 import { useCallback } from "react";
 import { useAppContext } from "../contexts/app-context.tsx";
+import { useMarkdown } from "../modules/conversation/use-markdown.ts";
+import { useResponsiveDimensions } from "../utils/useResponsiveDimensions.ts";
+import { MarkdownDisplay } from "./markdown-display.tsx";
 
 // Chat Message Component
 interface ChatMessageProps {

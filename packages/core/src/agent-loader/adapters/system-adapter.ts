@@ -1,6 +1,6 @@
 import type { AtlasAgent } from "@atlas/agent-sdk";
-import type { AgentAdapter, AgentSourceData, AgentSourceType, AgentSummary } from "./types.ts";
 import { conversationAgent } from "../../../../system/agents/conversation/conversation.agent.ts";
+import type { AgentAdapter, AgentSourceData, AgentSourceType, AgentSummary } from "./types.ts";
 
 /**
  * Loads built-in Atlas system agents.
@@ -30,10 +30,7 @@ export class SystemAgentAdapter implements AgentAdapter {
       type: "system",
       id,
       agent,
-      metadata: {
-        sourceLocation: `system://${id}`,
-        version: agent.metadata.version,
-      },
+      metadata: { sourceLocation: `system://${id}`, version: agent.metadata.version },
     });
   }
 

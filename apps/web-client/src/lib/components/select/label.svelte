@@ -1,12 +1,12 @@
 <script lang="ts">
-  import type { Snippet } from "svelte";
-  import { getContext } from "./context";
+import type { Snippet } from "svelte";
+import { getContext } from "./context";
 
-  type Props = { children: Snippet };
+type Props = { children: Snippet };
 
-  let { children }: Props = $props();
+const { children }: Props = $props();
 
-  const { label } = getContext();
+const { label } = getContext();
 </script>
 
 <label {...$label} use:label>

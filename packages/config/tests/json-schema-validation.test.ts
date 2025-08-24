@@ -1,11 +1,9 @@
-import { JsonSchema, jsonSchemaToZod, validateSignalPayload } from "@atlas/config";
+import { type JsonSchema, jsonSchemaToZod, validateSignalPayload } from "@atlas/config";
 import { assertEquals, assertThrows } from "@std/assert";
 
 // Basic Type Tests
 Deno.test("JSON Schema Validation - should convert string type", () => {
-  const schema = {
-    type: "string",
-  };
+  const schema = { type: "string" };
 
   const zodSchema = jsonSchemaToZod(schema);
 
@@ -19,9 +17,7 @@ Deno.test("JSON Schema Validation - should convert string type", () => {
 });
 
 Deno.test("JSON Schema Validation - should convert number type", () => {
-  const schema = {
-    type: "number",
-  };
+  const schema = { type: "number" };
 
   const zodSchema = jsonSchemaToZod(schema);
 
@@ -37,9 +33,7 @@ Deno.test("JSON Schema Validation - should convert number type", () => {
 });
 
 Deno.test("JSON Schema Validation - should convert integer type", () => {
-  const schema = {
-    type: "integer",
-  };
+  const schema = { type: "integer" };
 
   const zodSchema = jsonSchemaToZod(schema);
 
@@ -54,9 +48,7 @@ Deno.test("JSON Schema Validation - should convert integer type", () => {
 });
 
 Deno.test("JSON Schema Validation - should convert boolean type", () => {
-  const schema = {
-    type: "boolean",
-  };
+  const schema = { type: "boolean" };
 
   const zodSchema = jsonSchemaToZod(schema);
 
@@ -71,9 +63,7 @@ Deno.test("JSON Schema Validation - should convert boolean type", () => {
 });
 
 Deno.test("JSON Schema Validation - should convert null type", () => {
-  const schema = {
-    type: "null",
-  };
+  const schema = { type: "null" };
 
   const zodSchema = jsonSchemaToZod(schema);
 
@@ -88,12 +78,7 @@ Deno.test("JSON Schema Validation - should convert null type", () => {
 
 // Array Tests
 Deno.test("JSON Schema Validation - should convert array type", () => {
-  const schema = {
-    type: "array",
-    items: {
-      type: "string",
-    },
-  };
+  const schema = { type: "array", items: { type: "string" } };
 
   const zodSchema = jsonSchemaToZod(schema);
 
@@ -107,14 +92,7 @@ Deno.test("JSON Schema Validation - should convert array type", () => {
 });
 
 Deno.test("JSON Schema Validation - should handle array constraints", () => {
-  const schema = {
-    type: "array",
-    items: {
-      type: "number",
-    },
-    minItems: 2,
-    maxItems: 5,
-  };
+  const schema = { type: "array", items: { type: "number" }, minItems: 2, maxItems: 5 };
 
   const zodSchema = jsonSchemaToZod(schema);
 
@@ -132,11 +110,7 @@ Deno.test("JSON Schema Validation - should handle array constraints", () => {
 Deno.test("JSON Schema Validation - should handle tuple arrays", () => {
   const schema = {
     type: "array",
-    items: [
-      { type: "string" },
-      { type: "number" },
-      { type: "boolean" },
-    ],
+    items: [{ type: "string" }, { type: "number" }, { type: "boolean" }],
   };
 
   const zodSchema = jsonSchemaToZod(schema);
@@ -155,10 +129,7 @@ Deno.test("JSON Schema Validation - should handle tuple arrays", () => {
 Deno.test("JSON Schema Validation - should convert object type", () => {
   const schema = {
     type: "object",
-    properties: {
-      name: { type: "string" },
-      age: { type: "number" },
-    },
+    properties: { name: { type: "string" }, age: { type: "number" } },
     required: ["name"],
   };
 
@@ -178,9 +149,7 @@ Deno.test("JSON Schema Validation - should convert object type", () => {
 Deno.test("JSON Schema Validation - should handle additionalProperties", () => {
   const schema = {
     type: "object",
-    properties: {
-      name: { type: "string" },
-    },
+    properties: { name: { type: "string" } },
     additionalProperties: false,
   };
 
@@ -196,9 +165,7 @@ Deno.test("JSON Schema Validation - should handle additionalProperties", () => {
 Deno.test("JSON Schema Validation - should handle typed additionalProperties", () => {
   const schema = {
     type: "object",
-    properties: {
-      name: { type: "string" },
-    },
+    properties: { name: { type: "string" } },
     additionalProperties: { type: "number" },
   };
 
@@ -213,12 +180,7 @@ Deno.test("JSON Schema Validation - should handle typed additionalProperties", (
 
 // String Constraints
 Deno.test("JSON Schema Validation - should handle string constraints", () => {
-  const schema = {
-    type: "string",
-    minLength: 3,
-    maxLength: 10,
-    pattern: "^[a-zA-Z]+$",
-  };
+  const schema = { type: "string", minLength: 3, maxLength: 10, pattern: "^[a-zA-Z]+$" };
 
   const zodSchema = jsonSchemaToZod(schema);
 
@@ -237,10 +199,7 @@ Deno.test("JSON Schema Validation - should handle string constraints", () => {
 });
 
 Deno.test("JSON Schema Validation - should handle string enums", () => {
-  const schema = {
-    type: "string",
-    enum: ["red", "green", "blue"],
-  };
+  const schema = { type: "string", enum: ["red", "green", "blue"] };
 
   const zodSchema = jsonSchemaToZod(schema);
 
@@ -292,15 +251,8 @@ Deno.test("JSON Schema Validation - should handle complex nested objects", () =>
         },
         required: ["name", "email"],
       },
-      tags: {
-        type: "array",
-        items: { type: "string" },
-        minItems: 1,
-      },
-      metadata: {
-        type: "object",
-        additionalProperties: { type: "string" },
-      },
+      tags: { type: "array", items: { type: "string" }, minItems: 1 },
+      metadata: { type: "object", additionalProperties: { type: "string" } },
     },
     required: ["user"],
   };
@@ -309,40 +261,22 @@ Deno.test("JSON Schema Validation - should handle complex nested objects", () =>
 
   // Valid complex object
   const validData = {
-    user: {
-      name: "John Doe",
-      email: "john@example.com",
-      age: 30,
-    },
+    user: { name: "John Doe", email: "john@example.com", age: 30 },
     tags: ["important", "verified"],
-    metadata: {
-      source: "web",
-      version: "1.0",
-    },
+    metadata: { source: "web", version: "1.0" },
   };
 
   assertEquals(zodSchema.safeParse(validData).success, true);
 
   // Invalid - missing required email
-  const invalidData = {
-    user: {
-      name: "John Doe",
-      age: 30,
-    },
-    tags: ["important"],
-  };
+  const invalidData = { user: { name: "John Doe", age: 30 }, tags: ["important"] };
 
   assertEquals(zodSchema.safeParse(invalidData).success, false);
 });
 
 // Union Types
 Deno.test("JSON Schema Validation - should handle oneOf (union types)", () => {
-  const schema = {
-    oneOf: [
-      { type: "string" },
-      { type: "number" },
-    ],
-  };
+  const schema = { oneOf: [{ type: "string" }, { type: "number" }] };
 
   const zodSchema = jsonSchemaToZod(schema);
 
@@ -378,20 +312,8 @@ Deno.test("JSON Schema Validation - should handle anyOf", () => {
 Deno.test("JSON Schema Validation - should handle allOf (intersection types)", () => {
   const schema: JsonSchema = {
     allOf: [
-      {
-        type: "object",
-        properties: {
-          name: { type: "string" },
-        },
-        required: ["name"],
-      },
-      {
-        type: "object",
-        properties: {
-          age: { type: "number" },
-        },
-        required: ["age"],
-      },
+      { type: "object", properties: { name: { type: "string" } }, required: ["name"] },
+      { type: "object", properties: { age: { type: "number" } }, required: ["age"] },
     ],
   };
 
@@ -410,9 +332,7 @@ Deno.test("JSON Schema Validation - should validate webhook payload", () => {
   const signal = {
     provider: "http" as const,
     description: "GitHub webhook",
-    config: {
-      path: "/webhook/github",
-    },
+    config: { path: "/webhook/github" },
     schema: {
       type: "object",
       properties: {
@@ -435,10 +355,7 @@ Deno.test("JSON Schema Validation - should validate webhook payload", () => {
               message: { type: "string" },
               author: {
                 type: "object",
-                properties: {
-                  name: { type: "string" },
-                  email: { type: "string" },
-                },
+                properties: { name: { type: "string" }, email: { type: "string" } },
                 required: ["name", "email"],
               },
             },
@@ -452,21 +369,10 @@ Deno.test("JSON Schema Validation - should validate webhook payload", () => {
 
   // Valid payload
   const validPayload = {
-    repository: {
-      name: "atlas",
-      full_name: "tempest/atlas",
-      private: false,
-    },
+    repository: { name: "atlas", full_name: "tempest/atlas", private: false },
     ref: "refs/heads/main",
     commits: [
-      {
-        id: "abc123",
-        message: "Fix bug",
-        author: {
-          name: "John Doe",
-          email: "john@example.com",
-        },
-      },
+      { id: "abc123", message: "Fix bug", author: { name: "John Doe", email: "john@example.com" } },
     ],
   };
 
@@ -490,28 +396,17 @@ Deno.test("JSON Schema Validation - should validate business logic payload", () 
   const signal = {
     provider: "http" as const,
     description: "Order processing",
-    config: {
-      path: "/api/orders",
-    },
+    config: { path: "/api/orders" },
     schema: {
       type: "object",
       properties: {
-        orderId: {
-          type: "string",
-          pattern: "^ORD-[0-9]{6}$",
-        },
+        orderId: { type: "string", pattern: "^ORD-[0-9]{6}$" },
         customer: {
           type: "object",
           properties: {
             id: { type: "string" },
-            email: {
-              type: "string",
-              pattern: "^[^@]+@[^@]+\\.[^@]+$",
-            },
-            tier: {
-              type: "string",
-              enum: ["bronze", "silver", "gold", "platinum"],
-            },
+            email: { type: "string", pattern: "^[^@]+@[^@]+\\.[^@]+$" },
+            tier: { type: "string", enum: ["bronze", "silver", "gold", "platinum"] },
           },
           required: ["id", "email"],
         },
@@ -521,23 +416,14 @@ Deno.test("JSON Schema Validation - should validate business logic payload", () 
             type: "object",
             properties: {
               sku: { type: "string" },
-              quantity: {
-                type: "integer",
-                minimum: 1,
-              },
-              price: {
-                type: "number",
-                minimum: 0,
-              },
+              quantity: { type: "integer", minimum: 1 },
+              price: { type: "number", minimum: 0 },
             },
             required: ["sku", "quantity", "price"],
           },
           minItems: 1,
         },
-        total: {
-          type: "number",
-          minimum: 0,
-        },
+        total: { type: "number", minimum: 0 },
         status: {
           type: "string",
           enum: ["pending", "processing", "shipped", "delivered", "cancelled"],
@@ -550,22 +436,10 @@ Deno.test("JSON Schema Validation - should validate business logic payload", () 
   // Valid complex business payload
   const validPayload = {
     orderId: "ORD-123456",
-    customer: {
-      id: "CUST-789",
-      email: "customer@example.com",
-      tier: "gold",
-    },
+    customer: { id: "CUST-789", email: "customer@example.com", tier: "gold" },
     items: [
-      {
-        sku: "PROD-001",
-        quantity: 2,
-        price: 29.99,
-      },
-      {
-        sku: "PROD-002",
-        quantity: 1,
-        price: 49.99,
-      },
+      { sku: "PROD-001", quantity: 2, price: 29.99 },
+      { sku: "PROD-002", quantity: 1, price: 49.99 },
     ],
     total: 109.97,
     status: "pending",
@@ -614,12 +488,7 @@ Deno.test("JSON Schema Validation - should handle true/false schemas", () => {
 
 Deno.test("JSON Schema Validation - should throw for unsupported features", () => {
   // $ref is not supported
-  const schemaWithRef = {
-    type: "object",
-    properties: {
-      user: { "$ref": "#/definitions/User" },
-    },
-  };
+  const schemaWithRef = { type: "object", properties: { user: { $ref: "#/definitions/User" } } };
 
   assertThrows(
     () => jsonSchemaToZod(schemaWithRef),

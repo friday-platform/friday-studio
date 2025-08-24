@@ -1,5 +1,5 @@
-import type { IWorkspaceSignal } from "../../../../src/types/core.ts";
 import { AtlasScope } from "../../../../src/core/scope.ts";
+import type { IWorkspaceSignal } from "../../../../src/types/core.ts";
 import type {
   HealthStatus,
   IProviderSignal,
@@ -21,9 +21,7 @@ export class HttpWebhookProvider implements ISignalProvider {
   constructor(config: ProviderConfig) {
     this.id = config.id;
     this.config = config.config || {};
-    this.state = {
-      status: ProviderStatus.NOT_CONFIGURED,
-    };
+    this.state = { status: ProviderStatus.NOT_CONFIGURED };
   }
 
   // deno-lint-ignore require-await
@@ -63,9 +61,10 @@ export class HttpWebhookProvider implements ISignalProvider {
     const health: HealthStatus = {
       healthy: this.state.status === ProviderStatus.READY,
       lastCheck: new Date(),
-      message: this.state.status === ProviderStatus.READY
-        ? "Webhook endpoint ready"
-        : `Provider status: ${this.state.status}`,
+      message:
+        this.state.status === ProviderStatus.READY
+          ? "Webhook endpoint ready"
+          : `Provider status: ${this.state.status}`,
     };
 
     this.state.lastHealthCheck = health.lastCheck;
@@ -106,11 +105,8 @@ class HttpWebhookRuntimeSignal extends AtlasScope implements IWorkspaceSignal {
   constructor(signalConfig: IProviderSignal) {
     super();
     this.signalConfig = signalConfig;
-    (this).id = signalConfig.id;
-    this.provider = {
-      id: signalConfig.providerId,
-      name: "HTTP Webhook",
-    };
+    this.id = signalConfig.id;
+    this.provider = { id: signalConfig.providerId, name: "HTTP Webhook" };
   }
 
   // deno-lint-ignore require-await

@@ -1,6 +1,6 @@
 import { Box, Text } from "ink";
-import { useResponsiveDimensions } from "../utils/useResponsiveDimensions.ts";
 import { useAppContext } from "../contexts/app-context.tsx";
+import { useResponsiveDimensions } from "../utils/useResponsiveDimensions.ts";
 
 interface CollapsibleProps {
   children: React.ReactNode;
@@ -24,17 +24,11 @@ export const Collapsible = ({ children, totalLines }: CollapsibleProps) => {
   if (isCollapsed) {
     return (
       <Box flexDirection="column" width={dimensions.paddedWidth} height={10}>
-        <Box
-          height={visibleLines}
-          overflow="hidden"
-          width={dimensions.paddedWidth}
-        >
+        <Box height={visibleLines} overflow="hidden" width={dimensions.paddedWidth}>
           {children}
         </Box>
         <Box paddingTop={1} width={dimensions.paddedWidth}>
-          <Text dimColor>
-            ...+{remainingLines} rows, press ctrl+r to expand
-          </Text>
+          <Text dimColor>...+{remainingLines} rows, press ctrl+r to expand</Text>
         </Box>
       </Box>
     );

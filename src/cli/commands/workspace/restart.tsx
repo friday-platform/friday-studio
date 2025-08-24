@@ -9,11 +9,7 @@ export const builder = {
     type: "string" as const,
     describe: "Workspace ID or name (defaults to current directory)",
   },
-  port: {
-    type: "number" as const,
-    alias: "p",
-    describe: "Port to run the server on",
-  },
+  port: { type: "number" as const, alias: "p", describe: "Port to run the server on" },
   detached: {
     type: "boolean" as const,
     alias: "d",

@@ -5,6 +5,9 @@
  * while delegating all state management to the actor.
  */
 
+import { WorkspaceSessionStatus } from "@atlas/core";
+import { type Logger, logger } from "@atlas/logger";
+import { type CoALAMemoryManager, CoALAMemoryType } from "@atlas/memory";
 import type {
   IWorkspaceAgent,
   IWorkspaceArtifact,
@@ -14,26 +17,15 @@ import type {
   IWorkspaceSource,
   IWorkspaceWorkflow,
 } from "../types/core.ts";
-import { AtlasScope } from "./scope.ts";
-import { CoALAMemoryManager, CoALAMemoryType } from "@atlas/memory";
-import { type Logger, logger } from "@atlas/logger";
-import { WorkspaceSessionStatus } from "@atlas/core";
 import type { SessionSupervisorActor } from "./actors/session-supervisor-actor.ts";
+import { AtlasScope } from "./scope.ts";
 
 // Session Intent types (preserve for API compatibility)
 export interface SessionIntent {
   id: string;
-  signal: {
-    type: string;
-    data: any;
-    metadata?: Record<string, any>;
-  };
+  signal: { type: string; data: any; metadata?: Record<string, any> };
   goals: string[];
-  constraints?: {
-    timeLimit?: number;
-    costLimit?: number;
-    requiredApprovals?: string[];
-  };
+  constraints?: { timeLimit?: number; costLimit?: number; requiredApprovals?: string[] };
   suggestedAgents?: string[];
   executionHints?: {
     strategy?: "exploratory" | "deterministic" | "iterative";
@@ -42,20 +34,14 @@ export interface SessionIntent {
   };
   successCriteria?: {
     type: "all" | "any" | "custom";
-    conditions: Array<{
-      description: string;
-      evaluator?: (result: any) => boolean;
-    }>;
+    conditions: Array<{ description: string; evaluator?: (result: any) => boolean }>;
   };
   userPrompt?: string;
 }
 
 export class Session extends AtlasScope implements IWorkspaceSession {
   // Core session properties
-  public signals: {
-    triggers: IWorkspaceSignal[];
-    callback: IWorkspaceSignalCallback;
-  };
+  public signals: { triggers: IWorkspaceSignal[]; callback: IWorkspaceSignalCallback };
   public agents?: IWorkspaceAgent[];
   public workflows?: IWorkspaceWorkflow[];
   public sources?: IWorkspaceSource[];
@@ -86,17 +72,14 @@ export class Session extends AtlasScope implements IWorkspaceSession {
       | import("../types/core.ts").ICoALAMemoryStorageAdapter,
     enableCognitiveLoop: boolean = true,
   ) {
-    super({
-      workspaceId,
-      storageAdapter,
-      enableCognitiveLoop,
-    });
+    super({ workspaceId, storageAdapter, enableCognitiveLoop });
 
     this.signals = {
       triggers: signals.triggers,
-      callback: typeof signals.callback === "function"
-        ? new FunctionCallback(signals.callback)
-        : signals.callback,
+      callback:
+        typeof signals.callback === "function"
+          ? new FunctionCallback(signals.callback)
+          : signals.callback,
     };
     this.agents = agents;
     this.workflows = workflows;
@@ -105,10 +88,7 @@ export class Session extends AtlasScope implements IWorkspaceSession {
     this.createdAt = new Date();
 
     // Initialize logger
-    this.logger = logger.child({
-      sessionId: this.id,
-      workerType: "session",
-    });
+    this.logger = logger.child({ sessionId: this.id, workerType: "session" });
 
     // Store session initialization in CoALA memory
     this.rememberSessionEvent("session-initialization", {
@@ -242,9 +222,7 @@ export class Session extends AtlasScope implements IWorkspaceSession {
     this._status = WorkspaceSessionStatus.FAILED;
     this._error = new Error("Session cancelled");
 
-    this.rememberSessionEvent("session-cancelled", {
-      cancelledAt: new Date().toISOString(),
-    });
+    this.rememberSessionEvent("session-cancelled", { cancelledAt: new Date().toISOString() });
 
     this.signals.callback.onError(this._error);
 
@@ -346,9 +324,7 @@ export class Session extends AtlasScope implements IWorkspaceSession {
 
       executionPromise.then(
         (result) => {
-          this.logger.info("Session actor execution completed", {
-            sessionId: this.id,
-          });
+          this.logger.info("Session actor execution completed", { sessionId: this.id });
           this.complete(result);
         },
         (error) => {
@@ -411,12 +387,7 @@ export class Session extends AtlasScope implements IWorkspaceSession {
     const coalaMemory = this.memory as CoALAMemoryManager;
     coalaMemory.rememberWithMetadata(
       `${event}-${Date.now()}`,
-      {
-        sessionId: this.id,
-        workspaceId: this.workspaceId || "global",
-        event,
-        ...data,
-      },
+      { sessionId: this.id, workspaceId: this.workspaceId || "global", event, ...data },
       {
         memoryType: CoALAMemoryType.EPISODIC,
         tags: ["session", event.replace("session-", ""), this.workspaceId || "global"],
@@ -430,10 +401,7 @@ export class Session extends AtlasScope implements IWorkspaceSession {
     try {
       const coalaMemory = this.memory as CoALAMemoryManager;
       const cleared = coalaMemory.clearWorkingBySession(this.id);
-      this.logger.debug("Cleared working memory for session", {
-        sessionId: this.id,
-        cleared,
-      });
+      this.logger.debug("Cleared working memory for session", { sessionId: this.id, cleared });
     } catch (e) {
       this.logger.warn("Failed to clear working memory for session", {
         error: e instanceof Error ? e.message : String(e),
@@ -476,10 +444,7 @@ export class WorkspaceSession extends Session {
   constructor(workspaceId: string, triggerSignal: IWorkspaceSignal) {
     super(
       workspaceId,
-      {
-        triggers: [triggerSignal],
-        callback: new DefaultSignalCallback(),
-      },
+      { triggers: [triggerSignal], callback: new DefaultSignalCallback() },
       undefined, // agents
       undefined, // workflows
       undefined, // sources
@@ -491,9 +456,7 @@ class DefaultSignalCallback implements IWorkspaceSignalCallback {
   private logger: Logger;
 
   constructor() {
-    this.logger = logger.child({
-      workerType: "signal-callback",
-    });
+    this.logger = logger.child({ workerType: "signal-callback" });
   }
 
   execute(): void {
@@ -521,9 +484,7 @@ class FunctionCallback implements IWorkspaceSignalCallback {
   private logger: Logger;
 
   constructor(private fn: (result: any) => Promise<void>) {
-    this.logger = logger.child({
-      workerType: "function-callback",
-    });
+    this.logger = logger.child({ workerType: "function-callback" });
   }
 
   execute(): void {

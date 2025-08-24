@@ -1,15 +1,15 @@
 <script lang="ts">
-  import type { Snippet } from "svelte";
-  import type { HTMLLabelAttributes } from "svelte/elements";
+import type { Snippet } from "svelte";
+import type { HTMLLabelAttributes } from "svelte/elements";
 
-  type Props = {
-    children: Snippet;
-    inline?: boolean;
-    label: string;
-    required?: boolean;
-  } & HTMLLabelAttributes;
+type Props = {
+  children: Snippet;
+  inline?: boolean;
+  label: string;
+  required?: boolean;
+} & HTMLLabelAttributes;
 
-  let { children, inline = false, label, required = false, ...rest }: Props = $props();
+const { children, inline = false, label, required = false, ...rest }: Props = $props();
 </script>
 
 <label class={inline ? "inline" : ""} {...rest}>

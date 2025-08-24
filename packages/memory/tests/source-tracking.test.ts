@@ -7,8 +7,8 @@
 
 import { assertEquals, assertExists, assertNotEquals } from "@std/assert";
 import { CoALAMemoryManager, CoALAMemoryType } from "../src/coala-memory.ts";
+import { type ConversationContext, MemorySource, MemoryType } from "../src/mecmf-interfaces.ts";
 import { MECMFMemoryManager } from "../src/mecmf-memory-manager.ts";
-import { ConversationContext, MemorySource, MemoryType } from "../src/mecmf-interfaces.ts";
 
 // Helper to track and close MessageChannels created by onnxruntime-web during tests
 async function runWithMessageChannelCleanup<T>(fn: () => Promise<T>): Promise<T> {
@@ -32,10 +32,14 @@ async function runWithMessageChannelCleanup<T>(fn: () => Promise<T>): Promise<T>
     for (const mc of created) {
       try {
         mc.port1.close();
-      } catch (_) { /* noop */ }
+      } catch (_) {
+        /* noop */
+      }
       try {
         mc.port2.close();
-      } catch (_) { /* noop */ }
+      } catch (_) {
+        /* noop */
+      }
     }
     // Restore original constructor
     globalThis.MessageChannel = OriginalMessageChannel;
@@ -55,11 +59,7 @@ const createConversationContext = (
 });
 
 // Mock scope for testing
-const createTestScope = (id: string) => ({
-  id,
-  workspaceId: id,
-  type: "test" as const,
-});
+const createTestScope = (id: string) => ({ id, workspaceId: id, type: "test" as const });
 
 Deno.test("CoALA Memory - Source Field Storage and Retrieval", async () => {
   const scope = createTestScope("test-workspace");
@@ -211,13 +211,9 @@ Deno.test({
       }
 
       // Verify different sources were used
-      const memories = await Promise.all(
-        storedIds.map((id) => mecmfManager.retrieveMemory(id)),
-      );
+      const memories = await Promise.all(storedIds.map((id) => mecmfManager.retrieveMemory(id)));
 
-      const uniqueSources = new Set(
-        memories.filter((m) => m !== null).map((m) => m!.source),
-      );
+      const uniqueSources = new Set(memories.filter((m) => m !== null).map((m) => m!.source));
       assertEquals(uniqueSources.size, sources.length);
 
       // Clean up
@@ -256,7 +252,7 @@ Deno.test("Memory Source Migration - Basic Functionality", async () => {
 
   // Get memory and verify no source
   let allMemories = memoryManager.queryMemories({});
-  let oldMemory = allMemories.find((m) => m.id === "old-memory");
+  const oldMemory = allMemories.find((m) => m.id === "old-memory");
   assertExists(oldMemory);
 
   // Update memory with source information (simulating migration)
@@ -394,12 +390,9 @@ Deno.test({
 
       const storedIds = [];
       for (const mem of testMemories) {
-        const id = await mecmfManager.classifyAndStore(
-          mem.content,
-          context,
-          mem.source,
-          { sessionId: "test-session" },
-        );
+        const id = await mecmfManager.classifyAndStore(mem.content, context, mem.source, {
+          sessionId: "test-session",
+        });
         storedIds.push({ id, source: mem.source });
       }
 

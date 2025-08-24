@@ -3,15 +3,12 @@
  * Describes a specific job within a workspace through the daemon API
  */
 
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { PromptContext } from "../types.ts";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { createSuccessResponse } from "../types.ts";
 
-export function registerJobDescribePrompt(
-  server: McpServer,
-  ctx: PromptContext,
-) {
+export function registerJobDescribePrompt(server: McpServer, ctx: PromptContext) {
   server.registerPrompt(
     "job_describe",
     {
@@ -24,10 +21,7 @@ export function registerJobDescribePrompt(
       },
     },
     ({ workspaceId, jobId }) => {
-      ctx.logger.info("MCP workspace_jobs_describe called", {
-        workspaceId,
-        jobId,
-      });
+      ctx.logger.info("MCP workspace_jobs_describe called", { workspaceId, jobId });
 
       return createSuccessResponse(
         `Return detailed information about the job with ID ${jobId} in workspace ${workspaceId}. Use markdown syntax to format the response.`,

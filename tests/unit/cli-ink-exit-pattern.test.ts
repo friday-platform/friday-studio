@@ -15,12 +15,7 @@ Deno.test("CLI commands should not use immediate Deno.exit() after render()", as
   const problematicFiles: string[] = [];
 
   // Walk through all CLI command files
-  for await (
-    const entry of walk(cliCommandsPath, {
-      exts: [".tsx", ".ts"],
-      includeDirs: false,
-    })
-  ) {
+  for await (const entry of walk(cliCommandsPath, { exts: [".tsx", ".ts"], includeDirs: false })) {
     const content = await Deno.readTextFile(entry.path);
 
     // Check if file contains Ink render() calls
@@ -89,12 +84,7 @@ Deno.test("CLI commands should follow proper Ink lifecycle patterns", async () =
   const cliCommandsPath = join(Deno.cwd(), "src", "cli", "commands");
   const recommendations: string[] = [];
 
-  for await (
-    const entry of walk(cliCommandsPath, {
-      exts: [".tsx", ".ts"],
-      includeDirs: false,
-    })
-  ) {
+  for await (const entry of walk(cliCommandsPath, { exts: [".tsx", ".ts"], includeDirs: false })) {
     const content = await Deno.readTextFile(entry.path);
 
     // Skip files that don't use Ink

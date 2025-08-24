@@ -1,8 +1,8 @@
+import { InMemoryStorageAdapter } from "@atlas/storage";
 import { expect } from "@std/expect";
 import { MemoryConfigManager } from "../../../src/core/memory-config.ts";
-import { CoALAMemoryType } from "../src/coala-memory.ts";
 import { AtlasScope } from "../../../src/core/scope.ts";
-import { InMemoryStorageAdapter } from "@atlas/storage";
+import { CoALAMemoryType } from "../src/coala-memory.ts";
 
 // Set testing environment to prevent logger file operations
 Deno.env.set("DENO_TESTING", "true");
@@ -13,11 +13,7 @@ const mockMemoryConfig = {
     enabled: true,
     storage: "local",
     cognitive_loop: true,
-    retention: {
-      max_age_days: 30,
-      max_entries: 1000,
-      cleanup_interval_hours: 24,
-    },
+    retention: { max_age_days: 30, max_entries: 1000, cleanup_interval_hours: 24 },
   },
   streaming: {
     enabled: true,
@@ -37,96 +33,36 @@ const mockMemoryConfig = {
     enabled: true,
     scope: "agent" as const,
     include_in_context: true,
-    context_limits: {
-      relevant_memories: 3,
-      past_successes: 2,
-      past_failures: 1,
-    },
+    context_limits: { relevant_memories: 3, past_successes: 2, past_failures: 1 },
     memory_types: {
-      working: {
-        enabled: true,
-        max_age_hours: 2,
-        max_entries: 50,
-      },
-      episodic: {
-        enabled: true,
-        max_age_hours: 24,
-        max_entries: 100,
-      },
-      semantic: {
-        enabled: false,
-        max_age_days: 30,
-        max_entries: 200,
-      },
-      procedural: {
-        enabled: true,
-        max_age_days: 90,
-        max_entries: 300,
-      },
+      working: { enabled: true, max_age_hours: 2, max_entries: 50 },
+      episodic: { enabled: true, max_age_hours: 24, max_entries: 100 },
+      semantic: { enabled: false, max_age_days: 30, max_entries: 200 },
+      procedural: { enabled: true, max_age_days: 90, max_entries: 300 },
     },
   },
   session: {
     enabled: true,
     scope: "session" as const,
     include_in_context: true,
-    context_limits: {
-      relevant_memories: 5,
-      past_successes: 3,
-      past_failures: 2,
-    },
+    context_limits: { relevant_memories: 5, past_successes: 3, past_failures: 2 },
     memory_types: {
-      working: {
-        enabled: true,
-        max_age_hours: 8,
-        max_entries: 100,
-      },
-      episodic: {
-        enabled: true,
-        max_age_days: 7,
-        max_entries: 200,
-      },
-      semantic: {
-        enabled: true,
-        max_age_days: 30,
-        max_entries: 500,
-      },
-      procedural: {
-        enabled: true,
-        max_age_days: 90,
-        max_entries: 400,
-      },
+      working: { enabled: true, max_age_hours: 8, max_entries: 100 },
+      episodic: { enabled: true, max_age_days: 7, max_entries: 200 },
+      semantic: { enabled: true, max_age_days: 30, max_entries: 500 },
+      procedural: { enabled: true, max_age_days: 90, max_entries: 400 },
     },
   },
   workspace: {
     enabled: true,
     scope: "workspace" as const,
     include_in_context: false,
-    context_limits: {
-      relevant_memories: 10,
-      past_successes: 5,
-      past_failures: 3,
-    },
+    context_limits: { relevant_memories: 10, past_successes: 5, past_failures: 3 },
     memory_types: {
-      working: {
-        enabled: false,
-        max_age_hours: 24,
-        max_entries: 200,
-      },
-      episodic: {
-        enabled: true,
-        max_age_days: 30,
-        max_entries: 1000,
-      },
-      semantic: {
-        enabled: true,
-        max_age_days: 365,
-        max_entries: 2000,
-      },
-      procedural: {
-        enabled: true,
-        max_age_days: 365,
-        max_entries: 1000,
-      },
+      working: { enabled: false, max_age_hours: 24, max_entries: 200 },
+      episodic: { enabled: true, max_age_days: 30, max_entries: 1000 },
+      semantic: { enabled: true, max_age_days: 365, max_entries: 2000 },
+      procedural: { enabled: true, max_age_days: 365, max_entries: 1000 },
     },
   },
 };
@@ -170,10 +106,7 @@ Deno.test("MemoryConfigManager - reuses memory managers for same scope", async (
 Deno.test("MemoryConfigManager - creates disabled memory manager when disabled", async () => {
   const disabledConfig = {
     ...mockMemoryConfig,
-    agent: {
-      ...mockMemoryConfig.agent,
-      enabled: false,
-    },
+    agent: { ...mockMemoryConfig.agent, enabled: false },
   };
 
   const configManager = new MemoryConfigManager(disabledConfig);
@@ -193,11 +126,7 @@ Deno.test("MemoryConfigManager - builds memory context with limits", async () =>
   const memoryManager = configManager.getMemoryManager(scope, "agent");
 
   // Build memory context
-  const context = configManager.buildMemoryContext(
-    memoryManager,
-    "Test user prompt",
-    "agent",
-  );
+  const context = configManager.buildMemoryContext(memoryManager, "Test user prompt", "agent");
 
   expect(context).toBeDefined();
   expect(context.systemContext).toBeDefined();
@@ -210,10 +139,7 @@ Deno.test("MemoryConfigManager - builds memory context with limits", async () =>
 Deno.test("MemoryConfigManager - builds empty context when disabled", async () => {
   const disabledConfig = {
     ...mockMemoryConfig,
-    agent: {
-      ...mockMemoryConfig.agent,
-      enabled: false,
-    },
+    agent: { ...mockMemoryConfig.agent, enabled: false },
   };
 
   const configManager = new MemoryConfigManager(disabledConfig);
@@ -221,11 +147,7 @@ Deno.test("MemoryConfigManager - builds empty context when disabled", async () =
   const memoryManager = configManager.getMemoryManager(scope, "agent");
 
   // Build memory context
-  const context = configManager.buildMemoryContext(
-    memoryManager,
-    "Test user prompt",
-    "agent",
-  );
+  const context = configManager.buildMemoryContext(memoryManager, "Test user prompt", "agent");
 
   expect(context.systemContext).toBe("");
   expect(context.userContext).toBe("");
@@ -237,10 +159,7 @@ Deno.test("MemoryConfigManager - builds empty context when disabled", async () =
 Deno.test("MemoryConfigManager - builds empty context when not included", async () => {
   const noContextConfig = {
     ...mockMemoryConfig,
-    agent: {
-      ...mockMemoryConfig.agent,
-      include_in_context: false,
-    },
+    agent: { ...mockMemoryConfig.agent, include_in_context: false },
   };
 
   const configManager = new MemoryConfigManager(noContextConfig);
@@ -248,11 +167,7 @@ Deno.test("MemoryConfigManager - builds empty context when not included", async 
   const memoryManager = configManager.getMemoryManager(scope, "agent");
 
   // Build memory context
-  const context = configManager.buildMemoryContext(
-    memoryManager,
-    "Test user prompt",
-    "agent",
-  );
+  const context = configManager.buildMemoryContext(memoryManager, "Test user prompt", "agent");
 
   expect(context.systemContext).toBe("");
   expect(context.userContext).toBe("");
@@ -286,10 +201,7 @@ Deno.test("MemoryConfigManager - remembers with scope-specific configuration", a
 Deno.test("MemoryConfigManager - skips remembering when disabled", async () => {
   const disabledConfig = {
     ...mockMemoryConfig,
-    agent: {
-      ...mockMemoryConfig.agent,
-      enabled: false,
-    },
+    agent: { ...mockMemoryConfig.agent, enabled: false },
   };
 
   const configManager = new MemoryConfigManager(disabledConfig);
@@ -320,10 +232,7 @@ Deno.test("MemoryConfigManager - skips remembering when memory type disabled", a
       ...mockMemoryConfig.agent,
       memory_types: {
         ...mockMemoryConfig.agent.memory_types,
-        working: {
-          ...mockMemoryConfig.agent.memory_types.working,
-          enabled: false,
-        },
+        working: { ...mockMemoryConfig.agent.memory_types.working, enabled: false },
       },
     },
   };
@@ -415,11 +324,7 @@ Deno.test("MemoryConfigManager - calculates decay rates based on config", async 
 Deno.test("MemoryConfigManager - handles streaming configuration", async () => {
   const streamingConfig = {
     ...mockMemoryConfig,
-    streaming: {
-      ...mockMemoryConfig.streaming,
-      enabled: true,
-      stream_everything: true,
-    },
+    streaming: { ...mockMemoryConfig.streaming, enabled: true, stream_everything: true },
   };
 
   const configManager = new MemoryConfigManager(streamingConfig);
@@ -439,26 +344,10 @@ Deno.test("MemoryConfigManager - handles complex memory type configurations", as
     session: {
       ...mockMemoryConfig.session,
       memory_types: {
-        working: {
-          enabled: true,
-          max_age_hours: 1,
-          max_entries: 10,
-        },
-        episodic: {
-          enabled: true,
-          max_age_days: 1,
-          max_entries: 20,
-        },
-        semantic: {
-          enabled: false,
-          max_age_days: 30,
-          max_entries: 500,
-        },
-        procedural: {
-          enabled: true,
-          max_age_days: 7,
-          max_entries: 100,
-        },
+        working: { enabled: true, max_age_hours: 1, max_entries: 10 },
+        episodic: { enabled: true, max_age_days: 1, max_entries: 20 },
+        semantic: { enabled: false, max_age_days: 30, max_entries: 500 },
+        procedural: { enabled: true, max_age_days: 7, max_entries: 100 },
       },
     },
   };
@@ -471,11 +360,7 @@ Deno.test("MemoryConfigManager - handles complex memory type configurations", as
   expect(memoryManager).toBeDefined();
 
   // Test context building with complex config
-  const context = configManager.buildMemoryContext(
-    memoryManager,
-    "Test prompt",
-    "session",
-  );
+  const context = configManager.buildMemoryContext(memoryManager, "Test prompt", "session");
 
   expect(context).toBeDefined();
 
@@ -492,11 +377,7 @@ Deno.test("MemoryConfigManager - handles workspace scope memory", async () => {
   expect(workspaceMemory).toBeDefined();
 
   // Context should be empty since include_in_context is false
-  const context = configManager.buildMemoryContext(
-    workspaceMemory,
-    "Test prompt",
-    "workspace",
-  );
+  const context = configManager.buildMemoryContext(workspaceMemory, "Test prompt", "workspace");
 
   expect(context.systemContext).toBe("");
   expect(context.userContext).toBe("");

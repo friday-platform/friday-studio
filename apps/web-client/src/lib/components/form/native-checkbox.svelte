@@ -1,23 +1,22 @@
 <script lang="ts">
-	import { FIELD_CONTEXT, getFieldContext } from '$lib/components/form/context';
+import { hasContext } from "svelte";
+import type { HTMLInputAttributes } from "svelte/elements";
+import { FIELD_CONTEXT, getFieldContext } from "$lib/components/form/context";
 
-	import { hasContext } from 'svelte';
-	import type { HTMLInputAttributes } from 'svelte/elements';
+type Props = { checked: boolean; name?: string; disabled?: boolean };
 
-	type Props = { checked: boolean; name?: string; disabled?: boolean };
+const {
+  checked = $bindable(),
+  name,
+  disabled = false,
+  ...rest
+}: Props & HTMLInputAttributes = $props();
 
-	let {
-		checked = $bindable(),
-		name,
-		disabled = false,
-		...rest
-	}: Props & HTMLInputAttributes = $props();
+let id = $state<string>();
 
-	let id = $state<string>();
-
-	if (hasContext(FIELD_CONTEXT)) {
-		id = getFieldContext().id;
-	}
+if (hasContext(FIELD_CONTEXT)) {
+  id = getFieldContext().id;
+}
 </script>
 
 <div>

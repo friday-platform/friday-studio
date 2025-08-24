@@ -1,6 +1,6 @@
+import { AtlasDaemon } from "@atlas/atlasd";
 import { assertEquals, assertExists } from "@std/assert";
 import { createAtlasClient } from "../mod.ts";
-import { AtlasDaemon } from "@atlas/atlasd";
 
 Deno.test({
   name: "Integration test - health check with real Atlas daemon",

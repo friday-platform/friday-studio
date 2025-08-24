@@ -20,10 +20,10 @@ export function AgentListComponent({
       <Text bold color="cyan">
         Agents in workspace: {workspaceName}
       </Text>
-      <Text color="gray">
-        ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-      </Text>
-      {agents.length === 0 ? <Text color="gray">No agents configured</Text> : (
+      <Text color="gray">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</Text>
+      {agents.length === 0 ? (
+        <Text color="gray">No agents configured</Text>
+      ) : (
         <>
           <Box>
             <Box width={25}>

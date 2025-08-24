@@ -1,6 +1,6 @@
 import { Box, Text } from "ink";
-import { Collapsible } from "./collapsible.tsx";
 import { useResponsiveDimensions } from "../utils/useResponsiveDimensions.ts";
+import { Collapsible } from "./collapsible.tsx";
 
 interface MarkdownDisplayProps {
   markdown: string;
@@ -15,15 +15,13 @@ export const MarkdownDisplay = ({
 }: MarkdownDisplayProps) => {
   const dimensions = useResponsiveDimensions({ minHeight: 24, padding: 1 });
 
-  return showCollapsible
-    ? (
-      <Collapsible totalLines={totalLines}>
-        <Text>{markdown}</Text>
-      </Collapsible>
-    )
-    : (
-      <Box flexShrink={0} width={dimensions.paddedWidth}>
-        <Text>{markdown}</Text>
-      </Box>
-    );
+  return showCollapsible ? (
+    <Collapsible totalLines={totalLines}>
+      <Text>{markdown}</Text>
+    </Collapsible>
+  ) : (
+    <Box flexShrink={0} width={dimensions.paddedWidth}>
+      <Text>{markdown}</Text>
+    </Box>
+  );
 };

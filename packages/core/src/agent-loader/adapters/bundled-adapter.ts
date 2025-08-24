@@ -1,7 +1,7 @@
 import type { AtlasAgent } from "@atlas/agent-sdk";
-import type { AgentAdapter, AgentSourceData, AgentSourceType, AgentSummary } from "./types.ts";
-import { createLogger } from "@atlas/logger";
 import { bundledAgents } from "@atlas/bundled-agents";
+import { createLogger } from "@atlas/logger";
+import type { AgentAdapter, AgentSourceData, AgentSourceType, AgentSummary } from "./types.ts";
 
 /**
  * Loads agents bundled with Atlas.
@@ -32,10 +32,7 @@ export class BundledAgentAdapter implements AgentAdapter {
           key: agentKey,
         });
       } catch (error) {
-        this.logger.error("Failed to register bundled SDK agent", {
-          id: agent.metadata.id,
-          error,
-        });
+        this.logger.error("Failed to register bundled SDK agent", { id: agent.metadata.id, error });
         throw new Error(`Failed to register bundled SDK agent '${agent.metadata.id}'`);
       }
     }
@@ -51,10 +48,7 @@ export class BundledAgentAdapter implements AgentAdapter {
       type: "bundled",
       id,
       agent,
-      metadata: {
-        sourceLocation: `bundled://${id}`,
-        version: agent.metadata.version,
-      },
+      metadata: { sourceLocation: `bundled://${id}`, version: agent.metadata.version },
     });
   }
 

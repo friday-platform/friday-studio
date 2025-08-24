@@ -1,11 +1,11 @@
-import { PlatformServiceManager, ServiceConfig, ServiceStatus } from "../types.ts";
+import { exists } from "@std/fs";
+import { join } from "@std/path";
 import {
   getAtlasBinaryPath,
   getDefaultServiceName,
   getPlatformPaths,
 } from "../../utils/platform.ts";
-import { exists } from "@std/fs";
-import { join } from "@std/path";
+import type { PlatformServiceManager, ServiceConfig, ServiceStatus } from "../types.ts";
 
 /**
  * Linux systemd service manager for Atlas
@@ -112,11 +112,7 @@ export class LinuxSystemdService implements PlatformServiceManager {
       ? ["--user", "kill", "--signal=SIGKILL", this.serviceName]
       : ["--user", "stop", this.serviceName];
 
-    const cmd = new Deno.Command("systemctl", {
-      args,
-      stdout: "piped",
-      stderr: "piped",
-    });
+    const cmd = new Deno.Command("systemctl", { args, stdout: "piped", stderr: "piped" });
 
     const result = await cmd.output();
     if (!result.success) {

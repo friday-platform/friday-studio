@@ -2,9 +2,9 @@
  * Email notification tool for Atlas MCP server
  */
 
-import { z } from "zod";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { NotificationManager } from "@atlas/notifications";
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { z } from "zod";
 import type { ToolContext } from "../types.ts";
 import { createErrorResponse, createSuccessResponse } from "../utils.ts";
 
@@ -40,36 +40,38 @@ Common use cases:
         to: z.string().describe("Recipient email address"),
         subject: z.string().describe("Email subject line"),
         content: z.string().describe("Email content (HTML or plain text)"),
-        from: z.string().optional().describe(
-          "Override sender email (uses SENDGRID_FROM_EMAIL env var, defaults to noreply@tempestdx.com)",
-        ),
-        from_name: z.string().optional().describe(
-          "Override sender name (uses SENDGRID_FROM_NAME env var by default)",
-        ),
-        template_id: z.string().optional().describe("SendGrid template ID for dynamic templates"),
-        template_data: z.record(z.string(), z.unknown()).optional().describe(
-          "Template variables for dynamic templates",
-        ),
-        attachments: z.array(z.object({
-          filename: z.string().describe("Attachment filename"),
-          content: z.string().describe("Base64 encoded attachment content"),
-          type: z.string().describe("MIME type"),
-          disposition: z.string().optional().describe(
-            "Attachment disposition: 'attachment' or 'inline'",
+        from: z
+          .string()
+          .optional()
+          .describe(
+            "Override sender email (uses SENDGRID_FROM_EMAIL env var, defaults to noreply@tempestdx.com)",
           ),
-        })).optional().describe("Email attachments"),
+        from_name: z
+          .string()
+          .optional()
+          .describe("Override sender name (uses SENDGRID_FROM_NAME env var by default)"),
+        template_id: z.string().optional().describe("SendGrid template ID for dynamic templates"),
+        template_data: z
+          .record(z.string(), z.unknown())
+          .optional()
+          .describe("Template variables for dynamic templates"),
+        attachments: z
+          .array(
+            z.object({
+              filename: z.string().describe("Attachment filename"),
+              content: z.string().describe("Base64 encoded attachment content"),
+              type: z.string().describe("MIME type"),
+              disposition: z
+                .string()
+                .optional()
+                .describe("Attachment disposition: 'attachment' or 'inline'"),
+            }),
+          )
+          .optional()
+          .describe("Email attachments"),
       },
     },
-    async ({
-      to,
-      subject,
-      content,
-      from,
-      from_name,
-      template_id,
-      template_data,
-      attachments,
-    }) => {
+    async ({ to, subject, content, from, from_name, template_id, template_data, attachments }) => {
       try {
         // Validate email address
         if (!to || typeof to !== "string") {
@@ -173,13 +175,10 @@ Common use cases:
             retry_count: result.retry_count,
           });
 
-          return createErrorResponse(
-            `Failed to send email notification: ${result.error}`,
-            {
-              retry_count: result.retry_count,
-              metadata: result.metadata,
-            },
-          );
+          return createErrorResponse(`Failed to send email notification: ${result.error}`, {
+            retry_count: result.retry_count,
+            metadata: result.metadata,
+          });
         }
       } catch (error) {
         ctx.logger.error("Error in email notification tool", {

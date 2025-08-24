@@ -1,16 +1,11 @@
-import { createEventSource } from "../../../../../../src/core/agents/remote/adapters/sse-utils.ts";
 import { createAtlasClient } from "@atlas/oapi-client";
+import { createEventSource } from "../../../../../../src/core/agents/remote/adapters/sse-utils.ts";
 import { DaemonClient } from "./daemon.ts";
 
 export interface ConversationSession {
   sessionId: string;
   mode: "private" | "shared";
-  participants: Array<{
-    userId: string;
-    clientType: string;
-    joinedAt: string;
-    lastSeen: string;
-  }>;
+  participants: Array<{ userId: string; clientType: string; joinedAt: string; lastSeen: string }>;
   sseUrl: string;
 }
 
@@ -49,9 +44,7 @@ export class ConversationClient {
     // Create session without sending an initial message
     const body = {
       userId: options?.userId || this.userId,
-      scope: options?.scope || {
-        workspaceId: this.workspaceId,
-      },
+      scope: options?.scope || { workspaceId: this.workspaceId },
       createOnly: options?.createOnly ?? true, // Just create session, don't send a message
     };
 
@@ -142,10 +135,7 @@ export class ConversationClient {
       );
     }
 
-    return {
-      messageId: response.data.message || crypto.randomUUID(),
-      status: "processing",
-    };
+    return { messageId: response.data.message || crypto.randomUUID(), status: "processing" };
   }
 
   /**
@@ -153,9 +143,7 @@ export class ConversationClient {
    */
   async sendPrompt(
     sessionId: string,
-    parameters: {
-      promptName: string;
-    } & Record<string, unknown>,
+    parameters: { promptName: string } & Record<string, unknown>,
   ): Promise<ConversationMessage> {
     // Get the conversation workspace ID
     const workspaceId = await this.getConversationWorkspaceId();
@@ -163,14 +151,7 @@ export class ConversationClient {
 
     const response = await client.POST("/api/workspaces/{workspaceId}/signals/{signalId}", {
       params: { path: { workspaceId, signalId: "conversation-stream" } },
-      body: {
-        streamId: sessionId,
-        payload: {
-          type: "prompt",
-          streamId: sessionId,
-          parameters,
-        },
-      },
+      body: { streamId: sessionId, payload: { type: "prompt", streamId: sessionId, parameters } },
     });
 
     if (response.error) {
@@ -179,10 +160,7 @@ export class ConversationClient {
       );
     }
 
-    return {
-      messageId: response.data.message || crypto.randomUUID(),
-      status: "processing",
-    };
+    return { messageId: response.data.message || crypto.randomUUID(), status: "processing" };
   }
 
   /**
@@ -196,8 +174,8 @@ export class ConversationClient {
     abortSignal?: AbortSignal,
   ): AsyncIterableIterator<unknown> {
     // Use the SSE URL from the session if not provided
-    const streamUrl = sseUrl ||
-      `${this.daemonUrl}/system/conversation/sessions/${sessionId}/stream`;
+    const streamUrl =
+      sseUrl || `${this.daemonUrl}/system/conversation/sessions/${sessionId}/stream`;
 
     let eventSource: any = null;
     try {
@@ -260,9 +238,7 @@ export class ConversationClient {
   async getSession(sessionId: string): Promise<ConversationSession | null> {
     const response = await fetch(
       `${this.daemonUrl}/api/workspaces/${this.workspaceId}/conversation/sessions/${sessionId}`,
-      {
-        headers: { "Access-Control-Allow-Origin": "*" },
-      },
+      { headers: { "Access-Control-Allow-Origin": "*" } },
     );
 
     if (response.status === 404) {

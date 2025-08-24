@@ -1,8 +1,6 @@
 import { z } from "zod/v4";
 
-export const agentIdParamsSchema = z.object({
-  id: z.string().min(1).describe("Agent identifier"),
-});
+export const agentIdParamsSchema = z.object({ id: z.string().min(1).describe("Agent identifier") });
 
 export const agentMetadataSchema = z.object({
   id: z.string(),
@@ -33,6 +31,4 @@ export const agentExpertiseSchema = z.object({
   recommendedFor: z.array(z.string()).optional(),
 });
 
-export const errorResponseSchema = z.object({
-  error: z.string(),
-});
+export const errorResponseSchema = z.object({ error: z.string() });

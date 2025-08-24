@@ -14,7 +14,7 @@ const MemoryType = {
   PROCEDURAL: "procedural",
 } as const;
 
-type MemoryType = typeof MemoryType[keyof typeof MemoryType];
+type MemoryType = (typeof MemoryType)[keyof typeof MemoryType];
 
 // Simple memory classification test
 function classifyContent(content: string): MemoryType {
@@ -64,10 +64,10 @@ function estimateTokens(text: string): number {
 // Token allocation function
 function allocateTokens(budget: number) {
   return {
-    working_memory: Math.floor(budget * 0.40),
+    working_memory: Math.floor(budget * 0.4),
     procedural_memory: Math.floor(budget * 0.25),
     semantic_memory: Math.floor(budget * 0.25),
-    episodic_memory: Math.floor(budget * 0.10),
+    episodic_memory: Math.floor(budget * 0.1),
   };
 }
 
@@ -107,8 +107,11 @@ Deno.test("MECMF Core - Token Management", () => {
   assertEquals(allocation.episodic_memory, 400); // 10%
 
   // Verify allocations sum correctly
-  const total = allocation.working_memory + allocation.procedural_memory +
-    allocation.semantic_memory + allocation.episodic_memory;
+  const total =
+    allocation.working_memory +
+    allocation.procedural_memory +
+    allocation.semantic_memory +
+    allocation.episodic_memory;
   assertEquals(total, 4000);
 
   console.log("✓ Token management tests passed");
@@ -128,22 +131,21 @@ Deno.test("MECMF Core - Constants", () => {
 
   // Test token allocation constants
   const DEFAULT_ALLOCATION = {
-    WORKING_MEMORY: 0.40,
+    WORKING_MEMORY: 0.4,
     PROCEDURAL_MEMORY: 0.25,
     SEMANTIC_MEMORY: 0.25,
-    EPISODIC_MEMORY: 0.10,
+    EPISODIC_MEMORY: 0.1,
   };
 
-  const total = DEFAULT_ALLOCATION.WORKING_MEMORY + DEFAULT_ALLOCATION.PROCEDURAL_MEMORY +
-    DEFAULT_ALLOCATION.SEMANTIC_MEMORY + DEFAULT_ALLOCATION.EPISODIC_MEMORY;
+  const total =
+    DEFAULT_ALLOCATION.WORKING_MEMORY +
+    DEFAULT_ALLOCATION.PROCEDURAL_MEMORY +
+    DEFAULT_ALLOCATION.SEMANTIC_MEMORY +
+    DEFAULT_ALLOCATION.EPISODIC_MEMORY;
   assertEquals(total, 1.0);
 
   // Test vector search config
-  const VECTOR_CONFIG = {
-    DIMENSION: 384,
-    MAX_SEQUENCE_LENGTH: 512,
-    BATCH_SIZE: 10,
-  };
+  const VECTOR_CONFIG = { DIMENSION: 384, MAX_SEQUENCE_LENGTH: 512, BATCH_SIZE: 10 };
 
   assertEquals(VECTOR_CONFIG.DIMENSION, 384);
   assertEquals(VECTOR_CONFIG.MAX_SEQUENCE_LENGTH, 512);
@@ -156,7 +158,8 @@ Deno.test("MECMF Core - Utility Functions", () => {
   function extractKeyTerms(content: string, maxTerms: number = 5): string[] {
     const stopWords = new Set(["the", "a", "an", "and", "or", "in", "on", "at", "to", "for"]);
 
-    const words = content.toLowerCase()
+    const words = content
+      .toLowerCase()
       .replace(/[^\w\s]/g, " ")
       .split(/\s+/)
       .filter((word) => word.length > 2 && !stopWords.has(word));

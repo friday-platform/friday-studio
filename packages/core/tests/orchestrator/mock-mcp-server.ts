@@ -4,8 +4,8 @@
  * Implements minimal MCP protocol over HTTP to test the orchestrator
  */
 
-import type { TestAgentResponse } from "./test-helpers.ts";
 import { createLogger } from "@atlas/logger";
+import type { TestAgentResponse } from "./test-helpers.ts";
 
 const logger = createLogger({ test: "mock-mcp-server" });
 
@@ -75,13 +75,8 @@ export class MockMCPServer {
             id: request.id,
             result: {
               protocolVersion: "2025-06-18",
-              serverInfo: {
-                name: "mock-mcp-server",
-                version: "1.0.0",
-              },
-              capabilities: {
-                tools: {},
-              },
+              serverInfo: { name: "mock-mcp-server", version: "1.0.0" },
+              capabilities: { tools: {} },
             },
           };
           break;
@@ -91,19 +86,21 @@ export class MockMCPServer {
             jsonrpc: "2.0",
             id: request.id,
             result: {
-              tools: [{
-                name: "test-agent",
-                description: "Test agent for orchestrator integration testing",
-                inputSchema: {
-                  type: "object",
-                  properties: {
-                    prompt: { type: "string" },
-                    context: { type: "object" },
-                    _sessionContext: { type: "object" },
+              tools: [
+                {
+                  name: "test-agent",
+                  description: "Test agent for orchestrator integration testing",
+                  inputSchema: {
+                    type: "object",
+                    properties: {
+                      prompt: { type: "string" },
+                      context: { type: "object" },
+                      _sessionContext: { type: "object" },
+                    },
+                    required: ["prompt"],
                   },
-                  required: ["prompt"],
                 },
-              }],
+              ],
             },
           };
           break;
@@ -113,18 +110,20 @@ export class MockMCPServer {
             jsonrpc: "2.0",
             id: request.id,
             result: {
-              resources: [{
-                uri: "agent://test-agent",
-                name: "test-agent",
-                description: "Test agent for orchestrator integration testing",
-                metadata: {
-                  expertise: {
-                    domains: ["testing"],
-                    capabilities: ["echo messages", "simple calculations"],
-                    examples: ["echo hello world", "calculate 2 + 2"],
+              resources: [
+                {
+                  uri: "agent://test-agent",
+                  name: "test-agent",
+                  description: "Test agent for orchestrator integration testing",
+                  metadata: {
+                    expertise: {
+                      domains: ["testing"],
+                      capabilities: ["echo messages", "simple calculations"],
+                      examples: ["echo hello world", "calculate 2 + 2"],
+                    },
                   },
                 },
-              }],
+              ],
             },
           };
           break;
@@ -137,10 +136,7 @@ export class MockMCPServer {
           response = {
             jsonrpc: "2.0",
             id: request.id,
-            error: {
-              code: -32601,
-              message: `Method not found: ${request.method}`,
-            },
+            error: { code: -32601, message: `Method not found: ${request.method}` },
           };
       }
 
@@ -154,15 +150,9 @@ export class MockMCPServer {
         JSON.stringify({
           jsonrpc: "2.0",
           id: null,
-          error: {
-            code: -32700,
-            message: "Parse error",
-          },
+          error: { code: -32700, message: "Parse error" },
         }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        },
+        { status: 200, headers: { "Content-Type": "application/json" } },
       );
     }
   }
@@ -174,10 +164,7 @@ export class MockMCPServer {
       return {
         jsonrpc: "2.0",
         id: request.id,
-        error: {
-          code: -32602,
-          message: `Unknown tool: ${name}`,
-        },
+        error: { code: -32602, message: `Unknown tool: ${name}` },
       };
     }
 
@@ -222,20 +209,12 @@ export class MockMCPServer {
     }
 
     // Wrap in the expected MCP response format
-    const executionResult = {
-      type: "completed",
-      result: agentResult,
-    };
+    const executionResult = { type: "completed", result: agentResult };
 
     return {
       jsonrpc: "2.0",
       id: request.id,
-      result: {
-        content: [{
-          type: "text",
-          text: JSON.stringify(executionResult),
-        }],
-      },
+      result: { content: [{ type: "text", text: JSON.stringify(executionResult) }] },
     };
   }
 
@@ -262,7 +241,7 @@ export class MockMCPServer {
       headers: {
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache",
-        "Connection": "keep-alive",
+        Connection: "keep-alive",
       },
     });
   }

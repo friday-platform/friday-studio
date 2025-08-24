@@ -7,22 +7,21 @@ class EchoAgent implements TestAgent {
     return {
       name: "echo",
       description: "Simple echo agent that returns input messages",
-      metadata: {
-        capabilities: ["text"],
-        version: "1.0.0",
-      },
+      metadata: { capabilities: ["text"], version: "1.0.0" },
     };
   }
 
   processMessage(input: Message[]): Promise<Message[]> {
     // Simple echo - return the input as assistant response
-    return Promise.resolve(input.map((msg) => ({
-      role: "assistant" as const,
-      parts: msg.parts.map((part) => ({
-        content_type: part.content_type,
-        content: `Echo: ${part.content}`,
+    return Promise.resolve(
+      input.map((msg) => ({
+        role: "assistant" as const,
+        parts: msg.parts.map((part) => ({
+          content_type: part.content_type,
+          content: `Echo: ${part.content}`,
+        })),
       })),
-    })));
+    );
   }
 
   async *processMessageStream(input: Message[]): AsyncIterableIterator<MessagePart> {
@@ -31,20 +30,11 @@ class EchoAgent implements TestAgent {
         const response = `Echo: ${part.content}`;
 
         // Stream as: start -> content -> end
-        yield {
-          content_type: "text/plain",
-          content: "[START]",
-        };
+        yield { content_type: "text/plain", content: "[START]" };
 
-        yield {
-          content_type: part.content_type,
-          content: response,
-        };
+        yield { content_type: part.content_type, content: response };
 
-        yield {
-          content_type: "text/plain",
-          content: "[END]",
-        };
+        yield { content_type: "text/plain", content: "[END]" };
       }
     }
   }
@@ -55,10 +45,7 @@ class ErrorAgent implements TestAgent {
     return {
       name: "error",
       description: "Agent that always throws errors for testing error handling",
-      metadata: {
-        capabilities: ["error"],
-        version: "1.0.0",
-      },
+      metadata: { capabilities: ["error"], version: "1.0.0" },
     };
   }
 
@@ -77,10 +64,7 @@ class SlowAgent implements TestAgent {
     return {
       name: "slow",
       description: "Agent that introduces delays for timeout testing",
-      metadata: {
-        capabilities: ["text", "timeout"],
-        version: "1.0.0",
-      },
+      metadata: { capabilities: ["text", "timeout"], version: "1.0.0" },
     };
   }
 
@@ -103,10 +87,7 @@ class SlowAgent implements TestAgent {
         // Small delay between each part
         await new Promise((resolve) => setTimeout(resolve, 500));
 
-        yield {
-          content_type: part.content_type,
-          content: `Slow: ${part.content}`,
-        };
+        yield { content_type: part.content_type, content: `Slow: ${part.content}` };
       }
     }
   }

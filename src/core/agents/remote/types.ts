@@ -69,11 +69,7 @@ export interface RemoteExecutionMetadata {
   model_used?: string;
   session_id?: string;
   agent_version?: string;
-  cost?: {
-    input_tokens?: number;
-    output_tokens?: number;
-    total_cost_usd?: number;
-  };
+  cost?: { input_tokens?: number; output_tokens?: number; total_cost_usd?: number };
   performance?: {
     queue_time_ms?: number;
     processing_time_ms?: number;

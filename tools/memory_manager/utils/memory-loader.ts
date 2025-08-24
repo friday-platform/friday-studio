@@ -4,10 +4,10 @@
  * Loads and saves memory data from Atlas workspace memory files using the current MECMF system
  */
 
-import { CoALAMemoryType, type MemoryEntry, type MemoryStorage } from "../types/memory-types.ts";
 import { CoALAMemoryManager } from "@atlas/memory";
 import { WebEmbeddingProvider } from "../../../packages/memory/src/web-embedding-provider.ts";
 import { getWorkspaceMemoryDir } from "../../../src/utils/paths.ts";
+import { CoALAMemoryType, type MemoryEntry, type MemoryStorage } from "../types/memory-types.ts";
 
 export class AtlasMemoryLoader implements MemoryStorage {
   private workspacePath: string;
@@ -101,9 +101,7 @@ export class AtlasMemoryLoader implements MemoryStorage {
     return result;
   }
 
-  async saveAll(
-    data: Record<CoALAMemoryType, Record<string, MemoryEntry>>,
-  ): Promise<void> {
+  async saveAll(data: Record<CoALAMemoryType, Record<string, MemoryEntry>>): Promise<void> {
     const manager = await this.getCoALAManager();
 
     // Use the CoALA manager to save data
@@ -163,10 +161,7 @@ export class AtlasMemoryLoader implements MemoryStorage {
     }
   }
 
-  async saveByType(
-    type: CoALAMemoryType,
-    data: Record<string, MemoryEntry>,
-  ): Promise<void> {
+  async saveByType(type: CoALAMemoryType, data: Record<string, MemoryEntry>): Promise<void> {
     const manager = await this.getCoALAManager();
 
     // Save each memory entry using the CoALA manager
@@ -192,16 +187,10 @@ export class AtlasMemoryLoader implements MemoryStorage {
 
   async getStorageStats(): Promise<{
     path: string;
-    memoryTypes: Record<
-      CoALAMemoryType,
-      { count: number; lastModified?: Date; size?: number }
-    >;
+    memoryTypes: Record<CoALAMemoryType, { count: number; lastModified?: Date; size?: number }>;
   }> {
     await this.getCoALAManager();
-    const stats: Record<
-      CoALAMemoryType,
-      { count: number; lastModified?: Date; size?: number }
-    > = {
+    const stats: Record<CoALAMemoryType, { count: number; lastModified?: Date; size?: number }> = {
       [CoALAMemoryType.WORKING]: { count: 0 },
       [CoALAMemoryType.EPISODIC]: { count: 0 },
       [CoALAMemoryType.SEMANTIC]: { count: 0 },
@@ -216,9 +205,10 @@ export class AtlasMemoryLoader implements MemoryStorage {
 
         stats[memoryType] = {
           count: entries.length,
-          lastModified: entries.length > 0
-            ? new Date(Math.max(...entries.map((e) => e.lastAccessed.getTime())))
-            : undefined,
+          lastModified:
+            entries.length > 0
+              ? new Date(Math.max(...entries.map((e) => e.lastAccessed.getTime())))
+              : undefined,
           size: undefined, // Size calculation would require accessing file system directly
         };
       } catch {
@@ -229,10 +219,7 @@ export class AtlasMemoryLoader implements MemoryStorage {
     // Get the actual storage path from the workspace memory directory
     const storagePath = getWorkspaceMemoryDir(this.workspaceId);
 
-    return {
-      path: storagePath,
-      memoryTypes: stats,
-    };
+    return { path: storagePath, memoryTypes: stats };
   }
 
   // Public method to access the CoALA manager for vector search

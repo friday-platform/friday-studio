@@ -64,10 +64,7 @@ export interface LaunchAgentConfig {
 }
 
 export interface SystemdServiceConfig {
-  Unit: {
-    Description: string;
-    After?: string[];
-  };
+  Unit: { Description: string; After?: string[] };
   Service: {
     Type: string;
     ExecStart: string;
@@ -76,9 +73,7 @@ export interface SystemdServiceConfig {
     Restart: string;
     RestartSec?: number;
   };
-  Install: {
-    WantedBy: string[];
-  };
+  Install: { WantedBy: string[] };
 }
 
 export interface WindowsServiceConfig {

@@ -1,19 +1,11 @@
-import { Box, Text, useInput } from "ink";
 import { defaultTheme, extendTheme, TextInput, ThemeProvider } from "@inkjs/ui";
+import { Box, Text, useInput } from "ink";
 import { useCallback, useState } from "react";
 import { useAppContext } from "../contexts/app-context.tsx";
 
 // Custom theme with yellow highlights for TextInput components
 const customTheme = extendTheme(defaultTheme, {
-  components: {
-    TextInput: {
-      styles: {
-        frame: () => ({
-          color: "yellow",
-        }),
-      },
-    },
-  },
+  components: { TextInput: { styles: { frame: () => ({ color: "yellow" }) } } },
 });
 
 interface ConfigViewProps {
@@ -25,12 +17,7 @@ const ConfigViewContent = ({ onExit }: ConfigViewProps) => {
   const [localConfig, setLocalConfig] = useState(config);
 
   const [focusedField, setFocusedField] = useState<
-    | "apiKey"
-    | "daemonPort"
-    | "streamMessages"
-    | "submit"
-    | "yes"
-    | "no"
+    "apiKey" | "daemonPort" | "streamMessages" | "submit" | "yes" | "no"
   >("apiKey");
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);

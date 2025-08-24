@@ -3,21 +3,14 @@
  * Lists available signals within a workspace through the daemon API
  */
 
-import type { PromptContext } from "../types.ts";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { PromptContext } from "../types.ts";
 import { createSuccessResponse } from "../types.ts";
 
-export function registerSystemVersionPrompt(
-  server: McpServer,
-  ctx: PromptContext,
-) {
+export function registerSystemVersionPrompt(server: McpServer, ctx: PromptContext) {
   server.registerPrompt(
     "system_version",
-    {
-      title: "System Version",
-      description: "Get the current version of Atlas.",
-      argsSchema: {},
-    },
+    { title: "System Version", description: "Get the current version of Atlas.", argsSchema: {} },
     () => {
       ctx.logger.info("MCP system_version called");
 

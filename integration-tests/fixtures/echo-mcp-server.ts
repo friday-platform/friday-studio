@@ -11,10 +11,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 
 // Create MCP server
-const server = new McpServer({
-  name: "echo-test-server",
-  version: "1.0.0",
-});
+const server = new McpServer({ name: "echo-test-server", version: "1.0.0" });
 
 // Define Zod schemas for tools
 const echoSchema = z.object({
@@ -25,50 +22,28 @@ const echoSchema = z.object({
 // Register echo tool
 server.registerTool(
   "echo",
-  {
-    title: "Echo",
-    description: "Echo back the provided message",
-    inputSchema: echoSchema.shape,
-  },
+  { title: "Echo", description: "Echo back the provided message", inputSchema: echoSchema.shape },
   async (args) => {
     const { message, prefix } = echoSchema.parse(args);
     const result = prefix ? `${prefix}: ${message}` : message;
-    return {
-      content: [{
-        type: "text",
-        text: result,
-      }],
-    };
+    return { content: [{ type: "text", text: result }] };
   },
 );
 
-const reverseSchema = z.object({
-  text: z.string().describe("The text to reverse"),
-});
+const reverseSchema = z.object({ text: z.string().describe("The text to reverse") });
 
 // Register reverse tool
 server.registerTool(
   "reverse",
-  {
-    title: "Reverse",
-    description: "Reverse the provided text",
-    inputSchema: reverseSchema.shape,
-  },
+  { title: "Reverse", description: "Reverse the provided text", inputSchema: reverseSchema.shape },
   async (args) => {
     const { text } = reverseSchema.parse(args);
     const reversed = text.split("").reverse().join("");
-    return {
-      content: [{
-        type: "text",
-        text: reversed,
-      }],
-    };
+    return { content: [{ type: "text", text: reversed }] };
   },
 );
 
-const uppercaseSchema = z.object({
-  text: z.string().describe("The text to convert to uppercase"),
-});
+const uppercaseSchema = z.object({ text: z.string().describe("The text to convert to uppercase") });
 
 // Register uppercase tool
 server.registerTool(
@@ -80,12 +55,7 @@ server.registerTool(
   },
   async (args) => {
     const { text } = uppercaseSchema.parse(args);
-    return {
-      content: [{
-        type: "text",
-        text: text.toUpperCase(),
-      }],
-    };
+    return { content: [{ type: "text", text: text.toUpperCase() }] };
   },
 );
 

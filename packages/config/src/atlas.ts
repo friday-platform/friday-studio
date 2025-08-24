@@ -27,11 +27,13 @@ const SupervisorConfigSchema = z.strictObject({
     cache_adapter: z.string().optional(),
     cache_ttl_hours: z.number().positive().optional(),
     parallel_llm_calls: z.boolean().optional(),
-    timeouts: z.strictObject({
-      analysis: DurationSchema,
-      validation: DurationSchema,
-      execution: DurationSchema.optional(),
-    }).optional(),
+    timeouts: z
+      .strictObject({
+        analysis: DurationSchema,
+        validation: DurationSchema,
+        execution: DurationSchema.optional(),
+      })
+      .optional(),
   }),
 
   prompts: SupervisorPromptsSchema,
@@ -84,11 +86,13 @@ export const PlanningConfigSchema = z.strictObject({
     cache_ttl_hours: z.number().positive(),
     fail_fast: z.boolean(),
 
-    external_services: z.strictObject({
-      openai_moderation: z.boolean(),
-      perspective_api: z.boolean(),
-      deepeval_service: z.string().nullable(),
-    }).optional(),
+    external_services: z
+      .strictObject({
+        openai_moderation: z.boolean(),
+        perspective_api: z.boolean(),
+        deepeval_service: z.string().nullable(),
+      })
+      .optional(),
   }),
 });
 export type PlanningConfig = z.infer<typeof PlanningConfigSchema>;
@@ -98,24 +102,20 @@ export type PlanningConfig = z.infer<typeof PlanningConfigSchema>;
 // ==============================================================================
 
 export const RuntimeConfigSchema = z.strictObject({
-  server: z.strictObject({
-    port: z.number().int().min(1).max(65535),
-    host: z.string(),
-  }).optional(),
+  server: z.strictObject({ port: z.number().int().min(1).max(65535), host: z.string() }).optional(),
 
-  logging: z.strictObject({
-    level: z.enum(["debug", "info", "warn", "error"]),
-    format: z.enum(["json", "pretty"]),
-  }).optional(),
+  logging: z
+    .strictObject({
+      level: z.enum(["debug", "info", "warn", "error"]),
+      format: z.enum(["json", "pretty"]),
+    })
+    .optional(),
 
-  persistence: z.strictObject({
-    type: z.enum(["local", "memory", "s3", "gcs", "azure"]),
-    path: z.string(),
-  }).optional(),
+  persistence: z
+    .strictObject({ type: z.enum(["local", "memory", "s3", "gcs", "azure"]), path: z.string() })
+    .optional(),
 
-  security: z.strictObject({
-    cors: z.string(),
-  }).optional(),
+  security: z.strictObject({ cors: z.string() }).optional(),
 });
 export type RuntimeConfig = z.infer<typeof RuntimeConfigSchema>;
 
@@ -149,10 +149,13 @@ export type ServerConfig = z.infer<typeof ServerConfigSchema>;
  */
 export const AtlasServerConfigSchema = ServerConfigSchema.extend({
   mcp: AtlasPlatformMCPConfigSchema.optional(),
-  rest: z.strictObject({
-    enabled: z.boolean().default(false),
-    prefix: z.string().default("/api/v1"),
-    swagger: z.boolean().default(false),
-  }).optional().describe("REST API configuration (not currently implemented)"),
+  rest: z
+    .strictObject({
+      enabled: z.boolean().default(false),
+      prefix: z.string().default("/api/v1"),
+      swagger: z.boolean().default(false),
+    })
+    .optional()
+    .describe("REST API configuration (not currently implemented)"),
 });
 export type AtlasServerConfig = z.infer<typeof AtlasServerConfigSchema>;

@@ -1,16 +1,13 @@
-import { createFactory } from "hono/factory";
-import { cors } from "hono/cors";
-import type { WorkspaceRuntime } from "../../../src/core/workspace-runtime.ts";
 import type { WorkspaceManager } from "@atlas/workspace";
+import { cors } from "hono/cors";
+import { createFactory } from "hono/factory";
+import type { WorkspaceRuntime } from "../../../src/core/workspace-runtime.ts";
 
 // Define app context that will be available to all routes
 export interface AppContext {
   runtimes: Map<string, WorkspaceRuntime>;
   startTime: number;
-  sseClients: Map<
-    string,
-    Array<{ controller: ReadableStreamDefaultController<Uint8Array> }>
-  >;
+  sseClients: Map<string, Array<{ controller: ReadableStreamDefaultController<Uint8Array> }>>;
   getWorkspaceManager(): WorkspaceManager;
 
   // Signal route methods
@@ -23,9 +20,7 @@ export interface AppContext {
 }
 
 // Define variables available in context
-export type AppVariables = {
-  Variables: { app: AppContext };
-};
+export type AppVariables = { Variables: { app: AppContext } };
 
 // Create the factory with our types
 export const daemonFactory = createFactory<AppVariables>();

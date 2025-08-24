@@ -1,6 +1,3 @@
-import { assertEquals, assertRejects } from "@std/assert";
-import { parse } from "@std/yaml";
-
 import {
   AtlasConfigSchema,
   ConfigLoader,
@@ -10,6 +7,8 @@ import {
   WorkspaceAgentConfigSchema,
   WorkspaceConfigSchema,
 } from "@atlas/config";
+import { assertEquals, assertRejects } from "@std/assert";
+import { parse } from "@std/yaml";
 
 // Mock adapter for testing
 class MockConfigAdapter {
@@ -190,9 +189,7 @@ Deno.test("Config V2 Parsing - should validate signal schemas", () => {
     const dataWebhook = result.data.signals?.["data-webhook"];
 
     // Valid payload
-    const validPayload = {
-      dataset: "test-dataset",
-    };
+    const validPayload = { dataset: "test-dataset" };
 
     const validResult = validateSignalPayload(dataWebhook!, validPayload);
     assertEquals(validResult.success, true);
@@ -334,10 +331,7 @@ Deno.test("Config V2 Parsing - ConfigLoader should allow system signals in syste
     version: "1.0",
     workspace: { name: "system-workspace" },
     signals: {
-      "system-signal": {
-        provider: "system",
-        description: "System signal in system workspace",
-      },
+      "system-signal": { provider: "system", description: "System signal in system workspace" },
     },
   };
 
@@ -359,10 +353,7 @@ Deno.test("Config V2 Parsing - ConfigLoader should validate agent references in 
     jobs: {
       "test-job": {
         description: "Test job",
-        execution: {
-          strategy: "sequential",
-          agents: [{ id: "non-existent-agent" }],
-        },
+        execution: { strategy: "sequential", agents: [{ id: "non-existent-agent" }] },
       },
     },
   };
@@ -388,21 +379,14 @@ Deno.test("Config V2 Parsing - ConfigLoader should validate signal references in
       "test-agent": {
         type: "llm",
         description: "Test agent",
-        config: {
-          provider: "anthropic",
-          model: "claude-3-5-haiku-latest",
-          prompt: "Test",
-        },
+        config: { provider: "anthropic", model: "claude-3-5-haiku-latest", prompt: "Test" },
       },
     },
     jobs: {
       "test-job": {
         description: "Test job",
         triggers: [{ signal: "non-existent-signal" }],
-        execution: {
-          strategy: "sequential",
-          agents: ["test-agent"],
-        },
+        execution: { strategy: "sequential", agents: ["test-agent"] },
       },
     },
   };
@@ -425,7 +409,7 @@ Deno.test("Config V2 Parsing - ConfigLoader should handle ConfigValidationError 
     version: "1.0",
     // Missing required workspace field
     signals: {
-      "test": {
+      test: {
         provider: "invalid-provider", // Invalid provider
       },
     },
@@ -450,7 +434,8 @@ Deno.test("Config V2 Parsing - ConfigLoader should handle ConfigValidationError 
       assertEquals(details.length > 0, true);
 
       // Verify that the error mentions the validation issues
-      const hasValidationError = errorMessage.includes("workspace") ||
+      const hasValidationError =
+        errorMessage.includes("workspace") ||
         errorMessage.includes("signals.test.provider") ||
         errorMessage.includes("Invalid");
       assertEquals(hasValidationError, true);
@@ -510,13 +495,7 @@ Deno.test("Config V2 Parsing - should handle temperature validation for LLM agen
   assertEquals(result.success, false);
 
   // Valid temperature
-  const validAgent = {
-    ...llmAgent,
-    config: {
-      ...llmAgent.config,
-      temperature: 0.7,
-    },
-  };
+  const validAgent = { ...llmAgent, config: { ...llmAgent.config, temperature: 0.7 } };
 
   const validResult = WorkspaceAgentConfigSchema.safeParse(validAgent);
   assertEquals(validResult.success, true);
@@ -527,12 +506,10 @@ Deno.test("Config V2 Parsing - should handle MCP tool name validation", () => {
     version: "1.0",
     workspace: { name: "test" },
     jobs: {
-      "Invalid Job Name!": { // Invalid characters
+      "Invalid Job Name!": {
+        // Invalid characters
         description: "Test",
-        execution: {
-          strategy: "sequential",
-          agents: [],
-        },
+        execution: { strategy: "sequential", agents: [] },
       },
     },
   };
@@ -545,15 +522,10 @@ Deno.test("Config V2 Parsing - should validate signal payload at runtime", () =>
   const signal = {
     provider: "http" as const,
     description: "Test signal",
-    config: {
-      path: "/test",
-    },
+    config: { path: "/test" },
     schema: {
       type: "object",
-      properties: {
-        name: { type: "string", minLength: 3 },
-        age: { type: "number", minimum: 0 },
-      },
+      properties: { name: { type: "string", minLength: 3 }, age: { type: "number", minimum: 0 } },
       required: ["name"],
     },
   };
@@ -606,12 +578,7 @@ Deno.test("Config V2 Parsing - should infer correct types for tagged unions", ()
 });
 
 Deno.test("Config V2 Parsing - should handle optional fields correctly", () => {
-  const minimal = {
-    version: "1.0",
-    workspace: {
-      name: "minimal",
-    },
-  };
+  const minimal = { version: "1.0", workspace: { name: "minimal" } };
 
   const result = WorkspaceConfigSchema.safeParse(minimal);
   assertEquals(result.success, true);

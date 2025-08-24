@@ -33,11 +33,7 @@ export interface MemoryOperations {
     metadata?: Partial<MemoryEntry>,
   ): Promise<void>;
   read(type: CoALAMemoryType, key: string): Promise<MemoryEntry | null>;
-  update(
-    type: CoALAMemoryType,
-    key: string,
-    updates: Partial<MemoryEntry>,
-  ): Promise<void>;
+  update(type: CoALAMemoryType, key: string, updates: Partial<MemoryEntry>): Promise<void>;
   delete(type: CoALAMemoryType, key: string): Promise<void>;
 
   // List and search
@@ -56,10 +52,7 @@ export interface MemoryStorage {
   loadAll(): Promise<Record<CoALAMemoryType, Record<string, MemoryEntry>>>;
   saveAll(data: Record<CoALAMemoryType, Record<string, MemoryEntry>>): Promise<void>;
   loadByType(type: CoALAMemoryType): Promise<Record<string, MemoryEntry>>;
-  saveByType(
-    type: CoALAMemoryType,
-    data: Record<string, MemoryEntry>,
-  ): Promise<void>;
+  saveByType(type: CoALAMemoryType, data: Record<string, MemoryEntry>): Promise<void>;
 }
 
 export interface TUIState {

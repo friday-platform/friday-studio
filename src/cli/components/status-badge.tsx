@@ -6,10 +6,7 @@ export interface StatusBadgeProps {
   compact?: boolean;
 }
 
-const statusConfig: Record<
-  string,
-  { color: string; symbol?: string; label?: string }
-> = {
+const statusConfig: Record<string, { color: string; symbol?: string; label?: string }> = {
   // Session statuses
   ready: { color: "green", symbol: "●", label: "ready" },
   executing: { color: "yellow", symbol: "◐", label: "executing" },

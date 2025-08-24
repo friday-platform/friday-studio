@@ -11,11 +11,7 @@ export interface JobSpecification {
   description?: string;
   triggers?: Array<{
     signal: string;
-    response?: {
-      mode?: string;
-      format?: string;
-      timeout?: number;
-    };
+    response?: { mode?: string; format?: string; timeout?: number };
   }>;
   execution: {
     strategy: "sequential" | "parallel" | "conditional";
@@ -26,17 +22,9 @@ export interface JobSpecification {
     }>;
     context?: Record<string, unknown>;
   };
-  supervision?: {
-    level?: "minimal" | "standard" | "paranoid";
-  };
-  memory?: {
-    enabled?: boolean;
-    fact_extraction?: boolean;
-    working_memory_summary?: boolean;
-  };
-  resources?: {
-    estimated_duration_seconds?: number;
-  };
+  supervision?: { level?: "minimal" | "standard" | "paranoid" };
+  memory?: { enabled?: boolean; fact_extraction?: boolean; working_memory_summary?: boolean };
+  resources?: { estimated_duration_seconds?: number };
 }
 
 /**

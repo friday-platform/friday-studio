@@ -56,10 +56,10 @@ export function getVersionInfo() {
     gitSha: isDev
       ? version.replace("dev-", "")
       : isNightly
-      ? version.replace("nightly-", "")
-      : COMPILED_GIT_SHA !== shaPlaceholder
-      ? COMPILED_GIT_SHA
-      : undefined,
+        ? version.replace("nightly-", "")
+        : COMPILED_GIT_SHA !== shaPlaceholder
+          ? COMPILED_GIT_SHA
+          : undefined,
   };
 }
 

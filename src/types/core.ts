@@ -1,7 +1,7 @@
 // Core Atlas interfaces based on technical design document
 
-import type { AgentOrchestrator } from "@atlas/core";
 import type { WorkspaceSignalConfig } from "@atlas/config";
+import type { AgentOrchestrator } from "@atlas/core";
 
 export interface IAtlasScope {
   id: string;
@@ -11,10 +11,7 @@ export interface IAtlasScope {
   context: ITempestContextManager;
   memory: ITempestMemoryManager;
   messages: ITempestMessageManager;
-  prompts: {
-    system: string;
-    user: string;
-  };
+  prompts: { system: string; user: string };
   gates: IAtlasGate[];
   newConversation(): ITempestMessageManager;
   getConversation(): ITempestMessageManager;
@@ -94,19 +91,13 @@ export interface IWorkspaceLibrary {
 
 export interface IWorkspaceSupervisor extends IAtlasScope, IWorkspaceAgent {
   config?: { defaultModel?: string; [key: string]: any };
-  spawnSession(
-    signal: IWorkspaceSignal,
-    payload?: any,
-  ): Promise<IWorkspaceSession>;
+  spawnSession(signal: IWorkspaceSignal, payload?: any): Promise<IWorkspaceSession>;
   manageAgentLifecycle(): void;
   processSignalInterrupts(): void;
 }
 
 export interface IWorkspaceSession extends IAtlasScope {
-  signals: {
-    triggers: IWorkspaceSignal[];
-    callback: IWorkspaceSignalCallback;
-  };
+  signals: { triggers: IWorkspaceSignal[]; callback: IWorkspaceSignalCallback };
   agents?: IWorkspaceAgent[];
   workflows?: IWorkspaceWorkflow[];
   sources?: IWorkspaceSource[];
@@ -125,10 +116,7 @@ export interface IWorkspaceSessionPlan extends IAtlasDecisionGraph {
 }
 
 export interface IWorkspaceSignal extends IAtlasScope {
-  provider: {
-    id: string;
-    name: string;
-  };
+  provider: { id: string; name: string };
   trigger(): Promise<void>;
   configure(config: WorkspaceSignalConfig): void;
 }
@@ -185,10 +173,7 @@ export interface ITempestContextManager {
 }
 
 export interface ITempestContext {
-  source: {
-    type: string;
-    id: string;
-  };
+  source: { type: string; id: string };
   detail: string;
 }
 
@@ -202,22 +187,26 @@ export interface ITempestMemoryManager {
   forget(key: string): void;
 
   // CoALA-specific methods (optional for backwards compatibility)
-  rememberWithMetadata?(key: string, content: any, metadata: {
-    memoryType: string;
-    tags: string[];
-    relevanceScore: number;
-    associations?: string[];
-    confidence?: number;
-    decayRate?: number;
-    source?: string;
-    sourceMetadata?: {
-      agentId?: string;
-      toolName?: string;
-      sessionId?: string;
-      userId?: string;
-      workspaceId?: string;
-    };
-  }): void;
+  rememberWithMetadata?(
+    key: string,
+    content: any,
+    metadata: {
+      memoryType: string;
+      tags: string[];
+      relevanceScore: number;
+      associations?: string[];
+      confidence?: number;
+      decayRate?: number;
+      source?: string;
+      sourceMetadata?: {
+        agentId?: string;
+        toolName?: string;
+        sessionId?: string;
+        userId?: string;
+        workspaceId?: string;
+      };
+    },
+  ): void;
 
   queryMemories?(query: {
     content?: string;

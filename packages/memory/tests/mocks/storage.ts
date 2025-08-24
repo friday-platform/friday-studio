@@ -17,7 +17,8 @@ import type {
  * Simple mock storage adapter for memory testing
  */
 export class MockMemoryStorageAdapter
-  implements ICoALAMemoryStorageAdapter, ITempestMemoryStorageAdapter {
+  implements ICoALAMemoryStorageAdapter, ITempestMemoryStorageAdapter
+{
   private data = new Map<string, any>();
 
   async store(key: string, value: any): Promise<void> {
@@ -130,17 +131,20 @@ export class MockKnowledgeGraphStorageAdapter implements IKnowledgeGraphStorageA
   }
 
   async queryEntities(query: KnowledgeGraphQuery): Promise<KnowledgeEntity[]> {
-    return Array.from(this.entities.values()).filter((entity) => {
-      if (query.workspaceId && entity.workspaceId !== query.workspaceId) return false;
-      if (query.entityTypes && !query.entityTypes.includes(entity.type)) return false;
-      if (
-        query.entityNames &&
-        !query.entityNames.some((name) => entity.name.toLowerCase().includes(name.toLowerCase()))
-      ) return false;
-      if (query.minConfidence && entity.confidence < query.minConfidence) return false;
-      if (query.search && !this.entityMatchesSearch(entity, query.search)) return false;
-      return true;
-    }).slice(0, query.limit || 100);
+    return Array.from(this.entities.values())
+      .filter((entity) => {
+        if (query.workspaceId && entity.workspaceId !== query.workspaceId) return false;
+        if (query.entityTypes && !query.entityTypes.includes(entity.type)) return false;
+        if (
+          query.entityNames &&
+          !query.entityNames.some((name) => entity.name.toLowerCase().includes(name.toLowerCase()))
+        )
+          return false;
+        if (query.minConfidence && entity.confidence < query.minConfidence) return false;
+        if (query.search && !this.entityMatchesSearch(entity, query.search)) return false;
+        return true;
+      })
+      .slice(0, query.limit || 100);
   }
 
   async updateEntity(id: string, updates: Partial<KnowledgeEntity>): Promise<void> {
@@ -164,17 +168,19 @@ export class MockKnowledgeGraphStorageAdapter implements IKnowledgeGraphStorageA
   }
 
   async queryRelationships(query: KnowledgeGraphQuery): Promise<KnowledgeRelationship[]> {
-    return Array.from(this.relationships.values()).filter((rel) => {
-      if (query.workspaceId && rel.workspaceId !== query.workspaceId) return false;
-      if (query.relationshipTypes && !query.relationshipTypes.includes(rel.type)) return false;
-      if (query.minConfidence && rel.confidence < query.minConfidence) return false;
-      return true;
-    }).slice(0, query.limit || 100);
+    return Array.from(this.relationships.values())
+      .filter((rel) => {
+        if (query.workspaceId && rel.workspaceId !== query.workspaceId) return false;
+        if (query.relationshipTypes && !query.relationshipTypes.includes(rel.type)) return false;
+        if (query.minConfidence && rel.confidence < query.minConfidence) return false;
+        return true;
+      })
+      .slice(0, query.limit || 100);
   }
 
   async getEntityRelationships(entityId: string): Promise<KnowledgeRelationship[]> {
-    return Array.from(this.relationships.values()).filter((rel) =>
-      rel.sourceEntityId === entityId || rel.targetEntityId === entityId
+    return Array.from(this.relationships.values()).filter(
+      (rel) => rel.sourceEntityId === entityId || rel.targetEntityId === entityId,
     );
   }
 
@@ -192,12 +198,14 @@ export class MockKnowledgeGraphStorageAdapter implements IKnowledgeGraphStorageA
   }
 
   async queryFacts(query: KnowledgeGraphQuery): Promise<KnowledgeFact[]> {
-    return Array.from(this.facts.values()).filter((fact) => {
-      if (query.workspaceId && fact.workspaceId !== query.workspaceId) return false;
-      if (query.minConfidence && fact.confidence < query.minConfidence) return false;
-      if (query.search && !this.factMatchesSearch(fact, query.search)) return false;
-      return true;
-    }).slice(0, query.limit || 100);
+    return Array.from(this.facts.values())
+      .filter((fact) => {
+        if (query.workspaceId && fact.workspaceId !== query.workspaceId) return false;
+        if (query.minConfidence && fact.confidence < query.minConfidence) return false;
+        if (query.search && !this.factMatchesSearch(fact, query.search)) return false;
+        return true;
+      })
+      .slice(0, query.limit || 100);
   }
 
   async deleteFact(id: string): Promise<void> {
@@ -275,20 +283,26 @@ export class MockKnowledgeGraphStorageAdapter implements IKnowledgeGraphStorageA
     };
 
     findNeighborsRecursive(entityId, 0);
-    return Array.from(neighborIds).map((id) => this.entities.get(id)!).filter(Boolean);
+    return Array.from(neighborIds)
+      .map((id) => this.entities.get(id)!)
+      .filter(Boolean);
   }
 
   // Helper methods
   private entityMatchesSearch(entity: KnowledgeEntity, search: string): boolean {
     const searchLower = search.toLowerCase();
-    return entity.name.toLowerCase().includes(searchLower) ||
-      JSON.stringify(entity.attributes).toLowerCase().includes(searchLower);
+    return (
+      entity.name.toLowerCase().includes(searchLower) ||
+      JSON.stringify(entity.attributes).toLowerCase().includes(searchLower)
+    );
   }
 
   private factMatchesSearch(fact: KnowledgeFact, search: string): boolean {
     const searchLower = search.toLowerCase();
-    return fact.statement.toLowerCase().includes(searchLower) ||
-      fact.tags.some((tag) => tag.toLowerCase().includes(searchLower));
+    return (
+      fact.statement.toLowerCase().includes(searchLower) ||
+      fact.tags.some((tag) => tag.toLowerCase().includes(searchLower))
+    );
   }
 
   // Helper methods for tests

@@ -1,11 +1,11 @@
+import { ConfigLoader } from "@atlas/config";
+import { FilesystemConfigAdapter } from "@atlas/storage";
 import { Box, render, Text } from "ink";
 import {
   checkDaemonRunning,
   createDaemonNotRunningError,
   getDaemonClient,
 } from "../../utils/daemon-client.ts";
-import { ConfigLoader } from "@atlas/config";
-import { FilesystemConfigAdapter } from "@atlas/storage";
 
 interface DescribeArgs {
   name: string;
@@ -30,21 +30,9 @@ export const desc = "Show detailed information about an agent";
 export const aliases = ["show", "get"];
 
 export const builder = {
-  name: {
-    type: "string" as const,
-    describe: "Agent name to describe",
-    demandOption: true,
-  },
-  json: {
-    type: "boolean" as const,
-    describe: "Output agent details as JSON",
-    default: false,
-  },
-  workspace: {
-    type: "string" as const,
-    alias: "w",
-    describe: "Workspace ID or name",
-  },
+  name: { type: "string" as const, describe: "Agent name to describe", demandOption: true },
+  json: { type: "boolean" as const, describe: "Output agent details as JSON", default: false },
+  workspace: { type: "string" as const, alias: "w", describe: "Workspace ID or name" },
 };
 
 export const handler = async (argv: DescribeArgs): Promise<void> => {
@@ -128,9 +116,7 @@ export const handler = async (argv: DescribeArgs): Promise<void> => {
       }, 100);
     }
   } catch (error) {
-    console.error(
-      `Error: ${error instanceof Error ? error.message : String(error)}`,
-    );
+    console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
     Deno.exit(1);
   }
 };
@@ -172,40 +158,40 @@ function AgentDetailCommand({ agent }: { agent: AgentDetail }) {
         <>
           <Text></Text>
           <Text bold>Tools:</Text>
-          {Array.isArray(agent.tools)
-            ? agent.tools.map((tool, i) => (
+          {Array.isArray(agent.tools) ? (
+            agent.tools.map((tool, i) => (
               <Box key={i} marginLeft={1}>
                 <Text>• {tool}</Text>
               </Box>
             ))
-            : (
-              <>
-                {agent.tools.mcp && agent.tools.mcp.length > 0 && (
-                  <>
-                    <Box marginLeft={1}>
-                      <Text color="cyan">MCP Servers:</Text>
+          ) : (
+            <>
+              {agent.tools.mcp && agent.tools.mcp.length > 0 && (
+                <>
+                  <Box marginLeft={1}>
+                    <Text color="cyan">MCP Servers:</Text>
+                  </Box>
+                  {agent.tools.mcp.map((tool, i) => (
+                    <Box key={`mcp-${i}`} marginLeft={2}>
+                      <Text>• {tool}</Text>
                     </Box>
-                    {agent.tools.mcp.map((tool, i) => (
-                      <Box key={`mcp-${i}`} marginLeft={2}>
-                        <Text>• {tool}</Text>
-                      </Box>
-                    ))}
-                  </>
-                )}
-                {agent.tools.workspace && agent.tools.workspace.length > 0 && (
-                  <>
-                    <Box marginLeft={1}>
-                      <Text color="cyan">Workspace Tools:</Text>
+                  ))}
+                </>
+              )}
+              {agent.tools.workspace && agent.tools.workspace.length > 0 && (
+                <>
+                  <Box marginLeft={1}>
+                    <Text color="cyan">Workspace Tools:</Text>
+                  </Box>
+                  {agent.tools.workspace.map((tool, i) => (
+                    <Box key={`workspace-${i}`} marginLeft={2}>
+                      <Text>• {tool}</Text>
                     </Box>
-                    {agent.tools.workspace.map((tool, i) => (
-                      <Box key={`workspace-${i}`} marginLeft={2}>
-                        <Text>• {tool}</Text>
-                      </Box>
-                    ))}
-                  </>
-                )}
-              </>
-            )}
+                  ))}
+                </>
+              )}
+            </>
+          )}
         </>
       )}
 

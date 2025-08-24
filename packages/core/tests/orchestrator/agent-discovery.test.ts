@@ -7,8 +7,8 @@
  */
 
 import { assertEquals, assertExists } from "@std/assert";
-import { cleanupTestServers, setupTestServers } from "./test-helpers.ts";
 import type { TestSetup } from "./test-helpers.ts";
+import { cleanupTestServers, setupTestServers } from "./test-helpers.ts";
 
 /**
  * Core agent discovery - tests MCP resource listing and metadata parsing.

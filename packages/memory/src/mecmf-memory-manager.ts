@@ -5,39 +5,33 @@
  * integrating all MECMF components into a unified memory system for Atlas.
  */
 
-import {
-  ConversationContext,
-  EnhancedPrompt,
-  MemoryEntry,
-  MemorySource,
-  MemorySourceMetadata,
-  MemoryStatistics,
-  MemoryType,
-  RetrievalOptions,
-} from "./mecmf-interfaces.ts";
-import type { MECMFMemoryManager as IMECMFMemoryManager } from "./mecmf-interfaces.ts";
-
-import { WebEmbeddingProvider } from "./web-embedding-provider.ts";
-import { AtlasTokenBudgetManager } from "./token-budget-manager.ts";
-import { PIISafeMemoryClassifier } from "./pii-safe-classifier.ts";
-import { MECMFErrorHandler } from "./error-handling.ts";
-import { getGlobalMECMFDebugLogger, type PromptEnhancementLog } from "./debug-logger.ts";
-
 // Import existing Atlas components
-import { CoALAMemoryEntry, CoALAMemoryManager, CoALAMemoryType } from "./coala-memory.ts";
-import type { MemoryScoper } from "./mecmf-interfaces.ts";
+import { type CoALAMemoryEntry, CoALAMemoryManager, CoALAMemoryType } from "./coala-memory.ts";
+import { getGlobalMECMFDebugLogger, type PromptEnhancementLog } from "./debug-logger.ts";
+import { MECMFErrorHandler } from "./error-handling.ts";
+import type {
+  MECMFMemoryManager as IMECMFMemoryManager,
+  MemoryScoper,
+} from "./mecmf-interfaces.ts";
+import {
+  type ConversationContext,
+  type EnhancedPrompt,
+  type MemoryEntry,
+  MemorySource,
+  type MemorySourceMetadata,
+  type MemoryStatistics,
+  MemoryType,
+  type RetrievalOptions,
+} from "./mecmf-interfaces.ts";
+import { PIISafeMemoryClassifier } from "./pii-safe-classifier.ts";
+import { AtlasTokenBudgetManager } from "./token-budget-manager.ts";
+import { WebEmbeddingProvider } from "./web-embedding-provider.ts";
 
 export interface MECMFConfig {
   workspaceId: string;
   enableVectorSearch?: boolean;
-  embeddingConfig?: {
-    cacheDirectory?: string;
-    batchSize?: number;
-  };
-  tokenBudgets?: {
-    defaultBudget?: number;
-    modelLimits?: Record<string, number>;
-  };
+  embeddingConfig?: { cacheDirectory?: string; batchSize?: number };
+  tokenBudgets?: { defaultBudget?: number; modelLimits?: Record<string, number> };
   fallbackOptions?: {
     enableTextSearch?: boolean;
     cacheRecentMemories?: boolean;
@@ -55,17 +49,10 @@ export class MECMFMemoryManager implements IMECMFMemoryManager {
   private ready: boolean = false;
   private config: MECMFConfig;
 
-  constructor(
-    scope: MemoryScoper,
-    config: MECMFConfig,
-  ) {
+  constructor(scope: MemoryScoper, config: MECMFConfig) {
     this.config = {
       enableVectorSearch: true,
-      fallbackOptions: {
-        enableTextSearch: true,
-        cacheRecentMemories: true,
-        maxCachedMemories: 50,
-      },
+      fallbackOptions: { enableTextSearch: true, cacheRecentMemories: true, maxCachedMemories: 50 },
       tokenBudgets: {
         defaultBudget: 4000, // Conservative default
         modelLimits: {
@@ -87,15 +74,10 @@ export class MECMFMemoryManager implements IMECMFMemoryManager {
     this.errorHandler = new MECMFErrorHandler();
 
     // Initialize CoALA memory manager with vector search
-    this.coalaManager = new CoALAMemoryManager(
-      scope,
-      undefined,
-      true,
-      {
-        // Vector search will be initialized internally by CoALAMemoryManager
-        // based on provided options; embedding provider is managed separately here.
-      },
-    );
+    this.coalaManager = new CoALAMemoryManager(scope, undefined, true, {
+      // Vector search will be initialized internally by CoALAMemoryManager
+      // based on provided options; embedding provider is managed separately here.
+    });
   }
 
   async initialize(): Promise<void> {
@@ -264,9 +246,10 @@ export class MECMFMemoryManager implements IMECMFMemoryManager {
     // Log memory classification and storage if debugging is enabled
     if (debugLogger.isEnabled()) {
       // Create a simplified log for memory storage (show what was actually stored)
-      const truncatedContent = sanitizedContent.length > 200
-        ? sanitizedContent.substring(0, 200) + "..."
-        : sanitizedContent;
+      const truncatedContent =
+        sanitizedContent.length > 200
+          ? sanitizedContent.substring(0, 200) + "..."
+          : sanitizedContent;
 
       // Write debug information to stderr if environment variable is set
       if (typeof Deno !== "undefined" && Deno.env.get("MECMF_DEBUG") === "true") {
@@ -307,27 +290,29 @@ export class MECMFMemoryManager implements IMECMFMemoryManager {
     } = options || {};
 
     // Use error handling with fallback for vector search
-    return this.errorHandler.handleVectorSearchTimeout(
-      // Primary: Vector search via CoALA
-      async () => {
-        const coalaMemories = await this.coalaManager.searchMemoriesByVector(query, {
-          memoryTypes: memoryTypes.map((t) => this.mapMemoryType(t)),
-          limit: maxResults,
-          minSimilarity: minRelevanceScore,
-        });
+    return this.errorHandler
+      .handleVectorSearchTimeout(
+        // Primary: Vector search via CoALA
+        async () => {
+          const coalaMemories = await this.coalaManager.searchMemoriesByVector(query, {
+            memoryTypes: memoryTypes.map((t) => this.mapMemoryType(t)),
+            limit: maxResults,
+            minSimilarity: minRelevanceScore,
+          });
 
-        return this.convertCoALAToMECMF(coalaMemories);
-      },
-      // Fallback: Recent cached memories
-      (limit: number) =>
-        Promise.resolve(
-          Array.from(this.recentMemoryCache.values())
-            .filter((m) => memoryTypes.includes(m.memoryType))
-            .sort((a, b) => b.relevanceScore - a.relevanceScore)
-            .slice(0, limit),
-        ),
-      { operation: "getRelevantMemories", memoryType: memoryTypes[0] },
-    ).then((result) => result.data);
+          return this.convertCoALAToMECMF(coalaMemories);
+        },
+        // Fallback: Recent cached memories
+        (limit: number) =>
+          Promise.resolve(
+            Array.from(this.recentMemoryCache.values())
+              .filter((m) => memoryTypes.includes(m.memoryType))
+              .sort((a, b) => b.relevanceScore - a.relevanceScore)
+              .slice(0, limit),
+          ),
+        { operation: "getRelevantMemories", memoryType: memoryTypes[0] },
+      )
+      .then((result) => result.data);
   }
 
   // === Token-Aware Operations ===
@@ -360,10 +345,7 @@ export class MECMFMemoryManager implements IMECMFMemoryManager {
       originalPrompt,
       memories,
       tokenBudget,
-      {
-        adaptiveAllocation: true,
-        contextFormat: "summary",
-      },
+      { adaptiveAllocation: true, contextFormat: "summary" },
     );
     const tokenBudgetTime = performance.now() - tokenBudgetStart;
     transformationSteps.push(`Constructed token-aware prompt in ${tokenBudgetTime.toFixed(1)}ms`);
@@ -448,12 +430,13 @@ export class MECMFMemoryManager implements IMECMFMemoryManager {
 
     const totalMemories = Object.values(byType).reduce((sum, count) => sum + count, 0);
 
-    const averageRelevance = totalMemories > 0
-      ? Object.entries(coalaStats).reduce(
-        (sum, [_type, stats]) => sum + (stats?.avgRelevance || 0) * (stats?.count || 0),
-        0,
-      ) / totalMemories
-      : 0;
+    const averageRelevance =
+      totalMemories > 0
+        ? Object.entries(coalaStats).reduce(
+            (sum, [_type, stats]) => sum + (stats?.avgRelevance || 0) * (stats?.count || 0),
+            0,
+          ) / totalMemories
+        : 0;
 
     const timestamps = Object.values(coalaStats)
       .map((stats) => stats?.oldestEntry)
@@ -463,9 +446,8 @@ export class MECMFMemoryManager implements IMECMFMemoryManager {
       totalMemories,
       byType,
       averageRelevance,
-      oldestEntry: timestamps.length > 0
-        ? new Date(Math.min(...timestamps.map((d) => d.getTime())))
-        : null,
+      oldestEntry:
+        timestamps.length > 0 ? new Date(Math.min(...timestamps.map((d) => d.getTime()))) : null,
       newestEntry: new Date(), // Would need proper tracking
       totalSize: totalMemories * 1024, // Rough estimate
     };
@@ -505,9 +487,9 @@ export class MECMFMemoryManager implements IMECMFMemoryManager {
     } = options || {};
 
     transformationSteps.push(
-      `Configuration: budget=${tokenBudget}, format=${contextFormat}, types=[${
-        includeTypes.join(",")
-      }], maxMemories=${maxMemories}`,
+      `Configuration: budget=${tokenBudget}, format=${contextFormat}, types=[${includeTypes.join(
+        ",",
+      )}], maxMemories=${maxMemories}`,
     );
 
     // Use CoALA's enhanced prompt construction with error handling
@@ -544,13 +526,14 @@ export class MECMFMemoryManager implements IMECMFMemoryManager {
           performanceImpact: "moderate",
           operation: () => {
             const memories = Array.from(this.recentMemoryCache.values()).slice(0, 5);
-            const context = memories.length > 0
-              ? `Context: ${
-                memories.map((m) =>
-                  typeof m.content === "string" ? m.content : JSON.stringify(m.content)
-                ).join("; ")
-              }`
-              : "";
+            const context =
+              memories.length > 0
+                ? `Context: ${memories
+                    .map((m) =>
+                      typeof m.content === "string" ? m.content : JSON.stringify(m.content),
+                    )
+                    .join("; ")}`
+                : "";
 
             return Promise.resolve({
               enhancedPrompt: context ? `${context}\n\n${originalPrompt}` : originalPrompt,
@@ -559,15 +542,15 @@ export class MECMFMemoryManager implements IMECMFMemoryManager {
               tokensUsed: this.tokenBudgetManager.estimateTokens(context + originalPrompt),
               memoriesIncluded: memories.length,
               memoryBreakdown: {
-                [MemoryType.WORKING]: memories.filter((m) =>
-                  m.memoryType === MemoryType.WORKING
+                [MemoryType.WORKING]: memories.filter((m) => m.memoryType === MemoryType.WORKING)
+                  .length,
+                [MemoryType.EPISODIC]: memories.filter((m) => m.memoryType === MemoryType.EPISODIC)
+                  .length,
+                [MemoryType.SEMANTIC]: memories.filter((m) => m.memoryType === MemoryType.SEMANTIC)
+                  .length,
+                [MemoryType.PROCEDURAL]: memories.filter(
+                  (m) => m.memoryType === MemoryType.PROCEDURAL,
                 ).length,
-                [MemoryType.EPISODIC]:
-                  memories.filter((m) => m.memoryType === MemoryType.EPISODIC).length,
-                [MemoryType.SEMANTIC]:
-                  memories.filter((m) => m.memoryType === MemoryType.SEMANTIC).length,
-                [MemoryType.PROCEDURAL]:
-                  memories.filter((m) => m.memoryType === MemoryType.PROCEDURAL).length,
               },
             });
           },

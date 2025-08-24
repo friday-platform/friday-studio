@@ -59,6 +59,5 @@ export function isPiped(): boolean {
  * Check if NO_COLOR environment variable is set
  */
 export function shouldDisableColor(): boolean {
-  return Deno.env.get("NO_COLOR") !== undefined ||
-    Deno.env.get("ATLAS_NO_COLOR") !== undefined;
+  return Deno.env.get("NO_COLOR") !== undefined || Deno.env.get("ATLAS_NO_COLOR") !== undefined;
 }

@@ -1,4 +1,4 @@
-import { createSelect, type CreateSelectProps, type SelectOption } from "@melt-ui/svelte";
+import { type CreateSelectProps, createSelect, type SelectOption } from "@melt-ui/svelte";
 import { getContext as _getContext, setContext } from "svelte";
 import type { Writable } from "svelte/store";
 

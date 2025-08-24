@@ -39,11 +39,7 @@ export class MECMFDebugLogger {
   private logs: PromptEnhancementLog[] = [];
 
   constructor(config: MECMFDebugConfig = { enabled: false, logLevel: "minimal" }) {
-    this.config = {
-      maxPromptLength: 500,
-      includeMemoryContent: false,
-      ...config,
-    };
+    this.config = { maxPromptLength: 500, includeMemoryContent: false, ...config };
   }
 
   logPromptEnhancement(log: PromptEnhancementLog): void {
@@ -105,9 +101,8 @@ export class MECMFDebugLogger {
 
     // Token analysis
     const tokenChange = log.tokensEnhanced - log.tokensOriginal;
-    const tokenChangePercent = log.tokensOriginal > 0
-      ? ((tokenChange / log.tokensOriginal) * 100).toFixed(1)
-      : "N/A";
+    const tokenChangePercent =
+      log.tokensOriginal > 0 ? ((tokenChange / log.tokensOriginal) * 100).toFixed(1) : "N/A";
 
     lines.push(`🎯 TOKEN ANALYSIS:`);
     lines.push(`  Original: ${log.tokensOriginal} tokens`);
@@ -146,11 +141,12 @@ export class MECMFDebugLogger {
     }
 
     // Summary
-    const efficiencyGain = log.tokensOriginal > 0 && tokenChange < 0
-      ? `Reduced tokens by ${Math.abs(Number(tokenChangePercent))}%`
-      : tokenChange > 0
-      ? `Added context (+${tokenChangePercent}% tokens)`
-      : "No token change";
+    const efficiencyGain =
+      log.tokensOriginal > 0 && tokenChange < 0
+        ? `Reduced tokens by ${Math.abs(Number(tokenChangePercent))}%`
+        : tokenChange > 0
+          ? `Added context (+${tokenChangePercent}% tokens)`
+          : "No token change";
 
     lines.push(`✨ ENHANCEMENT SUMMARY:`);
     lines.push(`  Memories integrated: ${log.memoriesUsed}`);
@@ -249,10 +245,13 @@ export class MECMFDebugLogger {
       };
     }
 
-    const totals = this.logs.reduce((acc, log) => ({
-      originalTokens: acc.originalTokens + log.tokensOriginal,
-      enhancedTokens: acc.enhancedTokens + log.tokensEnhanced,
-    }), { originalTokens: 0, enhancedTokens: 0 });
+    const totals = this.logs.reduce(
+      (acc, log) => ({
+        originalTokens: acc.originalTokens + log.tokensOriginal,
+        enhancedTokens: acc.enhancedTokens + log.tokensEnhanced,
+      }),
+      { originalTokens: 0, enhancedTokens: 0 },
+    );
 
     const averageOriginal = totals.originalTokens / this.logs.length;
     const averageEnhanced = totals.enhancedTokens / this.logs.length;
@@ -274,12 +273,14 @@ let globalDebugLogger: MECMFDebugLogger | null = null;
 export function getGlobalMECMFDebugLogger(): MECMFDebugLogger {
   if (!globalDebugLogger) {
     // Check environment variables for default configuration
-    const debugEnabled = typeof Deno !== "undefined" &&
+    const debugEnabled =
+      typeof Deno !== "undefined" &&
       (Deno.env.get("MECMF_DEBUG") === "true" || Deno.env.get("DEBUG") === "true");
 
-    const debugLevel = typeof Deno !== "undefined"
-      ? (Deno.env.get("MECMF_DEBUG_LEVEL") as MECMFDebugConfig["logLevel"]) || "detailed"
-      : "detailed";
+    const debugLevel =
+      typeof Deno !== "undefined"
+        ? (Deno.env.get("MECMF_DEBUG_LEVEL") as MECMFDebugConfig["logLevel"]) || "detailed"
+        : "detailed";
 
     globalDebugLogger = new MECMFDebugLogger({
       enabled: debugEnabled,

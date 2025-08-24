@@ -5,11 +5,11 @@
  * with retry logic and configurable supervision levels.
  */
 
-import { generateObject, type LanguageModel } from "ai";
 import { createAnthropic } from "@ai-sdk/anthropic";
-import { z } from "zod/v4";
-import type { Logger } from "@atlas/logger";
 import type { AgentResult } from "@atlas/agent-sdk";
+import type { Logger } from "@atlas/logger";
+import { generateObject, type LanguageModel } from "ai";
+import { z } from "zod/v4";
 import { SupervisionLevel } from "../supervision-levels.ts";
 
 /**
@@ -44,14 +44,15 @@ export class HallucinationPatternDetector {
    * Check if issues contain severe hallucination patterns
    */
   static containsSeverePatterns(issues: string[]): boolean {
-    return issues.some((issue) =>
-      issue.includes(HALLUCINATION_PATTERNS.SEVERE.FABRICATED) ||
-      issue.includes(HALLUCINATION_PATTERNS.SEVERE.IMPOSSIBLE) ||
-      issue.includes(HALLUCINATION_PATTERNS.SEVERE.NO_TOOLS_BUT_CLAIMS_DATA) ||
-      issue.includes(HALLUCINATION_PATTERNS.SEVERE.NO_TOOLS_EXTERNAL_ACCESS) ||
-      issue.includes(HALLUCINATION_PATTERNS.SEVERE.FABRICATED_PRICING) ||
-      (issue.includes(HALLUCINATION_PATTERNS.SEVERE.CLAIMED_DATA_WITHOUT_TOOLS) &&
-        issue.includes(HALLUCINATION_PATTERNS.SEVERE.WITHOUT_SEARCH_TOOLS))
+    return issues.some(
+      (issue) =>
+        issue.includes(HALLUCINATION_PATTERNS.SEVERE.FABRICATED) ||
+        issue.includes(HALLUCINATION_PATTERNS.SEVERE.IMPOSSIBLE) ||
+        issue.includes(HALLUCINATION_PATTERNS.SEVERE.NO_TOOLS_BUT_CLAIMS_DATA) ||
+        issue.includes(HALLUCINATION_PATTERNS.SEVERE.NO_TOOLS_EXTERNAL_ACCESS) ||
+        issue.includes(HALLUCINATION_PATTERNS.SEVERE.FABRICATED_PRICING) ||
+        (issue.includes(HALLUCINATION_PATTERNS.SEVERE.CLAIMED_DATA_WITHOUT_TOOLS) &&
+          issue.includes(HALLUCINATION_PATTERNS.SEVERE.WITHOUT_SEARCH_TOOLS)),
     );
   }
 
@@ -59,14 +60,15 @@ export class HallucinationPatternDetector {
    * Extract severe issues from a list of issues
    */
   static getSevereIssues(issues: string[]): string[] {
-    return issues.filter((issue) =>
-      issue.includes(HALLUCINATION_PATTERNS.SEVERE.FABRICATED) ||
-      issue.includes(HALLUCINATION_PATTERNS.SEVERE.IMPOSSIBLE) ||
-      issue.includes(HALLUCINATION_PATTERNS.SEVERE.NO_TOOLS_BUT_CLAIMS_DATA) ||
-      issue.includes(HALLUCINATION_PATTERNS.SEVERE.NO_TOOLS_EXTERNAL_ACCESS) ||
-      issue.includes(HALLUCINATION_PATTERNS.SEVERE.FABRICATED_PRICING) ||
-      (issue.includes(HALLUCINATION_PATTERNS.SEVERE.CLAIMED_DATA_WITHOUT_TOOLS) &&
-        issue.includes(HALLUCINATION_PATTERNS.SEVERE.WITHOUT_SEARCH_TOOLS))
+    return issues.filter(
+      (issue) =>
+        issue.includes(HALLUCINATION_PATTERNS.SEVERE.FABRICATED) ||
+        issue.includes(HALLUCINATION_PATTERNS.SEVERE.IMPOSSIBLE) ||
+        issue.includes(HALLUCINATION_PATTERNS.SEVERE.NO_TOOLS_BUT_CLAIMS_DATA) ||
+        issue.includes(HALLUCINATION_PATTERNS.SEVERE.NO_TOOLS_EXTERNAL_ACCESS) ||
+        issue.includes(HALLUCINATION_PATTERNS.SEVERE.FABRICATED_PRICING) ||
+        (issue.includes(HALLUCINATION_PATTERNS.SEVERE.CLAIMED_DATA_WITHOUT_TOOLS) &&
+          issue.includes(HALLUCINATION_PATTERNS.SEVERE.WITHOUT_SEARCH_TOOLS)),
     );
   }
 }
@@ -97,12 +99,7 @@ class LLMErrorClassifier {
       errorString.includes("econnreset") ||
       errorString.includes("enotfound")
     ) {
-      return {
-        type: "network",
-        isRetryable: true,
-        baseDelayMs: 2000,
-        maxRetries: 3,
-      };
+      return { type: "network", isRetryable: true, baseDelayMs: 2000, maxRetries: 3 };
     }
 
     // Rate limiting
@@ -111,12 +108,7 @@ class LLMErrorClassifier {
       errorString.includes("429") ||
       errorString.includes("quota exceeded")
     ) {
-      return {
-        type: "rate_limit",
-        isRetryable: true,
-        baseDelayMs: 5000,
-        maxRetries: 2,
-      };
+      return { type: "rate_limit", isRetryable: true, baseDelayMs: 5000, maxRetries: 2 };
     }
 
     // Authentication issues
@@ -125,12 +117,7 @@ class LLMErrorClassifier {
       errorString.includes("401") ||
       errorString.includes("invalid api key")
     ) {
-      return {
-        type: "auth",
-        isRetryable: false,
-        baseDelayMs: 0,
-        maxRetries: 0,
-      };
+      return { type: "auth", isRetryable: false, baseDelayMs: 0, maxRetries: 0 };
     }
 
     // Model/API specific errors
@@ -139,21 +126,11 @@ class LLMErrorClassifier {
       errorString.includes("invalid request") ||
       errorString.includes("400")
     ) {
-      return {
-        type: "model",
-        isRetryable: false,
-        baseDelayMs: 0,
-        maxRetries: 0,
-      };
+      return { type: "model", isRetryable: false, baseDelayMs: 0, maxRetries: 0 };
     }
 
     // Default to retryable with conservative settings
-    return {
-      type: "unknown",
-      isRetryable: true,
-      baseDelayMs: 1000,
-      maxRetries: 2,
-    };
+    return { type: "unknown", isRetryable: true, baseDelayMs: 1000, maxRetries: 2 };
   }
 }
 
@@ -187,7 +164,7 @@ class RetryableOperation {
           throw error;
         }
 
-        const delayMs = classification.baseDelayMs * Math.pow(2, attempt);
+        const delayMs = classification.baseDelayMs * 2 ** attempt;
         logger?.debug("Retrying operation after delay", {
           attempt: attempt + 1,
           delayMs,
@@ -230,11 +207,7 @@ export interface HallucinationDetectorConfig {
   logger?: Logger;
   anthropicApiKey?: string;
   enableLLMValidation?: boolean; // Default: true
-  retryConfig?: {
-    enabled: boolean;
-    maxRetries: number;
-    baseDelayMs: number;
-  };
+  retryConfig?: { enabled: boolean; maxRetries: number; baseDelayMs: number };
 }
 
 /**
@@ -332,9 +305,10 @@ export class HallucinationDetector {
     };
 
     try {
-      const retryConfig: ErrorClassification = this.config.retryConfig?.enabled !== false
-        ? { type: "unknown", isRetryable: true, baseDelayMs: 1000, maxRetries: 2 }
-        : { type: "unknown", isRetryable: false, baseDelayMs: 0, maxRetries: 0 };
+      const retryConfig: ErrorClassification =
+        this.config.retryConfig?.enabled !== false
+          ? { type: "unknown", isRetryable: true, baseDelayMs: 1000, maxRetries: 2 }
+          : { type: "unknown", isRetryable: false, baseDelayMs: 0, maxRetries: 0 };
 
       const llmResult = await RetryableOperation.execute(
         operation,
@@ -403,10 +377,7 @@ export class HallucinationDetector {
       const { object } = await generateObject({
         model: this.llmProvider("claude-3-5-haiku-latest"),
         system: this.buildValidationPrompt(),
-        messages: [{
-          role: "user",
-          content: this.buildValidationInput(result),
-        }],
+        messages: [{ role: "user", content: this.buildValidationInput(result) }],
         schema: ValidationSchema,
         temperature: 0.05,
         maxOutputTokens: 1000,
@@ -479,28 +450,30 @@ Respond with ONLY valid JSON.
   private buildValidationInput(result: AgentResult): string {
     // Use top-level toolCalls extracted at AgentResult level
     const topLevel = Array.isArray((result as { toolCalls?: unknown[] }).toolCalls)
-      ? ((result as { toolCalls?: unknown[] }).toolCalls || [])
+      ? (result as { toolCalls?: unknown[] }).toolCalls || []
       : [];
 
     const normalized = topLevel as unknown as Array<{ toolName: string; input?: unknown }>;
 
     const toolCount = normalized.length;
-    const toolDetails = toolCount > 0
-      ? normalized
-        .map((tc) => {
-          const name = tc.toolName || "unknown";
-          const argObj = tc.input;
-          const argKeys = (argObj && typeof argObj === "object")
-            ? Object.keys(argObj as Record<string, unknown>)
-            : [];
-          return `${name}(${argKeys.length} params)`;
-        })
-        .join(", ")
-      : "NO_TOOLS";
+    const toolDetails =
+      toolCount > 0
+        ? normalized
+            .map((tc) => {
+              const name = tc.toolName || "unknown";
+              const argObj = tc.input;
+              const argKeys =
+                argObj && typeof argObj === "object"
+                  ? Object.keys(argObj as Record<string, unknown>)
+                  : [];
+              return `${name}(${argKeys.length} params)`;
+            })
+            .join(", ")
+        : "NO_TOOLS";
 
     // Summarize tool results for provenance (e.g., tavily_* saved to library)
     const topLevelResults = Array.isArray((result as { toolResults?: unknown[] }).toolResults)
-      ? ((result as { toolResults?: unknown[] }).toolResults || [])
+      ? (result as { toolResults?: unknown[] }).toolResults || []
       : [];
 
     const toolResultsSummary: string[] = [];
@@ -510,9 +483,9 @@ Respond with ONLY valid JSON.
       try {
         const text = typeof tr === "string" ? tr : JSON.stringify(tr);
         // Detect library item IDs embedded in tool responses
-        const idMatches = text.match(/\"itemId\"\s*:\s*\"([^\"]+)\"/g) || [];
+        const idMatches = text.match(/"itemId"\s*:\s*"([^"]+)"/g) || [];
         for (const m of idMatches) {
-          const id = m.replace(/.*:\s*\"/, "").replace(/\"$/, "");
+          const id = m.replace(/.*:\s*"/, "").replace(/"$/, "");
           if (id && !detectedLibraryItemIds.includes(id)) detectedLibraryItemIds.push(id);
         }
         // Keep a compact summary line for each tool result
@@ -534,23 +507,27 @@ Respond with ONLY valid JSON.
         return String(result.output);
       }
     })();
-    const detectedUrls = (outputText.match(/https?:\/\/[^\s)]+/gi) || [])
-      .map((u) => u.replace(/[),.;:!?]+$/g, ""));
+    const detectedUrls = (outputText.match(/https?:\/\/[^\s)]+/gi) || []).map((u) =>
+      u.replace(/[),.;:!?]+$/g, ""),
+    );
 
     return `## SOURCE ATTRIBUTION VALIDATION
 
 **TOOLS ACTUALLY USED:**
 ${
-      toolCount > 0
-        ? `${toolCount} tools called: ${toolDetails}`
-        : `ZERO TOOLS - Agent made no external calls`
-    }
+  toolCount > 0
+    ? `${toolCount} tools called: ${toolDetails}`
+    : `ZERO TOOLS - Agent made no external calls`
+}
 
 **TOOL RESULTS SUMMARY (for provenance):**
 - Total results: ${topLevelResults.length}
 - Library itemIds: ${detectedLibraryItemIds.length > 0 ? detectedLibraryItemIds.join(", ") : "none"}
 - Sample results (truncated):
-${toolResultsSummary.slice(0, 3).map((l, i) => `  ${i + 1}. ${l}`).join("\n")}
+${toolResultsSummary
+  .slice(0, 3)
+  .map((l, i) => `  ${i + 1}. ${l}`)
+  .join("\n")}
 
 **AGENT OUTPUT TO VALIDATE:**
 ${JSON.stringify(result.output, null, 2)}
@@ -607,8 +584,8 @@ ${detectedUrls.length > 0 ? detectedUrls.join("\n") : "none"}
       }
 
       // Average confidence from LLM detection methods
-      const avgConfidence = llmDetections.reduce((sum, d) => sum + d.confidence, 0) /
-        llmDetections.length;
+      const avgConfidence =
+        llmDetections.reduce((sum, d) => sum + d.confidence, 0) / llmDetections.length;
 
       finalConfidences.push(avgConfidence);
     }

@@ -5,9 +5,9 @@
  * configuration with quoted numeric values, demonstrating the fix in action.
  */
 
+import { ConfigLoader, WorkspaceAgentConfigSchema } from "@atlas/config";
 import { assertEquals } from "@std/assert";
 import { parse as parseYaml } from "@std/yaml";
-import { ConfigLoader, WorkspaceAgentConfigSchema } from "@atlas/config";
 
 // Mock adapter that simulates conversation agent generated YAML
 class MockConversationAdapter {
@@ -106,12 +106,7 @@ Deno.test("Direct Schema Validation - comprehensive agent config coercion", () =
           max_retries: "3",
         },
       },
-      expected: {
-        temperature: 0.7,
-        max_tokens: 2000,
-        max_steps: 10,
-        max_retries: 3,
-      },
+      expected: { temperature: 0.7, max_tokens: 2000, max_steps: 10, max_retries: 3 },
     },
     {
       name: "System Agent with all numeric fields as strings",
@@ -126,11 +121,7 @@ Deno.test("Direct Schema Validation - comprehensive agent config coercion", () =
           max_reasoning_steps: "8",
         },
       },
-      expected: {
-        temperature: 0.5,
-        max_tokens: 1500,
-        max_reasoning_steps: 8,
-      },
+      expected: { temperature: 0.5, max_tokens: 1500, max_reasoning_steps: 8 },
     },
     {
       name: "Remote Agent with numeric fields as strings",
@@ -145,9 +136,7 @@ Deno.test("Direct Schema Validation - comprehensive agent config coercion", () =
           health_check_interval: "30s",
         },
       },
-      expected: {
-        max_retries: 5,
-      },
+      expected: { max_retries: 5 },
     },
   ];
 

@@ -6,9 +6,9 @@
  */
 
 import type { IAtlasScope, IWorkspaceSession, IWorkspaceSignal } from "../../../src/types/core.ts";
-import { CoALAMemoryManager, CoALAMemoryType } from "./coala-memory.ts";
 import { extractSearchTerms } from "../../../src/utils/prompt-tokenizer.ts";
 import { WorkspaceMemoryConsolidator } from "./coala-consolidation.ts";
+import { CoALAMemoryManager, CoALAMemoryType } from "./coala-memory.ts";
 
 export interface SupervisorMemoryContext {
   workspaceMemory: CoALAMemoryManager;
@@ -17,14 +17,8 @@ export interface SupervisorMemoryContext {
 }
 
 export interface MemoryFilteringPolicy {
-  filterForSession(
-    workspaceMemories: any[],
-    sessionContext: IWorkspaceSession,
-  ): any[];
-  filterForAgent(
-    sessionMemories: any[],
-    agentId: string,
-  ): any[];
+  filterForSession(workspaceMemories: any[], sessionContext: IWorkspaceSession): any[];
+  filterForAgent(sessionMemories: any[], agentId: string): any[];
 }
 
 export class SupervisorMemoryCoordinator {
@@ -33,10 +27,7 @@ export class SupervisorMemoryCoordinator {
   private consolidator: WorkspaceMemoryConsolidator;
   private filteringPolicy: MemoryFilteringPolicy;
 
-  constructor(
-    workspace: IAtlasScope,
-    filteringPolicy?: MemoryFilteringPolicy,
-  ) {
+  constructor(workspace: IAtlasScope, filteringPolicy?: MemoryFilteringPolicy) {
     this.workspaceMemory = new CoALAMemoryManager(workspace, undefined, true);
     this.consolidator = new WorkspaceMemoryConsolidator(this.workspaceMemory);
     this.filteringPolicy = filteringPolicy || new DefaultMemoryFilteringPolicy();
@@ -48,11 +39,7 @@ export class SupervisorMemoryCoordinator {
    */
   async consolidateWorkingMemories(
     sessionId: string,
-    options: {
-      minAccessCount?: number;
-      minRelevance?: number;
-      markImportant?: boolean;
-    } = {},
+    options: { minAccessCount?: number; minRelevance?: number; markImportant?: boolean } = {},
   ): Promise<void> {
     const { minAccessCount = 3, minRelevance = 0.8, markImportant = false } = options;
 
@@ -67,10 +54,11 @@ export class SupervisorMemoryCoordinator {
     });
 
     // Filter for consolidation candidates
-    const toConsolidate = workingMemories.filter((memory) =>
-      memory.accessCount >= minAccessCount ||
-      memory.relevanceScore >= minRelevance ||
-      (markImportant && memory.tags.includes("important"))
+    const toConsolidate = workingMemories.filter(
+      (memory) =>
+        memory.accessCount >= minAccessCount ||
+        memory.relevanceScore >= minRelevance ||
+        (markImportant && memory.tags.includes("important")),
     );
 
     // Promote each qualified memory
@@ -84,17 +72,13 @@ export class SupervisorMemoryCoordinator {
       memory.tags.push("consolidated", `from-session-${sessionId}`);
 
       // Store in workspace memory for cross-session access
-      this.workspaceMemory.rememberWithMetadata(
-        memory.id,
-        memory.content,
-        {
-          memoryType: newType,
-          tags: memory.tags,
-          relevanceScore: memory.relevanceScore,
-          confidence: memory.confidence,
-          associations: memory.associations,
-        },
-      );
+      this.workspaceMemory.rememberWithMetadata(memory.id, memory.content, {
+        memoryType: newType,
+        tags: memory.tags,
+        relevanceScore: memory.relevanceScore,
+        confidence: memory.confidence,
+        associations: memory.associations,
+      });
     }
   }
 
@@ -130,16 +114,20 @@ export class SupervisorMemoryCoordinator {
 
     // Check for procedural patterns
     if (
-      content.includes("step") || content.includes("process") ||
-      content.includes("workflow") || memory.tags.includes("tool")
+      content.includes("step") ||
+      content.includes("process") ||
+      content.includes("workflow") ||
+      memory.tags.includes("tool")
     ) {
       return CoALAMemoryType.PROCEDURAL;
     }
 
     // Check for episodic patterns
     if (
-      content.includes("success") || content.includes("failure") ||
-      content.includes("result") || memory.tags.includes("agent")
+      content.includes("success") ||
+      content.includes("failure") ||
+      content.includes("result") ||
+      memory.tags.includes("agent")
     ) {
       return CoALAMemoryType.EPISODIC;
     }
@@ -149,37 +137,32 @@ export class SupervisorMemoryCoordinator {
   }
 
   // WorkspaceSupervisor Memory Operations
-  async analyzeSignalWithMemory(signal: IWorkspaceSignal): Promise<{
-    relevantMemories: any[];
-    analysisContext: string;
-    suggestedAgents: string[];
-  }> {
+  async analyzeSignalWithMemory(
+    signal: IWorkspaceSignal,
+  ): Promise<{ relevantMemories: any[]; analysisContext: string; suggestedAgents: string[] }> {
     // Extract searchable content from signal
     const signalContent = extractSearchTerms(signal);
 
     // Use enhanced memory retrieval with vector search for better relevance
-    const memoryResults = await this.workspaceMemory.getRelevantMemoriesForPrompt(
-      signalContent,
-      {
-        includeWorking: false, // Don't include working memory for signal analysis
-        includeEpisodic: true, // Include past experiences
-        includeSemantic: true, // Include knowledge and concepts
-        includeProcedural: true, // Include workflows and patterns
-        limit: 15,
-        minSimilarity: 0.3,
-        tags: undefined, // Search all tags
-      },
-    );
+    const memoryResults = await this.workspaceMemory.getRelevantMemoriesForPrompt(signalContent, {
+      includeWorking: false, // Don't include working memory for signal analysis
+      includeEpisodic: true, // Include past experiences
+      includeSemantic: true, // Include knowledge and concepts
+      includeProcedural: true, // Include workflows and patterns
+      limit: 15,
+      minSimilarity: 0.3,
+      tags: undefined, // Search all tags
+    });
 
     // Separate memories by type for targeted analysis
-    const semanticMemories = memoryResults.memories.filter((m) =>
-      m.memoryType === CoALAMemoryType.SEMANTIC
+    const semanticMemories = memoryResults.memories.filter(
+      (m) => m.memoryType === CoALAMemoryType.SEMANTIC,
     );
-    const proceduralMemories = memoryResults.memories.filter((m) =>
-      m.memoryType === CoALAMemoryType.PROCEDURAL
+    const proceduralMemories = memoryResults.memories.filter(
+      (m) => m.memoryType === CoALAMemoryType.PROCEDURAL,
     );
-    const episodicMemories = memoryResults.memories.filter((m) =>
-      m.memoryType === CoALAMemoryType.EPISODIC
+    const episodicMemories = memoryResults.memories.filter(
+      (m) => m.memoryType === CoALAMemoryType.EPISODIC,
     );
 
     // Prioritize procedural memories for workflow patterns
@@ -213,11 +196,7 @@ export class SupervisorMemoryCoordinator {
       },
     );
 
-    return {
-      relevantMemories: prioritizedMemories,
-      analysisContext,
-      suggestedAgents,
-    };
+    return { relevantMemories: prioritizedMemories, analysisContext, suggestedAgents };
   }
 
   createSessionMemoryContext(
@@ -240,16 +219,12 @@ export class SupervisorMemoryCoordinator {
 
     // Seed session memory with filtered workspace context
     for (const memory of relevantWorkspaceMemories) {
-      sessionMemory.rememberWithMetadata(
-        `inherited-${memory.id}`,
-        memory.content,
-        {
-          memoryType: CoALAMemoryType.CONTEXTUAL,
-          tags: [...memory.tags, "inherited", "workspace-context"],
-          relevanceScore: memory.relevanceScore * 0.8, // Slight reduction for inherited memories
-          associations: memory.associations,
-        },
-      );
+      sessionMemory.rememberWithMetadata(`inherited-${memory.id}`, memory.content, {
+        memoryType: CoALAMemoryType.CONTEXTUAL,
+        tags: [...memory.tags, "inherited", "workspace-context"],
+        relevanceScore: memory.relevanceScore * 0.8, // Slight reduction for inherited memories
+        associations: memory.associations,
+      });
     }
 
     // Remember session creation context
@@ -288,31 +263,28 @@ export class SupervisorMemoryCoordinator {
     const planningContext = extractSearchTerms(sessionContext);
 
     // Query session memories for execution planning using vector search
-    const memoryResults = await sessionMemory.getRelevantMemoriesForPrompt(
-      planningContext,
-      {
-        includeWorking: true, // Include working memory for current session state
-        includeEpisodic: true, // Include past experiences
-        includeSemantic: false, // Skip semantic for execution planning (focus on concrete)
-        includeProcedural: true, // Include workflows and strategies
-        limit: 12,
-        minSimilarity: 0.3,
-        tags: undefined, // Search all tags
-      },
-    );
+    const memoryResults = await sessionMemory.getRelevantMemoriesForPrompt(planningContext, {
+      includeWorking: true, // Include working memory for current session state
+      includeEpisodic: true, // Include past experiences
+      includeSemantic: false, // Skip semantic for execution planning (focus on concrete)
+      includeProcedural: true, // Include workflows and strategies
+      limit: 12,
+      minSimilarity: 0.3,
+      tags: undefined, // Search all tags
+    });
 
     // Separate by memory source and type for targeted processing
-    const contextualMemories = memoryResults.memories.filter((m) =>
-      m.memoryType === CoALAMemoryType.CONTEXTUAL
+    const contextualMemories = memoryResults.memories.filter(
+      (m) => m.memoryType === CoALAMemoryType.CONTEXTUAL,
     );
-    const workingMemories = memoryResults.memories.filter((m) =>
-      m.memoryType === CoALAMemoryType.WORKING
+    const workingMemories = memoryResults.memories.filter(
+      (m) => m.memoryType === CoALAMemoryType.WORKING,
     );
-    const proceduralMemories = memoryResults.memories.filter((m) =>
-      m.memoryType === CoALAMemoryType.PROCEDURAL
+    const proceduralMemories = memoryResults.memories.filter(
+      (m) => m.memoryType === CoALAMemoryType.PROCEDURAL,
     );
-    const episodicMemories = memoryResults.memories.filter((m) =>
-      m.memoryType === CoALAMemoryType.EPISODIC
+    const episodicMemories = memoryResults.memories.filter(
+      (m) => m.memoryType === CoALAMemoryType.EPISODIC,
     );
 
     // Combine all relevant memories, prioritizing current context
@@ -331,10 +303,7 @@ export class SupervisorMemoryCoordinator {
     const suggestedAgents = sessionContext.suggestedAgents || [];
 
     for (const agentId of suggestedAgents) {
-      const agentMemories = this.filteringPolicy.filterForAgent(
-        allRelevantMemories,
-        agentId,
-      );
+      const agentMemories = this.filteringPolicy.filterForAgent(allRelevantMemories, agentId);
 
       agentMemoryContexts.set(agentId, {
         relevantMemories: agentMemories,
@@ -355,42 +324,26 @@ export class SupervisorMemoryCoordinator {
       estimatedComplexity: this.estimateComplexity(memoryGuidance),
     };
 
-    sessionMemory.rememberWithMetadata(
-      "execution-plan",
-      executionPlan,
-      {
-        memoryType: CoALAMemoryType.PROCEDURAL,
-        tags: ["execution-plan", "session-strategy"],
-        relevanceScore: 0.8,
-      },
-    );
+    sessionMemory.rememberWithMetadata("execution-plan", executionPlan, {
+      memoryType: CoALAMemoryType.PROCEDURAL,
+      tags: ["execution-plan", "session-strategy"],
+      relevanceScore: 0.8,
+    });
 
-    return {
-      executionPlan,
-      memoryGuidance,
-      agentMemoryContexts,
-    };
+    return { executionPlan, memoryGuidance, agentMemoryContexts };
   }
 
   evaluateProgressWithMemory(
     sessionMemory: CoALAMemoryManager,
     agentResults: any[],
-  ): {
-    shouldContinue: boolean;
-    refinements: string[];
-    memoryUpdates: any[];
-  } {
+  ): { shouldContinue: boolean; refinements: string[]; memoryUpdates: any[] } {
     // Remember agent results
     for (const result of agentResults) {
-      sessionMemory.rememberWithMetadata(
-        `agent-result-${result.agentId}-${Date.now()}`,
-        result,
-        {
-          memoryType: CoALAMemoryType.EPISODIC,
-          tags: ["agent-result", result.agentId, result.success ? "success" : "failure"],
-          relevanceScore: result.success ? 0.7 : 0.9, // Failures are more memorable
-        },
-      );
+      sessionMemory.rememberWithMetadata(`agent-result-${result.agentId}-${Date.now()}`, result, {
+        memoryType: CoALAMemoryType.EPISODIC,
+        tags: ["agent-result", result.agentId, result.success ? "success" : "failure"],
+        relevanceScore: result.success ? 0.7 : 0.9, // Failures are more memorable
+      });
     }
 
     // Query historical patterns for evaluation
@@ -414,11 +367,7 @@ export class SupervisorMemoryCoordinator {
       context: result.context,
     }));
 
-    return {
-      shouldContinue,
-      refinements,
-      memoryUpdates,
-    };
+    return { shouldContinue, refinements, memoryUpdates };
   }
 
   // Session cleanup and consolidation
@@ -433,10 +382,7 @@ export class SupervisorMemoryCoordinator {
     });
 
     // Consolidate up to workspace level
-    await this.consolidator.syncUp(
-      { id: sessionId } as IAtlasScope,
-      importantMemories,
-    );
+    await this.consolidator.syncUp({ id: sessionId } as IAtlasScope, importantMemories);
 
     // Cleanup session memory
     this.consolidator.unregisterSessionMemory(sessionId);
@@ -448,12 +394,13 @@ export class SupervisorMemoryCoordinator {
     await this.consolidator.performMaintenance();
 
     // Cleanup old session memories
-    const oldSessions = Array.from(this.sessionMemories.entries())
-      .filter(([_sessionId, memory]) => {
+    const oldSessions = Array.from(this.sessionMemories.entries()).filter(
+      ([_sessionId, memory]) => {
         // Remove sessions older than 24 hours
         const sessionAge = Date.now() - memory.size() * 1000; // Rough age estimate
         return sessionAge > 86400000;
-      });
+      },
+    );
 
     for (const [sessionId, _memory] of oldSessions) {
       await this.consolidateSessionMemory(sessionId);
@@ -486,10 +433,12 @@ export class SupervisorMemoryCoordinator {
       .map((m) => m.content)
       .slice(0, 3);
 
-    return `Signal analysis based on ${memories.length} relevant memories. ` +
+    return (
+      `Signal analysis based on ${memories.length} relevant memories. ` +
       `Identified patterns: ${
         patterns.length > 0 ? patterns.map((p) => p.type).join(", ") : "none"
-      }`;
+      }`
+    );
   }
 
   private extractExecutionGuidance(memories: any[]): string[] {
@@ -501,7 +450,7 @@ export class SupervisorMemoryCoordinator {
 
   private createAgentGuidance(memories: any[], agentId: string): string {
     const relevantMemories = memories.filter((m) =>
-      m.tags.some((tag: string) => tag.includes(agentId))
+      m.tags.some((tag: string) => tag.includes(agentId)),
     );
 
     return `Agent ${agentId} should consider ${relevantMemories.length} relevant memories`;
@@ -529,19 +478,21 @@ export class SupervisorMemoryCoordinator {
 class DefaultMemoryFilteringPolicy implements MemoryFilteringPolicy {
   filterForSession(workspaceMemories: any[], _sessionContext: IWorkspaceSession): any[] {
     // Provide general knowledge and relevant patterns to sessions
-    return workspaceMemories.filter((memory) =>
-      memory.memoryType === CoALAMemoryType.SEMANTIC ||
-      memory.memoryType === CoALAMemoryType.PROCEDURAL ||
-      memory.tags.includes("session-relevant")
+    return workspaceMemories.filter(
+      (memory) =>
+        memory.memoryType === CoALAMemoryType.SEMANTIC ||
+        memory.memoryType === CoALAMemoryType.PROCEDURAL ||
+        memory.tags.includes("session-relevant"),
     );
   }
 
   filterForAgent(sessionMemories: any[], agentId: string): any[] {
     // Provide agent-specific and contextual memories
-    return sessionMemories.filter((memory) =>
-      memory.tags.includes(agentId) ||
-      memory.tags.includes("context") ||
-      memory.memoryType === CoALAMemoryType.CONTEXTUAL
+    return sessionMemories.filter(
+      (memory) =>
+        memory.tags.includes(agentId) ||
+        memory.tags.includes("context") ||
+        memory.memoryType === CoALAMemoryType.CONTEXTUAL,
     );
   }
 }

@@ -164,17 +164,13 @@ Deno.test("CoALAMemoryManager - query memories", async () => {
   });
 
   // Query by type
-  const semanticMemories = memory.queryMemories({
-    memoryType: CoALAMemoryType.SEMANTIC,
-  });
+  const semanticMemories = memory.queryMemories({ memoryType: CoALAMemoryType.SEMANTIC });
 
   expect(semanticMemories).toHaveLength(1);
   expect(semanticMemories[0].content).toBe("semantic content 1");
 
   // Query by tags
-  const taggedMemories = memory.queryMemories({
-    tags: ["semantic"],
-  });
+  const taggedMemories = memory.queryMemories({ tags: ["semantic"] });
 
   expect(taggedMemories).toHaveLength(1);
   expect(taggedMemories[0].tags).toContain("semantic");

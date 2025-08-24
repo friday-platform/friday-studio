@@ -3,25 +3,22 @@
  * Tests end-to-end session execution with real AI planning and agent execution
  */
 
+import type { SessionSupervisorConfig } from "@atlas/core";
 import { assertEquals, assertExists } from "@std/assert";
 import {
   type SessionContext,
   SessionSupervisorActor,
 } from "../src/core/actors/session-supervisor-actor.ts";
-import type { SessionSupervisorConfig } from "@atlas/core";
 
 // Skip tests in CI or when no API key is available
-const skipIfNoKey = !Deno.env.get("ANTHROPIC_API_KEY") || Deno.env.get("CI") === "true" ||
+const skipIfNoKey =
+  !Deno.env.get("ANTHROPIC_API_KEY") ||
+  Deno.env.get("CI") === "true" ||
   Deno.env.get("GITHUB_ACTIONS") === "true";
 
 // Mock agent configuration for integration tests
 const createIntegrationConfig = (): SessionSupervisorConfig => ({
-  job: {
-    name: "integration-test-job",
-    execution: {
-      strategy: "sequential",
-    },
-  },
+  job: { name: "integration-test-job", execution: { strategy: "sequential" } },
   agents: {
     "test-agent-1": {
       type: "llm",
@@ -144,10 +141,7 @@ Deno.test({
     const jobContext = createIntegrationContext({
       jobSpec: {
         name: "predefined-job",
-        execution: {
-          strategy: "parallel",
-          agents: ["test-agent-1", "test-agent-2"],
-        },
+        execution: { strategy: "parallel", agents: ["test-agent-1", "test-agent-2"] },
       },
     });
 
@@ -231,13 +225,7 @@ Deno.test({
     const context = createIntegrationContext({
       jobSpec: {
         name: "memory-enabled-job",
-        config: {
-          memory: {
-            enabled: true,
-            fact_extraction: true,
-            summary: true,
-          },
-        },
+        config: { memory: { enabled: true, fact_extraction: true, summary: true } },
       },
     });
 
@@ -274,11 +262,7 @@ Deno.test({
     try {
       const supervisor1 = new SessionSupervisorActor("error-test-1", "workspace-error");
       const malformedContext = createIntegrationContext({
-        signal: {
-          id: "",
-          type: "",
-          payload: {},
-        },
+        signal: { id: "", type: "", payload: {} },
         payload: {},
       });
 

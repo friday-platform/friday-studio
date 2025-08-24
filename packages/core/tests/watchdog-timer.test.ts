@@ -3,9 +3,9 @@
  * Tests progress-based timeout behavior, configuration, and integration scenarios
  */
 
+import type { WorkspaceTimeoutConfig } from "@atlas/config";
 import { expect } from "@std/expect";
 import { WatchdogTimer } from "../src/watchdog-timer.ts";
-import type { WorkspaceTimeoutConfig } from "@atlas/config";
 
 // Test helper to wait for a specified duration
 function delay(ms: number): Promise<void> {
@@ -29,10 +29,7 @@ Deno.test("WatchdogTimer - Default configuration", () => {
 });
 
 Deno.test("WatchdogTimer - Custom configuration", () => {
-  const config: WorkspaceTimeoutConfig = {
-    progressTimeout: "30s",
-    maxTotalTimeout: "10m",
-  };
+  const config: WorkspaceTimeoutConfig = { progressTimeout: "30s", maxTotalTimeout: "10m" };
 
   const watchdog = new WatchdogTimer(config);
 
@@ -150,10 +147,7 @@ Deno.test("WatchdogTimer - Multiple abort calls are safe", () => {
 });
 
 Deno.test("WatchdogTimer - Integration with fetch-like operations", async () => {
-  const config: WorkspaceTimeoutConfig = {
-    progressTimeout: "2s",
-    maxTotalTimeout: "10s",
-  };
+  const config: WorkspaceTimeoutConfig = { progressTimeout: "2s", maxTotalTimeout: "10s" };
 
   const watchdog = new WatchdogTimer(config);
 

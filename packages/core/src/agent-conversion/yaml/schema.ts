@@ -5,13 +5,13 @@
  * Defines the complete structure and validation rules for YAML agent files.
  */
 
-import { z } from "zod/v4";
 import {
   type AgentEnvironmentConfig,
   AgentEnvironmentConfigSchema,
   AgentMetadataSchema,
 } from "@atlas/agent-sdk";
 import { MCPServerConfigSchema } from "@atlas/config";
+import { z } from "zod/v4";
 
 /** MCP server config with tool filtering and auth options. */
 export const YAMLMCPServerConfigSchema = MCPServerConfigSchema.omit({
@@ -19,61 +19,75 @@ export const YAMLMCPServerConfigSchema = MCPServerConfigSchema.omit({
   tools: true,
 }).extend({
   /** Authentication configuration */
-  auth: z.object({
-    type: z.enum(["bearer", "api_key", "basic"]),
-    header: z.string().optional().describe("Header name for the token"),
-    token_env: z.string().optional().describe("Environment variable containing the token"),
-    username_env: z.string().optional().describe("Environment variable containing username"),
-    password_env: z.string().optional().describe("Environment variable containing password"),
-  }).optional(),
+  auth: z
+    .object({
+      type: z.enum(["bearer", "api_key", "basic"]),
+      header: z.string().optional().describe("Header name for the token"),
+      token_env: z.string().optional().describe("Environment variable containing the token"),
+      username_env: z.string().optional().describe("Environment variable containing username"),
+      password_env: z.string().optional().describe("Environment variable containing password"),
+    })
+    .optional(),
 
   /** Tool configuration */
-  tools: z.object({
-    /** Allow specific tools only */
-    allow: z.array(z.string()).optional().describe("List of allowed tool names"),
-    /** Deny specific tools */
-    deny: z.array(z.string()).optional().describe("List of denied tool names"),
-  }).optional(),
+  tools: z
+    .object({
+      /** Allow specific tools only */
+      allow: z.array(z.string()).optional().describe("List of allowed tool names"),
+      /** Deny specific tools */
+      deny: z.array(z.string()).optional().describe("List of denied tool names"),
+    })
+    .optional(),
 });
 
 export type YAMLMCPServerConfig = z.infer<typeof YAMLMCPServerConfigSchema>;
 
 /** LLM configuration schema for YAML agents. */
 export const YAMLLLMConfigSchema = z.object({
-  provider: z.enum(["anthropic", "openai", "google"], {
-    message: "Provider must be 'anthropic', 'openai', or 'google'",
-  }).describe("LLM provider to use"),
+  provider: z
+    .enum(["anthropic", "openai", "google"], {
+      message: "Provider must be 'anthropic', 'openai', or 'google'",
+    })
+    .describe("LLM provider to use"),
 
-  model: z.string().min(1, {
-    message: "Model is required for YAML agents",
-  }).describe("Specific model to use (e.g., 'claude-3-7-sonnet-latest')"),
+  model: z
+    .string()
+    .min(1, { message: "Model is required for YAML agents" })
+    .describe("Specific model to use (e.g., 'claude-3-7-sonnet-latest')"),
 
-  prompt: z.string().min(1, {
-    message: "System prompt is required for YAML agents",
-  }).describe("System prompt that defines agent behavior"),
+  prompt: z
+    .string()
+    .min(1, { message: "System prompt is required for YAML agents" })
+    .describe("System prompt that defines agent behavior"),
 
   temperature: z.number().min(0).max(2).optional(),
   max_tokens: z.number().positive().optional(),
   max_steps: z.number().positive().default(10).optional(),
-  timeout: z.object({
-    progressTimeout: z.string().regex(/^\d+[smh]$/, {
-      message: "Duration must be in format like '30s', '2m', or '1h'",
-    }).default("30s").optional(),
-    maxTotalTimeout: z.string().regex(/^\d+[smh]$/, {
-      message: "Duration must be in format like '30s', '2m', or '1h'",
-    }).default("5m").optional(),
-  }).optional(),
+  timeout: z
+    .object({
+      progressTimeout: z
+        .string()
+        .regex(/^\d+[smh]$/, { message: "Duration must be in format like '30s', '2m', or '1h'" })
+        .default("30s")
+        .optional(),
+      maxTotalTimeout: z
+        .string()
+        .regex(/^\d+[smh]$/, { message: "Duration must be in format like '30s', '2m', or '1h'" })
+        .default("5m")
+        .optional(),
+    })
+    .optional(),
 
-  streaming: z.object({
-    enabled: z.boolean().default(true),
-    chunk_size: z.number().optional(),
-  }).optional(),
+  streaming: z
+    .object({ enabled: z.boolean().default(true), chunk_size: z.number().optional() })
+    .optional(),
 
   tool_choice: z.enum(["auto", "required", "none"]).default("auto").optional(),
 
-  provider_options: z.record(z.string(), z.unknown()).optional().describe(
-    "Provider-specific configuration (e.g., anthropic.thinking, openai.logitBias)",
-  ),
+  provider_options: z
+    .record(z.string(), z.unknown())
+    .optional()
+    .describe("Provider-specific configuration (e.g., anthropic.thinking, openai.logitBias)"),
 });
 
 export type YAMLLLMConfig = z.infer<typeof YAMLLLMConfigSchema>;
@@ -102,20 +116,13 @@ export function exportJSONSchema() {
         description: "Agent metadata and expertise",
         required: ["name", "version", "description", "expertise"],
       },
-      environment: {
-        type: "object",
-        description: "Environment variables configuration",
-      },
+      environment: { type: "object", description: "Environment variables configuration" },
       mcp_servers: {
         type: "object",
         description: "MCP server configurations",
         additionalProperties: true,
       },
-      llm: {
-        type: "object",
-        description: "LLM configuration",
-        required: ["prompt"],
-      },
+      llm: { type: "object", description: "LLM configuration", required: ["prompt"] },
     },
   };
 }

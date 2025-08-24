@@ -1,7 +1,4 @@
 {
   "name": "@packages/system",
-  "exports": {
-    "./workspaces": "./workspaces/mod.ts",
-    "./agents": "./agents/mod.ts"
-  }
+  "exports": { "./workspaces": "./workspaces/mod.ts", "./agents": "./agents/mod.ts" }
 }

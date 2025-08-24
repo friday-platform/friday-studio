@@ -1,6 +1,6 @@
-import { daemonFactory } from "../../src/factory.ts";
 import { describeRoute, resolver, validator } from "hono-openapi";
 import { InMemoryTodoStorage } from "../../../../src/core/daemon-capabilities.ts";
+import { daemonFactory } from "../../src/factory.ts";
 import { errorResponseSchema, streamIdParamSchema, todoListResponseSchema } from "./schemas.ts";
 
 const getTodos = daemonFactory.createApp();
@@ -14,27 +14,15 @@ getTodos.get(
     responses: {
       200: {
         description: "Todo list retrieved successfully",
-        content: {
-          "application/json": {
-            schema: resolver(todoListResponseSchema),
-          },
-        },
+        content: { "application/json": { schema: resolver(todoListResponseSchema) } },
       },
       404: {
         description: "Stream not found",
-        content: {
-          "application/json": {
-            schema: resolver(errorResponseSchema),
-          },
-        },
+        content: { "application/json": { schema: resolver(errorResponseSchema) } },
       },
       500: {
         description: "Internal server error",
-        content: {
-          "application/json": {
-            schema: resolver(errorResponseSchema),
-          },
-        },
+        content: { "application/json": { schema: resolver(errorResponseSchema) } },
       },
     },
   }),
@@ -46,11 +34,7 @@ getTodos.get(
       const storage = InMemoryTodoStorage.getInstance();
       const todos = storage.getTodos(streamId);
 
-      return c.json({
-        success: true,
-        todos,
-        todoCount: todos.length,
-      });
+      return c.json({ success: true, todos, todoCount: todos.length });
     } catch (error) {
       return c.json(
         { success: false, error: error instanceof Error ? error.message : String(error) },

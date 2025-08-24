@@ -118,10 +118,7 @@ export class MemoryKVStorage implements KVStorage {
     this.data.set(keyString, value);
 
     // Notify watchers
-    this.notifyWatchers([{
-      key: [...key],
-      value,
-    }]);
+    this.notifyWatchers([{ key: [...key], value }]);
   }
 
   async delete(key: string[]): Promise<void> {
@@ -135,10 +132,7 @@ export class MemoryKVStorage implements KVStorage {
 
     if (existed) {
       // Notify watchers of deletion
-      this.notifyWatchers([{
-        key: [...key],
-        value: null,
-      }]);
+      this.notifyWatchers([{ key: [...key], value: null }]);
     }
   }
 
@@ -176,10 +170,7 @@ export class MemoryKVStorage implements KVStorage {
       // Filter events that match the prefix
       const matchingEvents: WatchEvent<T>[] = events
         .filter((event) => this.keyToString(event.key).startsWith(prefixString))
-        .map((event) => ({
-          ...event,
-          value: event.value as T,
-        }));
+        .map((event) => ({ ...event, value: event.value as T }));
 
       if (matchingEvents.length > 0) {
         if (resolveNext) {
@@ -242,11 +233,7 @@ export class MemoryKVStorage implements KVStorage {
       totalSize += key.length + JSON.stringify(value).length;
     }
 
-    return {
-      totalKeys: this.data.size,
-      totalSize,
-      isConnected: true,
-    };
+    return { totalKeys: this.data.size, totalSize, isConnected: true };
   }
 
   async close(): Promise<void> {

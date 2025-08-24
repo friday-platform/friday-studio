@@ -3,13 +3,13 @@
  * These are pure functions that can be used with the state machine
  */
 
+import { LLMProvider } from "@atlas/core";
 import type {
   BaseReasoningContext,
   ReasoningAction,
   ReasoningCompletion,
   ReasoningContext,
 } from "./types.ts";
-import { LLMProvider } from "@atlas/core";
 
 /**
  * Generate thinking based on current context using LLMProvider
@@ -36,19 +36,13 @@ export async function generateThinking<TUserContext extends BaseReasoningContext
     },
   });
 
-  const confidence = calculateConfidence(
-    result.text,
-    context.currentIteration,
-  );
-  const isComplete = result.text.includes("ACTION: complete") ||
+  const confidence = calculateConfidence(result.text, context.currentIteration);
+  const isComplete =
+    result.text.includes("ACTION: complete") ||
     result.text.toLowerCase().includes("task complete") ||
     result.text.toLowerCase().includes("finished");
 
-  return {
-    thinking: { text: result.text, toolCalls: result.toolCalls },
-    confidence,
-    isComplete,
-  };
+  return { thinking: { text: result.text, toolCalls: result.toolCalls }, confidence, isComplete };
 }
 
 /**
@@ -107,9 +101,10 @@ function createDefaultPrompt<TUserContext extends BaseReasoningContext>(
 ): string {
   const { userContext, steps, workingMemory, currentIteration } = context;
 
-  const recentObservations = steps.slice(-2).map((s) => s.observation).join(
-    " | ",
-  );
+  const recentObservations = steps
+    .slice(-2)
+    .map((s) => s.observation)
+    .join(" | ");
   const recentResults = Array.from(workingMemory.entries())
     .filter(([key]) => key.startsWith("result_"))
     .slice(-1)
@@ -128,11 +123,13 @@ ${JSON.stringify(userContext, null, 2)}
 
 **PREVIOUS STEPS:**
 ${
-    steps.length > 0
-      ? steps.slice(-2).map((s) => `Step ${s.iteration}: ${JSON.stringify(s.thinking, null, 2)}`)
+  steps.length > 0
+    ? steps
+        .slice(-2)
+        .map((s) => `Step ${s.iteration}: ${JSON.stringify(s.thinking, null, 2)}`)
         .join("\n")
-      : "No previous steps."
-  }
+    : "No previous steps."
+}
 
 **INSTRUCTIONS:**
 1.  **Analyze**: Review the context, memory, and previous steps.

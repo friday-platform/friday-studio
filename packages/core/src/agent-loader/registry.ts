@@ -1,12 +1,12 @@
 import type { AgentMetadata, AtlasAgent } from "@atlas/agent-sdk";
-import { AgentLoader, type LoaderOptions } from "./loader.ts";
-import { SystemAgentAdapter } from "./adapters/system-adapter.ts";
-import { BundledAgentAdapter } from "./adapters/bundled-adapter.ts";
-import { YAMLFileAdapter } from "./adapters/yaml-file-adapter.ts";
-import { SDKAgentAdapter } from "./adapters/sdk-adapter.ts";
-import type { AgentSourceType } from "./adapters/types.ts";
-import { join } from "@std/path";
 import { createLogger } from "@atlas/logger";
+import { join } from "@std/path";
+import { BundledAgentAdapter } from "./adapters/bundled-adapter.ts";
+import { SDKAgentAdapter } from "./adapters/sdk-adapter.ts";
+import { SystemAgentAdapter } from "./adapters/system-adapter.ts";
+import type { AgentSourceType } from "./adapters/types.ts";
+import { YAMLFileAdapter } from "./adapters/yaml-file-adapter.ts";
+import { AgentLoader, type LoaderOptions } from "./loader.ts";
 
 /** Options for configuring the agent registry */
 export interface RegistryOptions extends LoaderOptions {
@@ -50,9 +50,7 @@ export class AgentRegistry {
     const agentPaths = this.options.agentPaths || this.getDefaultAgentPaths();
     if (agentPaths.length > 0) {
       this.loader.addAdapter(
-        new YAMLFileAdapter(agentPaths, {
-          watchForChanges: this.options.watchForChanges,
-        }),
+        new YAMLFileAdapter(agentPaths, { watchForChanges: this.options.watchForChanges }),
       );
       this.logger.debug("Added YAML file adapter with paths", { paths: agentPaths });
     }
@@ -124,10 +122,7 @@ export class AgentRegistry {
       }
     }
 
-    this.logger.info(
-      "Registry initialized",
-      { loaded: successCount, failures: failureCount },
-    );
+    this.logger.info("Registry initialized", { loaded: successCount, failures: failureCount });
 
     this.initialized = true;
   }
@@ -256,7 +251,9 @@ export class AgentRegistry {
         ...agent.expertise.domains,
         ...agent.expertise.capabilities,
         ...(agent.metadata?.tags || []),
-      ].join(" ").toLowerCase();
+      ]
+        .join(" ")
+        .toLowerCase();
 
       return searchText.includes(lowercaseQuery);
     });

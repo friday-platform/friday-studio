@@ -1,14 +1,10 @@
-import { parse } from "@std/yaml";
-import { join } from "@std/path";
-import { getWorkspaceDiscoveryDirs } from "../../utils/paths.ts";
 import { exists } from "@std/fs";
+import { join } from "@std/path";
+import { parse } from "@std/yaml";
+import { getWorkspaceDiscoveryDirs } from "../../utils/paths.ts";
 
 export interface WorkspaceConfig {
-  workspace: {
-    id: string;
-    name: string;
-    description: string;
-  };
+  workspace: { id: string; name: string; description: string };
   signals?: Record<string, unknown>;
   agents?: Record<string, unknown>;
   jobs?: Record<string, unknown>;

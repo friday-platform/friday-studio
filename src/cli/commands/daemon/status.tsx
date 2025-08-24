@@ -1,6 +1,6 @@
-import { errorOutput } from "../../utils/output.ts";
-import { YargsInstance } from "../../utils/yargs.ts";
 import { displayDaemonStatus, getLocalDaemonClient } from "../../utils/daemon-status.ts";
+import { errorOutput } from "../../utils/output.ts";
+import type { YargsInstance } from "../../utils/yargs.ts";
 
 interface StatusArgs {
   port?: number;
@@ -18,11 +18,7 @@ export function builder(y: YargsInstance) {
       describe: "Port to check daemon on",
       default: 8080,
     })
-    .option("json", {
-      type: "boolean",
-      describe: "Output status as JSON",
-      default: false,
-    })
+    .option("json", { type: "boolean", describe: "Output status as JSON", default: false })
     .example("$0 daemon status", "Check daemon status on default port")
     .example("$0 daemon status --port 3000", "Check daemon on specific port")
     .example("$0 daemon status --json", "Output status as JSON");
@@ -52,15 +48,17 @@ export const handler = async (argv: StatusArgs): Promise<void> => {
     }
   } catch (error) {
     if (argv.json) {
-      console.log(JSON.stringify(
-        {
-          status: "error",
-          error: error instanceof Error ? error.message : String(error),
-          port: argv.port || 8080,
-        },
-        null,
-        2,
-      ));
+      console.log(
+        JSON.stringify(
+          {
+            status: "error",
+            error: error instanceof Error ? error.message : String(error),
+            port: argv.port || 8080,
+          },
+          null,
+          2,
+        ),
+      );
     } else {
       errorOutput(
         `Failed to check daemon status: ${error instanceof Error ? error.message : String(error)}`,

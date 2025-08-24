@@ -1,3 +1,4 @@
+import { logger } from "@atlas/logger";
 import type {
   Attributes,
   Context,
@@ -8,7 +9,6 @@ import type {
   Tracer,
 } from "@opentelemetry/api";
 import { z } from "zod/v4";
-import { logger } from "@atlas/logger";
 import { objectEntries } from "./index.ts";
 
 // Zod schemas for runtime validation
@@ -39,10 +39,12 @@ const ComponentSchema = z.enum(["workspace", "session", "agent", "supervisor", "
 /**
  * Schema for W3C traceparent header format: 00-{traceId}-{spanId}-{flags}
  */
-const TraceParentSchema = z.string().regex(
-  /^00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$/,
-  "Invalid W3C traceparent format. Expected: 00-{32-char-trace-id}-{16-char-span-id}-{2-char-flags}",
-);
+const TraceParentSchema = z
+  .string()
+  .regex(
+    /^00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$/,
+    "Invalid W3C traceparent format. Expected: 00-{32-char-trace-id}-{16-char-span-id}-{2-char-flags}",
+  );
 
 /**
  * Schema for trace headers from worker communication
@@ -69,31 +71,35 @@ const WorkerSpanContextSchema = z.object({
 /**
  * Schema for LLM operation attributes
  */
-const LLMAttributesSchema = z.object({
-  provider: z.string(),
-  model: z.string(),
-  temperature: z.number().optional(),
-  maxTokens: z.number().optional(),
-  inputTokens: z.number().optional(),
-  outputTokens: z.number().optional(),
-  costEstimate: z.number().optional(),
-  finishReason: z.string().optional(),
-  maxSteps: z.number().optional(),
-  retryCount: z.number().optional(),
-  errorCategory: z.string().optional(),
-}).partial();
+const LLMAttributesSchema = z
+  .object({
+    provider: z.string(),
+    model: z.string(),
+    temperature: z.number().optional(),
+    maxTokens: z.number().optional(),
+    inputTokens: z.number().optional(),
+    outputTokens: z.number().optional(),
+    costEstimate: z.number().optional(),
+    finishReason: z.string().optional(),
+    maxSteps: z.number().optional(),
+    retryCount: z.number().optional(),
+    errorCategory: z.string().optional(),
+  })
+  .partial();
 
 /**
  * Schema for MCP operation attributes
  */
-const MCPAttributesSchema = z.object({
-  serverName: z.string(),
-  serversCount: z.number().optional(),
-  toolCallsCount: z.number().optional(),
-  toolsUsed: z.array(z.string()).optional(),
-  serverNames: z.array(z.string()).optional(),
-  totalToolTime: z.number().optional(),
-}).partial();
+const MCPAttributesSchema = z
+  .object({
+    serverName: z.string(),
+    serversCount: z.number().optional(),
+    toolCallsCount: z.number().optional(),
+    toolsUsed: z.array(z.string()).optional(),
+    serverNames: z.array(z.string()).optional(),
+    totalToolTime: z.number().optional(),
+  })
+  .partial();
 
 /**
  * Validation utility functions
@@ -132,10 +138,7 @@ export class TelemetryValidation {
       return result.data;
     }
 
-    logger.warn("Invalid traceparent header format", {
-      traceParent,
-      error: result.error.issues,
-    });
+    logger.warn("Invalid traceparent header format", { traceParent, error: result.error.issues });
     return null;
   }
 
@@ -148,10 +151,7 @@ export class TelemetryValidation {
       return result.data;
     }
 
-    logger.error("Invalid worker span context", {
-      context,
-      error: result.error.issues,
-    });
+    logger.error("Invalid worker span context", { context, error: result.error.issues });
     throw new Error(
       `Invalid worker span context: ${result.error.issues.map((e) => e.message).join(", ")}`,
     );
@@ -265,11 +265,11 @@ export class AtlasTelemetry {
    * Initialize OpenTelemetry (async to handle dynamic imports)
    */
   private static initialize(): Promise<void> {
-    if (this.initPromise) {
-      return this.initPromise;
+    if (AtlasTelemetry.initPromise) {
+      return AtlasTelemetry.initPromise;
     }
 
-    this.initPromise = (async () => {
+    AtlasTelemetry.initPromise = (async () => {
       try {
         // Check if OpenTelemetry should be enabled
         if (Deno.env.get("OTEL_DENO") !== "true") {
@@ -284,8 +284,8 @@ export class AtlasTelemetry {
         statusCodes = otel.SpanStatusCode;
         spanKinds = otel.SpanKind;
 
-        this.tracer = trace.getTracer("atlas", "1.0.0");
-        this.isEnabled = true;
+        AtlasTelemetry.tracer = trace.getTracer("atlas", "1.0.0");
+        AtlasTelemetry.isEnabled = true;
 
         // Set service name if not already set
         if (!Deno.env.get("OTEL_SERVICE_NAME")) {
@@ -305,26 +305,26 @@ export class AtlasTelemetry {
             workerType: typeof globalThis.WorkerGlobalScope !== "undefined" ? "worker" : "main",
           },
         );
-        this.isEnabled = false;
+        AtlasTelemetry.isEnabled = false;
       }
     })();
 
-    return this.initPromise;
+    return AtlasTelemetry.initPromise;
   }
 
   /**
    * Check if telemetry is enabled
    */
   static get enabled(): boolean {
-    return this.isEnabled;
+    return AtlasTelemetry.isEnabled;
   }
 
   /**
    * Ensure initialization before use
    */
   private static async ensureInitialized(): Promise<boolean> {
-    await this.initialize();
-    return this.isEnabled;
+    await AtlasTelemetry.initialize();
+    return AtlasTelemetry.isEnabled;
   }
 
   /**
@@ -340,8 +340,8 @@ export class AtlasTelemetry {
       parentTraceContext?: string | null;
     } = {},
   ): Promise<T> {
-    const enabled = await this.ensureInitialized();
-    if (!enabled || !this.tracer) {
+    const enabled = await AtlasTelemetry.ensureInitialized();
+    if (!enabled || !AtlasTelemetry.tracer) {
       return await fn(null);
     }
 
@@ -358,18 +358,23 @@ export class AtlasTelemetry {
       contextToUse = parentContext;
     } else if (parentTraceContext && context && trace) {
       // Parse W3C traceparent header and create context manually
-      contextToUse = this.parseTraceContext(parentTraceContext);
+      contextToUse = AtlasTelemetry.parseTraceContext(parentTraceContext);
     }
 
     // Create span with appropriate context
     const spanCreator = contextToUse
       ? (callback: (span: Span) => Promise<T>) =>
-        this.tracer!.startActiveSpan(name, { kind }, contextToUse!, callback)
+          AtlasTelemetry.tracer!.startActiveSpan(name, { kind }, contextToUse!, callback)
       : (callback: (span: Span) => Promise<T>) =>
-        this.tracer!.startActiveSpan(name, { kind }, callback);
+          AtlasTelemetry.tracer!.startActiveSpan(name, { kind }, callback);
 
     return await spanCreator(async (span: Span) => {
-      return await this.executeSpanLogic(span, attributes, parentTraceContext || null, fn);
+      return await AtlasTelemetry.executeSpanLogic(
+        span,
+        attributes,
+        parentTraceContext || null,
+        fn,
+      );
     });
   }
 
@@ -392,9 +397,7 @@ export class AtlasTelemetry {
       const traceFlagsStr = parts[3];
 
       if (!traceId || !spanId || !traceFlagsStr) {
-        logger.warn("Invalid trace context parts", {
-          parentTraceContext: validatedTraceContext,
-        });
+        logger.warn("Invalid trace context parts", { parentTraceContext: validatedTraceContext });
         return undefined;
       }
 
@@ -406,12 +409,7 @@ export class AtlasTelemetry {
         spanId,
       });
 
-      const parentSpanContext = {
-        traceId,
-        spanId,
-        traceFlags,
-        isRemote: true,
-      };
+      const parentSpanContext = { traceId, spanId, traceFlags, isRemote: true };
 
       return trace.setSpanContext(context.active(), parentSpanContext);
     } catch (error) {
@@ -434,7 +432,7 @@ export class AtlasTelemetry {
     attributes?: Attributes,
     spanKind?: SpanKind,
   ): Promise<T> {
-    return this.createSpan(name, fn, { attributes, spanKind });
+    return AtlasTelemetry.createSpan(name, fn, { attributes, spanKind });
   }
 
   /**
@@ -445,9 +443,9 @@ export class AtlasTelemetry {
     fn: (span: Span | null) => Promise<T> | T,
     attributes?: Attributes,
   ): Promise<T> {
-    await this.ensureInitialized();
+    await AtlasTelemetry.ensureInitialized();
     const kind = spanKinds?.SERVER;
-    return this.withSpan(operationName, fn, attributes, kind);
+    return AtlasTelemetry.withSpan(operationName, fn, attributes, kind);
   }
 
   /**
@@ -458,19 +456,15 @@ export class AtlasTelemetry {
     fn: (span: Span | null) => Promise<T> | T,
     attributes?: Attributes,
   ): Promise<T> {
-    await this.ensureInitialized();
+    await AtlasTelemetry.ensureInitialized();
     const kind = spanKinds?.CLIENT;
-    return this.withSpan(operationName, fn, attributes, kind);
+    return AtlasTelemetry.withSpan(operationName, fn, attributes, kind);
   }
 
   /**
    * Add Atlas-specific attributes to a span based on component type
    */
-  static addAtlasAttributes(
-    span: Span | null,
-    component: unknown,
-    attributes: unknown,
-  ) {
+  static addAtlasAttributes(span: Span | null, component: unknown, attributes: unknown) {
     if (!span) return;
 
     try {
@@ -503,12 +497,7 @@ export class AtlasTelemetry {
   static addComponentAttributes(
     span: Span | null,
     component: unknown,
-    componentAttributes: {
-      id?: string;
-      type?: string;
-      sessionId?: string;
-      [key: string]: unknown;
-    },
+    componentAttributes: { id?: string; type?: string; sessionId?: string; [key: string]: unknown },
     additionalAttributes?: unknown,
   ) {
     // Build the final attributes object
@@ -519,7 +508,7 @@ export class AtlasTelemetry {
       Object.assign(baseAttributes, additionalAttributes);
     }
 
-    this.addAtlasAttributes(span, component, baseAttributes);
+    AtlasTelemetry.addAtlasAttributes(span, component, baseAttributes);
   }
 
   /**
@@ -527,7 +516,7 @@ export class AtlasTelemetry {
    * This is useful for passing context to workers via MessagePort
    */
   static async getCurrentSpanContext(): Promise<string | null> {
-    const enabled = await this.ensureInitialized();
+    const enabled = await AtlasTelemetry.ensureInitialized();
     if (!enabled || !context || !trace) return null;
 
     try {
@@ -537,9 +526,9 @@ export class AtlasTelemetry {
       if (activeSpan) {
         const spanContext = activeSpan.spanContext();
         // Return W3C trace context format for propagation
-        return `00-${spanContext.traceId}-${spanContext.spanId}-${
-          spanContext.traceFlags.toString(16).padStart(2, "0")
-        }`;
+        return `00-${spanContext.traceId}-${spanContext.spanId}-${spanContext.traceFlags
+          .toString(16)
+          .padStart(2, "0")}`;
       }
     } catch (error) {
       logger.warn("Failed to get span context", { error: String(error) });
@@ -557,7 +546,7 @@ export class AtlasTelemetry {
     fn: (span: Span | null) => Promise<T> | T,
     attributes?: Attributes,
   ): Promise<T> {
-    return this.createSpan(name, fn, { attributes, parentTraceContext });
+    return AtlasTelemetry.createSpan(name, fn, { attributes, parentTraceContext });
   }
 
   private static async executeSpanLogic<T>(
@@ -588,10 +577,7 @@ export class AtlasTelemetry {
       if (span.recordException) {
         span.recordException(error as Error);
       }
-      span.setStatus({
-        code: statusCodes?.ERROR || 2,
-        message: String(error),
-      });
+      span.setStatus({ code: statusCodes?.ERROR || 2, message: String(error) });
       throw error;
     } finally {
       span.end();
@@ -602,7 +588,7 @@ export class AtlasTelemetry {
    * Create a trace context header for worker communication
    */
   static async createTraceHeaders(): Promise<Record<string, string>> {
-    const enabled = await this.ensureInitialized();
+    const enabled = await AtlasTelemetry.ensureInitialized();
     if (!enabled || !context || !trace) {
       return {};
     }
@@ -617,9 +603,9 @@ export class AtlasTelemetry {
         if (spanContext.traceId && spanContext.spanId) {
           // Create W3C traceparent header manually since propagation API is failing
           const traceFlags = spanContext.traceFlags || 0;
-          const traceparent = `00-${spanContext.traceId}-${spanContext.spanId}-${
-            traceFlags.toString(16).padStart(2, "0")
-          }`;
+          const traceparent = `00-${spanContext.traceId}-${spanContext.spanId}-${traceFlags
+            .toString(16)
+            .padStart(2, "0")}`;
 
           logger.debug("Created trace headers from active span", {
             traceparent,
@@ -676,41 +662,39 @@ export class AtlasTelemetry {
       validatedContext.component,
       validatedContext.operation,
       validatedContext.agentType,
-    ].filter(Boolean).join(
-      ".",
-    );
+    ]
+      .filter(Boolean)
+      .join(".");
 
     // Extract trace context from headers
-    const parentTraceContext = this.extractTraceContext(validatedContext.traceHeaders || {});
+    const parentTraceContext = AtlasTelemetry.extractTraceContext(
+      validatedContext.traceHeaders || {},
+    );
 
-    return await this.withSpanFromContext(
-      spanName,
-      parentTraceContext,
-      async (span) => {
-        // Set component type
-        span?.setAttribute("atlas.component", validatedContext.component);
+    return await AtlasTelemetry.withSpanFromContext(spanName, parentTraceContext, async (span) => {
+      // Set component type
+      span?.setAttribute("atlas.component", validatedContext.component);
 
-        // Set all context attributes directly using static mapping (single loop)
-        objectEntries(WORKER_ATTRIBUTE_MAPPING).forEach(([contextKey, attributeKey]) => {
-          const value = validatedContext[contextKey as keyof WorkerSpanContext];
-          if (value !== undefined && typeof value === "string") {
-            span?.setAttribute(attributeKey, value);
+      // Set all context attributes directly using static mapping (single loop)
+      objectEntries(WORKER_ATTRIBUTE_MAPPING).forEach(([contextKey, attributeKey]) => {
+        const value = validatedContext[contextKey as keyof WorkerSpanContext];
+        if (value !== undefined && typeof value === "string") {
+          span?.setAttribute(attributeKey, value);
+        }
+      });
+
+      // Set any additional custom attributes (already validated by context validation)
+      if (validatedContext.attributes) {
+        Object.entries(validatedContext.attributes).forEach(([key, value]) => {
+          if (value !== undefined) {
+            span?.setAttribute(key, value);
           }
         });
+      }
 
-        // Set any additional custom attributes (already validated by context validation)
-        if (validatedContext.attributes) {
-          Object.entries(validatedContext.attributes).forEach(([key, value]) => {
-            if (value !== undefined) {
-              span?.setAttribute(key, value);
-            }
-          });
-        }
-
-        // Execute the business logic
-        return await fn(span);
-      },
-    );
+      // Execute the business logic
+      return await fn(span);
+    });
   }
 
   /**
@@ -723,11 +707,7 @@ export class AtlasTelemetry {
     fn: (span: Span | null) => Promise<T>,
     additionalAttributes?: Partial<LLMAttributes>,
   ): Promise<T> {
-    const baseAttributes: LLMAttributes = {
-      provider,
-      model,
-      ...additionalAttributes,
-    };
+    const baseAttributes: LLMAttributes = { provider, model, ...additionalAttributes };
 
     // Validate LLM attributes
     const validatedAttributes = LLMAttributesSchema.safeParse(baseAttributes);
@@ -753,33 +733,37 @@ export class AtlasTelemetry {
 
     const spanName = `llm.${operation}`;
 
-    return await this.withClientSpan(spanName, async (span) => {
-      // Add LLM-specific attributes
-      if (span) {
-        Object.entries(llmAttributes).forEach(([key, value]) => {
-          if (value !== undefined) {
-            span.setAttribute(key, value);
-          }
-        });
-      }
+    return await AtlasTelemetry.withClientSpan(
+      spanName,
+      async (span) => {
+        // Add LLM-specific attributes
+        if (span) {
+          Object.entries(llmAttributes).forEach(([key, value]) => {
+            if (value !== undefined) {
+              span.setAttribute(key, value);
+            }
+          });
+        }
 
-      const startTime = Date.now();
+        const startTime = Date.now();
 
-      try {
-        const result = await fn(span);
+        try {
+          const result = await fn(span);
 
-        // Record generation latency
-        const latency = Date.now() - startTime;
-        span?.setAttribute("llm.generation_latency", latency);
+          // Record generation latency
+          const latency = Date.now() - startTime;
+          span?.setAttribute("llm.generation_latency", latency);
 
-        return result;
-      } catch (error) {
-        // Record error category if possible
-        const errorCategory = error instanceof Error ? error.constructor.name : "Unknown";
-        span?.setAttribute("llm.error_category", errorCategory);
-        throw error;
-      }
-    }, llmAttributes);
+          return result;
+        } catch (error) {
+          // Record error category if possible
+          const errorCategory = error instanceof Error ? error.constructor.name : "Unknown";
+          span?.setAttribute("llm.error_category", errorCategory);
+          throw error;
+        }
+      },
+      llmAttributes,
+    );
   }
 
   /**
@@ -791,10 +775,7 @@ export class AtlasTelemetry {
     fn: (span: Span | null) => Promise<T>,
     additionalAttributes?: Partial<MCPAttributes>,
   ): Promise<T> {
-    const baseAttributes: MCPAttributes = {
-      serverName,
-      ...additionalAttributes,
-    };
+    const baseAttributes: MCPAttributes = { serverName, ...additionalAttributes };
 
     // Validate MCP attributes
     const validatedAttributes = MCPAttributesSchema.safeParse(baseAttributes);
@@ -825,33 +806,37 @@ export class AtlasTelemetry {
 
     const spanName = `mcp.${operation}`;
 
-    return await this.withClientSpan(spanName, async (span) => {
-      // Add MCP-specific attributes
-      if (span) {
-        Object.entries(mcpAttributes).forEach(([key, value]) => {
-          if (value !== undefined) {
-            span.setAttribute(key, value);
-          }
-        });
-      }
+    return await AtlasTelemetry.withClientSpan(
+      spanName,
+      async (span) => {
+        // Add MCP-specific attributes
+        if (span) {
+          Object.entries(mcpAttributes).forEach(([key, value]) => {
+            if (value !== undefined) {
+              span.setAttribute(key, value);
+            }
+          });
+        }
 
-      const startTime = Date.now();
+        const startTime = Date.now();
 
-      try {
-        const result = await fn(span);
+        try {
+          const result = await fn(span);
 
-        // Record operation latency
-        const latency = Date.now() - startTime;
-        span?.setAttribute("mcp.operation_latency", latency);
+          // Record operation latency
+          const latency = Date.now() - startTime;
+          span?.setAttribute("mcp.operation_latency", latency);
 
-        return result;
-      } catch (error) {
-        // Record error details
-        const errorCategory = error instanceof Error ? error.constructor.name : "Unknown";
-        span?.setAttribute("mcp.error_category", errorCategory);
-        throw error;
-      }
-    }, mcpAttributes);
+          return result;
+        } catch (error) {
+          // Record error details
+          const errorCategory = error instanceof Error ? error.constructor.name : "Unknown";
+          span?.setAttribute("mcp.error_category", errorCategory);
+          throw error;
+        }
+      },
+      mcpAttributes,
+    );
   }
 
   /**
@@ -873,7 +858,7 @@ export class AtlasTelemetry {
     ) => Promise<T>,
     additionalAttributes?: Partial<LLMAttributes>,
   ): Promise<T> {
-    return await this.withLLMSpan(
+    return await AtlasTelemetry.withLLMSpan(
       provider,
       model,
       "generate_with_tools",
@@ -891,15 +876,12 @@ export class AtlasTelemetry {
           toolFn: (span: Span | null) => Promise<unknown>,
           attributes?: Partial<MCPAttributes>,
         ) => {
-          return await this.withMCPSpan(serverName, operation, toolFn, attributes);
+          return await AtlasTelemetry.withMCPSpan(serverName, operation, toolFn, attributes);
         };
 
         return await fn(parentSpan, mcpSpanCreator);
       },
-      {
-        ...additionalAttributes,
-        maxSteps: additionalAttributes?.maxSteps,
-      },
+      { ...additionalAttributes, maxSteps: additionalAttributes?.maxSteps },
     );
   }
 }

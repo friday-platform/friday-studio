@@ -2,18 +2,18 @@
  * SendGrid notification provider
  */
 
-import sgMail from "@sendgrid/mail";
-import { z } from "zod/v4";
 import type {
   EmailParams,
   MessageParams,
   NotificationResult,
   SendGridProvider as SendGridConfig,
 } from "@atlas/config";
-import { BaseNotificationProvider, type BaseProviderConfig } from "./base-provider.ts";
-import { NotificationSendError, ProviderConfigError } from "../types.ts";
-import { getAtlasVersion } from "../../../../src/utils/version.ts";
 import { logger } from "@atlas/logger";
+import sgMail from "@sendgrid/mail";
+import { z } from "zod/v4";
+import { getAtlasVersion } from "../../../../src/utils/version.ts";
+import { NotificationSendError, ProviderConfigError } from "../types.ts";
+import { BaseNotificationProvider, type BaseProviderConfig } from "./base-provider.ts";
 
 // JWT payload schema for Atlas keys
 const AtlasJWTPayloadSchema = z.object({
@@ -90,7 +90,9 @@ export class SendGridProvider extends BaseNotificationProvider {
       fromName: config.config.from_name,
       templateId: config.config.template_id,
       sandboxMode: config.config.sandbox_mode,
-      timeout: config.config.timeout ? this.parseDuration(config.config.timeout) : undefined,
+      timeout: config.config.timeout
+        ? SendGridProvider.parseDuration(config.config.timeout)
+        : undefined,
     });
   }
 
@@ -133,22 +135,19 @@ export class SendGridProvider extends BaseNotificationProvider {
         body: response[0]?.body,
       });
 
-      return this.createSuccessResponse(
-        response[0]?.headers?.["x-message-id"] as string,
-        {
-          statusCode: response[0]?.statusCode,
-          body: response[0]?.body,
-        },
-      );
+      return this.createSuccessResponse(response[0]?.headers?.["x-message-id"] as string, {
+        statusCode: response[0]?.statusCode,
+        body: response[0]?.body,
+      });
     } catch (error) {
       logger.error("SendGrid sendEmail error", {
         error: error instanceof Error ? error.message : String(error),
         stack: error instanceof Error ? error.stack : undefined,
-        // @ts-ignore - SendGrid error object structure
+        // @ts-expect-error - SendGrid error object structure
         statusCode: error?.code || error?.statusCode,
-        // @ts-ignore - SendGrid error object structure
+        // @ts-expect-error - SendGrid error object structure
         body: error?.response?.body,
-        // @ts-ignore - SendGrid error object structure
+        // @ts-expect-error - SendGrid error object structure
         headers: error?.response?.headers,
       });
 
@@ -255,10 +254,7 @@ export class SendGridProvider extends BaseNotificationProvider {
   private buildEmailMessage(params: EmailParams): sgMail.MailDataRequired {
     const message: Record<string, unknown> = {
       to: params.to,
-      from: {
-        email: params.from || this.fromEmail,
-        name: params.from_name || this.fromName,
-      },
+      from: { email: params.from || this.fromEmail, name: params.from_name || this.fromName },
       subject: params.subject,
     };
 
@@ -289,11 +285,7 @@ export class SendGridProvider extends BaseNotificationProvider {
 
     // Add sandbox mode if enabled
     if (this.sandboxMode) {
-      message.mailSettings = {
-        sandboxMode: {
-          enable: true,
-        },
-      };
+      message.mailSettings = { sandboxMode: { enable: true } };
     }
 
     // Always use 'tempest-atlas' IP pool
@@ -375,12 +367,7 @@ export class SendGridProvider extends BaseNotificationProvider {
     if (error instanceof Error) {
       // Handle SendGrid-specific errors
       if (error.message.includes("401")) {
-        return new NotificationSendError(
-          this.name,
-          "Invalid SendGrid API key",
-          false,
-          error,
-        );
+        return new NotificationSendError(this.name, "Invalid SendGrid API key", false, error);
       }
       if (error.message.includes("403")) {
         return new NotificationSendError(
@@ -391,23 +378,14 @@ export class SendGridProvider extends BaseNotificationProvider {
         );
       }
       if (error.message.includes("429")) {
-        return new NotificationSendError(
-          this.name,
-          "Rate limit exceeded",
-          true,
-          error,
-        );
+        return new NotificationSendError(this.name, "Rate limit exceeded", true, error);
       }
       if (
-        error.message.includes("500") || error.message.includes("502") ||
+        error.message.includes("500") ||
+        error.message.includes("502") ||
         error.message.includes("503")
       ) {
-        return new NotificationSendError(
-          this.name,
-          "SendGrid server error",
-          true,
-          error,
-        );
+        return new NotificationSendError(this.name, "SendGrid server error", true, error);
       }
     }
 

@@ -1,11 +1,10 @@
-import type { AgentAdapter, AgentSourceData, AgentSourceType, AgentSummary } from "./types.ts";
-import { basename, join } from "@std/path";
-import { expandGlob } from "@std/fs";
-import { exists } from "@std/fs";
-import { parse as parseYAML } from "@std/yaml";
 import { createLogger } from "@atlas/logger";
-import { YAMLAgentSchema } from "../../agent-conversion/yaml/schema.ts";
+import { exists, expandGlob } from "@std/fs";
+import { basename, join } from "@std/path";
+import { parse as parseYAML } from "@std/yaml";
 import z from "zod/v4";
+import { YAMLAgentSchema } from "../../agent-conversion/yaml/schema.ts";
+import type { AgentAdapter, AgentSourceData, AgentSourceType, AgentSummary } from "./types.ts";
 
 /**
  * Loads YAML agents from the filesystem.
@@ -41,10 +40,7 @@ export class YAMLFileAdapter implements AgentAdapter {
             type: "yaml",
             id,
             content,
-            metadata: {
-              sourceLocation: filePath,
-              lastModified: stat.mtime ?? undefined,
-            },
+            metadata: { sourceLocation: filePath, lastModified: stat.mtime ?? undefined },
           };
         } catch (error) {
           const msg = `Failed to read YAML agent file ${filePath}`;

@@ -5,35 +5,27 @@
  * with improved type safety, tagged unions, and clear separation of concerns.
  */
 
-// Base types and enums
-export * from "./src/base.ts";
-
-// MCP schemas (Platform and Protocol)
-export * from "./src/mcp.ts";
-
-// Signal schemas with tagged unions
-export * from "./src/signals.ts";
-
 // Agent schemas with tagged unions
 export * from "./src/agents.ts";
+// Atlas-specific schemas
+export * from "./src/atlas.ts";
+// Base types and enums
+export * from "./src/base.ts";
+// Configuration loader
+export * from "./src/config-loader.ts";
 
 // Job specification schemas
 export * from "./src/jobs.ts";
-
+// MCP schemas (Platform and Protocol)
+export * from "./src/mcp.ts";
 // Memory configuration schemas
 export * from "./src/memory.ts";
-
+// Message stream schemas for SSE events
+export * from "./src/message-stream.ts";
 // Notification configuration schemas
 export * from "./src/notifications.ts";
-
-// Atlas-specific schemas
-export * from "./src/atlas.ts";
-
-// Main workspace configuration schemas
-export * from "./src/workspace.ts";
-
-// Configuration loader
-export * from "./src/config-loader.ts";
+// Signal schemas with tagged unions
+export * from "./src/signals.ts";
 
 // Supervisor defaults
 export {
@@ -44,9 +36,8 @@ export {
 
 // Todo schemas
 export * from "./src/todos.ts";
-
-// Message stream schemas for SSE events
-export * from "./src/message-stream.ts";
+// Main workspace configuration schemas
+export * from "./src/workspace.ts";
 
 // Helper function for formatting Zod errors
 export function formatZodError(error: z.ZodError): string {
@@ -58,16 +49,16 @@ export function formatZodError(error: z.ZodError): string {
 // ==============================================================================
 
 import { z } from "zod/v4";
-import { MergedConfig } from "./src/workspace.ts";
-import { JobSpecificationSchema } from "./src/jobs.ts";
-import { WorkspaceSignalConfigSchema } from "./src/signals.ts";
-import {
+import type {
   LLMAgentConfig,
   RemoteAgentConfig,
   SystemAgentConfig,
   WorkspaceAgentConfig,
   WorkspaceAgentConfigSchema,
 } from "./src/agents.ts";
+import type { JobSpecificationSchema } from "./src/jobs.ts";
+import type { WorkspaceSignalConfigSchema } from "./src/signals.ts";
+import type { MergedConfig } from "./src/workspace.ts";
 
 /**
  * Get a job by name from the configuration
@@ -138,28 +129,28 @@ export function isRemoteAgent(agent: WorkspaceAgentConfig): agent is RemoteAgent
 export type JsonSchema =
   | boolean
   | {
-    type?: string | string[];
-    properties?: Record<string, JsonSchema>;
-    required?: string[];
-    items?: JsonSchema | JsonSchema[];
-    enum?: unknown[];
-    minLength?: number;
-    maxLength?: number;
-    pattern?: string;
-    minimum?: number;
-    maximum?: number;
-    exclusiveMinimum?: boolean | number;
-    exclusiveMaximum?: boolean | number;
-    minItems?: number;
-    maxItems?: number;
-    default?: unknown;
-    description?: string;
-    additionalProperties?: boolean | JsonSchema;
-    oneOf?: JsonSchema[];
-    anyOf?: JsonSchema[];
-    allOf?: JsonSchema[];
-    $ref?: string;
-  };
+      type?: string | string[];
+      properties?: Record<string, JsonSchema>;
+      required?: string[];
+      items?: JsonSchema | JsonSchema[];
+      enum?: unknown[];
+      minLength?: number;
+      maxLength?: number;
+      pattern?: string;
+      minimum?: number;
+      maximum?: number;
+      exclusiveMinimum?: boolean | number;
+      exclusiveMaximum?: boolean | number;
+      minItems?: number;
+      maxItems?: number;
+      default?: unknown;
+      description?: string;
+      additionalProperties?: boolean | JsonSchema;
+      oneOf?: JsonSchema[];
+      anyOf?: JsonSchema[];
+      allOf?: JsonSchema[];
+      $ref?: string;
+    };
 
 /**
  * Convert JSON Schema to Zod schema for runtime validation
@@ -224,10 +215,10 @@ export function jsonSchemaToZod(jsonSchema: JsonSchema): z.ZodSchema<unknown> {
       return jsonSchema.additionalProperties === false
         ? z.object(shape).strict()
         : jsonSchema.additionalProperties === true
-        ? z.object(shape).passthrough()
-        : typeof jsonSchema.additionalProperties === "object"
-        ? z.object(shape).catchall(jsonSchemaToZod(jsonSchema.additionalProperties))
-        : z.object(shape).passthrough();
+          ? z.object(shape).passthrough()
+          : typeof jsonSchema.additionalProperties === "object"
+            ? z.object(shape).catchall(jsonSchemaToZod(jsonSchema.additionalProperties))
+            : z.object(shape).passthrough();
     }
 
     case "string": {

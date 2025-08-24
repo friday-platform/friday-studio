@@ -1,9 +1,9 @@
-export * from "./types.ts";
+export { Component } from "./component.tsx";
+export { JobDetailsWithPath } from "./job-details-with-path.tsx";
 export * from "./registry.ts";
 export { SignalDetailsWithPath } from "./signal-details-with-path.tsx";
-export { JobDetailsWithPath } from "./job-details-with-path.tsx";
+export * from "./types.ts";
 export { WorkspaceSelection } from "./workspace-selection.tsx";
-export { Component } from "./component.tsx";
 
 // Parse command arguments while preserving complex arguments
 export const parseSlashCommand = (input: string) => {
@@ -49,9 +49,5 @@ export const parseSlashCommand = (input: string) => {
     return null;
   }
 
-  return {
-    command: args[0]?.toLowerCase(),
-    args: args.slice(1),
-    rawInput: input,
-  };
+  return { command: args[0]?.toLowerCase(), args: args.slice(1), rawInput: input };
 };

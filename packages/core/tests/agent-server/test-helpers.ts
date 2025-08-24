@@ -3,7 +3,7 @@
  */
 
 import type { AgentContext, AgentSessionData, AtlasAgent } from "@atlas/agent-sdk";
-import { CoALAMemoryManager } from "@atlas/memory";
+import type { CoALAMemoryManager } from "@atlas/memory";
 import { NoOpStreamEmitter } from "../../src/streaming/stream-emitters.ts";
 
 type SessionState = Record<string, unknown>;

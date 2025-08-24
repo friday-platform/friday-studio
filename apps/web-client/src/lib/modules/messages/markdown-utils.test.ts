@@ -33,35 +33,17 @@ Deno.test("parseMarkdownToAST - empty input", () => {
 });
 
 Deno.test("cleanMarkdownSyntax - bold markers", () => {
-  const node = {
-    type: "StrongEmphasis",
-    content: "**bold**",
-    from: 0,
-    to: 8,
-    children: [],
-  };
+  const node = { type: "StrongEmphasis", content: "**bold**", from: 0, to: 8, children: [] };
   assertEquals(cleanMarkdownSyntax(node), "bold");
 });
 
 Deno.test("cleanMarkdownSyntax - italic markers", () => {
-  const node = {
-    type: "Emphasis",
-    content: "*italic*",
-    from: 0,
-    to: 8,
-    children: [],
-  };
+  const node = { type: "Emphasis", content: "*italic*", from: 0, to: 8, children: [] };
   assertEquals(cleanMarkdownSyntax(node), "italic");
 });
 
 Deno.test("cleanMarkdownSyntax - header markers", () => {
-  const node = {
-    type: "ATXHeading2",
-    content: "## Header",
-    from: 0,
-    to: 9,
-    children: [],
-  };
+  const node = { type: "ATXHeading2", content: "## Header", from: 0, to: 9, children: [] };
   assertEquals(cleanMarkdownSyntax(node), "Header");
 });
 
@@ -78,57 +60,27 @@ Deno.test("extractLinkData - malformed link", () => {
 });
 
 Deno.test("astToHTML - paragraph", () => {
-  const node = {
-    type: "Paragraph",
-    content: "Hello world",
-    from: 0,
-    to: 11,
-    children: [],
-  };
+  const node = { type: "Paragraph", content: "Hello world", from: 0, to: 11, children: [] };
   assertEquals(astToHTML(node), "<p>Hello world</p>");
 });
 
 Deno.test("astToHTML - paragraph inside list item", () => {
-  const node = {
-    type: "Paragraph",
-    content: "List item text",
-    from: 0,
-    to: 14,
-    children: [],
-  };
+  const node = { type: "Paragraph", content: "List item text", from: 0, to: 14, children: [] };
   assertEquals(astToHTML(node, "ListItem"), "List item text");
 });
 
 Deno.test("astToHTML - bold text", () => {
-  const node = {
-    type: "StrongEmphasis",
-    content: "**bold**",
-    from: 0,
-    to: 8,
-    children: [],
-  };
+  const node = { type: "StrongEmphasis", content: "**bold**", from: 0, to: 8, children: [] };
   assertEquals(astToHTML(node), "<strong>bold</strong>");
 });
 
 Deno.test("astToHTML - headers to bold paragraphs", () => {
-  const node = {
-    type: "ATXHeading2",
-    content: "## Header",
-    from: 0,
-    to: 9,
-    children: [],
-  };
+  const node = { type: "ATXHeading2", content: "## Header", from: 0, to: 9, children: [] };
   assertEquals(astToHTML(node), "<p><strong>Header</strong></p>");
 });
 
 Deno.test("astToHTML - skip horizontal rules", () => {
-  const node = {
-    type: "HorizontalRule",
-    content: "---",
-    from: 0,
-    to: 3,
-    children: [],
-  };
+  const node = { type: "HorizontalRule", content: "---", from: 0, to: 3, children: [] };
   assertEquals(astToHTML(node), "");
 });
 
@@ -137,17 +89,11 @@ Deno.test("markdownToHTML - simple paragraph", () => {
 });
 
 Deno.test("markdownToHTML - bold text", () => {
-  assertEquals(
-    markdownToHTML("**bold text**"),
-    "<p><strong>bold text</strong></p>",
-  );
+  assertEquals(markdownToHTML("**bold text**"), "<p><strong>bold text</strong></p>");
 });
 
 Deno.test("markdownToHTML - italic text", () => {
-  assertEquals(
-    markdownToHTML("*italic text*"),
-    "<p><em>italic text</em></p>",
-  );
+  assertEquals(markdownToHTML("*italic text*"), "<p><em>italic text</em></p>");
 });
 
 Deno.test("markdownToHTML - unordered list", () => {
@@ -169,17 +115,11 @@ Deno.test("markdownToHTML - list with inline formatting", () => {
 });
 
 Deno.test("markdownToHTML - H1 to bold paragraph", () => {
-  assertEquals(
-    markdownToHTML("# Header 1"),
-    "<p><strong>Header 1</strong></p>",
-  );
+  assertEquals(markdownToHTML("# Header 1"), "<p><strong>Header 1</strong></p>");
 });
 
 Deno.test("markdownToHTML - H2 to bold paragraph", () => {
-  assertEquals(
-    markdownToHTML("## Header 2"),
-    "<p><strong>Header 2</strong></p>",
-  );
+  assertEquals(markdownToHTML("## Header 2"), "<p><strong>Header 2</strong></p>");
 });
 
 Deno.test("markdownToHTML - horizontal rules removed", () => {
@@ -210,10 +150,7 @@ Deno.test("markdownToHTML - inline code", () => {
 });
 
 Deno.test("markdownToHTML - code blocks", () => {
-  assertEquals(
-    markdownToHTML("```\ncode block\n```"),
-    "<pre><code>code block</code></pre>",
-  );
+  assertEquals(markdownToHTML("```\ncode block\n```"), "<pre><code>code block</code></pre>");
 });
 
 Deno.test("markdownToHTML - mixed content", () => {

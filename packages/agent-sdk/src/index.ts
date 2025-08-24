@@ -5,9 +5,16 @@
  * Agents access MCP tools, environment variables, and streaming.
  */
 
+// Adapter interfaces for server implementations
+export type {
+  AgentExecutionResult,
+  AgentServerAdapter,
+  AgentSessionManager,
+  AwaitingApprovalResult,
+  CompletedAgentResult,
+} from "./adapter.ts";
 // Core API
 export { createAgent } from "./create-agent.ts";
-
 // Types
 export type {
   AgentContext,
@@ -37,8 +44,8 @@ export type {
   ToolContext,
   ToolResult,
 } from "./types.ts";
-
 // Zod Schemas for runtime validation
+// Exceptions
 export {
   AgentEnvironmentConfigSchema,
   AgentExpertiseSchema,
@@ -48,6 +55,7 @@ export {
   AgentSessionStateSchema,
   ApprovalRequestSchema,
   AtlasAgentConfigSchema,
+  AwaitingSupervisorDecision,
   CreateAgentConfigValidationSchema,
   MCPAuthConfigSchema,
   MCPServerConfigSchema,
@@ -55,15 +63,3 @@ export {
   MCPTransportConfigSchema,
   StreamEventSchema,
 } from "./types.ts";
-
-// Exceptions
-export { AwaitingSupervisorDecision } from "./types.ts";
-
-// Adapter interfaces for server implementations
-export type {
-  AgentExecutionResult,
-  AgentServerAdapter,
-  AgentSessionManager,
-  AwaitingApprovalResult,
-  CompletedAgentResult,
-} from "./adapter.ts";

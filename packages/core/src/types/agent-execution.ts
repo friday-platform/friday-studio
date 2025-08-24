@@ -18,12 +18,14 @@ import { z } from "zod/v4";
 export const AgentExecutePayloadSchema = z.object({
   agentId: z.string().describe("The ID of the agent to execute"),
   input: z.unknown().describe("Input data for the agent"),
-  sessionContext: z.object({
-    sessionId: z.string().describe("The session ID this execution belongs to"),
-    workspaceId: z.string().describe("The workspace ID"),
-    task: z.string().optional().describe("Optional task description"),
-    reasoning: z.string().optional().describe("Optional reasoning from supervisor"),
-  }).describe("Session context for the execution"),
+  sessionContext: z
+    .object({
+      sessionId: z.string().describe("The session ID this execution belongs to"),
+      workspaceId: z.string().describe("The workspace ID"),
+      task: z.string().optional().describe("Optional task description"),
+      reasoning: z.string().optional().describe("Optional reasoning from supervisor"),
+    })
+    .describe("Session context for the execution"),
 });
 
 export type AgentExecutePayload = z.infer<typeof AgentExecutePayloadSchema>;

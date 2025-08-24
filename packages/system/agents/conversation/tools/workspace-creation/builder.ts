@@ -285,7 +285,7 @@ export class WorkspaceBuilder {
 
     // Check for dependent jobs
     const dependentJobs = Array.from(this.jobs.entries()).filter(([, job]) =>
-      job.triggers?.some((trigger) => trigger.signal === id)
+      job.triggers?.some((trigger) => trigger.signal === id),
     );
 
     if (dependentJobs.length > 0) {
@@ -311,7 +311,7 @@ export class WorkspaceBuilder {
       job.execution?.agents?.some((agent) => {
         const agentId = typeof agent === "string" ? agent : agent.id;
         return agentId === id;
-      })
+      }),
     );
 
     if (dependentJobs.length > 0) {
@@ -357,11 +357,7 @@ export class WorkspaceBuilder {
       }
     }
 
-    return {
-      success: errors.length === 0,
-      errors,
-      warnings,
-    };
+    return { success: errors.length === 0, errors, warnings };
   }
 
   repairBrokenReferences(): RepairResult {
@@ -412,10 +408,7 @@ export class WorkspaceBuilder {
           shouldRemoveJob = true;
           repairs.push(`Removed job '${jobName}' due to no valid agents remaining`);
         } else if (jobModified) {
-          updatedJob.execution = {
-            ...updatedJob.execution,
-            agents: validAgents,
-          };
+          updatedJob.execution = { ...updatedJob.execution, agents: validAgents };
         }
       }
 
@@ -429,19 +422,15 @@ export class WorkspaceBuilder {
           this.jobs.set(jobName, jobResult.data);
         } else {
           errors.push(
-            `Failed to repair job '${jobName}': ${
-              jobResult.error.issues.map((e) => e.message).join(", ")
-            }`,
+            `Failed to repair job '${jobName}': ${jobResult.error.issues
+              .map((e) => e.message)
+              .join(", ")}`,
           );
         }
       }
     }
 
-    return {
-      success: errors.length === 0,
-      repairs,
-      errors,
-    };
+    return { success: errors.length === 0, repairs, errors };
   }
 
   validateWorkspace(): ValidationResult {
@@ -462,8 +451,8 @@ export class WorkspaceBuilder {
     if (!configResult.success) {
       return {
         success: false,
-        errors: configResult.error.issues.map((e) =>
-          `Schema validation: ${e.path.join(".")}: ${e.message}`
+        errors: configResult.error.issues.map(
+          (e) => `Schema validation: ${e.path.join(".")}: ${e.message}`,
         ),
         warnings: [],
       };
@@ -489,12 +478,7 @@ export class WorkspaceBuilder {
     if (this.mcpServers.size > 0) {
       config.tools = {
         mcp: {
-          client_config: {
-            timeout: {
-              progressTimeout: "2m",
-              maxTotalTimeout: "30m",
-            },
-          },
+          client_config: { timeout: { progressTimeout: "2m", maxTotalTimeout: "30m" } },
           servers: Object.fromEntries(this.mcpServers),
         },
       };

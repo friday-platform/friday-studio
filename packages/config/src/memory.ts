@@ -13,16 +13,20 @@ export const WorkspaceMemoryConfigSchema = z.strictObject({
   enabled: z.boolean().default(true),
   scope: MemoryScope.optional().describe("Memory scope level"),
 
-  retention: z.strictObject({
-    max_age_days: z.number().int().positive(),
-    max_entries: z.number().int().positive(),
-    cleanup_interval_hours: z.number().int().positive().optional(),
-  }).optional(),
+  retention: z
+    .strictObject({
+      max_age_days: z.number().int().positive(),
+      max_entries: z.number().int().positive(),
+      cleanup_interval_hours: z.number().int().positive().optional(),
+    })
+    .optional(),
 
-  session: z.strictObject({
-    include_in_context: z.boolean().optional(),
-    max_context_entries: z.number().int().positive().optional(),
-  }).optional(),
+  session: z
+    .strictObject({
+      include_in_context: z.boolean().optional(),
+      max_context_entries: z.number().int().positive().optional(),
+    })
+    .optional(),
 
   include_types: z.array(z.string()).optional().describe("Types of memory to track"),
 });
@@ -56,13 +60,15 @@ const MemoryScopeConfigSchema = z.strictObject({
     past_failures: z.number().int().min(0),
   }),
 
-  memory_types: z.strictObject({
-    working: MemoryTypeConfigSchema.optional(),
-    procedural: MemoryTypeConfigSchema.optional(),
-    episodic: MemoryTypeConfigSchema.optional(),
-    semantic: MemoryTypeConfigSchema.optional(),
-    contextual: MemoryTypeConfigSchema.optional(),
-  }).describe("Different types of memory with individual configurations"),
+  memory_types: z
+    .strictObject({
+      working: MemoryTypeConfigSchema.optional(),
+      procedural: MemoryTypeConfigSchema.optional(),
+      episodic: MemoryTypeConfigSchema.optional(),
+      semantic: MemoryTypeConfigSchema.optional(),
+      contextual: MemoryTypeConfigSchema.optional(),
+    })
+    .describe("Different types of memory with individual configurations"),
 });
 
 /**
@@ -82,20 +88,22 @@ export const AtlasMemoryConfigSchema = z.strictObject({
   }),
 
   // Streaming configuration for performance
-  streaming: z.strictObject({
-    enabled: z.boolean(),
-    queue_max_size: z.number().int().positive(),
-    batch_size: z.number().int().positive(),
-    flush_interval: DurationSchema,
-    background_processing: z.boolean(),
-    persistence_enabled: z.boolean(),
-    error_retry_attempts: z.number().int().min(0),
-    priority_processing: z.boolean(),
-    dual_write_enabled: z.boolean().describe("Safe migration mode"),
-    legacy_batch_enabled: z.boolean().describe("Legacy batch processing"),
-    stream_everything: z.boolean().describe("Stream all memory operations"),
-    performance_tracking: z.boolean().describe("Track performance metrics"),
-  }).optional(),
+  streaming: z
+    .strictObject({
+      enabled: z.boolean(),
+      queue_max_size: z.number().int().positive(),
+      batch_size: z.number().int().positive(),
+      flush_interval: DurationSchema,
+      background_processing: z.boolean(),
+      persistence_enabled: z.boolean(),
+      error_retry_attempts: z.number().int().min(0),
+      priority_processing: z.boolean(),
+      dual_write_enabled: z.boolean().describe("Safe migration mode"),
+      legacy_batch_enabled: z.boolean().describe("Legacy batch processing"),
+      stream_everything: z.boolean().describe("Stream all memory operations"),
+      performance_tracking: z.boolean().describe("Track performance metrics"),
+    })
+    .optional(),
 
   // Scoped memory configurations
   agent: MemoryScopeConfigSchema,

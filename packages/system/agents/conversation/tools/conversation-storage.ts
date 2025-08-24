@@ -5,9 +5,9 @@
  * Manages conversation history using daemon's storage API
  */
 
+import { createAtlasClient } from "@atlas/oapi-client";
 import { tool } from "ai";
 import { z } from "zod/v4";
-import { createAtlasClient } from "@atlas/oapi-client";
 
 // Helper to safely extract error message from unknown error
 function getErrorMessage(error: unknown): string {
@@ -25,14 +25,9 @@ export const conversationStorageTool = tool({
       operation: z
         .enum(["store", "retrieve", "delete"])
         .describe("The operation to perform on conversation storage"),
-      streamId: z
-        .string()
-        .describe("The stream ID to operate on"),
+      streamId: z.string().describe("The stream ID to operate on"),
       message: z
-        .object({
-          role: z.enum(["user", "assistant"]),
-          content: z.string(),
-        })
+        .object({ role: z.enum(["user", "assistant"]), content: z.string() })
         .optional()
         .describe("The message to store (required for store operation)"),
       metadata: z
@@ -48,9 +43,7 @@ export const conversationStorageTool = tool({
         }
         return true;
       },
-      {
-        message: "message is required for store operation",
-      },
+      { message: "message is required for store operation" },
     ),
   execute: async ({ operation, streamId, message, metadata }) => {
     try {
@@ -63,23 +56,14 @@ export const conversationStorageTool = tool({
           }
           const response = await client.POST("/api/conversation-storage/{streamId}", {
             params: { path: { streamId } },
-            body: {
-              message,
-              metadata,
-              timestamp: new Date().toISOString(),
-            },
+            body: { message, metadata, timestamp: new Date().toISOString() },
           });
 
           if (response.error) {
             throw new Error(`API error (${response.response.status}): ${response.error.error}`);
           }
 
-          return {
-            success: true,
-            operation,
-            streamId,
-            result: response.data,
-          };
+          return { success: true, operation, streamId, result: response.data };
         }
 
         case "retrieve": {
@@ -91,12 +75,7 @@ export const conversationStorageTool = tool({
             throw new Error(`API error (${response.response.status}): ${response.error.error}`);
           }
 
-          return {
-            success: true,
-            operation,
-            streamId,
-            result: response.data,
-          };
+          return { success: true, operation, streamId, result: response.data };
         }
 
         case "delete": {
@@ -108,21 +87,14 @@ export const conversationStorageTool = tool({
             throw new Error(`API error (${response.response.status}): ${response.error.error}`);
           }
 
-          return {
-            success: true,
-            operation,
-            streamId,
-            result: response.data,
-          };
+          return { success: true, operation, streamId, result: response.data };
         }
 
         default:
           throw new Error(`Unknown operation: ${operation}`);
       }
     } catch (error) {
-      throw new Error(
-        `Failed to manage conversation storage: ${getErrorMessage(error)}`,
-      );
+      throw new Error(`Failed to manage conversation storage: ${getErrorMessage(error)}`);
     }
   },
 });

@@ -5,14 +5,13 @@
  * before execution, with clear error messages for missing or invalid values.
  */
 
+import type { AgentEnvironmentConfig } from "@atlas/agent-sdk";
+import type { Logger } from "@atlas/logger";
 import { assertEquals, assertRejects } from "@std/assert";
 import {
   createEnvironmentContext,
   getEnvironmentHelp,
 } from "../../src/agent-context/environment-context.ts";
-import type { AgentEnvironmentConfig } from "@atlas/agent-sdk";
-
-import type { Logger } from "@atlas/logger";
 
 // Silent logger for tests
 const mockLogger: Logger = {
@@ -47,11 +46,7 @@ Deno.test("Environment validation - success with required variables", async () =
       ],
     };
 
-    const result = await validateEnvironment(
-      "test-workspace",
-      "test-agent",
-      config,
-    );
+    const result = await validateEnvironment("test-workspace", "test-agent", config);
 
     assertEquals(result.TEST_API_KEY, "sk_test123456789");
     assertEquals(result.TEST_TOKEN, "ghp_abcdefghij1234567890");
@@ -71,16 +66,8 @@ Deno.test("Environment validation - success with optional variables and defaults
 
     const config: AgentEnvironmentConfig = {
       optional: [
-        {
-          name: "TEST_TIMEOUT",
-          description: "Timeout in seconds",
-          default: "300",
-        },
-        {
-          name: "TEST_ORG",
-          description: "Default organization",
-          default: "atlas-dev",
-        },
+        { name: "TEST_TIMEOUT", description: "Timeout in seconds", default: "300" },
+        { name: "TEST_ORG", description: "Default organization", default: "atlas-dev" },
         {
           name: "TEST_DEBUG",
           description: "Debug mode",
@@ -89,11 +76,7 @@ Deno.test("Environment validation - success with optional variables and defaults
       ],
     };
 
-    const result = await validateEnvironment(
-      "test-workspace",
-      "test-agent",
-      config,
-    );
+    const result = await validateEnvironment("test-workspace", "test-agent", config);
 
     assertEquals(result.TEST_TIMEOUT, "600"); // From environment
     assertEquals(result.TEST_ORG, "atlas-dev"); // From default
@@ -112,26 +95,13 @@ Deno.test("Environment validation - success with mixed required and optional", a
     const validateEnvironment = createEnvironmentContext(mockLogger);
 
     const config: AgentEnvironmentConfig = {
-      required: [
-        {
-          name: "REQUIRED_VAR",
-          description: "Required variable",
-        },
-      ],
+      required: [{ name: "REQUIRED_VAR", description: "Required variable" }],
       optional: [
-        {
-          name: "OPTIONAL_VAR",
-          description: "Optional variable",
-          default: "default_value",
-        },
+        { name: "OPTIONAL_VAR", description: "Optional variable", default: "default_value" },
       ],
     };
 
-    const result = await validateEnvironment(
-      "test-workspace",
-      "test-agent",
-      config,
-    );
+    const result = await validateEnvironment("test-workspace", "test-agent", config);
 
     assertEquals(result.REQUIRED_VAR, "required_value");
     assertEquals(result.OPTIONAL_VAR, "default_value");
@@ -160,24 +130,13 @@ Deno.test("Environment validation - failure with missing required variables", as
 
   const config: AgentEnvironmentConfig = {
     required: [
-      {
-        name: "MISSING_VAR1",
-        description: "First missing variable",
-      },
-      {
-        name: "MISSING_VAR2",
-        description: "Second missing variable",
-      },
+      { name: "MISSING_VAR1", description: "First missing variable" },
+      { name: "MISSING_VAR2", description: "Second missing variable" },
     ],
   };
 
   await assertRejects(
-    () =>
-      validateEnvironment(
-        "test-workspace",
-        "test-agent",
-        config,
-      ),
+    () => validateEnvironment("test-workspace", "test-agent", config),
     Error,
     "Cannot execute test-agent in workspace 'test-workspace': Required environment variables not found: MISSING_VAR1, MISSING_VAR2. Please add these variables to your workspace .env file.",
   );
@@ -200,12 +159,7 @@ Deno.test("Environment validation - failure with regex validation", async () => 
     };
 
     await assertRejects(
-      () =>
-        validateEnvironment(
-          "test-workspace",
-          "test-agent",
-          config,
-        ),
+      () => validateEnvironment("test-workspace", "test-agent", config),
       Error,
       "Environment variable BAD_FORMAT_VAR failed validation pattern: ^sk_[a-zA-Z0-9]+$",
     );
@@ -232,12 +186,7 @@ Deno.test("Environment validation - failure with invalid regex pattern", async (
     };
 
     await assertRejects(
-      () =>
-        validateEnvironment(
-          "test-workspace",
-          "test-agent",
-          config,
-        ),
+      () => validateEnvironment("test-workspace", "test-agent", config),
       Error,
       "Invalid regex pattern for TEST_VAR: [invalid regex",
     );
@@ -255,31 +204,16 @@ Deno.test("Environment validation - mixed scenario (some missing, some present)"
 
     const config: AgentEnvironmentConfig = {
       required: [
-        {
-          name: "PRESENT_VAR",
-          description: "Variable that is present",
-        },
-        {
-          name: "MISSING_VAR",
-          description: "Variable that is missing",
-        },
+        { name: "PRESENT_VAR", description: "Variable that is present" },
+        { name: "MISSING_VAR", description: "Variable that is missing" },
       ],
       optional: [
-        {
-          name: "OPTIONAL_VAR",
-          description: "Optional variable",
-          default: "default_value",
-        },
+        { name: "OPTIONAL_VAR", description: "Optional variable", default: "default_value" },
       ],
     };
 
     await assertRejects(
-      () =>
-        validateEnvironment(
-          "test-workspace",
-          "test-agent",
-          config,
-        ),
+      () => validateEnvironment("test-workspace", "test-agent", config),
       Error,
       "Cannot execute test-agent in workspace 'test-workspace': Required environment variables not found: MISSING_VAR. Please add these variables to your workspace .env file.",
     );
@@ -292,26 +226,12 @@ Deno.test("Environment validation - mixed scenario (some missing, some present)"
 Deno.test("Environment help message generation", () => {
   const config: AgentEnvironmentConfig = {
     required: [
-      {
-        name: "API_KEY",
-        description: "API key for service",
-        validation: "^sk_[a-zA-Z0-9]+$",
-      },
-      {
-        name: "TOKEN",
-        description: "Authentication token",
-      },
+      { name: "API_KEY", description: "API key for service", validation: "^sk_[a-zA-Z0-9]+$" },
+      { name: "TOKEN", description: "Authentication token" },
     ],
     optional: [
-      {
-        name: "ORG",
-        description: "Organization name",
-        default: "default-org",
-      },
-      {
-        name: "DEBUG",
-        description: "Enable debug mode",
-      },
+      { name: "ORG", description: "Organization name", default: "default-org" },
+      { name: "DEBUG", description: "Enable debug mode" },
     ],
   };
 

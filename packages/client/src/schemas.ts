@@ -16,10 +16,7 @@ export const DaemonStatusSchema = z.object({
     external: z.number(),
   }),
   workspaces: z.array(z.string()),
-  configuration: z.object({
-    maxConcurrentWorkspaces: z.number(),
-    idleTimeoutMs: z.number(),
-  }),
+  configuration: z.object({ maxConcurrentWorkspaces: z.number(), idleTimeoutMs: z.number() }),
 });
 
 // Workspace schemas
@@ -44,10 +41,7 @@ export const WorkspaceDetailedInfoSchema = WorkspaceInfoSchema.extend({
   runtime: WorkspaceRuntimeSchema.optional(),
 });
 
-export const WorkspaceCreateResponseSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-});
+export const WorkspaceCreateResponseSchema = z.object({ id: z.string(), name: z.string() });
 
 export const WorkspaceAddRequestSchema = z.object({
   path: z.string(),
@@ -55,18 +49,11 @@ export const WorkspaceAddRequestSchema = z.object({
   description: z.string().optional(),
 });
 
-export const WorkspaceBatchAddRequestSchema = z.object({
-  paths: z.array(z.string()),
-});
+export const WorkspaceBatchAddRequestSchema = z.object({ paths: z.array(z.string()) });
 
 export const WorkspaceBatchAddResponseSchema = z.object({
   added: z.array(WorkspaceInfoSchema),
-  failed: z.array(
-    z.object({
-      path: z.string(),
-      error: z.string(),
-    }),
-  ),
+  failed: z.array(z.object({ path: z.string(), error: z.string() })),
 });
 
 // Session schemas
@@ -82,12 +69,7 @@ export const SessionInfoSchema = z.object({
 });
 
 export const SessionDetailedInfoSchema = SessionInfoSchema.extend({
-  artifacts: z.array(
-    z.object({
-      type: z.string(),
-      data: z.unknown(),
-    }),
-  ),
+  artifacts: z.array(z.object({ type: z.string(), data: z.unknown() })),
   results: z.unknown().optional(),
 });
 
@@ -110,9 +92,7 @@ export const LogEntrySchema = z.object({
   metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
-export const SessionLogsResponseSchema = z.object({
-  logs: z.array(LogEntrySchema),
-});
+export const SessionLogsResponseSchema = z.object({ logs: z.array(LogEntrySchema) });
 
 // Library schemas
 export const LibraryItemSchema = z.object({
@@ -183,9 +163,7 @@ export const LibraryItemWithContentSchema = z.object({
 });
 
 // Signal schemas
-export const SignalInfoSchema = z.object({
-  description: z.string().optional(),
-});
+export const SignalInfoSchema = z.object({ description: z.string().optional() });
 
 export const SignalDetailedInfoSchema = z.object({
   name: z.string(),
@@ -206,10 +184,7 @@ export const SignalDetailedInfoSchema = z.object({
   webhook_secret: z.string().optional(),
   timeout_ms: z.number().optional(),
   retry_config: z
-    .object({
-      max_retries: z.number().optional(),
-      retry_delay_ms: z.number().optional(),
-    })
+    .object({ max_retries: z.number().optional(), retry_delay_ms: z.number().optional() })
     .optional(),
 });
 
@@ -227,28 +202,15 @@ export const AgentInfoSchema = z.object({
   purpose: z.string().optional(),
 });
 
-export const JobInfoSchema = z.object({
-  name: z.string(),
-  description: z.string().optional(),
-});
+export const JobInfoSchema = z.object({ name: z.string(), description: z.string().optional() });
 
 export const JobDetailedInfoSchema = z.object({
   name: z.string(),
   description: z.string().optional(),
   task_template: z.string().optional(),
-  triggers: z
-    .array(
-      z.object({
-        signal: z.string(),
-        condition: z.string().optional(),
-      }),
-    )
-    .optional(),
+  triggers: z.array(z.object({ signal: z.string(), condition: z.string().optional() })).optional(),
   session_prompts: z
-    .object({
-      planning: z.string().optional(),
-      evaluation: z.string().optional(),
-    })
+    .object({ planning: z.string().optional(), evaluation: z.string().optional() })
     .optional(),
   execution: z.object({
     strategy: z.enum(["sequential", "parallel"]),
@@ -258,9 +220,7 @@ export const JobDetailedInfoSchema = z.object({
         z.object({
           id: z.string(),
           task: z.string().optional(),
-          input_source: z
-            .enum(["signal", "previous", "combined", "filesystem_context"])
-            .optional(),
+          input_source: z.enum(["signal", "previous", "combined", "filesystem_context"]).optional(),
           dependencies: z.array(z.string()).optional(),
           tools: z.array(z.string()).optional(),
         }),
@@ -277,10 +237,7 @@ export const JobDetailedInfoSchema = z.object({
           })
           .optional(),
         memory: z
-          .object({
-            recall_limit: z.number().optional(),
-            strategy: z.string().optional(),
-          })
+          .object({ recall_limit: z.number().optional(), strategy: z.string().optional() })
           .optional(),
       })
       .optional(),
@@ -314,9 +271,7 @@ export const WorkspaceTemplateInfoSchema = z.object({
   tags: z.array(z.string()).optional(),
 });
 
-export const WorkspaceTemplateListResponseSchema = z.array(
-  WorkspaceTemplateInfoSchema,
-);
+export const WorkspaceTemplateListResponseSchema = z.array(WorkspaceTemplateInfoSchema);
 
 export const CreateWorkspaceFromTemplateRequestSchema = z.object({
   templateId: z.string(),
@@ -333,10 +288,6 @@ export const CreateWorkspaceFromTemplateResponseSchema = z.object({
 });
 
 // Generic response schemas
-export const MessageResponseSchema = z.object({
-  message: z.string(),
-});
+export const MessageResponseSchema = z.object({ message: z.string() });
 
-export const DeleteResponseSchema = z.object({
-  message: z.string(),
-});
+export const DeleteResponseSchema = z.object({ message: z.string() });

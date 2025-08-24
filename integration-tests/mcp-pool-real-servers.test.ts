@@ -53,10 +53,10 @@
  *   - Tools: get_current_time, convert_time
  */
 
-import { assertEquals, assertExists } from "@std/assert";
-import { GlobalMCPServerPool } from "@atlas/core";
 import type { MCPServerConfig } from "@atlas/config";
+import { GlobalMCPServerPool } from "@atlas/core";
 import { logger } from "@atlas/logger";
+import { assertEquals, assertExists } from "@std/assert";
 
 Deno.env.set("DENO_TESTING", "true");
 
@@ -81,21 +81,10 @@ function createEchoServerConfig(): MCPServerConfig {
     transport: {
       type: "stdio",
       command: "deno",
-      args: [
-        "run",
-        "--allow-all",
-        "./integration-tests/fixtures/echo-mcp-server.ts",
-      ],
+      args: ["run", "--allow-all", "./integration-tests/fixtures/echo-mcp-server.ts"],
     },
-    tools: {
-      allow: ["echo", "reverse", "uppercase"],
-    },
-    client_config: {
-      timeout: {
-        progressTimeout: "10s",
-        maxTotalTimeout: "30s",
-      },
-    },
+    tools: { allow: ["echo", "reverse", "uppercase"] },
+    client_config: { timeout: { progressTimeout: "10s", maxTotalTimeout: "30s" } },
   };
 }
 
@@ -109,9 +98,7 @@ function createInvalidServerConfig(): MCPServerConfig {
       command: "nonexistent-command-that-will-fail",
       args: ["--invalid-arg"],
     },
-    tools: {
-      allow: ["*"],
-    },
+    tools: { allow: ["*"] },
   } as MCPServerConfig;
 }
 
@@ -141,15 +128,8 @@ function createTimeServerConfig(): MCPServerConfig {
       command: "uvx",
       args: ["mcp-server-time", "--local-timezone", "UTC"],
     },
-    tools: {
-      allow: ["get_current_time", "convert_time"],
-    },
-    client_config: {
-      timeout: {
-        progressTimeout: "10s",
-        maxTotalTimeout: "30s",
-      },
-    },
+    tools: { allow: ["get_current_time", "convert_time"] },
+    client_config: { timeout: { progressTimeout: "10s", maxTotalTimeout: "30s" } },
   };
 }
 
@@ -157,325 +137,313 @@ function createTimeServerConfig(): MCPServerConfig {
 // Echo Server Connection and Tool Execution Tests
 // =============================================================================
 
-Deno.test("should connect to echo server and discover tools", {
-  sanitizeOps: false,
-  sanitizeResources: false,
-}, async () => {
-  const pool = setupFreshTest();
+Deno.test(
+  "should connect to echo server and discover tools",
+  { sanitizeOps: false, sanitizeResources: false },
+  async () => {
+    const pool = setupFreshTest();
 
-  const config = {
-    "echo": createEchoServerConfig(),
-  };
+    const config = { echo: createEchoServerConfig() };
 
-  const manager = await pool.getMCPManager(config);
-  assertExists(manager);
+    const manager = await pool.getMCPManager(config);
+    assertExists(manager);
 
-  // Verify the manager was created and cached
-  const stats = pool.getPoolStats();
-  assertEquals(stats.totalPooledManagers, 1);
-  assertEquals(stats.activeReferences, 1);
+    // Verify the manager was created and cached
+    const stats = pool.getPoolStats();
+    assertEquals(stats.totalPooledManagers, 1);
+    assertEquals(stats.activeReferences, 1);
 
-  // Get available tools from the manager
-  const tools = await manager.getToolsForServers(["echo"]);
-  assertExists(tools);
+    // Get available tools from the manager
+    const tools = await manager.getToolsForServers(["echo"]);
+    assertExists(tools);
 
-  // Should have our echo server tools
-  const toolNames = Object.keys(tools);
+    // Should have our echo server tools
+    const toolNames = Object.keys(tools);
 
-  // Verify tools were retrieved successfully
-  assertEquals(toolNames.length, 3);
-  assertEquals(toolNames.includes("echo"), true);
-  assertEquals(toolNames.includes("reverse"), true);
-  assertEquals(toolNames.includes("uppercase"), true);
+    // Verify tools were retrieved successfully
+    assertEquals(toolNames.length, 3);
+    assertEquals(toolNames.includes("echo"), true);
+    assertEquals(toolNames.includes("reverse"), true);
+    assertEquals(toolNames.includes("uppercase"), true);
 
-  pool.releaseMCPManager(config);
-  await cleanupPool(pool);
-});
+    pool.releaseMCPManager(config);
+    await cleanupPool(pool);
+  },
+);
 
-Deno.test("should reuse connection for same server config", {
-  sanitizeOps: false,
-  sanitizeResources: false,
-}, async () => {
-  const pool = setupFreshTest();
+Deno.test(
+  "should reuse connection for same server config",
+  { sanitizeOps: false, sanitizeResources: false },
+  async () => {
+    const pool = setupFreshTest();
 
-  const config = {
-    "echo": createEchoServerConfig(),
-  };
+    const config = { echo: createEchoServerConfig() };
 
-  // Get manager twice
-  const manager1 = await pool.getMCPManager(config);
-  const manager2 = await pool.getMCPManager(config);
+    // Get manager twice
+    const manager1 = await pool.getMCPManager(config);
+    const manager2 = await pool.getMCPManager(config);
 
-  // Should be the same manager instance (connection reuse)
-  assertEquals(manager1, manager2);
+    // Should be the same manager instance (connection reuse)
+    assertEquals(manager1, manager2);
 
-  const stats = pool.getPoolStats();
-  assertEquals(stats.totalPooledManagers, 1); // Still only one pool entry
-  assertEquals(stats.activeReferences, 2); // But two active references
+    const stats = pool.getPoolStats();
+    assertEquals(stats.totalPooledManagers, 1); // Still only one pool entry
+    assertEquals(stats.activeReferences, 2); // But two active references
 
-  pool.releaseMCPManager(config);
-  pool.releaseMCPManager(config);
-  await cleanupPool(pool);
-});
+    pool.releaseMCPManager(config);
+    pool.releaseMCPManager(config);
+    await cleanupPool(pool);
+  },
+);
 
 // =============================================================================
 // Multiple Server Configuration Tests
 // =============================================================================
 
-Deno.test("should handle multiple echo servers with different IDs", {
-  sanitizeOps: false,
-  sanitizeResources: false,
-}, async () => {
-  const pool = setupFreshTest();
+Deno.test(
+  "should handle multiple echo servers with different IDs",
+  { sanitizeOps: false, sanitizeResources: false },
+  async () => {
+    const pool = setupFreshTest();
 
-  const config = {
-    "echo1": createEchoServerConfig(),
-    "echo2": createEchoServerConfig(),
-  };
+    const config = { echo1: createEchoServerConfig(), echo2: createEchoServerConfig() };
 
-  const manager = await pool.getMCPManager(config);
-  assertExists(manager);
+    const manager = await pool.getMCPManager(config);
+    assertExists(manager);
 
-  const stats = pool.getPoolStats();
-  assertEquals(stats.totalPooledManagers, 1);
-  assertEquals(stats.serverConfigurations[0]?.serverCount, 2);
+    const stats = pool.getPoolStats();
+    assertEquals(stats.totalPooledManagers, 1);
+    assertEquals(stats.serverConfigurations[0]?.serverCount, 2);
 
-  // Get tools from both servers
-  const tools = await manager.getToolsForServers(["echo1", "echo2"]);
-  assertExists(tools);
+    // Get tools from both servers
+    const tools = await manager.getToolsForServers(["echo1", "echo2"]);
+    assertExists(tools);
 
-  pool.releaseMCPManager(config);
-  await cleanupPool(pool);
-});
+    pool.releaseMCPManager(config);
+    await cleanupPool(pool);
+  },
+);
 
-Deno.test("should create separate pools for different server combinations", {
-  sanitizeOps: false,
-  sanitizeResources: false,
-}, async () => {
-  const pool = setupFreshTest();
+Deno.test(
+  "should create separate pools for different server combinations",
+  { sanitizeOps: false, sanitizeResources: false },
+  async () => {
+    const pool = setupFreshTest();
 
-  const config1 = { "echo": createEchoServerConfig() };
-  const config2 = { "echo-diff": createEchoServerConfig() };
+    const config1 = { echo: createEchoServerConfig() };
+    const config2 = { "echo-diff": createEchoServerConfig() };
 
-  const manager1 = await pool.getMCPManager(config1);
-  const manager2 = await pool.getMCPManager(config2);
+    const manager1 = await pool.getMCPManager(config1);
+    const manager2 = await pool.getMCPManager(config2);
 
-  // Should be different managers (different server IDs = different pool keys)
-  assertEquals(manager1 === manager2, false);
+    // Should be different managers (different server IDs = different pool keys)
+    assertEquals(manager1 === manager2, false);
 
-  const stats = pool.getPoolStats();
-  assertEquals(stats.totalPooledManagers, 2);
+    const stats = pool.getPoolStats();
+    assertEquals(stats.totalPooledManagers, 2);
 
-  pool.releaseMCPManager(config1);
-  pool.releaseMCPManager(config2);
-  await cleanupPool(pool);
-});
+    pool.releaseMCPManager(config1);
+    pool.releaseMCPManager(config2);
+    await cleanupPool(pool);
+  },
+);
 
 // =============================================================================
 // Time Server Integration Tests (conditional on uvx availability)
 // =============================================================================
 
-Deno.test("should connect to time server (if uvx available)", {
-  sanitizeOps: false,
-  sanitizeResources: false,
-}, async () => {
-  const uvxAvailable = await checkUvxAvailable();
-  if (!uvxAvailable) {
-    // Skip time server tests when uvx is not available
-    return;
-  }
+Deno.test(
+  "should connect to time server (if uvx available)",
+  { sanitizeOps: false, sanitizeResources: false },
+  async () => {
+    const uvxAvailable = await checkUvxAvailable();
+    if (!uvxAvailable) {
+      // Skip time server tests when uvx is not available
+      return;
+    }
 
-  const pool = setupFreshTest();
+    const pool = setupFreshTest();
 
-  const config = {
-    "time": createTimeServerConfig(),
-  };
+    const config = { time: createTimeServerConfig() };
 
-  const manager = await pool.getMCPManager(config);
-  assertExists(manager);
+    const manager = await pool.getMCPManager(config);
+    assertExists(manager);
 
-  // Get tools to verify connection
-  const tools = await manager.getToolsForServers(["time"]);
-  assertExists(tools);
+    // Get tools to verify connection
+    const tools = await manager.getToolsForServers(["time"]);
+    assertExists(tools);
 
-  pool.releaseMCPManager(config);
-  await cleanupPool(pool);
-});
+    pool.releaseMCPManager(config);
+    await cleanupPool(pool);
+  },
+);
 
-Deno.test("should handle mixed echo and time servers (if uvx available)", {
-  sanitizeOps: false,
-  sanitizeResources: false,
-}, async () => {
-  const uvxAvailable = await checkUvxAvailable();
-  if (!uvxAvailable) {
-    // Skip time server tests when uvx is not available
-    return;
-  }
+Deno.test(
+  "should handle mixed echo and time servers (if uvx available)",
+  { sanitizeOps: false, sanitizeResources: false },
+  async () => {
+    const uvxAvailable = await checkUvxAvailable();
+    if (!uvxAvailable) {
+      // Skip time server tests when uvx is not available
+      return;
+    }
 
-  const pool = setupFreshTest();
+    const pool = setupFreshTest();
 
-  const config = {
-    "echo": createEchoServerConfig(),
-    "time": createTimeServerConfig(),
-  };
+    const config = { echo: createEchoServerConfig(), time: createTimeServerConfig() };
 
-  const manager = await pool.getMCPManager(config);
-  assertExists(manager);
+    const manager = await pool.getMCPManager(config);
+    assertExists(manager);
 
-  const stats = pool.getPoolStats();
-  assertEquals(stats.serverConfigurations[0]?.serverCount, 2);
+    const stats = pool.getPoolStats();
+    assertEquals(stats.serverConfigurations[0]?.serverCount, 2);
 
-  // Should be able to get tools from both
-  const echoTools = await manager.getToolsForServers(["echo"]);
-  const timeTools = await manager.getToolsForServers(["time"]);
-  const allTools = await manager.getToolsForServers(["echo", "time"]);
+    // Should be able to get tools from both
+    const echoTools = await manager.getToolsForServers(["echo"]);
+    const timeTools = await manager.getToolsForServers(["time"]);
+    const allTools = await manager.getToolsForServers(["echo", "time"]);
 
-  assertExists(echoTools);
-  assertExists(timeTools);
-  assertExists(allTools);
+    assertExists(echoTools);
+    assertExists(timeTools);
+    assertExists(allTools);
 
-  pool.releaseMCPManager(config);
-  await cleanupPool(pool);
-});
+    pool.releaseMCPManager(config);
+    await cleanupPool(pool);
+  },
+);
 
 // =============================================================================
 // Error Handling with Real Processes Tests
 // =============================================================================
 
-Deno.test("should handle server startup failures gracefully", {
-  sanitizeOps: false,
-  sanitizeResources: false,
-}, async () => {
-  const pool = setupFreshTest();
+Deno.test(
+  "should handle server startup failures gracefully",
+  { sanitizeOps: false, sanitizeResources: false },
+  async () => {
+    const pool = setupFreshTest();
 
-  const config = {
-    "invalid": createInvalidServerConfig(),
-  };
+    const config = { invalid: createInvalidServerConfig() };
 
-  // Should not throw, but will log errors
-  const manager = await pool.getMCPManager(config);
-  assertExists(manager);
+    // Should not throw, but will log errors
+    const manager = await pool.getMCPManager(config);
+    assertExists(manager);
 
-  // Manager should still be created even with invalid servers
-  const stats = pool.getPoolStats();
-  assertEquals(stats.totalPooledManagers, 1);
+    // Manager should still be created even with invalid servers
+    const stats = pool.getPoolStats();
+    assertEquals(stats.totalPooledManagers, 1);
 
-  pool.releaseMCPManager(config);
-  await cleanupPool(pool);
-});
+    pool.releaseMCPManager(config);
+    await cleanupPool(pool);
+  },
+);
 
-Deno.test("should handle mixed valid/invalid servers", {
-  sanitizeOps: false,
-  sanitizeResources: false,
-}, async () => {
-  const pool = setupFreshTest();
+Deno.test(
+  "should handle mixed valid/invalid servers",
+  { sanitizeOps: false, sanitizeResources: false },
+  async () => {
+    const pool = setupFreshTest();
 
-  const config = {
-    "echo": createEchoServerConfig(),
-    "invalid": createInvalidServerConfig(),
-  };
+    const config = { echo: createEchoServerConfig(), invalid: createInvalidServerConfig() };
 
-  const manager = await pool.getMCPManager(config);
-  assertExists(manager);
+    const manager = await pool.getMCPManager(config);
+    assertExists(manager);
 
-  // Should still be able to get tools from valid server
-  const tools = await manager.getToolsForServers(["echo"]);
-  assertExists(tools);
+    // Should still be able to get tools from valid server
+    const tools = await manager.getToolsForServers(["echo"]);
+    assertExists(tools);
 
-  // Should have tools from the valid server
-  const toolNames = Object.keys(tools);
-  assertEquals(toolNames.length, 3);
-  assertEquals(toolNames.includes("echo"), true);
+    // Should have tools from the valid server
+    const toolNames = Object.keys(tools);
+    assertEquals(toolNames.length, 3);
+    assertEquals(toolNames.includes("echo"), true);
 
-  pool.releaseMCPManager(config);
-  await cleanupPool(pool);
-});
+    pool.releaseMCPManager(config);
+    await cleanupPool(pool);
+  },
+);
 
 // =============================================================================
 // Pool Lifecycle and Cleanup Tests
 // =============================================================================
 
-Deno.test("should properly clean up all connections on dispose", {
-  sanitizeOps: false,
-  sanitizeResources: false,
-}, async () => {
-  const pool = setupFreshTest();
+Deno.test(
+  "should properly clean up all connections on dispose",
+  { sanitizeOps: false, sanitizeResources: false },
+  async () => {
+    const pool = setupFreshTest();
 
-  const config1 = { "echo1": createEchoServerConfig() };
-  const config2 = { "echo2": createEchoServerConfig() };
+    const config1 = { echo1: createEchoServerConfig() };
+    const config2 = { echo2: createEchoServerConfig() };
 
-  await pool.getMCPManager(config1);
-  await pool.getMCPManager(config2);
+    await pool.getMCPManager(config1);
+    await pool.getMCPManager(config2);
 
-  let stats = pool.getPoolStats();
-  assertEquals(stats.totalPooledManagers, 2);
+    let stats = pool.getPoolStats();
+    assertEquals(stats.totalPooledManagers, 2);
 
-  // Dispose should clean up everything
-  await pool.dispose();
+    // Dispose should clean up everything
+    await pool.dispose();
 
-  stats = pool.getPoolStats();
-  assertEquals(stats.totalPooledManagers, 0);
-  assertEquals(stats.activeReferences, 0);
+    stats = pool.getPoolStats();
+    assertEquals(stats.totalPooledManagers, 0);
+    assertEquals(stats.activeReferences, 0);
 
-  // Verify pool is empty after disposal
-  assertEquals(stats.totalPooledManagers, 0);
-  assertEquals(stats.activeReferences, 0);
-});
+    // Verify pool is empty after disposal
+    assertEquals(stats.totalPooledManagers, 0);
+    assertEquals(stats.activeReferences, 0);
+  },
+);
 
 // =============================================================================
 // Connection Key Generation Consistency Tests
 // =============================================================================
 
-Deno.test("should generate consistent keys for identical configs", {
-  sanitizeOps: false,
-  sanitizeResources: false,
-}, async () => {
-  const pool = setupFreshTest();
+Deno.test(
+  "should generate consistent keys for identical configs",
+  { sanitizeOps: false, sanitizeResources: false },
+  async () => {
+    const pool = setupFreshTest();
 
-  const config1 = { "echo": createEchoServerConfig() };
-  const config2 = { "echo": createEchoServerConfig() };
+    const config1 = { echo: createEchoServerConfig() };
+    const config2 = { echo: createEchoServerConfig() };
 
-  const manager1 = await pool.getMCPManager(config1);
-  const manager2 = await pool.getMCPManager(config2);
+    const manager1 = await pool.getMCPManager(config1);
+    const manager2 = await pool.getMCPManager(config2);
 
-  // Should reuse the same manager (identical configs)
-  assertEquals(manager1, manager2);
+    // Should reuse the same manager (identical configs)
+    assertEquals(manager1, manager2);
 
-  const stats = pool.getPoolStats();
-  assertEquals(stats.totalPooledManagers, 1);
-  assertEquals(stats.activeReferences, 2);
+    const stats = pool.getPoolStats();
+    assertEquals(stats.totalPooledManagers, 1);
+    assertEquals(stats.activeReferences, 2);
 
-  pool.releaseMCPManager(config1);
-  pool.releaseMCPManager(config2);
-  await cleanupPool(pool);
-});
+    pool.releaseMCPManager(config1);
+    pool.releaseMCPManager(config2);
+    await cleanupPool(pool);
+  },
+);
 
-Deno.test("should handle server ordering in keys", {
-  sanitizeOps: false,
-  sanitizeResources: false,
-}, async () => {
-  const pool = setupFreshTest();
+Deno.test(
+  "should handle server ordering in keys",
+  { sanitizeOps: false, sanitizeResources: false },
+  async () => {
+    const pool = setupFreshTest();
 
-  // Create separate config objects to avoid reference issues
-  const config1 = {
-    "a": createEchoServerConfig(),
-    "b": createEchoServerConfig(),
-  };
-  const config2 = {
-    "b": createEchoServerConfig(),
-    "a": createEchoServerConfig(),
-  };
+    // Create separate config objects to avoid reference issues
+    const config1 = { a: createEchoServerConfig(), b: createEchoServerConfig() };
+    const config2 = { b: createEchoServerConfig(), a: createEchoServerConfig() };
 
-  const manager1 = await pool.getMCPManager(config1);
-  const manager2 = await pool.getMCPManager(config2);
+    const manager1 = await pool.getMCPManager(config1);
+    const manager2 = await pool.getMCPManager(config2);
 
-  // Should reuse same manager (same servers, different order)
-  assertEquals(manager1, manager2);
+    // Should reuse same manager (same servers, different order)
+    assertEquals(manager1, manager2);
 
-  const stats = pool.getPoolStats();
-  assertEquals(stats.totalPooledManagers, 1);
+    const stats = pool.getPoolStats();
+    assertEquals(stats.totalPooledManagers, 1);
 
-  pool.releaseMCPManager(config1);
-  pool.releaseMCPManager(config2);
-  await cleanupPool(pool);
-});
+    pool.releaseMCPManager(config1);
+    pool.releaseMCPManager(config2);
+    await cleanupPool(pool);
+  },
+);

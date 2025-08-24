@@ -3,15 +3,12 @@
  * Searches library items within a workspace through the daemon API
  */
 
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { PromptContext } from "../types.ts";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { createSuccessResponse } from "../types.ts";
 
-export function registerLibrarySearchPrompt(
-  server: McpServer,
-  ctx: PromptContext,
-) {
+export function registerLibrarySearchPrompt(server: McpServer, ctx: PromptContext) {
   server.registerPrompt(
     "library_search",
     {
@@ -22,19 +19,11 @@ export function registerLibrarySearchPrompt(
         workspaceId: z.string().describe("Workspace ID to search within"),
         query: z.string().describe("Search query to find library items"),
         category: z.string().optional().describe("Filter results by category"),
-        limit: z
-          .string()
-          .optional()
-          .describe("Maximum number of results to return"),
+        limit: z.string().optional().describe("Maximum number of results to return"),
       },
     },
     ({ workspaceId, query, category, limit }) => {
-      ctx.logger.info("MCP library_search called", {
-        workspaceId,
-        query,
-        category,
-        limit,
-      });
+      ctx.logger.info("MCP library_search called", { workspaceId, query, category, limit });
 
       const categoryFilter = category ? ` in category ${category}` : "";
       const limitFilter = limit ? ` (limit ${limit} results)` : "";

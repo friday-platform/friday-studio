@@ -1,16 +1,11 @@
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { expandGlob } from "@std/fs";
+import * as path from "@std/path";
 import { z } from "zod";
 import type { ToolContext } from "../types.ts";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { createSuccessResponse } from "../types.ts";
-import * as path from "@std/path";
-import { expandGlob } from "@std/fs";
 
-export const IGNORE_PATTERNS = [
-  "node_modules/",
-  ".git/",
-  "dist/",
-  "build/",
-];
+export const IGNORE_PATTERNS = ["node_modules/", ".git/", "dist/", "build/"];
 
 const LIMIT = 100;
 
@@ -21,12 +16,11 @@ export function registerLsTool(server: McpServer, _ctx: ToolContext) {
       description:
         "Lists files and directories in a given path. The path parameter can be either absolute or relative. You can optionally provide an array of glob patterns to ignore with the ignore parameter. You should generally prefer the Glob and Grep tools, if you know which directories to search.",
       inputSchema: {
-        path: z.string().optional().describe(
-          "The path to the directory to list (can be absolute or relative)",
-        ),
-        ignore: z.array(z.string()).optional().describe(
-          "List of glob patterns to ignore",
-        ),
+        path: z
+          .string()
+          .optional()
+          .describe("The path to the directory to list (can be absolute or relative)"),
+        ignore: z.array(z.string()).optional().describe("List of glob patterns to ignore"),
       },
     },
     async (params) => {
@@ -35,13 +29,11 @@ export function registerLsTool(server: McpServer, _ctx: ToolContext) {
       const files = [];
 
       // Directory scanning with glob pattern
-      for await (
-        const entry of expandGlob("**/*", {
-          root: searchPath,
-          includeDirs: true,
-          globstar: true,
-        })
-      ) {
+      for await (const entry of expandGlob("**/*", {
+        root: searchPath,
+        includeDirs: true,
+        globstar: true,
+      })) {
         // Get relative path from search path
         const file = path.relative(searchPath, entry.path);
 
@@ -53,7 +45,8 @@ export function registerLsTool(server: McpServer, _ctx: ToolContext) {
             const regexp = path.globToRegExp(pattern);
             return regexp.test(file);
           })
-        ) continue;
+        )
+          continue;
 
         files.push(file);
         if (files.length >= LIMIT) break;
@@ -109,10 +102,7 @@ export function registerLsTool(server: McpServer, _ctx: ToolContext) {
 
       return createSuccessResponse({
         title: path.relative(Deno.cwd(), searchPath),
-        metadata: {
-          count: files.length,
-          truncated: files.length >= LIMIT,
-        },
+        metadata: { count: files.length, truncated: files.length >= LIMIT },
         output,
       });
     },

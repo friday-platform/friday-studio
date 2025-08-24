@@ -82,11 +82,7 @@ export interface ExtractedFact {
     | "project_info"
     | "general_fact";
   statement: string;
-  entities: {
-    type: KnowledgeEntityType;
-    name: string;
-    attributes: Record<string, any>;
-  }[];
+  entities: { type: KnowledgeEntityType; name: string; attributes: Record<string, any> }[];
   relationships: {
     type: KnowledgeRelationType;
     source: string;
@@ -218,7 +214,9 @@ export class KnowledgeGraphManager {
   }
 
   // Query knowledge graph
-  async queryKnowledge(query: KnowledgeGraphQuery): Promise<{
+  async queryKnowledge(
+    query: KnowledgeGraphQuery,
+  ): Promise<{
     entities: KnowledgeEntity[];
     relationships: KnowledgeRelationship[];
     facts: KnowledgeFact[];
@@ -245,12 +243,10 @@ export class KnowledgeGraphManager {
 
     if (entities.length === 0) return [];
 
-    const facts = await this.storageAdapter.queryFacts({
-      workspaceId: this.workspaceId,
-    });
+    const facts = await this.storageAdapter.queryFacts({ workspaceId: this.workspaceId });
 
     return facts.filter((fact) =>
-      fact.entities.some((entity) => entity.name.toLowerCase() === entityName.toLowerCase())
+      fact.entities.some((entity) => entity.name.toLowerCase() === entityName.toLowerCase()),
     );
   }
 

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer } from "react";
-import { Option } from "./types.ts";
 import OptionMap from "./option-map.ts";
+import type { Option } from "./types.ts";
 
 type State = {
   optionMap: OptionMap;
@@ -57,12 +57,7 @@ const reducer = (state: State, action: Action): State => {
         // If we can't scroll, the window stays the same
       }
 
-      return {
-        ...state,
-        focusedValue: nextOption.value,
-        visibleFromIndex,
-        visibleToIndex,
-      };
+      return { ...state, focusedValue: nextOption.value, visibleFromIndex, visibleToIndex };
     }
 
     case "focus-previous-option": {
@@ -91,22 +86,13 @@ const reducer = (state: State, action: Action): State => {
         // If we can't scroll, the window stays the same
       }
 
-      return {
-        ...state,
-        focusedValue: previousOption.value,
-        visibleFromIndex,
-        visibleToIndex,
-      };
+      return { ...state, focusedValue: previousOption.value, visibleFromIndex, visibleToIndex };
     }
 
     case "select-focused-option": {
       if (!state.focusedValue) return state;
 
-      return {
-        ...state,
-        previousValue: state.value,
-        value: state.focusedValue,
-      };
+      return { ...state, previousValue: state.value, value: state.focusedValue };
     }
 
     case "reset": {
@@ -174,11 +160,7 @@ export const useSelectState = ({
 
   // Reset state when options change
   useEffect(() => {
-    const newState = createDefaultState({
-      visibleOptionCount,
-      defaultValue,
-      options,
-    });
+    const newState = createDefaultState({ visibleOptionCount, defaultValue, options });
 
     dispatch({ type: "reset", state: newState });
   }, [options, visibleOptionCount, defaultValue]);
@@ -205,11 +187,7 @@ export const useSelectState = ({
   const visibleOptions = useMemo(() => {
     return Array.from(state.optionMap.values())
       .slice(state.visibleFromIndex, state.visibleToIndex + 1)
-      .map((option) => ({
-        label: option.label,
-        value: option.value,
-        index: option.index,
-      }));
+      .map((option) => ({ label: option.label, value: option.value, index: option.index }));
   }, [state.optionMap, state.visibleFromIndex, state.visibleToIndex]);
 
   return {

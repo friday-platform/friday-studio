@@ -1,6 +1,6 @@
 import { assertEquals, assertExists } from "@std/assert";
-import { join } from "@std/path";
 import { ensureDir } from "@std/fs";
+import { join } from "@std/path";
 
 // Create a simple test that verifies the multi-workspace functionality
 Deno.test({
@@ -69,11 +69,15 @@ agents:
 
       // Test successful workspace setup
       assertEquals(
-        await Deno.stat(join(workspace1, "workspace.yml")).then(() => true).catch(() => false),
+        await Deno.stat(join(workspace1, "workspace.yml"))
+          .then(() => true)
+          .catch(() => false),
         true,
       );
       assertEquals(
-        await Deno.stat(join(workspace2, "workspace.yml")).then(() => true).catch(() => false),
+        await Deno.stat(join(workspace2, "workspace.yml"))
+          .then(() => true)
+          .catch(() => false),
         true,
       );
 
@@ -133,15 +137,16 @@ Deno.test({
     const start = Date.now();
 
     // Trigger all in parallel
-    const results = await Promise.all(
-      workspaces.map((ws, i) => mockTriggerSignal(ws, delays[i])),
-    );
+    const results = await Promise.all(workspaces.map((ws, i) => mockTriggerSignal(ws, delays[i])));
 
     const elapsed = Date.now() - start;
 
     // All should complete
     assertEquals(results.length, 3);
-    assertEquals(results.every((r) => r.success), true);
+    assertEquals(
+      results.every((r) => r.success),
+      true,
+    );
 
     // Should complete in roughly the time of the longest delay (not sum)
     // Allow some margin for execution overhead
@@ -229,11 +234,7 @@ Deno.test({
     const jsonOutput = {
       signal: "test-signal",
       timestamp: new Date().toISOString(),
-      summary: {
-        total: results.length,
-        successful: successful.length,
-        failed: failed.length,
-      },
+      summary: { total: results.length, successful: successful.length, failed: failed.length },
       results: results.map((r) => ({
         workspaceId: r.workspace.id,
         workspaceName: r.workspace.name,

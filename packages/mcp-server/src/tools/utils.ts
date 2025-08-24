@@ -299,10 +299,7 @@ export async function fetchWithTimeout(
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const response = await fetch(url, {
-      ...options,
-      signal: controller.signal,
-    });
+    const response = await fetch(url, { ...options, signal: controller.signal });
     clearTimeout(timeoutId);
     return response;
   } catch (error) {
@@ -313,11 +310,7 @@ export async function fetchWithTimeout(
       // deno-lint-ignore no-explicit-any
       timeoutError.code = -32000;
       // deno-lint-ignore no-explicit-any
-      timeoutError.details = {
-        url,
-        timeoutMs,
-        timestamp: new Date().toISOString(),
-      };
+      timeoutError.details = { url, timeoutMs, timestamp: new Date().toISOString() };
       throw timeoutError;
     }
 
@@ -345,7 +338,7 @@ export function isRetryableError(status: number): boolean {
  */
 export function calculateRetryDelay(retryCount: number): number {
   // Exponential backoff: 1s, 2s, 4s, 8s, etc. with jitter
-  const baseDelay = Math.pow(2, retryCount) * 1000;
+  const baseDelay = 2 ** retryCount * 1000;
   const jitter = Math.random() * 0.3 * baseDelay; // 30% jitter
   return Math.min(baseDelay + jitter, 30000); // Cap at 30 seconds
 }
@@ -386,10 +379,7 @@ export async function checkWorkspaceMCPEnabled(
     const workspace = await response.json();
     const mcpEnabled = workspace.config?.server?.mcp?.enabled ?? false;
 
-    logger.debug("Platform MCP: Checked workspace MCP settings", {
-      workspaceId,
-      mcpEnabled,
-    });
+    logger.debug("Platform MCP: Checked workspace MCP settings", { workspaceId, mcpEnabled });
 
     return mcpEnabled;
   } catch (error) {
@@ -441,20 +431,12 @@ export async function checkJobDiscoverable(
       const basePattern = isWildcard ? pattern.slice(0, -1) : pattern;
 
       if (isWildcard ? jobName.startsWith(basePattern) : jobName === pattern) {
-        logger.debug("Platform MCP: Job is discoverable", {
-          workspaceId,
-          jobName,
-          pattern,
-        });
+        logger.debug("Platform MCP: Job is discoverable", { workspaceId, jobName, pattern });
         return true;
       }
     }
 
-    logger.debug("Platform MCP: Job not discoverable", {
-      workspaceId,
-      jobName,
-      discoverableJobs,
-    });
+    logger.debug("Platform MCP: Job not discoverable", { workspaceId, jobName, discoverableJobs });
 
     return false;
   } catch (error) {
@@ -482,15 +464,7 @@ export function createSuccessResponse(data: unknown): {
   content: Array<{ type: "text"; text: string }>;
   isError?: false;
 } {
-  return {
-    content: [
-      {
-        type: "text",
-        text: JSON.stringify(data, null, 2),
-      },
-    ],
-    isError: false,
-  };
+  return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }], isError: false };
 }
 
 /**
@@ -499,22 +473,8 @@ export function createSuccessResponse(data: unknown): {
 export function createErrorResponse(
   message: string,
   details?: unknown,
-): {
-  content: Array<{ type: "text"; text: string }>;
-  isError: true;
-} {
-  const errorData = {
-    error: message,
-    ...(details && { details }),
-  };
+): { content: Array<{ type: "text"; text: string }>; isError: true } {
+  const errorData = { error: message, ...(details && { details }) };
 
-  return {
-    content: [
-      {
-        type: "text",
-        text: JSON.stringify(errorData, null, 2),
-      },
-    ],
-    isError: true,
-  };
+  return { content: [{ type: "text", text: JSON.stringify(errorData, null, 2) }], isError: true };
 }

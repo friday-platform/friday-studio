@@ -3,15 +3,12 @@
  * Lists available sessions within a workspace through the daemon API
  */
 
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { PromptContext } from "../types.ts";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { createSuccessResponse } from "../types.ts";
 
-export function registerSessionListPrompt(
-  server: McpServer,
-  ctx: PromptContext,
-) {
+export function registerSessionListPrompt(server: McpServer, ctx: PromptContext) {
   server.registerPrompt(
     "session_list",
     {
@@ -23,21 +20,12 @@ export function registerSessionListPrompt(
         status: z
           .string()
           .optional()
-          .describe(
-            "Filter by session status (active, completed, failed, etc.)",
-          ),
-        limit: z
-          .string()
-          .optional()
-          .describe("Maximum number of sessions to return"),
+          .describe("Filter by session status (active, completed, failed, etc.)"),
+        limit: z.string().optional().describe("Maximum number of sessions to return"),
       },
     },
     ({ workspaceId, status, limit }) => {
-      ctx.logger.info("MCP session_list called", {
-        workspaceId,
-        status,
-        limit,
-      });
+      ctx.logger.info("MCP session_list called", { workspaceId, status, limit });
 
       const statusFilter = status ? ` with status ${status}` : "";
       const limitFilter = limit ? ` (limit ${limit} results)` : "";

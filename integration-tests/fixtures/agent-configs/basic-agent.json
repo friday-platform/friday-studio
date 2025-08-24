@@ -6,10 +6,6 @@
   "expertise": {
     "domains": ["testing", "echo"],
     "capabilities": ["echo", "text manipulation"],
-    "examples": [
-      "echo hello world",
-      "reverse some text",
-      "make text uppercase"
-    ]
+    "examples": ["echo hello world", "reverse some text", "make text uppercase"]
   }
 }

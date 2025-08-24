@@ -1,18 +1,26 @@
+import { getAtlasDaemonUrl } from "@atlas/atlasd";
 import { ConfigLoader, type SupervisorDefaults, supervisorDefaultsWrapped } from "@atlas/config";
+import {
+  AgentRegistry,
+  AtlasAgentsMCPServer,
+  GlobalMCPServerPool,
+  WorkspaceSessionStatus,
+} from "@atlas/core";
 import {
   CronManager,
   type CronTimerConfig,
   type CronTimerSignalData,
   type WorkspaceWakeupCallback,
 } from "@atlas/cron";
+import { logger } from "@atlas/logger";
 import { PlatformMCPServer } from "@atlas/mcp-server";
 import { FilesystemConfigAdapter, FilesystemWorkspaceCreationAdapter } from "@atlas/storage";
-import { getAtlasDaemonUrl } from "@atlas/atlasd";
+import { WorkspaceManager } from "@atlas/workspace";
 import { StreamableHTTPTransport } from "@hono/mcp";
 import { dirname, join } from "@std/path";
-import { cors } from "hono/cors";
-import { AgentRegistry, AtlasAgentsMCPServer, GlobalMCPServerPool } from "@atlas/core";
+import { parse } from "@std/yaml";
 import type { Context, Next } from "hono";
+import { cors } from "hono/cors";
 import { DaemonCapabilityRegistry } from "../../../src/core/daemon-capabilities.ts";
 import type { LibrarySearchQuery } from "../../../src/core/library/types.ts";
 import {
@@ -22,22 +30,18 @@ import {
   StorageConfigs,
 } from "../../../src/core/storage/index.ts";
 import type { LibraryStorageAdapter } from "../../../src/core/storage/library-storage-adapter.ts";
-import { WorkspaceRuntime } from "../../../src/core/workspace-runtime.ts";
 import { Workspace } from "../../../src/core/workspace.ts";
+import { WorkspaceRuntime } from "../../../src/core/workspace-runtime.ts";
 import { WorkspaceMemberRole } from "../../../src/types/core.ts";
-import { logger } from "@atlas/logger";
-import { WorkspaceSessionStatus } from "@atlas/core";
+import { agents as agentsRoutes } from "../routes/agents/index.ts";
+import { conversationStorageRoutes } from "../routes/conversation-storage/index.ts";
 import { healthRoutes } from "../routes/health.ts";
 import { createOpenAPIHandlers } from "../routes/openapi.ts";
-import { workspacesRoutes } from "../routes/workspaces/index.ts";
-import { conversationStorageRoutes } from "../routes/conversation-storage/index.ts";
-import { todoStorageRoutes } from "../routes/todo-storage/index.ts";
 import { signalRoutes } from "../routes/signals/index.ts";
+import { todoStorageRoutes } from "../routes/todo-storage/index.ts";
 import { userRoutes } from "../routes/user/index.ts";
-import { agents as agentsRoutes } from "../routes/agents/index.ts";
+import { workspacesRoutes } from "../routes/workspaces/index.ts";
 import { type AppContext, createApp } from "./factory.ts";
-import { WorkspaceManager } from "@atlas/workspace";
-import { parse } from "@std/yaml";
 import { WorkspaceFileWatcher } from "./workspace-file-watcher.ts";
 
 export interface AtlasDaemonOptions {
@@ -126,9 +130,7 @@ export class AtlasDaemon implements AppContext {
 
   public getWorkspaceManager(): WorkspaceManager {
     if (!this.workspaceManager) {
-      throw new Error(
-        "WorkspaceManager not initialized. Call initialize() first.",
-      );
+      throw new Error("WorkspaceManager not initialized. Call initialize() first.");
     }
     return this.workspaceManager;
   }
@@ -167,15 +169,12 @@ export class AtlasDaemon implements AppContext {
 
     // Initialize LibraryStorage with hybrid storage
     logger.info("Initializing LibraryStorage...");
-    this.libraryStorage = await createLibraryStorage(
-      StorageConfigs.defaultKV(),
-      {
-        // Use XDG-compliant default location, but allow environment override
-        contentDir: Deno.env.get("ATLAS_LIBRARY_DIR"),
-        organizeByType: true,
-        organizeByDate: true,
-      },
-    );
+    this.libraryStorage = await createLibraryStorage(StorageConfigs.defaultKV(), {
+      // Use XDG-compliant default location, but allow environment override
+      contentDir: Deno.env.get("ATLAS_LIBRARY_DIR"),
+      organizeByType: true,
+      organizeByDate: true,
+    });
 
     // Initialize daemon-level capabilities
     logger.info("Initializing daemon capabilities...");
@@ -206,9 +205,7 @@ export class AtlasDaemon implements AppContext {
 
     // Initialize agent registry with bundled agents
     logger.info("Initializing agent registry...");
-    const agentRegistry = new AgentRegistry({
-      includeSystemAgents: true,
-    });
+    const agentRegistry = new AgentRegistry({ includeSystemAgents: true });
     await agentRegistry.initialize();
     logger.info("Agent registry initialized");
     this.agentRegistry = agentRegistry;
@@ -238,18 +235,11 @@ export class AtlasDaemon implements AppContext {
         const runtime = await this.getOrCreateWorkspaceRuntime(workspaceId);
 
         // Process the timer signal using triggerSignal which handles signal creation
-        await runtime.triggerSignal(
-          signalId,
-          { ...signalData.data },
-        );
+        await runtime.triggerSignal(signalId, { ...signalData.data });
 
         logger.info("Timer signal processed", { workspaceId, signalId });
       } catch (error) {
-        logger.error("Failed to process timer signal", {
-          error,
-          workspaceId,
-          signalId,
-        });
+        logger.error("Failed to process timer signal", { error, workspaceId, signalId });
 
         // Store error details and clean up immediately
         try {
@@ -262,7 +252,7 @@ export class AtlasDaemon implements AppContext {
               ...workspace?.metadata,
               lastError: error instanceof Error ? error.message : String(error),
               lastErrorAt: new Date().toISOString(),
-              failureCount: ((workspace?.metadata?.failureCount || 0) + 1),
+              failureCount: (workspace?.metadata?.failureCount || 0) + 1,
             },
           });
 
@@ -322,9 +312,7 @@ export class AtlasDaemon implements AppContext {
    */
   private getMCPServer(): PlatformMCPServer {
     if (!this.mcpServer) {
-      throw new Error(
-        "Platform MCP server not initialized. Call initialize() first.",
-      );
+      throw new Error("Platform MCP server not initialized. Call initialize() first.");
     }
     return this.mcpServer;
   }
@@ -332,10 +320,9 @@ export class AtlasDaemon implements AppContext {
   /**
    * Get or create per-session MCP server
    */
-  private async getOrCreateAgentSession(sessionId: string): Promise<{
-    server: AtlasAgentsMCPServer;
-    transport: StreamableHTTPTransport;
-  }> {
+  private async getOrCreateAgentSession(
+    sessionId: string,
+  ): Promise<{ server: AtlasAgentsMCPServer; transport: StreamableHTTPTransport }> {
     const existing = this.agentSessions.get(sessionId);
     if (existing) {
       existing.lastUsed = Date.now();
@@ -451,13 +438,7 @@ export class AtlasDaemon implements AppContext {
 
     // Setup CORS if configured
     if (this.options.cors) {
-      this.app.use(
-        "*",
-        cors({
-          origin: this.options.cors,
-          credentials: true,
-        }),
-      );
+      this.app.use("*", cors({ origin: this.options.cors, credentials: true }));
     }
 
     // Mount health routes
@@ -518,16 +499,8 @@ export class AtlasDaemon implements AppContext {
     // Add a single workspace by path
     this.app.post("/api/workspaces/add", async (c) => {
       try {
-        const body = (await c.req.json()) as {
-          path: string;
-          name?: string;
-          description?: string;
-        };
-        const {
-          path,
-          name: providedName,
-          description: providedDescription,
-        } = body;
+        const body = (await c.req.json()) as { path: string; name?: string; description?: string };
+        const { path, name: providedName, description: providedDescription } = body;
 
         if (!path) {
           return c.json({ error: "Path is required" }, 400);
@@ -582,24 +555,14 @@ export class AtlasDaemon implements AppContext {
         // Check if workspace already exists at this path
         const existingByPath = await manager.find({ path });
         if (existingByPath) {
-          return c.json(
-            {
-              error: `Workspace already registered at path: ${path}`,
-            },
-            409,
-          );
+          return c.json({ error: `Workspace already registered at path: ${path}` }, 409);
         }
 
         // If name is determined (provided or from config), check for naming conflicts
         if (workspaceName) {
           const existingByName = await manager.find({ name: workspaceName });
           if (existingByName) {
-            return c.json(
-              {
-                error: `Workspace with name '${workspaceName}' already exists`,
-              },
-              409,
-            );
+            return c.json({ error: `Workspace with name '${workspaceName}' already exists` }, 409);
           }
         }
 
@@ -657,14 +620,8 @@ export class AtlasDaemon implements AppContext {
             createdAt: string;
             lastSeen: string;
           }>;
-          failed: Array<{
-            path: string;
-            error: string;
-          }>;
-        } = {
-          added: [],
-          failed: [],
-        };
+          failed: Array<{ path: string; error: string }>;
+        } = { added: [], failed: [] };
 
         // Process paths with reasonable concurrency (5 parallel)
         const batchSize = 5;
@@ -677,18 +634,12 @@ export class AtlasDaemon implements AppContext {
               try {
                 stats = await Deno.stat(path);
               } catch {
-                results.failed.push({
-                  path,
-                  error: `Path not found: ${path}`,
-                });
+                results.failed.push({ path, error: `Path not found: ${path}` });
                 return;
               }
 
               if (!stats.isDirectory) {
-                results.failed.push({
-                  path,
-                  error: `Path is not a directory: ${path}`,
-                });
+                results.failed.push({ path, error: `Path is not a directory: ${path}` });
                 return;
               }
 
@@ -697,10 +648,7 @@ export class AtlasDaemon implements AppContext {
               try {
                 await Deno.stat(workspaceYmlPath);
               } catch {
-                results.failed.push({
-                  path,
-                  error: `workspace.yml not found in: ${path}`,
-                });
+                results.failed.push({ path, error: `workspace.yml not found in: ${path}` });
                 return;
               }
 
@@ -792,17 +740,11 @@ export class AtlasDaemon implements AppContext {
         const { name, description, config, path, cwd } = body;
 
         if (!name || !description || !config) {
-          return c.json(
-            { error: "name, description, and config are required" },
-            400,
-          );
+          return c.json({ error: "name, description, and config are required" }, 400);
         }
 
         if (!this.workspaceCreationAdapter) {
-          return c.json(
-            { error: "Workspace creation adapter not initialized" },
-            500,
-          );
+          return c.json({ error: "Workspace creation adapter not initialized" }, 500);
         }
 
         // Determine base path
@@ -825,17 +767,11 @@ export class AtlasDaemon implements AppContext {
         );
 
         // Write workspace files
-        await this.workspaceCreationAdapter.writeWorkspaceFiles(
-          workspacePath,
-          config,
-        );
+        await this.workspaceCreationAdapter.writeWorkspaceFiles(workspacePath, config);
 
         // Register the new workspace
         const manager = this.getWorkspaceManager();
-        const entry = await manager.registerWorkspace(workspacePath, {
-          name,
-          description,
-        });
+        const entry = await manager.registerWorkspace(workspacePath, { name, description });
 
         // Cron signals are now automatically registered via WorkspaceManager hooks
 
@@ -874,8 +810,7 @@ export class AtlasDaemon implements AppContext {
         // For now, return a placeholder response
         return c.json(
           {
-            message:
-              `Config refresh not implemented - refreshConfig method removed from WorkspaceManager`,
+            message: `Config refresh not implemented - refreshConfig method removed from WorkspaceManager`,
             workspaceId,
           },
           501,
@@ -903,8 +838,7 @@ export class AtlasDaemon implements AppContext {
         // For now, return a placeholder response
         return c.json(
           {
-            message:
-              `Atlas config refresh not implemented - refreshAtlasConfig method removed from WorkspaceManager`,
+            message: `Atlas config refresh not implemented - refreshAtlasConfig method removed from WorkspaceManager`,
           },
           501,
         );
@@ -988,9 +922,7 @@ export class AtlasDaemon implements AppContext {
 
           // Get execution results if available
           const artifacts = session.getArtifacts();
-          const resultsArtifact = artifacts.find(
-            (a) => a.type === "execution_results",
-          );
+          const resultsArtifact = artifacts.find((a) => a.type === "execution_results");
           if (resultsArtifact?.data) {
             sessionData.results = resultsArtifact.data.results;
             sessionData.summary = resultsArtifact.data.summary;
@@ -1013,16 +945,10 @@ export class AtlasDaemon implements AppContext {
         if (session) {
           try {
             await runtime.cancelSession(sessionId);
-            return c.json({
-              message: `Session ${sessionId} cancelled`,
-              workspaceId,
-            });
+            return c.json({ message: `Session ${sessionId} cancelled`, workspaceId });
           } catch (error) {
             logger.error("Failed to cancel session", { error, sessionId });
-            return c.json({
-              message: `Session ${sessionId} cancelled`,
-              workspaceId,
-            });
+            return c.json({ message: `Session ${sessionId} cancelled`, workspaceId });
           }
         }
       }
@@ -1062,11 +988,7 @@ export class AtlasDaemon implements AppContext {
         const agent = runtime.describeAgent(agentId);
         return c.json(agent);
       } catch (error) {
-        logger.error("Failed to describe agent", {
-          error,
-          workspaceId,
-          agentId,
-        });
+        logger.error("Failed to describe agent", { error, workspaceId, agentId });
         return c.json(
           {
             error: `Failed to describe agent: ${
@@ -1131,10 +1053,7 @@ export class AtlasDaemon implements AppContext {
         const sessions = await runtime.listSessions();
         return c.json(sessions);
       } catch (error) {
-        logger.error("Failed to list workspace sessions", {
-          error,
-          workspaceId,
-        });
+        logger.error("Failed to list workspace sessions", { error, workspaceId });
         return c.json(
           {
             error: `Failed to list workspace sessions: ${
@@ -1272,12 +1191,7 @@ export class AtlasDaemon implements AppContext {
         // This would need template engine integration
         // For now, return a simple response
         return c.json(
-          {
-            message: "Template generation not yet implemented",
-            templateId,
-            data,
-            options,
-          },
+          { message: "Template generation not yet implemented", templateId, data, options },
           501,
         );
       } catch (error) {
@@ -1312,10 +1226,7 @@ export class AtlasDaemon implements AppContext {
         }
 
         if (includeContent && "content" in result) {
-          return c.json({
-            item: result.item,
-            content: result.content,
-          });
+          return c.json({ item: result.item, content: result.content });
         } else {
           return c.json({ item: result.item });
         }
@@ -1498,9 +1409,7 @@ export class AtlasDaemon implements AppContext {
           // without a pre-existing Atlas Session ID.
           if (!sessionId && c.req.method === "POST") {
             const newSessionId = crypto.randomUUID();
-            logger.info("Creating new SSE session for Agent Server", {
-              sessionId: newSessionId,
-            });
+            logger.info("Creating new SSE session for Agent Server", { sessionId: newSessionId });
 
             // Create and store the session
             const { transport } = await this.getOrCreateAgentSession(newSessionId);
@@ -1523,17 +1432,13 @@ export class AtlasDaemon implements AppContext {
 
             // Track SSE connections for GET requests
             if (c.req.method === "GET") {
-              logger.info("Establishing SSE connection to Agent Server", {
-                sessionId,
-              });
+              logger.info("Establishing SSE connection to Agent Server", { sessionId });
               this.agentSSEConnections.add(sessionId);
             }
 
             // Handle DELETE specially - clean up after processing
             if (c.req.method === "DELETE") {
-              logger.info("Terminating Agent Server SSE session", {
-                sessionId,
-              });
+              logger.info("Terminating Agent Server SSE session", { sessionId });
               const response = await transport.handleRequest(c);
               await this.cleanupAgentSession(sessionId);
               return response;
@@ -1543,19 +1448,13 @@ export class AtlasDaemon implements AppContext {
             return transport.handleRequest(c);
           } else {
             // No session ID and not a POST request - this is an error
-            logger.error(
-              "[Daemon] Invalid request - no session ID for non-POST",
-              {
-                method: c.req.method,
-              },
-            );
+            logger.error("[Daemon] Invalid request - no session ID for non-POST", {
+              method: c.req.method,
+            });
             return c.json(
               {
                 jsonrpc: "2.0",
-                error: {
-                  code: -32000,
-                  message: "Session ID required for non-initialize requests",
-                },
+                error: { code: -32000, message: "Session ID required for non-initialize requests" },
                 id: null,
               },
               400,
@@ -1605,21 +1504,13 @@ export class AtlasDaemon implements AppContext {
         if (body.workspaceId && body.signal) {
           const runtime = this.runtimes.get(body.workspaceId);
           if (!runtime) {
-            return c.json(
-              { error: `Workspace not found: ${body.workspaceId}` },
-              404,
-            );
+            return c.json({ error: `Workspace not found: ${body.workspaceId}` }, 404);
           }
 
           // Trigger signal with streamId
-          runtime
-            .triggerSignal(body.signal, {
-              ...body,
-              streamId,
-            })
-            .catch((error) => {
-              logger.error("Signal trigger failed", { error });
-            });
+          runtime.triggerSignal(body.signal, { ...body, streamId }).catch((error) => {
+            logger.error("Signal trigger failed", { error });
+          });
         }
 
         return c.json({
@@ -1659,17 +1550,11 @@ export class AtlasDaemon implements AppContext {
           metadata,
         });
 
-        return c.json({
-          success: true,
-          message: "Reply streamed",
-          messageId: crypto.randomUUID(),
-        });
+        return c.json({ success: true, message: "Reply streamed", messageId: crypto.randomUUID() });
       } catch (error) {
         logger.error("Stream API error", { streamId, error });
         return c.json(
-          {
-            error: `Stream API error: ${error instanceof Error ? error.message : String(error)}`,
-          },
+          { error: `Stream API error: ${error instanceof Error ? error.message : String(error)}` },
           500,
         );
       }
@@ -1689,9 +1574,7 @@ export class AtlasDaemon implements AppContext {
       } catch (error) {
         logger.error("SSE emit error", { streamId, error });
         return c.json(
-          {
-            error: `SSE emit error: ${error instanceof Error ? error.message : String(error)}`,
-          },
+          { error: `SSE emit error: ${error instanceof Error ? error.message : String(error)}` },
           500,
         );
       }
@@ -1701,9 +1584,7 @@ export class AtlasDaemon implements AppContext {
   /**
    * Get or create a workspace runtime on-demand
    */
-  async getOrCreateWorkspaceRuntime(
-    workspaceId: string,
-  ): Promise<WorkspaceRuntime> {
+  async getOrCreateWorkspaceRuntime(workspaceId: string): Promise<WorkspaceRuntime> {
     try {
       logger.debug("getOrCreateWorkspaceRuntime called", { workspaceId });
 
@@ -1716,9 +1597,7 @@ export class AtlasDaemon implements AppContext {
       if (!this.mcpServerPool) {
         logger.warn(
           "MCP server pool not initialized - workspace runtime will have limited tool access",
-          {
-            workspaceId,
-          },
+          { workspaceId },
         );
       }
 
@@ -1754,24 +1633,17 @@ export class AtlasDaemon implements AppContext {
 
       // Check concurrent workspace limit
       if (this.runtimes.size >= this.options.maxConcurrentWorkspaces!) {
-        logger.warn(
-          "Maximum concurrent workspaces reached, attempting eviction",
-          {
-            maxConcurrentWorkspaces: this.options.maxConcurrentWorkspaces,
-          },
-        );
+        logger.warn("Maximum concurrent workspaces reached, attempting eviction", {
+          maxConcurrentWorkspaces: this.options.maxConcurrentWorkspaces,
+        });
         // Find the oldest idle workspace to evict
         const oldestWorkspace = this.findOldestIdleWorkspace();
         if (oldestWorkspace) {
-          logger.info("Evicting oldest idle workspace", {
-            workspaceId: oldestWorkspace,
-          });
+          logger.info("Evicting oldest idle workspace", { workspaceId: oldestWorkspace });
           await this.destroyWorkspaceRuntime(oldestWorkspace);
         } else {
           const error = "Maximum concurrent workspaces reached";
-          logger.error(error, {
-            maxConcurrentWorkspaces: this.options.maxConcurrentWorkspaces,
-          });
+          logger.error(error, { maxConcurrentWorkspaces: this.options.maxConcurrentWorkspaces });
           throw new Error(`${error} (${this.options.maxConcurrentWorkspaces})`);
         }
       }
@@ -1779,8 +1651,8 @@ export class AtlasDaemon implements AppContext {
       // Find workspace in registry (if not already found)
       logger.debug("Looking up workspace in registry", { workspaceId });
       if (!workspace) {
-        workspace = (await manager.find({ id: workspaceId })) ||
-          (await manager.find({ name: workspaceId }));
+        workspace =
+          (await manager.find({ id: workspaceId })) || (await manager.find({ name: workspaceId }));
       }
 
       if (!workspace) {
@@ -1801,29 +1673,20 @@ export class AtlasDaemon implements AppContext {
         try {
           const stat = await Deno.stat(workspace.path);
           if (!stat.isDirectory) {
-            throw new Error(
-              `Workspace path is not a directory: ${workspace.path}`,
-            );
+            throw new Error(`Workspace path is not a directory: ${workspace.path}`);
           }
         } catch (error) {
-          logger.error("Failed to access workspace path", {
-            error,
-            workspacePath: workspace.path,
-          });
+          logger.error("Failed to access workspace path", { error, workspacePath: workspace.path });
           throw new Error(`Workspace path does not exist: ${workspace.path}`);
         }
       } else {
-        logger.debug("Loading system workspace", {
-          workspaceId: workspace.id,
-        });
+        logger.debug("Loading system workspace", { workspaceId: workspace.id });
       }
 
       // Load configuration using the new WorkspaceManager
       const mergedConfig = await manager.getWorkspaceConfig(workspace.id);
       if (!mergedConfig) {
-        throw new Error(
-          `Failed to load workspace configuration: ${workspace.id}`,
-        );
+        throw new Error(`Failed to load workspace configuration: ${workspace.id}`);
       }
 
       logger.debug("Workspace configuration loaded", {
@@ -1868,12 +1731,7 @@ export class AtlasDaemon implements AppContext {
             await mgr.updateWorkspaceStatus(workspaceId, "inactive", {
               metadata: {
                 ...ws?.metadata,
-                lastFinishedSession: {
-                  id: sessionId,
-                  status,
-                  finishedAt,
-                  summary,
-                },
+                lastFinishedSession: { id: sessionId, status, finishedAt, summary },
               },
             });
 
@@ -1881,9 +1739,10 @@ export class AtlasDaemon implements AppContext {
             const currentRuntime = this.runtimes.get(workspaceId);
             if (currentRuntime) {
               const sessions = currentRuntime.getSessions();
-              const hasActive = sessions.some((s) =>
-                s.status === WorkspaceSessionStatus.EXECUTING ||
-                s.status === WorkspaceSessionStatus.PENDING
+              const hasActive = sessions.some(
+                (s) =>
+                  s.status === WorkspaceSessionStatus.EXECUTING ||
+                  s.status === WorkspaceSessionStatus.PENDING,
               );
 
               if (!hasActive) {
@@ -1905,39 +1764,27 @@ export class AtlasDaemon implements AppContext {
       logger.debug("WorkspaceRuntime created", { workspaceId: workspace.id });
 
       this.runtimes.set(workspace.id, runtime);
-      logger.debug("Runtime stored in daemon registry", {
-        workspaceId: workspace.id,
-      });
+      logger.debug("Runtime stored in daemon registry", { workspaceId: workspace.id });
 
       // Register runtime with WorkspaceManager
       await manager.registerRuntime(workspace.id, runtime);
-      logger.debug("Runtime registered with WorkspaceManager", {
-        workspaceId: workspace.id,
-      });
+      logger.debug("Runtime registered with WorkspaceManager", { workspaceId: workspace.id });
 
       // Start watching workspace configuration file if not a system workspace
       if (this.fileWatcher && !workspace.metadata?.system) {
         await this.fileWatcher.watchWorkspace(workspace);
-        logger.debug("Started watching workspace configuration", {
-          workspaceId: workspace.id,
-        });
+        logger.debug("Started watching workspace configuration", { workspaceId: workspace.id });
       }
 
       // Set idle timeout
       this.resetIdleTimeout(workspace.id);
       logger.debug("Idle timeout set", { workspaceId: workspace.id });
 
-      logger.info("Runtime created", {
-        workspaceId: workspace.id,
-        workspaceName: workspace.name,
-      });
+      logger.info("Runtime created", { workspaceId: workspace.id, workspaceName: workspace.name });
 
       return runtime;
     } catch (error) {
-      logger.error("Failed to create workspace runtime", {
-        error,
-        workspaceId,
-      });
+      logger.error("Failed to create workspace runtime", { error, workspaceId });
 
       // Clean up on failure to prevent inconsistent state
       try {
@@ -1968,10 +1815,7 @@ export class AtlasDaemon implements AppContext {
           logger.debug("Cleared idle timeout for failed workspace", { workspaceId });
         }
       } catch (cleanupError) {
-        logger.error("Error during failed workspace cleanup", {
-          workspaceId,
-          cleanupError,
-        });
+        logger.error("Error during failed workspace cleanup", { workspaceId, cleanupError });
       }
 
       throw error;
@@ -2078,10 +1922,7 @@ export class AtlasDaemon implements AppContext {
     try {
       await runtime.shutdown();
     } catch (error) {
-      logger.error("Error shutting down workspace runtime", {
-        error,
-        workspaceId,
-      });
+      logger.error("Error shutting down workspace runtime", { error, workspaceId });
     }
 
     this.runtimes.delete(workspaceId);
@@ -2094,10 +1935,7 @@ export class AtlasDaemon implements AppContext {
     try {
       await manager.updateWorkspaceStatus(workspaceId, "inactive");
     } catch (error) {
-      logger.warn("Failed to set workspace inactive after destroy", {
-        workspaceId,
-        error,
-      });
+      logger.warn("Failed to set workspace inactive after destroy", { workspaceId, error });
     }
 
     // Clear idle timeout
@@ -2115,14 +1953,8 @@ export class AtlasDaemon implements AppContext {
   /**
    * Handle workspace configuration changes detected by file watcher
    */
-  private async handleWorkspaceConfigChange(
-    workspaceId: string,
-    filePath: string,
-  ) {
-    logger.info("Workspace configuration changed, reloading runtime", {
-      workspaceId,
-      filePath,
-    });
+  private async handleWorkspaceConfigChange(workspaceId: string, filePath: string) {
+    logger.info("Workspace configuration changed, reloading runtime", { workspaceId, filePath });
 
     // Check if the workspace is in an inactive state
     const manager = this.getWorkspaceManager();
@@ -2157,10 +1989,7 @@ export class AtlasDaemon implements AppContext {
       if (this.isShuttingDown) return;
       this.isShuttingDown = true;
 
-      logger.info("Daemon received signal, shutting down gracefully", {
-        daemonId,
-        signal,
-      });
+      logger.info("Daemon received signal, shutting down gracefully", { daemonId, signal });
 
       // Handle async shutdown in a promise to ensure proper cleanup
       // Add a timeout to prevent hanging indefinitely
@@ -2248,10 +2077,7 @@ export class AtlasDaemon implements AppContext {
         hostname,
         onListen: ({ hostname, port }) => {
           this.#port = port; // Store the actual port
-          logger.info("Atlas daemon running", {
-            hostname,
-            port,
-          });
+          logger.info("Atlas daemon running", { hostname, port });
           serverReady();
         },
       },
@@ -2275,8 +2101,8 @@ export class AtlasDaemon implements AppContext {
     this.signalHandlers = [];
 
     // Shutdown all workspace runtimes
-    const shutdownPromises = Array.from(this.runtimes.keys()).map(
-      (workspaceId) => this.destroyWorkspaceRuntime(workspaceId),
+    const shutdownPromises = Array.from(this.runtimes.keys()).map((workspaceId) =>
+      this.destroyWorkspaceRuntime(workspaceId),
     );
     await Promise.all(shutdownPromises);
 
@@ -2318,10 +2144,7 @@ export class AtlasDaemon implements AppContext {
         try {
           client.controller.close();
         } catch (error) {
-          logger.debug("Error closing SSE client for session", {
-            error,
-            sessionId,
-          });
+          logger.debug("Error closing SSE client for session", { error, sessionId });
         }
       }
     }
@@ -2404,10 +2227,9 @@ export class AtlasDaemon implements AppContext {
     workspacePath: string,
   ): Promise<void> {
     if (!this.cronManager) {
-      logger.warn(
-        "CronManager not initialized, skipping cron signal registration",
-        { workspaceId },
-      );
+      logger.warn("CronManager not initialized, skipping cron signal registration", {
+        workspaceId,
+      });
       return;
     }
 
@@ -2416,13 +2238,10 @@ export class AtlasDaemon implements AppContext {
       try {
         await Deno.stat(workspacePath);
       } catch {
-        logger.debug(
-          "Skipping cron signal registration for non-existent workspace",
-          {
-            workspaceId,
-            workspacePath,
-          },
-        );
+        logger.debug("Skipping cron signal registration for non-existent workspace", {
+          workspaceId,
+          workspacePath,
+        });
         return;
       }
 
@@ -2498,9 +2317,7 @@ export class AtlasDaemon implements AppContext {
   /**
    * Unregister all cron signals for a workspace
    */
-  private async unregisterWorkspaceCronSignals(
-    workspaceId: string,
-  ): Promise<void> {
+  private async unregisterWorkspaceCronSignals(workspaceId: string): Promise<void> {
     if (!this.cronManager) {
       return;
     }
@@ -2509,10 +2326,7 @@ export class AtlasDaemon implements AppContext {
       await this.cronManager.unregisterWorkspaceTimers(workspaceId);
       logger.info("Unregistered workspace cron signals", { workspaceId });
     } catch (error) {
-      logger.error("Failed to unregister workspace cron signals", {
-        error,
-        workspaceId,
-      });
+      logger.error("Failed to unregister workspace cron signals", { error, workspaceId });
     }
   }
 
@@ -2521,9 +2335,7 @@ export class AtlasDaemon implements AppContext {
    */
   private async discoverAndRegisterExistingCronSignals(): Promise<void> {
     if (!this.cronManager) {
-      logger.warn(
-        "CronManager not initialized, skipping existing workspace discovery",
-      );
+      logger.warn("CronManager not initialized, skipping existing workspace discovery");
       return;
     }
 
@@ -2553,14 +2365,11 @@ export class AtlasDaemon implements AppContext {
             progress: `${processedWorkspaces}/${workspaces.length}`,
           });
         } catch (error) {
-          logger.warn(
-            "Failed to register cron signals for existing workspace",
-            {
-              workspaceId: workspace.id,
-              workspacePath: workspace.path,
-              error,
-            },
-          );
+          logger.warn("Failed to register cron signals for existing workspace", {
+            workspaceId: workspace.id,
+            workspacePath: workspace.path,
+            error,
+          });
           processedWorkspaces++;
         }
       }
@@ -2571,9 +2380,7 @@ export class AtlasDaemon implements AppContext {
         timersRegistered: registeredTimers,
       });
     } catch (error) {
-      logger.error("Failed to discover existing workspace cron signals", {
-        error,
-      });
+      logger.error("Failed to discover existing workspace cron signals", { error });
     }
   }
 
@@ -2584,10 +2391,7 @@ export class AtlasDaemon implements AppContext {
       activeWorkspaces: this.runtimes.size,
       uptime: Date.now() - this.startTime,
       cronManager: cronStats
-        ? {
-          isActive: this.cronManager?.isActive() || false,
-          ...cronStats,
-        }
+        ? { isActive: this.cronManager?.isActive() || false, ...cronStats }
         : null,
       configuration: {
         maxConcurrentWorkspaces: this.options.maxConcurrentWorkspaces,
@@ -2626,9 +2430,7 @@ export class AtlasDaemon implements AppContext {
 
     // Remove disconnected clients
     if (disconnectedClients.length > 0) {
-      const remainingClients = clients.filter(
-        (c) => !disconnectedClients.includes(c),
-      );
+      const remainingClients = clients.filter((c) => !disconnectedClients.includes(c));
       if (remainingClients.length === 0) {
         this.sseClients.delete(sessionId);
       } else {
@@ -2653,9 +2455,7 @@ export class AtlasDaemon implements AppContext {
       this.performSSEHealthCheck();
     }, this.options.sseHeartbeatIntervalMs!);
 
-    logger.info("SSE health check started", {
-      intervalMs: this.options.sseHeartbeatIntervalMs,
-    });
+    logger.info("SSE health check started", { intervalMs: this.options.sseHeartbeatIntervalMs });
   }
 
   /**
@@ -2710,10 +2510,7 @@ export class AtlasDaemon implements AppContext {
         (a, b) => a[1].lastUsed - b[1].lastUsed,
       );
 
-      const toEvict = sortedSessions.slice(
-        0,
-        this.agentSessions.size - this.MAX_AGENT_SESSIONS,
-      );
+      const toEvict = sortedSessions.slice(0, this.agentSessions.size - this.MAX_AGENT_SESSIONS);
 
       logger.warn("Evicting LRU agent sessions due to limit", {
         evictionCount: toEvict.length,
@@ -2759,10 +2556,7 @@ export class AtlasDaemon implements AppContext {
         } else {
           // Send heartbeat to active clients
           try {
-            const heartbeat = {
-              type: "heartbeat",
-              data: { timestamp: new Date().toISOString() },
-            };
+            const heartbeat = { type: "heartbeat", data: { timestamp: new Date().toISOString() } };
             client.controller.enqueue(
               new TextEncoder().encode(`data: ${JSON.stringify(heartbeat)}\n\n`),
             );
@@ -2777,10 +2571,7 @@ export class AtlasDaemon implements AppContext {
               // Ignore close errors
             }
             prunedClients++;
-            logger.debug("Pruned disconnected SSE client during heartbeat", {
-              sessionId,
-              error,
-            });
+            logger.debug("Pruned disconnected SSE client during heartbeat", { sessionId, error });
           }
         }
       }
@@ -2819,11 +2610,7 @@ export class AtlasDaemon implements AppContext {
           this.sseClients.set(sessionId, []);
         }
 
-        const clientInfo = {
-          controller,
-          connectedAt: now,
-          lastActivity: now,
-        };
+        const clientInfo = { controller, connectedAt: now, lastActivity: now };
 
         this.sseClients.get(sessionId)!.push(clientInfo);
 
@@ -2833,11 +2620,7 @@ export class AtlasDaemon implements AppContext {
           data: { sessionId, timestamp: new Date().toISOString() },
         };
         try {
-          controller.enqueue(
-            new TextEncoder().encode(
-              `data: ${JSON.stringify(initialEvent)}\n\n`,
-            ),
-          );
+          controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(initialEvent)}\n\n`));
         } catch (error) {
           logger.error("Failed to send initial SSE event", { error });
         }

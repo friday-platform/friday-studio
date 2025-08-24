@@ -1,8 +1,8 @@
 import { daemonFactory } from "../../src/factory.ts";
-import { listTodoStreams } from "./list.ts";
-import { getTodos } from "./get.ts";
 import { createTodos } from "./create.ts";
 import { deleteTodos } from "./delete.ts";
+import { getTodos } from "./get.ts";
+import { listTodoStreams } from "./list.ts";
 
 // Export shared schemas and types
 export * from "./schemas.ts";

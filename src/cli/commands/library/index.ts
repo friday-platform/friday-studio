@@ -1,11 +1,11 @@
-import { YargsInstance } from "../../utils/yargs.ts";
+import { formatResourceHelp } from "../../utils/resource-help.ts";
+import type { YargsInstance } from "../../utils/yargs.ts";
 import * as generate from "./generate.tsx";
 import * as get from "./get.tsx";
 import * as list from "./list.tsx";
 import * as search from "./search.tsx";
 import * as stats from "./stats.tsx";
 import * as templates from "./templates.tsx";
-import { formatResourceHelp } from "../../utils/resource-help.ts";
 
 export const command = "library <action>";
 export const desc = "Manage library items and templates";

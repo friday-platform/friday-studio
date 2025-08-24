@@ -5,7 +5,6 @@
  * Handles agent loading, MCP tool access, environment validation, and session state.
  */
 
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type {
   AgentExecutionResult,
   AgentExpertise,
@@ -15,13 +14,14 @@ import type {
   AtlasAgent,
 } from "@atlas/agent-sdk";
 import { type AgentSessionData, AwaitingSupervisorDecision } from "@atlas/agent-sdk";
+import type { GlobalMCPServerPool } from "@atlas/core";
 import type { Logger } from "@atlas/logger";
+import { CoALAMemoryManager, type IMemoryScope } from "@atlas/memory";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { createAgentContextBuilder } from "../agent-context/index.ts";
+import { AgentExecutionManager } from "./agent-execution-manager.ts";
 import { ApprovalQueueManager } from "./approval-queue-manager.ts";
 import { type AgentServerDependencies, AgentToolParamsSchema } from "./types.ts";
-import { AgentExecutionManager } from "./agent-execution-manager.ts";
-import { createAgentContextBuilder } from "../agent-context/index.ts";
-import { GlobalMCPServerPool } from "@atlas/core";
-import { CoALAMemoryManager, IMemoryScope } from "@atlas/memory";
 
 export class AtlasAgentsMCPServer implements AgentServerAdapter {
   #logger: Logger;
@@ -46,18 +46,18 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
     this.sessionId = deps.sessionId;
 
     // MCP server configured for Atlas agent orchestration with SSE notification support
-    this.server = new McpServer({
-      name: "atlas-agents",
-      version: "1.0.0",
-    }, {
-      capabilities: {
-        // Advertise that we support notifications (required for SSE)
-        notifications: {},
-        // We also support tools and resources
-        tools: {},
-        resources: {},
+    this.server = new McpServer(
+      { name: "atlas-agents", version: "1.0.0" },
+      {
+        capabilities: {
+          // Advertise that we support notifications (required for SSE)
+          notifications: {},
+          // We also support tools and resources
+          tools: {},
+          resources: {},
+        },
       },
-    });
+    );
 
     this.#logger.debug("Created MCP server", {
       serverName: "atlas-agents",
@@ -135,10 +135,7 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
 
         // Approval flow remains the same
         if (args._approvalId && args._approvalDecision) {
-          const result = await this.resumeWithApproval(
-            args._approvalId,
-            args._approvalDecision,
-          );
+          const result = await this.resumeWithApproval(args._approvalId, args._approvalDecision);
           return { content: [{ type: "text", text: JSON.stringify(result) }] };
         }
 
@@ -260,28 +257,28 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
     this.server.registerResource(
       "agents/list",
       "agent://atlas/agents/list",
-      {
-        title: "Agent List",
-        description: "List of all agents",
-        mimeType: "application/json",
-      },
+      { title: "Agent List", description: "List of all agents", mimeType: "application/json" },
       async (uri) => ({
-        contents: [{
-          uri: uri.href,
-          text: JSON.stringify(
-            await this.agentRegistry.listAgents().then((agents) =>
-              agents.map((agent) => ({
-                id: agent.id,
-                displayName: agent.displayName,
-                description: agent.description,
-                expertise: agent.expertise,
-                metadata: agent.metadata,
-              }))
+        contents: [
+          {
+            uri: uri.href,
+            text: JSON.stringify(
+              await this.agentRegistry
+                .listAgents()
+                .then((agents) =>
+                  agents.map((agent) => ({
+                    id: agent.id,
+                    displayName: agent.displayName,
+                    description: agent.description,
+                    expertise: agent.expertise,
+                    metadata: agent.metadata,
+                  })),
+                ),
+              null,
+              2,
             ),
-            null,
-            2,
-          ),
-        }],
+          },
+        ],
       }),
     );
 
@@ -308,18 +305,20 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
           mimeType: "application/json",
         },
         (uri) => ({
-          contents: [{
-            uri: uri.href,
-            text: JSON.stringify(
-              {
-                domains: agent.expertise.domains,
-                capabilities: agent.expertise.capabilities,
-                examples: agent.expertise.examples,
-              },
-              null,
-              2,
-            ),
-          }],
+          contents: [
+            {
+              uri: uri.href,
+              text: JSON.stringify(
+                {
+                  domains: agent.expertise.domains,
+                  capabilities: agent.expertise.capabilities,
+                  examples: agent.expertise.examples,
+                },
+                null,
+                2,
+              ),
+            },
+          ],
         }),
       );
     }
@@ -343,18 +342,20 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
         mimeType: "application/json",
       },
       (uri) => ({
-        contents: [{
-          uri: uri.href,
-          text: JSON.stringify(
-            {
-              domains: agent.metadata.expertise.domains,
-              capabilities: agent.metadata.expertise.capabilities,
-              examples: agent.metadata.expertise.examples,
-            },
-            null,
-            2,
-          ),
-        }],
+        contents: [
+          {
+            uri: uri.href,
+            text: JSON.stringify(
+              {
+                domains: agent.metadata.expertise.domains,
+                capabilities: agent.metadata.expertise.capabilities,
+                examples: agent.metadata.expertise.examples,
+              },
+              null,
+              2,
+            ),
+          },
+        ],
       }),
     );
   }
@@ -410,17 +411,10 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
 
     try {
       // Use execution manager with session data
-      const result = await this.executionManager.executeAgent(
-        agentId,
-        prompt,
-        sessionData,
-      );
+      const result = await this.executionManager.executeAgent(agentId, prompt, sessionData);
 
       // Wrap successful results in structured response
-      return {
-        type: "completed",
-        result,
-      };
+      return { type: "completed", result };
     } catch (error) {
       if (error instanceof AwaitingSupervisorDecision) {
         // Convert exception to structured response for MCP transport
@@ -481,10 +475,7 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
       }
 
       // Wrap successful results in structured response
-      return {
-        type: "completed",
-        result,
-      };
+      return { type: "completed", result };
     } catch (error) {
       if (error instanceof AwaitingSupervisorDecision) {
         // Another approval needed - return structured response
@@ -570,10 +561,7 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
   private ensureSessionMemory(workspaceId: string): void {
     if (this.sessionMemory) return;
     // Create a properly typed scope for CoALAMemoryManager
-    const scope: IMemoryScope = {
-      id: this.sessionId,
-      workspaceId,
-    };
+    const scope: IMemoryScope = { id: this.sessionId, workspaceId };
     this.sessionMemory = new CoALAMemoryManager(scope);
     this.executionManager.setSessionMemory(this.sessionMemory);
     this.#logger.info("Initialized session memory for MCP server", { workspaceId });
@@ -589,11 +577,7 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
     const sid = sessionId || this.sessionId;
     if (this.hasActiveSSEFn && sid) {
       const hasSSE = this.hasActiveSSEFn(sid);
-      this.#logger.info("SSE check", {
-        sessionId: sid,
-        hasSSE,
-        source: "daemon",
-      });
+      this.#logger.info("SSE check", { sessionId: sid, hasSSE, source: "daemon" });
       return hasSSE;
     }
     return false;

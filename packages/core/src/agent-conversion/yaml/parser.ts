@@ -5,6 +5,7 @@
  * variable interpolation. Handles file I/O, YAML parsing, and schema validation.
  */
 
+import { createLogger } from "@atlas/logger";
 import { parse as parseYAML } from "@std/yaml";
 import {
   mergeEnvironmentConfig,
@@ -12,7 +13,6 @@ import {
   validateYAMLAgent,
   type YAMLAgentDefinition,
 } from "./schema.ts";
-import { createLogger } from "@atlas/logger";
 
 /** Options for YAML agent parsing. */
 export interface ParseOptions {
@@ -31,11 +31,7 @@ export async function parseYAMLAgentFile(
   filePath: string,
   options: ParseOptions = {},
 ): Promise<YAMLAgentDefinition> {
-  const {
-    env = {},
-    validateEnv = true,
-    fileReader = Deno.readTextFile,
-  } = options;
+  const { env = {}, validateEnv = true, fileReader = Deno.readTextFile } = options;
 
   try {
     // Read the YAML file
@@ -170,9 +166,7 @@ export function extractToolAllowlist(
 ): string[] | undefined;
 
 /** Extract tool allowlists for all MCP servers. */
-export function extractToolAllowlist(
-  definition: YAMLAgentDefinition,
-): Record<string, string[]>;
+export function extractToolAllowlist(definition: YAMLAgentDefinition): Record<string, string[]>;
 
 export function extractToolAllowlist(
   definition: YAMLAgentDefinition,
@@ -202,9 +196,7 @@ export function extractToolDenylist(
 ): string[] | undefined;
 
 /** Extract tool denylists for all MCP servers. */
-export function extractToolDenylist(
-  definition: YAMLAgentDefinition,
-): Record<string, string[]>;
+export function extractToolDenylist(definition: YAMLAgentDefinition): Record<string, string[]>;
 
 export function extractToolDenylist(
   definition: YAMLAgentDefinition,
@@ -239,10 +231,7 @@ export async function validateYAMLAgentFile(
     return { valid: true };
   } catch (error) {
     if (error instanceof Error) {
-      return {
-        valid: false,
-        errors: error.message.split("\n").filter((line) => line.trim()),
-      };
+      return { valid: false, errors: error.message.split("\n").filter((line) => line.trim()) };
     }
     return { valid: false, errors: ["Unknown validation error"] };
   }

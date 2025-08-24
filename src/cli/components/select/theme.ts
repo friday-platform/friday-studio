@@ -1,4 +1,4 @@
-import { type BoxProps, type TextProps } from "ink";
+import type { BoxProps, TextProps } from "ink";
 
 export interface Theme {
   styles: {
@@ -13,19 +13,10 @@ export interface Theme {
 
 export const theme: Theme = {
   styles: {
-    container: (): BoxProps => ({
-      flexDirection: "column",
-    }),
-    option: ({ isFocused }): BoxProps => ({
-      gap: 1,
-      paddingLeft: isFocused ? 0 : 2,
-    }),
-    selectedIndicator: (): TextProps => ({
-      color: "yellow",
-    }),
-    focusIndicator: (): TextProps => ({
-      color: "yellow",
-    }),
+    container: (): BoxProps => ({ flexDirection: "column" }),
+    option: ({ isFocused }): BoxProps => ({ gap: 1, paddingLeft: isFocused ? 0 : 2 }),
+    selectedIndicator: (): TextProps => ({ color: "yellow" }),
+    focusIndicator: (): TextProps => ({ color: "yellow" }),
     label({ isFocused, isSelected }): TextProps {
       let color: string | undefined;
 
@@ -39,8 +30,6 @@ export const theme: Theme = {
 
       return { color };
     },
-    highlightedText: (): TextProps => ({
-      bold: true,
-    }),
+    highlightedText: (): TextProps => ({ bold: true }),
   },
 };

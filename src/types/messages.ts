@@ -58,22 +58,12 @@ export interface SessionProgressMessage extends SessionMessage {
 
 export interface SessionCompleteMessage extends SessionMessage {
   type: "session.complete";
-  payload: {
-    success: boolean;
-    result?: unknown;
-    error?: string;
-    execution_time_ms: number;
-  };
+  payload: { success: boolean; result?: unknown; error?: string; execution_time_ms: number };
 }
 
 export interface SessionErrorMessage extends SessionMessage {
   type: "session.error";
-  payload: {
-    error: string;
-    stack?: string;
-    retryable: boolean;
-    error_code?: string;
-  };
+  payload: { error: string; stack?: string; retryable: boolean; error_code?: string };
 }
 
 // Actor communication message types
@@ -86,18 +76,10 @@ export interface ActorMessage {
 
 export interface ActorStateMessage extends ActorMessage {
   type: "actor.state";
-  payload: {
-    state: string;
-    previous_state?: string;
-    context?: Record<string, unknown>;
-  };
+  payload: { state: string; previous_state?: string; context?: Record<string, unknown> };
 }
 
 export interface ActorErrorMessage extends ActorMessage {
   type: "actor.error";
-  payload: {
-    error: string;
-    stack?: string;
-    recovery_action?: string;
-  };
+  payload: { error: string; stack?: string; recovery_action?: string };
 }

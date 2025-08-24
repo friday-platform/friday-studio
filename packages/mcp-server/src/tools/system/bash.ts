@@ -1,6 +1,6 @@
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { ToolContext } from "../types.ts";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { createSuccessResponse } from "../types.ts";
 
 const MAX_OUTPUT_LENGTH = 30000;
@@ -11,8 +11,7 @@ export function registerBashTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(
     "atlas_bash",
     {
-      description:
-        `Executes a given bash command in a persistent shell session with optional timeout, ensuring proper handling and security measures.
+      description: `Executes a given bash command in a persistent shell session with optional timeout, ensuring proper handling and security measures.
 
 Before executing the command, please follow these steps:
 
@@ -47,12 +46,19 @@ Usage notes:
     </bad-example>`,
       inputSchema: {
         command: z.string().describe("The command to execute"),
-        timeout: z.number().min(0).max(MAX_TIMEOUT).optional().describe(
-          "Optional timeout in milliseconds (up to 600000ms / 10 minutes). If not specified, commands will timeout after 120000ms (2 minutes).",
-        ),
-        description: z.string().describe(
-          "Clear, concise description of what this command does in 5-10 words. Examples:\nInput: pwd\nOutput: Shows current working directory\n\nInput: git status\nOutput: Shows working tree status\n\nInput: npm install\nOutput: Installs package dependencies\n\nInput: mkdir foo\nOutput: Creates directory 'foo'",
-        ),
+        timeout: z
+          .number()
+          .min(0)
+          .max(MAX_TIMEOUT)
+          .optional()
+          .describe(
+            "Optional timeout in milliseconds (up to 600000ms / 10 minutes). If not specified, commands will timeout after 120000ms (2 minutes).",
+          ),
+        description: z
+          .string()
+          .describe(
+            "Clear, concise description of what this command does in 5-10 words. Examples:\nInput: pwd\nOutput: Shows current working directory\n\nInput: git status\nOutput: Shows working tree status\n\nInput: npm install\nOutput: Installs package dependencies\n\nInput: mkdir foo\nOutput: Creates directory 'foo'",
+          ),
       },
     },
     async (params) => {
@@ -87,8 +93,9 @@ Usage notes:
         // Truncate output if it's too long
         const truncateOutput = (text: string) => {
           if (text.length > MAX_OUTPUT_LENGTH) {
-            return text.substring(0, MAX_OUTPUT_LENGTH) +
-              "\n\n... (output truncated due to length)";
+            return (
+              text.substring(0, MAX_OUTPUT_LENGTH) + "\n\n... (output truncated due to length)"
+            );
           }
           return text;
         };
@@ -121,18 +128,15 @@ Usage notes:
             description: params.description,
             stdout: truncatedStdout,
             stderr: truncatedStderr,
-            truncated: stdoutText.length > MAX_OUTPUT_LENGTH ||
-              stderrText.length > MAX_OUTPUT_LENGTH,
+            truncated:
+              stdoutText.length > MAX_OUTPUT_LENGTH || stderrText.length > MAX_OUTPUT_LENGTH,
           },
         });
       } catch (error) {
         clearTimeout(timeoutId);
 
         if (error instanceof Error && error.name === "AbortError") {
-          ctx.logger.error("Bash command timed out", {
-            command: params.command,
-            timeout,
-          });
+          ctx.logger.error("Bash command timed out", { command: params.command, timeout });
           throw new Error(`Command timed out after ${timeout}ms: ${params.command}`);
         }
 

@@ -64,11 +64,7 @@ Deno.test("KnowledgeRelationship - interface structure", () => {
     type: KnowledgeRelationType.WORKS_ON,
     sourceEntityId: "person-123",
     targetEntityId: "project-456",
-    attributes: {
-      role: "Lead Developer",
-      startDate: "2024-01-01",
-      commitment: "Full-time",
-    },
+    attributes: { role: "Lead Developer", startDate: "2024-01-01", commitment: "Full-time" },
     confidence: 0.9,
     source: "project-assignment",
     timestamp: new Date("2024-01-01T00:00:00Z"),
@@ -220,11 +216,7 @@ Deno.test("Extracted fact structure", () => {
     type: "person_info" as const,
     statement: "John Smith prefers to work with React and TypeScript",
     entities: [
-      {
-        type: KnowledgeEntityType.PERSON,
-        name: "John Smith",
-        attributes: { role: "developer" },
-      },
+      { type: KnowledgeEntityType.PERSON, name: "John Smith", attributes: { role: "developer" } },
       {
         type: KnowledgeEntityType.TECHNOLOGY,
         name: "React",

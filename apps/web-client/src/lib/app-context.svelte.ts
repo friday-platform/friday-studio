@@ -43,12 +43,7 @@ function createStateSession(initialValue: StateSession = { sidebarVisible: "expa
 
 export type RouteConfig = ReturnType<typeof getRouteConfig>;
 export function getRouteConfig() {
-  return {
-    api: {},
-    workspaces: {},
-    library: {},
-    settings: {},
-  } as const;
+  return { api: {}, workspaces: {}, library: {}, settings: {} } as const;
 }
 
 /**
@@ -71,11 +66,7 @@ export function setAppContext(initialSidebarVisibility?: SidebarVisibility) {
   const keyboard = createKeyboard();
   const stateSession = createStateSession({ sidebarVisible: initialSidebarVisibility });
 
-  const ctx = {
-    keyboard,
-    routes,
-    stateSession,
-  };
+  const ctx = { keyboard, routes, stateSession };
   setContext(KEY, ctx);
   return ctx;
 }

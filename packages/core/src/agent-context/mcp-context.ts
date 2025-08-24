@@ -10,8 +10,8 @@
 import type { AtlasTool } from "@atlas/agent-sdk";
 import type { MCPServerConfig, WorkspaceConfig } from "@atlas/config";
 import type { Logger } from "@atlas/logger";
-import { GlobalMCPServerPool } from "../mcp-server-pool.ts";
 import { createAtlasClient } from "@atlas/oapi-client";
+import type { GlobalMCPServerPool } from "../mcp-server-pool.ts";
 
 export interface MCPContext {
   /** Get tools from MCP server(s) - returns AI SDK Tool format directly */
@@ -142,10 +142,7 @@ function mergeServerConfigs(
 
   // Add Atlas platform server (takes priority over workspace servers)
   const platformServerConfig: MCPServerConfig = {
-    transport: {
-      type: "http",
-      url: "http://localhost:8080/mcp",
-    },
+    transport: { type: "http", url: "http://localhost:8080/mcp" },
   };
 
   merged["atlas-platform"] = platformServerConfig;

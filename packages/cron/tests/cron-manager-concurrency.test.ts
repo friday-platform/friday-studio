@@ -6,12 +6,13 @@
  */
 
 import { assert, assertEquals, assertExists } from "@std/assert";
+import { MemoryKVStorage } from "../../../src/core/storage/memory-kv-storage.ts";
+import { delay } from "../../../tests/utils/mod.ts";
 import {
   CronManager,
   type CronTimerConfig,
   type WorkspaceWakeupCallback,
 } from "../src/cron-manager.ts";
-import { MemoryKVStorage } from "../../../src/core/storage/memory-kv-storage.ts";
 import {
   assertTimeBounds,
   MockStorageWithContention,
@@ -19,15 +20,9 @@ import {
   runConcurrent,
   stressTest,
 } from "./concurrency-test-utils.ts";
-import { delay } from "../../../tests/utils/mod.ts";
 
 // Mock logger for testing
-const mockLogger = {
-  info: () => {},
-  warn: () => {},
-  error: () => {},
-  debug: () => {},
-};
+const mockLogger = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} };
 
 async function createTestCronManager() {
   const storage = new MemoryKVStorage();
@@ -53,9 +48,9 @@ Deno.test("CronManager Concurrency - concurrent timer registration should mainta
     await cronManager.start();
 
     // Create multiple timer configurations for the same workspace
-    const configs = Array(10).fill(null).map((_: unknown, i: number) =>
-      createTestTimerConfig("workspace1", `signal${i}`)
-    );
+    const configs = Array(10)
+      .fill(null)
+      .map((_: unknown, i: number) => createTestTimerConfig("workspace1", `signal${i}`));
 
     // Register all timers concurrently
     const results = await runConcurrent(
@@ -97,7 +92,9 @@ Deno.test("CronManager Concurrency - concurrent registration of same timer shoul
 
     // Try to register the same timer multiple times concurrently
     // This should either succeed once or fail gracefully
-    const registrationPromises = Array(5).fill(null).map(() => cronManager.registerTimer(config));
+    const registrationPromises = Array(5)
+      .fill(null)
+      .map(() => cronManager.registerTimer(config));
 
     // Some registrations might fail, but at least one should succeed
     const results = await Promise.allSettled(registrationPromises);
@@ -146,12 +143,7 @@ Deno.test("CronManager Concurrency - timer execution during shutdown should be h
   const shutdownPromise = cronManager.shutdown();
 
   // Shutdown should complete within reasonable time even if timers are executing
-  await assertTimeBounds(
-    () => shutdownPromise,
-    0,
-    5000,
-    "Shutdown during timer execution",
-  );
+  await assertTimeBounds(() => shutdownPromise, 0, 5000, "Shutdown during timer execution");
 
   // After shutdown, no more callbacks should be invoked
   const callbackCountAfterShutdown = callbackCount;
@@ -223,9 +215,9 @@ Deno.test("CronManager Concurrency - storage operations should be atomic", async
     await cronManager.start();
 
     // Create multiple timers that will cause concurrent storage operations
-    const configs = Array(20).fill(null).map((_: unknown, i: number) =>
-      createTestTimerConfig(`workspace${i % 5}`, `signal${i}`)
-    );
+    const configs = Array(20)
+      .fill(null)
+      .map((_: unknown, i: number) => createTestTimerConfig(`workspace${i % 5}`, `signal${i}`));
 
     // Register all timers concurrently to stress storage operations
     const results = await Promise.allSettled(
@@ -260,16 +252,18 @@ Deno.test("CronManager Concurrency - bulk workspace registration should handle c
     await cronManager.start();
 
     // Simulate multiple workspaces being registered simultaneously (like daemon startup)
-    const workspaceConfigs = Array(10).fill(null).map((_: unknown, i: number) => ({
-      workspaceId: `workspace${i}`,
-      timers: Array(3).fill(null).map((_: unknown, j: number) =>
-        createTestTimerConfig(`workspace${i}`, `signal${j}`)
-      ),
-    }));
+    const workspaceConfigs = Array(10)
+      .fill(null)
+      .map((_: unknown, i: number) => ({
+        workspaceId: `workspace${i}`,
+        timers: Array(3)
+          .fill(null)
+          .map((_: unknown, j: number) => createTestTimerConfig(`workspace${i}`, `signal${j}`)),
+      }));
 
     // Register all workspace timers concurrently
     const registrationPromises = workspaceConfigs.flatMap((workspace) =>
-      workspace.timers.map((config) => cronManager.registerTimer(config))
+      workspace.timers.map((config) => cronManager.registerTimer(config)),
     );
 
     const results = await Promise.allSettled(registrationPromises);
@@ -306,9 +300,9 @@ Deno.test("CronManager Concurrency - concurrent unregistration should be safe", 
     await cronManager.start();
 
     // Register multiple timers first
-    const configs = Array(10).fill(null).map((_: unknown, i: number) =>
-      createTestTimerConfig("workspace1", `signal${i}`)
-    );
+    const configs = Array(10)
+      .fill(null)
+      .map((_: unknown, i: number) => createTestTimerConfig("workspace1", `signal${i}`));
 
     for (const config of configs) {
       await cronManager.registerTimer(config);
@@ -318,7 +312,7 @@ Deno.test("CronManager Concurrency - concurrent unregistration should be safe", 
 
     // Unregister timers concurrently
     const unregistrationPromises = configs.map((config) =>
-      cronManager.unregisterTimer(config.workspaceId, config.signalId)
+      cronManager.unregisterTimer(config.workspaceId, config.signalId),
     );
 
     await Promise.all(unregistrationPromises);
@@ -347,13 +341,20 @@ Deno.test("CronManager Concurrency - mixed operations should maintain consistenc
     // Simulate a mix of register, unregister, and query operations happening concurrently
     const operations: (() => Promise<unknown>)[] = [
       // Register operations
-      ...Array(5).fill(null).map((_: unknown, i: number) => () =>
-        cronManager.registerTimer(createTestTimerConfig("workspace1", `signal${i}`))
-      ),
+      ...Array(5)
+        .fill(null)
+        .map(
+          (_: unknown, i: number) => () =>
+            cronManager.registerTimer(createTestTimerConfig("workspace1", `signal${i}`)),
+        ),
       // Query operations
-      ...Array(10).fill(null).map(() => () => Promise.resolve(cronManager.listActiveTimers())),
+      ...Array(10)
+        .fill(null)
+        .map(() => () => Promise.resolve(cronManager.listActiveTimers())),
       // Stats operations
-      ...Array(5).fill(null).map(() => () => Promise.resolve(cronManager.getStats())),
+      ...Array(5)
+        .fill(null)
+        .map(() => () => Promise.resolve(cronManager.getStats())),
     ];
 
     // Run all operations concurrently

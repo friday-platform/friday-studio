@@ -1,9 +1,9 @@
-import { checkAtlasRunning, createAtlasNotRunningError, getAtlasClient } from "@atlas/client";
 import type { WorkspaceInfo } from "@atlas/client";
+import { checkAtlasRunning, createAtlasNotRunningError, getAtlasClient } from "@atlas/client";
+import { exists } from "@std/fs";
 import { confirmAction } from "../../utils/confirm.tsx";
 import { errorOutput, infoOutput, successOutput, warningOutput } from "../../utils/output.ts";
 import { spinner } from "../../utils/prompts.tsx";
-import { exists } from "@std/fs";
 
 interface CleanupArgs {
   force?: boolean;
@@ -79,11 +79,7 @@ export const handler = async (argv: CleanupArgs): Promise<void> => {
     // Confirm cleanup
     const confirmed = await confirmAction(
       `Remove ${invalidWorkspaces.length} workspace(s) from registry?`,
-      {
-        force: argv.force,
-        yes: argv.yes,
-        defaultValue: false,
-      },
+      { force: argv.force, yes: argv.yes, defaultValue: false },
     );
 
     if (!confirmed) {

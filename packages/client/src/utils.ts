@@ -2,8 +2,8 @@
  * Utility functions for the Atlas client
  */
 
-import { getAtlasClient } from "./client.ts";
 import { getAtlasDaemonUrl } from "@atlas/atlasd";
+import { getAtlasClient } from "./client.ts";
 
 /**
  * Check if the Atlas daemon is running and accessible

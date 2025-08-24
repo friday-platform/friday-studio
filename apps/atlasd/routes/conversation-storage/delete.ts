@@ -1,5 +1,5 @@
-import { daemonFactory } from "../../src/factory.ts";
 import { describeRoute, resolver, validator } from "hono-openapi";
+import { daemonFactory } from "../../src/factory.ts";
 import { deleteResponseSchema, errorResponseSchema, streamIdParamSchema } from "./schemas.ts";
 
 const deleteConversation = daemonFactory.createApp();
@@ -13,27 +13,15 @@ deleteConversation.delete(
     responses: {
       200: {
         description: "Conversation deleted successfully",
-        content: {
-          "application/json": {
-            schema: resolver(deleteResponseSchema),
-          },
-        },
+        content: { "application/json": { schema: resolver(deleteResponseSchema) } },
       },
       404: {
         description: "Conversation not found",
-        content: {
-          "application/json": {
-            schema: resolver(errorResponseSchema),
-          },
-        },
+        content: { "application/json": { schema: resolver(errorResponseSchema) } },
       },
       500: {
         description: "Internal server error",
-        content: {
-          "application/json": {
-            schema: resolver(errorResponseSchema),
-          },
-        },
+        content: { "application/json": { schema: resolver(errorResponseSchema) } },
       },
     },
   }),
@@ -57,10 +45,7 @@ deleteConversation.delete(
       // Delete conversation using the public API
       storage.deleteConversation(streamId);
 
-      return c.json({
-        success: true,
-        deleted: existed,
-      });
+      return c.json({ success: true, deleted: existed });
     } catch (error) {
       return c.json(
         { success: false, error: error instanceof Error ? error.message : String(error) },

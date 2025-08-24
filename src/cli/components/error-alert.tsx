@@ -17,9 +17,7 @@ export const ErrorAlert = ({ message, visible, onDismiss }: ErrorAlertProps) => 
   if (!visible) return null;
 
   const dismissText = "Press any key to dismiss";
-  const additionalSpace = " ".repeat(
-    (message.length - dismissText.length + 4) / 2,
-  );
+  const additionalSpace = " ".repeat((message.length - dismissText.length + 4) / 2);
 
   return (
     <Box position="absolute">

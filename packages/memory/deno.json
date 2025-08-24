@@ -2,7 +2,5 @@
   "name": "@atlas/memory",
   "version": "1.0.0",
   "exports": "./mod.ts",
-  "imports": {
-    "onnxruntime-web": "npm:onnxruntime-web@1.22.0"
-  }
+  "imports": { "onnxruntime-web": "npm:onnxruntime-web@1.22.0" }
 }

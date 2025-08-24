@@ -3,9 +3,9 @@
  * Retrieves detailed information about a specific job through the daemon API
  */
 
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { ToolContext } from "../types.ts";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { createSuccessResponse } from "../types.ts";
 import { checkJobDiscoverable } from "../utils.ts";
 
@@ -16,12 +16,10 @@ export function registerJobsDescribeTool(server: McpServer, ctx: ToolContext) {
       description:
         "Examine a job's workflow configuration including execution strategy (sequential, parallel, conditional), assigned agents, trigger conditions, and context provisioning. Jobs define multi-step workflows where agents receive inputs from signals, previous agents, or filesystem context, then execute using specialized MCP tools.",
       inputSchema: {
-        workspaceId: z.string().describe(
-          "Unique identifier of the workspace containing the job",
-        ),
-        jobName: z.string().describe(
-          "Name of the specific job to examine (obtain from workspace_jobs_list)",
-        ),
+        workspaceId: z.string().describe("Unique identifier of the workspace containing the job"),
+        jobName: z
+          .string()
+          .describe("Name of the specific job to examine (obtain from workspace_jobs_list)"),
       },
     },
     async ({ workspaceId, jobName }) => {
@@ -65,17 +63,9 @@ export function registerJobsDescribeTool(server: McpServer, ctx: ToolContext) {
           throw new Error(`Job not found: ${jobName}`);
         }
 
-        return createSuccessResponse({
-          job,
-          workspaceId,
-          source: "daemon_api",
-        });
+        return createSuccessResponse({ job, workspaceId, source: "daemon_api" });
       } catch (error) {
-        ctx.logger.error("MCP workspace_jobs_describe failed", {
-          workspaceId,
-          jobName,
-          error,
-        });
+        ctx.logger.error("MCP workspace_jobs_describe failed", { workspaceId, jobName, error });
         throw error;
       }
     },

@@ -7,16 +7,11 @@
  */
 
 import { assertEquals } from "@std/assert";
-import { CronManager, type CronTimerConfig } from "../mod.ts";
 import { MemoryKVStorage } from "../../../src/core/storage/memory-kv-storage.ts";
+import { CronManager, type CronTimerConfig } from "../mod.ts";
 
 // Mock logger for testing
-const mockLogger = {
-  info: () => {},
-  warn: () => {},
-  error: () => {},
-  debug: () => {},
-};
+const mockLogger = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} };
 
 // Mock workspace configuration similar to topic-summarizer
 const mockWorkspaceConfig = {
@@ -43,14 +38,8 @@ const mockWorkspaceConfig = {
     "test-discovery": {
       name: "test-discovery",
       description: "Test job triggered by timer",
-      triggers: [
-        { signal: "timer-test-scan" },
-        { signal: "manual-test-scan" },
-      ],
-      execution: {
-        strategy: "sequential",
-        agents: ["test-agent"],
-      },
+      triggers: [{ signal: "timer-test-scan" }, { signal: "manual-test-scan" }],
+      execution: { strategy: "sequential", agents: ["test-agent"] },
     },
   },
   agents: {
@@ -65,9 +54,12 @@ const mockWorkspaceConfig = {
 // Mock workspace runtime that tracks signal triggers
 class MockWorkspaceRuntime {
   private cronManager: CronManager;
-  private triggeredSignals: Array<
-    { workspaceId: string; signalId: string; data: unknown; timestamp: number }
-  > = [];
+  private triggeredSignals: Array<{
+    workspaceId: string;
+    signalId: string;
+    data: unknown;
+    timestamp: number;
+  }> = [];
   private registeredTimers = new Map<string, boolean>();
 
   constructor(private workspaceId: string) {
@@ -116,9 +108,12 @@ class MockWorkspaceRuntime {
     return this.cronManager.getTimer(this.workspaceId, signalId);
   }
 
-  getTriggeredSignals(): Array<
-    { workspaceId: string; signalId: string; data: unknown; timestamp: number }
-  > {
+  getTriggeredSignals(): Array<{
+    workspaceId: string;
+    signalId: string;
+    data: unknown;
+    timestamp: number;
+  }> {
     return [...this.triggeredSignals];
   }
 
@@ -337,8 +332,8 @@ Deno.test("Timer Signal - Workspace Runtime Integration", async (t) => {
         setupSequence.push(`loaded-signal-${signalId}`);
 
         const timer = runtime.getTimer(signalId);
-        const isHealthy = timer !== undefined && timer.isActive &&
-          timer.nextExecution !== undefined;
+        const isHealthy =
+          timer !== undefined && timer.isActive && timer.nextExecution !== undefined;
         setupSequence.push(`health-${signalId}-${isHealthy}`);
       }
     }

@@ -13,21 +13,19 @@ Deno.test("FileWriteCoordinator - should prevent concurrent writes to same file"
   let maxConcurrent = 0;
 
   // Create multiple write operations
-  const writes = Array.from(
-    { length: 10 },
-    (_, i) =>
-      coordinator.executeWrite(testFile, async () => {
-        concurrentWrites++;
-        maxConcurrent = Math.max(maxConcurrent, concurrentWrites);
+  const writes = Array.from({ length: 10 }, (_, i) =>
+    coordinator.executeWrite(testFile, async () => {
+      concurrentWrites++;
+      maxConcurrent = Math.max(maxConcurrent, concurrentWrites);
 
-        // Simulate write delay
-        await new Promise((resolve) => setTimeout(resolve, 10));
+      // Simulate write delay
+      await new Promise((resolve) => setTimeout(resolve, 10));
 
-        await Deno.writeTextFile(testFile, `Write ${i}\n`, { append: true });
-        writeCount++;
+      await Deno.writeTextFile(testFile, `Write ${i}\n`, { append: true });
+      writeCount++;
 
-        concurrentWrites--;
-      }),
+      concurrentWrites--;
+    }),
   );
 
   // Execute all writes concurrently
@@ -68,7 +66,8 @@ Deno.test("FileWriteCoordinator - should handle writes to different files concur
         await Deno.writeTextFile(testFile1, `File1 Write ${i}\n`, { append: true });
         file1Writes++;
         currentConcurrent--;
-      })),
+      }),
+    ),
     ...Array.from({ length: 5 }, (_, i) =>
       coordinator.executeWrite(testFile2, async () => {
         currentConcurrent++;
@@ -77,7 +76,8 @@ Deno.test("FileWriteCoordinator - should handle writes to different files concur
         await Deno.writeTextFile(testFile2, `File2 Write ${i}\n`, { append: true });
         file2Writes++;
         currentConcurrent--;
-      })),
+      }),
+    ),
   ];
 
   // Execute all writes

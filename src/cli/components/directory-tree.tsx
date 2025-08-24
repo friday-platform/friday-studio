@@ -1,5 +1,5 @@
-import React from "react";
 import { Box, Text } from "ink";
+import type React from "react";
 
 interface DirectoryNode {
   name: string;
@@ -14,12 +14,7 @@ interface DirectoryTreeProps {
 }
 
 // Tree drawing characters
-const TREE_CHARS = {
-  BRANCH: "├─ ",
-  LAST_BRANCH: "└─ ",
-  VERTICAL: "│  ",
-  EMPTY: "   ",
-};
+const TREE_CHARS = { BRANCH: "├─ ", LAST_BRANCH: "└─ ", VERTICAL: "│  ", EMPTY: "   " };
 
 function renderTree(
   node: DirectoryNode,
@@ -42,11 +37,7 @@ function renderTree(
       <Box key={`${prefix}-${node.name}`}>
         <Text key={1}>{prefix + branch}</Text>
         <Text></Text>
-        <Text
-          key={2}
-          bold={node.active}
-          color={node.active ? "yellow" : undefined}
-        >
+        <Text key={2} bold={node.active} color={node.active ? "yellow" : undefined}>
           {node.name}
         </Text>
       </Box>,
@@ -68,10 +59,7 @@ function renderTree(
   return elements;
 }
 
-export const DirectoryTree = ({
-  tree,
-  showRoot = true,
-}: DirectoryTreeProps) => {
+export const DirectoryTree = ({ tree, showRoot = true }: DirectoryTreeProps) => {
   const elements = renderTree(tree, "", true, showRoot);
 
   return <Box flexDirection="column">{elements}</Box>;

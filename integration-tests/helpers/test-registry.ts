@@ -5,8 +5,8 @@
  * testing utilities and domain filtering support.
  */
 
-import { InMemoryAgentRegistry } from "../../packages/core/src/agent-server/in-memory-registry.ts";
 import type { AgentMetadata, AtlasAgent } from "@atlas/agent-sdk";
+import { InMemoryAgentRegistry } from "../../packages/core/src/agent-server/in-memory-registry.ts";
 
 export class TestAgentRegistry extends InMemoryAgentRegistry {
   private registrationHistory: Array<{
@@ -35,11 +35,7 @@ export class TestAgentRegistry extends InMemoryAgentRegistry {
     const agents = this.getInternalAgentsMap();
     agents.delete(agentId);
 
-    this.registrationHistory.push({
-      agentId,
-      timestamp: Date.now(),
-      action: "unregister",
-    });
+    this.registrationHistory.push({ agentId, timestamp: Date.now(), action: "unregister" });
   }
 
   /**
@@ -48,7 +44,7 @@ export class TestAgentRegistry extends InMemoryAgentRegistry {
   private getInternalAgentsMap(): Map<string, AtlasAgent> {
     // Access the private agents map through reflection
     // This is for testing only
-    return (this).agents;
+    return this.agents;
   }
 
   /**
@@ -72,7 +68,7 @@ export class TestAgentRegistry extends InMemoryAgentRegistry {
     const agents = await this.listAgents();
 
     return agents.filter((agent) =>
-      agent.expertise.domains.some((domain) => domains.includes(domain))
+      agent.expertise.domains.some((domain) => domains.includes(domain)),
     );
   }
 
@@ -85,9 +81,9 @@ export class TestAgentRegistry extends InMemoryAgentRegistry {
     return agents.filter((agent) =>
       capabilities.every((cap) =>
         agent.expertise.capabilities.some((agentCap) =>
-          agentCap.toLowerCase().includes(cap.toLowerCase())
-        )
-      )
+          agentCap.toLowerCase().includes(cap.toLowerCase()),
+        ),
+      ),
     );
   }
 
@@ -118,15 +114,11 @@ export class TestAgentRegistry extends InMemoryAgentRegistry {
     }
 
     const registrations = this.registrationHistory.filter((h) => h.action === "register").length;
-    const unregistrations =
-      this.registrationHistory.filter((h) => h.action === "unregister").length;
+    const unregistrations = this.registrationHistory.filter(
+      (h) => h.action === "unregister",
+    ).length;
 
-    return {
-      total: this.size(),
-      byDomain,
-      registrations,
-      unregistrations,
-    };
+    return { total: this.size(), byDomain, registrations, unregistrations };
   }
 
   /**
@@ -140,11 +132,7 @@ export class TestAgentRegistry extends InMemoryAgentRegistry {
     const agents = await this.listAgents();
     const stats = this.getStats();
 
-    return {
-      agents,
-      stats,
-      timestamp: Date.now(),
-    };
+    return { agents, stats, timestamp: Date.now() };
   }
 
   /**
@@ -159,9 +147,7 @@ export class TestAgentRegistry extends InMemoryAgentRegistry {
   /**
    * Find agents matching a predicate
    */
-  async findAgents(
-    predicate: (agent: AgentMetadata) => boolean,
-  ): Promise<AgentMetadata[]> {
+  async findAgents(predicate: (agent: AgentMetadata) => boolean): Promise<AgentMetadata[]> {
     const agents = await this.listAgents();
     return agents.filter(predicate);
   }

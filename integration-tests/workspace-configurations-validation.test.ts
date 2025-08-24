@@ -5,12 +5,12 @@
  * Ensures all example workspaces, system workspaces, and reference configurations are valid
  */
 
-import { expect } from "@std/expect";
-import { join, resolve } from "@std/path";
-import { walk } from "@std/fs";
 import { ConfigLoader, formatZodError } from "@atlas/config";
 import { FilesystemConfigAdapter } from "@atlas/storage";
-import { z } from "zod/v4";
+import { expect } from "@std/expect";
+import { walk } from "@std/fs";
+import { join, resolve } from "@std/path";
+import type { z } from "zod/v4";
 
 interface WorkspaceValidationResult {
   path: string;
@@ -34,12 +34,7 @@ async function findWorkspaceDirectories(): Promise<string[]> {
 
   // Find all workspace.yml files in examples
   const examplesDir = join(projectRoot, "examples");
-  for await (
-    const entry of walk(examplesDir, {
-      match: [/workspace\.yml$/],
-      maxDepth: 3,
-    })
-  ) {
+  for await (const entry of walk(examplesDir, { match: [/workspace\.yml$/], maxDepth: 3 })) {
     if (entry.isFile) {
       workspaceDirs.push(entry.path.replace("/workspace.yml", ""));
     }
@@ -52,10 +47,7 @@ async function findWorkspaceDirectories(): Promise<string[]> {
  * Validate a single workspace configuration
  */
 async function validateWorkspaceConfig(workspacePath: string): Promise<WorkspaceValidationResult> {
-  const result: WorkspaceValidationResult = {
-    path: workspacePath,
-    valid: false,
-  };
+  const result: WorkspaceValidationResult = { path: workspacePath, valid: false };
 
   try {
     const adapter = new FilesystemConfigAdapter(workspacePath);
@@ -80,9 +72,9 @@ async function validateWorkspaceConfig(workspacePath: string): Promise<Workspace
 
       // If it's a ConfigValidationError with Zod details, format them nicely
       if (error.name === "ConfigValidationError" && "zodError" in error) {
-        result.error += `\n\nValidation Details:\n${
-          formatZodError(error.zodError as z.ZodError<unknown>)
-        }`;
+        result.error += `\n\nValidation Details:\n${formatZodError(
+          error.zodError as z.ZodError<unknown>,
+        )}`;
       }
     } else {
       result.error = String(error);
@@ -96,10 +88,7 @@ async function validateWorkspaceConfig(workspacePath: string): Promise<Workspace
  * Validate a standalone workspace.yml file (for system workspaces)
  */
 async function validateStandaloneWorkspace(filePath: string): Promise<WorkspaceValidationResult> {
-  const result: WorkspaceValidationResult = {
-    path: filePath,
-    valid: false,
-  };
+  const result: WorkspaceValidationResult = { path: filePath, valid: false };
 
   try {
     // Create a temporary directory and copy the file there
@@ -135,9 +124,9 @@ async function validateStandaloneWorkspace(filePath: string): Promise<WorkspaceV
 
       // If it's a ConfigValidationError with Zod details, format them nicely
       if (error.name === "ConfigValidationError" && "zodError" in error) {
-        result.error += `\n\nValidation Details:\n${
-          formatZodError(error.zodError as z.ZodError<unknown>)
-        }`;
+        result.error += `\n\nValidation Details:\n${formatZodError(
+          error.zodError as z.ZodError<unknown>,
+        )}`;
       }
     } else {
       result.error = String(error);

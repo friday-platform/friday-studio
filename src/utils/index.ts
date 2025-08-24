@@ -56,9 +56,7 @@ export type ObjectEntry<T> = {
  * Note that Object.entries collapses all possible values into a single union
  * while objectEntries results in a union of 2-tuples.
  */
-export const objectEntries = Object.entries as <T>(
-  o: T,
-) => Array<ObjectEntry<T>>;
+export const objectEntries = Object.entries as <T>(o: T) => Array<ObjectEntry<T>>;
 
 // Export exponential backoff utilities
 export * from "./exponential-backoff.ts";

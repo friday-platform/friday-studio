@@ -1,12 +1,12 @@
 <script lang="ts">
-  import type { Snippet } from "svelte";
-  import { expoOut } from "svelte/easing";
-  import type { HTMLAttributes } from "svelte/elements";
-  import { scale } from "svelte/transition";
-  import { getContext } from "./context";
+import type { Snippet } from "svelte";
+import { expoOut } from "svelte/easing";
+import type { HTMLAttributes } from "svelte/elements";
+import { scale } from "svelte/transition";
+import { getContext } from "./context";
 
-  const { menu, open } = getContext();
-  let { children, ...rest }: { children: Snippet } & HTMLAttributes<HTMLDivElement> = $props();
+const { menu, open } = getContext();
+const { children, ...rest }: { children: Snippet } & HTMLAttributes<HTMLDivElement> = $props();
 </script>
 
 {#if $open}

@@ -4,10 +4,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 
-const server = new McpServer({
-  name: "math-server",
-  version: "1.0.0",
-});
+const server = new McpServer({ name: "math-server", version: "1.0.0" });
 
 // Register calculate tool for basic arithmetic
 server.registerTool(
@@ -15,9 +12,9 @@ server.registerTool(
   {
     description: "Perform basic arithmetic calculations",
     inputSchema: {
-      expression: z.string().describe(
-        "Mathematical expression to evaluate (e.g., '2 + 2', '10 * 5')",
-      ),
+      expression: z
+        .string()
+        .describe("Mathematical expression to evaluate (e.g., '2 + 2', '10 * 5')"),
     },
   },
   ({ expression }) => {
@@ -33,17 +30,9 @@ server.registerTool(
       // This is safer than eval but still should be replaced with a proper parser in production
       const result = new Function("return " + sanitized)();
 
-      return {
-        content: [
-          { type: "text", text: result.toString() },
-        ],
-      };
+      return { content: [{ type: "text", text: result.toString() }] };
     } catch (error) {
-      return {
-        content: [
-          { type: "text", text: `Error: ${error.message}` },
-        ],
-      };
+      return { content: [{ type: "text", text: `Error: ${error.message}` }] };
     }
   },
 );
@@ -60,11 +49,7 @@ server.registerTool(
   },
   ({ min, max }) => {
     const result = Math.floor(Math.random() * (max - min + 1)) + min;
-    return {
-      content: [
-        { type: "text", text: result.toString() },
-      ],
-    };
+    return { content: [{ type: "text", text: result.toString() }] };
   },
 );
 
@@ -73,42 +58,26 @@ server.registerTool(
   "statistics",
   {
     description: "Calculate statistics for a list of numbers",
-    inputSchema: {
-      numbers: z.array(z.number()).describe("Array of numbers to analyze"),
-    },
+    inputSchema: { numbers: z.array(z.number()).describe("Array of numbers to analyze") },
   },
   ({ numbers }) => {
     if (numbers.length === 0) {
-      return {
-        content: [
-          { type: "text", text: JSON.stringify({ error: "Empty array" }) },
-        ],
-      };
+      return { content: [{ type: "text", text: JSON.stringify({ error: "Empty array" }) }] };
     }
 
     const sum = numbers.reduce((a, b) => a + b, 0);
     const mean = sum / numbers.length;
     const sorted = [...numbers].sort((a, b) => a - b);
-    const median = sorted.length % 2 === 0
-      ? (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2
-      : sorted[Math.floor(sorted.length / 2)];
+    const median =
+      sorted.length % 2 === 0
+        ? (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2
+        : sorted[Math.floor(sorted.length / 2)];
     const min = Math.min(...numbers);
     const max = Math.max(...numbers);
 
-    const stats = {
-      count: numbers.length,
-      sum,
-      mean,
-      median,
-      min,
-      max,
-    };
+    const stats = { count: numbers.length, sum, mean, median, min, max };
 
-    return {
-      content: [
-        { type: "text", text: JSON.stringify(stats) },
-      ],
-    };
+    return { content: [{ type: "text", text: JSON.stringify(stats) }] };
   },
 );
 

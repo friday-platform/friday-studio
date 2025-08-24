@@ -1,10 +1,9 @@
+import { type AnthropicProviderOptions, anthropic } from "@ai-sdk/anthropic";
 import { type AtlasAgent, createAgent } from "@atlas/agent-sdk";
 import { streamResults } from "@atlas/agent-sdk/vercel-helpers";
 import { stepCountIs, streamText } from "ai";
-import { anthropic, type AnthropicProviderOptions } from "@ai-sdk/anthropic";
 
-const HAIKU_SYSTEM_PROMPT =
-  `You are a haiku poet. Use the fetch tool to read a given website. Transform the headline of the website into a beautiful haiku (5-7-5 syllable structure).
+const HAIKU_SYSTEM_PROMPT = `You are a haiku poet. Use the fetch tool to read a given website. Transform the headline of the website into a beautiful haiku (5-7-5 syllable structure).
 
 Follow these rules:
 1. First line: 5 syllables
@@ -24,13 +23,7 @@ Respond ONLY with the haiku, no explanations or additional text.`;
  */
 export const haikuAgent: AtlasAgent = createAgent({
   mcp: {
-    "fetch": {
-      transport: {
-        "type": "stdio",
-        command: "npx",
-        args: ["-y", "mcp-fetch-server"],
-      },
-    },
+    fetch: { transport: { type: "stdio", command: "npx", args: ["-y", "mcp-fetch-server"] } },
   },
   id: "haiku",
   displayName: "Haiku Poet",
@@ -75,39 +68,26 @@ export const haikuAgent: AtlasAgent = createAgent({
       logger.debug("Streaming haiku response");
       const response = await streamResults(result, stream);
 
-      logger.info("Haiku generated successfully", {
-        response: response.response,
-      });
+      logger.info("Haiku generated successfully", { response: response.response });
 
       return response;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
 
-      logger.error("Failed to generate haiku", {
-        error,
-        errorMessage,
-      });
+      logger.error("Failed to generate haiku", { error, errorMessage });
 
       // Emit error to stream
       stream.emit({ type: "error", error: errorMessage });
 
       return {
         response: `Failed to generate haiku: ${errorMessage}`,
-        metadata: {
-          error: true,
-          errorMessage,
-        },
+        metadata: { error: true, errorMessage },
       };
     }
   },
 
   // Optional: Define environment requirements
   environment: {
-    required: [
-      {
-        name: "ANTHROPIC_API_KEY",
-        description: "Anthropic API key for Claude access",
-      },
-    ],
+    required: [{ name: "ANTHROPIC_API_KEY", description: "Anthropic API key for Claude access" }],
   },
 });

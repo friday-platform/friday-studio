@@ -1,6 +1,8 @@
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
+import { type WorkspaceTimeoutConfig, WorkspaceTimeoutConfigSchema } from "@atlas/config";
+import { logger } from "@atlas/logger";
 import { MCPManager } from "@atlas/mcp";
 import {
   createProviderRegistry,
@@ -8,14 +10,12 @@ import {
   type ModelMessage,
   stepCountIs,
   streamText,
-  Tool,
-  ToolCallUnion,
-  ToolResultUnion,
+  type Tool,
+  type ToolCallUnion,
+  type ToolResultUnion,
 } from "ai";
 import { z } from "zod/v4";
-import { logger } from "@atlas/logger";
 import { WatchdogTimer } from "./watchdog-timer.ts";
-import { type WorkspaceTimeoutConfig, WorkspaceTimeoutConfigSchema } from "@atlas/config";
 
 // Runtime validation schemas
 const LLMProviderSchema = z.enum(["anthropic", "openai", "google"]);
@@ -31,10 +31,7 @@ const LLMOptionsSchema = z.object({
       z.literal("auto"),
       z.literal("required"),
       z.literal("none"),
-      z.object({
-        type: z.literal("tool"),
-        toolName: z.string(),
-      }),
+      z.object({ type: z.literal("tool"), toolName: z.string() }),
     ])
     .optional(),
   apiKey: z.string().optional(),
@@ -84,15 +81,9 @@ const PROVIDER_ENV_VARS = {
 // Create provider registry for centralized provider management
 function createLLMRegistry() {
   return createProviderRegistry({
-    anthropic: createAnthropic({
-      apiKey: Deno.env.get(PROVIDER_ENV_VARS.anthropic),
-    }),
-    openai: createOpenAI({
-      apiKey: Deno.env.get(PROVIDER_ENV_VARS.openai),
-    }),
-    google: createGoogleGenerativeAI({
-      apiKey: Deno.env.get(PROVIDER_ENV_VARS.google),
-    }),
+    anthropic: createAnthropic({ apiKey: Deno.env.get(PROVIDER_ENV_VARS.anthropic) }),
+    openai: createOpenAI({ apiKey: Deno.env.get(PROVIDER_ENV_VARS.openai) }),
+    google: createGoogleGenerativeAI({ apiKey: Deno.env.get(PROVIDER_ENV_VARS.google) }),
   });
 }
 
@@ -108,28 +99,25 @@ export class LLMProvider {
    * Gets the MCPManager instance for server registration
    */
   static getMCPManager(): MCPManager {
-    return this.mcpManager;
+    return LLMProvider.mcpManager;
   }
 
   /**
    * Single entry point for all LLM operations - tools are detected automatically
    */
-  static async generateText(
-    userPrompt: string,
-    options: LLMOptions,
-  ): Promise<LLMResponse> {
+  static async generateText(userPrompt: string, options: LLMOptions): Promise<LLMResponse> {
     const validatedOptions = LLMOptionsSchema.parse(options);
 
     // Check if we should use mocks
-    const shouldUseMocks = Deno.env.get("ATLAS_USE_LLM_MOCKS") === "true" ||
-      Deno.env.get("NODE_ENV") === "test";
+    const shouldUseMocks =
+      Deno.env.get("ATLAS_USE_LLM_MOCKS") === "true" || Deno.env.get("NODE_ENV") === "test";
 
     if (shouldUseMocks) {
-      return this.generateMockResponse(userPrompt, validatedOptions);
+      return LLMProvider.generateMockResponse(userPrompt, validatedOptions);
     }
 
     const startTime = Date.now();
-    const { providerConfig, runtimeContext } = this.extractProviderConfig(validatedOptions);
+    const { providerConfig, runtimeContext } = LLMProvider.extractProviderConfig(validatedOptions);
 
     logger.info("LLM generation started", {
       provider: providerConfig.provider,
@@ -143,16 +131,16 @@ export class LLMProvider {
     const watchdog = new WatchdogTimer(providerConfig.timeout);
 
     try {
-      const model = this.getModel(providerConfig);
+      const model = LLMProvider.getModel(providerConfig);
 
-      const messages = this.buildMessages(userPrompt, runtimeContext);
+      const messages = LLMProvider.buildMessages(userPrompt, runtimeContext);
 
       const hasTools = !!(runtimeContext.tools && Object.keys(runtimeContext.tools).length > 0);
       const hasMcpServers = !!(runtimeContext.mcpServers && runtimeContext.mcpServers.length > 0);
       const needsTools = hasTools || hasMcpServers;
 
       const tools: Record<string, Tool> | undefined = needsTools
-        ? await this.prepareTools(runtimeContext)
+        ? await LLMProvider.prepareTools(runtimeContext)
         : undefined;
 
       // Report progress after tool preparation
@@ -217,12 +205,7 @@ export class LLMProvider {
           reason: "No activity for configured timeout period - graceful shutdown",
         });
         // Return empty response for graceful shutdown
-        return {
-          text: "",
-          toolCalls: [],
-          toolResults: [],
-          steps: [],
-        };
+        return { text: "", toolCalls: [], toolResults: [], steps: [] };
       }
 
       // For other errors, log as error and throw
@@ -237,9 +220,7 @@ export class LLMProvider {
       // Always clean up watchdog timer
       watchdog.abort("Operation finished");
 
-      logger.info("LLM generation completed", {
-        duration: Date.now() - startTime,
-      });
+      logger.info("LLM generation completed", { duration: Date.now() - startTime });
     }
   }
 
@@ -290,17 +271,9 @@ export class LLMProvider {
         'I got 42 from addition. Task complete:\nACTION: complete\nPARAMETERS: {"answer": 42}';
     }
 
-    logger.info("LLM generation completed", {
-      duration: 100,
-      mock: true,
-    });
+    logger.info("LLM generation completed", { duration: 100, mock: true });
 
-    return Promise.resolve({
-      text: mockText,
-      toolCalls: [],
-      toolResults: [],
-      steps: [],
-    });
+    return Promise.resolve({ text: mockText, toolCalls: [], toolResults: [], steps: [] });
   }
 
   /**
@@ -313,17 +286,17 @@ export class LLMProvider {
     const validatedOptions = LLMOptionsSchema.parse(options);
 
     // Check if we should use mocks
-    const shouldUseMocks = Deno.env.get("ATLAS_USE_LLM_MOCKS") === "true" ||
-      Deno.env.get("NODE_ENV") === "test";
+    const shouldUseMocks =
+      Deno.env.get("ATLAS_USE_LLM_MOCKS") === "true" || Deno.env.get("NODE_ENV") === "test";
 
     if (shouldUseMocks) {
-      const mockResponse = await this.generateMockResponse(userPrompt, validatedOptions);
+      const mockResponse = await LLMProvider.generateMockResponse(userPrompt, validatedOptions);
       yield mockResponse.text;
       return;
     }
     const validatedPrompt = z.string().parse(userPrompt);
 
-    const { providerConfig, runtimeContext } = this.extractProviderConfig(validatedOptions);
+    const { providerConfig, runtimeContext } = LLMProvider.extractProviderConfig(validatedOptions);
 
     logger.info("LLM stream generation started", {
       provider: providerConfig.provider,
@@ -334,8 +307,8 @@ export class LLMProvider {
     const watchdog = new WatchdogTimer(providerConfig.timeout);
 
     try {
-      const model = this.getModel(providerConfig);
-      const messages = this.buildMessages(validatedPrompt, runtimeContext);
+      const model = LLMProvider.getModel(providerConfig);
+      const messages = LLMProvider.buildMessages(validatedPrompt, runtimeContext);
 
       const stream = streamText({
         model,
@@ -423,23 +396,14 @@ export class LLMProvider {
 
     // Always provide current datetime to the model for time awareness
     const nowUtcIso = new Date().toISOString();
-    messages.push({
-      role: "system",
-      content: `Current datetime (UTC): ${nowUtcIso}`,
-    });
+    messages.push({ role: "system", content: `Current datetime (UTC): ${nowUtcIso}` });
 
     if (context.systemPrompt) {
-      messages.push({
-        role: "system",
-        content: context.systemPrompt,
-      });
+      messages.push({ role: "system", content: context.systemPrompt });
     }
 
     if (context.memoryContext) {
-      messages.push({
-        role: "system",
-        content: `Memory Context:\n${context.memoryContext}`,
-      });
+      messages.push({ role: "system", content: `Memory Context:\n${context.memoryContext}` });
     }
 
     if (context.operationContext && Object.keys(context.operationContext).length > 0) {
@@ -450,10 +414,7 @@ export class LLMProvider {
     }
 
     if (userPrompt.length > 0) {
-      messages.push({
-        role: "user",
-        content: userPrompt,
-      });
+      messages.push({ role: "user", content: userPrompt });
     }
 
     return messages;
@@ -462,12 +423,10 @@ export class LLMProvider {
   /**
    * Aggregate tools from all sources - all tools are already AI SDK-compatible
    */
-  private static async prepareTools(
-    context: {
-      tools?: Record<string, Tool>;
-      mcpServers?: string[];
-    },
-  ): Promise<Record<string, Tool>> {
+  private static async prepareTools(context: {
+    tools?: Record<string, Tool>;
+    mcpServers?: string[];
+  }): Promise<Record<string, Tool>> {
     const allTools: Record<string, Tool> = {};
 
     // All tools are already AI SDK Tools - no conversion needed
@@ -478,7 +437,7 @@ export class LLMProvider {
     // MCP tools already return AI SDK Tools
     if (context.mcpServers && context.mcpServers.length > 0) {
       try {
-        const mcpTools = await this.mcpManager.getToolsForServers(context.mcpServers);
+        const mcpTools = await LLMProvider.mcpManager.getToolsForServers(context.mcpServers);
         Object.assign(allTools, mcpTools);
       } catch (error) {
         logger.error("Failed to get MCP tools", {
@@ -495,10 +454,10 @@ export class LLMProvider {
       // Detailed logging for stream_reply tool
       streamReplyDetails: allTools.stream_reply
         ? {
-          hasParameters: !!allTools.stream_reply.inputSchema,
-          parametersType: allTools.stream_reply.inputSchema?.constructor.name,
-          parameterKeys: allTools.stream_reply.inputSchema,
-        }
+            hasParameters: !!allTools.stream_reply.inputSchema,
+            parametersType: allTools.stream_reply.inputSchema?.constructor.name,
+            parameterKeys: allTools.stream_reply.inputSchema,
+          }
         : "stream_reply not found",
     });
 
@@ -508,13 +467,11 @@ export class LLMProvider {
   /**
    * Returns a model instance ready for generation using the provider registry
    */
-  private static getModel(
-    config: {
-      provider: "anthropic" | "openai" | "google";
-      model: string;
-      apiKey?: string;
-    },
-  ) {
+  private static getModel(config: {
+    provider: "anthropic" | "openai" | "google";
+    model: string;
+    apiKey?: string;
+  }) {
     // If a custom API key is provided, create a new registry instance
     if (config.apiKey) {
       const customRegistry = createProviderRegistry({
@@ -545,14 +502,14 @@ export class LLMProvider {
       );
     }
 
-    return this.registry.languageModel(`${config.provider}:${config.model}`);
+    return LLMProvider.registry.languageModel(`${config.provider}:${config.model}`);
   }
 
   /**
    * Recreates the provider registry - useful for testing or API key rotation
    */
   static clearClients(): void {
-    this.registry = createLLMRegistry();
+    LLMProvider.registry = createLLMRegistry();
     logger.debug("Provider registry recreated");
   }
 }

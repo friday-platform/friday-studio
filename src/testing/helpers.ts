@@ -2,6 +2,9 @@
  * Testing helpers for Atlas components
  */
 
+import type { WorkspaceSignalConfig } from "@atlas/config";
+import { InMemoryStorageAdapter } from "@atlas/storage";
+import { AtlasScope, type AtlasScopeOptions } from "../core/scope.ts";
 import { Session, type SessionIntent } from "../core/session.ts";
 import type {
   IAtlasGate,
@@ -19,9 +22,6 @@ import type {
   IWorkspaceWorkflow,
   MessageUser,
 } from "../types/core.ts";
-import { InMemoryStorageAdapter } from "@atlas/storage";
-import { AtlasScope, type AtlasScopeOptions } from "../core/scope.ts";
-import type { WorkspaceSignalConfig } from "@atlas/config";
 
 /**
  * Creates a Session instance with in-memory storage for testing
@@ -68,9 +68,10 @@ export function createTestSession(
 /**
  * Creates an AtlasScope instance with in-memory storage for testing
  */
-export function createTestScope(
-  options?: Partial<AtlasScopeOptions>,
-): { scope: AtlasScope; storage: InMemoryStorageAdapter } {
+export function createTestScope(options?: Partial<AtlasScopeOptions>): {
+  scope: AtlasScope;
+  storage: InMemoryStorageAdapter;
+} {
   const storage = new InMemoryStorageAdapter();
 
   const scope = new AtlasScope({
@@ -101,7 +102,7 @@ export class MockContextManager implements ITempestContextManager {
 
   search(query: string): ITempestContext[] {
     return this.contexts.filter((ctx) =>
-      JSON.stringify(ctx).toLowerCase().includes(query.toLowerCase())
+      JSON.stringify(ctx).toLowerCase().includes(query.toLowerCase()),
     );
   }
 
@@ -167,10 +168,7 @@ export class MockMessageManager implements ITempestMessageManager {
  */
 export class MockSignal implements IWorkspaceSignal {
   public readonly id: string;
-  public provider: {
-    id: string;
-    name: string;
-  };
+  public provider: { id: string; name: string };
   public context: ITempestContextManager;
   public memory: ITempestMemoryManager;
   public messages: ITempestMessageManager;
@@ -183,19 +181,10 @@ export class MockSignal implements IWorkspaceSignal {
   private triggerCount = 0;
   private lastTriggerTime?: Date;
 
-  constructor(
-    id: string = "mock-signal",
-    providerName: string = "mock-provider",
-  ) {
+  constructor(id: string = "mock-signal", providerName: string = "mock-provider") {
     this.id = id;
-    this.provider = {
-      id: `${providerName}-id`,
-      name: providerName,
-    };
-    this.prompts = {
-      system: "Mock system prompt",
-      user: "Mock user prompt",
-    };
+    this.provider = { id: `${providerName}-id`, name: providerName };
+    this.prompts = { system: "Mock system prompt", user: "Mock user prompt" };
     this.context = new MockContextManager();
     this.memory = new MockMemoryManager();
     this.messages = new MockMessageManager();
@@ -258,10 +247,7 @@ export class MockAgent implements IWorkspaceAgent {
     private _name: string = "Mock Agent",
   ) {
     this.id = id;
-    this.prompts = {
-      system: "Mock agent system prompt",
-      user: "Mock agent user prompt",
-    };
+    this.prompts = { system: "Mock agent system prompt", user: "Mock agent user prompt" };
     this.context = new MockContextManager();
     this.memory = new MockMemoryManager();
     this.messages = new MockMessageManager();

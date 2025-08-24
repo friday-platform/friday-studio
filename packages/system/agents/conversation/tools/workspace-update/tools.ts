@@ -1,12 +1,12 @@
-import { z } from "zod/v4";
-import { tool } from "ai";
 import type {
   JobSpecification,
   MCPServerConfig,
   WorkspaceAgentConfig,
   WorkspaceSignalConfig,
 } from "@atlas/config";
-import { WorkspaceBuilder } from "../workspace-creation/builder.ts";
+import { tool } from "ai";
+import { z } from "zod/v4";
+import type { WorkspaceBuilder } from "../workspace-creation/builder.ts";
 
 // Create singleton instance that tools will share - this will be initialized with existing config
 let workspaceUpdateBuilder: WorkspaceBuilder | null = null;
@@ -52,17 +52,16 @@ export const workspaceUpdateTools = {
         })),
         mcpServers: config.tools?.mcp?.servers
           ? Object.keys(config.tools.mcp.servers).map((id) => ({
-            id,
-            transport: config.tools!.mcp!.servers![id]!.transport.type,
-            tools: config.tools!.mcp!.servers![id]!.tools?.allow?.length || 0,
-          }))
+              id,
+              transport: config.tools!.mcp!.servers![id]!.transport.type,
+              tools: config.tools!.mcp!.servers![id]!.tools?.allow?.length || 0,
+            }))
           : [],
       };
 
       return {
         status: "listed",
-        message:
-          `Found ${components.signals.length} signals, ${components.agents.length} agents, ${components.jobs.length} jobs, ${components.mcpServers.length} MCP servers`,
+        message: `Found ${components.signals.length} signals, ${components.agents.length} agents, ${components.jobs.length} jobs, ${components.mcpServers.length} MCP servers`,
         components,
       };
     },
@@ -73,12 +72,14 @@ export const workspaceUpdateTools = {
     description: "Update an existing signal's configuration",
     inputSchema: z.object({
       signalId: z.string().describe("ID of the existing signal to update"),
-      updates: z.object({
-        description: z.string().optional().describe("New description for the signal"),
-        schedule: z.string().optional().describe("New cron schedule (for schedule signals only)"),
-        timezone: z.string().optional().describe("New timezone (for schedule signals only)"),
-        path: z.string().optional().describe("New webhook path (for webhook signals only)"),
-      }).describe("Signal configuration updates to apply"),
+      updates: z
+        .object({
+          description: z.string().optional().describe("New description for the signal"),
+          schedule: z.string().optional().describe("New cron schedule (for schedule signals only)"),
+          timezone: z.string().optional().describe("New timezone (for schedule signals only)"),
+          path: z.string().optional().describe("New webhook path (for webhook signals only)"),
+        })
+        .describe("Signal configuration updates to apply"),
     }),
     execute: ({ signalId, updates }) => {
       const builder = getUpdateBuilder();
@@ -99,22 +100,29 @@ export const workspaceUpdateTools = {
     description: "Update an existing agent's configuration",
     inputSchema: z.object({
       agentId: z.string().describe("ID of the existing agent to update"),
-      updates: z.object({
-        description: z.string().optional().describe("New description for the agent"),
-        prompt: z.string().optional().describe("New system prompt (for LLM agents only)"),
-        model: z.string().optional().describe("New model identifier (for LLM agents only)"),
-        temperature: z.number().min(0).max(1).optional().describe(
-          "New temperature setting (for LLM agents only)",
-        ),
-        tools: z.array(z.string()).optional().describe(
-          "New array of MCP server names (for LLM agents only)",
-        ),
-        endpoint: z.url().optional().describe("New endpoint URL (for remote agents only)"),
-        agentName: z.string().optional().describe("New agent name (for remote agents only)"),
-        defaultMode: z.enum(["sync", "async", "stream"]).optional().describe(
-          "New default mode (for remote agents only)",
-        ),
-      }).describe("Agent configuration updates to apply"),
+      updates: z
+        .object({
+          description: z.string().optional().describe("New description for the agent"),
+          prompt: z.string().optional().describe("New system prompt (for LLM agents only)"),
+          model: z.string().optional().describe("New model identifier (for LLM agents only)"),
+          temperature: z
+            .number()
+            .min(0)
+            .max(1)
+            .optional()
+            .describe("New temperature setting (for LLM agents only)"),
+          tools: z
+            .array(z.string())
+            .optional()
+            .describe("New array of MCP server names (for LLM agents only)"),
+          endpoint: z.url().optional().describe("New endpoint URL (for remote agents only)"),
+          agentName: z.string().optional().describe("New agent name (for remote agents only)"),
+          defaultMode: z
+            .enum(["sync", "async", "stream"])
+            .optional()
+            .describe("New default mode (for remote agents only)"),
+        })
+        .describe("Agent configuration updates to apply"),
     }),
     execute: ({ agentId, updates }) => {
       const builder = getUpdateBuilder();
@@ -135,12 +143,17 @@ export const workspaceUpdateTools = {
     description: "Update an existing job's configuration",
     inputSchema: z.object({
       jobId: z.string().describe("ID of the existing job to update"),
-      updates: z.object({
-        description: z.string().optional().describe("New description for the job"),
-        triggerSignal: z.string().optional().describe("New signal that triggers this job"),
-        agents: z.array(z.string()).optional().describe("New array of agent IDs for execution"),
-        strategy: z.enum(["sequential", "parallel"]).optional().describe("New execution strategy"),
-      }).describe("Job configuration updates to apply"),
+      updates: z
+        .object({
+          description: z.string().optional().describe("New description for the job"),
+          triggerSignal: z.string().optional().describe("New signal that triggers this job"),
+          agents: z.array(z.string()).optional().describe("New array of agent IDs for execution"),
+          strategy: z
+            .enum(["sequential", "parallel"])
+            .optional()
+            .describe("New execution strategy"),
+        })
+        .describe("Job configuration updates to apply"),
     }),
     execute: ({ jobId, updates }) => {
       const builder = getUpdateBuilder();
@@ -160,58 +173,40 @@ export const workspaceUpdateTools = {
   // Removal tools
   removeSignal: tool({
     description: "Remove an existing signal and handle dependent jobs",
-    inputSchema: z.object({
-      signalId: z.string().describe("ID of the signal to remove"),
-    }),
+    inputSchema: z.object({ signalId: z.string().describe("ID of the signal to remove") }),
     execute: ({ signalId }) => {
       const builder = getUpdateBuilder();
       const result = builder.removeSignal(signalId);
       if (!result.success) {
         throw new Error(`Signal removal failed: ${result.errors.join("; ")}`);
       }
-      return {
-        status: "removed",
-        signalId,
-        message: `Signal '${signalId}' removed successfully`,
-      };
+      return { status: "removed", signalId, message: `Signal '${signalId}' removed successfully` };
     },
   }),
 
   removeAgent: tool({
     description: "Remove an existing agent and update job references",
-    inputSchema: z.object({
-      agentId: z.string().describe("ID of the agent to remove"),
-    }),
+    inputSchema: z.object({ agentId: z.string().describe("ID of the agent to remove") }),
     execute: ({ agentId }) => {
       const builder = getUpdateBuilder();
       const result = builder.removeAgent(agentId);
       if (!result.success) {
         throw new Error(`Agent removal failed: ${result.errors.join("; ")}`);
       }
-      return {
-        status: "removed",
-        agentId,
-        message: `Agent '${agentId}' removed successfully`,
-      };
+      return { status: "removed", agentId, message: `Agent '${agentId}' removed successfully` };
     },
   }),
 
   removeJob: tool({
     description: "Remove an existing job",
-    inputSchema: z.object({
-      jobId: z.string().describe("ID of the job to remove"),
-    }),
+    inputSchema: z.object({ jobId: z.string().describe("ID of the job to remove") }),
     execute: ({ jobId }) => {
       const builder = getUpdateBuilder();
       const result = builder.removeJob(jobId);
       if (!result.success) {
         throw new Error(`Job removal failed: ${result.errors.join("; ")}`);
       }
-      return {
-        status: "removed",
-        jobId,
-        message: `Job '${jobId}' removed successfully`,
-      };
+      return { status: "removed", jobId, message: `Job '${jobId}' removed successfully` };
     },
   }),
 
@@ -219,18 +214,27 @@ export const workspaceUpdateTools = {
   addScheduleSignal: tool({
     description: "Add schedule-based signal for cron triggers",
     inputSchema: z.object({
-      signalName: z.string().describe(
-        "Unique signal identifier within workspace, e.g., 'check_nike', 'daily_report', 'sync_customers'",
-      ),
-      description: z.string().describe(
-        "Human-readable description of what this signal does, e.g., 'Check Nike for new shoe releases', 'Generate daily sales report'",
-      ),
-      schedule: z.string().describe(
-        "Cron expression defining when this signal triggers, e.g., '0 * * * *', '*/30 * * * *', '0 9 * * 1-5'",
-      ),
-      timezone: z.string().default("UTC").describe(
-        "Timezone for schedule interpretation, e.g., 'UTC', 'America/New_York', 'Europe/London'",
-      ),
+      signalName: z
+        .string()
+        .describe(
+          "Unique signal identifier within workspace, e.g., 'check_nike', 'daily_report', 'sync_customers'",
+        ),
+      description: z
+        .string()
+        .describe(
+          "Human-readable description of what this signal does, e.g., 'Check Nike for new shoe releases', 'Generate daily sales report'",
+        ),
+      schedule: z
+        .string()
+        .describe(
+          "Cron expression defining when this signal triggers, e.g., '0 * * * *', '*/30 * * * *', '0 9 * * 1-5'",
+        ),
+      timezone: z
+        .string()
+        .default("UTC")
+        .describe(
+          "Timezone for schedule interpretation, e.g., 'UTC', 'America/New_York', 'Europe/London'",
+        ),
     }),
     execute: ({ signalName, description, schedule, timezone }) => {
       const builder = getUpdateBuilder();
@@ -251,15 +255,19 @@ export const workspaceUpdateTools = {
   addWebhookSignal: tool({
     description: "Add HTTP webhook signal that triggers jobs on incoming requests",
     inputSchema: z.object({
-      signalName: z.string().describe(
-        "Unique signal identifier within workspace, e.g., 'webhook_trigger', 'api_callback', 'form_submission'",
-      ),
-      description: z.string().describe(
-        "Human-readable description of what this signal does, e.g., 'Handle incoming webhook from Stripe', 'Process form submissions'",
-      ),
-      path: z.string().describe(
-        "URL path for the webhook endpoint, e.g., '/webhook/stripe', '/api/callback'",
-      ),
+      signalName: z
+        .string()
+        .describe(
+          "Unique signal identifier within workspace, e.g., 'webhook_trigger', 'api_callback', 'form_submission'",
+        ),
+      description: z
+        .string()
+        .describe(
+          "Human-readable description of what this signal does, e.g., 'Handle incoming webhook from Stripe', 'Process form submissions'",
+        ),
+      path: z
+        .string()
+        .describe("URL path for the webhook endpoint, e.g., '/webhook/stripe', '/api/callback'"),
     }),
     execute: ({ signalName, description, path }) => {
       const builder = getUpdateBuilder();
@@ -280,40 +288,47 @@ export const workspaceUpdateTools = {
   addLLMAgent: tool({
     description: "Add AI agent using language models for processing and decision-making",
     inputSchema: z.object({
-      agentId: z.string().describe(
-        "Unique agent identifier within workspace, e.g., 'nike_analyzer', 'content_generator', 'data_processor'",
-      ),
-      description: z.string().describe(
-        "What this agent does and its purpose, e.g., 'Analyze Nike products for hype level', 'Generate marketing content'",
-      ),
-      provider: z.enum(["anthropic", "openai", "google"]).describe(
-        "LLM provider for this agent",
-      ),
-      model: z.string().default("claude-3-7-sonnet-latest").describe(
-        "Model identifier from the selected provider, e.g., 'claude-3-7-sonnet-latest', 'gpt-4', 'gemini-pro'",
-      ),
-      prompt: z.string().describe(
-        "System prompt that defines the agent's behavior and capabilities, e.g., 'You analyze Nike products for hype potential...', 'You generate engaging social media content...'",
-      ),
-      tools: z.array(z.string()).default([]).describe(
-        "Array of external MCP server names available to this agent, e.g., ['github'], ['slack']. Atlas tools are automatically available.",
-      ),
-      temperature: z.number().min(0).max(1).default(0.3).describe(
-        "Controls randomness in model responses (0=deterministic, 1=creative)",
-      ),
+      agentId: z
+        .string()
+        .describe(
+          "Unique agent identifier within workspace, e.g., 'nike_analyzer', 'content_generator', 'data_processor'",
+        ),
+      description: z
+        .string()
+        .describe(
+          "What this agent does and its purpose, e.g., 'Analyze Nike products for hype level', 'Generate marketing content'",
+        ),
+      provider: z.enum(["anthropic", "openai", "google"]).describe("LLM provider for this agent"),
+      model: z
+        .string()
+        .default("claude-3-7-sonnet-latest")
+        .describe(
+          "Model identifier from the selected provider, e.g., 'claude-3-7-sonnet-latest', 'gpt-4', 'gemini-pro'",
+        ),
+      prompt: z
+        .string()
+        .describe(
+          "System prompt that defines the agent's behavior and capabilities, e.g., 'You analyze Nike products for hype potential...', 'You generate engaging social media content...'",
+        ),
+      tools: z
+        .array(z.string())
+        .default([])
+        .describe(
+          "Array of external MCP server names available to this agent, e.g., ['github'], ['slack']. Atlas tools are automatically available.",
+        ),
+      temperature: z
+        .number()
+        .min(0)
+        .max(1)
+        .default(0.3)
+        .describe("Controls randomness in model responses (0=deterministic, 1=creative)"),
     }),
     execute: ({ agentId, description, provider, model, prompt, tools, temperature }) => {
       const builder = getUpdateBuilder();
       const agentConfig: WorkspaceAgentConfig = {
         type: "llm",
         description,
-        config: {
-          provider,
-          model,
-          prompt,
-          tools,
-          temperature,
-        },
+        config: { provider, model, prompt, tools, temperature },
       };
 
       const result = builder.addAgent(agentId, agentConfig);
@@ -327,21 +342,22 @@ export const workspaceUpdateTools = {
   addRemoteAgent: tool({
     description: "Add a remote agent that connects to external services via ACP protocol",
     inputSchema: z.object({
-      agentId: z.string().describe(
-        "Unique agent identifier within workspace, e.g., 'external_api', 'third_party_service'",
-      ),
-      description: z.string().describe(
-        "What this agent does and its purpose, e.g., 'Connect to external API service', 'Interface with third-party system'",
-      ),
-      endpoint: z.url().describe(
-        "URL endpoint for the remote agent",
-      ),
-      agentName: z.string().describe(
-        "Agent name on the remote system (lowercase with hyphens)",
-      ),
-      defaultMode: z.enum(["sync", "async", "stream"]).default("async").describe(
-        "Default communication mode with the remote agent",
-      ),
+      agentId: z
+        .string()
+        .describe(
+          "Unique agent identifier within workspace, e.g., 'external_api', 'third_party_service'",
+        ),
+      description: z
+        .string()
+        .describe(
+          "What this agent does and its purpose, e.g., 'Connect to external API service', 'Interface with third-party system'",
+        ),
+      endpoint: z.url().describe("URL endpoint for the remote agent"),
+      agentName: z.string().describe("Agent name on the remote system (lowercase with hyphens)"),
+      defaultMode: z
+        .enum(["sync", "async", "stream"])
+        .default("async")
+        .describe("Default communication mode with the remote agent"),
     }),
     execute: ({ agentId, description, endpoint, agentName, defaultMode }) => {
       const builder = getUpdateBuilder();
@@ -369,21 +385,22 @@ export const workspaceUpdateTools = {
   createJob: tool({
     description: "Create a job that connects signals to agents in an execution pipeline",
     inputSchema: z.object({
-      jobName: z.string().regex(/^[a-zA-Z0-9_-]+$/).describe(
-        "Unique job name following MCP naming conventions (letters, numbers, underscores, and hyphens)",
-      ),
-      description: z.string().optional().describe(
-        "Optional description of what this job does",
-      ),
-      triggerSignal: z.string().describe(
-        "Name of the signal that triggers this job",
-      ),
-      agents: z.array(z.string()).min(1).describe(
-        "Array of agent IDs that will execute in sequence",
-      ),
-      strategy: z.enum(["sequential", "parallel"]).default("sequential").describe(
-        "Execution strategy for the agents",
-      ),
+      jobName: z
+        .string()
+        .regex(/^[a-zA-Z0-9_-]+$/)
+        .describe(
+          "Unique job name following MCP naming conventions (letters, numbers, underscores, and hyphens)",
+        ),
+      description: z.string().optional().describe("Optional description of what this job does"),
+      triggerSignal: z.string().describe("Name of the signal that triggers this job"),
+      agents: z
+        .array(z.string())
+        .min(1)
+        .describe("Array of agent IDs that will execute in sequence"),
+      strategy: z
+        .enum(["sequential", "parallel"])
+        .default("sequential")
+        .describe("Execution strategy for the agents"),
     }),
     execute: ({ jobName, description, triggerSignal, agents, strategy }) => {
       const builder = getUpdateBuilder();
@@ -391,10 +408,7 @@ export const workspaceUpdateTools = {
         name: jobName,
         description,
         triggers: [{ signal: triggerSignal }],
-        execution: {
-          strategy,
-          agents: agents,
-        },
+        execution: { strategy, agents: agents },
       };
 
       const result = builder.addJob(jobName, jobConfig);
@@ -409,18 +423,20 @@ export const workspaceUpdateTools = {
     description:
       "Add external MCP server integration for additional capabilities. Note: atlas-platform is automatically provided by the runtime.",
     inputSchema: z.object({
-      serverName: z.string().describe(
-        "MCP server identifier, e.g., 'github', 'slack', 'database_connector'. Atlas tools are automatically available.",
-      ),
-      command: z.string().describe(
-        "Command to start the MCP server, e.g., 'deno'",
-      ),
-      args: z.array(z.string()).default([]).describe(
-        "Additional arguments for the MCP server command",
-      ),
-      env: z.record(z.string(), z.string()).optional().describe(
-        "Environment variables for the MCP server",
-      ),
+      serverName: z
+        .string()
+        .describe(
+          "MCP server identifier, e.g., 'github', 'slack', 'database_connector'. Atlas tools are automatically available.",
+        ),
+      command: z.string().describe("Command to start the MCP server, e.g., 'deno'"),
+      args: z
+        .array(z.string())
+        .default([])
+        .describe("Additional arguments for the MCP server command"),
+      env: z
+        .record(z.string(), z.string())
+        .optional()
+        .describe("Environment variables for the MCP server"),
     }),
     execute: ({ serverName, command, args, env }) => {
       // CRITICAL: Prevent using this tool for atlas-platform
@@ -433,14 +449,7 @@ export const workspaceUpdateTools = {
       }
 
       const builder = getUpdateBuilder();
-      const serverConfig: MCPServerConfig = {
-        transport: {
-          type: "stdio",
-          command,
-          args,
-        },
-        env,
-      };
+      const serverConfig: MCPServerConfig = { transport: { type: "stdio", command, args }, env };
 
       const result = builder.addMCPIntegration(serverName, serverConfig);
       if (!result.success) {

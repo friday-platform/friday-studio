@@ -8,37 +8,14 @@ export interface CommandInfo {
 
 // Define all available commands and their aliases
 export const COMMANDS: CommandInfo[] = [
-  {
-    command: "workspace",
-    aliases: ["work", "w"],
-    description: "Manage Atlas workspaces",
-  },
-  {
-    command: "session",
-    aliases: ["sesh", "sess"],
-    description: "Manage Atlas sessions",
-  },
-  {
-    command: "signal",
-    aliases: ["sig"],
-    description: "Manage workspace signals",
-  },
+  { command: "workspace", aliases: ["work", "w"], description: "Manage Atlas workspaces" },
+  { command: "session", aliases: ["sesh", "sess"], description: "Manage Atlas sessions" },
+  { command: "signal", aliases: ["sig"], description: "Manage workspace signals" },
   { command: "agent", aliases: ["ag"], description: "Manage workspace agents" },
-  {
-    command: "library",
-    aliases: ["lib"],
-    description: "Manage library items and templates",
-  },
+  { command: "library", aliases: ["lib"], description: "Manage library items and templates" },
   { command: "logs", aliases: ["log"], description: "View session logs" },
-  {
-    command: "ps",
-    description: "List active sessions (alias for 'session list')",
-  },
-  {
-    command: "version",
-    aliases: ["v"],
-    description: "Show Atlas version information",
-  },
+  { command: "ps", description: "List active sessions (alias for 'session list')" },
+  { command: "version", aliases: ["v"], description: "Show Atlas version information" },
   { command: "help", aliases: ["h"], description: "Show help information" },
 ];
 
@@ -90,10 +67,7 @@ export function findClosestCommand(
 
   for (const cmd of commands) {
     // Check main command
-    const cmdDistance = levenshtein(
-      input.toLowerCase(),
-      cmd.command.toLowerCase(),
-    );
+    const cmdDistance = levenshtein(input.toLowerCase(), cmd.command.toLowerCase());
     if (cmdDistance <= threshold) {
       suggestions.push({ command: cmd, distance: cmdDistance });
     }
@@ -101,10 +75,7 @@ export function findClosestCommand(
     // Check aliases
     if (cmd.aliases) {
       for (const alias of cmd.aliases) {
-        const aliasDistance = levenshtein(
-          input.toLowerCase(),
-          alias.toLowerCase(),
-        );
+        const aliasDistance = levenshtein(input.toLowerCase(), alias.toLowerCase());
         if (aliasDistance <= threshold) {
           suggestions.push({ command: cmd, distance: aliasDistance });
         }

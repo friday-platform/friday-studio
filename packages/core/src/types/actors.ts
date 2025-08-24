@@ -5,6 +5,7 @@
  * for the Atlas actor hierarchy.
  */
 
+import type { AgentResult } from "@atlas/agent-sdk";
 import type {
   AtlasMemoryConfig,
   JobSpecification,
@@ -14,7 +15,6 @@ import type {
   WorkspaceConfig,
   WorkspaceSignalConfig,
 } from "@atlas/config";
-import type { AgentResult } from "@atlas/agent-sdk";
 import type { SessionSupervisorStatusType } from "../constants/supervisor-status.ts";
 
 // Type aliases for clarity

@@ -1,6 +1,6 @@
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { ToolContext } from "../types.ts";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { createSuccessResponse } from "../types.ts";
 import { fetchWithTimeout, handleDaemonResponse } from "../utils.ts";
 
@@ -11,12 +11,15 @@ export function registerLibraryGetTool(server: McpServer, ctx: ToolContext) {
       description:
         "Retrieve a specific library item including its metadata and optionally its full content. Use this to access stored reports, session archives, templates, or other resources by their unique identifier.",
       inputSchema: {
-        itemId: z.string().describe(
-          "Unique identifier of the library item to retrieve (obtain from library_list)",
-        ),
-        includeContent: z.boolean().default(false).describe(
-          "Whether to include the full content/data of the item, not just metadata (useful for reports, documents, or archived results)",
-        ),
+        itemId: z
+          .string()
+          .describe("Unique identifier of the library item to retrieve (obtain from library_list)"),
+        includeContent: z
+          .boolean()
+          .default(false)
+          .describe(
+            "Whether to include the full content/data of the item, not just metadata (useful for reports, documents, or archived results)",
+          ),
       },
     },
     async ({ itemId, includeContent = false }) => {

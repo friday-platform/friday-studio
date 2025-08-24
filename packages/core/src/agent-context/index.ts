@@ -6,15 +6,15 @@
  */
 
 import type { AgentContext, AgentSessionData, AtlasAgent, AtlasTool } from "@atlas/agent-sdk";
-import { stripSourceAttributionTags } from "../prompts/source-attribution.ts";
 import type { MCPServerConfig, WorkspaceConfig } from "@atlas/config";
 import type { Logger } from "@atlas/logger";
-import { CoALAMemoryManager, CoALAMemoryType, MemorySource } from "@atlas/memory";
-import type { GlobalMCPServerPool } from "../mcp-server-pool.ts";
-import { createEnvironmentContext } from "./environment-context.ts";
-import { MCPStreamEmitter, NoOpStreamEmitter } from "../streaming/stream-emitters.ts";
+import { type CoALAMemoryManager, CoALAMemoryType, MemorySource } from "@atlas/memory";
 import { createAtlasClient } from "@atlas/oapi-client";
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import type { GlobalMCPServerPool } from "../mcp-server-pool.ts";
+import { stripSourceAttributionTags } from "../prompts/source-attribution.ts";
+import { MCPStreamEmitter, NoOpStreamEmitter } from "../streaming/stream-emitters.ts";
+import { createEnvironmentContext } from "./environment-context.ts";
 
 export interface AgentContextBuilderDeps {
   daemonUrl: string;
@@ -211,10 +211,7 @@ function mergeServerConfigs(
 
   // Add Atlas platform server (takes priority over workspace servers)
   const platformServerConfig: MCPServerConfig = {
-    transport: {
-      type: "http",
-      url: "http://localhost:8080/mcp",
-    },
+    transport: { type: "http", url: "http://localhost:8080/mcp" },
   };
 
   merged["atlas-platform"] = platformServerConfig;
@@ -280,9 +277,9 @@ async function enrichPromptWithMemories(
     // Sanitize any prior content to avoid leaking/replicating source tags
     const sanitizedRecent = recentWorkingMemory
       ? {
-        content: stripSourceAttributionTags(recentWorkingMemory.content),
-        timestamp: recentWorkingMemory.timestamp,
-      }
+          content: stripSourceAttributionTags(recentWorkingMemory.content),
+          timestamp: recentWorkingMemory.timestamp,
+        }
       : null;
     const sanitizedMemories = memoryResults.memories.map((m) => ({
       ...m,
@@ -336,15 +333,16 @@ async function storePreviousResultsAsWorkingMemory(
   try {
     for (const result of previousResults) {
       // Store the actual output as the primary content for the next agent
-      const outputStr = typeof result.output === "string"
-        ? result.output
-        : JSON.stringify(result.output, null, 2);
+      const outputStr =
+        typeof result.output === "string" ? result.output : JSON.stringify(result.output, null, 2);
 
       // Create a structured memory content that preserves the actual data
       // The output is the most important part for the next agent in the chain
       // Truncate or summarize the task to avoid storing entire prompts/code
       const taskSummary = result.task
-        ? result.task.length > 100 ? result.task.substring(0, 97) + "..." : result.task
+        ? result.task.length > 100
+          ? result.task.substring(0, 97) + "..."
+          : result.task
         : "No prompt available";
 
       const memoryContent = `Agent: ${result.agentId}
@@ -354,17 +352,13 @@ Output: ${outputStr}`;
       // Store as WORKING memory with session-specific key
       const memoryKey = `wrk:${sessionId}:agent_result:${result.agentId}:${Date.now()}`;
 
-      await sessionMemory.rememberWithMetadata(
-        memoryKey,
-        memoryContent,
-        {
-          memoryType: CoALAMemoryType.WORKING,
-          tags: ["working", "session", "agent_result", result.agentId],
-          relevanceScore: 0.9, // High relevance for recent outputs
-          source: MemorySource.AGENT_OUTPUT,
-          sourceMetadata: { agentId: result.agentId, sessionId },
-        },
-      );
+      await sessionMemory.rememberWithMetadata(memoryKey, memoryContent, {
+        memoryType: CoALAMemoryType.WORKING,
+        tags: ["working", "session", "agent_result", result.agentId],
+        relevanceScore: 0.9, // High relevance for recent outputs
+        source: MemorySource.AGENT_OUTPUT,
+        sourceMetadata: { agentId: result.agentId, sessionId },
+      });
     }
 
     logger.debug("Stored previous results as WORKING memory", {
@@ -406,10 +400,7 @@ async function getMostRecentWorkingMemory(
     if (workingMemories.memories.length > 0) {
       const recent = workingMemories.memories[0];
       if (recent) {
-        return {
-          content: recent.content,
-          timestamp: recent.timestamp || new Date(),
-        };
+        return { content: recent.content, timestamp: recent.timestamp || new Date() };
       }
     }
 
@@ -437,8 +428,8 @@ function calculateAvailableTokenBudget(prompt: string): number {
   const reservedResponseTokens = 8000; // Larger response buffer for 200k model
   const bufferTokens = Math.ceil(maxContextTokens * 0.05); // 5% buffer for 200k
 
-  const availableForMemory = maxContextTokens - promptTokens - reservedResponseTokens -
-    bufferTokens;
+  const availableForMemory =
+    maxContextTokens - promptTokens - reservedResponseTokens - bufferTokens;
 
   // Ensure minimum viable budget (much higher for 200k model)
   return Math.max(availableForMemory, 5000);
@@ -451,15 +442,13 @@ function calculateAvailableTokenBudget(prompt: string): number {
 function buildMemoryEnhancedPrompt(
   originalPrompt: string,
   recentWorkingMemory: { content: string; timestamp: Date } | null,
-  allMemories: Array<
-    {
-      memoryType: string;
-      content: string;
-      relevanceScore?: number;
-      similarity?: number;
-      timestamp?: Date;
-    }
-  >,
+  allMemories: Array<{
+    memoryType: string;
+    content: string;
+    relevanceScore?: number;
+    similarity?: number;
+    timestamp?: Date;
+  }>,
   maxTokens: number,
   logger: Logger,
 ): string {
@@ -470,9 +459,11 @@ function buildMemoryEnhancedPrompt(
   const originalRequestSection = `## Current Request\n${originalPrompt}`;
 
   // 1. Add most recent working memory for immediate context (high priority)
-  if (recentWorkingMemory && tokensUsed < maxTokens * 0.7) { // Use up to 70% for recent context
+  if (recentWorkingMemory && tokensUsed < maxTokens * 0.7) {
+    // Use up to 70% for recent context
     const recentTokens = Math.ceil(recentWorkingMemory.content.length / 4);
-    if (tokensUsed + recentTokens <= maxTokens * 0.3) { // Max 30% for recent context
+    if (tokensUsed + recentTokens <= maxTokens * 0.3) {
+      // Max 30% for recent context
       sections.push(`## Previous Agent Output\n${recentWorkingMemory.content}`);
       tokensUsed += recentTokens;
     }
@@ -490,30 +481,22 @@ function buildMemoryEnhancedPrompt(
 
     // Add memory sections in order of importance
     if (memoryAllocation.procedural.length > 0) {
-      const proceduralContext = memoryAllocation.procedural
-        .map((m) => m.content)
-        .join("\n");
+      const proceduralContext = memoryAllocation.procedural.map((m) => m.content).join("\n");
       sections.push(`## Relevant Procedures and Guidelines\n${proceduralContext}`);
     }
 
     if (memoryAllocation.semantic.length > 0) {
-      const semanticContext = memoryAllocation.semantic
-        .map((m) => m.content)
-        .join("\n");
+      const semanticContext = memoryAllocation.semantic.map((m) => m.content).join("\n");
       sections.push(`## Relevant Knowledge and Facts\n${semanticContext}`);
     }
 
     if (memoryAllocation.working.length > 0) {
-      const workingContext = memoryAllocation.working
-        .map((m) => m.content)
-        .join("\n");
+      const workingContext = memoryAllocation.working.map((m) => m.content).join("\n");
       sections.push(`## Additional Session Context\n${workingContext}`);
     }
 
     if (memoryAllocation.episodic.length > 0) {
-      const episodicContext = memoryAllocation.episodic
-        .map((m) => m.content)
-        .join("\n");
+      const episodicContext = memoryAllocation.episodic.map((m) => m.content).join("\n");
       sections.push(`## Past Experiences and Outcomes\n${episodicContext}`);
     }
 
@@ -540,25 +523,26 @@ function buildMemoryEnhancedPrompt(
  * Smart memory allocation that adjusts based on context availability
  */
 function allocateMemoriesWithSmartPrioritization(
-  memories: Array<
-    {
-      memoryType: string;
-      content: string;
-      relevanceScore?: number;
-      similarity?: number;
-      timestamp?: Date;
-    }
-  >,
+  memories: Array<{
+    memoryType: string;
+    content: string;
+    relevanceScore?: number;
+    similarity?: number;
+    timestamp?: Date;
+  }>,
   totalTokenBudget: number,
   hasRecentContext: boolean,
 ): MemoryAllocation {
   // Group memories by type
-  const memoriesByType = memories.reduce((acc, memory) => {
-    const type = memory.memoryType;
-    if (!acc[type]) acc[type] = [];
-    acc[type].push(memory);
-    return acc;
-  }, {} as Record<string, typeof memories>);
+  const memoriesByType = memories.reduce(
+    (acc, memory) => {
+      const type = memory.memoryType;
+      if (!acc[type]) acc[type] = [];
+      acc[type].push(memory);
+      return acc;
+    },
+    {} as Record<string, typeof memories>,
+  );
 
   // Sort each type by relevance (similarity or relevanceScore)
   Object.values(memoriesByType).forEach((typeMemories) => {
@@ -580,19 +564,19 @@ function allocateMemoriesWithSmartPrioritization(
   // Adjust allocation based on whether we have recent context
   const typeAllocations = hasRecentContext
     ? {
-      // Reduce working memory allocation since we have recent context
-      WORKING: Math.ceil(totalTokenBudget * 0.20), // Reduced from 40%
-      PROCEDURAL: Math.ceil(totalTokenBudget * 0.35), // Increased for procedures
-      SEMANTIC: Math.ceil(totalTokenBudget * 0.35), // Increased for knowledge
-      EPISODIC: Math.ceil(totalTokenBudget * 0.10),
-    }
+        // Reduce working memory allocation since we have recent context
+        WORKING: Math.ceil(totalTokenBudget * 0.2), // Reduced from 40%
+        PROCEDURAL: Math.ceil(totalTokenBudget * 0.35), // Increased for procedures
+        SEMANTIC: Math.ceil(totalTokenBudget * 0.35), // Increased for knowledge
+        EPISODIC: Math.ceil(totalTokenBudget * 0.1),
+      }
     : {
-      // Standard MECMF allocation when no recent context
-      WORKING: Math.ceil(totalTokenBudget * 0.40),
-      PROCEDURAL: Math.ceil(totalTokenBudget * 0.25),
-      SEMANTIC: Math.ceil(totalTokenBudget * 0.25),
-      EPISODIC: Math.ceil(totalTokenBudget * 0.10),
-    };
+        // Standard MECMF allocation when no recent context
+        WORKING: Math.ceil(totalTokenBudget * 0.4),
+        PROCEDURAL: Math.ceil(totalTokenBudget * 0.25),
+        SEMANTIC: Math.ceil(totalTokenBudget * 0.25),
+        EPISODIC: Math.ceil(totalTokenBudget * 0.1),
+      };
 
   // Allocate memories within token budget for each type
   for (const [type, budget] of Object.entries(typeAllocations)) {
@@ -602,13 +586,14 @@ function allocateMemoriesWithSmartPrioritization(
     for (const memory of typeMemories) {
       const memoryTokens = Math.ceil(memory.content.length / 4);
       if (usedTokens + memoryTokens <= budget) {
-        const targetArray = type === "WORKING"
-          ? allocation.working
-          : type === "PROCEDURAL"
-          ? allocation.procedural
-          : type === "SEMANTIC"
-          ? allocation.semantic
-          : allocation.episodic;
+        const targetArray =
+          type === "WORKING"
+            ? allocation.working
+            : type === "PROCEDURAL"
+              ? allocation.procedural
+              : type === "SEMANTIC"
+                ? allocation.semantic
+                : allocation.episodic;
 
         targetArray.push(memory);
         usedTokens += memoryTokens;

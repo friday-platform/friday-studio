@@ -1,4 +1,4 @@
-import { ConfigLoader, WorkspaceMemoryConfig } from "@atlas/config";
+import { ConfigLoader, type WorkspaceMemoryConfig } from "@atlas/config";
 import { assertEquals } from "@std/assert";
 
 // Mock adapter for testing
@@ -40,14 +40,8 @@ const baseAtlasConfig = {
   server: {
     mcp: {
       enabled: true,
-      transport: {
-        type: "sse",
-        url: "https://platform.atlas.example.com/mcp",
-      },
-      auth: {
-        required: true,
-        providers: ["bearer"],
-      },
+      transport: { type: "sse", url: "https://platform.atlas.example.com/mcp" },
+      auth: { required: true, providers: ["bearer"] },
     },
   },
   agents: {
@@ -65,18 +59,13 @@ const baseAtlasConfig = {
     "platform-signal": {
       provider: "schedule",
       description: "Platform signal",
-      config: {
-        schedule: "0 * * * *",
-      },
+      config: { schedule: "0 * * * *" },
     },
   },
   jobs: {
     "platform-job": {
       description: "Platform job",
-      execution: {
-        strategy: "sequential",
-        agents: ["platform-agent"],
-      },
+      execution: { strategy: "sequential", agents: ["platform-agent"] },
     },
   },
   memory: {
@@ -84,42 +73,27 @@ const baseAtlasConfig = {
       enabled: true,
       storage: "coala-local",
       cognitive_loop: false,
-      retention: {
-        max_age_days: 30,
-        cleanup_interval_hours: 24,
-      },
+      retention: { max_age_days: 30, cleanup_interval_hours: 24 },
     },
     agent: {
       enabled: true,
       scope: "agent",
       include_in_context: true,
-      context_limits: {
-        relevant_memories: 5,
-        past_successes: 3,
-        past_failures: 2,
-      },
+      context_limits: { relevant_memories: 5, past_successes: 3, past_failures: 2 },
       memory_types: {},
     },
     session: {
       enabled: true,
       scope: "session",
       include_in_context: true,
-      context_limits: {
-        relevant_memories: 10,
-        past_successes: 5,
-        past_failures: 3,
-      },
+      context_limits: { relevant_memories: 10, past_successes: 5, past_failures: 3 },
       memory_types: {},
     },
     workspace: {
       enabled: true,
       scope: "workspace",
       include_in_context: true,
-      context_limits: {
-        relevant_memories: 20,
-        past_successes: 10,
-        past_failures: 5,
-      },
+      context_limits: { relevant_memories: 20, past_successes: 10, past_failures: 5 },
       memory_types: {},
     },
   },
@@ -130,10 +104,7 @@ const baseAtlasConfig = {
       supervision: {
         level: "detailed",
         cache_enabled: true,
-        timeouts: {
-          analysis: "30s",
-          validation: "10s",
-        },
+        timeouts: { analysis: "30s", validation: "10s" },
       },
       prompts: {},
     },
@@ -142,10 +113,7 @@ const baseAtlasConfig = {
       supervision: {
         level: "standard",
         cache_enabled: true,
-        timeouts: {
-          analysis: "30s",
-          validation: "10s",
-        },
+        timeouts: { analysis: "30s", validation: "10s" },
       },
       prompts: {},
     },
@@ -154,10 +122,7 @@ const baseAtlasConfig = {
       supervision: {
         level: "minimal",
         cache_enabled: true,
-        timeouts: {
-          analysis: "30s",
-          validation: "10s",
-        },
+        timeouts: { analysis: "30s", validation: "10s" },
       },
       prompts: {},
     },
@@ -174,11 +139,7 @@ const baseAtlasConfig = {
         optimization_jobs: ".*optimize.*",
         planning_jobs: ".*plan.*",
       },
-      strategy_thresholds: {
-        complexity: 0.5,
-        uncertainty: 0.3,
-        optimization: 0.7,
-      },
+      strategy_thresholds: { complexity: 0.5, uncertainty: 0.3, optimization: 0.7 },
     },
     validation: {
       llm_threshold: 0.8,
@@ -192,20 +153,12 @@ const baseAtlasConfig = {
       fail_fast: false,
     },
   },
-  runtime: {
-    server: {
-      host: "0.0.0.0",
-      port: 8080,
-    },
-  },
+  runtime: { server: { host: "0.0.0.0", port: 8080 } },
 };
 
 const baseWorkspaceConfig = {
   version: "1.0",
-  workspace: {
-    name: "Test Workspace",
-    description: "User workspace",
-  },
+  workspace: { name: "Test Workspace", description: "User workspace" },
   server: {
     mcp: {
       enabled: false, // Override
@@ -226,18 +179,13 @@ const baseWorkspaceConfig = {
     "workspace-signal": {
       provider: "http",
       description: "Workspace signal",
-      config: {
-        path: "/webhook",
-      },
+      config: { path: "/webhook" },
     },
   },
   jobs: {
     "workspace-job": {
       description: "Workspace job",
-      execution: {
-        strategy: "sequential",
-        agents: ["workspace-agent"],
-      },
+      execution: { strategy: "sequential", agents: ["workspace-agent"] },
     },
   },
 };
@@ -325,17 +273,8 @@ Deno.test("Config V2 - should keep MCP servers separate in each config", async (
     ...baseAtlasConfig,
     tools: {
       mcp: {
-        client_config: {
-          timeout: {
-            progressTimeout: "2m",
-            maxTotalTimeout: "30m",
-          },
-        },
-        servers: {
-          "atlas-server": {
-            transport: { type: "stdio", command: "atlas-mcp" },
-          },
-        },
+        client_config: { timeout: { progressTimeout: "2m", maxTotalTimeout: "30m" } },
+        servers: { "atlas-server": { transport: { type: "stdio", command: "atlas-mcp" } } },
       },
     },
   };
@@ -350,11 +289,7 @@ Deno.test("Config V2 - should keep MCP servers separate in each config", async (
             maxTotalTimeout: "60m",
           },
         },
-        servers: {
-          "workspace-server": {
-            transport: { type: "stdio", command: "workspace-mcp" },
-          },
-        },
+        servers: { "workspace-server": { transport: { type: "stdio", command: "workspace-mcp" } } },
       },
     },
   };
@@ -518,24 +453,14 @@ Deno.test("Config V2 - should keep federation configs separate", async () => {
   const atlasWithFederation = {
     ...baseAtlasConfig,
     federation: {
-      sharing: {
-        "platform-share": {
-          workspaces: ["workspace-a"],
-          scopes: ["read_platform"],
-        },
-      },
+      sharing: { "platform-share": { workspaces: ["workspace-a"], scopes: ["read_platform"] } },
     },
   };
 
   const workspaceWithFederation = {
     ...baseWorkspaceConfig,
     federation: {
-      sharing: {
-        "workspace-share": {
-          workspaces: ["workspace-b"],
-          scopes: ["read_data"],
-        },
-      },
+      sharing: { "workspace-share": { workspaces: ["workspace-b"], scopes: ["read_data"] } },
     },
   };
 
@@ -564,10 +489,7 @@ Deno.test("Config V2 - should keep memory configs separate", async () => {
     memory: {
       enabled: true,
       scope: "workspace",
-      retention: {
-        max_age_days: 7,
-        max_entries: 1000,
-      },
+      retention: { max_age_days: 7, max_entries: 1000 },
     },
   };
 
@@ -611,22 +533,14 @@ Deno.test("Config V2 - should keep complex nested tool configs separate", async 
     ...baseAtlasConfig,
     tools: {
       mcp: {
-        client_config: {
-          timeout: {
-            progressTimeout: "2m",
-            maxTotalTimeout: "30m",
-          },
-        },
+        client_config: { timeout: { progressTimeout: "2m", maxTotalTimeout: "30m" } },
         servers: {
-          "github": {
+          github: {
             transport: { type: "stdio", command: "gh-mcp" },
             auth: { type: "bearer", token_env: "GH_TOKEN" },
           },
         },
-        tool_policy: {
-          type: "allowlist",
-          allow: ["github"],
-        },
+        tool_policy: { type: "allowlist", allow: ["github"] },
       },
     },
   };
@@ -642,10 +556,9 @@ Deno.test("Config V2 - should keep complex nested tool configs separate", async 
           },
         },
         servers: {
-          "slack": {
-            transport: { type: "stdio", command: "slack-mcp" },
-          },
-          "github": { // Override github
+          slack: { transport: { type: "stdio", command: "slack-mcp" } },
+          github: {
+            // Override github
             transport: { type: "stdio", command: "github-mcp-v2" },
             auth: { type: "bearer", token_env: "GITHUB_PAT" },
           },

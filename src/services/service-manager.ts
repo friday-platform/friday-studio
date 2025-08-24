@@ -1,8 +1,8 @@
 import { detectPlatform, isPlatformSupported } from "../utils/platform.ts";
-import { PlatformServiceManager, ServiceConfig, ServiceStatus } from "./types.ts";
-import { MacOSLaunchdService } from "./platforms/macos-launchd.ts";
 import { LinuxSystemdService } from "./platforms/linux-systemd.ts";
+import { MacOSLaunchdService } from "./platforms/macos-launchd.ts";
 import { WindowsService } from "./platforms/windows.ts";
+import type { PlatformServiceManager, ServiceConfig, ServiceStatus } from "./types.ts";
 
 export class ServiceManager implements PlatformServiceManager {
   private static instance: ServiceManager;

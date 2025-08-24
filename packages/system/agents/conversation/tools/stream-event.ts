@@ -5,9 +5,9 @@
  * Sends rich events to the conversation stream for real-time UI updates
  */
 
+import { getAtlasDaemonUrl } from "@atlas/atlasd";
 import { tool } from "ai";
 import { z } from "zod/v4";
-import { getAtlasDaemonUrl } from "@atlas/atlasd";
 import { fetchWithTimeout, handleDaemonResponse } from "./utils.ts";
 
 export const streamEvent = tool({

@@ -1,5 +1,5 @@
-import { daemonFactory } from "../../src/factory.ts";
 import { describeRoute, resolver, validator } from "hono-openapi";
+import { daemonFactory } from "../../src/factory.ts";
 import {
   errorResponseSchema,
   workspaceDetailsResponseSchema,
@@ -18,27 +18,15 @@ getWorkspace.get(
     responses: {
       200: {
         description: "Successfully retrieved workspace details",
-        content: {
-          "application/json": {
-            schema: resolver(workspaceDetailsResponseSchema),
-          },
-        },
+        content: { "application/json": { schema: resolver(workspaceDetailsResponseSchema) } },
       },
       404: {
         description: "Workspace not found",
-        content: {
-          "application/json": {
-            schema: resolver(errorResponseSchema),
-          },
-        },
+        content: { "application/json": { schema: resolver(errorResponseSchema) } },
       },
       500: {
         description: "Internal server error",
-        content: {
-          "application/json": {
-            schema: resolver(errorResponseSchema),
-          },
-        },
+        content: { "application/json": { schema: resolver(errorResponseSchema) } },
       },
     },
   }),
@@ -52,9 +40,7 @@ getWorkspace.get(
       const workspace = await manager.find({ id: workspaceId });
 
       if (!workspace) {
-        return c.json({
-          error: `Workspace not found: ${workspaceId}`,
-        }, 404);
+        return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
       }
 
       return c.json(workspace);
@@ -63,14 +49,10 @@ getWorkspace.get(
 
       // Check if it's a "not found" error
       if (errorMessage.includes("not found")) {
-        return c.json({
-          error: errorMessage,
-        }, 404);
+        return c.json({ error: errorMessage }, 404);
       }
 
-      return c.json({
-        error: `Failed to get workspace: ${errorMessage}`,
-      }, 500);
+      return c.json({ error: `Failed to get workspace: ${errorMessage}` }, 500);
     }
   },
 );

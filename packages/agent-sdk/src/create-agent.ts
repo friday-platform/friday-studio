@@ -5,6 +5,7 @@
  * prompts and accomplish tasks within their expertise.
  */
 
+import { z } from "zod/v4";
 import type {
   AgentContext,
   AgentEnvironmentConfig,
@@ -21,12 +22,11 @@ import {
   AgentMetadataSchema,
   MCPServerConfigSchema,
 } from "./types.ts";
-import { z } from "zod/v4";
 
 /**
  * Internal implementation of AtlasAgent
  */
-class AtlasAgentImpl<T extends unknown = unknown> implements AtlasAgent<T> {
+class AtlasAgentImpl<T = unknown> implements AtlasAgent<T> {
   metadata: AgentMetadata;
   private handler: AgentHandler;
   private environment?: AgentEnvironmentConfig;
@@ -90,7 +90,7 @@ class AtlasAgentImpl<T extends unknown = unknown> implements AtlasAgent<T> {
   async execute(prompt: string, context: AgentContext): Promise<T> {
     try {
       // Execute the handler with the prompt and context
-      return await this.handler(prompt, context) as T;
+      return (await this.handler(prompt, context)) as T;
     } catch (error) {
       // Re-throw AwaitingSupervisorDecision exceptions
       if (error instanceof Error && error.name === "AwaitingSupervisorDecision") {
@@ -175,8 +175,6 @@ class AtlasAgentImpl<T extends unknown = unknown> implements AtlasAgent<T> {
  * });
  * ```
  */
-export function createAgent<T extends unknown = unknown>(
-  config: CreateAgentConfig<T>,
-): AtlasAgent<T> {
+export function createAgent<T = unknown>(config: CreateAgentConfig<T>): AtlasAgent<T> {
   return new AtlasAgentImpl<T>(config);
 }

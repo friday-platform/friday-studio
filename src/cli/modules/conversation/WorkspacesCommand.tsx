@@ -1,5 +1,5 @@
-import { WorkspaceSelection } from "./workspace-selection.tsx";
 import { getDaemonClient } from "../../utils/daemon-client.ts";
+import { WorkspaceSelection } from "./workspace-selection.tsx";
 
 interface WorkspacesCommandProps {
   onComplete: (selectedWorkspace?: string) => void;
@@ -72,10 +72,5 @@ export function WorkspacesCommand({ onComplete }: WorkspacesCommandProps) {
     onComplete();
   };
 
-  return (
-    <WorkspaceSelection
-      onEscape={onComplete}
-      onWorkspaceSelect={handleWorkspaceSelect}
-    />
-  );
+  return <WorkspaceSelection onEscape={onComplete} onWorkspaceSelect={handleWorkspaceSelect} />;
 }

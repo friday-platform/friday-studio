@@ -2,8 +2,8 @@
  * Core types for the reasoning machine
  */
 
-import { Tool, ToolCallUnion } from "ai";
 import type { ReasoningResultStatusType } from "@atlas/core";
+import type { Tool, ToolCallUnion } from "ai";
 
 /**
  * Base reasoning context that all reasoning contexts must extend.
@@ -21,10 +21,7 @@ export interface BaseReasoningContext {
 
 // User context for session-based reasoning
 export interface SessionReasoningContext extends BaseReasoningContext {
-  signal: {
-    id: string;
-    [key: string]: unknown;
-  };
+  signal: { id: string; [key: string]: unknown };
   payload: Record<string, unknown>;
   availableAgents: Array<{
     id: string;
@@ -89,13 +86,9 @@ export interface ReasoningContext<TUserContext extends BaseReasoningContext> {
   currentIteration: number;
 }
 
-export interface ReasoningCallbacks<
-  TUserContext extends BaseReasoningContext,
-> {
+export interface ReasoningCallbacks<TUserContext extends BaseReasoningContext> {
   // Required: Generate thinking based on current state
-  think: (
-    context: ReasoningContext<TUserContext>,
-  ) => Promise<ReasoningCompletion>;
+  think: (context: ReasoningContext<TUserContext>) => Promise<ReasoningCompletion>;
 
   // Required: Parse action from thinking
   parseAction: (thinking: ReasoningThinking) => ReasoningAction | null;
@@ -152,10 +145,7 @@ export interface ReasoningResult {
     output: unknown;
     artifacts: Record<string, unknown>;
   };
-  metrics: {
-    agentCalls: number;
-    toolCalls: number;
-  };
+  metrics: { agentCalls: number; toolCalls: number };
 }
 
 export interface ReasoningExecutionResult {

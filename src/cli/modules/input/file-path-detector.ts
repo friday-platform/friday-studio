@@ -13,7 +13,7 @@ export const UNIX_PATH_PATTERNS = [
 ];
 
 export const WINDOWS_PATH_PATTERNS = [
-  /^[A-Za-z]:[\\\/].*$/, // Drive letter paths (allow spaces)
+  /^[A-Za-z]:[\\/].*$/, // Drive letter paths (allow spaces)
   /^\\\\.*$/, // UNC paths (allow spaces)
 ];
 
@@ -33,10 +33,10 @@ export function extractFileName(path: string): string {
   let cleanPath = path.replace(/\\ /g, " ");
 
   // Remove trailing slashes
-  cleanPath = cleanPath.replace(/[\/\\]+$/, "");
+  cleanPath = cleanPath.replace(/[/\\]+$/, "");
 
   // Split by both forward and back slashes
-  const segments = cleanPath.split(/[\/\\]/);
+  const segments = cleanPath.split(/[/\\]/);
 
   // Get the last non-empty segment
   const lastSegment = segments.filter((s) => s.length > 0).pop();
@@ -135,12 +135,6 @@ export function detectFilePaths(text: string): DetectedPath[] {
     const hasExt = hasFileExtension(path);
     const extension = hasExt ? fileName.split(".").pop() : undefined;
 
-    return {
-      originalText: path,
-      fileName,
-      isDirectory: !hasExt,
-      hasExtension: hasExt,
-      extension,
-    };
+    return { originalText: path, fileName, isDirectory: !hasExt, hasExtension: hasExt, extension };
   });
 }

@@ -1,16 +1,15 @@
 import { ensureDir } from "@std/fs";
 import { join } from "@std/path";
+import type { AgentMetadata } from "../types/agent.ts";
 import type { IWorkspace, IWorkspaceMember, WorkspaceMemberRole } from "../types/core.ts";
 import { Workspace } from "./workspace.ts";
-import type { AgentMetadata } from "../types/agent.ts";
 
 export class AtlasWorkspaceManager {
   private workspacesPath: string;
   private workspaces: Map<string, IWorkspace> = new Map();
 
   constructor(storagePath?: string) {
-    this.workspacesPath = storagePath ||
-      join(Deno.cwd(), ".atlas", "workspaces");
+    this.workspacesPath = storagePath || join(Deno.cwd(), ".atlas", "workspaces");
   }
 
   private async ensureLoaded(): Promise<void> {
@@ -95,14 +94,7 @@ export class AtlasWorkspaceManager {
     const metaPath = join(workspacePath, "workspace.json");
     await Deno.writeTextFile(
       metaPath,
-      JSON.stringify(
-        {
-          ...meta,
-          snapshot: workspace.snapshot(),
-        },
-        null,
-        2,
-      ),
+      JSON.stringify({ ...meta, snapshot: workspace.snapshot() }, null, 2),
     );
 
     // Save workspace state with agent metadata instead of full agents
@@ -184,10 +176,7 @@ export class AtlasWorkspaceManager {
       const agentMetadata = state.agentMetadata || state.agents || {}; // Backward compatibility
       for (const [id, metadata] of Object.entries(agentMetadata)) {
         try {
-          if (
-            typeof metadata === "object" && metadata !== null &&
-            "type" in metadata
-          ) {
+          if (typeof metadata === "object" && metadata !== null && "type" in metadata) {
             // Legacy agent restoration - now handled by AgentLoader during runtime
             console.warn(
               `Skipping agent restoration for ${id} - agents are now loaded from configuration`,

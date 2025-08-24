@@ -1,6 +1,7 @@
 import { logger } from "@atlas/logger";
 import type { CoALAMemoryManager } from "../coala-memory.ts";
 import type {
+  SessionCompleteStream as _SessionCompleteStream,
   AgentResultStream,
   ContextualUpdateStream,
   EpisodicEventStream,
@@ -8,7 +9,6 @@ import type {
   MemoryStreamProcessor,
   ProceduralPatternStream,
   SemanticFactStream,
-  SessionCompleteStream as _SessionCompleteStream,
 } from "./memory-stream.ts";
 
 /**
@@ -332,17 +332,21 @@ export class AgentResultProcessor implements MemoryStreamProcessor {
       // Write a WORKING memory entry capturing the raw agent result for session context
       try {
         const tags = ["working", "session", "agent", stream.data.agent_id];
-        this.memoryManager.rememberWorking(stream.sessionId, {
-          kind: "agent_result",
-          agentId: stream.data.agent_id,
-          input: stream.data.input,
-          output: stream.data.output,
-          success: stream.data.success,
-          tokensUsed: stream.data.tokens_used,
-          error: stream.data.error,
-          durationMs: stream.data.duration_ms,
-          timestamp: stream.timestamp,
-        }, { tags, relevanceScore: 0.65, confidence: 0.9 });
+        this.memoryManager.rememberWorking(
+          stream.sessionId,
+          {
+            kind: "agent_result",
+            agentId: stream.data.agent_id,
+            input: stream.data.input,
+            output: stream.data.output,
+            success: stream.data.success,
+            tokensUsed: stream.data.tokens_used,
+            error: stream.data.error,
+            durationMs: stream.data.duration_ms,
+            timestamp: stream.timestamp,
+          },
+          { tags, relevanceScore: 0.65, confidence: 0.9 },
+        );
       } catch (e) {
         logger.debug("Failed to write working memory for agent_result", {
           error: e instanceof Error ? e.message : String(e),
@@ -415,13 +419,17 @@ export class AgentResultProcessor implements MemoryStreamProcessor {
     const outputSize = data.output ? JSON.stringify(data.output).length : 0;
 
     if (data.success) {
-      return `Agent ${data.agent_id} successfully processed ${inputSize} chars of input, ` +
+      return (
+        `Agent ${data.agent_id} successfully processed ${inputSize} chars of input, ` +
         `produced ${outputSize} chars of output in ${data.duration_ms}ms using ${
           data.tokens_used || 0
-        } tokens`;
+        } tokens`
+      );
     } else {
-      return `Agent ${data.agent_id} failed to process ${inputSize} chars of input after ${data.duration_ms}ms. ` +
-        `Error: ${data.error || "unknown error"}`;
+      return (
+        `Agent ${data.agent_id} failed to process ${inputSize} chars of input after ${data.duration_ms}ms. ` +
+        `Error: ${data.error || "unknown error"}`
+      );
     }
   }
 

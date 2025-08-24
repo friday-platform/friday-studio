@@ -10,7 +10,8 @@ import { join } from "@std/path";
 
 async function clean() {
   // Determine the Atlas home directory
-  const atlasHome = Deno.env.get("ATLAS_HOME") ||
+  const atlasHome =
+    Deno.env.get("ATLAS_HOME") ||
     join(Deno.env.get("HOME") || Deno.env.get("USERPROFILE") || "", ".atlas");
 
   try {

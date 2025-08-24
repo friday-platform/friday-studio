@@ -21,21 +21,26 @@ const BaseNotificationProviderSchema = z.strictObject({
  * Email parameters schema
  */
 export const EmailParamsSchema = z.strictObject({
-  to: z.union([z.string().email(), z.array(z.string().email())]).describe(
-    "Recipient email address(es)",
-  ),
+  to: z
+    .union([z.string().email(), z.array(z.string().email())])
+    .describe("Recipient email address(es)"),
   subject: z.string().describe("Email subject line"),
   content: z.string().describe("Email content (HTML or plain text)"),
   from: z.string().email().optional().describe("Override sender email"),
   from_name: z.string().optional().describe("Override sender name"),
   template_id: z.string().optional().describe("Template ID for provider-specific templates"),
   template_data: z.record(z.string(), z.unknown()).optional().describe("Template variables"),
-  attachments: z.array(z.strictObject({
-    filename: z.string().describe("Attachment filename"),
-    content: z.string().describe("Base64 encoded attachment content"),
-    type: z.string().describe("MIME type"),
-    disposition: z.enum(["attachment", "inline"]).default("attachment"),
-  })).optional().describe("Email attachments"),
+  attachments: z
+    .array(
+      z.strictObject({
+        filename: z.string().describe("Attachment filename"),
+        content: z.string().describe("Base64 encoded attachment content"),
+        type: z.string().describe("MIME type"),
+        disposition: z.enum(["attachment", "inline"]).default("attachment"),
+      }),
+    )
+    .optional()
+    .describe("Email attachments"),
 });
 
 /**
@@ -135,9 +140,13 @@ export const NotificationProviderSchema = z.discriminatedUnion("provider", [
 export const NotificationDefaultsSchema = z.strictObject({
   enabled: z.boolean().default(true).describe("Whether notifications are enabled by default"),
   provider: z.string().optional().describe("Default provider name to use"),
-  retry_attempts: z.number().int().min(0).max(10).default(3).describe(
-    "Default number of retry attempts",
-  ),
+  retry_attempts: z
+    .number()
+    .int()
+    .min(0)
+    .max(10)
+    .default(3)
+    .describe("Default number of retry attempts"),
   retry_delay: DurationSchema.default("5s").describe("Default delay between retry attempts"),
   retry_backoff: z.number().min(1).max(10).default(2).describe("Retry backoff multiplier"),
   timeout: DurationSchema.default("30s").describe("Default request timeout"),
@@ -147,9 +156,10 @@ export const NotificationDefaultsSchema = z.strictObject({
  * Main notification configuration schema
  */
 export const NotificationConfigSchema = z.strictObject({
-  providers: z.record(z.string(), NotificationProviderSchema).optional().describe(
-    "Notification providers by name",
-  ),
+  providers: z
+    .record(z.string(), NotificationProviderSchema)
+    .optional()
+    .describe("Notification providers by name"),
   defaults: NotificationDefaultsSchema.optional().describe("Default notification settings"),
 });
 

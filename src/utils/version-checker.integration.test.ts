@@ -6,8 +6,8 @@
  */
 
 import { assert, assertEquals, assertExists } from "@std/assert";
-import { checkAndDisplayUpdate, checkForUpdates } from "./version-checker.ts";
 import { ReleaseChannel } from "./release-channel.ts";
+import { checkAndDisplayUpdate, checkForUpdates } from "./version-checker.ts";
 
 Deno.test("Version Checker - Development builds skip checking", async () => {
   const result = await checkForUpdates();
@@ -23,12 +23,9 @@ Deno.test("Version Checker - API endpoints are accessible", async () => {
 
   for (const channel of channels) {
     try {
-      const response = await fetch(
-        `https://atlas.tempestdx.com/version/${channel}`,
-        {
-          signal: AbortSignal.timeout(10000),
-        },
-      );
+      const response = await fetch(`https://atlas.tempestdx.com/version/${channel}`, {
+        signal: AbortSignal.timeout(10000),
+      });
 
       assert(response.ok, `${channel} API should be accessible`);
 
@@ -36,10 +33,7 @@ Deno.test("Version Checker - API endpoints are accessible", async () => {
       assert(typeof data === "object", "Response should be JSON object");
       assert(typeof data.channel === "string", "Should have channel field");
       assert(typeof data.latest === "object", "Should have latest field");
-      assert(
-        typeof data.latest.version === "string",
-        "Should have version field",
-      );
+      assert(typeof data.latest.version === "string", "Should have version field");
 
       // Verify version format (date-based)
       const versionPattern = /^\d{8}-/;
@@ -48,27 +42,21 @@ Deno.test("Version Checker - API endpoints are accessible", async () => {
         `Version should start with date: ${data.latest.version}`,
       );
     } catch (error) {
-      console.warn(
-        `Skipping ${channel} API test due to network issue:`,
-        error.message,
-      );
+      console.warn(`Skipping ${channel} API test due to network issue:`, error.message);
     }
   }
 });
 
-Deno.test(
-  "Version Checker - Performance requirement with caching",
-  async () => {
-    const startTime = performance.now();
+Deno.test("Version Checker - Performance requirement with caching", async () => {
+  const startTime = performance.now();
 
-    await checkAndDisplayUpdate();
+  await checkAndDisplayUpdate();
 
-    const duration = performance.now() - startTime;
+  const duration = performance.now() - startTime;
 
-    // Should complete quickly to avoid blocking CLI startup (2s max, but usually much faster due to caching)
-    assert(duration < 2500, `Version check should be fast, took ${duration}ms`);
-  },
-);
+  // Should complete quickly to avoid blocking CLI startup (2s max, but usually much faster due to caching)
+  assert(duration < 2500, `Version check should be fast, took ${duration}ms`);
+});
 
 Deno.test("Version Checker - Caching behavior", async () => {
   // First call
@@ -159,9 +147,7 @@ Deno.test("Version CLI - Remote flag integration test", async () => {
     // For dev builds, should show disabled message instead of checking
     assert(
       outputs.some((line) =>
-        line.includes(
-          "Remote version checking is disabled for development builds",
-        )
+        line.includes("Remote version checking is disabled for development builds"),
       ),
       "Should show dev build message",
     );
@@ -223,61 +209,56 @@ Deno.test("Version CLI - Remote flag with JSON output", async () => {
   }
 });
 
-Deno.test(
-  "Version CLI - displayVersionWithRemote function unit test",
-  async () => {
-    const { displayVersionWithRemote } = await import("../utils/version.ts");
+Deno.test("Version CLI - displayVersionWithRemote function unit test", async () => {
+  const { displayVersionWithRemote } = await import("../utils/version.ts");
 
-    // Capture console output
-    const originalConsoleLog = console.log;
-    const outputs: string[] = [];
+  // Capture console output
+  const originalConsoleLog = console.log;
+  const outputs: string[] = [];
 
-    console.log = (...args: unknown[]) => {
-      outputs.push(args.join(" "));
-    };
+  console.log = (...args: unknown[]) => {
+    outputs.push(args.join(" "));
+  };
 
-    try {
-      // Test human-readable output
-      await displayVersionWithRemote(false);
+  try {
+    // Test human-readable output
+    await displayVersionWithRemote(false);
 
-      assert(outputs.length > 0, "Should produce output");
-      assert(
-        outputs.some((line) => line.includes("Atlas")),
-        "Should show version info",
-      );
-      // For dev builds, should show disabled message instead of checking
-      assert(
-        outputs.some((line) =>
-          line.includes(
-            "Remote version checking is disabled for development builds",
-          )
-        ),
-        "Should show dev build message",
-      );
+    assert(outputs.length > 0, "Should produce output");
+    assert(
+      outputs.some((line) => line.includes("Atlas")),
+      "Should show version info",
+    );
+    // For dev builds, should show disabled message instead of checking
+    assert(
+      outputs.some((line) =>
+        line.includes("Remote version checking is disabled for development builds"),
+      ),
+      "Should show dev build message",
+    );
 
-      // Reset for JSON test
-      outputs.length = 0;
+    // Reset for JSON test
+    outputs.length = 0;
 
-      // Test JSON output
-      await displayVersionWithRemote(true);
+    // Test JSON output
+    await displayVersionWithRemote(true);
 
-      assert(outputs.length > 0, "Should produce JSON output");
-      const jsonOutput = outputs.join(" ");
-      const parsed = JSON.parse(jsonOutput);
+    assert(outputs.length > 0, "Should produce JSON output");
+    const jsonOutput = outputs.join(" ");
+    const parsed = JSON.parse(jsonOutput);
 
-      assertExists(parsed.version);
-      assertExists(parsed.remote);
-      assertEquals(typeof parsed.remote.hasUpdate, "boolean");
+    assertExists(parsed.version);
+    assertExists(parsed.remote);
+    assertEquals(typeof parsed.remote.hasUpdate, "boolean");
 
-      // For dev builds, should have skipped flag and reason
-      if (parsed.isDev) {
-        assertEquals(parsed.remote.skipped, true);
-        assertExists(parsed.remote.reason);
-      }
-    } finally {
-      console.log = originalConsoleLog;
+    // For dev builds, should have skipped flag and reason
+    if (parsed.isDev) {
+      assertEquals(parsed.remote.skipped, true);
+      assertExists(parsed.remote.reason);
     }
-  },
-);
+  } finally {
+    console.log = originalConsoleLog;
+  }
+});
 
 console.log("✅ Version checker integration tests completed!");

@@ -7,8 +7,5 @@ export interface WorkspaceHealthData {
   sessions: number;
   uptime: number;
   detached: boolean;
-  memory?: {
-    heapUsed: number;
-    heapTotal: number;
-  };
+  memory?: { heapUsed: number; heapTotal: number };
 }

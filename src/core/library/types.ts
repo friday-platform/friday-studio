@@ -102,11 +102,7 @@ export interface LibraryStats {
   total_items: number;
   total_size_bytes: number;
   types: Record<string, number>;
-  recent_activity: Array<{
-    date: string;
-    items_added: number;
-    items_modified: number;
-  }>;
+  recent_activity: Array<{ date: string; items_added: number; items_modified: number }>;
 }
 
 // Template engine interfaces

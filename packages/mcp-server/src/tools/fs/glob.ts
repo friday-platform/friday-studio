@@ -1,8 +1,8 @@
-import { z } from "zod";
-import * as path from "@std/path";
-import { expandGlob } from "@std/fs";
-import type { ToolContext } from "../types.ts";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { expandGlob } from "@std/fs";
+import * as path from "@std/path";
+import { z } from "zod";
+import type { ToolContext } from "../types.ts";
 import { createSuccessResponse } from "../types.ts";
 
 export function registerGlobTool(server: McpServer, _ctx: ToolContext) {
@@ -34,13 +34,11 @@ export function registerGlobTool(server: McpServer, _ctx: ToolContext) {
       let truncated = false;
 
       // Use expandGlob from @std/fs
-      for await (
-        const walkEntry of expandGlob(params.pattern, {
-          root: searchPath,
-          includeDirs: false, // Only files, not directories
-          globstar: true,
-        })
-      ) {
+      for await (const walkEntry of expandGlob(params.pattern, {
+        root: searchPath,
+        includeDirs: false, // Only files, not directories
+        globstar: true,
+      })) {
         if (files.length >= limit) {
           truncated = true;
           break;
@@ -54,10 +52,7 @@ export function registerGlobTool(server: McpServer, _ctx: ToolContext) {
           mtime = 0;
         }
 
-        files.push({
-          path: walkEntry.path,
-          mtime: mtime,
-        });
+        files.push({ path: walkEntry.path, mtime: mtime });
       }
 
       // Sort by modification time, newest first
@@ -76,10 +71,7 @@ export function registerGlobTool(server: McpServer, _ctx: ToolContext) {
 
       return createSuccessResponse({
         title: path.relative(Deno.cwd(), searchPath),
-        metadata: {
-          count: files.length,
-          truncated,
-        },
+        metadata: { count: files.length, truncated },
         output: output.join("\n"),
       });
     },

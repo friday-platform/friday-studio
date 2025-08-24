@@ -11,6 +11,7 @@ import {
   isSSHSession,
   isTmuxSession,
 } from "../detector.ts";
+import { preFlightCheck } from "../index.ts";
 import {
   formatErrorMessage,
   formatInfoMessage,
@@ -18,7 +19,6 @@ import {
   formatWarningMessage,
   isCI,
 } from "../utils.ts";
-import { preFlightCheck } from "../index.ts";
 
 describe("Terminal Detection", () => {
   it("should detect platform support", async () => {
@@ -133,10 +133,7 @@ describe("Pre-flight Checks", () => {
     Deno.env.set("CI", "true");
     const result = await preFlightCheck();
     assertEquals(result.canProceed, false);
-    assertEquals(
-      result.issues.includes("Cannot configure terminal in CI environment"),
-      true,
-    );
+    assertEquals(result.issues.includes("Cannot configure terminal in CI environment"), true);
 
     Deno.env.delete("CI");
     if (originalCI) Deno.env.set("CI", originalCI);
@@ -148,7 +145,7 @@ describe("Pre-flight Checks", () => {
     if (Deno.build.os !== "darwin") {
       assertEquals(result.canProceed, false);
       const hasPlatformIssue = result.issues.some((issue) =>
-        issue.includes("is not supported - only macOS (darwin) is supported")
+        issue.includes("is not supported - only macOS (darwin) is supported"),
       );
       assertEquals(hasPlatformIssue, true);
     }

@@ -1,11 +1,11 @@
-import { spinner } from "../../utils/prompts.tsx";
-import { Box, render, Text } from "ink";
-import React from "react";
-import { Table } from "../../components/table.tsx";
-import { YargsInstance } from "../../utils/yargs.ts";
-import { getAtlasClient } from "@atlas/client";
-import type { TemplateConfig } from "@atlas/client";
 import process from "node:process";
+import type { TemplateConfig } from "@atlas/client";
+import { getAtlasClient } from "@atlas/client";
+import { Box, render, Text } from "ink";
+import type React from "react";
+import { Table } from "../../components/table.tsx";
+import { spinner } from "../../utils/prompts.tsx";
+import type { YargsInstance } from "../../utils/yargs.ts";
 
 interface TemplatesArgs {
   workspace: boolean;
@@ -25,22 +25,9 @@ export function builder(y: YargsInstance) {
       description: "Show workspace-specific templates",
       default: false,
     })
-    .option("platform", {
-      type: "boolean",
-      description: "Show platform templates",
-      default: false,
-    })
-    .option("json", {
-      type: "boolean",
-      description: "Output as JSON",
-      default: false,
-    })
-    .option("port", {
-      alias: "p",
-      type: "number",
-      description: "Server port",
-      default: 8080,
-    });
+    .option("platform", { type: "boolean", description: "Show platform templates", default: false })
+    .option("json", { type: "boolean", description: "Output as JSON", default: false })
+    .option("port", { alias: "p", type: "number", description: "Server port", default: 8080 });
 }
 
 // Use the type from the client
@@ -58,9 +45,7 @@ export async function handler(argv: TemplatesArgs) {
     s.stop("Templates fetched");
 
     if (argv.json) {
-      console.log(
-        JSON.stringify({ templates, count: templates.length }, null, 2),
-      );
+      console.log(JSON.stringify({ templates, count: templates.length }, null, 2));
       return;
     }
 
@@ -73,9 +58,7 @@ export async function handler(argv: TemplatesArgs) {
     setTimeout(() => unmount(), 100);
   } catch (error) {
     s.stop("Failed to fetch templates");
-    console.error(
-      `Error: ${error instanceof Error ? error.message : String(error)}`,
-    );
+    console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
     process.exit(1);
   }
 }

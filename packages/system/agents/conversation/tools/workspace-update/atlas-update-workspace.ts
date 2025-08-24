@@ -1,6 +1,6 @@
-import { z } from "zod/v4";
-import { tool } from "ai";
 import { createAtlasClient } from "@atlas/oapi-client";
+import { tool } from "ai";
+import { z } from "zod/v4";
 import { WorkspaceUpdater } from "./workspace-updater.ts";
 
 /**
@@ -14,25 +14,34 @@ export const updateWorkspace = tool({
   description:
     "Update existing Atlas workspace using AI orchestration with natural language instructions",
   inputSchema: z.object({
-    workspaceIdentifier: z.string().describe(
-      "Workspace identifier (ID, name, or path) to update",
-    ),
-    userIntent: z.string().describe(
-      "User's natural language description of the changes they want to make to the workspace",
-    ),
-    conversationContext: z.string().optional().describe(
-      "Additional context from the conversation that provides relevant details",
-    ),
-    debugLevel: z.enum(["minimal", "detailed"]).default("minimal").describe(
-      "Level of technical detail to include in the response",
-    ),
-    applyChanges: z.boolean().default(true).describe(
-      "Whether to apply changes to the workspace files (true) or just generate updated config (false)",
-    ),
+    workspaceIdentifier: z.string().describe("Workspace identifier (ID, name, or path) to update"),
+    userIntent: z
+      .string()
+      .describe(
+        "User's natural language description of the changes they want to make to the workspace",
+      ),
+    conversationContext: z
+      .string()
+      .optional()
+      .describe("Additional context from the conversation that provides relevant details"),
+    debugLevel: z
+      .enum(["minimal", "detailed"])
+      .default("minimal")
+      .describe("Level of technical detail to include in the response"),
+    applyChanges: z
+      .boolean()
+      .default(true)
+      .describe(
+        "Whether to apply changes to the workspace files (true) or just generate updated config (false)",
+      ),
   }),
-  execute: async (
-    { workspaceIdentifier, userIntent, conversationContext, debugLevel, applyChanges },
-  ) => {
+  execute: async ({
+    workspaceIdentifier,
+    userIntent,
+    conversationContext,
+    debugLevel,
+    applyChanges,
+  }) => {
     const updater = new WorkspaceUpdater();
 
     try {
@@ -49,11 +58,7 @@ export const updateWorkspace = tool({
         try {
           const client = createAtlasClient();
           const response = await client.POST("/api/workspaces/{workspaceId}/update", {
-            params: {
-              path: {
-                workspaceId: workspace.id,
-              },
-            },
+            params: { path: { workspaceId: workspace.id } },
             body: {
               config,
               backup: true, // Always create backup before updating
@@ -119,12 +124,13 @@ export const updateWorkspace = tool({
         },
       };
     } catch (error) {
-      const errorMessage = debugLevel === "detailed"
-        ? (error instanceof Error ? error.message : String(error))
-        : getUserFriendlyError(error);
-      throw new Error(
-        `Workspace update failed: ${errorMessage}`,
-      );
+      const errorMessage =
+        debugLevel === "detailed"
+          ? error instanceof Error
+            ? error.message
+            : String(error)
+          : getUserFriendlyError(error);
+      throw new Error(`Workspace update failed: ${errorMessage}`);
     }
   },
 });

@@ -1,9 +1,9 @@
-import { PlatformServiceManager, ServiceConfig, ServiceStatus } from "../types.ts";
 import {
   getAtlasBinaryPath,
   getDefaultServiceName,
   getPlatformPaths,
 } from "../../utils/platform.ts";
+import type { PlatformServiceManager, ServiceConfig, ServiceStatus } from "../types.ts";
 
 /**
  * Windows service manager for Atlas
@@ -30,17 +30,13 @@ export class WindowsService implements PlatformServiceManager {
     // Persist configuration for later start/status
     try {
       await Deno.mkdir(this.paths.configDir, { recursive: true });
-      await Deno.writeTextFile(
-        this.configPath,
-        JSON.stringify({ port: config.port }, null, 2),
-      );
+      await Deno.writeTextFile(this.configPath, JSON.stringify({ port: config.port }, null, 2));
     } catch (_err) {
       // Best effort; start() will fallback to default port
     }
 
     // For Windows, we'll use the Startup folder approach (no admin required)
-    const startupFolder =
-      `${homeDir}\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup`;
+    const startupFolder = `${homeDir}\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup`;
     const startupBatch = `${startupFolder}\\Atlas.bat`;
 
     // Create batch file content that starts service in background
@@ -74,8 +70,7 @@ exit
     }
 
     // Remove startup folder entry
-    const startupBatch =
-      `${homeDir}\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\Atlas.bat`;
+    const startupBatch = `${homeDir}\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\Atlas.bat`;
     try {
       await Deno.remove(startupBatch);
       console.log("Atlas startup entries removed successfully");
@@ -109,9 +104,10 @@ exit
       "-NoProfile",
       "-Command",
       // Use -WindowStyle Hidden to avoid a visible window
-      `Start-Process -WindowStyle Hidden -FilePath '${
-        binaryPath.replaceAll("'", "''")
-      }' -ArgumentList 'daemon start --port ${port}'`,
+      `Start-Process -WindowStyle Hidden -FilePath '${binaryPath.replaceAll(
+        "'",
+        "''",
+      )}' -ArgumentList 'daemon start --port ${port}'`,
     ];
 
     try {
@@ -194,9 +190,10 @@ exit
             const currentPid = Deno.pid;
             const daemonPids = entries
               .filter((e) => typeof e.ProcessId === "number")
-              .filter((e) =>
-                (e.CommandLine || "").toLowerCase().includes("daemon") &&
-                (e.CommandLine || "").toLowerCase().includes("start")
+              .filter(
+                (e) =>
+                  (e.CommandLine || "").toLowerCase().includes("daemon") &&
+                  (e.CommandLine || "").toLowerCase().includes("start"),
               )
               .map((e) => e.ProcessId)
               .filter((pid) => pid !== currentPid);
@@ -239,9 +236,9 @@ exit
       if (netstatResult.success) {
         const output = new TextDecoder().decode(netstatResult.stdout);
         // Match lines like: TCP    0.0.0.0:8080         0.0.0.0:0              LISTENING       1234
-        const line = output.split("\n").find((l) =>
-          l.includes(`:${configuredPort}`) && l.toUpperCase().includes("LISTENING")
-        );
+        const line = output
+          .split("\n")
+          .find((l) => l.includes(`:${configuredPort}`) && l.toUpperCase().includes("LISTENING"));
         if (line) {
           const parts = line.trim().split(/\s+/);
           const maybePid = parts[parts.length - 1];
@@ -308,8 +305,7 @@ exit
   async isInstalled(): Promise<boolean> {
     // Check if startup batch file exists
     const homeDir = Deno.env.get("USERPROFILE") || "C:\\Users\\Default";
-    const startupBatch =
-      `${homeDir}\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\Atlas.bat`;
+    const startupBatch = `${homeDir}\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\Atlas.bat`;
 
     try {
       await Deno.stat(startupBatch);

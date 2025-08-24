@@ -1,10 +1,10 @@
-import { spinner } from "../../utils/prompts.tsx";
-import { Box, render, Text } from "ink";
-import React from "react";
-import { Table } from "../../../cli/components/table.tsx";
-import { YargsInstance } from "../../utils/yargs.ts";
-import { getAtlasClient } from "@atlas/client";
 import process from "node:process";
+import { getAtlasClient } from "@atlas/client";
+import { Box, render, Text } from "ink";
+import type React from "react";
+import { Table } from "../../../cli/components/table.tsx";
+import { spinner } from "../../utils/prompts.tsx";
+import type { YargsInstance } from "../../utils/yargs.ts";
 
 interface SearchArgs {
   query: string;
@@ -20,36 +20,17 @@ export const desc = "Search library content";
 
 export function builder(y: YargsInstance) {
   return y
-    .positional("query", {
-      describe: "Search query",
-      type: "string",
-    })
-    .option("type", {
-      alias: "t",
-      type: "string",
-      description: "Filter by item type",
-    })
-    .option("tags", {
-      type: "string",
-      description: "Filter by tags (comma-separated)",
-    })
+    .positional("query", { describe: "Search query", type: "string" })
+    .option("type", { alias: "t", type: "string", description: "Filter by item type" })
+    .option("tags", { type: "string", description: "Filter by tags (comma-separated)" })
     .option("limit", {
       alias: "l",
       type: "number",
       description: "Maximum number of results",
       default: 50,
     })
-    .option("json", {
-      type: "boolean",
-      description: "Output as JSON",
-      default: false,
-    })
-    .option("port", {
-      alias: "p",
-      type: "number",
-      description: "Server port",
-      default: 8080,
-    });
+    .option("json", { type: "boolean", description: "Output as JSON", default: false })
+    .option("port", { alias: "p", type: "number", description: "Server port", default: 8080 });
 }
 
 // Import the type from the client
@@ -90,15 +71,11 @@ export async function handler(argv: SearchArgs) {
       return;
     }
 
-    const { unmount } = render(
-      <SearchResultsDisplay result={result} query={argv.query} />,
-    );
+    const { unmount } = render(<SearchResultsDisplay result={result} query={argv.query} />);
     setTimeout(() => unmount(), 100);
   } catch (error) {
     s.stop("Search failed");
-    console.error(
-      `Error: ${error instanceof Error ? error.message : String(error)}`,
-    );
+    console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
     process.exit(1);
   }
 }
@@ -108,16 +85,13 @@ interface SearchResultsDisplayProps {
   query: string;
 }
 
-const SearchResultsDisplay: React.FC<SearchResultsDisplayProps> = ({
-  result,
-  query,
-}) => {
+const SearchResultsDisplay: React.FC<SearchResultsDisplayProps> = ({ result, query }) => {
   const formatBytes = (bytes: number): string => {
     if (bytes === 0) return "0 B";
     const k = 1024;
     const sizes = ["B", "KB", "MB", "GB"];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
+    return parseFloat((bytes / k ** i).toFixed(1)) + " " + sizes[i];
   };
 
   const formatDate = (dateString: string): string => {

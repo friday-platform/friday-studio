@@ -1,13 +1,13 @@
+import { getWorkspaceManager } from "@atlas/workspace";
 import { Box, render, Text, useApp } from "ink";
 import { useEffect, useState } from "react";
-import { getWorkspaceManager } from "@atlas/workspace";
-import { YargsInstance } from "../../utils/yargs.ts";
 import {
   formatLog,
   parseContextFilters,
   parseDuration,
   WorkspaceLogReader,
 } from "../../utils/log-reader.ts";
+import type { YargsInstance } from "../../utils/yargs.ts";
 
 interface LogsArgs {
   workspace?: string;
@@ -42,21 +42,14 @@ export function builder(y: YargsInstance) {
       describe: "Number of lines to show from the end of the logs",
       default: 100,
     })
-    .option("since", {
-      type: "string",
-      describe: "Show logs since duration (e.g., 5m, 2h, 1d)",
-    })
+    .option("since", { type: "string", describe: "Show logs since duration (e.g., 5m, 2h, 1d)" })
     .option("timestamps", {
       alias: "t",
       type: "boolean",
       describe: "Show timestamps",
       default: true,
     })
-    .option("json", {
-      type: "boolean",
-      describe: "Output logs as JSON",
-      default: false,
-    })
+    .option("json", { type: "boolean", describe: "Output logs as JSON", default: false })
     .option("level", {
       alias: "l",
       type: "string",
@@ -94,8 +87,9 @@ export const handler = async (argv: LogsArgs): Promise<void> => {
       workspaceId = workspace.id;
     } else {
       // Find workspace by ID or name
-      const workspace = await registry.find({ id: argv.workspace }) ||
-        await registry.find({ name: argv.workspace });
+      const workspace =
+        (await registry.find({ id: argv.workspace })) ||
+        (await registry.find({ name: argv.workspace }));
       if (!workspace) {
         throw new Error(`Workspace '${argv.workspace}' not found`);
       }
@@ -173,10 +167,7 @@ async function runDirectLogs(workspaceId: string, flags: LogsArgs): Promise<void
     });
   } else {
     // Read logs once
-    const entries = await logReader.read({
-      tail: flags.tail || 100,
-      filters,
-    });
+    const entries = await logReader.read({ tail: flags.tail || 100, filters });
 
     if (entries.length === 0) {
       console.log("\x1b[90mNo logs found for this workspace\x1b[0m");
@@ -216,10 +207,7 @@ function LogsDisplay({ workspaceId, flags }: { workspaceId: string; flags: LogsA
         };
 
         // Read logs once (follow mode is handled by direct output)
-        const entries = await logReader.read({
-          tail: flags.tail || 100,
-          filters,
-        });
+        const entries = await logReader.read({ tail: flags.tail || 100, filters });
 
         if (!mounted) return;
 
@@ -228,10 +216,7 @@ function LogsDisplay({ workspaceId, flags }: { workspaceId: string; flags: LogsA
         } else {
           setLogs(
             entries.map((log) =>
-              formatLog(log, {
-                timestamps: flags.timestamps !== false,
-                json: flags.json || false,
-              })
+              formatLog(log, { timestamps: flags.timestamps !== false, json: flags.json || false }),
             ),
           );
         }
@@ -281,7 +266,9 @@ function LogsDisplay({ workspaceId, flags }: { workspaceId: string; flags: LogsA
 
   return (
     <Box flexDirection="column">
-      {logs.map((log, i) => <Text key={i}>{log}</Text>)}
+      {logs.map((log, i) => (
+        <Text key={i}>{log}</Text>
+      ))}
     </Box>
   );
 }

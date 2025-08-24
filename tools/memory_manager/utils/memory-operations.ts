@@ -88,11 +88,7 @@ export class AtlasMemoryOperations implements MemoryOperations {
     return Promise.resolve(null);
   }
 
-  update(
-    type: CoALAMemoryType,
-    key: string,
-    updates: Partial<MemoryEntry>,
-  ): Promise<void> {
+  update(type: CoALAMemoryType, key: string, updates: Partial<MemoryEntry>): Promise<void> {
     const entry = this.data[type][key];
     if (!entry) {
       throw new Error(`Memory entry '${key}' not found in ${type} memory`);
@@ -115,8 +111,8 @@ export class AtlasMemoryOperations implements MemoryOperations {
 
   list(type: CoALAMemoryType): Promise<MemoryEntry[]> {
     return Promise.resolve(
-      Object.values(this.data[type]).sort((a, b) =>
-        b.lastAccessed.getTime() - a.lastAccessed.getTime()
+      Object.values(this.data[type]).sort(
+        (a, b) => b.lastAccessed.getTime() - a.lastAccessed.getTime(),
       ),
     );
   }
@@ -179,9 +175,8 @@ export class AtlasMemoryOperations implements MemoryOperations {
       }
 
       // Search in content (convert to string)
-      const contentStr = typeof entry.content === "string"
-        ? entry.content
-        : JSON.stringify(entry.content);
+      const contentStr =
+        typeof entry.content === "string" ? entry.content : JSON.stringify(entry.content);
       if (contentStr.toLowerCase().includes(lowerQuery)) {
         return true;
       }
@@ -218,20 +213,26 @@ export class AtlasMemoryOperations implements MemoryOperations {
     return { ...this.data[type] };
   }
 
-  getStats(): Record<CoALAMemoryType, {
-    count: number;
-    totalRelevance: number;
-    avgRelevance: number;
-    mostRecent?: Date;
-    oldestEntry?: Date;
-  }> {
-    const stats: Record<CoALAMemoryType, {
+  getStats(): Record<
+    CoALAMemoryType,
+    {
       count: number;
       totalRelevance: number;
       avgRelevance: number;
       mostRecent?: Date;
       oldestEntry?: Date;
-    }> = {
+    }
+  > {
+    const stats: Record<
+      CoALAMemoryType,
+      {
+        count: number;
+        totalRelevance: number;
+        avgRelevance: number;
+        mostRecent?: Date;
+        oldestEntry?: Date;
+      }
+    > = {
       [CoALAMemoryType.WORKING]: { count: 0, totalRelevance: 0, avgRelevance: 0 },
       [CoALAMemoryType.EPISODIC]: { count: 0, totalRelevance: 0, avgRelevance: 0 },
       [CoALAMemoryType.SEMANTIC]: { count: 0, totalRelevance: 0, avgRelevance: 0 },
@@ -245,20 +246,19 @@ export class AtlasMemoryOperations implements MemoryOperations {
 
       stats[memoryType as CoALAMemoryType] = {
         count: entryValues.length,
-        totalRelevance: entryValues.reduce(
-          (sum, e) => sum + e.relevanceScore,
-          0,
-        ),
-        avgRelevance: entryValues.length > 0
-          ? entryValues.reduce((sum, e) => sum + e.relevanceScore, 0) /
-            entryValues.length
-          : 0,
-        mostRecent: timestamps.length > 0
-          ? new Date(Math.max(...timestamps.map((t) => t.getTime())))
-          : undefined,
-        oldestEntry: timestamps.length > 0
-          ? new Date(Math.min(...timestamps.map((t) => t.getTime())))
-          : undefined,
+        totalRelevance: entryValues.reduce((sum, e) => sum + e.relevanceScore, 0),
+        avgRelevance:
+          entryValues.length > 0
+            ? entryValues.reduce((sum, e) => sum + e.relevanceScore, 0) / entryValues.length
+            : 0,
+        mostRecent:
+          timestamps.length > 0
+            ? new Date(Math.max(...timestamps.map((t) => t.getTime())))
+            : undefined,
+        oldestEntry:
+          timestamps.length > 0
+            ? new Date(Math.min(...timestamps.map((t) => t.getTime())))
+            : undefined,
       };
     }
 
@@ -283,10 +283,7 @@ export class AtlasMemoryOperations implements MemoryOperations {
       errors.push("Relevance score must be between 0 and 1");
     }
 
-    if (
-      entry.confidence !== undefined &&
-      (entry.confidence < 0 || entry.confidence > 1)
-    ) {
+    if (entry.confidence !== undefined && (entry.confidence < 0 || entry.confidence > 1)) {
       errors.push("Confidence must be between 0 and 1");
     }
 
@@ -305,41 +302,38 @@ export class AtlasMemoryOperations implements MemoryOperations {
         const manager = await loader.getCoALAManagerPublic();
 
         // Perform vector search across all indexed memory types using the updated Atlas interface
-        const results = await manager.getRelevantMemoriesForPrompt(
-          query,
-          {
-            includeWorking: false, // WORKING memory doesn't use vector search
-            includeEpisodic: true,
-            includeSemantic: true,
-            includeProcedural: true,
-            limit: 20,
-            minSimilarity: 0.2,
-            maxAge: undefined, // No age restriction
-            tags: undefined, // No tag filtering
-          },
-        );
+        const results = await manager.getRelevantMemoriesForPrompt(query, {
+          includeWorking: false, // WORKING memory doesn't use vector search
+          includeEpisodic: true,
+          includeSemantic: true,
+          includeProcedural: true,
+          limit: 20,
+          minSimilarity: 0.2,
+          maxAge: undefined, // No age restriction
+          tags: undefined, // No tag filtering
+        });
 
         // Convert CoALA results to VectorSearchResult format
         // Note: Don't filter by source here - CoALA returns all relevant memories whether from vector or fallback search
-        const vectorResults: VectorSearchResult[] = results.memories
-          .map((memory: any) => ({
-            id: memory.id,
-            content: memory.content,
-            timestamp: memory.timestamp,
-            accessCount: memory.accessCount,
-            lastAccessed: memory.lastAccessed,
-            memoryType: memory.memoryType,
-            relevanceScore: memory.relevanceScore,
-            sourceScope: memory.sourceScope,
-            associations: memory.associations,
-            tags: memory.tags,
-            confidence: memory.confidence,
-            decayRate: memory.decayRate,
-            similarity: memory.similarity || 0,
-            matchedContent: typeof memory.content === "string"
+        const vectorResults: VectorSearchResult[] = results.memories.map((memory: any) => ({
+          id: memory.id,
+          content: memory.content,
+          timestamp: memory.timestamp,
+          accessCount: memory.accessCount,
+          lastAccessed: memory.lastAccessed,
+          memoryType: memory.memoryType,
+          relevanceScore: memory.relevanceScore,
+          sourceScope: memory.sourceScope,
+          associations: memory.associations,
+          tags: memory.tags,
+          confidence: memory.confidence,
+          decayRate: memory.decayRate,
+          similarity: memory.similarity || 0,
+          matchedContent:
+            typeof memory.content === "string"
               ? memory.content.substring(0, 200) + (memory.content.length > 200 ? "..." : "")
               : JSON.stringify(memory.content).substring(0, 200) + "...",
-          }));
+        }));
 
         // Sort by similarity score (highest first)
         return vectorResults.sort((a, b) => b.similarity - a.similarity);
@@ -424,11 +418,10 @@ export class AtlasMemoryOperations implements MemoryOperations {
   /**
    * Enhanced search that combines traditional and vector search for optimal results
    */
-  async enhancedSearch(query: string, options?: {
-    memoryTypes?: CoALAMemoryType[];
-    limit?: number;
-    minSimilarity?: number;
-  }): Promise<Array<MemoryEntry & { similarity?: number; source: string }>> {
+  async enhancedSearch(
+    query: string,
+    options?: { memoryTypes?: CoALAMemoryType[]; limit?: number; minSimilarity?: number },
+  ): Promise<Array<MemoryEntry & { similarity?: number; source: string }>> {
     const { memoryTypes, limit = 20, minSimilarity = 0.3 } = options || {};
 
     try {

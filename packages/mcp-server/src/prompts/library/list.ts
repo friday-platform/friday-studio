@@ -3,15 +3,12 @@
  * Lists available library items within a workspace through the daemon API
  */
 
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { PromptContext } from "../types.ts";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { createSuccessResponse } from "../types.ts";
 
-export function registerLibraryListPrompt(
-  server: McpServer,
-  ctx: PromptContext,
-) {
+export function registerLibraryListPrompt(server: McpServer, ctx: PromptContext) {
   server.registerPrompt(
     "library_list",
     {
@@ -19,9 +16,7 @@ export function registerLibraryListPrompt(
       description:
         "View all library items within a workspace including reports, session archives, templates, and other workspace artifacts. The library serves as a knowledge base and resource repository for agents and workflows.",
       argsSchema: {
-        workspaceId: z
-          .string()
-          .describe("Workspace ID to list library items for"),
+        workspaceId: z.string().describe("Workspace ID to list library items for"),
         category: z
           .string()
           .optional()

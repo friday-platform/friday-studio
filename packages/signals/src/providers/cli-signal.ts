@@ -49,15 +49,9 @@ export class CliSignalProvider implements IProvider {
 
   constructor(config: CliSignalConfig) {
     this.validateConfig(config);
-    this.config = {
-      ...config,
-      args: config.args || [],
-      flags: config.flags || {},
-    };
+    this.config = { ...config, args: config.args || [], flags: config.flags || {} };
     this.id = config.id;
-    this.state = {
-      status: ProviderStatus.NOT_CONFIGURED,
-    };
+    this.state = { status: ProviderStatus.NOT_CONFIGURED };
   }
 
   private validateConfig(config: CliSignalConfig): void {
@@ -110,9 +104,10 @@ export class CliSignalProvider implements IProvider {
     return Promise.resolve({
       healthy: this.state.status === ProviderStatus.READY,
       lastCheck: new Date(),
-      message: this.state.status === ProviderStatus.READY
-        ? "CLI signal provider ready"
-        : `Provider status: ${this.state.status}`,
+      message:
+        this.state.status === ProviderStatus.READY
+          ? "CLI signal provider ready"
+          : `Provider status: ${this.state.status}`,
     });
   }
 
@@ -185,11 +180,7 @@ export class CliSignalProvider implements IProvider {
       id: this.config.id,
       type: "cli",
       timestamp: new Date().toISOString(),
-      data: {
-        command,
-        args: mergedArgs,
-        flags: mergedFlags,
-      },
+      data: { command, args: mergedArgs, flags: mergedFlags },
     };
 
     // Include metadata if provided

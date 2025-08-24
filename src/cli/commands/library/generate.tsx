@@ -1,11 +1,10 @@
-import React from "react";
-import { render } from "ink";
-import { Box, Text } from "ink";
-import { spinner } from "../../utils/prompts.tsx";
 import { promises as fs } from "node:fs";
-import { YargsInstance } from "../../utils/yargs.ts";
-import { getAtlasClient } from "@atlas/client";
 import process from "node:process";
+import { getAtlasClient } from "@atlas/client";
+import { Box, render, Text } from "ink";
+import type React from "react";
+import { spinner } from "../../utils/prompts.tsx";
+import type { YargsInstance } from "../../utils/yargs.ts";
 
 interface GenerateArgs {
   template: string;
@@ -24,14 +23,8 @@ export const desc = "Generate content from template";
 
 export function builder(y: YargsInstance) {
   return y
-    .positional("template", {
-      describe: "Template ID to use",
-      type: "string",
-    })
-    .positional("data-file", {
-      describe: "JSON data file path",
-      type: "string",
-    })
+    .positional("template", { describe: "Template ID to use", type: "string" })
+    .positional("data-file", { describe: "JSON data file path", type: "string" })
     .option("store", {
       alias: "s",
       type: "boolean",
@@ -58,28 +51,15 @@ export function builder(y: YargsInstance) {
       type: "string",
       description: "Output file path (if not specified, prints to stdout)",
     })
-    .option("json", {
-      type: "boolean",
-      description: "Output as JSON",
-      default: false,
-    })
-    .option("port", {
-      alias: "p",
-      type: "number",
-      description: "Server port",
-      default: 8080,
-    });
+    .option("json", { type: "boolean", description: "Output as JSON", default: false })
+    .option("port", { alias: "p", type: "number", description: "Server port", default: 8080 });
 }
 
 // Define the result type based on what the client returns
 interface GenerationResult {
   content: string;
   id?: string;
-  metadata?: {
-    template_id: string;
-    generated_at: string;
-    input_data_hash?: string;
-  };
+  metadata?: { template_id: string; generated_at: string; input_data_hash?: string };
 }
 
 export async function handler(argv: GenerateArgs) {
@@ -117,11 +97,11 @@ export async function handler(argv: GenerateArgs) {
     // Prepare options for client call
     const options = argv.store
       ? {
-        store: true,
-        name: argv.name,
-        description: argv.description,
-        tags: argv.tags ? argv.tags.split(",").map((t: string) => t.trim()) : undefined,
-      }
+          store: true,
+          name: argv.name,
+          description: argv.description,
+          tags: argv.tags ? argv.tags.split(",").map((t: string) => t.trim()) : undefined,
+        }
       : undefined;
 
     const result = (await client.generateFromTemplate(
@@ -142,16 +122,12 @@ export async function handler(argv: GenerateArgs) {
     } else if (argv.json) {
       console.log(JSON.stringify(result, null, 2));
     } else {
-      const { unmount } = render(
-        <GenerationResultDisplay result={result} stored={argv.store} />,
-      );
+      const { unmount } = render(<GenerationResultDisplay result={result} stored={argv.store} />);
       setTimeout(() => unmount(), 100);
     }
   } catch (error) {
     s.stop("Generation failed");
-    console.error(
-      `Error: ${error instanceof Error ? error.message : String(error)}`,
-    );
+    console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
     process.exit(1);
   }
 }
@@ -161,10 +137,7 @@ interface GenerationResultDisplayProps {
   stored: boolean;
 }
 
-const GenerationResultDisplay: React.FC<GenerationResultDisplayProps> = ({
-  result,
-  stored,
-}) => {
+const GenerationResultDisplay: React.FC<GenerationResultDisplayProps> = ({ result, stored }) => {
   return (
     <Box flexDirection="column">
       <Box marginBottom={1}>
@@ -200,20 +173,13 @@ const GenerationResultDisplay: React.FC<GenerationResultDisplayProps> = ({
         <Text bold>Generated Content:</Text>
       </Box>
 
-      <Box
-        paddingLeft={2}
-        paddingY={1}
-        borderStyle="single"
-        borderColor="green"
-      >
+      <Box paddingLeft={2} paddingY={1} borderStyle="single" borderColor="green">
         <Text>{result.content}</Text>
       </Box>
 
       {stored && (
         <Box marginTop={1}>
-          <Text dimColor>
-            Use 'atlas library get {result.id}' to retrieve this content later
-          </Text>
+          <Text dimColor>Use 'atlas library get {result.id}' to retrieve this content later</Text>
         </Box>
       )}
     </Box>

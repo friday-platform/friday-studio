@@ -17,7 +17,7 @@ import {
   type WorkspaceEntry,
   type WorkspaceSelectionState,
 } from "../types/memory-types.ts";
-import { AtlasMemoryOperations } from "../utils/memory-operations.ts";
+import type { AtlasMemoryOperations } from "../utils/memory-operations.ts";
 import { MemoryManagerWorkspaceService } from "../utils/workspace-manager.ts";
 
 export class MemoryManagerTUI {
@@ -150,8 +150,7 @@ export class MemoryManagerTUI {
     } else if (this.operations) {
       const stats = this.operations.getStats();
       const currentStats = stats[this.state.currentTab];
-      headerText =
-        `${title} | ${this.state.currentTab.toUpperCase()} Memory (${currentStats.count} entries)`;
+      headerText = `${title} | ${this.state.currentTab.toUpperCase()} Memory (${currentStats.count} entries)`;
     } else {
       headerText = title;
     }
@@ -174,25 +173,10 @@ export class MemoryManagerTUI {
 
     const tabs: TabInfo[] = [
       { type: MemoryType.WORKING, title: "Working", count: 0, color: "yellow" },
-      {
-        type: MemoryType.EPISODIC,
-        title: "Episodic",
-        count: 0,
-        color: "green",
-      },
+      { type: MemoryType.EPISODIC, title: "Episodic", count: 0, color: "green" },
       { type: MemoryType.SEMANTIC, title: "Semantic", count: 0, color: "blue" },
-      {
-        type: MemoryType.PROCEDURAL,
-        title: "Procedural",
-        count: 0,
-        color: "magenta",
-      },
-      {
-        type: MemoryType.VECTOR_SEARCH,
-        title: "Vector Search",
-        count: 0,
-        color: "cyan",
-      },
+      { type: MemoryType.PROCEDURAL, title: "Procedural", count: 0, color: "magenta" },
+      { type: MemoryType.VECTOR_SEARCH, title: "Vector Search", count: 0, color: "cyan" },
     ];
 
     const stats = this.operations.getStats();
@@ -243,10 +227,7 @@ export class MemoryManagerTUI {
     // Adjust scroll offset if needed
     this.state.scrollOffset = Math.max(
       0,
-      Math.min(
-        this.state.scrollOffset,
-        entries.length - visibleHeight,
-      ),
+      Math.min(this.state.scrollOffset, entries.length - visibleHeight),
     );
 
     const visibleEntries = entries.slice(
@@ -259,14 +240,12 @@ export class MemoryManagerTUI {
       const isSelected = absoluteIndex === this.state.selectedIndex;
 
       const relevanceBar = "█".repeat(Math.ceil(entry.relevanceScore * 10));
-      const ageInHours = Math.floor(
-        (Date.now() - entry.lastAccessed.getTime()) / (1000 * 60 * 60),
-      );
+      const ageInHours = Math.floor((Date.now() - entry.lastAccessed.getTime()) / (1000 * 60 * 60));
       const ageText = ageInHours < 1 ? "< 1h" : `${ageInHours}h`;
 
-      let line = `${entry.id.padEnd(25)} │ ${relevanceBar.padEnd(10)} │ ${ageText.padEnd(6)} │ ${
-        entry.tags.slice(0, 3).join(", ")
-      }`;
+      let line = `${entry.id.padEnd(25)} │ ${relevanceBar.padEnd(10)} │ ${ageText.padEnd(6)} │ ${entry.tags
+        .slice(0, 3)
+        .join(", ")}`;
 
       if (line.length > this.terminalSize.width - 2) {
         line = line.substring(0, this.terminalSize.width - 5) + "...";
@@ -281,13 +260,12 @@ export class MemoryManagerTUI {
 
     // Show scroll indicator
     if (entries.length > visibleHeight) {
-      const scrollPos = Math.floor(
-        (this.state.scrollOffset / entries.length) * visibleHeight,
-      );
+      const scrollPos = Math.floor((this.state.scrollOffset / entries.length) * visibleHeight);
       console.log(
-        `\nShowing ${this.state.scrollOffset + 1}-${
-          Math.min(this.state.scrollOffset + visibleHeight, entries.length)
-        } of ${entries.length}`,
+        `\nShowing ${this.state.scrollOffset + 1}-${Math.min(
+          this.state.scrollOffset + visibleHeight,
+          entries.length,
+        )} of ${entries.length}`,
       );
     }
   }
@@ -313,11 +291,7 @@ export class MemoryManagerTUI {
     // Header
     const headerText = `┌─ Memory Entry: ${entry.id} `;
     const headerPadding = Math.max(0, titleWidth - headerText.length - 1);
-    console.log(this.colorize(
-      headerText + "─".repeat(headerPadding) + "┐",
-      "bold",
-      "cyan",
-    ));
+    console.log(this.colorize(headerText + "─".repeat(headerPadding) + "┐", "bold", "cyan"));
 
     // Metadata table with conditional similarity row
     const tableData = [
@@ -334,7 +308,7 @@ export class MemoryManagerTUI {
       [
         "Relevance",
         this.renderProgressBar(entry.relevanceScore, 20) +
-        ` ${(entry.relevanceScore * 100).toFixed(1)}%`,
+          ` ${(entry.relevanceScore * 100).toFixed(1)}%`,
       ],
     ];
 
@@ -342,16 +316,14 @@ export class MemoryManagerTUI {
     if ("similarity" in entry && entry.similarity !== undefined) {
       tableData.push([
         "Similarity",
-        this.renderProgressBar(entry.similarity, 20) +
-        ` ${(entry.similarity * 100).toFixed(1)}%`,
+        this.renderProgressBar(entry.similarity, 20) + ` ${(entry.similarity * 100).toFixed(1)}%`,
       ]);
     }
 
     tableData.push(
       [
         "Confidence",
-        this.renderProgressBar(entry.confidence, 20) +
-        ` ${(entry.confidence * 100).toFixed(1)}%`,
+        this.renderProgressBar(entry.confidence, 20) + ` ${(entry.confidence * 100).toFixed(1)}%`,
       ],
       ["Access Count", entry.accessCount.toString()],
       ["Created", this.formatDate(entry.timestamp)],
@@ -365,11 +337,7 @@ export class MemoryManagerTUI {
     // Tags section
     if (entry.tags.length > 0) {
       console.log(
-        this.colorize(
-          "\n├─ Tags " + "─".repeat(Math.max(0, width - 8)),
-          "bold",
-          "yellow",
-        ),
+        this.colorize("\n├─ Tags " + "─".repeat(Math.max(0, width - 8)), "bold", "yellow"),
       );
       const tagLine = entry.tags.map((tag) => this.colorize(`#${tag}`, "dim", "yellow")).join("  ");
       console.log(`│ ${tagLine}`);
@@ -385,30 +353,18 @@ export class MemoryManagerTUI {
         ),
       );
       entry.associations.forEach((assoc) => {
-        console.log(
-          `│ → ${this.truncateString(assoc, Math.max(5, width - 5))}`,
-        );
+        console.log(`│ → ${this.truncateString(assoc, Math.max(5, width - 5))}`);
       });
     }
 
     // Content section
     console.log(
-      this.colorize(
-        "\n├─ Content " + "─".repeat(Math.max(0, width - 11)),
-        "bold",
-        "green",
-      ),
+      this.colorize("\n├─ Content " + "─".repeat(Math.max(0, width - 11)), "bold", "green"),
     );
     this.renderContent(entry.content, width);
 
     // Footer
-    console.log(
-      this.colorize(
-        "└" + "─".repeat(Math.max(0, width - 1)) + "┘",
-        "bold",
-        "cyan",
-      ),
-    );
+    console.log(this.colorize("└" + "─".repeat(Math.max(0, width - 1)) + "┘", "bold", "cyan"));
   }
 
   private renderTable(rows: string[][], maxWidth: number): void {
@@ -429,7 +385,7 @@ export class MemoryManagerTUI {
     // Adjust widths to fit terminal
     const totalPadding = colCount * 3 + 4; // spaces and borders
     const availableWidth = maxWidth - totalPadding;
-    let totalDesiredWidth = colWidths.reduce((sum, w) => sum + w, 0);
+    const totalDesiredWidth = colWidths.reduce((sum, w) => sum + w, 0);
 
     if (totalDesiredWidth > availableWidth) {
       const ratio = availableWidth / totalDesiredWidth;
@@ -445,7 +401,8 @@ export class MemoryManagerTUI {
         const cleanCell = cell.replace(/\x1b\[[0-9;]*m/g, "");
         const padding = Math.max(0, colWidths[colIndex] - cleanCell.length);
 
-        if (rowIndex === 1) { // Separator row
+        if (rowIndex === 1) {
+          // Separator row
           line += cell.substring(0, colWidths[colIndex]);
         } else {
           line += cell + " ".repeat(padding);
@@ -502,9 +459,7 @@ export class MemoryManagerTUI {
   private renderObjectContent(content: any, maxWidth: number): void {
     if (Array.isArray(content)) {
       // Handle arrays
-      console.log(
-        `│ ${this.colorize(`Array (${content.length} items):`, "bold")}`,
-      );
+      console.log(`│ ${this.colorize(`Array (${content.length} items):`, "bold")}`);
       content.slice(0, 10).forEach((item, index) => {
         const itemStr = typeof item === "object" ? JSON.stringify(item) : String(item);
         const truncated = this.truncateString(itemStr, maxWidth - 8);
@@ -517,19 +472,12 @@ export class MemoryManagerTUI {
     } else {
       // Handle objects
       const entries = Object.entries(content);
-      console.log(
-        `│ ${this.colorize(`Object (${entries.length} properties):`, "bold")}`,
-      );
+      console.log(`│ ${this.colorize(`Object (${entries.length} properties):`, "bold")}`);
 
       entries.slice(0, 15).forEach(([key, value]) => {
         const valueStr = typeof value === "object" ? JSON.stringify(value) : String(value);
-        const truncatedValue = this.truncateString(
-          valueStr,
-          maxWidth - key.length - 8,
-        );
-        console.log(
-          `│   ${this.colorize(key, "bold", "cyan")}: ${truncatedValue}`,
-        );
+        const truncatedValue = this.truncateString(valueStr, maxWidth - key.length - 8);
+        console.log(`│   ${this.colorize(key, "bold", "cyan")}: ${truncatedValue}`);
       });
 
       if (entries.length > 15) {
@@ -611,10 +559,7 @@ export class MemoryManagerTUI {
     console.log(`Query: ${this.state.searchQuery}_`);
 
     if (this.state.searchQuery.length > 0) {
-      const results = await this.operations.search(
-        this.state.currentTab,
-        this.state.searchQuery,
-      );
+      const results = await this.operations.search(this.state.currentTab, this.state.searchQuery);
       console.log(`Found ${results.length} results:`);
 
       results.slice(0, 10).forEach((entry, index) => {
@@ -656,9 +601,9 @@ export class MemoryManagerTUI {
         const similarityBar = "█".repeat(Math.ceil(entry.similarity * 10));
         const typeColor = this.getMemoryTypeColor(entry.memoryType);
 
-        let line = `[${entry.memoryType.toUpperCase()}] ${entry.id} │ ${similarityBar} ${
-          (entry.similarity * 100).toFixed(1)
-        }% │ ${entry.matchedContent}`;
+        let line = `[${entry.memoryType.toUpperCase()}] ${entry.id} │ ${similarityBar} ${(
+          entry.similarity * 100
+        ).toFixed(1)}% │ ${entry.matchedContent}`;
 
         if (line.length > this.terminalSize.width - 2) {
           line = line.substring(0, this.terminalSize.width - 5) + "...";
@@ -707,10 +652,7 @@ export class MemoryManagerTUI {
     // Adjust scroll offset if needed
     this.state.scrollOffset = Math.max(
       0,
-      Math.min(
-        this.state.scrollOffset,
-        results.length - visibleHeight,
-      ),
+      Math.min(this.state.scrollOffset, results.length - visibleHeight),
     );
 
     const visibleResults = results.slice(
@@ -724,16 +666,14 @@ export class MemoryManagerTUI {
 
       const similarityBar = "█".repeat(Math.ceil(entry.similarity * 10));
       const typeColor = this.getMemoryTypeColor(entry.memoryType);
-      const ageInHours = Math.floor(
-        (Date.now() - entry.lastAccessed.getTime()) / (1000 * 60 * 60),
-      );
+      const ageInHours = Math.floor((Date.now() - entry.lastAccessed.getTime()) / (1000 * 60 * 60));
       const ageText = ageInHours < 1 ? "< 1h" : `${ageInHours}h`;
 
-      let line = `[${entry.memoryType.toUpperCase()}] ${entry.id.padEnd(20)} │ ${
-        similarityBar.padEnd(10)
-      } │ ${(entry.similarity * 100).toFixed(1)}% │ ${ageText.padEnd(6)} │ ${
-        entry.tags.slice(0, 2).join(", ")
-      }`;
+      let line = `[${entry.memoryType.toUpperCase()}] ${entry.id.padEnd(20)} │ ${similarityBar.padEnd(
+        10,
+      )} │ ${(entry.similarity * 100).toFixed(1)}% │ ${ageText.padEnd(6)} │ ${entry.tags
+        .slice(0, 2)
+        .join(", ")}`;
 
       if (line.length > this.terminalSize.width - 2) {
         line = line.substring(0, this.terminalSize.width - 5) + "...";
@@ -748,13 +688,12 @@ export class MemoryManagerTUI {
 
     // Show scroll indicator
     if (results.length > visibleHeight) {
-      const _scrollPos = Math.floor(
-        (this.state.scrollOffset / results.length) * visibleHeight,
-      );
+      const _scrollPos = Math.floor((this.state.scrollOffset / results.length) * visibleHeight);
       console.log(
-        `\nShowing ${this.state.scrollOffset + 1}-${
-          Math.min(this.state.scrollOffset + visibleHeight, results.length)
-        } of ${results.length} vector search results`,
+        `\nShowing ${this.state.scrollOffset + 1}-${Math.min(
+          this.state.scrollOffset + visibleHeight,
+          results.length,
+        )} of ${results.length} vector search results`,
       );
     }
   }
@@ -764,33 +703,17 @@ export class MemoryManagerTUI {
     console.log("─".repeat(this.terminalSize.width));
 
     const keyBindings: KeyBinding[] = [
-      {
-        key: "Tab / Shift+Tab",
-        description: "Switch between memory types",
-        action: () => {},
-      },
+      { key: "Tab / Shift+Tab", description: "Switch between memory types", action: () => {} },
       { key: "↑/↓ or j/k", description: "Navigate up/down", action: () => {} },
-      {
-        key: "Enter",
-        description: "View selected entry (formatted)",
-        action: () => {},
-      },
+      { key: "Enter", description: "View selected entry (formatted)", action: () => {} },
       { key: "e", description: "Edit selected entry", action: () => {} },
       { key: "n", description: "Create new entry", action: () => {} },
       { key: "d", description: "Delete selected entry", action: () => {} },
-      {
-        key: "/",
-        description: "Search in current memory type",
-        action: () => {},
-      },
+      { key: "/", description: "Search in current memory type", action: () => {} },
       { key: "v", description: "Vector search mode", action: () => {} },
       { key: "r", description: "Reload memory from disk", action: () => {} },
       { key: "s", description: "Save changes to disk", action: () => {} },
-      {
-        key: "f",
-        description: "View full content in overlay",
-        action: () => {},
-      },
+      { key: "f", description: "View full content in overlay", action: () => {} },
       { key: "h or ?", description: "Show/hide this help", action: () => {} },
       { key: "q", description: "Quit", action: () => {} },
     ];
@@ -810,8 +733,7 @@ export class MemoryManagerTUI {
     if (this.state.mode === "workspace-selector") {
       footer = `${modeText} | h:help q:quit ↑↓:navigate Enter:select`;
     } else {
-      footer =
-        `${modeText} | h:help q:quit ↑↓:navigate Tab:switch Enter:view f:overlay e:edit n:new d:delete /:search v:vector r:reload s:save`;
+      footer = `${modeText} | h:help q:quit ↑↓:navigate Tab:switch Enter:view f:overlay e:edit n:new d:delete /:search v:vector r:reload s:save`;
     }
 
     console.log("\n" + "─".repeat(this.terminalSize.width));
@@ -840,7 +762,7 @@ export class MemoryManagerTUI {
         case "q":
           this.running = false;
           break;
-          // Ignore other keys in overlay mode
+        // Ignore other keys in overlay mode
       }
       return;
     }
@@ -857,7 +779,8 @@ export class MemoryManagerTUI {
       } else if (key === "q") {
         this.running = false;
         return;
-      } else if (key === "\t") { // Tab
+      } else if (key === "\t") {
+        // Tab
         this.switchTab(1);
         return;
       } else if (key === "SHIFT_TAB") {
@@ -876,20 +799,23 @@ export class MemoryManagerTUI {
         }
         return;
       } else if (
-        (key === "k" || key === "K") && this.state.vectorSearchResults &&
+        (key === "k" || key === "K") &&
+        this.state.vectorSearchResults &&
         this.state.vectorSearchResults.length > 0
       ) {
         // Only use k for navigation when we have search results to navigate
         this.navigateUp();
         return;
       } else if (
-        (key === "j" || key === "J") && this.state.vectorSearchResults &&
+        (key === "j" || key === "J") &&
+        this.state.vectorSearchResults &&
         this.state.vectorSearchResults.length > 0
       ) {
         // Only use j for navigation when we have search results to navigate
         this.navigateDown();
         return;
-      } else if (key === "\r") { // Enter
+      } else if (key === "\r") {
+        // Enter
         // If we have results, view selected one; otherwise perform search
         if (this.state.vectorSearchResults && this.state.vectorSearchResults.length > 0) {
           this.state.mode = "view" as const;
@@ -1005,12 +931,14 @@ export class MemoryManagerTUI {
       this.state.vectorSearchQuery = "";
     }
 
-    if (key === "\b" || key === "\x7f") { // Backspace
+    if (key === "\b" || key === "\x7f") {
+      // Backspace
       if (this.state.vectorSearchQuery.length > 0) {
         this.state.vectorSearchQuery = this.state.vectorSearchQuery.slice(0, -1);
         this.state.vectorSearchResults = undefined; // Clear results to trigger new search
       }
-    } else if (key === "\r") { // Enter - perform search
+    } else if (key === "\r") {
+      // Enter - perform search
       if (this.state.vectorSearchQuery && this.state.vectorSearchQuery.length > 0) {
         this.state.vectorSearchResults = await this.operations.vectorSearch(
           this.state.vectorSearchQuery,
@@ -1018,7 +946,8 @@ export class MemoryManagerTUI {
         this.state.selectedIndex = 0;
         this.state.scrollOffset = 0;
       }
-    } else if (key >= " " && key <= "~") { // Printable characters
+    } else if (key >= " " && key <= "~") {
+      // Printable characters
       this.state.vectorSearchQuery += key;
       this.state.vectorSearchResults = undefined; // Clear results to trigger new search when Enter is pressed
     }
@@ -1033,7 +962,8 @@ export class MemoryManagerTUI {
     const firstByte = buffer[0];
 
     // Handle escape sequences (arrow keys, etc.)
-    if (firstByte === 0x1b) { // ESC
+    if (firstByte === 0x1b) {
+      // ESC
       // Try to read the next character(s) for escape sequences
       const seqBuffer = new Uint8Array(3);
       let seqLength = 0;
@@ -1043,9 +973,7 @@ export class MemoryManagerTUI {
 
       try {
         while (seqLength < 3) {
-          const readPromise = Deno.stdin.read(
-            seqBuffer.subarray(seqLength, seqLength + 1),
-          );
+          const readPromise = Deno.stdin.read(seqBuffer.subarray(seqLength, seqLength + 1));
           const result = await Promise.race([readPromise, timeoutPromise]);
 
           if (result === undefined) break; // timeout
@@ -1054,9 +982,7 @@ export class MemoryManagerTUI {
           seqLength++;
 
           // Check for complete sequences
-          const sequence = new TextDecoder().decode(
-            seqBuffer.subarray(0, seqLength),
-          );
+          const sequence = new TextDecoder().decode(seqBuffer.subarray(0, seqLength));
 
           // Arrow keys: ESC[A, ESC[B, ESC[C, ESC[D
           if (sequence === "[A") return "ARROW_UP";
@@ -1126,12 +1052,7 @@ export class MemoryManagerTUI {
     }
   }
 
-  private colorize(
-    text: string,
-    style?: string,
-    color?: string,
-    bgColor?: string,
-  ): string {
+  private colorize(text: string, style?: string, color?: string, bgColor?: string): string {
     // Simple ANSI color implementation
     let result = text;
 
@@ -1188,10 +1109,7 @@ export class MemoryManagerTUI {
   private updateTerminalSize(): void {
     try {
       const size = Deno.consoleSize();
-      this.terminalSize = {
-        width: Math.max(50, size.columns),
-        height: Math.max(10, size.rows),
-      };
+      this.terminalSize = { width: Math.max(50, size.columns), height: Math.max(10, size.rows) };
     } catch {
       // Fallback if consoleSize fails
       this.terminalSize = { width: 80, height: 24 };
@@ -1202,9 +1120,7 @@ export class MemoryManagerTUI {
 
   private async renderOverlay(): Promise<void> {
     if (!this.state.overlayContent) {
-      console.log(
-        this.colorize("Error: No overlay content to display", "bold", "red"),
-      );
+      console.log(this.colorize("Error: No overlay content to display", "bold", "red"));
       return;
     }
 
@@ -1218,12 +1134,7 @@ export class MemoryManagerTUI {
     const startY = Math.floor((height - overlayHeight) / 2);
 
     // Draw overlay background
-    await this.drawOverlayBackground(
-      overlayWidth,
-      overlayHeight,
-      startX,
-      startY,
-    );
+    await this.drawOverlayBackground(overlayWidth, overlayHeight, startX, startY);
 
     // Render overlay header
     await this.drawOverlayHeader(overlay.title, overlayWidth, startX, startY);
@@ -1260,23 +1171,17 @@ export class MemoryManagerTUI {
     const sideBorder = "│" + " ".repeat(width - 2) + "│";
 
     // Position cursor and draw top border
-    await Deno.stdout.write(
-      new TextEncoder().encode(`\x1b[${startY + 1};${startX + 1}H`),
-    );
+    await Deno.stdout.write(new TextEncoder().encode(`\x1b[${startY + 1};${startX + 1}H`));
     console.log(this.colorize(topBorder, "bold", "cyan"));
 
     // Draw side borders
     for (let i = 1; i < height - 1; i++) {
-      await Deno.stdout.write(
-        new TextEncoder().encode(`\x1b[${startY + i + 1};${startX + 1}H`),
-      );
+      await Deno.stdout.write(new TextEncoder().encode(`\x1b[${startY + i + 1};${startX + 1}H`));
       console.log(this.colorize(sideBorder, "bold", "cyan"));
     }
 
     // Draw bottom border
-    await Deno.stdout.write(
-      new TextEncoder().encode(`\x1b[${startY + height};${startX + 1}H`),
-    );
+    await Deno.stdout.write(new TextEncoder().encode(`\x1b[${startY + height};${startX + 1}H`));
     console.log(this.colorize(bottomBorder, "bold", "cyan"));
   }
 
@@ -1291,12 +1196,9 @@ export class MemoryManagerTUI {
     const leftPadding = Math.floor(padding / 2);
     const rightPadding = padding - leftPadding;
 
-    const header = "├" + "─".repeat(leftPadding) + headerText +
-      "─".repeat(rightPadding) + "┤";
+    const header = "├" + "─".repeat(leftPadding) + headerText + "─".repeat(rightPadding) + "┤";
 
-    await Deno.stdout.write(
-      new TextEncoder().encode(`\x1b[${startY + 2};${startX + 1}H`),
-    );
+    await Deno.stdout.write(new TextEncoder().encode(`\x1b[${startY + 2};${startX + 1}H`));
     console.log(this.colorize(header, "bold", "yellow"));
   }
 
@@ -1315,26 +1217,18 @@ export class MemoryManagerTUI {
     const lines = this.contentToLines(content, contentWidth);
 
     // Calculate visible lines
-    const visibleLines = lines.slice(
-      scrollOffset,
-      scrollOffset + contentHeight,
-    );
+    const visibleLines = lines.slice(scrollOffset, scrollOffset + contentHeight);
 
     // Update max scroll in state
     if (this.state.overlayContent) {
-      this.state.overlayContent.maxScroll = Math.max(
-        0,
-        lines.length - contentHeight,
-      );
+      this.state.overlayContent.maxScroll = Math.max(0, lines.length - contentHeight);
     }
 
     // Render visible lines without truncation (they're already wrapped)
     for (let index = 0; index < visibleLines.length; index++) {
       const line = visibleLines[index];
       const y = startY + 3 + index;
-      await Deno.stdout.write(
-        new TextEncoder().encode(`\x1b[${y};${startX + 3}H`),
-      );
+      await Deno.stdout.write(new TextEncoder().encode(`\x1b[${y};${startX + 3}H`));
       // Lines are already properly wrapped, just display them
       console.log(line.substring(0, contentWidth));
     }
@@ -1342,9 +1236,7 @@ export class MemoryManagerTUI {
     // Clear any remaining lines in the content area
     for (let i = visibleLines.length; i < contentHeight; i++) {
       const y = startY + 3 + i;
-      await Deno.stdout.write(
-        new TextEncoder().encode(`\x1b[${y};${startX + 3}H`),
-      );
+      await Deno.stdout.write(new TextEncoder().encode(`\x1b[${y};${startX + 3}H`));
       console.log(" ".repeat(contentWidth));
     }
   }
@@ -1361,12 +1253,14 @@ export class MemoryManagerTUI {
     const footerContent = scrollInfo + instructions;
     const padding = Math.max(0, width - footerContent.length - 4);
 
-    const footer = "├" + "─".repeat(Math.floor(padding / 2)) + footerContent +
-      "─".repeat(Math.ceil(padding / 2)) + "┤";
+    const footer =
+      "├" +
+      "─".repeat(Math.floor(padding / 2)) +
+      footerContent +
+      "─".repeat(Math.ceil(padding / 2)) +
+      "┤";
 
-    await Deno.stdout.write(
-      new TextEncoder().encode(`\x1b[${y};${startX + 1}H`),
-    );
+    await Deno.stdout.write(new TextEncoder().encode(`\x1b[${y};${startX + 1}H`));
     console.log(this.colorize(footer, "dim", "white"));
   }
 
@@ -1429,17 +1323,13 @@ export class MemoryManagerTUI {
               let breakPoint = availableWidth;
               for (let i = availableWidth - 1; i > availableWidth * 0.7; i--) {
                 const char = remainingContent[i];
-                if (
-                  char === "," || char === " " || char === '"' || char === ":"
-                ) {
+                if (char === "," || char === " " || char === '"' || char === ":") {
                   breakPoint = i + 1;
                   break;
                 }
               }
 
-              lines.push(
-                currentIndent + remainingContent.substring(0, breakPoint),
-              );
+              lines.push(currentIndent + remainingContent.substring(0, breakPoint));
               remainingContent = remainingContent.substring(breakPoint);
 
               // Add extra indentation for continuation lines
@@ -1458,12 +1348,7 @@ export class MemoryManagerTUI {
 
   // Method to show overlay with content
   private showOverlay(title: string, content: unknown): void {
-    this.state.overlayContent = {
-      title,
-      content,
-      scrollOffset: 0,
-      maxScroll: 0,
-    };
+    this.state.overlayContent = { title, content, scrollOffset: 0, maxScroll: 0 };
     this.state.showOverlay = true;
   }
 
@@ -1606,9 +1491,10 @@ export class MemoryManagerTUI {
 
       if (workspace.metadata?.description) {
         const maxDescLength = Math.max(20, this.terminalSize.width - line.length - 5);
-        const truncatedDesc = workspace.metadata.description.length > maxDescLength
-          ? workspace.metadata.description.substring(0, maxDescLength - 3) + "..."
-          : workspace.metadata.description;
+        const truncatedDesc =
+          workspace.metadata.description.length > maxDescLength
+            ? workspace.metadata.description.substring(0, maxDescLength - 3) + "..."
+            : workspace.metadata.description;
         line += ` │ ${this.colorize(truncatedDesc, "dim")}`;
       }
 
@@ -1628,10 +1514,12 @@ export class MemoryManagerTUI {
 
     if (workspaces.length > visibleHeight) {
       console.log("");
-      console.log(this.colorize(
-        `Showing ${startIndex + 1}-${endIndex} of ${workspaces.length} workspaces`,
-        "dim",
-      ));
+      console.log(
+        this.colorize(
+          `Showing ${startIndex + 1}-${endIndex} of ${workspaces.length} workspaces`,
+          "dim",
+        ),
+      );
     }
   }
 

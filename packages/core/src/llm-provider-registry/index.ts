@@ -5,10 +5,10 @@
  * Anthropic, OpenAI, and Google AI providers. Loads API keys from environment.
  */
 
-import { createProviderRegistry, ProviderRegistryProvider } from "ai";
 import { createAnthropic } from "@ai-sdk/anthropic";
-import { createOpenAI } from "@ai-sdk/openai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
+import { createOpenAI } from "@ai-sdk/openai";
+import { createProviderRegistry, type ProviderRegistryProvider } from "ai";
 
 /**
  * Create the AI SDK provider registry with all supported providers
@@ -21,15 +21,9 @@ export function createProviders(env: Record<string, string> = {}): ProviderRegis
   const getEnvVar = (key: string) => env[key] || Deno.env.get(key);
 
   return createProviderRegistry({
-    anthropic: createAnthropic({
-      apiKey: getEnvVar("ANTHROPIC_API_KEY"),
-    }),
-    openai: createOpenAI({
-      apiKey: getEnvVar("OPENAI_API_KEY"),
-    }),
-    google: createGoogleGenerativeAI({
-      apiKey: getEnvVar("GOOGLE_GENERATIVE_AI_API_KEY"),
-    }),
+    anthropic: createAnthropic({ apiKey: getEnvVar("ANTHROPIC_API_KEY") }),
+    openai: createOpenAI({ apiKey: getEnvVar("OPENAI_API_KEY") }),
+    google: createGoogleGenerativeAI({ apiKey: getEnvVar("GOOGLE_GENERATIVE_AI_API_KEY") }),
   });
 }
 
@@ -45,10 +39,7 @@ export const registry = createProviders();
  * @param env Environment variables
  * @throws Error if required API key is missing
  */
-export function validateProviderConfig(
-  provider: string,
-  env: Record<string, string> = {},
-): void {
+export function validateProviderConfig(provider: string, env: Record<string, string> = {}): void {
   const envVarMap: Record<string, string> = {
     anthropic: "ANTHROPIC_API_KEY",
     openai: "OPENAI_API_KEY",

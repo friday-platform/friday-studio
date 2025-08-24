@@ -1,8 +1,8 @@
-import { useEffect, useMemo } from "react";
-import { useStdin } from "ink";
 import chalk from "chalk";
-import { type TextInputState } from "./use-text-input-state.ts";
+import { useStdin } from "ink";
+import { useEffect, useMemo } from "react";
 import { useKeypress } from "./key-press.ts";
+import type { TextInputState } from "./use-text-input-state.ts";
 
 export type UseTextInputProps = {
   /** When disabled, user input is ignored. */
@@ -44,7 +44,7 @@ export const useTextInput = ({
   const { setRawMode, stdin } = useStdin();
 
   useKeypress(
-    function ({ ctrl, meta, paste, sequence, name }) {
+    ({ ctrl, meta, paste, sequence, name }) => {
       if (meta && sequence) {
         if (name === "b") {
           // Meta+b: move to previous word
@@ -207,8 +207,7 @@ export const useTextInput = ({
 
     if (state.suggestion) {
       if (state.cursorOffset === state.value.length) {
-        result += chalk.inverse(state.suggestion[0]) +
-          chalk.dim(state.suggestion.slice(1));
+        result += chalk.inverse(state.suggestion[0]) + chalk.dim(state.suggestion.slice(1));
       } else {
         result += chalk.dim(state.suggestion);
       }
@@ -232,7 +231,5 @@ export const useTextInput = ({
     return renderedPlaceholder;
   }, [state.value.length, renderedValue, renderedPlaceholder]);
 
-  return {
-    inputValue,
-  };
+  return { inputValue };
 };

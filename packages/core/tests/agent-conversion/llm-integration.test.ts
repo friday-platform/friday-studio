@@ -5,13 +5,13 @@
  * Includes mocked AI SDK responses, streaming, and error handling.
  */
 
-import { assertEquals } from "@std/assert";
-import { describe, it } from "@std/testing/bdd";
-import { convertYAMLToAgent } from "../../src/agent-conversion/from-yaml.ts";
-import { convertLLMToAgent } from "../../src/agent-conversion/from-llm.ts";
-import type { YAMLAgentDefinition } from "../../src/agent-conversion/yaml/schema.ts";
 import type { LLMAgentConfig } from "@atlas/config";
 import { createLogger } from "@atlas/logger";
+import { assertEquals } from "@std/assert";
+import { describe, it } from "@std/testing/bdd";
+import { convertLLMToAgent } from "../../src/agent-conversion/from-llm.ts";
+import { convertYAMLToAgent } from "../../src/agent-conversion/from-yaml.ts";
+import type { YAMLAgentDefinition } from "../../src/agent-conversion/yaml/schema.ts";
 
 // Check if ANTHROPIC_API_KEY is available
 const hasAnthropicKey = !!Deno.env.get("ANTHROPIC_API_KEY");
@@ -32,11 +32,7 @@ describe("LLM Integration", () => {
           id: "test-agent",
           version: "1.0.0",
           description: "Test agent",
-          expertise: {
-            domains: ["testing"],
-            capabilities: ["test"],
-            examples: [],
-          },
+          expertise: { domains: ["testing"], capabilities: ["test"], examples: [] },
         },
         llm: {
           provider: "anthropic",
@@ -65,11 +61,7 @@ describe("LLM Integration", () => {
           id: "tool-agent",
           version: "1.0.0",
           description: "Agent that uses tools",
-          expertise: {
-            domains: ["tools"],
-            capabilities: ["use tools"],
-            examples: [],
-          },
+          expertise: { domains: ["tools"], capabilities: ["use tools"], examples: [] },
         },
         llm: {
           provider: "anthropic",
@@ -94,11 +86,7 @@ describe("LLM Integration", () => {
           id: "streaming-agent",
           version: "1.0.0",
           description: "Streaming test agent",
-          expertise: {
-            domains: ["streaming"],
-            capabilities: ["stream responses"],
-            examples: [],
-          },
+          expertise: { domains: ["streaming"], capabilities: ["stream responses"], examples: [] },
         },
         llm: {
           provider: "anthropic",
@@ -195,11 +183,7 @@ describe("LLM Integration", () => {
           id: "error-agent",
           version: "1.0.0",
           description: "Error test agent",
-          expertise: {
-            domains: ["errors"],
-            capabilities: ["handle errors"],
-            examples: [],
-          },
+          expertise: { domains: ["errors"], capabilities: ["handle errors"], examples: [] },
         },
         llm: {
           provider: "invalid-provider" as "anthropic" | "openai" | "google",
@@ -249,11 +233,7 @@ describe("LLM Integration", () => {
           id: "error-tool-agent",
           version: "1.0.0",
           description: "Agent with error-prone tool",
-          expertise: {
-            domains: ["errors"],
-            capabilities: ["handle tool errors"],
-            examples: [],
-          },
+          expertise: { domains: ["errors"], capabilities: ["handle tool errors"], examples: [] },
         },
         llm: {
           provider: "anthropic",
@@ -320,10 +300,7 @@ describe("LLM Integration", () => {
           provider: "anthropic",
           model: "claude-3-sonnet-20240229",
           prompt: "You use provider options",
-          provider_options: {
-            thinking: true,
-            cache: { enabled: true },
-          },
+          provider_options: { thinking: true, cache: { enabled: true } },
         },
       };
 
@@ -342,11 +319,7 @@ describe("LLM Integration", () => {
           id: "config-agent",
           version: "1.0.0",
           description: "Agent with detailed config",
-          expertise: {
-            domains: ["configuration"],
-            capabilities: ["handle config"],
-            examples: [],
-          },
+          expertise: { domains: ["configuration"], capabilities: ["handle config"], examples: [] },
         },
         llm: {
           provider: "anthropic",
@@ -375,11 +348,7 @@ describe("LLM Integration", () => {
           id: "usage-agent",
           version: "1.0.0",
           description: "Usage tracking agent",
-          expertise: {
-            domains: ["usage"],
-            capabilities: ["track usage"],
-            examples: [],
-          },
+          expertise: { domains: ["usage"], capabilities: ["track usage"], examples: [] },
         },
         llm: {
           provider: "anthropic",

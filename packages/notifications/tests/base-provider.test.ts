@@ -2,10 +2,10 @@
  * Tests for BaseNotificationProvider
  */
 
+import type { EmailParams, MessageParams, NotificationResult } from "@atlas/config";
 import { assertEquals, assertRejects } from "@std/assert";
 import { BaseNotificationProvider } from "../src/providers/base-provider.ts";
 import { ProviderConfigError } from "../src/types.ts";
-import type { EmailParams, MessageParams, NotificationResult } from "@atlas/config";
 
 // Concrete implementation for testing
 class TestProvider extends BaseNotificationProvider {
@@ -69,10 +69,7 @@ Deno.test("BaseNotificationProvider - validateEmailParams valid", () => {
 Deno.test("BaseNotificationProvider - validateEmailParams missing to", async () => {
   const provider = new TestProvider("test-provider");
 
-  const params = {
-    subject: "Test Subject",
-    content: "Test content",
-  } as EmailParams;
+  const params = { subject: "Test Subject", content: "Test content" } as EmailParams;
 
   await assertRejects(
     () => provider.sendEmail(params),
@@ -84,10 +81,7 @@ Deno.test("BaseNotificationProvider - validateEmailParams missing to", async () 
 Deno.test("BaseNotificationProvider - validateEmailParams missing subject", async () => {
   const provider = new TestProvider("test-provider");
 
-  const params = {
-    to: "test@example.com",
-    content: "Test content",
-  } as EmailParams;
+  const params = { to: "test@example.com", content: "Test content" } as EmailParams;
 
   await assertRejects(
     () => provider.sendEmail(params),
@@ -99,10 +93,7 @@ Deno.test("BaseNotificationProvider - validateEmailParams missing subject", asyn
 Deno.test("BaseNotificationProvider - validateEmailParams missing content", async () => {
   const provider = new TestProvider("test-provider");
 
-  const params = {
-    to: "test@example.com",
-    subject: "Test Subject",
-  } as EmailParams;
+  const params = { to: "test@example.com", subject: "Test Subject" } as EmailParams;
 
   await assertRejects(
     () => provider.sendEmail(params),
@@ -177,10 +168,7 @@ Deno.test("BaseNotificationProvider - validateEmailParams invalid recipient in a
 Deno.test("BaseNotificationProvider - validateMessageParams valid", async () => {
   const provider = new TestProvider("test-provider");
 
-  const params: MessageParams = {
-    content: "Test message",
-    channel: "#test-channel",
-  };
+  const params: MessageParams = { content: "Test message", channel: "#test-channel" };
 
   // Should not throw
   const result = await provider.sendMessage(params);
@@ -190,9 +178,7 @@ Deno.test("BaseNotificationProvider - validateMessageParams valid", async () => 
 Deno.test("BaseNotificationProvider - validateMessageParams missing content", async () => {
   const provider = new TestProvider("test-provider");
 
-  const params = {
-    channel: "#test-channel",
-  } as MessageParams;
+  const params = { channel: "#test-channel" } as MessageParams;
 
   await assertRejects(
     () => provider.sendMessage(params),
@@ -260,8 +246,9 @@ Deno.test("BaseNotificationProvider - getTimeout default", () => {
 
 Deno.test("BaseNotificationProvider - getTimeout custom", () => {
   const provider = new TestProvider("test-provider");
-  (provider as TestProvider & { config: { timeout: number }; getTimeout: () => number }).config
-    .timeout = 60000;
+  (
+    provider as TestProvider & { config: { timeout: number }; getTimeout: () => number }
+  ).config.timeout = 60000;
 
   const timeout = (provider as TestProvider & { getTimeout: () => number }).getTimeout();
   assertEquals(timeout, 60000);

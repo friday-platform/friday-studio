@@ -5,25 +5,6 @@
  * multiple providers including SendGrid, Slack, Discord, and Microsoft Teams.
  */
 
-// Core types and interfaces
-export * from "./src/types.ts";
-
-// Notification manager
-export { NotificationManager } from "./src/notification-manager.ts";
-
-// Base provider
-export { BaseNotificationProvider } from "./src/providers/base-provider.ts";
-
-// Providers
-export { SendGridProvider } from "./src/providers/sendgrid-provider.ts";
-
-// Provider factory and registry
-export {
-  DefaultNotificationProviderFactory,
-  defaultProviderRegistry,
-  ProviderRegistry,
-} from "./src/providers/provider-factory.ts";
-
 // Re-export configuration types and schemas from @atlas/config
 export type {
   DiscordProvider as DiscordProviderConfig,
@@ -37,7 +18,6 @@ export type {
   SlackProvider as SlackProviderConfig,
   TeamsProvider as TeamsProviderConfig,
 } from "@atlas/config";
-
 // Re-export configuration schemas from @atlas/config
 export {
   EmailParamsSchema,
@@ -47,3 +27,18 @@ export {
   NotificationProviderSchema,
   NotificationResultSchema,
 } from "@atlas/config";
+// Notification manager
+export { NotificationManager } from "./src/notification-manager.ts";
+// Base provider
+export { BaseNotificationProvider } from "./src/providers/base-provider.ts";
+
+// Provider factory and registry
+export {
+  DefaultNotificationProviderFactory,
+  defaultProviderRegistry,
+  ProviderRegistry,
+} from "./src/providers/provider-factory.ts";
+// Providers
+export { SendGridProvider } from "./src/providers/sendgrid-provider.ts";
+// Core types and interfaces
+export * from "./src/types.ts";

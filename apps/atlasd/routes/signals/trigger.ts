@@ -1,8 +1,8 @@
-import { daemonFactory } from "../../src/factory.ts";
-import { describeRoute, resolver, validator } from "hono-openapi";
 import { SignalTriggerRequestSchema } from "@atlas/config";
-import { AtlasTelemetry } from "../../../../src/utils/telemetry.ts";
 import { createLogger } from "@atlas/logger";
+import { describeRoute, resolver, validator } from "hono-openapi";
+import { AtlasTelemetry } from "../../../../src/utils/telemetry.ts";
+import { daemonFactory } from "../../src/factory.ts";
 import { errorResponseSchema, signalPathSchema, signalTriggerResponseSchema } from "./schemas.ts";
 
 const triggerSignal = daemonFactory.createApp();
@@ -26,35 +26,19 @@ enables real-time progress feedback in the UI.
     responses: {
       200: {
         description: "Signal accepted for processing",
-        content: {
-          "application/json": {
-            schema: resolver(signalTriggerResponseSchema),
-          },
-        },
+        content: { "application/json": { schema: resolver(signalTriggerResponseSchema) } },
       },
       400: {
         description: "Invalid request body or signal configuration",
-        content: {
-          "application/json": {
-            schema: resolver(errorResponseSchema),
-          },
-        },
+        content: { "application/json": { schema: resolver(errorResponseSchema) } },
       },
       404: {
         description: "Workspace or signal not found",
-        content: {
-          "application/json": {
-            schema: resolver(errorResponseSchema),
-          },
-        },
+        content: { "application/json": { schema: resolver(errorResponseSchema) } },
       },
       500: {
         description: "Internal server error",
-        content: {
-          "application/json": {
-            schema: resolver(errorResponseSchema),
-          },
-        },
+        content: { "application/json": { schema: resolver(errorResponseSchema) } },
       },
     },
   }),
@@ -81,11 +65,7 @@ enables real-time progress feedback in the UI.
           const runtime = await ctx.getOrCreateWorkspaceRuntime(workspaceId);
 
           // Use triggerSignalWithSession to get the session back (handles config resolution internally)
-          const session = await runtime.triggerSignalWithSession(
-            signalId,
-            payload || {},
-            streamId,
-          );
+          const session = await runtime.triggerSignalWithSession(signalId, payload || {}, streamId);
 
           // Update lastSeen timestamp after signal processing
           try {
@@ -115,30 +95,17 @@ enables real-time progress feedback in the UI.
 
           // Handle specific error types
           if (errorMessage.includes("Workspace not found")) {
+            return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
+          }
+
+          if (errorMessage.includes("Signal not found") || errorMessage.includes("not found")) {
             return c.json(
-              { error: `Workspace not found: ${workspaceId}` },
+              { error: `Signal '${signalId}' not found in workspace '${workspaceId}'` },
               404,
             );
           }
 
-          if (
-            errorMessage.includes("Signal not found") ||
-            errorMessage.includes("not found")
-          ) {
-            return c.json(
-              {
-                error: `Signal '${signalId}' not found in workspace '${workspaceId}'`,
-              },
-              404,
-            );
-          }
-
-          return c.json(
-            {
-              error: `Failed to process signal: ${errorMessage}`,
-            },
-            500,
-          );
+          return c.json({ error: `Failed to process signal: ${errorMessage}` }, 500);
         }
       },
       {

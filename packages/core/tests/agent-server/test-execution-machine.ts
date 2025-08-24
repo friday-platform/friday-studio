@@ -3,22 +3,22 @@
  * auto-transitions that would make test timing unpredictable.
  */
 
-import { type ActorRefFrom, assign, fromPromise, setup } from "xstate";
 import {
   type AgentContext,
   type AgentSessionData,
   type AtlasAgent,
   AwaitingSupervisorDecision,
 } from "@atlas/agent-sdk";
-import { CoALAMemoryManager } from "@atlas/memory";
 import type { Logger } from "@atlas/logger";
-import type { BuildAgentContext } from "../../src/agent-server/agent-execution-manager.ts";
+import type { CoALAMemoryManager } from "@atlas/memory";
+import { type ActorRefFrom, assign, fromPromise, setup } from "xstate";
 import type {
   AgentExecutionContext,
   AgentExecutionEvents,
   AgentExecutionMachineInput,
   PrepareContextOutput,
 } from "../../src/agent-server/agent-execution-machine.ts";
+import type { BuildAgentContext } from "../../src/agent-server/agent-execution-manager.ts";
 
 // Creates agent execution state machine without timers for predictable test execution
 export function createTestAgentExecutionMachine(
@@ -41,20 +41,14 @@ export function createTestAgentExecutionMachine(
     },
 
     actors: {
-      loadAgent: fromPromise<AtlasAgent, { agentId: string }>(
-        async ({ input }) => {
-          logger.info(`Loading agent: ${input.agentId}`);
-          return await loadAgentFn(input.agentId);
-        },
-      ),
+      loadAgent: fromPromise<AtlasAgent, { agentId: string }>(async ({ input }) => {
+        logger.info(`Loading agent: ${input.agentId}`);
+        return await loadAgentFn(input.agentId);
+      }),
 
       prepareContext: fromPromise<
         PrepareContextOutput,
-        {
-          agent: AtlasAgent;
-          prompt: string;
-          sessionData: AgentSessionData;
-        }
+        { agent: AtlasAgent; prompt: string; sessionData: AgentSessionData }
       >(async ({ input }) => {
         const { agent, prompt, sessionData } = input;
         logger.info(
@@ -62,23 +56,14 @@ export function createTestAgentExecutionMachine(
         );
 
         // Build context with memory, tools, and session data
-        const result = await contextBuilder(
-          agent,
-          sessionData,
-          sessionMemory,
-          prompt,
-        );
+        const result = await contextBuilder(agent, sessionData, sessionMemory, prompt);
 
         return result;
       }),
 
       executeAgent: fromPromise<
         unknown,
-        {
-          agent: AtlasAgent;
-          prompt: string;
-          context: AgentContext;
-        }
+        { agent: AtlasAgent; prompt: string; context: AgentContext }
       >(async ({ input }) => {
         const { agent, prompt, context } = input;
         logger.info(`Executing agent: ${agent.metadata.name}`);
@@ -91,12 +76,7 @@ export function createTestAgentExecutionMachine(
 
       persistResults: fromPromise<
         void,
-        {
-          agentId: string;
-          prompt: string;
-          result: unknown;
-          duration: number;
-        }
+        { agentId: string; prompt: string; result: unknown; duration: number }
       >(({ input }) => {
         const { agentId, prompt, result, duration } = input;
 
@@ -120,8 +100,8 @@ export function createTestAgentExecutionMachine(
 
     actions: {
       assignExecutionParams: assign({
-        currentPrompt: ({ event }) => event.type === "EXECUTE" ? event.prompt : undefined,
-        sessionData: ({ event }) => event.type === "EXECUTE" ? event.sessionData : undefined,
+        currentPrompt: ({ event }) => (event.type === "EXECUTE" ? event.prompt : undefined),
+        sessionData: ({ event }) => (event.type === "EXECUTE" ? event.sessionData : undefined),
         startTime: () => Date.now(),
       }),
 
@@ -171,18 +151,13 @@ export function createTestAgentExecutionMachine(
       },
 
       logCompleted: ({ context }) => {
-        const duration = context.endTime && context.startTime
-          ? context.endTime - context.startTime
-          : 0;
-        logger.info(
-          `Agent execution completed: ${context.agentId} (${duration}ms)`,
-        );
+        const duration =
+          context.endTime && context.startTime ? context.endTime - context.startTime : 0;
+        logger.info(`Agent execution completed: ${context.agentId} (${duration}ms)`);
       },
 
       logError: ({ context }) => {
-        logger.error(`Agent execution failed: ${context.agentId}`, {
-          error: context.error,
-        });
+        logger.error(`Agent execution failed: ${context.agentId}`, { error: context.error });
       },
     },
   });
@@ -190,23 +165,15 @@ export function createTestAgentExecutionMachine(
   return machineSetup.createMachine({
     id: "agentExecution",
 
-    context: ({ input }) => ({
-      agentId: input.agentId,
-      timeout: input.timeout || 30000,
-    }),
+    context: ({ input }) => ({ agentId: input.agentId, timeout: input.timeout || 30000 }),
 
     initial: "idle",
 
     states: {
       idle: {
         on: {
-          LOAD: {
-            target: "loading",
-          },
-          EXECUTE: {
-            target: "loading",
-            actions: "assignExecutionParams",
-          },
+          LOAD: { target: "loading" },
+          EXECUTE: { target: "loading", actions: "assignExecutionParams" },
         },
       },
 
@@ -217,33 +184,17 @@ export function createTestAgentExecutionMachine(
           id: "loadAgent",
           src: "loadAgent",
           input: ({ context }) => ({ agentId: context.agentId }),
-          onDone: {
-            target: "ready",
-            actions: ["assignLoadedAgent"],
-          },
-          onError: {
-            target: "failed",
-            actions: ["assignError", "logError"],
-          },
+          onDone: { target: "ready", actions: ["assignLoadedAgent"] },
+          onError: { target: "failed", actions: ["assignError", "logError"] },
         },
       },
 
       ready: {
-        always: [
-          {
-            target: "preparing",
-            guard: "hasExecutionParams",
-          },
-        ],
+        always: [{ target: "preparing", guard: "hasExecutionParams" }],
 
         on: {
-          EXECUTE: {
-            target: "preparing",
-            actions: "assignExecutionParams",
-          },
-          UNLOAD: {
-            target: "idle",
-          },
+          EXECUTE: { target: "preparing", actions: "assignExecutionParams" },
+          UNLOAD: { target: "idle" },
         },
       },
 
@@ -258,21 +209,11 @@ export function createTestAgentExecutionMachine(
             prompt: context.currentPrompt!,
             sessionData: context.sessionData!,
           }),
-          onDone: {
-            target: "executing",
-            actions: "assignPreparedContext",
-          },
-          onError: {
-            target: "failed",
-            actions: ["assignError", "logError"],
-          },
+          onDone: { target: "executing", actions: "assignPreparedContext" },
+          onError: { target: "failed", actions: ["assignError", "logError"] },
         },
 
-        on: {
-          CANCEL: {
-            target: "ready",
-          },
-        },
+        on: { CANCEL: { target: "ready" } },
       },
 
       executing: {
@@ -286,10 +227,7 @@ export function createTestAgentExecutionMachine(
             prompt: context.enrichedPrompt || context.currentPrompt!,
             context: context.preparedContext!,
           }),
-          onDone: {
-            target: "persisting",
-            actions: ["assignExecutionResult"],
-          },
+          onDone: { target: "persisting", actions: ["assignExecutionResult"] },
           onError: [
             {
               // Check if it's an approval request
@@ -307,14 +245,7 @@ export function createTestAgentExecutionMachine(
           ],
         },
 
-        on: {
-          CANCEL: {
-            target: "ready",
-          },
-          AWAIT_INPUT: {
-            target: "awaiting",
-          },
-        },
+        on: { CANCEL: { target: "ready" }, AWAIT_INPUT: { target: "awaiting" } },
       },
 
       awaiting: {
@@ -322,15 +253,11 @@ export function createTestAgentExecutionMachine(
         on: {
           RESUME_WITH_APPROVAL: {
             target: "executing",
-            actions: assign({
-              approvalDecision: ({ event }) => event.decision,
-            }),
+            actions: assign({ approvalDecision: ({ event }) => event.decision }),
           },
           CANCEL: {
             target: "failed",
-            actions: assign({
-              error: () => new Error("Approval cancelled"),
-            }),
+            actions: assign({ error: () => new Error("Approval cancelled") }),
           },
         },
       },
@@ -347,10 +274,7 @@ export function createTestAgentExecutionMachine(
             result: context.result!,
             duration: context.endTime! - context.startTime!,
           }),
-          onDone: {
-            target: "completed",
-            actions: "logCompleted",
-          },
+          onDone: { target: "completed", actions: "logCompleted" },
           onError: {
             // Don't fail the whole execution if persistence fails
             target: "completed",
@@ -363,13 +287,8 @@ export function createTestAgentExecutionMachine(
 
       completed: {
         on: {
-          EXECUTE: {
-            target: "preparing",
-            actions: "assignExecutionParams",
-          },
-          UNLOAD: {
-            target: "idle",
-          },
+          EXECUTE: { target: "preparing", actions: "assignExecutionParams" },
+          UNLOAD: { target: "idle" },
         },
         // Timer removed - prevents auto-transition for deterministic testing
       },
@@ -378,16 +297,9 @@ export function createTestAgentExecutionMachine(
         entry: "logError",
 
         on: {
-          LOAD: {
-            target: "loading",
-          },
-          EXECUTE: {
-            target: "loading",
-            actions: "assignExecutionParams",
-          },
-          UNLOAD: {
-            target: "idle",
-          },
+          LOAD: { target: "loading" },
+          EXECUTE: { target: "loading", actions: "assignExecutionParams" },
+          UNLOAD: { target: "idle" },
         },
       },
     },

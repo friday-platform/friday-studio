@@ -4,10 +4,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 
-const server = new McpServer({
-  name: "mock-api-server",
-  version: "1.0.0",
-});
+const server = new McpServer({ name: "mock-api-server", version: "1.0.0" });
 
 // In-memory storage for mock data
 const users = new Map<string, any>();
@@ -25,9 +22,7 @@ server.registerTool(
   "fetch_user",
   {
     description: "Fetch user data by ID",
-    inputSchema: {
-      userId: z.string().describe("User ID to fetch"),
-    },
+    inputSchema: { userId: z.string().describe("User ID to fetch") },
   },
   async ({ userId }) => {
     // Simulate async operation
@@ -35,18 +30,10 @@ server.registerTool(
 
     const user = users.get(userId);
     if (!user) {
-      return {
-        content: [
-          { type: "text", text: JSON.stringify({ error: "User not found" }) },
-        ],
-      };
+      return { content: [{ type: "text", text: JSON.stringify({ error: "User not found" }) }] };
     }
 
-    return {
-      content: [
-        { type: "text", text: JSON.stringify(user) },
-      ],
-    };
+    return { content: [{ type: "text", text: JSON.stringify(user) }] };
   },
 );
 
@@ -66,21 +53,11 @@ server.registerTool(
     await new Promise((resolve) => setTimeout(resolve, 150));
 
     const postId = `post-${Date.now()}`;
-    const post = {
-      id: postId,
-      userId,
-      title,
-      content,
-      createdAt: new Date().toISOString(),
-    };
+    const post = { id: postId, userId, title, content, createdAt: new Date().toISOString() };
 
     posts.set(postId, post);
 
-    return {
-      content: [
-        { type: "text", text: JSON.stringify(post) },
-      ],
-    };
+    return { content: [{ type: "text", text: JSON.stringify(post) }] };
   },
 );
 

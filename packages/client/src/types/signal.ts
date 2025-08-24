@@ -16,17 +16,10 @@ export interface SignalDetailedInfo {
   endpoint?: string;
   headers?: Record<string, string>;
   config?: Record<string, unknown>;
-  schema?: {
-    type: string;
-    properties?: Record<string, unknown>;
-    required?: string[];
-  };
+  schema?: { type: string; properties?: Record<string, unknown>; required?: string[] };
   webhook_secret?: string;
   timeout_ms?: number;
-  retry_config?: {
-    max_retries?: number;
-    retry_delay_ms?: number;
-  };
+  retry_config?: { max_retries?: number; retry_delay_ms?: number };
 }
 
 export interface SignalTriggerResponse {
