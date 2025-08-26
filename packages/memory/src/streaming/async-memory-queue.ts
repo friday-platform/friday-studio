@@ -176,9 +176,9 @@ export class AsyncMemoryQueue implements MemoryStreamQueue {
           const processor = this.processors.get(type)!;
 
           try {
-            if (streams.length === 1) {
+            if (streams.length === 1 && streams[0]) {
               await processor.process(streams[0]);
-            } else {
+            } else if (streams.length > 0) {
               await processor.processBatch(streams);
             }
 

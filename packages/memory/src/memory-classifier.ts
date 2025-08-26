@@ -603,82 +603,6 @@ export class AtlasMemoryClassifier implements MemoryClassifier {
   }
 
   /**
-   * Extract technical terms
-   */
-  private _extractTechnicalTerms(content: string): string[] {
-    // Simple pattern matching for technical terms
-    const technicalPatterns = [
-      /\b[A-Z]{2,}\b/g, // Acronyms
-      /\b\w+\(\)/g, // Function calls
-      /\b\w+\.\w+/g, // Dotted notation
-      /\b\w+_\w+/g, // Snake_case
-      /\b[a-z]+[A-Z]\w*/g, // camelCase
-    ];
-
-    const terms = new Set<string>();
-
-    for (const pattern of technicalPatterns) {
-      const matches = content.match(pattern) || [];
-      matches.forEach((match) => terms.add(match));
-    }
-
-    return Array.from(terms).slice(0, 10); // Limit to 10 terms
-  }
-
-  /**
-   * Extract named entities (basic implementation)
-   */
-  private _extractNamedEntities(content: string): Entity[] {
-    const entities: Entity[] = [];
-
-    // Simple capitalized word detection
-    const capitalizedWords = content.match(/\b[A-Z][a-z]+\b/g) || [];
-
-    capitalizedWords.forEach((word) => {
-      if (word.length > 3 && !["The", "This", "That", "When", "Where"].includes(word)) {
-        entities.push({
-          name: word,
-          type: "proper_noun",
-          confidence: 0.6,
-          attributes: { source: "capitalization_pattern" },
-        });
-      }
-    });
-
-    return entities.slice(0, 5); // Limit to 5 entities
-  }
-
-  /**
-   * Extract action verbs
-   */
-  private _extractActionVerbs(content: string): string[] {
-    const commonActionVerbs = [
-      "create",
-      "build",
-      "implement",
-      "configure",
-      "setup",
-      "install",
-      "run",
-      "execute",
-      "deploy",
-      "test",
-      "debug",
-      "fix",
-      "update",
-      "modify",
-      "change",
-      "add",
-      "remove",
-      "delete",
-      "start",
-      "stop",
-    ];
-
-    return commonActionVerbs.filter((verb) => content.toLowerCase().includes(verb)).slice(0, 5);
-  }
-
-  /**
    * Calculate semantic relevance between content and query
    */
   private calculateSemanticRelevance(content: string, query: string): number {
@@ -707,7 +631,9 @@ export class AtlasMemoryClassifier implements MemoryClassifier {
    */
   private calculateAccessRelevance(memory: MemoryEntry): number {
     // Simple access count normalization
-    return Math.min(1.0, memory.accessCount / 10);
+    // Note: accessCount may not be available on all MemoryEntry implementations
+    const accessCount = (memory as unknown as { accessCount?: number }).accessCount || 0;
+    return Math.min(1.0, accessCount / 10);
   }
 
   /**
@@ -728,15 +654,16 @@ export class AtlasMemoryClassifier implements MemoryClassifier {
   /**
    * Extract text content from various content types
    */
-  private extractTextContent(content: any): string {
+  private extractTextContent(content: unknown): string {
     if (typeof content === "string") {
       return content;
     } else if (typeof content === "object" && content !== null) {
       const textFields = ["text", "content", "description", "statement", "summary"];
 
       for (const field of textFields) {
-        if (content[field] && typeof content[field] === "string") {
-          return content[field];
+        const contentObj = content as Record<string, unknown>;
+        if (contentObj[field] && typeof contentObj[field] === "string") {
+          return contentObj[field] as string;
         }
       }
 

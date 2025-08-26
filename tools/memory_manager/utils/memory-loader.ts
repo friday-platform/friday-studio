@@ -5,7 +5,7 @@
  */
 
 import { CoALAMemoryManager } from "@atlas/memory";
-import { WebEmbeddingProvider } from "../../../packages/memory/src/web-embedding-provider.ts";
+import type { IMemoryScope } from "../../../packages/memory/src/coala-memory.ts";
 import { getWorkspaceMemoryDir } from "../../../src/utils/paths.ts";
 import { CoALAMemoryType, type MemoryEntry, type MemoryStorage } from "../types/memory-types.ts";
 
@@ -13,7 +13,6 @@ export class AtlasMemoryLoader implements MemoryStorage {
   private workspacePath: string;
   private workspaceId: string;
   private coalaManager?: CoALAMemoryManager;
-  private embeddingProvider?: WebEmbeddingProvider;
 
   constructor(workspacePath?: string, workspaceId?: string) {
     this.workspacePath = workspacePath || Deno.cwd();
@@ -27,40 +26,15 @@ export class AtlasMemoryLoader implements MemoryStorage {
 
   private async getCoALAManager(): Promise<CoALAMemoryManager> {
     if (!this.coalaManager) {
-      // Initialize the WebEmbeddingProvider
-      if (!this.embeddingProvider) {
-        this.embeddingProvider = new WebEmbeddingProvider({
-          model: "sentence-transformers/all-MiniLM-L6-v2",
-          backend: "wasm",
-          batchSize: 10,
-          maxSequenceLength: 512,
-          cacheDirectory: getWorkspaceMemoryDir(this.workspaceId),
-        });
-
-        // Warm up the embedding provider
-        try {
-          await this.embeddingProvider.warmup();
-        } catch (error) {
-          console.warn("Failed to warm up embedding provider:", error);
-        }
-      }
-
       // Create a proper scope for the memory manager
-      // Using partial IAtlasScope for memory manager initialization
-      const scope = {
-        id: this.workspaceId,
-        workspaceId: this.workspaceId,
-        type: "workspace" as const,
-      } as Parameters<typeof CoALAMemoryManager.prototype.constructor>[0];
+      const scope: IMemoryScope = { id: this.workspaceId, workspaceId: this.workspaceId };
 
       // Create CoALA manager with vector search enabled
       this.coalaManager = new CoALAMemoryManager(scope, undefined, true);
 
-      // Initialize vector search capabilities using the WebEmbeddingProvider
+      // Initialize vector search capabilities
       try {
         await this.coalaManager.initializeVectorSearch({
-          embeddingProvider: this.embeddingProvider,
-          dimension: 384, // all-MiniLM-L6-v2 produces 384-dimensional embeddings
           similarityThreshold: 0.3,
           batchSize: 10,
           autoIndexOnWrite: true,
@@ -101,30 +75,9 @@ export class AtlasMemoryLoader implements MemoryStorage {
     return result;
   }
 
-  async saveAll(data: Record<CoALAMemoryType, Record<string, MemoryEntry>>): Promise<void> {
-    const manager = await this.getCoALAManager();
-
-    // Use the CoALA manager to save data
-    for (const [memoryType, entries] of Object.entries(data)) {
-      for (const [key, entry] of Object.entries(entries)) {
-        try {
-          await manager.remember(key, entry.content, {
-            memoryType: memoryType as CoALAMemoryType,
-            relevanceScore: entry.relevanceScore,
-            sourceScope: entry.sourceScope,
-            tags: entry.tags,
-            confidence: entry.confidence,
-            decayRate: entry.decayRate,
-            associations: entry.associations,
-          });
-        } catch (error) {
-          console.warn(`Failed to save memory ${key}:`, error);
-        }
-      }
-    }
-
-    // Force a commit to storage
-    await manager.commitToStorage();
+  saveAll(_: Record<CoALAMemoryType, Record<string, MemoryEntry>>): Promise<void> {
+    console.log("Memory manager does not support saving all memories");
+    return Promise.resolve();
   }
 
   async loadByType(type: CoALAMemoryType): Promise<Record<string, MemoryEntry>> {
@@ -161,28 +114,9 @@ export class AtlasMemoryLoader implements MemoryStorage {
     }
   }
 
-  async saveByType(type: CoALAMemoryType, data: Record<string, MemoryEntry>): Promise<void> {
-    const manager = await this.getCoALAManager();
-
-    // Save each memory entry using the CoALA manager
-    for (const [key, entry] of Object.entries(data)) {
-      try {
-        await manager.remember(key, entry.content, {
-          memoryType: type,
-          relevanceScore: entry.relevanceScore,
-          sourceScope: entry.sourceScope,
-          tags: entry.tags,
-          confidence: entry.confidence,
-          decayRate: entry.decayRate,
-          associations: entry.associations,
-        });
-      } catch (error) {
-        console.warn(`Failed to save memory ${key} of type ${type}:`, error);
-      }
-    }
-
-    // Force a commit to storage
-    await manager.commitToStorage();
+  saveByType(_: CoALAMemoryType, __: Record<string, MemoryEntry>): Promise<void> {
+    console.log("Memory manager does not support saving memories by type");
+    return Promise.resolve();
   }
 
   async getStorageStats(): Promise<{
@@ -228,11 +162,7 @@ export class AtlasMemoryLoader implements MemoryStorage {
   }
 
   // Cleanup method to dispose of resources
-  async dispose(): Promise<void> {
-    if (this.embeddingProvider) {
-      await this.embeddingProvider.dispose();
-      this.embeddingProvider = undefined;
-    }
+  dispose(): void {
     this.coalaManager = undefined;
   }
 }

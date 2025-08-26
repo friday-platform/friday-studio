@@ -38,12 +38,12 @@ export interface Entity {
   name: string;
   type: string;
   confidence: number;
-  attributes?: Record<string, unknown>;
+  attributes?: Record<string, string>;
 }
 
 export interface MemoryEntry {
   id: string;
-  content: unknown;
+  content: string;
   timestamp: Date;
   memoryType: MemoryType;
   relevanceScore: number;
@@ -58,6 +58,7 @@ export interface MemoryEntry {
 
 export enum MemoryType {
   WORKING = "working",
+  SESSION_BRIDGE = "session_bridge",
   EPISODIC = "episodic",
   SEMANTIC = "semantic",
   PROCEDURAL = "procedural",
@@ -208,6 +209,10 @@ export interface MECMFEmbeddingProvider {
 // === MECMF Memory Manager Interface ===
 
 export interface MECMFMemoryManager {
+  // Lifecycle management
+  initialize(): Promise<void>;
+  dispose(): Promise<void>;
+
   // Core memory operations
   storeMemory(entry: MemoryEntry): Promise<void>;
   retrieveMemory(id: string): Promise<MemoryEntry | null>;
@@ -267,4 +272,77 @@ export interface MemoryStatistics {
   oldestEntry: Date | null;
   newestEntry: Date | null;
   totalSize: number; // estimated bytes
+}
+
+// === Session Bridge Memory Interfaces ===
+
+export interface SessionBridgeConfig {
+  max_turns: number; // Default: 10
+  retention_hours: number; // Default: 48
+  token_allocation: number; // Default: 0.10 (10% of working memory)
+  relevance_threshold: number; // Default: 0.6
+}
+
+// === Worklog System Interfaces ===
+
+export interface CompletionPattern {
+  type: "task_completed" | "decision_made" | "file_modified" | "command_executed";
+  patterns: string[];
+  extractionRule: string; // Function name reference
+}
+
+export interface WorklogEntry {
+  id: string;
+  timestamp: Date;
+  session_id: string;
+  type: "task_completed" | "decision_made" | "file_modified" | "command_executed";
+  title: string; // Brief description
+  description: string; // 1-2 sentence context
+  outcome: "success" | "failure" | "partial";
+  files_affected?: string[];
+  commands_used?: string[];
+  next_actions?: string[];
+  tags: string[];
+  confidence: number; // 0-1, extraction confidence
+}
+
+export interface WorklogMemoryEntry extends MemoryEntry {
+  memoryType: MemoryType.EPISODIC;
+  subtype: "worklog";
+  worklog_data: WorklogEntry;
+}
+
+// === Enhanced Token Management Interfaces ===
+
+export interface ExtendedTokenAllocation {
+  working_memory: number; // 35% (reduced from 40%)
+  session_bridge: number; // 10% (new allocation)
+  procedural_memory: number; // 25%
+  semantic_memory: number; // 20% (reduced from 25%)
+  episodic_memory: number; // 10%
+  worklog_context: number; // 5% (subset of episodic)
+}
+
+// === Memory Configuration Schema ===
+
+export interface MemoryConfiguration {
+  session_bridge: {
+    enabled: boolean;
+    max_turns: number;
+    retention_hours: number;
+    token_allocation: number;
+    relevance_threshold: number;
+  };
+  worklog: {
+    enabled: boolean;
+    auto_detect: boolean;
+    confidence_threshold: number;
+    max_entries_per_session: number;
+    retention_days: number;
+  };
+  token_management: {
+    bridge_allocation: number;
+    worklog_allocation: number;
+    compression_threshold: number;
+  };
 }

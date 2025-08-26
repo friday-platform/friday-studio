@@ -758,16 +758,16 @@ export class AgentOrchestrator implements IAgentOrchestrator {
         },
       });
 
-      // Best-effort episodic persistence for wrapped-agent execution
+      // Safely persist episodic memory for wrapped-agent execution
       try {
         const eventKey = `epi:${Date.now()}:${agentId}`;
-        await sessionMemory.rememberWithMetadata?.(
+        sessionMemory.rememberWithMetadata(
           eventKey,
           {
             agentId,
-            task: prompt.length > 100 ? prompt.substring(0, 97) + "..." : prompt,
-            output: result,
-            duration: Date.now() - startTime,
+            task: prompt.length > 100 ? `${prompt.substring(0, 97)}...` : prompt,
+            output: JSON.stringify(result),
+            duration: (Date.now() - startTime).toString(),
           },
           {
             memoryType: CoALAMemoryType.EPISODIC,
@@ -783,7 +783,7 @@ export class AgentOrchestrator implements IAgentOrchestrator {
       }
 
       // Create a brief summary of the task instead of storing the entire prompt
-      const taskSummary = prompt.length > 100 ? prompt.substring(0, 97) + "..." : prompt;
+      const taskSummary = prompt.length > 100 ? `${prompt.substring(0, 97)}...` : prompt;
 
       return {
         agentId,
@@ -799,7 +799,7 @@ export class AgentOrchestrator implements IAgentOrchestrator {
       this.logger.error("Wrapped agent execution failed", { error });
 
       // Create a brief summary of the task instead of storing the entire prompt
-      const taskSummary = prompt.length > 100 ? prompt.substring(0, 97) + "..." : prompt;
+      const taskSummary = prompt.length > 100 ? `${prompt.substring(0, 97)}...` : prompt;
 
       return {
         agentId,

@@ -5,10 +5,10 @@
  * retrieval, and migration of memory entries with source information.
  */
 
-import { assertEquals, assertExists, assertNotEquals } from "@std/assert";
+import { assertEquals, assertExists } from "@std/assert";
 import { CoALAMemoryManager, CoALAMemoryType } from "../src/coala-memory.ts";
-import { type ConversationContext, MemorySource, MemoryType } from "../src/mecmf-interfaces.ts";
-import { MECMFMemoryManager } from "../src/mecmf-memory-manager.ts";
+import { AtlasMECMFMemoryManager } from "../src/mecmf-memory-manager.ts";
+import { ConversationContext, MemorySource } from "../src/mecmf-interfaces.ts";
 
 // Helper to track and close MessageChannels created by onnxruntime-web during tests
 async function runWithMessageChannelCleanup<T>(fn: () => Promise<T>): Promise<T> {
@@ -53,9 +53,9 @@ const createConversationContext = (
 ): ConversationContext => ({
   sessionId,
   workspaceId,
-  userId: "test-user",
-  agentId: "test-agent",
-  timestamp: new Date(),
+  currentTask: "test-task",
+  recentMessages: ["test-message"],
+  activeAgents: ["test-agent"],
 });
 
 // Mock scope for testing
@@ -123,7 +123,7 @@ Deno.test({
     await runWithMessageChannelCleanup(async () => {
       const scope = createTestScope("mecmf-test");
       const config = { workspaceId: "mecmf-test" };
-      const mecmfManager = new MECMFMemoryManager(scope, config);
+      const mecmfManager = new AtlasMECMFMemoryManager(scope, config);
 
       await mecmfManager.initialize();
 
@@ -184,7 +184,7 @@ Deno.test({
     await runWithMessageChannelCleanup(async () => {
       const scope = createTestScope("mecmf-stats");
       const config = { workspaceId: "mecmf-stats" };
-      const mecmfManager = new MECMFMemoryManager(scope, config);
+      const mecmfManager = new AtlasMECMFMemoryManager(scope, config);
 
       await mecmfManager.initialize();
 
@@ -374,7 +374,7 @@ Deno.test({
     await runWithMessageChannelCleanup(async () => {
       const scope = createTestScope("filtering-test");
       const config = { workspaceId: "filtering-test" };
-      const mecmfManager = new MECMFMemoryManager(scope, config);
+      const mecmfManager = new AtlasMECMFMemoryManager(scope, config);
 
       await mecmfManager.initialize();
 

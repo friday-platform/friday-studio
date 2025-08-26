@@ -250,7 +250,7 @@ export class StreamingMemoryManager {
     sessionId: string,
     agentId: string,
     toolName: string,
-    args: any,
+    args: unknown,
   ): Promise<void> {
     if (this.isShutdown) return;
 
@@ -258,7 +258,13 @@ export class StreamingMemoryManager {
       // Store directly as working memory
       this.memoryManager.rememberWorking(
         sessionId,
-        { kind: "tool_call", agentId, toolName, arguments: args, timestamp: Date.now() },
+        {
+          kind: "tool_call",
+          agentId,
+          toolName,
+          arguments: JSON.stringify(args),
+          timestamp: Date.now().toString(),
+        },
         {
           tags: ["working", "session", "tool", "tool_call", agentId, toolName],
           relevanceScore: 0.7,
@@ -284,7 +290,7 @@ export class StreamingMemoryManager {
     sessionId: string,
     agentId: string,
     toolName: string,
-    result: any,
+    result: unknown,
   ): Promise<void> {
     if (this.isShutdown) return;
 
@@ -292,7 +298,13 @@ export class StreamingMemoryManager {
       // Store directly as working memory
       this.memoryManager.rememberWorking(
         sessionId,
-        { kind: "tool_result", agentId, toolName, result, timestamp: Date.now() },
+        {
+          kind: "tool_result",
+          agentId,
+          toolName,
+          result: JSON.stringify(result),
+          timestamp: Date.now().toString(),
+        },
         {
           tags: ["working", "session", "tool", "tool_result", agentId, toolName],
           relevanceScore: 0.75,
@@ -314,7 +326,7 @@ export class StreamingMemoryManager {
             await this.streamSemanticFact(
               `${entity.type}:${entity.name}`,
               entity.confidence,
-              "tool_result",
+              "agent_output",
               { toolName, agentId, entityType: entity.type },
             );
           }

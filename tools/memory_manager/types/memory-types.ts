@@ -4,8 +4,16 @@
  * Defines types for the memory navigation tool that align with MECMF
  */
 
-// Use the MECMF MemoryType enum
-export { MemoryType } from "@atlas/memory";
+// Use the MECMF CoALAMemoryEntry interface and CoALAMemoryType enum
+import type { CoALAMemoryEntry, CoALAMemoryManager } from "@atlas/memory";
+import { CoALAMemoryType } from "@atlas/memory";
+
+// Re-export for external use
+export type { CoALAMemoryEntry, CoALAMemoryManager };
+export { CoALAMemoryType };
+
+// Create a MemoryEntry type alias for consistency
+export type MemoryEntry = CoALAMemoryEntry;
 
 // Local MemoryType for backward compatibility
 export enum LocalMemoryType {
@@ -15,37 +23,9 @@ export enum LocalMemoryType {
   PROCEDURAL = "procedural",
 }
 
-// Use the MECMF CoALAMemoryEntry interface and CoALAMemoryType enum
-export type { CoALAMemoryEntry as MemoryEntry, CoALAMemoryManager } from "@atlas/memory";
-export { CoALAMemoryType } from "@atlas/memory";
-
 export interface VectorSearchResult extends MemoryEntry {
   similarity: number;
   matchedContent: string;
-}
-
-export interface MemoryOperations {
-  // CRUD operations
-  create(
-    type: CoALAMemoryType,
-    key: string,
-    content: unknown,
-    metadata?: Partial<MemoryEntry>,
-  ): Promise<void>;
-  read(type: CoALAMemoryType, key: string): Promise<MemoryEntry | null>;
-  update(type: CoALAMemoryType, key: string, updates: Partial<MemoryEntry>): Promise<void>;
-  delete(type: CoALAMemoryType, key: string): Promise<void>;
-
-  // List and search
-  list(type: CoALAMemoryType): Promise<MemoryEntry[]>;
-  search(type: CoALAMemoryType, query: string): Promise<MemoryEntry[]>;
-
-  // Vector search operations
-  vectorSearch(query: string): Promise<VectorSearchResult[]>;
-
-  // Storage operations
-  save(): Promise<void>;
-  reload(): Promise<void>;
 }
 
 export interface MemoryStorage {
@@ -56,7 +36,7 @@ export interface MemoryStorage {
 }
 
 export interface TUIState {
-  currentTab: CoALAMemoryType;
+  currentTab: CoALAMemoryType | "vector-search";
   selectedIndex: number;
   scrollOffset: number;
   searchQuery: string;
@@ -92,7 +72,7 @@ export interface KeyBinding {
 }
 
 export interface TabInfo {
-  type: CoALAMemoryType;
+  type: CoALAMemoryType | "vector-search";
   title: string;
   count: number;
   color: string;
@@ -114,12 +94,14 @@ export enum EditableField {
 }
 
 // Workspace selection types
-export interface WorkspaceEntry {
-  id: string;
-  name: string;
-  path: string;
-  description?: string;
-}
+// Import proper workspace types
+import type { WorkspaceEntry as CoreWorkspaceEntry, WorkspaceStatus } from "@atlas/workspace";
+
+// Re-export the proper WorkspaceEntry type which includes status
+export type WorkspaceEntry = CoreWorkspaceEntry;
+
+// Re-export WorkspaceStatus for use in other files
+export type { WorkspaceStatus };
 
 export interface WorkspaceSelectionState {
   availableWorkspaces: WorkspaceEntry[];

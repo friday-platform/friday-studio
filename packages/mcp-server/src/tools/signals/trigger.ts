@@ -23,34 +23,35 @@ export function registerSignalsTriggerTool(server: McpServer, ctx: ToolContext) 
           .describe("Signal payload data used for job routing and agent input"),
       },
     },
-    ({ workspaceId, signalName, payload }) => {
+    async ({ workspaceId, signalName, payload }) => {
       ctx.logger.info("MCP workspace_signals_trigger called", { workspaceId, signalName });
 
-      /**
-       * TEMPORARILY DISABLED WHILE TRACKING DOWN HANGING PROMISE.
-       */
       try {
-        fetch(`${ctx.daemonUrl}/api/workspaces/${workspaceId}/signals/${signalName}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload || {}),
-        });
+        const response = await fetch(
+          `${ctx.daemonUrl}/api/workspaces/${workspaceId}/signals/${signalName}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ payload: payload || {} }),
+          },
+        );
 
-        // if (!response.ok) {
-        //   const errorData = await response.json().catch(() => ({}));
-        //   throw new Error(
-        //     `Daemon API error: ${response.status} - ${errorData.error || response.statusText}`,
-        //   );
-        // }
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(
+            `Daemon API error: ${response.status} - ${errorData.error || response.statusText}`,
+          );
+        }
 
-        // const result = await response.json();
+        const result = await response.json();
 
         return createSuccessResponse({
           success: true,
           workspaceId,
           signalName,
-          // status: result.status,
-          // message: result.message,
+          status: result.status,
+          message: result.message,
+          sessionId: result.sessionId,
           source: "daemon_api",
         });
       } catch (error) {

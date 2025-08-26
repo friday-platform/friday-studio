@@ -2,6 +2,19 @@ version: "1.0"
 workspace:
   name: "atlas-conversation"
   description: "Conversation management for Atlas"
+memory:
+  sessionBridge:
+    enabled: true
+    maxTurns: 10
+    retentionHours: 48
+    tokenAllocation: 0.10
+    relevanceThreshold: 0.6
+  worklog:
+    enabled: true
+    autoDetect: true
+    confidenceThreshold: 0.7
+    maxEntriesPerSession: 20
+    retentionDays: 90
 signals:
   conversation-stream:
     description: "Handle conversation with streaming response"

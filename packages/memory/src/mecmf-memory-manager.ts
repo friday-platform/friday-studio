@@ -5,13 +5,16 @@
  * integrating all MECMF components into a unified memory system for Atlas.
  */
 
+import { GlobalEmbeddingProvider } from "./global-embedding-provider.ts";
+
 // Import existing Atlas components
 import { type CoALAMemoryEntry, CoALAMemoryManager, CoALAMemoryType } from "./coala-memory.ts";
 import { getGlobalMECMFDebugLogger, type PromptEnhancementLog } from "./debug-logger.ts";
 import { MECMFErrorHandler } from "./error-handling.ts";
 import type {
-  MECMFMemoryManager as IMECMFMemoryManager,
   MemoryScoper,
+  MECMFMemoryManager,
+  MECMFEmbeddingProvider,
 } from "./mecmf-interfaces.ts";
 import {
   type ConversationContext,
@@ -25,7 +28,6 @@ import {
 } from "./mecmf-interfaces.ts";
 import { PIISafeMemoryClassifier } from "./pii-safe-classifier.ts";
 import { AtlasTokenBudgetManager } from "./token-budget-manager.ts";
-import { WebEmbeddingProvider } from "./web-embedding-provider.ts";
 
 export interface MECMFConfig {
   workspaceId: string;
@@ -39,8 +41,8 @@ export interface MECMFConfig {
   };
 }
 
-export class MECMFMemoryManager implements IMECMFMemoryManager {
-  private embeddingProvider: WebEmbeddingProvider | null;
+export class AtlasMECMFMemoryManager implements MECMFMemoryManager {
+  private embeddingProvider: MECMFEmbeddingProvider | null = null;
   private tokenBudgetManager: AtlasTokenBudgetManager;
   private memoryClassifier: PIISafeMemoryClassifier; // Changed to PII-safe classifier
   private errorHandler: MECMFErrorHandler;
@@ -48,8 +50,10 @@ export class MECMFMemoryManager implements IMECMFMemoryManager {
   private recentMemoryCache: Map<string, MemoryEntry> = new Map();
   private ready: boolean = false;
   private config: MECMFConfig;
+  private scope: IAtlasScope;
 
-  constructor(scope: MemoryScoper, config: MECMFConfig) {
+  constructor(scope: IAtlasScope, config: MECMFConfig) {
+    this.scope = scope;
     this.config = {
       enableVectorSearch: true,
       fallbackOptions: { enableTextSearch: true, cacheRecentMemories: true, maxCachedMemories: 50 },
@@ -65,28 +69,46 @@ export class MECMFMemoryManager implements IMECMFMemoryManager {
       ...config,
     };
 
-    // Initialize core components
-    this.embeddingProvider = this.config.enableVectorSearch
-      ? new WebEmbeddingProvider(config.embeddingConfig)
-      : null;
+    // Initialize synchronous core components
     this.tokenBudgetManager = new AtlasTokenBudgetManager();
     this.memoryClassifier = new PIISafeMemoryClassifier(); // Use PII-safe classifier
     this.errorHandler = new MECMFErrorHandler();
 
-    // Initialize CoALA memory manager with vector search
-    this.coalaManager = new CoALAMemoryManager(scope, undefined, true, {
-      // Vector search will be initialized internally by CoALAMemoryManager
-      // based on provided options; embedding provider is managed separately here.
-    });
+    // Note: Embedding provider and CoALA manager initialization moved to initialize() method
+    // to support async singleton embedding provider initialization
+    this.coalaManager = new CoALAMemoryManager(
+      scope,
+      undefined, // Use default storage
+      true, // Enable cognitive loop
+      {
+        // Vector search config will be set in initialize() once embedding provider is ready
+        vectorSearchConfig: undefined,
+      },
+    );
   }
 
   async initialize(): Promise<void> {
     if (this.ready) return;
 
     try {
-      // Initialize embedding provider only when vector search is enabled
-      if (this.config.enableVectorSearch && this.embeddingProvider) {
-        await this.embeddingProvider.warmup();
+      // Initialize embedding provider using singleton if vector search is enabled
+      if (this.config.enableVectorSearch) {
+        this.embeddingProvider = await GlobalEmbeddingProvider.getInstance(
+          this.config.embeddingConfig,
+        );
+
+        // Configure CoALA manager with vector search now that embedding provider is ready
+        this.coalaManager = new CoALAMemoryManager(
+          this.scope,
+          undefined, // Use default storage
+          true, // Enable cognitive loop
+          {
+            vectorSearchConfig: {
+              embeddingProvider: this.embeddingProvider,
+              batchSize: this.config.embeddingConfig?.batchSize || 10,
+            },
+          },
+        );
       }
 
       // The CoALA manager initializes automatically
@@ -622,7 +644,10 @@ export class MECMFMemoryManager implements IMECMFMemoryManager {
   async dispose(): Promise<void> {
     try {
       if (this.embeddingProvider) {
-        await this.embeddingProvider.dispose();
+        // Release reference to singleton instead of disposing it
+        // The singleton manages its own lifecycle across all sessions
+        GlobalEmbeddingProvider.releaseReference();
+        this.embeddingProvider = null;
       }
       await this.coalaManager.dispose();
       this.recentMemoryCache.clear();
@@ -723,5 +748,5 @@ export function createMECMFMemoryManager(
   scope: MemoryScoper,
   config: MECMFConfig,
 ): MECMFMemoryManager {
-  return new MECMFMemoryManager(scope, config);
+  return new AtlasMECMFMemoryManager(scope, config);
 }

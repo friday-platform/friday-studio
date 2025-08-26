@@ -1,22 +1,7 @@
 /**
- * @atlas/memory - Memory Management Package
+ * Atlas Memory Package
  *
- * This package provides comprehensive memory management for Atlas, including:
- *
- * ## CoALA Memory System:
- * - Multi-layered memory hierarchies (working, episodic, semantic, procedural)
- * - Adaptive retrieval based on context and relevance
- * - Cross-agent memory sharing and reflection
- * - Cognitive loops for memory consolidation and adaptation
- * - Streaming memory processing for real-time updates
- *
- * ## MECMF (Memory-Enhanced Context Management Framework):
- * - Token-aware prompt construction and budget management
- * - WebAssembly-based local embeddings with sentence-transformers
- * - Intelligent memory classification and entity extraction
- * - Vector similarity search with <100ms retrieval targets
- * - Graceful degradation and comprehensive error handling
- * - Production-ready performance optimizations
+ * Session Bridge + Worklog Implementation for conversational continuity
  */
 
 export type {
@@ -47,10 +32,6 @@ export {
   KnowledgeGraphManager,
   KnowledgeRelationType,
 } from "./src/knowledge-graph.ts";
-
-// Fact extraction capabilities moved to packages/system/agents/fact-extractor.ts
-// to avoid circular dependency with BaseAgent
-
 export { AsyncMemoryQueue } from "./src/streaming/async-memory-queue.ts";
 export type {
   AgentResultStream,
@@ -74,6 +55,9 @@ export type { StreamingMemoryConfig } from "./src/streaming/streaming-memory-man
 export { StreamingMemoryManager } from "./src/streaming/streaming-memory-manager.ts";
 // Memory coordination for supervisors
 export { SupervisorMemoryCoordinator } from "./src/supervisor-memory-coordinator.ts";
+export { TaskCompletionDetector } from "./src/worklog/completion-detector.ts";
+// Worklog System
+export { WorklogManager } from "./src/worklog/worklog-manager.ts";
 
 // === MECMF (Memory-Enhanced Context Management Framework) ===
 
@@ -103,3 +87,8 @@ export type {
 // Export enum as a VALUE, not type-only, so it can be used at runtime
 export { MemoryType } from "./src/mecmf-interfaces.ts";
 export type { MECMFConfig } from "./src/mecmf-memory-manager.ts";
+export {
+  createSessionMemoryHooks,
+  type SessionMemoryHooks,
+  WorkspaceMemoryManager,
+} from "./src/workspace-memory-integration.ts";

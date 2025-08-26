@@ -310,6 +310,9 @@ export interface AgentContext {
   /** Environment variables validated at execution time */
   env: Record<string, string>;
 
+  /** Agent configuration from workspace.yml or atlas.yml */
+  config?: Record<string, unknown>;
+
   /** Stream events back to Atlas - always provided */
   stream: StreamEmitter;
 

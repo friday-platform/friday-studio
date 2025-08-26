@@ -9,9 +9,9 @@ import { getWorkspaceManager, type WorkspaceEntry } from "@atlas/workspace";
 
 export class MemoryManagerWorkspaceService {
   /**
-   * List all available workspaces (excluding system workspaces by default)
+   * List all available workspaces (including system workspaces by default)
    */
-  async listWorkspaces(includeSystem = false): Promise<WorkspaceEntry[]> {
+  async listWorkspaces(includeSystem = true): Promise<WorkspaceEntry[]> {
     try {
       const manager = await getWorkspaceManager();
       const workspaces = await manager.list({ includeSystem });

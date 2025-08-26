@@ -14,32 +14,52 @@ import type { SSEEvent } from "@atlas/config";
 import { convertAIStreamToSSE, createRequestEvent } from "@atlas/core";
 import { stepCountIs, streamText, type TextStreamPart, type ToolSet } from "ai";
 import SYSTEM_PROMPT from "./prompt.txt" with { type: "text" };
-import { conversationStorageTool, conversationTools, streamEvent } from "./tools/mod.ts";
+import type { AtlasTools } from "@atlas/agent-sdk";
+import { type SystemAgentConfigObject, SystemAgentConfigObjectSchema } from "@atlas/config";
+import { conversationTools, streamEvent, workspaceMemoryTool } from "./tools/mod.ts";
 
-type MessageHistory = {
-  messages: Array<{ role: "user" | "assistant"; content: string }>;
-  historyContext: string;
-};
+type Role = "user" | "assistant";
+type ChatMessage = { role: Role; content: string };
+type MessageHistory = { messages: Array<ChatMessage> };
 
 /**
- * Get the system prompt with optional conversation history injection
+ * Get the system prompt with optional conversation history injection and available tools
  * Based on existing conversation-agent.ts buildSystemPrompt logic
  */
 function getSystemPrompt(
-  history?: { messages: Array<{ role: string; content: string }>; historyContext: string },
+  historyMessages?: Array<{ role: string; content: string }>,
+  tools?: AtlasTools,
   customPrompt?: string,
 ): string {
   let prompt = customPrompt || SYSTEM_PROMPT;
 
   // Replace the conversation history placeholder if present
-  if (history?.historyContext) {
+  if (historyMessages && historyMessages.length > 0) {
+    const formattedHistory = historyMessages.map((m) => `${m.role}: ${m.content}`).join("\n");
     prompt = prompt.replace(
       "{{CONVERSATION_HISTORY}}",
-      `\nConversation History:\n${history.historyContext}\n`,
+      `\nConversation History:\n${formattedHistory}\n`,
     );
   } else {
     // Remove the placeholder if no history
     prompt = prompt.replace("{{CONVERSATION_HISTORY}}", "");
+  }
+
+  // Replace the available tools placeholder with actual tool descriptions
+  if (tools && Object.keys(tools).length > 0) {
+    const toolDescriptions = Object.entries(tools)
+      .map(([name, tool]) => {
+        if (tool.description) {
+          return `- ${name}: ${tool.description}`;
+        }
+        return `- ${name}`;
+      })
+      .join("\n");
+
+    prompt = prompt.replace("{{AVAILABLE_TOOLS}}", `Available tools:\n${toolDescriptions}`);
+  } else {
+    // Remove the placeholder if no tools
+    prompt = prompt.replace("{{AVAILABLE_TOOLS}}", "");
   }
 
   return prompt;
@@ -129,47 +149,84 @@ export const conversationAgent = createAgent({
    * @param context - Execution context with session, logger, and available tools
    * @returns Conversation response with text, reasoning, execution flow, and tool calls
    */
-  handler: async (prompt, { session, logger, tools }) => {
+  handler: async (prompt, { session, logger, tools, config }) => {
     if (!session.streamId || !streamEvent.execute) {
       throw new Error("Stream ID is required");
     }
 
     const anthropic = createAnthropic({ apiKey: Deno.env.get("ANTHROPIC_API_KEY") });
 
+    // Get configuration values from workspace config with defaults
+    // Parse and validate config using proper schema types
+    let agentConfig: SystemAgentConfigObject | undefined;
+
+    if (config) {
+      try {
+        agentConfig = SystemAgentConfigObjectSchema.parse(config);
+        logger.info("Successfully parsed system agent configuration", {
+          model: agentConfig.model,
+          temperature: agentConfig.temperature,
+          maxTokens: agentConfig.max_tokens,
+        });
+      } catch (error) {
+        logger.warn("Invalid system agent configuration, using defaults", {
+          error: error instanceof Error ? error.message : String(error),
+          receivedConfig: config,
+        });
+      }
+    }
+
+    const modelConfig = {
+      model: agentConfig?.model ?? "claude-sonnet-4-20250514",
+      temperature: agentConfig?.temperature ?? 0.3,
+      maxOutputTokens: agentConfig?.max_tokens ?? 12000,
+    };
+
     const allTools = { ...tools, ...conversationTools };
 
     /**
-     * @FIXME: this is the wrong level of abstraction. Retrieval should be much more automatic here.
+     * Load conversation context from workspace memory system instead of separate storage
      */
-    let history: MessageHistory = { messages: [], historyContext: "" };
+    let history: MessageHistory = { messages: [] };
 
     try {
-      const result = await conversationStorageTool.execute?.(
-        { operation: "retrieve", streamId: session.streamId },
+      // Use workspace memory tool from conversation tools
+
+      const result = await workspaceMemoryTool.execute?.(
+        { operation: "load_context", maxEntries: 10, sessionId: session.sessionId, prompt: prompt },
         { messages: [], toolCallId: crypto.randomUUID() },
       );
 
-      if (result?.success && result.operation === "retrieve" && result?.result.messageCount > 0) {
-        const messages = result.result.messages;
-        const historyContext = messages
-          .map((m: { role: string; content: string }) => `${m.role}: ${m.content}`)
-          .join("\n");
+      logger.debug("DEBUG: Workspace memory tool result:", { result });
 
-        history = { messages, historyContext };
+      if (result?.success && result.conversationHistory.length > 0) {
+        const conversationHistory = result.conversationHistory;
+
+        // Convert workspace memory format to conversation format
+        const messages: Array<ChatMessage> = [];
+        for (const entry of conversationHistory) {
+          const userContent = entry?.user;
+          const assistantContent = entry?.assistant;
+          if (typeof userContent === "string" && userContent.trim().length > 0) {
+            messages.push({ role: "user", content: userContent });
+          }
+          if (typeof assistantContent === "string" && assistantContent.trim().length > 0) {
+            messages.push({ role: "assistant", content: assistantContent });
+          }
+        }
+
+        history = {
+          messages: messages.slice(-20), // Limit to recent messages
+        };
+
+        logger.info("Loaded conversation context from workspace memory", {
+          entriesLoaded: conversationHistory.length,
+          messagesCount: messages.length,
+        });
       }
     } catch (error) {
-      logger.warn("Failed to load conversation history", { error });
+      logger.warn("Failed to load workspace memory context", { error });
     }
-
-    await conversationStorageTool.execute?.(
-      {
-        streamId: session.streamId,
-        operation: "store",
-        message: { role: "user", content: prompt },
-        metadata: { userId: session.userId, timestamp: new Date().toISOString() },
-      },
-      { toolCallId: crypto.randomUUID(), messages: [] },
-    );
 
     const requestEvent = createRequestEvent(prompt);
     await streamEvent.execute(
@@ -183,25 +240,53 @@ export const conversationAgent = createAgent({
       { toolCallId: crypto.randomUUID(), messages: [] },
     );
 
+    const systemPrompt = getSystemPrompt(history.messages, allTools);
+    const messages = [{ role: "user" as const, content: prompt }];
+
+    // Log LLM input for debugging and monitoring
+    logger.info("LLM Input", {
+      systemPromptLength: systemPrompt.length,
+      systemPrompt: systemPrompt.substring(0, 500) + (systemPrompt.length > 500 ? "..." : ""),
+      userPrompt: prompt,
+      model: modelConfig.model,
+      temperature: modelConfig.temperature,
+      maxTokens: modelConfig.maxOutputTokens,
+      toolsCount: Object.keys(allTools).length,
+      toolsAvailable: Object.keys(allTools),
+      sessionId: session.sessionId,
+      streamId: session.streamId,
+      workspaceId: session.workspaceId,
+      historyLength: history.messages.length,
+    });
+
+    // Debug: Log what workspace we're running in for memory troubleshooting
+    logger.info("🔍 MEMORY DEBUG - Conversation Agent Context", {
+      sessionId: session.sessionId,
+      workspaceId: session.workspaceId,
+      userId: session.userId,
+      streamId: session.streamId,
+      conversationHistoryEntries: history.messages.length,
+    });
+
     const { fullStream, text, reasoning } = streamText({
-      model: anthropic("claude-sonnet-4-20250514"),
-      system: getSystemPrompt(history),
-      messages: [{ role: "user", content: prompt }],
+      model: anthropic(modelConfig.model),
+      system: systemPrompt,
+      messages,
       tools: allTools,
       toolChoice: "auto",
       stopWhen: stepCountIs(20),
-      temperature: 0.3,
-      maxOutputTokens: 12000,
+      temperature: modelConfig.temperature,
+      maxOutputTokens: modelConfig.maxOutputTokens,
       maxRetries: 3, // Enable retries for API resilience (e.g., 529 errors)
       providerOptions: { anthropic: { thinking: { type: "enabled", budgetTokens: 25000 } } },
     });
 
-    // I think this can be simpplified.
     const executionFlow = {
       steps: [] as Array<{ type: string; tool?: string; args?: unknown; timestamp: string }>,
       reasoning: [] as string[],
       responseBuffer: "",
       thinkingBuffer: "",
+      startTime: Date.now(), // Track start time for duration calculation
     };
 
     let prevChunk: TextStreamPart<ToolSet> | undefined;
@@ -258,16 +343,6 @@ export const conversationAgent = createAgent({
 
     const finalText = await text;
     const finalReasoning = await reasoning;
-
-    await conversationStorageTool.execute?.(
-      {
-        streamId: session.streamId,
-        operation: "store",
-        message: { role: "assistant", content: finalText },
-        metadata: { timestamp: new Date().toISOString() },
-      },
-      { toolCallId: crypto.randomUUID(), messages: [] },
-    );
 
     // Fallback: if no text chunks were streamed (e.g., only finish), emit final text once
     if ((!executionFlow.responseBuffer || executionFlow.responseBuffer.length === 0) && finalText) {

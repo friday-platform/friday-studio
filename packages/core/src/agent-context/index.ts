@@ -341,18 +341,16 @@ async function storePreviousResultsAsWorkingMemory(
       // Truncate or summarize the task to avoid storing entire prompts/code
       const taskSummary = result.task
         ? result.task.length > 100
-          ? result.task.substring(0, 97) + "..."
+          ? `${result.task.substring(0, 97)}...`
           : result.task
         : "No prompt available";
 
-      const memoryContent = `Agent: ${result.agentId}
-Input: ${taskSummary}
-Output: ${outputStr}`;
+      const memoryContent = { input: taskSummary, output: outputStr };
 
       // Store as WORKING memory with session-specific key
       const memoryKey = `wrk:${sessionId}:agent_result:${result.agentId}:${Date.now()}`;
 
-      await sessionMemory.rememberWithMetadata(memoryKey, memoryContent, {
+      sessionMemory.rememberWithMetadata(memoryKey, memoryContent, {
         memoryType: CoALAMemoryType.WORKING,
         tags: ["working", "session", "agent_result", result.agentId],
         relevanceScore: 0.9, // High relevance for recent outputs

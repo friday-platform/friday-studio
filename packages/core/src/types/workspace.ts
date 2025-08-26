@@ -4,7 +4,6 @@ export {
   WorkspaceEntrySchema,
   type WorkspaceMetadata,
   WorkspaceMetadataSchema,
-  type WorkspaceStatus,
   WorkspaceStatusEnum as WorkspaceStatus,
   WorkspaceStatusSchema,
 } from "@atlas/workspace";

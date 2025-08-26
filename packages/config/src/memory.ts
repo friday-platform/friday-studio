@@ -29,6 +29,30 @@ export const WorkspaceMemoryConfigSchema = z.strictObject({
     .optional(),
 
   include_types: z.array(z.string()).optional().describe("Types of memory to track"),
+
+  // Session Bridge Memory Configuration
+  sessionBridge: z
+    .strictObject({
+      enabled: z.boolean(),
+      maxTurns: z.number().int().positive().default(10),
+      retentionHours: z.number().positive().default(48),
+      tokenAllocation: z.number().min(0).max(1).default(0.1),
+      relevanceThreshold: z.number().min(0).max(1).default(0.6),
+    })
+    .optional()
+    .describe("Session bridge memory for cross-session continuity"),
+
+  // Worklog Configuration
+  worklog: z
+    .strictObject({
+      enabled: z.boolean(),
+      autoDetect: z.boolean().default(true),
+      confidenceThreshold: z.number().min(0).max(1).default(0.7),
+      maxEntriesPerSession: z.number().int().positive().default(20),
+      retentionDays: z.number().int().positive().default(90),
+    })
+    .optional()
+    .describe("Automated worklog for institutional memory"),
 });
 export type WorkspaceMemoryConfig = z.infer<typeof WorkspaceMemoryConfigSchema>;
 

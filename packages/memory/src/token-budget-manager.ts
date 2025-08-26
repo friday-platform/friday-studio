@@ -145,6 +145,7 @@ export class AtlasTokenBudgetManager implements TokenBudgetManager {
         memoriesIncluded: 0,
         memoryBreakdown: {
           [MemoryType.WORKING]: 0,
+          [MemoryType.SESSION_BRIDGE]: 0,
           [MemoryType.EPISODIC]: 0,
           [MemoryType.SEMANTIC]: 0,
           [MemoryType.PROCEDURAL]: 0,
@@ -184,6 +185,9 @@ export class AtlasTokenBudgetManager implements TokenBudgetManager {
     const memoryBreakdown = {
       [MemoryType.WORKING]: selectedMemories.filter((m) => m.memoryType === MemoryType.WORKING)
         .length,
+      [MemoryType.SESSION_BRIDGE]: selectedMemories.filter(
+        (m) => m.memoryType === MemoryType.SESSION_BRIDGE,
+      ).length,
       [MemoryType.EPISODIC]: selectedMemories.filter((m) => m.memoryType === MemoryType.EPISODIC)
         .length,
       [MemoryType.SEMANTIC]: selectedMemories.filter((m) => m.memoryType === MemoryType.SEMANTIC)
@@ -297,6 +301,9 @@ export class AtlasTokenBudgetManager implements TokenBudgetManager {
 
     const groupedMemories = {
       [MemoryType.WORKING]: memories.filter((m) => m.memoryType === MemoryType.WORKING),
+      [MemoryType.SESSION_BRIDGE]: memories.filter(
+        (m) => m.memoryType === MemoryType.SESSION_BRIDGE,
+      ),
       [MemoryType.PROCEDURAL]: memories.filter((m) => m.memoryType === MemoryType.PROCEDURAL),
       [MemoryType.SEMANTIC]: memories.filter((m) => m.memoryType === MemoryType.SEMANTIC),
       [MemoryType.EPISODIC]: memories.filter((m) => m.memoryType === MemoryType.EPISODIC),
@@ -320,6 +327,13 @@ export class AtlasTokenBudgetManager implements TokenBudgetManager {
     if (groupedMemories[MemoryType.WORKING].length > 0) {
       sections.push("### Current Working Context:");
       groupedMemories[MemoryType.WORKING].forEach((memory, index) => {
+        sections.push(`${index + 1}. **${memory.id}**: ${this.extractContentText(memory.content)}`);
+      });
+    }
+
+    if (groupedMemories[MemoryType.SESSION_BRIDGE].length > 0) {
+      sections.push("### Previous Session Context:");
+      groupedMemories[MemoryType.SESSION_BRIDGE].forEach((memory, index) => {
         sections.push(`${index + 1}. **${memory.id}**: ${this.extractContentText(memory.content)}`);
       });
     }
@@ -355,6 +369,12 @@ export class AtlasTokenBudgetManager implements TokenBudgetManager {
       parts.push(`Current context: ${this.summarizeMemories(groupedMemories[MemoryType.WORKING])}`);
     }
 
+    if (groupedMemories[MemoryType.SESSION_BRIDGE].length > 0) {
+      parts.push(
+        `Previous session: ${this.summarizeMemories(groupedMemories[MemoryType.SESSION_BRIDGE])}`,
+      );
+    }
+
     if (groupedMemories[MemoryType.PROCEDURAL].length > 0) {
       parts.push(`Procedures: ${this.summarizeMemories(groupedMemories[MemoryType.PROCEDURAL])}`);
     }
@@ -375,6 +395,10 @@ export class AtlasTokenBudgetManager implements TokenBudgetManager {
 
     for (const memory of groupedMemories[MemoryType.WORKING]) {
       bullets.push(`• [Working] ${this.extractContentText(memory.content, 120)}`);
+    }
+
+    for (const memory of groupedMemories[MemoryType.SESSION_BRIDGE]) {
+      bullets.push(`• [Bridge] ${this.extractContentText(memory.content, 120)}`);
     }
 
     for (const memory of groupedMemories[MemoryType.PROCEDURAL]) {
@@ -482,11 +506,7 @@ export class AtlasTokenBudgetManager implements TokenBudgetManager {
     const compressed = this.compressContent(contentText, maxTokens);
 
     if (compressed) {
-      return {
-        ...memory,
-        content:
-          typeof memory.content === "string" ? compressed : { ...memory.content, text: compressed },
-      };
+      return { ...memory, content: compressed };
     }
 
     return null;

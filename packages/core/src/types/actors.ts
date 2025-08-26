@@ -33,6 +33,7 @@ type JobsConfig = Record<string, JobSpecification>;
  */
 export interface WorkspaceSupervisorConfig {
   workspaceId: string;
+  workspacePath: string;
   workspace: WorkspaceConfig["workspace"];
   signals: SignalsConfig;
   jobs: JobsConfig;

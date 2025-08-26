@@ -172,9 +172,9 @@ export function createAgentExecutionMachine(
               eventType: "agent_execution",
               agentId: input.agentId,
               prompt: input.prompt,
-              output: input.result,
-              duration: input.duration,
-              timestamp: Date.now(),
+              output: JSON.stringify(input.result),
+              duration: input.duration.toString(),
+              timestamp: Date.now().toString(),
             },
             // Using CoALAMemoryType enum for type safety
             {

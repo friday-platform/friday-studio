@@ -3,70 +3,33 @@
  * Enhances semantic memory to work as a structured knowledge base
  */
 
-// Knowledge graph entity types
-export enum KnowledgeEntityType {
-  PERSON = "person",
-  PROJECT = "project",
-  SERVICE = "service",
-  CONCEPT = "concept",
-  PREFERENCE = "preference",
-  IDENTIFIER = "identifier",
-  TEAM = "team",
-  TECHNOLOGY = "technology",
-  LOCATION = "location",
-  FACT = "fact",
-}
+import type {
+  KnowledgeEntity as StorageKnowledgeEntity,
+  KnowledgeFact as StorageKnowledgeFact,
+  KnowledgeGraphQuery as StorageKnowledgeGraphQuery,
+  KnowledgeRelationship as StorageKnowledgeRelationship,
+} from "@atlas/storage";
+import { KnowledgeEntityType, KnowledgeRelationType } from "@atlas/storage";
 
-// Relationship types between entities
-export enum KnowledgeRelationType {
-  IS_A = "is_a",
-  PART_OF = "part_of",
-  WORKS_ON = "works_on",
-  USES = "uses",
-  PREFERS = "prefers",
-  OWNS = "owns",
-  MEMBER_OF = "member_of",
-  LOCATED_AT = "located_at",
-  RELATED_TO = "related_to",
-  HAS_ATTRIBUTE = "has_attribute",
-  KNOWS = "knows",
-}
+// Re-export storage types for compatibility
+export { KnowledgeEntityType, KnowledgeRelationType };
 
-// Knowledge graph entity
-export interface KnowledgeEntity {
-  id: string;
-  type: KnowledgeEntityType;
-  name: string;
-  attributes: Record<string, any>;
-  confidence: number;
+// Extended knowledge graph types with memory-specific properties
+export interface KnowledgeEntity extends StorageKnowledgeEntity {
   source: string; // Where this entity was extracted from
   timestamp: Date;
-  workspaceId: string;
 }
 
-// Knowledge graph relationship
-export interface KnowledgeRelationship {
-  id: string;
-  type: KnowledgeRelationType;
-  sourceEntityId: string;
-  targetEntityId: string;
-  attributes: Record<string, any>;
-  confidence: number;
+export interface KnowledgeRelationship extends StorageKnowledgeRelationship {
   source: string;
   timestamp: Date;
-  workspaceId: string;
 }
 
-// Knowledge graph fact (combines entity and relationship)
-export interface KnowledgeFact {
-  id: string;
-  statement: string; // Natural language statement
+export interface KnowledgeFact extends StorageKnowledgeFact {
   entities: KnowledgeEntity[];
   relationships: KnowledgeRelationship[];
-  confidence: number;
   source: string;
   timestamp: Date;
-  workspaceId: string;
   tags: string[];
   validated: boolean;
 }
@@ -94,15 +57,8 @@ export interface ExtractedFact {
 }
 
 // Knowledge graph query interface
-export interface KnowledgeGraphQuery {
-  entityTypes?: KnowledgeEntityType[];
-  relationshipTypes?: KnowledgeRelationType[];
-  entityNames?: string[];
-  search?: string; // Text search across entities and facts
-  workspaceId?: string;
-  minConfidence?: number;
-  limit?: number;
-}
+// Knowledge graph query interface - use storage interface
+export interface KnowledgeGraphQuery extends StorageKnowledgeGraphQuery {}
 
 // Knowledge graph storage adapter interface
 export interface IKnowledgeGraphStorageAdapter {
@@ -155,6 +111,7 @@ export class KnowledgeGraphManager {
       // Create entities
       const entities: KnowledgeEntity[] = [];
       for (const entityData of extractedFact.entities) {
+        const now = new Date();
         const entity: KnowledgeEntity = {
           id: `entity_${crypto.randomUUID()}`,
           type: entityData.type,
@@ -162,8 +119,10 @@ export class KnowledgeGraphManager {
           attributes: entityData.attributes,
           confidence: extractedFact.confidence,
           source: extractedFact.context,
-          timestamp: new Date(),
+          timestamp: now,
           workspaceId: this.workspaceId,
+          createdAt: now,
+          updatedAt: now,
         };
         entities.push(entity);
         await this.storageAdapter.storeEntity(entity);
@@ -176,6 +135,7 @@ export class KnowledgeGraphManager {
         const targetEntity = entities.find((e) => e.name === relData.target);
 
         if (sourceEntity && targetEntity) {
+          const relationshipNow = new Date();
           const relationship: KnowledgeRelationship = {
             id: `rel_${crypto.randomUUID()}`,
             type: relData.type,
@@ -184,8 +144,10 @@ export class KnowledgeGraphManager {
             attributes: relData.attributes,
             confidence: extractedFact.confidence,
             source: extractedFact.context,
-            timestamp: new Date(),
+            timestamp: relationshipNow,
             workspaceId: this.workspaceId,
+            createdAt: relationshipNow,
+            updatedAt: relationshipNow,
           };
           relationships.push(relationship);
           await this.storageAdapter.storeRelationship(relationship);
@@ -193,6 +155,7 @@ export class KnowledgeGraphManager {
       }
 
       // Create fact
+      const factNow = new Date();
       const fact: KnowledgeFact = {
         id: factId,
         statement: extractedFact.statement,
@@ -200,10 +163,12 @@ export class KnowledgeGraphManager {
         relationships,
         confidence: extractedFact.confidence,
         source: extractedFact.context,
-        timestamp: new Date(),
+        timestamp: factNow,
         workspaceId: this.workspaceId,
         tags: [extractedFact.type, "extracted_fact"],
         validated: false,
+        createdAt: factNow,
+        updatedAt: factNow,
       };
 
       await this.storageAdapter.storeFact(fact);
@@ -264,8 +229,31 @@ export class KnowledgeGraphManager {
     });
     const facts = await this.storageAdapter.queryFacts({ workspaceId: this.workspaceId });
 
-    const entityTypes: Record<KnowledgeEntityType, number> = {};
-    const relationshipTypes: Record<KnowledgeRelationType, number> = {};
+    const entityTypes: Record<KnowledgeEntityType, number> = {
+      [KnowledgeEntityType.PERSON]: 0,
+      [KnowledgeEntityType.PROJECT]: 0,
+      [KnowledgeEntityType.SERVICE]: 0,
+      [KnowledgeEntityType.CONCEPT]: 0,
+      [KnowledgeEntityType.PREFERENCE]: 0,
+      [KnowledgeEntityType.IDENTIFIER]: 0,
+      [KnowledgeEntityType.TEAM]: 0,
+      [KnowledgeEntityType.TECHNOLOGY]: 0,
+      [KnowledgeEntityType.LOCATION]: 0,
+      [KnowledgeEntityType.FACT]: 0,
+    };
+    const relationshipTypes: Record<KnowledgeRelationType, number> = {
+      [KnowledgeRelationType.IS_A]: 0,
+      [KnowledgeRelationType.PART_OF]: 0,
+      [KnowledgeRelationType.WORKS_ON]: 0,
+      [KnowledgeRelationType.USES]: 0,
+      [KnowledgeRelationType.PREFERS]: 0,
+      [KnowledgeRelationType.OWNS]: 0,
+      [KnowledgeRelationType.MEMBER_OF]: 0,
+      [KnowledgeRelationType.LOCATED_AT]: 0,
+      [KnowledgeRelationType.RELATED_TO]: 0,
+      [KnowledgeRelationType.HAS_ATTRIBUTE]: 0,
+      [KnowledgeRelationType.KNOWS]: 0,
+    };
 
     entities.forEach((entity) => {
       entityTypes[entity.type] = (entityTypes[entity.type] || 0) + 1;

@@ -112,7 +112,7 @@ export class MECMFErrorHandler {
           errorType: "embedding_service_failure",
           timestamp: new Date(),
           retryCount: attempt,
-          details: { error: error.message, attempt },
+          details: { error: error instanceof Error ? error.message : String(error), attempt },
           ...context,
         });
 
@@ -133,7 +133,7 @@ export class MECMFErrorHandler {
             };
           } catch (_fallbackError) {
             throw new Error(
-              `Primary operation failed: ${error.message}. Fallback also failed: ${fallbackError.message}`,
+              `Primary operation failed: ${error instanceof Error ? error.message : String(error)}. Fallback also failed: ${_fallbackError instanceof Error ? _fallbackError.message : String(_fallbackError)}`,
             );
           }
         }
@@ -166,7 +166,7 @@ export class MECMFErrorHandler {
         errorType: "vector_search_timeout",
         timestamp: new Date(),
         retryCount: 1,
-        details: { timeout, error: error.message },
+        details: { timeout, error: error instanceof Error ? error.message : String(error) },
         ...context,
       });
 
@@ -225,7 +225,7 @@ export class MECMFErrorHandler {
       return { ...pruneResult, backupCreated };
     } catch (pruneError) {
       throw new Error(
-        `Storage capacity exceeded and emergency pruning failed: ${pruneError.message}`,
+        `Storage capacity exceeded and emergency pruning failed: ${pruneError instanceof Error ? pruneError.message : String(pruneError)}`,
       );
     }
   }
@@ -261,7 +261,9 @@ export class MECMFErrorHandler {
       const restored = await restoreFromCheckpoint();
       return restored;
     } catch (restoreError) {
-      throw new Error(`Memory corruption detected and restoration failed: ${restoreError.message}`);
+      throw new Error(
+        `Memory corruption detected and restoration failed: ${restoreError instanceof Error ? restoreError.message : String(restoreError)}`,
+      );
     }
   }
 
@@ -321,7 +323,11 @@ export class MECMFErrorHandler {
             errorType: "primary_operation_failure",
             timestamp: new Date(),
             retryCount: 1,
-            details: { primaryError: primaryError.message, usedFallback: fallback.name },
+            details: {
+              primaryError:
+                primaryError instanceof Error ? primaryError.message : String(primaryError),
+              usedFallback: fallback.name,
+            },
             ...context,
           });
 
@@ -336,7 +342,9 @@ export class MECMFErrorHandler {
       }
 
       // All operations failed
-      throw new Error(`All operations failed. Primary: ${primaryError.message}`);
+      throw new Error(
+        `All operations failed. Primary: ${primaryError instanceof Error ? primaryError.message : String(primaryError)}`,
+      );
     }
   }
 

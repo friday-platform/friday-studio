@@ -9,16 +9,16 @@
  *   deno run --allow-read --allow-write --unstable tools/memory_manager/main.ts [workspace-path]
  */
 
+import type { CoALAMemoryManager } from "@atlas/memory";
+import { CoALAMemoryType } from "@atlas/memory";
+import type { WorkspaceEntry } from "@atlas/workspace";
 import { parseArgs } from "@std/cli";
-import { join as _join } from "@std/path";
 import { MemoryManagerTUI } from "./src/tui.ts";
 import { AtlasMemoryLoader } from "./utils/memory-loader.ts";
-import { AtlasMemoryOperations } from "./utils/memory-operations.ts";
 
 interface Args {
   help?: boolean;
   stats?: boolean;
-  export?: boolean;
   import?: boolean;
   validate?: boolean;
   workspace?: string;
@@ -39,11 +39,11 @@ async function main() {
 
   // Get workspace path from args
   let workspacePath = args.workspace || args._[0]?.toString();
-  let selectedWorkspace: any = null;
+  let selectedWorkspace: WorkspaceEntry | null = null;
 
   // If no workspace path provided and we're in interactive mode (not stats/export/validate),
   // show workspace selector
-  const isInteractiveMode = !args.stats && !args.export && !args.validate;
+  const isInteractiveMode = !args.stats && !args.validate;
 
   if (!workspacePath && isInteractiveMode) {
     // Start TUI in workspace selector mode
@@ -90,23 +90,16 @@ async function main() {
     const loader = workspaceId
       ? new AtlasMemoryLoader(workspacePath, workspaceId)
       : new AtlasMemoryLoader(workspacePath);
-    const operations = new AtlasMemoryOperations(loader);
-
-    await operations.initialize();
+    const coalaManager = await loader.getCoALAManagerPublic();
 
     // Handle different modes
     if (args.stats) {
-      await showStats(operations, loader);
-      return;
-    }
-
-    if (args.export) {
-      await exportMemory(operations);
+      await showStats(coalaManager, loader);
       return;
     }
 
     if (args.validate) {
-      await validateMemory(operations);
+      validateMemory(coalaManager);
       return;
     }
 
@@ -117,7 +110,7 @@ async function main() {
     // Small delay to let user read the message
     await new Promise((resolve) => setTimeout(resolve, 1000));
 
-    const tui = new MemoryManagerTUI(operations);
+    const tui = new MemoryManagerTUI(coalaManager);
     await tui.start();
   } catch (error) {
     console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
@@ -141,12 +134,13 @@ OPTIONS:
 
 INTERACTIVE COMMANDS:
     Tab / Shift+Tab          Switch between memory types (Working, Episodic, Semantic, Procedural)
-    ↑/↓ or j/k              Navigate up/down in memory list
+    ↑/↓ or j/k              Navigate up/down in memory list (arrow keys only in vector search mode)
     Enter                    View selected memory entry details
     e                        Edit selected entry (future feature)
     n                        Create new entry (future feature)
     d                        Delete selected entry (future feature)
     /                        Search in current memory type
+    v                        Vector search mode (most keys used for typing during search)
     r                        Reload memory from disk
     s                        Save changes to disk
     h or ?                   Show/hide help
@@ -170,11 +164,37 @@ EXAMPLES:
 `);
 }
 
-async function showStats(operations: AtlasMemoryOperations, loader: AtlasMemoryLoader) {
+async function showStats(coalaManager: CoALAMemoryManager, loader: AtlasMemoryLoader) {
   console.log(`\nMemory Statistics:`);
   console.log(`─────────────────`);
 
-  const stats = operations.getStats();
+  // Get stats using CoALA manager
+  const stats: Record<
+    string,
+    { count: number; avgRelevance: number; mostRecent?: Date; oldestEntry?: Date }
+  > = {};
+
+  for (const memoryType of Object.values(CoALAMemoryType)) {
+    const entries = coalaManager.getMemoriesByType(memoryType);
+    const timestamps = entries.map((e) => e.timestamp);
+
+    stats[memoryType] = {
+      count: entries.length,
+      avgRelevance:
+        entries.length > 0
+          ? entries.reduce((sum, e) => sum + e.relevanceScore, 0) / entries.length
+          : 0,
+      mostRecent:
+        timestamps.length > 0
+          ? new Date(Math.max(...timestamps.map((t) => t.getTime())))
+          : undefined,
+      oldestEntry:
+        timestamps.length > 0
+          ? new Date(Math.min(...timestamps.map((t) => t.getTime())))
+          : undefined,
+    };
+  }
+
   const storageStats = await loader.getStorageStats();
 
   console.log(`Storage Path: ${storageStats.path}`);
@@ -205,32 +225,73 @@ async function showStats(operations: AtlasMemoryOperations, loader: AtlasMemoryL
   console.log(`Total Entries: ${totalEntries}`);
 }
 
-async function exportMemory(operations: AtlasMemoryOperations) {
-  const jsonData = await operations.exportToJson();
-  console.log(jsonData);
-}
-
-function validateMemory(operations: AtlasMemoryOperations) {
+function validateMemory(coalaManager: CoALAMemoryManager) {
   console.log(`\nValidating Memory Data:`);
   console.log(`──────────────────────`);
 
   let totalErrors = 0;
-  const allData = operations.getAll();
 
-  for (const [memoryType, entries] of Object.entries(allData)) {
+  function validateEntry(entry: unknown): string[] {
+    const errors: string[] = [];
+
+    if (typeof entry !== "object" || entry === null) {
+      errors.push("Entry must be an object");
+      return errors;
+    }
+
+    const entryObj = entry as Record<string, unknown>;
+
+    if (!entryObj.id || typeof entryObj.id !== "string" || entryObj.id.trim() === "") {
+      errors.push("ID is required");
+    }
+
+    if (entryObj.content === undefined || entryObj.content === null) {
+      errors.push("Content is required");
+    }
+
+    if (
+      entryObj.relevanceScore !== undefined &&
+      (typeof entryObj.relevanceScore !== "number" ||
+        entryObj.relevanceScore < 0 ||
+        entryObj.relevanceScore > 1)
+    ) {
+      errors.push("Relevance score must be between 0 and 1");
+    }
+
+    if (
+      entryObj.confidence !== undefined &&
+      (typeof entryObj.confidence !== "number" ||
+        entryObj.confidence < 0 ||
+        entryObj.confidence > 1)
+    ) {
+      errors.push("Confidence must be between 0 and 1");
+    }
+
+    if (
+      entryObj.decayRate !== undefined &&
+      (typeof entryObj.decayRate !== "number" || entryObj.decayRate < 0)
+    ) {
+      errors.push("Decay rate must be non-negative");
+    }
+
+    return errors;
+  }
+
+  for (const memoryType of Object.values(CoALAMemoryType)) {
+    const entries = coalaManager.getMemoriesByType(memoryType);
     console.log(`\nValidating ${memoryType.toUpperCase()} memory...`);
 
     let typeErrors = 0;
-    for (const [key, entry] of Object.entries(entries)) {
-      const errors = operations.validateEntry(entry);
+    for (const entry of entries) {
+      const errors = validateEntry(entry);
       if (errors.length > 0) {
-        console.log(`  ❌ ${key}: ${errors.join(", ")}`);
+        console.log(`  ❌ ${entry.id}: ${errors.join(", ")}`);
         typeErrors += errors.length;
       }
     }
 
     if (typeErrors === 0) {
-      console.log(`  ✅ ${Object.keys(entries).length} entries validated successfully`);
+      console.log(`  ✅ ${entries.length} entries validated successfully`);
     } else {
       console.log(`  ❌ ${typeErrors} validation errors found`);
     }

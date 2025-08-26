@@ -20,16 +20,20 @@ export { CoALALocalFileStorageAdapter } from "./src/memory/coala-local.ts";
 export { FileWriteCoordinator } from "./src/memory/file-write-coordinator.ts";
 export { InMemoryStorageAdapter } from "./src/memory/in-memory.ts";
 export { LocalFileStorageAdapter } from "./src/memory/local.ts";
-// Core storage interfaces
+// Core storage interfaces and types
 export type {
   ICoALAMemoryStorageAdapter,
   IKnowledgeGraphStorageAdapter,
   ITempestMemoryStorageAdapter,
   KnowledgeEntity,
-  KnowledgeEntityType,
   KnowledgeFact,
   KnowledgeGraphQuery,
   KnowledgeRelationship,
+} from "./src/types/core.ts";
+
+// Export enums as values (not types)
+export {
+  KnowledgeEntityType,
   KnowledgeRelationType,
 } from "./src/types/core.ts";
 // Vector search interfaces

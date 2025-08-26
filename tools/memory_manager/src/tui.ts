@@ -4,27 +4,24 @@
  * Provides an ncurses-like interface for navigating workspace memory
  */
 
+import type { CoALAMemoryEntry, CoALAMemoryManager } from "@atlas/memory";
 import {
-  EditableField,
-  type EditState,
+  CoALAMemoryType,
   type KeyBinding,
   type MemoryEntry,
-  MemoryType,
-  type OverlayContent,
   type TabInfo,
   type TUIState,
   type VectorSearchResult,
   type WorkspaceEntry,
-  type WorkspaceSelectionState,
+  type WorkspaceStatus,
 } from "../types/memory-types.ts";
-import type { AtlasMemoryOperations } from "../utils/memory-operations.ts";
 import { MemoryManagerWorkspaceService } from "../utils/workspace-manager.ts";
 
 export class MemoryManagerTUI {
-  private operations?: AtlasMemoryOperations;
+  private coalaManager?: CoALAMemoryManager;
   private workspaceService = new MemoryManagerWorkspaceService();
   private state: TUIState = {
-    currentTab: MemoryType.WORKING,
+    currentTab: CoALAMemoryType.WORKING,
     selectedIndex: 0,
     scrollOffset: 0,
     searchQuery: "",
@@ -35,14 +32,162 @@ export class MemoryManagerTUI {
   private running = true;
   private terminalSize = { width: 80, height: 24 };
 
-  constructor(operations?: AtlasMemoryOperations) {
-    this.operations = operations;
+  constructor(coalaManager?: CoALAMemoryManager) {
+    this.coalaManager = coalaManager;
     this.updateTerminalSize();
 
-    // If operations are provided, skip workspace selection
-    if (operations) {
+    // If CoALA manager is provided, skip workspace selection
+    if (coalaManager) {
       this.state.mode = "list" as const;
     }
+  }
+
+  // Helper methods to map operations to CoALA manager
+  private getStats(): Record<
+    CoALAMemoryType,
+    {
+      count: number;
+      totalRelevance: number;
+      avgRelevance: number;
+      mostRecent?: Date;
+      oldestEntry?: Date;
+    }
+  > {
+    if (!this.coalaManager) {
+      throw new Error("CoALA manager not initialized");
+    }
+
+    const stats: Record<
+      CoALAMemoryType,
+      {
+        count: number;
+        totalRelevance: number;
+        avgRelevance: number;
+        mostRecent?: Date;
+        oldestEntry?: Date;
+      }
+    > = {
+      [CoALAMemoryType.WORKING]: { count: 0, totalRelevance: 0, avgRelevance: 0 },
+      [CoALAMemoryType.EPISODIC]: { count: 0, totalRelevance: 0, avgRelevance: 0 },
+      [CoALAMemoryType.SEMANTIC]: { count: 0, totalRelevance: 0, avgRelevance: 0 },
+      [CoALAMemoryType.PROCEDURAL]: { count: 0, totalRelevance: 0, avgRelevance: 0 },
+      [CoALAMemoryType.CONTEXTUAL]: { count: 0, totalRelevance: 0, avgRelevance: 0 },
+    };
+
+    for (const memoryType of Object.values(CoALAMemoryType)) {
+      const entries = this.coalaManager.getMemoriesByType(memoryType);
+      const timestamps = entries.map((e) => e.timestamp);
+
+      stats[memoryType] = {
+        count: entries.length,
+        totalRelevance: entries.reduce((sum, e) => sum + e.relevanceScore, 0),
+        avgRelevance:
+          entries.length > 0
+            ? entries.reduce((sum, e) => sum + e.relevanceScore, 0) / entries.length
+            : 0,
+        mostRecent:
+          timestamps.length > 0
+            ? new Date(Math.max(...timestamps.map((t) => t.getTime())))
+            : undefined,
+        oldestEntry:
+          timestamps.length > 0
+            ? new Date(Math.min(...timestamps.map((t) => t.getTime())))
+            : undefined,
+      };
+    }
+
+    return stats;
+  }
+
+  private list(type: CoALAMemoryType): MemoryEntry[] {
+    if (!this.coalaManager) {
+      throw new Error("CoALA manager not initialized");
+    }
+
+    const entries = this.coalaManager.getMemoriesByType(type);
+    return entries.sort((a, b) => b.lastAccessed.getTime() - a.lastAccessed.getTime());
+  }
+
+  private async search(type: CoALAMemoryType, query: string): Promise<MemoryEntry[]> {
+    if (!this.coalaManager) {
+      throw new Error("CoALA manager not initialized");
+    }
+
+    try {
+      const searchResults = await this.coalaManager.queryMemoriesEnhanced({
+        content: query,
+        memoryType: type,
+        minRelevance: 0.1,
+        limit: 50,
+      });
+      return searchResults;
+    } catch (error) {
+      console.error(`Search failed for type ${type}:`, error);
+      return [];
+    }
+  }
+
+  private async vectorSearch(query: string): Promise<VectorSearchResult[]> {
+    if (!this.coalaManager) {
+      throw new Error("CoALA manager not initialized");
+    }
+
+    try {
+      const results = await this.coalaManager.getRelevantMemoriesForPrompt(query, {
+        includeWorking: false,
+        includeEpisodic: true,
+        includeSemantic: true,
+        includeProcedural: true,
+        limit: 20,
+        minSimilarity: 0.2,
+        maxAge: undefined,
+        tags: undefined,
+      });
+
+      return results.memories
+        .map((memory: CoALAMemoryEntry): VectorSearchResult => {
+          const memoryWithSimilarity = memory as CoALAMemoryEntry & { similarity?: number };
+          return {
+            ...memory,
+            similarity: memoryWithSimilarity.similarity || 0,
+            matchedContent:
+              typeof memory.content === "string"
+                ? memory.content.substring(0, 200) + (memory.content.length > 200 ? "..." : "")
+                : JSON.stringify(memory.content).substring(0, 200) + "...",
+          };
+        })
+        .sort((a, b) => b.similarity - a.similarity);
+    } catch (error) {
+      console.error("Vector search failed:", error);
+      return [];
+    }
+  }
+
+  private getAllByType(type: CoALAMemoryType): Record<string, MemoryEntry> {
+    if (!this.coalaManager) {
+      throw new Error("CoALA manager not initialized");
+    }
+
+    const entries = this.coalaManager.getMemoriesByType(type);
+    const result: Record<string, MemoryEntry> = {};
+    entries.forEach((entry) => {
+      result[entry.id] = entry;
+    });
+    return result;
+  }
+
+  private async reload(): Promise<void> {
+    if (!this.coalaManager) {
+      throw new Error("CoALA manager not initialized");
+    }
+    await this.coalaManager.loadFromStorage();
+  }
+
+  private async save(): Promise<void> {
+    if (!this.coalaManager) {
+      throw new Error("CoALA manager not initialized");
+    }
+    await this.coalaManager.commitToStorage();
   }
 
   /**
@@ -98,8 +243,6 @@ export class MemoryManagerTUI {
   }
 
   private async renderMain(): Promise<void> {
-    const { width, height } = this.terminalSize;
-
     // Render header
     await this.renderHeader();
 
@@ -144,13 +287,19 @@ export class MemoryManagerTUI {
 
     if (this.state.mode === "workspace-selector") {
       headerText = `${title} | Workspace Selection`;
-    } else if (this.state.currentTab === MemoryType.VECTOR_SEARCH) {
+    } else if (this.state.currentTab === "vector-search") {
       const resultCount = this.state.vectorSearchResults?.length || 0;
       headerText = `${title} | VECTOR SEARCH (${resultCount} results)`;
-    } else if (this.operations) {
-      const stats = this.operations.getStats();
-      const currentStats = stats[this.state.currentTab];
-      headerText = `${title} | ${this.state.currentTab.toUpperCase()} Memory (${currentStats.count} entries)`;
+    } else if (this.coalaManager) {
+      const stats = this.getStats();
+      const currentStats = stats[this.state.currentTab as CoALAMemoryType];
+      if (currentStats) {
+        headerText = `${title} | ${(
+          this.state.currentTab as string
+        ).toUpperCase()} Memory (${currentStats.count} entries)`;
+      } else {
+        headerText = `${title} | ${(this.state.currentTab as string).toUpperCase()} Memory`;
+      }
     } else {
       headerText = title;
     }
@@ -167,25 +316,36 @@ export class MemoryManagerTUI {
       return;
     }
 
-    if (!this.operations) {
+    if (!this.coalaManager) {
       return;
     }
 
     const tabs: TabInfo[] = [
-      { type: MemoryType.WORKING, title: "Working", count: 0, color: "yellow" },
-      { type: MemoryType.EPISODIC, title: "Episodic", count: 0, color: "green" },
-      { type: MemoryType.SEMANTIC, title: "Semantic", count: 0, color: "blue" },
-      { type: MemoryType.PROCEDURAL, title: "Procedural", count: 0, color: "magenta" },
-      { type: MemoryType.VECTOR_SEARCH, title: "Vector Search", count: 0, color: "cyan" },
+      { type: CoALAMemoryType.WORKING, title: "Working", count: 0, color: "yellow" },
+      { type: CoALAMemoryType.EPISODIC, title: "Episodic", count: 0, color: "green" },
+      { type: CoALAMemoryType.SEMANTIC, title: "Semantic", count: 0, color: "blue" },
+      { type: CoALAMemoryType.PROCEDURAL, title: "Procedural", count: 0, color: "magenta" },
+      {
+        type: "vector-search" as any, // Special search mode, not a real memory type
+        title: "Vector Search",
+        count: 0,
+        color: "cyan",
+      },
     ];
 
-    const stats = this.operations.getStats();
+    const stats = await this.getStats();
     tabs.forEach((tab) => {
-      if (tab.type === MemoryType.VECTOR_SEARCH) {
+      if (tab.type === "vector-search") {
         // Vector search shows count of search results, not stored memories
         tab.count = this.state.vectorSearchResults?.length || 0;
       } else {
-        tab.count = stats[tab.type].count;
+        // Only access stats for real memory types
+        const realMemoryType = tab.type as CoALAMemoryType;
+        if (stats[realMemoryType]) {
+          tab.count = stats[realMemoryType].count;
+        } else {
+          tab.count = 0;
+        }
       }
     });
 
@@ -211,12 +371,12 @@ export class MemoryManagerTUI {
 
   private async renderMemoryList(): Promise<void> {
     // Handle vector search tab differently
-    if (this.state.currentTab === MemoryType.VECTOR_SEARCH) {
+    if (this.state.currentTab === "vector-search") {
       await this.renderVectorSearchList();
       return;
     }
 
-    const entries = await this.operations.list(this.state.currentTab);
+    const entries = this.list(this.state.currentTab as CoALAMemoryType);
     const visibleHeight = this.terminalSize.height - 8; // Account for header, tabs, footer
 
     if (entries.length === 0) {
@@ -260,7 +420,6 @@ export class MemoryManagerTUI {
 
     // Show scroll indicator
     if (entries.length > visibleHeight) {
-      const scrollPos = Math.floor((this.state.scrollOffset / entries.length) * visibleHeight);
       console.log(
         `\nShowing ${this.state.scrollOffset + 1}-${Math.min(
           this.state.scrollOffset + visibleHeight,
@@ -273,10 +432,10 @@ export class MemoryManagerTUI {
   private async renderMemoryView(): Promise<void> {
     let entry: MemoryEntry | VectorSearchResult | undefined;
 
-    if (this.state.currentTab === MemoryType.VECTOR_SEARCH && this.state.vectorSearchResults) {
+    if (this.state.currentTab === "vector-search" && this.state.vectorSearchResults) {
       entry = this.state.vectorSearchResults[this.state.selectedIndex];
     } else {
-      const entries = await this.operations.list(this.state.currentTab);
+      const entries = this.list(this.state.currentTab as CoALAMemoryType);
       entry = entries[this.state.selectedIndex];
     }
 
@@ -325,9 +484,7 @@ export class MemoryManagerTUI {
         "Confidence",
         this.renderProgressBar(entry.confidence, 20) + ` ${(entry.confidence * 100).toFixed(1)}%`,
       ],
-      ["Access Count", entry.accessCount.toString()],
       ["Created", this.formatDate(entry.timestamp)],
-      ["Last Accessed", this.formatDate(entry.lastAccessed)],
       ["Source Scope", this.truncateString(entry.sourceScope, 30)],
       ["Decay Rate", entry.decayRate.toFixed(3)],
     );
@@ -341,20 +498,6 @@ export class MemoryManagerTUI {
       );
       const tagLine = entry.tags.map((tag) => this.colorize(`#${tag}`, "dim", "yellow")).join("  ");
       console.log(`│ ${tagLine}`);
-    }
-
-    // Associations section
-    if (entry.associations.length > 0) {
-      console.log(
-        this.colorize(
-          "\n├─ Associations " + "─".repeat(Math.max(0, width - 15)),
-          "bold",
-          "magenta",
-        ),
-      );
-      entry.associations.forEach((assoc) => {
-        console.log(`│ → ${this.truncateString(assoc, Math.max(5, width - 5))}`);
-      });
     }
 
     // Content section
@@ -377,8 +520,8 @@ export class MemoryManagerTUI {
     rows.forEach((row) => {
       row.forEach((cell, i) => {
         // Remove ANSI codes for length calculation
-        const cleanCell = cell.replace(/\x1b\[[0-9;]*m/g, "");
-        colWidths[i] = Math.max(colWidths[i], cleanCell.length);
+        const cleanCell = cell.replace(/\\x1b\[[0-9;]*m/g, "");
+        colWidths[i] = Math.max(colWidths[i] || 0, cleanCell.length);
       });
     });
 
@@ -398,8 +541,8 @@ export class MemoryManagerTUI {
     rows.forEach((row, rowIndex) => {
       let line = "│ ";
       row.forEach((cell, colIndex) => {
-        const cleanCell = cell.replace(/\x1b\[[0-9;]*m/g, "");
-        const padding = Math.max(0, colWidths[colIndex] - cleanCell.length);
+        const cleanCell = cell.replace(/\\x1b\[[0-9;]*m/g, "");
+        const padding = Math.max(0, colWidths[colIndex] || 0 - cleanCell.length);
 
         if (rowIndex === 1) {
           // Separator row
@@ -417,7 +560,7 @@ export class MemoryManagerTUI {
     });
   }
 
-  private renderContent(content: any, maxWidth: number): void {
+  private renderContent(content: CoALAMemoryEntry, maxWidth: number): void {
     const safeMaxWidth = Math.max(10, maxWidth);
 
     if (typeof content === "string") {
@@ -559,7 +702,10 @@ export class MemoryManagerTUI {
     console.log(`Query: ${this.state.searchQuery}_`);
 
     if (this.state.searchQuery.length > 0) {
-      const results = await this.operations.search(this.state.currentTab, this.state.searchQuery);
+      const results = await this.search(
+        this.state.currentTab as CoALAMemoryType,
+        this.state.searchQuery,
+      );
       console.log(`Found ${results.length} results:`);
 
       results.slice(0, 10).forEach((entry, index) => {
@@ -585,9 +731,7 @@ export class MemoryManagerTUI {
     if (this.state.vectorSearchQuery && this.state.vectorSearchQuery.length > 0) {
       if (!this.state.vectorSearchResults) {
         console.log(this.colorize("Performing vector search...", "dim", "yellow"));
-        this.state.vectorSearchResults = await this.operations.vectorSearch(
-          this.state.vectorSearchQuery,
-        );
+        this.state.vectorSearchResults = await this.vectorSearch(this.state.vectorSearchQuery);
       }
 
       const results = this.state.vectorSearchResults;
@@ -666,7 +810,7 @@ export class MemoryManagerTUI {
 
       const similarityBar = "█".repeat(Math.ceil(entry.similarity * 10));
       const typeColor = this.getMemoryTypeColor(entry.memoryType);
-      const ageInHours = Math.floor((Date.now() - entry.lastAccessed.getTime()) / (1000 * 60 * 60));
+      const ageInHours = Math.floor((Date.now() - entry.timestamp.getTime()) / (1000 * 60 * 60));
       const ageText = ageInHours < 1 ? "< 1h" : `${ageInHours}h`;
 
       let line = `[${entry.memoryType.toUpperCase()}] ${entry.id.padEnd(20)} │ ${similarityBar.padEnd(
@@ -688,7 +832,6 @@ export class MemoryManagerTUI {
 
     // Show scroll indicator
     if (results.length > visibleHeight) {
-      const _scrollPos = Math.floor((this.state.scrollOffset / results.length) * visibleHeight);
       console.log(
         `\nShowing ${this.state.scrollOffset + 1}-${Math.min(
           this.state.scrollOffset + visibleHeight,
@@ -704,13 +847,21 @@ export class MemoryManagerTUI {
 
     const keyBindings: KeyBinding[] = [
       { key: "Tab / Shift+Tab", description: "Switch between memory types", action: () => {} },
-      { key: "↑/↓ or j/k", description: "Navigate up/down", action: () => {} },
+      {
+        key: "↑/↓ or j/k",
+        description: "Navigate up/down (arrow keys only in vector search mode)",
+        action: () => {},
+      },
       { key: "Enter", description: "View selected entry (formatted)", action: () => {} },
       { key: "e", description: "Edit selected entry", action: () => {} },
       { key: "n", description: "Create new entry", action: () => {} },
       { key: "d", description: "Delete selected entry", action: () => {} },
       { key: "/", description: "Search in current memory type", action: () => {} },
-      { key: "v", description: "Vector search mode", action: () => {} },
+      {
+        key: "v",
+        description: "Vector search mode (most keys disabled during search for typing)",
+        action: () => {},
+      },
       { key: "r", description: "Reload memory from disk", action: () => {} },
       { key: "s", description: "Save changes to disk", action: () => {} },
       { key: "f", description: "View full content in overlay", action: () => {} },
@@ -722,6 +873,11 @@ export class MemoryManagerTUI {
       console.log(`  ${binding.key.padEnd(15)} - ${binding.description}`);
     });
 
+    console.log("\n" + "─".repeat(this.terminalSize.width));
+    console.log(this.colorize("VECTOR SEARCH MODE:", "bold", "cyan"));
+    console.log("  ESC, Tab, Arrow keys work normally for navigation");
+    console.log("  All other keys (q,e,n,d,s,r,f,v,h,/,j,k, etc.) are used for typing");
+    console.log("  This allows typing queries like 'question', 'environment', 'search'");
     console.log("\n" + "─".repeat(this.terminalSize.width));
     console.log("Press any key to return to memory view");
   }
@@ -769,15 +925,13 @@ export class MemoryManagerTUI {
 
     // Handle vector search input first to prevent conflicts with navigation keys
     if (this.state.mode === "vector-search") {
-      // Handle special keys that should work even in vector search mode
+      // Handle ONLY essential navigation keys in vector search mode
+      // All other keys should go to text input to allow typing words like "question", "environment", etc.
       if (key === "ESCAPE") {
         this.state.mode = "list" as const;
         this.state.showHelp = false;
         this.state.vectorSearchQuery = undefined;
         this.state.vectorSearchResults = undefined;
-        return;
-      } else if (key === "q") {
-        this.running = false;
         return;
       } else if (key === "\t") {
         // Tab
@@ -787,32 +941,16 @@ export class MemoryManagerTUI {
         this.switchTab(-1);
         return;
       } else if (key === "ARROW_UP") {
-        // Navigate up in vector search results (only arrow keys for navigation to avoid conflicts)
+        // Navigate up in vector search results
         if (this.state.vectorSearchResults && this.state.vectorSearchResults.length > 0) {
           this.navigateUp();
         }
         return;
       } else if (key === "ARROW_DOWN") {
-        // Navigate down in vector search results (only arrow keys for navigation to avoid conflicts)
+        // Navigate down in vector search results
         if (this.state.vectorSearchResults && this.state.vectorSearchResults.length > 0) {
-          this.navigateDown();
+          await this.navigateDown();
         }
-        return;
-      } else if (
-        (key === "k" || key === "K") &&
-        this.state.vectorSearchResults &&
-        this.state.vectorSearchResults.length > 0
-      ) {
-        // Only use k for navigation when we have search results to navigate
-        this.navigateUp();
-        return;
-      } else if (
-        (key === "j" || key === "J") &&
-        this.state.vectorSearchResults &&
-        this.state.vectorSearchResults.length > 0
-      ) {
-        // Only use j for navigation when we have search results to navigate
-        this.navigateDown();
         return;
       } else if (key === "\r") {
         // Enter
@@ -824,18 +962,12 @@ export class MemoryManagerTUI {
           await this.handleVectorSearchInput(key);
         }
         return;
-      } else if (key === "f" || key === "F") {
-        // Show overlay for vector search result
-        if (this.state.vectorSearchResults && this.state.vectorSearchResults.length > 0) {
-          await this.showCurrentEntryOverlay();
-        }
-        return;
-      } else if (key.length === 1) {
+      } else {
+        // ALL other keys (including q,e,n,d,s,r,f,v,h,/,j,k,etc.) go to text input
+        // This allows typing words like "question", "environment", "search", "define", etc.
         await this.handleVectorSearchInput(key);
         return;
       }
-      // For other keys in vector search mode, ignore them
-      return;
     }
 
     // Normal mode key handling
@@ -856,7 +988,7 @@ export class MemoryManagerTUI {
       case "j":
       case "J":
       case "ARROW_DOWN":
-        this.navigateDown();
+        await this.navigateDown();
         break;
       case "k":
       case "K":
@@ -888,7 +1020,7 @@ export class MemoryManagerTUI {
         this.state.mode = this.state.mode === "search" ? ("list" as const) : ("search" as const);
         break;
       case "v":
-        if (this.state.currentTab === MemoryType.VECTOR_SEARCH) {
+        if (this.state.currentTab === "vector-search") {
           const currentMode = this.state.mode as
             | "list"
             | "view"
@@ -904,17 +1036,17 @@ export class MemoryManagerTUI {
           }
         } else {
           // Switch to vector search tab and enter vector search mode
-          this.state.currentTab = MemoryType.VECTOR_SEARCH;
+          this.state.currentTab = "vector-search" as any;
           this.state.mode = "vector-search" as const;
           this.state.selectedIndex = 0;
           this.state.scrollOffset = 0;
         }
         break;
       case "r":
-        await this.operations.reload();
+        await this.reload();
         break;
       case "s":
-        await this.operations.save();
+        await this.save();
         break;
       case "ESCAPE":
         this.state.mode = "list" as const;
@@ -940,9 +1072,7 @@ export class MemoryManagerTUI {
     } else if (key === "\r") {
       // Enter - perform search
       if (this.state.vectorSearchQuery && this.state.vectorSearchQuery.length > 0) {
-        this.state.vectorSearchResults = await this.operations.vectorSearch(
-          this.state.vectorSearchQuery,
-        );
+        this.state.vectorSearchResults = await this.vectorSearch(this.state.vectorSearchQuery);
         this.state.selectedIndex = 0;
         this.state.scrollOffset = 0;
       }
@@ -1007,15 +1137,30 @@ export class MemoryManagerTUI {
     }
 
     // Handle regular characters
-    return String.fromCharCode(firstByte);
+    return String.fromCharCode(firstByte || 0);
   }
 
   private switchTab(direction: 1 | -1): void {
-    const types = Object.values(MemoryType);
-    const currentIndex = types.indexOf(this.state.currentTab);
+    // Only include actual memory storage types, not VECTOR_SEARCH which is a search mode
+    const types = [
+      CoALAMemoryType.WORKING,
+      CoALAMemoryType.EPISODIC,
+      CoALAMemoryType.SEMANTIC,
+      CoALAMemoryType.PROCEDURAL,
+    ];
+
+    // If current tab is VECTOR_SEARCH, start from WORKING
+    let currentIndex =
+      this.state.currentTab === ("vector-search" as any)
+        ? 0
+        : types.indexOf(this.state.currentTab as CoALAMemoryType);
+    if (currentIndex === -1) {
+      currentIndex = 0; // fallback to first tab
+    }
+
     const newIndex = (currentIndex + direction + types.length) % types.length;
 
-    this.state.currentTab = types[newIndex];
+    this.state.currentTab = types[newIndex] as any;
     this.state.selectedIndex = 0;
     this.state.scrollOffset = 0;
   }
@@ -1031,13 +1176,13 @@ export class MemoryManagerTUI {
     }
   }
 
-  private navigateDown(): void {
+  private async navigateDown(): Promise<void> {
     let maxIndex: number;
 
-    if (this.state.currentTab === MemoryType.VECTOR_SEARCH && this.state.vectorSearchResults) {
+    if (this.state.currentTab === "vector-search" && this.state.vectorSearchResults) {
       maxIndex = this.state.vectorSearchResults.length - 1;
     } else {
-      const entries = this.operations.getAllByType(this.state.currentTab);
+      const entries = this.getAllByType(this.state.currentTab as CoALAMemoryType);
       maxIndex = Object.keys(entries).length - 1;
     }
 
@@ -1230,7 +1375,7 @@ export class MemoryManagerTUI {
       const y = startY + 3 + index;
       await Deno.stdout.write(new TextEncoder().encode(`\x1b[${y};${startX + 3}H`));
       // Lines are already properly wrapped, just display them
-      console.log(line.substring(0, contentWidth));
+      console.log(line?.substring(0, contentWidth) || "");
     }
 
     // Clear any remaining lines in the content area
@@ -1308,7 +1453,6 @@ export class MemoryManagerTUI {
           } else {
             // Wrap long JSON lines while preserving indentation
             let currentIndent = indent;
-            const _baseAvailableWidth = maxWidth - indent.length;
             let remainingContent = contentPart;
 
             while (remainingContent.length > 0) {
@@ -1356,10 +1500,10 @@ export class MemoryManagerTUI {
   private async showCurrentEntryOverlay(): Promise<void> {
     let entry: MemoryEntry | VectorSearchResult | undefined;
 
-    if (this.state.currentTab === MemoryType.VECTOR_SEARCH && this.state.vectorSearchResults) {
+    if (this.state.currentTab === "vector-search" && this.state.vectorSearchResults) {
       entry = this.state.vectorSearchResults[this.state.selectedIndex];
     } else {
-      const entries = await this.operations.list(this.state.currentTab);
+      const entries = this.list(this.state.currentTab as CoALAMemoryType);
       entry = entries[this.state.selectedIndex];
     }
 
@@ -1401,7 +1545,7 @@ export class MemoryManagerTUI {
     };
 
     try {
-      const workspaces = await this.workspaceService.listWorkspaces(false);
+      const workspaces = await this.workspaceService.listWorkspaces(true);
       this.state.workspaceSelection.availableWorkspaces = workspaces;
       this.state.workspaceSelection.loading = false;
 
@@ -1563,7 +1707,7 @@ export class MemoryManagerTUI {
       case "\r": // Enter
         if (workspaces.length > 0) {
           const selectedWorkspace = workspaces[selection.selectedWorkspaceIndex];
-          return selectedWorkspace;
+          return selectedWorkspace || null;
         }
         break;
 
@@ -1579,17 +1723,14 @@ export class MemoryManagerTUI {
   /**
    * Get color for workspace status
    */
-  private getStatusColor(status: string): string {
+  private getStatusColor(status: WorkspaceStatus): string {
     switch (status) {
       case "running":
         return "green";
       case "stopped":
         return "red";
-      case "starting":
-      case "stopping":
-        return "yellow";
-      case "crashed":
-        return "red";
+      case "inactive":
+        return "dim";
       default:
         return "white";
     }

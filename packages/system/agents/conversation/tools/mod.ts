@@ -12,9 +12,10 @@
 
 import type { AtlasTools } from "@atlas/agent-sdk";
 import { conversationStorageTool } from "./conversation-storage.ts";
+import { workspaceMemoryTool } from "./workspace-memory-tool.ts";
+import { todoReadTool, todoWriteTool } from "./todo-tools.ts";
 import { resourceReadTool } from "./resource-read.ts";
 import { streamEvent } from "./stream-event.ts";
-import { todoReadTool, todoWriteTool } from "./todo-tools.ts";
 import { generateWorkspace } from "./workspace-creation/generation.ts";
 import { updateWorkspace } from "./workspace-update/atlas-update-workspace.ts";
 
@@ -25,6 +26,7 @@ import { updateWorkspace } from "./workspace-update/atlas-update-workspace.ts";
 export const conversationTools: AtlasTools = {
   atlas_stream_event: streamEvent,
   atlas_conversation_storage: conversationStorageTool,
+  atlas_workspace_memory: workspaceMemoryTool,
   atlas_todo_read: todoReadTool,
   atlas_todo_write: todoWriteTool,
   read_atlas_resource: resourceReadTool,
@@ -40,4 +42,5 @@ export {
   todoReadTool,
   todoWriteTool,
   updateWorkspace,
+  workspaceMemoryTool,
 };

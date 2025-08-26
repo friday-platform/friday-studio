@@ -3,8 +3,9 @@
  * Replaces worker-based supervisor management with direct actor orchestration
  */
 
+import type { AtlasAgent } from "@atlas/agent-sdk";
 import { ConfigLoader, type MergedConfig } from "@atlas/config";
-import type { WorkspaceSupervisorConfig } from "@atlas/core";
+import type { WorkspaceSupervisorConfig, WrappedAgentResult } from "@atlas/core";
 import {
   AgentOrchestrator,
   convertLLMToAgent,
@@ -14,6 +15,11 @@ import {
 } from "@atlas/core";
 import { logger } from "@atlas/logger";
 import { MCPServerRegistry } from "@atlas/mcp";
+import {
+  createSessionMemoryHooks,
+  type SessionMemoryHooks,
+  WorkspaceMemoryManager,
+} from "@atlas/memory";
 import { type ISignalProvider, ProviderRegistry, ProviderType } from "@atlas/signals";
 import { FilesystemConfigAdapter } from "@atlas/storage";
 import { load } from "@std/dotenv";
@@ -21,6 +27,7 @@ import { exists } from "@std/fs";
 import { join } from "@std/path";
 import { assign, fromPromise, setup } from "xstate";
 import type { IWorkspace, IWorkspaceSession, IWorkspaceSignal } from "../types/core.ts";
+import { getAtlasHome } from "../utils/paths.ts";
 import {
   type ProcessSignalResult,
   WorkspaceSupervisorActor,
@@ -55,6 +62,8 @@ export interface WorkspaceRuntimeContext {
   daemonUrl?: string;
   supervisor?: WorkspaceSupervisorActor;
   agentOrchestrator?: AgentOrchestrator;
+  memoryManager?: WorkspaceMemoryManager;
+  sessionMemoryHooks?: SessionMemoryHooks;
   sessions: Map<string, IWorkspaceSession>;
   activeStreamSignals: Map<string, StreamSignalData>;
   isShuttingDown: boolean;
@@ -88,6 +97,8 @@ export type WorkspaceRuntimeEvent =
         supervisor: WorkspaceSupervisorActor;
         mergedConfig: MergedConfig;
         agentOrchestrator: AgentOrchestrator;
+        memoryManager?: WorkspaceMemoryManager;
+        sessionMemoryHooks?: SessionMemoryHooks;
       };
     }
   | {
@@ -126,6 +137,8 @@ export const workspaceRuntimeMachineSetup = setup({
         supervisor: WorkspaceSupervisorActor;
         mergedConfig: MergedConfig;
         agentOrchestrator: AgentOrchestrator;
+        memoryManager?: WorkspaceMemoryManager;
+        sessionMemoryHooks?: SessionMemoryHooks;
       },
       { context: WorkspaceRuntimeContext }
     >(async ({ input }) => {
@@ -160,13 +173,15 @@ export const workspaceRuntimeMachineSetup = setup({
 
       // Load or use provided configuration
       let mergedConfig: MergedConfig;
+      const workspacePath = context.options.workspacePath || getAtlasHome();
+
       if (context.config) {
         mergedConfig = context.config;
         logger.debug("Using provided configuration", { workspaceId: context.workspace.id });
       } else {
         // Load configuration from disk
         logger.debug("Loading configuration from disk", { workspaceId: context.workspace.id });
-        const workspacePath = context.options.workspacePath || Deno.cwd();
+        const workspacePath = context.options.workspacePath || getAtlasHome();
         const adapter = new FilesystemConfigAdapter(workspacePath);
         const configLoader = new ConfigLoader(adapter, workspacePath);
         mergedConfig = await configLoader.load();
@@ -175,6 +190,7 @@ export const workspaceRuntimeMachineSetup = setup({
       // Create typed configuration slice for WorkspaceSupervisor
       const supervisorConfig: WorkspaceSupervisorConfig = {
         workspaceId: context.workspace.id,
+        workspacePath: workspacePath,
         workspace: mergedConfig.workspace.workspace,
         signals: mergedConfig.workspace.signals || {},
         jobs: mergedConfig.workspace.jobs || {},
@@ -211,9 +227,7 @@ export const workspaceRuntimeMachineSetup = setup({
         {
           agentsServerUrl: `http://localhost:8080/agents`,
           headers: { "X-Atlas-Workspace-ID": context.workspace.id },
-          executionTimeout: mergedConfig.atlas?.execution?.agent_timeout
-            ? mergedConfig.atlas.execution.agent_timeout * 1000
-            : 300000,
+          approvalTimeout: 300000,
           mcpServerPool: context.options.mcpServerPool,
           daemonUrl: context.options.daemonUrl,
         },
@@ -236,7 +250,7 @@ export const workspaceRuntimeMachineSetup = setup({
 
             try {
               // Convert LLM config to SDK agent
-              const wrappedAgent = convertLLMToAgent(
+              const wrappedAgent: AtlasAgent<WrappedAgentResult> = convertLLMToAgent(
                 agentConfig,
                 agentId,
                 logger.child({ component: "LLMAgentWrapper", agentId }),
@@ -281,6 +295,27 @@ export const workspaceRuntimeMachineSetup = setup({
         timestamp: new Date().toISOString(),
       });
 
+      // Initialize memory manager if memory configuration is available
+      let memoryManager: WorkspaceMemoryManager | undefined;
+      let sessionMemoryHooks: SessionMemoryHooks | undefined;
+
+      if (mergedConfig.workspace?.memory) {
+        try {
+          memoryManager = new WorkspaceMemoryManager(mergedConfig.workspace.memory);
+          sessionMemoryHooks = createSessionMemoryHooks(memoryManager);
+
+          logger.info("Memory manager initialized", {
+            workspaceId: context.workspace.id,
+            sessionBridge: mergedConfig.workspace.memory.sessionBridge?.enabled,
+            worklog: mergedConfig.workspace.memory.worklog?.enabled,
+          });
+        } catch (error) {
+          logger.warn("Failed to initialize memory manager", {
+            workspaceId: context.workspace.id,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
       if (initDuration > 15000) {
         logger.warn("Workspace initialization took longer than expected", {
           workspaceId: context.workspace.id,
@@ -288,7 +323,7 @@ export const workspaceRuntimeMachineSetup = setup({
         });
       }
 
-      return { supervisor, mergedConfig, agentOrchestrator };
+      return { supervisor, mergedConfig, agentOrchestrator, memoryManager, sessionMemoryHooks };
     }),
     initializeStreams: fromPromise<
       { activeStreamSignals: Map<string, StreamSignalData> },
@@ -430,6 +465,16 @@ export const workspaceRuntimeMachineSetup = setup({
         activeSessionCount: context.stats.activeSessionCount + 1,
       }),
     }),
+    onSessionCreated: ({ context, event }) => {
+      if (event.type === "SESSION_CREATED" && context.sessionMemoryHooks) {
+        context.sessionMemoryHooks.onStart(event.sessionId).catch((error) => {
+          logger.error("Failed to initialize session memory", {
+            sessionId: event.sessionId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        });
+      }
+    },
     updateSessionCompletedStats: assign({
       stats: ({ context }) => ({
         ...context.stats,
@@ -444,6 +489,16 @@ export const workspaceRuntimeMachineSetup = setup({
       //   return newSessions;
       // },
     }),
+    onSessionCompleted: ({ context, event }) => {
+      if (event.type === "SESSION_COMPLETED" && context.sessionMemoryHooks) {
+        context.sessionMemoryHooks.onEnd(event.sessionId).catch((error) => {
+          logger.error("Failed to finalize session memory", {
+            sessionId: event.sessionId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        });
+      }
+    },
     assignSupervisor: assign(({ event }) => {
       logger.info("assignSupervisor action called", {
         eventType: event.type,
@@ -461,6 +516,8 @@ export const workspaceRuntimeMachineSetup = setup({
         return {
           supervisor: event.output.supervisor,
           agentOrchestrator: event.output.agentOrchestrator,
+          memoryManager: event.output.memoryManager,
+          sessionMemoryHooks: event.output.sessionMemoryHooks,
         };
       }
       logger.warn("assignSupervisor: Event type not matched", {

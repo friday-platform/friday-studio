@@ -133,7 +133,7 @@ export class MECMFDebugLogger {
     if (this.config.logLevel !== "minimal") {
       const enhancedTruncated = this.truncateText(
         log.enhancedPrompt,
-        this.config.maxPromptLength * 2,
+        this.config?.maxPromptLength ? this.config.maxPromptLength * 2 : 1000,
       );
       lines.push(`🚀 ENHANCED PROMPT (${log.tokensEnhanced} tokens):`);
       lines.push(`"${enhancedTruncated}"`);

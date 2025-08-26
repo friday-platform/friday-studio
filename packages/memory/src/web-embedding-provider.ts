@@ -8,6 +8,7 @@
  */
 
 import { crypto } from "jsr:@std/crypto";
+import { logger } from "@atlas/logger";
 import { ensureDir } from "@std/fs";
 import ort from "onnxruntime-web";
 import { getMECMFCacheDir } from "../../../src/utils/paths.ts";
@@ -39,38 +40,26 @@ export interface EmbeddingResult {
 export class BERTTokenizer {
   private vocab: Record<string, number> = {};
   private idToToken: Record<number, string> = {};
-  private _specialTokens: Record<string, number> = {};
   private doLowerCase: boolean = true;
   private maxLength: number = 512;
   private clsToken: string = "[CLS]";
   private sepToken: string = "[SEP]";
-  private _padToken: string = "[PAD]";
   private unkToken: string = "[UNK]";
-  private _maskToken: string = "[MASK]";
-  private _clsTokenId: number = 101;
-  private _sepTokenId: number = 102;
   private padTokenId: number = 0;
   private unkTokenId: number = 100;
-  private _maskTokenId: number = 103;
 
   constructor(config: TokenizerConfig) {
     this.vocab = config.vocab;
-    this._specialTokens = config.special_tokens;
     this.doLowerCase = config.do_lower_case;
     this.maxLength = config.max_len || 512;
 
     // Set token strings and IDs from config
     this.clsToken = config.cls_token || "[CLS]";
     this.sepToken = config.sep_token || "[SEP]";
-    this._padToken = config.pad_token || "[PAD]";
     this.unkToken = config.unk_token || "[UNK]";
-    this._maskToken = config.mask_token || "[MASK]";
 
-    this._clsTokenId = config.cls_token_id ?? 101;
-    this._sepTokenId = config.sep_token_id ?? 102;
     this.padTokenId = config.pad_token_id ?? 0;
     this.unkTokenId = config.unk_token_id ?? 100;
-    this._maskTokenId = config.mask_token_id ?? 103;
 
     // Create reverse mapping
     for (const [token, id] of Object.entries(this.vocab)) {
@@ -258,7 +247,7 @@ export class WebEmbeddingProvider implements MECMFEmbeddingProvider {
         // Added in PR #16169 for proper session cleanup
         await this.session.release();
       } catch (error) {
-        console.warn("Error releasing ONNX Runtime session:", error);
+        logger.warn("Error releasing ONNX Runtime session:", { error });
       } finally {
         this.session = null;
       }
@@ -305,7 +294,9 @@ export class WebEmbeddingProvider implements MECMFEmbeddingProvider {
     } catch (error) {
       this.ready = false;
       this.initializationPromise = null;
-      throw new Error(`Failed to initialize WebEmbeddingProvider: ${error.message}`);
+      throw new Error(
+        `Failed to initialize WebEmbeddingProvider: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
 
@@ -505,13 +496,13 @@ export class WebEmbeddingProvider implements MECMFEmbeddingProvider {
       // Set up inputs based on model requirements
       if (session.inputNames.includes("input_ids")) {
         inputs["input_ids"] = inputIdsTensor;
-      } else if (session.inputNames.length > 0) {
+      } else if (session.inputNames.length > 0 && session.inputNames[0]) {
         inputs[session.inputNames[0]] = inputIdsTensor;
       }
 
       if (session.inputNames.includes("attention_mask")) {
         inputs["attention_mask"] = attentionMaskTensor;
-      } else if (session.inputNames.length > 1) {
+      } else if (session.inputNames.length > 1 && session.inputNames[1]) {
         inputs[session.inputNames[1]] = attentionMaskTensor;
       }
 
@@ -524,6 +515,9 @@ export class WebEmbeddingProvider implements MECMFEmbeddingProvider {
 
       const results = await session.run(inputs);
       const outputKey = Object.keys(results)[0];
+      if (!outputKey) {
+        throw new Error("No output tensor found in model results");
+      }
       const outputTensor = results[outputKey];
 
       const endTime = performance.now();
@@ -531,7 +525,12 @@ export class WebEmbeddingProvider implements MECMFEmbeddingProvider {
 
       // Perform mean pooling to get sentence embedding
       const data = outputTensor.data as Float32Array;
-      const [_batchSize, seqLength, hiddenSize] = outputTensor.dims as number[];
+      const dims = outputTensor.dims as number[];
+      if (!dims || dims.length !== 3) {
+        throw new Error("Invalid tensor dimensions for sentence embedding");
+      }
+
+      const [_batchSize, seqLength, hiddenSize] = dims;
 
       const embedding = new Array(hiddenSize).fill(0);
       let validTokens = 0;

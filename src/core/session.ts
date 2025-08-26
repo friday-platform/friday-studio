@@ -90,17 +90,6 @@ export class Session extends AtlasScope implements IWorkspaceSession {
     // Initialize logger
     this.logger = logger.child({ sessionId: this.id, workerType: "session" });
 
-    // Store session initialization in CoALA memory
-    this.rememberSessionEvent("session-initialization", {
-      workspaceId,
-      signalCount: signals.triggers.length,
-      agentCount: agents?.length || 0,
-      workflowCount: workflows?.length || 0,
-      sourceCount: sources?.length || 0,
-      intent: intent?.id,
-      strategy: intent?.executionHints?.strategy,
-    });
-
     this.logger.info("Session created", {
       sessionId: this.id,
       workspaceId,
@@ -195,12 +184,6 @@ export class Session extends AtlasScope implements IWorkspaceSession {
     if (this.sessionActor) {
       this._status = WorkspaceSessionStatus.EXECUTING;
     }
-
-    this.rememberSessionEvent("session-started", {
-      signalCount: this.signals.triggers.length,
-      startTime: new Date().toISOString(),
-    });
-
     // Session execution is initiated by attaching the SessionSupervisorActor
   }
 
@@ -221,8 +204,6 @@ export class Session extends AtlasScope implements IWorkspaceSession {
 
     this._status = WorkspaceSessionStatus.FAILED;
     this._error = new Error("Session cancelled");
-
-    this.rememberSessionEvent("session-cancelled", { cancelledAt: new Date().toISOString() });
 
     this.signals.callback.onError(this._error);
 
@@ -261,16 +242,11 @@ export class Session extends AtlasScope implements IWorkspaceSession {
     // Only clean up active resources like actors and connections
   }
 
-  complete(result?: any): void {
+  complete(result?: unknown): void {
     this.logger.info("Session completed", { hasResult: !!result });
 
     this._status = WorkspaceSessionStatus.COMPLETED;
     this._executionResult = result;
-
-    this.rememberSessionEvent("session-completed", {
-      completedAt: new Date().toISOString(),
-      hasResult: !!result,
-    });
 
     this.signals.callback.onSuccess(result || this.getArtifacts());
     this.signals.callback.onComplete();
@@ -307,11 +283,6 @@ export class Session extends AtlasScope implements IWorkspaceSession {
       actorId: sessionActor.id,
       sessionId: this.id,
       status: this._status,
-    });
-
-    this.rememberSessionEvent("session-actor-attached", {
-      actorId: sessionActor.id,
-      attachedAt: new Date().toISOString(),
     });
 
     // Monitor the execution promise from the actor
@@ -382,10 +353,8 @@ export class Session extends AtlasScope implements IWorkspaceSession {
   }
 
   // CoALA Memory Integration
-
-  private rememberSessionEvent(event: string, data: Record<string, unknown>): void {
-    const coalaMemory = this.memory as CoALAMemoryManager;
-    coalaMemory.rememberWithMetadata(
+  private rememberSessionEvent(event: string, data: Record<string, string>): void {
+    this.memory.rememberWithMetadata(
       `${event}-${Date.now()}`,
       { sessionId: this.id, workspaceId: this.workspaceId || "global", event, ...data },
       {
@@ -425,16 +394,6 @@ export class Session extends AtlasScope implements IWorkspaceSession {
       hasSessionActor: !!this.sessionActor,
       executionMetadata: this.getExecutionMetadata(),
     };
-  }
-
-  updateProgress(step: string, data: any): void {
-    this.logger.debug(`Progress update: ${step}`, { step, data });
-
-    this.rememberSessionEvent("progress-update", {
-      step,
-      data,
-      updatedAt: new Date().toISOString(),
-    });
   }
 }
 

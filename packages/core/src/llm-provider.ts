@@ -119,6 +119,27 @@ export class LLMProvider {
     const startTime = Date.now();
     const { providerConfig, runtimeContext } = LLMProvider.extractProviderConfig(validatedOptions);
 
+    // Log detailed LLM input for monitoring
+    logger.info("LLM Input Details", {
+      provider: providerConfig.provider,
+      model: providerConfig.model,
+      temperature: providerConfig.temperature,
+      maxTokens: providerConfig.max_tokens,
+      userPromptLength: userPrompt.length,
+      userPrompt: userPrompt.substring(0, 1000) + (userPrompt.length > 1000 ? "..." : ""),
+      systemPromptLength: runtimeContext.systemPrompt?.length || 0,
+      systemPrompt: runtimeContext.systemPrompt
+        ? runtimeContext.systemPrompt.substring(0, 500) +
+          (runtimeContext.systemPrompt.length > 500 ? "..." : "")
+        : null,
+      memoryContextLength: runtimeContext.memoryContext?.length || 0,
+      hasTools: !!(runtimeContext.tools && Object.keys(runtimeContext.tools).length > 0),
+      toolsAvailable: runtimeContext.tools ? Object.keys(runtimeContext.tools) : [],
+      hasMcpServers: !!(runtimeContext.mcpServers && runtimeContext.mcpServers.length > 0),
+      mcpServerList: runtimeContext.mcpServers || [],
+      operationContext: runtimeContext.operationContext,
+    });
+
     logger.info("LLM generation started", {
       provider: providerConfig.provider,
       model: providerConfig.model,

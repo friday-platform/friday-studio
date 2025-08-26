@@ -6,13 +6,14 @@
  * accidental collection of random PII from tool outputs or external data.
  */
 
+import { logger } from "@atlas/logger";
 import {
   type ConversationContext,
   type Entity,
   MemorySource,
   type MemorySourceMetadata,
 } from "./mecmf-interfaces.ts";
-import { AtlasMemoryClassifier, type ClassificationResult } from "./memory-classifier.ts";
+import { AtlasMemoryClassifier } from "./memory-classifier.ts";
 
 export interface PIIExtractionConfig {
   // PII types that require source filtering
@@ -116,7 +117,7 @@ export class PIISafeMemoryClassifier extends AtlasMemoryClassifier {
 
     if (!validation.isValid) {
       // Log the rejected content for debugging
-      console.warn(`Content rejected from memory storage: ${content.substring(0, 100)}...`);
+      logger.warn(`Content rejected from memory storage: ${content.substring(0, 100)}...`);
 
       // Return a safe default for invalid content
       return super.classifyContent(validation.sanitized, context);
@@ -144,31 +145,6 @@ export class PIISafeMemoryClassifier extends AtlasMemoryClassifier {
 
     // Filter entities based on source and PII policy
     return allEntities.filter((entity) => this.isEntityAllowedFromSource(entity, source));
-  }
-
-  /**
-   * Classify content and store with source-aware entity extraction
-   */
-  classifyContentWithSource(
-    content: string,
-    context: ConversationContext,
-    source: MemorySource = MemorySource.SYSTEM_GENERATED,
-    _sourceMetadata?: MemorySourceMetadata,
-  ): Promise<ClassificationResult & { allowedEntities: Entity[] }> {
-    // Validate content first
-    const validation = this.validateAndSanitizeContent(content);
-    const contentToUse = validation.isValid ? validation.sanitized : validation.sanitized;
-
-    if (!validation.isValid) {
-      console.warn(
-        `Content rejected in classifyContentWithSource: ${content.substring(0, 100)}...`,
-      );
-    }
-
-    const classification = this.classifyContentDetailed(contentToUse, context);
-    const allowedEntities = this.extractKeyEntities(contentToUse, source);
-
-    return { ...classification, allowedEntities };
   }
 
   /**

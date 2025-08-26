@@ -5,7 +5,24 @@
  * for easy integration with Atlas workspaces and agents.
  */
 
-export type { MECMFDebugConfig, PromptEnhancementLog } from "./debug-logger.ts";
+// === Core Interfaces ===
+export * from "./mecmf-interfaces.ts";
+
+// === Implementation Components ===
+export { createWebEmbeddingProvider, WebEmbeddingProvider } from "./web-embedding-provider.ts";
+export {
+  getGlobalEmbeddingProvider,
+  GlobalEmbeddingProvider,
+} from "./global-embedding-provider.ts";
+export { AtlasTokenBudgetManager, createTokenBudgetManager } from "./token-budget-manager.ts";
+export { AtlasMemoryClassifier, createMemoryClassifier } from "./memory-classifier.ts";
+export { createErrorHandler, MECMFErrorHandler } from "./error-handling.ts";
+export {
+  AtlasMECMFMemoryManager,
+  createMECMFMemoryManager,
+  type MECMFConfig,
+} from "./mecmf-memory-manager.ts";
+
 // === Debug Logging ===
 export {
   disableMECMFDebugLogging,
@@ -13,22 +30,11 @@ export {
   getGlobalMECMFDebugLogger,
   MECMFDebugLogger,
 } from "./debug-logger.ts";
-export { createErrorHandler, MECMFErrorHandler } from "./error-handling.ts";
-// === Core Interfaces ===
-export * from "./mecmf-interfaces.ts";
-export {
-  createMECMFMemoryManager,
-  type MECMFConfig,
-  MECMFMemoryManager,
-} from "./mecmf-memory-manager.ts";
-export { AtlasMemoryClassifier, createMemoryClassifier } from "./memory-classifier.ts";
-export { AtlasTokenBudgetManager, createTokenBudgetManager } from "./token-budget-manager.ts";
-// === Implementation Components ===
-export { createWebEmbeddingProvider, WebEmbeddingProvider } from "./web-embedding-provider.ts";
+export type { MECMFDebugConfig, PromptEnhancementLog } from "./debug-logger.ts";
 
+// === Integration Helpers ===
 import { getMECMFCacheDir } from "../../../src/utils/paths.ts";
 import { enableMECMFDebugLogging } from "./debug-logger.ts";
-// === Integration Helpers ===
 import type { MemoryScoper } from "./mecmf-interfaces.ts";
 import { type ConversationContext, MemoryType } from "./mecmf-interfaces.ts";
 import {
@@ -66,8 +72,12 @@ export async function setupMECMF(
 
   // Enable debug logging if environment variable is set
   if (typeof Deno !== "undefined" && Deno.env.get("MECMF_DEBUG") === "true") {
+    const debugLevel = Deno.env.get("MECMF_DEBUG_LEVEL");
     enableMECMFDebugLogging({
-      logLevel: Deno.env.get("MECMF_DEBUG_LEVEL") || "detailed",
+      logLevel:
+        debugLevel === "minimal" || debugLevel === "detailed" || debugLevel === "verbose"
+          ? debugLevel
+          : "detailed",
       includeMemoryContent: true,
     });
   }

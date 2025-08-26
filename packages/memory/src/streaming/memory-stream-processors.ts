@@ -339,11 +339,10 @@ export class AgentResultProcessor implements MemoryStreamProcessor {
             agentId: stream.data.agent_id,
             input: stream.data.input,
             output: stream.data.output,
-            success: stream.data.success,
-            tokensUsed: stream.data.tokens_used,
-            error: stream.data.error,
-            durationMs: stream.data.duration_ms,
-            timestamp: stream.timestamp,
+            success: stream.data.success.toString(),
+            error: stream.data.error || "",
+            durationMs: stream.data.duration_ms.toString(),
+            timestamp: stream.timestamp.toString(),
           },
           { tags, relevanceScore: 0.65, confidence: 0.9 },
         );
@@ -462,7 +461,7 @@ export class AgentResultProcessor implements MemoryStreamProcessor {
       if ("data" in output) return `Data: ${JSON.stringify(output.data).substring(0, 100)}...`;
     }
 
-    return outputStr.substring(0, 100) + "...";
+    return `${outputStr.substring(0, 100)}...`;
   }
 }
 
@@ -488,13 +487,13 @@ export class WorkingContextProcessor implements MemoryStreamProcessor {
           {
             kind: "agent_result",
             agentId: data.agent_id,
-            input: data.input,
-            output: data.output,
-            success: data.success,
-            tokensUsed: data.tokens_used,
-            error: data.error,
-            durationMs: data.duration_ms,
-            timestamp: stream.timestamp,
+            input: JSON.stringify(data.input),
+            output: JSON.stringify(data.output),
+            success: data.success.toString(),
+            tokensUsed: data.tokens_used?.toString() || "",
+            error: data.error || "",
+            durationMs: data.duration_ms.toString(),
+            timestamp: stream.timestamp.toString(),
           },
           { tags, relevanceScore: 0.65, confidence: 0.9 },
         );
@@ -507,10 +506,10 @@ export class WorkingContextProcessor implements MemoryStreamProcessor {
             kind: "context_update",
             updateType: ctx.update_type,
             key: ctx.key,
-            oldValue: ctx.old_value,
-            newValue: ctx.new_value,
-            relevanceScore: ctx.relevance_score,
-            timestamp: stream.timestamp,
+            oldValue: JSON.stringify(ctx.old_value),
+            newValue: JSON.stringify(ctx.new_value),
+            relevanceScore: ctx.relevance_score.toString(),
+            timestamp: stream.timestamp.toString(),
           },
           { tags, relevanceScore: ctx.relevance_score ?? 0.6, confidence: 0.9 },
         );

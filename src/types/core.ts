@@ -179,13 +179,6 @@ export interface ITempestContext {
 
 // Enhanced memory interface supporting both legacy and CoALA methods
 export interface ITempestMemoryManager {
-  // Legacy compatibility methods
-  remember(key: string, value: any): void;
-  recall(key: string): any;
-  summarize(): string;
-  size(): number;
-  forget(key: string): void;
-
   // CoALA-specific methods (optional for backwards compatibility)
   rememberWithMetadata?(
     key: string,

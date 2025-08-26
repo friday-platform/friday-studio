@@ -143,7 +143,7 @@ tools/memory_manager/
 │   └── memory-types.ts        # TypeScript type definitions
 ├── utils/
 │   ├── memory-loader.ts       # Memory file I/O operations
-│   └── memory-operations.ts   # CRUD operations on memory
+# Removed memory-operations.ts - now uses packages/memory directly
 └── src/
     └── tui.ts                 # Terminal UI implementation
 ```
@@ -202,7 +202,7 @@ To add new features or modify the memory manager:
 
 1. **Types**: Add new interfaces in `types/memory-types.ts`
 2. **Storage**: Modify `utils/memory-loader.ts` for file operations
-3. **Operations**: Extend `utils/memory-operations.ts` for new memory operations
+3. **Operations**: Use `packages/memory` directly for memory operations
 4. **UI**: Update `src/tui.ts` for interface changes
 
 Run type checking:

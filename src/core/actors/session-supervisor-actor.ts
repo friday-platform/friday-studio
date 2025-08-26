@@ -1145,7 +1145,7 @@ export class SessionSupervisorActor implements BaseActor {
       phase: phaseName,
     });
 
-    let result;
+    let result: AgentResult;
 
     if (!this.agentOrchestrator) {
       throw new Error("Agent orchestrator is not available");
@@ -1226,10 +1226,9 @@ export class SessionSupervisorActor implements BaseActor {
         const retryCount = this.retryAttempts.get(agentTask.agentId) ?? 0;
         if (priorIssues && retryCount > 0) {
           const feedbackHeader = "## Validation Feedback (address in this retry):";
-          const issuesList =
-            priorIssues.issues && priorIssues.issues.length
-              ? priorIssues.issues.map((i) => `- ${i}`).join("\n")
-              : "- Low confidence without specific issues provided";
+          const issuesList = priorIssues.issues?.length
+            ? priorIssues.issues.map((i) => `- ${i}`).join("\n")
+            : "- Low confidence without specific issues provided";
           const feedbackBody = `${feedbackHeader}\nConfidence: ${priorIssues.confidence.toFixed(
             2,
           )}\nIssues:\n${issuesList}`;
@@ -1282,7 +1281,7 @@ export class SessionSupervisorActor implements BaseActor {
           );
 
           // Use enhanced prompt if available
-          if (enhancedPrompt && enhancedPrompt.enhancedPrompt) {
+          if (enhancedPrompt?.enhancedPrompt) {
             this.logger.debug("Prompt enhanced with MECMF memory context", {
               originalLength: prompt.length,
               enhancedLength: enhancedPrompt.enhancedPrompt.length,
@@ -1344,6 +1343,10 @@ export class SessionSupervisorActor implements BaseActor {
         typeof v === "object" && v !== null;
       const or = isExecResult(orchestratorResult) ? orchestratorResult : {};
       result = {
+        agentId: agentTask.agentId,
+        task: agentTask.task,
+        input,
+        timestamp: new Date().toISOString(),
         output: isExecResult(orchestratorResult) ? or.output : undefined,
         duration:
           isExecResult(orchestratorResult) && typeof or.duration === "number"
@@ -2349,24 +2352,28 @@ Think step by step about the best approach to handle this signal, then use the t
             const tempManager = new CoALAMemoryManager(scope, memoryAdapter, false, {
               commitDebounceDelay: 0,
             });
-            await tempManager.rememberWithMetadata(`semantic-fact-${crypto.randomUUID()}`, fact, {
-              memoryType: CoALAMemoryType.SEMANTIC,
-              tags: [
-                fact.predicate,
-                fact.sourceType,
-                fact.subject.split(" ")[0],
-                fact.object.split(" ")[0],
-              ].filter((t): t is string => Boolean(t)),
-              relevanceScore: Math.min(0.9, Math.max(0.6, fact.confidence)),
-              confidence: fact.confidence,
-              associations: [this.sessionId, ...(fact.sourceAgentId ? [fact.sourceAgentId] : [])],
-              source: MemorySource.SYSTEM_GENERATED,
-              sourceMetadata: {
-                sessionId: this.sessionId,
-                workspaceId: this.workspaceId,
-                agentId: fact.sourceAgentId,
+            await tempManager.rememberWithMetadata(
+              `semantic-fact-${crypto.randomUUID()}`,
+              JSON.stringify(fact),
+              {
+                memoryType: CoALAMemoryType.SEMANTIC,
+                tags: [
+                  fact.predicate,
+                  fact.sourceType,
+                  fact.subject.split(" ")[0],
+                  fact.object.split(" ")[0],
+                ].filter((t): t is string => Boolean(t)),
+                relevanceScore: Math.min(0.9, Math.max(0.6, fact.confidence)),
+                confidence: fact.confidence,
+                associations: [this.sessionId, ...(fact.sourceAgentId ? [fact.sourceAgentId] : [])],
+                source: MemorySource.SYSTEM_GENERATED,
+                sourceMetadata: {
+                  sessionId: this.sessionId,
+                  workspaceId: this.workspaceId,
+                  agentId: fact.sourceAgentId,
+                },
               },
-            });
+            );
             await tempManager.dispose();
             stored++;
           }
@@ -2417,7 +2424,7 @@ Think step by step about the best approach to handle this signal, then use the t
 
       await memoryManager.rememberWithMetadata(
         `session-summary-${this.sessionId}`,
-        summaryContent,
+        JSON.stringify(summaryContent),
         {
           memoryType: CoALAMemoryType.WORKING,
           tags: ["session-summary", "completion", summary.status],
@@ -2436,11 +2443,11 @@ Think step by step about the best approach to handle this signal, then use the t
           {
             agentId: result.agentId,
             task: result.task,
-            output: result.output,
-            duration: result.duration,
-            reasoning: result.reasoning,
-            toolCalls: result.toolCalls?.length || 0,
-            success: true, // Assume success if in results
+            output: JSON.stringify(result.output),
+            duration: result.duration.toString(),
+            reasoning: result.reasoning || "",
+            toolCalls: (result.toolCalls?.length || 0).toString(),
+            success: true.toString(), // Assume success if in results
           },
           {
             memoryType: CoALAMemoryType.WORKING,

@@ -33,7 +33,7 @@ export function convertLLMToAgent(
   config: LLMAgentConfig,
   agentId: string,
   logger: Logger,
-): AtlasAgent {
+): AtlasAgent<WrappedAgentResult> {
   // Use configured retries or default to 3 for better resilience against 529 errors
   const maxRetries = config.config.max_retries ?? 3;
 

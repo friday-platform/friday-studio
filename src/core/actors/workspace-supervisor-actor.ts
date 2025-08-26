@@ -13,6 +13,7 @@
 import type { JobSpecification, WorkspaceAgentConfig } from "@atlas/config";
 import type {
   ActorInitParams,
+  AgentOrchestrator,
   BaseActor,
   SessionInfo as ISessionInfo,
   SessionSupervisorConfig,
@@ -23,6 +24,11 @@ import {
   WorkspaceSessionStatus,
   type WorkspaceSessionStatusType,
 } from "@atlas/core";
+import {
+  CoALAMemoryManager,
+  StreamingMemoryManager,
+  SupervisorMemoryCoordinator,
+} from "@atlas/memory";
 import { type Logger, logger } from "@atlas/logger";
 import type { IWorkspaceSignal } from "../../types/core.ts";
 import { type SessionContext, SessionSupervisorActor } from "./session-supervisor-actor.ts";
@@ -53,7 +59,7 @@ export class WorkspaceSupervisorActor implements BaseActor {
   private agents: Record<string, WorkspaceAgentConfig> = {};
   private agentOrchestrator?: any; // Will be set by workspace runtime
   private streamingMemoryManager?: any; // StreamingMemoryManager - loaded dynamically
-  private memoryCoordinator?: any; // SupervisorMemoryCoordinator - loaded dynamically
+  memoryCoordinator?: SupervisorMemoryCoordinator; // SupervisorMemoryCoordinator - loaded dynamically
 
   constructor(workspaceId: string, config: WorkspaceSupervisorConfig, id?: string) {
     this.id = id || crypto.randomUUID();
@@ -86,14 +92,14 @@ export class WorkspaceSupervisorActor implements BaseActor {
     });
 
     // Initialize memory systems if memory is enabled
-    if (this.config.memory?.enabled !== false) {
+    if (this.config.memory?.session.enabled !== false) {
       await this.initializeMemorySystems();
     }
 
     this.logger.info("Workspace supervisor actor initialized", {
       workspaceId: this.workspaceId,
       actorId: this.id,
-      memoryEnabled: this.config.memory?.enabled !== false,
+      memoryEnabled: this.config.memory?.session.enabled !== false,
       streamingMemoryInitialized: !!this.streamingMemoryManager,
     });
   }
@@ -107,7 +113,7 @@ export class WorkspaceSupervisorActor implements BaseActor {
     });
   }
 
-  setAgentOrchestrator(orchestrator: any): void {
+  setAgentOrchestrator(orchestrator: AgentOrchestrator): void {
     this.agentOrchestrator = orchestrator;
     this.logger.info("Agent orchestrator set for workspace supervisor", {
       workspaceId: this.workspaceId,
@@ -168,7 +174,7 @@ export class WorkspaceSupervisorActor implements BaseActor {
           let jobSpec: JobSpecification | undefined;
           if (this.config.jobs) {
             for (const [jobId, job] of Object.entries(this.config.jobs)) {
-              if (job.triggers.some((trigger) => trigger.signal === signal.id)) {
+              if (job.triggers?.some((trigger) => trigger.signal === signal.id)) {
                 jobSpec = job;
                 this.logger.info("Found matching job for signal", {
                   signalId: signal.id,
@@ -414,19 +420,6 @@ export class WorkspaceSupervisorActor implements BaseActor {
     try {
       this.logger.info("Initializing memory systems", { workspaceId: this.workspaceId });
 
-      // Dynamic imports to avoid circular dependencies
-      const [
-        { StreamingMemoryManager },
-        { SupervisorMemoryCoordinator },
-        { CoALAMemoryManager, MemorySource },
-        { getWorkspaceMemoryDir },
-      ] = await Promise.all([
-        import("@atlas/memory"),
-        import("@atlas/memory"),
-        import("@atlas/memory"),
-        import("../../utils/paths.ts"),
-      ]);
-
       // Initialize CoALA memory manager for the workspace
       const workspaceScope = {
         id: this.workspaceId,
@@ -444,6 +437,9 @@ export class WorkspaceSupervisorActor implements BaseActor {
           batch_size: 10,
           flush_interval_ms: 5000,
           background_processing: true,
+          persistence_enabled: true,
+          error_retry_attempts: 3,
+          priority_processing: true,
           dual_write_enabled: true,
           legacy_batch_enabled: false,
           stream_everything: false,
@@ -456,7 +452,7 @@ export class WorkspaceSupervisorActor implements BaseActor {
       );
 
       // Initialize memory coordinator
-      this.memoryCoordinator = new SupervisorMemoryCoordinator(workspaceScope);
+      //this.memoryCoordinator = new SupervisorMemoryCoordinator(workspaceScope);
 
       // Ingest rules.md if present in workspace
       await this.ingestProceduralRules(memoryManager);
@@ -527,7 +523,7 @@ export class WorkspaceSupervisorActor implements BaseActor {
     sessionId: string,
     agentId: string,
     toolName: string,
-    args: any,
+    args: unknown,
   ): Promise<void> {
     if (!this.streamingMemoryManager) {
       return;
@@ -610,10 +606,10 @@ export class WorkspaceSupervisorActor implements BaseActor {
   /**
    * Ingest rules.md into procedural memory if present
    */
-  private async ingestProceduralRules(memoryManager: any): Promise<void> {
+  private async ingestProceduralRules(memoryManager: CoALAMemoryManager): Promise<void> {
     try {
       // Try to find rules.md in workspace directory
-      const workspacePath = this.config.workspacePath || Deno.cwd();
+      const workspacePath = this.config.workspacePath;
       const rulesPath = `${workspacePath}/rules.md`;
 
       try {
@@ -665,7 +661,6 @@ export class WorkspaceSupervisorActor implements BaseActor {
                 tags: ["rules", "procedural", "workspace", "read-only", section.slug],
                 relevanceScore: 0.95,
                 confidence: 1.0,
-                readOnly: true,
                 source: MemorySource.SYSTEM_GENERATED,
                 sourceMetadata: { workspaceId: this.workspaceId },
               },
@@ -691,6 +686,7 @@ export class WorkspaceSupervisorActor implements BaseActor {
         this.logger.debug("No rules.md found in workspace", {
           workspaceId: this.workspaceId,
           path: rulesPath,
+          error: fileError instanceof Error ? fileError.message : String(fileError),
         });
       }
     } catch (error) {
@@ -723,7 +719,7 @@ export class WorkspaceSupervisorActor implements BaseActor {
         }
 
         // Start new section
-        const title = headingMatch[1].trim();
+        const title = headingMatch[1]?.trim() || "";
         const slug = title
           .toLowerCase()
           .replace(/[^a-z0-9]+/g, "-")

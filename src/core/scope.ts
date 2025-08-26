@@ -4,7 +4,6 @@ import type {
   IAtlasScope,
   ICoALAMemoryStorageAdapter,
   ITempestContextManager,
-  ITempestMemoryManager,
   ITempestMemoryStorageAdapter,
   ITempestMessageManager,
   IWorkspaceSupervisor,
@@ -27,7 +26,7 @@ export class AtlasScope implements IAtlasScope {
   public parentScopeId?: string;
   public supervisor?: IWorkspaceSupervisor;
   public context: ITempestContextManager;
-  public memory: ITempestMemoryManager;
+  public memory: CoALAMemoryManager;
   public messages: ITempestMessageManager;
   public prompts: { system: string; user: string };
   public gates: IAtlasGate[] = [];

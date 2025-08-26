@@ -6,7 +6,7 @@
     "stats": "deno run --allow-read --allow-write --allow-env --allow-net --allow-ffi --allow-sys --unstable-kv main.ts --stats",
     "export": "deno run --allow-read --allow-write --allow-env --allow-net --allow-ffi --allow-sys --unstable-kv main.ts --export",
     "validate": "deno run --allow-read --allow-write --allow-env --allow-net --allow-ffi --allow-sys --unstable-kv main.ts --validate",
-    "check": "deno check main.ts src/tui.ts utils/memory-loader.ts utils/memory-operations.ts types/memory-types.ts"
+    "check": "deno check main.ts src/tui.ts utils/memory-loader.ts types/memory-types.ts"
   },
   "imports": {
     "@std/cli": "jsr:@std/cli@^1.0.20",
