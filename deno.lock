@@ -51,6 +51,7 @@
     "npm:@sveltejs/vite-plugin-svelte@6": "6.1.3_svelte@5.38.2__acorn@8.15.0_vite@7.1.3__picomatch@4.0.3_@types+node@22.15.15",
     "npm:@tanstack/svelte-query@^5.83.1": "5.85.5_svelte@5.38.2__acorn@8.15.0",
     "npm:@tanstack/svelte-table@^8.21.3": "8.21.3_svelte@5.38.2__acorn@8.15.0",
+    "npm:@tavily/core@~0.5.11": "0.5.11",
     "npm:@types/node@*": "22.15.15",
     "npm:@types/react@^19.1.8": "19.1.10",
     "npm:@worker-tools/html-rewriter@~0.1.0-pre.19": "0.1.0-pre.19",
@@ -1221,6 +1222,14 @@
     "@tanstack/table-core@8.21.3": {
       "integrity": "sha512-ldZXEhOBb8Is7xLs01fR3YEc3DERiz5silj8tnGkFZytt1abEvl/GhUmCE0PMLaMPTa3Jk4HbKmRlHmu+gCftg=="
     },
+    "@tavily/core@0.5.11": {
+      "integrity": "sha512-SHYjpWgeyHpJNZh8RZCUcRtb228ymLzNlVOqrfCql6vOlSiz8q3wy5VEVtfdN881pg6wHPLa2Rra3xVyPhuYuw==",
+      "dependencies": [
+        "axios",
+        "https-proxy-agent",
+        "js-tiktoken"
+      ]
+    },
     "@tybys/wasm-util@0.10.0": {
       "integrity": "sha512-VyyPYFlOMNylG45GoAe0xDoLwWuowvf92F9kySqzYh8vmYm7D2u4iUJKa1tOUpS70Ku13ASrOkS4ScXFsTaCNQ==",
       "dependencies": [
@@ -1540,6 +1549,9 @@
     },
     "balanced-match@1.0.2": {
       "integrity": "sha512-3oSeUO0TMV67hN1AmbXsK4yaqU7tjiHlbxRDZOpH0KW9+CeX4bRAaX0Anxt0tx2MrpRpWwQaPwIlISEJhYU5Pw=="
+    },
+    "base64-js@1.5.1": {
+      "integrity": "sha512-AKpaYlHn8t4SVbOHCy+b5+KKgvR4vrsD8vbvrbiQJps7fKDTkjkDry6ji0rUJjC0kzbNePLwzxq8iypo41qeWA=="
     },
     "body-parser@2.2.0": {
       "integrity": "sha512-02qvAaxv8tp7fBa/mw1ga98OGm+eCbqzJOKoRt70sLmfEEi+jyBYVTDGfCL/k06/4EMk/z01gCe7HoCH/f2LTg==",
@@ -2488,6 +2500,12 @@
     },
     "js-levenshtein@1.1.6": {
       "integrity": "sha512-X2BB11YZtrRqY4EnQcLX5Rh373zbK4alC1FW7D7MBhL2gtcC17cTnr6DmfHZeS0s2rTHjUTMMHfG7gO8SSdw+g=="
+    },
+    "js-tiktoken@1.0.21": {
+      "integrity": "sha512-biOj/6M5qdgx5TKjDnFT1ymSpM5tbd3ylwDtrQvFQSu0Z7bBYko2dF+W/aUkXUPuk6IVpRxk/3Q2sHOzGlS36g==",
+      "dependencies": [
+        "base64-js"
+      ]
     },
     "js-tokens@4.0.0": {
       "integrity": "sha512-RdJUflcE3cUzKiMqQgsCu06FPu9UdIJO0beYbPhHN4k6apgJtifcoCtT9bcxOpYBtpD2kCM6Sbzg4CausW/PKQ=="
@@ -4089,6 +4107,11 @@
           "npm:typescript@5",
           "npm:vite@^7.0.4",
           "npm:vitest@^3.2.4"
+        ]
+      },
+      "packages/bundled-agents": {
+        "dependencies": [
+          "npm:@tavily/core@~0.5.11"
         ]
       },
       "packages/cron": {

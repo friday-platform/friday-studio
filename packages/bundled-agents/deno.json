@@ -1,1 +1,6 @@
-{ "name": "@atlas/bundled-agents", "version": "0.1.0", "exports": "./src/index.ts" }
+{
+  "name": "@atlas/bundled-agents",
+  "version": "0.1.0",
+  "exports": "./src/index.ts",
+  "imports": { "@tavily/core": "npm:@tavily/core@^0.5.11" }
+}

@@ -1,0 +1,27 @@
+{
+  "name": "evals",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "@biomejs/biome": "2.2.2",
+    "@types/bun": "^1.2.20",
+    "@typescript/native-preview": "7.0.0-dev.20250823.8",
+    "dotenv": "^17.2.1"
+  },
+  "peerDependencies": { "typescript": "^5" },
+  "dependencies": {
+    "@ai-sdk/anthropic": "^2.0.6",
+    "ai": "^5.0.22",
+    "autoevals": "^0.0.131",
+    "evalite": "^0.11.4",
+    "vitest": "^3.2.4",
+    "zod": "^3.24.1"
+  },
+  "scripts": {
+    "eval": "evalite",
+    "eval:dev": "evalite watch",
+    "lint": "biome check",
+    "typecheck": "tsgo --noEmit"
+  }
+}
