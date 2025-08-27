@@ -8,7 +8,7 @@ import type { YargsInstance } from "../../utils/yargs.ts";
 
 interface SearchArgs {
   query: string;
-  type?: string;
+  source?: string;
   tags?: string;
   limit: number;
   json: boolean;
@@ -21,7 +21,7 @@ export const desc = "Search library content";
 export function builder(y: YargsInstance) {
   return y
     .positional("query", { describe: "Search query", type: "string" })
-    .option("type", { alias: "t", type: "string", description: "Filter by item type" })
+    .option("source", { alias: "s", type: "string", description: "Filter by item source" })
     .option("tags", { type: "string", description: "Filter by tags (comma-separated)" })
     .option("limit", {
       alias: "l",
@@ -52,7 +52,7 @@ export async function handler(argv: SearchArgs) {
     // Build query object
     const query = {
       query: argv.query,
-      type: argv.type,
+      source: argv.source,
       tags: argv.tags ? argv.tags.split(",").map((tag: string) => tag.trim()) : undefined,
       limit: argv.limit,
     };
@@ -109,7 +109,7 @@ const SearchResultsDisplay: React.FC<SearchResultsDisplayProps> = ({ result, que
       <Table
         columns={[
           { key: "ID", label: "ID", width: 10 },
-          { key: "Type", label: "Type", width: 12 },
+          { key: "Source", label: "Source", width: 12 },
           { key: "Name", label: "Name", width: 25 },
           { key: "Size", label: "Size", width: 10 },
           { key: "Created", label: "Created", width: 12 },
@@ -117,7 +117,7 @@ const SearchResultsDisplay: React.FC<SearchResultsDisplayProps> = ({ result, que
         ]}
         data={result.items.map((item) => ({
           ID: item.id.slice(0, 8),
-          Type: item.type,
+          Source: item.source,
           Name: item.name,
           Size: formatBytes(item.size_bytes),
           Created: formatDate(item.created_at),

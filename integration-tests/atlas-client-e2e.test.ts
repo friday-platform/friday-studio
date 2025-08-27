@@ -159,7 +159,7 @@ Deno.test("Atlas Client E2E - should fetch library items through the complete st
         const params = url.searchParams;
 
         // Verify query parameters are passed correctly
-        assertEquals(params.get("type"), "document");
+        assertEquals(params.get("source"), "user");
         // Tags come as comma-separated string in URL params
         assertEquals(params.get("tags"), "technical,api");
         assertEquals(params.get("limit"), "10");
@@ -168,10 +168,13 @@ Deno.test("Atlas Client E2E - should fetch library items through the complete st
           items: [
             {
               id: "lib_e2e_1",
-              type: "document",
+              source: "user",
               name: "API Guide",
               description: "Complete API documentation",
-              metadata: { format: "markdown", source: "manual" },
+              content_path: "user/2024/01/lib_e2e_1.md",
+              full_path: "/path/to/lib_e2e_1.md",
+              file_extension: ".md",
+              mime_type: "text/plain",
               created_at: "2024-01-01T10:00:00Z",
               updated_at: "2024-01-01T10:00:00Z",
               tags: ["technical", "api"],
@@ -180,7 +183,7 @@ Deno.test("Atlas Client E2E - should fetch library items through the complete st
             },
           ],
           total: 1,
-          query: { type: "document", tags: ["technical", "api"], limit: 10 },
+          query: { source: "user", tags: ["technical", "api"], limit: 10 },
           took_ms: 25,
         };
       },
@@ -188,7 +191,7 @@ Deno.test("Atlas Client E2E - should fetch library items through the complete st
 
     const result = await fetchLibraryItems({
       port: serverPort,
-      type: "document",
+      source: "user",
       tags: "technical,api",
       limit: 10,
     });
@@ -197,7 +200,7 @@ Deno.test("Atlas Client E2E - should fetch library items through the complete st
     if (result.success) {
       assertEquals(result.items.length, 1);
       assertEquals(result.items[0].id, "lib_e2e_1");
-      assertEquals(result.items[0].type, "document");
+      assertEquals(result.items[0].source, "user");
       assertEquals(result.items[0].name, "API Guide");
       assertEquals(result.items[0].tags, ["technical", "api"]);
     }

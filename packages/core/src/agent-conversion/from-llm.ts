@@ -1,18 +1,11 @@
-/**
- * LLM Config to SDK Agent Conversion
- *
- * Converts workspace.yml LLM agent configs into AtlasAgent instances.
- * Enables workspace-defined agents to use the same execution infrastructure
- * as standalone .agent.yml files.
- */
-
 import { APICallError } from "@ai-sdk/provider";
-import type { AgentContext, AtlasAgent, AtlasTools, ToolCall, ToolResult } from "@atlas/agent-sdk";
+import type { AtlasAgent, AtlasTools, ToolCall, ToolResult } from "@atlas/agent-sdk";
 import { createAgent } from "@atlas/agent-sdk";
+import { pipeUIMessageStream } from "@atlas/agent-sdk/vercel-helpers";
 import type { LLMAgentConfig } from "@atlas/config";
 import type { Logger } from "@atlas/logger";
-import { generateText, stepCountIs } from "ai";
 import type { StepResult, TypedToolCall, TypedToolResult } from "ai";
+import { stepCountIs, streamText } from "ai";
 import { registry, validateProviderConfig } from "../llm-provider-registry/index.ts";
 import { ensureSourceAttributionProtocol } from "../prompts/source-attribution.ts";
 
@@ -44,7 +37,7 @@ function collectToolUsageFromSteps(res: {
   steps?: Array<StepResult<AtlasTools>>;
   toolCalls?: Array<TypedToolCall<AtlasTools>>;
   toolResults?: Array<TypedToolResult<AtlasTools>>;
-}): { toolCalls: ToolCall[]; toolResults: ToolResult[] } {
+}): { assembledToolCalls: ToolCall[]; assembledToolResults: ToolResult[] } {
   const steps: Array<StepResult<AtlasTools>> = Array.isArray(res.steps) ? res.steps : [];
 
   const stepToolCalls: Array<TypedToolCall<AtlasTools>> = steps.flatMap(
@@ -54,17 +47,17 @@ function collectToolUsageFromSteps(res: {
     (step) => step.toolResults ?? [],
   );
 
-  const toolCalls: ToolCall[] =
+  const assembledToolCalls: ToolCall[] =
     stepToolCalls.length > 0 ? stepToolCalls : Array.isArray(res.toolCalls) ? res.toolCalls : [];
 
-  const toolResults: ToolResult[] =
+  const assembledToolResults: ToolResult[] =
     stepToolResults.length > 0
       ? stepToolResults
       : Array.isArray(res.toolResults)
         ? res.toolResults
         : [];
 
-  return { toolCalls, toolResults };
+  return { assembledToolCalls, assembledToolResults };
 }
 
 /**
@@ -75,7 +68,7 @@ export function convertLLMToAgent(
   config: LLMAgentConfig,
   agentId: string,
   logger: Logger,
-): AtlasAgent<WrappedAgentResult> {
+): WrappedAgent {
   // Use configured retries or default to 3 for better resilience against 529 errors
   const maxRetries = config.config.max_retries ?? 3;
 
@@ -88,7 +81,7 @@ export function convertLLMToAgent(
     description: config.description,
     metadata: {},
     expertise: { domains: ["general"], capabilities: ["general"], examples: [] },
-    handler: async (prompt: string, context: AgentContext) => {
+    handler: async (prompt, { tools, stream }) => {
       try {
         // Enforce source attribution protocol in system prompt (idempotent)
         const systemPromptWithAttribution = ensureSourceAttributionProtocol(
@@ -100,11 +93,11 @@ export function convertLLMToAgent(
         const nowUtcIso = new Date().toISOString();
         const datetimeHeader = `Current datetime (UTC): ${nowUtcIso}`;
 
-        const res = await generateText({
+        const result = streamText({
           model,
           system: `${datetimeHeader}\n\n${systemPromptWithAttribution}`,
           messages: [{ role: "user" as const, content: prompt }],
-          tools: { ...context.tools },
+          tools,
           toolChoice: config.config.tool_choice || "auto",
           temperature: config.config.temperature,
           maxOutputTokens: config.config.max_tokens,
@@ -113,13 +106,27 @@ export function convertLLMToAgent(
           ...(config.config.provider_options || {}),
         });
 
-        const { toolCalls, toolResults } = collectToolUsageFromSteps(res);
-        return { reasoning: res.reasoningText, response: res.text, toolCalls, toolResults };
-        // if (streaming && context.stream) {
-        //   return await handleStreamingResponse(commonOptions, context);
-        // } else {
-        //   return await handleNonStreamingResponse(commonOptions);
-        // }
+        pipeUIMessageStream(result.toUIMessageStream(), stream);
+
+        const [text, reasoning, toolCalls, toolResults, steps] = await Promise.all([
+          result.text,
+          result.reasoningText,
+          result.toolCalls,
+          result.toolResults,
+          result.steps,
+        ]);
+
+        const { assembledToolCalls, assembledToolResults } = collectToolUsageFromSteps({
+          steps,
+          toolCalls,
+          toolResults,
+        });
+        return {
+          reasoning,
+          response: text,
+          toolCalls: assembledToolCalls,
+          toolResults: assembledToolResults,
+        };
       } catch (error) {
         // Enhanced error logging for API overload situations
         const isAPIError = error instanceof APICallError;
@@ -149,13 +156,6 @@ export function convertLLMToAgent(
           );
         }
 
-        // if (context.stream) {
-        //   const errorEvent: StreamEvent = {
-        //     type: "error",
-        //     error: error instanceof Error ? error : new Error(String(error)),
-        //   };
-        //   context.stream.emit(errorEvent);
-        // }
         throw error;
       }
     },
@@ -163,84 +163,3 @@ export function convertLLMToAgent(
 
   return agent;
 }
-
-// /** Handle streaming LLM response with event emission. */
-// async function handleStreamingResponse(
-//   options: Parameters<typeof streamText>[0],
-//   context: AgentContext,
-// ): Promise<unknown> {
-//   const result = streamText(options);
-//   let fullText = "";
-//   const toolCalls: Array<{ id: string; name: string; args: unknown }> = [];
-//   for await (const chunk of result.textStream) {
-//     fullText += chunk;
-//     const textEvent: StreamEvent = {
-//       type: "text",
-//       content: chunk,
-//     };
-//     context.stream!.emit(textEvent);
-//   }
-
-//   const toolCallsArray = await result.toolCalls;
-//   if (toolCallsArray && toolCallsArray.length > 0) {
-//     for (const toolCall of toolCallsArray) {
-//       const toolCallEvent: StreamEvent = {
-//         type: "tool-call",
-//         toolName: toolCall.toolName,
-//         args: toolCall.input,
-//       };
-//       context.stream!.emit(toolCallEvent);
-//       toolCalls.push({
-//         id: toolCall.toolCallId,
-//         name: toolCall.toolName,
-//         args: toolCall.input,
-//       });
-//     }
-//   }
-
-//   const usage = await result.usage;
-//   if (usage) {
-//     const usageEvent: StreamEvent = {
-//       type: "usage",
-//       tokens: {
-//         input: usage.inputTokens,
-//         output: usage.outputTokens,
-//         total: usage.totalTokens,
-//       },
-//     };
-//     context.stream!.emit(usageEvent);
-//   }
-
-//   const finishEvent: StreamEvent = { type: "finish" };
-//   context.stream!.emit(finishEvent);
-
-//   return {
-//     response: fullText,
-//     toolCalls,
-//     usage: usage
-//       ? {
-//         promptTokens: usage.inputTokens,
-//         completionTokens: usage.outputTokens,
-//         totalTokens: usage.totalTokens,
-//       }
-//       : undefined,
-//   };
-// }
-
-// /** Handle non-streaming LLM response. */
-// async function handleNonStreamingResponse(
-//   options: Parameters<typeof generateText>[0],
-// ): Promise<unknown> {
-//   const result = await generateText(options);
-//   return {
-//     response: result.text,
-//     toolCalls: result.toolCalls,
-//     usage: result.usage
-//       ? {
-//         promptTokens: result.usage.inputTokens,
-//         completionTokens: result.usage.outputTokens,
-//         totalTokens: result.usage.totalTokens,
-//       }
-//       : undefined,
-//   };
-// }

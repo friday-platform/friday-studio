@@ -6,7 +6,14 @@
  */
 
 import type { Logger } from "@atlas/logger";
-import type { Tool, TypedToolCall, TypedToolResult } from "ai";
+import type {
+  Tool,
+  TypedToolCall,
+  TypedToolResult,
+  UIDataTypes,
+  UIMessage,
+  UIMessageChunk,
+} from "ai";
 import { z } from "zod/v4";
 
 // ==============================================================================
@@ -244,41 +251,36 @@ export interface ToolContext {
   messages: Array<{ role: string; content: string }>;
 }
 
-/** Tool call/result types are re-exports of AI SDK branded types */
-export type ToolCall<T extends AtlasTools = AtlasTools> = TypedToolCall<T>;
-export type ToolResult<T extends AtlasTools = AtlasTools> = TypedToolResult<T>;
+/** Tool execution result from agent runs */
+export type ToolResult = TypedToolResult<AtlasTools>;
+export type ToolCall = TypedToolCall<AtlasTools>;
+
+export const MessageMetadataSchema = z.object({
+  agentId: z.string().optional(),
+  sessionId: z.string().optional(),
+});
+
+export type MessageMetadata = z.infer<typeof MessageMetadataSchema>;
 
 /**
- * Stream events that agents can emit back to Atlas
- *
- * Maps from any LLM library's streaming format to Atlas events.
- * Used by agent handlers to provide real-time feedback.
+ * @HACK: `data-user-message` this is a workaround since the AI SDK doesn't
+ * give you a way to emit user messages back to the stream. It expects that
+ * they will be just pushed to the array and persisted client-side.
  */
-export const StreamEventSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("text"), content: z.string() }),
-  z.object({ type: z.literal("tool-call"), toolName: z.string(), args: z.unknown() }),
-  z.object({ type: z.literal("tool-result"), toolName: z.string(), result: z.unknown() }),
-  z.object({ type: z.literal("thinking"), content: z.string() }),
-  z.object({ type: z.literal("error"), error: z.union([z.instanceof(Error), z.string()]) }),
-  z.object({ type: z.literal("finish"), reason: z.string().optional() }),
-  z.object({
-    type: z.literal("usage"),
-    tokens: z.object({
-      input: z.number().optional(),
-      cachedInput: z.number().optional(),
-      output: z.number().optional(),
-      total: z.number().optional(),
-    }),
-  }),
-  z.object({ type: z.literal("progress"), message: z.string(), percentage: z.number().optional() }),
-  z.object({ type: z.literal("custom"), eventType: z.string(), data: z.unknown() }),
-]);
+type UserMessageEvent = { "user-message": { content: string } };
 
-export type StreamEvent = z.infer<typeof StreamEventSchema>;
+export type AtlasUIMessage<T extends UIDataTypes = UIDataTypes> = UIMessage<
+  MessageMetadata,
+  T & UserMessageEvent
+>;
+export type AtlasUIMessageChunk<T extends UIDataTypes = UIDataTypes> = UIMessageChunk<
+  MessageMetadata,
+  T & UserMessageEvent
+>;
 
 /** Stream emitter passed to agent handlers */
-export interface StreamEmitter {
-  emit: (event: StreamEvent) => void;
+export interface StreamEmitter<T extends AtlasUIMessageChunk = AtlasUIMessageChunk> {
+  emit: (event: T) => void;
   end: () => void | Promise<void>;
   error: (error: Error) => void;
 }
@@ -302,7 +304,7 @@ export type AgentSessionData = z.infer<typeof AgentSessionDataSchema>;
  */
 export interface AgentContext {
   /** All available tools from all servers (unified access) */
-  tools: Record<string, AtlasTool>;
+  tools: AtlasTools;
 
   /** Session info (workspace, user, etc.) */
   session: AgentSessionData;
@@ -314,7 +316,7 @@ export interface AgentContext {
   config?: Record<string, unknown>;
 
   /** Stream events back to Atlas - always provided */
-  stream: StreamEmitter;
+  stream: StreamEmitter | undefined;
 
   /** Logger instance with session context pre-configured */
   logger: Logger;

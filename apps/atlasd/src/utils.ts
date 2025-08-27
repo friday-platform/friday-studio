@@ -2,6 +2,7 @@
  * Daemon-related utilities for Atlas
  */
 
+import { z } from "zod/v4";
 import { logger } from "@atlas/logger";
 
 // Private constants
@@ -41,3 +42,7 @@ export function getAtlasDaemonUrl(): string {
 
   return DEFAULT_DAEMON_URL;
 }
+
+export const errorResponseSchema = z
+  .object({ error: z.string() })
+  .meta({ description: "Standard error response" });

@@ -1,42 +1,62 @@
-import type { SSEEvent } from "@atlas/config";
+// import { type SSEEvent } from "@atlas/config";
+
+import type { UIDataTypes, UIMessagePart, UITools } from "ai";
 import type { OutputEntry } from "../conversation/types.ts";
 
-export function formatMessage(messages: SSEEvent[]): OutputEntry | undefined {
+export function formatMessage(part: UIMessagePart<UIDataTypes, UITools>): OutputEntry | undefined {
   const currentUser = Deno.env.get("USER") || Deno.env.get("USERNAME") || "You";
 
-  const firstMessage = messages[0];
-
-  if (!firstMessage) {
-    return;
+  if (part.type === "data-user-message") {
+    return {
+      id: crypto.randomUUID(),
+      type: "request",
+      timestamp: new Date().toISOString(),
+      author: currentUser,
+      content: String(part.data),
+    };
+  } else if (part.type === "reasoning" && part.state === "done") {
+    return {
+      id: crypto.randomUUID(),
+      type: "thinking",
+      timestamp: new Date().toISOString(),
+      author: "Atlas",
+      content: part.text,
+    };
+  } else if (part.type === "text" && part.state === "done") {
+    return {
+      id: crypto.randomUUID(),
+      type: "text",
+      timestamp: new Date().toISOString(),
+      author: "Atlas",
+      content: part.text,
+    };
+  } else if (part.type.startsWith("tool-") || part.type === "dynamic-tool") {
+    return {
+      id: crypto.randomUUID(),
+      type: "tool_call",
+      timestamp: new Date().toISOString(),
+      author: "Atlas",
+      metadata: {
+        // example: tool-atlas_todo_read
+        toolName: "toolName" in part ? part.toolName : part.type.replace("tool-", ""),
+      },
+    };
+  } // @TODO: implement all of these
+  else if (part.type.startsWith("tool-result-")) {
+    return undefined;
+  } else if (
+    part.type === "tool-error" ||
+    part.type === "data-error" ||
+    part.type === "data-agent-error"
+  ) {
+    return {
+      id: crypto.randomUUID(),
+      type: "error",
+      timestamp: new Date().toISOString(),
+      author: "Atlas",
+      content: "Something went wrong",
+    };
   }
-
-  const normalizedType = firstMessage.type;
-  const { content: _, ...metadata } = firstMessage.data;
-
-  return {
-    id: firstMessage.id,
-    type: normalizedType as OutputEntry["type"],
-    timestamp: firstMessage.timestamp,
-    author: normalizedType === "text" ? "Atlas" : currentUser,
-    content: messages.map((message) => message.data.content).join(""),
-    metadata,
-  };
-}
-
-export function getGroupedMessages(messageValues: SSEEvent[]) {
-  return messageValues.reduce(
-    (groups, message) => {
-      const id = message.id;
-      if (!groups[id]) {
-        groups[id] = [];
-      }
-
-      groups[id].push(message);
-
-      return groups;
-    },
-    {} as Record<string, SSEEvent[]>,
-  );
 }
 
 export function getNormalizedToolName(toolName: string) {

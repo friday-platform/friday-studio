@@ -97,19 +97,18 @@ export const SessionLogsResponseSchema = z.object({ logs: z.array(LogEntrySchema
 // Library schemas
 export const LibraryItemSchema = z.object({
   id: z.string(),
-  type: z.string(),
+  source: z.enum(["agent", "job", "user", "system"]),
   name: z.string(),
   description: z.string().optional(),
-  metadata: z.object({
-    format: z.string(),
-    source: z.string(),
-    session_id: z.string().optional(),
-    agent_ids: z.array(z.string()).optional(),
-    engine: z.string().optional(),
-    template_id: z.string().optional(),
-    created_by: z.string().optional(),
-    custom_fields: z.record(z.string(), z.unknown()).optional(),
-  }),
+  content_path: z.string(),
+  full_path: z.string(),
+  file_extension: z.string(),
+  mime_type: z.string(),
+  session_id: z.string().optional(),
+  agent_ids: z.array(z.string()).optional(),
+  template_id: z.string().optional(),
+  generated_by: z.string().optional(),
+  custom_fields: z.record(z.string(), z.unknown()).optional(),
   created_at: z.string(),
   updated_at: z.string(),
   tags: z.array(z.string()),
@@ -127,23 +126,11 @@ export const LibrarySearchResultSchema = z.object({
 export const LibraryStatsSchema = z.object({
   total_items: z.number(),
   total_size_bytes: z.number(),
-  types: z.record(z.string(), z.number()),
+  sources: z.record(z.string(), z.number()),
   tags: z.record(z.string(), z.number()).optional(),
   recent_activity: z.array(
-    z.object({
-      date: z.string(),
-      items_added: z.number(),
-      items_modified: z.number(),
-      size_added_bytes: z.number().optional(),
-    }),
+    z.object({ date: z.string(), items_added: z.number(), items_modified: z.number() }),
   ),
-  storage_stats: z
-    .object({
-      used_bytes: z.number(),
-      limit_bytes: z.number().optional(),
-      percentage_used: z.number().optional(),
-    })
-    .optional(),
 });
 
 export const TemplateConfigSchema = z.object({

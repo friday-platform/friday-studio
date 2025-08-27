@@ -2,16 +2,15 @@ import { daemonFactory } from "../../src/factory.ts";
 import { createTodos } from "./create.ts";
 import { deleteTodos } from "./delete.ts";
 import { getTodos } from "./get.ts";
-import { listTodoStreams } from "./list.ts";
 
-// Export shared schemas and types
-export * from "./schemas.ts";
+/**
+ * Atlas daemon todo storage routes.
+ * Provides CRUD API for stream-based todo persistence.
+ * Mounted at /todo-storage/ on the daemon's HTTP server.
+ */
 
-// Create and mount routes
 const todoStorageRoutes = daemonFactory.createApp();
 
-// Mount individual endpoints
-todoStorageRoutes.route("/", listTodoStreams);
 todoStorageRoutes.route("/:streamId", getTodos);
 todoStorageRoutes.route("/:streamId", createTodos);
 todoStorageRoutes.route("/:streamId", deleteTodos);

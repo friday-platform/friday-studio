@@ -3,7 +3,7 @@ import type { Snippet } from "svelte";
 
 type Props = { children: Snippet };
 
-const { children }: Props = $props();
+let { children }: Props = $props();
 </script>
 
 <span class="read-only-field">

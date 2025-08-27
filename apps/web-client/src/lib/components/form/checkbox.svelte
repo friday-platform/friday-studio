@@ -11,8 +11,8 @@ type Props = {
   onUpdate?: (e: MouseEvent & { currentTarget: EventTarget & HTMLButtonElement }) => void;
 };
 
-const {
-  checked = $bindable(),
+let {
+  checked = $bindable(false),
   name,
   disabled = false,
   onUpdate,

@@ -2,7 +2,7 @@ import { AtlasApiError, getAtlasClient, type LibrarySearchQuery } from "@atlas/c
 import type { LibraryItem } from "./library-list-component.tsx";
 
 export interface LibraryFetchOptions {
-  type?: string;
+  source?: string;
   tags?: string;
   since?: string;
   limit?: number;
@@ -37,7 +37,7 @@ export async function fetchLibraryItems(
 
     // Convert LibraryFetchOptions to LibrarySearchQuery format
     const searchQuery: LibrarySearchQuery = {
-      type: options.type,
+      source: options.source,
       tags:
         options.tags && options.tags.trim()
           ? options.tags.split(",").map((tag) => tag.trim())
@@ -55,12 +55,18 @@ export async function fetchLibraryItems(
     const items = result.items.map(
       (item): LibraryItem => ({
         id: item.id,
-        type: item.type,
+        source: item.source,
         name: item.name,
         description: item.description,
         created_at: item.created_at,
         tags: item.tags,
         size_bytes: item.size_bytes,
+        mime_type: item.mime_type,
+        session_id: item.session_id,
+        agent_ids: item.agent_ids,
+        template_id: item.template_id,
+        generated_by: item.generated_by,
+        custom_fields: item.custom_fields,
       }),
     );
 

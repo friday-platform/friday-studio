@@ -4,8 +4,9 @@
 
 export interface LibrarySearchQuery {
   query?: string;
-  type?: string | string[];
+  source?: string | string[];
   tags?: string[];
+  workspace?: boolean;
   since?: string;
   until?: string;
   limit?: number;
@@ -14,19 +15,18 @@ export interface LibrarySearchQuery {
 
 export interface LibraryItem {
   id: string;
-  type: string;
+  source: "agent" | "job" | "user" | "system";
   name: string;
   description?: string;
-  metadata: {
-    format: string;
-    source: string;
-    session_id?: string;
-    agent_ids?: string[];
-    engine?: string;
-    template_id?: string;
-    created_by?: string;
-    custom_fields?: Record<string, unknown>;
-  };
+  content_path: string;
+  full_path: string;
+  file_extension: string;
+  mime_type: string;
+  session_id?: string;
+  agent_ids?: string[];
+  template_id?: string;
+  generated_by?: string;
+  custom_fields?: Record<string, unknown>;
   created_at: string;
   updated_at: string;
   tags: string[];
@@ -44,15 +44,8 @@ export interface LibrarySearchResult {
 export interface LibraryStats {
   total_items: number;
   total_size_bytes: number;
-  types: Record<string, number>;
-  tags?: Record<string, number>;
-  recent_activity: Array<{
-    date: string;
-    items_added: number;
-    items_modified: number;
-    size_added_bytes?: number;
-  }>;
-  storage_stats?: { used_bytes: number; limit_bytes?: number; percentage_used?: number };
+  sources: Record<string, number>;
+  recent_activity: Array<{ date: string; items_added: number; items_modified: number }>;
 }
 
 export interface TemplateConfig {

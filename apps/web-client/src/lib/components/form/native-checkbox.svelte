@@ -5,7 +5,7 @@ import { FIELD_CONTEXT, getFieldContext } from "$lib/components/form/context";
 
 type Props = { checked: boolean; name?: string; disabled?: boolean };
 
-const {
+let {
   checked = $bindable(),
   name,
   disabled = false,

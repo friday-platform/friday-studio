@@ -3,8 +3,8 @@
  */
 
 import type { AgentContext, AgentSessionData, AtlasAgent } from "@atlas/agent-sdk";
+import { createLogger } from "@atlas/logger";
 import type { CoALAMemoryManager } from "@atlas/memory";
-import { NoOpStreamEmitter } from "../../src/streaming/stream-emitters.ts";
 
 type SessionState = Record<string, unknown>;
 
@@ -20,15 +20,6 @@ export function createMockContextBuilder() {
     prompt: string,
     overrides?: Partial<AgentContext>,
   ): Promise<{ context: AgentContext; enrichedPrompt: string }> => {
-    // Stub MCP context - prevents real tool connections
-    const mcpContext = {
-      getTools: () => Promise.resolve({}),
-      callTool: () => {
-        return Promise.reject(new Error("Direct MCP tool calling not yet implemented"));
-      },
-      dispose: () => {},
-    };
-
     // Empty environment context for tests
     const envContext = {};
 
@@ -41,11 +32,11 @@ export function createMockContextBuilder() {
 
     // Build test context with session data
     const context: AgentContext = {
-      mcp: mcpContext,
       tools: {}, // Empty tools for test context
       env: envContext,
       session: sessionData,
-      stream: overrides?.stream || new NoOpStreamEmitter(),
+      stream: overrides?.stream,
+      logger: createLogger(),
       ...overrides,
     };
 

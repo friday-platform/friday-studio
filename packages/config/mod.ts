@@ -20,29 +20,19 @@ export * from "./src/jobs.ts";
 export * from "./src/mcp.ts";
 // Memory configuration schemas
 export * from "./src/memory.ts";
-// Message stream schemas for SSE events
-export * from "./src/message-stream.ts";
 // Notification configuration schemas
 export * from "./src/notifications.ts";
 // Signal schemas with tagged unions
 export * from "./src/signals.ts";
-
 // Supervisor defaults
 export {
   type SupervisorDefaults,
   supervisorDefaults,
   supervisorDefaultsWrapped,
 } from "./src/supervisor-defaults.ts";
-
 // Todo schemas
 export * from "./src/todos.ts";
-// Main workspace configuration schemas
 export * from "./src/workspace.ts";
-
-// Helper function for formatting Zod errors
-export function formatZodError(error: z.ZodError): string {
-  return z.prettifyError(error);
-}
 
 // ==============================================================================
 // HELPER FUNCTIONS
@@ -215,10 +205,10 @@ export function jsonSchemaToZod(jsonSchema: JsonSchema): z.ZodSchema<unknown> {
       return jsonSchema.additionalProperties === false
         ? z.object(shape).strict()
         : jsonSchema.additionalProperties === true
-          ? z.object(shape).passthrough()
+          ? z.looseObject(shape)
           : typeof jsonSchema.additionalProperties === "object"
             ? z.object(shape).catchall(jsonSchemaToZod(jsonSchema.additionalProperties))
-            : z.object(shape).passthrough();
+            : z.looseObject(shape);
     }
 
     case "string": {

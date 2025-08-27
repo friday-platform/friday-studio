@@ -1,36 +1,60 @@
 <script lang="ts">
+import { page } from "$app/state";
+import { getAppContext } from "$lib/app-context.svelte";
 import logo from "$lib/assets/logo.png";
+import { SegmentedControl } from "$lib/components/segmented-control";
+
+const { routes } = getAppContext();
+
+function getActivePage(value: string | string[]) {
+  if (Array.isArray(value)) {
+    return value.some((v) => String(page.route.id).endsWith(v));
+  }
+  return String(page.route.id).endsWith(value);
+}
 </script>
 
-<aside>
-	<header>
+<header>
+	<a href={routes.main} class="logo">
 		<img src={logo} alt="Atlas" />
 		<span>Atlas</span>
-	</header>
-</aside>
+	</a>
+	<nav>
+		<SegmentedControl.Root>
+			<SegmentedControl.Item href={routes.main} active={getActivePage('/')}
+				>Chat</SegmentedControl.Item
+			>
+			<SegmentedControl.Item
+				href={routes.library.list}
+				active={getActivePage(['library', 'library/[id]'])}>Library</SegmentedControl.Item
+			>
+		</SegmentedControl.Root>
+	</nav>
+</header>
 
 <style>
-	aside {
+	header {
 		display: flex;
-		flex-direction: column;
+		flex: none;
+		justify-content: space-between;
 		gap: var(--size-4);
-		padding-block: var(--size-7);
+		padding-block-start: var(--size-8);
 		padding-inline: var(--size-8);
 	}
 
-	header {
+	.logo {
 		display: flex;
-		gap: var(--size-2);
+		gap: var(--size-4);
 		align-items: center;
 
 		img {
 			aspect-ratio: 1;
 			flex: none;
-			inline-size: var(--size-7);
+			inline-size: var(--size-8);
 		}
 
 		span {
-			font-size: var(--font-size-5);
+			font-size: var(--font-size-6);
 			font-weight: var(--font-weight-6);
 		}
 	}

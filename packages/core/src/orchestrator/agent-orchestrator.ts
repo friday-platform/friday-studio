@@ -15,11 +15,13 @@ import {
   type AgentResult,
   ApprovalRequestSchema,
   type AtlasAgent,
+  type AtlasUIMessageChunk,
   AwaitingSupervisorDecision,
+  type StreamEmitter,
 } from "@atlas/agent-sdk";
 import type { Logger } from "@atlas/logger";
 import { CoALAMemoryManager, CoALAMemoryType, type IMemoryScope } from "@atlas/memory";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { Client } from "@modelcontextprotocol/sdk/client";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
@@ -32,8 +34,10 @@ import { createAgentContextBuilder } from "../agent-context/index.ts";
 import type { WrappedAgentResult } from "../agent-conversion/from-llm.ts";
 import type { AgentToolParams } from "../agent-server/types.ts";
 import type { GlobalMCPServerPool } from "../mcp-server-pool.ts";
-import { CallbackStreamEmitter, NoOpStreamEmitter } from "../streaming/stream-emitters.ts";
-import { StreamContentNotificationSchema, type StreamEvent } from "../types/streaming.ts";
+import {
+  CallbackStreamEmitter,
+  StreamContentNotificationSchema,
+} from "../streaming/stream-emitters.ts";
 
 // FIXME: this is wrong.
 const MCPToolResultSchema = z.object({
@@ -54,7 +58,7 @@ export interface AgentExecutionContext {
   additionalContext?: unknown;
   reasoning?: string;
   agentTools?: string[]; // Agent-specific tools to filter from workspace tools
-  onStreamEvent?: (event: StreamEvent) => void; // NEW: Callback for stream events
+  onStreamEvent?: (event: AtlasUIMessageChunk) => void; // NEW: Callback for stream events
   /** Optional pre-provisioned session memory. If not provided, orchestrator creates one. */
   memoryManager?: CoALAMemoryManager;
 }
@@ -168,7 +172,7 @@ export class AgentOrchestrator implements IAgentOrchestrator {
   private sessionCleanupInterval?: number;
   private wrappedAgents = new Map<string, AtlasAgent<WrappedAgentResult>>(); // LLM agents that bypass MCP
   // Track active stream handlers by sessionId:agentId to handle multi-workspace scenarios
-  private activeStreamHandlers = new Map<string, (event: StreamEvent) => void>();
+  private activeStreamHandlers = new Map<string, (event: AtlasUIMessageChunk) => void>();
   private buildAgentContext?: ReturnType<typeof createAgentContextBuilder>;
   // Cache CoALA session memories per workspaceId:sessionId
   private sessionMemories = new Map<string, CoALAMemoryManager>();
@@ -493,7 +497,7 @@ export class AgentOrchestrator implements IAgentOrchestrator {
       });
 
       // Create a brief summary of the task instead of storing the entire prompt
-      const taskSummary = prompt.length > 100 ? prompt.substring(0, 97) + "..." : prompt;
+      const taskSummary = prompt.length > 100 ? `${prompt.substring(0, 97)}...` : prompt;
 
       return {
         agentId,
@@ -653,14 +657,14 @@ export class AgentOrchestrator implements IAgentOrchestrator {
   ): Promise<AgentResult> {
     try {
       // Only enable streaming if both streamId and callback are provided
-      const streamEmitter =
-        context.onStreamEvent && context.streamId
-          ? new CallbackStreamEmitter(
-              context.onStreamEvent,
-              () => {}, // end handled by session supervisor
-              (error) => logger.error("Agent stream error", { agentId, error }),
-            )
-          : new NoOpStreamEmitter();
+      let streamEmitter: StreamEmitter | undefined;
+      if (context.onStreamEvent && context.streamId) {
+        streamEmitter = new CallbackStreamEmitter(
+          context.onStreamEvent,
+          () => {},
+          (error) => logger.error("Agent stream error", { agentId, error }),
+        );
+      }
 
       let agentContext: AgentContext;
       let finalPrompt = prompt;
@@ -857,24 +861,23 @@ export class AgentOrchestrator implements IAgentOrchestrator {
 
       await client.connect(transport);
 
+      /**
+       * Handles streaming notifications from Agents and passes them up to the session supervisor.
+       * @see packages/core/src/streaming/stream-emitters.ts - MCPStreamEmitter
+       */
       client.setNotificationHandler(StreamContentNotificationSchema, (notification) => {
-        const { toolName: agentId, sessionId, events } = notification.params;
-
+        const { toolName: agentId, sessionId, event } = notification.params;
+        // @ts-expect-error right now, uiMessageChunkSchema isn't exported by the Vercel AI SDK.
+        // The chunk is emitted from the MCPStreamEmitter so we'll have to line those up by hand.
+        // @see https://github.com/vercel/ai/issues/8100
+        const evt: AtlasUIMessageChunk = event;
         const handlerKey = this.getStreamHandlerKey(sessionId, agentId);
         const handler = this.activeStreamHandlers.get(handlerKey);
-
         if (handler) {
-          for (const event of events) {
-            try {
-              this.logger.debug("📬 Forwarding SSE event to supervisor", { event });
-              handler(event);
-              // Auto-cleanup when stream ends
-              if (event.type === "finish") {
-                this.activeStreamHandlers.delete(handlerKey);
-              }
-            } catch (error) {
-              this.logger.error("Failed to deliver event to handler", { event, error });
-            }
+          handler(evt);
+
+          if (evt.type === "finish") {
+            this.activeStreamHandlers.delete(handlerKey);
           }
         } else {
           this.logger.error("No handler found for SSE Stream", { handlerKey });

@@ -6,7 +6,7 @@ import { scale } from "svelte/transition";
 import { getContext } from "./context";
 
 const { menu, open } = getContext();
-const { children, ...rest }: { children: Snippet } & HTMLAttributes<HTMLDivElement> = $props();
+let { children, ...rest }: { children: Snippet } & HTMLAttributes<HTMLDivElement> = $props();
 </script>
 
 {#if $open}

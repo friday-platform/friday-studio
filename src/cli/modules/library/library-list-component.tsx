@@ -5,12 +5,18 @@ import { Table } from "../../components/table.tsx";
 // Schema for library item
 export const LibraryItemSchema = z.object({
   id: z.string(),
-  type: z.string(),
+  source: z.string(),
   name: z.string(),
   created_at: z.string(),
   tags: z.array(z.string()),
   size_bytes: z.number(),
   description: z.string().optional(),
+  mime_type: z.string().optional(),
+  session_id: z.string().optional(),
+  agent_ids: z.array(z.string()).optional(),
+  template_id: z.string().optional(),
+  generated_by: z.string().optional(),
+  custom_fields: z.record(z.unknown()).optional(),
 });
 
 export type LibraryItem = z.infer<typeof LibraryItemSchema>;
@@ -49,7 +55,7 @@ export function LibraryListComponent({
       <Table
         columns={[
           { key: "ID", label: "ID", width: 10 },
-          { key: "Type", label: "Type", width: 12 },
+          { key: "Source", label: "Source", width: 12 },
           { key: "Name", label: "Name", width: 25 },
           { key: "Size", label: "Size", width: 10 },
           { key: "Created", label: "Created", width: 20 },
@@ -57,7 +63,7 @@ export function LibraryListComponent({
         ]}
         data={items.map((item) => ({
           ID: item.id.slice(0, 8),
-          Type: item.type,
+          Source: item.source,
           Name: item.name,
           Size: formatBytes(item.size_bytes),
           Created: formatDate(item.created_at),

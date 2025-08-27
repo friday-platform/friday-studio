@@ -5,4 +5,4 @@
  * with Atlas agents.
  */
 
-export { streamResults } from "./stream-mapper.ts";
+export { pipeUIMessageStream } from "./stream-mapper.ts";

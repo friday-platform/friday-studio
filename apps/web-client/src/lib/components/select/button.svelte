@@ -5,7 +5,7 @@ import { getContext } from "./context";
 
 type Props = { children: Snippet; variant?: "small" | "regular"; width?: "fill" | "auto" };
 
-const { children, variant = "regular", width = "fill" }: Props = $props();
+let { children, variant = "regular", width = "fill" }: Props = $props();
 
 const { selectedLabel } = getContext();
 </script>

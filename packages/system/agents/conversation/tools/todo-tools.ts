@@ -19,6 +19,7 @@ function getErrorMessage(error: unknown): string {
 }
 
 export const todoReadTool = tool({
+  name: "Reading todos",
   description: "Read current todo list for the session to understand completed and pending tasks.",
   inputSchema: z.object({
     streamId: z.string().describe("Stream identifier for the conversation session"),

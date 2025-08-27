@@ -264,10 +264,14 @@ Deno.test("AtlasClient - listWorkspaceLibraryItems returns workspace library ite
     items: [
       {
         id: "lib_1",
-        type: "document",
+        source: "user",
         name: "Test Document",
         description: "Test description",
-        metadata: { format: "markdown", source: "user", session_id: "sess_123" },
+        content_path: "lib_1.txt",
+        full_path: "/workspace/library/lib_1.txt",
+        file_extension: ".txt",
+        mime_type: "text/plain",
+        session_id: "sess_123",
         created_at: "2024-01-01T10:00:00Z",
         updated_at: "2024-01-01T10:00:00Z",
         tags: ["test", "document"],
@@ -290,7 +294,7 @@ Deno.test("AtlasClient - listWorkspaceLibraryItems returns workspace library ite
   try {
     const client = new AtlasClient();
     const result = await client.listWorkspaceLibraryItems("test-workspace", {
-      type: "document",
+      source: "user",
       limit: 10,
     });
 
@@ -310,9 +314,12 @@ Deno.test("AtlasClient - searchWorkspaceLibrary searches within workspace", asyn
     items: [
       {
         id: "lib_search_1",
-        type: "code",
+        source: "agent",
         name: "Search Result",
-        metadata: { format: "typescript", source: "agent" },
+        content_path: "lib_search_1.txt",
+        full_path: "/workspace/library/lib_search_1.txt",
+        file_extension: ".txt",
+        mime_type: "text/plain",
         created_at: "2024-01-01T11:00:00Z",
         updated_at: "2024-01-01T11:00:00Z",
         tags: ["search", "test"],
@@ -321,7 +328,7 @@ Deno.test("AtlasClient - searchWorkspaceLibrary searches within workspace", asyn
       },
     ],
     total: 1,
-    query: { query: "test search", type: "code" },
+    query: { query: "test search", source: "agent" },
     took_ms: 25,
   };
 
@@ -336,12 +343,12 @@ Deno.test("AtlasClient - searchWorkspaceLibrary searches within workspace", asyn
     const client = new AtlasClient();
     const result = await client.searchWorkspaceLibrary("test-workspace", {
       query: "test search",
-      type: "code",
+      source: "agent",
       limit: 20,
     });
 
     expect(result.items.length).toBe(1);
-    expect(result.items[0]?.type).toBe("code");
+    expect(result.items[0]?.source).toBe("agent");
     expect(result.query.query).toBe("test search");
   } finally {
     globalThis.fetch = originalFetch;
@@ -354,10 +361,13 @@ Deno.test("AtlasClient - getWorkspaceLibraryItem retrieves specific item", async
   const mockLibraryItem = {
     item: {
       id: "lib_item_1",
-      type: "config",
+      source: "user",
       name: "Configuration File",
       description: "Test config",
-      metadata: { format: "yaml", source: "user" },
+      content_path: "lib_item_1.yml",
+      full_path: "/workspace/library/lib_item_1.yml",
+      file_extension: ".yml",
+      mime_type: "application/yaml",
       created_at: "2024-01-01T12:00:00Z",
       updated_at: "2024-01-01T12:00:00Z",
       tags: ["config"],
@@ -386,7 +396,7 @@ Deno.test("AtlasClient - getWorkspaceLibraryItem retrieves specific item", async
     );
 
     expect(result.item.id).toBe("lib_item_1");
-    expect(result.item.type).toBe("config");
+    expect(result.item.source).toBe("user");
     expect(result.content).toBe("test: configuration\nvalue: 123");
   } finally {
     globalThis.fetch = originalFetch;
@@ -399,9 +409,12 @@ Deno.test("AtlasClient - getWorkspaceLibraryItem without content", async () => {
   const mockLibraryItem = {
     item: {
       id: "lib_item_2",
-      type: "document",
+      source: "agent",
       name: "Document Without Content",
-      metadata: { format: "markdown", source: "agent" },
+      content_path: "lib_item_2.txt",
+      full_path: "/workspace/library/lib_item_2.txt",
+      file_extension: ".txt",
+      mime_type: "text/plain",
       created_at: "2024-01-01T13:00:00Z",
       updated_at: "2024-01-01T13:00:00Z",
       tags: ["document"],

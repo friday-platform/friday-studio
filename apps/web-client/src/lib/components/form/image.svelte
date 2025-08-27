@@ -18,7 +18,7 @@ type Props = {
   isPublic?: boolean;
 };
 
-const {
+let {
   uploadLabel = "Select Image",
   onChange,
   name,
@@ -28,7 +28,7 @@ const {
   isPublic = false,
 }: Props = $props();
 
-const preview = $state<string>(src);
+let preview = $state<string>(src);
 let id = $state<string>();
 
 if (hasContext(FIELD_CONTEXT)) {

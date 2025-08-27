@@ -1,4 +1,6 @@
-import { type SSEEvent, SSEEventSchema } from "@atlas/config";
+import type { SessionUIMessageChunk } from "@atlas/core";
+import { stringifyError } from "@atlas/utils";
+import { readUIMessageStream, type UIDataTypes, type UIMessage, type UITools } from "ai";
 import { Box, Static } from "ink";
 import { useEffect, useRef, useState } from "react";
 import { ChatMessage } from "../../components/chat-message.tsx";
@@ -9,7 +11,7 @@ import { DAEMON_STATUS } from "../../constants/daemon-status.ts";
 import { useAppContext } from "../../contexts/app-context.tsx";
 import type { OutputEntry } from "../conversation/types.ts";
 import { ToolCall } from "./components/tool-call.tsx";
-import { formatMessage, getGroupedMessages } from "./utils.ts";
+import { formatMessage } from "./utils.ts";
 
 interface TypingState {
   isTyping: boolean;
@@ -26,9 +28,9 @@ export const MessageBuffer = () => {
     setDaemonStatusState,
   } = useAppContext();
   const sseListenerStarted = useRef(false);
-  const [sseStream, setSseStream] = useState<AsyncIterable<unknown> | null>(null);
 
-  const [sseMessages, setSseMessages] = useState<Map<string, SSEEvent>>(new Map());
+  const [sseStream, setSseStream] = useState<ReadableStream<SessionUIMessageChunk> | null>(null);
+  const [sseMessages, setSseMessages] = useState<UIMessage<unknown, UIDataTypes, UITools>>();
   const [output, setOutput] = useState<OutputEntry[]>([]);
 
   const [typingState, setTypingState] = useState<TypingState>({
@@ -42,23 +44,19 @@ export const MessageBuffer = () => {
       return;
     }
 
-    const connectSSE = () => {
-      // Create new abort controller for this connection
-      if (!sseAbortControllerRef.current) {
-        sseAbortControllerRef.current = new AbortController();
-      }
+    // Create new abort controller for this connection
+    if (!sseAbortControllerRef.current) {
+      sseAbortControllerRef.current = new AbortController();
+    }
 
-      // Start SSE stream
-      const sseIterator = conversationClient.streamEvents(
-        conversationSessionId,
-        conversationClient.sseUrl,
-        sseAbortControllerRef.current?.signal,
-      );
-      setSseStream(sseIterator);
-      sseListenerStarted.current = false; // Reset listener flag for new stream
-    };
-
-    connectSSE();
+    // Use the new ReadableStream method
+    const stream = conversationClient.createMessageStream(
+      conversationClient.sseUrl,
+      conversationSessionId,
+      sseAbortControllerRef.current?.signal,
+    );
+    setSseStream(stream);
+    sseListenerStarted.current = false; // Reset listener flag for new stream
 
     return () => {
       // Clean up SSE connection
@@ -78,28 +76,23 @@ export const MessageBuffer = () => {
 
     (async () => {
       try {
-        for await (const event of sseStream) {
-          if (sseAbortControllerRef.current?.signal.aborted) break;
-
-          // Parse and validate SSE events with Zod
-          const parseResult = SSEEventSchema.safeParse(event);
-
-          if (!parseResult.success) {
-            continue; // Skip invalid events
-          }
-
-          setSseMessages((prev) => {
-            const newMap = new Map(prev);
-            newMap.set(parseResult.data.timestamp, parseResult.data);
-            return newMap;
+        for await (const uiMessage of readUIMessageStream({ stream: sseStream })) {
+          uiMessage.parts.forEach((part) => {
+            if (part.type === "data-session-start" && !typingState.isTyping) {
+              setTypingState((prev) => ({ ...prev, isTyping: true }));
+            } else if (part.type === "data-session-finish") {
+              setTypingState({ isTyping: false, elapsedSeconds: 0 });
+            }
           });
+
+          setSseMessages(uiMessage);
         }
       } catch (error) {
         // SSE connection closed or error
         // Only log if it's not an intentional abort
         if (!sseAbortControllerRef.current?.signal.aborted) {
           // Check if the error is due to abort signal
-          const errorMessage = error instanceof Error ? error.message : String(error);
+          const errorMessage = stringifyError(error);
           if (
             !errorMessage.includes("signal has been aborted") &&
             !errorMessage.includes("aborted") &&
@@ -150,38 +143,19 @@ export const MessageBuffer = () => {
   }, [typingState, setTypingState]);
 
   useEffect(() => {
-    const messageValues: SSEEvent[] = Array.from(sseMessages.values());
+    if (!sseMessages) return;
 
-    // Get the latest message to check if it's streaming
-    const latestMessage = messageValues[messageValues.length - 1];
+    const output: OutputEntry[] = [];
 
-    if (latestMessage?.type === "request") {
-      setTypingState({ isTyping: true, elapsedSeconds: 0 });
-    }
+    sseMessages.parts.forEach((part) => {
+      const formattedMessage = formatMessage(part);
 
-    if (latestMessage?.type === "finish" || latestMessage?.type === "error") {
-      setTypingState({ isTyping: false, elapsedSeconds: 0 });
-    }
+      if (formattedMessage) {
+        output.push(formattedMessage);
+      }
+    });
 
-    if (latestMessage?.type === "text" || latestMessage?.type === "thinking") {
-      const staticMessages = getGroupedMessages(
-        messageValues.filter((message) => message.id !== latestMessage.id),
-      );
-
-      setOutput(
-        (Object.values(staticMessages) as SSEEvent[][])
-          .map((messages: SSEEvent[]) => formatMessage(messages))
-          .filter((message) => message !== undefined),
-      );
-    } else {
-      const groupedMessages = getGroupedMessages(messageValues);
-
-      setOutput(
-        (Object.values(groupedMessages) as SSEEvent[][])
-          .map((messages: SSEEvent[]) => formatMessage(messages))
-          .filter((message) => message !== undefined),
-      );
-    }
+    setOutput(output);
   }, [sseMessages]);
 
   return (

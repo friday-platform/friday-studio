@@ -28,56 +28,6 @@ export function calculateRetryDelay(retryCount: number): number {
 export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
-/**
- * Handle daemon API response with enhanced error handling and type safety
- *
- * @template T - The expected response type
- * @param response - The HTTP response from Atlas daemon
- * @returns Promise<T> - Parsed JSON response
- * @throws Error - On HTTP errors or invalid responses
- * @deprecated - usage of this should be replaced as soon as the stream endpoints on the atlas daemon
- * are moved to openapi.
- */
-export async function handleDaemonResponse<T = unknown>(response: Response): Promise<T> {
-  if (!response.ok) {
-    let errorData: { message?: string; error?: string } = {};
-    try {
-      const text = await response.text();
-      const trimmedText = text.trim();
-      if (trimmedText.startsWith("{") || trimmedText.startsWith("[")) {
-        errorData = JSON.parse(trimmedText);
-      } else {
-        errorData = { message: text };
-      }
-    } catch {
-      errorData = { message: response.statusText };
-    }
-
-    throw new Error(
-      `Daemon API error: ${response.status} - ${
-        errorData.error || errorData.message || response.statusText
-      }`,
-    );
-  }
-
-  // Validate Content-Type for Atlas API consistency
-  const contentType = response.headers.get("content-type");
-  if (!contentType?.includes("application/json")) {
-    throw new Error(
-      `Unexpected response format from daemon. Expected JSON, got: ${contentType || "unknown"}`,
-    );
-  }
-
-  try {
-    return (await response.json()) as T;
-  } catch (error) {
-    throw new Error(
-      `Failed to parse daemon API response: ${
-        error instanceof Error ? error.message : String(error)
-      }`,
-    );
-  }
-}
 
 /**
  * Fetch with timeout and enhanced error handling

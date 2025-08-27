@@ -215,7 +215,7 @@ export class WorkspaceSupervisorActor implements BaseActor {
             payload,
             availableAgents,
             jobSpec,
-            streamId: streamId || (payload.streamId as string | undefined), // Use streamId parameter first, fallback to payload
+            streamId: streamId, // Only use the streamId parameter - never fallback to payload
           };
 
           this.logger.info("Session context created", {

@@ -94,9 +94,11 @@ export interface OutputEntry {
     | "tool_call"
     | "tool_result"
     | "error"
-    | "header";
+    | "header"
+    | "typing";
   author?: string;
   timestamp?: string;
   content?: string;
   currentlyStreaming?: boolean;
+  metadata?: Record<string, unknown>;
 }

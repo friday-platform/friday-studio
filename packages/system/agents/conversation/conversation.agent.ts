@@ -9,14 +9,13 @@
  */
 
 import { createAnthropic } from "@ai-sdk/anthropic";
-import { createAgent } from "@atlas/agent-sdk";
-import type { SSEEvent } from "@atlas/config";
-import { convertAIStreamToSSE, createRequestEvent } from "@atlas/core";
-import { stepCountIs, streamText, type TextStreamPart, type ToolSet } from "ai";
-import SYSTEM_PROMPT from "./prompt.txt" with { type: "text" };
 import type { AtlasTools } from "@atlas/agent-sdk";
+import { createAgent } from "@atlas/agent-sdk";
+import { pipeUIMessageStream } from "@atlas/agent-sdk/vercel-helpers";
 import { type SystemAgentConfigObject, SystemAgentConfigObjectSchema } from "@atlas/config";
-import { conversationTools, streamEvent, workspaceMemoryTool } from "./tools/mod.ts";
+import { createIdGenerator, smoothStream, stepCountIs, streamText } from "ai";
+import SYSTEM_PROMPT from "./prompt.txt" with { type: "text" };
+import { conversationTools, workspaceMemoryTool } from "./tools/mod.ts";
 
 type Role = "user" | "assistant";
 type ChatMessage = { role: Role; content: string };
@@ -29,9 +28,16 @@ type MessageHistory = { messages: Array<ChatMessage> };
 function getSystemPrompt(
   historyMessages?: Array<{ role: string; content: string }>,
   tools?: AtlasTools,
-  customPrompt?: string,
+  streamId?: string,
 ): string {
-  let prompt = customPrompt || SYSTEM_PROMPT;
+  let prompt = SYSTEM_PROMPT;
+
+  // Add critical streamId instruction for signal triggers
+  if (streamId) {
+    prompt = `${prompt}
+      CRITICAL: Your current Stream ID is ${streamId}. Include this when calling the atlas_workspace_signals_trigger tool.
+    `;
+  }
 
   // Replace the conversation history placeholder if present
   if (historyMessages && historyMessages.length > 0) {
@@ -65,73 +71,6 @@ function getSystemPrompt(
   return prompt;
 }
 
-/**
- * Checks if thinking content contains system prompt information that should not be exposed to users.
- * Filters out internal instructions, configuration details, and other sensitive prompt content.
- *
- * @param content - The thinking/reasoning content to check
- * @returns true if content should be filtered out, false if it's safe to show
- */
-function shouldFilterThinkingContent(content: string): boolean {
-  // Common system prompt indicators that should not be exposed
-  const systemPromptIndicators = [
-    "You are Atlas",
-    "<identity>",
-    "<personality_traits>",
-    "<core_principles>",
-    "<todo_memory>",
-    "<information_gathering_strategy>",
-    "<communication_approach>",
-    "<workspace_creation_confirmation>",
-    "<resource_knowledge>",
-    "<example_interactions>",
-    "<library_streaming_guidance>",
-    "<input_context>",
-    "<available_tools>",
-    "{{AVAILABLE_TOOLS}}",
-    "{{CONVERSATION_HISTORY}}",
-    "CRITICAL:",
-    "MANDATORY:",
-    "IMPORTANT:",
-    "NEVER mention",
-    "DO NOT",
-    "Always ask",
-    "Never ask",
-    "Step 1 -",
-    "Step 2 -",
-    "Phase 1",
-    "Phase 2",
-  ];
-
-  // Check if content contains any system prompt indicators
-  return systemPromptIndicators.some((indicator) => content.includes(indicator));
-}
-
-/**
- * Extracts metadata from SSE events for tool calls and results.
- * Captures tool names, call IDs, arguments, and results for tracing.
- *
- * @param sseEvent - Server-sent event containing tool execution data
- * @returns Metadata object for tool events, undefined for other event types
- */
-function extractSSEMetadata(sseEvent: SSEEvent): Record<string, unknown> | undefined {
-  if (sseEvent.type === "tool_call") {
-    return {
-      toolName: sseEvent.data.toolName,
-      toolCallId: sseEvent.data.toolCallId,
-      args: sseEvent.data.args,
-    };
-  }
-  if (sseEvent.type === "tool_result") {
-    return {
-      toolName: sseEvent.data.toolName,
-      toolCallId: sseEvent.data.toolCallId,
-      result: sseEvent.data.result,
-    };
-  }
-  return undefined;
-}
-
 // Export the agent
 export const conversationAgent = createAgent({
   id: "conversation",
@@ -149,8 +88,8 @@ export const conversationAgent = createAgent({
    * @param context - Execution context with session, logger, and available tools
    * @returns Conversation response with text, reasoning, execution flow, and tool calls
    */
-  handler: async (prompt, { session, logger, tools, config }) => {
-    if (!session.streamId || !streamEvent.execute) {
+  handler: async (prompt, { session, logger, tools, config, stream }) => {
+    if (!session.streamId) {
       throw new Error("Stream ID is required");
     }
 
@@ -176,11 +115,11 @@ export const conversationAgent = createAgent({
       }
     }
 
-    const modelConfig = {
-      model: agentConfig?.model ?? "claude-sonnet-4-20250514",
-      temperature: agentConfig?.temperature ?? 0.3,
-      maxOutputTokens: agentConfig?.max_tokens ?? 12000,
-    };
+    // Emit it using our custom message type
+    // @HACK: `data-user-message` this is a workaround since the AI SDK doesn't
+    // give you a way to emit user messages back to the stream. It expects that
+    // they will be just pushed to the array and persisted client-side.
+    stream?.emit({ type: "data-user-message", data: prompt });
 
     const allTools = { ...tools, ...conversationTools };
 
@@ -228,19 +167,7 @@ export const conversationAgent = createAgent({
       logger.warn("Failed to load workspace memory context", { error });
     }
 
-    const requestEvent = createRequestEvent(prompt);
-    await streamEvent.execute(
-      {
-        streamId: session.streamId,
-        id: requestEvent.id,
-        eventType: requestEvent.type,
-        content: requestEvent.data.content,
-        timestamp: requestEvent.timestamp,
-      },
-      { toolCallId: crypto.randomUUID(), messages: [] },
-    );
-
-    const systemPrompt = getSystemPrompt(history.messages, allTools);
+    const systemPrompt = getSystemPrompt(history.messages, allTools, session.streamId);
     const messages = [{ role: "user" as const, content: prompt }];
 
     // Log LLM input for debugging and monitoring
@@ -248,9 +175,9 @@ export const conversationAgent = createAgent({
       systemPromptLength: systemPrompt.length,
       systemPrompt: systemPrompt.substring(0, 500) + (systemPrompt.length > 500 ? "..." : ""),
       userPrompt: prompt,
-      model: modelConfig.model,
-      temperature: modelConfig.temperature,
-      maxTokens: modelConfig.maxOutputTokens,
+      model: "claude-sonnet-4-20250514",
+      temperature: 0.3,
+      maxTokens: 12000,
       toolsCount: Object.keys(allTools).length,
       toolsAvailable: Object.keys(allTools),
       sessionId: session.sessionId,
@@ -268,18 +195,26 @@ export const conversationAgent = createAgent({
       conversationHistoryEntries: history.messages.length,
     });
 
-    const { fullStream, text, reasoning } = streamText({
-      model: anthropic(modelConfig.model),
+    const result = streamText({
+      model: anthropic("claude-sonnet-4-20250514"),
       system: systemPrompt,
-      messages,
-      tools: allTools,
+      messages: messages,
+      tools: { ...tools, ...conversationTools },
       toolChoice: "auto",
       stopWhen: stepCountIs(20),
-      temperature: modelConfig.temperature,
-      maxOutputTokens: modelConfig.maxOutputTokens,
+      temperature: 0.3,
+      maxOutputTokens: 12000,
+      experimental_transform: smoothStream({ chunking: "word" }),
       maxRetries: 3, // Enable retries for API resilience (e.g., 529 errors)
       providerOptions: { anthropic: { thinking: { type: "enabled", budgetTokens: 25000 } } },
     });
+
+    pipeUIMessageStream(
+      result.toUIMessageStream({
+        generateMessageId: createIdGenerator({ prefix: "msg", size: 8 }),
+      }),
+      stream,
+    );
 
     const executionFlow = {
       steps: [] as Array<{ type: string; tool?: string; args?: unknown; timestamp: string }>,
@@ -289,87 +224,14 @@ export const conversationAgent = createAgent({
       startTime: Date.now(), // Track start time for duration calculation
     };
 
-    let prevChunk: TextStreamPart<ToolSet> | undefined;
-
-    for await (const chunk of fullStream) {
-      const sseEvent = convertAIStreamToSSE(chunk, prevChunk);
-      prevChunk = chunk;
-
-      if (!sseEvent) {
-        logger.debug("Skipped null event from chunk", { chunkType: chunk.type });
-        continue;
-      }
-
-      // Filter thinking content before streaming and processing
-      if (sseEvent.type === "thinking" && shouldFilterThinkingContent(sseEvent.data.content)) {
-        logger.debug("Filtered thinking content containing system prompt information");
-        continue; // Skip this event entirely
-      }
-
-      await streamEvent.execute(
-        {
-          id: sseEvent.id,
-          streamId: session.streamId,
-          eventType: sseEvent.type,
-          content: sseEvent.data.content,
-          metadata: extractSSEMetadata(sseEvent),
-          timestamp: sseEvent.timestamp,
-        },
-        { toolCallId: crypto.randomUUID(), messages: [] },
-      );
-
-      switch (sseEvent.type) {
-        case "thinking":
-          executionFlow.thinkingBuffer += sseEvent.data.content;
-          executionFlow.reasoning.push(sseEvent.data.content);
-          break;
-        case "text":
-          executionFlow.responseBuffer += sseEvent.data.content;
-          break;
-        case "finish":
-          executionFlow.responseBuffer += sseEvent.data.content;
-          break;
-        case "tool_call":
-          executionFlow.steps.push({
-            type: "tool_call",
-            tool: sseEvent.data.toolName,
-            args: sseEvent.data.args,
-            timestamp: sseEvent.timestamp,
-          });
-          logger.info("Tool call initiated", { tool: sseEvent.data.toolName });
-          break;
-      }
-    }
-
-    const finalText = await text;
-    const finalReasoning = await reasoning;
-
-    // Fallback: if no text chunks were streamed (e.g., only finish), emit final text once
-    if ((!executionFlow.responseBuffer || executionFlow.responseBuffer.length === 0) && finalText) {
-      await streamEvent.execute(
-        {
-          id: crypto.randomUUID(),
-          streamId: session.streamId,
-          eventType: "text",
-          content: finalText,
-          timestamp: new Date().toISOString(),
-        },
-        { toolCallId: crypto.randomUUID(), messages: [] },
-      );
-    }
+    const finalText = await result.text;
+    const finalReasoning = await result.reasoning;
 
     // Convert reasoning to proper format - prioritize collected reasoning if AI SDK reasoning is empty
     const processedReasoning =
       finalReasoning.length > 0
         ? finalReasoning.map((item) => item.text).join("\n")
         : executionFlow.reasoning.join("\n");
-
-    logger.debug("🎉", {
-      text: finalText || executionFlow.responseBuffer,
-      reasoning: processedReasoning,
-      executionFlow: executionFlow.steps,
-      toolCalls: executionFlow.steps.filter((s) => s.type === "tool_call"),
-    });
 
     return {
       text: finalText || executionFlow.responseBuffer,

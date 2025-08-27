@@ -1,10 +1,18 @@
+import { TodoItemSchema } from "@atlas/config";
+import { todoStorage } from "@atlas/core";
+import { stringifyError } from "@atlas/utils";
 import { describeRoute, resolver, validator } from "hono-openapi";
-import { InMemoryTodoStorage } from "../../../../src/core/daemon-capabilities.ts";
+import z from "zod/v4";
 import { daemonFactory } from "../../src/factory.ts";
-import { errorResponseSchema, streamIdParamSchema, todoListResponseSchema } from "./schemas.ts";
+import { errorResponseSchema } from "../../src/utils.ts";
 
 const getTodos = daemonFactory.createApp();
 
+/**
+ * GET /:streamId - Retrieve todo list for a stream.
+ *
+ * Returns the complete todo list for the stream, or empty array if none exists.
+ */
 getTodos.get(
   "/",
   describeRoute({
@@ -14,7 +22,11 @@ getTodos.get(
     responses: {
       200: {
         description: "Todo list retrieved successfully",
-        content: { "application/json": { schema: resolver(todoListResponseSchema) } },
+        content: {
+          "application/json": {
+            schema: resolver(z.object({ todos: z.array(TodoItemSchema), todoCount: z.number() })),
+          },
+        },
       },
       404: {
         description: "Stream not found",
@@ -26,20 +38,15 @@ getTodos.get(
       },
     },
   }),
-  validator("param", streamIdParamSchema),
+  validator("param", z.object({ streamId: z.string() })),
   (c) => {
     try {
       const { streamId } = c.req.valid("param");
+      const todos = todoStorage.get(streamId);
 
-      const storage = InMemoryTodoStorage.getInstance();
-      const todos = storage.getTodos(streamId);
-
-      return c.json({ success: true, todos, todoCount: todos.length });
+      return c.json({ todos, todoCount: todos.length });
     } catch (error) {
-      return c.json(
-        { success: false, error: error instanceof Error ? error.message : String(error) },
-        500,
-      );
+      return c.json({ error: stringifyError(error) }, 500);
     }
   },
 );

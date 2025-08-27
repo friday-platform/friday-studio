@@ -431,8 +431,4 @@ When users reference "the configuration" or "the workspace" without context,
 ask for clarification about which workspace they're referring to.
 </input_context>
 
-<available_tools>
-{{AVAILABLE_TOOLS}}
-</available_tools>
-
-{{CONVERSATION_HISTORY}}
+### Current Session Information

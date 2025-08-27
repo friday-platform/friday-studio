@@ -1,10 +1,17 @@
+import { todoStorage } from "@atlas/core";
+import { stringifyError } from "@atlas/utils";
 import { describeRoute, resolver, validator } from "hono-openapi";
-import { InMemoryTodoStorage } from "../../../../src/core/daemon-capabilities.ts";
+import z from "zod/v4";
 import { daemonFactory } from "../../src/factory.ts";
-import { deleteResponseSchema, errorResponseSchema, streamIdParamSchema } from "./schemas.ts";
+import { errorResponseSchema } from "../../src/utils.ts";
 
 const deleteTodos = daemonFactory.createApp();
 
+/**
+ * DELETE /:streamId - Delete all todos for a stream.
+ *
+ * Removes all todo data for the stream and reports whether data existed.
+ */
 deleteTodos.delete(
   "/",
   describeRoute({
@@ -14,7 +21,11 @@ deleteTodos.delete(
     responses: {
       200: {
         description: "Todos deleted successfully",
-        content: { "application/json": { schema: resolver(deleteResponseSchema) } },
+        content: {
+          "application/json": {
+            schema: resolver(z.object({ success: z.boolean(), deleted: z.boolean() })),
+          },
+        },
       },
       404: {
         description: "Stream not found",
@@ -26,24 +37,19 @@ deleteTodos.delete(
       },
     },
   }),
-  validator("param", streamIdParamSchema),
+  validator("param", z.object({ streamId: z.string() })),
   (c) => {
     try {
       const { streamId } = c.req.valid("param");
 
-      const storage = InMemoryTodoStorage.getInstance();
-      // Check if todos exist for response info
-      const existingTodos = storage.getTodos(streamId);
+      const existingTodos = todoStorage.get(streamId);
       const existed = existingTodos.length > 0;
 
-      storage.clearTodos(streamId);
+      todoStorage.delete(streamId);
 
       return c.json({ success: true, deleted: existed });
     } catch (error) {
-      return c.json(
-        { success: false, error: error instanceof Error ? error.message : String(error) },
-        500,
-      );
+      return c.json({ error: stringifyError(error) }, 500);
     }
   },
 );

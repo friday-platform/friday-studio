@@ -3,7 +3,7 @@ import type { Snippet } from "svelte";
 
 type Props = { children: Snippet; align?: "start" | "center" | "end" | "full" };
 
-const { children, align = "full" }: Props = $props();
+let { children, align = "full" }: Props = $props();
 </script>
 
 <div class="align--{align}">

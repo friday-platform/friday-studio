@@ -12,12 +12,12 @@
 
 import { ensureDir } from "@std/fs";
 import { dirname, join } from "@std/path";
-import { z } from "zod/v4";
 import type {
   LibraryItem,
   LibrarySearchQuery,
   LibrarySearchResult,
   LibraryStats,
+  StoreItemInput,
   TemplateConfig,
 } from "../library/types.ts";
 import type { KVStorage } from "./kv-storage.ts";
@@ -28,8 +28,8 @@ import type { KVStorage } from "./kv-storage.ts";
 export interface LibraryStorageConfig {
   /** Base directory for content storage. Defaults to ~/.atlas/library */
   contentDir?: string;
-  /** Whether to organize content by type subdirectories */
-  organizeByType?: boolean;
+  /** Whether to organize content by source subdirectories */
+  organizeBySource?: boolean;
   /** Whether to organize content by date subdirectories (YYYY/MM) */
   organizeByDate?: boolean;
   /** File extension mapping for content types */
@@ -78,11 +78,16 @@ function getDefaultLibraryDir(): string {
  */
 interface LibraryMetadata {
   id: string;
-  type: LibraryItem["type"];
+  source: "agent" | "job" | "user" | "system";
   name: string;
   description?: string;
   content_path: string;
-  metadata: LibraryItem["metadata"];
+  mime_type: string;
+  session_id?: string;
+  agent_ids?: string[];
+  template_id?: string;
+  generated_by?: string;
+  custom_fields?: Record<string, any>;
   created_at: string;
   updated_at: string;
   tags: string[];
@@ -119,6 +124,97 @@ interface LibraryMetadata {
  * - Metadata in KV for fast queries
  * - Content on disk for efficient large file handling
  */
+// MIME type to extension mapping
+const MIME_TO_EXTENSION: Record<string, string> = {
+  // Text formats (most text files use text/plain with specific extensions)
+  "text/plain": "txt", // Default for text/plain
+  "text/html": "html",
+  "text/css": "css",
+  "text/csv": "csv",
+
+  // Application text formats
+  "application/json": "json",
+  "application/xml": "xml",
+  "application/yaml": "yaml",
+  "application/x-yaml": "yml",
+  "application/x-javascript": "js",
+
+  // Images
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/gif": "gif",
+  "image/webp": "webp",
+  "image/svg+xml": "svg",
+  "image/bmp": "bmp",
+  "image/tiff": "tiff",
+
+  // Video
+  "video/mp4": "mp4",
+  "video/webm": "webm",
+  "video/quicktime": "mov",
+  "video/x-msvideo": "avi",
+  "video/x-ms-wmv": "wmv",
+
+  // Audio
+  "audio/mpeg": "mp3",
+  "audio/wav": "wav",
+  "audio/ogg": "ogg",
+  "audio/mp4": "m4a",
+  "audio/webm": "weba",
+
+  // Applications
+  "application/pdf": "pdf",
+  "application/zip": "zip",
+  "application/x-tar": "tar",
+  "application/gzip": "gz",
+  "application/vnd.ms-excel": "xls",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
+  "application/msword": "doc",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+  "application/vnd.ms-powerpoint": "ppt",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation": "pptx",
+  "application/x-executable": "bin",
+  "application/x-mach-binary": "dmg",
+  "application/x-msdownload": "exe",
+};
+
+// Extension-based MIME type detection for text/plain files
+const EXTENSION_TO_MIME: Record<string, string> = {
+  // Programming languages (all stored as text/plain with specific extensions)
+  md: "text/plain",
+  markdown: "text/plain",
+  ts: "text/plain",
+  js: "text/plain",
+  py: "text/plain",
+  go: "text/plain",
+  rs: "text/plain",
+  java: "text/plain",
+  cpp: "text/plain",
+  c: "text/plain",
+  h: "text/plain",
+  sh: "text/plain",
+  rb: "text/plain",
+  php: "text/plain",
+  swift: "text/plain",
+  kt: "text/plain",
+  scala: "text/plain",
+  r: "text/plain",
+  sql: "text/plain",
+
+  // Config files
+  yml: "text/plain",
+  yaml: "text/plain",
+  toml: "text/plain",
+  ini: "text/plain",
+  conf: "text/plain",
+  env: "text/plain",
+
+  // Other text formats
+  txt: "text/plain",
+  log: "text/plain",
+  readme: "text/plain",
+};
+
 export class LibraryStorageAdapter {
   private readonly LIBRARY_VERSION = "1.0.0";
   private config: Required<LibraryStorageConfig>;
@@ -131,7 +227,7 @@ export class LibraryStorageAdapter {
     // Apply defaults to config
     this.config = {
       contentDir: config.contentDir || getDefaultLibraryDir(),
-      organizeByType: config.organizeByType ?? true,
+      organizeBySource: config.organizeBySource ?? true,
       organizeByDate: config.organizeByDate ?? true,
       extensionMap: {
         markdown: "md",
@@ -147,6 +243,70 @@ export class LibraryStorageAdapter {
   }
 
   /**
+   * Get file extension from filename
+   */
+  private getFileExtension(filename: string): string {
+    const lastDot = filename.lastIndexOf(".");
+    return lastDot > 0 ? filename.substring(lastDot + 1).toLowerCase() : "";
+  }
+
+  /**
+   * Detect MIME type from content, filename, and metadata
+   */
+  private detectMimeType(
+    content: string | Uint8Array,
+    filename?: string,
+    metadata?: { mime_type?: string },
+  ): string {
+    // 1. Use MIME type from metadata if available
+    if (metadata?.mime_type && metadata.mime_type.trim() !== "") {
+      return metadata.mime_type.trim();
+    }
+
+    // 2. For empty/missing MIME type, detect from filename extension
+    if (filename) {
+      const ext = this.getFileExtension(filename);
+      if (EXTENSION_TO_MIME[ext]) {
+        return EXTENSION_TO_MIME[ext];
+      }
+    }
+
+    // 3. Analyze content structure for text formats (JSON, XML, etc.)
+    if (typeof content === "string") {
+      if (content.trim().startsWith("{") || content.trim().startsWith("[")) {
+        return "application/json";
+      }
+      if (content.trim().startsWith("<")) {
+        return "application/xml";
+      }
+    }
+
+    // 4. Defaults
+    return content instanceof Uint8Array ? "application/octet-stream" : "text/plain";
+  }
+
+  /**
+   * Get file extension for MIME type with filename fallback for text/plain
+   */
+  private getExtensionForMimeType(mimeType: string, filename?: string): string {
+    // For text/plain, use filename extension if available
+    if (mimeType === "text/plain" && filename) {
+      const ext = this.getFileExtension(filename);
+      if (ext && EXTENSION_TO_MIME[ext] === "text/plain") {
+        return ext; // Use original extension (md, ts, go, etc.)
+      }
+    }
+
+    // Use known mapping if available
+    if (MIME_TO_EXTENSION[mimeType]) {
+      return MIME_TO_EXTENSION[mimeType];
+    }
+
+    // Fallback for unknown MIME types
+    return "dat";
+  }
+
+  /**
    * Initialize the library storage
    * Sets up initial metadata, indexes, and content directories
    */
@@ -157,10 +317,10 @@ export class LibraryStorageAdapter {
     await ensureDir(this.contentDir);
 
     // Create organized subdirectories if configured
-    if (this.config.organizeByType) {
-      const typeNames = ["report", "session_archive", "template", "artifact", "user_upload"];
-      for (const typeName of typeNames) {
-        await ensureDir(join(this.contentDir, typeName));
+    if (this.config.organizeBySource) {
+      const sourceNames = ["agent", "job", "user", "system"];
+      for (const sourceName of sourceNames) {
+        await ensureDir(join(this.contentDir, sourceName));
       }
     }
 
@@ -178,22 +338,16 @@ export class LibraryStorageAdapter {
   /**
    * Store a library item with automatic indexing (hybrid storage)
    */
-  async storeItem(item: {
-    id: string;
-    type: string;
-    name: string;
-    description?: string;
-    content: string | Uint8Array;
-    metadata: LibraryItem["metadata"];
-    created_at: string;
-    updated_at: string;
-    tags: string[];
-    workspace_id?: string;
-  }): Promise<void> {
+  async storeItem(item: StoreItemInput): Promise<string> {
     // Validate item structure (basic validation)
-    if (!item.id || !item.type || !item.name || !item.content) {
+    if (!item.id || !item.source || !item.name || !item.content) {
       throw new Error("Missing required fields for library item");
     }
+
+    // Use provided MIME type or detect from content/filename
+    const detectedMimeType = this.detectMimeType(item.content, item.filename, {
+      mime_type: item.mime_type,
+    });
 
     // Calculate content size
     const contentSize =
@@ -201,12 +355,13 @@ export class LibraryStorageAdapter {
         ? new TextEncoder().encode(item.content).length
         : item.content.length;
 
-    // Generate content path using organized structure
+    // Generate content path using MIME-based extension (use source as directory)
     const contentPath = this.generateContentPath(
       item.id,
-      item.type,
-      item.metadata.format,
+      item.source,
+      detectedMimeType,
       item.created_at,
+      item.filename,
     );
     const fullContentPath = join(this.contentDir, contentPath);
 
@@ -223,11 +378,16 @@ export class LibraryStorageAdapter {
     // Create metadata record for KV storage
     const metadata: LibraryMetadata = {
       id: item.id,
-      type: item.type as LibraryItem["type"],
+      source: item.source,
       name: item.name,
       description: item.description,
       content_path: contentPath,
-      metadata: item.metadata,
+      mime_type: detectedMimeType,
+      session_id: item.session_id,
+      agent_ids: item.agent_ids,
+      template_id: item.template_id,
+      generated_by: item.generated_by,
+      custom_fields: item.custom_fields,
       created_at: item.created_at,
       updated_at: item.updated_at,
       tags: item.tags,
@@ -241,7 +401,7 @@ export class LibraryStorageAdapter {
     atomic.set(["library", "items", metadata.id], metadata);
 
     // Create indexes for efficient querying
-    atomic.set(["library", "indexes", "by_type", metadata.type, metadata.id], metadata.id);
+    atomic.set(["library", "indexes", "by_source", metadata.source, metadata.id], metadata.id);
 
     for (const tag of metadata.tags) {
       atomic.set(["library", "indexes", "by_tag", tag, metadata.id], metadata.id);
@@ -271,6 +431,8 @@ export class LibraryStorageAdapter {
       }
       throw new Error("Failed to store library item - atomic operation failed");
     }
+
+    return fullContentPath;
   }
 
   /**
@@ -282,8 +444,8 @@ export class LibraryStorageAdapter {
       return null;
     }
 
-    // Convert metadata to LibraryItem format
-    const item: LibraryItem = { ...metadata, content_path: metadata.content_path };
+    // Convert metadata to LibraryItem format with enhanced info
+    const item: LibraryItem = this.enhanceItemWithPaths(metadata);
 
     return { item };
   }
@@ -304,10 +466,18 @@ export class LibraryStorageAdapter {
 
     let content: string | Uint8Array;
     try {
-      if (metadata.metadata.format === "binary") {
-        content = await Deno.readFile(fullContentPath);
-      } else {
+      // Use MIME type to determine if content is binary
+      const mimeType = metadata.mime_type || "text/plain";
+      const isText =
+        mimeType.startsWith("text/") ||
+        mimeType === "application/json" ||
+        mimeType === "application/xml" ||
+        mimeType === "application/yaml";
+
+      if (isText) {
         content = await Deno.readTextFile(fullContentPath);
+      } else {
+        content = await Deno.readFile(fullContentPath);
       }
     } catch (error) {
       throw new Error(
@@ -317,8 +487,8 @@ export class LibraryStorageAdapter {
       );
     }
 
-    // Convert metadata to LibraryItem format
-    const item: LibraryItem = { ...metadata, content_path: metadata.content_path };
+    // Convert metadata to LibraryItem format with enhanced info
+    const item: LibraryItem = this.enhanceItemWithPaths(metadata);
 
     return { item, content };
   }
@@ -351,7 +521,7 @@ export class LibraryStorageAdapter {
     atomic.delete(["library", "items", id]);
 
     // Delete indexes
-    atomic.delete(["library", "indexes", "by_type", metadata.type, id]);
+    atomic.delete(["library", "indexes", "by_source", metadata.source, id]);
 
     for (const tag of metadata.tags) {
       atomic.delete(["library", "indexes", "by_tag", tag, id]);
@@ -381,24 +551,29 @@ export class LibraryStorageAdapter {
     // Use indexes for efficient querying when possible
     let candidateIds: Set<string> | null = null;
 
-    // Filter by type if specified
-    if (query.type) {
-      const types = Array.isArray(query.type) ? query.type : [query.type];
-      const typeIds = new Set<string>();
+    // Filter by source if specified
+    if (query.source) {
+      const sources = Array.isArray(query.source) ? query.source : [query.source];
+      const sourceIds = new Set<string>();
 
-      for (const type of types) {
-        for await (const { key } of this.storage.list(["library", "indexes", "by_type", type])) {
+      for (const source of sources) {
+        for await (const { key } of this.storage.list([
+          "library",
+          "indexes",
+          "by_source",
+          source,
+        ])) {
           if (key.length === 5) {
-            // ['library', 'indexes', 'by_type', type, id]
+            // ['library', 'indexes', 'by_source', source, id]
             const itemId = key[4];
             if (typeof itemId === "string") {
-              typeIds.add(itemId);
+              sourceIds.add(itemId);
             }
           }
         }
       }
 
-      candidateIds = typeIds;
+      candidateIds = sourceIds;
     }
 
     // Filter by tags if specified
@@ -418,7 +593,7 @@ export class LibraryStorageAdapter {
       }
 
       if (candidateIds) {
-        // Intersection of type and tag filters
+        // Intersection of source and tag filters
         candidateIds = new Set([...candidateIds].filter((id) => tagIds.has(id)));
       } else {
         candidateIds = tagIds;
@@ -433,8 +608,8 @@ export class LibraryStorageAdapter {
     if (!candidateIds) {
       for await (const { value } of this.storage.list<LibraryMetadata>(["library", "items"])) {
         if (value) {
-          // Convert metadata to LibraryItem format
-          const item: LibraryItem = { ...value };
+          // Convert metadata to LibraryItem format with enhanced info
+          const item: LibraryItem = this.enhanceItemWithPaths(value);
           items.push(item);
         }
       }
@@ -443,8 +618,8 @@ export class LibraryStorageAdapter {
       for (const id of candidateIds) {
         const metadata = await this.storage.get<LibraryMetadata>(["library", "items", id]);
         if (metadata) {
-          // Convert metadata to LibraryItem format
-          const item: LibraryItem = { ...metadata };
+          // Convert metadata to LibraryItem format with enhanced info
+          const item: LibraryItem = this.enhanceItemWithPaths(metadata);
           items.push(item);
         }
       }
@@ -497,7 +672,7 @@ export class LibraryStorageAdapter {
    */
   async listItems(
     options: {
-      type?: string | string[];
+      source?: string | string[];
       tags?: string[];
       workspace_id?: string;
       since?: string;
@@ -505,7 +680,7 @@ export class LibraryStorageAdapter {
     } = {},
   ): Promise<LibraryItem[]> {
     const query: LibrarySearchQuery = {
-      type: options.type,
+      source: options.source,
       tags: options.tags,
       // Note: workspace filtering not supported with current LibrarySearchQuery interface
       since: options.since,
@@ -527,8 +702,8 @@ export class LibraryStorageAdapter {
     let totalSize = 0;
 
     for (const item of items) {
-      // Type breakdown
-      typeBreakdown.set(item.type, (typeBreakdown.get(item.type) || 0) + 1);
+      // Source breakdown
+      typeBreakdown.set(item.source, (typeBreakdown.get(item.source) || 0) + 1);
 
       // Tag breakdown
       for (const tag of item.tags) {
@@ -541,7 +716,7 @@ export class LibraryStorageAdapter {
     return {
       total_items: items.length,
       total_size_bytes: totalSize,
-      types: Object.fromEntries(typeBreakdown),
+      sources: Object.fromEntries(typeBreakdown),
       recent_activity: [], // TODO: Implement activity tracking
     };
   }
@@ -646,7 +821,7 @@ export class LibraryStorageAdapter {
 
     // Rebuild indexes
     for (const item of items) {
-      atomic.set(["library", "indexes", "by_type", item.type, item.id], item.id);
+      atomic.set(["library", "indexes", "by_source", item.source, item.id], item.id);
 
       for (const tag of item.tags) {
         atomic.set(["library", "indexes", "by_tag", tag, item.id], item.id);
@@ -676,23 +851,43 @@ export class LibraryStorageAdapter {
   }
 
   /**
-   * Generate organized content path for a library item
+   * Enhance LibraryMetadata with computed path and extension information
    */
-  private generateContentPath(id: string, type: string, format: string, createdAt: string): string {
-    const extension = this.config.extensionMap[format] || "dat";
-    const filename = `${id}.${extension}`;
+  private enhanceItemWithPaths(metadata: LibraryMetadata): LibraryItem {
+    // Extract file extension from content path
+    const lastDot = metadata.content_path.lastIndexOf(".");
+    const fileExtension = lastDot > 0 ? metadata.content_path.substring(lastDot) : ".dat";
 
-    let path = filename;
+    // Generate full absolute path
+    const fullPath = join(this.contentDir, metadata.content_path);
+
+    return { ...metadata, full_path: fullPath, file_extension: fileExtension };
+  }
+
+  /**
+   * Generate organized content path for a library item using MIME types
+   */
+  private generateContentPath(
+    id: string,
+    source: string,
+    mimeType: string,
+    createdAt: string,
+    filename?: string,
+  ): string {
+    const extension = this.getExtensionForMimeType(mimeType, filename);
+    const filepath = `${id}.${extension}`;
+
+    let path = filepath;
 
     if (this.config.organizeByDate) {
       const date = new Date(createdAt);
       const year = date.getFullYear().toString();
       const month = (date.getMonth() + 1).toString().padStart(2, "0");
-      path = join(year, month, filename);
+      path = join(year, month, filepath);
     }
 
-    if (this.config.organizeByType) {
-      path = join(type, path);
+    if (this.config.organizeBySource) {
+      path = join(source, path);
     }
 
     return path;

@@ -4,7 +4,7 @@ import { getContext } from "./context";
 
 type Props = { children: Snippet };
 
-const { children }: Props = $props();
+let { children }: Props = $props();
 
 const { label } = getContext();
 </script>

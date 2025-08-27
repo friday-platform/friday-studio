@@ -9,7 +9,7 @@ type Props = {
   cover?: boolean;
 };
 
-const { src, alt, role = "img", isPublic = false, cover = false }: Props = $props();
+let { src, alt, role = "img", isPublic = false, cover = false }: Props = $props();
 </script>
 
 {#if src.includes('base64') || src.includes('https')}

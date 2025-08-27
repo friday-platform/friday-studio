@@ -112,39 +112,20 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  "/api/conversation-storage": {
-    parameters: { query?: never; header?: never; path?: never; cookie?: never };
-    /**
-     * List conversations
-     * @description Get a list of all conversations with summary information
-     */
-    get: operations["GETApiConversation-storage"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/conversation-storage/{streamId}": {
+  "/api/chat-storage/{streamId}": {
     parameters: { query?: never; header?: never; path?: never; cookie?: never };
     /**
      * Retrieve conversation history
      * @description Get the complete conversation history for the given stream ID
      */
-    get: operations["GETApiConversation-storage:streamId"];
-    put?: never;
+    get: operations["GETApiChat-storage:streamId"];
     /**
-     * Store conversation message
-     * @description Store a message in the conversation history for the given stream ID
+     * Replace conversation messages
+     * @description Replace entire conversation history for the given stream ID
      */
-    post: operations["POSTApiConversation-storage:streamId"];
-    /**
-     * Delete conversation
-     * @description Delete all conversation history for the given stream ID
-     */
-    delete: operations["DELETEApiConversation-storage:streamId"];
+    put: operations["PUTApiChat-storage:streamId"];
+    post?: never;
+    delete?: never;
     options?: never;
     head?: never;
     patch?: never;
@@ -157,21 +138,6 @@ export interface paths {
      * @description Get the current user for the session
      */
     get: operations["GETApiUser"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/todos": {
-    parameters: { query?: never; header?: never; path?: never; cookie?: never };
-    /**
-     * List all todo streams
-     * @description Get a list of all stream IDs that have todo data (admin endpoint)
-     */
-    get: operations["GETApiTodos"];
     put?: never;
     post?: never;
     delete?: never;
@@ -248,6 +214,66 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/sse": {
+    parameters: { query?: never; header?: never; path?: never; cookie?: never };
+    get?: never;
+    put?: never;
+    /**
+     * Create a new stream session
+     * @description Creates a new stream session with optional signal triggering
+     */
+    post: operations["POSTApiSse"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/sse/{streamId}/stream": {
+    parameters: { query?: never; header?: never; path?: never; cookie?: never };
+    /**
+     * Subscribe to stream events (AI SDK Protocol)
+     * @description Opens SSE stream using Vercel AI SDK protocol for real-time agent responses
+     */
+    get: operations["GETApiSse:streamIdStream"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/sse/{streamId}": {
+    parameters: { query?: never; header?: never; path?: never; cookie?: never };
+    get?: never;
+    put?: never;
+    /**
+     * Send a message through the stream
+     * @description Send user message to trigger conversation agent processing
+     */
+    post: operations["POSTApiSse:streamId"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/sse/{streamId}/emit": {
+    parameters: { query?: never; header?: never; path?: never; cookie?: never };
+    get?: never;
+    put?: never;
+    /**
+     * Emit UIMessageChunk event to stream
+     * @description Forward AI SDK events from agents to SSE clients
+     */
+    post: operations["POSTApiSse:streamIdEmit"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -308,14 +334,7 @@ export interface operations {
             /** @description Workspace description */
             description?: string;
             /** @enum {string} */
-            status:
-              | "stopped"
-              | "starting"
-              | "running"
-              | "stopping"
-              | "crashed"
-              | "failed"
-              | "unknown";
+            status: "inactive" | "running" | "stopped";
             /** @description Filesystem path to the workspace */
             path: string;
             /** @description ISO 8601 timestamp when workspace was created */
@@ -331,6 +350,14 @@ export interface operations {
               /** Format: date-time */
               lastErrorAt?: string;
               failureCount?: number;
+              lastFinishedSession?: {
+                id: string;
+                /** @enum {string} */
+                status: "completed" | "failed";
+                /** Format: date-time */
+                finishedAt: string;
+                summary?: string;
+              };
             };
           }[];
         };
@@ -367,14 +394,7 @@ export interface operations {
             /** @description Workspace description */
             description?: string;
             /** @enum {string} */
-            status:
-              | "stopped"
-              | "starting"
-              | "running"
-              | "stopping"
-              | "crashed"
-              | "failed"
-              | "unknown";
+            status: "inactive" | "running" | "stopped";
             /** @description Filesystem path to the workspace */
             path: string;
             /** @description ISO 8601 timestamp when workspace was created */
@@ -390,6 +410,14 @@ export interface operations {
               /** Format: date-time */
               lastErrorAt?: string;
               failureCount?: number;
+              lastFinishedSession?: {
+                id: string;
+                /** @enum {string} */
+                status: "completed" | "failed";
+                /** Format: date-time */
+                finishedAt: string;
+                summary?: string;
+              };
             };
             /** @description Full workspace configuration */
             config: unknown;
@@ -1149,14 +1177,7 @@ export interface operations {
               /** @description Workspace description */
               description?: string;
               /** @enum {string} */
-              status:
-                | "stopped"
-                | "starting"
-                | "running"
-                | "stopping"
-                | "crashed"
-                | "failed"
-                | "unknown";
+              status: "inactive" | "running" | "stopped";
               /** @description Filesystem path to the workspace */
               path: string;
               /** @description ISO 8601 timestamp when workspace was created */
@@ -1172,6 +1193,14 @@ export interface operations {
                 /** Format: date-time */
                 lastErrorAt?: string;
                 failureCount?: number;
+                lastFinishedSession?: {
+                  id: string;
+                  /** @enum {string} */
+                  status: "completed" | "failed";
+                  /** Format: date-time */
+                  finishedAt: string;
+                  summary?: string;
+                };
               };
             };
             backupPath?: string;
@@ -1242,14 +1271,7 @@ export interface operations {
               /** @description Workspace description */
               description?: string;
               /** @enum {string} */
-              status:
-                | "stopped"
-                | "starting"
-                | "running"
-                | "stopping"
-                | "crashed"
-                | "failed"
-                | "unknown";
+              status: "inactive" | "running" | "stopped";
               /** @description Filesystem path to the workspace */
               path: string;
               /** @description ISO 8601 timestamp when workspace was created */
@@ -1265,6 +1287,14 @@ export interface operations {
                 /** Format: date-time */
                 lastErrorAt?: string;
                 failureCount?: number;
+                lastFinishedSession?: {
+                  id: string;
+                  /** @enum {string} */
+                  status: "completed" | "failed";
+                  /** Format: date-time */
+                  finishedAt: string;
+                  summary?: string;
+                };
               };
             };
             workspacePath?: string;
@@ -1374,60 +1404,14 @@ export interface operations {
       };
     };
   };
-  "GETApiConversation-storage": {
-    parameters: {
-      query?: { limit?: number; offset?: number };
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Conversation list retrieved successfully */
-      200: {
-        headers: { [name: string]: unknown };
-        content: {
-          "application/json": {
-            success: boolean;
-            conversations: {
-              streamId: string;
-              messageCount: number;
-              lastMessage: string;
-              lastTimestamp: string;
-            }[];
-            total: number;
-          };
-        };
-      };
-      /** @description Internal server error */
-      500: {
-        headers: { [name: string]: unknown };
-        content: { "application/json": { error: string } };
-      };
-    };
-  };
-  "GETApiConversation-storage:streamId": {
+  "GETApiChat-storage:streamId": {
     parameters: { query?: never; header?: never; path: { streamId: string }; cookie?: never };
     requestBody?: never;
     responses: {
       /** @description Conversation history retrieved successfully */
       200: {
         headers: { [name: string]: unknown };
-        content: {
-          "application/json": {
-            success: boolean;
-            messages: {
-              messageId: string;
-              userId?: string;
-              content: string;
-              timestamp: string;
-              /** @enum {string} */
-              role: "user" | "assistant";
-              metadata?: { [key: string]: unknown };
-            }[];
-            messageCount: number;
-          };
-        };
+        content: { "application/json": { messages: unknown[]; messageCount: number } };
       };
       /** @description Conversation not found */
       404: {
@@ -1441,50 +1425,17 @@ export interface operations {
       };
     };
   };
-  "POSTApiConversation-storage:streamId": {
+  "PUTApiChat-storage:streamId": {
     parameters: { query?: never; header?: never; path: { streamId: string }; cookie?: never };
-    requestBody?: {
-      content: {
-        "application/json": {
-          message: {
-            /** @enum {string} */
-            role: "user" | "assistant";
-            content: string;
-          };
-          metadata?: { [key: string]: unknown };
-          timestamp: string;
-        };
-      };
-    };
+    requestBody?: { content: { "application/json": { messages: unknown[] } } };
     responses: {
-      /** @description Message stored successfully */
+      /** @description Conversation updated successfully */
       200: {
         headers: { [name: string]: unknown };
-        content: { "application/json": { success: boolean; messageId?: string; error?: string } };
+        content: { "application/json": Record<string, never> };
       };
       /** @description Invalid request data */
       400: {
-        headers: { [name: string]: unknown };
-        content: { "application/json": { error: string } };
-      };
-      /** @description Internal server error */
-      500: {
-        headers: { [name: string]: unknown };
-        content: { "application/json": { error: string } };
-      };
-    };
-  };
-  "DELETEApiConversation-storage:streamId": {
-    parameters: { query?: never; header?: never; path: { streamId: string }; cookie?: never };
-    requestBody?: never;
-    responses: {
-      /** @description Conversation deleted successfully */
-      200: {
-        headers: { [name: string]: unknown };
-        content: { "application/json": { success: boolean; deleted?: boolean; error?: string } };
-      };
-      /** @description Conversation not found */
-      404: {
         headers: { [name: string]: unknown };
         content: { "application/json": { error: string } };
       };
@@ -1516,22 +1467,6 @@ export interface operations {
       };
     };
   };
-  GETApiTodos: {
-    parameters: { query?: never; header?: never; path?: never; cookie?: never };
-    requestBody?: never;
-    responses: {
-      /** @description Stream list retrieved successfully */
-      200: {
-        headers: { [name: string]: unknown };
-        content: { "application/json": { success: boolean; streams: string[]; total: number } };
-      };
-      /** @description Internal server error */
-      500: {
-        headers: { [name: string]: unknown };
-        content: { "application/json": { error: string } };
-      };
-    };
-  };
   "GETApiTodos:streamId": {
     parameters: { query?: never; header?: never; path: { streamId: string }; cookie?: never };
     requestBody?: never;
@@ -1541,7 +1476,6 @@ export interface operations {
         headers: { [name: string]: unknown };
         content: {
           "application/json": {
-            success: boolean;
             todos: {
               /** @description Unique identifier for the todo item */
               id: string;
@@ -1585,7 +1519,6 @@ export interface operations {
     requestBody?: {
       content: {
         "application/json": {
-          /** @description Complete todo list to store */
           todos: {
             /** @description Unique identifier for the todo item */
             id: string;
@@ -1615,7 +1548,7 @@ export interface operations {
       /** @description Todos stored successfully */
       200: {
         headers: { [name: string]: unknown };
-        content: { "application/json": { success: boolean; message?: string; error?: string } };
+        content: { "application/json": { success: boolean; message?: string } };
       };
       /** @description Invalid request data */
       400: {
@@ -1636,7 +1569,7 @@ export interface operations {
       /** @description Todos deleted successfully */
       200: {
         headers: { [name: string]: unknown };
-        content: { "application/json": { success: boolean; deleted?: boolean; error?: string } };
+        content: { "application/json": { success: boolean; deleted: boolean } };
       };
       /** @description Stream not found */
       404: {
@@ -1730,6 +1663,124 @@ export interface operations {
         };
       };
       /** @description Agent expertise not found */
+      404: {
+        headers: { [name: string]: unknown };
+        content: { "application/json": { error: string } };
+      };
+      /** @description Internal server error */
+      500: {
+        headers: { [name: string]: unknown };
+        content: { "application/json": { error: string } };
+      };
+    };
+  };
+  POSTApiSse: {
+    parameters: { query?: never; header?: never; path?: never; cookie?: never };
+    requestBody?: {
+      content: {
+        "application/json": {
+          streamId?: string;
+          /** @default false */
+          createOnly: boolean;
+          workspaceId?: string;
+          signal?: string;
+        };
+      };
+    };
+    responses: {
+      /** @description Stream created successfully */
+      200: {
+        headers: { [name: string]: unknown };
+        content: { "application/json": { success: boolean; stream_id: string; sse_url: string } };
+      };
+      /** @description Invalid request parameters */
+      400: {
+        headers: { [name: string]: unknown };
+        content: { "application/json": { error: string } };
+      };
+      /** @description Internal server error */
+      500: {
+        headers: { [name: string]: unknown };
+        content: { "application/json": { error: string } };
+      };
+    };
+  };
+  "GETApiSse:streamIdStream": {
+    parameters: { query?: never; header?: never; path: { streamId: string }; cookie?: never };
+    requestBody?: never;
+    responses: {
+      /** @description SSE stream opened (AI SDK protocol) */
+      200: {
+        headers: { [name: string]: unknown };
+        content: {
+          "text/event-stream": {
+            type: string;
+            /** @constant */
+            format: "event-stream";
+            /** @constant */
+            description: "AI SDK UI Message Stream";
+          };
+        };
+      };
+      /** @description Stream not found */
+      404: {
+        headers: { [name: string]: unknown };
+        content: { "application/json": { error: string } };
+      };
+    };
+  };
+  "POSTApiSse:streamId": {
+    parameters: { query?: never; header?: never; path: { streamId: string }; cookie?: never };
+    requestBody?: {
+      content: {
+        "application/json": {
+          message: string;
+          /** @default cli-user */
+          userId: string;
+          conversationId?: string;
+          scope?: { [key: string]: unknown };
+          metadata?: { [key: string]: unknown };
+        };
+      };
+    };
+    responses: {
+      /** @description Message sent successfully */
+      200: {
+        headers: { [name: string]: unknown };
+        content: { "application/json": { success: boolean; message: string; messageId: string } };
+      };
+      /** @description Invalid request parameters */
+      400: {
+        headers: { [name: string]: unknown };
+        content: { "application/json": { error: string } };
+      };
+      /** @description Stream not found */
+      404: {
+        headers: { [name: string]: unknown };
+        content: { "application/json": { error: string } };
+      };
+      /** @description Internal server error */
+      500: {
+        headers: { [name: string]: unknown };
+        content: { "application/json": { error: string } };
+      };
+    };
+  };
+  "POSTApiSse:streamIdEmit": {
+    parameters: { query?: never; header?: never; path: { streamId: string }; cookie?: never };
+    requestBody?: { content: { "application/json": unknown } };
+    responses: {
+      /** @description Event emitted successfully */
+      200: {
+        headers: { [name: string]: unknown };
+        content: { "application/json": { success: boolean; message?: string } };
+      };
+      /** @description Invalid request parameters */
+      400: {
+        headers: { [name: string]: unknown };
+        content: { "application/json": { error: string } };
+      };
+      /** @description Stream not found or no connected clients */
       404: {
         headers: { [name: string]: unknown };
         content: { "application/json": { error: string } };

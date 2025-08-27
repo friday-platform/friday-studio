@@ -1,196 +1,105 @@
-import type { SSEEvent } from "@atlas/config";
+import type { UIMessagePart } from "ai";
 import { assertEquals, assertExists } from "@std/assert";
-import { formatMessage, getGroupedMessages } from "./utils.ts";
+import { formatMessage, getNormalizedToolName } from "./utils.ts";
 
-Deno.test("formatMessage - returns undefined for empty messages array", () => {
-  const result = formatMessage([]);
+Deno.test("formatMessage - returns undefined for unsupported message types", () => {
+  const unsupportedMessage: UIMessagePart = { type: "unsupported-type" as any } as any;
+
+  const result = formatMessage(unsupportedMessage);
   assertEquals(result, undefined);
 });
 
-Deno.test("formatMessage - formats text message correctly", () => {
-  const messages: SSEEvent[] = [
-    {
-      id: "msg-1",
-      type: "text",
-      timestamp: "2024-01-01T12:00:00Z",
-      data: { content: "Hello from Atlas" },
-    },
-  ];
+Deno.test("formatMessage - formats user message correctly", () => {
+  const userMessage: UIMessagePart = { type: "data-user-message", data: "Hello from user" } as any;
 
-  const result = formatMessage(messages);
+  const result = formatMessage(userMessage);
   assertExists(result);
-  assertEquals(result.id, "msg-1");
-  assertEquals(result.type, "text");
-  assertEquals(result.author, "Atlas");
-  assertEquals(result.content, "Hello from Atlas");
-  assertEquals(result.timestamp, "2024-01-01T12:00:00Z");
-});
-
-Deno.test("formatMessage - formats request message with current user", () => {
-  const originalUser = Deno.env.get("USER");
-  Deno.env.set("USER", "TestUser");
-
-  const messages: SSEEvent[] = [
-    {
-      id: "req-1",
-      type: "request",
-      timestamp: "2024-01-01T12:00:00Z",
-      data: { content: "User request" },
-    },
-  ];
-
-  const result = formatMessage(messages);
-  assertExists(result);
-  assertEquals(result.id, "req-1");
   assertEquals(result.type, "request");
-  assertEquals(result.author, "TestUser");
-  assertEquals(result.content, "User request");
-
-  // Restore original USER env
-  if (originalUser) {
-    Deno.env.set("USER", originalUser);
-  } else {
-    Deno.env.delete("USER");
-  }
+  assertEquals(result.content, "Hello from user");
+  assertEquals(result.author, Deno.env.get("USER") || Deno.env.get("USERNAME") || "You");
 });
 
-Deno.test("formatMessage - concatenates multiple message parts", () => {
-  const messages: SSEEvent[] = [
-    { id: "msg-1", type: "text", timestamp: "2024-01-01T12:00:00Z", data: { content: "Part 1" } },
-    { id: "msg-1", type: "text", timestamp: "2024-01-01T12:00:01Z", data: { content: " Part 2" } },
-    { id: "msg-1", type: "text", timestamp: "2024-01-01T12:00:02Z", data: { content: " Part 3" } },
-  ];
+Deno.test("formatMessage - formats completed reasoning correctly", () => {
+  const reasoningMessage: UIMessagePart = {
+    type: "reasoning",
+    state: "done",
+    text: "I need to analyze this request...",
+  } as any;
 
-  const result = formatMessage(messages);
-  assertExists(result);
-  assertEquals(result.content, "Part 1 Part 2 Part 3");
-});
-
-Deno.test("formatMessage - handles thinking type messages", () => {
-  const messages: SSEEvent[] = [
-    {
-      id: "think-1",
-      type: "thinking",
-      timestamp: "2024-01-01T12:00:00Z",
-      data: { content: "Processing..." },
-    },
-  ];
-
-  const result = formatMessage(messages);
+  const result = formatMessage(reasoningMessage);
   assertExists(result);
   assertEquals(result.type, "thinking");
-  assertEquals(result.content, "Processing...");
+  assertEquals(result.content, "I need to analyze this request...");
+  assertEquals(result.author, "Atlas");
 });
 
-Deno.test("formatMessage - handles tool_call type messages", () => {
-  const messages: SSEEvent[] = [
-    {
-      id: "tool-1",
-      type: "tool_call",
-      timestamp: "2024-01-01T12:00:00Z",
-      data: { content: "Calling API..." },
-    },
-  ];
+Deno.test("formatMessage - formats completed text message correctly", () => {
+  const textMessage: UIMessagePart = {
+    type: "text",
+    state: "done",
+    text: "Here is my response",
+  } as any;
 
-  const result = formatMessage(messages);
+  const result = formatMessage(textMessage);
+  assertExists(result);
+  assertEquals(result.type, "text");
+  assertEquals(result.content, "Here is my response");
+  assertEquals(result.author, "Atlas");
+});
+
+Deno.test("formatMessage - formats tool calls correctly", () => {
+  const toolMessage: UIMessagePart = {
+    type: "tool-atlas_todo_read",
+    toolName: "atlas_todo_read",
+  } as any;
+
+  const result = formatMessage(toolMessage);
   assertExists(result);
   assertEquals(result.type, "tool_call");
-  assertEquals(result.content, "Calling API...");
+  assertEquals(result.author, "Atlas");
+  assertEquals(result.metadata?.toolName, "atlas_todo_read");
 });
 
-Deno.test("formatMessage - handles error type messages", () => {
-  const messages: SSEEvent[] = [
-    {
-      id: "err-1",
-      type: "error",
-      timestamp: "2024-01-01T12:00:00Z",
-      data: { content: "An error occurred" },
-    },
-  ];
+Deno.test("formatMessage - formats dynamic tool calls correctly", () => {
+  const dynamicToolMessage: UIMessagePart = {
+    type: "dynamic-tool",
+    toolName: "custom_tool",
+  } as any;
 
-  const result = formatMessage(messages);
+  const result = formatMessage(dynamicToolMessage);
+  assertExists(result);
+  assertEquals(result.type, "tool_call");
+  assertEquals(result.metadata?.toolName, "custom_tool");
+});
+
+Deno.test("formatMessage - formats error messages correctly", () => {
+  const errorMessage: UIMessagePart = {
+    type: "data-error", // Use data-error instead of tool-error to avoid startsWith("tool-") conflict
+  } as any;
+
+  const result = formatMessage(errorMessage);
   assertExists(result);
   assertEquals(result.type, "error");
-  assertEquals(result.content, "An error occurred");
+  assertEquals(result.content, "Something went wrong");
+  assertEquals(result.author, "Atlas");
 });
 
-Deno.test("getGroupedMessages - returns empty object for empty array", () => {
-  const result = getGroupedMessages([]);
-  assertEquals(result, {});
+Deno.test("formatMessage - formats tool results as tool calls (due to startsWith logic)", () => {
+  const toolResultMessage: UIMessagePart = { type: "tool-result-atlas_todo_read" } as any;
+
+  const result = formatMessage(toolResultMessage);
+  assertExists(result);
+  assertEquals(result.type, "tool_call");
+  assertEquals(result.metadata?.toolName, "result-atlas_todo_read"); // "tool-" prefix removed
 });
 
-Deno.test("getGroupedMessages - groups messages by id", () => {
-  const messages: SSEEvent[] = [
-    {
-      id: "msg-1",
-      type: "text",
-      timestamp: "2024-01-01T12:00:00Z",
-      data: { content: "Message 1 Part 1" },
-    },
-    {
-      id: "msg-2",
-      type: "text",
-      timestamp: "2024-01-01T12:00:01Z",
-      data: { content: "Message 2" },
-    },
-    {
-      id: "msg-1",
-      type: "text",
-      timestamp: "2024-01-01T12:00:02Z",
-      data: { content: "Message 1 Part 2" },
-    },
-  ];
-
-  const result = getGroupedMessages(messages);
-
-  assertEquals(Object.keys(result).length, 2);
-  assertEquals(result["msg-1"].length, 2);
-  assertEquals(result["msg-2"].length, 1);
-  assertEquals(result["msg-1"][0].data.content, "Message 1 Part 1");
-  assertEquals(result["msg-1"][1].data.content, "Message 1 Part 2");
-  assertEquals(result["msg-2"][0].data.content, "Message 2");
+Deno.test("getNormalizedToolName - normalizes known tool names", () => {
+  assertEquals(getNormalizedToolName("atlas_todo_read"), "Reading Todos");
+  assertEquals(getNormalizedToolName("atlas_workspace_list"), "Reading Workspaces");
+  assertEquals(getNormalizedToolName("atlas_workspace_create"), "Creating Workspace");
 });
 
-Deno.test("getGroupedMessages - maintains message order within groups", () => {
-  const messages: SSEEvent[] = [
-    { id: "msg-1", type: "text", timestamp: "2024-01-01T12:00:00Z", data: { content: "First" } },
-    { id: "msg-1", type: "text", timestamp: "2024-01-01T12:00:01Z", data: { content: "Second" } },
-    { id: "msg-1", type: "text", timestamp: "2024-01-01T12:00:02Z", data: { content: "Third" } },
-  ];
-
-  const result = getGroupedMessages(messages);
-
-  assertEquals(result["msg-1"][0].data.content, "First");
-  assertEquals(result["msg-1"][1].data.content, "Second");
-  assertEquals(result["msg-1"][2].data.content, "Third");
-});
-
-Deno.test("getGroupedMessages - handles different message types", () => {
-  const messages: SSEEvent[] = [
-    {
-      id: "req-1",
-      type: "request",
-      timestamp: "2024-01-01T12:00:00Z",
-      data: { content: "Request" },
-    },
-    {
-      id: "text-1",
-      type: "text",
-      timestamp: "2024-01-01T12:00:01Z",
-      data: { content: "Response" },
-    },
-    {
-      id: "think-1",
-      type: "thinking",
-      timestamp: "2024-01-01T12:00:02Z",
-      data: { content: "Thinking" },
-    },
-  ];
-
-  const result = getGroupedMessages(messages);
-
-  assertEquals(Object.keys(result).length, 3);
-  assertEquals(result["req-1"][0].type, "request");
-  assertEquals(result["text-1"][0].type, "text");
-  assertEquals(result["think-1"][0].type, "thinking");
+Deno.test("getNormalizedToolName - returns original name for unknown tools", () => {
+  assertEquals(getNormalizedToolName("custom_tool"), "custom_tool");
+  assertEquals(getNormalizedToolName("unknown_tool_name"), "unknown_tool_name");
 });

@@ -10,7 +10,7 @@ import { spinner } from "../../utils/prompts.tsx";
 import type { YargsInstance } from "../../utils/yargs.ts";
 
 interface ListArgs {
-  type?: string;
+  source?: string;
   tags?: string;
   since?: string;
   limit: number;
@@ -24,10 +24,9 @@ export const desc = "List library items";
 
 export function builder(y: YargsInstance) {
   return y
-    .option("type", { alias: "t", type: "string", description: "Filter by item type" })
+    .option("source", { alias: "s", type: "string", description: "Filter by item source" })
     .option("tags", { type: "string", description: "Filter by tags (comma-separated)" })
     .option("since", {
-      alias: "s",
       type: "string",
       description: "Show items created since (e.g., '7d', '2024-01-01')",
     })
@@ -57,7 +56,7 @@ export async function handler(argv: ListArgs) {
     const client = getDaemonClient();
     const query: any = {};
 
-    if (argv.type) query.type = argv.type;
+    if (argv.source) query.source = argv.source;
     if (argv.tags) query.tags = argv.tags.split(",").map((tag) => tag.trim());
     if (argv.since) query.since = argv.since;
     if (argv.limit) query.limit = argv.limit;
@@ -80,14 +79,19 @@ export async function handler(argv: ListArgs) {
     // Convert to format expected by component
     const componentItems = items.map((item) => ({
       id: item.id,
-      type: item.type,
+      source: item.source,
       name: item.name,
       description: item.description,
       created_at: item.created_at,
       updated_at: item.updated_at,
       tags: item.tags,
       size_bytes: item.size_bytes,
-      metadata: item.metadata,
+      mime_type: item.mime_type,
+      session_id: item.session_id,
+      agent_ids: item.agent_ids,
+      template_id: item.template_id,
+      generated_by: item.generated_by,
+      custom_fields: item.custom_fields,
     }));
 
     const { unmount } = render(<LibraryListComponent items={componentItems} />);

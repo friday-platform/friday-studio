@@ -1,7 +1,7 @@
 <script lang="ts">
 import type { Snippet } from "svelte";
 
-const { children }: { children: Snippet } = $props();
+let { children }: { children: Snippet } = $props();
 </script>
 
 <div>
@@ -10,7 +10,8 @@ const { children }: { children: Snippet } = $props();
 
 <style>
 	div {
-		display: grid;
-		grid-template-columns: var(--size-48) 1fr;
+		block-size: 100dvh;
+		display: flex;
+		flex-direction: column;
 	}
 </style>

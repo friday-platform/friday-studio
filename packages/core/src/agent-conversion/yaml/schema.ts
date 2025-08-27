@@ -78,10 +78,6 @@ export const YAMLLLMConfigSchema = z.object({
     })
     .optional(),
 
-  streaming: z
-    .object({ enabled: z.boolean().default(true), chunk_size: z.number().optional() })
-    .optional(),
-
   tool_choice: z.enum(["auto", "required", "none"]).default("auto").optional(),
 
   provider_options: z

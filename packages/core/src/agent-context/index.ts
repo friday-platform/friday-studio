@@ -13,7 +13,7 @@ import { createAtlasClient } from "@atlas/oapi-client";
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import type { GlobalMCPServerPool } from "../mcp-server-pool.ts";
 import { stripSourceAttributionTags } from "../prompts/source-attribution.ts";
-import { MCPStreamEmitter, NoOpStreamEmitter } from "../streaming/stream-emitters.ts";
+import { MCPStreamEmitter } from "../streaming/stream-emitters.ts";
 import { createEnvironmentContext } from "./environment-context.ts";
 
 export interface AgentContextBuilderDeps {
@@ -109,9 +109,6 @@ export function createAgentContextBuilder(deps: AgentContextBuilderDeps) {
           sessionData.sessionId,
           agentLogger,
         );
-      } else {
-        agentLogger.info("Creating NoOpStreamEmitter");
-        streamEmitter = new NoOpStreamEmitter();
       }
     }
 
@@ -454,7 +451,7 @@ function buildMemoryEnhancedPrompt(
   let tokensUsed = Math.ceil(originalPrompt.length / 4); // Start with original prompt tokens
 
   // Reserve tokens for original request (always included)
-  const originalRequestSection = `## Current Request\n${originalPrompt}`;
+  const originalRequestSection = originalPrompt;
 
   // 1. Add most recent working memory for immediate context (high priority)
   if (recentWorkingMemory && tokensUsed < maxTokens * 0.7) {

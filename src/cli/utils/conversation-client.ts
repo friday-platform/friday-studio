@@ -1,8 +1,12 @@
+// import {
+//   createEventSource,
+//   EventSourceMessage,
+// } from "../../core/agents/remote/adapters/sse-utils.ts";
+
+import type { SessionUIMessageChunk } from "@atlas/core";
 import { createAtlasClient } from "@atlas/oapi-client";
-import {
-  createEventSource,
-  type EventSourceMessage,
-} from "../../core/agents/remote/adapters/sse-utils.ts";
+import { stringifyError } from "@atlas/utils";
+import { createEventSource } from "eventsource-client";
 import { DaemonClient } from "./daemon-client.ts";
 
 export interface ConversationSession {
@@ -25,6 +29,7 @@ export class ConversationClient {
   public sseUrl?: string; // Store the SSE URL from createSession
   private daemonClient: DaemonClient;
   private conversationWorkspaceId?: string; // Cache the conversation workspace ID
+  private client = createAtlasClient();
 
   constructor(
     private daemonUrl: string,
@@ -42,31 +47,19 @@ export class ConversationClient {
     scope?: { workspaceId?: string };
     createOnly?: boolean;
   }): Promise<ConversationSession> {
-    // Use the new direct daemon stream API
-    const url = `${this.daemonUrl}/api/streams`;
-    // Create session without sending an initial message
-    const body = {
-      userId: options?.userId || this.userId,
-      scope: options?.scope || { workspaceId: this.workspaceId },
-      createOnly: options?.createOnly ?? true, // Just create session, don't send a message
-    };
-
-    const response = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+    const res = await this.client.POST("/api/sse", {
+      body: {
+        userId: options?.userId || this.userId,
+        scope: options?.scope || { workspaceId: this.workspaceId },
+        createOnly: options?.createOnly ?? true, // Just create session, don't send a message
+      },
     });
-
-    if (!response.ok) {
-      const errorText = await response.text().catch(() => response.statusText);
-      throw new Error(`Failed to create conversation session (${response.status}): ${errorText}`);
+    if (res.error) {
+      throw new Error(`Failed to create conversation session (${res.error}): ${res.error.error}`);
     }
-
-    const result = await response.json();
-
     // Transform the response to match the expected ConversationSession interface
     return {
-      sessionId: result.stream_id,
+      sessionId: res.data.stream_id,
       mode: "private",
       participants: [
         {
@@ -76,7 +69,7 @@ export class ConversationClient {
           lastSeen: new Date().toISOString(),
         },
       ],
-      sseUrl: `${this.daemonUrl}${result.sse_url}`,
+      sseUrl: `${this.daemonUrl}${res.data.sse_url}`,
     };
   }
 
@@ -168,83 +161,54 @@ export class ConversationClient {
 
   /**
    * Stream conversation events via Server-Sent Events
-   * @FIXME: Create a dedicated event type from
-   * https://github.com/tempestteam/atlas/blob/db7941f26370ca923ef4ede1d026386b765d028e/src/core/daemon-capabilities.ts#L104
    */
   async *streamEvents(
     sessionId: string,
-    sseUrl?: string,
+    sseUrl: string,
     abortSignal?: AbortSignal,
-  ): AsyncIterableIterator<unknown> {
-    // Use the SSE URL from the session if not provided
-    const streamUrl =
-      sseUrl || `${this.daemonUrl}/system/conversation/sessions/${sessionId}/stream`;
-
-    let eventSource: {
-      response: Response;
-      consume(): AsyncIterableIterator<EventSourceMessage>;
-    } | null = null;
-
+  ): AsyncIterableIterator<SessionUIMessageChunk> {
     try {
-      eventSource = await createEventSource({
-        url: streamUrl,
-        options: abortSignal ? { signal: abortSignal } : undefined,
-      });
-
-      for await (const message of eventSource.consume()) {
-        // Check if aborted
+      const eventSource = createEventSource(sseUrl);
+      for await (const { data, id } of eventSource) {
         if (abortSignal?.aborted) {
           break;
         }
 
         try {
-          const parsedData = JSON.parse(message.data);
+          const parsedData = JSON.parse(data);
           const event: unknown = {
             type: parsedData.type || "unknown",
             data: parsedData.data || parsedData,
             timestamp: parsedData.timestamp || new Date().toISOString(),
             sessionId: parsedData.sessionId || sessionId,
-            messageId: message.id,
+            messageId: id,
             id: parsedData.id,
           };
 
+          console.log("Data: %s", data);
           yield event;
-
-          // Only close the connection if explicitly requested
-          if (
-            // @ts-expect-error event is currently untyped
-            event.type === "message_complete" &&
-            // @ts-expect-error event is currently untyped
-            event.data?.closeConnection === true
-          ) {
-            // @TODO: cleanup: ensure the connection is closed
-            break;
-          }
         } catch (error) {
-          console.error("Failed to parse SSE message:", error, message);
-          // Continue processing other messages
+          console.error("💩💩💩", error);
         }
       }
     } catch (error) {
       // Handle specific connection errors with user-friendly messages
-      const errorMessage = error instanceof Error ? error.message : String(error);
+      const message = stringifyError(error);
 
       // Check for daemon shutdown or connection loss
       if (
-        errorMessage.includes("error reading a body from connection") ||
-        errorMessage.includes("Connection refused") ||
-        errorMessage.includes("ECONNREFUSED")
+        message.includes("error reading a body from connection") ||
+        message.includes("Connection refused") ||
+        message.includes("ECONNREFUSED")
       ) {
-        throw new Error(
-          "Connection to Atlas daemon lost. The daemon may have been stopped or restarted.",
-        );
+        throw new Error("Connection to Atlas daemon lost. It may have been stopped or restarted.");
       }
 
       // Check for network issues
       if (
-        errorMessage.includes("Failed to fetch") ||
-        errorMessage.includes("NetworkError") ||
-        errorMessage.includes("ERR_NETWORK")
+        message.includes("Failed to fetch") ||
+        message.includes("NetworkError") ||
+        message.includes("ERR_NETWORK")
       ) {
         throw new Error(
           "Network connection to Atlas daemon failed. Please check your network and daemon status.",
@@ -252,12 +216,138 @@ export class ConversationClient {
       }
 
       // Default error message for other cases
-      throw new Error(`SSE connection error: ${errorMessage}`);
-    } finally {
-      // @TODO: cleanup: ensure the connection is closed
+      throw new Error(`SSE connection error: ${message}`);
     }
+
+    // Use the SSE URL from the session if not provided
+
+    // let eventSource: {
+    //   response: Response;
+    //   consume(): AsyncIterableIterator<EventSourceMessage>;
+    // } | null = null;
+
+    // try {
+    //   eventSource = await createEventSource({
+    //     url: sseUrl,
+    //     options: abortSignal ? { signal: abortSignal } : undefined,
+    //   });
+
+    //   for await (const message of eventSource.consume()) {
+    //     // Check if aborted
+    //     if (abortSignal?.aborted) {
+    //       break;
+    //     }
+
+    //     console.log("🍂🍂🍂🍂", message.data);
+
+    //     try {
+    //       const parsedData = JSON.parse(message.data);
+    //       const event: unknown = {
+    //         type: parsedData.type || "unknown",
+    //         data: parsedData.data || parsedData,
+    //         timestamp: parsedData.timestamp || new Date().toISOString(),
+    //         sessionId: parsedData.sessionId || sessionId,
+    //         messageId: message.id,
+    //         id: parsedData.id,
+    //       };
+
+    //       yield event;
+
+    //       // Only close the connection if explicitly requested
+    //       if (
+    //         // @ts-expect-error event is currently untyped
+    //         event.type === "message_complete" &&
+    //         // @ts-expect-error event is currently untyped
+    //         event.data?.closeConnection === true
+    //       ) {
+    //         // @TODO: cleanup: ensure the connection is closed
+    //         break;
+    //       }
+    //     } catch (error) {
+    //       console.error("Failed to parse SSE message:", error, message);
+    //       // Continue processing other messages
+    //     }
+    //   }
+    // } catch (error) {
+    //   // Handle specific connection errors with user-friendly messages
+    //   const errorMessage = error instanceof Error ? error.message : String(error);
+
+    //   // Check for daemon shutdown or connection loss
+    //   if (
+    //     errorMessage.includes("error reading a body from connection") ||
+    //     errorMessage.includes("Connection refused") ||
+    //     errorMessage.includes("ECONNREFUSED")
+    //   ) {
+    //     throw new Error(
+    //       "Connection to Atlas daemon lost. The daemon may have been stopped or restarted.",
+    //     );
+    //   }
+
+    //   // Check for network issues
+    //   if (
+    //     errorMessage.includes("Failed to fetch") ||
+    //     errorMessage.includes("NetworkError") ||
+    //     errorMessage.includes("ERR_NETWORK")
+    //   ) {
+    //     throw new Error(
+    //       "Network connection to Atlas daemon failed. Please check your network and daemon status.",
+    //     );
+    //   }
+
+    //   // Default error message for other cases
+    //   throw new Error(`SSE connection error: ${errorMessage}`);
+    // } finally {
+    //   // @TODO: cleanup: ensure the connection is closed
+    // }
   }
 
+  createMessageStream(
+    sseUrl: string,
+    sessionId: string,
+    abortSignal?: AbortSignal,
+  ): ReadableStream<SessionUIMessageChunk> {
+    const eventSource = createEventSource(sseUrl);
+
+    return new ReadableStream<SessionUIMessageChunk>({
+      start(controller) {
+        // Start consuming the async iterator in the background
+        (async () => {
+          try {
+            for await (const { data, id } of eventSource) {
+              // if (abortSignal?.aborted) {
+              //   controller.close();
+              //   break;
+              // }
+
+              try {
+                const parsedData = JSON.parse(data);
+                // const event: SessionUIMessageChunk = {
+                //   type: parsedData.type || "unknown",
+                //   data: parsedData.data || parsedData,
+                //   timestamp: parsedData.timestamp || new Date().toISOString(),
+                //   sessionId: parsedData.sessionId || sessionId,
+                //   messageId: id,
+                //   id: parsedData.id,
+                // };
+
+                controller.enqueue(parsedData);
+              } catch (error) {
+                // Skip malformed messages, don't break the stream
+                console.error("Parse error:", error);
+              }
+            }
+          } catch (error) {
+            controller.error(error);
+          }
+        })();
+      },
+
+      cancel() {
+        // Clean up on stream cancellation
+        eventSource.close();
+      },
+    });
+  }
   /**
    * Get session information
    */

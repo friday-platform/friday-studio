@@ -916,7 +916,7 @@ export function createWorkspaceRuntimeMachine(_input: WorkspaceRuntimeMachineInp
                 context.options.libraryStorage
                   .storeItem({
                     id: crypto.randomUUID(),
-                    type: "session_archive",
+                    source: "system",
                     name: `Session Archive - ${event.sessionId.slice(0, 8)}`,
                     description: `Complete session data and results from session ${event.sessionId}`,
                     content: JSON.stringify(
@@ -929,7 +929,8 @@ export function createWorkspaceRuntimeMachine(_input: WorkspaceRuntimeMachineInp
                       null,
                       2,
                     ),
-                    metadata: { format: "json", source: "system", session_id: event.sessionId },
+                    mime_type: "application/json",
+                    session_id: event.sessionId,
                     created_at: new Date().toISOString(),
                     updated_at: new Date().toISOString(),
                     tags: ["session-archive", "automated"],

@@ -621,11 +621,12 @@ export class AtlasClient {
   async listLibraryItems(query?: Partial<LibrarySearchQuery>): Promise<LibrarySearchResult> {
     const params = new URLSearchParams();
     if (query?.query) params.set("q", query.query);
-    if (query?.type) {
-      const types = Array.isArray(query.type) ? query.type : [query.type];
-      params.set("type", types.join(","));
+    if (query?.source) {
+      const sources = Array.isArray(query.source) ? query.source : [query.source];
+      params.set("source", sources.join(","));
     }
     if (query?.tags) params.set("tags", query.tags.join(","));
+    if (query?.workspace) params.set("workspace", query.workspace.toString());
     if (query?.since) params.set("since", query.since);
     if (query?.until) params.set("until", query.until);
     if (query?.limit) params.set("limit", query.limit.toString());
@@ -661,11 +662,12 @@ export class AtlasClient {
   async searchLibrary(query: LibrarySearchQuery): Promise<LibrarySearchResult> {
     const params = new URLSearchParams();
     if (query.query) params.set("q", query.query);
-    if (query.type) {
-      const types = Array.isArray(query.type) ? query.type : [query.type];
-      params.set("type", types.join(","));
+    if (query.source) {
+      const sources = Array.isArray(query.source) ? query.source : [query.source];
+      params.set("source", sources.join(","));
     }
     if (query.tags) params.set("tags", query.tags.join(","));
+    if (query.workspace) params.set("workspace", query.workspace.toString());
     if (query.since) params.set("since", query.since);
     if (query.until) params.set("until", query.until);
     if (query.limit) params.set("limit", query.limit.toString());
@@ -731,11 +733,12 @@ export class AtlasClient {
   ): Promise<LibrarySearchResult> {
     const params = new URLSearchParams();
     if (query?.query) params.set("q", query.query);
-    if (query?.type) {
-      const types = Array.isArray(query.type) ? query.type : [query.type];
-      params.set("type", types.join(","));
+    if (query?.source) {
+      const sources = Array.isArray(query.source) ? query.source : [query.source];
+      params.set("source", sources.join(","));
     }
     if (query?.tags) params.set("tags", query.tags.join(","));
+    if (query?.workspace) params.set("workspace", query.workspace.toString());
     if (query?.since) params.set("since", query.since);
     if (query?.until) params.set("until", query.until);
     if (query?.limit) params.set("limit", query.limit.toString());
@@ -759,11 +762,12 @@ export class AtlasClient {
   ): Promise<LibrarySearchResult> {
     const params = new URLSearchParams();
     if (query.query) params.set("q", query.query);
-    if (query.type) {
-      const types = Array.isArray(query.type) ? query.type : [query.type];
-      params.set("type", types.join(","));
+    if (query.source) {
+      const sources = Array.isArray(query.source) ? query.source : [query.source];
+      params.set("source", sources.join(","));
     }
     if (query.tags) params.set("tags", query.tags.join(","));
+    if (query.workspace) params.set("workspace", query.workspace.toString());
     if (query.since) params.set("since", query.since);
     if (query.until) params.set("until", query.until);
     if (query.limit) params.set("limit", query.limit.toString());

@@ -34,10 +34,12 @@ import { Workspace } from "../../../src/core/workspace.ts";
 import { WorkspaceRuntime } from "../../../src/core/workspace-runtime.ts";
 import { WorkspaceMemberRole } from "../../../src/types/core.ts";
 import { agents as agentsRoutes } from "../routes/agents/index.ts";
-import { conversationStorageRoutes } from "../routes/conversation-storage/index.ts";
+import { chatStorageRoutes } from "../routes/chat-storage/index.ts";
 import { healthRoutes } from "../routes/health.ts";
+import { libraryRoutes } from "../routes/library/index.ts";
 import { createOpenAPIHandlers } from "../routes/openapi.ts";
 import { signalRoutes } from "../routes/signals/index.ts";
+import { streamsRoutes } from "../routes/streams/index.ts";
 import { todoStorageRoutes } from "../routes/todo-storage/index.ts";
 import { userRoutes } from "../routes/user/index.ts";
 import { workspacesRoutes } from "../routes/workspaces/index.ts";
@@ -72,6 +74,10 @@ export class AtlasDaemon implements AppContext {
       lastActivity: number;
     }>
   > = new Map();
+
+  // Track stream metadata separately to persist after clients disconnect
+  public sseStreams: Map<string, { createdAt: number; lastActivity: number; lastEmit: number }> =
+    new Map();
   // Private properties
   private idleTimeouts: Map<string, number> = new Map();
   private isShuttingDown = false;
@@ -406,6 +412,16 @@ export class AtlasDaemon implements AppContext {
   }
 
   /**
+   * Get library storage instance
+   */
+  public getLibraryStorage(): LibraryStorageAdapter {
+    if (!this.libraryStorage) {
+      throw new Error("Library storage not initialized");
+    }
+    return this.libraryStorage;
+  }
+
+  /**
    * Get the configured Hono app instance
    * Used for OpenAPI spec generation
    */
@@ -425,15 +441,16 @@ export class AtlasDaemon implements AppContext {
       const duration = Date.now() - start;
       const status = c.res.status;
 
-      // Log in consistent format with other Atlas logs
-      logger.info(`HTTP ${method} ${path}`, {
-        method,
-        path,
-        status,
-        duration: `${duration}ms`,
-        // Add component to match other logs
-        component: "http",
-      });
+      if (status >= 400) {
+        logger.error(`HTTP ${method} ${path}`, {
+          method,
+          path,
+          status,
+          duration: `${duration}ms`,
+          // Add component to match other logs
+          component: "http",
+        });
+      }
     });
 
     // Setup CORS if configured
@@ -450,8 +467,8 @@ export class AtlasDaemon implements AppContext {
     // Mount signal routes
     this.app.route("/api/workspaces", signalRoutes);
 
-    // Mount conversation storage routes
-    this.app.route("/api/conversation-storage", conversationStorageRoutes);
+    // Mount chat storage routes
+    this.app.route("/api/chat-storage", chatStorageRoutes);
 
     this.app.route("/api/user", userRoutes);
 
@@ -459,6 +476,11 @@ export class AtlasDaemon implements AppContext {
     this.app.route("/api/todos", todoStorageRoutes);
     // Mount agent routes
     this.app.route("/api/agents", agentsRoutes);
+
+    this.app.route("/api/sse", streamsRoutes);
+
+    // Mount library routes
+    this.app.route("/api/library", libraryRoutes);
 
     // Create a new workspace (functionality moved to create-from-template and create-from-config endpoints)
     this.app.post("/api/workspaces", (c) => {
@@ -1065,276 +1087,6 @@ export class AtlasDaemon implements AppContext {
       }
     });
 
-    // Library management routes
-    // List library items
-    this.app.get("/api/library", async (c) => {
-      try {
-        if (!this.libraryStorage) {
-          throw new Error("Library storage not initialized");
-        }
-
-        // Parse query parameters
-        const query: LibrarySearchQuery = {
-          query: c.req.query("q") || c.req.query("query"),
-          type: c.req.query("type") ? c.req.query("type")!.split(",") : undefined,
-          tags: c.req.query("tags") ? c.req.query("tags")!.split(",") : undefined,
-          since: c.req.query("since"),
-          until: c.req.query("until"),
-          limit: c.req.query("limit") ? parseInt(c.req.query("limit")!) : 50,
-          offset: c.req.query("offset") ? parseInt(c.req.query("offset")!) : 0,
-        };
-
-        const result = await this.libraryStorage.search(query);
-        return c.json(result);
-      } catch (error) {
-        logger.error("Failed to list library items", { error });
-        return c.json(
-          {
-            error: `Failed to list library items: ${
-              error instanceof Error ? error.message : String(error)
-            }`,
-          },
-          500,
-        );
-      }
-    });
-
-    // Search library items (before itemId route)
-    this.app.get("/api/library/search", async (c) => {
-      try {
-        if (!this.libraryStorage) {
-          throw new Error("Library storage not initialized");
-        }
-
-        const query: LibrarySearchQuery = {
-          query: c.req.query("q") || c.req.query("query"),
-          type: c.req.query("type") ? c.req.query("type")!.split(",") : undefined,
-          tags: c.req.query("tags") ? c.req.query("tags")!.split(",") : undefined,
-          since: c.req.query("since"),
-          until: c.req.query("until"),
-          limit: c.req.query("limit") ? parseInt(c.req.query("limit")!) : 50,
-          offset: c.req.query("offset") ? parseInt(c.req.query("offset")!) : 0,
-        };
-
-        const result = await this.libraryStorage.search(query);
-        return c.json(result);
-      } catch (error) {
-        logger.error("Failed to search library", { error });
-        return c.json(
-          {
-            error: `Failed to search library: ${
-              error instanceof Error ? error.message : String(error)
-            }`,
-          },
-          500,
-        );
-      }
-    });
-
-    // List available templates (before itemId route)
-    this.app.get("/api/library/templates", async (c) => {
-      try {
-        if (!this.libraryStorage) {
-          throw new Error("Library storage not initialized");
-        }
-
-        const templates = await this.libraryStorage.listTemplates();
-        return c.json(templates);
-      } catch (error) {
-        logger.error("Failed to list templates", { error });
-        return c.json(
-          {
-            error: `Failed to list templates: ${
-              error instanceof Error ? error.message : String(error)
-            }`,
-          },
-          500,
-        );
-      }
-    });
-
-    // Get library statistics (before itemId route)
-    this.app.get("/api/library/stats", async (c) => {
-      try {
-        if (!this.libraryStorage) {
-          throw new Error("Library storage not initialized");
-        }
-
-        const stats = await this.libraryStorage.getStats();
-        return c.json(stats);
-      } catch (error) {
-        logger.error("Failed to get library stats", { error });
-        return c.json(
-          {
-            error: `Failed to get library stats: ${
-              error instanceof Error ? error.message : String(error)
-            }`,
-          },
-          500,
-        );
-      }
-    });
-
-    // Generate content from template (before itemId route)
-    this.app.post("/api/library/generate", async (c) => {
-      try {
-        if (!this.libraryStorage) {
-          throw new Error("Library storage not initialized");
-        }
-
-        const { templateId, data, options } = await c.req.json();
-
-        if (!templateId) {
-          return c.json({ error: "templateId is required" }, 400);
-        }
-
-        // This would need template engine integration
-        // For now, return a simple response
-        return c.json(
-          { message: "Template generation not yet implemented", templateId, data, options },
-          501,
-        );
-      } catch (error) {
-        logger.error("Failed to generate from template", { error });
-        return c.json(
-          {
-            error: `Failed to generate from template: ${
-              error instanceof Error ? error.message : String(error)
-            }`,
-          },
-          500,
-        );
-      }
-    });
-
-    // Get specific library item (must be after specific routes)
-    this.app.get("/api/library/:itemId", async (c) => {
-      const itemId = c.req.param("itemId");
-      const includeContent = c.req.query("content") === "true";
-
-      try {
-        if (!this.libraryStorage) {
-          throw new Error("Library storage not initialized");
-        }
-
-        const result = includeContent
-          ? await this.libraryStorage.getItemWithContent(itemId)
-          : await this.libraryStorage.getItem(itemId);
-
-        if (!result) {
-          return c.json({ error: `Library item not found: ${itemId}` }, 404);
-        }
-
-        if (includeContent && "content" in result) {
-          return c.json({ item: result.item, content: result.content });
-        } else {
-          return c.json({ item: result.item });
-        }
-      } catch (error) {
-        logger.error("Failed to get library item", { error, itemId });
-        return c.json(
-          {
-            error: `Failed to get library item: ${
-              error instanceof Error ? error.message : String(error)
-            }`,
-          },
-          500,
-        );
-      }
-    });
-
-    // Create library item
-    this.app.post("/api/library", async (c) => {
-      try {
-        if (!this.libraryStorage) {
-          throw new Error("Library storage not initialized");
-        }
-
-        const itemData = await c.req.json();
-
-        // Validate required fields
-        if (!itemData.type) {
-          return c.json({ error: "type is required" }, 400);
-        }
-        if (!itemData.name) {
-          return c.json({ error: "name is required" }, 400);
-        }
-        if (!itemData.content) {
-          return c.json({ error: "content is required" }, 400);
-        }
-
-        // Generate ID and timestamps
-        const itemId = crypto.randomUUID();
-        const now = new Date().toISOString();
-
-        const libraryItem = {
-          id: itemId,
-          type: itemData.type,
-          name: itemData.name,
-          description: itemData.description || "",
-          content: itemData.content,
-          metadata: {
-            format: itemData.format || "markdown",
-            source: itemData.source || "agent",
-            session_id: itemData.session_id,
-            agent_ids: itemData.agent_ids || [],
-            ...itemData.metadata,
-          },
-          created_at: now,
-          updated_at: now,
-          tags: itemData.tags || [],
-          workspace_id: itemData.workspace_id,
-        };
-
-        await this.libraryStorage.storeItem(libraryItem);
-
-        return c.json({
-          success: true,
-          itemId,
-          message: `Library item '${itemData.name}' created`,
-          item: libraryItem,
-        });
-      } catch (error) {
-        logger.error("Failed to create library item", { error });
-        return c.json(
-          {
-            error: `Failed to create library item: ${
-              error instanceof Error ? error.message : String(error)
-            }`,
-          },
-          500,
-        );
-      }
-    });
-
-    // Delete library item
-    this.app.delete("/api/library/:itemId", async (c) => {
-      const itemId = c.req.param("itemId");
-
-      try {
-        if (!this.libraryStorage) {
-          throw new Error("Library storage not initialized");
-        }
-
-        const deleted = await this.libraryStorage.deleteItem(itemId);
-        if (!deleted) {
-          return c.json({ error: `Library item not found: ${itemId}` }, 404);
-        }
-
-        return c.json({ message: `Library item ${itemId} deleted` });
-      } catch (error) {
-        logger.error("Failed to delete library item", { error, itemId });
-        return c.json(
-          {
-            error: `Failed to delete library item: ${
-              error instanceof Error ? error.message : String(error)
-            }`,
-          },
-          500,
-        );
-      }
-    });
-
     // Daemon management routes
     this.app.get("/api/daemon/status", (c) => {
       return c.json({
@@ -1482,102 +1234,6 @@ export class AtlasDaemon implements AppContext {
       setTimeout(() => this.shutdown(), 100);
 
       return c.json({ message: "Daemon shutdown initiated" });
-    });
-
-    // Create a new stream session
-    this.app.post("/api/streams", async (c) => {
-      try {
-        const body = await c.req.json();
-        const streamId = body.streamId || crypto.randomUUID(); // Use existing streamId if provided
-
-        // For createOnly requests, just return the stream info
-        if (body.createOnly) {
-          return c.json({
-            success: true,
-            stream_id: streamId,
-            sse_url: `/api/stream/${streamId}/stream`,
-          });
-        }
-
-        // No special conversation logic - client should use regular workspace triggers
-        // For requests that include a workspace and signal, trigger the signal
-        if (body.workspaceId && body.signal) {
-          const runtime = this.runtimes.get(body.workspaceId);
-          if (!runtime) {
-            return c.json({ error: `Workspace not found: ${body.workspaceId}` }, 404);
-          }
-
-          // Trigger signal with streamId
-          runtime.triggerSignal(body.signal, { ...body, streamId }).catch((error) => {
-            logger.error("Signal trigger failed", { error });
-          });
-        }
-
-        return c.json({
-          success: true,
-          stream_id: streamId, // Return the same streamId that was used
-          sse_url: `/api/stream/${streamId}/stream`,
-        });
-      } catch (error) {
-        logger.error("Failed to create stream", { error });
-        return c.json({ error: "Failed to create stream" }, 500);
-      }
-    });
-
-    // SSE endpoint for stream subscriptions
-    this.app.get("/api/stream/:streamId/stream", (c) => {
-      const streamId = c.req.param("streamId");
-      return this.handleGenericSSERequest(c, streamId);
-    });
-
-    // Stream API endpoint for MCP tools
-    this.app.post("/api/stream/:streamId", async (c) => {
-      const streamId = c.req.param("streamId");
-
-      try {
-        const body = await c.req.json();
-        const { message, userId, scope, metadata, conversationId } = body;
-
-        // Trigger the conversation workspace signal with the message
-        const conversationWorkspace = await this.getOrCreateWorkspaceRuntime("atlas-conversation");
-
-        await conversationWorkspace.triggerSignal("conversation-stream", {
-          streamId,
-          message,
-          userId: userId || "cli-user",
-          conversationId,
-          scope,
-          metadata,
-        });
-
-        return c.json({ success: true, message: "Reply streamed", messageId: crypto.randomUUID() });
-      } catch (error) {
-        logger.error("Stream API error", { streamId, error });
-        return c.json(
-          { error: `Stream API error: ${error instanceof Error ? error.message : String(error)}` },
-          500,
-        );
-      }
-    });
-
-    // SSE event emission endpoint for daemon capabilities
-    this.app.post("/api/stream/:streamId/emit", async (c) => {
-      const streamId = c.req.param("streamId");
-
-      try {
-        const event = await c.req.json();
-
-        // Emit the SSE event to all connected clients for this stream
-        this.emitSSEEvent(streamId, event);
-
-        return c.json({ success: true });
-      } catch (error) {
-        logger.error("SSE emit error", { streamId, error });
-        return c.json(
-          { error: `SSE emit error: ${error instanceof Error ? error.message : String(error)}` },
-          500,
-        );
-      }
     });
   }
 
@@ -2149,6 +1805,7 @@ export class AtlasDaemon implements AppContext {
       }
     }
     this.sseClients.clear();
+    this.sseStreams.clear();
 
     // Clean up agent sessions
     for (const sessionId of this.agentSessions.keys()) {
@@ -2529,11 +2186,45 @@ export class AtlasDaemon implements AppContext {
    */
   private performSSEHealthCheck(): void {
     const now = Date.now();
-    const timeoutMs = this.options.sseConnectionTimeoutMs!;
+    const clientTimeoutMs = this.options.sseConnectionTimeoutMs!;
+    const streamInactivityMs = 5 * 60 * 1000; // 5 minutes for stream inactivity
     let totalClients = 0;
     let prunedClients = 0;
     let heartbeatsSent = 0;
+    let prunedStreams = 0;
 
+    // First, clean up inactive streams
+    for (const [streamId, streamMeta] of this.sseStreams.entries()) {
+      const inactiveTime = now - streamMeta.lastActivity;
+
+      if (inactiveTime > streamInactivityMs) {
+        // Stream has been inactive for too long, remove it
+        this.sseStreams.delete(streamId);
+
+        // Also remove any lingering clients
+        const clients = this.sseClients.get(streamId);
+        if (clients) {
+          for (const client of clients) {
+            try {
+              client.controller.close();
+            } catch {
+              // Ignore close errors
+            }
+          }
+          this.sseClients.delete(streamId);
+        }
+
+        prunedStreams++;
+        logger.info("Closed inactive stream after timeout", {
+          streamId,
+          inactiveMinutes: Math.round(inactiveTime / 60000),
+          createdAt: new Date(streamMeta.createdAt).toISOString(),
+          lastActivity: new Date(streamMeta.lastActivity).toISOString(),
+        });
+      }
+    }
+
+    // Then, handle client health checks
     for (const [sessionId, clients] of this.sseClients.entries()) {
       const activeClients: typeof clients = [];
 
@@ -2541,7 +2232,7 @@ export class AtlasDaemon implements AppContext {
         totalClients++;
 
         // Check if connection is stale
-        if (now - client.lastActivity > timeoutMs) {
+        if (now - client.lastActivity > clientTimeoutMs) {
           try {
             client.controller.close();
           } catch {
@@ -2576,89 +2267,25 @@ export class AtlasDaemon implements AppContext {
         }
       }
 
-      // Update client list or remove empty sessions
+      // Update client list but DON'T remove the session even if no clients
+      // The stream metadata tracks activity separately
       if (activeClients.length === 0) {
         this.sseClients.delete(sessionId);
+        // Stream metadata persists in sseStreams map
       } else {
         this.sseClients.set(sessionId, activeClients);
       }
     }
 
-    if (prunedClients > 0 || totalClients > 10) {
+    if (prunedClients > 0 || prunedStreams > 0 || totalClients > 10) {
       logger.info("SSE health check completed", {
         totalClients,
         prunedClients,
+        prunedStreams,
         heartbeatsSent,
-        activeSessions: this.sseClients.size,
+        activeClientSessions: this.sseClients.size,
+        totalStreams: this.sseStreams.size,
       });
     }
-  }
-
-  /**
-   * Handle generic SSE requests for streaming responses
-   */
-  private handleGenericSSERequest(_c: unknown, sessionId: string): Response {
-    let streamController: ReadableStreamDefaultController<Uint8Array> | null = null;
-    const now = Date.now();
-
-    const stream = new ReadableStream<Uint8Array>({
-      start: (controller) => {
-        streamController = controller;
-
-        // Add client to SSE clients map with metadata
-        if (!this.sseClients.has(sessionId)) {
-          this.sseClients.set(sessionId, []);
-        }
-
-        const clientInfo = { controller, connectedAt: now, lastActivity: now };
-
-        this.sseClients.get(sessionId)!.push(clientInfo);
-
-        // Send initial connection event
-        const initialEvent = {
-          type: "connection_opened",
-          data: { sessionId, timestamp: new Date().toISOString() },
-        };
-        try {
-          controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(initialEvent)}\n\n`));
-        } catch (error) {
-          logger.error("Failed to send initial SSE event", { error });
-        }
-
-        logger.debug("SSE client connected", {
-          sessionId,
-          totalClients: this.sseClients.get(sessionId)!.length,
-        });
-      },
-      cancel: () => {
-        // Remove client from SSE clients map
-        const clients = this.sseClients.get(sessionId);
-        if (clients && streamController) {
-          const filteredClients = clients.filter(
-            (client) => client.controller !== streamController,
-          );
-          if (filteredClients.length === 0) {
-            this.sseClients.delete(sessionId);
-          } else {
-            this.sseClients.set(sessionId, filteredClients);
-          }
-
-          logger.debug("SSE client disconnected", {
-            sessionId,
-            remainingClients: filteredClients.length,
-          });
-        }
-      },
-    });
-
-    return new Response(stream, {
-      headers: {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
-        Connection: "keep-alive",
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Headers": "Cache-Control",
-      },
-    });
   }
 }

@@ -12,6 +12,14 @@
  */
 
 import { createAnthropic } from "@ai-sdk/anthropic";
+import type { AtlasTools } from "@atlas/agent-sdk";
+import {
+  type AgentResult,
+  AwaitingSupervisorDecision,
+  type StreamEmitter,
+  type ToolCall,
+  type ToolResult,
+} from "@atlas/agent-sdk";
 import type { JobSpecification } from "@atlas/config";
 import type {
   ActorInitParams,
@@ -23,11 +31,46 @@ import type {
   IAgentOrchestrator,
   SessionResult,
   SessionSupervisorConfig,
+  SessionUIMessageChunk,
 } from "@atlas/core";
-import type { Tool } from "ai";
+import {
+  HTTPStreamEmitter,
+  ReasoningResultStatus,
+  type ReasoningResultStatusType,
+  SessionSupervisorStatus,
+  type SessionSupervisorStatusType,
+} from "@atlas/core";
+import { type Logger, logger } from "@atlas/logger";
+import {
+  CoALAMemoryManager,
+  CoALAMemoryType,
+  createConversationContext,
+  type MECMFMemoryManager,
+  MemorySource,
+  MemoryType,
+  setupMECMF,
+} from "@atlas/memory";
+import { CoALALocalFileStorageAdapter } from "@atlas/storage";
 import { generateText, stepCountIs } from "ai";
 import { z } from "zod/v4";
+import { stripSourceAttributionTags } from "../../../packages/core/src/prompts/source-attribution.ts";
 import type { IWorkspaceArtifact, IWorkspaceSignal } from "../../types/core.ts";
+import { getWorkspaceMemoryDir } from "../../utils/paths.ts";
+import {
+  type HallucinationAnalysis,
+  HallucinationDetector,
+  HallucinationPatternDetector,
+} from "../services/hallucination-detector.ts";
+import {
+  type JeopardyValidationResult,
+  JeopardyValidator,
+} from "../services/jeopardy-validator.ts";
+import {
+  type FactSourceType,
+  type SemanticFact,
+  SemanticFactExtractor,
+} from "../services/semantic-fact-extractor.ts";
+import { getSupervisionConfig, SupervisionLevel } from "../supervision-levels.ts";
 
 // Canonical tool metadata types are provided by @atlas/agent-sdk
 
@@ -81,54 +124,9 @@ export interface IWorkspaceSupervisorForSession {
   };
 }
 
-import type { StreamEvent } from "@atlas/agent-sdk";
-import {
-  type AgentResult,
-  AwaitingSupervisorDecision,
-  type StreamEmitter,
-  type ToolCall,
-  type ToolResult,
-} from "@atlas/agent-sdk";
-import {
-  HTTPStreamEmitter,
-  NoOpStreamEmitter,
-  ReasoningResultStatus,
-  type ReasoningResultStatusType,
-  SessionSupervisorStatus,
-  type SessionSupervisorStatusType,
-  stripSourceAttributionTags,
-} from "@atlas/core";
-import { type Logger, logger } from "@atlas/logger";
-import {
-  CoALAMemoryManager,
-  CoALAMemoryType,
-  createConversationContext,
-  type MECMFMemoryManager,
-  MemorySource,
-  MemoryType,
-  setupMECMF,
-} from "@atlas/memory";
-import { CoALALocalFileStorageAdapter } from "@atlas/storage";
-import { getWorkspaceMemoryDir } from "../../utils/paths.ts";
-import {
-  type HallucinationAnalysis,
-  HallucinationDetector,
-  HallucinationPatternDetector,
-} from "../services/hallucination-detector.ts";
-import {
-  type JeopardyValidationResult,
-  JeopardyValidator,
-} from "../services/jeopardy-validator.ts";
-import {
-  type FactSourceType,
-  type SemanticFact,
-  SemanticFactExtractor,
-} from "../services/semantic-fact-extractor.ts";
-import { getSupervisionConfig, SupervisionLevel } from "../supervision-levels.ts";
-
 export interface SessionContext {
   sessionId: string;
-  workspaceId?: string;
+  workspaceId: string;
   signal: IWorkspaceSignal;
   payload: Record<string, unknown>;
   jobSpec?: JobSpecification;
@@ -193,7 +191,7 @@ export interface LLMValidationResult {
 export class SessionSupervisorActor implements BaseActor {
   readonly type: "session" = "session";
   private sessionId: string;
-  private workspaceId?: string;
+  private workspaceId: string;
   private logger: Logger;
   id: string;
   private sessionContext?: SessionContext;
@@ -229,7 +227,8 @@ export class SessionSupervisorActor implements BaseActor {
   private mecmfManager?: MECMFMemoryManager; // MECMF memory manager for prompt enhancement
 
   // Stream management
-  private baseStreamEmitter?: StreamEmitter;
+  private baseStreamEmitter?: StreamEmitter<SessionUIMessageChunk>;
+  private sessionFinishEmitted = false; // Track if session-finish was already emitted
   private streamMetrics = {
     totalEvents: 0,
     filteredEvents: 0,
@@ -399,18 +398,24 @@ export class SessionSupervisorActor implements BaseActor {
       });
     }
 
-    // End streaming
-    if (this.baseStreamEmitter) {
-      this.streamSessionEvent("session.completed", {
-        totalAgents: this.streamMetrics.agentMetrics.size,
-        totalEvents: this.streamMetrics.totalEvents,
-        filteredEvents: this.streamMetrics.filteredEvents,
+    // Only emit session-finish if not already emitted during normal execution
+    if (!this.sessionFinishEmitted && this.baseStreamEmitter) {
+      this.baseStreamEmitter.emit({
+        type: "data-session-finish",
+        data: {
+          sessionId: this.sessionId,
+          workspaceId: this.workspaceId,
+          status: this.status,
+          source: "shutdown",
+        },
       });
-
-      void this.baseStreamEmitter.end();
-      this.baseStreamEmitter = undefined;
+      this.sessionFinishEmitted = true;
+      this.logger.debug("Emitted session-finish event during shutdown", {
+        sessionId: this.sessionId,
+        status: this.status,
+      });
     }
-
+    this.baseStreamEmitter?.end();
     // Clear heavy memory objects to prevent leaks
     this.cleanupMemoryObjects();
   }
@@ -538,21 +543,21 @@ export class SessionSupervisorActor implements BaseActor {
 
     // Initialize streaming if streamId provided
     if (context.streamId) {
-      this.baseStreamEmitter = new HTTPStreamEmitter(
+      this.baseStreamEmitter = new HTTPStreamEmitter<SessionUIMessageChunk>(
         context.streamId,
         context.sessionId,
-        Deno.env.get("ATLAS_DAEMON_URL") || "http://localhost:8080",
         this.logger,
       );
 
       // Emit session start event
-      this.streamSessionEvent("session_started", {
-        sessionId: context.sessionId,
-        signalId: context.signal.id,
-        workspaceId: context.workspaceId,
+      this.baseStreamEmitter.emit({
+        type: "data-session-start",
+        data: {
+          sessionId: context.sessionId,
+          signalId: context.signal.id,
+          workspaceId: context.workspaceId,
+        },
       });
-    } else {
-      this.baseStreamEmitter = new NoOpStreamEmitter();
     }
 
     this.logger.info("Session initialized", {
@@ -824,118 +829,178 @@ export class SessionSupervisorActor implements BaseActor {
     this.executionStartTime = new Date();
 
     const sessionStartTime = Date.now();
+    let summary: SessionSummary | undefined;
 
-    // Create execution plan
-    const plan = await this.createExecutionPlan();
+    try {
+      // Create execution plan
+      const plan = await this.createExecutionPlan();
 
-    const allResults: AgentResult[] = [];
-    let lastConfidenceResults: ConfidenceAnalysis | undefined;
+      const allResults: AgentResult[] = [];
+      let lastConfidenceResults: ConfidenceAnalysis | undefined;
 
-    // Execute each phase
-    for (const [phaseIndex, phase] of plan.phases.entries()) {
-      this.logger.info("Executing phase", {
-        phaseIndex: phaseIndex + 1,
-        phaseName: phase.name,
-        strategy: phase.executionStrategy,
-        agentCount: phase.agents.length,
-      });
-
-      const phaseResults = await this.executePhase(phase, allResults);
-      allResults.push(...phaseResults);
-
-      // Stop the session immediately if severe hallucination was detected
-      if (this.hallucinationTermination) {
-        this.logger.error("Session terminated due to severe hallucination", {
-          agentId: this.hallucinationTermination.agentId,
-          confidence: this.hallucinationTermination.confidence,
-          issues: this.hallucinationTermination.issues,
+      // Execute each phase
+      for (const [phaseIndex, phase] of plan.phases.entries()) {
+        this.logger.info("Executing phase", {
+          phaseIndex: phaseIndex + 1,
+          phaseName: phase.name,
+          strategy: phase.executionStrategy,
+          agentCount: phase.agents.length,
         });
-        break;
-      }
 
-      // Evaluate progress after each phase (non-hallucination controls)
-      const shouldContinue = this.evaluateProgress(allResults, plan);
-      if (!shouldContinue) {
-        this.logger.info("Session completion criteria met, stopping execution");
-        // Optional: capture confidence results for later summary
-        try {
-          lastConfidenceResults = await this.analyzeResultConfidence(allResults);
-        } catch (error) {
-          this.logger.warn("Confidence analysis failed after early stop", {
-            error: error instanceof Error ? error.message : String(error),
+        const phaseResults = await this.executePhase(phase, allResults);
+        allResults.push(...phaseResults);
+
+        // Stop the session immediately if severe hallucination was detected
+        if (this.hallucinationTermination) {
+          this.logger.error("Session terminated due to severe hallucination", {
+            agentId: this.hallucinationTermination.agentId,
+            confidence: this.hallucinationTermination.confidence,
+            issues: this.hallucinationTermination.issues,
           });
+          break;
         }
-        break;
+
+        // Evaluate progress after each phase (non-hallucination controls)
+        const shouldContinue = this.evaluateProgress(allResults, plan);
+        if (!shouldContinue) {
+          this.logger.info("Session completion criteria met, stopping execution");
+          // Optional: capture confidence results for later summary
+          try {
+            lastConfidenceResults = await this.analyzeResultConfidence(allResults);
+          } catch (error) {
+            this.logger.warn("Confidence analysis failed after early stop", {
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
+          break;
+        }
       }
-    }
 
-    // Store agent results as artifact
-    if (allResults.length > 0) {
-      const agentResultsArtifact: IWorkspaceArtifact = {
-        id: crypto.randomUUID(),
-        type: "agent_results",
-        data: allResults,
-        createdAt: new Date(),
-        createdBy: this.sessionId,
-      };
-      this.artifacts.push(agentResultsArtifact);
-
-      this.logger.info("Stored agent results as artifact", {
-        artifactId: agentResultsArtifact.id,
-        resultCount: allResults.length,
-        sessionId: this.sessionId,
-      });
-
-      // Also store validation results if available
-      if (this.validationMap.size > 0) {
-        const validationData = Array.from(this.validationMap.entries()).map(([agentId, v]) => ({
-          agentId,
-          confidence: v.confidence,
-          jeopardyValidation: v.jeopardyValidation,
-        }));
-
-        const validationArtifact: IWorkspaceArtifact = {
+      // Store agent results as artifact
+      if (allResults.length > 0) {
+        const agentResultsArtifact: IWorkspaceArtifact = {
           id: crypto.randomUUID(),
-          type: "validation_results",
-          data: validationData,
+          type: "agent_results",
+          data: allResults,
           createdAt: new Date(),
           createdBy: this.sessionId,
         };
-        this.artifacts.push(validationArtifact);
+        this.artifacts.push(agentResultsArtifact);
 
-        this.logger.info("Stored validation results as artifact", {
-          artifactId: validationArtifact.id,
-          validatedAgents: validationData.length,
+        this.logger.info("Stored agent results as artifact", {
+          artifactId: agentResultsArtifact.id,
+          resultCount: allResults.length,
           sessionId: this.sessionId,
+        });
+
+        // Also store validation results if available
+        if (this.validationMap.size > 0) {
+          const validationData = Array.from(this.validationMap.entries()).map(([agentId, v]) => ({
+            agentId,
+            confidence: v.confidence,
+            jeopardyValidation: v.jeopardyValidation,
+          }));
+
+          const validationArtifact: IWorkspaceArtifact = {
+            id: crypto.randomUUID(),
+            type: "validation_results",
+            data: validationData,
+            createdAt: new Date(),
+            createdBy: this.sessionId,
+          };
+          this.artifacts.push(validationArtifact);
+
+          this.logger.info("Stored validation results as artifact", {
+            artifactId: validationArtifact.id,
+            validatedAgents: validationData.length,
+            sessionId: this.sessionId,
+          });
+        }
+      }
+
+      // Generate session summary
+      const duration = Date.now() - sessionStartTime;
+      summary = this.generateSessionSummary(allResults, plan, duration, lastConfidenceResults);
+
+      // Update execution tracking
+      this.lastSessionSummary = summary;
+      this.agentResults = allResults;
+      this.isExecuting = false;
+      this.executionEndTime = new Date();
+
+      // Handle memory operations based on job configuration
+      await this.handleMemoryOperations(summary);
+
+      // Perform session lifecycle memory management
+      await this.performSessionMemoryLifecycle(summary);
+
+      this.logger.info("Session execution completed", {
+        sessionId: this.sessionId,
+        status: summary.status,
+        phases: summary.totalPhases,
+        agents: summary.totalAgents,
+        duration,
+      });
+
+      return summary;
+    } catch (error) {
+      // Create error summary if execution failed
+      const duration = Date.now() - sessionStartTime;
+      if (!summary) {
+        summary = {
+          sessionId: this.sessionId,
+          status: ReasoningResultStatus.FAILED,
+          totalPhases: 0,
+          totalAgents: 0,
+          completedPhases: 0,
+          executedAgents: 0,
+          duration,
+          reasoning: "Session failed with error",
+          results: [],
+          failureReason: error instanceof Error ? error.message : String(error),
+        };
+        this.lastSessionSummary = summary;
+      }
+
+      this.isExecuting = false;
+      this.executionEndTime = new Date();
+
+      this.logger.error("Session execution failed", {
+        sessionId: this.sessionId,
+        error: error instanceof Error ? error.message : String(error),
+        duration,
+      });
+
+      throw error;
+    } finally {
+      // Always emit session-finish event to trigger queue rotation
+      // This is critical for proper SSE stream synchronization
+      if (this.baseStreamEmitter && !this.sessionFinishEmitted) {
+        const finalStatus = summary?.status || ReasoningResultStatus.FAILED;
+        const finalDuration = Date.now() - sessionStartTime;
+
+        this.baseStreamEmitter.emit({
+          type: "data-session-finish",
+          data: {
+            sessionId: this.sessionId,
+            workspaceId: this.workspaceId,
+            status: finalStatus,
+            duration: finalDuration,
+            source: "execution",
+          },
+        });
+
+        this.sessionFinishEmitted = true;
+
+        this.logger.debug("Emitted session-finish event for stream rotation", {
+          sessionId: this.sessionId,
+          streamId: this.sessionContext?.streamId,
+          status: finalStatus,
+          wasError: !summary || summary.status === ReasoningResultStatus.FAILED,
+          source: "execution",
         });
       }
     }
-
-    // Generate session summary
-    const duration = Date.now() - sessionStartTime;
-    const summary = this.generateSessionSummary(allResults, plan, duration, lastConfidenceResults);
-
-    // Update execution tracking
-    this.lastSessionSummary = summary;
-    this.agentResults = allResults;
-    this.isExecuting = false;
-    this.executionEndTime = new Date();
-
-    // Handle memory operations based on job configuration
-    await this.handleMemoryOperations(summary);
-
-    // Perform session lifecycle memory management
-    await this.performSessionMemoryLifecycle(summary);
-
-    this.logger.info("Session execution completed", {
-      sessionId: this.sessionId,
-      status: summary.status,
-      phases: summary.totalPhases,
-      agents: summary.totalAgents,
-      duration,
-    });
-
-    return summary;
   }
 
   private async executePhase(
@@ -1102,7 +1167,6 @@ export class SessionSupervisorActor implements BaseActor {
     agentTask: AgentTask,
     previousResults: AgentResult[],
     _phaseResults: AgentResult[],
-    phaseName: string,
   ): Promise<AgentResult> {
     const startTime = Date.now();
 
@@ -1139,10 +1203,9 @@ export class SessionSupervisorActor implements BaseActor {
     });
 
     // Stream agent start
-    this.streamSessionEvent("agent.started", {
-      agentId: agentTask.agentId,
-      task: agentTask.task,
-      phase: phaseName,
+    this.baseStreamEmitter?.emit({
+      type: "data-agent-start",
+      data: { agentId: agentTask.agentId, task: agentTask.task },
     });
 
     let result: AgentResult;
@@ -1310,24 +1373,8 @@ export class SessionSupervisorActor implements BaseActor {
           agentTools: agentExecutionConfig.tools, // Pass agent-specific tools
           additionalContext: { input, reasoning: agentTask.reasoning },
           // Pass callback for stream events
-          onStreamEvent: (event: unknown): void => {
-            // Normalize unknown events to a minimal shape without using any-casts
-            let normalized: { type: string; [key: string]: unknown };
-            if (
-              typeof event === "object" &&
-              event !== null &&
-              "type" in event &&
-              typeof (event as Record<string, unknown>)["type"] === "string"
-            ) {
-              const evtObj = event as Record<string, unknown>;
-              normalized = { type: String(evtObj["type"]), ...evtObj } as {
-                type: string;
-                [key: string]: unknown;
-              };
-            } else {
-              normalized = { type: "custom", data: event };
-            }
-            this.handleAgentStreamEvent(agentTask.agentId, phaseName, normalized);
+          onStreamEvent: (event) => {
+            this.baseStreamEmitter?.emit(event);
           },
         },
       );
@@ -1356,11 +1403,9 @@ export class SessionSupervisorActor implements BaseActor {
         toolResults: isExecResult(orchestratorResult) ? or.toolResults : undefined,
       };
 
-      // Stream agent completion
-      this.streamSessionEvent("agent.completed", {
-        agentId: agentTask.agentId,
-        duration: Date.now() - startTime,
-        success: true,
+      this.baseStreamEmitter?.emit({
+        type: "data-agent-finish",
+        data: { agentId: agentTask.agentId, duration: Date.now() - startTime },
       });
     } catch (error) {
       // Check if it's an approval exception
@@ -1368,11 +1413,13 @@ export class SessionSupervisorActor implements BaseActor {
         return await this.handleApprovalRequest(error, agentTask, startTime);
       }
 
-      // Stream agent failure
-      this.streamSessionEvent("agent.failed", {
-        agentId: agentTask.agentId,
-        duration: Date.now() - startTime,
-        error: error instanceof Error ? error.message : String(error),
+      this.baseStreamEmitter?.emit({
+        type: "data-agent-error",
+        data: {
+          agentId: agentTask.agentId,
+          duration: Date.now() - startTime,
+          error: error instanceof Error ? error.message : String(error),
+        },
       });
 
       this.logger.error("Agent orchestrator execution failed", {
@@ -1386,7 +1433,7 @@ export class SessionSupervisorActor implements BaseActor {
         {
           agentId: agentTask.agentId,
           task:
-            String(prompt).length > 100 ? String(prompt).substring(0, 97) + "..." : String(prompt), // Truncate long prompts
+            String(prompt).length > 100 ? `${String(prompt).substring(0, 97)}...` : String(prompt), // Truncate long prompts
           input,
           output: null,
           duration,
@@ -1652,14 +1699,7 @@ export class SessionSupervisorActor implements BaseActor {
           agentOutput: result.output,
           agentId: result.agentId,
         });
-        this.streamSessionEvent("jeopardy.validation", {
-          agentId: result.agentId,
-          answersTask: jeopardyResult.answersTask,
-          completeness: jeopardyResult.completeness,
-          confidence: jeopardyResult.confidence,
-          issues: jeopardyResult.issues,
-          note: "observation-only; no retries or termination",
-        });
+
         if (jeopardyResult.issues.some((i) => i.severity === "critical")) {
           this.logger.warn("Jeopardy critical issues detected (observation-only)", {
             agentId: result.agentId,
@@ -1926,7 +1966,7 @@ For each agent, call the plan_agent_execution tool with:
 Think step by step about the best approach to handle this signal, then use the tools to create the structured plan.`;
   }
 
-  private createPlanningTools(): Record<string, Tool> {
+  private createPlanningTools(): AtlasTools {
     return {
       plan_agent_execution: {
         description: "Plan the execution of an agent with a specific task",
@@ -2422,7 +2462,7 @@ Think step by step about the best approach to handle this signal, then use the t
       // Create working memory summary from session results
       const summaryContent = this.buildWorkingMemorySummary(summary);
 
-      await memoryManager.rememberWithMetadata(
+      memoryManager.rememberWithMetadata(
         `session-summary-${this.sessionId}`,
         JSON.stringify(summaryContent),
         {
@@ -2438,7 +2478,7 @@ Think step by step about the best approach to handle this signal, then use the t
 
       // Store individual agent results as working memories
       for (const result of summary.results) {
-        await memoryManager.rememberWithMetadata(
+        memoryManager.rememberWithMetadata(
           `agent-result-${result.agentId}-${this.sessionId}`,
           {
             agentId: result.agentId,
@@ -2881,86 +2921,5 @@ Think step by step about the best approach to handle this signal, then use the t
       duration,
       timestamp: new Date().toISOString(),
     };
-  }
-
-  // Jeopardy auto-repair removed; validator is observation-only
-
-  // Central stream event handler - all agent streams flow through here
-  private handleAgentStreamEvent(
-    agentId: string,
-    phase: string,
-    event: { type: string; [key: string]: unknown },
-  ): void {
-    // Update metrics
-    this.streamMetrics.totalEvents++;
-    const agentMetrics = this.streamMetrics.agentMetrics.get(agentId) || { events: 0, errors: 0 };
-    agentMetrics.events++;
-
-    if (event.type === "error") {
-      this.streamMetrics.errorEvents++;
-      agentMetrics.errors++;
-    }
-
-    this.streamMetrics.agentMetrics.set(agentId, agentMetrics);
-
-    // Enrich event with session context
-    const enrichedEvent = this.enrichStreamEvent(
-      event,
-      agentId,
-      phase,
-    ) as unknown as import("@atlas/agent-sdk").StreamEvent;
-
-    // Emit supervised event
-    this.baseStreamEmitter?.emit(enrichedEvent);
-  }
-
-  // Enrich events with session metadata
-  private enrichStreamEvent(
-    event: { type: string; [key: string]: unknown },
-    agentId: string,
-    phase: string,
-  ): StreamEvent {
-    // Create session metadata
-    const sessionMetadata = {
-      sessionId: this.sessionId,
-      agentId,
-      phase,
-      timestamp: Date.now(),
-      sequenceNumber: this.streamMetrics.totalEvents,
-    };
-
-    // Special handling for text events - add agent prefix
-    if (event.type === "text") {
-      return {
-        type: "text",
-        content: `[${agentId}]: ${String((event as { content?: unknown }).content ?? "")}`,
-      } as StreamEvent;
-    }
-
-    // For other event types, add metadata if supported
-    if (event.type === "custom") {
-      return {
-        type: "custom",
-        eventType:
-          typeof (event as { eventType?: unknown }).eventType === "string"
-            ? String((event as { eventType?: unknown }).eventType)
-            : "custom",
-        data: {
-          ...(typeof (event as { data?: unknown }).data === "object" &&
-          (event as { data?: unknown }).data !== null
-            ? (event as { data?: Record<string, unknown> }).data!
-            : { originalData: (event as { data?: unknown }).data }),
-          metadata: sessionMetadata,
-        },
-      } as StreamEvent;
-    }
-
-    // For events that don't support metadata, map to a generic custom event
-    return { type: "custom", eventType: "unknown", data: { original: event } } as StreamEvent;
-  }
-
-  // Stream session-level events
-  private streamSessionEvent(eventType: string, data: unknown): void {
-    this.baseStreamEmitter?.emit({ type: "custom", eventType: `session.${eventType}`, data });
   }
 }

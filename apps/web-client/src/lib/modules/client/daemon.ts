@@ -3,6 +3,8 @@
  * All CLI commands should use this to communicate with the daemon
  */
 
+import type { LibraryItem, StoreItemInput } from "../../../../../../src/core/library/types.ts";
+
 export interface DaemonClientOptions {
   daemonUrl: string;
   timeout?: number;
@@ -38,25 +40,6 @@ export interface LibrarySearchQuery {
   until?: string;
   limit?: number;
   offset?: number;
-}
-
-export interface LibraryItem {
-  id: string;
-  type: string;
-  name: string;
-  description?: string;
-  metadata: {
-    format: string;
-    source: string;
-    session_id?: string;
-    agent_ids?: string[];
-    custom_fields?: Record<string, any>;
-  };
-  created_at: string;
-  updated_at: string;
-  tags: string[];
-  size_bytes: number;
-  workspace_id?: string;
 }
 
 export interface LibrarySearchResult {
@@ -377,6 +360,37 @@ export class DaemonClient {
   async getLibraryStats(): Promise<LibraryStats> {
     const response = await this.makeRequest("/api/library/stats");
     return response;
+  }
+
+  /**
+   * Create library item from File upload
+   * Web clients upload files directly - all metadata extracted from File object
+   */
+  async createLibraryItem(
+    file: File,
+  ): Promise<{
+    success: boolean;
+    itemId: string;
+    message: string;
+    item: StoreItemInput;
+    path: string;
+  }> {
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const response = await this.makeRequest("/api/library", {
+      method: "POST",
+      body: formData, // FormData sets Content-Type automatically
+    });
+    return response;
+  }
+
+  /**
+   * Download library item as file
+   */
+  async downloadLibraryItem(itemId: string): Promise<Blob> {
+    const response = await this.makeRequest(`/api/library/${itemId}/download`, { method: "GET" });
+    return response.blob();
   }
 
   /**

@@ -1,4 +1,6 @@
 import { getContext, setContext } from "svelte";
+import { SvelteMap } from "svelte/reactivity";
+import { DaemonClient } from "./modules/client/daemon.ts";
 
 const KEY = Symbol();
 
@@ -15,60 +17,53 @@ function createKeyboard() {
     get state() {
       return state;
     },
-    update: (value: KeyboardValue | undefined) => (state = value),
+    update: (value: KeyboardValue | undefined) => {
+      state = value;
+    },
   };
 }
 
-export type SidebarVisibility = "expanded" | "collapsed";
-
-type StateSession = { sidebarVisible?: SidebarVisibility };
-
-function createStateSession(initialValue: StateSession = { sidebarVisible: "expanded" }) {
-  let state = $state(initialValue);
+function createStagedFiles() {
+  const state = new SvelteMap<string, { name: string; path: string }>();
 
   return {
     get state() {
       return state;
     },
-    update: (value: StateSession) => (state = value),
-    toggleSidebar: ({ value, persist = true }: { value: SidebarVisibility; persist?: boolean }) => {
-      state = { ...state, sidebarVisible: value };
-
-      if (persist) {
-        localStorage.setItem("tempest-sidebar-visibility", value);
-      }
+    add: (itemId: string, { name, path }: { name: string; path: string }) => {
+      state.set(itemId, { name, path });
+    },
+    remove: (itemId: string) => {
+      state.delete(itemId);
     },
   };
 }
 
 export type RouteConfig = ReturnType<typeof getRouteConfig>;
 export function getRouteConfig() {
-  return { api: {}, workspaces: {}, library: {}, settings: {} } as const;
+  return {
+    main: "/",
+    library: { list: "/library", item: (id: string) => `/library/${id}` },
+  } as const;
 }
 
-/**
- * Sets a global context containing the app's state. This has a couple quirks which
- * merit explanation:
- * 1. The input is a query result from Tanstack Query, which is a rune. Destructuring or
- *    deriving state from this query doesn't correctly update context consumers, so it
- *    must remain intact when provided.
- * 2. The selected organization is passed in from the layout load function and _isn't_
- *    reactive. This is okay because the user's organization can only be changed by
- *    hard-navigating to a different org route, triggering a full page reload and thus
- *    instantiating a new context.
- *
- * @see https://svelte.dev/docs/svelte/context
- * @todo dig more into _why_ you can't expose derived values or destructure state within a
- *       context. This doesn't make a huge amount of sense based on my read of the docs.
- */
-export function setAppContext(initialSidebarVisibility?: SidebarVisibility) {
+export function setAppContext() {
   const routes = getRouteConfig();
   const keyboard = createKeyboard();
-  const stateSession = createStateSession({ sidebarVisible: initialSidebarVisibility });
+  const daemonClient = new DaemonClient({ daemonUrl: "http://localhost:8080" });
+  const stagedFiles = createStagedFiles();
 
-  const ctx = { keyboard, routes, stateSession };
-  setContext(KEY, ctx);
-  return ctx;
+  async function uploadFile(file: File) {
+    const item = await daemonClient.createLibraryItem(file);
+
+    if (item.success) {
+      console.log(item);
+      stagedFiles.add(item.itemId, { name: item.item.name, path: item.path });
+    }
+  }
+
+  const ctx = { keyboard, routes, daemonClient, stagedFiles, uploadFile };
+  return setContext(KEY, ctx);
 }
 
 export function getAppContext() {

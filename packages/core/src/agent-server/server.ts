@@ -331,7 +331,7 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
    */
   async registerAgent(agent: AtlasAgent): Promise<void> {
     await this.agentRegistry.registerAgent(agent);
-    await this.registerSingleAgentTool(agent.metadata);
+    this.registerSingleAgentTool(agent.metadata);
     const agentId = agent.metadata.id;
     this.server.registerResource(
       `agents/${agentId}/expertise`,
@@ -428,7 +428,6 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
         };
       }
 
-      console.error("Halp", error);
       this.#logger.error("Agent execution failed", { agentId, error });
       throw error;
     }

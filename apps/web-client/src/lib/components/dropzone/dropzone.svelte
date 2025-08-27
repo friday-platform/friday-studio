@@ -4,7 +4,7 @@ import type { Snippet } from "svelte";
 type Props = {
   accept: string[];
   maxSize: number;
-  onDrop: (file: File) => void;
+  onDrop: (files: File[]) => void;
   children?: Snippet;
   showHighlight?: boolean;
   name?: string;
@@ -13,7 +13,7 @@ type Props = {
   label?: string;
 };
 
-const {
+let {
   accept,
   onDrop,
   maxSize,
@@ -62,18 +62,14 @@ function handleDrop(e: DragEvent) {
   if (!e.dataTransfer?.items) {
     return;
   }
-  const file = Array.from(e.dataTransfer.files)[0];
-  if (file) {
+
+  const files = Array.from(e.dataTransfer.files).filter((file) => {
     const validation = validateFile(file);
 
-    if (validation === "invalid_size") {
-      alert("Please upload an file smaller than 20MB");
-    } else if (validation === "invalid_type") {
-      alert("Invalid file type");
-    } else {
-      onDrop(file);
-    }
-  }
+    return validation === "valid";
+  });
+
+  onDrop(files);
 }
 
 function handleChange(e: Event) {
@@ -83,23 +79,13 @@ function handleChange(e: Event) {
     return;
   }
 
-  const file = target.files[0];
+  const files = Array.from(target.files).filter((file) => {
+    const validation = validateFile(file);
 
-  if (!file) {
-    alert("Unable to upload file");
-  }
+    return validation === "valid";
+  });
 
-  const validation = validateFile(file);
-
-  if (validation === "invalid_size") {
-    alert("Please upload an image smaller than 20MB");
-    target.value = "";
-  } else if (validation === "invalid_type") {
-    alert("Only png, jpg, and svg images are supported");
-    target.value = "";
-  } else {
-    onDrop(file);
-  }
+  onDrop(files);
 }
 </script>
 
@@ -123,6 +109,7 @@ function handleChange(e: Event) {
 		ondrop={handleDrop}
 		accept={accept.join(',')}
 		type="file"
+		multiple
 		{id}
 		{name}
 		{required}
@@ -140,7 +127,6 @@ function handleChange(e: Event) {
 		transition: all 150ms ease;
 
 		&.dragging,
-		&.showHighlight:hover,
 		&.showHighlight:has(input:focus) {
 			background-color: var(--highlight-2);
 		}

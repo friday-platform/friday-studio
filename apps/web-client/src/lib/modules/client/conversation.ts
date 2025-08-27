@@ -1,5 +1,7 @@
+import type { SessionUIMessageChunk } from "@atlas/core";
 import { createAtlasClient } from "@atlas/oapi-client";
-import { createEventSource } from "../../../../../../src/core/agents/remote/adapters/sse-utils.ts";
+import { stringifyError } from "@atlas/utils";
+import { createEventSource } from "eventsource-client";
 import { DaemonClient } from "./daemon.ts";
 
 export interface ConversationSession {
@@ -40,7 +42,7 @@ export class ConversationClient {
     createOnly?: boolean;
   }): Promise<ConversationSession> {
     // Use the new direct daemon stream API
-    const url = `${this.daemonUrl}/api/streams`;
+    const url = `${this.daemonUrl}/api/sse`;
     // Create session without sending an initial message
     const body = {
       userId: options?.userId || this.userId,
@@ -168,68 +170,167 @@ export class ConversationClient {
    * @FIXME: Create a dedicated event type from
    * https://github.com/tempestteam/atlas/blob/db7941f26370ca923ef4ede1d026386b765d028e/src/core/daemon-capabilities.ts#L104
    */
+  // async *streamEvents(
+  //   sessionId: string,
+  //   sseUrl?: string,
+  //   abortSignal?: AbortSignal,
+  // ): AsyncIterableIterator<unknown> {
+  //   // Use the SSE URL from the session if not provided
+  //   const streamUrl =
+  //     sseUrl || `${this.daemonUrl}/system/conversation/sessions/${sessionId}/stream`;
+
+  //   let eventSource: any = null;
+  //   try {
+  //     eventSource = await createEventSource({
+  //       url: streamUrl,
+  //       options: abortSignal ? { signal: abortSignal } : undefined,
+  //     });
+
+  //     for await (const message of eventSource.consume()) {
+  //       // Check if aborted
+  //       if (abortSignal?.aborted) {
+  //         break;
+  //       }
+
+  //       try {
+  //         const parsedData = JSON.parse(message.data);
+  //         const event: unknown = {
+  //           type: parsedData.type || "unknown",
+  //           data: parsedData.data || parsedData,
+  //           timestamp: parsedData.timestamp || new Date().toISOString(),
+  //           sessionId: parsedData.sessionId || sessionId,
+  //           messageId: message.id,
+  //           id: parsedData.id,
+  //         };
+
+  //         yield event;
+
+  //         // Only close the connection if explicitly requested
+  //         if (
+  //           // @ts-expect-error event is currently untyped
+  //           event.type === "message_complete" &&
+  //           // @ts-expect-error event is currently untyped
+  //           event.data?.closeConnection === true
+  //         ) {
+  //           if (eventSource && eventSource.close) {
+  //             eventSource.close();
+  //           }
+  //           break;
+  //         }
+  //       } catch (error) {
+  //         console.error("Failed to parse SSE message:", error, message);
+  //         // Continue processing other messages
+  //       }
+  //     }
+  //   } catch (error) {
+  //     // throw new Error(
+  //     // 	`SSE connection failed: ${error instanceof Error ? error.message : String(error)}`
+  //     // );
+  //   } finally {
+  //     // Ensure the connection is closed
+  //     if (eventSource && eventSource.close) {
+  //       eventSource.close();
+  //     }
+  //   }
+  // }
+
   async *streamEvents(
     sessionId: string,
-    sseUrl?: string,
+    sseUrl: string,
     abortSignal?: AbortSignal,
-  ): AsyncIterableIterator<unknown> {
-    // Use the SSE URL from the session if not provided
-    const streamUrl =
-      sseUrl || `${this.daemonUrl}/system/conversation/sessions/${sessionId}/stream`;
-
-    let eventSource: any = null;
+  ): AsyncIterableIterator<SessionUIMessageChunk> {
     try {
-      eventSource = await createEventSource({
-        url: streamUrl,
-        options: abortSignal ? { signal: abortSignal } : undefined,
-      });
-
-      for await (const message of eventSource.consume()) {
-        // Check if aborted
+      const eventSource = createEventSource(sseUrl);
+      for await (const { data, id } of eventSource) {
         if (abortSignal?.aborted) {
           break;
         }
 
         try {
-          const parsedData = JSON.parse(message.data);
+          const parsedData = JSON.parse(data);
           const event: unknown = {
             type: parsedData.type || "unknown",
             data: parsedData.data || parsedData,
             timestamp: parsedData.timestamp || new Date().toISOString(),
             sessionId: parsedData.sessionId || sessionId,
-            messageId: message.id,
+            messageId: id,
             id: parsedData.id,
           };
 
+          console.log("Data: %s", data);
           yield event;
-
-          // Only close the connection if explicitly requested
-          if (
-            // @ts-expect-error event is currently untyped
-            event.type === "message_complete" &&
-            // @ts-expect-error event is currently untyped
-            event.data?.closeConnection === true
-          ) {
-            if (eventSource && eventSource.close) {
-              eventSource.close();
-            }
-            break;
-          }
         } catch (error) {
-          console.error("Failed to parse SSE message:", error, message);
-          // Continue processing other messages
+          console.error("💩💩💩", error);
         }
       }
     } catch (error) {
-      // throw new Error(
-      // 	`SSE connection failed: ${error instanceof Error ? error.message : String(error)}`
-      // );
-    } finally {
-      // Ensure the connection is closed
-      if (eventSource && eventSource.close) {
-        eventSource.close();
+      // Handle specific connection errors with user-friendly messages
+      const message = stringifyError(error);
+
+      // Check for daemon shutdown or connection loss
+      if (
+        message.includes("error reading a body from connection") ||
+        message.includes("Connection refused") ||
+        message.includes("ECONNREFUSED")
+      ) {
+        throw new Error("Connection to Atlas daemon lost. It may have been stopped or restarted.");
       }
+
+      // Check for network issues
+      if (
+        message.includes("Failed to fetch") ||
+        message.includes("NetworkError") ||
+        message.includes("ERR_NETWORK")
+      ) {
+        throw new Error(
+          "Network connection to Atlas daemon failed. Please check your network and daemon status.",
+        );
+      }
+
+      // Default error message for other cases
+      throw new Error(`SSE connection error: ${message}`);
     }
+  }
+
+  createMessageStream(
+    sseUrl: string,
+    abortSignal?: AbortSignal,
+  ): ReadableStream<SessionUIMessageChunk> {
+    const eventSource = createEventSource(sseUrl);
+
+    return new ReadableStream<SessionUIMessageChunk>({
+      start(controller) {
+        // Start consuming the async iterator in the background
+        (async () => {
+          try {
+            for await (const { data } of eventSource) {
+              if (abortSignal?.aborted) {
+                controller.close();
+                break;
+              }
+
+              try {
+                const parsedData = JSON.parse(data);
+
+                controller.enqueue(parsedData);
+              } catch (error) {
+                // Skip malformed messages, don't break the stream
+                console.error("Parse error:", error);
+              }
+            }
+          } catch (error) {
+            controller.error(error);
+          } finally {
+            controller.close();
+          }
+        })();
+      },
+
+      cancel() {
+        // Clean up on stream cancellation
+        eventSource.close();
+      },
+    });
   }
 
   /**

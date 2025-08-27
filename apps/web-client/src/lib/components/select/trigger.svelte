@@ -4,7 +4,7 @@ import { getContext } from "./context";
 
 const { trigger } = getContext();
 
-const { children }: { children: Snippet } = $props();
+let { children }: { children: Snippet } = $props();
 </script>
 
 <button data-tempest {...$trigger} use:trigger>

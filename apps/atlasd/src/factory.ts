@@ -2,12 +2,22 @@ import type { WorkspaceManager } from "@atlas/workspace";
 import { cors } from "hono/cors";
 import { createFactory } from "hono/factory";
 import type { WorkspaceRuntime } from "../../../src/core/workspace-runtime.ts";
+import type { LibraryStorageAdapter } from "../../../src/core/storage/library-storage-adapter.ts";
+
+type SSEClient = {
+  controller: ReadableStreamDefaultController<Uint8Array>;
+  connectedAt: number;
+  lastActivity: number;
+};
+
+type SSEStreamMetadata = { createdAt: number; lastActivity: number; lastEmit: number };
 
 // Define app context that will be available to all routes
 export interface AppContext {
   runtimes: Map<string, WorkspaceRuntime>;
   startTime: number;
-  sseClients: Map<string, Array<{ controller: ReadableStreamDefaultController<Uint8Array> }>>;
+  sseClients: Map<string, SSEClient[]>;
+  sseStreams: Map<string, SSEStreamMetadata>;
   getWorkspaceManager(): WorkspaceManager;
 
   // Signal route methods
@@ -17,6 +27,9 @@ export interface AppContext {
   // Runtime management methods
   getWorkspaceRuntime(workspaceId: string): WorkspaceRuntime | undefined;
   destroyWorkspaceRuntime(workspaceId: string): Promise<void>;
+
+  // Library storage methods
+  getLibraryStorage(): LibraryStorageAdapter;
 }
 
 // Define variables available in context

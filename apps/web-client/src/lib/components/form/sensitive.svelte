@@ -6,7 +6,7 @@ import { FIELD_CONTEXT, getFieldContext } from "./context";
 
 type Props = { value?: string | number; variant?: "small" | "regular" };
 
-const { value = $bindable(), variant = "regular", ...rest }: Props & HTMLInputAttributes = $props();
+let { value = $bindable(), variant = "regular", ...rest }: Props & HTMLInputAttributes = $props();
 
 let id = $state<string>();
 
@@ -14,7 +14,7 @@ if (hasContext(FIELD_CONTEXT)) {
   id = getFieldContext().id;
 }
 
-const visible = $state(false);
+let visible = $state(false);
 </script>
 
 <div>
