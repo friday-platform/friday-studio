@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { ChatMessage } from "../../components/chat-message.tsx";
 import { Header } from "../../components/header.tsx";
 import { MessageHeader } from "../../components/message-header.tsx";
-import { ThinkingSpinner } from "../../components/thinking-spinner.tsx";
+import { Progress } from "../../components/progress.tsx";
 import { DAEMON_STATUS } from "../../constants/daemon-status.ts";
 import { useAppContext } from "../../contexts/app-context.tsx";
 import type { OutputEntry } from "../conversation/types.ts";
@@ -123,26 +123,6 @@ export const MessageBuffer = () => {
   }, [sseStream, sseAbortControllerRef]);
 
   useEffect(() => {
-    let interval: ReturnType<typeof setInterval> | null = null;
-
-    if (typingState.isTyping) {
-      interval = setInterval(() => {
-        setTypingState((prev) => ({ ...prev, elapsedSeconds: prev.elapsedSeconds + 1 }));
-      }, 1000);
-    } else {
-      if (interval) {
-        clearInterval(interval);
-      }
-    }
-
-    return () => {
-      if (interval) {
-        clearInterval(interval);
-      }
-    };
-  }, [typingState, setTypingState]);
-
-  useEffect(() => {
     if (!sseMessages) return;
 
     const output: OutputEntry[] = [];
@@ -205,29 +185,29 @@ export const MessageBuffer = () => {
             );
           }
 
-          if (entry.type === "thinking") {
-            return (
-              <Box key={entry.id} flexShrink={0} paddingX={2} flexDirection="column">
-                <Box height={1} />
-                <ChatMessage
-                  message={entry.content}
-                  hideHeader
-                  dimColor
-                  fixedHeight
-                  showCollapsible
-                />
-              </Box>
-            );
-          }
+          // if (entry.type === "thinking") {
+          //   return (
+          //     <Box key={entry.id} flexShrink={0} paddingX={2} flexDirection="column">
+          //       <Box height={1} />
+          //       <ChatMessage
+          //         message={entry.content}
+          //         hideHeader
+          //         dimColor
+          //         fixedHeight
+          //         showCollapsible
+          //       />
+          //     </Box>
+          //   );
+          // }
 
-          if (entry.type === "tool_call" || entry.type === "tool_result") {
-            return (
-              <Box key={entry.id} flexShrink={0} paddingX={2} flexDirection="column">
-                <Box height={1} />
-                <ToolCall metadata={entry.metadata} />
-              </Box>
-            );
-          }
+          // if (entry.type === "tool_call" || entry.type === "tool_result") {
+          //   return (
+          //     <Box key={entry.id} flexShrink={0} paddingX={2} flexDirection="column">
+          //       <Box height={1} />
+          //       <ToolCall metadata={entry.metadata} />
+          //     </Box>
+          //   );
+          // }
 
           if (entry.type === "error") {
             return (
@@ -254,7 +234,21 @@ export const MessageBuffer = () => {
 
       {typingState.isTyping && (
         <Box paddingX={1} paddingTop={1} flexShrink={0}>
-          <ThinkingSpinner elapsedSeconds={typingState.elapsedSeconds} />
+          <Progress
+            actions={(() => {
+              if (!sseMessages) return [];
+
+              const lastUserIndex = sseMessages.parts.findLastIndex(
+                (msg) => msg.type === "data-user-message",
+              );
+
+              // If no user message found, return empty
+              if (lastUserIndex === -1) return [];
+
+              // Return everything after the last user message
+              return sseMessages.parts.slice(lastUserIndex + 1);
+            })()}
+          />
         </Box>
       )}
     </Box>
