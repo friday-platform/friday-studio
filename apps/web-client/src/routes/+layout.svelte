@@ -1,16 +1,16 @@
 <script lang="ts">
-import { getAppContext, setAppContext } from "$lib/app-context.svelte";
+import { setAppContext } from "$lib/app-context.svelte";
 import favicon from "$lib/assets/favicon.svg";
 import AppContainer from "$lib/components/app/container.svelte";
 import AppSidebar from "$lib/components/app/sidebar.svelte";
 import KeyboardListener from "$lib/components/keyboard-listener.svelte";
+import { setClientContext } from "$lib/modules/client/context.svelte";
 import "../app.css";
 
 const { children } = $props();
 
-setAppContext();
-
-const { daemonClient, stagedFiles, uploadFile } = getAppContext();
+const { daemonClient, uploadFile } = setAppContext();
+setClientContext(daemonClient);
 </script>
 
 <svelte:head>

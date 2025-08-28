@@ -1,133 +1,36 @@
 <script lang="ts">
-import type { SessionUIMessageChunk } from "@atlas/core";
-import { readUIMessageStream } from "ai";
-import { onDestroy, onMount } from "svelte";
+import { onMount } from "svelte";
 import { getAppContext } from "$lib/app-context.svelte";
 import Button from "$lib/components/button.svelte";
 import Dropzone from "$lib/components/dropzone/dropzone.svelte";
 import { CustomIcons } from "$lib/components/icons/custom";
 import { IconSmall } from "$lib/components/icons/small";
-import { ConversationClient } from "$lib/modules/client/conversation.ts";
+import { getClientContext } from "$lib/modules/client/context.svelte";
 import { formatMessage } from "$lib/modules/messages/format";
 import Message from "$lib/modules/messages/message.svelte";
 import Progress from "$lib/modules/messages/progress.svelte";
-import { type OutputEntry } from "$lib/modules/messages/types";
-
-function getAtlasDaemonUrl() {
-  return "http://localhost:8080";
-}
 
 const { stagedFiles, daemonClient, uploadFile } = getAppContext();
 
+const ctx = getClientContext();
+
 let form = $state<HTMLFormElement | null>(null);
 let message = $state<string>("");
-let typingState = $state({ isTyping: false, elapsedSeconds: 0 });
-let conversationClient = $state<ConversationClient | null>(null);
-let conversationSessionId = $state<string | null>(null);
-let sseAbortController = $state<AbortController | null>(null);
-let sseStream = $state<ReadableStream<SessionUIMessageChunk> | null>(null);
-let output = $state<OutputEntry[]>([]);
-let user = $state<string>();
-
-$effect(() => {
-  async function getUser() {
-    if (!conversationClient || user) {
-      return;
-    }
-
-    const data = await conversationClient.getUser();
-
-    if (data.success) {
-      user = data.currentUser;
-    }
-  }
-
-  getUser();
-});
+let scrollContainer = $state<HTMLDivElement | null>(null);
+let userHasScrolled = $state(false);
+let animationFrameId = $state<number | null>(null);
 
 onMount(async () => {
-  try {
-    // Use "atlas-conversation" as the workspace ID for the conversation system workspace
-    const newConversationClient = new ConversationClient(
-      getAtlasDaemonUrl(),
-      "atlas-conversation",
-      "cli-user",
-    );
-
-    const session = await newConversationClient.createSession();
-
-    conversationSessionId = session.sessionId;
-
-    // Store the SSE URL for later use
-    newConversationClient.sseUrl = session.sseUrl;
-    conversationClient = newConversationClient;
-
-    // Create AbortController for SSE
-    sseAbortController = new AbortController();
-
-    const stream = conversationClient.createMessageStream(
-      newConversationClient.sseUrl,
-      sseAbortController?.signal,
-    );
-
-    sseStream = stream;
-
-    for await (const uiMessage of readUIMessageStream({ stream })) {
-      uiMessage.parts.forEach((part) => {
-        if (part.type === "data-session-start" && !typingState.isTyping) {
-          typingState.isTyping = true;
-        } else if (part.type === "data-session-finish") {
-          typingState.isTyping = false;
-        }
-      });
-
-      // Process messages with flatMap to handle typing indicator
-      output = uiMessage.parts.flatMap((part, index) => {
-        const formattedMessage = formatMessage(part, user);
-
-        // If this is a user message, check if there's a text message after it
-        if (part.type === "data-user-message") {
-          const hasTextAfter = uiMessage.parts
-            .slice(index + 1)
-            .some((p) => p.type === "text" && p.state === "done");
-
-          // Add typing indicator if no text message follows
-          if (!hasTextAfter) {
-            return formattedMessage
-              ? [
-                  formattedMessage,
-                  { id: `typing-${uiMessage.id}-${index}`, type: "typing", role: "assistant" },
-                ]
-              : [];
-          }
-        }
-
-        return formattedMessage ? [formattedMessage] : [];
-      });
-    }
-  } catch (error) {
-    // Clear any loading messages and show error
-    const errorMessage = error instanceof Error ? error.message : String(error);
-
-    console.error(`Failed to start Atlas daemon: ${errorMessage}`);
-  }
-});
-
-onDestroy(() => {
-  if (sseAbortController) {
-    sseAbortController.abort();
-    sseAbortController = null;
-  }
-
-  sseStream = null;
+  // animationFrameId = requestAnimationFrame(scrollToBottom);
+  ctx.setup();
 });
 
 $effect(() => {
   let interval: ReturnType<typeof setInterval> | null = null;
 
-  if (typingState.isTyping) {
+  if (ctx.typingState.isTyping) {
     interval = setInterval(() => {
-      typingState.elapsedSeconds += 1;
+      ctx.typingState.elapsedSeconds += 1;
     }, 1000);
   } else {
     if (interval) {
@@ -141,53 +44,80 @@ $effect(() => {
     }
   };
 });
+
+// Handle Scrolling
+function handleScroll() {
+  if (!scrollContainer) return;
+  const { scrollTop, scrollHeight, clientHeight } = scrollContainer;
+  const isAtBottom = Math.abs(scrollHeight - scrollTop - clientHeight) < 50;
+
+  // If user scrolls away from bottom, mark as manually scrolled
+  if (!isAtBottom) {
+    userHasScrolled = true;
+  }
+  // If user scrolls back to bottom, reset the flag
+  if (isAtBottom) {
+    userHasScrolled = false;
+  }
+}
+
+// Scroll to the bottom of the container
+function scrollToBottom() {
+  if (!scrollContainer) return;
+  scrollContainer.scrollTop = scrollContainer.scrollHeight;
+
+  animationFrameId = requestAnimationFrame(scrollToBottom);
+}
+
+// Auto-scroll when new logs are added, unless user has manually scrolled
+$effect(() => {
+  if (userHasScrolled && animationFrameId) {
+    cancelAnimationFrame(animationFrameId);
+    animationFrameId = null;
+  }
+
+  if (!userHasScrolled && !animationFrameId) {
+    animationFrameId = requestAnimationFrame(scrollToBottom);
+  }
+});
 </script>
 
-<div class="chat" class:has-messages={output.length > 0}>
-	<div class="messages">
+<div
+	class="chat"
+	class:has-messages={ctx.messages.filter(
+		(m) => m.type !== 'data-connection' && m.type !== 'data-heartbeat'
+	).length > 0}
+>
+	<div class="messages" bind:this={scrollContainer} onscroll={handleScroll}>
 		<div class="messages-inner">
-			{#each output as message (message.id)}
-				{#if message.type === 'typing'}
-					<!-- Typing indicator found, collect messages between user message and text -->
-					{@const intermediateMessages = (() => {
-						// Find the current typing indicator's index
-						const typingIndex = output.findIndex((msg) => msg.id === message.id);
+			{#each ctx.messages as message, index (index)}
+				{@const formattedMessage = formatMessage(message, ctx.user)}
 
-						// Find the previous request message
-						const requestIndex = output.findLastIndex(
-							(msg, idx) => idx < typingIndex && msg.type === 'request'
-						);
-
-						// Find the next text message (if any)
-						const textIndex = output.findIndex(
-							(msg, idx) => idx > typingIndex && msg.type === 'text'
-						);
-
-						// If no request found, return empty
-						if (requestIndex === -1) return [];
-
-						// Collect all messages between request and typing (or text if it exists)
-						const endIndex = textIndex !== -1 ? textIndex : typingIndex;
-
-						return output
-							.slice(requestIndex + 1, endIndex)
-							.filter(
-								(msg) => msg.type !== 'typing' && msg.type !== 'request' && msg.type !== 'text'
-							);
-					})()}
-
-					<Progress actions={intermediateMessages} />
-				{:else}
-					<!-- Render regular messages (request and text), skip intermediate types -->
-					{#if message.type === 'request' || message.type === 'text'}
-						<Message {message} />
-					{/if}
+				{#if formattedMessage && (formattedMessage.type === 'request' || formattedMessage.type === 'text')}
+					<Message message={formattedMessage} />
 				{/if}
 			{/each}
+
+			{#if ctx.typingState.isTyping}
+				{@const actionsAfterLastUser = (() => {
+					// Find the last data-user-message
+					const lastUserIndex = ctx.messages.findLastIndex(
+						(msg) => msg.type === 'data-user-message'
+					);
+
+					// If no user message found, return empty
+					if (lastUserIndex === -1) return [];
+
+					// Return everything after the last user message
+					return ctx.messages.slice(lastUserIndex + 1);
+				})()}
+
+				<Progress actions={actionsAfterLastUser} />
+			{/if}
 		</div>
 	</div>
 
-	{#if output.length === 0}
+	{#if ctx.messages.filter((m) => m.type !== 'data-connection' && m.type !== 'data-heartbeat').length === 0}
 		<h2>Welcome to Atlas</h2>
 	{/if}
 
@@ -204,7 +134,7 @@ $effect(() => {
 		onsubmit={async (e) => {
 			e.preventDefault();
 
-			if (!conversationClient || !conversationSessionId) {
+			if (!ctx.conversationClient || !ctx.conversationSessionId) {
 				return;
 			}
 
@@ -220,8 +150,12 @@ $effect(() => {
 					}
 				}
 
+				if (formMessage.trim().length === 0) {
+					return;
+				}
+
 				// Just send the message - the persistent SSE listener will handle the response
-				await conversationClient.sendMessage(conversationSessionId, formMessage);
+				await ctx.conversationClient.sendMessage(ctx.conversationSessionId, formMessage);
 
 				message = '';
 
@@ -247,7 +181,7 @@ $effect(() => {
 				>
 					<span class="file-drop-children">
 						<CustomIcons.Paperclip />
-						<span>Upload Files</span>
+						<span>Add Files</span>
 					</span>
 				</Dropzone>
 			</div>
@@ -354,7 +288,7 @@ $effect(() => {
 				block-size: var(--size-6);
 				margin-inline-start: var(--size-1);
 				position: relative;
-				inline-size: 94px;
+				inline-size: 4.6875rem;
 			}
 
 			.file-drop-children {
@@ -363,7 +297,6 @@ $effect(() => {
 				font-size: var(--font-size-2);
 				font-weight: var(--font-weight-5);
 				gap: var(--size-1-5);
-
 				inline-size: max-content;
 			}
 		}
