@@ -357,8 +357,8 @@ Generate improved search query (or return "suggestion" as undefined if current q
 async function searchWithRetries(
   searchParams: SearchParameters,
   tavilyClient: TavilyClient,
-  stream: StreamEmitter,
   options: { maxAttempts: number },
+  stream?: StreamEmitter,
   logger?: Logger,
 ): Promise<SearchResult[]> {
   const allResults: SearchResult[] = [];
@@ -366,9 +366,14 @@ async function searchWithRetries(
   let currentQueries = searchParams.queries;
 
   for (let attempt = 0; attempt < options.maxAttempts; attempt++) {
-    stream.emit({
-      type: "progress",
-      message: `Search attempt ${attempt + 1}/${options.maxAttempts}`,
+    const attemptMessage =
+      attempt > 0 && currentQueries !== searchParams.queries
+        ? `Searching web (attempt ${attempt + 1} of ${options.maxAttempts}, refined query)...`
+        : `Searching web (attempt ${attempt + 1} of ${options.maxAttempts})...`;
+
+    stream?.emit({
+      type: "data-tool-progress",
+      data: { toolName: "Research Agent", content: attemptMessage },
     });
 
     const batchResults = await Promise.allSettled(
@@ -395,10 +400,7 @@ async function searchWithRetries(
             query: failedQuery.query,
             reason: result.reason instanceof Error ? result.reason.message : String(result.reason),
           });
-          stream.emit({
-            type: "text",
-            content: `Search failed for query "${failedQuery.query}": ${result.reason}`,
-          });
+          // Log search failures but don't emit them as progress
         }
       }
     });
@@ -414,6 +416,14 @@ async function searchWithRetries(
           continue;
         }
       }
+    }
+
+    // Emit evaluation progress before evaluating
+    if (newResults.length > 0) {
+      stream?.emit({
+        type: "data-tool-progress",
+        data: { toolName: "Research Agent", content: "Evaluating result relevance..." },
+      });
     }
 
     const evaluated = await evaluateResults(newResults, logger);
@@ -433,6 +443,17 @@ async function searchWithRetries(
       };
       currentQueries = [modifiedQuery];
     }
+  }
+
+  // Emit final evaluation summary
+  if (allResults.length > 0) {
+    stream?.emit({
+      type: "data-tool-progress",
+      data: {
+        toolName: "Research Agent",
+        content: `Selected ${allResults.length} relevant results`,
+      },
+    });
   }
 
   return allResults;
@@ -515,7 +536,7 @@ async function extractTopResults(
   results: SearchResult[],
   query: string,
   tavilyClient: TavilyClient,
-  stream: StreamEmitter,
+  stream?: StreamEmitter,
   logger?: Logger,
 ): Promise<ExtractionResult> {
   const MAX_EXTRACTIONS = 15;
@@ -523,14 +544,35 @@ async function extractTopResults(
   const skipped = results.slice(MAX_EXTRACTIONS).map((r) => r.url);
 
   logger?.debug(`Starting extraction`, { urls: urls.length, skipped: skipped.length });
-  stream.emit({ type: "progress", message: `Extracting content from ${urls.length} URLs` });
+  // Initial extraction message removed - batch progress will be shown instead
 
   const successful: ExtractedContent[] = [];
   const failed: FailedExtraction[] = [];
 
   const BATCH_SIZE = 5;
+  const totalBatches = Math.ceil(urls.length / BATCH_SIZE);
+
   for (let i = 0; i < urls.length; i += BATCH_SIZE) {
     const batch = urls.slice(i, Math.min(i + BATCH_SIZE, urls.length));
+    const currentBatch = Math.floor(i / BATCH_SIZE) + 1;
+
+    if (totalBatches > 1) {
+      stream?.emit({
+        type: "data-tool-progress",
+        data: {
+          toolName: "Research Agent",
+          content: `Extracting content from ${urls.length} pages (batch ${currentBatch}/${totalBatches})...`,
+        },
+      });
+    } else {
+      stream?.emit({
+        type: "data-tool-progress",
+        data: {
+          toolName: "Research Agent",
+          content: `Extracting content from ${urls.length} pages...`,
+        },
+      });
+    }
 
     try {
       const response = await tavilyClient.extract(batch);
@@ -731,7 +773,7 @@ export const targetedResearchAgent = createAgent<string>({
   displayName: "Targeted Research Agent",
   version: "1.0.0",
   description:
-    "Performs web research: issues structured searches, extracts content from sources, and synthesizes a result with links.",
+    "Run targeted web research: executes multi-query search with optional domain focus, extracts page content, and returns a cited synthesis.",
   expertise: {
     domains: ["research", "web-search", "information-synthesis"],
     capabilities: [
@@ -760,7 +802,10 @@ export const targetedResearchAgent = createAgent<string>({
     const tavilyClient = tavily({ apiKey });
 
     try {
-      stream.emit({ type: "progress", message: "Parsing query..." });
+      stream?.emit({
+        type: "data-tool-progress",
+        data: { toolName: "Research Agent", content: "Analyzing query requirements..." },
+      });
       const parseStart = Date.now();
       const searchParams = await parseQuery(prompt, logger);
       metrics.parseTime = Date.now() - parseStart;
@@ -770,13 +815,13 @@ export const targetedResearchAgent = createAgent<string>({
         outputFormat: searchParams.outputFormat,
       });
 
-      stream.emit({ type: "progress", message: "Executing searches..." });
+      // Initial search progress is now handled in searchWithRetries
       const searchStart = Date.now();
       const searchResults = await searchWithRetries(
         searchParams,
         tavilyClient,
-        stream,
         { maxAttempts: 3 },
+        stream,
         logger,
       );
       metrics.searchTime = Date.now() - searchStart;
@@ -787,9 +832,15 @@ export const targetedResearchAgent = createAgent<string>({
       }
 
       logger?.info(`Search phase complete`, { resultCount: searchResults.length });
-      stream.emit({ type: "text", content: `Found ${searchResults.length} relevant results` });
+      stream?.emit({
+        type: "data-tool-progress",
+        data: {
+          toolName: "Research Agent",
+          content: `Found ${searchResults.length} results across ${searchParams.queries.length} ${searchParams.queries.length === 1 ? "query" : "queries"}`,
+        },
+      });
 
-      stream.emit({ type: "progress", message: "Extracting content..." });
+      // Extraction progress is now handled in extractTopResults
       const extractStart = Date.now();
       const extracted = await extractTopResults(
         searchResults,
@@ -804,12 +855,22 @@ export const targetedResearchAgent = createAgent<string>({
         extracted: extracted.successful.length,
         failed: extracted.failed.length,
       });
-      stream.emit({
-        type: "text",
-        content: `Extracted ${extracted.successful.length} pages, ${extracted.failed.length} failed`,
+      stream?.emit({
+        type: "data-tool-progress",
+        data: {
+          toolName: "Research Agent",
+          content: `Extracted ${extracted.successful.length} pages successfully`,
+        },
       });
 
-      stream.emit({ type: "progress", message: "Synthesizing results..." });
+      const formatDescriptions = { summary: "summary", list: "list", comparison: "comparison" };
+      stream?.emit({
+        type: "data-tool-progress",
+        data: {
+          toolName: "Research Agent",
+          content: `Generating ${formatDescriptions[searchParams.outputFormat]} from ${extracted.successful.length} sources...`,
+        },
+      });
       const synthStart = Date.now();
       const synthesis = await synthesizeResults({
         query: prompt,
@@ -839,7 +900,10 @@ export const targetedResearchAgent = createAgent<string>({
 
       logger?.info(`Research complete`, { research: JSON.stringify(output) });
 
-      stream.emit({ type: "progress", message: "Research complete" });
+      stream?.emit({
+        type: "data-tool-progress",
+        data: { toolName: "Research Agent", content: "Research complete" },
+      });
       return output.synthesis;
     } catch (error) {
       logger?.error(`Research agent failed`, {

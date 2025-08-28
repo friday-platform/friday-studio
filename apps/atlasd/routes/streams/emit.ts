@@ -56,15 +56,6 @@ function emitToStream(
     const queueItem = { event, resolve, reject, timestamp: Date.now(), metadata };
     sessionQueue.push(queueItem);
 
-    logger.debug("SSE emission queued", {
-      streamId,
-      sessionId,
-      queueDepth: sessionQueue.length,
-      totalSessions: streamSessionQueues.size,
-      activeSession: activeSession.get(streamId),
-      isProcessing: streamProcessing.get(streamId) || false,
-    });
-
     // If no active session, make this one active
     if (!activeSession.get(streamId) && !streamProcessing.get(streamId)) {
       activeSession.set(streamId, sessionId);
@@ -111,11 +102,6 @@ async function processStreamQueue(ctx: AppContext, streamId: string): Promise<vo
 
       const sessionQueue = streamSessionQueues.get(currentSessionId);
       if (!sessionQueue || sessionQueue.length === 0) {
-        logger.debug("Active session queue empty, waiting for more events or session-finish", {
-          streamId,
-          sessionId: currentSessionId,
-        });
-
         // DO NOT rotate on empty queue - wait for explicit session-finish event
         // Sessions must explicitly signal completion via data-session-finish
         // This prevents premature rotation and message interleaving
@@ -134,25 +120,6 @@ async function processStreamQueue(ctx: AppContext, streamId: string): Promise<vo
 
       // Check if this is a session-finish event
       const isSessionFinish = isSessionFinishEvent(item.event);
-
-      // Extract a preview of the event for debugging
-      let eventPreview = "";
-      try {
-        const eventStr = JSON.stringify(item.event);
-        eventPreview = eventStr.substring(0, 200);
-      } catch (e) {
-        eventPreview = "[unparseable]";
-      }
-
-      logger.debug("Processing emission from queue", {
-        streamId,
-        sessionId: currentSessionId,
-        agentId: item.metadata?.agentId,
-        remainingInQueue: sessionQueue.length,
-        processedSoFar: processedCount,
-        isSessionFinish,
-        eventPreview,
-      });
 
       // Timeout check (5 seconds for being in queue)
       if (Date.now() - item.timestamp > 5000) {
@@ -211,11 +178,6 @@ async function processStreamQueue(ctx: AppContext, streamId: string): Promise<vo
     }
   } finally {
     streamProcessing.set(streamId, false);
-    logger.debug("Queue processor completed", {
-      streamId,
-      processedCount,
-      duration: Date.now() - startTime,
-    });
   }
 }
 

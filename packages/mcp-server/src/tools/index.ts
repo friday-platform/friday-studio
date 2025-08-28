@@ -37,8 +37,6 @@ import { registerSignalsTriggerTool } from "./signals/trigger.ts";
 // Import system tools
 import { registerBashTool } from "./system/bash.ts";
 import type { ToolContext } from "./types.ts";
-// Import web tools
-import { registerTargetedResearchTool } from "./research/targeted-research.ts";
 // Import workspace tools
 import { registerWorkspaceCreateTool } from "./workspace/create.ts";
 import { registerWorkspaceDeleteTool } from "./workspace/delete.ts";
@@ -85,9 +83,6 @@ export function registerTools(server: McpServer, context: ToolContext): void {
   registerLsTool(server, context);
   registerReadTool(server, context);
   registerWriteTool(server, context);
-
-  // Research tools (platform-provided)
-  registerTargetedResearchTool(server, context);
 
   // System tools
   registerBashTool(server, context);

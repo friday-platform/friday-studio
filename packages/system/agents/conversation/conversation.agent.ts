@@ -9,11 +9,23 @@
  */
 
 import { createAnthropic } from "@ai-sdk/anthropic";
-import type { AtlasTools } from "@atlas/agent-sdk";
+import type { AtlasTools, AtlasUIMessage } from "@atlas/agent-sdk";
 import { createAgent } from "@atlas/agent-sdk";
 import { pipeUIMessageStream } from "@atlas/agent-sdk/vercel-helpers";
 import { type SystemAgentConfigObject, SystemAgentConfigObjectSchema } from "@atlas/config";
-import { createIdGenerator, smoothStream, stepCountIs, streamText } from "ai";
+import type { Logger } from "@atlas/logger";
+import { Client } from "@modelcontextprotocol/sdk/client";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import {
+  convertToModelMessages,
+  createIdGenerator,
+  smoothStream,
+  stepCountIs,
+  streamText,
+  tool,
+} from "ai";
+import { z } from "zod/v4";
+import { StreamContentNotificationSchema } from "../../../core/src/streaming/stream-emitters.ts";
 import SYSTEM_PROMPT from "./prompt.txt" with { type: "text" };
 import { conversationTools, workspaceMemoryTool } from "./tools/mod.ts";
 
@@ -71,6 +83,31 @@ function getSystemPrompt(
   return prompt;
 }
 
+async function getAgentServerClient(streamId: string, logger: Logger) {
+  // Create official MCP client (not AI SDK client - supports notifications)
+  const client = new Client({ name: "atlas-streaming-client", version: "1.0.0" });
+
+  const transport = new StreamableHTTPClientTransport(new URL("http://localhost:8080/agents"), {
+    requestInit: {
+      headers: {
+        // TODO
+        "mcp-session-id": crypto.randomUUID(),
+        "x-stream-id": streamId,
+      },
+    },
+  });
+
+  try {
+    await client.connect(transport);
+    logger.info("Connected to Agent Server via MCP");
+  } catch (error) {
+    logger.error("Failed to connect to Agent Server", { error });
+    throw new Error(`Failed to connect to Agent Server: ${error}`);
+  }
+
+  return client;
+}
+
 // Export the agent
 export const conversationAgent = createAgent({
   id: "conversation",
@@ -94,6 +131,51 @@ export const conversationAgent = createAgent({
     }
 
     const anthropic = createAnthropic({ apiKey: Deno.env.get("ANTHROPIC_API_KEY") });
+
+    /**
+     * Connect directly to the Atlas Agent server so that we can invoke agents and
+     * intercept streamed notifications to show their progress and status updates.
+     */
+    const agentServer = await getAgentServerClient(session.streamId, logger);
+    agentServer.setNotificationHandler(StreamContentNotificationSchema, (notification) => {
+      const { event } = notification.params;
+      stream?.emit(event);
+    });
+
+    /**
+     * Register and transform all agents from the Agent Server for use
+     * by the conversation agent.
+     */
+    const { tools: agentTools } = await agentServer.listTools();
+    const agents: AtlasTools = {};
+    for (const agent of agentTools) {
+      // Skip the conversation agent. The universe might implode.
+      if (agent.name === "conversation") continue;
+      agents[agent.name] = tool({
+        name: agent.name,
+        description: agent.description,
+        inputSchema: z.object({ prompt: z.string() }),
+        execute: async (input) => {
+          try {
+            const result = await agentServer.callTool({
+              name: agent.name,
+              arguments: {
+                prompt: input.prompt,
+                _sessionContext: {
+                  sessionId: session.sessionId,
+                  workspaceId: session.workspaceId,
+                  userId: session.userId,
+                  streamId: session.streamId,
+                },
+              },
+            });
+            return { result };
+          } catch (error) {
+            logger.error("Agent invocation failed", { error });
+          }
+        },
+      });
+    }
 
     // Get configuration values from workspace config with defaults
     // Parse and validate config using proper schema types
@@ -121,7 +203,7 @@ export const conversationAgent = createAgent({
     // they will be just pushed to the array and persisted client-side.
     stream?.emit({ type: "data-user-message", data: prompt });
 
-    const allTools = { ...tools, ...conversationTools };
+    const allTools = { ...tools, ...conversationTools, ...agents };
 
     /**
      * Load conversation context from workspace memory system instead of separate storage
@@ -135,8 +217,6 @@ export const conversationAgent = createAgent({
         { operation: "load_context", maxEntries: 10, sessionId: session.sessionId, prompt: prompt },
         { messages: [], toolCallId: crypto.randomUUID() },
       );
-
-      logger.debug("DEBUG: Workspace memory tool result:", { result });
 
       if (result?.success && result.conversationHistory.length > 0) {
         const conversationHistory = result.conversationHistory;
@@ -168,7 +248,9 @@ export const conversationAgent = createAgent({
     }
 
     const systemPrompt = `Current datetime (UTC): ${new Date().toISOString()}\n\n${getSystemPrompt(history.messages, allTools, session.streamId)}`;
-    const messages = [{ role: "user" as const, content: prompt }];
+    const messages: AtlasUIMessage[] = [
+      { id: crypto.randomUUID(), role: "user" as const, parts: [{ type: "text", text: prompt }] },
+    ];
 
     // Log LLM input for debugging and monitoring
     logger.info("LLM Input", {
@@ -186,20 +268,11 @@ export const conversationAgent = createAgent({
       historyLength: history.messages.length,
     });
 
-    // Debug: Log what workspace we're running in for memory troubleshooting
-    logger.info("🔍 MEMORY DEBUG - Conversation Agent Context", {
-      sessionId: session.sessionId,
-      workspaceId: session.workspaceId,
-      userId: session.userId,
-      streamId: session.streamId,
-      conversationHistoryEntries: history.messages.length,
-    });
-
     const result = streamText({
       model: anthropic("claude-sonnet-4-20250514"),
       system: systemPrompt,
-      messages: messages,
-      tools: { ...tools, ...conversationTools },
+      messages: convertToModelMessages(messages),
+      tools: allTools,
       toolChoice: "auto",
       stopWhen: stepCountIs(20),
       temperature: 0.3,
@@ -211,6 +284,7 @@ export const conversationAgent = createAgent({
 
     pipeUIMessageStream(
       result.toUIMessageStream({
+        originalMessages: messages,
         generateMessageId: createIdGenerator({ prefix: "msg", size: 8 }),
       }),
       stream,

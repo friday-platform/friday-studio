@@ -203,6 +203,7 @@ export class AgentOrchestrator implements IAgentOrchestrator {
         logger: this.logger,
         // No server needed for wrapped agents (no MCP notification support)
         hasActiveSSE: () => false,
+        agentServerUrl: config.agentsServerUrl, // NEW: Pass Agent Server URL
       });
 
       this.logger.info("Initialized agent context builder for wrapped agents", {
@@ -529,7 +530,7 @@ export class AgentOrchestrator implements IAgentOrchestrator {
       });
 
       // Create a brief summary of the task instead of storing the entire prompt
-      const taskSummary = prompt.length > 100 ? prompt.substring(0, 97) + "..." : prompt;
+      const taskSummary = prompt.length > 100 ? `${prompt.substring(0, 97)}...` : prompt;
 
       return {
         agentId,

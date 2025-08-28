@@ -111,7 +111,7 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
       toolName,
       {
         title: agent.displayName,
-        description: this.formatAgentDescription(agent),
+        description: agent.description,
         inputSchema: AgentToolParamsSchema.shape,
       },
       async (args) => {
@@ -186,19 +186,6 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
     for (const agent of agents) {
       this.registerSingleAgentTool(agent);
     }
-  }
-
-  /**
-   * Format agent metadata as JSON string for MCP tool descriptions.
-   * MCP requires tool descriptions as strings, so we serialize the agent's
-   * expertise information to provide rich context to LLMs.
-   */
-  private formatAgentDescription(meta: AgentMetadata): string {
-    return JSON.stringify({
-      text: meta.description,
-      expertise: meta.expertise,
-      examples: meta.expertise.examples,
-    });
   }
 
   /**

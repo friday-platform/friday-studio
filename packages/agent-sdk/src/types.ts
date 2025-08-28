@@ -267,7 +267,10 @@ export type MessageMetadata = z.infer<typeof MessageMetadataSchema>;
  * give you a way to emit user messages back to the stream. It expects that
  * they will be just pushed to the array and persisted client-side.
  */
-type UserMessageEvent = { "user-message": { content: string } };
+type UserMessageEvent = {
+  "user-message": { content: string };
+  "tool-progress": { toolName: string; content: string };
+};
 
 export type AtlasUIMessage<T extends UIDataTypes = UIDataTypes> = UIMessage<
   MessageMetadata,
