@@ -332,7 +332,6 @@ tool_choice: z.enum(["auto", "required", "none"]).optional().describe(
            tools:
              allow:
                - "atlas_notify_email"
-               - "tavily_search"
                # ... other platform tools
    ```
 
@@ -395,7 +394,6 @@ Our final implementation went beyond the original plan with these enhancements:
    - Start daemon and verify `/mcp` endpoint is accessible
    - Create workspace and verify atlas-platform server is registered
    - Test atlas_notify_email tool can be called through MCP
-   - Test tavily_search tool can be called through MCP
 
 3. **Manual Testing**:
    - Run telephone example

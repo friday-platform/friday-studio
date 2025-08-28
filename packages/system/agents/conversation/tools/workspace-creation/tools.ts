@@ -140,7 +140,7 @@ export const workspaceBuilderTools = {
         .array(z.string())
         .default([])
         .describe(
-          "Additional MCP servers for this agent. Atlas tools (atlas_*, tavily_*) are automatically available to all agents. Only specify external MCP servers like ['github'], ['slack'] if needed.",
+          "Additional MCP servers for this agent. Atlas tools are automatically available to all agents. Only specify external MCP servers like ['github'], ['slack'] if needed.",
         ),
       temperature: z
         .number()
@@ -281,7 +281,7 @@ export const workspaceBuilderTools = {
       if (serverName === "atlas-platform") {
         throw new Error(
           "atlas-platform is automatically provided by the Atlas runtime. " +
-            "You don't need to add it manually. All Atlas tools (atlas_*, tavily_*) " +
+            "You don't need to add it manually. All Atlas tools " +
             "will be available to your agents automatically.",
         );
       }

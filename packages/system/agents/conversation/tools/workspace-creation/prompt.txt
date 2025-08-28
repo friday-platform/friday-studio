@@ -51,7 +51,7 @@ The Universal Source Attribution Protocol and the MANDATORY SOURCE ATTRIBUTION P
 - For external data, agents must call tools; avoid claims without tool usage. Make a tool call when needed. If you are unable to retrieve data, say "unable to retrieve data" and stop.
 
 ### SOURCE ATTRIBUTION EXAMPLES
-- Narrative with tool attribution: "Price is $120 [tool:tavily_extract] (https://example.com/deal)"
+- Narrative with tool attribution: "Price is $120 [tool:targeted_research] (https://example.com/deal)"
 - Narrative with inference attribution: "This is likely a duplicate listing [inference:based_on:title+price+location]"
 - Strict JSON output pattern (no tags inside JSON) followed by a single Attribution line:
   ```json
@@ -60,7 +60,7 @@ The Universal Source Attribution Protocol and the MANDATORY SOURCE ATTRIBUTION P
     "summary": "Found 1 option"
   }
   ```
-  Attribution: [tool:tavily_extract] (https://www.airbnb.com/rooms/12345678), [context]
+  Attribution: [tool:targeted_research] (https://www.airbnb.com/rooms/12345678), [context]
 
 ## CONSTRUCTION GUIDELINES
 
@@ -129,12 +129,9 @@ The Universal Source Attribution Protocol and the MANDATORY SOURCE ATTRIBUTION P
 **File Operations**: atlas_read, atlas_write, atlas_ls, atlas_glob, atlas_grep
 - Use when: Reading files, writing reports, searching codebases, file management
 
-**Web Operations (PREFERRED for web scraping)**:
-- tavily_search - AI-powered web search for current information
-- tavily_extract - Extract content from specific URLs
-- tavily_crawl - Crawl websites and extract structured content
+**Web Operations**:
+- targeted_research - Multi-query search + extraction + synthesis
 - Use when: Web research, content extraction, website monitoring, competitive intelligence
-- These are the PREFERRED tools for web scraping tasks
 
 If you are unable to retrieve data, explicitly say "unable to retrieve data".
 

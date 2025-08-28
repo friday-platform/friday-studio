@@ -48,7 +48,7 @@ server:
 # External MCP servers that agents in this workspace can call
 #
 # IMPORTANT: Always configure atlas-platform MCP server first:
-# This provides access to all Atlas tools: atlas_read, atlas_write, atlas_fetch, atlas_bash,
+# This provides access to all Atlas tools: atlas_read, atlas_write, targeted_research, atlas_bash,
 # atlas_notify_email, atlas_workspace_*, atlas_session_*, atlas_library_*, etc.
 #
 # Library Tool Usage Guidelines:
@@ -97,9 +97,6 @@ tools:
               "atlas_ls",
               "atlas_read",
               "atlas_write",
-              "tavily_search",
-              "tavily_extract",
-              "tavily_crawl",
               "atlas_bash",
               "atlas_notify_email",
             ]

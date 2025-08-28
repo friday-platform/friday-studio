@@ -192,7 +192,7 @@ Please analyze these errors and adjust your approach accordingly.`;
 Create a complete Atlas workspace configuration using the provided tools. You MUST call ALL necessary tools in this exact sequence:
 
 **AGENT TOOL USAGE**:
-- ALL agents automatically have access to atlas-platform tools (atlas_*, tavily_*)
+- ALL agents automatically have access to atlas-platform tools
 - You don't need to list specific tools in prompts - agents can discover and use them as needed
 - Focus agent prompts on WHAT they should do, not HOW (tools will be selected automatically)
 - For critical operations (like email), you can still use tool_choice: "required" to ensure tools are used
@@ -225,7 +225,7 @@ You must create AT LEAST:
    - tool_choice: "required" (ensures the agent uses tools to send email)
 
 **IMPORTANT: Atlas Platform Tools**
-All Atlas platform tools (atlas_*, tavily_*) are automatically available to ALL agents at runtime. You do NOT need to:
+All Atlas platform tools are automatically available to ALL agents at runtime. You do NOT need to:
 - Add atlas-platform as an MCP server
 - Include "atlas-platform" in agent tools arrays
 - Mention specific tool names in agent prompts
@@ -233,13 +233,8 @@ All Atlas platform tools (atlas_*, tavily_*) are automatically available to ALL 
 Agents can discover and use Atlas tools automatically based on their task requirements.
 
 **ATLAS TOOLS AUTOMATICALLY AVAILABLE:**
-- **Web Search & Scraping (PREFERRED)**:
-  - tavily_search - AI-powered web search
-  - tavily_extract - Extract content from specific URLs
-  - tavily_crawl - Crawl websites and extract structured content
-- **API Calls & Basic Fetching**:
-  - atlas_fetch - Simple HTTP requests
-  - atlas_web_session_* - Complex web automation with sessions
+- **Web Research**:
+  - targeted_research - Multi-query search, extraction, synthesis
 - **File operations**: atlas_read, atlas_write, atlas_ls, atlas_glob, atlas_grep
 - **Email notifications**: atlas_notify_email
 - **System commands**: atlas_bash

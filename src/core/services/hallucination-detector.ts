@@ -412,7 +412,7 @@ The agent MUST attribute information using ONLY these tags:
 - [generated] — created content (templates/formatting/non-factual)
 - [undefined] — source cannot be determined
 
-For strict JSON outputs, close the JSON and include a single trailing line starting with "Attribution:" that contains the required tags (e.g., Attribution: [input] or Attribution: [tool:tavily_extract] (https://example.com)).
+For strict JSON outputs, close the JSON and include a single trailing line starting with "Attribution:" that contains the required tags (e.g., Attribution: [input] or Attribution: [tool:targeted_research] (https://example.com)).
 
 ### IMMEDIATE FAIL CONDITIONS (Confidence 0.0-0.2)
 1. [tool:{name}] tag without matching tool call in this step
@@ -471,7 +471,7 @@ Respond with ONLY valid JSON.
             .join(", ")
         : "NO_TOOLS";
 
-    // Summarize tool results for provenance (e.g., tavily_* saved to library)
+    // Summarize tool results for provenance (e.g., targeted_research results saved to library)
     const topLevelResults = Array.isArray((result as { toolResults?: unknown[] }).toolResults)
       ? (result as { toolResults?: unknown[] }).toolResults || []
       : [];

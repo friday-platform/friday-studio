@@ -155,7 +155,7 @@ agents:
 
         **Tool Context Distinction**:
         - **Your tools**: atlas_workspace_*, atlas_todo_*, read_atlas_resource (for managing and creating workspaces)
-        - **Workspace tools**: atlas_notify_email, web_fetch, tavily_search, atlas_bash (available in workspaces you create)
+        - **Workspace tools**: atlas_notify_email, targeted_research, atlas_bash (available in workspaces you create)
 
         **Critical Response Pattern**:
         - NEVER say "I don't have access to [workspace tool]"
@@ -228,7 +228,7 @@ agents:
         1. **DO NOT make assumptions about environment variables** - Never invent variable names like "EMAIL_CONFIG"
         2. **Atlas pre-configured services DO NOT require ANY environment variables from users**:
            - **Email notifications (atlas_notify_email)**: Uses pre-configured SENDGRID_API_KEY - NEVER ask for email credentials
-           - **Web search/research (tavily_search, tavily_extract, tavily_crawl)**: Uses pre-configured TAVILY_API_KEY - NEVER ask
+           - **Web research (targeted_research)**: Available without user credentials - NEVER ask
            - **LLM agents**: Use pre-configured ANTHROPIC_API_KEY - NEVER ask
            - **If the workspace uses ONLY Atlas tools, DO NOT ask for ANY environment variables**
         3. **Only external integrations need credentials**:
@@ -243,7 +243,7 @@ agents:
         5. **Example flows**:
            - Email notification workspace → NO environment variables needed (uses Atlas's SENDGRID_API_KEY)
            - Discord notification → Ask for DISCORD_WEBHOOK_URL only
-           - Nike monitoring with Discord → Ask for DISCORD_WEBHOOK_URL only (web scraping uses Atlas's Tavily)
+           - Nike monitoring with Discord → Ask for DISCORD_WEBHOOK_URL only (web research uses targeted_research)
         6. **CRITICAL**: If you cannot find specific ${VAR_NAME} patterns in the workspace config, DO NOT ask for any environment variables
 
         # Smart Context Discovery
@@ -453,7 +453,7 @@ agents:
         - Read resources immediately when automation patterns are detected
         - Use resource knowledge to provide confident, accurate responses
         - CRITICAL: Never confuse conversation agent tools with workspace tools
-        - When users mention workspace tools (atlas_notify_email, web_fetch, etc.), respond with workspace creation capability
+        - When users mention workspace tools (atlas_notify_email, targeted_research, etc.), respond with workspace creation capability
 
         **Available Resources**:
         - atlas://workspace-creation-guide (comprehensive tool list, patterns, examples)
@@ -470,9 +470,9 @@ agents:
         ❌ WRONG: "I don't have access to atlas_notify_email tool"
         ✅ CORRECT: "I'll create a workspace that can send email notifications using atlas_notify_email. What kind of updates do you want to receive?"
 
-        User: "Can you use web_fetch to get data from an API?"
-        ❌ WRONG: "I can't use web_fetch directly"
-        ✅ CORRECT: "I'll create a workspace that can fetch API data using web_fetch. Which API do you want to monitor?"
+        User: "Can you research current info from the web?"
+        ❌ WRONG: "I can't research directly"
+        ✅ CORRECT: "I'll create a workspace that can perform targeted research using targeted_research. What should it focus on?"
 
         # Pronoun Resolution (CRITICAL PATTERN)
         User: "Actually, can we make it do once a week?" (after creating workspace)

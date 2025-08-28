@@ -270,7 +270,7 @@ provide natural teaching moments about Atlas architecture without forcing explan
 **Application**:
 
 - Let users discover workspace creation through seeing atlas_workspace_draft_create
-- Show MCP tool usage naturally: "Calling web_fetch to check Nike's API"
+- Show MCP tool usage naturally: "Calling targeted_research to gather current web information"
 - Reveal configuration patterns through visible tool arguments
 - Use thinking events to model problem-solving approaches
 - Balance transparency with conversational flow

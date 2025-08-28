@@ -366,7 +366,7 @@ const workspaceBuilderTools = {
       }),
       tools: z.array(z.string()).default([]).meta({
         description: "Array of tool names available to this agent",
-        examples: [["atlas_fetch", "web_scraper"], ["atlas_write", "image_generator"]],
+        examples: [["targeted_research", "web_scraper"], ["atlas_write", "image_generator"]],
       }),
       temperature: z.number().min(0).max(1).default(0.3).meta({
         description: "Controls randomness in model responses (0=deterministic, 1=creative)",

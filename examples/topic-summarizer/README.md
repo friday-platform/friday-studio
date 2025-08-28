@@ -52,10 +52,7 @@ capabilities to provide detailed analysis of emerging AI agent projects, framewo
    export GITHUB_TOKEN="your_github_token"
    ```
 
-2. **Tavily API Key** (for web search):
-   ```bash
-   export TAVILY_API_KEY="your_tavily_api_key"
-   ```
+2. Targeted research is available via the built-in `targeted_research` MCP tool.
 
 ### Installation
 
@@ -181,9 +178,9 @@ Uses the official GitHub MCP server with these capabilities:
 - Metadata collection (stars, forks, topics)
 - Code structure evaluation
 
-### Web Search
+### Targeted Research
 
-Integrates Tavily API for:
+Uses `targeted_research` for:
 
 - Additional project context and mentions
 - Blog posts and announcements

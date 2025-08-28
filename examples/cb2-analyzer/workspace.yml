@@ -1,7 +1,7 @@
 version: "1.0"
 workspace:
   name: web-discount-analyzer
-  description: Analyzes web content for product discounts using Tavily search and stores summaries in library
+  description: Analyzes web content for product discounts using targeted_research and stores summaries in library
 
 signals:
   analyze-url:
@@ -62,7 +62,7 @@ jobs:
 agents:
   web-fetcher:
     type: llm
-    description: Fetch and extract web content using Tavily search for discount analysis
+    description: Perform targeted research and extraction for discount analysis
     config:
       provider: anthropic
       model: claude-3-5-haiku-latest
@@ -110,7 +110,7 @@ agents:
         ```
 
         You are autonomous - research thoroughly and provide actionable deal information immediately.
-      tools: ["tavily"]
+      tools: ["atlas-platform"]
 
   discount-analyzer:
     type: llm
@@ -151,16 +151,5 @@ agents:
 
 tools:
   mcp:
-    servers:
-      tavily:
-        transport:
-          type: "stdio"
-          command: "npx"
-          args: ["-y", "tavily-mcp"]
-        env:
-          TAVILY_API_KEY: "auto"
-        tools:
-          allow:
-            - "tavily-search"
-
+    servers: {}
       # Atlas Platform is automatically provided - no need to configure it here

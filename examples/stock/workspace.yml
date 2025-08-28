@@ -36,10 +36,10 @@ jobs:
 agents:
   stock-fetcher:
     description: >-
-      Fetch top 5 performing stocks from finance.yahoo.com using session-based automation. MUST
-      capture and include specific source URLs where each piece of stock data was obtained
-      (individual stock pages, screener results) so recipients can verify the information. Include
-      both the main source URL and individual stock page URLs in the output.
+      Fetch top 5 performing stocks from finance.yahoo.com using targeted research. MUST capture and
+      include specific source URLs where each piece of stock data was obtained (individual stock
+      pages, screener results) so recipients can verify the information. Include both the main
+      source URL and individual stock page URLs in the output.
     type: llm
     config:
       provider: anthropic

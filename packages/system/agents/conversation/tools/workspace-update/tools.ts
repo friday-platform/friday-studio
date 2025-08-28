@@ -443,7 +443,7 @@ export const workspaceUpdateTools = {
       if (serverName === "atlas-platform") {
         throw new Error(
           "atlas-platform is automatically provided by the Atlas runtime. " +
-            "You don't need to add it manually. All Atlas tools (atlas_*, tavily_*) " +
+            "You don't need to add it manually. All Atlas tools " +
             "will be available to your agents automatically.",
         );
       }

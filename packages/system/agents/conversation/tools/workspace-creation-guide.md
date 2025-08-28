@@ -73,7 +73,7 @@ Let's explore how different user intents map to Atlas components:
   - Web scraper (extracts product data)
   - Change detector (compares with previous data)
   - Notifier (sends email alerts)
-- **Tools**: atlas_fetch, atlas_library_store, atlas_notify_email
+- **Tools**: targeted_research, atlas_library_store, atlas_notify_email
 - **Context flow**: Each agent passes results to the next
 
 **Critical configuration elements**:
@@ -148,7 +148,7 @@ their prompts.
 - **Signal**: HTTP webhook with validation
 - **Trigger condition**: Filter for specific event types
 - **Agent pipeline**: Validator → Mapper → Syncer
-- **Tools**: atlas_fetch (for API calls), atlas_library_store (cache data), atlas_notify_email
+- **Tools**: targeted_research (for web research), atlas_library_store (cache data), atlas_notify_email
   (error alerts)
 
 **Critical configuration elements**:
@@ -509,8 +509,7 @@ There are two distinct tool contexts in Atlas:
 
 2. **Workspace Tools** (for execution - listed below):
    - `atlas_notify_email` - Send email notifications
-   - `web_fetch` - Make HTTP requests
-   - `tavily_search` - Web research and data extraction
+   - `targeted_research` - Multi-query search + extraction + synthesis
    - `atlas_bash` - System operations and commands
 
 **Critical**: When users ask about workspace tools (like `atlas_notify_email`), the conversation
@@ -552,9 +551,6 @@ tools:
               "atlas_ls",
               "atlas_read",
               "atlas_write",
-              "tavily_search",
-              "tavily_extract",
-              "tavily_crawl",
               "atlas_bash",
               "atlas_notify_email",
             ]
@@ -587,7 +583,7 @@ tools:
   - Use when: Agent introspection needed
 - **File Operations**: `atlas_glob`, `atlas_grep`, `atlas_ls`, `atlas_read`, `atlas_write`
   - Use when: Reading files, writing reports, searching codebases, file management
-- **Web Operations**: `tavily_search`, `tavily_extract`, `tavily_crawl`
+- **Web Operations**: `targeted_research`
   - Use when: Web search, content extraction, website crawling, research tasks
 - **System Operations**: `atlas_bash`
   - Use when: Running commands, git operations, system integrations, deployments
@@ -625,7 +621,7 @@ agents:
 **Common atlas-platform tool patterns**:
 
 - **File operations**: `atlas_read`, `atlas_write`, `atlas_list`, `atlas_glob`, `atlas_grep`
-- **Web requests**: `atlas_fetch` (handles both APIs and web scraping)
+- **Web research**: `targeted_research`
 - **System commands**: `atlas_bash` (for git, builds, system operations)
 - **Notifications**: `atlas_notify_email`
 - **Workspace management**: `atlas_workspace_create`, `atlas_workspace_list`
@@ -652,15 +648,15 @@ tools:
           type: "http"
           url: "http://localhost:8080/mcp"
         tools:
-          allow: ["tavily_search", "tavily_extract", "atlas_library_store"]
+          allow: ["atlas_library_store"]
 
 agents:
   research-analyzer:
     config:
       prompt: |
-        Use Tavily to research and analyze web content:
-        1. Search for relevant information with tavily_search
-        2. Extract detailed content from URLs with tavily_extract
+        Use targeted_research to research and analyze web content:
+        1. Run multi-query search to find relevant sources
+        2. Extract detailed content from URLs
         3. Store findings with atlas_library_store
       tools: ["atlas-platform"]
 ```
@@ -674,11 +670,11 @@ agents:
   research-agent:
     config:
       prompt: |
-        Use Tavily to research GitHub repositories and issues:
-        1. Search for relevant repositories with tavily_search
-        2. Extract detailed content with tavily_extract
-        3. Crawl documentation with tavily_crawl
-      tools: ["tavily_search", "tavily_extract", "tavily_crawl"]
+        Use targeted_research to research GitHub repositories and issues:
+        1. Find relevant repositories and discussions
+        2. Extract detailed content from documentation pages
+        3. Analyze issues and PRs for insights
+      tools: ["atlas-platform"]
 ```
 
 **Use Tavily for comprehensive web research**:
@@ -699,10 +695,10 @@ When you need functionality not directly available:
      data-fetcher:
        config:
          prompt: |
-           Use tavily_search to find relevant data on example.com
-           Use tavily_extract to get specific content from URLs
+           Use targeted_research to retrieve relevant data from example.com
+           Extract specific content from the returned pages
            Return structured JSON data with insights
-         tools: ["tavily_search", "tavily_extract"]
+         tools: ["atlas-platform"]
    ```
 
 2. **Combine atlas-platform tools for complex workflows**:
@@ -856,11 +852,11 @@ agents:
   web-researcher:
     config:
       prompt: |
-        1. Search for information with tavily_search using specific queries
-        2. Extract content from specific URLs with tavily_extract
-        3. Crawl websites systematically with tavily_crawl
+        1. Retrieve information using targeted_research queries
+        2. Extract content from returned pages
+        3. Follow relevant links as needed to gather additional context
         4. Generate insights from collected data
-      tools: ["tavily_search", "tavily_extract", "tavily_crawl"]
+      tools: ["atlas-platform"]
 ```
 
 ## Best Practices

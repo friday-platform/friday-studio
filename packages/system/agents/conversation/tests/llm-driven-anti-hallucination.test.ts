@@ -69,7 +69,7 @@ Deno.test("LLM-Driven Anti-Hallucination", async (t) => {
   await t.step("system prompt should include tool guidance", () => {
     assertStringIncludes(
       WORKSPACE_ARCHITECT_SYSTEM_PROMPT,
-      "tavily_search",
+      "targeted_research",
       "Should reference Atlas tools for data fetching",
     );
 

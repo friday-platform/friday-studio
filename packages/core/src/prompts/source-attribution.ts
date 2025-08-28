@@ -29,15 +29,15 @@ Every piece of information in your output MUST be tagged with its source using t
 5. LINKS: Include the URL/file path next to the tag when available
 
 ### SIMPLE EXAMPLES
-- INVALID (tools=0): "According to research ... [tool:tavily_search]"
-- INVALID (tools=0): "From analysis ... [inference:tool:tavily_search]"
+- INVALID (tools=0): "According to research ... [tool:targeted_research]"
+- INVALID (tools=0): "From analysis ... [inference:tool:targeted_research]"
 - VALID (input fact): "Based on the provided recipes ... [input] (https://example.com)"
 - VALID (input summary): "Steps summarized ... [inference:input]"
-- VALID (tool-derived conclusion): "Comparative ranking ... [inference:tool:tavily_search]"
+- VALID (tool-derived conclusion): "Comparative ranking ... [inference:tool:targeted_research]"
 
 ### FORMAT NOTES
 - Narrative text: Prefer inline tags next to claims.
-- Strict JSON outputs: Do NOT place tags inside JSON. When you must output strict JSON, close the JSON and add a single line immediately after it starting with "Attribution:" followed by the required tags, e.g., "Attribution: [input]" or "Attribution: [tool:tavily_extract] (https://example.com)".
+- Strict JSON outputs: Do NOT place tags inside JSON. When you must output strict JSON, close the JSON and add a single line immediately after it starting with "Attribution:" followed by the required tags, e.g., "Attribution: [input]" or "Attribution: [tool:targeted_research] (https://example.com)".
 
 - Domain compliance: If the task/context specifies allowed sources (e.g., airbnb.com), ensure every source URL's domain matches. Do not include prohibited domains.
 - Always include the actual URLs in user-facing content where appropriate (without tags).
