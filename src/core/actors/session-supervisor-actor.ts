@@ -226,6 +226,10 @@ export class SessionSupervisorActor implements BaseActor {
   private workspaceSupervisor?: IWorkspaceSupervisorForSession; // WorkspaceSupervisorActor - set by runtime for memory streaming
   private mecmfManager?: MECMFMemoryManager; // MECMF memory manager for prompt enhancement
 
+  // Cancellation management
+  private abortController?: AbortController;
+  private activeAgentExecutions = new Map<string, AbortController>();
+
   // Stream management
   private baseStreamEmitter?: StreamEmitter<SessionUIMessageChunk>;
   private sessionFinishEmitted = false; // Track if session-finish was already emitted
@@ -381,6 +385,8 @@ export class SessionSupervisorActor implements BaseActor {
     const resultStatus = this.lastSessionSummary?.status;
     if (resultStatus === ReasoningResultStatus.FAILED) {
       this.status = SessionSupervisorStatus.FAILED;
+    } else if (resultStatus === ReasoningResultStatus.CANCELLED) {
+      this.status = SessionSupervisorStatus.CANCELLED;
     } else if (resultStatus === ReasoningResultStatus.COMPLETED) {
       this.status = SessionSupervisorStatus.COMPLETED;
     } else {
@@ -675,12 +681,18 @@ export class SessionSupervisorActor implements BaseActor {
   getSessionStatus(): SessionSupervisorStatusType {
     if (!this.hasStarted) return SessionSupervisorStatus.IDLE;
     if (this.isExecuting) return SessionSupervisorStatus.EXECUTING;
+    if (this.status === SessionSupervisorStatus.CANCELLED) {
+      return SessionSupervisorStatus.CANCELLED;
+    }
     const resultStatus = this.lastSessionSummary?.status;
     if (resultStatus === ReasoningResultStatus.COMPLETED) {
       return SessionSupervisorStatus.COMPLETED;
     }
     if (resultStatus === ReasoningResultStatus.FAILED) {
       return SessionSupervisorStatus.FAILED;
+    }
+    if (resultStatus === ReasoningResultStatus.CANCELLED) {
+      return SessionSupervisorStatus.CANCELLED;
     }
     // Map PARTIAL or undefined final result to COMPLETED for public session status
     return SessionSupervisorStatus.COMPLETED;
@@ -828,6 +840,9 @@ export class SessionSupervisorActor implements BaseActor {
     this.isExecuting = true;
     this.executionStartTime = new Date();
 
+    // Create abort controller for this session
+    this.abortController = new AbortController();
+
     const sessionStartTime = Date.now();
     let summary: SessionSummary | undefined;
 
@@ -947,15 +962,21 @@ export class SessionSupervisorActor implements BaseActor {
       // Create error summary if execution failed
       const duration = Date.now() - sessionStartTime;
       if (!summary) {
+        const isCancellation = 
+          (error instanceof Error && 
+           (error.name === 'AbortError' || 
+            error.message.includes('Session cancelled') ||
+            error.message.includes('aborted')));
+        
         summary = {
           sessionId: this.sessionId,
-          status: ReasoningResultStatus.FAILED,
+          status: isCancellation ? ReasoningResultStatus.CANCELLED : ReasoningResultStatus.FAILED,
           totalPhases: 0,
           totalAgents: 0,
           completedPhases: 0,
           executedAgents: 0,
           duration,
-          reasoning: "Session failed with error",
+          reasoning: isCancellation ? "Session cancelled by user" : "Session failed with error",
           results: [],
           failureReason: error instanceof Error ? error.message : String(error),
         };
@@ -965,18 +986,32 @@ export class SessionSupervisorActor implements BaseActor {
       this.isExecuting = false;
       this.executionEndTime = new Date();
 
-      this.logger.error("Session execution failed", {
-        sessionId: this.sessionId,
-        error: error instanceof Error ? error.message : String(error),
-        duration,
-      });
+      const isCancellation = 
+        (error instanceof Error && 
+         (error.name === 'AbortError' || 
+          error.message.includes('Session cancelled') ||
+          error.message.includes('aborted')));
+
+      if (isCancellation) {
+        this.logger.info("Session execution cancelled", {
+          sessionId: this.sessionId,
+          duration,
+        });
+      } else {
+        this.logger.error("Session execution failed", {
+          sessionId: this.sessionId,
+          error: error instanceof Error ? error.message : String(error),
+          duration,
+        });
+      }
 
       throw error;
     } finally {
       // Always emit session-finish event to trigger queue rotation
       // This is critical for proper SSE stream synchronization
       if (this.baseStreamEmitter && !this.sessionFinishEmitted) {
-        const finalStatus = summary?.status || ReasoningResultStatus.FAILED;
+        const finalStatus = summary?.status || 
+          (this.status === SessionSupervisorStatus.CANCELLED ? ReasoningResultStatus.CANCELLED : ReasoningResultStatus.FAILED);
         const finalDuration = Date.now() - sessionStartTime;
 
         this.baseStreamEmitter.emit({
@@ -1017,7 +1052,6 @@ export class SessionSupervisorActor implements BaseActor {
           agentTask,
           allPreviousResults,
           phaseResults,
-          phase.name,
         );
         phaseResults.push(result);
         this.logger.debug("Agent result", {
@@ -1041,7 +1075,7 @@ export class SessionSupervisorActor implements BaseActor {
       }
     } else {
       const promises = phase.agents.map((agentTask) =>
-        this.executeAgent(agentTask, previousResults, phaseResults, phase.name),
+        this.executeAgent(agentTask, previousResults, phaseResults),
       );
       const parallelResults = await Promise.all(promises);
       phaseResults.push(...parallelResults);
@@ -1116,7 +1150,6 @@ export class SessionSupervisorActor implements BaseActor {
         { ...agentTask },
         [...previousResults, ...phaseResults],
         phaseResults,
-        phase.name,
       );
 
       // Replace the corresponding stored result(s)
@@ -1362,6 +1395,10 @@ export class SessionSupervisorActor implements BaseActor {
         }
       }
 
+      // Create abort controller for this specific agent execution
+      const agentAbort = new AbortController();
+      this.activeAgentExecutions.set(agentTask.agentId, agentAbort);
+
       const orchestratorResult: unknown = await this.agentOrchestrator.executeAgent(
         agentId,
         prompt,
@@ -1372,6 +1409,7 @@ export class SessionSupervisorActor implements BaseActor {
           previousResults,
           agentTools: agentExecutionConfig.tools, // Pass agent-specific tools
           additionalContext: { input, reasoning: agentTask.reasoning },
+          abortSignal: agentAbort.signal,
           // Pass callback for stream events
           onStreamEvent: (event) => {
             this.baseStreamEmitter?.emit(event);
@@ -1408,24 +1446,41 @@ export class SessionSupervisorActor implements BaseActor {
         data: { agentId: agentTask.agentId, duration: Date.now() - startTime },
       });
     } catch (error) {
+      // Clean up the abort controller for this agent
+      this.activeAgentExecutions.delete(agentTask.agentId);
+
       // Check if it's an approval exception
       if (error instanceof AwaitingSupervisorDecision) {
         return await this.handleApprovalRequest(error, agentTask, startTime);
       }
 
-      this.baseStreamEmitter?.emit({
-        type: "data-agent-error",
-        data: {
+      // Check if it's a cancellation
+      const isCancellation = 
+        (error instanceof Error && 
+         (error.name === 'AbortError' || 
+          error.message.includes('Session cancelled') ||
+          error.message.includes('aborted')));
+
+      if (isCancellation) {
+        this.logger.info("Agent execution cancelled", {
           agentId: agentTask.agentId,
           duration: Date.now() - startTime,
-          error: error instanceof Error ? error.message : String(error),
-        },
-      });
+        });
+      } else {
+        this.baseStreamEmitter?.emit({
+          type: "data-agent-error",
+          data: {
+            agentId: agentTask.agentId,
+            duration: Date.now() - startTime,
+            error: error instanceof Error ? error.message : String(error),
+          },
+        });
 
-      this.logger.error("Agent orchestrator execution failed", {
-        agentId: agentTask.agentId,
-        error: error instanceof Error ? error.message : String(error),
-      });
+        this.logger.error("Agent orchestrator execution failed", {
+          agentId: agentTask.agentId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
 
       // Stream failed agent result to memory for learning
       const duration = Date.now() - startTime;
@@ -1584,6 +1639,9 @@ export class SessionSupervisorActor implements BaseActor {
 
     // Stream agent result to workspace memory system for automatic processing
     await this.streamAgentResultToMemory(agentResult, true);
+
+    // Clean up the abort controller for this agent
+    this.activeAgentExecutions.delete(agentTask.agentId);
 
     return agentResult;
   }
@@ -2845,9 +2903,33 @@ Think step by step about the best approach to handle this signal, then use the t
     }
   }
 
-  abort(): void {
-    this.logger.info("Aborting session", { sessionId: this.sessionId });
-    this.status = SessionSupervisorStatus.FAILED;
+  cancel(): void {
+    this.logger.info("Cancelling session", { sessionId: this.sessionId });
+    this.status = SessionSupervisorStatus.CANCELLED;
+
+    // Emit session-cancel event
+    if (this.baseStreamEmitter && !this.sessionFinishEmitted) {
+      this.baseStreamEmitter.emit({
+        type: "data-session-cancel",
+        data: {
+          sessionId: this.sessionId,
+          workspaceId: this.workspaceId,
+          reason: "Session cancelled by user",
+        },
+      });
+    }
+
+    // Cancel all active agent executions
+    for (const [agentId, controller] of this.activeAgentExecutions) {
+      this.logger.debug("Cancelling agent execution", { agentId, sessionId: this.sessionId });
+      controller.abort();
+    }
+
+    // Clear the map after cancelling
+    this.activeAgentExecutions.clear();
+
+    // Cancel session-level operations
+    this.abortController?.abort();
   }
 
   getStatus(): SessionSupervisorStatusType {

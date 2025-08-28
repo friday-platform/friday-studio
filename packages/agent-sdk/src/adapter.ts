@@ -87,6 +87,7 @@ export interface AgentServerAdapter {
     agentId: string,
     prompt: string,
     sessionData: AgentSessionData,
+    requestId?: string,
     contextOverrides?: Partial<AgentContext>,
   ): Promise<AgentExecutionResult>;
 

@@ -27,7 +27,10 @@ import {
   tool,
 } from "ai";
 import { z } from "zod/v4";
-import { StreamContentNotificationSchema } from "../../../core/src/streaming/stream-emitters.ts";
+import {
+  type CancellationNotification,
+  StreamContentNotificationSchema,
+} from "../../../core/src/streaming/stream-emitters.ts";
 import SYSTEM_PROMPT from "./prompt.txt" with { type: "text" };
 import { conversationTools, workspaceMemoryTool } from "./tools/mod.ts";
 
@@ -121,7 +124,7 @@ export const conversationAgent = createAgent({
    * @param context - Execution context with session, logger, and available tools
    * @returns Conversation response with text, reasoning, execution flow, and tool calls
    */
-  handler: async (prompt, { session, logger, tools, config, stream }) => {
+  handler: async (prompt, { session, logger, tools, config, stream, abortSignal }) => {
     if (!session.streamId) {
       throw new Error("Stream ID is required");
     }
@@ -138,6 +141,37 @@ export const conversationAgent = createAgent({
       stream?.emit(event);
     });
 
+    // Track active agent invocations for cancellation
+    const activeMCPRequests = new Map<string, string>(); // agentName:invocationId -> requestId
+
+    // Handle cancellation - send notifications for all active agent invocations
+    if (abortSignal) {
+      abortSignal.addEventListener("abort", async () => {
+        logger.info("Conversation cancelled, notifying active agents", {
+          activeAgents: Array.from(activeMCPRequests.keys()),
+        });
+
+        for (const [key, requestId] of activeMCPRequests) {
+          const agentName = key.split(":")[0];
+          try {
+            const notification: CancellationNotification = {
+              method: "notifications/cancelled",
+              params: { requestId, reason: "Conversation cancelled by user" },
+            };
+            await agentServer.notification(notification);
+            logger.debug("Sent cancellation notification", { agentName, requestId });
+          } catch (error) {
+            logger.warn("Failed to send cancellation notification", {
+              error,
+              requestId,
+              agentName,
+            });
+          }
+        }
+        activeMCPRequests.clear();
+      });
+    }
+
     /**
      * Register and transform all agents from the Agent Server for use
      * by the conversation agent.
@@ -152,6 +186,13 @@ export const conversationAgent = createAgent({
         description: agent.description,
         inputSchema: z.object({ prompt: z.string() }),
         execute: async (input) => {
+          const requestId = crypto.randomUUID();
+          const invocationId = crypto.randomUUID(); // Unique ID for this specific invocation
+          const trackingKey = `${agent.name}:${invocationId}`;
+
+          // Track this invocation for cancellation
+          activeMCPRequests.set(trackingKey, requestId);
+
           try {
             const result = await agentServer.callTool({
               name: agent.name,
@@ -164,10 +205,15 @@ export const conversationAgent = createAgent({
                   streamId: session.streamId,
                 },
               },
+              _meta: { requestId }, // Pass requestId for cancellation correlation
             });
             return { result };
           } catch (error) {
-            logger.error("Agent invocation failed", { error });
+            logger.error("Agent invocation failed", { error, agentName: agent.name, requestId });
+            throw error; // Re-throw to maintain error propagation
+          } finally {
+            // Clean up tracking regardless of success/failure
+            activeMCPRequests.delete(trackingKey);
           }
         },
       });
@@ -280,6 +326,7 @@ export const conversationAgent = createAgent({
       maxOutputTokens: 20000,
       experimental_transform: smoothStream({ chunking: "word" }),
       maxRetries: 3, // Enable retries for API resilience (e.g., 529 errors)
+      abortSignal, // Pass the abort signal for cancellation
       providerOptions: { anthropic: { thinking: { type: "enabled", budgetTokens: 25000 } } },
     });
 

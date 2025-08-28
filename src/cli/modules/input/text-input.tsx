@@ -31,6 +31,9 @@ export type TextInputProps = {
 
   /** Callback when Ctrl+c is pressed. */
   readonly exitApp?: () => Promise<void>;
+
+  /** Callback when escape is pressed, typically to cancel current operation. */
+  readonly onCancel?: () => void;
 };
 
 export function TextInput({
@@ -43,6 +46,7 @@ export function TextInput({
   onSubmit,
   onTabFocus,
   exitApp,
+  onCancel,
 }: TextInputProps) {
   const dimensions = useResponsiveDimensions({ minHeight: 24, padding: 1 });
 
@@ -55,7 +59,7 @@ export function TextInput({
     exitApp,
   });
 
-  const { inputValue } = useTextInput({ isDisabled, placeholder, state, onTabFocus });
+  const { inputValue } = useTextInput({ isDisabled, placeholder, state, onTabFocus, onCancel });
 
   // Split the input value by both \n and \r and render each line separately
   const lines = inputValue.split(/[\n\r]/);
@@ -63,6 +67,7 @@ export function TextInput({
   return (
     <Box flexDirection="column" width={dimensions.paddedWidth - 6} flexWrap="wrap">
       {lines.map((line, index) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: we don't have anything else to index off.
         <Box key={index} overflow="hidden" width="100%">
           <Text wrap="wrap">{line}&nbsp;</Text>
         </Box>

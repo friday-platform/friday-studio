@@ -11,6 +11,7 @@ export const SessionSupervisorStatus = {
   EXECUTING: "executing",
   COMPLETED: "completed",
   FAILED: "failed",
+  CANCELLED: "cancelled",
 } as const;
 
 /**
@@ -20,6 +21,7 @@ export const ReasoningResultStatus = {
   COMPLETED: "completed",
   FAILED: "failed",
   PARTIAL: "partial",
+  CANCELLED: "cancelled",
 } as const;
 
 /**
@@ -30,6 +32,7 @@ export const WorkspaceSessionStatus = {
   EXECUTING: "executing",
   COMPLETED: "completed",
   FAILED: "failed",
+  CANCELLED: "cancelled",
 } as const;
 
 // Type exports

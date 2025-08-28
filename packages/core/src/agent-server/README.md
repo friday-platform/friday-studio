@@ -8,9 +8,9 @@ package.
 
 ```
 Session Supervisor
-    ↓ (executes agents via)
+    ↓ (executes agents via + passes AbortSignal)
 Agent Execution Manager
-    ↓ (creates/manages)
+    ↓ (creates/manages + propagates cancellation)
 Agent Execution Machines (XState actors)
     ↓ (when approval needed)
 Approval Queue Manager (stores suspended states)
@@ -23,6 +23,7 @@ The agent server provides:
 3. **Lazy Loading**: Agent code is loaded on-demand for efficient resource usage
 4. **Approval Flows**: Built-in support for human-in-the-loop approval via supervisor exceptions
 5. **Resource Discovery**: MCP resources for agent discovery and capability inspection
+6. **Cancellation Support**: Handles MCP cancellation notifications to abort running executions
 
 ## Key Components
 
@@ -42,7 +43,9 @@ Orchestrates agent execution using XState actors:
 - Creates and manages execution state machines
 - Handles lazy loading of agent code
 - Coordinates with approval queue for human-in-the-loop flows
-- Tracks active agent executions
+- Tracks active agent executions with AbortControllers
+- Maps requestIds to executions for cancellation correlation
+- Propagates AbortSignals to agent handlers
 
 ### Agent Execution Machine (`agent-execution-machine.ts`)
 
@@ -117,7 +120,43 @@ Agents are exposed as tools with this schema:
     context?: any,       // Optional additional context
     _approvalId?: string,    // For approval resumption
     _approvalDecision?: any, // Approval decision
+  },
+  _meta?: {
+    requestId?: string,  // Correlation ID for cancellation
   }
+}
+```
+
+### Cancellation Protocol
+
+The server implements MCP cancellation handling:
+
+1. **Request Tracking**: Each tool call can include a `requestId` in the `_meta` property
+2. **Cancellation Notification**: Clients send `notifications/cancelled` with the requestId
+3. **Abort Propagation**: Server aborts the matching execution via AbortController
+4. **Agent Context**: AbortSignal is passed to agent handlers in their execution context
+
+Example cancellation flow:
+```typescript
+// Client initiates execution with requestId
+await client.callTool({
+  name: "my-agent",
+  arguments: { prompt: "analyze data" },
+  _meta: { requestId: "req-123" }
+});
+
+// Client cancels the execution
+await client.notification({
+  method: "notifications/cancelled",
+  params: { requestId: "req-123", reason: "User cancelled" }
+});
+
+// Agent handler receives abort signal
+handler: async (prompt, { abortSignal }) => {
+  if (abortSignal?.aborted) {
+    throw new Error("Operation cancelled");
+  }
+  // ... agent logic
 }
 ```
 
@@ -140,6 +179,10 @@ import { AtlasAgentsMCPServer } from "@atlas/agent-server";
 const agent = createAgent({
   name: "test-agent",
   handler: async (prompt, context) => {
+    // Check for cancellation
+    if (context.abortSignal?.aborted) {
+      throw new Error("Cancelled");
+    }
     return { response: `Processed: ${prompt}` };
   },
 });
@@ -147,6 +190,22 @@ const agent = createAgent({
 // Register with server
 await server.registerAgent(agent);
 
-// Execute via MCP
-const result = await server.executeAgent("test-agent", "Hello", sessionData);
+// Execute via MCP with cancellation support
+const requestId = crypto.randomUUID();
+const executePromise = server.executeAgent(
+  "test-agent",
+  "Hello",
+  sessionData,
+  { requestId }
+);
+
+// Cancel the execution
+await server.handleCancellation(requestId);
+
+// Execution will throw cancellation error
+try {
+  await executePromise;
+} catch (error) {
+  console.log("Execution cancelled");
+}
 ```

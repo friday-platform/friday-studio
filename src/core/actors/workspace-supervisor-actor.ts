@@ -242,18 +242,33 @@ export class WorkspaceSupervisorActor implements BaseActor {
               sessionInfo.status =
                 sessionSummary.status === ReasoningResultStatus.COMPLETED
                   ? WorkspaceSessionStatus.COMPLETED
-                  : WorkspaceSessionStatus.FAILED;
+                  : sessionSummary.status === ReasoningResultStatus.CANCELLED
+                    ? WorkspaceSessionStatus.CANCELLED
+                    : WorkspaceSessionStatus.FAILED;
 
               // Clean up session after completion
               this.cleanupSession(sessionId);
             },
             (error) => {
-              this.logger.error("Session execution failed", {
-                sessionId,
-                signalId: signal.id,
-                error: error instanceof Error ? error.message : String(error),
-              });
-              sessionInfo.status = WorkspaceSessionStatus.FAILED;
+              const isCancellation = 
+                error instanceof Error && 
+                (error.message.includes('Session cancelled') || 
+                 error.message.includes('aborted'));
+              
+              if (isCancellation) {
+                this.logger.info("Session execution cancelled", {
+                  sessionId,
+                  signalId: signal.id,
+                });
+                sessionInfo.status = WorkspaceSessionStatus.CANCELLED;
+              } else {
+                this.logger.error("Session execution failed", {
+                  sessionId,
+                  signalId: signal.id,
+                  error: error instanceof Error ? error.message : String(error),
+                });
+                sessionInfo.status = WorkspaceSessionStatus.FAILED;
+              }
 
               // Clean up session after failure
               this.cleanupSession(sessionId);
@@ -316,6 +331,8 @@ export class WorkspaceSupervisorActor implements BaseActor {
         sessionsByStatus.completed++;
       } else if (sessionInfo.status === WorkspaceSessionStatus.FAILED) {
         sessionsByStatus.failed++;
+      } else if (sessionInfo.status === WorkspaceSessionStatus.CANCELLED) {
+        sessionsByStatus.failed++; // Count cancelled as failed for backward compatibility
       }
     }
 
@@ -389,7 +406,8 @@ export class WorkspaceSupervisorActor implements BaseActor {
     for (const [sessionId, sessionInfo] of this.sessions) {
       if (
         (sessionInfo.status === WorkspaceSessionStatus.COMPLETED ||
-          sessionInfo.status === WorkspaceSessionStatus.FAILED) &&
+          sessionInfo.status === WorkspaceSessionStatus.FAILED ||
+          sessionInfo.status === WorkspaceSessionStatus.CANCELLED) &&
         now - sessionInfo.createdAt > maxAge
       ) {
         this.logger.debug("Releasing heavy memory objects for old session", {

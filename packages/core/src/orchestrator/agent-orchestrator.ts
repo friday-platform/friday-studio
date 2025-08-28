@@ -36,6 +36,7 @@ import type { AgentToolParams } from "../agent-server/types.ts";
 import type { GlobalMCPServerPool } from "../mcp-server-pool.ts";
 import {
   CallbackStreamEmitter,
+  type CancellationNotification,
   StreamContentNotificationSchema,
 } from "../streaming/stream-emitters.ts";
 
@@ -61,6 +62,8 @@ export interface AgentExecutionContext {
   onStreamEvent?: (event: AtlasUIMessageChunk) => void; // NEW: Callback for stream events
   /** Optional pre-provisioned session memory. If not provided, orchestrator creates one. */
   memoryManager?: CoALAMemoryManager;
+  /** Optional abort signal for cancelling the execution */
+  abortSignal?: AbortSignal;
 }
 
 export interface ApprovalDecision {
@@ -176,6 +179,8 @@ export class AgentOrchestrator implements IAgentOrchestrator {
   private buildAgentContext?: ReturnType<typeof createAgentContextBuilder>;
   // Cache CoALA session memories per workspaceId:sessionId
   private sessionMemories = new Map<string, CoALAMemoryManager>();
+  // Track active MCP requests for cancellation
+  private activeMCPRequests = new Map<string, { requestId: string; sessionId: string }>();
 
   // (No ad-hoc resource parsing; we read the typed agents list resource instead)
 
@@ -203,7 +208,6 @@ export class AgentOrchestrator implements IAgentOrchestrator {
         logger: this.logger,
         // No server needed for wrapped agents (no MCP notification support)
         hasActiveSSE: () => false,
-        agentServerUrl: config.agentsServerUrl, // NEW: Pass Agent Server URL
       });
 
       this.logger.info("Initialized agent context builder for wrapped agents", {
@@ -435,6 +439,30 @@ export class AgentOrchestrator implements IAgentOrchestrator {
         hasStreamCallback: !!context.onStreamEvent,
       });
 
+      // Generate request ID for tracking
+      const requestId = crypto.randomUUID();
+
+      // Store for cancellation
+      this.activeMCPRequests.set(`${context.sessionId}:${agentId}`, {
+        requestId,
+        sessionId: context.sessionId,
+      });
+
+      // Handle abort signal
+      if (context.abortSignal) {
+        context.abortSignal.addEventListener("abort", async () => {
+          const notification: CancellationNotification = {
+            method: "notifications/cancelled",
+            params: { requestId, reason: "Session cancelled by user" },
+          };
+          try {
+            await mcpSetup.client.notification(notification);
+          } catch (error) {
+            logger.warn("Failed to send cancellation notification", { error, requestId });
+          }
+        });
+      }
+
       const toolCallArgs: AgentToolParams = {
         prompt: prompt,
         context: {
@@ -450,7 +478,16 @@ export class AgentOrchestrator implements IAgentOrchestrator {
         },
       };
 
-      const toolResult = await mcpSetup.client.callTool({ name: agentId, arguments: toolCallArgs });
+      let toolResult: unknown;
+      try {
+        toolResult = await mcpSetup.client.callTool({
+          name: agentId,
+          arguments: toolCallArgs,
+          _meta: { requestId },
+        });
+      } finally {
+        this.activeMCPRequests.delete(`${context.sessionId}:${agentId}`);
+      }
 
       const executionResult = this.parseAgentResponse(toolResult);
 
@@ -690,6 +727,7 @@ export class AgentOrchestrator implements IAgentOrchestrator {
             prompt,
             {
               stream: streamEmitter, // Override with our stream emitter
+              abortSignal: context.abortSignal, // Pass abort signal
             },
             context.previousResults, // Pass previous results for context enrichment
           );
@@ -720,6 +758,7 @@ export class AgentOrchestrator implements IAgentOrchestrator {
             },
             stream: streamEmitter,
             env: {},
+            abortSignal: context.abortSignal,
           };
         }
       } else {
@@ -747,6 +786,7 @@ export class AgentOrchestrator implements IAgentOrchestrator {
           },
           stream: streamEmitter,
           env: {},
+          abortSignal: context.abortSignal,
         };
       }
 

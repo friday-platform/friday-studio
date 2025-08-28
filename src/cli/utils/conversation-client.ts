@@ -395,4 +395,19 @@ export class ConversationClient {
 
     return await response.json();
   }
+
+  /**
+   * Cancel an active Atlas session
+   */
+  async cancelSession(sessionId: string): Promise<void> {
+    const client = createAtlasClient();
+    const response = await client.DELETE("/api/sessions/{sessionId}", {
+      params: { path: { sessionId } },
+    });
+
+    // Ignore 404 errors (session already finished)
+    if (response.error && response.response.status !== 404) {
+      throw new Error(`Failed to cancel session: ${response.error.error}`);
+    }
+  }
 }

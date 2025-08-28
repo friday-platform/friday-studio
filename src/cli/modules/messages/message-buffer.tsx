@@ -16,7 +16,6 @@ import { formatMessage } from "./utils.ts";
 interface TypingState {
   isTyping: boolean;
   elapsedSeconds: number;
-  message?: string;
 }
 
 export const MessageBuffer = () => {
@@ -26,6 +25,7 @@ export const MessageBuffer = () => {
     sseAbortControllerRef,
     staticKey,
     setDaemonStatusState,
+    setAtlasSessionId,
   } = useAppContext();
   const sseListenerStarted = useRef(false);
 
@@ -78,9 +78,20 @@ export const MessageBuffer = () => {
       try {
         for await (const uiMessage of readUIMessageStream({ stream: sseStream })) {
           uiMessage.parts.forEach((part) => {
-            if (part.type === "data-session-start" && !typingState.isTyping) {
-              setTypingState((prev) => ({ ...prev, isTyping: true }));
+            if (part.type === "data-session-start") {
+              // Capture the Atlas session ID
+              if (part.data && typeof part.data === "object" && "sessionId" in part.data) {
+                const sessionData = part.data as { sessionId: string };
+                setAtlasSessionId(sessionData.sessionId);
+              }
+              if (!typingState.isTyping) {
+                setTypingState((prev) => ({ ...prev, isTyping: true }));
+              }
             } else if (part.type === "data-session-finish") {
+              setAtlasSessionId(null); // Clear session ID on finish
+              setTypingState({ isTyping: false, elapsedSeconds: 0 });
+            } else if (part.type === "data-session-cancel") {
+              setAtlasSessionId(null); // Clear session ID on cancel
               setTypingState({ isTyping: false, elapsedSeconds: 0 });
             }
           });

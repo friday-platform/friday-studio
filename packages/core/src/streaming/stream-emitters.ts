@@ -5,6 +5,13 @@ import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { NotificationSchema } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 
+export const CancellationNotificationSchema = NotificationSchema.extend({
+  method: z.literal("notifications/cancelled"),
+  params: z.object({ requestId: z.string(), reason: z.string().optional() }),
+});
+
+export type CancellationNotification = z.infer<typeof CancellationNotificationSchema>;
+
 export const StreamContentNotificationSchema = NotificationSchema.extend({
   method: z.literal("notifications/tool/streamContent"),
   params: z.object({

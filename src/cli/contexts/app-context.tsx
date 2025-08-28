@@ -37,6 +37,9 @@ interface AppContextType {
   setConversationClient: React.Dispatch<React.SetStateAction<ConversationClient | null>>;
   conversationSessionId: string | null;
   setConversationSessionId: React.Dispatch<React.SetStateAction<string | null>>;
+  atlasSessionId: string | null;
+  setAtlasSessionId: React.Dispatch<React.SetStateAction<string | null>>;
+  cancelCurrentSession: () => Promise<void>;
   sseAbortControllerRef: React.RefObject<AbortController | null>;
   isInitializing: boolean;
   exitApp: () => Promise<void>;
@@ -70,6 +73,7 @@ export const AppProvider = ({ children }: AppProviderProps) => {
 
   const [conversationClient, setConversationClient] = useState<ConversationClient | null>(null);
   const [conversationSessionId, setConversationSessionId] = useState<string | null>(null);
+  const [atlasSessionId, setAtlasSessionId] = useState<string | null>(null);
   const sseAbortControllerRef = useRef<AbortController | null>(null);
 
   const [isInitializing, setIsInitializing] = useState(false);
@@ -368,6 +372,21 @@ export const AppProvider = ({ children }: AppProviderProps) => {
     }, 5000);
   };
 
+  const cancelCurrentSession = async () => {
+    if (!conversationClient || !atlasSessionId) {
+      return; // No session to cancel
+    }
+
+    try {
+      await conversationClient.cancelSession(atlasSessionId);
+      // Clear the Atlas session ID after successful cancellation
+      setAtlasSessionId(null);
+    } catch (error) {
+      // Log error but don't throw - cancellation is best effort
+      console.error("Failed to cancel session:", error);
+    }
+  };
+
   return (
     <AppContext.Provider
       value={{
@@ -381,6 +400,9 @@ export const AppProvider = ({ children }: AppProviderProps) => {
         setConversationClient,
         conversationSessionId,
         setConversationSessionId,
+        atlasSessionId,
+        setAtlasSessionId,
+        cancelCurrentSession,
         sseAbortControllerRef,
         isInitializing,
         exitApp,

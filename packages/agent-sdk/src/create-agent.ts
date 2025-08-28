@@ -97,6 +97,11 @@ class AtlasAgentImpl<T = unknown> implements AtlasAgent<T> {
         throw error;
       }
 
+      // Re-throw AbortError exceptions for proper cancellation handling
+      if (error instanceof DOMException && error.name === "AbortError") {
+        throw error;
+      }
+
       // Wrap other errors with agent context
       throw new Error(
         `Agent ${this.metadata.id} execution failed: ${

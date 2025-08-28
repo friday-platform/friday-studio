@@ -44,6 +44,15 @@ export function formatMessage(part: UIMessagePart<UIDataTypes, UITools>): Output
   } // @TODO: implement all of these
   else if (part.type.startsWith("tool-result-")) {
     return undefined;
+  } else if (part.type === "data-session-cancel") {
+    const reason = part.data?.reason || "Session cancelled by user";
+    return {
+      id: crypto.randomUUID(),
+      type: "text",
+      timestamp: new Date().toISOString(),
+      author: "Atlas",
+      content: `⚠️ ${reason}`,
+    };
   } else if (
     part.type === "tool-error" ||
     part.type === "data-error" ||

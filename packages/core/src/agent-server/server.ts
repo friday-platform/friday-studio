@@ -18,7 +18,9 @@ import type { GlobalMCPServerPool } from "@atlas/core";
 import type { Logger } from "@atlas/logger";
 import { CoALAMemoryManager, type IMemoryScope } from "@atlas/memory";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import z from "zod";
 import { createAgentContextBuilder } from "../agent-context/index.ts";
+import { CancellationNotificationSchema } from "../streaming/stream-emitters.ts";
 import { AgentExecutionManager } from "./agent-execution-manager.ts";
 import { ApprovalQueueManager } from "./approval-queue-manager.ts";
 import { type AgentServerDependencies, AgentToolParamsSchema } from "./types.ts";
@@ -70,14 +72,6 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
       deps.logger.child({ component: "approval-queue-manager" }),
     );
 
-    // Debug MCP server internal structure for SSE notification capabilities
-    this.#logger.info("Checking server.server in constructor", {
-      hasServerServer: !!this.server.server,
-      serverServerType: this.server.server?.constructor?.name,
-      serverServerKeys: this.server.server ? Object.keys(this.server.server) : [],
-      hasNotificationOnServerServer: typeof this.server.server?.notification === "function",
-    });
-
     this.buildAgentContext = createAgentContextBuilder({
       daemonUrl: deps.daemonUrl,
       mcpServerPool: deps.mcpServerPool,
@@ -96,7 +90,16 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
       deps.logger.child({ component: "agent-execution-manager" }),
     );
 
-    this.#logger.info("Agent execution manager initialized with memory integration support");
+    this.#logger.info("Agent execution manager initialized");
+
+    // Register cancellation notification handler
+
+    this.server.server.setNotificationHandler(CancellationNotificationSchema, (notification) => {
+      const { requestId, reason } = notification.params;
+      this.#logger.info("Received cancellation notification", { requestId, reason });
+      this.executionManager.cancelExecution(requestId, reason);
+    });
+    this.#logger.info("Registered cancellation notification handler");
 
     this.registerAgentTools().catch((error) => {
       this.#logger.error("Failed to register agent tools", { error });
@@ -114,56 +117,81 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
         description: agent.description,
         inputSchema: AgentToolParamsSchema.shape,
       },
-      async (args) => {
-        const agentId = agent.id;
-
-        // Ensure session memory is initialized once we know the workspace
+      async (args, request) => {
         try {
-          const workspaceId = args._sessionContext?.workspaceId;
-          if (workspaceId && !this.sessionMemory) {
-            this.ensureSessionMemory(workspaceId);
+          const agentId = agent.id;
+
+          /**
+           * MCP request _meta is untyped, but we want to ensure that requestId is either
+           * a string or undefined before it's passed into the execution machine.
+           */
+          const requestId = z
+            .string()
+            .optional()
+            .catch(() => undefined)
+            .parse(request._meta?.requestId);
+
+          // Ensure session memory is initialized once we know the workspace
+          try {
+            const workspaceId = args._sessionContext?.workspaceId;
+            if (workspaceId && !this.sessionMemory) {
+              this.ensureSessionMemory(workspaceId);
+            }
+          } catch (e) {
+            this.#logger.warn("Failed to initialize session memory; proceeding without it", { e });
           }
-        } catch (e) {
-          this.#logger.warn("Failed to initialize session memory; proceeding without it", { e });
-        }
 
-        this.#logger.debug("MCP tool handler called for agent", {
-          args: JSON.stringify(args),
-          agentId,
-          displayName: agent.displayName,
-        });
+          this.#logger.debug("MCP tool handler called for agent", {
+            args: JSON.stringify(args),
+            agentId,
+            displayName: agent.displayName,
+            requestId,
+          });
 
-        // Approval flow remains the same
-        if (args._approvalId && args._approvalDecision) {
-          const result = await this.resumeWithApproval(args._approvalId, args._approvalDecision);
+          // Approval flow remains the same
+          if (args._approvalId && args._approvalDecision) {
+            const result = await this.resumeWithApproval(args._approvalId, args._approvalDecision);
+            return { content: [{ type: "text", text: JSON.stringify(result) }] };
+          }
+
+          // Session still comes from _sessionContext parameter - no changes!
+          const session = args._sessionContext;
+
+          this.#logger.info("Session context", {
+            hasSession: !!session,
+            orchestratorSessionId: session?.sessionId,
+            serverSessionId: this.sessionId,
+            streamId: session?.streamId,
+            workspaceId: session?.workspaceId,
+            agentId,
+          });
+
+          if (!session) {
+            throw new Error("No session data available - authentication required");
+          }
+
+          // Pass requestId directly to executeAgent - no instance variable
+          const result = await this.executeAgent(agentId, args.prompt, session, requestId);
+
+          this.#logger.debug("Agent execution result", {
+            agentId,
+            result: JSON.stringify(result),
+            resultType: typeof result,
+          });
+
           return { content: [{ type: "text", text: JSON.stringify(result) }] };
+        } catch (error) {
+          const isCancellation = error instanceof Error && 
+            (error.message.includes('cancelled') || 
+             error.message.includes('aborted'));
+          
+          if (isCancellation) {
+            this.#logger.info("Agent execution cancelled", { agentId: agent.id });
+          } else {
+            this.#logger.error("Agent execution error", { agentId: agent.id, error });
+          }
+          throw error;
         }
-
-        // Session still comes from _sessionContext parameter - no changes!
-        const session = args._sessionContext;
-
-        this.#logger.info("Session context", {
-          hasSession: !!session,
-          orchestratorSessionId: session?.sessionId,
-          serverSessionId: this.sessionId,
-          streamId: session?.streamId,
-          workspaceId: session?.workspaceId,
-          agentId,
-        });
-
-        if (!session) {
-          throw new Error("No session data available - authentication required");
-        }
-
-        const result = await this.executeAgent(agentId, args.prompt, session);
-
-        this.#logger.debug("Agent execution result", {
-          agentId,
-          result: JSON.stringify(result),
-          resultType: typeof result,
-        });
-
-        return { content: [{ type: "text", text: JSON.stringify(result) }] };
       },
     );
 
@@ -232,7 +260,12 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
         throw error;
       }
     }
-    return this.loadedAgents.get(agentId)!;
+
+    const agent = this.loadedAgents.get(agentId);
+    if (!agent) {
+      throw new Error("Failed to load agent after lazy loading.");
+    }
+    return agent;
   }
 
   /**
@@ -387,18 +420,25 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
     agentId: string,
     prompt: string,
     sessionData: AgentSessionData,
+    requestId?: string,
   ): Promise<AgentExecutionResult> {
     this.#logger.debug("executeAgent called", {
       agentId,
       sessionId: sessionData.sessionId,
-      streamId: (sessionData as AgentSessionData & { streamId?: string }).streamId,
+      streamId: sessionData.streamId,
       workspaceId: sessionData.workspaceId,
       prompt: prompt,
+      requestId,
     });
 
     try {
-      // Use execution manager with session data
-      const result = await this.executionManager.executeAgent(agentId, prompt, sessionData);
+      // Use execution manager with session data and requestId
+      const result = await this.executionManager.executeAgent(
+        agentId,
+        prompt,
+        sessionData,
+        requestId,
+      );
 
       // Wrap successful results in structured response
       return { type: "completed", result };
@@ -415,7 +455,15 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
         };
       }
 
-      this.#logger.error("Agent execution failed", { agentId, error });
+      const isCancellation = error instanceof Error && 
+        (error.message.includes('cancelled') || 
+         error.message.includes('aborted'));
+      
+      if (isCancellation) {
+        this.#logger.info("Agent execution cancelled", { agentId });
+      } else {
+        this.#logger.error("Agent execution failed", { agentId, error });
+      }
       throw error;
     }
   }

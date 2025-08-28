@@ -323,6 +323,9 @@ export interface AgentContext {
 
   /** Logger instance with session context pre-configured */
   logger: Logger;
+
+  /** Optional abort signal for cancelling agent execution */
+  abortSignal?: AbortSignal;
 }
 
 /**

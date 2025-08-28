@@ -36,7 +36,12 @@ import type { CollectableStreamEmitter } from "../streaming/stream-emitters.ts";
 type LoadAgentInput = { agentId: string };
 type LoadAgentOutput = AtlasAgent;
 
-type PrepareContextInput = { agent: AtlasAgent; prompt: string; sessionData: AgentSessionData };
+type PrepareContextInput = {
+  agent: AtlasAgent;
+  prompt: string;
+  sessionData: AgentSessionData;
+  abortSignal?: AbortSignal;
+};
 
 export type PrepareContextOutput = { context: AgentContext; enrichedPrompt: string };
 
@@ -71,6 +76,7 @@ export interface AgentExecutionContext {
   currentPrompt?: string;
   enrichedPrompt?: string;
   sessionData?: AgentSessionData;
+  abortSignal?: AbortSignal;
   preparedContext?: AgentContext;
   result?: unknown;
   error?: Error;
@@ -83,7 +89,7 @@ export interface AgentExecutionContext {
 /** Events that drive state transitions */
 export type AgentExecutionEvents =
   | { type: "LOAD" }
-  | { type: "EXECUTE"; prompt: string; sessionData: AgentSessionData }
+  | { type: "EXECUTE"; prompt: string; sessionData: AgentSessionData; abortSignal?: AbortSignal }
   | { type: "CANCEL" }
   | { type: "TIMEOUT" }
   | { type: "UNLOAD" }
@@ -136,24 +142,20 @@ export function createAgentExecutionMachine(
       }),
 
       prepareContext: fromPromise<PrepareContextOutput, PrepareContextInput>(async ({ input }) => {
-        return await contextBuilder(input.agent, input.sessionData, sessionMemory, input.prompt);
+        // Pass abortSignal as an override if present
+        const overrides = input.abortSignal ? { abortSignal: input.abortSignal } : undefined;
+        return await contextBuilder(
+          input.agent,
+          input.sessionData,
+          sessionMemory,
+          input.prompt,
+          overrides,
+        );
       }),
 
       executeAgent: fromPromise<ExecuteAgentOutput, ExecuteAgentInput>(async ({ input }) => {
         // Execute agent and return raw result
         const result = await input.agent.execute(input.prompt, input.context);
-
-        // Check if we used a CollectingStreamEmitter and include events
-        if (input.context.stream && "getCollectedEvents" in input.context.stream) {
-          const collectedEvents = (
-            input.context.stream as CollectableStreamEmitter
-          ).getCollectedEvents();
-          if (collectedEvents && collectedEvents.length > 0) {
-            // Include stream events in the result metadata
-            return { result, metadata: { streamEvents: collectedEvents } };
-          }
-        }
-
         return result;
       }),
 
@@ -213,6 +215,12 @@ export function createAgentExecutionMachine(
             return undefined;
           }
           return event.sessionData;
+        },
+        abortSignal: ({ event }) => {
+          if (event.type !== "EXECUTE") {
+            return undefined;
+          }
+          return event.abortSignal;
         },
         startTime: () => Date.now(),
       }),
@@ -288,7 +296,16 @@ export function createAgentExecutionMachine(
       },
 
       logError: ({ context }) => {
-        logger.error("Agent error", { agentId: context.agentId, error: context.error });
+        const isCancellation =
+          context.error &&
+          (context.error.message?.includes("cancelled") ||
+            context.error.message?.includes("aborted"));
+
+        if (isCancellation) {
+          logger.info("Agent execution cancelled", { agentId: context.agentId });
+        } else {
+          logger.error("Agent error", { agentId: context.agentId, error: context.error });
+        }
       },
     },
 
@@ -350,6 +367,7 @@ export function createAgentExecutionMachine(
             agent: context.agent!,
             prompt: context.currentPrompt!,
             sessionData: context.sessionData!,
+            abortSignal: context.abortSignal,
           }),
           onDone: { target: "executing", actions: "assignPreparedContext" },
           onError: { target: "failed", actions: ["assignError", "logError"] },

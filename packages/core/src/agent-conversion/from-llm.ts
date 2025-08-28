@@ -81,7 +81,7 @@ export function convertLLMToAgent(
     description: config.description,
     metadata: {},
     expertise: { domains: ["general"], capabilities: ["general"], examples: [] },
-    handler: async (prompt, { tools, stream }) => {
+    handler: async (prompt, { tools, stream, abortSignal }) => {
       try {
         // Enforce source attribution protocol in system prompt (idempotent)
         const systemPromptWithAttribution = ensureSourceAttributionProtocol(
@@ -103,6 +103,7 @@ export function convertLLMToAgent(
           maxOutputTokens: config.config.max_tokens,
           maxRetries,
           stopWhen: stepCountIs(config.config.max_steps || 10),
+          abortSignal,
           ...(config.config.provider_options || {}),
         });
 
@@ -128,6 +129,12 @@ export function convertLLMToAgent(
           toolResults: assembledToolResults,
         };
       } catch (error) {
+        // Simply check if we were aborted, don't try to detect from error
+        if (abortSignal?.aborted) {
+          logger.info("Wrapped agent execution cancelled", { agentId });
+          throw new DOMException("Agent execution cancelled", "AbortError");
+        }
+
         // Enhanced error logging for API overload situations
         const isAPIError = error instanceof APICallError;
         const errorDetails = {

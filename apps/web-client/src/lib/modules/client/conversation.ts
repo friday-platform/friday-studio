@@ -1,6 +1,5 @@
 import type { SessionUIMessageChunk } from "@atlas/core";
 import { createAtlasClient } from "@atlas/oapi-client";
-import { stringifyError } from "@atlas/utils";
 import { createEventSource } from "eventsource-client";
 import { DaemonClient } from "./daemon.ts";
 

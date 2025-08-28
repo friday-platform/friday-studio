@@ -20,7 +20,7 @@ export function Component() {
   const {
     conversationClient,
     conversationSessionId,
-
+    atlasSessionId,
     setIsCollapsed,
     exitApp,
     sendDiagnostics,
@@ -36,6 +36,10 @@ export function Component() {
     (input, key) => {
       if (key.ctrl && input === "r") {
         setIsCollapsed((prev) => !prev);
+      }
+
+      if (key.escape && atlasSessionId) {
+        conversationClient?.cancelSession(atlasSessionId);
       }
     },
     { isActive: true },

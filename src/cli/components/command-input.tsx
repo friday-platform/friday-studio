@@ -14,7 +14,7 @@ export interface CommandInputProps {
 }
 
 export const CommandInput = ({ onSubmit, isDisabled = false }: CommandInputProps) => {
-  const { exitApp, diagnosticsStatus, daemonStatus, multilineSetupStatus, multilineTerminalType } =
+  const { exitApp, cancelCurrentSession, diagnosticsStatus, daemonStatus, multilineSetupStatus, multilineTerminalType } =
     useAppContext();
 
   const [currentInput, setCurrentInput] = useState("");
@@ -187,6 +187,7 @@ export const CommandInput = ({ onSubmit, isDisabled = false }: CommandInputProps
           defaultValue={currentInput}
           enableAttachments
           exitApp={exitApp}
+          onCancel={cancelCurrentSession}
         />
       </Box>
 

@@ -69,7 +69,7 @@ interface ResearchOutput {
  * Parses natural language queries into structured search parameters
  * Supports reddit filtering, time ranges, and domain specifications
  */
-async function parseQuery(query: string, logger?: Logger): Promise<SearchParameters> {
+async function parseQuery(query: string, logger?: Logger, abortSignal?: AbortSignal): Promise<SearchParameters> {
   const schema = z.object({
     queries: z
       .array(
@@ -87,6 +87,7 @@ async function parseQuery(query: string, logger?: Logger): Promise<SearchParamet
   const { object } = await generateObject({
     model: anthropic("claude-3-5-haiku-latest"),
     schema,
+    abortSignal,
     system: `Parse natural language into structured search parameters for web research.
 
 <constraints>
@@ -192,6 +193,7 @@ async function searchSingle(
 async function evaluateResults(
   results: SearchResult[],
   logger?: Logger,
+  abortSignal?: AbortSignal,
 ): Promise<{ relevant: SearchResult[]; queryModification?: string }> {
   if (results.length === 0) {
     logger?.debug(`No results to evaluate`);
@@ -215,6 +217,7 @@ async function evaluateResults(
         const { object } = await generateObject({
           model: anthropic("claude-3-5-haiku-latest"),
           schema: singleResultSchema,
+          abortSignal,
           system: `Evaluate if this search result directly answers the user's query.
 
 <relevance_criteria>
@@ -283,6 +286,7 @@ Content: ${result.content.slice(0, 400)}...
     try {
       const { object } = await generateObject({
         model: anthropic("claude-3-5-haiku-latest"),
+        abortSignal,
         schema: z.object({
           suggestion: z
             .string()
@@ -360,6 +364,7 @@ async function searchWithRetries(
   options: { maxAttempts: number },
   stream?: StreamEmitter,
   logger?: Logger,
+  abortSignal?: AbortSignal,
 ): Promise<SearchResult[]> {
   const allResults: SearchResult[] = [];
   const seenUrls = new Set<string>();
@@ -409,7 +414,7 @@ async function searchWithRetries(
       const firstQuery = currentQueries[0];
       if (firstQuery) {
         logger?.debug(`No new results, attempting query refinement`);
-        const suggestion = await suggestBetterQuery(firstQuery, allResults, logger);
+        const suggestion = await suggestBetterQuery(firstQuery, allResults, logger, abortSignal);
         if (suggestion) {
           logger?.info(`Retrying with modified query`, { query: suggestion.query });
           currentQueries = [suggestion];
@@ -426,7 +431,7 @@ async function searchWithRetries(
       });
     }
 
-    const evaluated = await evaluateResults(newResults, logger);
+    const evaluated = await evaluateResults(newResults, logger, abortSignal);
 
     for (const result of evaluated.relevant) {
       if (!seenUrls.has(result.url)) {
@@ -467,6 +472,7 @@ async function suggestBetterQuery(
   originalQuery: QuerySpec,
   currentResults: SearchResult[],
   logger?: Logger,
+  abortSignal?: AbortSignal,
 ): Promise<QuerySpec | undefined> {
   const schema = z.object({
     query: z.string().max(400).describe("Just the new search query text, no explanations or prose"),
@@ -479,6 +485,7 @@ async function suggestBetterQuery(
     const { object } = await generateObject({
       model: anthropic("claude-3-5-haiku-latest"),
       schema,
+      abortSignal,
       system: `Improve search queries based on result quality. Current date: ${formatter.format(new Date())}
 
 <instructions>
@@ -538,6 +545,7 @@ async function extractTopResults(
   tavilyClient: TavilyClient,
   stream?: StreamEmitter,
   logger?: Logger,
+  abortSignal?: AbortSignal,
 ): Promise<ExtractionResult> {
   const MAX_EXTRACTIONS = 15;
   const urls = results.slice(0, MAX_EXTRACTIONS).map((r) => r.url);
@@ -580,7 +588,7 @@ async function extractTopResults(
       if (response.results && Array.isArray(response.results)) {
         for (const result of response.results) {
           const content = result.rawContent || "";
-          const processed = await summarizeIfLarge(content, query, logger);
+          const processed = await summarizeIfLarge(content, query, logger, abortSignal);
 
           successful.push({
             url: result.url,
@@ -629,6 +637,7 @@ async function summarizeIfLarge(
   content: string,
   query: string,
   logger?: Logger,
+  abortSignal?: AbortSignal,
 ): Promise<{ content: string; wasSummarized: boolean; originalTokens?: number }> {
   const maxTokens = 2000;
   const estimatedTokens = Math.ceil(content.length / 4);
@@ -641,6 +650,7 @@ async function summarizeIfLarge(
 
   const { text } = await generateText({
     model: anthropic("claude-3-5-haiku-latest"),
+    abortSignal,
     system: `Extract information relevant to the user's query from large content.
 
 <extraction_criteria>
@@ -682,6 +692,7 @@ async function synthesizeResults(input: {
   searchParams: SearchParameters;
   searchResults: SearchResult[];
   extracted: ExtractionResult;
+  abortSignal?: AbortSignal;
 }): Promise<string> {
   const sources = new Map<string, SourceContent>();
 
@@ -714,6 +725,7 @@ async function synthesizeResults(input: {
 
   const { text } = await generateText({
     model: anthropic("claude-sonnet-4-20250514"),
+    abortSignal: input.abortSignal,
     system: buildSynthesisPrompt(input.searchParams.outputFormat),
     prompt: `<query>${input.query}</query>
 
@@ -790,7 +802,7 @@ export const targetedResearchAgent = createAgent<string>({
     ],
   },
 
-  handler: async (prompt, { stream, logger }): Promise<string> => {
+  handler: async (prompt, { stream, logger, abortSignal }): Promise<string> => {
     const startTime = Date.now();
     const metrics = { parseTime: 0, searchTime: 0, extractTime: 0, synthTime: 0 };
 
@@ -807,7 +819,7 @@ export const targetedResearchAgent = createAgent<string>({
         data: { toolName: "Research Agent", content: "Analyzing query requirements..." },
       });
       const parseStart = Date.now();
-      const searchParams = await parseQuery(prompt, logger);
+      const searchParams = await parseQuery(prompt, logger, abortSignal);
       metrics.parseTime = Date.now() - parseStart;
 
       logger?.info(`Search request parsed`, {
@@ -823,6 +835,7 @@ export const targetedResearchAgent = createAgent<string>({
         { maxAttempts: 3 },
         stream,
         logger,
+        abortSignal,
       );
       metrics.searchTime = Date.now() - searchStart;
 
@@ -848,6 +861,7 @@ export const targetedResearchAgent = createAgent<string>({
         tavilyClient,
         stream,
         logger,
+        abortSignal,
       );
       metrics.extractTime = Date.now() - extractStart;
 
@@ -877,6 +891,7 @@ export const targetedResearchAgent = createAgent<string>({
         searchParams,
         searchResults,
         extracted,
+        abortSignal,
       });
       metrics.synthTime = Date.now() - synthStart;
 

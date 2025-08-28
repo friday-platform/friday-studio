@@ -16,6 +16,9 @@ export type UseTextInputProps = {
 
   /** Callback when tab is pressed and should change focus instead of accepting suggestion. */
   onTabFocus?: () => void;
+
+  /** Callback when escape is pressed, typically to cancel current operation. */
+  onCancel?: () => void;
 };
 
 export type UseTextInputResult = {
@@ -30,6 +33,7 @@ export const useTextInput = ({
   state,
   placeholder = "",
   onTabFocus,
+  onCancel,
 }: UseTextInputProps): UseTextInputResult => {
   const renderedPlaceholder = useMemo(() => {
     if (isDisabled) {
@@ -146,6 +150,13 @@ export const useTextInput = ({
 
       if (name === "return") {
         state.submit();
+
+        return;
+      }
+
+      if (name === "escape") {
+        // Call the cancel callback if provided
+        onCancel?.();
 
         return;
       }

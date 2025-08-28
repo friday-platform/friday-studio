@@ -22,7 +22,6 @@ import { parse } from "@std/yaml";
 import type { Context, Next } from "hono";
 import { cors } from "hono/cors";
 import { DaemonCapabilityRegistry } from "../../../src/core/daemon-capabilities.ts";
-import type { LibrarySearchQuery } from "../../../src/core/library/types.ts";
 import {
   createKVStorage,
   createLibraryStorage,
@@ -38,6 +37,7 @@ import { chatStorageRoutes } from "../routes/chat-storage/index.ts";
 import { healthRoutes } from "../routes/health.ts";
 import { libraryRoutes } from "../routes/library/index.ts";
 import { createOpenAPIHandlers } from "../routes/openapi.ts";
+import { sessionsRoutes } from "../routes/sessions/index.ts";
 import { signalRoutes } from "../routes/signals/index.ts";
 import { streamsRoutes } from "../routes/streams/index.ts";
 import { todoStorageRoutes } from "../routes/todo-storage/index.ts";
@@ -474,6 +474,10 @@ export class AtlasDaemon implements AppContext {
 
     // Mount todo storage routes
     this.app.route("/api/todos", todoStorageRoutes);
+
+    // Mount sessions routes
+    this.app.route("/api/sessions", sessionsRoutes);
+
     // Mount agent routes
     this.app.route("/api/agents", agentsRoutes);
 
@@ -951,27 +955,6 @@ export class AtlasDaemon implements AppContext {
           }
 
           return c.json(sessionData);
-        }
-      }
-
-      return c.json({ error: `Session not found: ${sessionId}` }, 404);
-    });
-
-    // Cancel session from any workspace
-    this.app.delete("/api/sessions/:sessionId", async (c) => {
-      const sessionId = c.req.param("sessionId");
-
-      // Find session across all runtimes
-      for (const [workspaceId, runtime] of this.runtimes) {
-        const session = runtime.getSession(sessionId);
-        if (session) {
-          try {
-            await runtime.cancelSession(sessionId);
-            return c.json({ message: `Session ${sessionId} cancelled`, workspaceId });
-          } catch (error) {
-            logger.error("Failed to cancel session", { error, sessionId });
-            return c.json({ message: `Session ${sessionId} cancelled`, workspaceId });
-          }
         }
       }
 

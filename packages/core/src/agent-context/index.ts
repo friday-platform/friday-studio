@@ -122,6 +122,7 @@ export function createAgentContextBuilder(deps: AgentContextBuilderDeps) {
         agentId: agent.metadata.id,
         streamId: sessionData.streamId,
       }),
+      // Spread overrides to include abortSignal and other overrides
       ...overrides,
       // Tools should be last to ensure they're available unless explicitly overridden
       tools: overrides?.tools || allTools,

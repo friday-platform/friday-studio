@@ -202,8 +202,15 @@ export class Session extends AtlasScope implements IWorkspaceSession {
 
     this.logger.info("Cancelling session");
 
-    this._status = WorkspaceSessionStatus.FAILED;
+    this._status = WorkspaceSessionStatus.CANCELLED;
     this._error = new Error("Session cancelled");
+
+    // Cancel session execution in the supervisor actor.
+    if (this.sessionActor) {
+      this.sessionActor.cancel();
+    }
+
+    this.rememberSessionEvent("session-cancelled", { cancelledAt: new Date().toISOString() });
 
     this.signals.callback.onError(this._error);
 

@@ -47,6 +47,7 @@ export type BuildAgentContext = (
  */
 export class AgentExecutionManager {
   private activeAgents = new Map<string, AgentExecutionMachineActor>();
+  private activeExecutions = new Map<string, AbortController>();
   private loadAgentFn: (agentId: string) => Promise<AtlasAgent>;
   private contextBuilder: BuildAgentContext;
   private sessionMemory: CoALAMemoryManager | null;
@@ -106,7 +107,11 @@ export class AgentExecutionManager {
       this.activeAgents.set(agentId, actor);
     }
 
-    return this.activeAgents.get(agentId)!;
+    const agent = this.activeAgents.get(agentId);
+    if (!agent) {
+      throw new Error(`Agent ${agentId} not found`);
+    }
+    return agent;
   }
 
   /**
@@ -116,9 +121,21 @@ export class AgentExecutionManager {
    * @throws {AwaitingSupervisorDecision} When agent requests approval
    * @throws {Error} When execution fails
    */
-  executeAgent(agentId: string, prompt: string, sessionData: AgentSessionData): Promise<unknown> {
-    this.logger.info("Executing agent", { agentId, prompt, ...sessionData });
+  executeAgent(
+    agentId: string,
+    prompt: string,
+    sessionData: AgentSessionData,
+    requestId?: string,
+  ): Promise<unknown> {
+    this.logger.info("Executing agent", { agentId, prompt, requestId, ...sessionData });
     const actor = this.getOrCreateExecutionActor(agentId);
+
+    // Create abort controller if requestId is provided
+    let abortController: AbortController | undefined;
+    if (requestId) {
+      abortController = new AbortController();
+      this.activeExecutions.set(requestId, abortController);
+    }
 
     return new Promise((resolve, reject) => {
       const subscription = actor.subscribe((snapshot) => {
@@ -126,9 +143,19 @@ export class AgentExecutionManager {
 
         if (state === "completed" && snapshot.context.result) {
           subscription.unsubscribe();
+          if (requestId) {
+            this.activeExecutions.delete(requestId);
+          }
+          // Remove completed actor so it can be recreated for next execution
+          this.activeAgents.delete(agentId);
           resolve(snapshot.context.result);
         } else if (state === "failed" && snapshot.context.error) {
           subscription.unsubscribe();
+          if (requestId) {
+            this.activeExecutions.delete(requestId);
+          }
+          // Remove failed actor so it can be recreated for next execution
+          this.activeAgents.delete(agentId);
           reject(snapshot.context.error);
         } else if (state === "awaiting") {
           // Agent is requesting supervisor approval
@@ -141,13 +168,16 @@ export class AgentExecutionManager {
             this.activeAgents.delete(agentId);
 
             subscription.unsubscribe();
+            if (requestId) {
+              this.activeExecutions.delete(requestId);
+            }
             reject(error); // Propagate to supervisor
           }
         }
       });
 
-      // Start execution
-      actor.send({ type: "EXECUTE", prompt, sessionData });
+      // Start execution - pass the abort signal separately
+      actor.send({ type: "EXECUTE", prompt, sessionData, abortSignal: abortController?.signal });
     });
   }
 
@@ -237,6 +267,20 @@ export class AgentExecutionManager {
     }
 
     return { activeAgents: this.activeAgents.size, agentStates };
+  }
+
+  /**
+   * Cancel an agent execution by request ID.
+   */
+  cancelExecution(requestId: string, reason?: string): void {
+    const controller = this.activeExecutions.get(requestId);
+    if (controller) {
+      this.logger.info("Cancelling agent execution", { requestId, reason });
+      controller.abort();
+      this.activeExecutions.delete(requestId);
+    } else {
+      this.logger.debug("No active execution found for requestId", { requestId });
+    }
   }
 
   /**
