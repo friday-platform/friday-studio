@@ -14,7 +14,9 @@ import { createAgent } from "@atlas/agent-sdk";
 import { pipeUIMessageStream } from "@atlas/agent-sdk/vercel-helpers";
 import { type SystemAgentConfigObject, SystemAgentConfigObjectSchema } from "@atlas/config";
 import type { Logger } from "@atlas/logger";
+import { createAtlasClient } from "@atlas/oapi-client";
 import { Client } from "@modelcontextprotocol/sdk/client";
+
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import {
   convertToModelMessages,
@@ -88,13 +90,7 @@ async function getAgentServerClient(streamId: string, logger: Logger) {
   const client = new Client({ name: "atlas-streaming-client", version: "1.0.0" });
 
   const transport = new StreamableHTTPClientTransport(new URL("http://localhost:8080/agents"), {
-    requestInit: {
-      headers: {
-        // TODO
-        "mcp-session-id": crypto.randomUUID(),
-        "x-stream-id": streamId,
-      },
-    },
+    requestInit: { headers: { "mcp-session-id": crypto.randomUUID(), "x-stream-id": streamId } },
   });
 
   try {
@@ -129,7 +125,7 @@ export const conversationAgent = createAgent({
     if (!session.streamId) {
       throw new Error("Stream ID is required");
     }
-
+    const client = createAtlasClient();
     const anthropic = createAnthropic({ apiKey: Deno.env.get("ANTHROPIC_API_KEY") });
 
     /**
@@ -197,6 +193,28 @@ export const conversationAgent = createAgent({
       }
     }
 
+    // If chat history exists, load it.
+    const messages: AtlasUIMessage[] = [];
+    const chatHistory = await client.GET("/api/chat-storage/{streamId}", {
+      params: { path: { streamId: session.streamId } },
+    });
+    if (chatHistory.data && chatHistory.data.messages.length > 0) {
+      // @ts-expect-error the AI sdk doesn't currently export Zod schemas for UIMessage and UIMessageChunk
+      // so right now we're accepting a z.record(z.string(), z.unknown());
+      // @see: https://github.com/vercel/ai/issues/8100
+      messages.push(...chatHistory.data.messages.slice(-20));
+    }
+
+    // convert the prompt to an AtlasUIMessage
+    const userMessage: AtlasUIMessage = {
+      id: crypto.randomUUID(),
+      role: "user",
+      parts: [{ type: "text", text: prompt }],
+    };
+
+    // Push the message to the array which will be sent to the LLM.
+    messages.push(userMessage);
+
     // Emit it using our custom message type
     // @HACK: `data-user-message` this is a workaround since the AI SDK doesn't
     // give you a way to emit user messages back to the stream. It expects that
@@ -222,21 +240,20 @@ export const conversationAgent = createAgent({
         const conversationHistory = result.conversationHistory;
 
         // Convert workspace memory format to conversation format
-        const messages: Array<ChatMessage> = [];
+        const pastChatContext: Array<ChatMessage> = [];
         for (const entry of conversationHistory) {
           const userContent = entry?.user;
           const assistantContent = entry?.assistant;
           if (typeof userContent === "string" && userContent.trim().length > 0) {
-            messages.push({ role: "user", content: userContent });
+            pastChatContext.push({ role: "user", content: userContent });
           }
           if (typeof assistantContent === "string" && assistantContent.trim().length > 0) {
-            messages.push({ role: "assistant", content: assistantContent });
+            pastChatContext.push({ role: "assistant", content: assistantContent });
           }
         }
 
-        history = {
-          messages: messages.slice(-20), // Limit to recent messages
-        };
+        // Limit to recent messages
+        history = { messages: pastChatContext.slice(-20) };
 
         logger.info("Loaded conversation context from workspace memory", {
           entriesLoaded: conversationHistory.length,
@@ -247,26 +264,10 @@ export const conversationAgent = createAgent({
       logger.warn("Failed to load workspace memory context", { error });
     }
 
-    const systemPrompt = `Current datetime (UTC): ${new Date().toISOString()}\n\n${getSystemPrompt(history.messages, allTools, session.streamId)}`;
-    const messages: AtlasUIMessage[] = [
-      { id: crypto.randomUUID(), role: "user" as const, parts: [{ type: "text", text: prompt }] },
-    ];
+    const systemPrompt = `Current datetime (UTC): ${new Date().toISOString()}
 
-    // Log LLM input for debugging and monitoring
-    logger.info("LLM Input", {
-      systemPromptLength: systemPrompt.length,
-      systemPrompt: systemPrompt.substring(0, 500) + (systemPrompt.length > 500 ? "..." : ""),
-      userPrompt: prompt,
-      model: "claude-sonnet-4-20250514",
-      temperature: 0.3,
-      maxTokens: 12000,
-      toolsCount: Object.keys(allTools).length,
-      toolsAvailable: Object.keys(allTools),
-      sessionId: session.sessionId,
-      streamId: session.streamId,
-      workspaceId: session.workspaceId,
-      historyLength: history.messages.length,
-    });
+    ${getSystemPrompt(history.messages, allTools, session.streamId)}
+    `;
 
     const result = streamText({
       model: anthropic("claude-sonnet-4-20250514"),
@@ -274,9 +275,9 @@ export const conversationAgent = createAgent({
       messages: convertToModelMessages(messages),
       tools: allTools,
       toolChoice: "auto",
-      stopWhen: stepCountIs(20),
+      stopWhen: stepCountIs(40),
       temperature: 0.3,
-      maxOutputTokens: 12000,
+      maxOutputTokens: 20000,
       experimental_transform: smoothStream({ chunking: "word" }),
       maxRetries: 3, // Enable retries for API resilience (e.g., 529 errors)
       providerOptions: { anthropic: { thinking: { type: "enabled", budgetTokens: 25000 } } },
@@ -286,6 +287,16 @@ export const conversationAgent = createAgent({
       result.toUIMessageStream({
         originalMessages: messages,
         generateMessageId: createIdGenerator({ prefix: "msg", size: 8 }),
+        onFinish: async ({ messages }) => {
+          if (!session.streamId) {
+            throw new Error("Stream ID is missing");
+          }
+          // Store the updated chat
+          await client.PUT("/api/chat-storage/{streamId}", {
+            params: { path: { streamId: session.streamId } },
+            body: { messages },
+          });
+        },
       }),
       stream,
     );
