@@ -167,7 +167,7 @@ export const conversationAgent = createAgent({
       logger.warn("Failed to load workspace memory context", { error });
     }
 
-    const systemPrompt = getSystemPrompt(history.messages, allTools, session.streamId);
+    const systemPrompt = `Current datetime (UTC): ${new Date().toISOString()}\n\n${getSystemPrompt(history.messages, allTools, session.streamId)}`;
     const messages = [{ role: "user" as const, content: prompt }];
 
     // Log LLM input for debugging and monitoring
