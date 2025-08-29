@@ -292,7 +292,7 @@ export class AgentMCPTestHarness {
   private async startMockDaemon(): Promise<void> {
     // Create AbortController for clean shutdown
     this.mockDaemonAbortController = new AbortController();
-    
+
     // Create a simple HTTP server to respond to workspace config requests
     this.mockDaemonServer = Deno.serve({
       port: this.daemonPort,
@@ -311,12 +311,12 @@ export class AgentMCPTestHarness {
               tools: {},
               mcpServers: {},
             }),
-            { 
-              status: 200, 
-              headers: { 
+            {
+              status: 200,
+              headers: {
                 "Content-Type": "application/json",
-                "Connection": "close" // Force connection to close after response
-              } 
+                Connection: "close", // Force connection to close after response
+              },
             },
           );
         }
@@ -324,9 +324,9 @@ export class AgentMCPTestHarness {
         // Handle other requests with minimal response
         return new Response(JSON.stringify({ status: "ok" }), {
           status: 200,
-          headers: { 
+          headers: {
             "Content-Type": "application/json",
-            "Connection": "close" // Force connection to close after response
+            Connection: "close", // Force connection to close after response
           },
         });
       },

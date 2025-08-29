@@ -1,4 +1,8 @@
 <script lang="ts">
+import { Menu } from "@tauri-apps/api/menu";
+import { TrayIcon } from "@tauri-apps/api/tray";
+import { Command } from "@tauri-apps/plugin-shell";
+import { onMount } from "svelte";
 import { setAppContext } from "$lib/app-context.svelte";
 import favicon from "$lib/assets/favicon.svg";
 import AppContainer from "$lib/components/app/container.svelte";
@@ -11,6 +15,21 @@ const { children } = $props();
 
 const { daemonClient, uploadFile } = setAppContext();
 setClientContext(daemonClient);
+
+async function sendDiagnostics() {
+  let result = await Command.create("exec-sh", ["-c", "echo 'Hello World!'"]).execute();
+  console.log("RESULT 📯", result);
+}
+
+onMount(async () => {
+  const menu = await Menu.new({
+    items: [{ id: "send-diagnostics", text: "Send Diagnostics", action: sendDiagnostics }],
+  });
+
+  const options = { menu, menuOnLeftClick: true, icon: "icons/tray.png", tooltip: "Tauri App" };
+
+  await TrayIcon.new(options);
+});
 </script>
 
 <svelte:head>

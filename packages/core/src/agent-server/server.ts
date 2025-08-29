@@ -181,10 +181,10 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
 
           return { content: [{ type: "text", text: JSON.stringify(result) }] };
         } catch (error) {
-          const isCancellation = error instanceof Error && 
-            (error.message.includes('cancelled') || 
-             error.message.includes('aborted'));
-          
+          const isCancellation =
+            error instanceof Error &&
+            (error.message.includes("cancelled") || error.message.includes("aborted"));
+
           if (isCancellation) {
             this.#logger.info("Agent execution cancelled", { agentId: agent.id });
           } else {
@@ -455,10 +455,10 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
         };
       }
 
-      const isCancellation = error instanceof Error && 
-        (error.message.includes('cancelled') || 
-         error.message.includes('aborted'));
-      
+      const isCancellation =
+        error instanceof Error &&
+        (error.message.includes("cancelled") || error.message.includes("aborted"));
+
       if (isCancellation) {
         this.#logger.info("Agent execution cancelled", { agentId });
       } else {

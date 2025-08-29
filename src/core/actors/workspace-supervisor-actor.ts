@@ -250,16 +250,12 @@ export class WorkspaceSupervisorActor implements BaseActor {
               this.cleanupSession(sessionId);
             },
             (error) => {
-              const isCancellation = 
-                error instanceof Error && 
-                (error.message.includes('Session cancelled') || 
-                 error.message.includes('aborted'));
-              
+              const isCancellation =
+                error instanceof Error &&
+                (error.message.includes("Session cancelled") || error.message.includes("aborted"));
+
               if (isCancellation) {
-                this.logger.info("Session execution cancelled", {
-                  sessionId,
-                  signalId: signal.id,
-                });
+                this.logger.info("Session execution cancelled", { sessionId, signalId: signal.id });
                 sessionInfo.status = WorkspaceSessionStatus.CANCELLED;
               } else {
                 this.logger.error("Session execution failed", {

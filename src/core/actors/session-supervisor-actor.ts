@@ -962,12 +962,12 @@ export class SessionSupervisorActor implements BaseActor {
       // Create error summary if execution failed
       const duration = Date.now() - sessionStartTime;
       if (!summary) {
-        const isCancellation = 
-          (error instanceof Error && 
-           (error.name === 'AbortError' || 
-            error.message.includes('Session cancelled') ||
-            error.message.includes('aborted')));
-        
+        const isCancellation =
+          error instanceof Error &&
+          (error.name === "AbortError" ||
+            error.message.includes("Session cancelled") ||
+            error.message.includes("aborted"));
+
         summary = {
           sessionId: this.sessionId,
           status: isCancellation ? ReasoningResultStatus.CANCELLED : ReasoningResultStatus.FAILED,
@@ -986,17 +986,14 @@ export class SessionSupervisorActor implements BaseActor {
       this.isExecuting = false;
       this.executionEndTime = new Date();
 
-      const isCancellation = 
-        (error instanceof Error && 
-         (error.name === 'AbortError' || 
-          error.message.includes('Session cancelled') ||
-          error.message.includes('aborted')));
+      const isCancellation =
+        error instanceof Error &&
+        (error.name === "AbortError" ||
+          error.message.includes("Session cancelled") ||
+          error.message.includes("aborted"));
 
       if (isCancellation) {
-        this.logger.info("Session execution cancelled", {
-          sessionId: this.sessionId,
-          duration,
-        });
+        this.logger.info("Session execution cancelled", { sessionId: this.sessionId, duration });
       } else {
         this.logger.error("Session execution failed", {
           sessionId: this.sessionId,
@@ -1010,8 +1007,11 @@ export class SessionSupervisorActor implements BaseActor {
       // Always emit session-finish event to trigger queue rotation
       // This is critical for proper SSE stream synchronization
       if (this.baseStreamEmitter && !this.sessionFinishEmitted) {
-        const finalStatus = summary?.status || 
-          (this.status === SessionSupervisorStatus.CANCELLED ? ReasoningResultStatus.CANCELLED : ReasoningResultStatus.FAILED);
+        const finalStatus =
+          summary?.status ||
+          (this.status === SessionSupervisorStatus.CANCELLED
+            ? ReasoningResultStatus.CANCELLED
+            : ReasoningResultStatus.FAILED);
         const finalDuration = Date.now() - sessionStartTime;
 
         this.baseStreamEmitter.emit({
@@ -1048,11 +1048,7 @@ export class SessionSupervisorActor implements BaseActor {
       for (const agentTask of phase.agents) {
         // Combine results from previous phases + current phase agents
         const allPreviousResults = [...previousResults, ...phaseResults];
-        const result = await this.executeAgent(
-          agentTask,
-          allPreviousResults,
-          phaseResults,
-        );
+        const result = await this.executeAgent(agentTask, allPreviousResults, phaseResults);
         phaseResults.push(result);
         this.logger.debug("Agent result", {
           agentId: agentTask.agentId,
@@ -1455,11 +1451,11 @@ export class SessionSupervisorActor implements BaseActor {
       }
 
       // Check if it's a cancellation
-      const isCancellation = 
-        (error instanceof Error && 
-         (error.name === 'AbortError' || 
-          error.message.includes('Session cancelled') ||
-          error.message.includes('aborted')));
+      const isCancellation =
+        error instanceof Error &&
+        (error.name === "AbortError" ||
+          error.message.includes("Session cancelled") ||
+          error.message.includes("aborted"));
 
       if (isCancellation) {
         this.logger.info("Agent execution cancelled", {

@@ -19,6 +19,7 @@ function getActivePage(value: string | string[]) {
 		<img src={logo} alt="Atlas" />
 		<span>Atlas</span>
 	</a>
+
 	<nav>
 		<SegmentedControl.Root>
 			<SegmentedControl.Item href={routes.main} active={getActivePage('/')}

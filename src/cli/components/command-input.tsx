@@ -14,8 +14,14 @@ export interface CommandInputProps {
 }
 
 export const CommandInput = ({ onSubmit, isDisabled = false }: CommandInputProps) => {
-  const { exitApp, cancelCurrentSession, diagnosticsStatus, daemonStatus, multilineSetupStatus, multilineTerminalType } =
-    useAppContext();
+  const {
+    exitApp,
+    cancelCurrentSession,
+    diagnosticsStatus,
+    daemonStatus,
+    multilineSetupStatus,
+    multilineTerminalType,
+  } = useAppContext();
 
   const [currentInput, setCurrentInput] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);

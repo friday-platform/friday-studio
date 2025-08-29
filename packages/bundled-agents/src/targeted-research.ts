@@ -69,7 +69,11 @@ interface ResearchOutput {
  * Parses natural language queries into structured search parameters
  * Supports reddit filtering, time ranges, and domain specifications
  */
-async function parseQuery(query: string, logger?: Logger, abortSignal?: AbortSignal): Promise<SearchParameters> {
+async function parseQuery(
+  query: string,
+  logger?: Logger,
+  abortSignal?: AbortSignal,
+): Promise<SearchParameters> {
   const schema = z.object({
     queries: z
       .array(

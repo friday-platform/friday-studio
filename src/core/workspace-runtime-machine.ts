@@ -753,10 +753,11 @@ export function createWorkspaceRuntimeMachine(_input: WorkspaceRuntimeMachineInp
                               self.send({ type: "SESSION_COMPLETED", sessionId, result });
                             },
                             onError: (error) => {
-                              const isCancellation = error.message && 
-                                (error.message.includes('Session cancelled') || 
-                                 error.message.includes('aborted'));
-                              
+                              const isCancellation =
+                                error.message &&
+                                (error.message.includes("Session cancelled") ||
+                                  error.message.includes("aborted"));
+
                               if (isCancellation) {
                                 logger.info("Session cancelled", {
                                   workspaceId: context.workspace.id,
@@ -902,10 +903,10 @@ export function createWorkspaceRuntimeMachine(_input: WorkspaceRuntimeMachineInp
             actions: [
               "updateSessionCompletedStats",
               ({ context, event }) => {
-                const isCancellation = event.error && 
-                  (event.error.includes('Session cancelled') || 
-                   event.error.includes('aborted'));
-                
+                const isCancellation =
+                  event.error &&
+                  (event.error.includes("Session cancelled") || event.error.includes("aborted"));
+
                 if (isCancellation) {
                   logger.info(`Session cancelled: ${event.sessionId}`);
                 } else {
