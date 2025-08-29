@@ -194,19 +194,23 @@ export const conversationAgent = createAgent({
           activeMCPRequests.set(trackingKey, requestId);
 
           try {
-            const result = await agentServer.callTool({
-              name: agent.name,
-              arguments: {
-                prompt: input.prompt,
-                _sessionContext: {
-                  sessionId: session.sessionId,
-                  workspaceId: session.workspaceId,
-                  userId: session.userId,
-                  streamId: session.streamId,
+            const result = await agentServer.callTool(
+              {
+                name: agent.name,
+                arguments: {
+                  prompt: input.prompt,
+                  _sessionContext: {
+                    sessionId: session.sessionId,
+                    workspaceId: session.workspaceId,
+                    userId: session.userId,
+                    streamId: session.streamId,
+                  },
                 },
+                _meta: { requestId }, // Pass requestId for cancellation correlation
               },
-              _meta: { requestId }, // Pass requestId for cancellation correlation
-            });
+              undefined,
+              { timeout: 1_200_000 },
+            );
             return { result };
           } catch (error) {
             logger.error("Agent invocation failed", { error, agentName: agent.name, requestId });

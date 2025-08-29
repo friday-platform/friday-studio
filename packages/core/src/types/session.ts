@@ -1,4 +1,4 @@
-import type { AtlasUIMessage, AtlasUIMessageChunk } from "@atlas/agent-sdk";
+import type { AtlasUIMessage, AtlasUIMessageChunk, AtlasUIMessagePart } from "@atlas/agent-sdk";
 
 type SessionEvents = {
   "session-start": { sessionId: string; signalId: string; workspaceId: string };
@@ -13,7 +13,9 @@ type SessionEvents = {
   "agent-start": { agentId: string; task: string };
   "agent-finish": { agentId: string; duration: number };
   "agent-error": { agentId: string; duration: number; error: string };
+  "agent-timeout": { agentId: string; task: string; duration: number; error: string };
 };
 
 export type SessionUIMessage = AtlasUIMessage<SessionEvents>;
 export type SessionUIMessageChunk = AtlasUIMessageChunk<SessionEvents>;
+export type SessionUIMessagePart = AtlasUIMessagePart<SessionEvents>;

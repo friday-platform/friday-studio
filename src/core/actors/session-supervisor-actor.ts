@@ -188,6 +188,14 @@ export interface LLMValidationResult {
   source?: "llm" | "validation_unavailable" | "validation_failed";
 }
 
+// Custom error class to indicate we've already emitted the appropriate event
+class OrchestratorHandledError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "OrchestratorHandledError";
+  }
+}
+
 export class SessionSupervisorActor implements BaseActor {
   readonly type: "session" = "session";
   private sessionId: string;
@@ -1419,10 +1427,47 @@ export class SessionSupervisorActor implements BaseActor {
         duration?: number;
         toolCalls?: ToolCall[];
         toolResults?: ToolResult[];
+        error?: string;
       };
       const isExecResult = (v: unknown): v is OrchestratorExecResult =>
         typeof v === "object" && v !== null;
       const or = isExecResult(orchestratorResult) ? orchestratorResult : {};
+
+      // Check if orchestrator returned an error
+      if (or.error) {
+        const errorMessage = or.error;
+        // MCP timeout error code
+        const isTimeout = errorMessage.includes("-32001");
+
+        // Emit appropriate error event
+        if (isTimeout) {
+          this.baseStreamEmitter?.emit({
+            type: "data-agent-timeout",
+            data: {
+              agentId: agentTask.agentId,
+              task: agentTask.task,
+              duration: or.duration || Date.now() - startTime,
+              error: errorMessage,
+            },
+          });
+        } else {
+          this.baseStreamEmitter?.emit({
+            type: "data-agent-error",
+            data: {
+              agentId: agentTask.agentId,
+              duration: or.duration || Date.now() - startTime,
+              error: errorMessage,
+            },
+          });
+        }
+
+        // Clean up abort controller before throwing
+        this.activeAgentExecutions.delete(agentTask.agentId);
+
+        // Throw custom error to trigger session failure (and indicate we've already emitted events)
+        throw new OrchestratorHandledError(`Agent ${agentTask.agentId} failed: ${errorMessage}`);
+      }
+
       result = {
         agentId: agentTask.agentId,
         task: agentTask.task,
@@ -1462,7 +1507,8 @@ export class SessionSupervisorActor implements BaseActor {
           agentId: agentTask.agentId,
           duration: Date.now() - startTime,
         });
-      } else {
+      } else if (!(error instanceof OrchestratorHandledError)) {
+        // Only emit agent-error if we haven't already handled this error
         this.baseStreamEmitter?.emit({
           type: "data-agent-error",
           data: {
@@ -1475,6 +1521,13 @@ export class SessionSupervisorActor implements BaseActor {
         this.logger.error("Agent orchestrator execution failed", {
           agentId: agentTask.agentId,
           error: error instanceof Error ? error.message : String(error),
+        });
+      } else {
+        // For OrchestratorHandledError, we've already emitted the appropriate event
+        // Just log that the agent failed
+        this.logger.error("Agent execution failed (orchestrator error)", {
+          agentId: agentTask.agentId,
+          error: error.message,
         });
       }
 

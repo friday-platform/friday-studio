@@ -1,5 +1,5 @@
-import type { SessionUIMessageChunk } from "@atlas/core";
-import { readUIMessageStream, type UIDataTypes, type UIMessagePart, type UITools } from "ai";
+import type { SessionUIMessage, SessionUIMessageChunk, SessionUIMessagePart } from "@atlas/core";
+import { readUIMessageStream } from "ai";
 import { getContext, setContext } from "svelte";
 import { ConversationClient } from "./conversation.ts";
 import type { DaemonClient } from "./daemon.ts";
@@ -16,7 +16,7 @@ class ClientContext {
 
   // Svelte reactive values
   typingState = $state({ isTyping: false, elapsedSeconds: 0 });
-  messages = $state<UIMessagePart<UIDataTypes, UITools>[]>([]);
+  messages = $state<SessionUIMessagePart[]>([]);
   user = $state<string>("NA");
   atlasSessionId = $state<string | null>(null);
 
@@ -69,14 +69,11 @@ class ClientContext {
 
       this.getUser();
 
-      for await (const uiMessage of readUIMessageStream({ stream })) {
+      for await (const uiMessage of readUIMessageStream<SessionUIMessage>({ stream })) {
         uiMessage.parts.forEach((part) => {
           if (part.type === "data-session-start") {
             // Capture the Atlas session ID
-            if (part.data && typeof part.data === "object" && "sessionId" in part.data) {
-              const sessionData = part.data as { sessionId: string };
-              this.atlasSessionId = sessionData.sessionId;
-            }
+            this.atlasSessionId = part.data.sessionId;
             if (!this.typingState.isTyping) {
               this.typingState.isTyping = true;
             }

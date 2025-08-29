@@ -1,9 +1,7 @@
-// import { type SSEEvent } from "@atlas/config";
-
-import type { UIDataTypes, UIMessagePart, UITools } from "ai";
+import type { SessionUIMessagePart } from "@atlas/core";
 import type { OutputEntry } from "../conversation/types.ts";
 
-export function formatMessage(part: UIMessagePart<UIDataTypes, UITools>): OutputEntry | undefined {
+export function formatMessage(part: SessionUIMessagePart): OutputEntry | undefined {
   const currentUser = Deno.env.get("USER") || Deno.env.get("USERNAME") || "You";
 
   if (part.type === "data-user-message") {
@@ -51,13 +49,17 @@ export function formatMessage(part: UIMessagePart<UIDataTypes, UITools>): Output
       type: "text",
       timestamp: new Date().toISOString(),
       author: "Atlas",
-      content: `⚠️ ${reason}`,
+      content: reason,
     };
-  } else if (
-    part.type === "tool-error" ||
-    part.type === "data-error" ||
-    part.type === "data-agent-error"
-  ) {
+  } else if (part.type === "data-agent-timeout") {
+    return {
+      id: crypto.randomUUID(),
+      type: "error",
+      timestamp: new Date().toISOString(),
+      author: "Atlas",
+      content: "Agent timed out",
+    };
+  } else if (part.type === "tool-error" || part.type === "data-agent-error") {
     return {
       id: crypto.randomUUID(),
       type: "error",

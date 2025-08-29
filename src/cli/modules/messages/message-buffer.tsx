@@ -1,6 +1,6 @@
-import type { SessionUIMessageChunk } from "@atlas/core";
+import type { SessionUIMessage, SessionUIMessageChunk } from "@atlas/core";
 import { stringifyError } from "@atlas/utils";
-import { readUIMessageStream, type UIDataTypes, type UIMessage, type UITools } from "ai";
+import { readUIMessageStream } from "ai";
 import { Box, Static } from "ink";
 import { useEffect, useRef, useState } from "react";
 import { ChatMessage } from "../../components/chat-message.tsx";
@@ -11,11 +11,6 @@ import { DAEMON_STATUS } from "../../constants/daemon-status.ts";
 import { useAppContext } from "../../contexts/app-context.tsx";
 import type { OutputEntry } from "../conversation/types.ts";
 import { formatMessage } from "./utils.ts";
-
-interface TypingState {
-  isTyping: boolean;
-  elapsedSeconds: number;
-}
 
 export const MessageBuffer = () => {
   const {
@@ -31,7 +26,7 @@ export const MessageBuffer = () => {
   const sseListenerStarted = useRef(false);
 
   const [sseStream, setSseStream] = useState<ReadableStream<SessionUIMessageChunk> | null>(null);
-  const [sseMessages, setSseMessages] = useState<UIMessage<unknown, UIDataTypes, UITools>>();
+  const [sseMessages, setSseMessages] = useState<SessionUIMessage>();
   const [output, setOutput] = useState<OutputEntry[]>([]);
 
   // Create SSE stream when conversation session is ready
@@ -72,14 +67,13 @@ export const MessageBuffer = () => {
 
     (async () => {
       try {
-        for await (const uiMessage of readUIMessageStream({ stream: sseStream })) {
+        for await (const uiMessage of readUIMessageStream<SessionUIMessage>({
+          stream: sseStream,
+        })) {
           uiMessage.parts.forEach((part) => {
             if (part.type === "data-session-start") {
               // Capture the Atlas session ID
-              if (part.data && typeof part.data === "object" && "sessionId" in part.data) {
-                const sessionData = part.data as { sessionId: string };
-                setAtlasSessionId(sessionData.sessionId);
-              }
+              setAtlasSessionId(part.data.sessionId);
               if (!typingState) {
                 setTypingState(true);
               }

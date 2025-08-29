@@ -7,12 +7,14 @@
 
 import type { Logger } from "@atlas/logger";
 import type {
+  InferUITools,
   Tool,
   TypedToolCall,
   TypedToolResult,
   UIDataTypes,
   UIMessage,
   UIMessageChunk,
+  UIMessagePart,
 } from "ai";
 import { z } from "zod/v4";
 
@@ -279,6 +281,11 @@ export type AtlasUIMessage<T extends UIDataTypes = UIDataTypes> = UIMessage<
 export type AtlasUIMessageChunk<T extends UIDataTypes = UIDataTypes> = UIMessageChunk<
   MessageMetadata,
   T & UserMessageEvent
+>;
+
+export type AtlasUIMessagePart<T extends UIDataTypes = UIDataTypes> = UIMessagePart<
+  T & UserMessageEvent,
+  InferUITools<AtlasTools>
 >;
 
 /** Stream emitter passed to agent handlers */

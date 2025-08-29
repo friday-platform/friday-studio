@@ -35,6 +35,7 @@ export type {
   AtlasTools,
   AtlasUIMessage,
   AtlasUIMessageChunk,
+  AtlasUIMessagePart,
   CreateAgentConfig,
   MCPAuthConfig,
   MCPServerConfig,

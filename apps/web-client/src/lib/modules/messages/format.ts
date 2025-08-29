@@ -45,6 +45,14 @@ export function formatMessage(
   } // @TODO: implement all of these
   else if (part.type.startsWith("tool-result-")) {
     return undefined;
+  } else if (part.type === "data-agent-timeout") {
+    return {
+      id: crypto.randomUUID(),
+      type: "error",
+      timestamp: new Date().toISOString(),
+      author: "Atlas",
+      content: "Agent timed out",
+    };
   } else if (
     part.type === "tool-error" ||
     part.type === "data-error" ||

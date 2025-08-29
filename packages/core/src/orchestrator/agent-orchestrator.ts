@@ -340,6 +340,10 @@ export class AgentOrchestrator implements IAgentOrchestrator {
 
       return AgentExecutionResultSchema.parse(parsed);
     } catch (error) {
+      //
+      if (textContent.includes("No output generated. Check the stream for errors.")) {
+        return { type: "completed", result: "Canceled by user" };
+      }
       if (error instanceof z.ZodError) {
         throw new Error(`Invalid agent execution result: ${error.message}`);
       }
@@ -480,11 +484,11 @@ export class AgentOrchestrator implements IAgentOrchestrator {
 
       let toolResult: unknown;
       try {
-        toolResult = await mcpSetup.client.callTool({
-          name: agentId,
-          arguments: toolCallArgs,
-          _meta: { requestId },
-        });
+        toolResult = await mcpSetup.client.callTool(
+          { name: agentId, arguments: toolCallArgs, _meta: { requestId } },
+          undefined,
+          { timeout: 1_200_000 },
+        );
       } finally {
         this.activeMCPRequests.delete(`${context.sessionId}:${agentId}`);
       }

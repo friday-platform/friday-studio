@@ -1,16 +1,16 @@
-import type { UIMessagePart } from "ai";
+import type { SessionUIMessagePart } from "@atlas/core";
 import { assertEquals, assertExists } from "@std/assert";
 import { formatMessage, getNormalizedToolName } from "./utils.ts";
 
 Deno.test("formatMessage - returns undefined for unsupported message types", () => {
-  const unsupportedMessage: UIMessagePart = { type: "unsupported-type" as any } as any;
+  const unsupportedMessage: SessionUIMessagePart = { type: "unsupported-type" };
 
   const result = formatMessage(unsupportedMessage);
   assertEquals(result, undefined);
 });
 
 Deno.test("formatMessage - formats user message correctly", () => {
-  const userMessage: UIMessagePart = { type: "data-user-message", data: "Hello from user" } as any;
+  const userMessage: SessionUIMessagePart = { type: "data-user-message", data: "Hello from user" };
 
   const result = formatMessage(userMessage);
   assertExists(result);
@@ -20,11 +20,11 @@ Deno.test("formatMessage - formats user message correctly", () => {
 });
 
 Deno.test("formatMessage - formats completed reasoning correctly", () => {
-  const reasoningMessage: UIMessagePart = {
+  const reasoningMessage: SessionUIMessagePart = {
     type: "reasoning",
     state: "done",
     text: "I need to analyze this request...",
-  } as any;
+  };
 
   const result = formatMessage(reasoningMessage);
   assertExists(result);
@@ -34,11 +34,11 @@ Deno.test("formatMessage - formats completed reasoning correctly", () => {
 });
 
 Deno.test("formatMessage - formats completed text message correctly", () => {
-  const textMessage: UIMessagePart = {
+  const textMessage: SessionUIMessagePart = {
     type: "text",
     state: "done",
     text: "Here is my response",
-  } as any;
+  };
 
   const result = formatMessage(textMessage);
   assertExists(result);
@@ -48,10 +48,10 @@ Deno.test("formatMessage - formats completed text message correctly", () => {
 });
 
 Deno.test("formatMessage - formats tool calls correctly", () => {
-  const toolMessage: UIMessagePart = {
+  const toolMessage: SessionUIMessagePart = {
     type: "tool-atlas_todo_read",
     toolName: "atlas_todo_read",
-  } as any;
+  };
 
   const result = formatMessage(toolMessage);
   assertExists(result);
@@ -61,10 +61,10 @@ Deno.test("formatMessage - formats tool calls correctly", () => {
 });
 
 Deno.test("formatMessage - formats dynamic tool calls correctly", () => {
-  const dynamicToolMessage: UIMessagePart = {
+  const dynamicToolMessage: SessionUIMessagePart = {
     type: "dynamic-tool",
     toolName: "custom_tool",
-  } as any;
+  };
 
   const result = formatMessage(dynamicToolMessage);
   assertExists(result);
@@ -73,9 +73,9 @@ Deno.test("formatMessage - formats dynamic tool calls correctly", () => {
 });
 
 Deno.test("formatMessage - formats error messages correctly", () => {
-  const errorMessage: UIMessagePart = {
-    type: "data-error", // Use data-error instead of tool-error to avoid startsWith("tool-") conflict
-  } as any;
+  const errorMessage: SessionUIMessagePart = {
+    type: "data-agent-error", // Use data-error instead of tool-error to avoid startsWith("tool-") conflict
+  };
 
   const result = formatMessage(errorMessage);
   assertExists(result);
@@ -85,7 +85,7 @@ Deno.test("formatMessage - formats error messages correctly", () => {
 });
 
 Deno.test("formatMessage - formats tool results as tool calls (due to startsWith logic)", () => {
-  const toolResultMessage: UIMessagePart = { type: "tool-result-atlas_todo_read" } as any;
+  const toolResultMessage: SessionUIMessagePart = { type: "tool-result-atlas_todo_read" };
 
   const result = formatMessage(toolResultMessage);
   assertExists(result);
