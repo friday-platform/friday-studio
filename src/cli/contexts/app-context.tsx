@@ -53,6 +53,8 @@ interface AppContextType {
   multilineTerminalType: "Apple_Terminal" | "iTerm.app" | "ghostty" | null;
   staticKey: number;
   refreshStatic: () => void;
+  typingState: boolean;
+  setTypingState: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -91,6 +93,8 @@ export const AppProvider = ({ children }: AppProviderProps) => {
 
   // const timerIntervalRef = useRef<number | null>(null);
   const [staticKey, setStaticKey] = useState(0);
+
+  const [typingState, setTypingState] = useState<boolean>(false);
 
   // Store transport reference for cleanup
   const mcpTransportRef = useRef<StreamableHTTPClientTransport | null>(null);
@@ -416,6 +420,8 @@ export const AppProvider = ({ children }: AppProviderProps) => {
         multilineTerminalType,
         staticKey,
         refreshStatic,
+        typingState,
+        setTypingState,
       }}
     >
       {children}

@@ -13,8 +13,14 @@ import "../app.css";
 
 const { children } = $props();
 
-const { daemonClient, uploadFile } = setAppContext();
-setClientContext(daemonClient);
+const { daemonClient, uploadFile, keyboard } = setAppContext();
+const ctx = setClientContext(daemonClient);
+
+$effect(() => {
+  if (keyboard.state?.key === "escape" && ctx.atlasSessionId) {
+    ctx.conversationClient?.cancelSession(ctx.atlasSessionId);
+  }
+});
 
 async function sendDiagnostics() {
   let result = await Command.create("exec-sh", ["-c", "echo 'Hello World!'"]).execute();

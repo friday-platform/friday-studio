@@ -26,6 +26,7 @@ export function Component() {
     sendDiagnostics,
     setDaemonStatus,
     enableMultiline,
+    typingState,
   } = useAppContext();
   const [view, setView] = useState<"help" | "command" | "init" | "config" | "credits">("command");
   const [activeCommand, setActiveCommand] = useState<
@@ -207,7 +208,7 @@ export function Component() {
           )}
 
           {/* Show command input when no active command */}
-          {!activeCommand && <CommandInput onSubmit={handleCommand} />}
+          {!activeCommand && <CommandInput onSubmit={handleCommand} disabled={typingState} />}
         </>
       )}
 

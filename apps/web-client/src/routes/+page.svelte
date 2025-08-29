@@ -6,6 +6,7 @@ import Dropzone from "$lib/components/dropzone/dropzone.svelte";
 import { CustomIcons } from "$lib/components/icons/custom";
 import { IconSmall } from "$lib/components/icons/small";
 import { getClientContext } from "$lib/modules/client/context.svelte";
+import ErrorMessage from "$lib/modules/messages/error-message.svelte";
 import { formatMessage } from "$lib/modules/messages/format";
 import Message from "$lib/modules/messages/message.svelte";
 import Progress from "$lib/modules/messages/progress.svelte";
@@ -95,6 +96,8 @@ $effect(() => {
 
 				{#if formattedMessage && (formattedMessage.type === 'request' || formattedMessage.type === 'text')}
 					<Message message={formattedMessage} />
+				{:else if formattedMessage && formattedMessage.type === 'error'}
+					<ErrorMessage message={formattedMessage} />
 				{/if}
 			{/each}
 
@@ -124,6 +127,9 @@ $effect(() => {
 	<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 	<form
 		bind:this={form}
+		title={ctx.typingState.isTyping
+			? 'Processing... (press escape to cancel the current request)'
+			: undefined}
 		method="POST"
 		onkeydown={(e) => {
 			if (e.key === 'Enter' && !e.shiftKey && !e.altKey) {
@@ -134,7 +140,7 @@ $effect(() => {
 		onsubmit={async (e) => {
 			e.preventDefault();
 
-			if (!ctx.conversationClient || !ctx.conversationSessionId) {
+			if (!ctx.conversationClient || !ctx.conversationSessionId || ctx.typingState.isTyping) {
 				return;
 			}
 
@@ -165,7 +171,11 @@ $effect(() => {
 			}
 		}}
 	>
-		<textarea name="message" placeholder="What can I help you with?" bind:value={message}
+		<textarea
+			disabled={ctx.typingState.isTyping}
+			name="message"
+			placeholder="What can I help you with?"
+			bind:value={message}
 		></textarea>
 
 		<div class="actions">
@@ -254,6 +264,10 @@ $effect(() => {
 		padding-block-end: var(--size-10-5);
 		position: sticky;
 		z-index: var(--layer-2);
+
+		&:has(textarea:disabled) {
+			opacity: 0.5;
+		}
 
 		textarea {
 			background-color: transparent;

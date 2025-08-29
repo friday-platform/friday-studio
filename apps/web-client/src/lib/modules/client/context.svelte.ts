@@ -9,7 +9,7 @@ const KEY = Symbol();
 class ClientContext {
   client: DaemonClient;
 
-  conversationClient: ConversationClient | null = null;
+  public conversationClient: ConversationClient | null = null;
   conversationSessionId: string | null = null;
   sseAbortController: AbortController | null = null;
   sseStream: ReadableStream<SessionUIMessageChunk> | null = null;
@@ -18,6 +18,7 @@ class ClientContext {
   typingState = $state({ isTyping: false, elapsedSeconds: 0 });
   messages = $state<UIMessagePart<UIDataTypes, UITools>[]>([]);
   user = $state<string>("NA");
+  atlasSessionId = $state<string | null>(null);
 
   constructor(client: DaemonClient) {
     this.client = client;
@@ -70,39 +71,25 @@ class ClientContext {
 
       for await (const uiMessage of readUIMessageStream({ stream })) {
         uiMessage.parts.forEach((part) => {
-          if (part.type === "data-session-start" && !this.typingState.isTyping) {
-            this.typingState.isTyping = true;
+          if (part.type === "data-session-start") {
+            // Capture the Atlas session ID
+            if (part.data && typeof part.data === "object" && "sessionId" in part.data) {
+              const sessionData = part.data as { sessionId: string };
+              this.atlasSessionId = sessionData.sessionId;
+            }
+            if (!this.typingState.isTyping) {
+              this.typingState.isTyping = true;
+            }
           } else if (part.type === "data-session-finish") {
             this.typingState.isTyping = false;
+            this.atlasSessionId = null;
+          } else if (part.type === "data-session-cancel") {
+            this.typingState.isTyping = false;
+            this.atlasSessionId = null;
           }
         });
 
         this.messages = uiMessage.parts;
-
-        // console.log(uiMessage.parts);
-        // // Process messages with flatMap to handle typing indicator
-        // this.output = uiMessage.parts.flatMap((part) => {
-        //   const formattedMessage = formatMessage(part, user ?? "NA");
-
-        //   // If this is a user message, check if there's a text message after it
-        //   // if (part.type === "data-user-message") {
-        //   //   const hasTextAfter = uiMessage.parts
-        //   //     .slice(index + 1)
-        //   //     .some((p) => p.type === "text" && p.state === "done");
-
-        //   //   // Add typing indicator if no text message follows
-        //   //   if (!hasTextAfter) {
-        //   //     return formattedMessage
-        //   //       ? [
-        //   //           formattedMessage,
-        //   //           { id: `typing-${uiMessage.id}-${index}`, type: "typing", role: "assistant" },
-        //   //         ]
-        //   //       : [];
-        //   //   }
-        //   // }
-
-        //   return formattedMessage ? [formattedMessage] : [];
-        // });
       }
     } catch (error) {
       // Clear any loading messages and show error

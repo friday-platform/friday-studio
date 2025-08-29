@@ -1,5 +1,4 @@
 <script lang="ts">
-import logo from "$lib/assets/logo.png";
 import { markdownToHTML } from "./markdown-utils";
 import type { OutputEntry } from "./types";
 

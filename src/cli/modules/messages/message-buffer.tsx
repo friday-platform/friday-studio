@@ -10,7 +10,6 @@ import { Progress } from "../../components/progress.tsx";
 import { DAEMON_STATUS } from "../../constants/daemon-status.ts";
 import { useAppContext } from "../../contexts/app-context.tsx";
 import type { OutputEntry } from "../conversation/types.ts";
-import { ToolCall } from "./components/tool-call.tsx";
 import { formatMessage } from "./utils.ts";
 
 interface TypingState {
@@ -26,17 +25,14 @@ export const MessageBuffer = () => {
     staticKey,
     setDaemonStatusState,
     setAtlasSessionId,
+    typingState,
+    setTypingState,
   } = useAppContext();
   const sseListenerStarted = useRef(false);
 
   const [sseStream, setSseStream] = useState<ReadableStream<SessionUIMessageChunk> | null>(null);
   const [sseMessages, setSseMessages] = useState<UIMessage<unknown, UIDataTypes, UITools>>();
   const [output, setOutput] = useState<OutputEntry[]>([]);
-
-  const [typingState, setTypingState] = useState<TypingState>({
-    isTyping: false,
-    elapsedSeconds: 0,
-  });
 
   // Create SSE stream when conversation session is ready
   useEffect(() => {
@@ -84,15 +80,15 @@ export const MessageBuffer = () => {
                 const sessionData = part.data as { sessionId: string };
                 setAtlasSessionId(sessionData.sessionId);
               }
-              if (!typingState.isTyping) {
-                setTypingState((prev) => ({ ...prev, isTyping: true }));
+              if (!typingState) {
+                setTypingState(true);
               }
             } else if (part.type === "data-session-finish") {
               setAtlasSessionId(null); // Clear session ID on finish
-              setTypingState({ isTyping: false, elapsedSeconds: 0 });
+              setTypingState(false);
             } else if (part.type === "data-session-cancel") {
               setAtlasSessionId(null); // Clear session ID on cancel
-              setTypingState({ isTyping: false, elapsedSeconds: 0 });
+              setTypingState(false);
             }
           });
 
@@ -110,7 +106,7 @@ export const MessageBuffer = () => {
             !errorMessage.includes("Bad resource ID")
           ) {
             // Stop the thinking spinner immediately when connection is lost
-            setTypingState({ isTyping: false, elapsedSeconds: 0 });
+            setTypingState(false);
 
             // Handle daemon connection loss with user-friendly message
             if (errorMessage.includes("Connection to Atlas daemon lost")) {
@@ -243,7 +239,7 @@ export const MessageBuffer = () => {
         {(item) => item}
       </Static>
 
-      {typingState.isTyping && (
+      {typingState && (
         <Box paddingX={1} paddingTop={1} flexShrink={0}>
           <Progress
             actions={(() => {

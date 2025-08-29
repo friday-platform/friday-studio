@@ -11,9 +11,14 @@ import { useResponsiveDimensions } from "../utils/useResponsiveDimensions.ts";
 export interface CommandInputProps {
   onSubmit: (command: string) => void;
   isDisabled?: boolean;
+  disabled?: boolean;
 }
 
-export const CommandInput = ({ onSubmit, isDisabled = false }: CommandInputProps) => {
+export const CommandInput = ({
+  onSubmit,
+  isDisabled = false,
+  disabled = false,
+}: CommandInputProps) => {
   const {
     exitApp,
     cancelCurrentSession,
@@ -178,6 +183,16 @@ export const CommandInput = ({ onSubmit, isDisabled = false }: CommandInputProps
     // Submit the command
     onSubmit(commandToSubmit);
   };
+
+  if (disabled) {
+    return (
+      <Box flexDirection="column" marginTop={1} width={dimensions.paddedWidth}>
+        <Box borderStyle="round" borderColor={isDisabled ? "gray" : "gray"} paddingX={1}>
+          <Text dimColor>Processing... (press escape to cancel the current request)</Text>
+        </Box>
+      </Box>
+    );
+  }
 
   return (
     <Box flexDirection="column" marginTop={1} width={dimensions.paddedWidth}>
