@@ -66,6 +66,97 @@ interface ResearchOutput {
 // Helper Functions
 
 /**
+ * Generates human-readable progress messages using LLM
+ * Falls back to generic message on error
+ */
+async function generateProgressMessage(
+  phase: "parsing" | "searching" | "evaluating" | "extracting" | "synthesizing",
+  context: unknown,
+  fallback: string,
+  logger?: Logger,
+  abortSignal?: AbortSignal,
+): Promise<string> {
+  try {
+    // Convert context to a simple string representation
+    const contextStr = typeof context === "string" ? context : JSON.stringify(context, null, 2);
+
+    const phasePrompts = {
+      parsing: `Extract the query topic and what requirements are being analyzed.
+Examples:
+- "Figuring out gravel bike requirements"
+- "Parsing accommodation needs for 8 guests"
+- "Understanding React vs Vue comparison request"`,
+
+      searching: `Extract the domains being searched, query refinements, or attempt info.
+Examples:
+- "Searching bikeradar.com for 2024 gravel bikes"
+- "Querying reddit.com/r/gravelcycling for tire clearance"
+- "Refining search: adding 'carbon frame' qualifier"
+- "Searching airbnb.com for tokyo listings"`,
+
+      evaluating: `Extract the number of results and what's being filtered or checked.
+Examples:
+- "Checking 20 bikeradar.com results for relevance"
+- "Filtering out road bike results"
+- "Evaluating 15 airbnb listings"
+- "Selecting 8 relevant forum posts"`,
+
+      extracting: `Extract specific page titles, domains, or batch info.
+Examples:
+- "Reading bikeradar's specialized diverge review"
+- "Extracting cyclingnews.com's gear guide (batch 2/3)"
+- "Pulling content from 5 reddit threads"
+- "Reading zillow property details"`,
+
+      synthesizing: `Extract the output format and source count.
+Examples:
+- "Building comparison from 12 sources"
+- "Formatting gravel bike list"
+- "Creating summary from 8 articles"
+- "Generating property comparison table"`,
+    };
+
+    const { text } = await generateText({
+      model: anthropic("claude-3-5-haiku-latest"),
+      abortSignal,
+      system: `Generate a specific, informative progress update for a web research task.
+
+<constraints>
+- Maximum 6 words
+- Start with capital letter (sentence case)
+- Be specific about WHAT is being processed
+- Include counts, domains, or specific content when available
+- No generic phrases like "browsing sites" or "looking through"
+</constraints>
+
+<phase_guidance>
+${phasePrompts[phase]}
+</phase_guidance>`,
+      prompt: `<phase>${phase}</phase>
+
+<context>
+${contextStr}
+</context>
+
+<task>
+Generate a specific progress update. Focus on the actual content/domains/counts from the context.
+Return ONLY the sentence-cased update text, no explanations.
+</task>`,
+      temperature: 0.5,
+      maxOutputTokens: 50,
+    });
+
+    return text.trim();
+  } catch (error) {
+    logger?.warn(`Failed to generate progress message`, {
+      error: error instanceof Error ? error.message : String(error),
+      phase,
+    });
+    return fallback;
+  }
+}
+
+/**
  * Parses natural language queries into structured search parameters
  * Supports reddit filtering, time ranges, and domain specifications
  */
@@ -375,14 +466,23 @@ async function searchWithRetries(
   let currentQueries = searchParams.queries;
 
   for (let attempt = 0; attempt < options.maxAttempts; attempt++) {
-    const attemptMessage =
-      attempt > 0 && currentQueries !== searchParams.queries
-        ? `Searching web (attempt ${attempt + 1} of ${options.maxAttempts}, refined query)...`
-        : `Searching web (attempt ${attempt + 1} of ${options.maxAttempts})...`;
+    const domains = currentQueries[0]?.include_domains || [];
+    const progressMessage = await generateProgressMessage(
+      "searching",
+      {
+        query: currentQueries[0]?.query,
+        domains: domains.length > 0 ? domains : undefined,
+        attempt: `${attempt + 1} of ${options.maxAttempts}`,
+        refinedQuery: attempt > 0 && currentQueries !== searchParams.queries,
+      },
+      `Searching web (attempt ${attempt + 1} of ${options.maxAttempts})...`,
+      logger,
+      abortSignal,
+    );
 
     stream?.emit({
       type: "data-tool-progress",
-      data: { toolName: "Research Agent", content: attemptMessage },
+      data: { toolName: "Research Agent", content: progressMessage },
     });
 
     const batchResults = await Promise.allSettled(
@@ -429,9 +529,16 @@ async function searchWithRetries(
 
     // Emit evaluation progress before evaluating
     if (newResults.length > 0) {
+      const evalMessage = await generateProgressMessage(
+        "evaluating",
+        { resultCount: newResults.length, urls: newResults.slice(0, 3).map((r) => r.url) },
+        "Evaluating result relevance...",
+        logger,
+        abortSignal,
+      );
       stream?.emit({
         type: "data-tool-progress",
-        data: { toolName: "Research Agent", content: "Evaluating result relevance..." },
+        data: { toolName: "Research Agent", content: evalMessage },
       });
     }
 
@@ -456,12 +563,16 @@ async function searchWithRetries(
 
   // Emit final evaluation summary
   if (allResults.length > 0) {
+    const summaryMessage = await generateProgressMessage(
+      "evaluating",
+      { relevantResults: allResults.length },
+      `Selected ${allResults.length} relevant results`,
+      logger,
+      abortSignal,
+    );
     stream?.emit({
       type: "data-tool-progress",
-      data: {
-        toolName: "Research Agent",
-        content: `Selected ${allResults.length} relevant results`,
-      },
+      data: { toolName: "Research Agent", content: summaryMessage },
     });
   }
 
@@ -568,23 +679,25 @@ async function extractTopResults(
     const batch = urls.slice(i, Math.min(i + BATCH_SIZE, urls.length));
     const currentBatch = Math.floor(i / BATCH_SIZE) + 1;
 
-    if (totalBatches > 1) {
-      stream?.emit({
-        type: "data-tool-progress",
-        data: {
-          toolName: "Research Agent",
-          content: `Extracting content from ${urls.length} pages (batch ${currentBatch}/${totalBatches})...`,
-        },
-      });
-    } else {
-      stream?.emit({
-        type: "data-tool-progress",
-        data: {
-          toolName: "Research Agent",
-          content: `Extracting content from ${urls.length} pages...`,
-        },
-      });
-    }
+    const extractMessage = await generateProgressMessage(
+      "extracting",
+      {
+        urls: batch,
+        titles: results.slice(i, Math.min(i + BATCH_SIZE, urls.length)).map((r) => r.title),
+        batch: totalBatches > 1 ? `${currentBatch} of ${totalBatches}` : undefined,
+        totalPages: urls.length,
+      },
+      totalBatches > 1
+        ? `Extracting content from ${urls.length} pages (batch ${currentBatch}/${totalBatches})...`
+        : `Extracting content from ${urls.length} pages...`,
+      logger,
+      abortSignal,
+    );
+
+    stream?.emit({
+      type: "data-tool-progress",
+      data: { toolName: "Research Agent", content: extractMessage },
+    });
 
     try {
       const response = await tavilyClient.extract(batch);
@@ -818,9 +931,16 @@ export const targetedResearchAgent = createAgent<string>({
     const tavilyClient = tavily({ apiKey });
 
     try {
+      const parseMessage = await generateProgressMessage(
+        "parsing",
+        { query: prompt },
+        "Analyzing query requirements...",
+        logger,
+        abortSignal,
+      );
       stream?.emit({
         type: "data-tool-progress",
-        data: { toolName: "Research Agent", content: "Analyzing query requirements..." },
+        data: { toolName: "Research Agent", content: parseMessage },
       });
       const parseStart = Date.now();
       const searchParams = await parseQuery(prompt, logger, abortSignal);
@@ -849,12 +969,16 @@ export const targetedResearchAgent = createAgent<string>({
       }
 
       logger?.info(`Search phase complete`, { resultCount: searchResults.length });
+      const foundMessage = await generateProgressMessage(
+        "searching",
+        { resultsFound: searchResults.length, queriesUsed: searchParams.queries.length },
+        `Found ${searchResults.length} results across ${searchParams.queries.length} ${searchParams.queries.length === 1 ? "query" : "queries"}`,
+        logger,
+        abortSignal,
+      );
       stream?.emit({
         type: "data-tool-progress",
-        data: {
-          toolName: "Research Agent",
-          content: `Found ${searchResults.length} results across ${searchParams.queries.length} ${searchParams.queries.length === 1 ? "query" : "queries"}`,
-        },
+        data: { toolName: "Research Agent", content: foundMessage },
       });
 
       // Extraction progress is now handled in extractTopResults
@@ -873,21 +997,32 @@ export const targetedResearchAgent = createAgent<string>({
         extracted: extracted.successful.length,
         failed: extracted.failed.length,
       });
+      const extractCompleteMessage = await generateProgressMessage(
+        "extracting",
+        { pagesExtracted: extracted.successful.length },
+        `Extracted ${extracted.successful.length} pages successfully`,
+        logger,
+        abortSignal,
+      );
       stream?.emit({
         type: "data-tool-progress",
-        data: {
-          toolName: "Research Agent",
-          content: `Extracted ${extracted.successful.length} pages successfully`,
-        },
+        data: { toolName: "Research Agent", content: extractCompleteMessage },
       });
 
       const formatDescriptions = { summary: "summary", list: "list", comparison: "comparison" };
+      const synthMessage = await generateProgressMessage(
+        "synthesizing",
+        {
+          outputFormat: formatDescriptions[searchParams.outputFormat],
+          sourceCount: extracted.successful.length,
+        },
+        `Generating ${formatDescriptions[searchParams.outputFormat]} from ${extracted.successful.length} sources...`,
+        logger,
+        abortSignal,
+      );
       stream?.emit({
         type: "data-tool-progress",
-        data: {
-          toolName: "Research Agent",
-          content: `Generating ${formatDescriptions[searchParams.outputFormat]} from ${extracted.successful.length} sources...`,
-        },
+        data: { toolName: "Research Agent", content: synthMessage },
       });
       const synthStart = Date.now();
       const synthesis = await synthesizeResults({
@@ -919,9 +1054,16 @@ export const targetedResearchAgent = createAgent<string>({
 
       logger?.info(`Research complete`, { research: JSON.stringify(output) });
 
+      const completeMessage = await generateProgressMessage(
+        "synthesizing",
+        { totalResults: output.sources.relevantResults },
+        "Research complete",
+        logger,
+        abortSignal,
+      );
       stream?.emit({
         type: "data-tool-progress",
-        data: { toolName: "Research Agent", content: "Research complete" },
+        data: { toolName: "Research Agent", content: completeMessage },
       });
       return output.synthesis;
     } catch (error) {
