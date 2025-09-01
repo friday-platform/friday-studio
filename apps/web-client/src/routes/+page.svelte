@@ -83,137 +83,145 @@ $effect(() => {
 });
 </script>
 
-<div
-	class="chat"
-	class:has-messages={ctx.messages.filter(
-		(m) => m.type !== 'data-connection' && m.type !== 'data-heartbeat'
-	).length > 0}
->
-	<div class="messages" bind:this={scrollContainer} onscroll={handleScroll}>
-		<div class="messages-inner">
-			{#each ctx.messages as message, index (index)}
-				{@const formattedMessage = formatMessage(message, ctx.user)}
+{#if ctx.daemonStatus === 'error'}
+	<p class="daemon-error">
+		Error: The atlas daemon is not running <button type="button" onclick={() => ctx.checkHealth()}
+			>Try again</button
+		>
+	</p>
+{:else}
+	<div
+		class="chat"
+		class:has-messages={ctx.messages.filter(
+			(m) => m.type !== 'data-connection' && m.type !== 'data-heartbeat'
+		).length > 0}
+	>
+		<div class="messages" bind:this={scrollContainer} onscroll={handleScroll}>
+			<div class="messages-inner">
+				{#each ctx.messages as message, index (index)}
+					{@const formattedMessage = formatMessage(message, ctx.user)}
 
-				{#if formattedMessage && (formattedMessage.type === 'request' || formattedMessage.type === 'text')}
-					<Message message={formattedMessage} />
-				{:else if formattedMessage && formattedMessage.type === 'error'}
-					<ErrorMessage message={formattedMessage} />
+					{#if formattedMessage && (formattedMessage.type === 'request' || formattedMessage.type === 'text')}
+						<Message message={formattedMessage} />
+					{:else if formattedMessage && formattedMessage.type === 'error'}
+						<ErrorMessage message={formattedMessage} />
+					{/if}
+				{/each}
+
+				{#if ctx.typingState.isTyping}
+					{@const actionsAfterLastUser = (() => {
+						// Find the last data-user-message
+						const lastUserIndex = ctx.messages.findLastIndex(
+							(msg) => msg.type === 'data-user-message'
+						);
+
+						// If no user message found, return empty
+						if (lastUserIndex === -1) return [];
+
+						// Return everything after the last user message
+						return ctx.messages.slice(lastUserIndex + 1);
+					})()}
+
+					<Progress actions={actionsAfterLastUser} />
 				{/if}
-			{/each}
-
-			{#if ctx.typingState.isTyping}
-				{@const actionsAfterLastUser = (() => {
-					// Find the last data-user-message
-					const lastUserIndex = ctx.messages.findLastIndex(
-						(msg) => msg.type === 'data-user-message'
-					);
-
-					// If no user message found, return empty
-					if (lastUserIndex === -1) return [];
-
-					// Return everything after the last user message
-					return ctx.messages.slice(lastUserIndex + 1);
-				})()}
-
-				<Progress actions={actionsAfterLastUser} />
-			{/if}
+			</div>
 		</div>
-	</div>
 
-	{#if ctx.messages.filter((m) => m.type !== 'data-connection' && m.type !== 'data-heartbeat').length === 0}
-		<h2>Welcome to Atlas</h2>
-	{/if}
+		{#if ctx.messages.filter((m) => m.type !== 'data-connection' && m.type !== 'data-heartbeat').length === 0}
+			<h2>Welcome to Atlas</h2>
+		{/if}
 
-	<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-	<form
-		bind:this={form}
-		title={ctx.typingState.isTyping
-			? 'Processing... (press escape to cancel the current request)'
-			: undefined}
-		method="POST"
-		onkeydown={(e) => {
-			if (e.key === 'Enter' && !e.shiftKey && !e.altKey) {
-				e.preventDefault();
-				e.currentTarget?.requestSubmit();
-			}
-		}}
-		onsubmit={async (e) => {
-			e.preventDefault();
-
-			if (!ctx.conversationClient || !ctx.conversationSessionId || ctx.typingState.isTyping) {
-				return;
-			}
-
-			try {
-				const formData = new FormData(e.target as HTMLFormElement);
-				let formMessage = formData.get('message') as string;
-
-				if (stagedFiles.state.size > 0) {
-					formMessage = formMessage + `\n\nLibrary attachments:`;
-
-					for (const id of stagedFiles.state.keys()) {
-						formMessage = formMessage + `\n- ${id}`;
-					}
+		<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+		<form
+			bind:this={form}
+			title={ctx.typingState.isTyping
+				? 'Processing... (press escape to cancel the current request)'
+				: undefined}
+			method="POST"
+			onkeydown={(e) => {
+				if (e.key === 'Enter' && !e.shiftKey && !e.altKey) {
+					e.preventDefault();
+					e.currentTarget?.requestSubmit();
 				}
+			}}
+			onsubmit={async (e) => {
+				e.preventDefault();
 
-				if (formMessage.trim().length === 0) {
+				if (!ctx.conversationClient || !ctx.conversationSessionId || ctx.typingState.isTyping) {
 					return;
 				}
 
-				// Just send the message - the persistent SSE listener will handle the response
-				await ctx.conversationClient.sendMessage(ctx.conversationSessionId, formMessage);
+				try {
+					const formData = new FormData(e.target as HTMLFormElement);
+					let formMessage = formData.get('message') as string;
 
-				message = '';
+					if (stagedFiles.state.size > 0) {
+						formMessage = formMessage + `\n\nLibrary attachments:`;
 
-				// The persistent SSE listener will handle the response
-			} catch (e) {
-				console.error(e);
-			}
-		}}
-	>
-		<textarea
-			disabled={ctx.typingState.isTyping}
-			name="message"
-			placeholder="What can I help you with?"
-			bind:value={message}
-		></textarea>
-
-		<div class="actions">
-			<div class="file-drop">
-				<Dropzone
-					maxSize={Infinity}
-					accept={['*']}
-					onDrop={(files) => {
-						for (const file of files) {
-							uploadFile(file);
+						for (const id of stagedFiles.state.keys()) {
+							formMessage = formMessage + `\n- ${id}`;
 						}
-					}}
-				>
-					<span class="file-drop-children">
-						<CustomIcons.Paperclip />
-						<span>Add Files</span>
-					</span>
-				</Dropzone>
+					}
+
+					if (formMessage.trim().length === 0) {
+						return;
+					}
+
+					// Just send the message - the persistent SSE listener will handle the response
+					await ctx.conversationClient.sendMessage(ctx.conversationSessionId, formMessage);
+
+					message = '';
+
+					// The persistent SSE listener will handle the response
+				} catch (e) {
+					console.error(e);
+				}
+			}}
+		>
+			<textarea
+				disabled={ctx.typingState.isTyping}
+				name="message"
+				placeholder="What can I help you with?"
+				bind:value={message}
+			></textarea>
+
+			<div class="actions">
+				<div class="file-drop">
+					<Dropzone
+						maxSize={Infinity}
+						accept={['*']}
+						onDrop={(files) => {
+							for (const file of files) {
+								uploadFile(file);
+							}
+						}}
+					>
+						<span class="file-drop-children">
+							<CustomIcons.Paperclip />
+							<span>Add Files</span>
+						</span>
+					</Dropzone>
+				</div>
+
+				<Button type="submit">Send</Button>
 			</div>
+		</form>
 
-			<Button type="submit">Send</Button>
-		</div>
-	</form>
+		{#if stagedFiles.state.size > 0}
+			<div class="staged-files">
+				{#each stagedFiles.state.entries() as [itemId, file]}
+					<button
+						onclick={async () => {
+							await daemonClient.deleteLibraryItem(itemId);
 
-	{#if stagedFiles.state.size > 0}
-		<div class="staged-files">
-			{#each stagedFiles.state.entries() as [itemId, file]}
-				<button
-					onclick={async () => {
-						await daemonClient.deleteLibraryItem(itemId);
-
-						stagedFiles.remove(itemId);
-					}}>{file.name} <IconSmall.Close /></button
-				>
-			{/each}
-		</div>
-	{/if}
-</div>
+							stagedFiles.remove(itemId);
+						}}>{file.name} <IconSmall.Close /></button
+					>
+				{/each}
+			</div>
+		{/if}
+	</div>
+{/if}
 
 <style>
 	.chat {
@@ -348,6 +356,19 @@ $effect(() => {
 			&:hover {
 				background-color: var(--highlight-3);
 			}
+		}
+	}
+
+	.daemon-error {
+		color: var(--text-3);
+		font-size: var(--font-size-5);
+		text-align: center;
+		margin-block-end: var(--size-6);
+
+		button {
+			color: var(--accent-1);
+			cursor: pointer;
+			text-decoration: underline;
 		}
 	}
 </style>

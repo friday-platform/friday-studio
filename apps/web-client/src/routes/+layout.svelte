@@ -28,6 +28,8 @@ async function sendDiagnostics() {
 }
 
 onMount(async () => {
+  ctx.checkHealth();
+
   const menu = await Menu.new({
     items: [{ id: "send-diagnostics", text: "Send Diagnostics", action: sendDiagnostics }],
   });
@@ -63,7 +65,7 @@ onMount(async () => {
 	}}
 >
 	<AppContainer>
-		<AppSidebar />
+		<AppSidebar disabled={ctx.daemonStatus === 'error'} />
 
 		<main>
 			{@render children?.()}

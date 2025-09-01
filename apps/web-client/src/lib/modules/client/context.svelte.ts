@@ -19,6 +19,7 @@ class ClientContext {
   messages = $state<SessionUIMessagePart[]>([]);
   user = $state<string>("NA");
   atlasSessionId = $state<string | null>(null);
+  daemonStatus = $state<"connected" | "error" | "idle">("idle");
 
   constructor(client: DaemonClient) {
     this.client = client;
@@ -93,6 +94,20 @@ class ClientContext {
       const errorMessage = error instanceof Error ? error.message : String(error);
 
       console.error(`Failed to start Atlas daemon: ${errorMessage}`);
+    }
+  }
+
+  async checkHealth() {
+    try {
+      const health = await this.conversationClient?.healthCheck();
+
+      if (health) {
+        this.daemonStatus = "connected";
+      } else {
+        this.daemonStatus = "error";
+      }
+    } catch {
+      this.daemonStatus = "error";
     }
   }
 }

@@ -6,6 +6,8 @@ import { SegmentedControl } from "$lib/components/segmented-control";
 
 const { routes } = getAppContext();
 
+let { disabled = true } = $props();
+
 function getActivePage(value: string | string[]) {
   if (Array.isArray(value)) {
     return value.some((v) => String(page.route.id).endsWith(v));
@@ -20,17 +22,19 @@ function getActivePage(value: string | string[]) {
 		<span>Atlas</span>
 	</a>
 
-	<nav>
-		<SegmentedControl.Root>
-			<SegmentedControl.Item href={routes.main} active={getActivePage('/')}
-				>Chat</SegmentedControl.Item
-			>
-			<SegmentedControl.Item
-				href={routes.library.list}
-				active={getActivePage(['library', 'library/[id]'])}>Library</SegmentedControl.Item
-			>
-		</SegmentedControl.Root>
-	</nav>
+	{#if !disabled}
+		<nav>
+			<SegmentedControl.Root>
+				<SegmentedControl.Item href={routes.main} active={getActivePage('/')}
+					>Chat</SegmentedControl.Item
+				>
+				<SegmentedControl.Item
+					href={routes.library.list}
+					active={getActivePage(['library', 'library/[id]'])}>Library</SegmentedControl.Item
+				>
+			</SegmentedControl.Root>
+		</nav>
+	{/if}
 </header>
 
 <style>
