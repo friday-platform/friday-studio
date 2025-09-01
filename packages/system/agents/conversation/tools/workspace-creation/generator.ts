@@ -32,6 +32,7 @@ export class WorkspaceGenerator {
     maxAttempts: number = 3,
   ): Promise<GenerationResult> {
     this.attemptHistory = [];
+    const builder = workspaceBuilder();
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       logger.info(`Starting workspace generation attempt ${attempt}/${maxAttempts}`);
@@ -39,7 +40,7 @@ export class WorkspaceGenerator {
       try {
         // Reset workspace builder for fresh attempt
         logger.debug("Resetting workspace builder");
-        workspaceBuilder.reset();
+        builder.reset();
 
         logger.debug(`Building prompt for attempt ${attempt}`);
         const prompt = this.buildAttemptPrompt(
@@ -54,10 +55,6 @@ export class WorkspaceGenerator {
         const aiStartTime = Date.now();
         logger.info("Starting AI workspace generation with Claude Sonnet 4");
 
-        let capturedThinking = "";
-        const toolCallSummary: string[] = [];
-        let finalText = "";
-
         const result = streamText({
           model: this.anthropic("claude-sonnet-4-20250514"),
           system: SYSTEM_PROMPT,
@@ -68,28 +65,21 @@ export class WorkspaceGenerator {
           temperature: this.getTemperatureForAttempt(attempt),
           maxRetries: 3, // Enable retries for API resilience (e.g., 529 errors)
           providerOptions: { anthropic: { thinking: { type: "enabled", budgetTokens: 7000 } } },
-          onChunk({ chunk }) {
-            if (chunk.type === "tool-call") {
-              logger.debug(`Tool call: ${chunk.toolName}`);
-              toolCallSummary.push(`${chunk.toolName}()`);
-            }
-          },
         });
 
-        // Process the full stream to capture thinking and tool calls
-        for await (const chunk of result.fullStream) {
-          if (chunk.type === "text") {
-            finalText += chunk.text;
-          } else if (chunk.type === "reasoning") {
-            capturedThinking += chunk.text || "";
-          }
-        }
+        const [text, reasoning, toolCalls] = await Promise.all([
+          result.text,
+          result.reasoningText,
+          result.toolCalls,
+        ]);
+
+        const calledToolNames = toolCalls.map((t) => t.toolName);
 
         const aiEndTime = Date.now();
         const totalAiTime = aiEndTime - aiStartTime;
 
         logger.debug(`AI generation completed in ${totalAiTime}ms`);
-        logger.debug(`Tool execution sequence: ${toolCallSummary.join(" → ")}`);
+        logger.debug(`Tool execution sequence: ${calledToolNames.join(" → ")}`);
 
         // Check if we have minimum components for a functional workspace
         logger.debug("Analyzing generated workspace components");
@@ -98,7 +88,7 @@ export class WorkspaceGenerator {
           agentCount = 0,
           jobCount = 0;
         try {
-          const config = workspaceBuilder.exportConfig();
+          const config = builder.exportConfig();
           signalCount = Object.keys(config.signals || {}).length;
           agentCount = Object.keys(config.agents || {}).length;
           jobCount = Object.keys(config.jobs || {}).length;
@@ -117,7 +107,7 @@ export class WorkspaceGenerator {
         // Only validate if we have minimum components, otherwise force failure
         logger.debug("Running workspace validation");
         const validation = hasMinimumComponents
-          ? workspaceBuilder.validateWorkspace()
+          ? builder.validateWorkspace()
           : {
               success: false,
               errors: ["Workspace incomplete - missing signals, agents, or jobs"],
@@ -126,19 +116,14 @@ export class WorkspaceGenerator {
 
         if (validation.success) {
           logger.info(`Workspace generation attempt ${attempt} succeeded`);
-          const config = workspaceBuilder.exportConfig();
+          const config = builder.exportConfig();
           logger.debug(
             `Generated workspace with ${signalCount} signals, ${agentCount} agents, ${jobCount} jobs`,
           );
 
           return {
             config,
-            reasoning: this.buildSuccessReasoning(
-              attempt,
-              finalText,
-              capturedThinking,
-              toolCallSummary,
-            ),
+            reasoning: this.buildSuccessReasoning(attempt, text, reasoning, calledToolNames),
           };
         }
 
@@ -207,9 +192,10 @@ Create a complete Atlas workspace configuration using the provided tools. You MU
 2. REQUIRED: Call addScheduleSignal OR addWebhookSignal for triggers
 3. REQUIRED: Call addLLMAgent AND/OR addRemoteAgent for workers
 4. REQUIRED: Call createJob to connect signals to agents
-5. OPTIONAL: Call addMCPIntegration if external services needed (NOT for atlas-platform)
-6. REQUIRED: Call validateWorkspace to check configuration
-7. REQUIRED: Call exportWorkspace to finalize
+5. REQUIRED: Call discoverAndAddMCPServers if external integrations are needed (identify requirements first)
+6. OPTIONAL: Call addMCPIntegration only if discovery doesn't find suitable servers
+7. REQUIRED: Call validateWorkspace to check configuration
+8. REQUIRED: Call exportWorkspace to finalize
 
 You must create AT LEAST:
 - 1 signal (trigger mechanism)
@@ -223,6 +209,12 @@ You must create AT LEAST:
 4. Example configuration:
    - prompt: "You are responsible for sending email notifications. Format and send an email report with the analysis results to the configured recipients."
    - tool_choice: "required" (ensures the agent uses tools to send email)
+
+**MANDATORY MCP DISCOVERY**: You MUST use MCP discovery for any external integrations:
+1. BEFORE adding any manual MCP integrations, call 'discoverAndAddMCPServers'
+2. Extract requirements from user intent (e.g., ['GitHub API access', 'Discord notifications'])
+3. Only use manual 'addMCPIntegration' if discovery fails to find suitable servers
+4. This ensures consistent registry usage across all workspace creation paths
 
 **IMPORTANT: Atlas Platform Tools**
 All Atlas platform tools are automatically available to ALL agents at runtime. You do NOT need to:

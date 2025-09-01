@@ -3,6 +3,7 @@ import { join } from "@std/path";
 import * as yaml from "@std/yaml";
 import { generateUniqueWorkspaceName } from "../../../core/utils/id-generator.ts";
 import { checkDaemonRunning, getDaemonClient } from "../../utils/daemon-client.ts";
+import { MCPRegistry, type MCPDiscoveryRequest } from "@atlas/core";
 
 interface WorkspaceCreationOptions {
   name: string;
@@ -27,6 +28,7 @@ export async function createAndRegisterWorkspace(
     signals: {} as Record<string, unknown>,
     jobs: {} as Record<string, unknown>,
     agents: {} as Record<string, unknown>,
+    tools: {} as Record<string, unknown>,
   };
 
   // Add configured signals
@@ -77,6 +79,12 @@ export async function createAndRegisterWorkspace(
         };
       }
     }
+  }
+
+  // Auto-discover MCP servers based on basic requirements
+  const mcpServers = await discoverMCPServersForBasicWorkspace(name, description);
+  if (mcpServers && Object.keys(mcpServers).length > 0) {
+    workspaceConfig.tools = { mcp: { servers: mcpServers } };
   }
 
   // Add sample job based on selected agents
@@ -131,4 +139,78 @@ export async function createAndRegisterWorkspace(
   }
 
   return { id: workspaceId, name: workspaceName, path: path };
+}
+
+/**
+ * Auto-discover MCP servers for basic workspace creation
+ * This ensures MCP registry is used in CLI workspace creation
+ */
+async function discoverMCPServersForBasicWorkspace(
+  name: string,
+  description?: string,
+): Promise<Record<string, any> | null> {
+  try {
+    const registry = await MCPRegistry.getInstance();
+    const requirements = extractRequirementsFromNameAndDescription(name, description);
+
+    if (requirements.length === 0) {
+      return null;
+    }
+
+    const mcpServers: Record<string, any> = {};
+    let discoveredCount = 0;
+
+    for (const requirement of requirements) {
+      const request: MCPDiscoveryRequest = { intent: requirement, capabilities: [requirement] };
+
+      const discovery = await registry.discoverBestMCPServer(request);
+
+      if (discovery && discovery.confidence >= 0.6) {
+        const serverId = discovery.server.id;
+        if (!mcpServers[serverId]) {
+          mcpServers[serverId] = discovery.server.configTemplate;
+          discoveredCount++;
+        }
+      }
+    }
+
+    if (discoveredCount > 0) {
+      console.log(`Auto-discovered ${discoveredCount} MCP servers for workspace requirements`);
+    }
+
+    return Object.keys(mcpServers).length > 0 ? mcpServers : null;
+  } catch (error) {
+    console.warn("MCP discovery failed:", error instanceof Error ? error.message : String(error));
+    return null;
+  }
+}
+
+/**
+ * Extract likely requirements from workspace name and description
+ */
+function extractRequirementsFromNameAndDescription(name: string, description?: string): string[] {
+  const requirements: string[] = [];
+  const fullText = `${name} ${description || ""}`.toLowerCase();
+
+  // Common patterns
+  const patterns = [
+    { keywords: ["github", "git", "repo"], requirement: "GitHub repository management" },
+    { keywords: ["discord", "chat", "notification"], requirement: "Discord notifications" },
+    { keywords: ["email", "mail", "smtp"], requirement: "Email notifications" },
+    { keywords: ["stripe", "payment", "billing"], requirement: "Stripe payment processing" },
+    { keywords: ["slack", "message"], requirement: "Slack messaging" },
+    { keywords: ["database", "sql", "postgres", "mysql"], requirement: "Database operations" },
+    { keywords: ["api", "rest", "http"], requirement: "HTTP API access" },
+    { keywords: ["file", "upload", "storage"], requirement: "File operations" },
+    { keywords: ["monitor", "health", "check"], requirement: "System monitoring" },
+    { keywords: ["report", "analytics", "metrics"], requirement: "Analytics and reporting" },
+  ];
+
+  for (const pattern of patterns) {
+    if (pattern.keywords.some((keyword) => fullText.includes(keyword))) {
+      requirements.push(pattern.requirement);
+    }
+  }
+
+  return requirements;
 }

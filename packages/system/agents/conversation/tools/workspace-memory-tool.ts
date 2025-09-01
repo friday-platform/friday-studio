@@ -25,15 +25,6 @@ interface AgentExecutionContent {
   [key: string]: unknown;
 }
 
-// Type for memory with source info
-type MemoryWithSource = {
-  memoryType: CoALAMemoryType;
-  content: unknown;
-  timestamp: Date;
-  id: string;
-  [key: string]: unknown;
-};
-
 export const workspaceMemoryTool = tool({
   description:
     "Access workspace memory for conversation context including session bridge memories and recent worklog entries.",

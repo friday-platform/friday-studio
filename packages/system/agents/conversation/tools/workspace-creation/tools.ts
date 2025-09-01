@@ -6,14 +6,26 @@ import type {
 } from "@atlas/config";
 import { tool } from "ai";
 import { z } from "zod/v4";
+import { agentDiscoveryTool } from "./agent-discovery-tool.ts";
 import { WorkspaceBuilder } from "./builder.ts";
+import { mcpDiscoveryTool } from "./mcp-discovery-tool.ts";
 
-// Create singleton instance that tools will share
-const workspaceBuilder = new WorkspaceBuilder();
+// Lazy initialization to avoid circular import issues
+let workspaceBuilderInstance: WorkspaceBuilder | undefined;
 
-export { workspaceBuilder };
+function getWorkspaceBuilder(): WorkspaceBuilder {
+  if (!workspaceBuilderInstance) {
+    workspaceBuilderInstance = new WorkspaceBuilder();
+  }
+  return workspaceBuilderInstance;
+}
+
+export { getWorkspaceBuilder as workspaceBuilder };
 
 export const workspaceBuilderTools = {
+  discoverAgent: agentDiscoveryTool,
+  discoverMCPServer: mcpDiscoveryTool,
+
   initializeWorkspace: tool({
     description: "Initialize workspace with identity metadata",
     inputSchema: z.object({
@@ -30,7 +42,7 @@ export const workspaceBuilderTools = {
     }),
     execute: ({ name, description }) => {
       // TypeScript ensures this matches expected identity structure
-      const result = workspaceBuilder.initialize({ name, description });
+      const result = getWorkspaceBuilder().initialize({ name, description });
       if (!result.success) {
         throw new Error(`Workspace initialization failed: ${result.errors.join("; ")}`);
       }
@@ -71,7 +83,7 @@ export const workspaceBuilderTools = {
         config: { schedule, timezone },
       };
 
-      const result = workspaceBuilder.addSignal(signalName, signalConfig);
+      const result = getWorkspaceBuilder().addSignal(signalName, signalConfig);
       if (!result.success) {
         throw new Error(`Schedule signal creation failed: ${result.errors.join("; ")}`);
       }
@@ -103,7 +115,7 @@ export const workspaceBuilderTools = {
         config: { path },
       };
 
-      const result = workspaceBuilder.addSignal(signalName, signalConfig);
+      const result = getWorkspaceBuilder().addSignal(signalName, signalConfig);
       if (!result.success) {
         throw new Error(`Webhook signal creation failed: ${result.errors.join("; ")}`);
       }
@@ -171,7 +183,7 @@ export const workspaceBuilderTools = {
         config: { provider, model, prompt, tools, temperature, tool_choice },
       };
 
-      const result = workspaceBuilder.addAgent(agentId, agentConfig);
+      const result = getWorkspaceBuilder().addAgent(agentId, agentConfig);
       if (!result.success) {
         throw new Error(`LLM agent creation failed: ${result.errors.join("; ")}`);
       }
@@ -213,7 +225,7 @@ export const workspaceBuilderTools = {
         },
       };
 
-      const result = workspaceBuilder.addAgent(agentId, agentConfig);
+      const result = getWorkspaceBuilder().addAgent(agentId, agentConfig);
       if (!result.success) {
         throw new Error(`Remote agent creation failed: ${result.errors.join("; ")}`);
       }
@@ -249,7 +261,7 @@ export const workspaceBuilderTools = {
         execution: { strategy, agents: agents },
       };
 
-      const result = workspaceBuilder.addJob(jobName, jobConfig);
+      const result = getWorkspaceBuilder().addJob(jobName, jobConfig);
       if (!result.success) {
         throw new Error(`Job creation failed: ${result.errors.join("; ")}`);
       }
@@ -288,7 +300,7 @@ export const workspaceBuilderTools = {
 
       const serverConfig: MCPServerConfig = { transport: { type: "stdio", command, args }, env };
 
-      const result = workspaceBuilder.addMCPIntegration(serverName, serverConfig);
+      const result = getWorkspaceBuilder().addMCPIntegration(serverName, serverConfig);
       if (!result.success) {
         throw new Error(`MCP integration failed: ${result.errors.join("; ")}`);
       }
@@ -296,11 +308,35 @@ export const workspaceBuilderTools = {
     },
   }),
 
+  discoverAndAddMCPServers: tool({
+    description:
+      "Automatically discover and add suitable MCP servers based on workspace requirements. This ensures consistent MCP registry usage.",
+    inputSchema: z.object({
+      requirements: z
+        .array(z.string())
+        .describe(
+          "List of capability requirements, e.g., ['GitHub repository management', 'Discord notifications', 'Stripe payment processing']",
+        ),
+    }),
+    execute: async ({ requirements }) => {
+      const result = await getWorkspaceBuilder().discoverAndAddMCPServers(requirements);
+      if (!result.success) {
+        throw new Error(`MCP discovery failed: ${result.errors.join("; ")}`);
+      }
+      return {
+        status: "discovered",
+        message: "MCP server discovery completed",
+        warnings: result.warnings,
+        discoveredCount: result.warnings.filter((w) => w.includes("Auto-discovered")).length,
+      };
+    },
+  }),
+
   validateWorkspace: tool({
     description: "Validate the complete workspace configuration for errors",
     inputSchema: z.object({}),
     execute: () => {
-      const result = workspaceBuilder.validateWorkspace();
+      const result = getWorkspaceBuilder().validateWorkspace();
       if (!result.success) {
         throw new Error(`Workspace validation failed: ${result.errors.join("; ")}`);
       }
@@ -317,7 +353,7 @@ export const workspaceBuilderTools = {
     inputSchema: z.object({}),
     execute: () => {
       try {
-        const config = workspaceBuilder.exportConfig();
+        const config = getWorkspaceBuilder().exportConfig();
         return {
           status: "exported",
           message: "Workspace configuration exported successfully",

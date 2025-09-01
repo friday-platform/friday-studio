@@ -36,7 +36,7 @@ export class VectorSearchLocalStorageAdapter implements IVectorSearchStorageAdap
     }
     this.indexFile = join(this.storagePath, "embeddings.json");
     this.statsFile = join(this.storagePath, "stats.json");
-    this.loadFromStorage();
+    this.loadFromStorageSync();
   }
 
   async upsertEmbeddings(embeddings: VectorEmbedding[]): Promise<void> {
@@ -90,7 +90,7 @@ export class VectorSearchLocalStorageAdapter implements IVectorSearchStorageAdap
     }
 
     const results: VectorSearchResult[] = [];
-    const minSimilarity = query.minSimilarity || 0.5;
+    const minSimilarity = query.minSimilarity ?? 0.1;
     const limit = query.limit || 10;
 
     // Filter embeddings by criteria
@@ -205,6 +205,39 @@ export class VectorSearchLocalStorageAdapter implements IVectorSearchStorageAdap
     }
 
     return dotProduct / (normA * normB);
+  }
+
+  private loadFromStorageSync(): void {
+    try {
+      const content = Deno.readTextFileSync(this.indexFile);
+      if (content.trim()) {
+        const data = JSON.parse(content) as StoredEmbedding[];
+
+        // Rebuild indexes
+        this.embeddings.clear();
+        this.embeddingsByType.clear();
+
+        for (const embedding of data) {
+          // Convert timestamp strings back to Date objects
+          embedding.metadata.timestamp = new Date(embedding.metadata.timestamp);
+
+          this.embeddings.set(embedding.id, embedding);
+
+          const memoryType = embedding.metadata.memoryType;
+          if (!this.embeddingsByType.has(memoryType)) {
+            this.embeddingsByType.set(memoryType, new Set());
+          }
+          this.embeddingsByType.get(memoryType)!.add(embedding.id);
+        }
+      }
+    } catch (error) {
+      if (!(error instanceof Deno.errors.NotFound)) {
+        console.warn(
+          `Failed to load vector index: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+      // File doesn't exist or is corrupted, start with empty index
+    }
   }
 
   private async loadFromStorage(): Promise<void> {

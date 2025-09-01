@@ -43,14 +43,14 @@ Deno.test("LLM-Driven Anti-Hallucination", async (t) => {
   await t.step("system prompt should provide clear examples", () => {
     assertStringIncludes(
       WORKSPACE_ARCHITECT_SYSTEM_PROMPT,
-      "monitor stock prices",
-      "Should provide stock monitoring examples",
+      "Monitor Nike for shoe releases",
+      "Should provide monitoring examples",
     );
 
     assertStringIncludes(
       WORKSPACE_ARCHITECT_SYSTEM_PROMPT,
-      "write blog posts",
-      "Should provide content creation examples",
+      "Generate report",
+      "Should provide content generation examples",
     );
 
     assertStringIncludes(

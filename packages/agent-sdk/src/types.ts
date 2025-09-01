@@ -163,6 +163,9 @@ export const AgentMetadataSchema = z.object({
   /** Agent's domains and capabilities */
   expertise: AgentExpertiseSchema,
 
+  /** MCP server IDs this agent requires */
+  mcpRequirements: z.array(z.string()).optional().describe("MCP server IDs this agent requires"),
+
   /** Optional tags and author info */
   metadata: z
     .object({

@@ -4,7 +4,6 @@
 
 import { type WorkspaceConfig, WorkspaceConfigSchema } from "@atlas/config";
 import { assertEquals, assertExists, assertStringIncludes } from "@std/assert";
-import { generateWorkspace } from "../packages/system/agents/conversation/tools/workspace-creation/generation.ts";
 
 // Realistic test scenarios for comprehensive validation
 const testScenarios = [
@@ -146,6 +145,10 @@ for (const scenario of testScenarios) {
         summary: { signals: number; agents: number; jobs: number; mcpServers: number };
       };
       try {
+        // lazy import to avoid circular dependencies
+        const { generateWorkspace } = await import(
+          "../packages/system/agents/conversation/tools/workspace-creation/generation.ts"
+        );
         // The execute function requires a context parameter but may return AsyncIterable
         // We assert the type since we know with createWorkspace=false it returns a direct object
         result = (await generateWorkspace.execute!(

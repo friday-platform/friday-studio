@@ -45,6 +45,9 @@ export {
 // Export all LLM provider types and interfaces
 export type { LLMOptions, LLMResponse } from "./src/llm-provider.ts";
 export { LLMProvider } from "./src/llm-provider.ts";
+export type { MCPDiscoveryRequest, MCPServerMetadata } from "./src/mcp-registry/index.ts";
+// MCP Registry
+export { MCPRegistry } from "./src/mcp-registry/index.ts";
 // MCP Server Pool
 export { GlobalMCPServerPool } from "./src/mcp-server-pool.ts";
 export type {

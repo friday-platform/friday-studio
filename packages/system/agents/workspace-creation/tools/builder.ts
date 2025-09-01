@@ -12,7 +12,7 @@ import {
 } from "@atlas/config";
 import { type MCPDiscoveryRequest, MCPRegistry } from "@atlas/core";
 
-interface ValidationResult {
+export interface ValidationResult {
   success: boolean;
   errors: string[];
   warnings: string[];
@@ -215,7 +215,10 @@ export class WorkspaceBuilder {
 
           // Only add if not already present
           if (!this.mcpServers.has(serverName)) {
-            const result = this.addMCPIntegration(serverName, discovery.server.configTemplate);
+            const result = this.addMCPIntegration(
+              serverName,
+              discovery.server.configTemplate as MCPServerConfig,
+            );
             if (result.success) {
               addedCount++;
               warnings.push(

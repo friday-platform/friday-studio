@@ -281,13 +281,13 @@ export const conversationAgent = createAgent({
     try {
       // Use workspace memory tool from conversation tools
 
-      const result = await workspaceMemoryTool.execute?.(
+      const memoryResult = await workspaceMemoryTool.execute?.(
         { operation: "load_context", maxEntries: 10, sessionId: session.sessionId, prompt: prompt },
         { messages: [], toolCallId: crypto.randomUUID() },
       );
 
-      if (result?.success && result.conversationHistory.length > 0) {
-        const conversationHistory = result.conversationHistory;
+      if (memoryResult?.success && memoryResult.conversationHistory.length > 0) {
+        const conversationHistory = memoryResult.conversationHistory;
 
         // Convert workspace memory format to conversation format
         const pastChatContext: Array<ChatMessage> = [];

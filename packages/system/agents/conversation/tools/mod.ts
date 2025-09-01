@@ -14,6 +14,7 @@ import type { AtlasTools } from "@atlas/agent-sdk";
 import { resourceReadTool } from "./resource-read.ts";
 import { todoReadTool, todoWriteTool } from "./todo-tools.ts";
 import { generateWorkspace } from "./workspace-creation/generation.ts";
+import { mcpDiscoveryTool } from "./workspace-creation/mcp-discovery-tool.ts";
 import { workspaceMemoryTool } from "./workspace-memory-tool.ts";
 import { updateWorkspace } from "./workspace-update/atlas-update-workspace.ts";
 
@@ -28,10 +29,12 @@ export const conversationTools: AtlasTools = {
   read_atlas_resource: resourceReadTool,
   atlas_create_workspace: generateWorkspace,
   atlas_update_workspace: updateWorkspace,
+  atlas_discover_mcp_server: mcpDiscoveryTool,
 };
 
 export {
   generateWorkspace,
+  mcpDiscoveryTool,
   resourceReadTool,
   todoReadTool,
   todoWriteTool,
