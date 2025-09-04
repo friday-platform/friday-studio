@@ -17,7 +17,7 @@
  */
 
 // Export system workspaces
-export { SYSTEM_WORKSPACES } from "@packages/system/workspaces";
+export { SYSTEM_WORKSPACES } from "@atlas/system/workspaces";
 // Export WorkspaceManagerOptions interface
 export type { WorkspaceManagerOptions } from "./src/manager.ts";
 // Export main components

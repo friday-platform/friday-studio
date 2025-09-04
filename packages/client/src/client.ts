@@ -4,6 +4,7 @@
  */
 
 import { getAtlasDaemonUrl } from "@atlas/atlasd";
+import { validateAtlasJWT } from "@atlas/core";
 import { z } from "zod/v4";
 import { DEFAULT_TIMEOUT } from "./constants.ts";
 import { AtlasApiError } from "./errors.ts";
@@ -808,8 +809,8 @@ export class AtlasClient {
     const { join } = await import("@std/path");
     const { exists } = await import("@std/fs");
     const { load } = await import("@std/dotenv");
-    const { getAtlasHome } = await import("../../../src/utils/paths.ts");
-    const { CredentialFetcher, getDiagnosticsApiUrl } = await import("@atlas/core");
+    const { getAtlasHome } = await import("@atlas/utils");
+    const { getDiagnosticsApiUrl } = await import("@atlas/core");
 
     const globalAtlasEnv = join(getAtlasHome(), ".env");
     if (await exists(globalAtlasEnv)) {
@@ -825,10 +826,7 @@ export class AtlasClient {
     }
 
     // Validate JWT token
-    const validation = CredentialFetcher.validateJWT(atlasKey);
-    if (!validation.valid) {
-      throw new Error(validation.error);
-    }
+    validateAtlasJWT(atlasKey);
 
     // Read the gzip file
     const diagnosticData = await Deno.readFile(gzipPath);

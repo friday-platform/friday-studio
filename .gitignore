@@ -48,6 +48,9 @@ tools/atlas-installer/*.bak
 # Test directories
 test-workspace-watcher*
 
+# Eval snapshots
+**/snapshots/
+
 # Web Client Output
 apps/web-client/.output
 apps/web-client/.vercel

@@ -12,7 +12,6 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import type { AtlasTools, AtlasUIMessage } from "@atlas/agent-sdk";
 import { createAgent } from "@atlas/agent-sdk";
 import { pipeUIMessageStream } from "@atlas/agent-sdk/vercel-helpers";
-import { type SystemAgentConfigObject, SystemAgentConfigObjectSchema } from "@atlas/config";
 import type { Logger } from "@atlas/logger";
 import { createAtlasClient } from "@atlas/oapi-client";
 import { Client } from "@modelcontextprotocol/sdk/client";
@@ -104,7 +103,7 @@ async function getAgentServerClient(streamId: string, logger: Logger) {
     throw new Error(`Failed to connect to Agent Server: ${error}`);
   }
 
-  return client;
+  return { agentServer: client, agentServerTransport: transport };
 }
 
 // Export the agent
@@ -124,7 +123,7 @@ export const conversationAgent = createAgent({
    * @param context - Execution context with session, logger, and available tools
    * @returns Conversation response with text, reasoning, execution flow, and tool calls
    */
-  handler: async (prompt, { session, logger, tools, config, stream, abortSignal }) => {
+  handler: async (prompt, { session, logger, tools, stream, abortSignal, telemetry }) => {
     if (!session.streamId) {
       throw new Error("Stream ID is required");
     }
@@ -135,7 +134,10 @@ export const conversationAgent = createAgent({
      * Connect directly to the Atlas Agent server so that we can invoke agents and
      * intercept streamed notifications to show their progress and status updates.
      */
-    const agentServer = await getAgentServerClient(session.streamId, logger);
+    const { agentServer, agentServerTransport } = await getAgentServerClient(
+      session.streamId,
+      logger,
+    );
     agentServer.setNotificationHandler(StreamContentNotificationSchema, (notification) => {
       const { event } = notification.params;
       stream?.emit(event);
@@ -223,26 +225,6 @@ export const conversationAgent = createAgent({
       });
     }
 
-    // Get configuration values from workspace config with defaults
-    // Parse and validate config using proper schema types
-    let agentConfig: SystemAgentConfigObject | undefined;
-
-    if (config) {
-      try {
-        agentConfig = SystemAgentConfigObjectSchema.parse(config);
-        logger.info("Successfully parsed system agent configuration", {
-          model: agentConfig.model,
-          temperature: agentConfig.temperature,
-          maxTokens: agentConfig.max_tokens,
-        });
-      } catch (error) {
-        logger.warn("Invalid system agent configuration, using defaults", {
-          error: error instanceof Error ? error.message : String(error),
-          receivedConfig: config,
-        });
-      }
-    }
-
     // If chat history exists, load it.
     const messages: AtlasUIMessage[] = [];
     const chatHistory = await client.GET("/api/chat-storage/{streamId}", {
@@ -319,62 +301,78 @@ export const conversationAgent = createAgent({
     ${getSystemPrompt(history.messages, allTools, session.streamId)}
     `;
 
-    const result = streamText({
-      model: anthropic("claude-sonnet-4-20250514"),
-      system: systemPrompt,
-      messages: convertToModelMessages(messages),
-      tools: allTools,
-      toolChoice: "auto",
-      stopWhen: stepCountIs(40),
-      temperature: 0.3,
-      maxOutputTokens: 20000,
-      experimental_transform: smoothStream({ chunking: "word" }),
-      maxRetries: 3, // Enable retries for API resilience (e.g., 529 errors)
-      abortSignal, // Pass the abort signal for cancellation
-      providerOptions: { anthropic: { thinking: { type: "enabled", budgetTokens: 25000 } } },
-    });
+    try {
+      const result = streamText({
+        model: anthropic("claude-sonnet-4-20250514"),
+        system: systemPrompt,
+        messages: convertToModelMessages(messages),
+        tools: allTools,
+        toolChoice: "auto",
+        stopWhen: stepCountIs(40),
+        temperature: 0.3,
+        maxOutputTokens: 20000,
+        experimental_transform: smoothStream({ chunking: "word" }),
+        maxRetries: 3, // Enable retries for API resilience (e.g., 529 errors)
+        abortSignal, // Pass the abort signal for cancellation
+        providerOptions: { anthropic: { thinking: { type: "enabled", budgetTokens: 25000 } } },
 
-    pipeUIMessageStream(
-      result.toUIMessageStream({
-        originalMessages: messages,
-        generateMessageId: createIdGenerator({ prefix: "msg", size: 8 }),
-        onFinish: async ({ messages }) => {
-          if (!session.streamId) {
-            throw new Error("Stream ID is missing");
-          }
-          // Store the updated chat
-          await client.PUT("/api/chat-storage/{streamId}", {
-            params: { path: { streamId: session.streamId } },
-            body: { messages },
-          });
+        // Pass telemetry config if provided in context
+        experimental_telemetry: {
+          isEnabled: telemetry?.isEnabled ?? false,
+          tracer: telemetry?.tracer,
         },
-      }),
-      stream,
-    );
+      });
 
-    const executionFlow = {
-      steps: [] as Array<{ type: string; tool?: string; args?: unknown; timestamp: string }>,
-      reasoning: [] as string[],
-      responseBuffer: "",
-      thinkingBuffer: "",
-      startTime: Date.now(), // Track start time for duration calculation
-    };
+      pipeUIMessageStream(
+        result.toUIMessageStream({
+          originalMessages: messages,
+          generateMessageId: createIdGenerator({ prefix: "msg", size: 8 }),
+          onFinish: async ({ messages }) => {
+            if (!session.streamId) {
+              throw new Error("Stream ID is missing");
+            }
+            // Store the updated chat
+            await client.PUT("/api/chat-storage/{streamId}", {
+              params: { path: { streamId: session.streamId } },
+              body: { messages },
+            });
+          },
+        }),
+        stream,
+      );
 
-    const finalText = await result.text;
-    const finalReasoning = await result.reasoning;
+      const executionFlow = {
+        steps: [] as Array<{ type: string; tool?: string; args?: unknown; timestamp: string }>,
+        reasoning: [] as string[],
+        responseBuffer: "",
+        thinkingBuffer: "",
+        startTime: Date.now(), // Track start time for duration calculation
+      };
 
-    // Convert reasoning to proper format - prioritize collected reasoning if AI SDK reasoning is empty
-    const processedReasoning =
-      finalReasoning.length > 0
-        ? finalReasoning.map((item) => item.text).join("\n")
-        : executionFlow.reasoning.join("\n");
+      const finalText = await result.text;
+      const finalReasoning = await result.reasoning;
 
-    return {
-      text: finalText || executionFlow.responseBuffer,
-      reasoning: processedReasoning,
-      executionFlow: executionFlow.steps,
-      toolCalls: executionFlow.steps.filter((s) => s.type === "tool_call"),
-    };
+      // Convert reasoning to proper format - prioritize collected reasoning if AI SDK reasoning is empty
+      const processedReasoning =
+        finalReasoning.length > 0
+          ? finalReasoning.map((item) => item.text).join("\n")
+          : executionFlow.reasoning.join("\n");
+
+      return {
+        text: finalText || executionFlow.responseBuffer,
+        reasoning: processedReasoning,
+        executionFlow: executionFlow.steps,
+        toolCalls: executionFlow.steps.filter((s) => s.type === "tool_call"),
+      };
+    } finally {
+      // Clean up MCP connection
+      try {
+        await agentServerTransport.close();
+        logger.info("Closed MCP transport for conversation agent");
+      } catch (closeError) {
+        logger.error("Failed to close MCP transport", { error: closeError });
+      }
+    }
   },
   environment: {
     required: [{ name: "ANTHROPIC_API_KEY", description: "Claude API key" }],

@@ -1,6 +1,12 @@
 import { z } from "zod/v4";
 
 /**
+ * @atlas/utils - Shared utility functions for Atlas
+ */
+
+export { getAtlasHome, getAtlasMemoryDir, getMECMFCacheDir, isSystemService } from "./src/paths.ts";
+
+/**
  * Converts an error to a human-readable string.
  */
 export function stringifyError(error: unknown): string {

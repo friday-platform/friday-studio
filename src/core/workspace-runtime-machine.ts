@@ -22,12 +22,12 @@ import {
 } from "@atlas/memory";
 import { type ISignalProvider, ProviderRegistry, ProviderType } from "@atlas/signals";
 import { FilesystemConfigAdapter } from "@atlas/storage";
+import { getAtlasHome } from "@atlas/utils";
 import { load } from "@std/dotenv";
 import { exists } from "@std/fs";
 import { join } from "@std/path";
 import { assign, fromPromise, setup } from "xstate";
 import type { IWorkspace, IWorkspaceSession, IWorkspaceSignal } from "../types/core.ts";
-import { getAtlasHome } from "../utils/paths.ts";
 import {
   type ProcessSignalResult,
   WorkspaceSupervisorActor,

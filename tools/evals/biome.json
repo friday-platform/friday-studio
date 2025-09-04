@@ -1,8 +1,0 @@
-{
-  "$schema": "https://biomejs.dev/schemas/2.2.2/schema.json",
-  "root": false,
-  "extends": "//",
-  "files": { "ignoreUnknown": true, "includes": ["**", "!bun.lock"] },
-  "linter": { "enabled": true, "rules": { "recommended": true, "correctness": "warn" } },
-  "javascript": { "globals": ["Bun"] }
-}

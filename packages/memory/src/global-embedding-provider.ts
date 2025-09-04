@@ -9,7 +9,7 @@
 
 import { WebEmbeddingProvider } from "./web-embedding-provider.ts";
 import type { AtlasEmbeddingConfig, MECMFEmbeddingProvider } from "./mecmf-interfaces.ts";
-import { getMECMFCacheDir } from "../../../src/utils/paths.ts";
+import { getMECMFCacheDir } from "@atlas/utils";
 import { logger } from "@atlas/logger";
 
 /**
@@ -19,7 +19,15 @@ export class GlobalEmbeddingProvider {
   private static instance: WebEmbeddingProvider | null = null;
   private static initializationPromise: Promise<WebEmbeddingProvider> | null = null;
   private static referenceCount: number = 0;
-  private static readonly logger = logger.child({ component: "GlobalEmbeddingProvider" });
+  // Lazy initialization to avoid circular dependency issues
+  private static _logger: ReturnType<typeof logger.child> | null = null;
+
+  private static get logger() {
+    if (!this._logger) {
+      this._logger = logger.child({ component: "GlobalEmbeddingProvider" });
+    }
+    return this._logger;
+  }
 
   /**
    * Get the global singleton embedding provider instance

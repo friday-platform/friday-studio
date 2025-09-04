@@ -14,7 +14,7 @@ interface QuerySpec {
   time_range?: "day" | "week" | "month" | "year";
 }
 
-interface SearchParameters {
+interface ParsedQueries {
   queries: QuerySpec[];
   outputFormat: "summary" | "list" | "comparison";
 }
@@ -51,8 +51,9 @@ interface SourceContent {
   title: string;
 }
 
-interface ResearchOutput {
-  query: string;
+export interface ResearchOutput {
+  prompt: string;
+  parsedQueries: ParsedQueries;
   synthesis: string;
   sources: {
     searchResults: number;
@@ -164,7 +165,7 @@ async function parseQuery(
   query: string,
   logger?: Logger,
   abortSignal?: AbortSignal,
-): Promise<SearchParameters> {
+): Promise<ParsedQueries> {
   const schema = z.object({
     queries: z
       .array(
@@ -454,7 +455,7 @@ Generate improved search query (or return "suggestion" as undefined if current q
  * Emits progress via Atlas stream for real-time UI updates
  */
 async function searchWithRetries(
-  searchParams: SearchParameters,
+  parsedQueries: ParsedQueries,
   tavilyClient: TavilyClient,
   options: { maxAttempts: number },
   stream?: StreamEmitter,
@@ -463,7 +464,7 @@ async function searchWithRetries(
 ): Promise<SearchResult[]> {
   const allResults: SearchResult[] = [];
   const seenUrls = new Set<string>();
-  let currentQueries = searchParams.queries;
+  let currentQueries = parsedQueries.queries;
 
   for (let attempt = 0; attempt < options.maxAttempts; attempt++) {
     const domains = currentQueries[0]?.include_domains || [];
@@ -473,7 +474,7 @@ async function searchWithRetries(
         query: currentQueries[0]?.query,
         domains: domains.length > 0 ? domains : undefined,
         attempt: `${attempt + 1} of ${options.maxAttempts}`,
-        refinedQuery: attempt > 0 && currentQueries !== searchParams.queries,
+        refinedQuery: attempt > 0 && currentQueries !== parsedQueries.queries,
       },
       `Searching web (attempt ${attempt + 1} of ${options.maxAttempts})...`,
       logger,
@@ -806,7 +807,7 @@ ${content}
  */
 async function synthesizeResults(input: {
   query: string;
-  searchParams: SearchParameters;
+  parsedQueries: ParsedQueries;
   searchResults: SearchResult[];
   extracted: ExtractionResult;
   abortSignal?: AbortSignal;
@@ -843,7 +844,7 @@ async function synthesizeResults(input: {
   const { text } = await generateText({
     model: anthropic("claude-sonnet-4-20250514"),
     abortSignal: input.abortSignal,
-    system: buildSynthesisPrompt(input.searchParams.outputFormat),
+    system: buildSynthesisPrompt(input.parsedQueries.outputFormat),
     prompt: `<query>${input.query}</query>
 
 <sources>
@@ -897,7 +898,7 @@ Example for properties:
 }
 
 // Agent definition
-export const targetedResearchAgent = createAgent<string>({
+export const targetedResearchAgent = createAgent<ResearchOutput>({
   id: "targeted-research",
   displayName: "Targeted Research Agent",
   version: "1.0.0",
@@ -919,7 +920,7 @@ export const targetedResearchAgent = createAgent<string>({
     ],
   },
 
-  handler: async (prompt, { stream, logger, abortSignal }): Promise<string> => {
+  handler: async (prompt, { stream, logger, abortSignal }): Promise<ResearchOutput> => {
     const startTime = Date.now();
     const metrics = { parseTime: 0, searchTime: 0, extractTime: 0, synthTime: 0 };
 
@@ -943,18 +944,18 @@ export const targetedResearchAgent = createAgent<string>({
         data: { toolName: "Research Agent", content: parseMessage },
       });
       const parseStart = Date.now();
-      const searchParams = await parseQuery(prompt, logger, abortSignal);
+      const parsedQueries = await parseQuery(prompt, logger, abortSignal);
       metrics.parseTime = Date.now() - parseStart;
 
       logger?.info(`Search request parsed`, {
-        queryCount: searchParams.queries.length,
-        outputFormat: searchParams.outputFormat,
+        queryCount: parsedQueries.queries.length,
+        outputFormat: parsedQueries.outputFormat,
       });
 
       // Initial search progress is now handled in searchWithRetries
       const searchStart = Date.now();
       const searchResults = await searchWithRetries(
-        searchParams,
+        parsedQueries,
         tavilyClient,
         { maxAttempts: 3 },
         stream,
@@ -971,8 +972,8 @@ export const targetedResearchAgent = createAgent<string>({
       logger?.info(`Search phase complete`, { resultCount: searchResults.length });
       const foundMessage = await generateProgressMessage(
         "searching",
-        { resultsFound: searchResults.length, queriesUsed: searchParams.queries.length },
-        `Found ${searchResults.length} results across ${searchParams.queries.length} ${searchParams.queries.length === 1 ? "query" : "queries"}`,
+        { resultsFound: searchResults.length, queriesUsed: parsedQueries.queries.length },
+        `Found ${searchResults.length} results across ${parsedQueries.queries.length} ${parsedQueries.queries.length === 1 ? "query" : "queries"}`,
         logger,
         abortSignal,
       );
@@ -1013,10 +1014,10 @@ export const targetedResearchAgent = createAgent<string>({
       const synthMessage = await generateProgressMessage(
         "synthesizing",
         {
-          outputFormat: formatDescriptions[searchParams.outputFormat],
+          outputFormat: formatDescriptions[parsedQueries.outputFormat],
           sourceCount: extracted.successful.length,
         },
-        `Generating ${formatDescriptions[searchParams.outputFormat]} from ${extracted.successful.length} sources...`,
+        `Generating ${formatDescriptions[parsedQueries.outputFormat]} from ${extracted.successful.length} sources...`,
         logger,
         abortSignal,
       );
@@ -1027,7 +1028,7 @@ export const targetedResearchAgent = createAgent<string>({
       const synthStart = Date.now();
       const synthesis = await synthesizeResults({
         query: prompt,
-        searchParams,
+        parsedQueries,
         searchResults,
         extracted,
         abortSignal,
@@ -1035,7 +1036,8 @@ export const targetedResearchAgent = createAgent<string>({
       metrics.synthTime = Date.now() - synthStart;
 
       const output: ResearchOutput = {
-        query: prompt,
+        prompt,
+        parsedQueries,
         synthesis,
         sources: {
           searchResults: searchResults.length,
@@ -1065,7 +1067,7 @@ export const targetedResearchAgent = createAgent<string>({
         type: "data-tool-progress",
         data: { toolName: "Research Agent", content: completeMessage },
       });
-      return output.synthesis;
+      return output;
     } catch (error) {
       logger?.error(`Research agent failed`, {
         error: error instanceof Error ? error.message : String(error),

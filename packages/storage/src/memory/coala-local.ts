@@ -9,9 +9,9 @@
  * - contextual.json - Session/agent specific context
  */
 
+import { getAtlasHome } from "@atlas/utils";
 import { ensureDir } from "@std/fs";
 import { join } from "@std/path";
-import { getAtlasHome } from "../../../../src/utils/paths.ts";
 import type { ICoALAMemoryStorageAdapter } from "../types/core.ts";
 import { FileWriteCoordinator } from "./file-write-coordinator.ts";
 

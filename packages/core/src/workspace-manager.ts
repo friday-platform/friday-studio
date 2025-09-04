@@ -12,7 +12,7 @@
 import { ConfigLoader, type MergedConfig, type WorkspaceConfig } from "@atlas/config";
 import { logger } from "@atlas/logger";
 import { FilesystemConfigAdapter } from "@atlas/storage";
-import { SYSTEM_WORKSPACES } from "@packages/system/workspaces";
+import { SYSTEM_WORKSPACES } from "@atlas/system/workspaces";
 import { exists } from "@std/fs";
 import { basename, join } from "@std/path";
 import { createRegistryStorage, StorageConfigs } from "../../../src/core/storage/index.ts";

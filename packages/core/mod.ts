@@ -37,11 +37,7 @@ export {
 export { conversationStorage } from "./src/chat-storage.ts";
 export * from "./src/constants/supervisor-status.ts";
 // Credential Fetcher
-export {
-  CredentialFetcher,
-  type Credentials,
-  type FetchCredentialsOptions,
-} from "./src/credential-fetcher.ts";
+export * from "./src/credential-fetcher.ts";
 // Export all LLM provider types and interfaces
 export type { LLMOptions, LLMResponse } from "./src/llm-provider.ts";
 export { LLMProvider } from "./src/llm-provider.ts";

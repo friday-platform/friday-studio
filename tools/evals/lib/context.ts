@@ -1,9 +1,4 @@
-import type {
-  AgentContext,
-  AgentSessionData,
-  AtlasTools,
-  StreamEmitter,
-} from "../../../../packages/agent-sdk/src/index.ts";
+import type { AgentContext, AgentSessionData, AtlasTools, StreamEmitter } from "@atlas/agent-sdk";
 
 /**
  * Temporary until the entire repo is in Bun.
@@ -26,6 +21,9 @@ const testLogger = {
   },
   fatal(message: string, context: Record<string, unknown>): void {
     console.log(message, JSON.stringify(context, null, 2));
+  },
+  child() {
+    return testLogger;
   },
 };
 

@@ -1,4 +1,4 @@
 {
-  "name": "@packages/system",
+  "name": "@atlas/system",
   "exports": { "./workspaces": "./workspaces/mod.ts", "./agents": "./agents/mod.ts" }
 }

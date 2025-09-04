@@ -20,7 +20,7 @@ deno test --allow-all --no-check packages/core/tests/workspace-manager.test.ts
 
 ## Key Test Insights
 
-1. **System workspaces** are automatically registered from `@packages/system/workspaces`
+1. **System workspaces** are automatically registered from `@atlas/system/workspaces`
 2. **Workspace configurations** are validated using ConfigLoader with strict schema validation
 3. **System workspaces** cannot be deleted without `force: true`
 4. **List operations** exclude system workspaces by default

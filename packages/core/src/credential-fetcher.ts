@@ -2,7 +2,23 @@ import { logger } from "@atlas/logger";
 import { z } from "zod/v4";
 import { getCredentialsApiUrl } from "./atlas-config.ts";
 
-// JWT payload schema
+/**
+ * Fetches bundled API credentials from Atlas for Friends & Family users.
+ *
+ * During F&F phase, Atlas provides API keys for various services so users
+ * don't need their own. Credentials are returned as a record mapping
+ * environment variable names to their values.
+ *
+ * Example response:
+ * {
+ *   "OPENAI_API_KEY": "sk-...",
+ *   "GITHUB_TOKEN": "ghp_..."
+ * }
+ */
+
+const DEFAULT_RETRIES = 3;
+const DEFAULT_RETRY_DELAY = 1000;
+
 const JWTPayloadSchema = z.object({
   email: z.string(),
   iss: z.literal("tempest-atlas"),
@@ -11,7 +27,6 @@ const JWTPayloadSchema = z.object({
   iat: z.number(),
 });
 
-// API response schema
 const CredentialsResponseSchema = z.object({
   credentials: z.record(z.string(), z.string()),
   expires_at: z.string().optional(),
@@ -24,132 +39,92 @@ export interface FetchCredentialsOptions {
   retryDelay?: number;
 }
 
-export interface Credentials {
-  [key: string]: string;
+export type Credentials = Record<string, string>;
+
+export function validateAtlasJWT(token: string): void {
+  const parts = token.split(".");
+  const encodedPayload = parts.at(1);
+  if (parts.length !== 3 || !encodedPayload) {
+    throw new Error("Invalid JWT format");
+  }
+
+  const payload = JSON.parse(atob(encodedPayload));
+  const jwtPayload = JWTPayloadSchema.parse(payload);
+
+  const now = Math.floor(Date.now() / 1000);
+  if (jwtPayload.exp <= now) {
+    throw new Error("Atlas key has expired");
+  }
 }
 
-export class CredentialFetcher {
-  private static readonly DEFAULT_RETRIES = 3;
-  private static readonly DEFAULT_RETRY_DELAY = 1000; // 1 second
+/**
+ * Fetches credentials from Atlas API with automatic retry for transient failures.
+ * Validates the Atlas JWT before making the request.
+ */
+export async function fetchCredentials(options: FetchCredentialsOptions): Promise<Credentials> {
+  const {
+    atlasKey,
+    apiUrl = getCredentialsApiUrl(),
+    retries = DEFAULT_RETRIES,
+    retryDelay = DEFAULT_RETRY_DELAY,
+  } = options;
 
-  /**
-   * Validates a JWT token format and expiration
-   */
-  static validateJWT(token: string): { valid: boolean; error?: string } {
+  validateAtlasJWT(atlasKey);
+
+  for (let attempt = 0; attempt <= retries; attempt++) {
     try {
-      // Check JWT format (three parts)
-      const parts = token.split(".");
-      if (parts.length !== 3) {
-        return { valid: false, error: "Invalid JWT format - must have three parts" };
+      const response = await fetch(apiUrl, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${atlasKey}`, "Content-Type": "application/json" },
+        signal: AbortSignal.timeout(30000),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Credential fetch failed: ${response.status} ${response.statusText}`);
       }
 
-      // Decode and validate payload
-      const payload = JSON.parse(atob(parts[1]!));
-      const validatedPayload = JWTPayloadSchema.parse(payload);
+      const data = await response.json();
+      const credentialsResponse = CredentialsResponseSchema.parse(data);
 
-      // Check expiration
-      const now = Math.floor(Date.now() / 1000);
-      if (validatedPayload.exp <= now) {
-        return { valid: false, error: "Atlas key has expired" };
+      if (credentialsResponse.expires_at) {
+        logger.info(`Credentials expire at: ${credentialsResponse.expires_at}`);
       }
 
-      return { valid: true };
+      return credentialsResponse.credentials;
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      return { valid: false, error: `Invalid Atlas key: ${errorMessage}` };
-    }
-  }
+      const isNonRetryable =
+        error instanceof Error &&
+        (error.message.match(/\b4\d{2}\b/) || // Match 4xx status codes
+          error.message.includes("Invalid") ||
+          error.message.includes("expired") ||
+          error.name === "ZodError");
 
-  /**
-   * Fetches credentials from the Atlas API using an Atlas key
-   */
-  static async fetchCredentials(options: FetchCredentialsOptions): Promise<Credentials> {
-    const {
-      atlasKey,
-      apiUrl = getCredentialsApiUrl(),
-      retries = CredentialFetcher.DEFAULT_RETRIES,
-      retryDelay = CredentialFetcher.DEFAULT_RETRY_DELAY,
-    } = options;
-
-    // Validate JWT before making request
-    const validation = CredentialFetcher.validateJWT(atlasKey);
-    if (!validation.valid) {
-      throw new Error(validation.error);
-    }
-
-    let lastError: Error | null = null;
-
-    for (let attempt = 0; attempt <= retries; attempt++) {
-      try {
-        const response = await fetch(apiUrl, {
-          method: "POST",
-          headers: { Authorization: `Bearer ${atlasKey}`, "Content-Type": "application/json" },
-          signal: AbortSignal.timeout(30000), // 30 second timeout
-        });
-
-        if (!response.ok) {
-          const errorMessage = CredentialFetcher.getErrorMessage(response);
-          throw new Error(errorMessage);
-        }
-
-        const data = await response.json();
-        const validated = CredentialsResponseSchema.parse(data);
-
-        // Log expiration if provided
-        if (validated.expires_at) {
-          logger.info(`Credentials expire at: ${validated.expires_at}`);
-        }
-
-        return validated.credentials;
-      } catch (error) {
-        lastError = error as Error;
-
-        // Don't retry on client errors (4xx)
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        if (
-          errorMessage.includes("401") ||
-          errorMessage.includes("403") ||
-          errorMessage.includes("404") ||
-          errorMessage.includes("Invalid")
-        ) {
-          throw error;
-        }
-
-        // Retry on network or server errors
-        if (attempt < retries) {
-          logger.warn(
-            `Credential fetch attempt ${attempt + 1} failed, retrying in ${retryDelay}ms...`,
-          );
-          await new Promise((resolve) => setTimeout(resolve, retryDelay * (attempt + 1)));
-        }
+      if (attempt === retries || isNonRetryable) {
+        throw error;
       }
-    }
 
-    throw new Error(`Failed to fetch credentials after ${retries} retries: ${lastError?.message}`);
-  }
-
-  /**
-   * Gets a user-friendly error message based on HTTP status
-   */
-  private static getErrorMessage(response: Response): string {
-    const status = response.status;
-    const statusText = response.statusText;
-
-    switch (status) {
-      case 401:
-        return "Invalid or expired Atlas key";
-      case 403:
-        return "Access denied - please check your Atlas key permissions";
-      case 404:
-        return "Credentials endpoint not found - please check your Atlas configuration";
-      case 429:
-        return "Too many requests - please try again later";
-      case 500:
-      case 502:
-      case 503:
-        return "Atlas service temporarily unavailable - please try again later";
-      default:
-        return `Failed to fetch credentials: ${status} ${statusText}`;
+      const backoffMs = retryDelay * (attempt + 1);
+      logger.warn(`Attempt ${attempt + 1} failed, retrying in ${backoffMs}ms`);
+      await new Promise((resolve) => setTimeout(resolve, backoffMs));
     }
   }
+
+  throw new Error("Unexpected retry loop exit");
+}
+
+/**
+ * Sets credentials to Deno environment variables.
+ */
+export function setToDenoEnv(creds: Credentials): { setCount: number; skippedCount: number } {
+  let setCount = 0;
+  let skippedCount = 0;
+  for (const [key, value] of Object.entries(creds)) {
+    if (!Deno.env.get(key)) {
+      Deno.env.set(key, value);
+      setCount++;
+    } else {
+      skippedCount++;
+    }
+  }
+  return { setCount, skippedCount };
 }

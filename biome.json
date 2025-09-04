@@ -9,7 +9,8 @@
     "indentStyle": "space",
     "indentWidth": 2,
     "lineWidth": 100,
-    "expand": "never"
+    "expand": "never",
+    "includes": ["**", "!apps/web-client/src-tauri/target/**"]
   },
   "assist": { "enabled": true, "actions": { "source": { "organizeImports": "on" } } },
   "overrides": [

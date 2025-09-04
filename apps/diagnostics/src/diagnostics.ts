@@ -1,9 +1,10 @@
 import { getAtlasClient } from "@atlas/client";
+import { getAtlasHome } from "@atlas/utils";
 import { ensureDir, exists, walk } from "@std/fs";
 import { join } from "@std/path";
 import { TarStream, type TarStreamInput } from "@std/tar/tar-stream";
 import { stringify } from "@std/yaml";
-import { getAtlasHome, getAtlasLogsDir } from "./paths.ts";
+import { getAtlasLogsDir } from "./paths.ts";
 import { ReleaseChannel } from "./release-channel.ts";
 import { getVersionInfo } from "./version.ts";
 
@@ -210,7 +211,7 @@ export class DiagnosticsCollector {
 
       // Try to dynamically import system workspaces
       try {
-        const { SYSTEM_WORKSPACES } = await import("@packages/system/workspaces");
+        const { SYSTEM_WORKSPACES } = await import("@atlas/system/workspaces");
 
         for (const [id, config] of Object.entries(SYSTEM_WORKSPACES)) {
           try {

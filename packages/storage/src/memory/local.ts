@@ -1,6 +1,6 @@
+import { getAtlasHome } from "@atlas/utils";
 import { ensureDir } from "@std/fs";
 import { join } from "@std/path";
-import { getAtlasHome } from "../../../../src/utils/paths.ts";
 import type { ITempestMemoryStorageAdapter } from "../types/core.ts";
 
 export class LocalFileStorageAdapter implements ITempestMemoryStorageAdapter {

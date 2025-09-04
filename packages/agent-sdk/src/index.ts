@@ -15,6 +15,12 @@ export type {
 } from "./adapter.ts";
 // Core API
 export { createAgent } from "./create-agent.ts";
+// Telemetry
+export {
+  type AgentMetrics,
+  AgentTelemetryCollector,
+  type TelemetrySpan,
+} from "./telemetry/index.ts";
 // Types
 export type {
   AgentContext,
@@ -28,6 +34,7 @@ export type {
   AgentResult,
   AgentSessionData,
   AgentSessionState,
+  AgentTelemetryConfig,
   ApprovalRequest,
   AtlasAgent,
   AtlasAgentConfig,

@@ -1,10 +1,10 @@
 import { AtlasDaemon } from "@atlas/atlasd";
-import { CredentialFetcher } from "@atlas/core";
+import { fetchCredentials, setToDenoEnv } from "@atlas/core";
 import { AtlasLogger } from "@atlas/logger";
+import { getAtlasHome } from "@atlas/utils";
 import { load } from "@std/dotenv";
 import { exists } from "@std/fs";
 import { join } from "@std/path";
-import { getAtlasHome } from "../../../utils/paths.ts";
 import {
   displayDaemonStatus,
   fetchDaemonStatus,
@@ -128,25 +128,8 @@ export const handler = async (argv: StartArgs): Promise<void> => {
       logger.info("Atlas key detected, fetching credentials...");
 
       try {
-        const credentials = await CredentialFetcher.fetchCredentials({
-          atlasKey,
-          retries: 3,
-          retryDelay: 2000,
-        });
-
-        // Set fetched credentials as environment variables
-        // Only set if not already present (local .env has priority)
-        let setCount = 0;
-        let skippedCount = 0;
-
-        for (const [key, value] of Object.entries(credentials)) {
-          if (!Deno.env.get(key)) {
-            Deno.env.set(key, value);
-            setCount++;
-          } else {
-            skippedCount++;
-          }
-        }
+        const credentials = await fetchCredentials({ atlasKey, retries: 3, retryDelay: 2000 });
+        const { setCount, skippedCount } = setToDenoEnv(credentials);
 
         logger.info(
           `Credentials fetched successfully: ${setCount} set, ${skippedCount} skipped (already configured)`,
@@ -215,7 +198,7 @@ async function startDetached(argv: StartArgs): Promise<void> {
     return;
   }
 
-  let cmd;
+  let cmd: Deno.Command;
   if (isCompiledBinary) {
     // For compiled binaries, run the binary directly
     cmd = new Deno.Command(execPath, {
