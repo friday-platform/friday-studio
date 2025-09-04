@@ -169,13 +169,13 @@ Deno.test("installer binary path resolution works correctly", () => {
 
   assertStringIncludes(
     content,
-    'path.join(resourcesPath, "app.asar.unpacked", "atlas-binary", binaryName);',
+    'path.join(resourcesPath, "app.asar.unpacked", "atlas-binary", binary.name);',
     "Should correctly construct path to binary in packaged app",
   );
 
   assertStringIncludes(
     content,
-    'binarySource = path.join(__dirname, "atlas-binary", binaryName);',
+    'binarySource = path.join(__dirname, "atlas-binary", binary.name);',
     "Should have fallback to development binary location",
   );
 });

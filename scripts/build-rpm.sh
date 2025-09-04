@@ -5,9 +5,18 @@ VERSION=${VERSION:-1.0.0}
 ARCH=${ARCH:-amd64}
 
 # Convert edge/nightly versions to valid RPM version format
-# edge-20250716-002537-5e1e160 -> 0.0.0 with release 0.edge20250716002537.5e1e160
-# nightly-20250716-5e1e160 -> 0.0.0 with release 0.nightly20250716.5e1e160
-if [[ "${VERSION}" == edge-* ]]; then
+# 0.0.0-edge.YYYYMMDD.HHMMSS.gitsha -> Version: 0.0.0, Release: edge.YYYYMMDD.HHMMSS.gitsha
+# 0.0.0-nightly.YYYYMMDD.gitsha -> Version: 0.0.0, Release: nightly.YYYYMMDD.gitsha
+if [[ "${VERSION}" == *-edge.* ]]; then
+    # Extract parts: 0.0.0-edge.20250716.002537.5e1e160
+    RPM_VERSION=$(echo "${VERSION}" | cut -d'-' -f1)  # 0.0.0
+    RPM_RELEASE=$(echo "${VERSION}" | cut -d'-' -f2-)  # edge.20250716.002537.5e1e160
+elif [[ "${VERSION}" == *-nightly.* ]]; then
+    # Extract parts: 0.0.0-nightly.20250716.5e1e160
+    RPM_VERSION=$(echo "${VERSION}" | cut -d'-' -f1)  # 0.0.0
+    RPM_RELEASE=$(echo "${VERSION}" | cut -d'-' -f2-)  # nightly.20250716.5e1e160
+# Legacy formats for backward compatibility
+elif [[ "${VERSION}" == edge-* ]]; then
     # Extract parts: edge-20250716-002537-5e1e160
     date_part=$(echo "${VERSION}" | cut -d'-' -f2)
     time_part=$(echo "${VERSION}" | cut -d'-' -f3)
@@ -55,9 +64,11 @@ rm -rf "${BUILD_ROOT}"
 mkdir -p "${BUILD_ROOT}"/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
 mkdir -p "${BUILD_ROOT}/BUILDROOT/atlas-${RPM_VERSION}-${RPM_RELEASE}.${RPM_ARCH}"/{usr/bin,etc/atlas,"usr/share/doc/atlas-${RPM_VERSION}"}
 
-# Copy atlas binary
+# Copy both binaries to RPM build structure
 cp "build/atlas" "${BUILD_ROOT}/BUILDROOT/atlas-${RPM_VERSION}-${RPM_RELEASE}.${RPM_ARCH}/usr/bin/atlas"
+cp "build/atlas-diagnostics" "${BUILD_ROOT}/BUILDROOT/atlas-${RPM_VERSION}-${RPM_RELEASE}.${RPM_ARCH}/usr/bin/atlas-diagnostics"  # NEW
 chmod 755 "${BUILD_ROOT}/BUILDROOT/atlas-${RPM_VERSION}-${RPM_RELEASE}.${RPM_ARCH}/usr/bin/atlas"
+chmod 755 "${BUILD_ROOT}/BUILDROOT/atlas-${RPM_VERSION}-${RPM_RELEASE}.${RPM_ARCH}/usr/bin/atlas-diagnostics"  # NEW
 
 # Copy credential fetching script
 mkdir -p "${BUILD_ROOT}/BUILDROOT/atlas-${RPM_VERSION}-${RPM_RELEASE}.${RPM_ARCH}/usr/share/atlas/scripts"
@@ -287,6 +298,7 @@ fi
 %files
 %defattr(-,root,root,-)
 /usr/bin/atlas
+/usr/bin/atlas-diagnostics
 /usr/lib/systemd/system/atlas.service
 /usr/share/atlas/scripts/fetch-credentials.sh
 %doc /usr/share/doc/atlas-${RPM_VERSION}/LICENSE

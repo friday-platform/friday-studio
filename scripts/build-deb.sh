@@ -46,9 +46,11 @@ mkdir -p "${PKG_DIR}/DEBIAN"
 mkdir -p "${PKG_DIR}/usr/bin"
 mkdir -p "${PKG_DIR}/usr/share/doc/atlas"
 
-# Copy atlas binary
+# Copy both binaries
 cp "build/atlas" "${PKG_DIR}/usr/bin/atlas"
+cp "build/atlas-diagnostics" "${PKG_DIR}/usr/bin/atlas-diagnostics"  # NEW
 chmod 755 "${PKG_DIR}/usr/bin/atlas"
+chmod 755 "${PKG_DIR}/usr/bin/atlas-diagnostics"  # NEW
 
 # Copy credential fetching script
 mkdir -p "${PKG_DIR}/usr/share/atlas/scripts"

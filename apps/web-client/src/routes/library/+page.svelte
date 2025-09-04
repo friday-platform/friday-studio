@@ -1,10 +1,11 @@
 <script lang="ts">
+import { openPath } from "@tauri-apps/plugin-opener";
 import { onMount } from "svelte";
 import { getAppContext } from "$lib/app-context.svelte";
 
 import type { LibraryItem } from "../../../../../src/core/library/types.ts";
 
-const { routes, daemonClient } = getAppContext();
+const { daemonClient } = getAppContext();
 
 let libraryItems = $state<LibraryItem[]>([]);
 
@@ -31,7 +32,12 @@ function getAtlasDaemonUrl() {
 			</div>
 
 			{#each libraryItems as item}
-				<a class="row" href={`${getAtlasDaemonUrl()}/api/library/${item.id}/download`}>
+				<button
+					class="row"
+					onclick={async () => {
+						await openPath(item.full_path);
+					}}
+				>
 					<div class="cell">
 						{item.name}
 					</div>
@@ -46,7 +52,7 @@ function getAtlasDaemonUrl() {
 							timeStyle: 'short'
 						})}
 					</div>
-				</a>
+				</button>
 			{/each}
 		</div>
 	</div>
@@ -100,7 +106,7 @@ function getAtlasDaemonUrl() {
 				border-block-end: none;
 			}
 
-			&:matches(a):hover {
+			&:matches(button):hover {
 				background-color: var(--highlight-1);
 			}
 		}

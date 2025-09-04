@@ -53,11 +53,20 @@ runs:
       run: |
         # Import certificate
         echo "${{ inputs.macos-sign-p12 }}" | base64 --decode > certificate.p12
-        security create-keychain -p mypassword build.keychain
+        
+        # Create keychain if it doesn't exist
+        if ! security list-keychains | grep -q build.keychain; then
+          security create-keychain -p mypassword build.keychain
+        fi
+        
         security default-keychain -s build.keychain
         security unlock-keychain -p mypassword build.keychain
-        security import certificate.p12 -k build.keychain -P "${{ inputs.macos-sign-password }}" -T /usr/bin/codesign
-        security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k mypassword build.keychain
+        
+        # Check if certificate is already imported
+        if ! security find-identity -p codesigning build.keychain | grep -q "Developer ID"; then
+          security import certificate.p12 -k build.keychain -P "${{ inputs.macos-sign-password }}" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k mypassword build.keychain
+        fi
 
         # Auto-detect signing identity if not provided
         if [ -z "${{ inputs.macos-sign-identity }}" ]; then
@@ -91,9 +100,12 @@ runs:
         # Sign binary with entitlements
         codesign --force --options runtime --deep --entitlements entitlements.plist --sign "$SIGN_IDENTITY" "${{ inputs.binary-path }}"
 
-        # Test signed binary
+        # Test signed binary (skip for .app bundles)
         echo "Testing signed binary..."
-        if "${{ inputs.binary-path }}" --version; then
+        if [[ "${{ inputs.binary-path }}" == *.app ]]; then
+          echo ".app bundle signed successfully (skipping execution test)"
+          echo "signed=true" >> $GITHUB_OUTPUT
+        elif "${{ inputs.binary-path }}" --version; then
           echo "Binary works after signing"
           echo "signed=true" >> $GITHUB_OUTPUT
         else

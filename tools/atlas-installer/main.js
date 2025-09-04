@@ -129,188 +129,205 @@ ipcMain.handle("save-atlas-key", async (event, atlasKey) => {
 
 ipcMain.handle("install-atlas-binary", async () => {
   try {
-    // In Electron, resource locations vary by platform and packaging
-    let binarySource;
-    const binaryName = process.platform === "win32" ? "atlas.exe" : "atlas";
+    // Define binaries to install
+    const binaries = [
+      { name: process.platform === "win32" ? "atlas.exe" : "atlas" },
+      { name: process.platform === "win32" ? "atlas-diagnostics.exe" : "atlas-diagnostics" },
+    ];
 
-    // Windows/macOS: Try standard locations
-    // First try the unpacked location (production)
-    // When packaged with asar, __dirname is inside the asar file, so we need to
-    // get the actual Resources directory path
+    // Only require web app binary on non-mac platforms
+    if (process.platform !== "darwin") {
+      binaries.push({ name: process.platform === "win32" ? "atlas-web-app.exe" : "atlas-web-app" });
+    }
+
     const resourcesPath = process.resourcesPath || path.dirname(path.dirname(__dirname));
-    binarySource = path.join(resourcesPath, "app.asar.unpacked", "atlas-binary", binaryName);
+    const results = [];
 
-    if (!fs.existsSync(binarySource)) {
-      // Fallback to development location
-      binarySource = path.join(__dirname, "atlas-binary", binaryName);
-    }
+    for (const binary of binaries) {
+      let binarySource = path.join(resourcesPath, "app.asar.unpacked", "atlas-binary", binary.name);
 
-    // Check if source binary exists
-    if (!binarySource || !fs.existsSync(binarySource)) {
-      return { success: false, error: "Atlas binary not found in installer package" };
-    }
-
-    // Determine installation path based on platform
-    let installPath;
-    if (process.platform === "win32") {
-      // Windows: Install to user's local app data to avoid admin permissions
-      const userProfile = process.env.USERPROFILE || process.env.HOME || "C:\\Users\\Default";
-      installPath = path.join(userProfile, "AppData", "Local", "Atlas", "atlas.exe");
-      const installDir = path.dirname(installPath);
-
-      // Create directory if it doesn't exist
-      if (!fs.existsSync(installDir)) {
-        fs.mkdirSync(installDir, { recursive: true });
+      if (!fs.existsSync(binarySource)) {
+        // Fallback to development location
+        binarySource = path.join(__dirname, "atlas-binary", binary.name);
       }
 
-      // Handle existing binary - stop daemon if running and overwrite
-      if (fs.existsSync(installPath)) {
-        try {
-          // Try to stop the daemon gracefully first
-          const { execSync } = require("child_process");
-          try {
-            execSync(`"${installPath}" daemon stop`, { timeout: 5000, stdio: "ignore" });
-          } catch {
-            // If daemon stop fails, force kill atlas processes
-            try {
-              execSync("taskkill /F /IM atlas.exe", { timeout: 5000, stdio: "ignore" });
-            } catch {
-              // Ignore if no processes to kill
-            }
-          }
+      // Fail if any binary doesn't exist (all are required)
+      if (!fs.existsSync(binarySource)) {
+        throw new Error(`Required binary ${binary.name} not found in installer package`);
+      }
 
-          // Wait a moment for processes to terminate
-          await new Promise((resolve) => setTimeout(resolve, 1000));
-        } catch {
-          // Continue with installation even if stop fails
+      // Determine installation path based on platform
+      let installPath;
+      if (process.platform === "win32") {
+        const userProfile = process.env.USERPROFILE || process.env.HOME || "C:\\Users\\Default";
+        installPath = path.join(userProfile, "AppData", "Local", "Atlas", binary.name);
+
+        const installDir = path.dirname(installPath);
+        if (!fs.existsSync(installDir)) {
+          fs.mkdirSync(installDir, { recursive: true });
         }
-      }
 
-      // Copy binary with .exe extension (overwrite existing)
-      fs.copyFileSync(binarySource, installPath);
-
-      // Immediately update PATH for Windows
-      const { execSync } = require("child_process");
-      try {
-        const psCommand = `
-          $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
-          if ($userPath -notlike "*${installDir}*") {
-            [Environment]::SetEnvironmentVariable('Path', $userPath + ';${installDir}', 'User')
-          }
-        `.trim();
-
-        execSync(`powershell -Command "${psCommand}"`, { windowsHide: true, stdio: "ignore" });
-      } catch {
-        // PATH update failed silently
-      }
-    } else {
-      // macOS/Linux: Use symlink-based installation
-      const userBinaryPath = path.join(os.homedir(), ".atlas", "bin", "atlas");
-      const systemBinaryPath = "/usr/local/bin/atlas";
-
-      // Use platform-specific privilege escalation
-      if (process.platform === "darwin") {
-        // macOS: Use osascript to request admin privileges (native macOS approach)
-        const { execSync } = require("child_process");
-
-        try {
-          // First check if Atlas is currently running and stop it if necessary
-          if (fs.existsSync(systemBinaryPath)) {
-            try {
-              // Try to stop the service first (which manages the daemon)
-              execSync(`"${systemBinaryPath}" service stop`, { timeout: 5000, stdio: "ignore" });
-              // Wait for service to stop
-              await new Promise((resolve) => setTimeout(resolve, 2000));
-            } catch {
-              // If service stop fails, try to stop the daemon directly
+        // Handle existing binary - stop daemon if running and overwrite
+        if (fs.existsSync(installPath)) {
+          try {
+            // Try to stop the daemon gracefully first (only for atlas main binary)
+            const { execSync } = require("child_process");
+            if (binary.name.includes("atlas.exe") && !binary.name.includes("diagnostics")) {
               try {
-                execSync(`"${systemBinaryPath}" daemon stop`, { timeout: 5000, stdio: "ignore" });
-                await new Promise((resolve) => setTimeout(resolve, 2000));
+                execSync(`"${installPath}" daemon stop`, { timeout: 5000, stdio: "ignore" });
               } catch {
-                // If both fail, kill any atlas processes
+                // If daemon stop fails, force kill atlas processes
                 try {
-                  execSync("pkill -f atlas", { timeout: 5000, stdio: "ignore" });
-                  await new Promise((resolve) => setTimeout(resolve, 1000));
+                  execSync("taskkill /F /IM atlas.exe", { timeout: 5000, stdio: "ignore" });
                 } catch {
                   // Ignore if no processes to kill
                 }
               }
+              // Wait a moment for processes to terminate
+              await new Promise((resolve) => setTimeout(resolve, 1000));
+            }
+          } catch {
+            // Continue with installation even if stop fails
+          }
+        }
+
+        // Copy binary (overwrite existing)
+        fs.copyFileSync(binarySource, installPath);
+
+        // Update PATH for Windows (only once for the directory)
+        if (binary.name === (process.platform === "win32" ? "atlas.exe" : "atlas")) {
+          const { execSync } = require("child_process");
+          try {
+            const psCommand = `
+              $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+              if ($userPath -notlike "*${installDir}*") {
+                [Environment]::SetEnvironmentVariable('Path', $userPath + ';${installDir}', 'User')
+              }
+            `.trim();
+
+            execSync(`powershell -Command "${psCommand}"`, { windowsHide: true, stdio: "ignore" });
+          } catch {
+            // PATH update failed silently
+          }
+        }
+      } else if (process.platform === "darwin") {
+        // macOS: Use symlink-based installation
+        const userBinaryPath = path.join(
+          os.homedir(),
+          ".atlas",
+          "bin",
+          binary.name.replace(".exe", ""),
+        );
+        const systemBinaryPath = path.join("/usr/local/bin", binary.name.replace(".exe", ""));
+
+        const { execSync } = require("child_process");
+
+        try {
+          // First check if binary is currently running and stop it if necessary
+          if (fs.existsSync(systemBinaryPath)) {
+            try {
+              // Try to stop the service/daemon (only for main atlas binary)
+              if (binary.name.includes("atlas") && !binary.name.includes("diagnostics")) {
+                try {
+                  execSync(`"${systemBinaryPath}" service stop`, {
+                    timeout: 5000,
+                    stdio: "ignore",
+                  });
+                  await new Promise((resolve) => setTimeout(resolve, 2000));
+                } catch {
+                  try {
+                    execSync(`"${systemBinaryPath}" daemon stop`, {
+                      timeout: 5000,
+                      stdio: "ignore",
+                    });
+                    await new Promise((resolve) => setTimeout(resolve, 2000));
+                  } catch {
+                    try {
+                      execSync("pkill -f atlas", { timeout: 5000, stdio: "ignore" });
+                      await new Promise((resolve) => setTimeout(resolve, 1000));
+                    } catch {
+                      // Ignore if no processes to kill
+                    }
+                  }
+                }
+              }
+            } catch {
+              // Continue with installation
             }
           }
 
-          // First, create .atlas/bin directory and copy binary there (no admin needed)
+          // Create user binary directory
           const userBinDir = path.dirname(userBinaryPath);
           if (!fs.existsSync(userBinDir)) {
             fs.mkdirSync(userBinDir, { recursive: true });
-          }
-
-          // Check if user binary exists and is in use
-          if (fs.existsSync(userBinaryPath)) {
-            try {
-              // Try to stop any running instance using the user binary
-              execSync(`"${userBinaryPath}" daemon stop`, { timeout: 5000, stdio: "ignore" });
-              await new Promise((resolve) => setTimeout(resolve, 1000));
-            } catch {
-              // Ignore errors, process might not be running
-            }
           }
 
           // Copy binary to user location (overwrite existing)
           fs.copyFileSync(binarySource, userBinaryPath);
           fs.chmodSync(userBinaryPath, 0o755);
 
-          // Check if there's an existing installation
-          let existingIsSymlink = false;
-          let existingTarget = null;
-
-          try {
-            const stats = fs.lstatSync(systemBinaryPath);
-            if (stats.isSymbolicLink()) {
-              existingIsSymlink = true;
-              existingTarget = fs.readlinkSync(systemBinaryPath);
-            }
-          } catch {
-            // No existing installation
-          }
-
-          // Prepare the installation command based on existing setup
+          // Prepare the installation command for symlink
           let installCommand;
-          if (existingIsSymlink) {
-            // If already a symlink, just update the target (might not need sudo)
-            installCommand = `ln -sf ${userBinaryPath} ${systemBinaryPath}`;
-          } else if (fs.existsSync(systemBinaryPath)) {
-            // If direct binary exists, replace with symlink
+          if (fs.existsSync(systemBinaryPath)) {
+            // Replace existing installation
             installCommand = `rm -f ${systemBinaryPath} && ln -sf ${userBinaryPath} ${systemBinaryPath}`;
           } else {
             // Fresh installation
             installCommand = `ln -sf ${userBinaryPath} ${systemBinaryPath}`;
           }
 
-          // Execute with admin privileges using proper escaping
-          const script = `do shell script "${installCommand}" with administrator privileges with prompt "Atlas Installer needs administrator access to create a symlink in /usr/local/bin/"`;
+          // Execute with admin privileges
+          const script = `do shell script "${installCommand}" with administrator privileges with prompt "Atlas Installer needs administrator access to create symlinks in /usr/local/bin/"`;
           execSync(`osascript -e '${script}'`);
 
-          // Update installPath to reflect the actual binary location
           installPath = userBinaryPath;
         } catch (execError) {
-          // Provide more detailed error information
-          return {
-            success: false,
-            error: `Installation failed: ${execError.message}. Binary source: ${binarySource}, User path: ${userBinaryPath}`,
-          };
+          throw new Error(`Installation failed for ${binary.name}: ${execError.message}`);
         }
       } else {
-        // Unsupported platform
-        return { success: false, error: `Unsupported platform: ${process.platform}` };
+        // Linux: Install to ~/.local/bin
+        const installDir = path.join(os.homedir(), ".local", "bin");
+        installPath = path.join(installDir, binary.name);
+
+        if (!fs.existsSync(installDir)) {
+          fs.mkdirSync(installDir, { recursive: true });
+        }
+
+        // Copy binary (overwrite existing)
+        fs.copyFileSync(binarySource, installPath);
+        fs.chmodSync(installPath, 0o755);
+      }
+
+      results.push({ binary: binary.name, installed: installPath });
+    }
+
+    // macOS: verify DMG exists and open it to allow drag-and-drop
+    if (process.platform === "darwin") {
+      const dmgName = "AtlasWebApp.dmg";
+      let dmgSource = path.join(resourcesPath, "app.asar.unpacked", "atlas-binary", dmgName);
+      if (!fs.existsSync(dmgSource)) {
+        dmgSource = path.join(__dirname, "atlas-binary", dmgName);
+      }
+
+      if (!fs.existsSync(dmgSource)) {
+        throw new Error(`Required web app ${dmgName} not found in installer package`);
+      }
+
+      try {
+        const { execSync } = require("child_process");
+        execSync(`open "${dmgSource}"`, { stdio: "ignore" });
+        results.push({ webApp: dmgName, opened: true, path: dmgSource });
+      } catch {
+        results.push({ webApp: dmgName, opened: false, path: dmgSource });
       }
     }
 
-    // Verify the installation
-    if (fs.existsSync(installPath)) {
-      return { success: true, path: installPath, message: "Atlas binary installed successfully" };
-    } else {
-      return { success: false, error: "Binary installation failed - file not found after copy" };
-    }
+    return {
+      success: true,
+      message: "Atlas CLI installed successfully",
+      // Internal tracking of what was installed
+      _installed: results,
+    };
   } catch (error) {
     return { success: false, error: error.message };
   }

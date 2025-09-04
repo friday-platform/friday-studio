@@ -22,28 +22,7 @@ let userHasScrolled = $state(false);
 let animationFrameId = $state<number | null>(null);
 
 onMount(async () => {
-  // animationFrameId = requestAnimationFrame(scrollToBottom);
   ctx.setup();
-});
-
-$effect(() => {
-  let interval: ReturnType<typeof setInterval> | null = null;
-
-  if (ctx.typingState.isTyping) {
-    interval = setInterval(() => {
-      ctx.typingState.elapsedSeconds += 1;
-    }, 1000);
-  } else {
-    if (interval) {
-      clearInterval(interval);
-    }
-  }
-
-  return () => {
-    if (interval) {
-      clearInterval(interval);
-    }
-  };
 });
 
 // Handle Scrolling
@@ -55,10 +34,6 @@ function handleScroll() {
   // If user scrolls away from bottom, mark as manually scrolled
   if (!isAtBottom) {
     userHasScrolled = true;
-  }
-  // If user scrolls back to bottom, reset the flag
-  if (isAtBottom) {
-    userHasScrolled = false;
   }
 }
 

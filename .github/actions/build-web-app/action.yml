@@ -1,0 +1,185 @@
+name: "Build Atlas Web App"
+description: "Builds Atlas Web App using Tauri with cross-platform support"
+
+inputs:
+  version:
+    description: "Version string to embed in the web app"
+    required: true
+  platform:
+    description: "Target platform (darwin, windows, linux)"
+    required: true
+  arch:
+    description: "Target architecture (amd64, arm64)"
+    required: true
+  target:
+    description: "Tauri target (e.g., x86_64-unknown-linux-gnu)"
+    required: true
+
+outputs:
+  bundle-path:
+    description: "Path to the built Tauri bundle (.app for macOS, installers for others)"
+    value: ${{ steps.select-bundle.outputs.bundle-path }}
+  bundle-name:
+    description: "Name of the built bundle"
+    value: ${{ steps.build-info.outputs.bundle-name }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Setup Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: ${{ inputs.target }}
+
+
+    - name: Install Linux system dependencies
+      if: inputs.platform == 'linux'
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+
+    - name: Update version in Tauri config
+      shell: bash
+      working-directory: ./apps/web-client
+      run: |
+        # Use jq for proper JSON manipulation
+        if ! command -v jq &> /dev/null; then
+          echo "Installing jq..."
+          if [ "${{ inputs.platform }}" == "linux" ]; then
+            sudo apt-get update && sudo apt-get install -y jq
+          elif [ "${{ inputs.platform }}" == "darwin" ]; then
+            brew install jq
+          elif [ "${{ inputs.platform }}" == "windows" ]; then
+            choco install jq
+          fi
+        fi
+
+        # Transform version to valid semver for Tauri
+        # Edge versions like 0.0.0-edge.20250901.210021.e3a51f71 need to be simplified
+        # Tauri only accepts major.minor.patch or major.minor.patch-prerelease
+        version="${{ inputs.version }}"
+        if [[ "$version" == *-edge.* ]]; then
+          # Extract base version and create a simpler prerelease tag
+          base_version=$(echo "$version" | cut -d'-' -f1)  # 0.0.0
+          prerelease=$(echo "$version" | cut -d'-' -f2- | tr '.' '-')  # edge-20250901-210021-e3a51f71
+          tauri_version="${base_version}-${prerelease}"
+        elif [[ "$version" == *-nightly.* ]]; then
+          # Same for nightly builds
+          base_version=$(echo "$version" | cut -d'-' -f1)
+          prerelease=$(echo "$version" | cut -d'-' -f2- | tr '.' '-')
+          tauri_version="${base_version}-${prerelease}"
+        else
+          # Regular versions pass through unchanged
+          tauri_version="$version"
+        fi
+
+        # Windows MSI requires numeric-only prerelease (<= 65535). Normalize when targeting Windows.
+        if [ "${{ inputs.platform }}" == "windows" ]; then
+          base_version=$(echo "$tauri_version" | cut -d'-' -f1)
+          # Build a numeric, bounded prerelease from day-of-year and minute (max ~36659)
+          doy=$(date -u +%j)
+          minute=$(date -u +%M)
+          build_num=$((10#$doy * 100 + 10#$minute))
+          if [ $build_num -gt 65535 ]; then build_num=65535; fi
+          tauri_version="${base_version}-${build_num}"
+        fi
+
+        # Update version in tauri.conf.json
+        jq --arg version "$tauri_version" '.version = $version' \
+          src-tauri/tauri.conf.json > src-tauri/tauri.conf.json.tmp
+        mv src-tauri/tauri.conf.json.tmp src-tauri/tauri.conf.json
+
+        echo "Updated Tauri version to: $tauri_version (from $version)"
+        jq '.version' src-tauri/tauri.conf.json
+
+    - name: Set build info
+      id: build-info
+      shell: bash
+      run: |
+        # Set bundle name based on platform
+        if [ "${{ inputs.platform }}" == "windows" ]; then
+          bundle_name="atlas-web-app.exe"
+        elif [ "${{ inputs.platform }}" == "darwin" ]; then
+          bundle_name="Atlas.app"
+        else
+          bundle_name="atlas-web-app"
+        fi
+        echo "bundle-name=$bundle_name" >> $GITHUB_OUTPUT
+
+    - name: Clear Tauri cache to ensure version changes are respected
+      shell: bash
+      working-directory: ./apps/web-client
+      run: |
+        # Clear target directory to prevent build caching issues with version changes
+        rm -rf src-tauri/target
+        echo "Cleared Tauri target directory to ensure fresh build with new version"
+
+    - name: Build Tauri app
+      id: tauri-build
+      uses: tauri-apps/tauri-action@v0
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+      with:
+        projectPath: "./apps/web-client"
+        args: "--target ${{ inputs.target }}"
+
+    - name: Select bundle path
+      id: select-bundle
+      shell: bash
+      run: |
+        artifacts='${{ steps.tauri-build.outputs.artifactPaths }}'
+        platform='${{ inputs.platform }}'
+
+        if ! command -v jq >/dev/null 2>&1; then
+          echo "jq not found; installing..."
+          if [ "$platform" = "linux" ]; then
+            sudo apt-get update && sudo apt-get install -y jq
+          elif [ "$platform" = "darwin" ]; then
+            brew install jq
+          else
+            choco install jq
+          fi
+        fi
+
+        selected=""
+        if [ "$platform" = "windows" ]; then
+          # Prefer NSIS/EXE installer on Windows
+          selected=$(echo "$artifacts" | jq -r 'try (map(select(type=="string")) | (map(select(test("\\.exe$"))) | first)) catch ""')
+        elif [ "$platform" = "darwin" ]; then
+          # Prefer .app bundle on macOS (DMG is created later in workflow)
+          selected=$(echo "$artifacts" | jq -r 'try (map(select(type=="string")) | (map(select(test("\\.app$"))) | first)) catch ""')
+        else
+          # Prefer AppImage on Linux
+          selected=$(echo "$artifacts" | jq -r 'try (map(select(type=="string")) | (map(select(test("\\.AppImage$"))) | first)) catch ""')
+        fi
+
+        if [ -z "$selected" ] || [ "$selected" = "null" ]; then
+          echo "bundle-path=" >> "$GITHUB_OUTPUT"
+        else
+          echo "bundle-path=$selected" >> "$GITHUB_OUTPUT"
+          echo "Selected bundle path: $selected"
+        fi
+
+    - name: Copy artifacts to dist
+      shell: bash
+      run: |
+        mkdir -p ./dist
+
+        # Copy built artifacts to dist directory
+        if [ "${{ inputs.platform }}" == "darwin" ]; then
+          # For macOS, only copy the .app bundle (we'll create DMG after signing)
+          find ./apps/web-client/src-tauri/target/${{ inputs.target }}/release/bundle -name "*.app" -exec cp -r {} ./dist/ \;
+        elif [ "${{ inputs.platform }}" == "windows" ]; then
+          # For Windows, copy the .exe and .msi
+          find ./apps/web-client/src-tauri/target/${{ inputs.target }}/release/bundle -name "*.exe" -exec cp {} ./dist/ \;
+          find ./apps/web-client/src-tauri/target/${{ inputs.target }}/release/bundle -name "*.msi" -exec cp {} ./dist/ \;
+        else
+          # For Linux, copy the executable and .deb/.AppImage
+          find ./apps/web-client/src-tauri/target/${{ inputs.target }}/release/bundle -name "atlas" -exec cp {} ./dist/ \;
+          find ./apps/web-client/src-tauri/target/${{ inputs.target }}/release/bundle -name "*.deb" -exec cp {} ./dist/ \;
+          find ./apps/web-client/src-tauri/target/${{ inputs.target }}/release/bundle -name "*.AppImage" -exec cp {} ./dist/ \;
+        fi
+
+        echo "Built artifacts copied to ./dist/"
+        find ./dist/ -type f

@@ -1,7 +1,5 @@
 <script lang="ts">
-import { Menu } from "@tauri-apps/api/menu";
-import { TrayIcon } from "@tauri-apps/api/tray";
-import { Command } from "@tauri-apps/plugin-shell";
+// import { TrayIcon } from '@tauri-apps/api/tray';
 import { onMount } from "svelte";
 import { setAppContext } from "$lib/app-context.svelte";
 import favicon from "$lib/assets/favicon.svg";

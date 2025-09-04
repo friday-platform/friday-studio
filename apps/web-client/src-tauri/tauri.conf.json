@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "atlas-web-client",
+  "productName": "Atlas",
   "version": "0.1.0",
   "identifier": "com.tempest.atlas",
   "build": {
@@ -21,7 +21,8 @@
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.icns",
-      "icons/icon.ico"
+      "icons/icon.ico",
+      "icons/tray.png"
     ]
   }
 }

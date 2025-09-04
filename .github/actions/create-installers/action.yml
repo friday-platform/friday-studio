@@ -20,6 +20,18 @@ inputs:
   binary-name:
     description: "Name of the binary file"
     required: true
+  diagnostics-binary-path:
+    description: "Path to the diagnostics binary to package"
+    required: false
+  diagnostics-binary-name:
+    description: "Name of the diagnostics binary file"
+    required: false
+  web-app-binary-path:
+    description: "Path to the web app binary to package"
+    required: false
+  web-app-binary-name:
+    description: "Name of the web app binary file"
+    required: false
   macos-installer-p12:
     description: "Base64 encoded P12 certificate for installer signing"
     required: false
@@ -66,19 +78,51 @@ runs:
 
         echo "Dependencies optimized for minimal bundle size"
 
-    - name: Prepare Atlas binary for installer
+    - name: Prepare Atlas binaries for installer
       shell: bash
       run: |
         # Create a staging directory for the installer
         mkdir -p tools/atlas-installer/atlas-binary
 
-        # Copy the binary to the installer directory with correct name
+        # Copy the main binary
         cp "${{ inputs.binary-path }}" "tools/atlas-installer/atlas-binary/${{ inputs.binary-name }}"
-
-        # Make sure it's executable
         chmod +x "tools/atlas-installer/atlas-binary/${{ inputs.binary-name }}"
 
-        echo "Binary prepared for installer at: tools/atlas-installer/atlas-binary/${{ inputs.binary-name }}"
+        # Copy the diagnostics binary if provided
+        if [ -n "${{ inputs.diagnostics-binary-path }}" ]; then
+          cp "${{ inputs.diagnostics-binary-path }}" "tools/atlas-installer/atlas-binary/${{ inputs.diagnostics-binary-name }}"
+          chmod +x "tools/atlas-installer/atlas-binary/${{ inputs.diagnostics-binary-name }}"
+          echo "Diagnostics binary prepared: tools/atlas-installer/atlas-binary/${{ inputs.diagnostics-binary-name }}"
+        fi
+
+        # Copy the web app artifact if provided
+        if [ -n "${{ inputs.web-app-binary-path }}" ]; then
+          web_app_file="${{ inputs.web-app-binary-path }}"
+          dest_dir="tools/atlas-installer/atlas-binary"
+          mkdir -p "$dest_dir"
+
+          if [ -f "$web_app_file" ]; then
+            # On macOS, rename DMG to a simple, stable name
+            if [[ "$web_app_file" == *.dmg ]]; then
+              dest_name="AtlasWebApp.dmg"
+            else
+              # Use provided name if available, otherwise basename of the file
+              dest_name="${{ inputs.web-app-binary-name }}"
+              if [ -z "$dest_name" ]; then
+                dest_name="$(basename "$web_app_file")"
+              fi
+            fi
+
+            echo "Copying web app artifact: $web_app_file -> $dest_dir/$dest_name"
+            cp "$web_app_file" "$dest_dir/$dest_name"
+            echo "Web app artifact prepared at $dest_dir/$dest_name"
+          else
+            echo "ERROR: Web app artifact not found: $web_app_file"
+            exit 1
+          fi
+        fi
+
+        echo "Binaries prepared for installer"
 
     - name: Verify installer has real binary integration
       shell: bash

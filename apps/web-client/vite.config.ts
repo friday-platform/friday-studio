@@ -1,14 +1,15 @@
 import { readFileSync } from "node:fs";
-import deno from "@deno/vite-plugin";
 import { sveltekit } from "@sveltejs/kit/vite";
+import process from "node:process";
+import tsconfigPaths from "vite-tsconfig-paths";
 import { defineConfig } from "vite";
 
-const host = Deno.env.get("TAURI_DEV_HOST");
+const host = process.env.TAURI_DEV_HOST;
 
 // Custom plugin to handle YAML imports with { type: "text" }
 const yamlTextPlugin = () => ({
   name: "yaml-text-loader",
-  transform(_code: any, id: string) {
+  transform(_code: string, id: string) {
     if (id.endsWith(".yml") || id.endsWith(".yaml")) {
       try {
         const yamlContent = readFileSync(id, "utf-8");
@@ -21,12 +22,9 @@ const yamlTextPlugin = () => ({
 });
 
 export default defineConfig({
-  plugins: [yamlTextPlugin(), deno(), sveltekit()],
+  plugins: [tsconfigPaths(), yamlTextPlugin(), sveltekit()],
   resolve: { extensions: [".ts", ".js", ".json", ".jsonc"] },
   assetsInclude: ["**/*.yml"],
-  // server: {
-
-  // },
   clearScreen: false,
   server: {
     port: 1420,
