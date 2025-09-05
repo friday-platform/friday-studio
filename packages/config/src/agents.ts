@@ -26,7 +26,7 @@ const BaseAgentConfigSchema = z.strictObject({
 
 const LLMToolChoiceSchema = z.union([z.literal("auto"), z.literal("required"), z.literal("none")]);
 
-const LLMAgentConfigSchema = BaseAgentConfigSchema.extend({
+export const LLMAgentConfigSchema = BaseAgentConfigSchema.extend({
   type: z.literal("llm"),
   config: z.strictObject({
     // Provider and model
@@ -40,10 +40,10 @@ const LLMAgentConfigSchema = BaseAgentConfigSchema.extend({
     temperature: z.coerce
       .number()
       .min(0)
-      .max(1)
+      .max(0.7)
       .optional()
       .default(0.3)
-      .describe("Temperature (0-1 range)"),
+      .describe("Temperature (0-0.7 range)"),
     max_tokens: z.coerce.number().int().positive().optional(),
     max_steps: z.coerce
       .number()

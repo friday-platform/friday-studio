@@ -1,5 +1,7 @@
 export {
-  type AgentMetrics,
+  type CollectedMetrics as AgentMetrics,
   AgentTelemetryCollector,
-  type TelemetrySpan,
+  type ExecutionSpan as TelemetrySpan,
+  type CollectedMetrics,
+  type ExecutionSpan,
 } from "./agent-telemetry-collector.ts";

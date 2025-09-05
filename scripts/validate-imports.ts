@@ -43,6 +43,7 @@ async function findTypeScriptFiles(rootDir: string): Promise<string[]> {
       /\.deno/,
       /deno\.lock/,
       /tools\/atlas-installer/,
+      /apps\/web-client\/.svelte-kit/,
     ],
   })) {
     if (entry.isFile) {

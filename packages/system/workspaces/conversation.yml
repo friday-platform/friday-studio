@@ -73,14 +73,6 @@ jobs:
   handle-conversation:
     name: "handle-conversation"
     description: "Process conversation messages with context awareness"
-    config:
-      supervision:
-        level: "minimal"
-        skip_planning: true
-      memory:
-        enabled: false
-        fact_extraction: true
-        summary: true
     triggers:
       - signal: "conversation-stream"
     execution:

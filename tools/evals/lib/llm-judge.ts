@@ -16,7 +16,7 @@ export async function llmJudge(input: LLMJudgeInput): Promise<Evaluation> {
     model: anthropic("claude-3-5-haiku-latest"),
     schema: evaluationSchema,
     prompt: `
-    <idenity>
+    <identity>
     You are an expert AI agent evaluator. Evaluate the following output from an AI agent its effectiveness at meeting the following criteria:
     </identity>
 

@@ -903,15 +903,9 @@ export const targetedResearchAgent = createAgent<ResearchOutput>({
   displayName: "Targeted Research Agent",
   version: "1.0.0",
   description:
-    "Run targeted web research: executes multi-query search with optional domain focus, extracts page content, and returns a cited synthesis.",
+    "Run targeted web research: executes search with optional domain focus, extracts page content, and returns a cited synthesis.",
   expertise: {
-    domains: ["research", "web-search", "information-synthesis"],
-    capabilities: [
-      "Domain-specific search (Reddit, Airbnb, etc.)",
-      "Multi-query parallel search",
-      "Content extraction and summarization",
-      "Query refinement based on results",
-    ],
+    domains: ["research", "web-search"],
     examples: [
       "Show me popular posts on r/homeautomation about smart locks",
       "Find Airbnbs in Tokyo under $100/night",

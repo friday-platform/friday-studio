@@ -113,72 +113,27 @@ export const MCPServerConfigSchema = z.strictObject({
 });
 export type MCPServerConfig = z.infer<typeof MCPServerConfigSchema>;
 
-/** Agent expertise - used by Atlas session supervisor for task matching */
+/** Agent expertise - used for discovery & task matching */
 export const AgentExpertiseSchema = z.object({
-  /** Domains this agent handles */
   domains: z
     .array(z.string())
-    .min(1, { message: "Agent must specify at least one domain" })
-    .describe("Domains this agent handles"),
-
-  /** What the agent can do */
-  capabilities: z
-    .array(z.string())
-    .min(1, { message: "Agent must specify at least one capability" })
-    .describe("What the agent can do"),
-
-  /** Example prompts for users */
-  examples: z.array(z.string()).describe("Example prompts for users"),
+    .min(1)
+    .meta({ description: "Domains of expertise.", examples: ["Slack", "Web Research"] }),
+  examples: z.array(z.string()).meta({ description: "Example prompts for users" }),
 });
 
 export type AgentExpertise = z.infer<typeof AgentExpertiseSchema>;
 
 /** Agent metadata - stored in Atlas registry for discovery */
 export const AgentMetadataSchema = z.object({
-  /** Agent ID used for registration and access - lowercase with hyphens and underscores */
   id: z
     .string()
-    .regex(/^[a-z][a-z0-9-_]*$/, {
-      message:
-        "Invalid agent ID. Must be lowercase and follow domain naming pattern (e.g., 'my-agent', 'github_scanner', 'my_cool_agent')",
-    })
-    .describe("Agent ID used for registration and access - lowercase with hyphens and underscores"),
-
-  /** Display name for the agent - human-readable format */
-  displayName: z.string().optional().describe("Display name for the agent - human-readable format"),
-
-  /** Semantic version */
-  version: z
-    .string()
-    .regex(/^\d+\.\d+\.\d+/, {
-      message: "Invalid version. Must follow semantic versioning (e.g., '1.0.0', '2.1.3')",
-    })
-    .describe("Semantic version"),
-
-  /** What this agent does */
-  description: z
-    .string()
-    .min(1, { message: "Description is required" })
-    .describe("What this agent does"),
-
-  /** Agent's domains and capabilities */
+    .regex(/^[a-z0-9-]+$/, { message: "Agent name must be lowercase with hyphens" })
+    .meta({ description: "Agent ID" }),
+  displayName: z.string().optional().meta({ description: "Agent display name" }),
+  version: z.string().meta({ description: "Agent version" }),
+  description: z.string().min(1).meta({ description: "What this agent does" }),
   expertise: AgentExpertiseSchema,
-
-  /** MCP server IDs this agent requires */
-  mcpRequirements: z.array(z.string()).optional().describe("MCP server IDs this agent requires"),
-
-  /** Optional tags and author info */
-  metadata: z
-    .object({
-      tags: z.array(z.string()).optional(),
-      author: z
-        .object({
-          name: z.string(),
-          email: z.email({ message: "Invalid email format" }).optional(),
-        })
-        .optional(),
-    })
-    .optional(),
 });
 
 export type AgentMetadata = z.infer<typeof AgentMetadataSchema>;
@@ -500,17 +455,19 @@ export interface AgentRegistry {
  */
 export const AtlasAgentConfigSchema = z.object({
   type: z.literal("atlas"),
-  agent: z.string().describe("Atlas agent ID from registry"),
+  agent: z.string().describe("Atlas Agent ID from registry"),
   description: z.string().describe("Agent description"),
-  version: z.string().optional().describe("Agent version (defaults to latest)"),
-  config: z
-    .record(z.string(), z.unknown())
-    .optional()
-    .describe("Agent-specific configuration passed to the agent"),
-  environment: z
+  // version: z.string().optional().describe("Agent version (defaults to latest)"),
+  // config: z
+  //   .record(z.string(), z.unknown())
+  //   .optional()
+  //   .describe("Agent-specific configuration passed to the agent"),
+  //
+  env: z
     .record(z.string(), z.string())
     .optional()
-    .describe("Environment variables for the agent (supports ${VAR} interpolation)"),
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: Explanation of how env variables can be formatted.
+    .meta({ description: "Environment variables for the agent (supports ${VAR} interpolation)" }),
 });
 
 export type AtlasAgentConfig = z.infer<typeof AtlasAgentConfigSchema>;

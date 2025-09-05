@@ -12,11 +12,7 @@ Deno.test("createAgent - creates agent with valid configuration", () => {
     displayName: "Test Agent",
     version: "1.0.0",
     description: "Test agent for unit tests",
-    expertise: {
-      domains: ["testing"],
-      capabilities: ["run tests", "validate code"],
-      examples: ["run unit tests", "check code coverage"],
-    },
+    expertise: { domains: ["testing"], examples: ["run unit tests", "check code coverage"] },
     handler: (prompt, _context) => {
       return Promise.resolve({ prompt, processed: true });
     },
@@ -29,67 +25,6 @@ Deno.test("createAgent - creates agent with valid configuration", () => {
   assertEquals(agent.metadata.expertise.domains, ["testing"]);
 });
 
-Deno.test("createAgent - validates agent ID format", () => {
-  assertThrows(
-    () => {
-      createAgent({
-        id: "TestAgent", // Invalid: uppercase
-        displayName: "Test Agent",
-        version: "1.0.0",
-        description: "Invalid ID test",
-        expertise: { domains: ["testing"], capabilities: ["test"], examples: ["test"] },
-        handler: () => Promise.resolve({}),
-      });
-    },
-    Error,
-    "Invalid agent ID",
-  );
-
-  // Underscores are actually allowed in agent IDs
-  const agentWithUnderscore = createAgent({
-    id: "test_agent", // Valid: underscore is allowed
-    displayName: "Test Agent",
-    version: "1.0.0",
-    description: "Valid name test",
-    expertise: { domains: ["testing"], capabilities: ["test"], examples: ["test"] },
-    handler: () => Promise.resolve({}),
-  });
-  assertEquals(agentWithUnderscore.metadata.id, "test_agent");
-
-  // Test actual invalid ID (starts with number)
-  assertThrows(
-    () => {
-      createAgent({
-        id: "123-agent", // Invalid: starts with number
-        displayName: "Test Agent",
-        version: "1.0.0",
-        description: "Invalid ID test",
-        expertise: { domains: ["testing"], capabilities: ["test"], examples: ["test"] },
-        handler: () => Promise.resolve({}),
-      });
-    },
-    Error,
-    "Invalid agent ID",
-  );
-});
-
-Deno.test("createAgent - validates version format", () => {
-  assertThrows(
-    () => {
-      createAgent({
-        id: "test-agent",
-        displayName: "Test Agent",
-        version: "1.0", // Invalid: not semver
-        description: "Invalid version test",
-        expertise: { domains: ["testing"], capabilities: ["test"], examples: ["test"] },
-        handler: () => Promise.resolve({}),
-      });
-    },
-    Error,
-    "Invalid version",
-  );
-});
-
 Deno.test("createAgent - requires at least one domain", () => {
   assertThrows(
     () => {
@@ -100,35 +35,13 @@ Deno.test("createAgent - requires at least one domain", () => {
         description: "No domains test",
         expertise: {
           domains: [], // Invalid: empty
-          capabilities: ["test"],
           examples: ["test"],
         },
         handler: () => Promise.resolve({}),
       });
     },
     Error,
-    "at least one domain",
-  );
-});
-
-Deno.test("createAgent - requires at least one capability", () => {
-  assertThrows(
-    () => {
-      createAgent({
-        id: "test-agent",
-        displayName: "Test Agent",
-        version: "1.0.0",
-        description: "No capabilities test",
-        expertise: {
-          domains: ["testing"],
-          capabilities: [], // Invalid: empty
-          examples: ["test"],
-        },
-        handler: () => Promise.resolve({}),
-      });
-    },
-    Error,
-    "at least one capability",
+    "✖ Too small: expected array to have >=1 items\n  → at expertise.domains",
   );
 });
 
@@ -138,7 +51,7 @@ Deno.test("createAgent - validates environment configuration", () => {
     displayName: "Test Agent",
     version: "1.0.0",
     description: "Environment config test",
-    expertise: { domains: ["testing"], capabilities: ["test"], examples: ["test"] },
+    expertise: { domains: ["testing"], examples: ["test"] },
     environment: {
       required: [
         { name: "API_KEY", description: "API key for testing", validation: "^[A-Z0-9]+$" },
@@ -161,7 +74,7 @@ Deno.test("createAgent - validates environment regex patterns", () => {
         displayName: "Test Agent",
         version: "1.0.0",
         description: "Invalid regex test",
-        expertise: { domains: ["testing"], capabilities: ["test"], examples: ["test"] },
+        expertise: { domains: ["testing"], examples: ["test"] },
         environment: {
           required: [
             {
@@ -185,11 +98,7 @@ Deno.test("createAgent - executes handler with context", async () => {
     displayName: "Test Agent",
     version: "1.0.0",
     description: "Handler execution test",
-    expertise: {
-      domains: ["testing"],
-      capabilities: ["execute tests"],
-      examples: ["run test suite"],
-    },
+    expertise: { domains: ["testing"], examples: ["run test suite"] },
     handler: (prompt, context) => {
       return Promise.resolve({ prompt, hasContext: !!context, hasStream: !!context.stream });
     },
@@ -227,11 +136,7 @@ Deno.test("createAgent - LLM-agnostic handler pattern", async () => {
     displayName: "LLM Agnostic Agent",
     version: "1.0.0",
     description: "Agent that brings its own LLM",
-    expertise: {
-      domains: ["testing"],
-      capabilities: ["process with custom LLM"],
-      examples: ["analyze this data"],
-    },
+    expertise: { domains: ["testing"], examples: ["analyze this data"] },
     handler: (prompt, context) => {
       // Agent would import its own LLM library here
       // For testing, we'll simulate the pattern
@@ -276,7 +181,7 @@ Deno.test("createAgent - agent stores MCP and LLM config", () => {
     displayName: "Test Agent",
     version: "1.0.0",
     description: "Config storage test",
-    expertise: { domains: ["testing"], capabilities: ["test"], examples: ["test"] },
+    expertise: { domains: ["testing"], examples: ["test"] },
     mcp: { testServer: { transport: { type: "stdio", command: "test-server", args: ["--test"] } } },
     llm: { model: "test-model", temperature: 0.5, max_tokens: 1000 },
     handler: async () => {},

@@ -200,7 +200,7 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
       agentId: agent.id,
       displayName: agent.displayName,
       domains: agent.expertise.domains,
-      capabilities: agent.expertise.capabilities.length,
+      capabilities: agent.expertise,
     });
   }
 
@@ -291,7 +291,6 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
                     displayName: agent.displayName,
                     description: agent.description,
                     expertise: agent.expertise,
-                    metadata: agent.metadata,
                   })),
                 ),
               null,
@@ -329,11 +328,7 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
             {
               uri: uri.href,
               text: JSON.stringify(
-                {
-                  domains: agent.expertise.domains,
-                  capabilities: agent.expertise.capabilities,
-                  examples: agent.expertise.examples,
-                },
+                { domains: agent.expertise.domains, examples: agent.expertise.examples },
                 null,
                 2,
               ),
@@ -368,7 +363,6 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
             text: JSON.stringify(
               {
                 domains: agent.metadata.expertise.domains,
-                capabilities: agent.metadata.expertise.capabilities,
                 examples: agent.metadata.expertise.examples,
               },
               null,

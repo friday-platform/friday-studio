@@ -21,7 +21,7 @@ const BaseSignalConfigSchema = z.strictObject({
 /**
  * HTTP Signal - webhook/API endpoint
  */
-const HTTPSignalConfigSchema = BaseSignalConfigSchema.extend({
+export const HTTPSignalConfigSchema = BaseSignalConfigSchema.extend({
   provider: z.literal("http"),
   config: z.strictObject({
     path: z.string().describe("HTTP path for the webhook (method is always POST)"),
@@ -32,7 +32,7 @@ const HTTPSignalConfigSchema = BaseSignalConfigSchema.extend({
 /**
  * Schedule Signal - cron-based triggers
  */
-const ScheduleSignalConfigSchema = BaseSignalConfigSchema.extend({
+export const ScheduleSignalConfigSchema = BaseSignalConfigSchema.extend({
   provider: z.literal("schedule"),
   config: z.strictObject({
     schedule: z.string().describe("Cron expression (e.g., '0 9 * * *' for daily at 9 AM)"),

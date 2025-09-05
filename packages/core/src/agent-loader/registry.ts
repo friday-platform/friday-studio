@@ -249,8 +249,6 @@ export class AgentRegistry {
         agent.displayName,
         agent.description,
         ...agent.expertise.domains,
-        ...agent.expertise.capabilities,
-        ...(agent.metadata?.tags || []),
       ]
         .join(" ")
         .toLowerCase();
