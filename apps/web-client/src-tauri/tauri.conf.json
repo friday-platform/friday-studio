@@ -19,7 +19,8 @@
         "hiddenTitle": true,
         "dragDropEnabled": true,
         "width": 1156,
-        "height": 768
+        "height": 768,
+        "zoomHotkeysEnabled": true
       }
     ],
     "security": { "csp": null }

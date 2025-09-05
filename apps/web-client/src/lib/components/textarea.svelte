@@ -1,5 +1,4 @@
 <script lang="ts">
-import { onMount } from "svelte";
 import type { HTMLTextareaAttributes } from "svelte/elements";
 
 type Props = {

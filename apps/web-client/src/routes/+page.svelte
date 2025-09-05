@@ -1,9 +1,10 @@
 <script lang="ts">
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import Textarea from "src/lib/components/textarea.svelte";
 import { onMount } from "svelte";
 import { getAppContext } from "$lib/app-context.svelte";
-import Dropzone from "$lib/components/dropzone/dropzone.svelte";
-import { CustomIcons } from "$lib/components/icons/custom";
+// import Dropzone from '$lib/components/dropzone/dropzone.svelte';
+// import { CustomIcons } from '$lib/components/icons/custom';
 import { IconSmall } from "$lib/components/icons/small";
 import { getClientContext } from "$lib/modules/client/context.svelte";
 import ErrorMessage from "$lib/modules/messages/error-message.svelte";
@@ -12,7 +13,11 @@ import Message from "$lib/modules/messages/message.svelte";
 import Progress from "$lib/modules/messages/progress.svelte";
 import Table from "$lib/modules/messages/table.svelte";
 
-const { stagedFiles, daemonClient, uploadFile } = getAppContext();
+const {
+  stagedFiles,
+  daemonClient,
+  // uploadFile
+} = getAppContext();
 
 const ctx = getClientContext();
 
@@ -22,8 +27,25 @@ let scrollContainer = $state<HTMLDivElement | null>(null);
 let userHasScrolled = $state(false);
 let animationFrameId = $state<number | null>(null);
 
-onMount(async () => {
+onMount(() => {
   ctx.setup();
+
+  let unlisten: () => void = () => {};
+
+  async function setupDragDrop() {
+    unlisten = await getCurrentWebview().onDragDropEvent((event) => {
+      if (event.payload.type === "drop") {
+        message = `${message} ${event.payload.paths.join(", ")}`;
+      }
+    });
+  }
+
+  setupDragDrop();
+
+  return () => {
+    // you need to call unlisten if your handler goes out of scope e.g. the component is unmounted
+    unlisten();
+  };
 });
 
 // Handle Scrolling
@@ -209,9 +231,9 @@ $effect(() => {
 		</div>
 
 		<aside>
-			<h2>Artifacts</h2>
+			<!-- <h2>Artifacts</h2>
 
-			<span>Start a chat to see artifacts</span>
+			<span>Start a chat to see artifacts</span> -->
 		</aside>
 	</div>
 {/if}
@@ -248,7 +270,7 @@ $effect(() => {
 			}
 		}
 
-		aside {
+		/* aside {
 			padding-block: var(--size-10);
 
 			h2 {
@@ -264,7 +286,7 @@ $effect(() => {
 				opacity: 0.8;
 				font-weight: var(--font-weight-4);
 			}
-		}
+		} */
 	}
 
 	.messages {
@@ -285,7 +307,7 @@ $effect(() => {
 		background-color: var(--background-1);
 		display: flex;
 		bottom: 0;
-
+		max-inline-size: 75ch;
 		position: sticky;
 		z-index: var(--layer-2);
 
@@ -293,7 +315,7 @@ $effect(() => {
 			opacity: 0.5;
 		}
 
-		.actions {
+		/* .actions {
 			align-items: center;
 			display: flex;
 			justify-content: space-between;
@@ -313,7 +335,7 @@ $effect(() => {
 				gap: var(--size-1-5);
 				inline-size: max-content;
 			}
-		}
+		} */
 	}
 
 	.chat.has-messages form {

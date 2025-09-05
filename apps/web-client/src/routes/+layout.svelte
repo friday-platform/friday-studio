@@ -1,5 +1,4 @@
 <script lang="ts">
-import { onMount } from "svelte";
 import { setAppContext } from "$lib/app-context.svelte";
 import favicon from "$lib/assets/favicon.svg";
 import AppContainer from "$lib/components/app/container.svelte";
@@ -10,17 +9,13 @@ import "../app.css";
 
 const { children } = $props();
 
-const { daemonClient, uploadFile, keyboard } = setAppContext();
+const { daemonClient, keyboard } = setAppContext();
 const ctx = setClientContext(daemonClient);
 
 $effect(() => {
   if (keyboard.state?.key === "escape" && ctx.atlasSessionId) {
     ctx.conversationClient?.cancelSession(ctx.atlasSessionId);
   }
-});
-
-onMount(async () => {
-  ctx.checkHealth();
 });
 </script>
 
@@ -30,26 +25,7 @@ onMount(async () => {
 
 <div class="titlebar" data-tauri-drag-region></div>
 
-<div
-	role="region"
-	ondragover={(e) => {
-		e.preventDefault();
-	}}
-	ondragleave={(e) => {
-		e.preventDefault();
-	}}
-	ondrop={async (e) => {
-		e.preventDefault();
-
-		if (!e.dataTransfer?.items) {
-			return;
-		}
-
-		for (const file of e.dataTransfer.files) {
-			uploadFile(file);
-		}
-	}}
->
+<div role="region">
 	<AppContainer>
 		<AppSidebar disabled={ctx.daemonStatus === 'error'} />
 

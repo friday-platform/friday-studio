@@ -73,7 +73,7 @@ export const slackCommunicatorAgent = createAgent<string>({
     stream?.emit({
       type: "data-tool-progress",
       data: {
-        toolName: "Slack Communicator",
+        toolName: "Slack",
         content: `Planned: ${plan.intent}${plan.targetChannel ? ` → ${plan.targetChannel}` : ""}; summarizer: ${plan.summarizerPurpose}`,
       },
     });

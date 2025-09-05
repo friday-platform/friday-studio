@@ -68,7 +68,7 @@ function getActivePage(value: string | string[]) {
 			padding-inline: var(--size-2);
 
 			& :global(svg) {
-				color: var(--text-3);
+				color: var(--accent-1);
 				flex: none;
 			}
 

@@ -277,7 +277,5 @@ export function astToHTML(node: ASTNode | null, parentType: string = ""): string
 export function markdownToHTML(markdown: string): string {
   const ast = parseMarkdownToAST(markdown);
 
-  console.log(ast);
-
   return astToHTML(ast);
 }

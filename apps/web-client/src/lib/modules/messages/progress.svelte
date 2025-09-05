@@ -1,11 +1,16 @@
 <script lang="ts">
 import type { UIDataTypes, UIMessagePart, UITools } from "ai";
+import { CustomIcons } from "src/lib/components/icons/custom";
 
 let time = $state(0);
 
 const { actions }: { actions: UIMessagePart<UIDataTypes, UITools>[] } = $props();
 
-const progressActions = $derived(actions.filter((action) => action.type === "data-tool-progress"));
+const progressActions = $derived.by(() => {
+  const lastIndex = actions.map((a) => a.type).lastIndexOf("data-tool-progress");
+  return lastIndex !== -1 ? actions.slice(lastIndex, lastIndex + 1) : [];
+});
+
 const staticActions = $derived(actions.filter((action) => action.type !== "data-tool-progress"));
 
 $effect(() => {
@@ -35,25 +40,44 @@ function getMessage() {
     return "Thinking";
   }
 }
+
+$inspect(actions);
 </script>
 
 <div class="container">
-	<div class="progress">{getMessage()} {time}s...</div>
-
 	{#if progressActions.length > 0}
-		<div class="in-progress-tools">
-			<h2>Working...</h2>
-
-			<ul>
-				{#each progressActions as action}
-					{#if 'data' in action}
-						{#if typeof action.data === 'object' && action.data !== null && 'content' in action.data}
-							<li>{action.data.content}</li>
+		{#each progressActions as action}
+			{#if 'data' in action}
+				{#if typeof action.data === 'object' && action.data !== null && 'content' in action.data && 'toolName' in action.data}
+					<div class="in-progress-tools">
+						{#if action.data.toolName === 'Research Agent'}
+							<CustomIcons.Globe />
+						{:else if action.data.toolName === 'Slack'}
+							<CustomIcons.Slack />
+						{:else if action.data.toolName === 'Workspace Creator'}
+							<CustomIcons.Workspace />
+						{:else}
+							<CustomIcons.Workspace />
 						{/if}
-					{/if}
-				{/each}
-			</ul>
-		</div>
+
+						<div class="details">
+							{#if action.data.toolName === 'Research Agent'}
+								<h2>Searching the web</h2>
+							{:else if action.data.toolName === 'Slack'}
+								<h2>Sending message to Slack</h2>
+							{:else if action.data.toolName === 'Workspace Creator'}
+								<h2>Creating Workspace</h2>
+							{:else}
+								<h2>Working...</h2>
+							{/if}
+							<span>{action.data.content}</span>
+						</div>
+					</div>
+				{/if}
+			{/if}
+		{/each}
+	{:else}
+		<div class="progress">{getMessage()} {time}s...</div>
 	{/if}
 </div>
 
@@ -95,21 +119,32 @@ function getMessage() {
 		background-color: var(--background-1);
 		border: var(--size-px) solid var(--border-2);
 		border-radius: var(--radius-4);
-		padding: var(--size-4);
+		padding: var(--size-3);
+		display: flex;
+		align-items: center;
+		gap: var(--size-3);
+		max-inline-size: var(--size-56);
 
-		h2 {
-			font-size: var(--font-size-6);
-			font-weight: var(--font-weight-6);
-		}
+		.details {
+			display: flex;
+			flex-direction: column;
+			inline-size: 100%;
+			overflow: hidden;
 
-		ul {
-			list-style-type: '⋅ ';
-		}
+			h2 {
+				font-size: var(--font-size-3);
+				font-weight: var(--font-weight-5);
+				line-height: var(--font-lineheight-1);
+			}
 
-		li {
-			color: var(--text-3);
-			margin-inline-start: var(--size-3);
-			font-size: var(--font-size-5);
+			span {
+				color: var(--text-3);
+				font-size: var(--font-size-2);
+				max-inline-size: 100%;
+				overflow: hidden;
+				text-overflow: ellipsis;
+				white-space: nowrap;
+			}
 		}
 	}
 </style>
