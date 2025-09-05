@@ -102,7 +102,7 @@ runs:
         if [ "${{ inputs.platform }}" == "windows" ]; then
           bundle_name="atlas-web-app.exe"
         elif [ "${{ inputs.platform }}" == "darwin" ]; then
-          bundle_name="Atlas.app"
+          bundle_name="Atlas Web Client.app"
         else
           bundle_name="atlas-web-app"
         fi

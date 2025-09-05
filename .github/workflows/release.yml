@@ -116,7 +116,7 @@ jobs:
           if [ "${{ matrix.platform }}" == "darwin" ]; then
             cp dist/atlas_*.zip "$bundle_name/" || { echo "Missing Atlas CLI installer"; exit 1; }
             cp -r dist/*.dmg "$bundle_name/" || { echo "Missing Tauri DMG"; exit 1; }
-            echo -e "Atlas Bundle - macOS\\n\\nInstallation Steps:\\n1. Unzip and run Atlas CLI installer\\n2. Mount DMG and drag Atlas.app to Applications" > "$bundle_name/README.txt"
+            echo -e "Atlas Bundle - macOS\\n\\nInstallation Steps:\\n1. Unzip and run Atlas CLI installer\\n2. Mount DMG and drag Atlas Web Client.app to Applications" > "$bundle_name/README.txt"
           elif [ "${{ matrix.platform }}" == "windows" ]; then  
             cp dist/atlas_*.exe "$bundle_name/" || { echo "Missing Atlas CLI installer"; exit 1; }
             # Copy both .exe and .msi from Tauri
@@ -241,7 +241,7 @@ jobs:
             ./dist/Atlas_*.exe               # NEW: Include Tauri Windows installer
             ./dist/*.AppImage                # NEW: Include Tauri Linux AppImage
             ./dist/*.app                     # NEW: Include Tauri macOS app
-            ./dist/Atlas.app                 # NEW: Include Tauri macOS app (specific)
+            ./dist/Atlas\ Web\ Client.app   # NEW: Include Tauri macOS app (specific)
             ./dist/Atlas*.msi                # NEW: Include Tauri Windows msi
             ./dist/atlas_*.deb
             ./dist/atlas-*.rpm

@@ -134,15 +134,23 @@ runs:
           --key-id "${{ inputs.macos-notary-key-id }}" \
           --key notary_key.p8 \
           --wait; then
-          echo "Notarization successful, now stapling ticket to binary"
+          echo "Notarization successful"
 
-          # Staple the notarization ticket to the binary
-          if xcrun stapler staple "${{ inputs.binary-path }}"; then
-            echo "Notarization ticket stapled successfully"
-            echo "notarized=true" >> $GITHUB_OUTPUT
+          # Check if the binary supports stapling (only .app, .dmg, .pkg, .xip can be stapled)
+          # Plain executables cannot be stapled directly, only when inside these containers
+          if [[ "${{ inputs.binary-path }}" == *.app ]] || [[ "${{ inputs.binary-path }}" == *.dmg ]] || [[ "${{ inputs.binary-path }}" == *.pkg ]] || [[ "${{ inputs.binary-path }}" == *.xip ]]; then
+            echo "Attempting to staple notarization ticket to supported bundle format"
+            if xcrun stapler staple "${{ inputs.binary-path }}"; then
+              echo "Notarization ticket stapled successfully"
+              echo "notarized=true" >> $GITHUB_OUTPUT
+            else
+              echo "Failed to staple notarization ticket"
+              echo "notarized=false" >> $GITHUB_OUTPUT
+            fi
           else
-            echo "Failed to staple notarization ticket"
-            echo "notarized=false" >> $GITHUB_OUTPUT
+            echo "Skipping stapling - plain binaries cannot have tickets stapled (only .app, .dmg, .pkg, .xip)"
+            echo "Binary is notarized but ticket cannot be stapled to plain executables"
+            echo "notarized=true" >> $GITHUB_OUTPUT
           fi
         else
           echo "Notarization failed, but continuing build"

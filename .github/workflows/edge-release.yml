@@ -134,7 +134,7 @@ jobs:
         if: matrix.os == 'darwin'
         uses: ./.github/actions/macos-sign
         with:
-          binary-path: ./dist/Atlas.app
+          binary-path: "./dist/Atlas Web Client.app"
           macos-sign-p12: ${{ secrets.MACOS_SIGN_P12 }}
           macos-sign-password: ${{ secrets.MACOS_SIGN_PASSWORD }}
           macos-sign-identity: ${{ secrets.MACOS_SIGN_IDENTITY }}
@@ -148,12 +148,12 @@ jobs:
         id: create-dmg
         shell: bash
         run: |
-          app_path="./dist/Atlas.app"
+          app_path="./dist/Atlas Web Client.app"
           dmg_name="Atlas_${{ needs.check-changes.outputs.version }}_${{ matrix.arch }}.dmg"
           dmg_root="./dist/dmg-root"
           
           if [ ! -d "$app_path" ]; then
-            echo "ERROR: Atlas.app not found at $app_path"
+            echo "ERROR: Atlas Web Client.app not found at $app_path"
             exit 1
           fi
           
@@ -163,7 +163,7 @@ jobs:
           cp -R "$app_path" "$dmg_root/"
           ln -sf /Applications "$dmg_root/Applications"
 
-          echo "Creating DMG from staged contents (only Atlas.app + Applications alias)..."
+          echo "Creating DMG from staged contents (only Atlas Web Client.app + Applications alias)..."
           hdiutil create -volname "Atlas" -srcfolder "$dmg_root" -ov -format UDZO "./dist/$dmg_name"
           echo "Created DMG: $dmg_name"
           
@@ -250,7 +250,7 @@ jobs:
               exit 1
             fi
             cp dist/*.dmg "$bundle_name/"
-            echo -e "Atlas Bundle - macOS\\n\\nInstallation Steps:\\n1. Unzip and run Atlas CLI installer\\n2. Mount DMG and drag Atlas.app to Applications" > "$bundle_name/README.txt"
+            echo -e "Atlas Bundle - macOS\\n\\nInstallation Steps:\\n1. Unzip and run Atlas CLI installer\\n2. Mount DMG and drag Atlas Web Client.app to Applications" > "$bundle_name/README.txt"
           elif [ "${{ matrix.os }}" == "windows" ]; then
             cp dist/atlas_*.exe "$bundle_name/" || { echo "Missing Atlas CLI installer"; exit 1; }
             # Copy both .exe and .msi from Tauri
@@ -365,7 +365,7 @@ jobs:
             ./dist/atlas-*.rpm
             ./dist/atlas_*.sha256
             ./dist/atlas-diagnostics*        # NEW: Include diagnostics binaries
-            ./dist/Atlas.app                 # NEW: Include Tauri macOS app (specific)
+            ./dist/Atlas\ Web\ Client.app   # NEW: Include Tauri macOS app (specific)
             ./dist/Atlas_*.exe               # NEW: Include Tauri Windows installer
             ./dist/*.AppImage                # NEW: Include Tauri Linux AppImage
             ./dist/*.dmg                     # NEW: Include ALL DMG files
@@ -418,7 +418,7 @@ jobs:
               if [[ "$platform" == "darwin" ]]; then
                 # macOS: Include .app and installer zip
                 installer_zip=$(find ./dist -name "atlas_*_darwin_${arch}.zip" | head -1)
-                app_bundle=$(find ./dist -name "Atlas.app" -o -name "*.app" | head -1)
+                app_bundle=$(find ./dist -name "Atlas Web Client.app" -o -name "*.app" | head -1)
                 dmg_file=$(find ./dist -name "Atlas*.dmg" | head -1)
 
                 if [ -n "$installer_zip" ] && [ -n "$app_bundle" ]; then
@@ -435,7 +435,7 @@ jobs:
 
           Installation Steps:
           1. Unzip and run the Atlas installer (atlas_*_darwin_*.zip) - This installs the CLI
-          2. Drag Atlas.app to your Applications folder - This installs the GUI
+          2. Drag Atlas Web Client.app to your Applications folder - This installs the GUI
 
           After installation:
           - Use 'atlas' command in terminal for CLI
