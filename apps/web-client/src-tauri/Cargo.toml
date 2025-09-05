@@ -5,6 +5,12 @@ description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
 
+# Security Note: This project has a transitive dependency on glib 0.18.x through
+# webkit2gtk (Linux only), which has a medium severity vulnerability (GHSA-wrw7-89jp-8q8g).
+# The vulnerability is fixed in glib 0.20.0+, but webkit2gtk 2.0.1 still depends on 
+# glib 0.18.x. This issue only affects Linux builds.
+# Tracking upstream fix at: https://github.com/tauri-apps/webkit2gtk-rs
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [lib]

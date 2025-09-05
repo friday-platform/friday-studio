@@ -4,8 +4,7 @@ updates:
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "weekly"
-      day: "monday"
+      interval: "daily"
       time: "09:00"
     open-pull-requests-limit: 10
     assignees:
@@ -26,8 +25,7 @@ updates:
   - package-ecosystem: "npm"
     directory: "/tools/atlas-installer"
     schedule:
-      interval: "weekly"
-      day: "wednesday"
+      interval: "daily"
       time: "09:00"
     open-pull-requests-limit: 5
     assignees:
@@ -63,3 +61,26 @@ updates:
       - "dependencies"
       - "docker"
     rebase-strategy: "auto"
+
+  # Keep Rust dependencies up to date (for web-client/src-tauri)
+  - package-ecosystem: "cargo"
+    directory: "/apps/web-client/src-tauri"
+    schedule:
+      interval: "daily"
+      time: "09:00"
+    open-pull-requests-limit: 5
+    assignees:
+      - "ljagiello"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "rust"
+      - "tauri"
+    rebase-strategy: "auto"
+    # Known transitive dependency issue - glib vulnerability in webkit2gtk (Linux only)
+    # Waiting for upstream fix in https://github.com/tauri-apps/webkit2gtk-rs
+    ignore:
+      - dependency-name: "glib"
+        # Will be resolved when webkit2gtk updates to use glib 0.20.0+
