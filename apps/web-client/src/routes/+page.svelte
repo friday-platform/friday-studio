@@ -1,7 +1,7 @@
 <script lang="ts">
+import Textarea from "src/lib/components/textarea.svelte";
 import { onMount } from "svelte";
 import { getAppContext } from "$lib/app-context.svelte";
-
 import Dropzone from "$lib/components/dropzone/dropzone.svelte";
 import { CustomIcons } from "$lib/components/icons/custom";
 import { IconSmall } from "$lib/components/icons/small";
@@ -27,40 +27,40 @@ onMount(async () => {
 });
 
 // Handle Scrolling
-// function handleScroll() {
-// 	if (!scrollContainer) return;
-// 	const { scrollTop, scrollHeight, clientHeight } = scrollContainer;
-// 	const isAtBottom = Math.abs(scrollHeight - scrollTop - clientHeight) < 50;
+function handleScroll() {
+  if (!scrollContainer) return;
+  const { scrollTop, scrollHeight, clientHeight } = scrollContainer;
+  const isAtBottom = Math.abs(scrollHeight - scrollTop - clientHeight) < 50;
 
-// 	// If user scrolls away from bottom, mark as manually scrolled
-// 	if (!isAtBottom) {
-// 		userHasScrolled = true;
-// 	}
-// 	// If user scrolls back to bottom, reset the flag
-// 	if (isAtBottom) {
-// 		userHasScrolled = false;
-// 	}
-// }
+  // If user scrolls away from bottom, mark as manually scrolled
+  if (!isAtBottom) {
+    userHasScrolled = true;
+  }
+  // If user scrolls back to bottom, reset the flag
+  if (isAtBottom) {
+    userHasScrolled = false;
+  }
+}
 
-// // Scroll to the bottom of the container
-// function scrollToBottom() {
-// 	if (!scrollContainer) return;
-// 	scrollContainer.scrollTop = scrollContainer.scrollHeight;
+// Scroll to the bottom of the container
+function scrollToBottom() {
+  if (!scrollContainer) return;
+  scrollContainer.scrollTop = scrollContainer.scrollHeight;
 
-// 	animationFrameId = requestAnimationFrame(scrollToBottom);
-// }
+  animationFrameId = requestAnimationFrame(scrollToBottom);
+}
 
-// // Auto-scroll when new logs are added, unless user has manually scrolled
-// $effect(() => {
-// 	if (userHasScrolled && animationFrameId) {
-// 		cancelAnimationFrame(animationFrameId);
-// 		animationFrameId = null;
-// 	}
+// Auto-scroll when new logs are added, unless user has manually scrolled
+$effect(() => {
+  if (userHasScrolled && animationFrameId) {
+    cancelAnimationFrame(animationFrameId);
+    animationFrameId = null;
+  }
 
-// 	if (!userHasScrolled && !animationFrameId) {
-// 		animationFrameId = requestAnimationFrame(scrollToBottom);
-// 	}
-// });
+  if (!userHasScrolled && !animationFrameId) {
+    animationFrameId = requestAnimationFrame(scrollToBottom);
+  }
+});
 </script>
 
 {#if ctx.daemonStatus === 'error'}
@@ -83,7 +83,7 @@ onMount(async () => {
 				<p class="empty-message">What do you want to accomplish today?</p>
 			{/if}
 
-			<div class="messages" bind:this={scrollContainer}>
+			<div class="messages" bind:this={scrollContainer} onscroll={handleScroll}>
 				<div class="messages-inner">
 					{#each ctx.messages as message, index (message.id || index)}
 						{@const formattedMessage = formatMessage(message, ctx.user)}
@@ -163,12 +163,15 @@ onMount(async () => {
 					}
 				}}
 			>
-				<textarea
+				<Textarea
 					disabled={ctx.typingState.isTyping}
 					name="message"
 					placeholder="Type here..."
-					bind:value={message}
-				></textarea>
+					value={message}
+					onTextChange={(value) => {
+						message = value;
+					}}
+				/>
 
 				<!-- <div class="actions">
 					<div class="file-drop">
@@ -286,30 +289,8 @@ onMount(async () => {
 		position: sticky;
 		z-index: var(--layer-2);
 
-		&:has(textarea:disabled) {
+		&:global(:has(textarea:disabled)) {
 			opacity: 0.5;
-		}
-
-		textarea {
-			background-color: transparent;
-			border-radius: var(--radius-4);
-			block-size: var(--size-9);
-			box-shadow: var(--shadow-1);
-			display: block;
-			font-size: var(--font-size-3);
-			padding-inline: var(--size-3);
-			padding-block-start: var(--size-2);
-			scrollbar-width: thin;
-			inline-size: 100%;
-			resize: none;
-
-			&:focus {
-				outline: none;
-			}
-
-			&::placeholder {
-				color: color-mix(in oklch, var(--text-3) 70%, transparent);
-			}
 		}
 
 		.actions {

@@ -100,7 +100,6 @@ const htmlContent = $derived(message.content ? markdownToHTML(message.content) :
 		}
 
 		& :global(code) {
-			background-color: #f0f0f0;
 		}
 
 		& :global(a) {
