@@ -24,11 +24,11 @@ jobs:
       - name: Generate edge version
         id: version
         run: |
-          # Generate edge version: 0.0.0-edge.YYYYMMDD.HHMMSS.gitsha (valid semver)
+          # Generate edge version: edge-YYYYMMDD-HHMMSS-gitsha
           date_part=$(date -u +%Y%m%d)
           time_part=$(date -u +%H%M%S)
           git_sha=$(git rev-parse --short HEAD)
-          version="0.0.0-edge.${date_part}.${time_part}.${git_sha}"
+          version="edge-${date_part}-${time_part}-${git_sha}"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
           echo "Edge version: ${version}"
 

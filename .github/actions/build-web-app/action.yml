@@ -56,19 +56,20 @@ runs:
         fi
 
         # Transform version to valid semver for Tauri
-        # Edge versions like 0.0.0-edge.20250901.210021.e3a51f71 need to be simplified
+        # Edge versions like edge-20250901-210021-e3a51f71 need to be converted to semver
         # Tauri only accepts major.minor.patch or major.minor.patch-prerelease
+        # Prerelease can only have alphanumeric characters and hyphens (no dots)
         version="${{ inputs.version }}"
-        if [[ "$version" == *-edge.* ]]; then
-          # Extract base version and create a simpler prerelease tag
-          base_version=$(echo "$version" | cut -d'-' -f1)  # 0.0.0
-          prerelease=$(echo "$version" | cut -d'-' -f2- | tr '.' '-')  # edge-20250901-210021-e3a51f71
-          tauri_version="${base_version}-${prerelease}"
-        elif [[ "$version" == *-nightly.* ]]; then
-          # Same for nightly builds
-          base_version=$(echo "$version" | cut -d'-' -f1)
-          prerelease=$(echo "$version" | cut -d'-' -f2- | tr '.' '-')
-          tauri_version="${base_version}-${prerelease}"
+        if [[ "$version" == edge-* ]]; then
+          # Convert edge-YYYYMMDD-HHMMSS-gitsha to 0.0.0-edge-YYYYMMDD-HHMMSS-gitsha
+          # Replace all hyphens after 'edge' with the version parts
+          tauri_version="0.0.0-${version}"
+        elif [[ "$version" == nightly-* ]]; then
+          # Convert nightly-YYYYMMDD-gitsha to 0.0.0-nightly-YYYYMMDD-gitsha
+          tauri_version="0.0.0-${version}"
+        elif [[ "$version" == v* ]]; then
+          # Remove 'v' prefix for releases: v1.2.3 -> 1.2.3
+          tauri_version="${version#v}"
         else
           # Regular versions pass through unchanged
           tauri_version="$version"
