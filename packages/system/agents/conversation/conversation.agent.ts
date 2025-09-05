@@ -112,7 +112,6 @@ export const conversationAgent = createAgent({
   displayName: "Conversation Agent",
   version: "1.0.0",
   description: "Interactive conversation agent for workspace collaboration",
-
   expertise: { domains: ["conversation"], capabilities: ["interactive-chat"], examples: [] },
 
   /**
@@ -251,7 +250,7 @@ export const conversationAgent = createAgent({
     // @HACK: `data-user-message` this is a workaround since the AI SDK doesn't
     // give you a way to emit user messages back to the stream. It expects that
     // they will be just pushed to the array and persisted client-side.
-    stream?.emit({ type: "data-user-message", data: prompt });
+    stream?.emit({ id: crypto.randomUUID(), type: "data-user-message", data: prompt });
 
     const allTools = { ...tools, ...conversationTools, ...agents };
 

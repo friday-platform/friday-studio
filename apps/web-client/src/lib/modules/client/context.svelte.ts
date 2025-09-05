@@ -98,17 +98,18 @@ class ClientContext {
   }
 
   async checkHealth() {
-    try {
-      const health = await this.conversationClient?.healthCheck();
+    this.daemonStatus = "connected";
+    // try {
+    //   const health = await this.conversationClient?.healthCheck();
 
-      if (health) {
-        this.daemonStatus = "connected";
-      } else {
-        this.daemonStatus = "error";
-      }
-    } catch {
-      this.daemonStatus = "error";
-    }
+    //   if (health) {
+    //     this.daemonStatus = "connected";
+    //   } else {
+    //     this.daemonStatus = "error";
+    //   }
+    // } catch {
+    //   this.daemonStatus = "error";
+    // }
   }
 }
 

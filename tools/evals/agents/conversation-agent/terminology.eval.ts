@@ -6,7 +6,7 @@ import { loadCredentials } from "../../lib/load-credentials.ts";
 import { saveSnapshot } from "../../lib/snapshot.ts";
 
 Deno.test({
-  name: "Conversation Agent: Confirm that atlas ask clarifying questions when necessary",
+  name: "Conversation Agent: Terminology",
   sanitizeOps: false,
   sanitizeResources: false,
   async fn(t) {
@@ -18,28 +18,27 @@ Deno.test({
     try {
       const agentContext = context.createContext({ telemetry: true });
 
-      // Ask for a workspace but don't specify any details
+      // Test todo creation and management
       const result = await conversationAgent.execute(
-        "I want to monitor weather in my city",
+        "I’m a product manager, and I’m conducting discovery for my new product. I want Atlas to take my transcribed meeting notes, analyze them for learnings and next steps, and then share out to the rest of the team.",
         agentContext,
       );
       const metrics = context.getMetrics();
       const trace = context.getTrace();
 
-      const evaluation = await llmJudge({
-        criteria: "Atlas should ask questions like 'What city do you want to monitor weather for?'",
-        agentOutput: result.text,
-      });
-
-      await t.step("", () => {
-        // Direct assertions on the output
-        assert(evaluation.pass, evaluation.justification);
+      const judge = await llmJudge({
+        criteria: `
+        - The word workspace should not be used.
+        - The word agent should not be used.
+        - The word tool should not be used.
+        `,
+        agentOutput: result,
       });
 
       await saveSnapshot({
         testPath: new URL(import.meta.url),
-        data: { result, metrics, trace },
-        pass: evaluation.pass,
+        data: { result, metrics, trace, judge },
+        pass: judge.pass,
       });
     } finally {
       await context.cleanup();

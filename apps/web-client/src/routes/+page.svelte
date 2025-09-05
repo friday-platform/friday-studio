@@ -1,7 +1,7 @@
 <script lang="ts">
 import { onMount } from "svelte";
 import { getAppContext } from "$lib/app-context.svelte";
-import Button from "$lib/components/button.svelte";
+
 import Dropzone from "$lib/components/dropzone/dropzone.svelte";
 import { CustomIcons } from "$lib/components/icons/custom";
 import { IconSmall } from "$lib/components/icons/small";
@@ -10,6 +10,7 @@ import ErrorMessage from "$lib/modules/messages/error-message.svelte";
 import { formatMessage } from "$lib/modules/messages/format";
 import Message from "$lib/modules/messages/message.svelte";
 import Progress from "$lib/modules/messages/progress.svelte";
+import Table from "$lib/modules/messages/table.svelte";
 
 const { stagedFiles, daemonClient, uploadFile } = getAppContext();
 
@@ -26,36 +27,40 @@ onMount(async () => {
 });
 
 // Handle Scrolling
-function handleScroll() {
-  if (!scrollContainer) return;
-  const { scrollTop, scrollHeight, clientHeight } = scrollContainer;
-  const isAtBottom = Math.abs(scrollHeight - scrollTop - clientHeight) < 50;
+// function handleScroll() {
+// 	if (!scrollContainer) return;
+// 	const { scrollTop, scrollHeight, clientHeight } = scrollContainer;
+// 	const isAtBottom = Math.abs(scrollHeight - scrollTop - clientHeight) < 50;
 
-  // If user scrolls away from bottom, mark as manually scrolled
-  if (!isAtBottom) {
-    userHasScrolled = true;
-  }
-}
+// 	// If user scrolls away from bottom, mark as manually scrolled
+// 	if (!isAtBottom) {
+// 		userHasScrolled = true;
+// 	}
+// 	// If user scrolls back to bottom, reset the flag
+// 	if (isAtBottom) {
+// 		userHasScrolled = false;
+// 	}
+// }
 
-// Scroll to the bottom of the container
-function scrollToBottom() {
-  if (!scrollContainer) return;
-  scrollContainer.scrollTop = scrollContainer.scrollHeight;
+// // Scroll to the bottom of the container
+// function scrollToBottom() {
+// 	if (!scrollContainer) return;
+// 	scrollContainer.scrollTop = scrollContainer.scrollHeight;
 
-  animationFrameId = requestAnimationFrame(scrollToBottom);
-}
+// 	animationFrameId = requestAnimationFrame(scrollToBottom);
+// }
 
-// Auto-scroll when new logs are added, unless user has manually scrolled
-$effect(() => {
-  if (userHasScrolled && animationFrameId) {
-    cancelAnimationFrame(animationFrameId);
-    animationFrameId = null;
-  }
+// // Auto-scroll when new logs are added, unless user has manually scrolled
+// $effect(() => {
+// 	if (userHasScrolled && animationFrameId) {
+// 		cancelAnimationFrame(animationFrameId);
+// 		animationFrameId = null;
+// 	}
 
-  if (!userHasScrolled && !animationFrameId) {
-    animationFrameId = requestAnimationFrame(scrollToBottom);
-  }
-});
+// 	if (!userHasScrolled && !animationFrameId) {
+// 		animationFrameId = requestAnimationFrame(scrollToBottom);
+// 	}
+// });
 </script>
 
 {#if ctx.daemonStatus === 'error'}
@@ -71,180 +76,213 @@ $effect(() => {
 			(m) => m.type !== 'data-connection' && m.type !== 'data-heartbeat'
 		).length > 0}
 	>
-		<div class="messages" bind:this={scrollContainer} onscroll={handleScroll}>
-			<div class="messages-inner">
-				{#each ctx.messages as message, index (index)}
-					{@const formattedMessage = formatMessage(message, ctx.user)}
+		<div class="main">
+			<h2>Chat</h2>
 
-					{#if formattedMessage && (formattedMessage.type === 'request' || formattedMessage.type === 'text')}
-						<Message message={formattedMessage} />
-					{:else if formattedMessage && formattedMessage.type === 'error'}
-						<ErrorMessage message={formattedMessage} />
+			{#if ctx.messages.filter((m) => m.type !== 'data-connection' && m.type !== 'data-heartbeat').length === 0}
+				<p class="empty-message">What do you want to accomplish today?</p>
+			{/if}
+
+			<div class="messages" bind:this={scrollContainer}>
+				<div class="messages-inner">
+					{#each ctx.messages as message, index (message.id || index)}
+						{@const formattedMessage = formatMessage(message, ctx.user)}
+
+						{#if formattedMessage && (formattedMessage.type === 'request' || formattedMessage.type === 'text')}
+							<Message message={formattedMessage} />
+						{:else if formattedMessage && formattedMessage.type === 'tool_call' && formattedMessage.metadata?.toolName === 'table_output'}
+							<Table data={formattedMessage.metadata?.result} />
+						{:else if formattedMessage && formattedMessage.type === 'error'}
+							<ErrorMessage message={formattedMessage} />
+						{/if}
+					{/each}
+
+					{#if ctx.typingState.isTyping}
+						{@const actionsAfterLastUser = (() => {
+							// Find the last data-user-message
+							const lastUserIndex = ctx.messages.findLastIndex(
+								(msg) => msg.type === 'data-user-message'
+							);
+
+							// If no user message found, return empty
+							if (lastUserIndex === -1) return [];
+
+							// Return everything after the last user message
+							return ctx.messages.slice(lastUserIndex + 1);
+						})()}
+
+						<Progress actions={actionsAfterLastUser} />
 					{/if}
-				{/each}
-
-				{#if ctx.typingState.isTyping}
-					{@const actionsAfterLastUser = (() => {
-						// Find the last data-user-message
-						const lastUserIndex = ctx.messages.findLastIndex(
-							(msg) => msg.type === 'data-user-message'
-						);
-
-						// If no user message found, return empty
-						if (lastUserIndex === -1) return [];
-
-						// Return everything after the last user message
-						return ctx.messages.slice(lastUserIndex + 1);
-					})()}
-
-					<Progress actions={actionsAfterLastUser} />
-				{/if}
+				</div>
 			</div>
-		</div>
 
-		{#if ctx.messages.filter((m) => m.type !== 'data-connection' && m.type !== 'data-heartbeat').length === 0}
-			<h2>Welcome to Atlas</h2>
-		{/if}
-
-		<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-		<form
-			bind:this={form}
-			title={ctx.typingState.isTyping
-				? 'Processing... (press escape to cancel the current request)'
-				: undefined}
-			method="POST"
-			onkeydown={(e) => {
-				if (e.key === 'Enter' && !e.shiftKey && !e.altKey) {
-					e.preventDefault();
-					e.currentTarget?.requestSubmit();
-				}
-			}}
-			onsubmit={async (e) => {
-				e.preventDefault();
-
-				if (!ctx.conversationClient || !ctx.conversationSessionId || ctx.typingState.isTyping) {
-					return;
-				}
-
-				try {
-					const formData = new FormData(e.target as HTMLFormElement);
-					let formMessage = formData.get('message') as string;
-
-					if (stagedFiles.state.size > 0) {
-						formMessage = formMessage + `\n\nLibrary attachments:`;
-
-						for (const id of stagedFiles.state.keys()) {
-							formMessage = formMessage + `\n- ${id}`;
-						}
+			<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+			<form
+				bind:this={form}
+				title={ctx.typingState.isTyping
+					? 'Processing... (press escape to cancel the current request)'
+					: undefined}
+				method="POST"
+				onkeydown={(e) => {
+					if (e.key === 'Enter' && !e.shiftKey && !e.altKey) {
+						e.preventDefault();
+						e.currentTarget?.requestSubmit();
 					}
+				}}
+				onsubmit={async (e) => {
+					e.preventDefault();
 
-					if (formMessage.trim().length === 0) {
+					if (!ctx.conversationClient || !ctx.conversationSessionId || ctx.typingState.isTyping) {
 						return;
 					}
 
-					// Just send the message - the persistent SSE listener will handle the response
-					await ctx.conversationClient.sendMessage(ctx.conversationSessionId, formMessage);
+					try {
+						const formData = new FormData(e.target as HTMLFormElement);
+						let formMessage = formData.get('message') as string;
 
-					message = '';
+						if (stagedFiles.state.size > 0) {
+							formMessage = formMessage + `\n\nLibrary attachments:`;
 
-					// The persistent SSE listener will handle the response
-				} catch (e) {
-					console.error(e);
-				}
-			}}
-		>
-			<textarea
-				disabled={ctx.typingState.isTyping}
-				name="message"
-				placeholder="What can I help you with?"
-				bind:value={message}
-			></textarea>
-
-			<div class="actions">
-				<div class="file-drop">
-					<Dropzone
-						maxSize={Infinity}
-						accept={['*']}
-						onDrop={(files) => {
-							for (const file of files) {
-								uploadFile(file);
+							for (const id of stagedFiles.state.keys()) {
+								formMessage = formMessage + `\n- ${id}`;
 							}
-						}}
-					>
-						<span class="file-drop-children">
-							<CustomIcons.Paperclip />
-							<span>Add Files</span>
-						</span>
-					</Dropzone>
+						}
+
+						if (formMessage.trim().length === 0) {
+							return;
+						}
+
+						// Just send the message - the persistent SSE listener will handle the response
+						await ctx.conversationClient.sendMessage(ctx.conversationSessionId, formMessage);
+
+						message = '';
+
+						// The persistent SSE listener will handle the response
+					} catch (e) {
+						console.error(e);
+					}
+				}}
+			>
+				<textarea
+					disabled={ctx.typingState.isTyping}
+					name="message"
+					placeholder="Type here..."
+					bind:value={message}
+				></textarea>
+
+				<!-- <div class="actions">
+					<div class="file-drop">
+						<Dropzone
+							maxSize={Infinity}
+							accept={['*']}
+							onDrop={(files) => {
+								for (const file of files) {
+									uploadFile(file);
+								}
+							}}
+						>
+							<span class="file-drop-children">
+								<CustomIcons.Paperclip />
+								<span>Add Files</span>
+							</span>
+						</Dropzone>
+					</div>
+				</div> -->
+			</form>
+
+			{#if stagedFiles.state.size > 0}
+				<div class="staged-files">
+					{#each stagedFiles.state.entries() as [itemId, file]}
+						<button
+							onclick={async () => {
+								await daemonClient.deleteLibraryItem(itemId);
+
+								stagedFiles.remove(itemId);
+							}}>{file.name} <IconSmall.Close /></button
+						>
+					{/each}
 				</div>
+			{/if}
+		</div>
 
-				<Button type="submit">Send</Button>
-			</div>
-		</form>
+		<aside>
+			<h2>Artifacts</h2>
 
-		{#if stagedFiles.state.size > 0}
-			<div class="staged-files">
-				{#each stagedFiles.state.entries() as [itemId, file]}
-					<button
-						onclick={async () => {
-							await daemonClient.deleteLibraryItem(itemId);
-
-							stagedFiles.remove(itemId);
-						}}>{file.name} <IconSmall.Close /></button
-					>
-				{/each}
-			</div>
-		{/if}
+			<span>Start a chat to see artifacts</span>
+		</aside>
 	</div>
 {/if}
 
 <style>
 	.chat {
 		block-size: 100%;
-		display: flex;
-		flex-direction: column;
-		justify-content: center;
+		display: grid;
+		grid-template-columns: 1fr var(--size-64);
 		inline-size: 100%;
 		overflow: hidden;
-		padding-block-end: var(--size-16);
 		position: relative;
 		transition: all 150ms ease;
 		z-index: var(--layer-1);
-	}
 
-	.messages {
-		padding-block: var(--size-8);
-		overflow-y: scroll;
-		scrollbar-width: thin;
-		padding-inline: var(--size-8);
-
-		.messages-inner {
+		.main {
 			display: flex;
-			gap: var(--size-12);
+			block-size: 100%;
+			overflow: hidden;
 			flex-direction: column;
-			max-inline-size: 75ch;
-			margin-inline: auto;
+			padding: var(--size-10);
+			padding-inline-end: var(--size-10);
+
+			h2 {
+				font-size: var(--font-size-7);
+				font-weight: var(--font-weight-7);
+				line-height: var(--font-lineheight-1);
+			}
+
+			.empty-message {
+				font-size: var(--font-size-4);
+				opacity: 0.7;
+				font-weight: var(--font-weight-4);
+			}
+		}
+
+		aside {
+			padding-block: var(--size-10);
+
+			h2 {
+				color: var(--text-3);
+				font-size: var(--font-size-2);
+				font-weight: var(--font-weight-4-5);
+				line-height: var(--font-lineheight-1);
+			}
+
+			span {
+				color: var(--text-3);
+				font-size: var(--font-size-2);
+				opacity: 0.8;
+				font-weight: var(--font-weight-4);
+			}
 		}
 	}
 
-	h2 {
-		font-size: var(--font-size-7);
-		font-weight: var(--font-weight-7);
-		line-height: var(--font-lineheight-1);
-		text-align: center;
-		margin-block-end: var(--size-6);
+	.messages {
+		flex: 1;
+		overflow-y: scroll;
+		scrollbar-width: thin;
+		padding-block: var(--size-6);
+
+		.messages-inner {
+			display: flex;
+			flex-direction: column;
+			max-inline-size: 75ch;
+			inline-size: 100%;
+		}
 	}
 
 	form {
 		background-color: var(--background-1);
-		border-radius: var(--radius-4);
+		display: flex;
 		bottom: 0;
-		box-shadow: var(--shadow-1);
-		display: block;
-		margin-inline: auto;
-		max-inline-size: 75ch;
-		inline-size: 100%;
-		padding-block-end: var(--size-10-5);
+
 		position: sticky;
 		z-index: var(--layer-2);
 
@@ -254,11 +292,13 @@ $effect(() => {
 
 		textarea {
 			background-color: transparent;
-			block-size: var(--size-20);
+			border-radius: var(--radius-4);
+			block-size: var(--size-9);
+			box-shadow: var(--shadow-1);
 			display: block;
-			font-size: var(--font-size-5);
-			padding: var(--size-3);
-			padding-block-end: 0;
+			font-size: var(--font-size-3);
+			padding-inline: var(--size-3);
+			padding-block-start: var(--size-2);
 			scrollbar-width: thin;
 			inline-size: 100%;
 			resize: none;
@@ -276,10 +316,6 @@ $effect(() => {
 			align-items: center;
 			display: flex;
 			justify-content: space-between;
-			position: absolute;
-			inset-inline-start: var(--size-2);
-			inset-inline-end: var(--size-2);
-			inset-block-end: var(--size-2);
 
 			.file-drop {
 				block-size: var(--size-6);

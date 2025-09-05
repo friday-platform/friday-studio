@@ -126,7 +126,7 @@ function reconstructParagraphContent(node: ASTNode): string {
       result += `<del>${innerText}</del>`;
     } else if (child.type === "Link") {
       const linkData = extractLinkData(child.content);
-      result += `<a href="${linkData.href}">${linkData.text}</a>`;
+      result += `<a href="${linkData.href}" target="_blank">${linkData.text}</a>`;
     } else if (child.type === "InlineCode") {
       const innerText = child.content.slice(1, -1); // Remove backticks
       result += `<code>${innerText}</code>`;
@@ -276,5 +276,8 @@ export function astToHTML(node: ASTNode | null, parentType: string = ""): string
  */
 export function markdownToHTML(markdown: string): string {
   const ast = parseMarkdownToAST(markdown);
+
+  console.log(ast);
+
   return astToHTML(ast);
 }

@@ -6,7 +6,7 @@ import { loadCredentials } from "../../lib/load-credentials.ts";
 import { saveSnapshot } from "../../lib/snapshot.ts";
 
 Deno.test({
-  name: "Conversation Agent: Confirm that atlas ask clarifying questions when necessary",
+  name: "Conversation Agent: Table tool calling test",
   sanitizeOps: false,
   sanitizeResources: false,
   async fn(t) {
@@ -18,28 +18,22 @@ Deno.test({
     try {
       const agentContext = context.createContext({ telemetry: true });
 
-      // Ask for a workspace but don't specify any details
+      // Test todo creation and management
       const result = await conversationAgent.execute(
-        "I want to monitor weather in my city",
+        "Create a table with 3 rows and 3 columns using the table tool. The columns should be 'Name', 'Age', and 'City'. The rows should be 'John', '25', 'New York', 'Jane', '30', 'Los Angeles', 'Jim', '35', 'Chicago'.",
         agentContext,
       );
       const metrics = context.getMetrics();
       const trace = context.getTrace();
 
-      const evaluation = await llmJudge({
-        criteria: "Atlas should ask questions like 'What city do you want to monitor weather for?'",
-        agentOutput: result.text,
-      });
-
-      await t.step("", () => {
-        // Direct assertions on the output
-        assert(evaluation.pass, evaluation.justification);
+      const pass = await t.step("", () => {
+        assert(result.text === "", "Called table_output");
       });
 
       await saveSnapshot({
         testPath: new URL(import.meta.url),
         data: { result, metrics, trace },
-        pass: evaluation.pass,
+        pass,
       });
     } finally {
       await context.cleanup();

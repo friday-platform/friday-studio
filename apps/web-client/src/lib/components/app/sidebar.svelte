@@ -1,8 +1,7 @@
 <script lang="ts">
 import { page } from "$app/state";
 import { getAppContext } from "$lib/app-context.svelte";
-import logo from "$lib/assets/logo.png";
-import { SegmentedControl } from "$lib/components/segmented-control";
+import { CustomIcons } from "$lib/components/icons/custom";
 
 const { routes } = getAppContext();
 
@@ -17,50 +16,65 @@ function getActivePage(value: string | string[]) {
 </script>
 
 <header>
-	<a href={routes.main} class="logo">
-		<img src={logo} alt="Atlas" />
-		<span>Atlas</span>
-	</a>
-
 	{#if !disabled}
 		<nav>
-			<SegmentedControl.Root>
-				<SegmentedControl.Item href={routes.main} active={getActivePage('/')}
-					>Chat</SegmentedControl.Item
-				>
-				<SegmentedControl.Item
-					href={routes.library.list}
-					active={getActivePage(['library', 'library/[id]'])}>Library</SegmentedControl.Item
-				>
-			</SegmentedControl.Root>
+			<ul>
+				<li>
+					<a href={routes.main} class:active={getActivePage('/')}>
+						<CustomIcons.Dashboard />
+						<span>Dashboard</span>
+					</a>
+				</li>
+
+				<li>
+					<a href={routes.library.list} class:active={getActivePage(['library', 'library/[id]'])}>
+						<CustomIcons.Folder />
+						<span>Library</span>
+					</a>
+				</li>
+			</ul>
 		</nav>
 	{/if}
 </header>
 
 <style>
 	header {
-		display: flex;
-		flex: none;
+		border-inline-end: var(--size-px) solid var(--border-2);
 		justify-content: space-between;
 		gap: var(--size-4);
-		padding-block-start: var(--size-8);
-		padding-inline: var(--size-8);
+		padding-block: 3.25rem var(--size-5);
+		padding-inline: var(--size-3);
 	}
 
-	.logo {
+	ul {
 		display: flex;
-		gap: var(--size-4);
-		align-items: center;
+		flex-direction: column;
+		gap: var(--size-1);
 
-		img {
-			aspect-ratio: 1;
-			flex: none;
-			inline-size: var(--size-8);
+		li {
+			font-size: var(--font-size-3);
+			font-weight: var(--font-weight-5);
+			inline-size: 100%;
 		}
 
-		span {
-			font-size: var(--font-size-6);
-			font-weight: var(--font-weight-6);
+		a {
+			align-items: center;
+			block-size: var(--size-7);
+			border-radius: var(--radius-3);
+			color: var(--text-1);
+			display: flex;
+			gap: var(--size-2);
+			opacity: 0.9;
+			padding-inline: var(--size-2);
+
+			& :global(svg) {
+				color: var(--text-3);
+				flex: none;
+			}
+
+			&.active {
+				background-color: var(--highlight-2);
+			}
 		}
 	}
 </style>

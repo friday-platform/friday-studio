@@ -1,20 +1,26 @@
 # Atlas Agent Evals
 
-This module evaluates agent behavior using real external dependencies. We test what users experience, not mocked implementations.
+This module evaluates agent behavior using real external dependencies. We test
+what users experience, not mocked implementations.
 
 ## Philosophy
 
 ### 80/20 Approach
 
-Start with basic tests that catch obvious failures. Add complexity only when you find real problems in production. Most bugs come from simple failures, not edge cases.
+Start with basic tests that catch obvious failures. Add complexity only when you
+find real problems in production. Most bugs come from simple failures, not edge
+cases.
 
 ### Test Real Behavior
 
-Don't mock Tavily, MCP servers, or other external tools. If the API is down, the test fails - that's the user experience. Accept the cost of real API calls for accurate evaluation.
+Don't mock Tavily, MCP servers, or other external tools. If the API is down, the
+test fails - that's the user experience. Accept the cost of real API calls for
+accurate evaluation.
 
 ### Binary Pass/Fail
 
-Tests either pass or fail. No scoring systems. When a test fails, write a clear justification explaining why. This forces clarity about what "working" means.
+Tests either pass or fail. No scoring systems. When a test fails, write a clear
+justification explaining why. This forces clarity about what "working" means.
 
 ## Writing Evals
 
@@ -93,7 +99,8 @@ const evaluation = await llmJudge({
 assert(evaluation.pass, evaluation.justification);
 ```
 
-Write criteria that distinguish good from bad outputs. Bad: "Output should be good". Good: "Each recommendation must include a specific model name and price".
+Write criteria that distinguish good from bad outputs. Bad: "Output should be
+good". Good: "Each recommendation must include a specific model name and price".
 
 ## Running Evals
 
@@ -102,7 +109,7 @@ Write criteria that distinguish good from bad outputs. Bad: "Output should be go
 deno task test
 
 # Run specific eval
-deno task test agents/research-agent/domain-filtering.eval.ts
+deno task test tools/evals/agents/research-agent/domain-filtering.eval.ts
 
 # With specific credentials
 ATLAS_KEY=your-key deno task test
@@ -124,7 +131,8 @@ Use snapshots to:
 3. **Track regressions**: Diff outputs across time to spot degradation
 4. **Generate test cases**: Use interesting outputs as seeds for new tests
 
-Don't commit all snapshots. Keep a few representative examples for documentation.
+Don't commit all snapshots. Keep a few representative examples for
+documentation.
 
 ## When to Add Tests
 
@@ -142,15 +150,19 @@ Don't add tests for:
 
 ## Key Principles
 
-1. **Start manual**: Run agents by hand first. Understand failures before automating.
+1. **Start manual**: Run agents by hand first. Understand failures before
+   automating.
 2. **Test the contract**: What users see, not how it works internally.
-3. **Accept reality**: Tests with real APIs can be slow and occasionally flaky. That's OK - it reflects user experience.
-4. **Clear failures**: When a test fails, the reason should be obvious from the assertion message.
+3. **Accept reality**: Tests with real APIs can be slow and occasionally flaky.
+   That's OK - it reflects user experience.
+4. **Clear failures**: When a test fails, the reason should be obvious from the
+   assertion message.
 5. **Iteration speed**: Better to have 5 simple tests than 1 complex one.
 
 ## Handling Flaky Tests
 
-Real API calls can fail due to network issues or service outages. This is intentional - we want to know when dependencies are unreliable.
+Real API calls can fail due to network issues or service outages. This is
+intentional - we want to know when dependencies are unreliable.
 
 For persistent issues:
 

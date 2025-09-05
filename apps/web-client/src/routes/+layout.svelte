@@ -1,5 +1,4 @@
 <script lang="ts">
-// import { TrayIcon } from '@tauri-apps/api/tray';
 import { onMount } from "svelte";
 import { setAppContext } from "$lib/app-context.svelte";
 import favicon from "$lib/assets/favicon.svg";
@@ -20,27 +19,16 @@ $effect(() => {
   }
 });
 
-async function sendDiagnostics() {
-  let result = await Command.create("exec-sh", ["-c", "echo 'Hello World!'"]).execute();
-  console.log("RESULT 📯", result);
-}
-
 onMount(async () => {
   ctx.checkHealth();
-
-  const menu = await Menu.new({
-    items: [{ id: "send-diagnostics", text: "Send Diagnostics", action: sendDiagnostics }],
-  });
-
-  const options = { menu, menuOnLeftClick: true, icon: "icons/tray.png", tooltip: "Tauri App" };
-
-  await TrayIcon.new(options);
 });
 </script>
 
 <svelte:head>
 	<link rel="icon" href={favicon} />
 </svelte:head>
+
+<div class="titlebar" data-tauri-drag-region></div>
 
 <div
 	role="region"
@@ -81,6 +69,15 @@ Tracks and normalizes selection of all keys and modifiers including:
 <KeyboardListener />
 
 <style>
+	.titlebar {
+		app-region: drag;
+		block-size: 3.25rem;
+		inset-block-start: 0;
+		inset-inline: 0;
+		position: absolute;
+		z-index: var(--layer-5);
+	}
+
 	main {
 		display: flex;
 		align-items: center;

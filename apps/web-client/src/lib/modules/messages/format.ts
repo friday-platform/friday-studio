@@ -1,5 +1,3 @@
-// import { type SSEEvent } from "@atlas/config";
-
 import type { UIDataTypes, UIMessagePart, UITools } from "ai";
 import type { OutputEntry } from "./types.ts";
 
@@ -9,7 +7,6 @@ export function formatMessage(
 ): OutputEntry | undefined {
   if (part.type === "data-user-message") {
     return {
-      id: crypto.randomUUID(),
       type: "request",
       timestamp: new Date().toISOString(),
       author: currentUser,
@@ -30,6 +27,14 @@ export function formatMessage(
       timestamp: new Date().toISOString(),
       author: "Atlas",
       content: part.text,
+    };
+  } else if (part.type === "tool-table_output") {
+    return {
+      id: crypto.randomUUID(),
+      type: "tool_call",
+      timestamp: new Date().toISOString(),
+      author: "Atlas",
+      metadata: { toolName: "table_output", result: part.output },
     };
   } else if (part.type.startsWith("tool-") || part.type === "dynamic-tool") {
     return {

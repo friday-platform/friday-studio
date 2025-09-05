@@ -59,6 +59,7 @@ svg {
   --size-42: calc(10.5rem * var(--size-scale));
   --size-44: calc(11rem * var(--size-scale));
   --size-48: calc(12rem * var(--size-scale));
+  --size-50: calc(12.5rem * var(--size-scale));
   --size-52: calc(13rem * var(--size-scale));
   --size-56: calc(14rem * var(--size-scale));
   --size-60: calc(15rem * var(--size-scale));
@@ -102,6 +103,7 @@ svg {
 
   /* Font weight */
   --font-weight-4: 400;
+  --font-weight-4-5: 450;
   --font-weight-5: 500;
   --font-weight-6: 600;
   --font-weight-7: 700;

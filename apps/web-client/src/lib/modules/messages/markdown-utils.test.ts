@@ -141,7 +141,7 @@ Deno.test("markdownToHTML - empty input", () => {
 Deno.test("markdownToHTML - links", () => {
   assertEquals(
     markdownToHTML("[link text](https://example.com)"),
-    '<p><a href="https://example.com">link text</a></p>',
+    '<p><a href="https://example.com" target="_blank">link text</a></p>',
   );
 });
 
@@ -161,7 +161,7 @@ Deno.test("markdownToHTML - mixed content", () => {
 
   const expected =
     "<p>Here is a paragraph with <strong>bold</strong> and <em>italic</em> text.</p>" +
-    '<ol><li>First item</li><li>Second item with <a href="https://example.com">a link</a></li></ol>';
+    '<ol><li>First item</li><li>Second item with <a href="https://example.com" target="_blank">a link</a></li></ol>';
 
   assertEquals(markdownToHTML(markdown), expected);
 });
