@@ -12,18 +12,12 @@ import { z } from "zod";
  * text prompt and returns a concise helpful answer.
  */
 export const slackCommunicatorAgent = createAgent<string>({
-  id: "slack-communicator",
-  displayName: "Slack Communicator",
+  id: "slack",
+  displayName: "Slack",
   version: "1.0.0",
-  description: "Minimal single-LLM responder optimized for Slack conversations.",
+  description: "Can read and write to Slack channels and DMs",
   expertise: {
-    domains: ["slack", "communication"],
-    capabilities: [
-      "Answer questions concisely",
-      "Get needed context from Slack when required",
-      "Create clear Slack-ready messages",
-      "Post to the provided channel or DM",
-    ],
+    domains: ["slack"],
     examples: [
       "Post update to #general: Shipping v1.2 today; changelog attached.",
       "Share learning to #learning: Great article on idempotent APIs; include key takeaways.",
