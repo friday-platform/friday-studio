@@ -6,10 +6,12 @@
  */
 
 import type { AtlasAgent } from "@atlas/agent-sdk";
+import { slackCommunicatorAgent } from "./slack-communicator.ts";
 import { type ResearchOutput, targetedResearchAgent } from "./targeted-research.ts";
 
 // Add more bundled agents here as they are created
-export const bundledAgents: AtlasAgent[] = [targetedResearchAgent];
+export const bundledAgents: AtlasAgent[] = [targetedResearchAgent, slackCommunicatorAgent];
 
 export { targetedResearchAgent };
+export { slackCommunicatorAgent };
 export type { ResearchOutput };
