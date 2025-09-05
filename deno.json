@@ -19,7 +19,7 @@
   "tasks": {
     "prepare": "deno run -A  npm:husky@^9",
     "lint-staged": "deno run -A npm:lint-staged@^16.1.2",
-    "atlas": "cd \"$INIT_CWD\" && OTEL_DENO=true OTEL_SERVICE_NAME=atlas OTEL_SERVICE_VERSION=1.0.0 OTEL_RESOURCE_ATTRIBUTES=service.name=atlas,service.version=1.0.0 deno run -q --allow-all --unstable-broadcast-channel --unstable-worker-options --unstable-otel --unstable-kv --unstable-raw-imports --env-file \"$(git rev-parse --show-toplevel)/src/cli.tsx\"",
+    "atlas": "cd \"$INIT_CWD\" && OTEL_DENO=true OTEL_SERVICE_NAME=atlas OTEL_SERVICE_VERSION=1.0.0 OTEL_RESOURCE_ATTRIBUTES=service.name=atlas,service.version=1.0.0 deno run -q --allow-all --unstable-broadcast-channel --unstable-worker-options --unstable-kv --unstable-raw-imports --env-file \"$(git rev-parse --show-toplevel)/src/cli.tsx\"",
     "atlas-no-otel": "cd \"$INIT_CWD\" && deno run --allow-all --unstable-broadcast-channel --unstable-worker-options --unstable-kv --unstable-raw-imports --env-file \"$(git rev-parse --show-toplevel)/src/cli.tsx\"",
     "start": "OTEL_DENO=true deno run --allow-all --unstable-raw-imports src/cli.tsx",
     "test": "OTEL_DENO=true deno test --allow-all --unstable-raw-imports --no-check --env-file",

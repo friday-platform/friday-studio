@@ -31,7 +31,6 @@ RUN deno compile \
     --config=deno.json \
     --unstable-broadcast-channel \
     --unstable-worker-options \
-    --unstable-otel \
     --unstable-kv \
     --unstable-raw-imports \
     src/cli.tsx

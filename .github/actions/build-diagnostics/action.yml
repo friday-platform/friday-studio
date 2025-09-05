@@ -77,7 +77,6 @@ runs:
             --allow-ffi \
             --unstable-broadcast-channel \
             --unstable-worker-options \
-            --unstable-otel \
             --include=src \
             --include=examples \
             --output "./dist/${binary_name}" \
@@ -95,7 +94,6 @@ runs:
             --allow-ffi \
             --unstable-broadcast-channel \
             --unstable-worker-options \
-            --unstable-otel \
             --include=src \
             --include=examples \
             --target ${{ inputs.target }} \

@@ -51,7 +51,6 @@ deno compile \
   --allow-ffi \
   --unstable-broadcast-channel \
   --unstable-worker-options \
-  --unstable-otel \
   --include=src \
   --include=examples \
   --include=packages \

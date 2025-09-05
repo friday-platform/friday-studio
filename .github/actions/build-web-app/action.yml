@@ -31,6 +31,13 @@ runs:
       with:
         targets: ${{ inputs.target }}
 
+    - name: Setup Rust cache
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: "./apps/web-client/src-tauri -> target"
+        key: ${{ inputs.target }}
+        cache-on-failure: true
+        cache-all-crates: true
 
     - name: Install Linux system dependencies
       if: inputs.platform == 'linux'
@@ -107,14 +114,6 @@ runs:
           bundle_name="atlas-web-app"
         fi
         echo "bundle-name=$bundle_name" >> $GITHUB_OUTPUT
-
-    - name: Clear Tauri cache to ensure version changes are respected
-      shell: bash
-      working-directory: ./apps/web-client
-      run: |
-        # Clear target directory to prevent build caching issues with version changes
-        rm -rf src-tauri/target
-        echo "Cleared Tauri target directory to ensure fresh build with new version"
 
     - name: Build Tauri app
       id: tauri-build
