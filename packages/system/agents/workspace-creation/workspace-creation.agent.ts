@@ -1,4 +1,3 @@
-
 import { anthropic } from "@ai-sdk/anthropic";
 import { createAgent } from "@atlas/agent-sdk";
 import type { WorkspaceConfig } from "@atlas/config";

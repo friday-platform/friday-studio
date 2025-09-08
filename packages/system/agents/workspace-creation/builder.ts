@@ -1,4 +1,3 @@
-
 import { AtlasAgentConfigSchema } from "@atlas/agent-sdk";
 import {
   type JobSpecification,

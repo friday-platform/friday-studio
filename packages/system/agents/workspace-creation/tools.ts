@@ -1,4 +1,3 @@
-
 import type { AtlasTools } from "@atlas/agent-sdk";
 import type { Logger } from "@atlas/logger";
 import type { WorkspaceBuilder } from "./builder.ts";

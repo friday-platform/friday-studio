@@ -38,7 +38,7 @@ jobs:
     strategy:
       matrix:
         include:
-          - runner: ubuntu-latest
+          - runner: ubuntu-latest-8-cores
             os: linux
             arch: amd64
             target: x86_64-unknown-linux-gnu
@@ -50,7 +50,7 @@ jobs:
             os: darwin
             arch: arm64
             target: aarch64-apple-darwin
-          - runner: windows-latest
+          - runner: windows-latest-8-cores
             os: windows
             arch: amd64
             target: x86_64-pc-windows-msvc
@@ -84,7 +84,6 @@ jobs:
           arch: ${{ matrix.arch }}
           target: ${{ matrix.target }}
 
-      # NEW: Build diagnostics binary (runs sequentially after main binary)
       - name: Build diagnostics binary
         id: build-diagnostics
         uses: ./.github/actions/build-diagnostics
@@ -283,11 +282,10 @@ jobs:
             if [ "$cli_found" = false ]; then
               echo "Missing Atlas CLI installer (.deb or .rpm)"; exit 1
             fi
-            # Copy Tauri installers (AppImage only on Linux)
-            cp dist/*.AppImage "$bundle_name/" 2>/dev/null || true
+            # Copy Tauri installers (.deb only on Linux)
             # Check for Tauri installers using proper glob handling
             tauri_found=false
-            for file in "$bundle_name"/*.AppImage; do
+            for file in "$bundle_name"/*.deb; do
               if [ -f "$file" ]; then
                 tauri_found=true
                 break
@@ -296,7 +294,7 @@ jobs:
             if [ "$tauri_found" = false ]; then
               echo "Missing Tauri installer"; exit 1
             fi
-            echo -e "Atlas Bundle - Linux\\n\\nInstallation Steps:\\n1. Install Atlas CLI:\\n   - Debian/Ubuntu: sudo dpkg -i atlas_*.deb\\n   - RHEL/Fedora: sudo rpm -i atlas-*.rpm\\n2. Run Atlas GUI: chmod +x ./*.AppImage && ./*.AppImage" > "$bundle_name/README.txt"
+            echo -e "Atlas Bundle - Linux\\n\\nInstallation Steps:\\n1. Install Atlas CLI:\\n   - Debian/Ubuntu: sudo dpkg -i atlas_*.deb\\n   - RHEL/Fedora: sudo rpm -i atlas-*.rpm\\n2. Install Atlas GUI: sudo dpkg -i Atlas*.deb" > "$bundle_name/README.txt"
           fi
 
           # Create archive
@@ -332,8 +330,8 @@ jobs:
             tar --format=pax -czf "./dist/${archive_name}" -C ./dist "${binary_name}" "${diagnostics_name}" ./*.app ./*.dmg -C .. README.md 2>/dev/null || \
             tar --format=pax -czf "./dist/${archive_name}" -C ./dist "${binary_name}" "${diagnostics_name}" -C .. README.md
           else
-            # Include CLI binaries, Tauri AppImage/.deb, and README
-            tar -czf "./dist/${archive_name}" -C ./dist "${binary_name}" "${diagnostics_name}" ./*.AppImage ./*.deb -C .. README.md 2>/dev/null || \
+            # Include CLI binaries, Tauri .deb, and README
+            tar -czf "./dist/${archive_name}" -C ./dist "${binary_name}" "${diagnostics_name}" ./*.deb -C .. README.md 2>/dev/null || \
             tar -czf "./dist/${archive_name}" -C ./dist "${binary_name}" "${diagnostics_name}" -C .. README.md
           fi
 
@@ -344,13 +342,6 @@ jobs:
             sha256sum "./dist/${archive_name}" > "./dist/${archive_name}.sha256"
           fi
         shell: bash
-
-
-      - name: Debug - List all files in dist before upload
-        shell: bash
-        run: |
-          echo "=== All files in dist/ before upload ==="
-          find dist/ -type f -name "*" | sort
 
       - name: Upload binary archives
         uses: actions/upload-artifact@v4
@@ -367,7 +358,6 @@ jobs:
             ./dist/atlas-diagnostics*        # NEW: Include diagnostics binaries
             ./dist/Atlas\ Web\ Client.app   # NEW: Include Tauri macOS app (specific)
             ./dist/Atlas_*.exe               # NEW: Include Tauri Windows installer
-            ./dist/*.AppImage                # NEW: Include Tauri Linux AppImage
             ./dist/*.dmg                     # NEW: Include ALL DMG files
             ./dist/Atlas*.msi                # NEW: Include Tauri Windows msi
           retention-days: 1
@@ -482,10 +472,9 @@ jobs:
                 fi
 
               elif [[ "$platform" == "linux" ]]; then
-                # Linux: Include packages and AppImage
+                # Linux: Include packages
                 installer_deb=$(find ./dist -name "atlas_*_${arch}.deb" | head -1)
                 installer_rpm=$(find ./dist -name "atlas-*_${arch}.rpm" | head -1)
-                appimage=$(find ./dist -name "*.AppImage" | head -1)
 
                 if [ -n "$installer_deb" ] && [ -n "$appimage" ]; then
                   mkdir -p "$bundle_dir"
@@ -501,11 +490,11 @@ jobs:
           1. Install CLI package:
              - Ubuntu/Debian: sudo dpkg -i atlas_*.deb
              - RHEL/CentOS: sudo rpm -i atlas-*.rpm
-          2. Run AppImage: chmod +x *.AppImage && ./Atlas*.AppImage
+          2. Install GUI: sudo dpkg -i Atlas*.deb
 
           After installation:
           - Use 'atlas' command in terminal for CLI
-          - Run AppImage for GUI
+          - Install .deb for GUI
           - Both connect to the same daemon
           EOF
 

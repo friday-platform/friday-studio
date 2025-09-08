@@ -67,27 +67,24 @@ jobs:
     strategy:
       matrix:
         include:
-          - os: ubuntu-latest
+          - runner: ubuntu-latest-8-cores
+            os: linux
+            arch: amd64
             target: x86_64-unknown-linux-gnu
-            platform: linux
+          - runner: macos-latest
+            os: darwin
             arch: amd64
-          - os: ubuntu-latest
-            target: aarch64-unknown-linux-gnu
-            platform: linux
-            arch: arm64
-          - os: macos-latest
             target: x86_64-apple-darwin
-            platform: darwin
-            arch: amd64
-          - os: macos-15-xlarge
-            target: aarch64-apple-darwin
-            platform: darwin
+          - runner: macos-15-xlarge
+            os: darwin
             arch: arm64
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
-            platform: windows
+            target: aarch64-apple-darwin
+          - runner: windows-latest-8-cores
+            os: windows
             arch: amd64
-    runs-on: ${{ matrix.os }}
+            target: x86_64-pc-windows-msvc
+
+    runs-on: ${{ matrix.runner }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -101,7 +98,7 @@ jobs:
         run: deno install
 
       - name: Setup cross-compilation for ARM64 (Linux only)
-        if: matrix.platform == 'linux' && matrix.arch == 'arm64'
+        if: matrix.os == 'linux' && matrix.arch == 'arm64'
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu
@@ -112,7 +109,16 @@ jobs:
         uses: ./.github/actions/build-binary
         with:
           version: ${{ needs.check-changes.outputs.version }}
-          platform: ${{ matrix.platform }}
+          platform: ${{ matrix.os }}
+          arch: ${{ matrix.arch }}
+          target: ${{ matrix.target }}
+
+      - name: Build diagnostics binary
+        id: build-diagnostics
+        uses: ./.github/actions/build-diagnostics
+        with:
+          version: ${{ needs.check-changes.outputs.version }}
+          platform: ${{ matrix.os }}
           arch: ${{ matrix.arch }}
           target: ${{ matrix.target }}
 
@@ -122,12 +128,12 @@ jobs:
         uses: ./.github/actions/build-web-app
         with:
           version: ${{ needs.check-changes.outputs.version }}
-          platform: ${{ matrix.platform }}
+          platform: ${{ matrix.os }}
           arch: ${{ matrix.arch }}
           target: ${{ matrix.target }}
 
       - name: Sign macOS binary
-        if: matrix.platform == 'darwin'
+        if: matrix.os == 'darwin'
         uses: ./.github/actions/macos-sign
         with:
           binary-path: ${{ steps.build.outputs.binary-path }}
@@ -138,17 +144,88 @@ jobs:
           macos-notary-key-id: ${{ secrets.MACOS_NOTARY_KEY_ID }}
           macos-notary-key: ${{ secrets.MACOS_NOTARY_KEY }}
 
+      # NEW: Sign diagnostics binary on macOS
+      - name: Sign macOS diagnostics binary
+        if: matrix.os == 'darwin'
+        uses: ./.github/actions/macos-sign
+        with:
+          binary-path: ${{ steps.build-diagnostics.outputs.binary-path }}
+          macos-sign-p12: ${{ secrets.MACOS_SIGN_P12 }}
+          macos-sign-password: ${{ secrets.MACOS_SIGN_PASSWORD }}
+          macos-sign-identity: ${{ secrets.MACOS_SIGN_IDENTITY }}
+          macos-notary-issuer-id: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+          macos-notary-key-id: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          macos-notary-key: ${{ secrets.MACOS_NOTARY_KEY }}
+
+      # NEW: Sign the .app bundle using existing macos-sign action
+      - name: Sign macOS app bundle
+        if: matrix.os == 'darwin'
+        uses: ./.github/actions/macos-sign
+        with:
+          binary-path: "./dist/Atlas Web Client.app"
+          macos-sign-p12: ${{ secrets.MACOS_SIGN_P12 }}
+          macos-sign-password: ${{ secrets.MACOS_SIGN_PASSWORD }}
+          macos-sign-identity: ${{ secrets.MACOS_SIGN_IDENTITY }}
+          macos-notary-issuer-id: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+          macos-notary-key-id: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          macos-notary-key: ${{ secrets.MACOS_NOTARY_KEY }}
+
+      # NEW: Create DMG from signed .app bundle
+      - name: Create DMG from signed app
+        if: matrix.os == 'darwin'
+        id: create-dmg
+        shell: bash
+        run: |
+          app_path="./dist/Atlas Web Client.app"
+          dmg_name="Atlas_${{ needs.check-changes.outputs.version }}_${{ matrix.arch }}.dmg"
+          dmg_root="./dist/dmg-root"
+
+          if [ ! -d "$app_path" ]; then
+            echo "ERROR: Atlas Web Client.app not found at $app_path"
+            exit 1
+          fi
+
+          echo "Preparing staging folder for DMG contents..."
+          rm -rf "$dmg_root"
+          mkdir -p "$dmg_root"
+          cp -R "$app_path" "$dmg_root/"
+          ln -sf /Applications "$dmg_root/Applications"
+
+          echo "Creating DMG from staged contents (only Atlas Web Client.app + Applications alias)..."
+          hdiutil create -volname "Atlas" -srcfolder "$dmg_root" -ov -format UDZO "./dist/$dmg_name"
+          echo "Created DMG: $dmg_name"
+
+          # Set output for use in later steps
+          echo "dmg-path=./dist/$dmg_name" >> "$GITHUB_OUTPUT"
+          echo "dmg-name=$dmg_name" >> "$GITHUB_OUTPUT"
+
+          # Verify DMG was created
+          if [ -f "./dist/$dmg_name" ]; then
+            echo "DMG created successfully: ./dist/$dmg_name"
+            ls -la "./dist/$dmg_name"
+          else
+            echo "ERROR: Failed to create DMG"
+            exit 1
+          fi
+
+          # Cleanup staging folder
+          rm -rf "$dmg_root"
+
       - name: Create installers
-        if: matrix.platform != 'linux'
+        if: matrix.os != 'linux'
         id: installers
         uses: ./.github/actions/create-installers
         with:
           version: ${{ needs.check-changes.outputs.version }}
-          platform: ${{ matrix.platform }}
+          platform: ${{ matrix.os }}
           arch: ${{ matrix.arch }}
           channel: nightly
           binary-path: ${{ steps.build.outputs.binary-path }}
           binary-name: ${{ steps.build.outputs.binary-name }}
+          diagnostics-binary-path: ${{ steps.build-diagnostics.outputs.binary-path }}
+          diagnostics-binary-name: ${{ steps.build-diagnostics.outputs.binary-name }}
+          web-app-binary-path: ${{ matrix.os == 'darwin' && steps.create-dmg.outputs.dmg-path || steps.build-web-app.outputs.bundle-path }}
+          web-app-binary-name: ${{ steps.build-web-app.outputs.bundle-name }}
           macos-installer-p12: ${{ secrets.MACOS_INSTALLER_P12 }}
           macos-installer-password: ${{ secrets.MACOS_INSTALLER_PASSWORD }}
           macos-notary-issuer-id: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
@@ -156,16 +233,18 @@ jobs:
           macos-notary-key: ${{ secrets.MACOS_NOTARY_KEY }}
 
       - name: Build Linux packages
-        if: matrix.platform == 'linux'
+        if: matrix.os == 'linux'
         run: |
           # Install build dependencies
           sudo apt-get update
           sudo apt-get install -y rpm debhelper devscripts
 
-          # Create build directory and copy binary
+          # Create build directory and copy binaries
           mkdir -p build
           cp "${{ steps.build.outputs.binary-path }}" build/atlas
+          cp "${{ steps.build-diagnostics.outputs.binary-path }}" build/atlas-diagnostics
           chmod +x build/atlas
+          chmod +x build/atlas-diagnostics
 
           # Build DEB package
           ARCH="${{ matrix.arch }}" VERSION="${{ needs.check-changes.outputs.version }}" ./scripts/build-deb.sh
@@ -174,26 +253,40 @@ jobs:
           ARCH="${{ matrix.arch }}" VERSION="${{ needs.check-changes.outputs.version }}" ./scripts/build-rpm.sh
         shell: bash
 
+      - name: Debug - List dist contents before bundling
+        shell: bash
+        run: |
+          echo "Contents of dist/ directory before platform bundle:"
+          find dist/ -type f || echo "dist/ directory not found"
+
       - name: Create platform bundle
         shell: bash
         run: |
           set -e  # Fail on any error
-          bundle_name="atlas-bundle-${{ needs.check-changes.outputs.version }}-${{ matrix.platform }}-${{ matrix.arch }}"
+          bundle_name="atlas-bundle-${{ needs.check-changes.outputs.version }}-${{ matrix.os }}-${{ matrix.arch }}"
           mkdir -p "$bundle_name"
-          
+
           # Copy installers with explicit error handling
-          if [ "${{ matrix.platform }}" == "darwin" ]; then
+          if [ "${{ matrix.os }}" == "darwin" ]; then
             cp dist/atlas_*.zip "$bundle_name/" || { echo "Missing Atlas CLI installer"; exit 1; }
-            cp -r dist/*.dmg "$bundle_name/" || { echo "Missing Tauri DMG"; exit 1; }
+            # Copy DMG files (must exist for macOS bundle)
+            dmg_count=$(find dist/ -name "*.dmg" 2>/dev/null | wc -l)
+            if [ "$dmg_count" -eq 0 ]; then
+              echo "ERROR: No DMG files found in dist/"
+              echo "Contents of dist/:"
+              find dist/ -type f
+              exit 1
+            fi
+            cp dist/*.dmg "$bundle_name/"
             echo -e "Atlas Bundle - macOS\\n\\nInstallation Steps:\\n1. Unzip and run Atlas CLI installer\\n2. Mount DMG and drag Atlas Web Client.app to Applications" > "$bundle_name/README.txt"
-          elif [ "${{ matrix.platform }}" == "windows" ]; then  
+          elif [ "${{ matrix.os }}" == "windows" ]; then
             cp dist/atlas_*.exe "$bundle_name/" || { echo "Missing Atlas CLI installer"; exit 1; }
             # Copy both .exe and .msi from Tauri
-            cp dist/Atlas_*.exe "$bundle_name/" 2>/dev/null || true
+            cp dist/"Atlas Web Client"*.exe "$bundle_name/" 2>/dev/null || true
             cp dist/*.msi "$bundle_name/" 2>/dev/null || true
             # Check for Tauri installers using proper glob handling
             tauri_found=false
-            for file in "$bundle_name"/Atlas_*.exe "$bundle_name"/*.msi; do
+            for file in "$bundle_name"/"Atlas Web Client"*.exe "$bundle_name"/*.msi; do
               if [ -f "$file" ]; then
                 tauri_found=true
                 break
@@ -204,13 +297,24 @@ jobs:
             fi
             echo -e "Atlas Bundle - Windows\\n\\nInstallation Steps:\\n1. Run Atlas CLI installer (.exe)\\n2. Run Atlas GUI installer (.exe or .msi)" > "$bundle_name/README.txt"
           else
-            cp dist/atlas_*.tar.gz "$bundle_name/" || { echo "Missing Atlas CLI installer"; exit 1; }
-            # Linux: multiple possible formats
-            cp dist/*.deb "$bundle_name/" 2>/dev/null || true
-            cp dist/*.AppImage "$bundle_name/" 2>/dev/null || true
+            # Linux: Copy the .deb and .rpm packages as CLI installers
+            cp dist/atlas_*.deb "$bundle_name/" 2>/dev/null || true
+            cp dist/atlas-*.rpm "$bundle_name/" 2>/dev/null || true
+            # Check that at least one CLI installer exists
+            cli_found=false
+            for file in "$bundle_name"/atlas_*.deb "$bundle_name"/atlas-*.rpm; do
+              if [ -f "$file" ]; then
+                cli_found=true
+                break
+              fi
+            done
+            if [ "$cli_found" = false ]; then
+              echo "Missing Atlas CLI installer (.deb or .rpm)"; exit 1
+            fi
+            # Copy Tauri installers (.deb only on Linux)
             # Check for Tauri installers using proper glob handling
             tauri_found=false
-            for file in "$bundle_name"/*.deb "$bundle_name"/*.AppImage; do
+            for file in "$bundle_name"/*.deb; do
               if [ -f "$file" ]; then
                 tauri_found=true
                 break
@@ -219,66 +323,83 @@ jobs:
             if [ "$tauri_found" = false ]; then
               echo "Missing Tauri installer"; exit 1
             fi
-            echo -e "Atlas Bundle - Linux\\n\\nInstallation Steps:\\n1. Extract and run Atlas CLI installer\\n2. Install .deb package OR run AppImage" > "$bundle_name/README.txt"
+            echo -e "Atlas Bundle - Linux\\n\\nInstallation Steps:\\n1. Install Atlas CLI:\\n   - Debian/Ubuntu: sudo dpkg -i atlas_*.deb\\n   - RHEL/Fedora: sudo rpm -i atlas-*.rpm\\n2. Install Atlas GUI: sudo dpkg -i Atlas*.deb" > "$bundle_name/README.txt"
           fi
-          
+
           # Create archive
-          if [ "${{ matrix.platform }}" == "windows" ]; then
+          if [ "${{ matrix.os }}" == "windows" ]; then
             7z a "dist/${bundle_name}.zip" "$bundle_name"/*
           else
             tar -czf "dist/${bundle_name}.tar.gz" "$bundle_name"
           fi
-          
+
           echo "Bundle created successfully"
-          ls -la dist/${bundle_name}.*
+          find dist/ -type f -name "${bundle_name}.*"
 
       - name: Create archive
         run: |
           binary_name="${{ steps.build.outputs.binary-name }}"
-          if [ "${{ matrix.platform }}" == "windows" ]; then
+          diagnostics_name="${{ steps.build-diagnostics.outputs.binary-name }}"  # NEW
+          if [ "${{ matrix.os }}" == "windows" ]; then
             archive_ext=".zip"
           else
             archive_ext=".tar.gz"
           fi
 
-          archive_name="atlas_${{ needs.check-changes.outputs.version }}_${{ matrix.platform }}_${{ matrix.arch }}${archive_ext}"
+          archive_name="atlas_${{ needs.check-changes.outputs.version }}_${{ matrix.os }}_${{ matrix.arch }}${archive_ext}"
 
-          if [ "${{ matrix.platform }}" == "windows" ]; then
-            7z a "./dist/${archive_name}" "./dist/${binary_name}" README.md
-          elif [ "${{ matrix.platform }}" == "darwin" ]; then
+          if [ "${{ matrix.os }}" == "windows" ]; then
+            # Include CLI binaries, Tauri .exe/.msi, and README
+            7z a "./dist/${archive_name}" "./dist/${binary_name}" "./dist/${diagnostics_name}" "./dist"/*.exe "./dist"/*.msi README.md 2>/dev/null || true
+            # Fallback if no Tauri artifacts exist
+            7z a "./dist/${archive_name}" "./dist/${binary_name}" "./dist/${diagnostics_name}" README.md
+          elif [ "${{ matrix.os }}" == "darwin" ]; then
             # Use pax format to preserve extended attributes (including code signatures)
-            tar --format=pax -czf "./dist/${archive_name}" -C ./dist "${binary_name}" -C .. README.md
+            # Include CLI binaries, Tauri .app/.dmg, and README
+            tar --format=pax -czf "./dist/${archive_name}" -C ./dist "${binary_name}" "${diagnostics_name}" ./*.app ./*.dmg -C .. README.md 2>/dev/null || \
+            tar --format=pax -czf "./dist/${archive_name}" -C ./dist "${binary_name}" "${diagnostics_name}" -C .. README.md
           else
-            tar -czf "./dist/${archive_name}" -C ./dist "${binary_name}" -C .. README.md
+            # Include CLI binaries, Tauri .deb, and README
+            tar -czf "./dist/${archive_name}" -C ./dist "${binary_name}" "${diagnostics_name}" ./*.deb -C .. README.md 2>/dev/null || \
+            tar -czf "./dist/${archive_name}" -C ./dist "${binary_name}" "${diagnostics_name}" -C .. README.md
           fi
 
           # Generate checksum
-          if [ "${{ matrix.platform }}" == "darwin" ]; then
+          if [ "${{ matrix.os }}" == "darwin" ]; then
             shasum -a 256 "./dist/${archive_name}" > "./dist/${archive_name}.sha256"
           else
             sha256sum "./dist/${archive_name}" > "./dist/${archive_name}.sha256"
           fi
         shell: bash
 
-      - name: Upload artifacts
+      - name: Upload binary archives
         uses: actions/upload-artifact@v4
         with:
-          name: atlas-${{ matrix.platform }}-${{ matrix.arch }}
+          name: atlas-${{ matrix.os }}-${{ matrix.arch }}
           path: |
             ./dist/atlas-bundle-*.tar.gz     # NEW: Include platform bundles
             ./dist/atlas-bundle-*.zip        # NEW: Include platform bundles
             ./dist/atlas_*.tar.gz
             ./dist/atlas_*.zip
-            ./dist/Atlas*.dmg                # NEW: Include Tauri macOS dmg
-            ./dist/Atlas_*.exe               # NEW: Include Tauri Windows installer
-            ./dist/*.AppImage                # NEW: Include Tauri Linux AppImage
-            ./dist/*.app                     # NEW: Include Tauri macOS app
-            ./dist/Atlas\ Web\ Client.app   # NEW: Include Tauri macOS app (specific)
-            ./dist/Atlas*.msi                # NEW: Include Tauri Windows msi
             ./dist/atlas_*.deb
             ./dist/atlas-*.rpm
             ./dist/atlas_*.sha256
-            ./dist/Atlas*.sha256
+            ./dist/atlas-diagnostics*        # NEW: Include diagnostics binaries
+            ./dist/Atlas\ Web\ Client.app   # NEW: Include Tauri macOS app (specific)
+            ./dist/Atlas_*.exe               # NEW: Include Tauri Windows installer
+            ./dist/*.dmg                     # NEW: Include ALL DMG files
+            ./dist/Atlas*.msi                # NEW: Include Tauri Windows msi
+          retention-days: 1
+
+      - name: Upload installers
+        if: matrix.os != 'linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: atlas-installer-${{ needs.check-changes.outputs.version }}-${{ matrix.os }}-${{ matrix.arch }}
+          path: |
+            ./dist/atlas_*.zip
+            ./dist/atlas_*.exe
+            ./dist/atlas_*.sha256
           retention-days: 1
 
   release:
@@ -291,11 +412,156 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Download all artifacts
+      - name: Download binary artifacts
         uses: actions/download-artifact@v5
         with:
           path: ./dist/
+          pattern: atlas-*
           merge-multiple: true
+
+      - name: Download installer artifacts
+        uses: actions/download-artifact@v5
+        with:
+          path: ./dist/
+          pattern: atlas-installer-*
+          merge-multiple: true
+
+      - name: Create combined distribution bundles
+        run: |
+          echo "Creating combined bundles with CLI installer + Web app..."
+
+          # Create bundle directories for each platform/arch combination
+          for platform in darwin windows linux; do
+            for arch in amd64 arm64; do
+              bundle_dir="atlas-complete-bundle-${platform}-${arch}"
+
+              if [[ "$platform" == "darwin" ]]; then
+                # macOS: Include .app and installer zip
+                installer_zip=$(find ./dist -name "atlas_*_darwin_${arch}.zip" | head -1)
+                app_bundle=$(find ./dist -name "Atlas Web Client.app" -o -name "*.app" | head -1)
+                dmg_file=$(find ./dist -name "Atlas*.dmg" | head -1)
+
+                if [ -n "$installer_zip" ] && [ -n "$app_bundle" ]; then
+                  mkdir -p "$bundle_dir"
+                  cp "$installer_zip" "$bundle_dir/"
+                  cp -r "$app_bundle" "$bundle_dir/" 2>/dev/null || true
+                  if [ -n "$dmg_file" ]; then
+                    cp "$dmg_file" "$bundle_dir/" 2>/dev/null || true
+                  fi
+
+                  # Create instructions
+                  cat > "$bundle_dir/INSTALL.txt" << 'EOF'
+          Atlas Complete Bundle - macOS
+
+          Installation Steps:
+          1. Unzip and run the Atlas installer (atlas_*_darwin_*.zip) - This installs the CLI
+          2. Drag Atlas Web Client.app to your Applications folder - This installs the GUI
+
+          After installation:
+          - Use 'atlas' command in terminal for CLI
+          - Launch Atlas app from Applications for GUI
+          - Both connect to the same daemon
+          EOF
+
+                  # Create combined archive
+                  tar -czf "./dist/atlas-complete-${{ needs.check-changes.outputs.version }}-${platform}-${arch}.tar.gz" -C . "$bundle_dir"
+                  echo "Created macOS bundle: atlas-complete-${{ needs.check-changes.outputs.version }}-${platform}-${arch}.tar.gz"
+                fi
+
+              elif [[ "$platform" == "windows" ]]; then
+                # Windows: Include installer exe and Tauri installer
+                installer_exe=$(find ./dist -name "atlas_*_windows_${arch}.exe" | head -1)
+                tauri_exe=$(find ./dist -name "Atlas_*.exe" | head -1)
+                tauri_msi=$(find ./dist -name "Atlas*.msi" | head -1)
+
+                if [ -n "$installer_exe" ] && [ -n "$tauri_exe" ]; then
+                  mkdir -p "$bundle_dir"
+                  cp "$installer_exe" "$bundle_dir/"
+                  cp "$tauri_exe" "$bundle_dir/" 2>/dev/null || true
+                  if [ -n "$tauri_msi" ]; then
+                    cp "$tauri_msi" "$bundle_dir/" 2>/dev/null || true
+                  fi
+
+                  # Create instructions
+                  cat > "$bundle_dir/INSTALL.txt" << 'EOF'
+          Atlas Complete Bundle - Windows
+
+          Installation Steps:
+          1. Run the Atlas CLI installer (atlas_*_windows_*.exe) - This installs the CLI
+          2. Run the Atlas GUI installer (Atlas_*.exe) - This installs the GUI
+
+          After installation:
+          - Use 'atlas' command in Command Prompt/PowerShell for CLI
+          - Launch Atlas from Start Menu for GUI
+          - Both connect to the same daemon
+          EOF
+
+                  # Create combined archive
+                  zip -r "./dist/atlas-complete-${{ needs.check-changes.outputs.version }}-${platform}-${arch}.zip" "$bundle_dir"
+                  echo "Created Windows bundle: atlas-complete-${{ needs.check-changes.outputs.version }}-${platform}-${arch}.zip"
+                fi
+
+              elif [[ "$platform" == "linux" ]]; then
+                # Linux: Include packages
+                installer_deb=$(find ./dist -name "atlas_*_${arch}.deb" | head -1)
+                installer_rpm=$(find ./dist -name "atlas-*_${arch}.rpm" | head -1)
+
+                if [ -n "$installer_deb" ] && [ -n "$appimage" ]; then
+                  mkdir -p "$bundle_dir"
+                  cp "$installer_deb" "$bundle_dir/" 2>/dev/null || true
+                  cp "$installer_rpm" "$bundle_dir/" 2>/dev/null || true
+                  cp "$appimage" "$bundle_dir/" 2>/dev/null || true
+
+                  # Create instructions
+                  cat > "$bundle_dir/INSTALL.txt" << 'EOF'
+          Atlas Complete Bundle - Linux
+
+          Installation Steps:
+          1. Install CLI package:
+             - Ubuntu/Debian: sudo dpkg -i atlas_*.deb
+             - RHEL/CentOS: sudo rpm -i atlas-*.rpm
+          2. Install GUI: sudo dpkg -i Atlas*.deb
+
+          After installation:
+          - Use 'atlas' command in terminal for CLI
+          - Install .deb for GUI
+          - Both connect to the same daemon
+          EOF
+
+                  # Create combined archive
+                  tar -czf "./dist/atlas-complete-${{ needs.check-changes.outputs.version }}-${platform}-${arch}.tar.gz" -C . "$bundle_dir"
+                  echo "Created Linux bundle: atlas-complete-${{ needs.check-changes.outputs.version }}-${platform}-${arch}.tar.gz"
+                fi
+              fi
+
+              # Clean up temp directory
+              rm -rf "$bundle_dir"
+            done
+          done
+
+          # List created bundles
+          echo "Created combined bundles:"
+          find ./dist/ -type f -name "atlas-complete-*"
+        shell: bash
+
+      - name: Create ZIP files for release distribution
+        run: |
+          cd ./dist
+          # Create ZIP files for macOS .app bundles for release
+          for app in *.app; do
+            if [ -d "$app" ]; then
+              zip_name="${app%.app}.zip"
+              echo "Creating release ZIP: $zip_name"
+              zip -r "$zip_name" "$app"
+
+              # Generate checksum for the ZIP
+              if command -v shasum >/dev/null 2>&1; then
+                shasum -a 256 "$zip_name" > "$zip_name.sha256"
+              else
+                sha256sum "$zip_name" > "$zip_name.sha256"
+              fi
+            fi
+          done
 
       - name: Generate changelog
         run: |
@@ -321,10 +587,18 @@ jobs:
             echo "**Note:** Nightly builds are more stable than edge builds but may still contain experimental features."
           } >> changelog.md
 
-      - name: Create checksums file
+      - name: List downloaded files
         run: |
-          cd ./dist
-          cat ./*.sha256 > checksums.txt
+          echo "Binary files:"
+          find ./dist -type f -name "atlas_*" | grep -v "\.exe$\|\.zip$" || echo "No binary files found"
+          echo "Package files:"
+          find ./dist -type f -name "atlas*" | grep -E "\.(deb|rpm)$" || echo "No package files found"
+          echo "Installer files:"
+          find ./dist -type f -name "atlas_*" | grep -E "\.(exe|zip)$" || echo "No installer files found"
+          echo "Combined bundle files:"
+          find ./dist -type f -name "atlas-complete-*" | grep -E "\.(tar\.gz|zip)$" || echo "No combined bundles found"
+          echo "All files:"
+          find ./dist/ -type f
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
@@ -340,13 +614,11 @@ jobs:
             ./dist/atlas-bundle-*.zip         # NEW: Platform bundles from build jobs
             ./dist/atlas_*.tar.gz
             ./dist/atlas_*.zip
-            ./dist/Atlas*.dmg
-            ./dist/Atlas_*.exe
-            ./dist/*.AppImage                 # NEW: Include Tauri Linux AppImage
-            ./dist/Atlas*.msi                 # NEW: Include Tauri Windows msi
+            ./dist/atlas_*.exe
             ./dist/atlas_*.deb
             ./dist/atlas-*.rpm
-            ./dist/checksums.txt
+            ./dist/atlas-complete-*.tar.gz    # Legacy combined bundles from release job
+            ./dist/atlas-complete-*.zip       # Legacy combined bundles from release job
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

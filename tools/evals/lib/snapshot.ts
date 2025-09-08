@@ -15,7 +15,7 @@ export interface SnapshotOptions {
 
 /**
  * Save a snapshot of test output for later analysis.
- * 
+ *
  * Single-step tests: creates snapshots/testBaseName-timestamp-status.json
  * Multi-step tests: creates snapshots/testBaseName/testCase-timestamp-status.json
  */

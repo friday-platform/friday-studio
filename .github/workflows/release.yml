@@ -22,11 +22,11 @@ jobs:
     strategy:
       matrix:
         include:
-          - os: ubuntu-latest
+          - os: ubuntu-latest-8-cores
             target: x86_64-unknown-linux-gnu
             platform: linux
             arch: amd64
-          - os: ubuntu-latest
+          - os: ubuntu-latest-8-cores
             target: aarch64-unknown-linux-gnu
             platform: linux
             arch: arm64
@@ -38,7 +38,7 @@ jobs:
             target: aarch64-apple-darwin
             platform: darwin
             arch: arm64
-          - os: windows-latest
+          - os: windows-latest-8-cores
             target: x86_64-pc-windows-msvc
             platform: windows
             arch: amd64
@@ -77,6 +77,15 @@ jobs:
       - name: Build binary
         id: build
         uses: ./.github/actions/build-binary
+        with:
+          version: ${{ steps.version.outputs.version }}
+          platform: ${{ matrix.platform }}
+          arch: ${{ matrix.arch }}
+          target: ${{ matrix.target }}
+
+      - name: Build diagnostics binary
+        id: build-diagnostics
+        uses: ./.github/actions/build-diagnostics
         with:
           version: ${{ steps.version.outputs.version }}
           platform: ${{ matrix.platform }}
@@ -138,10 +147,9 @@ jobs:
             cp dist/atlas_*.tar.gz "$bundle_name/" || { echo "Missing Atlas CLI installer"; exit 1; }
             # Linux: multiple possible formats
             cp dist/*.deb "$bundle_name/" 2>/dev/null || true
-            cp dist/*.AppImage "$bundle_name/" 2>/dev/null || true
             # Check for Tauri installers using proper glob handling
             tauri_found=false
-            for file in "$bundle_name"/*.deb "$bundle_name"/*.AppImage; do
+            for file in "$bundle_name"/*.deb; do
               if [ -f "$file" ]; then
                 tauri_found=true
                 break
@@ -150,7 +158,7 @@ jobs:
             if [ "$tauri_found" = false ]; then
               echo "Missing Tauri installer"; exit 1
             fi
-            echo -e "Atlas Bundle - Linux\\n\\nInstallation Steps:\\n1. Extract and run Atlas CLI installer\\n2. Install .deb package OR run AppImage" > "$bundle_name/README.txt"
+            echo -e "Atlas Bundle - Linux\\n\\nInstallation Steps:\\n1. Extract and run Atlas CLI installer\\n2. Install .deb package" > "$bundle_name/README.txt"
           fi
           
           # Create archive
@@ -215,10 +223,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y rpm debhelper devscripts
 
-          # Create build directory and copy binary
+          # Create build directory and copy binaries
           mkdir -p build
           cp "${{ steps.build.outputs.binary-path }}" build/atlas
+          cp "${{ steps.build-diagnostics.outputs.binary-path }}" build/atlas-diagnostics
           chmod +x build/atlas
+          chmod +x build/atlas-diagnostics
 
           # Build DEB package
           ARCH="${{ matrix.arch }}" VERSION="${{ steps.version.outputs.version }}" ./scripts/build-deb.sh
@@ -239,7 +249,6 @@ jobs:
             ./dist/atlas_*.exe
             ./dist/Atlas*.dmg                # NEW: Include Tauri macOS dmg
             ./dist/Atlas_*.exe               # NEW: Include Tauri Windows installer
-            ./dist/*.AppImage                # NEW: Include Tauri Linux AppImage
             ./dist/*.app                     # NEW: Include Tauri macOS app
             ./dist/Atlas\ Web\ Client.app   # NEW: Include Tauri macOS app (specific)
             ./dist/Atlas*.msi                # NEW: Include Tauri Windows msi
@@ -395,7 +404,6 @@ jobs:
             ./dist/atlas_*.exe
             ./dist/Atlas*.dmg                 # NEW: Include Tauri macOS dmg
             ./dist/Atlas_*.exe                # NEW: Include Tauri Windows installer
-            ./dist/*.AppImage                 # NEW: Include Tauri Linux AppImage
             ./dist/Atlas*.msi                 # NEW: Include Tauri Windows msi
             ./dist/atlas_*.deb
             ./dist/atlas-*.rpm

@@ -12,7 +12,7 @@ Deno.test("Research Agent: Reddit domain filtering", async (t) => {
   const builder = new WorkspaceBuilder();
   builder.setIdentity("Test Workspace", "A testing workspace.");
   const tool = getPickAgentTool(builder, logger);
-  
+
   const res = await tool.execute?.(
     {
       requirements:
@@ -67,6 +67,6 @@ Deno.test("Research Agent: Reddit domain filtering", async (t) => {
       result: res,
       workspace: builder.exportConfig(),
       mcpDomainRequirements: builder.mcpDomainRequirements,
-    })
+    }),
   );
 });

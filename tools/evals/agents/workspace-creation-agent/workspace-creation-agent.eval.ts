@@ -26,13 +26,13 @@ Deno.test("Workspace Creation Agent", async (t) => {
     // Direct assertions on the output
     // Assert workspace was created successfully
     assert(result.success === true, "Workspace should be created successfully");
-    
+
     // Assert workspace has correct number of agents
     assert(result.summary.agentCount === 3, "Should have exactly 3 agents");
-    
+
     // Assert workspace has correct number of signals
     assert(result.summary.signalCount === 1, "Should have exactly 1 signal");
-    
+
     // Assert workspace has correct number of jobs
     assert(result.summary.jobCount === 1, "Should have exactly 1 job");
 
