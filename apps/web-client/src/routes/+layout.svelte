@@ -1,27 +1,27 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
-	import { setAppContext } from '$lib/app-context.svelte';
-	import favicon from '$lib/assets/favicon.svg';
-	import AppContainer from '$lib/components/app/container.svelte';
-	import AppSidebar from '$lib/components/app/sidebar.svelte';
-	import KeyboardListener from '$lib/components/keyboard-listener.svelte';
-	import { setClientContext } from '$lib/modules/client/context.svelte';
-	import '../app.css';
+import { onMount } from "svelte";
+import { setAppContext } from "$lib/app-context.svelte";
+import favicon from "$lib/assets/favicon.svg";
+import AppContainer from "$lib/components/app/container.svelte";
+import AppSidebar from "$lib/components/app/sidebar.svelte";
+import KeyboardListener from "$lib/components/keyboard-listener.svelte";
+import { setClientContext } from "$lib/modules/client/context.svelte";
+import "../app.css";
 
-	const { children } = $props();
+const { children } = $props();
 
-	const { daemonClient, keyboard } = setAppContext();
-	const ctx = setClientContext(daemonClient);
+const { daemonClient, keyboard } = setAppContext();
+const ctx = setClientContext(daemonClient);
 
-	$effect(() => {
-		if (keyboard.state?.key === 'escape' && ctx.atlasSessionId) {
-			ctx.conversationClient?.cancelSession(ctx.atlasSessionId);
-		}
-	});
+$effect(() => {
+  if (keyboard.state?.key === "escape" && ctx.atlasSessionId) {
+    ctx.conversationClient?.cancelSession(ctx.atlasSessionId);
+  }
+});
 
-	onMount(() => {
-		ctx.checkHealth();
-	});
+onMount(() => {
+  ctx.checkHealth();
+});
 </script>
 
 <svelte:head>

@@ -39,11 +39,11 @@ export const HALLUCINATION_PATTERNS = {
 /**
  * Helper functions for pattern detection
  */
-export class HallucinationPatternDetector {
+export const HallucinationPatternDetector = {
   /**
    * Check if issues contain severe hallucination patterns
    */
-  static containsSeverePatterns(issues: string[]): boolean {
+  containsSeverePatterns(issues: string[]): boolean {
     return issues.some(
       (issue) =>
         issue.includes(HALLUCINATION_PATTERNS.SEVERE.FABRICATED) ||
@@ -54,12 +54,12 @@ export class HallucinationPatternDetector {
         (issue.includes(HALLUCINATION_PATTERNS.SEVERE.CLAIMED_DATA_WITHOUT_TOOLS) &&
           issue.includes(HALLUCINATION_PATTERNS.SEVERE.WITHOUT_SEARCH_TOOLS)),
     );
-  }
+  },
 
   /**
    * Extract severe issues from a list of issues
    */
-  static getSevereIssues(issues: string[]): string[] {
+  getSevereIssues(issues: string[]): string[] {
     return issues.filter(
       (issue) =>
         issue.includes(HALLUCINATION_PATTERNS.SEVERE.FABRICATED) ||
@@ -70,8 +70,8 @@ export class HallucinationPatternDetector {
         (issue.includes(HALLUCINATION_PATTERNS.SEVERE.CLAIMED_DATA_WITHOUT_TOOLS) &&
           issue.includes(HALLUCINATION_PATTERNS.SEVERE.WITHOUT_SEARCH_TOOLS)),
     );
-  }
-}
+  },
+} as const;
 
 /**
  * Error classification for LLM validation failures
@@ -86,8 +86,8 @@ interface ErrorClassification {
 /**
  * Classifies errors to determine retry strategy
  */
-class LLMErrorClassifier {
-  static classify(error: unknown): ErrorClassification {
+const LLMErrorClassifier = {
+  classify(error: unknown): ErrorClassification {
     const errorMessage = error instanceof Error ? error.message : String(error);
     const errorString = errorMessage.toLowerCase();
 
@@ -131,14 +131,14 @@ class LLMErrorClassifier {
 
     // Default to retryable with conservative settings
     return { type: "unknown", isRetryable: true, baseDelayMs: 1000, maxRetries: 2 };
-  }
-}
+  },
+} as const;
 
 /**
  * Retry mechanism with exponential backoff
  */
-class RetryableOperation {
-  static async execute<T>(
+const RetryableOperation = {
+  async execute<T>(
     operation: () => Promise<T>,
     classification: ErrorClassification,
     logger?: Logger,
@@ -177,8 +177,8 @@ class RetryableOperation {
     }
 
     throw lastError;
-  }
-}
+  },
+} as const;
 
 export interface HallucinationAnalysis {
   averageConfidence: number;
@@ -412,25 +412,27 @@ The agent MUST attribute information using ONLY these tags:
 - [generated] — created content (templates/formatting/non-factual)
 - [undefined] — source cannot be determined
 
+Note: [input] and [inference:input] DO NOT require any tool evidence, even when referencing external data that is included in the job input.
+
 For strict JSON outputs, close the JSON and include a single trailing line starting with "Attribution:" that contains the required tags (e.g., Attribution: [input] or Attribution: [tool:targeted_research] (https://example.com)).
 
 ### IMMEDIATE FAIL CONDITIONS (Confidence 0.0-0.2)
 1. [tool:{name}] tag without matching tool call in this step
-2. External/web/API claims without executing a tool
+2. External/web/API claims that are not present in the job input and without executing a tool
 3. Any [inference:*] other than [inference:input] or [inference:tool:{name}] (the latter requires matching tool call)
 4. Fabricated or impossible claims
-5. Critical existence/identity claims without [tool:{name}] evidence and links/paths when applicable
+5. Critical existence/identity claims without [tool:{name}] evidence and links/paths when applicable, unless directly quoted from input and tagged [input]
 
 ### SPECIFIC VALIDATION CHECKS
 1. Every [tool:{name}] MUST match an actual tool call in this step
-2. No external data without [tool:{name}] attribution
+2. External data is allowed if it appears in the job input and is tagged [input]; otherwise, it requires [tool:{name}] attribution
 3. Claims derived from job input are tagged [input]; keep input URLs next to [input]
 4. [inference] is ONLY allowed as [inference:input] or [inference:tool:{name}] (tool form requires matching tool call)
 5. Include URL/file path inline next to the tag when available
 6. Negative existence/identity claims require [tool:{name}] evidence and links/paths
 
 ### PATTERN DETECTION
-- "According to" / "Based on research" without a [tool:{name}] tag
+- "According to" / "Based on research" without a [tool:{name}] or [input] tag
 - Specific numbers/dates/URLs without attribution
 - [tool:{name}] claims when no tool was called
 - Use of [inference] other than [inference:input] or [inference:tool:{name}]
@@ -541,17 +543,17 @@ ${detectedUrls.length > 0 ? detectedUrls.join("\n") : "none"}
 1. Output must use ONLY: [tool:{name}], [input], [inference:input], [generated], [undefined]. For strict JSON, add a trailing "Attribution:" line with tags.
 2. Every [tool:{name}] tag must match an actual tool call listed above.
 3. Input-derived facts must be tagged [input]; keep input URLs next to [input].
-4. No external/web/API claims without tool usage.
+4. External/web/API claims are allowed if they appear in the job input and are tagged [input]; otherwise they require tool usage and [tool:{name}] attribution.
 5. Include URL/file path inline next to the tag when available.
-6. Negative existence/identity claims require [tool:{name}] evidence (and links/paths when applicable).
+6. Negative existence/identity claims require [tool:{name}] evidence (and links/paths when applicable), unless directly quoted from input and tagged [input].
 
 **Common Attribution Violations:**
 1. **Untagged claims**: factual statements without source tags
 2. **False tool claims**: [tool:{name}] when that tool wasn't called
-3. **External data without tools**: prices, URLs, API data claimed without tool execution
+3. **External data without tools or input**: prices, URLs, API data claimed without tool execution and not present in input
 4. **Invalid inference**: any [inference:*] other than [inference:input]
 5. **Missing attribution signature**: strict JSON responses without a trailing "Attribution:" line
-6. **Existence/identity assertions without evidence**: e.g., "company does not exist" without [tool:{name}] and links/paths
+6. **Existence/identity assertions without evidence**: e.g., "company does not exist" without [tool:{name}] and links/paths, unless directly quoted from input and tagged [input]
 
 **Execution:** ${executionTime} | Agent: ${result.agentId} | Task duration: ${result.duration}ms`;
   }
