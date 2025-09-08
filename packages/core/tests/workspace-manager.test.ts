@@ -1,4 +1,3 @@
-import type { WorkspaceStatus } from "@atlas/workspace";
 import { WorkspaceManager, WorkspaceStatusEnum } from "@atlas/workspace";
 import { assertEquals, assertExists, assertRejects } from "@std/assert";
 import { join } from "@std/path";
@@ -75,7 +74,6 @@ Deno.test("WorkspaceManager - Register filesystem workspace", async () => {
     assertEquals(workspace.path, await Deno.realPath(testWorkspacePath));
     assertEquals(workspace.metadata?.description, "A test workspace for unit tests");
     assertEquals(workspace.metadata?.tags, ["test", "example"]);
-    assertExists(workspace.configHash);
 
     // Verify it appears in list
     const workspaces = await manager.list();
@@ -265,15 +263,16 @@ workspace:
       assertEquals(allWorkspaces.filter((w) => !w.metadata?.system).length, 2);
 
       // Update status and filter by it
+      if (!workspace1) throw new Error("workspace1 not found");
       await registry.updateWorkspaceStatus(workspace1.id, WorkspaceStatusEnum.RUNNING);
 
       const runningWorkspaces = await manager.list({ status: WorkspaceStatusEnum.RUNNING });
-      assertEquals(runningWorkspaces.length, 1);
-      assertEquals(runningWorkspaces[0].id, workspace1.id);
+      assertEquals(runningWorkspaces?.length ?? 0, 1);
+      assertEquals(runningWorkspaces?.[0]?.id, workspace1.id);
 
       const inactiveWorkspaces = await manager.list({ status: WorkspaceStatusEnum.INACTIVE });
-      assertEquals(inactiveWorkspaces.length, 1);
-      assertEquals(inactiveWorkspaces[0].id, workspace2.id);
+      assertEquals(inactiveWorkspaces?.length ?? 0, 1);
+      assertEquals(inactiveWorkspaces?.[0]?.id, workspace2.id);
     } finally {
       // Cleanup test workspace 2
       try {

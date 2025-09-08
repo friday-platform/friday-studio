@@ -9,7 +9,7 @@
  * - Provides clean separation between system and user workspaces
  */
 
-import { ConfigLoader, type MergedConfig, type WorkspaceConfig } from "@atlas/config";
+import { ConfigLoader, type MergedConfig } from "@atlas/config";
 import { logger } from "@atlas/logger";
 import { FilesystemConfigAdapter } from "@atlas/storage";
 import { SYSTEM_WORKSPACES } from "@atlas/system/workspaces";
@@ -43,6 +43,44 @@ export class WorkspaceManager {
 
   constructor(registry: RegistryStorageAdapter) {
     this.registry = registry;
+  }
+
+  /**
+   * Start watching all existing and newly registered workspaces using the provided watcher.
+   * Errors in the watcher are logged and do not stop processing.
+   */
+  public async watchWorkspaces(
+    watcher: { watchWorkspace(workspace: WorkspaceEntry): void | Promise<void> },
+    options?: { includeSystem?: boolean },
+  ): Promise<void> {
+    const includeSystem = options?.includeSystem === true;
+
+    // Invoke for existing workspaces first
+    const existing = await this.list({ includeSystem });
+    for (const workspace of existing) {
+      try {
+        await watcher.watchWorkspace(workspace);
+      } catch (error) {
+        logger.warn("watchWorkspaces failed for existing workspace", {
+          workspaceId: workspace.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    // Subscribe for future registrations
+    this.addRegistrationHook(async (entry) => {
+      // Filter system workspaces unless explicitly included
+      if (entry.metadata?.system && !includeSystem) return;
+      try {
+        await watcher.watchWorkspace(entry);
+      } catch (error) {
+        logger.warn("watchWorkspaces failed for newly registered workspace", {
+          workspaceId: entry.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    });
   }
 
   /**
@@ -125,11 +163,9 @@ export class WorkspaceManager {
     const configLoader = new ConfigLoader(adapter, absolutePath);
 
     let config: MergedConfig;
-    let configHash: string;
 
     try {
       config = await configLoader.load();
-      configHash = await this.hashConfig(config.workspace);
     } catch (error) {
       const errorDetails =
         error instanceof Error
@@ -146,7 +182,6 @@ export class WorkspaceManager {
       name: metadata?.name || config.workspace.workspace.name || basename(absolutePath),
       path: absolutePath,
       configPath: join(absolutePath, "workspace.yml"),
-      configHash,
       status: "inactive",
       createdAt: new Date().toISOString(),
       lastSeen: new Date().toISOString(),
@@ -173,14 +208,11 @@ export class WorkspaceManager {
     logger.info("Registering system workspaces...");
 
     for (const [id, config] of Object.entries(SYSTEM_WORKSPACES)) {
-      const configHash = await this.hashConfig(config);
-
       const entry: WorkspaceEntry = {
         id,
         name: config.workspace.name,
         path: `system://${id}`, // Clean system prefix
         configPath: `system://${id}/workspace.yml`,
-        configHash,
         status: "inactive",
         createdAt: new Date().toISOString(),
         lastSeen: new Date().toISOString(),
@@ -265,16 +297,6 @@ export class WorkspaceManager {
     includeSystem?: boolean;
   }): Promise<WorkspaceEntry[]> {
     let workspaces = await this.registry.listWorkspaces();
-
-    // Update workspace status based on active runtimes
-    workspaces = workspaces.map((workspace) => {
-      const runtime = this.runtimes.get(workspace.id);
-      if (runtime) {
-        // Runtime exists, workspace is running
-        return { ...workspace, status: "running" as WorkspaceStatus };
-      }
-      return workspace;
-    });
 
     if (options?.status) {
       workspaces = workspaces.filter((w) => w.status === options.status);
@@ -398,15 +420,6 @@ export class WorkspaceManager {
     const existingWorkspaces = await this.registry.listWorkspaces();
     const existingIds = new Set(existingWorkspaces.map((w) => w.id));
     return generateUniqueWorkspaceName(existingIds);
-  }
-
-  private async hashConfig(config: WorkspaceConfig): Promise<string> {
-    const configJson = JSON.stringify(config, Object.keys(config).sort());
-    const encoder = new TextEncoder();
-    const data = encoder.encode(configJson);
-    const hashBuffer = await crypto.subtle.digest("SHA-256", data);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
   }
 
   private isTestMode(): boolean {

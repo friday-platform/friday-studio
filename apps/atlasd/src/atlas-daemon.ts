@@ -1,21 +1,16 @@
 import { getAtlasDaemonUrl } from "@atlas/atlasd";
-import { ConfigLoader, type SupervisorDefaults, supervisorDefaultsWrapped } from "@atlas/config";
+import { type SupervisorDefaults, supervisorDefaultsWrapped } from "@atlas/config";
 import {
   AgentRegistry,
   AtlasAgentsMCPServer,
   GlobalMCPServerPool,
   WorkspaceSessionStatus,
 } from "@atlas/core";
-import {
-  CronManager,
-  type CronTimerConfig,
-  type CronTimerSignalData,
-  type WorkspaceWakeupCallback,
-} from "@atlas/cron";
+import { CronManager } from "@atlas/cron";
 import { logger } from "@atlas/logger";
 import { GlobalEmbeddingProvider } from "@atlas/memory";
 import { PlatformMCPServer } from "@atlas/mcp-server";
-import { FilesystemConfigAdapter, FilesystemWorkspaceCreationAdapter } from "@atlas/storage";
+import { FilesystemWorkspaceCreationAdapter } from "@atlas/storage";
 import { WorkspaceManager } from "@atlas/workspace";
 import { StreamableHTTPTransport } from "@hono/mcp";
 import { dirname, join } from "@std/path";
@@ -45,7 +40,11 @@ import { todoStorageRoutes } from "../routes/todo-storage/index.ts";
 import { userRoutes } from "../routes/user/index.ts";
 import { workspacesRoutes } from "../routes/workspaces/index.ts";
 import { type AppContext, createApp } from "./factory.ts";
-import { WorkspaceFileWatcher } from "./workspace-file-watcher.ts";
+import { watchers } from "@atlas/workspace";
+import type { WorkspaceSignalRegistrar } from "./signal-registrars/types.ts";
+import { FsWatchSignalRegistrar } from "./signal-registrars/fs-watch-registrar.ts";
+import { CronSignalRegistrar } from "./signal-registrars/cron-registrar.ts";
+import type { WorkspaceSignalTriggerCallback } from "@atlas/workspace/types";
 
 export interface AtlasDaemonOptions {
   port?: number;
@@ -113,7 +112,8 @@ export class AtlasDaemon implements AppContext {
   private readonly AGENT_SESSION_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
   // Store the actual port after server starts
   #port: number | undefined;
-  private fileWatcher: WorkspaceFileWatcher | null = null;
+  private fileWatcher: InstanceType<typeof watchers.WorkspaceConfigWatcher> | null = null;
+  private signalRegistrars: WorkspaceSignalRegistrar[] = [];
 
   constructor(options: AtlasDaemonOptions = {}) {
     this.options = {
@@ -160,15 +160,25 @@ export class AtlasDaemon implements AppContext {
     this.workspaceManager = new WorkspaceManager(registry);
     await this.workspaceManager.initialize();
 
-    // Register cron signal hook for automatic timer registration
+    // Register signal hooks for automatic registration
     this.workspaceManager.addRegistrationHook(async (entry) => {
-      // Skip system workspaces as they don't have cron signals
+      // Skip system workspaces
       if (!entry.metadata?.system) {
-        logger.debug("Executing cron registration hook for workspace", {
+        logger.debug("Executing signal registration hook for workspace", {
           workspaceId: entry.id,
           workspacePath: entry.path,
         });
-        await this.registerWorkspaceCronSignals(entry.id, entry.path);
+        for (const registrar of this.signalRegistrars) {
+          try {
+            await registrar.registerWorkspace(entry.id, entry.path);
+          } catch (error) {
+            logger.error("Signal registrar failed to register workspace", {
+              workspaceId: entry.id,
+              workspacePath: entry.path,
+              error,
+            });
+          }
+        }
       }
     });
 
@@ -179,7 +189,6 @@ export class AtlasDaemon implements AppContext {
     this.libraryStorage = await createLibraryStorage(StorageConfigs.defaultKV(), {
       // Use XDG-compliant default location, but allow environment override
       contentDir: Deno.env.get("ATLAS_LIBRARY_DIR"),
-      organizeByType: true,
       organizeByDate: true,
     });
 
@@ -187,6 +196,7 @@ export class AtlasDaemon implements AppContext {
     logger.info("Initializing daemon capabilities...");
     DaemonCapabilityRegistry.setDaemonInstance(this);
     DaemonCapabilityRegistry.initialize();
+
     // Initialize workspace creation adapter
     logger.info("Initializing workspace creation adapter...");
     this.workspaceCreationAdapter = new FilesystemWorkspaceCreationAdapter();
@@ -216,38 +226,32 @@ export class AtlasDaemon implements AppContext {
     await agentRegistry.initialize();
     logger.info("Agent registry initialized");
     this.agentRegistry = agentRegistry;
+
     // Initialize file watcher
     logger.info("Initializing file watcher...");
-    this.fileWatcher = new WorkspaceFileWatcher({
+    this.fileWatcher = new watchers.WorkspaceConfigWatcher({
       onConfigChange: this.handleWorkspaceConfigChange.bind(this),
       debounceMs: 1000, // Wait 1 second after last change
     });
 
-    // Initialize Platform MCP Server (moved to lazy initialization in getMCPServer)
+    await this.workspaceManager.watchWorkspaces(this.fileWatcher, { includeSystem: false });
 
     // Set up workspace wakeup callback
-    const wakeupCallback: WorkspaceWakeupCallback = async (
+    const wakeupCallback: WorkspaceSignalTriggerCallback = async (
       workspaceId: string,
       signalId: string,
-      signalData: CronTimerSignalData,
+      signalData,
     ) => {
-      logger.info("CronManager waking up workspace for timer signal", {
-        workspaceId,
-        signalId,
-        timestamp: signalData.timestamp,
-      });
-
       try {
         // Get or create workspace runtime (this will wake up the workspace)
         const runtime = await this.getOrCreateWorkspaceRuntime(workspaceId);
 
         // Process the timer signal using triggerSignal which handles signal creation
-        await runtime.triggerSignal(signalId, { ...signalData.data });
+        await runtime.triggerSignal(signalId, signalData);
 
-        logger.info("Timer signal processed", { workspaceId, signalId });
+        logger.info("Signal processed", { workspaceId, signalId });
       } catch (error) {
-        logger.error("Failed to process timer signal", { error, workspaceId, signalId });
-
+        logger.error("Failed to process signal", { error, workspaceId, signalId });
         // Store error details and clean up immediately
         try {
           const manager = this.getWorkspaceManager();
@@ -287,8 +291,22 @@ export class AtlasDaemon implements AppContext {
     // Start CronManager
     await this.cronManager.start();
 
-    // Register cron signals for all existing workspaces
-    await this.discoverAndRegisterExistingCronSignals();
+    // Initialize signal registrars and discover existing signals
+    try {
+      this.signalRegistrars = [];
+      const fsRegistrar = new FsWatchSignalRegistrar(wakeupCallback);
+      await fsRegistrar.initialize();
+      await fsRegistrar.discoverAndRegisterExisting(this.getWorkspaceManager());
+      this.signalRegistrars.push(fsRegistrar);
+
+      // Cron registrar: mirror fs-watch pattern using existing CronManager
+      const cronRegistrar = new CronSignalRegistrar(this.cronManager);
+      await cronRegistrar.initialize();
+      await cronRegistrar.discoverAndRegisterExisting(this.getWorkspaceManager());
+      this.signalRegistrars.push(cronRegistrar);
+    } catch (error) {
+      logger.error("Failed to initialize signal registrars", { error });
+    }
 
     // Start SSE health check interval
     this.startSSEHealthCheck();
@@ -311,6 +329,8 @@ export class AtlasDaemon implements AppContext {
     this.isInitialized = true;
     logger.info("Atlas daemon initialized");
   }
+
+  // fs-watch registration moved to signal registrars
 
   /**
    * Load supervisor defaults (compiled into the application)
@@ -363,8 +383,16 @@ export class AtlasDaemon implements AppContext {
     const server = AtlasAgentsMCPServer.create({
       daemonUrl: getAtlasDaemonUrl(),
       logger: logger,
-      agentRegistry: this.agentRegistry!,
-      mcpServerPool: this.mcpServerPool!,
+      agentRegistry: (() => {
+        const registry = this.agentRegistry;
+        if (!registry) throw new Error("Agent registry not initialized");
+        return registry;
+      })(),
+      mcpServerPool: (() => {
+        const pool = this.mcpServerPool;
+        if (!pool) throw new Error("MCP server pool not initialized");
+        return pool;
+      })(),
       sessionId: sessionId,
       hasActiveSSE: (sid?: string) => {
         const checkId = sid || sessionId;
@@ -516,8 +544,14 @@ export class AtlasDaemon implements AppContext {
       const force = c.req.query("force") === "true";
 
       try {
-        // Unregister cron signals before deleting workspace
-        await this.unregisterWorkspaceCronSignals(workspaceId);
+        // Unregister signal types for this workspace via registrars
+        for (const registrar of this.signalRegistrars) {
+          try {
+            await Promise.resolve(registrar.unregisterWorkspace(workspaceId));
+          } catch (error) {
+            logger.warn("Signal registrar failed to unregister workspace", { workspaceId, error });
+          }
+        }
 
         const manager = this.getWorkspaceManager();
         await manager.deleteWorkspace(workspaceId, { force });
@@ -1284,7 +1318,7 @@ export class AtlasDaemon implements AppContext {
       }
 
       // Check concurrent workspace limit
-      if (this.runtimes.size >= this.options.maxConcurrentWorkspaces!) {
+      if (this.runtimes.size >= (this.options.maxConcurrentWorkspaces ?? 10)) {
         logger.warn("Maximum concurrent workspaces reached, attempting eviction", {
           maxConcurrentWorkspaces: this.options.maxConcurrentWorkspaces,
         });
@@ -1379,8 +1413,8 @@ export class AtlasDaemon implements AppContext {
             const mgr = this.getWorkspaceManager();
             const ws = await mgr.find({ id: workspaceId });
 
-            // Always mark workspace as inactive when a session finishes
-            await mgr.updateWorkspaceStatus(workspaceId, "inactive", {
+            // Mark workspace as stopped when a session finishes normally
+            await mgr.updateWorkspaceStatus(workspaceId, "stopped", {
               metadata: {
                 ...ws?.metadata,
                 lastFinishedSession: { id: sessionId, status, finishedAt, summary },
@@ -1529,9 +1563,12 @@ export class AtlasDaemon implements AppContext {
     }
 
     // Set new timeout
-    const timeoutId = setTimeout(() => {
-      this.checkAndDestroyIdleWorkspace(workspaceId);
-    }, this.options.idleTimeoutMs!);
+    const timeoutId = setTimeout(
+      () => {
+        this.checkAndDestroyIdleWorkspace(workspaceId);
+      },
+      this.options.idleTimeoutMs ?? 5 * 60 * 1000,
+    );
 
     this.idleTimeouts.set(workspaceId, timeoutId);
   }
@@ -1566,11 +1603,6 @@ export class AtlasDaemon implements AppContext {
     const runtime = this.runtimes.get(workspaceId);
     if (!runtime) return;
 
-    // Stop watching workspace configuration file
-    if (this.fileWatcher) {
-      await this.fileWatcher.unwatchWorkspace(workspaceId);
-    }
-
     try {
       await runtime.shutdown();
     } catch (error) {
@@ -1583,11 +1615,11 @@ export class AtlasDaemon implements AppContext {
     const manager = this.getWorkspaceManager();
     await manager.unregisterRuntime(workspaceId);
 
-    // Ensure final status reflects inactivity after teardown
+    // Ensure final status reflects stopped after teardown
     try {
-      await manager.updateWorkspaceStatus(workspaceId, "inactive");
+      await manager.updateWorkspaceStatus(workspaceId, "stopped");
     } catch (error) {
-      logger.warn("Failed to set workspace inactive after destroy", { workspaceId, error });
+      logger.warn("Failed to set workspace stopped after destroy", { workspaceId, error });
     }
 
     // Clear idle timeout
@@ -1611,25 +1643,20 @@ export class AtlasDaemon implements AppContext {
     // Check if the workspace is in an inactive state
     const manager = this.getWorkspaceManager();
     const workspace = await manager.find({ id: workspaceId });
-    const wasInactive = workspace?.status === "inactive";
 
     // Destroy the existing runtime
     await this.destroyWorkspaceRuntime(workspaceId);
-
-    // If the workspace was inactive due to prior error, try to restart it
-    // This gives immediate feedback if the config fix worked
-    if (wasInactive) {
-      logger.info("Attempting to restart previously inactive workspace", { workspaceId });
-      try {
-        await this.getOrCreateWorkspaceRuntime(workspaceId);
-        logger.info("Successfully restarted workspace after config change", { workspaceId });
-      } catch (error) {
-        logger.error("Failed to restart workspace after config change", {
-          workspaceId,
-          error: error instanceof Error ? error.message : String(error),
-        });
-        // The workspace will remain stopped, which is fine
-        // The next timer trigger will try again
+    // Notify registrars about config change to re-register their signals
+    if (workspace) {
+      for (const registrar of this.signalRegistrars) {
+        try {
+          await registrar.onWorkspaceConfigChanged(workspaceId, workspace.path);
+        } catch (err) {
+          logger.warn("Signal registrar failed to handle config change", {
+            workspaceId,
+            error: err,
+          });
+        }
       }
     }
   }
@@ -1758,11 +1785,20 @@ export class AtlasDaemon implements AppContext {
     );
     await Promise.all(shutdownPromises);
 
-    // Unregister all cron signals
-    if (this.cronManager) {
-      const activeTimers = this.cronManager.listActiveTimers();
-      for (const timer of activeTimers) {
-        await this.unregisterWorkspaceCronSignals(timer.workspaceId);
+    // Unregister all signals via registrars
+    if (this.signalRegistrars.length > 0 && this.workspaceManager) {
+      const workspaces = await this.workspaceManager.list();
+      for (const ws of workspaces) {
+        for (const registrar of this.signalRegistrars) {
+          try {
+            await Promise.resolve(registrar.unregisterWorkspace(ws.id));
+          } catch (error) {
+            logger.debug("Error unregistering workspace signals during shutdown", {
+              error,
+              workspaceId: ws.id,
+            });
+          }
+        }
       }
     }
 
@@ -1776,6 +1812,18 @@ export class AtlasDaemon implements AppContext {
     if (this.fileWatcher) {
       await this.fileWatcher.stop();
       this.fileWatcher = null;
+    }
+
+    // Shutdown signal registrars
+    if (this.signalRegistrars.length > 0) {
+      for (const registrar of this.signalRegistrars) {
+        try {
+          await registrar.shutdown();
+        } catch (error) {
+          logger.debug("Error shutting down signal registrar", { error });
+        }
+      }
+      this.signalRegistrars = [];
     }
 
     // Stop SSE health check
@@ -1880,171 +1928,6 @@ export class AtlasDaemon implements AppContext {
     return this.cronManager;
   }
 
-  /**
-   * Extract and register cron signals from a workspace configuration
-   */
-  public async registerWorkspaceCronSignals(
-    workspaceId: string,
-    workspacePath: string,
-  ): Promise<void> {
-    if (!this.cronManager) {
-      logger.warn("CronManager not initialized, skipping cron signal registration", {
-        workspaceId,
-      });
-      return;
-    }
-
-    try {
-      // Check if workspace directory exists first
-      try {
-        await Deno.stat(workspacePath);
-      } catch {
-        logger.debug("Skipping cron signal registration for non-existent workspace", {
-          workspaceId,
-          workspacePath,
-        });
-        return;
-      }
-
-      // Load workspace configuration
-      const adapter = new FilesystemConfigAdapter(workspacePath);
-      const configLoader = new ConfigLoader(adapter, workspacePath);
-      const config = await configLoader.load();
-
-      // Extract timer signals from configuration
-      const signals = config.workspace?.signals || {};
-      const cronTimers: CronTimerConfig[] = [];
-
-      for (const [signalId, signalConfig] of Object.entries(signals)) {
-        // Check if this is a timer signal with cron schedule
-        // Schedule signals have provider="schedule" and config.schedule per the schema
-        if (
-          signalConfig &&
-          typeof signalConfig === "object" &&
-          "provider" in signalConfig &&
-          signalConfig.provider === "schedule" &&
-          "config" in signalConfig &&
-          signalConfig.config &&
-          typeof signalConfig.config === "object" &&
-          "schedule" in signalConfig.config &&
-          typeof signalConfig.config.schedule === "string"
-        ) {
-          const cronConfig: CronTimerConfig = {
-            workspaceId,
-            signalId,
-            schedule: signalConfig.config.schedule,
-            timezone: signalConfig.config.timezone || "UTC",
-            description: signalConfig.description,
-          };
-
-          cronTimers.push(cronConfig);
-        }
-      }
-
-      // Register all cron timers with CronManager sequentially to prevent conflicts
-      for (const cronConfig of cronTimers) {
-        try {
-          await this.cronManager.registerTimer(cronConfig);
-          logger.info("Registered cron timer", {
-            workspaceId,
-            signalId: cronConfig.signalId,
-            schedule: cronConfig.schedule,
-          });
-        } catch (error) {
-          logger.error("Failed to register cron timer", {
-            error,
-            workspaceId,
-            signalId: cronConfig.signalId,
-          });
-          // Continue with other timers even if one fails
-        }
-      }
-
-      if (cronTimers.length > 0) {
-        logger.info("Workspace cron signals registered", {
-          workspaceId,
-          timerCount: cronTimers.length,
-        });
-      }
-    } catch (error) {
-      logger.error("Failed to register workspace cron signals", {
-        error,
-        workspaceId,
-        workspacePath,
-      });
-    }
-  }
-
-  /**
-   * Unregister all cron signals for a workspace
-   */
-  private async unregisterWorkspaceCronSignals(workspaceId: string): Promise<void> {
-    if (!this.cronManager) {
-      return;
-    }
-
-    try {
-      await this.cronManager.unregisterWorkspaceTimers(workspaceId);
-      logger.info("Unregistered workspace cron signals", { workspaceId });
-    } catch (error) {
-      logger.error("Failed to unregister workspace cron signals", { error, workspaceId });
-    }
-  }
-
-  /**
-   * Discover and register cron signals for all existing workspaces
-   */
-  private async discoverAndRegisterExistingCronSignals(): Promise<void> {
-    if (!this.cronManager) {
-      logger.warn("CronManager not initialized, skipping existing workspace discovery");
-      return;
-    }
-
-    try {
-      const manager = this.getWorkspaceManager();
-      const workspaces = await manager.list();
-
-      logger.info("Discovering cron signals for existing workspaces", {
-        workspaceCount: workspaces.length,
-      });
-
-      let registeredTimers = 0;
-      let processedWorkspaces = 0;
-
-      // Process workspaces sequentially to prevent registration conflicts
-      for (const workspace of workspaces) {
-        try {
-          const timersBefore = this.cronManager.listActiveTimers().length;
-          await this.registerWorkspaceCronSignals(workspace.id, workspace.path);
-          const timersAfter = this.cronManager.listActiveTimers().length;
-          registeredTimers += timersAfter - timersBefore;
-          processedWorkspaces++;
-
-          logger.debug("Processed workspace cron signals", {
-            workspaceId: workspace.id,
-            timersAdded: timersAfter - timersBefore,
-            progress: `${processedWorkspaces}/${workspaces.length}`,
-          });
-        } catch (error) {
-          logger.warn("Failed to register cron signals for existing workspace", {
-            workspaceId: workspace.id,
-            workspacePath: workspace.path,
-            error,
-          });
-          processedWorkspaces++;
-        }
-      }
-
-      logger.info("Cron signal discovery complete", {
-        workspacesProcessed: processedWorkspaces,
-        totalWorkspaces: workspaces.length,
-        timersRegistered: registeredTimers,
-      });
-    } catch (error) {
-      logger.error("Failed to discover existing workspace cron signals", { error });
-    }
-  }
-
   getStatus() {
     const cronStats = this.cronManager?.getStats();
 
@@ -2112,9 +1995,12 @@ export class AtlasDaemon implements AppContext {
       clearInterval(this.sseHealthCheckInterval);
     }
 
-    this.sseHealthCheckInterval = setInterval(() => {
-      this.performSSEHealthCheck();
-    }, this.options.sseHeartbeatIntervalMs!);
+    this.sseHealthCheckInterval = setInterval(
+      () => {
+        this.performSSEHealthCheck();
+      },
+      this.options.sseHeartbeatIntervalMs ?? 30 * 1000,
+    );
 
     logger.info("SSE health check started", { intervalMs: this.options.sseHeartbeatIntervalMs });
   }
@@ -2190,7 +2076,7 @@ export class AtlasDaemon implements AppContext {
    */
   private performSSEHealthCheck(): void {
     const now = Date.now();
-    const clientTimeoutMs = this.options.sseConnectionTimeoutMs!;
+    const clientTimeoutMs = this.options.sseConnectionTimeoutMs ?? 5 * 60 * 1000;
     const streamInactivityMs = 5 * 60 * 1000; // 5 minutes for stream inactivity
     let totalClients = 0;
     let prunedClients = 0;

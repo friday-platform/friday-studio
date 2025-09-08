@@ -53,4 +53,27 @@ Deno.test("Workspace Creation Agent: generateSignals", async (t) => {
 
     return res;
   });
+
+  builder.reset();
+  builder.setIdentity("Test Workspace", "A testing workspace.");
+
+  await step(t, "Generating a file system watcher signal", async ({ snapshot }) => {
+    const toolResult = await tool.execute?.(
+      {
+        requirements:
+          "A signal that watches the directory /tmp/uploads and triggers when new files appear",
+      },
+      { messages: [], toolCallId: "" },
+    );
+    assert(toolResult, "Should have a result");
+    const res = await unwrapToolResult(toolResult);
+
+    snapshot({ res, config: builder.exportConfig() });
+
+    // Verify that one fs-watch signal was created.
+    assert(res.count === 1, "Should create one signal");
+    assert(res.types.includes("fs-watch"), "Should create an fs-watcher signal");
+
+    return res;
+  });
 });

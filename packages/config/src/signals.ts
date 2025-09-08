@@ -48,6 +48,29 @@ const SystemSignalConfigSchema = BaseSignalConfigSchema.extend({
   // No additional config required for system signals
 });
 
+/**
+ * File Watch Signal - filesystem change triggers
+ */
+export const FileWatchSignalConfigSchema = BaseSignalConfigSchema.extend({
+  provider: z.literal("fs-watch"),
+  config: z.strictObject({
+    path: z.string().describe("Absolute or workspace-relative path to watch"),
+    recursive: z
+      .boolean()
+      .optional()
+      .default(true)
+      .describe("Watch subdirectories when path is a directory"),
+    include: z
+      .array(z.string())
+      .optional()
+      .describe("Optional include filters (simple substring/prefix/suffix)"),
+    exclude: z
+      .array(z.string())
+      .optional()
+      .describe("Optional exclude filters (simple substring/prefix/suffix)"),
+  }),
+});
+
 // ==============================================================================
 // DISCRIMINATED UNION
 // ==============================================================================
@@ -60,6 +83,7 @@ export const WorkspaceSignalConfigSchema = z.discriminatedUnion("provider", [
   HTTPSignalConfigSchema,
   ScheduleSignalConfigSchema,
   SystemSignalConfigSchema,
+  FileWatchSignalConfigSchema,
 ]);
 
 export type WorkspaceSignalConfig = z.infer<typeof WorkspaceSignalConfigSchema>;

@@ -1,5 +1,9 @@
 import { anthropic } from "@ai-sdk/anthropic";
-import { HTTPSignalConfigSchema, ScheduleSignalConfigSchema } from "@atlas/config";
+import {
+  HTTPSignalConfigSchema,
+  ScheduleSignalConfigSchema,
+  FileWatchSignalConfigSchema,
+} from "@atlas/config";
 import type { Logger } from "@atlas/logger";
 import { toKebabCase } from "@std/text";
 import { generateObject, tool } from "ai";
@@ -9,6 +13,7 @@ import type { WorkspaceBuilder } from "../builder.ts";
 const SignalConfigSchema = z.discriminatedUnion("provider", [
   ScheduleSignalConfigSchema.omit({ schema: true }).extend({ id: z.string() }),
   HTTPSignalConfigSchema.omit({ schema: true }).extend({ id: z.string() }),
+  FileWatchSignalConfigSchema.omit({ schema: true }).extend({ id: z.string() }),
 ]);
 
 const systemPrompt = `
@@ -16,12 +21,16 @@ const systemPrompt = `
     You create signals that trigger automations.
   </role>
   <context>
-  You create signals to start jobs. Only two types exist: schedule (time-based) and http (webhook/event-based).
+  You create signals to start jobs. The available types are:
+    - schedule (time-based)
+    - http (webhook/event-based)
+    - fs-watch (file system change-based)
   </context>
   <instructions>
     1. Identify trigger patterns:
       - Time-based → schedule signal (periodic checks, reports, syncs)
       - Event-based → http signal (webhooks, API calls, external triggers)
+      - File changes → fs-watch signal (watch a directory or file for changes)
 
     2. For each signal, generate:
       - id: kebab-case identifier describing purpose
@@ -31,6 +40,12 @@ const systemPrompt = `
       - For schedule signals, include:
         - schedule: "cron expression"  # e.g., "*/30 * * * *" for every 30 min
         - timezone: "UTC"  # or user's timezone if specified
+
+      - For fs-watch signals, include:
+        - config.path: string  # absolute path or relative to workspace
+        - config.recursive: boolean  # default true
+        - config.include: string[] (optional glob-like filters)
+        - config.exclude: string[] (optional glob-like filters)
   </instructions>
   `;
 

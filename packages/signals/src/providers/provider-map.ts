@@ -9,6 +9,7 @@ import { HttpWebhookProvider } from "./http-webhook.ts";
 import { K8sEventsSignalProvider } from "./k8s-events.ts";
 import { StreamSignalProvider } from "./stream-signal.ts";
 import { TimerSignalProvider } from "./timer-signal.ts";
+import { FileWatchSignalProvider } from "./fs-watch-signal.ts";
 
 /**
  * Map of provider type strings to their corresponding class constructors
@@ -24,6 +25,7 @@ export const PROVIDER_CLASSES = {
   stream: StreamSignalProvider,
   "k8s-events": K8sEventsSignalProvider,
   cli: CliSignalProvider,
+  "fs-watch": FileWatchSignalProvider,
 } as const;
 
 /**

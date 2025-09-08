@@ -10,6 +10,7 @@ export { HttpWebhookProvider } from "./http-webhook.ts";
 export { K8sAuthManager } from "./k8s-auth.ts";
 export { K8sEventsSignalProvider } from "./k8s-events.ts";
 export { StreamSignalProvider } from "./stream-signal.ts";
+export { FileWatchSignalProvider } from "./fs-watch-signal.ts";
 export {
   type TimerSignalConfig,
   type TimerSignalData,

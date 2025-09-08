@@ -89,6 +89,17 @@ export class ProviderRegistry implements IProviderRegistry {
           flags: config.config?.flags,
         });
 
+      case "fs-watch":
+        return new ProviderClass({
+          id: config.id,
+          description: config.config?.description || `File watch signal for ${config.id}`,
+          provider: "fs-watch" as const,
+          path: config.config?.path,
+          recursive: config.config?.recursive,
+          include: config.config?.include,
+          exclude: config.config?.exclude,
+        });
+
       default:
         return new ProviderClass(config);
     }

@@ -1,0 +1,11 @@
+{
+  "name": "@atlas/fs-watch",
+  "version": "1.0.0",
+  "exports": "./mod.ts",
+  "imports": {
+    "@std/async": "jsr:@std/async@^1.0.14",
+    "@std/path": "jsr:@std/path@^1.1.1",
+    "@atlas/logger": "../../packages/logger/mod.ts"
+  },
+  "compilerOptions": { "strict": true, "lib": ["deno.window", "deno.unstable"] }
+}

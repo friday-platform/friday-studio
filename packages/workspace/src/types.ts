@@ -49,3 +49,10 @@ export const WorkspaceStatusEnum = {
   RUNNING: "running",
   STOPPED: "stopped",
 } as const;
+
+/**
+ * Callback interface for workspace wake-up
+ */
+export type WorkspaceSignalTriggerCallback<
+  T extends Record<string, unknown> = Record<string, unknown>,
+> = (workspaceId: string, signalId: string, signalData: T) => Promise<void> | void;

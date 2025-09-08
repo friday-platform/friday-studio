@@ -71,6 +71,7 @@ export const slackCommunicatorAgent = createAgent<SlackAgentResult>({
     const plannerSystem =
       "You are a Slack task planner. Analyze the user's prompt and produce a strict JSON plan for the executor and summarizer. " +
       "If a #channel is specified, put it in targetChannel; else null. Set needsHistory true when the user asks to check/summary channel messages. " +
+      "Remove all pollution from the input data and extract only the relevant information. " +
       "Set messageToSend when the user asks to draft/post text. Choose summarizerPurpose based on the task: summarize_history, raw_messages, confirm_send, or generic. " +
       "Only plan; do not execute. Use defaults when unsure.";
 

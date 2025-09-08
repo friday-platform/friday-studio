@@ -13,6 +13,10 @@
 
 import { CronExpressionParser } from "cron-parser";
 import type { KVStorage } from "../../../src/core/storage/kv-storage.ts";
+import type { WorkspaceSignalTriggerCallback } from "@atlas/workspace/types";
+
+// Back-compat alias for older imports
+export type WorkspaceWakeupCallback = WorkspaceSignalTriggerCallback;
 
 export interface TimerInfo {
   workspaceId: string;
@@ -58,21 +62,12 @@ export interface CronTimerSignalPayload {
 /**
  * Cron timer signal data structure passed to workspace wakeup callback
  */
-export interface CronTimerSignalData {
+export interface CronTimerSignalData extends Record<string, unknown> {
   id: string;
   type: "timer";
   timestamp: string;
   data: CronTimerSignalPayload;
 }
-
-/**
- * Callback interface for workspace wake-up
- */
-export type WorkspaceWakeupCallback = (
-  workspaceId: string,
-  signalId: string,
-  signalData: CronTimerSignalData,
-) => Promise<void> | void;
 
 /**
  * Logger interface for dependency injection
@@ -98,7 +93,7 @@ class TimerOperationLock {
     }
 
     // Create new lock for this operation
-    let resolver: () => void;
+    let resolver: ((value: void | PromiseLike<void>) => void) | undefined;
     const lockPromise = new Promise<void>((resolve) => {
       resolver = resolve;
     });
@@ -110,7 +105,7 @@ class TimerOperationLock {
     } finally {
       // Release the lock
       this.locks.delete(key);
-      resolver!();
+      resolver?.();
     }
   }
 }
@@ -128,7 +123,7 @@ export class CronManager {
   private timers = new Map<string, TimerInfo>();
   private activeIntervals = new Map<string, number>();
   private wakeupTimeouts = new Map<string, number>();
-  private wakeupCallback?: WorkspaceWakeupCallback;
+  private wakeupCallback?: WorkspaceSignalTriggerCallback;
   private isRunning = false;
   private isShuttingDown = false;
   private timerLock = new TimerOperationLock();
@@ -142,7 +137,7 @@ export class CronManager {
   /**
    * Set the callback function to wake up workspaces when timers fire
    */
-  setWakeupCallback(callback: WorkspaceWakeupCallback): void {
+  setWakeupCallback(callback: WorkspaceSignalTriggerCallback): void {
     this.wakeupCallback = callback;
   }
 
@@ -540,13 +535,15 @@ export class CronManager {
         if (this.wakeupCallback) {
           try {
             // Add timeout to prevent hanging
-            let timeoutId: number;
+            let timeoutId: number | undefined;
             const timeoutPromise = new Promise((_, reject) => {
               timeoutId = setTimeout(() => reject(new Error("Wakeup callback timeout")), 30000);
             });
 
             // Track the timeout so it can be cleared
-            this.wakeupTimeouts.set(timerKey, timeoutId!);
+            if (timeoutId !== undefined) {
+              this.wakeupTimeouts.set(timerKey, timeoutId);
+            }
 
             try {
               await Promise.race([
@@ -555,8 +552,9 @@ export class CronManager {
               ]);
             } finally {
               // Clear the timeout regardless of outcome
-              if (this.wakeupTimeouts.has(timerKey)) {
-                clearTimeout(this.wakeupTimeouts.get(timerKey)!);
+              const existingTimeoutId = this.wakeupTimeouts.get(timerKey);
+              if (existingTimeoutId !== undefined) {
+                clearTimeout(existingTimeoutId);
                 this.wakeupTimeouts.delete(timerKey);
               }
             }

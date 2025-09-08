@@ -51,6 +51,13 @@ export async function createAndRegisterWorkspace(
           description: "Scheduled trigger",
           config: { cron: "0 0 * * *" },
         };
+      } else if (signal === "fs-watch") {
+        // Default to watching the 'content/' directory to avoid triggering on all workspace changes
+        workspaceConfig.signals["file-watch"] = {
+          provider: "fs-watch",
+          description: "Filesystem watcher trigger",
+          config: { path: "content/", recursive: true },
+        };
       }
     }
   }
@@ -112,6 +119,11 @@ export async function createAndRegisterWorkspace(
 
   // Create jobs directory
   await ensureDir(join(path, "jobs"));
+
+  // If fs-watch was selected, ensure the default watched directory exists
+  if (signals.includes("fs-watch")) {
+    await ensureDir(join(path, "content"));
+  }
 
   // Register workspace with daemon if it's running, otherwise create locally
   let workspaceId: string;

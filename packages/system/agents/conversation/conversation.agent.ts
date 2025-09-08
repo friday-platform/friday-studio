@@ -114,7 +114,7 @@ export const conversationAgent = createAgent({
   description: "Interactive conversation agent for workspace collaboration",
   // Expose /agents endpoint as an MCP server for tool access
 
-  expertise: { domains: ["conversation"], capabilities: ["interactive-chat"], examples: [] },
+  expertise: { domains: ["conversation"], examples: [] },
 
   /**
    * Main conversation handler that processes user prompts with streaming responses.

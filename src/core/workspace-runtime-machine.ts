@@ -668,6 +668,7 @@ export function createWorkspaceRuntimeMachine(_input: WorkspaceRuntimeMachineInp
                           payload,
                         });
                       },
+                      workspacePath: context.options.workspacePath,
                     });
                   }
                 }

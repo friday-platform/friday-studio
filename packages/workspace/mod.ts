@@ -30,3 +30,5 @@ export {
   WorkspaceStatusEnum,
   WorkspaceStatusSchema,
 } from "./src/types.ts";
+// Re-export watchers module for convenience
+export * as watchers from "./src/watchers/index.ts";

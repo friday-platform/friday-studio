@@ -285,6 +285,42 @@ export const workspaceUpdateTools = {
     },
   }),
 
+  addFileWatchSignal: tool({
+    description: "Add filesystem watch signal that triggers jobs on file changes",
+    inputSchema: z.object({
+      signalName: z
+        .string()
+        .describe(
+          "Unique signal identifier within workspace, e.g., 'content_watch', 'src_changes'",
+        ),
+      description: z
+        .string()
+        .describe("Human-readable description, e.g., 'Watch content directory for updates'"),
+      path: z.string().describe("Path to watch (absolute or workspace-relative), e.g., 'content/'"),
+      recursive: z
+        .boolean()
+        .optional()
+        .default(true)
+        .describe("Watch subdirectories (default true)"),
+      include: z.array(z.string()).optional().describe("Optional include substring filters"),
+      exclude: z.array(z.string()).optional().describe("Optional exclude substring filters"),
+    }),
+    execute: ({ signalName, description, path, recursive, include, exclude }) => {
+      const builder = getUpdateBuilder();
+      const signalConfig: WorkspaceSignalConfig = {
+        provider: "fs-watch",
+        description,
+        config: { path, recursive, include, exclude },
+      };
+
+      const result = builder.addSignal(signalName, signalConfig);
+      if (!result.success) {
+        throw new Error(`FS watch signal creation failed: ${result.errors.join("; ")}`);
+      }
+      return { status: "added", signalName, message: `File watch signal '${signalName}' added` };
+    },
+  }),
+
   addLLMAgent: tool({
     description: "Add AI agent using language models for processing and decision-making",
     inputSchema: z.object({
