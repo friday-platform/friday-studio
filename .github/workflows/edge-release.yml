@@ -253,11 +253,11 @@ jobs:
           elif [ "${{ matrix.os }}" == "windows" ]; then
             cp dist/atlas_*.exe "$bundle_name/" || { echo "Missing Atlas CLI installer"; exit 1; }
             # Copy both .exe and .msi from Tauri
-            cp dist/Atlas_*.exe "$bundle_name/" 2>/dev/null || true
+            cp dist/"Atlas Web Client"*.exe "$bundle_name/" 2>/dev/null || true
             cp dist/*.msi "$bundle_name/" 2>/dev/null || true
             # Check for Tauri installers using proper glob handling
             tauri_found=false
-            for file in "$bundle_name"/Atlas_*.exe "$bundle_name"/*.msi; do
+            for file in "$bundle_name"/"Atlas Web Client"*.exe "$bundle_name"/*.msi; do
               if [ -f "$file" ]; then
                 tauri_found=true
                 break
