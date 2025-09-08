@@ -87,6 +87,8 @@ export type {
 // Export enum as a VALUE, not type-only, so it can be used at runtime
 export { MemoryType } from "./src/mecmf-interfaces.ts";
 export type { MECMFConfig } from "./src/mecmf-memory-manager.ts";
+// Global embedding provider for daemon initialization
+export { GlobalEmbeddingProvider } from "./src/global-embedding-provider.ts";
 export {
   createSessionMemoryHooks,
   type SessionMemoryHooks,

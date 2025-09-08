@@ -372,17 +372,6 @@ async function startForeground(argv: StartArgs): Promise<void> {
     idleTimeoutMs: (argv.idleTimeout || 300) * 1000,
   });
 
-  // Start browser download in background (non-blocking)
-  import("../../../utils/browser-manager.ts")
-    .then(({ checkAndDownloadBrowsers }) => {
-      checkAndDownloadBrowsers().catch((_error) => {
-        // Browser manager will log errors internally
-      });
-    })
-    .catch((_error) => {
-      // Module loading errors are rare but non-fatal
-    });
-
   // Handle graceful shutdown
   const shutdown = async () => {
     infoOutput("\nShutting down Atlas daemon...");

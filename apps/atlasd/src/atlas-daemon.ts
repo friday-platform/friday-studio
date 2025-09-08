@@ -13,6 +13,7 @@ import {
   type WorkspaceWakeupCallback,
 } from "@atlas/cron";
 import { logger } from "@atlas/logger";
+import { GlobalEmbeddingProvider } from "@atlas/memory";
 import { PlatformMCPServer } from "@atlas/mcp-server";
 import { FilesystemConfigAdapter, FilesystemWorkspaceCreationAdapter } from "@atlas/storage";
 import { WorkspaceManager } from "@atlas/workspace";
@@ -294,6 +295,18 @@ export class AtlasDaemon implements AppContext {
 
     // Start agent session cleanup interval
     this.startAgentSessionCleanup();
+
+    // Start embedding model download in background (non-blocking)
+    // This prevents the first conversation from being blocked by model downloads
+    logger.info("Starting background initialization of global embedding provider...");
+    GlobalEmbeddingProvider.getInstance()
+      .then(() => {
+        logger.info("Global embedding provider initialized successfully in background");
+      })
+      .catch((error) => {
+        logger.error("Failed to initialize global embedding provider in background", { error });
+        // Continue daemon startup - memory features will initialize lazily when needed
+      });
 
     this.isInitialized = true;
     logger.info("Atlas daemon initialized");
@@ -1831,6 +1844,14 @@ export class AtlasDaemon implements AppContext {
       } catch (error) {
         logger.error("Failed to close LibraryStorage", { error });
       }
+    }
+
+    // Dispose global embedding provider
+    try {
+      await GlobalEmbeddingProvider.forceDispose();
+      logger.info("Global embedding provider disposed");
+    } catch (error) {
+      logger.error("Failed to dispose global embedding provider", { error });
     }
 
     // Shutdown HTTP server
