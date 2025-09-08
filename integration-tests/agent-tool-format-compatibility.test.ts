@@ -16,8 +16,9 @@ Deno.test({
   sanitizeResources: false,
   sanitizeOps: false,
   async fn() {
-    // Only test workspaces that have their own atlas.yml files
-    const workspaceExamples = ["telephone", "atlas-codebase-analyzer"];
+    // Only test workspaces that are still in this repository
+    // atlas-codebase-analyzer has been moved to atlas-workspaces repository
+    const workspaceExamples = ["telephone"];
 
     for (const workspaceName of workspaceExamples) {
       const workspacePath = `./examples/${workspaceName}`;
@@ -132,8 +133,8 @@ Deno.test({
   sanitizeOps: false,
   async fn() {
     const workspaceExamples = [
-      "./examples/web-analysis/workspace.yml",
-      "./examples/k8s-assistant/workspace.yml",
+      // Examples moved to https://github.com/tempestteam/atlas-workspaces
+      // Using fixture files for testing instead
     ];
 
     for (const workspaceFile of workspaceExamples) {

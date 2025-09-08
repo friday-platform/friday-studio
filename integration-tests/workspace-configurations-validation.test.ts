@@ -34,11 +34,17 @@ async function findWorkspaceDirectories(): Promise<string[]> {
   const projectRoot = resolve(Deno.cwd());
 
   // Find all workspace.yml files in examples
+  // Note: Most examples have been moved to https://github.com/tempestteam/atlas-workspaces
+  // Only telephone remains in this repository
   const examplesDir = join(projectRoot, "examples");
-  for await (const entry of walk(examplesDir, { match: [/workspace\.yml$/], maxDepth: 3 })) {
-    if (entry.isFile) {
-      workspaceDirs.push(entry.path.replace("/workspace.yml", ""));
+  try {
+    for await (const entry of walk(examplesDir, { match: [/workspace\.yml$/], maxDepth: 3 })) {
+      if (entry.isFile) {
+        workspaceDirs.push(entry.path.replace("/workspace.yml", ""));
+      }
     }
+  } catch {
+    // Examples directory might not exist in some environments
   }
 
   return workspaceDirs;
