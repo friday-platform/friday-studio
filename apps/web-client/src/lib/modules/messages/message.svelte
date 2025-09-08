@@ -40,8 +40,12 @@ const htmlContent = $derived(message.content ? markdownToHTML(message.content) :
 		inline-size: max-content;
 		max-inline-size: 100%;
 
+		&:global(:not(:first-of-type)) {
+			padding-block-start: var(--size-1-5);
+		}
+
 		&:global(:is(.user):not(:first-of-type)) {
-			margin-block-start: var(--size-8);
+			padding-block-start: var(--size-8);
 		}
 	}
 
@@ -110,7 +114,7 @@ const htmlContent = $derived(message.content ? markdownToHTML(message.content) :
 
 	.request .content {
 		& {
-			padding-block-end: var(--size-3);
+			padding-block-end: var(--size-1-5);
 		}
 
 		& :global(p),
@@ -126,7 +130,7 @@ const htmlContent = $derived(message.content ? markdownToHTML(message.content) :
 		& :global(ul),
 		& :global(ol) {
 			&:global(:has(+ ul, + ol, + p)) {
-				margin-block-end: var(--size-2);
+				margin-block-end: 0;
 			}
 		}
 

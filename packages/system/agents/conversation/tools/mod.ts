@@ -28,6 +28,7 @@ export const conversationTools: AtlasTools = {
   atlas_todo_write: todoWriteTool,
   read_atlas_resource: resourceReadTool,
   atlas_update_workspace: updateWorkspace,
+  table_output: tableOutput,
 };
 
 export {
