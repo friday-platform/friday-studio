@@ -1,10 +1,9 @@
 import { APICallError } from "@ai-sdk/provider";
-import type { AtlasAgent, AtlasTools, ToolCall, ToolResult } from "@atlas/agent-sdk";
+import type { AtlasAgent, ToolCall, ToolResult } from "@atlas/agent-sdk";
 import { createAgent } from "@atlas/agent-sdk";
-import { pipeUIMessageStream } from "@atlas/agent-sdk/vercel-helpers";
+import { pipeUIMessageStream, collectToolUsageFromSteps } from "@atlas/agent-sdk/vercel-helpers";
 import type { LLMAgentConfig } from "@atlas/config";
 import type { Logger } from "@atlas/logger";
-import type { StepResult, TypedToolCall, TypedToolResult } from "ai";
 import { stepCountIs, streamText } from "ai";
 import { registry, validateProviderConfig } from "../llm-provider-registry/index.ts";
 import { ensureSourceAttributionProtocol } from "../prompts/source-attribution.ts";
@@ -17,48 +16,7 @@ export type WrappedAgentResult = {
 };
 export type WrappedAgent = AtlasAgent<WrappedAgentResult>;
 
-/**
- * Collect tool usage from AI SDK `generateText` response, preferring per-step data.
- *
- * Why this exists:
- * - The AI SDK exposes tool usage both at the top-level (last step only) and per-step in `steps`.
- * - Dynamic tool calls frequently appear only inside `steps`.
- * - We must return a complete, canonical view of all tool calls/results to Atlas.
- *
- * Strategy:
- * - Flatten `steps[].toolCalls` and `steps[].toolResults` to capture all dynamic and static calls.
- * - If no per-step entries exist, fall back to top-level `toolCalls`/`toolResults` (which represent the last step).
- *
- * Type notes:
- * - Uses `AtlasTools` to align with Atlas tool registry shape (Record<string, Tool>).
- * - Returns `ToolCall`/`ToolResult` which are the Atlas SDK aliases of AI SDK branded types.
- */
-function collectToolUsageFromSteps(res: {
-  steps?: Array<StepResult<AtlasTools>>;
-  toolCalls?: Array<TypedToolCall<AtlasTools>>;
-  toolResults?: Array<TypedToolResult<AtlasTools>>;
-}): { assembledToolCalls: ToolCall[]; assembledToolResults: ToolResult[] } {
-  const steps: Array<StepResult<AtlasTools>> = Array.isArray(res.steps) ? res.steps : [];
-
-  const stepToolCalls: Array<TypedToolCall<AtlasTools>> = steps.flatMap(
-    (step) => step.toolCalls ?? [],
-  );
-  const stepToolResults: Array<TypedToolResult<AtlasTools>> = steps.flatMap(
-    (step) => step.toolResults ?? [],
-  );
-
-  const assembledToolCalls: ToolCall[] =
-    stepToolCalls.length > 0 ? stepToolCalls : Array.isArray(res.toolCalls) ? res.toolCalls : [];
-
-  const assembledToolResults: ToolResult[] =
-    stepToolResults.length > 0
-      ? stepToolResults
-      : Array.isArray(res.toolResults)
-        ? res.toolResults
-        : [];
-
-  return { assembledToolCalls, assembledToolResults };
-}
+// Tool usage collector moved to @atlas/agent-sdk/vercel-helpers
 
 /**
  * Convert workspace LLM config to AtlasAgent.
@@ -79,8 +37,7 @@ export function convertLLMToAgent(
     id: agentId,
     version: "1.0.0",
     description: config.description,
-    metadata: {},
-    expertise: { domains: ["general"], capabilities: ["general"], examples: [] },
+    expertise: { domains: ["general"], examples: [] },
     handler: async (prompt, { tools, stream, abortSignal }) => {
       try {
         // Enforce source attribution protocol in system prompt (idempotent)

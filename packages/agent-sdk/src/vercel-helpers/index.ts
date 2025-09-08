@@ -6,3 +6,4 @@
  */
 
 export { pipeUIMessageStream } from "./stream-mapper.ts";
+export { collectToolUsageFromSteps } from "./tool-usage.ts";

@@ -7,6 +7,7 @@ import { loadCredentials } from "../../lib/load-credentials.ts";
 import type { AtlasTools } from "@atlas/agent-sdk";
 import { tool } from "ai";
 import { z } from "zod/v4";
+import { SlackAgentResultSchema } from "@atlas/bundled-agents";
 
 function createTimeoutTools(): AtlasTools {
   return {
@@ -33,14 +34,14 @@ Deno.test({
     const adapter = new AgentContextAdapter(createTimeoutTools());
     const context = adapter.createContext();
 
-    const slackAgent = bundledAgents.find((a) => a.metadata.id === "slack-communicator");
+    const slackAgent = bundledAgents.find((a) => a.metadata.id === "slack");
     if (!slackAgent) throw new Error("Slack agent not found in bundled agents");
 
     const result = await slackAgent.execute("Summarize last 5 messages in #engineering.", context);
+    const parsed = SlackAgentResultSchema.parse(result);
 
     const pass = await t.step("Basic validations", () => {
-      assert(typeof result === "string", "Result should be a string");
-      assert(result.length > 5, "Result should have content");
+      assert(parsed.response.length > 5, "Result.response should have content");
     });
 
     const evaluation = await llmJudge({
@@ -51,7 +52,7 @@ Deno.test({
         3. Be concise and factual, mentioning timeout
         4. Avoid technical stack traces or excessive details
       `,
-      agentOutput: result,
+      agentOutput: parsed.response,
     });
 
     const qualityPass = await t.step("Timeout handling quality", () => {
@@ -60,7 +61,15 @@ Deno.test({
 
     await saveSnapshot({
       testPath: new URL(import.meta.url),
-      data: { result, evaluation, basicPass: pass, qualityPass },
+      data: {
+        result,
+        response: parsed.response,
+        toolCalls: parsed.toolCalls,
+        toolResults: parsed.toolResults,
+        evaluation,
+        basicPass: pass,
+        qualityPass,
+      },
       pass: pass && qualityPass,
     });
   },

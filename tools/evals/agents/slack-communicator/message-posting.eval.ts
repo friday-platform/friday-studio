@@ -5,6 +5,7 @@ import { loadCredentials } from "../../lib/load-credentials.ts";
 import { llmJudge } from "../../lib/llm-judge.ts";
 import { saveSnapshot } from "../../lib/snapshot.ts";
 import { createSlackMCPMockTools } from "../../lib/slack-mcp-mock-tools.ts";
+import { SlackAgentResultSchema } from "@atlas/bundled-agents";
 
 Deno.test({
   name: "Slack Communicator: Message posting",
@@ -17,7 +18,7 @@ Deno.test({
     const context = adapter.createContext();
 
     // Resolve Slack agent from bundled agents
-    const slackAgent = bundledAgents.find((a) => a.metadata.id === "slack-communicator");
+    const slackAgent = bundledAgents.find((a) => a.metadata.id === "slack");
     if (!slackAgent) {
       throw new Error("Slack agent not found in bundled agents");
     }
@@ -30,11 +31,12 @@ Deno.test({
 
     // Basic structural assertions
     const pass = await t.step("Basic validations", () => {
-      assert(typeof result === "string", "Result should be a string");
-      assert(result.length > 5, "Result should have content");
+      const parsed = SlackAgentResultSchema.parse(result);
+      assert(parsed.response.length > 5, "Result.response should have content");
     });
 
     // LLM judge for posting confirmation
+    const parsed = SlackAgentResultSchema.parse(result);
     const evaluation = await llmJudge({
       criteria: `
         The agent should:
@@ -44,7 +46,7 @@ Deno.test({
         4. Provide confirmation details like timestamp or channel reference if available
         5. Not include excessive technical execution details
       `,
-      agentOutput: result,
+      agentOutput: parsed.response,
     });
 
     const qualityPass = await t.step("Posting confirmation quality", () => {
@@ -53,18 +55,23 @@ Deno.test({
 
     const toolUsagePass = await t.step("Slack tools invoked", () => {
       assert(
-        counters.conversations_history +
-          counters.conversations_add_message +
-          counters.channels_list +
-          counters.users_list >
-          0,
+        counters.conversations_add_message + counters.channels_list + counters.users_list > 0,
         "No Slack tools were invoked during execution",
       );
     });
 
     await saveSnapshot({
       testPath: new URL(import.meta.url),
-      data: { result, evaluation, basicPass: pass, qualityPass, counters },
+      data: {
+        result,
+        response: parsed.response,
+        toolCalls: parsed.toolCalls,
+        toolResults: parsed.toolResults,
+        evaluation,
+        basicPass: pass,
+        qualityPass,
+        counters,
+      },
       pass: pass && qualityPass && toolUsagePass,
     });
   },

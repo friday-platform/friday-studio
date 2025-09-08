@@ -4,6 +4,7 @@ import { AgentContextAdapter } from "../../lib/context.ts";
 import { llmJudge } from "../../lib/llm-judge.ts";
 import { saveSnapshot } from "../../lib/snapshot.ts";
 import { loadCredentials } from "../../lib/load-credentials.ts";
+import { SlackAgentResultSchema } from "@atlas/bundled-agents";
 
 Deno.test({
   name: "Slack Communicator: Hallucination guard — no tools provided",
@@ -14,16 +15,20 @@ Deno.test({
     const adapter = new AgentContextAdapter({});
     const context = adapter.createContext();
 
-    const slackAgent = bundledAgents.find((a) => a.metadata.id === "slack-communicator");
+    const slackAgent = bundledAgents.find((a) => a.metadata.id === "slack");
     if (!slackAgent) throw new Error("Slack agent not found in bundled agents");
 
     const result = await slackAgent.execute("Summarize last 10 messages in #engineering.", context);
 
     const pass = await t.step("Basic validations", () => {
-      assert(typeof result === "string", "Result should be a string");
-      assert(result.length > 5, "Result should have content");
+      const parsed = SlackAgentResultSchema.parse(result);
+      assert(
+        parsed.response.includes("tools unavailable") ||
+          parsed.response.includes("Slack tools unavailable"),
+      );
     });
 
+    const parsed = SlackAgentResultSchema.parse(result);
     const evaluation = await llmJudge({
       criteria: `
         The agent should:
@@ -33,7 +38,7 @@ Deno.test({
         4. Mention the limitation explicitly (tools unavailable / provide tools)
         5. Avoid excessive technical details
       `,
-      agentOutput: result,
+      agentOutput: parsed.response,
     });
 
     const qualityPass = await t.step("Non-fabrication confirmation", () => {
@@ -42,7 +47,15 @@ Deno.test({
 
     await saveSnapshot({
       testPath: new URL(import.meta.url),
-      data: { result, evaluation, basicPass: pass, qualityPass },
+      data: {
+        result,
+        response: parsed.response,
+        toolCalls: parsed.toolCalls,
+        toolResults: parsed.toolResults,
+        evaluation,
+        basicPass: pass,
+        qualityPass,
+      },
       pass: pass && qualityPass,
     });
   },
