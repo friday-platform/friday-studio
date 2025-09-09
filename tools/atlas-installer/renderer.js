@@ -308,26 +308,31 @@ class AtlasInstaller {
 
     const steps = [
       {
-        progress: 16,
+        progress: 14,
         message: "Creating Atlas directory...",
         action: () => globalThis.electronAPI.createAtlasDir(),
       },
       {
-        progress: 32,
+        progress: 28,
+        message: "Configuring NPX path for MCP servers...",
+        action: () => globalThis.electronAPI.ensureNpxPath(),
+      },
+      {
+        progress: 42,
         message: "Installing Atlas binary...",
         action: () => globalThis.electronAPI.installAtlasBinary(),
       },
       {
-        progress: 48,
+        progress: 56,
         message: "Saving Atlas Access Key configuration...",
         action: () => this.configureCredentials(),
       },
       {
-        progress: 64,
+        progress: 70,
         message: "Setting up PATH...",
         action: () => globalThis.electronAPI.setupPath(),
       },
-      { progress: 80, message: "Starting Atlas service...", action: () => this.manageDaemon() },
+      { progress: 84, message: "Starting Atlas service...", action: () => this.manageDaemon() },
       {
         progress: 100,
         message: "Installation complete!",

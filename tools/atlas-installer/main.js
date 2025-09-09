@@ -84,6 +84,147 @@ ipcMain.handle("check-existing-api-key", async () => {
   }
 });
 
+// Helper function to discover npx location
+function findNpxPath() {
+  const { execSync } = require("child_process");
+
+  // Common NPX locations to check as fallback
+  const commonNpxPaths = [
+    "/opt/homebrew/bin/npx", // Homebrew on Apple Silicon
+    "/usr/local/bin/npx", // Homebrew on Intel Mac or standard location
+    "/usr/bin/npx", // System installation
+    path.join(os.homedir(), ".nvm/versions/node/*/bin/npx"), // NVM (would need glob)
+    path.join(os.homedir(), ".volta/bin/npx"), // Volta
+    path.join(os.homedir(), ".asdf/shims/npx"), // asdf
+  ];
+
+  // First try to find via which/where command
+  try {
+    // On Windows, look for npx.cmd which is the actual executable
+    const npxName = process.platform === "win32" ? "npx.cmd" : "npx";
+    const cmd = process.platform === "win32" ? `where ${npxName}` : `which ${npxName}`;
+
+    console.log(`[NPX Discovery] Running command: ${cmd}`);
+
+    // On macOS, we need to run with a proper shell to get the full PATH
+    const shellCmd =
+      process.platform === "darwin"
+        ? `/bin/bash -l -c "${cmd}"` // Use login shell to get full PATH
+        : cmd;
+
+    const result = execSync(shellCmd, {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+      shell: process.platform === "darwin" ? false : true,
+    }).trim();
+
+    // On Windows, 'where' might return multiple paths, take the first one
+    const npxPath = result.split("\n")[0].trim();
+
+    console.log(`[NPX Discovery] Found npx via command at: ${npxPath}`);
+
+    if (npxPath && fs.existsSync(npxPath)) {
+      const stats = fs.statSync(npxPath);
+      if (stats.isFile()) {
+        // On Unix-like systems, check execute permission
+        if (process.platform !== "win32") {
+          const isExecutable = (stats.mode & 0o111) !== 0;
+          if (isExecutable) {
+            console.log(`[NPX Discovery] NPX path validated successfully: ${npxPath}`);
+            return npxPath;
+          }
+        } else {
+          // Windows .cmd files are executable by default
+          return npxPath;
+        }
+      }
+    }
+  } catch (error) {
+    console.warn(`[NPX Discovery] Could not find npx via command: ${error.message}`);
+  }
+
+  // Fallback: Check common locations directly
+  console.log(`[NPX Discovery] Checking common NPX locations...`);
+  for (const npxPath of commonNpxPaths) {
+    try {
+      // Handle glob patterns (for nvm)
+      if (npxPath.includes("*")) {
+        continue; // Skip glob patterns for now
+      }
+
+      if (fs.existsSync(npxPath)) {
+        const stats = fs.statSync(npxPath);
+        if (stats.isFile()) {
+          // Check if executable on Unix
+          if (process.platform !== "win32") {
+            const isExecutable = (stats.mode & 0o111) !== 0;
+            if (isExecutable) {
+              console.log(`[NPX Discovery] Found npx at common location: ${npxPath}`);
+              return npxPath;
+            }
+          }
+        }
+      }
+    } catch (err) {
+      // Continue checking other paths
+    }
+  }
+
+  console.warn(`[NPX Discovery] Could not find npx in PATH or common locations`);
+  return null;
+}
+
+// IPC handler for ensuring ATLAS_NPX_PATH is configured
+ipcMain.handle("ensure-npx-path", async () => {
+  try {
+    const atlasDir = path.join(os.homedir(), ".atlas");
+    const envFile = path.join(atlasDir, ".env");
+
+    // Ensure .atlas directory exists
+    if (!fs.existsSync(atlasDir)) {
+      fs.mkdirSync(atlasDir, { recursive: true });
+    }
+
+    let existingLines = [];
+
+    // Read existing .env file if it exists
+    if (fs.existsSync(envFile)) {
+      const existingContent = fs.readFileSync(envFile, "utf8");
+      existingLines = existingContent.split("\n");
+    }
+
+    // Check if ATLAS_NPX_PATH already exists
+    const hasExistingNpxPath = existingLines.some((line) =>
+      line.trim().startsWith("ATLAS_NPX_PATH="),
+    );
+
+    if (!hasExistingNpxPath) {
+      const npxPath = findNpxPath();
+      if (npxPath) {
+        // Add ATLAS_NPX_PATH to the file
+        existingLines.push(`ATLAS_NPX_PATH=${npxPath}`);
+
+        // Write back to file
+        const envContent = existingLines.filter((line) => line.trim()).join("\n") + "\n";
+        fs.writeFileSync(envFile, envContent, "utf8");
+
+        // Set file permissions (Unix-like systems)
+        if (process.platform !== "win32") {
+          fs.chmodSync(envFile, 0o600);
+        }
+
+        return { success: true, npxPath, message: "ATLAS_NPX_PATH configured successfully" };
+      } else {
+        return { success: false, error: "Could not find npx executable in PATH" };
+      }
+    } else {
+      return { success: true, message: "ATLAS_NPX_PATH already configured" };
+    }
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
 // IPC handler for saving Atlas Access Key to .env file
 ipcMain.handle("save-atlas-key", async (event, atlasKey) => {
   try {
@@ -112,56 +253,6 @@ ipcMain.handle("save-atlas-key", async (event, atlasKey) => {
 
     // Add the new ATLAS_KEY
     filteredLines.push(`ATLAS_KEY=${atlasKey}`);
-
-    // Try to discover npx location
-    const findNpxPath = () => {
-      try {
-        const { execSync, spawnSync } = require("child_process");
-        // On Windows, look for npx.cmd which is the actual executable
-        const npxName = process.platform === "win32" ? "npx.cmd" : "npx";
-        const cmd = process.platform === "win32" ? `where ${npxName}` : `which ${npxName}`;
-        const result = execSync(cmd, {
-          encoding: "utf8",
-          stdio: ["ignore", "pipe", "ignore"],
-        }).trim();
-        // On Windows, 'where' might return multiple paths, take the first one
-        const npxPath = result.split("\n")[0].trim();
-
-        // Validate that the found path is executable by checking file permissions
-        try {
-          const fs = require("fs");
-          const stats = fs.statSync(npxPath);
-
-          if (!stats.isFile()) {
-            console.warn(`Found npx at ${npxPath} but it's not a file.`);
-            return null;
-          }
-
-          // On Unix-like systems, check execute permission
-          if (process.platform !== "win32") {
-            // Check if any execute bit is set (owner, group, or other)
-            const isExecutable = (stats.mode & 0o111) !== 0;
-            if (!isExecutable) {
-              console.warn(
-                `Found npx at ${npxPath} but it's not executable (mode: ${stats.mode.toString(8)}).`,
-              );
-              return null;
-            }
-          }
-          // On Windows, .cmd and .exe files are executable by default if they exist
-
-          return npxPath;
-        } catch (error) {
-          console.warn(`Found npx at ${npxPath} but couldn't validate it: ${error.message}`);
-          return null;
-        }
-      } catch (error) {
-        console.warn(
-          "Could not find npx in PATH. MCP servers may not work without manual configuration.",
-        );
-        return null;
-      }
-    };
 
     // Find and store npx path if not already configured
     const hasExistingNpxPath = existingLines.some((line) =>
