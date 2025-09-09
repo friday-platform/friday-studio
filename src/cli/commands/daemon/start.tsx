@@ -42,7 +42,7 @@ export function builder(y: YargsInstance) {
       describe: "Port to run the daemon on",
       default: 8080,
     })
-    .option("hostname", { type: "string", describe: "Hostname to bind to", default: "localhost" })
+    .option("hostname", { type: "string", describe: "Hostname to bind to", default: "127.0.0.1" })
     .option("detached", {
       type: "boolean",
       alias: "d",
@@ -208,7 +208,7 @@ async function startDetached(argv: StartArgs): Promise<void> {
         "--port",
         (argv.port || 8080).toString(),
         "--hostname",
-        argv.hostname || "localhost",
+        argv.hostname || "127.0.0.1",
         "--max-workspaces",
         (argv.maxWorkspaces || 10).toString(),
         "--idle-timeout",
@@ -237,7 +237,7 @@ async function startDetached(argv: StartArgs): Promise<void> {
         "--port",
         (argv.port || 8080).toString(),
         "--hostname",
-        argv.hostname || "localhost",
+        argv.hostname || "127.0.0.1",
         "--max-workspaces",
         (argv.maxWorkspaces || 10).toString(),
         "--idle-timeout",
@@ -291,7 +291,7 @@ async function startWindowsDetached(
       "--port",
       (argv.port || 8080).toString(),
       "--hostname",
-      argv.hostname || "localhost",
+      argv.hostname || "127.0.0.1",
       "--max-workspaces",
       (argv.maxWorkspaces || 10).toString(),
       "--idle-timeout",
@@ -314,7 +314,7 @@ async function startWindowsDetached(
       "--port",
       (argv.port || 8080).toString(),
       "--hostname",
-      argv.hostname || "localhost",
+      argv.hostname || "127.0.0.1",
       "--max-workspaces",
       (argv.maxWorkspaces || 10).toString(),
       "--idle-timeout",
@@ -370,6 +370,7 @@ async function startForeground(argv: StartArgs): Promise<void> {
     hostname: argv.hostname,
     maxConcurrentWorkspaces: argv.maxWorkspaces,
     idleTimeoutMs: (argv.idleTimeout || 300) * 1000,
+    cors: ["tauri://localhost", "http://127.0.0.1:1420"],
   });
 
   // Handle graceful shutdown
@@ -388,7 +389,7 @@ async function startForeground(argv: StartArgs): Promise<void> {
   }
 
   infoOutput(
-    `Starting Atlas daemon on http://${argv.hostname || "localhost"}:${argv.port || 8080}...`,
+    `Starting Atlas daemon on http://${argv.hostname || "127.0.0.1"}:${argv.port || 8080}...`,
   );
   successOutput("Atlas daemon is running. Press Ctrl+C to stop.");
 

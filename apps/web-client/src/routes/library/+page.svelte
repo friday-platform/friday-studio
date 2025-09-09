@@ -2,6 +2,7 @@
 import { openPath } from "@tauri-apps/plugin-opener";
 import { onMount } from "svelte";
 import { getAppContext } from "$lib/app-context.svelte";
+import { getAtlasDaemonUrl } from "$lib/utils/daemon";
 
 import type { LibraryItem } from "../../../../../src/core/library/types.ts";
 
@@ -14,10 +15,6 @@ onMount(async () => {
 
   libraryItems = items.items;
 });
-
-function getAtlasDaemonUrl() {
-  return "http://localhost:8080";
-}
 </script>
 
 <div class="container">

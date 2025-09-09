@@ -14,6 +14,7 @@
     "tauri": "tauri"
   },
   "imports": {
+    "cookie": "npm:cookie@^1.0.2",
     "vite-tsconfig-paths": "npm:vite-tsconfig-paths@^5.1.2",
     "@deno/vite-plugin": "npm:@deno/vite-plugin@^1.0.5",
     "@eslint/compat": "npm:@eslint/compat@^1.2.5",

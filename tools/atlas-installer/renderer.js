@@ -35,6 +35,19 @@ class AtlasInstaller {
     document.getElementById("show-hide-btn").addEventListener("click", () => {
       this.toggleApiKeyVisibility();
     });
+
+    // Listen for installation progress updates from main process
+    if (globalThis.electronAPI && globalThis.electronAPI.onInstallationProgress) {
+      globalThis.electronAPI.onInstallationProgress((message) => {
+        // Update the installation log with progress messages
+        const logElement = document.getElementById("installation-log");
+        if (logElement && message) {
+          const currentLog = logElement.value;
+          logElement.value = currentLog + `→ ${message}\n`;
+          logElement.scrollTop = logElement.scrollHeight;
+        }
+      });
+    }
   }
 
   async loadLicenseText() {

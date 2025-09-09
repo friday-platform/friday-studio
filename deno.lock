@@ -66,6 +66,7 @@
     "npm:ai@^5.0.17": "5.0.33_zod@3.25.76",
     "npm:ansi-escapes@7": "7.0.0",
     "npm:chalk@^5.4.1": "5.6.0",
+    "npm:cookie@^1.0.2": "1.0.2",
     "npm:cron-parser@^5.3.0": "5.3.1",
     "npm:eslint-config-prettier@^10.0.1": "10.1.8_eslint@9.35.0",
     "npm:eslint-plugin-svelte@3": "3.12.1_eslint@9.35.0_svelte@5.38.7__acorn@8.15.0_postcss@8.5.6",
@@ -1733,6 +1734,9 @@
     },
     "cookie@0.7.2": {
       "integrity": "sha512-yki5XnKuf750l50uGTllt6kKILY4nQ1eNIQatoXEByZ5dWgnKqbnqmTrBE5B4N7lrMJKQ2ytWMiTO2o0v6Ew/w=="
+    },
+    "cookie@1.0.2": {
+      "integrity": "sha512-9Kr/j4O16ISv8zBBhJoi4bXOYNTkFLOqSL3UDB0njXxCXNezjeyVrJyGOWtgfs/q2km1gwBcfH8q1yEGoMYunA=="
     },
     "cors@2.8.5": {
       "integrity": "sha512-KIHbLJqu73RGr/hnbrO9uBeixNGuvSQjul/jdFvS/KFSIH1hWVd1ng7zOHx+YrEfInLG7q4n6GHQ9cDtxv/P6g==",
@@ -4032,6 +4036,7 @@
           "npm:@tauri-apps/cli@^2.8.0",
           "npm:@tauri-apps/plugin-opener@^2.5.0",
           "npm:@tauri-apps/plugin-shell@^2.3.1",
+          "npm:cookie@^1.0.2",
           "npm:eslint-config-prettier@^10.0.1",
           "npm:eslint-plugin-svelte@3",
           "npm:eslint@^9.18.0",

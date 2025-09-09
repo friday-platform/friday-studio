@@ -3,6 +3,7 @@ import { readUIMessageStream } from "ai";
 import { getContext, setContext } from "svelte";
 import { ConversationClient, type ConversationSession } from "./conversation.ts";
 import type { DaemonClient } from "./daemon.ts";
+import { getAtlasDaemonUrl } from "../../utils/daemon.ts";
 
 const KEY = Symbol();
 
@@ -31,7 +32,7 @@ class ClientContext {
   }
 
   getAtlasDaemonUrl() {
-    return "http://localhost:8080";
+    return getAtlasDaemonUrl();
   }
 
   async getUser() {
@@ -126,7 +127,7 @@ class ClientContext {
     try {
       // Use "atlas-conversation" as the workspace ID for the conversation system workspace
       this.conversationClient = new ConversationClient(
-        this.getAtlasDaemonUrl(),
+        getAtlasDaemonUrl(),
         "atlas-conversation",
         "cli-user",
       );

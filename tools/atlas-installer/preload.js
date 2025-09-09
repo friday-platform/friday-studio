@@ -15,4 +15,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
   manageService: (action) => ipcRenderer.invoke("manage-atlas-service", action),
   quitApp: () => ipcRenderer.invoke("quit-app"),
   getEulaText: () => ipcRenderer.invoke("get-eula-text"),
+  onInstallationProgress: (callback) => {
+    ipcRenderer.on("installation-progress", (event, message) => callback(message));
+  },
 });

@@ -1,6 +1,7 @@
 import { getContext, setContext } from "svelte";
 import { SvelteMap } from "svelte/reactivity";
 import { DaemonClient } from "./modules/client/daemon.ts";
+import { getAtlasDaemonUrl } from "./utils/daemon.ts";
 
 const KEY = Symbol();
 
@@ -50,7 +51,7 @@ export function getRouteConfig() {
 export function setAppContext() {
   const routes = getRouteConfig();
   const keyboard = createKeyboard();
-  const daemonClient = new DaemonClient({ daemonUrl: "http://localhost:8080" });
+  const daemonClient = new DaemonClient({ daemonUrl: getAtlasDaemonUrl() });
   const stagedFiles = createStagedFiles();
 
   async function uploadFile(file: File) {

@@ -6,7 +6,7 @@ import { z } from "zod/v4";
 import { logger } from "@atlas/logger";
 
 // Private constants
-const DEFAULT_DAEMON_URL = "http://localhost:8080";
+const DEFAULT_DAEMON_URL = "http://127.0.0.1:8080";
 
 /**
  * Validates that a string is a valid URL
@@ -33,7 +33,7 @@ export function getAtlasDaemonUrl(): string {
     // Validate the URL from environment
     if (!isValidUrl(envUrl)) {
       logger.warn(
-        `Invalid ATLAS_DAEMON_URL: "${envUrl}". Must be a valid URL (e.g., http://localhost:8080). Using default.`,
+        `Invalid ATLAS_DAEMON_URL: "${envUrl}". Must be a valid URL (e.g., http://127.0.0.1:8080). Using default.`,
       );
       return DEFAULT_DAEMON_URL;
     }

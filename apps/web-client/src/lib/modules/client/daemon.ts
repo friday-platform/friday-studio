@@ -4,6 +4,7 @@
  */
 
 import type { LibraryItem, StoreItemInput } from "../../../../../../src/core/library/types.ts";
+import { getAtlasDaemonUrl } from "../../utils/daemon.ts";
 
 export interface DaemonClientOptions {
   daemonUrl: string;
@@ -83,10 +84,7 @@ export class DaemonClient {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), this.timeout);
 
-      const response = await fetch(`${this.daemonUrl}/health`, {
-        signal: controller.signal,
-        headers: { "Access-Control-Allow-Origin": "*" },
-      });
+      const response = await fetch(`${this.daemonUrl}/health`, { signal: controller.signal });
 
       clearTimeout(timeoutId);
       return response.ok;
@@ -441,7 +439,7 @@ export class DaemonClient {
       const response = await fetch(`${this.daemonUrl}${path}`, {
         signal: controller.signal,
         ...options,
-        headers: { "Access-Control-Allow-Origin": "*", ...(options?.headers ?? {}) },
+        headers: { ...(options?.headers ?? {}) },
       });
 
       clearTimeout(timeoutId);
@@ -498,7 +496,7 @@ let defaultClient: DaemonClient | null = null;
 
 export function getDaemonClient(options?: DaemonClientOptions): DaemonClient {
   if (!defaultClient) {
-    defaultClient = new DaemonClient(options);
+    defaultClient = new DaemonClient(options || { daemonUrl: getAtlasDaemonUrl() });
   }
   return defaultClient;
 }

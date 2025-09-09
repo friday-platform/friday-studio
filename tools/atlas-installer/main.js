@@ -127,7 +127,18 @@ ipcMain.handle("save-atlas-key", async (event, atlasKey) => {
   }
 });
 
-ipcMain.handle("install-atlas-binary", async () => {
+ipcMain.handle("install-atlas-binary", async (event) => {
+  const { execSync } = require("child_process");
+  const crypto = require("crypto");
+  const ATLAS_WEB_CLIENT_APP = "Atlas Web Client.app";
+
+  // Helper function to safely send progress updates
+  const sendProgress = (message) => {
+    if (event && event.sender) {
+      event.sender.send("installation-progress", message);
+    }
+  };
+
   try {
     // Define binaries to install
     const binaries = [
@@ -171,7 +182,6 @@ ipcMain.handle("install-atlas-binary", async () => {
         if (fs.existsSync(installPath)) {
           try {
             // Try to stop the daemon gracefully first (only for atlas main binary)
-            const { execSync } = require("child_process");
             if (binary.name.includes("atlas.exe") && !binary.name.includes("diagnostics")) {
               try {
                 execSync(`"${installPath}" daemon stop`, { timeout: 5000, stdio: "ignore" });
@@ -196,7 +206,6 @@ ipcMain.handle("install-atlas-binary", async () => {
 
         // Update PATH for Windows (only once for the directory)
         if (binary.name === (process.platform === "win32" ? "atlas.exe" : "atlas")) {
-          const { execSync } = require("child_process");
           try {
             const psCommand = `
               $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
@@ -219,8 +228,6 @@ ipcMain.handle("install-atlas-binary", async () => {
           binary.name.replace(".exe", ""),
         );
         const systemBinaryPath = path.join("/usr/local/bin", binary.name.replace(".exe", ""));
-
-        const { execSync } = require("child_process");
 
         try {
           // First check if binary is currently running and stop it if necessary
@@ -301,24 +308,235 @@ ipcMain.handle("install-atlas-binary", async () => {
       results.push({ binary: binary.name, installed: installPath });
     }
 
-    // macOS: verify DMG exists and open it to allow drag-and-drop
+    // macOS: automatically install Atlas Web Client from DMG to ~/Applications
     if (process.platform === "darwin") {
       const dmgName = "AtlasWebApp.dmg";
       let dmgSource = path.join(resourcesPath, "app.asar.unpacked", "atlas-binary", dmgName);
+
       if (!fs.existsSync(dmgSource)) {
         dmgSource = path.join(__dirname, "atlas-binary", dmgName);
       }
 
       if (!fs.existsSync(dmgSource)) {
-        throw new Error(`Required web app ${dmgName} not found in installer package`);
+        const errorMsg = `Required web app ${dmgName} not found in installer package. Searched: ${path.join(resourcesPath, "app.asar.unpacked", "atlas-binary", dmgName)} and ${path.join(__dirname, "atlas-binary", dmgName)}`;
+        throw new Error(errorMsg);
       }
 
       try {
-        const { execSync } = require("child_process");
-        execSync(`open "${dmgSource}"`, { stdio: "ignore" });
-        results.push({ webApp: dmgName, opened: true, path: dmgSource });
-      } catch {
-        results.push({ webApp: dmgName, opened: false, path: dmgSource });
+        // Send progress update
+        sendProgress("Preparing Atlas Web Client installation...");
+
+        // ALWAYS check for and remove existing installation in /Applications when installing to ~/Applications
+        const systemAppPath = path.join("/Applications", ATLAS_WEB_CLIENT_APP);
+        if (fs.existsSync(systemAppPath)) {
+          sendProgress("Removing old installation from /Applications...");
+          try {
+            // Create a temporary script file with secure random name to prevent race conditions
+            const randomSuffix = crypto.randomBytes(16).toString("hex");
+            const tmpScript = path.join(os.tmpdir(), `atlas-remove-${randomSuffix}.sh`);
+            fs.writeFileSync(tmpScript, `#!/bin/bash\nrm -rf "${systemAppPath}"\n`, {
+              mode: 0o755,
+            });
+
+            // Properly escape the path to prevent injection attacks
+            const escapedScript = tmpScript.replace(/'/g, "'\\''");
+
+            // Use AppleScript to run the script with admin privileges
+            const appleScript = `do shell script "bash '${escapedScript}'" with administrator privileges with prompt "Atlas Installer needs administrator access to remove the old version of Atlas Web Client from /Applications"`;
+
+            // Pass AppleScript through stdin to avoid quote escaping issues
+            execSync("osascript -", { input: appleScript, encoding: "utf8" });
+
+            // Clean up temp script
+            try {
+              fs.unlinkSync(tmpScript);
+            } catch (e) {
+              // Ignore cleanup errors
+            }
+          } catch (removeError) {
+            console.log(
+              `Could not remove ${ATLAS_WEB_CLIENT_APP} from /Applications (user may have cancelled): ${removeError.message}`,
+            );
+            // Temp script cleanup happens in the outer try block
+            // Continue anyway - we'll install to ~/Applications
+          }
+        }
+
+        // Unmount if already mounted
+        sendProgress("Checking for existing mounts...");
+        try {
+          // Check if this DMG is already mounted and unmount it
+          const infoOutput = execSync("hdiutil info", { encoding: "utf8" });
+          if (infoOutput.includes(dmgSource)) {
+            // Find the mount point for this DMG
+            const lines = infoOutput.split("\n");
+            for (let i = 0; i < lines.length; i++) {
+              if (lines[i].includes(dmgSource)) {
+                // Look forward for the mount point (it appears after the image-path)
+                for (let j = i + 1; j < Math.min(lines.length, i + 30); j++) {
+                  if (lines[j].includes("/Volumes")) {
+                    // Extract mount point from line like: /dev/disk5s1 UUID /Volumes/Atlas
+                    const parts = lines[j].trim().split(/\s+/);
+                    const volumePath = parts.find((p) => p.startsWith("/Volumes"));
+                    if (volumePath) {
+                      console.log(`DMG already mounted at ${volumePath}, unmounting...`);
+                      execSync(`hdiutil detach "${volumePath}" -force`, { stdio: "ignore" });
+                      // Wait a moment for unmount to complete (using sync sleep as we're not in async context)
+                      execSync("sleep 1", { stdio: "ignore" });
+                      break;
+                    }
+                  }
+                }
+                break;
+              }
+            }
+          }
+        } catch (err) {
+          console.warn(`Unmount check failed: ${err.message}`);
+        }
+
+        // Mount the DMG silently (without opening Finder window)
+        sendProgress("Mounting disk image...");
+        let mountOutput;
+        let mountPoint = "";
+        try {
+          mountOutput = execSync(`hdiutil attach "${dmgSource}" -nobrowse -noautoopen`, {
+            encoding: "utf8",
+          });
+        } catch (mountError) {
+          throw mountError;
+        }
+
+        // Parse mount point - look for /Volumes path in the output
+        // hdiutil output format: device-node \t partition-type \t mount-point
+        const lines = mountOutput.split("\n");
+        for (const line of lines) {
+          if (line.includes("/Volumes")) {
+            // The mount point is after the last tab on lines containing /Volumes
+            const parts = line.split("\t");
+            const lastPart = parts[parts.length - 1];
+            if (lastPart && lastPart.includes("/Volumes")) {
+              mountPoint = lastPart.trim();
+              break;
+            }
+          }
+        }
+
+        // Fallback to last line parsing if /Volumes not found
+        if (!mountPoint) {
+          const lastLine = mountOutput.trim().split("\n").pop();
+          if (lastLine) {
+            const parts = lastLine.split("\t");
+            mountPoint = parts[parts.length - 1].trim();
+          }
+        }
+
+        // Start try block for cleanup in finally
+        try {
+          // Note: Disk space check removed as statfsSync doesn't exist in Node.js
+          // The app is ~200MB and macOS will show an error if disk is full during copy
+
+          // Ensure ~/Applications directory exists and resolve symlinks
+          sendProgress("Preparing installation directory...");
+          const userAppsDirRaw = path.join(os.homedir(), "Applications");
+          if (!fs.existsSync(userAppsDirRaw)) {
+            fs.mkdirSync(userAppsDirRaw, { recursive: true });
+          }
+          // Resolve symlinks to get the real path
+          const userAppsDir = fs.realpathSync(userAppsDirRaw);
+
+          // Define source and destination paths
+          const appSource = path.join(mountPoint, ATLAS_WEB_CLIENT_APP);
+          const appDest = path.join(userAppsDir, ATLAS_WEB_CLIENT_APP);
+
+          // Verify the app exists in the DMG
+          if (!fs.existsSync(appSource)) {
+            // Try to find any .app file in the DMG
+            const dmgFiles = fs.readdirSync(mountPoint);
+            const appFile = dmgFiles.find((f) => f.endsWith(".app"));
+            if (appFile) {
+              throw new Error(
+                `${ATLAS_WEB_CLIENT_APP} not found in mounted DMG at ${appSource}, but found ${appFile}`,
+              );
+            } else {
+              throw new Error(
+                `${ATLAS_WEB_CLIENT_APP} not found in mounted DMG at ${appSource}, DMG contains: ${dmgFiles.join(", ")}`,
+              );
+            }
+          }
+
+          // Remove existing app if present
+          if (fs.existsSync(appDest)) {
+            sendProgress("Removing old version from ~/Applications...");
+            fs.rmSync(appDest, { recursive: true, force: true });
+          }
+
+          // Copy the app to ~/Applications
+          sendProgress("Installing Atlas Web Client...");
+          try {
+            fs.cpSync(appSource, appDest, { recursive: true });
+
+            // Verify the copy was successful
+            if (!fs.existsSync(appDest)) {
+              throw new Error(`Copy appeared to succeed but app not found at ${appDest}`);
+            }
+          } catch (copyError) {
+            console.error(`Failed to copy app: ${copyError.message}`);
+            throw copyError;
+          }
+
+          // Clear quarantine attributes to avoid Gatekeeper issues
+          try {
+            execSync(`xattr -cr "${appDest}"`, { stdio: "ignore" });
+          } catch {
+            // Non-critical - app is signed and notarized so should work anyway
+          }
+
+          results.push({ webApp: ATLAS_WEB_CLIENT_APP, installed: appDest, autoInstalled: true });
+
+          sendProgress("Atlas Web Client installed successfully!");
+          console.log(`${ATLAS_WEB_CLIENT_APP} installed successfully to ~/Applications`);
+        } finally {
+          // Always try to unmount the DMG
+          if (mountPoint) {
+            sendProgress("Cleaning up...");
+            try {
+              execSync(`hdiutil detach "${mountPoint}" -quiet`, { stdio: "ignore" });
+              console.log("DMG unmounted successfully");
+            } catch (detachError) {
+              // Non-critical error - DMG will auto-unmount eventually
+              console.warn(`Warning: Could not unmount DMG (non-critical): ${detachError.message}`);
+            }
+          }
+        }
+      } catch (error) {
+        console.error(`Auto-installation failed: ${error.message}`);
+        console.log("Falling back to manual installation...");
+
+        // Fallback: Open DMG for manual installation
+        try {
+          execSync(`open "${dmgSource}"`);
+          results.push({
+            webApp: dmgName,
+            opened: true,
+            path: dmgSource,
+            autoInstalled: false,
+            fallbackReason: error.message,
+          });
+        } catch (openError) {
+          // Both auto-install and fallback failed - this is a critical error
+          const errorMsg = `Failed to install Atlas Web Client. Auto-install error: ${error.message}. Fallback error: ${openError.message}`;
+          console.error(errorMsg);
+          results.push({
+            webApp: dmgName,
+            opened: false,
+            path: dmgSource,
+            autoInstalled: false,
+            error: errorMsg,
+          });
+          // Return the error to the renderer so it shows in the UI
+          return { success: false, error: errorMsg, _installed: results };
+        }
       }
     }
 
