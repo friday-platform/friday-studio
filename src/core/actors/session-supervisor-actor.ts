@@ -248,6 +248,9 @@ export class SessionSupervisorActor implements BaseActor {
     agentMetrics: new Map<string, { events: number; errors: number }>(),
   };
 
+  // Background memory operations tracking for graceful shutdown
+  private backgroundMemoryOps = new Set<Promise<void>>();
+
   constructor(
     sessionId: string,
     workspaceId?: string,
@@ -462,6 +465,25 @@ export class SessionSupervisorActor implements BaseActor {
       });
       // Don't rethrow - memory cleanup failure shouldn't break shutdown
     }
+  }
+
+  /**
+   * Wait for all background memory operations to complete before shutdown.
+   * Enables graceful session termination without losing memory operations.
+   */
+  async awaitBackgroundMemoryOperations(): Promise<void> {
+    if (this.backgroundMemoryOps.size === 0) {
+      return;
+    }
+
+    this.logger.info("Waiting for background memory operations to complete", {
+      sessionId: this.sessionId,
+      operationCount: this.backgroundMemoryOps.size,
+    });
+
+    await Promise.allSettled(this.backgroundMemoryOps);
+
+    this.logger.info("Background memory operations completed", { sessionId: this.sessionId });
   }
 
   /**
@@ -951,11 +973,8 @@ export class SessionSupervisorActor implements BaseActor {
       this.isExecuting = false;
       this.executionEndTime = new Date();
 
-      // Handle memory operations based on job configuration
-      await this.handleMemoryOperations(summary);
-
-      // Perform session lifecycle memory management
-      await this.performSessionMemoryLifecycle(summary);
+      // Schedule session-level memory operations to happen after final message is sent
+      this.schedulePostSessionMemoryOperations(summary);
 
       this.logger.info("Session execution completed", {
         sessionId: this.sessionId,
@@ -1008,6 +1027,11 @@ export class SessionSupervisorActor implements BaseActor {
           error: error instanceof Error ? error.message : String(error),
           duration,
         });
+      }
+
+      // Schedule memory operations for failed session too (if summary exists)
+      if (summary) {
+        this.schedulePostSessionMemoryOperations(summary);
       }
 
       throw error;
@@ -1531,25 +1555,49 @@ export class SessionSupervisorActor implements BaseActor {
         });
       }
 
-      // Stream failed agent result to memory for learning
+      // Stream failed agent result to memory for learning (non-blocking)
       const duration = Date.now() - startTime;
-      await this.streamAgentResultToMemory(
-        {
-          agentId: agentTask.agentId,
-          task:
-            String(prompt).length > 100 ? `${String(prompt).substring(0, 97)}...` : String(prompt), // Truncate long prompts
-          input,
-          output: null,
-          duration,
-          timestamp: new Date().toISOString(),
-          reasoning: agentTask.reasoning,
-          toolCalls: undefined,
-          toolResults: undefined,
-        },
-        false, // success = false
-        0, // no tokens used
-        error instanceof Error ? error.message : String(error),
-      );
+      const failedAgentResult: AgentResult = {
+        agentId: agentTask.agentId,
+        task:
+          String(prompt).length > 100 ? `${String(prompt).substring(0, 97)}...` : String(prompt), // Truncate long prompts
+        input,
+        output: null,
+        duration,
+        timestamp: new Date().toISOString(),
+        reasoning: agentTask.reasoning,
+        toolCalls: undefined,
+        toolResults: undefined,
+      };
+
+      // Schedule failed agent memory operations to happen in background
+      const failedAgentMemoryOp = Promise.resolve()
+        .then(async () => {
+          await this.streamAgentResultToMemory(
+            failedAgentResult,
+            false, // success = false
+            0, // no tokens used
+            error instanceof Error ? error.message : String(error),
+          );
+          this.logger.debug("Failed agent result streamed to memory (post-response)", {
+            agentId: agentTask.agentId,
+            sessionId: this.sessionId,
+          });
+        })
+        .catch((memoryError) => {
+          this.logger.warn("Failed to stream failed agent result to memory", {
+            agentId: agentTask.agentId,
+            sessionId: this.sessionId,
+            error: memoryError instanceof Error ? memoryError.message : String(memoryError),
+          });
+        })
+        .finally(() => {
+          // Clean up the tracker once the promise resolves
+          this.backgroundMemoryOps.delete(failedAgentMemoryOp);
+        });
+
+      // Track the operation for graceful shutdown
+      this.backgroundMemoryOps.add(failedAgentMemoryOp);
 
       throw error;
     }
@@ -1574,125 +1622,230 @@ export class SessionSupervisorActor implements BaseActor {
       hasToolCalls: !!agentResult.toolCalls?.length,
     });
 
-    // Capture working memory from agent interactions using MECMF
-    if (this.mecmfManager) {
-      try {
-        const conversationContext = createConversationContext(
-          this.sessionId,
-          this.workspaceId || "global",
-          { currentTask: agentTask.task, activeAgents: [agentTask.agentId] },
-        );
+    // Schedule memory operations to happen after response is returned to UI
+    this.schedulePostResponseMemoryOperations(
+      agentResult,
+      agentTask,
+      result,
+      prompt,
+      input,
+      duration,
+    );
 
-        // Store agent prompt as working memory
-        const promptMemoryId = await this.mecmfManager.classifyAndStore(
-          `Agent ${agentTask.agentId} prompt: ${String(prompt)}`,
-          conversationContext,
-          MemorySource.SYSTEM_GENERATED, // Prompts are system-generated
-          { agentId: agentTask.agentId, sessionId: this.sessionId, workspaceId: this.workspaceId },
-        );
+    // Clean up the abort controller for this agent
+    this.activeAgentExecutions.delete(agentTask.agentId);
 
-        // Store agent response as working memory
-        const responseMemoryId = await this.mecmfManager.classifyAndStore(
-          `Agent ${agentTask.agentId} response: ${JSON.stringify(result.output)}`,
-          conversationContext,
-          MemorySource.AGENT_OUTPUT, // Agent outputs
-          { agentId: agentTask.agentId, sessionId: this.sessionId, workspaceId: this.workspaceId },
-        );
+    return agentResult;
+  }
 
-        // Store episodic memory for the agent execution outcome
-        const episodicContent =
-          `Agent ${agentTask.agentId} completed task "${agentTask.task}" in ${duration}ms. ` +
-          `Input type: ${typeof input}. Output type: ${typeof result.output}. ` +
-          `${
-            result.toolCalls?.length ? `Used ${result.toolCalls.length} tools.` : "No tools used."
-          }`;
+  /**
+   * Schedule memory operations to run after the agent response is returned to UI.
+   * This prevents memory consolidation from blocking the user interface response.
+   */
+  private schedulePostResponseMemoryOperations(
+    agentResult: AgentResult,
+    agentTask: AgentTask,
+    result: AgentResult,
+    prompt: string,
+    input: unknown,
+    duration: number,
+  ): void {
+    // Use tracked Promise to schedule after current execution context
+    const postResponseMemoryOp = Promise.resolve()
+      .then(async () => {
+        try {
+          // Capture working memory from agent interactions using MECMF
+          if (this.mecmfManager) {
+            try {
+              const conversationContext = createConversationContext(
+                this.sessionId,
+                this.workspaceId || "global",
+                { currentTask: agentTask.task, activeAgents: [agentTask.agentId] },
+              );
 
-        const episodicMemoryId = await this.mecmfManager.classifyAndStore(
-          episodicContent,
-          conversationContext,
-          MemorySource.SYSTEM_GENERATED, // Episodic summaries are system-generated
-          { agentId: agentTask.agentId, sessionId: this.sessionId, workspaceId: this.workspaceId },
-        );
-
-        // Extract and store semantic facts from agent output
-        if (result.output) {
-          const outputText =
-            typeof result.output === "string" ? result.output : JSON.stringify(result.output);
-
-          // Extract entities using the memory classifier
-          const classifier = this.mecmfManager as unknown as {
-            memoryClassifier?: {
-              extractKeyEntities(
-                text: string,
-              ): Array<{ type: string; name: string; confidence: number }>;
-            };
-          }; // Access internal classifier
-          if (classifier.memoryClassifier) {
-            const entities = classifier.memoryClassifier.extractKeyEntities(outputText);
-
-            // Store each extracted entity as semantic memory
-            for (const entity of entities) {
-              const semanticContent = `Entity ${entity.type}: ${entity.name} (confidence: ${entity.confidence})`;
-              await this.mecmfManager.classifyAndStore(
-                semanticContent,
+              // Store agent prompt as working memory
+              const promptMemoryId = await this.mecmfManager.classifyAndStore(
+                `Agent ${agentTask.agentId} prompt: ${String(prompt)}`,
                 conversationContext,
-                MemorySource.AGENT_OUTPUT, // Entities extracted from agent output - WILL BE PII FILTERED
+                MemorySource.SYSTEM_GENERATED, // Prompts are system-generated
                 {
                   agentId: agentTask.agentId,
                   sessionId: this.sessionId,
                   workspaceId: this.workspaceId,
                 },
               );
-            }
 
-            if (entities.length > 0) {
-              this.logger.debug("Extracted entities from agent output", {
+              // Store agent response as working memory
+              const responseMemoryId = await this.mecmfManager.classifyAndStore(
+                `Agent ${agentTask.agentId} response: ${JSON.stringify(result.output)}`,
+                conversationContext,
+                MemorySource.AGENT_OUTPUT, // Agent outputs
+                {
+                  agentId: agentTask.agentId,
+                  sessionId: this.sessionId,
+                  workspaceId: this.workspaceId,
+                },
+              );
+
+              // Store episodic memory for the agent execution outcome
+              const episodicContent =
+                `Agent ${agentTask.agentId} completed task "${agentTask.task}" in ${duration}ms. ` +
+                `Input type: ${typeof input}. Output type: ${typeof result.output}. ` +
+                `${
+                  result.toolCalls?.length
+                    ? `Used ${result.toolCalls.length} tools.`
+                    : "No tools used."
+                }`;
+
+              const episodicMemoryId = await this.mecmfManager.classifyAndStore(
+                episodicContent,
+                conversationContext,
+                MemorySource.SYSTEM_GENERATED, // Episodic summaries are system-generated
+                {
+                  agentId: agentTask.agentId,
+                  sessionId: this.sessionId,
+                  workspaceId: this.workspaceId,
+                },
+              );
+
+              // Extract and store semantic facts from agent output
+              if (result.output) {
+                const outputText =
+                  typeof result.output === "string" ? result.output : JSON.stringify(result.output);
+
+                // Extract entities using the memory classifier
+                const classifier = this.mecmfManager as unknown as {
+                  memoryClassifier?: {
+                    extractKeyEntities(
+                      text: string,
+                    ): Array<{ type: string; name: string; confidence: number }>;
+                  };
+                }; // Access internal classifier
+                if (classifier.memoryClassifier) {
+                  const entities = classifier.memoryClassifier.extractKeyEntities(outputText);
+
+                  // Store each extracted entity as semantic memory
+                  for (const entity of entities) {
+                    const semanticContent = `Entity ${entity.type}: ${entity.name} (confidence: ${entity.confidence})`;
+                    await this.mecmfManager.classifyAndStore(
+                      semanticContent,
+                      conversationContext,
+                      MemorySource.AGENT_OUTPUT, // Entities extracted from agent output - WILL BE PII FILTERED
+                      {
+                        agentId: agentTask.agentId,
+                        sessionId: this.sessionId,
+                        workspaceId: this.workspaceId,
+                      },
+                    );
+                  }
+
+                  if (entities.length > 0) {
+                    this.logger.debug("Extracted entities from agent output", {
+                      agentId: agentTask.agentId,
+                      entityCount: entities.length,
+                      entityTypes: [...new Set(entities.map((e) => e.type))],
+                    });
+                  }
+                }
+              }
+
+              this.logger.debug("Agent interaction captured in MECMF memory (post-response)", {
                 agentId: agentTask.agentId,
-                entityCount: entities.length,
-                entityTypes: [...new Set(entities.map((e) => e.type))],
+                promptMemoryId,
+                responseMemoryId,
+                episodicMemoryId,
+                sessionId: this.sessionId,
               });
+            } catch (error) {
+              this.logger.warn(
+                "Failed to capture agent interaction in MECMF memory (post-response)",
+                {
+                  error: error instanceof Error ? error.message : String(error),
+                  agentId: agentTask.agentId,
+                },
+              );
             }
           }
+
+          // Stream tool calls and results to working memory if present
+          if (result.toolCalls?.length) {
+            for (const { toolName, input } of result.toolCalls) {
+              await this.streamToolCallToMemory(agentTask.agentId, toolName, input);
+            }
+          }
+
+          if (result.toolResults?.length) {
+            for (const { toolName, output: toolOutput } of result.toolResults as Array<{
+              toolName: string;
+              output?: unknown;
+            }>) {
+              await this.streamToolResultToMemory(agentTask.agentId, toolName, toolOutput);
+            }
+          }
+
+          // Stream agent result to workspace memory system for automatic processing
+          await this.streamAgentResultToMemory(agentResult, true);
+
+          this.logger.debug("Post-response memory operations completed", {
+            agentId: agentTask.agentId,
+            sessionId: this.sessionId,
+          });
+        } catch (error) {
+          this.logger.error("Post-response memory operations failed", {
+            error: error instanceof Error ? error.message : String(error),
+            agentId: agentTask.agentId,
+            sessionId: this.sessionId,
+          });
         }
+      })
+      .finally(() => {
+        // Clean up the tracker once the promise resolves
+        this.backgroundMemoryOps.delete(postResponseMemoryOp);
+      });
 
-        this.logger.debug("Agent interaction captured in MECMF memory", {
-          agentId: agentTask.agentId,
-          promptMemoryId,
-          responseMemoryId,
-          episodicMemoryId,
-          sessionId: this.sessionId,
-        });
-      } catch (error) {
-        this.logger.warn("Failed to capture agent interaction in MECMF memory", {
-          error: error instanceof Error ? error.message : String(error),
-          agentId: agentTask.agentId,
-        });
-      }
-    }
+    // Track the operation for graceful shutdown
+    this.backgroundMemoryOps.add(postResponseMemoryOp);
+  }
 
-    // Stream tool calls and results to working memory if present
-    if (result.toolCalls?.length) {
-      for (const { toolName, input } of result.toolCalls) {
-        await this.streamToolCallToMemory(agentTask.agentId, toolName, input);
-      }
-    }
+  /**
+   * Schedule session-level memory operations to run after the final session message is sent to UI.
+   * This prevents session memory consolidation from blocking the final response.
+   */
+  private schedulePostSessionMemoryOperations(summary: SessionSummary): void {
+    // Use tracked Promise to schedule after current execution context
+    const postSessionMemoryOp = Promise.resolve()
+      .then(async () => {
+        try {
+          this.logger.info("Starting post-session memory operations", {
+            sessionId: this.sessionId,
+            status: summary.status,
+          });
 
-    if (result.toolResults?.length) {
-      for (const { toolName, output: toolOutput } of result.toolResults as Array<{
-        toolName: string;
-        output?: unknown;
-      }>) {
-        await this.streamToolResultToMemory(agentTask.agentId, toolName, toolOutput);
-      }
-    }
+          // Handle memory operations based on job configuration
+          await this.handleMemoryOperations(summary);
 
-    // Stream agent result to workspace memory system for automatic processing
-    await this.streamAgentResultToMemory(agentResult, true);
+          // Perform session lifecycle memory management
+          await this.performSessionMemoryLifecycle(summary);
 
-    // Clean up the abort controller for this agent
-    this.activeAgentExecutions.delete(agentTask.agentId);
+          this.logger.info("Post-session memory operations completed", {
+            sessionId: this.sessionId,
+            status: summary.status,
+          });
+        } catch (error) {
+          this.logger.error("Post-session memory operations failed", {
+            error: error instanceof Error ? error.message : String(error),
+            sessionId: this.sessionId,
+            status: summary.status,
+          });
+        }
+      })
+      .finally(() => {
+        // Clean up the tracker once the promise resolves
+        this.backgroundMemoryOps.delete(postSessionMemoryOp);
+      });
 
-    return agentResult;
+    // Track the operation for graceful shutdown
+    this.backgroundMemoryOps.add(postSessionMemoryOp);
   }
 
   private evaluateProgress(results: AgentResult[], _plan: ExecutionPlan): boolean {
