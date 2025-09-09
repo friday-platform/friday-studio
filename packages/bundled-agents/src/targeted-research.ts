@@ -909,7 +909,7 @@ export const targetedResearchAgent = createAgent<ResearchOutput>({
     examples: [
       "Find upcoming cultural events in Luxembourg City",
       "Collect weekly concert and theater listings from event websites",
-      "Search for Airbnbs in Tokyo under $100/night", 
+      "Search for Airbnbs in Tokyo under $100/night",
       "Show me popular posts on r/homeautomation about smart locks",
       "Research latest AI model announcements and compare capabilities",
       "Gather product reviews and pricing for gravel bikes under $3000",

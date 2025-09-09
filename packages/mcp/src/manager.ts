@@ -103,8 +103,108 @@ export class MCPManager {
         }
 
         case "stdio": {
-          const { command, args } = validatedConfig.transport;
+          let { command, args } = validatedConfig.transport;
           const env = validatedConfig.env;
+
+          // Smart command resolution for npx
+          // If command is 'npx' and we have ATLAS_NPX_PATH, use the full path
+          if (command === "npx" || command === "npx.cmd") {
+            const npxPath = Deno.env.get("ATLAS_NPX_PATH");
+            if (npxPath) {
+              // Validate the npx path exists and is executable
+              try {
+                // Follow symlinks to get the real path
+                let realPath = npxPath;
+                try {
+                  realPath = await Deno.realPath(npxPath);
+                  if (realPath !== npxPath) {
+                    logger.debug(`Resolved npx symlink: ${npxPath} -> ${realPath}`, {
+                      operation: "mcp_command_resolution",
+                      serverId: config.id,
+                    });
+                  }
+                } catch {
+                  // Not a symlink or doesn't exist, use original path
+                  realPath = npxPath;
+                }
+
+                const fileInfo = await Deno.stat(realPath);
+                if (fileInfo.isFile) {
+                  logger.debug(`Using configured npx path: ${npxPath}`, {
+                    operation: "mcp_command_resolution",
+                    serverId: config.id,
+                    originalCommand: command,
+                    resolvedCommand: npxPath,
+                    realPath: realPath !== npxPath ? realPath : undefined,
+                  });
+                  command = npxPath; // Use original path, not realPath, for execution
+                } else {
+                  logger.warn(`Configured ATLAS_NPX_PATH is not a file: ${npxPath}`, {
+                    operation: "mcp_command_resolution",
+                    serverId: config.id,
+                    realPath: realPath !== npxPath ? realPath : undefined,
+                  });
+                }
+              } catch (error) {
+                logger.warn(`Configured ATLAS_NPX_PATH does not exist: ${npxPath}`, {
+                  operation: "mcp_command_resolution",
+                  serverId: config.id,
+                  error: error instanceof Error ? error.message : String(error),
+                });
+              }
+            }
+
+            // If still not resolved, try fallback locations
+            if (command === "npx" || command === "npx.cmd") {
+              // Fallback: Try to find npx in common locations
+              const fallbackPaths =
+                Deno.build.os === "windows"
+                  ? [
+                      "C:\\Program Files\\nodejs\\npx.cmd", // Windows default
+                      "C:\\Program Files (x86)\\nodejs\\npx.cmd", // Windows 32-bit on 64-bit
+                      "%APPDATA%\\npm\\npx.cmd", // Windows user install
+                    ]
+                  : [
+                      "/opt/homebrew/bin/npx", // macOS with Homebrew
+                      "/usr/local/bin/npx", // Common Unix location
+                      "/usr/bin/npx", // System location
+                      "/home/linuxbrew/.linuxbrew/bin/npx", // Linux Homebrew
+                    ];
+
+              for (const fallbackPath of fallbackPaths) {
+                try {
+                  // Expand environment variables on Windows
+                  const expandedPath =
+                    Deno.build.os === "windows"
+                      ? fallbackPath.replace(/%([^%]+)%/g, (_, key) => Deno.env.get(key) || "")
+                      : fallbackPath;
+
+                  const fileInfo = await Deno.stat(expandedPath);
+                  if (fileInfo.isFile) {
+                    logger.info(`Found npx at fallback location: ${expandedPath}`, {
+                      operation: "mcp_command_resolution",
+                      serverId: config.id,
+                    });
+                    command = expandedPath;
+                    break;
+                  }
+                } catch {
+                  // Path doesn't exist, try next
+                }
+              }
+
+              if (command === "npx" || command === "npx.cmd") {
+                logger.warn(
+                  `npx not found in configured or fallback locations, using system PATH`,
+                  {
+                    operation: "mcp_command_resolution",
+                    serverId: config.id,
+                    hint: "Consider setting ATLAS_NPX_PATH in ~/.atlas/.env",
+                  },
+                );
+              }
+            }
+          }
 
           // Process environment variables and resolve "auto" values
           const processedEnv: Record<string, string> = {};

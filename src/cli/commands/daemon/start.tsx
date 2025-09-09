@@ -4,7 +4,7 @@ import { AtlasLogger } from "@atlas/logger";
 import { getAtlasHome } from "@atlas/utils";
 import { load } from "@std/dotenv";
 import { exists } from "@std/fs";
-import { join } from "@std/path";
+import { dirname, join } from "@std/path";
 import {
   displayDaemonStatus,
   fetchDaemonStatus,
@@ -118,11 +118,95 @@ export const handler = async (argv: StartArgs): Promise<void> => {
       await load({ export: true, envPath: globalAtlasEnv });
     }
 
+    const logger = AtlasLogger.getInstance();
+
+    // Smart PATH augmentation for npx and other tools
+    // This ensures compiled binaries can find tools like npx for MCP servers
+    const augmentPathWithTool = async (toolPath: string | undefined, toolName: string) => {
+      if (!toolPath) return;
+      try {
+        // First validate the tool path exists and is executable
+        try {
+          // Follow symlinks to get the real path
+          let realPath = toolPath;
+          try {
+            realPath = await Deno.realPath(toolPath);
+            logger.debug(`Resolved ${toolName} symlink: ${toolPath} -> ${realPath}`);
+          } catch {
+            // Not a symlink or doesn't exist, use original path
+            realPath = toolPath;
+          }
+
+          // Check if the path exists and is a file (after following symlinks)
+          const fileInfo = await Deno.stat(realPath);
+          if (!fileInfo.isFile) {
+            logger.warn(`${toolName} path is not a file: ${realPath} (original: ${toolPath})`);
+            return;
+          }
+
+          // Check if executable by examining file permissions (more robust than running)
+          if (Deno.build.os !== "windows") {
+            // On Unix-like systems, check if file has execute permission
+            // mode is a number where execute permissions are:
+            // - owner execute: 0o100
+            // - group execute: 0o010
+            // - other execute: 0o001
+            const mode = fileInfo.mode ?? 0;
+            const isExecutable = (mode & 0o111) !== 0; // Check any execute bit
+
+            if (!isExecutable) {
+              logger.warn(
+                `${toolName} is not executable (mode: ${mode.toString(
+                  8,
+                )}): ${realPath} (original: ${toolPath})`,
+              );
+              return;
+            }
+
+            logger.debug(`${toolName} is executable (mode: ${mode.toString(8)}): ${realPath}`);
+          }
+          // On Windows, .cmd and .exe files are executable by default if they exist
+        } catch (error) {
+          logger.warn(`${toolName} path does not exist or is not accessible: ${toolPath}`, {
+            error: error instanceof Error ? error.message : String(error),
+          });
+          return;
+        }
+
+        // Extract directory from tool path using proper path utilities
+        const toolDir = dirname(toolPath);
+        const currentPath = Deno.env.get("PATH") || "";
+        const separator = Deno.build.os === "windows" ? ";" : ":";
+
+        // Check if tool directory is already in PATH
+        const pathSegments = currentPath.split(separator);
+        if (!pathSegments.includes(toolDir)) {
+          // Prepend tool directory to PATH for higher priority
+          const newPath = `${toolDir}${separator}${currentPath}`;
+          Deno.env.set("PATH", newPath);
+          logger.info(`Added ${toolName} to PATH`, { toolPath, toolDir });
+        } else {
+          logger.debug(`${toolName} directory already in PATH`, { toolDir });
+        }
+      } catch (error) {
+        logger.warn(`Failed to augment PATH with ${toolName}`, {
+          error: error instanceof Error ? error.message : String(error),
+          toolPath,
+        });
+      }
+    };
+
+    // Check for ATLAS_NPX_PATH and augment PATH if needed
+    const npxPath = Deno.env.get("ATLAS_NPX_PATH");
+    if (npxPath) {
+      await augmentPathWithTool(npxPath, "npx");
+    } else {
+      logger.debug("No ATLAS_NPX_PATH configured, MCP servers using npx may not work");
+    }
+
     // Check for ATLAS_KEY and fetch credentials if present
     const atlasKey = Deno.env.get("ATLAS_KEY");
     const localOnlyMode = isLocalOnlyMode(Deno.env.get("ATLAS_LOCAL_ONLY"));
-
-    const logger = AtlasLogger.getInstance();
 
     if (atlasKey && !localOnlyMode) {
       logger.info("Atlas key detected, fetching credentials...");
