@@ -87,9 +87,13 @@ $effect(() => {
 
 {#if ctx.daemonStatus === 'error'}
 	<p class="daemon-error">
-		Error: The atlas daemon is not running <button type="button" onclick={() => ctx.checkHealth()}
-			>Try again</button
-		>
+		Error: The atlas daemon is not running
+		{#if ctx.reconnectCountdown > 0}
+			<span class="reconnect-countdown">(reconnecting in {ctx.reconnectCountdown}s)</span>
+		{:else if ctx.reconnectCountdown === 0}
+			<span class="reconnect-countdown">(reconnecting...)</span>
+		{/if}
+		<button type="button" onclick={() => ctx.checkHealth()}>Try again</button>
 	</p>
 {:else}
 	<div
@@ -379,10 +383,17 @@ $effect(() => {
 		text-align: center;
 		margin-block-end: var(--size-6);
 
+		.reconnect-countdown {
+			color: var(--text-2);
+			font-size: var(--font-size-4);
+			margin-inline: var(--size-2);
+		}
+
 		button {
 			color: var(--accent-1);
 			cursor: pointer;
 			text-decoration: underline;
+			margin-inline-start: var(--size-2);
 		}
 	}
 </style>

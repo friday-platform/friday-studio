@@ -1,5 +1,5 @@
 <script lang="ts">
-import { onMount } from "svelte";
+import { onMount, onDestroy } from "svelte";
 import { setAppContext } from "$lib/app-context.svelte";
 import favicon from "$lib/assets/favicon.svg";
 import AppContainer from "$lib/components/app/container.svelte";
@@ -20,7 +20,14 @@ $effect(() => {
 });
 
 onMount(() => {
+  // Start health checks immediately
   ctx.checkHealth();
+  // Ensure periodic health checks are running for auto-reconnect
+  ctx.startHealthCheckInterval();
+});
+
+onDestroy(() => {
+  ctx.destroy();
 });
 </script>
 
