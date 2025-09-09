@@ -127,7 +127,6 @@ export const workspaceCreationAgent = createAgent<WorkspaceResult>({
         maxOutputTokens: 4096,
         abortSignal,
         experimental_telemetry: telemetry,
-        // providerOptions: { anthropic: { thinking: { type: "enabled", budgetTokens: 25000 } } },
         onStepFinish: ({ reasoningText, text }) => {
           logger.debug(`Step completed:
 

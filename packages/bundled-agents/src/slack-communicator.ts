@@ -146,7 +146,6 @@ export const slackCommunicatorAgent = createAgent<SlackAgentResult>({
         system,
         prompt: [prompt, "\n\n", executorInstructions].join(""),
         tools,
-        temperature: 0,
         maxOutputTokens: 800,
         providerOptions: { anthropic: { thinking: { type: "enabled", budgetTokens: 12000 } } },
       });

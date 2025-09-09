@@ -310,7 +310,6 @@ export const conversationAgent = createAgent({
         tools: allTools,
         toolChoice: "auto",
         stopWhen: stepCountIs(40),
-        temperature: 0.3,
         maxOutputTokens: 20000,
         experimental_transform: smoothStream({ chunking: "word" }),
         maxRetries: 3, // Enable retries for API resilience (e.g., 529 errors)

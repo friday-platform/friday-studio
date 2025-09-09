@@ -88,7 +88,6 @@ export class WorkspaceUpdater {
           maxOutputTokens: 8000,
           tools: workspaceUpdateTools,
           stopWhen: stepCountIs(40),
-          temperature: this.getTemperatureForAttempt(attempt),
           maxRetries: 3, // Enable retries for API resilience (e.g., 529 errors)
           providerOptions: { anthropic: { thinking: { type: "enabled", budgetTokens: 7000 } } },
           onChunk({ chunk }) {
@@ -276,11 +275,6 @@ Begin the update process now.`;
     }
 
     return output || "\nNo existing components found.";
-  }
-
-  private getTemperatureForAttempt(attempt: number): number {
-    // Progressive temperature reduction: 0.4 → 0.3 → 0.2
-    return Math.max(0.1, 0.4 - (attempt - 1) * 0.1);
   }
 
   private getLastErrors(): string[] | undefined {

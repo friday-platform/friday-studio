@@ -62,7 +62,6 @@ export class WorkspaceGenerator {
           maxOutputTokens: 8000,
           tools: workspaceBuilderTools,
           stopWhen: stepCountIs(60),
-          temperature: this.getTemperatureForAttempt(attempt),
           maxRetries: 3, // Enable retries for API resilience (e.g., 529 errors)
           providerOptions: { anthropic: { thinking: { type: "enabled", budgetTokens: 7000 } } },
         });
@@ -243,11 +242,6 @@ Do NOT stop after calling just initializeWorkspace. Continue calling tools until
 Begin construction now and call ALL necessary tools.`;
 
     return prompt;
-  }
-
-  private getTemperatureForAttempt(attempt: number): number {
-    // Progressive temperature reduction: 0.4 → 0.3 → 0.2
-    return Math.max(0.1, 0.5 - (attempt - 1) * 0.1);
   }
 
   private getLastErrors(): string[] | undefined {
