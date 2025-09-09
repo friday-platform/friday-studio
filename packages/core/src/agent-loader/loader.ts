@@ -2,6 +2,7 @@ import type { AtlasAgent } from "@atlas/agent-sdk";
 import { createLogger } from "@atlas/logger";
 import { convertYAMLAgentToSDK, parseYAMLAgentContent } from "../agent-conversion/index.ts";
 import type { AgentAdapter, AgentSourceData, AgentSummary } from "./adapters/types.ts";
+import { AgentNotFoundError } from "./errors.ts";
 
 /** Options for configuring the agent loader */
 export interface LoaderOptions {
@@ -90,13 +91,22 @@ export class AgentLoader {
         });
         return agent;
       } catch (error) {
-        this.logger.error("Failed to load agent with adapter", {
-          id,
-          adapterName: adapter.adapterName,
-          error,
-          agentId: id,
-        });
-        errors.push(new Error(`${adapter.adapterName}: Failed to load agent ${id}`));
+        // Only log as error if it's not a "not found" error
+        if (error instanceof AgentNotFoundError) {
+          this.logger.debug("Agent not found in adapter", {
+            id,
+            adapterName: adapter.adapterName,
+            message: error.message,
+          });
+        } else {
+          this.logger.error("Failed to load agent with adapter", {
+            id,
+            adapterName: adapter.adapterName,
+            error,
+            agentId: id,
+          });
+        }
+        errors.push(error instanceof Error ? error : new Error(String(error)));
       }
     }
 

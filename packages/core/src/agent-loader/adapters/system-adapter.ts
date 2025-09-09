@@ -2,6 +2,7 @@ import type { AtlasAgent } from "@atlas/agent-sdk";
 import { conversationAgent } from "../../../../system/agents/conversation/conversation.agent.ts";
 import { workspaceCreationAgent } from "../../../../system/agents/workspace-creation/workspace-creation.agent.ts";
 import type { AgentAdapter, AgentSourceData, AgentSourceType, AgentSummary } from "./types.ts";
+import { AgentNotFoundError } from "../errors.ts";
 
 /**
  * Loads built-in Atlas system agents.
@@ -25,7 +26,7 @@ export class SystemAgentAdapter implements AgentAdapter {
   loadAgent(id: string): Promise<AgentSourceData> {
     const agent = this.agents.get(id);
     if (!agent) {
-      throw new Error(`System agent not found: ${id}`);
+      throw new AgentNotFoundError(id, "System");
     }
 
     return Promise.resolve({
