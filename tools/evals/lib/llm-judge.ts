@@ -25,7 +25,7 @@ export async function llmJudge(input: LLMJudgeInput): Promise<Evaluation> {
     </judging_criteria>
 
     <agent_output>
-    ${input.agentOutput}
+    ${JSON.stringify(input.agentOutput, null, 2)}
     </agent_output>
 
     <grading_criteria>

@@ -49,6 +49,7 @@ tools/atlas-installer/*.bak
 test-workspace-watcher*
 
 # Eval snapshots
+**/__snapshots__/
 **/snapshots/
 
 # Web Client Output

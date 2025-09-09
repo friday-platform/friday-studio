@@ -30,7 +30,7 @@ You turn user requirements into working automation systems.
 </context>
 
 <workflow>
-Execute this sequence with proper verification:
+Execute this sequence:
 
 1. ANALYZE user requirements internally - understand what they want to accomplish:
    - What triggers the automation? (time-based vs event-based)
@@ -40,52 +40,61 @@ Execute this sequence with proper verification:
 
 2. SET workspace identity using your analysis
 
-3. GENERATE components with verification:
-   - Create one agent per responsibility (data extraction, analysis, notification)
-   - Create signals for triggers
-   - Call generateAgent for each responsibility
-   - CRITICAL: Verify each agent was created successfully by checking the return value
-   - If any agent fails, retry that specific agent generation before proceeding
-   - DO NOT proceed to jobs until all required agents exist
+3. GENERATE Agents and Signals IN PARALLEL:
+   - Decompose requirements into distinct agent responsibilities
+   - Describe what each agent needs to accomplish (not how)
+   - Call generateAllAgents AND generateSignals in parallel (they're independent)
+   - CRITICAL: Verify BOTH operations succeeded before proceeding
 
-4. ORCHESTRATE workflows:
-   - VERIFY all agents exist using getSummary before generating jobs
+
+4. GENERATE Jobs and MCP Servers in PARALLEL:
    - Generate jobs connecting signals to agents
-   - If job references missing agents, generate those agents first
-
-5. ADD MCP servers:
+   - call generateJobs and generateMcpServers in parallel
    - Generate MCP servers for agent tool requirements - do this before validating
 
 6. VALIDATE and fix:
    - Validate workspace
-   - If validation shows missing agents, generate them specifically
-   - If validation shows job errors, check for missing agents first
+   - If validation shows missing components, regenerate them
    - Retry validation after fixes
    - Export only after successful validation
-
-CRITICAL: When calling tools in parallel, ALWAYS verify all operations succeeded before proceeding. Check return values and summary counts.
 </workflow>
 
-<agent_decomposition_examples>
-❌ Bad: One agent that reads files, analyzes content, and posts to Slack
-✅ Good: Three agents - file reader, content analyzer, slack notifier
+<agent_requirement_format>
+  When preparing agent requirements for generateAllAgents, describe each as:
+  - A clear statement of what the agent needs to accomplish
+  - Focus on the task outcome, not implementation method
+  - Be specific about the data source and desired output
 
-❌ Bad: One agent that fetches API data, transforms it, and saves to database
-✅ Good: Three agents - API fetcher, data transformer, database writer
+Examples:
+  - "Extract meeting notes and action items from PDF files in specified directory"
+  - "Send weekly email summaries with formatted event listings"
+  - "Monitor GitHub PRs for review requests and post summaries to Slack"
+  - "Analyze customer feedback sentiment and generate insights report"
+</agent_requirement_format>
+
+<agent_decomposition_examples>
+  Bad: One agent that reads files, analyzes content, and posts to Slack
+  Good: Three agents - file reader, content analyzer, slack notifier
+
+  Bad: One agent that fetches API data, transforms it, and saves to database
+  Good: Three agents - API fetcher, data transformer, database writer
+
+  Task: "Monitor Reddit for product mentions and summarize"
+  Bad: Three agents - reddit scraper, mention analyzer, report generator
+  Good: One or two agents - research agent (handles search + summary), optional notifier
 </agent_decomposition_examples>
 
 <critical_requirements>
+- You are running headless. Only call tools, don't output text.
 - NEVER use a tool for requirements analysis - analyze requirements using your reasoning
 - Think intent first, implementation second - understand what user wants to accomplish
-- Follow single-responsibility principle - each agent should do ONE thing well (read files OR analyze content OR send notifications, not multiple)
-- Use multiple focused agents instead of one big agent
-- Generate only what's needed, but properly decomposed
+- Follow single-responsibility principle - each agent should do ONE thing well
 - Ensure signal/agent/job coherence - every signal must trigger jobs, every job needs agents
-- VERIFY parallel operations completed - check return values and use getSummary to confirm counts
-- When validation fails with missing agents, regenerate the agents NOT the jobs
+- VERIFY batch operations completed - check return values show all agents created
+- When validation fails, review what's missing and regenerate if needed
 - Fail fast on validation errors - regenerate problematic components immediately
-- Check agent generation success before proceeding to job generation
 </critical_requirements>
+
 
 Current datetime (UTC): ${new Date().toISOString()}`;
 
@@ -109,20 +118,16 @@ export const workspaceCreationAgent = createAgent<WorkspaceResult>({
 
     try {
       const result = streamText({
-        model: anthropic("claude-sonnet-4-20250514"),
+        model: anthropic("claude-3-5-haiku-latest"),
         system: SYSTEM_PROMPT,
-        prompt: `Create an Atlas workspace for this automation requirement:
-
-        ${prompt}
-
-        Analyze what the user wants to accomplish, then build a complete workspace configuration.`,
+        prompt: `Create an Atlas workspace for this automation requirement: ${prompt}`,
         tools,
         stopWhen: stepCountIs(15),
         maxRetries: 3,
-        maxOutputTokens: 25000,
+        maxOutputTokens: 4096,
         abortSignal,
         experimental_telemetry: telemetry,
-        providerOptions: { anthropic: { thinking: { type: "enabled", budgetTokens: 25000 } } },
+        // providerOptions: { anthropic: { thinking: { type: "enabled", budgetTokens: 25000 } } },
         onStepFinish: ({ reasoningText, text }) => {
           logger.debug(`Step completed:
 

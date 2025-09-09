@@ -49,7 +49,7 @@ export function setupTest(config: TestSetupConfig) {
       let pass = false;
       let error: Error | undefined;
 
-      const capture = <R>(r: R): R => {
+      const capture = <R extends T | undefined>(r: R): R => {
         capturedResult = r;
         return r;
       };
@@ -61,7 +61,8 @@ export function setupTest(config: TestSetupConfig) {
       } catch (e) {
         error = e instanceof Error ? e : new Error(String(e));
       } finally {
-        const finalResult = result ?? capturedResult;
+        // Prefer explicitly captured snapshot over return value
+        const finalResult = capturedResult ?? result;
         await saveSnapshot({
           testCase: stepName,
           testPath: config.testFileUrl,

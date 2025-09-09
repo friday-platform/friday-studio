@@ -903,14 +903,17 @@ export const targetedResearchAgent = createAgent<ResearchOutput>({
   displayName: "Targeted Research Agent",
   version: "1.0.0",
   description:
-    "Run targeted web research: executes search with optional domain focus, extracts page content, and returns a cited synthesis.",
+    "Searches the web, extracts page content, and synthesizes findings with citations. Uses Tavily for professional web scraping.",
   expertise: {
-    domains: ["research", "web-search"],
+    domains: ["research", "web-search", "data-collection", "event-discovery"],
     examples: [
+      "Find upcoming cultural events in Luxembourg City",
+      "Collect weekly concert and theater listings from event websites",
+      "Search for Airbnbs in Tokyo under $100/night", 
       "Show me popular posts on r/homeautomation about smart locks",
-      "Find Airbnbs in Tokyo under $100/night",
-      "Compare React vs Vue discussions on r/webdev",
-      "Recent r/lupus posts about treatment experiences",
+      "Research latest AI model announcements and compare capabilities",
+      "Gather product reviews and pricing for gravel bikes under $3000",
+      "Find and summarize job openings at tech companies in Berlin",
     ],
   },
 

@@ -16,8 +16,8 @@ export interface SnapshotOptions {
 /**
  * Save a snapshot of test output for later analysis.
  *
- * Single-step tests: creates snapshots/testBaseName-timestamp-status.json
- * Multi-step tests: creates snapshots/testBaseName/testCase-timestamp-status.json
+ * Single-step tests: creates __snapshots__/testBaseName-timestamp-status.json
+ * Multi-step tests: creates __snapshots__/testBaseName/testCase-timestamp-status.json
  */
 export async function saveSnapshot(options: SnapshotOptions): Promise<string> {
   const { testPath, data, pass, testCase } = options;
@@ -33,7 +33,7 @@ export async function saveSnapshot(options: SnapshotOptions): Promise<string> {
 
   // Create snapshots directory alongside the test file
   const testDir = dirname(testPath);
-  const snapshotDir = join(testDir, "snapshots");
+  const snapshotDir = join(testDir, "__snapshots__");
   await ensureDir(snapshotDir);
 
   let filepath: string;

@@ -38,7 +38,7 @@ OUTPUT:      Complete workspace.yml ready for Atlas daemon
 
 ### Core Pipeline Functions
 
-**`workspaceCreationAgent()`** - Main agent using Claude Sonnet 4
+**`workspaceCreationAgent()`** - Main agent using Claude Sonnet 4 for orchestration
 
 - Executes 6-step pipeline with parallel tool calls
 - Uses WorkspaceBuilder to accumulate components
@@ -59,7 +59,7 @@ OUTPUT:      Complete workspace.yml ready for Atlas daemon
 **Component Generation**
 
 - `generateSignals` - Creates schedule/HTTP triggers using Haiku
-- `generateAgent` - Picks bundled agents or generates LLM agents using Sonnet 4
+- `generateAgents` - Batch generates all agents in a single Haiku call using archetype patterns
 - `generateMCPServers` - Adds tool servers from MCP registry
 
 **Orchestration Tools**
@@ -79,34 +79,51 @@ Built as Atlas system agent using `@atlas/agent-sdk`:
 
 - **Input**: `{prompt: string}` - Natural language automation requirements
 - **Output**: `WorkspaceResult` with config, API response, and summary
-- **Models**: Claude Sonnet 4 (orchestration), Haiku (signal generation)
+- **Models**: Claude Sonnet 4 (orchestration), Haiku (signals, agents, jobs, MCP servers)
 - **API**: Creates workspace via Atlas `/api/workspaces/create`
 
-## Agent Selection Strategy
+## Agent Generation Strategy
+
+### Archetype-Based Batch Generation
+
+All agents generated in a single LLM call using 7 archetypes:
+
+- **collector**: Retrieves data from external APIs (Slack, GitHub, web)
+- **reader**: Extracts content from files (PDFs, docs, CSVs)
+- **analyzer**: Performs analysis and reasoning on data
+- **evaluator**: Makes decisions and recommendations
+- **reporter**: Generates structured reports and summaries
+- **notifier**: Sends output to external services
+- **executor**: Performs system operations (file cleanup, command execution, maintenance tasks)
+
+Each archetype has predefined model configurations:
+- Simple tasks (collector, reader, notifier, executor): Haiku with low temperature
+- Complex reasoning (analyzer, evaluator): Sonnet with higher temperature
+- Balanced tasks (reporter): Haiku with moderate temperature
 
 ### Bundled Agent Priority
 
-Checks existing agents first:
+Always checks bundled agents first before generating:
 
 - Email agents for notifications
 - File system agents for monitoring
 - API agents for external integrations
 - Research agents for data gathering
 
-### LLM Agent Generation
+### Condensed Prompt Generation
 
-Creates custom agents when no bundled agent fits:
-
-- Generates role-specific prompts with XML structure
-- Adds tool requirements for MCP server matching
-- Uses temperature 0.3 for consistent output
+Instead of full XML structures, uses 3-5 line prompts specifying:
+- Agent's responsibility and expertise
+- Key task to perform
+- Input data format and source
+- Expected output format or action
 
 ### Single Responsibility Decomposition
 
 Breaks complex automation into focused agents:
 
 - ❌ One agent: read files, analyze content, send notifications
-- ✅ Three agents: file-reader, content-analyzer, slack-notifier
+- ✅ Three agents: file-reader (reader archetype), content-analyzer (analyzer archetype), slack-notifier (bundled or notifier archetype)
 
 ## Configuration Output
 
@@ -136,7 +153,9 @@ Breaks complex automation into focused agents:
 
 - **Atlas**: References bundled agents by ID
   - See: `@atlas/bundled-agents`
-- **LLM**: Generated agents with model/prompt configuration
+- **LLM**: Generated agents with archetype-based configurations
+  - Uses predefined model settings per archetype
+  - Condensed 3-5 line prompts instead of XML structures
   - See: `packages/core/src/agent-conversion/from-llm.ts`
 
 ## Usage Examples
