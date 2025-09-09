@@ -3,6 +3,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import Textarea from "src/lib/components/textarea.svelte";
 import Artifacts from "src/lib/modules/artifacts/artifacts.svelte";
 import { onMount } from "svelte";
+import { page } from "$app/state";
 import { getAppContext, getFileType } from "$lib/app-context.svelte";
 import { CustomIcons } from "$lib/components/icons/custom";
 import { IconSmall } from "$lib/components/icons/small";
@@ -24,9 +25,9 @@ let userHasScrolled = $state(false);
 let animationFrameId = $state<number | null>(null);
 
 onMount(() => {
-  if (!ctx.conversationSessionId) {
-    ctx.createSession();
-  }
+  ctx.conversationSessionId = page.params.id;
+  ctx.getConversation(page.params.id);
+  ctx.createSession();
 });
 
 // Handle Scrolling
@@ -61,18 +62,20 @@ $effect(() => {
     animationFrameId = requestAnimationFrame(scrollToBottom);
   }
 });
+
+const messages = $derived([...ctx.messageHistory, ...ctx.messages]);
 </script>
 
 <div
 	class="chat"
-	class:has-messages={ctx.messages.filter(
+	class:has-messages={messages.filter(
 		(m) => m.type !== 'data-connection' && m.type !== 'data-heartbeat'
 	).length > 0}
 >
 	<div class="main">
-		<h2>Dashboard</h2>
+		<h2>{page.params.id}</h2>
 
-		{#if ctx.messages.filter((m) => m.type !== 'data-connection' && m.type !== 'data-heartbeat').length === 0}
+		{#if messages.filter((m) => m.type !== 'data-connection' && m.type !== 'data-heartbeat').length === 0}
 			<div class="empty-message">
 				<p>Welcome to Atlas! What can I help you build?</p>
 				<p>Tip: You can drag and drop files to attach them to your message.</p>
@@ -81,7 +84,7 @@ $effect(() => {
 
 		<div class="messages" bind:this={scrollContainer} onscroll={handleScroll}>
 			<div class="messages-inner">
-				{#each ctx.messages as message, index (message.id || index)}
+				{#each messages as message, index (message.id || index)}
 					{@const formattedMessage = formatMessage(message, ctx.user)}
 
 					{#if formattedMessage && (formattedMessage.type === 'request' || formattedMessage.type === 'text')}
@@ -96,15 +99,13 @@ $effect(() => {
 				{#if ctx.typingState.isTyping}
 					{@const actionsAfterLastUser = (() => {
 						// Find the last data-user-message
-						const lastUserIndex = ctx.messages.findLastIndex(
-							(msg) => msg.type === 'data-user-message'
-						);
+						const lastUserIndex = messages.findLastIndex((msg) => msg.type === 'data-user-message');
 
 						// If no user message found, return empty
 						if (lastUserIndex === -1) return [];
 
 						// Return everything after the last user message
-						return ctx.messages.slice(lastUserIndex + 1);
+						return messages.slice(lastUserIndex + 1);
 					})()}
 
 					<Progress actions={actionsAfterLastUser} />
@@ -138,7 +139,7 @@ $effect(() => {
 						let formMessage = formData.get('message') as string;
 
 						if (stagedFiles.state.size > 0) {
-							formMessage = formMessage + `\n\nAttachments:`;
+							formMessage = formMessage + `\n\nLibrary attachments:`;
 
 							for (const id of stagedFiles.state.keys()) {
 								formMessage = formMessage + `\n- ${id}`;
@@ -153,7 +154,6 @@ $effect(() => {
 						await ctx.conversationClient.sendMessage(ctx.conversationSessionId, formMessage);
 
 						message = '';
-						stagedFiles.clear();
 
 						// The persistent SSE listener will handle the response
 					} catch (e) {
@@ -174,10 +174,7 @@ $effect(() => {
 				<div class="actions">
 					<button
 						class="file-drop"
-						type="button"
-						onclick={async (e) => {
-							e.preventDefault();
-
+						onclick={async () => {
 							const file = await open({
 								multiple: true,
 								directory: true
@@ -410,6 +407,20 @@ $effect(() => {
 			&:hover .close-button {
 				background-color: var(--highlight-3);
 			}
+		}
+	}
+
+	.daemon-error {
+		color: var(--text-3);
+		font-size: var(--font-size-3);
+		font-weight: var(--font-weight-4-5);
+		text-align: center;
+		margin-block-end: var(--size-6);
+
+		button {
+			color: var(--accent-1);
+			cursor: pointer;
+			text-decoration: underline;
 		}
 	}
 </style>

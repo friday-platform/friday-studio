@@ -1,12 +1,13 @@
 import type { SessionUIMessage, SessionUIMessageChunk } from "@atlas/core";
 import { stringifyError } from "@atlas/utils";
 import { readUIMessageStream } from "ai";
-import { Box, Static } from "ink";
+import { Box, Static, Text } from "ink";
 import { useEffect, useRef, useState } from "react";
 import { ChatMessage } from "../../components/chat-message.tsx";
 import { Header } from "../../components/header.tsx";
 import { MessageHeader } from "../../components/message-header.tsx";
 import { Progress } from "../../components/progress.tsx";
+import { TableOutput } from "../../components/table-output.tsx";
 import { DAEMON_STATUS } from "../../constants/daemon-status.ts";
 import { useAppContext } from "../../contexts/app-context.tsx";
 import type { OutputEntry } from "../conversation/types.ts";
@@ -182,6 +183,17 @@ export const MessageBuffer = () => {
                   date={entry.timestamp}
                   fixedHeight
                 />
+              </Box>
+            );
+          }
+
+          if (entry.type === "tool_call" && entry.metadata?.toolName === "table_output") {
+            return (
+              <Box key={entry.id} flexShrink={0} paddingX={2} flexDirection="column">
+                <Box height={1} />
+                <MessageHeader author="Atlas" date={entry.timestamp} authorColor="blue" />
+
+                <TableOutput data={entry.metadata?.result} />
               </Box>
             );
           }

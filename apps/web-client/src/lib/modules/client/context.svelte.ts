@@ -1,31 +1,34 @@
 import type { SessionUIMessage, SessionUIMessageChunk, SessionUIMessagePart } from "@atlas/core";
 import { readUIMessageStream } from "ai";
 import { getContext, setContext } from "svelte";
+import { getAtlasDaemonUrl } from "../../utils/daemon.ts";
 import { ConversationClient, type ConversationSession } from "./conversation.ts";
 import type { DaemonClient } from "./daemon.ts";
-import { getAtlasDaemonUrl } from "../../utils/daemon.ts";
 
 const KEY = Symbol();
 
 class ClientContext {
   client: DaemonClient;
 
-  public conversationClient: ConversationClient | null = null;
-  conversationSessionId: string | null = null;
-  sseAbortController: AbortController | null = null;
-  sseStream: ReadableStream<SessionUIMessageChunk> | null = null;
-
-  // Svelte reactive values
-  typingState = $state({ isTyping: false, elapsedSeconds: 0 });
-  messages = $state<SessionUIMessagePart[]>([]);
-  user = $state<string>("NA");
-  atlasSessionId = $state<string | null>(null);
-  daemonStatus = $state<"connected" | "error" | "idle">("idle");
-  reconnectCountdown = $state<number>(0);
   private isSetupComplete = false;
   private healthCheckInterval: number | null = null;
   private countdownInterval: number | null = null;
   private readonly HEALTH_CHECK_INTERVAL_MS = 5000;
+
+  public conversationClient: ConversationClient | null = null;
+  sseStream: ReadableStream<SessionUIMessageChunk> | null = null;
+  // Svelte reactive values
+  typingState = $state({ isTyping: false, elapsedSeconds: 0 });
+  messages = $state<SessionUIMessagePart[]>([]);
+  messageHistory = $state<SessionUIMessagePart[]>([]);
+  user = $state<string>("NA");
+  atlasSessionId = $state<string | null>(null);
+  daemonStatus = $state<"connected" | "error" | "idle">("idle");
+  pastConversations = $state<string[]>([]);
+  reconnectCountdown = $state<number>(0);
+  conversationSessionId = $state<string | null>(null);
+
+  sseAbortController: AbortController | null = null;
 
   constructor(client: DaemonClient) {
     this.client = client;
@@ -47,75 +50,7 @@ class ClientContext {
     }
   }
 
-  private cleanup(stopHealthChecks = true, preserveSession = false) {
-    // Abort any existing SSE connection
-    if (this.sseAbortController) {
-      this.sseAbortController.abort();
-      this.sseAbortController = null;
-    }
-
-    // Clear stream reference
-    this.sseStream = null;
-
-    // Clear session references only if not preserving
-    if (!preserveSession) {
-      this.conversationSessionId = null;
-      this.atlasSessionId = null;
-      // Only clear messages if not preserving session
-      this.messages = [];
-    }
-
-    // Reset typing state
-    this.typingState.isTyping = false;
-
-    // Stop health check interval only if requested
-    if (stopHealthChecks) {
-      this.stopHealthCheckInterval();
-      this.stopCountdownInterval();
-      this.reconnectCountdown = 0;
-    }
-  }
-
-  startHealthCheckInterval() {
-    // Stop any existing intervals
-    this.stopHealthCheckInterval();
-    this.stopCountdownInterval();
-
-    // Reset countdown
-    this.reconnectCountdown = Math.floor(this.HEALTH_CHECK_INTERVAL_MS / 1000);
-
-    // Start countdown timer (updates every second)
-    this.countdownInterval = setInterval(() => {
-      if (this.reconnectCountdown > 0) {
-        this.reconnectCountdown--;
-      }
-    }, 1000);
-
-    // Start periodic health checks
-    this.healthCheckInterval = setInterval(() => {
-      this.checkHealth();
-      // Reset countdown after each check
-      if (this.daemonStatus === "error") {
-        this.reconnectCountdown = Math.floor(this.HEALTH_CHECK_INTERVAL_MS / 1000);
-      }
-    }, this.HEALTH_CHECK_INTERVAL_MS);
-  }
-
-  private stopHealthCheckInterval() {
-    if (this.healthCheckInterval !== null) {
-      clearInterval(this.healthCheckInterval);
-      this.healthCheckInterval = null;
-    }
-  }
-
-  private stopCountdownInterval() {
-    if (this.countdownInterval !== null) {
-      clearInterval(this.countdownInterval);
-      this.countdownInterval = null;
-    }
-  }
-
-  async setup() {
+  setup() {
     // If setup is already complete and daemon is connected, skip
     if (this.isSetupComplete && this.daemonStatus === "connected") {
       return;
@@ -123,7 +58,9 @@ class ClientContext {
 
     // Clean up any existing connections but preserve session data
     this.cleanup(true, true);
+  }
 
+  connect() {
     try {
       // Use "atlas-conversation" as the workspace ID for the conversation system workspace
       this.conversationClient = new ConversationClient(
@@ -131,39 +68,53 @@ class ClientContext {
         "atlas-conversation",
         "cli-user",
       );
+    } catch (error) {
+      // Clear any loading messages and show error
+      const errorMessage = error instanceof Error ? error.message : String(error);
 
-      let session: ConversationSession;
+      console.error(`Failed to start Atlas daemon: ${errorMessage}`);
+    }
+  }
+
+  async createSession() {
+    try {
+      if (!this.conversationClient) {
+        this.connect();
+      }
+
+      let session: ConversationSession | null | undefined;
 
       // Try to reconnect to existing session if we have one
       if (this.conversationSessionId) {
-        const existingSession = await this.conversationClient.getSession(
+        const existingSession = await this.conversationClient?.getSession(
           this.conversationSessionId,
         );
+
         if (existingSession) {
           console.log(`Reconnecting to existing session: ${this.conversationSessionId}`);
           session = existingSession;
         } else {
           console.log("Previous session no longer exists, creating new session");
-          session = await this.conversationClient.createSession();
-          this.conversationSessionId = session.sessionId;
+          session = await this.conversationClient?.createSession();
+
           // Clear messages since we're starting fresh
           this.messages = [];
         }
       } else {
-        session = await this.conversationClient.createSession();
-        this.conversationSessionId = session.sessionId;
+        session = await this.conversationClient?.createSession();
       }
 
-      // Store the SSE URL for later use
-      this.conversationClient.sseUrl = session.sseUrl;
+      if (!session) return;
+
+      // duplicate if there is an existing session, but cleaner overall to ensure the session exists first
+      this.conversationSessionId = session.sessionId;
+
+      const stream = this.conversationClient?.createMessageStream(session.sseUrl);
 
       // Create AbortController for SSE
       this.sseAbortController = new AbortController();
 
-      const stream = this.conversationClient.createMessageStream(
-        this.conversationClient.sseUrl,
-        this.sseAbortController?.signal,
-      );
+      if (!stream) return;
 
       this.sseStream = stream;
 
@@ -251,7 +202,7 @@ class ClientContext {
 
         // If we're transitioning from error to connected, setup the conversation
         if (previousStatus === "error" || !this.isSetupComplete) {
-          await this.setup();
+          this.setup();
         }
       } else {
         this.daemonStatus = "error";
@@ -272,6 +223,98 @@ class ClientContext {
       if (this.healthCheckInterval === null) {
         this.startHealthCheckInterval();
       }
+    }
+  }
+
+  private cleanup(stopHealthChecks = true, preserveSession = false) {
+    // Abort any existing SSE connection
+    if (this.sseAbortController) {
+      this.sseAbortController.abort();
+      this.sseAbortController = null;
+    }
+
+    // Clear stream reference
+    this.sseStream = null;
+
+    // Clear session references only if not preserving
+    if (!preserveSession) {
+      this.conversationSessionId = null;
+      this.atlasSessionId = null;
+      // Only clear messages if not preserving session
+      this.messages = [];
+    }
+
+    // Reset typing state
+    this.typingState.isTyping = false;
+
+    // Stop health check interval only if requested
+    if (stopHealthChecks) {
+      this.stopHealthCheckInterval();
+      this.stopCountdownInterval();
+      this.reconnectCountdown = 0;
+    }
+  }
+
+  startHealthCheckInterval() {
+    // Stop any existing intervals
+    this.stopHealthCheckInterval();
+    this.stopCountdownInterval();
+
+    // Reset countdown
+    this.reconnectCountdown = Math.floor(this.HEALTH_CHECK_INTERVAL_MS / 1000);
+
+    // Start countdown timer (updates every second)
+    this.countdownInterval = setInterval(() => {
+      if (this.reconnectCountdown > 0) {
+        this.reconnectCountdown--;
+      }
+    }, 1000);
+
+    // Start periodic health checks
+    this.healthCheckInterval = setInterval(() => {
+      this.checkHealth();
+      // Reset countdown after each check
+      if (this.daemonStatus === "error") {
+        this.reconnectCountdown = Math.floor(this.HEALTH_CHECK_INTERVAL_MS / 1000);
+      }
+    }, this.HEALTH_CHECK_INTERVAL_MS);
+  }
+
+  private stopHealthCheckInterval() {
+    if (this.healthCheckInterval !== null) {
+      clearInterval(this.healthCheckInterval);
+      this.healthCheckInterval = null;
+    }
+  }
+
+  private stopCountdownInterval() {
+    if (this.countdownInterval !== null) {
+      clearInterval(this.countdownInterval);
+      this.countdownInterval = null;
+    }
+  }
+
+  async getConversation(id: string) {
+    if (!this.conversationClient) {
+      this.connect();
+    }
+
+    const messages = await this.conversationClient?.getConversation(id);
+
+    if (messages) {
+      this.messageHistory = messages.flatMap((message) => message.parts);
+    }
+  }
+
+  async listConversations() {
+    if (!this.conversationClient) {
+      this.connect();
+    }
+
+    const conversations = await this.conversationClient?.listConversations();
+
+    if (conversations) {
+      this.pastConversations = conversations;
     }
   }
 

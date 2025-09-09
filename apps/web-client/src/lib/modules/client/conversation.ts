@@ -1,4 +1,4 @@
-import type { SessionUIMessageChunk } from "@atlas/core";
+import type { SessionUIMessage, SessionUIMessageChunk } from "@atlas/core";
 import { createAtlasClient } from "@atlas/oapi-client";
 import { createEventSource } from "eventsource-client";
 import { DaemonClient } from "./daemon.ts";
@@ -20,7 +20,6 @@ export interface ConversationMessage {
  * Handles HTTP requests and SSE streaming for real-time chat experience
  */
 export class ConversationClient {
-  public sseUrl?: string; // Store the SSE URL from createSession
   private daemonClient: DaemonClient;
   private conversationWorkspaceId?: string; // Cache the conversation workspace ID
 
@@ -35,18 +34,15 @@ export class ConversationClient {
   /**
    * Create a new conversation session using direct daemon API
    */
-  async createSession(options?: {
-    userId?: string;
-    scope?: { workspaceId?: string };
-    createOnly?: boolean;
-  }): Promise<ConversationSession> {
+  async createSession(streamId?: string): Promise<ConversationSession> {
     // Use the new direct daemon stream API
     const url = `${this.daemonUrl}/api/sse`;
     // Create session without sending an initial message
     const body = {
-      userId: options?.userId || this.userId,
-      scope: options?.scope || { workspaceId: this.workspaceId },
-      createOnly: options?.createOnly ?? true, // Just create session, don't send a message
+      userId: this.userId,
+      scope: { workspaceId: this.workspaceId },
+      createOnly: true, // Just create session, don't send a message
+      streamId,
     };
 
     const response = await fetch(url, {
@@ -164,23 +160,17 @@ export class ConversationClient {
     return { messageId: response.data.message || crypto.randomUUID(), status: "processing" };
   }
 
-  createMessageStream(
-    sseUrl: string,
-    abortSignal?: AbortSignal,
-  ): ReadableStream<SessionUIMessageChunk> {
+  createMessageStream(sseUrl: string): ReadableStream<SessionUIMessageChunk> {
     const eventSource = createEventSource(sseUrl);
 
     return new ReadableStream<SessionUIMessageChunk>({
       start(controller) {
+        let closed = false;
+
         // Start consuming the async iterator in the background
         (async () => {
           try {
             for await (const { data } of eventSource) {
-              if (abortSignal?.aborted) {
-                controller.close();
-                break;
-              }
-
               try {
                 const parsedData = JSON.parse(data);
                 controller.enqueue(parsedData);
@@ -192,36 +182,14 @@ export class ConversationClient {
           } catch (error) {
             controller.error(error);
           } finally {
-            controller.close();
+            if (!closed) {
+              controller.close();
+              closed = true;
+            }
           }
         })();
       },
-
-      cancel() {
-        // Clean up on stream cancellation
-        eventSource.close();
-      },
     });
-  }
-
-  /**
-   * Get session information
-   */
-  async getSession(sessionId: string): Promise<ConversationSession | null> {
-    const response = await fetch(
-      `${this.daemonUrl}/api/workspaces/${this.workspaceId}/conversation/sessions/${sessionId}`,
-      { headers: { "Access-Control-Allow-Origin": "*" } },
-    );
-
-    if (response.status === 404) {
-      return null;
-    }
-
-    if (!response.ok) {
-      throw new Error(`Failed to get session: ${response.status} ${response.statusText}`);
-    }
-
-    return await response.json();
   }
 
   /**
@@ -272,6 +240,23 @@ export class ConversationClient {
     return await response.json();
   }
 
+  async getSession(sessionId: string): Promise<ConversationSession | null> {
+    const response = await fetch(
+      `${this.daemonUrl}/api/workspaces/${this.workspaceId}/conversation/sessions/${sessionId}`,
+      { headers: { "Access-Control-Allow-Origin": "*" } },
+    );
+
+    if (response.status === 404) {
+      return null;
+    }
+
+    if (!response.ok) {
+      throw new Error(`Failed to get session: ${response.status} ${response.statusText}`);
+    }
+
+    return await response.json();
+  }
+
   /**
    * Cancel an active Atlas session
    */
@@ -285,5 +270,33 @@ export class ConversationClient {
     if (response.error && response.response.status !== 404) {
       throw new Error(`Failed to cancel session: ${response.error.error}`);
     }
+  }
+
+  /**
+   * Lists past conversations
+   */
+  async listConversations(): Promise<string[]> {
+    const client = createAtlasClient();
+    const response = await client.GET("/api/chat-storage", { params: {} });
+
+    if (response.error) {
+      throw new Error(`Failed to list conversations: ${response.error.error}`);
+    }
+
+    return response?.data?.conversations || [];
+  }
+
+  /**
+   * Gets a conversation
+   */
+  async getConversation(id: string): Promise<SessionUIMessage[]> {
+    const client = createAtlasClient();
+    const response = await client.GET("/api/chat-storage/{id}", { params: { path: { id } } });
+
+    if (response.error) {
+      throw new Error(`Failed to get conversation: ${response.error.error}`);
+    }
+
+    return response?.data?.messages || [];
   }
 }

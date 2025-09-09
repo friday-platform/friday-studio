@@ -1,7 +1,11 @@
-import { AtlasUIMessage } from "@atlas/agent-sdk";
+import type { AtlasUIMessage } from "@atlas/agent-sdk";
 
 class ConversationStorage {
   private conversations = new Map<string, AtlasUIMessage[]>();
+
+  list(): string[] {
+    return Array.from(this.conversations.keys());
+  }
 
   get(streamId: string): AtlasUIMessage[] {
     return this.conversations.get(streamId) || [];

@@ -1,5 +1,6 @@
 import { daemonFactory } from "../../src/factory.ts";
 import { getChat } from "./get.ts";
+import { listChat } from "./list.ts";
 import { updateChat } from "./update.ts";
 
 export * from "./schemas.ts";
@@ -13,6 +14,7 @@ export * from "./schemas.ts";
  */
 const chatStorageRoutes = daemonFactory.createApp();
 
+chatStorageRoutes.route("/", listChat);
 chatStorageRoutes.route("/:streamId", getChat);
 chatStorageRoutes.route("/:streamId", updateChat);
 

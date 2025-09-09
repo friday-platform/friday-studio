@@ -25,19 +25,27 @@ function createKeyboard() {
 }
 
 function createStagedFiles() {
-  const state = new SvelteMap<string, { name: string; path: string }>();
+  const state = new SvelteMap<string, { path: string; type: "file" | "folder" }>();
 
   return {
     get state() {
       return state;
     },
-    add: (itemId: string, { name, path }: { name: string; path: string }) => {
-      state.set(itemId, { name, path });
+    add: (itemId: string, { path, type }: { path: string; type: "file" | "folder" }) => {
+      state.set(itemId, { path, type });
     },
     remove: (itemId: string) => {
       state.delete(itemId);
     },
+    clear: () => {
+      state.clear();
+    },
   };
+}
+
+export function getFileType(path: string) {
+  const hasExtension = /\.[^/\\]+$/.test(path);
+  return hasExtension ? "file" : "folder";
 }
 
 export type RouteConfig = ReturnType<typeof getRouteConfig>;
@@ -45,6 +53,7 @@ export function getRouteConfig() {
   return {
     main: "/",
     library: { list: "/library", item: (id: string) => `/library/${id}` },
+    chat: { item: (id: string) => `/chat/${id}` },
   } as const;
 }
 
@@ -58,7 +67,6 @@ export function setAppContext() {
     const item = await daemonClient.createLibraryItem(file);
 
     if (item.success) {
-      console.log(item);
       stagedFiles.add(item.itemId, { name: item.item.name, path: item.path });
     }
   }

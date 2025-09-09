@@ -28,7 +28,18 @@ export function formatMessage(part: SessionUIMessagePart): OutputEntry | undefin
       author: "Atlas",
       content: part.text,
     };
-  } else if (part.type.startsWith("tool-") || part.type === "dynamic-tool") {
+  } else if (part.type === "tool-table_output" && part.state === "output-available") {
+    return {
+      id: crypto.randomUUID(),
+      type: "tool_call",
+      timestamp: new Date().toISOString(),
+      author: "Atlas",
+      metadata: { toolName: "table_output", result: part.output },
+    };
+  } else if (
+    (part.type.startsWith("tool-") && part.type !== "tool-table_output") ||
+    part.type === "dynamic-tool"
+  ) {
     return {
       id: crypto.randomUUID(),
       type: "tool_call",

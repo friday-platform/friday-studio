@@ -40,8 +40,6 @@ function getMessage() {
     return "Thinking";
   }
 }
-
-$inspect(actions);
 </script>
 
 <div class="container">
@@ -87,6 +85,7 @@ $inspect(actions);
 		flex-direction: column;
 		align-items: start;
 		gap: var(--size-1);
+		margin-block-start: var(--size-2);
 	}
 
 	.progress {
@@ -120,10 +119,15 @@ $inspect(actions);
 		border: var(--size-px) solid var(--border-2);
 		border-radius: var(--radius-4);
 		padding: var(--size-3);
+		padding-inline-end: var(--size-3-5);
 		display: flex;
 		align-items: center;
 		gap: var(--size-3);
 		max-inline-size: var(--size-56);
+
+		& :global(svg) {
+			flex: none;
+		}
 
 		.details {
 			display: flex;
@@ -140,6 +144,7 @@ $inspect(actions);
 			span {
 				color: var(--text-3);
 				font-size: var(--font-size-2);
+				font-weight: var(--font-weight-4-5);
 				max-inline-size: 100%;
 				overflow: hidden;
 				text-overflow: ellipsis;

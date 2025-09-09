@@ -14,8 +14,6 @@
     "tauri": "tauri"
   },
   "imports": {
-    "cookie": "npm:cookie@^1.0.2",
-    "vite-tsconfig-paths": "npm:vite-tsconfig-paths@^5.1.2",
     "@deno/vite-plugin": "npm:@deno/vite-plugin@^1.0.5",
     "@eslint/compat": "npm:@eslint/compat@^1.2.5",
     "@eslint/js": "npm:@eslint/js@^9.18.0",
@@ -29,8 +27,10 @@
     "@sveltejs/vite-plugin-svelte": "npm:@sveltejs/vite-plugin-svelte@^6.0.0",
     "@tauri-apps/api": "npm:@tauri-apps/api@^2.8.0",
     "@tauri-apps/cli": "npm:@tauri-apps/cli@^2.8.0",
+    "@tauri-apps/plugin-dialog": "npm:@tauri-apps/plugin-dialog@^2.4.0",
     "@tauri-apps/plugin-opener": "npm:@tauri-apps/plugin-opener@^2.5.0",
     "@tauri-apps/plugin-shell": "npm:@tauri-apps/plugin-shell@^2.3.1",
+    "cookie": "npm:cookie@^1.0.2",
     "eslint": "npm:eslint@^9.18.0",
     "eslint-config-prettier": "npm:eslint-config-prettier@^10.0.1",
     "eslint-plugin-svelte": "npm:eslint-plugin-svelte@^3.0.0",
@@ -47,6 +47,7 @@
     "typescript": "npm:typescript@^5.0.0",
     "typescript-eslint": "npm:typescript-eslint@^8.20.0",
     "vite": "npm:vite@^7.0.4",
+    "vite-tsconfig-paths": "npm:vite-tsconfig-paths@^5.1.2",
     "vitest": "npm:vitest@^3.2.4"
   }
 }

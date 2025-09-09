@@ -61,6 +61,7 @@
     "eventsource-client": "npm:eventsource-client@^1.1.4",
     "fullscreen-ink": "npm:fullscreen-ink@^0.1.0",
     "ink": "npm:ink@^6.0.1",
+    "ink-table": "npm:ink-table@^3.1.0",
     "js-levenshtein": "npm:js-levenshtein@^1.1.6",
     "lint-staged": "npm:lint-staged@^16.1.2",
     "marked": "npm:marked@^16.0.0",

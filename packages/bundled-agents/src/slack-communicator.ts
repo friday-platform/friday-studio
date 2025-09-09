@@ -126,7 +126,7 @@ export const slackCommunicatorAgent = createAgent<SlackAgentResult>({
       stream?.emit({
         type: "data-tool-progress",
         data: {
-          toolName: "Slack Communicator",
+          toolName: "Slack",
           content: `Executing: ${plan.needsHistory ? `fetch history (${plan.historyLimit})` : "no history"}${plan.messageToSend ? ", send message" : ""}`,
         },
       });
@@ -166,7 +166,7 @@ export const slackCommunicatorAgent = createAgent<SlackAgentResult>({
       // Progress: execution complete
       stream?.emit({
         type: "data-tool-progress",
-        data: { toolName: "Slack Communicator", content: "Execution complete" },
+        data: { toolName: "Slack", content: "Execution complete" },
       });
 
       // Second-pass LLM summarization: stringify the first-pass result and refine into a final Slack-ready summary
@@ -191,10 +191,7 @@ export const slackCommunicatorAgent = createAgent<SlackAgentResult>({
       // Progress: starting summarization
       stream?.emit({
         type: "data-tool-progress",
-        data: {
-          toolName: "Slack Communicator",
-          content: `Summarizing (${plan.summarizerPurpose})`,
-        },
+        data: { toolName: "Slack", content: `Summarizing (${plan.summarizerPurpose})` },
       });
 
       const refined = await generateText({
@@ -211,7 +208,7 @@ export const slackCommunicatorAgent = createAgent<SlackAgentResult>({
       // Progress: summarization complete
       stream?.emit({
         type: "data-tool-progress",
-        data: { toolName: "Slack Communicator", content: "Summary ready" },
+        data: { toolName: "Slack", content: "Summary ready" },
       });
       return {
         response: finalText.length > 0 ? finalText : result.text.trim(),

@@ -57,6 +57,7 @@
     "npm:@tauri-apps/api@^2.8.0": "2.8.0",
     "npm:@tauri-apps/cli@2.8.4": "2.8.4",
     "npm:@tauri-apps/cli@^2.8.0": "2.8.4",
+    "npm:@tauri-apps/plugin-dialog@^2.4.0": "2.4.0",
     "npm:@tauri-apps/plugin-opener@^2.5.0": "2.5.0",
     "npm:@tauri-apps/plugin-shell@^2.3.1": "2.3.1",
     "npm:@tavily/core@~0.5.11": "0.5.11",
@@ -76,6 +77,7 @@
     "npm:globals@16": "16.3.0",
     "npm:hono-openapi@~0.5.0-rc.2": "0.5.0-rc.4_@hono+standard-validator@0.1.5__@standard-schema+spec@1.0.0__hono@4.9.6_@standard-community+standard-json@0.3.0-rc.4__@standard-schema+spec@1.0.0__@types+json-schema@7.0.15__zod@3.25.76_@standard-community+standard-openapi@0.2.0-rc.1__@standard-community+standard-json@0.3.0-rc.4___@standard-schema+spec@1.0.0___@types+json-schema@7.0.15___zod@3.25.76__@standard-schema+spec@1.0.0__openapi-types@12.1.3__zod@3.25.76__zod-openapi@5.4.0___zod@3.25.76__@types+json-schema@7.0.15_@types+json-schema@7.0.15_hono@4.9.6_openapi-types@12.1.3_zod@3.25.76_zod-openapi@5.4.0__zod@3.25.76",
     "npm:hono@^4.8.5": "4.9.6",
+    "npm:ink-table@^3.1.0": "3.1.0_ink@6.2.3__@types+react@19.1.12__react@19.1.1_react@19.1.1_@types+react@19.1.12",
     "npm:ink@^6.0.1": "6.2.3_@types+react@19.1.12_react@19.1.1",
     "npm:js-levenshtein@^1.1.6": "1.1.6",
     "npm:lint-staged@^16.1.2": "16.1.6",
@@ -1192,6 +1194,12 @@
         "@tauri-apps/cli-win32-x64-msvc"
       ],
       "bin": true
+    },
+    "@tauri-apps/plugin-dialog@2.4.0": {
+      "integrity": "sha512-OvXkrEBfWwtd8tzVCEXIvRfNEX87qs2jv6SqmVPiHcJjBhSF/GUvjqUNIDmKByb5N8nvDqVUM7+g1sXwdC/S9w==",
+      "dependencies": [
+        "@tauri-apps/api"
+      ]
     },
     "@tauri-apps/plugin-opener@2.5.0": {
       "integrity": "sha512-B0LShOYae4CZjN8leiNDbnfjSrTwoZakqKaWpfoH6nXiJwt6Rgj6RnVIffG3DoJiKsffRhMkjmBV9VeilSb4TA==",
@@ -2381,6 +2389,14 @@
     "inherits@2.0.4": {
       "integrity": "sha512-k/vGaX4/Yla3WzyMCvTQOXYeIHvqOKtnqBduzTHpzpQZzAskKMhZ2K+EnBiSM9zGSoIFeMpXKxa4dYeZIQqewQ=="
     },
+    "ink-table@3.1.0_ink@6.2.3__@types+react@19.1.12__react@19.1.1_react@19.1.1_@types+react@19.1.12": {
+      "integrity": "sha512-qxVb4DIaEaJryvF9uZGydnmP9Hkmas3DCKVpEcBYC0E4eJd3qNgNe+PZKuzgCERFe9LfAS1TNWxCr9+AU4v3YA==",
+      "dependencies": [
+        "ink",
+        "object-hash",
+        "react"
+      ]
+    },
     "ink@6.2.3_@types+react@19.1.12_react@19.1.1": {
       "integrity": "sha512-fQkfEJjKbLXIcVWEE3MvpYSnwtbbmRsmeNDNz1pIuOFlwE+UF2gsy228J36OXKZGWJWZJKUigphBSqCNMcARtg==",
       "dependencies": [
@@ -2730,6 +2746,9 @@
     },
     "object-assign@4.1.1": {
       "integrity": "sha512-rJgTQnkUnH1sFw8yT6VSU3zD3sWmu6sZhIseY8VX+GRu3P6F7Fu+JNDoXfklElbLJSnc3FUQHVe4cU5hj+BcUg=="
+    },
+    "object-hash@2.2.0": {
+      "integrity": "sha512-gScRMn0bS5fH+IuwyIFgnh9zBdo4DV+6GhygmWM9HyNJSgS0hScp1f5vjtm7oIIOiT9trXrShAkLFSc2IqKNgw=="
     },
     "object-inspect@1.13.4": {
       "integrity": "sha512-W67iLl4J2EXEGTbfeHCffrjDfitvLANg0UlX3wFUUSTx92KXRFegMHUVgSqE+wvhAbi4WqjGg9czysTV2Epbew=="
@@ -4001,6 +4020,7 @@
       "npm:fullscreen-ink@0.1",
       "npm:hono-openapi@~0.5.0-rc.2",
       "npm:hono@^4.8.5",
+      "npm:ink-table@^3.1.0",
       "npm:ink@^6.0.1",
       "npm:js-levenshtein@^1.1.6",
       "npm:lint-staged@^16.1.2",
@@ -4034,6 +4054,7 @@
           "npm:@sveltejs/vite-plugin-svelte@6",
           "npm:@tauri-apps/api@^2.8.0",
           "npm:@tauri-apps/cli@^2.8.0",
+          "npm:@tauri-apps/plugin-dialog@^2.4.0",
           "npm:@tauri-apps/plugin-opener@^2.5.0",
           "npm:@tauri-apps/plugin-shell@^2.3.1",
           "npm:cookie@^1.0.2",

@@ -61,18 +61,20 @@ function updateDimensions(_value?: string | null | undefined) {
 		font-size: var(--font-size-3);
 		font-weight: var(--font-weight-4);
 		line-height: var(--font-lineheight-3);
-		padding-inline: var(--size-3);
+		padding-inline: var(--size-3) var(--size-7);
 		padding-block: var(--size-2);
-		word-break: break-all;
+		word-break: break-word;
 	}
 
 	textarea {
 		background-color: transparent;
 		border-radius: var(--radius-4);
 		box-shadow: var(--shadow-1);
+		display: block;
 		caret-color: var(--accent-1);
 		inline-size: 100%;
 		min-block-size: var(--size-9);
+
 		resize: none;
 		scrollbar-width: thin;
 

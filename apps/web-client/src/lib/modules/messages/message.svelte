@@ -54,7 +54,7 @@ const htmlContent = $derived(message.content ? markdownToHTML(message.content) :
 			align-items: center;
 			color: var(--accent-1);
 			display: flex;
-			font-size: var(--font-size-2);
+			font-size: var(--font-size-3);
 			font-weight: var(--font-weight-5);
 			gap: var(--size-1);
 
@@ -123,7 +123,7 @@ const htmlContent = $derived(message.content ? markdownToHTML(message.content) :
 			font-weight: var(--font-weight-4-5);
 			line-height: var(--font-lineheight-2);
 			opacity: 1;
-			font-size: var(--font-size-2);
+			font-size: var(--font-size-3);
 		}
 
 		& :global(p),
@@ -139,7 +139,7 @@ const htmlContent = $derived(message.content ? markdownToHTML(message.content) :
 		}
 
 		& :global(ol) {
-			margin-inline-start: var(--size-4);
+			margin-inline-start: var(--size-5);
 		}
 	}
 </style>
