@@ -16,13 +16,16 @@ Deno.test("Workspace Creation Agent", async (t) => {
   await loadCredentials();
   const adapter = new AgentContextAdapter();
   adapter.enableTelemetry();
-  const context = adapter.createContext({ telemetry: true });
 
   /**
    * Tests workspace creation for a complex workflow:
    * Signal: fs-watch on directory → Agents: file reader, analyzer, Slack notifier → Job: sequential execution
    */
   await step(t, "Meeting Note Analysis", async ({ snapshot }) => {
+    // Reset adapter and create fresh context for this test
+    adapter.reset();
+    const context = adapter.createContext({ telemetry: true });
+
     const startTime = performance.now();
     const result = await workspaceCreationAgent.execute(
       "I'm a product manager, and I'm conducting discovery for my new product. I want Atlas to take my transcribed meeting notes from a directory on my computer whenever I add a new note, analyze them for learnings and next steps, and then share out to the rest of the team on Slack.",
@@ -32,11 +35,13 @@ Deno.test("Workspace Creation Agent", async (t) => {
 
     const metrics = adapter.getMetrics();
     const trace = adapter.getTrace();
+    const streamEvents = adapter.getStreamEvents();
 
     snapshot({
       result,
       metrics,
       trace,
+      streamEvents,
       timing: {
         executionTimeMs,
         executionTimeSec: executionTimeMs / 1000,
@@ -100,6 +105,10 @@ Deno.test("Workspace Creation Agent", async (t) => {
    * Validates minimal agent setup for straightforward workflows.
    */
   await step(t, "File Watcher with Slack Notifications", async ({ snapshot }) => {
+    // Reset adapter and create fresh context for this test
+    adapter.reset();
+    const context = adapter.createContext({ telemetry: true });
+
     const startTime = performance.now();
     const result = await workspaceCreationAgent.execute(
       "I would like to create a simple workspace that is watching path /Users/ericskram/Desktop/foo for any changes and send message to slack on channel #sara-bot-test about anything what changes there (removal, modification etc.)",
@@ -109,11 +118,13 @@ Deno.test("Workspace Creation Agent", async (t) => {
 
     const metrics = adapter.getMetrics();
     const trace = adapter.getTrace();
+    const streamEvents = adapter.getStreamEvents();
 
     snapshot({
       result,
       metrics,
       trace,
+      streamEvents,
       timing: {
         executionTimeMs,
         executionTimeSec: executionTimeMs / 1000,
@@ -181,6 +192,10 @@ Deno.test("Workspace Creation Agent", async (t) => {
    * Validates use of targeted-research agent and schedule signals for recurring tasks.
    */
   await step(t, "Weekly Cultural Events Email", async ({ snapshot }) => {
+    // Reset adapter and create fresh context for this test
+    adapter.reset();
+    const context = adapter.createContext({ telemetry: true });
+
     const startTime = performance.now();
     const result = await workspaceCreationAgent.execute(
       "I want to receive a weekly email every Monday morning with upcoming cultural events in Luxembourg City. The email should include concerts, exhibitions, theater performances, and festivals happening in the next 7 days.",
@@ -190,11 +205,13 @@ Deno.test("Workspace Creation Agent", async (t) => {
 
     const metrics = adapter.getMetrics();
     const trace = adapter.getTrace();
+    const streamEvents = adapter.getStreamEvents();
 
     snapshot({
       result,
       metrics,
       trace,
+      streamEvents,
       timing: {
         executionTimeMs,
         executionTimeSec: executionTimeMs / 1000,

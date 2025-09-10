@@ -123,7 +123,7 @@ function getMessage() {
 		display: flex;
 		align-items: center;
 		gap: var(--size-3);
-		max-inline-size: var(--size-56);
+		inline-size: var(--size-88);
 
 		& :global(svg) {
 			flex: none;

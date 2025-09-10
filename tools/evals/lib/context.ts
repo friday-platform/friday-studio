@@ -3,10 +3,30 @@ import type {
   AgentMetrics,
   AgentSessionData,
   AtlasTools,
+  AtlasUIMessageChunk,
   StreamEmitter,
   TelemetrySpan,
 } from "@atlas/agent-sdk";
 import { AgentTelemetryCollector } from "@atlas/agent-sdk";
+
+/**
+ * StreamEmitter implementation that captures emitted events for testing
+ */
+class CapturedStreamEmitter implements StreamEmitter<AtlasUIMessageChunk> {
+  private events: AtlasUIMessageChunk[] = [];
+
+  emit(event: AtlasUIMessageChunk): void {
+    this.events.push(event);
+  }
+
+  end(): void {}
+
+  error(_error: Error): void {}
+
+  getEvents(): AtlasUIMessageChunk[] {
+    return structuredClone(this.events); // Return copy to prevent mutation
+  }
+}
 
 /**
  * Temporary until the entire repo is in Bun.
@@ -40,6 +60,7 @@ const testLogger = {
  */
 export class AgentContextAdapter {
   private telemetryCollector: AgentTelemetryCollector | null = null;
+  private streamEmitter: CapturedStreamEmitter | null = null;
 
   constructor(
     private tools: AtlasTools = {},
@@ -56,14 +77,14 @@ export class AgentContextAdapter {
       streamId: `stream-${testSessionId}`,
     };
 
-    // No-op stream
-    const stream: StreamEmitter = { emit: () => {}, end: () => {}, error: () => {} };
+    // Create capturing stream emitter
+    this.streamEmitter = new CapturedStreamEmitter();
 
     const context: AgentContext = {
       tools: this.tools,
       env: this.env,
       session,
-      stream,
+      stream: this.streamEmitter,
       logger: testLogger,
     };
 
@@ -106,5 +127,20 @@ export class AgentContextAdapter {
    */
   getTrace(): TelemetrySpan[] | null {
     return this.telemetryCollector?.getExecutionTrace() || null;
+  }
+
+  /**
+   * Get all stream events emitted during execution
+   */
+  getStreamEvents(): AtlasUIMessageChunk[] {
+    return this.streamEmitter?.getEvents() || [];
+  }
+
+  /**
+   * Reset telemetry and stream data between test executions
+   */
+  reset(): void {
+    this.telemetryCollector?.reset();
+    this.streamEmitter = null;
   }
 }

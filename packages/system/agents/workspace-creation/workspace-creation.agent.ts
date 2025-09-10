@@ -1,8 +1,9 @@
 import { anthropic } from "@ai-sdk/anthropic";
 import { createAgent } from "@atlas/agent-sdk";
 import type { WorkspaceConfig } from "@atlas/config";
+import type { Logger } from "@atlas/logger";
 import { createAtlasClient } from "@atlas/oapi-client";
-import { stepCountIs, streamText } from "ai";
+import { generateText, hasToolCall, stepCountIs, streamText } from "ai";
 import { WorkspaceBuilder, type WorkspaceSummary } from "./builder.ts";
 import { getWorkspaceBuilderTools } from "./tools.ts";
 
@@ -99,6 +100,112 @@ Examples:
 Current datetime (UTC): ${new Date().toISOString()}`;
 
 /**
+ * Generates human-readable progress messages for workspace creation tools
+ */
+async function generateProgressMessage(
+  toolName: string,
+  toolArgs: unknown,
+  fallback: string,
+  logger?: Logger,
+  abortSignal?: AbortSignal,
+): Promise<string> {
+  try {
+    const contextStr = typeof toolArgs === "string" ? toolArgs : JSON.stringify(toolArgs, null, 2);
+
+    const toolContexts: Record<string, string> = {
+      setWorkspaceIdentity: `Extract workspace name and description.
+Examples:
+- "Configuring data pipeline"
+- "Creating automation workspace"`,
+
+      generateAllAgents: `Extract agent types and count being created.
+Examples:
+- "Adding 3 agents"
+- "Building monitoring agent"
+- "Generating data processors"`,
+
+      generateSignals: `Extract signal trigger type(s).
+Examples:
+- "Adding webhook trigger"
+- "Configuring schedule"
+- "Adding file system watcher"`,
+
+      generateJobs: `Extract job connections being made.
+Examples:
+- "Connecting agents"
+- "Creating job pipelines"`,
+
+      generateMCPServers: `Extract MCP tool types.
+Examples:
+- "Adding MCP servers"
+- "Adding filesystem access"`,
+
+      validateWorkspace: `Extract what's being validated.
+Examples:
+- "Validating..."`,
+
+      exportWorkspace: `Note final export.
+Examples:
+- "Exporting configuration"
+- "Finalizing setup"
+- "Saving configuration"`,
+
+      removeJob: `Extract what's being removed.
+Examples:
+- "Removing duplicate job"
+- "Deleting invalid connection"
+- "Cleaning job configuration"`,
+
+      getSummary: `Note summary generation.
+Examples:
+- "Generating workspace summary"
+- "Creating configuration overview"
+- "Building workspace report"`,
+    };
+
+    const guidance = toolContexts[toolName] || "Generate a status update for this operation";
+
+    const { text } = await generateText({
+      model: anthropic("claude-3-5-haiku-latest"),
+      abortSignal,
+      system: `Generate a workspace creation progress update.
+
+<constraints>
+- Maximum 3 words
+- Start with capital letter
+- Be specific about WHAT is being created/configured
+- Should usually follow the format [verb] [count(optional)] [noun]
+- No generic phrases - don't overuse "workspace" or "workflow"
+</constraints>
+
+<tool_guidance>
+${guidance}
+</tool_guidance>`,
+      prompt: `<tool>${toolName}</tool>
+
+<context>
+${contextStr.slice(0, 500)}
+</context>
+
+<task>
+Generate a specific progress update. Focus on the actual workspace elements being created.
+Return ONLY the progress text, no explanations.
+</task>`,
+      temperature: 0.5,
+      maxOutputTokens: 50,
+    });
+
+    return text.trim();
+  } catch (error) {
+    logger?.warn(`Failed to generate progress message`, {
+      error: error instanceof Error ? error.message : String(error),
+      tool: toolName,
+    });
+    return fallback;
+  }
+}
+
+/**
  * Creates Atlas workspaces from automation requirements.
  * Analyzes user input and generates signal triggers, AI agents, orchestration jobs, and tool configurations.
  */
@@ -122,7 +229,7 @@ export const workspaceCreationAgent = createAgent<WorkspaceResult>({
         system: SYSTEM_PROMPT,
         prompt: `Create an Atlas workspace for this automation requirement: ${prompt}`,
         tools,
-        stopWhen: stepCountIs(15),
+        stopWhen: [stepCountIs(10), hasToolCall("exportWorkspace")],
         maxRetries: 3,
         maxOutputTokens: 4096,
         abortSignal,
@@ -134,12 +241,24 @@ export const workspaceCreationAgent = createAgent<WorkspaceResult>({
             Reasoning: ${reasoningText}
             `);
         },
-        onChunk: ({ chunk }) => {
+        onChunk: async ({ chunk }) => {
           if (chunk.type === "tool-call") {
             logger.debug(`Executing tool: ${chunk.toolName}`, { chunk: chunk });
+
+            // Extract tool arguments - the chunk itself contains the tool call data
+            const toolArgs = "input" in chunk ? chunk.input : chunk;
+
+            const progressMessage = await generateProgressMessage(
+              chunk.toolName,
+              toolArgs,
+              `Executing ${chunk.toolName}...`,
+              logger,
+              abortSignal,
+            );
+
             stream?.emit({
               type: "data-tool-progress",
-              data: { toolName: "Workspace Creator", content: `Executing ${chunk.toolName}...` },
+              data: { toolName: "Workspace Creator", content: progressMessage },
             });
           }
         },
