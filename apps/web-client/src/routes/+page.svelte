@@ -12,6 +12,8 @@ import { formatMessage } from "$lib/modules/messages/format";
 import Message from "$lib/modules/messages/message.svelte";
 import Progress from "$lib/modules/messages/progress.svelte";
 import Table from "$lib/modules/messages/table.svelte";
+import WorkspaceSummary from "$lib/modules/messages/workspace-summary.svelte";
+import { fade, slide } from "svelte/transition";
 
 const { stagedFiles } = getAppContext();
 
@@ -22,6 +24,7 @@ let message = $state<string>("");
 let scrollContainer = $state<HTMLDivElement | null>(null);
 let userHasScrolled = $state(false);
 let animationFrameId = $state<number | null>(null);
+let showPlan = $state(false);
 
 onMount(() => {
   if (!ctx.conversationSessionId) {
@@ -31,17 +34,19 @@ onMount(() => {
 
 // Handle Scrolling
 function handleScroll() {
-  if (!scrollContainer) return;
-  const { scrollTop, scrollHeight, clientHeight } = scrollContainer;
-  const isAtBottom = Math.abs(scrollHeight - scrollTop - clientHeight) < 50;
-  // If user scrolls away from bottom, mark as manually scrolled
-  if (!isAtBottom) {
-    userHasScrolled = true;
-  }
-  // If user scrolls back to bottom, reset the flag
-  if (isAtBottom) {
-    userHasScrolled = false;
-  }
+  userHasScrolled = true;
+
+  // if (!scrollContainer) return;
+
+  // const { scrollTop, scrollHeight, clientHeight } = scrollContainer;
+  // const isAtBottom = Math.abs(scrollHeight - scrollTop - clientHeight) < 50;
+  // // If user scrolls away from bottom, mark as manually scrolled
+  // if (!isAtBottom) {
+  // }
+  // // If user scrolls back to bottom, reset the flag
+  // if (isAtBottom) {
+  // 	userHasScrolled = false;
+  // }
 }
 
 // Scroll to the bottom of the container
@@ -88,6 +93,11 @@ $effect(() => {
 						<Message message={formattedMessage} />
 					{:else if formattedMessage && formattedMessage.type === 'tool_call' && formattedMessage.metadata?.toolName === 'table_output'}
 						<Table data={formattedMessage.metadata?.result} />
+					{:else if formattedMessage && formattedMessage.type === 'tool_call' && formattedMessage.metadata?.toolName === 'workspace_summary'}
+						<WorkspaceSummary
+							data={formattedMessage.metadata?.result}
+							onShowPlan={() => (showPlan = true)}
+						/>
 					{:else if formattedMessage && formattedMessage.type === 'error'}
 						<ErrorMessage message={formattedMessage} />
 					{/if}
@@ -172,27 +182,43 @@ $effect(() => {
 				/>
 
 				<div class="actions">
-					<button
-						class="file-drop"
-						type="button"
-						onclick={async (e) => {
-							e.preventDefault();
+					{#if ctx.typingState.isTyping}
+						<button
+							class="stop-process"
+							type="button"
+							onclick={async (e) => {
+								e.preventDefault();
 
-							const file = await open({
-								multiple: true,
-								directory: true
-							});
+								if (!ctx.atlasSessionId) return;
 
-							if (file) {
-								stagedFiles.add(file[0], {
-									path: file[0],
-									type: getFileType(file[0])
+								ctx.conversationClient?.cancelSession(ctx.atlasSessionId);
+							}}
+						>
+							<IconSmall.Stop />
+						</button>
+					{:else}
+						<button
+							class="file-drop"
+							type="button"
+							onclick={async (e) => {
+								e.preventDefault();
+
+								const file = await open({
+									multiple: true,
+									directory: true
 								});
-							}
-						}}
-					>
-						<CustomIcons.Paperclip />
-					</button>
+
+								if (file) {
+									stagedFiles.add(file[0], {
+										path: file[0],
+										type: getFileType(file[0])
+									});
+								}
+							}}
+						>
+							<CustomIcons.Paperclip />
+						</button>
+					{/if}
 				</div>
 			</form>
 
@@ -230,6 +256,30 @@ $effect(() => {
 
 		<Artifacts />
 	</aside>
+
+	{#if showPlan}
+	    {@const latestPlanMessage = ctx.messages.findLast(message => message.type === 'tool-workspace_summary')}
+		{@const formattedPlan = latestPlanMessage ? formatMessage(latestPlanMessage, ctx.user) : null}
+		{#if formattedPlan}
+		    {@const data = formattedPlan.metadata?.result}
+    		<div class="plan" transition:fade={{ duration: 150 }}>
+    			<button type="button" class="close-button" onclick={() => (showPlan = false)}>
+    				<IconSmall.Close />
+    			</button>
+				<h3>Description</h3>
+
+				<p>{data.data.description}</p>
+
+				<h3>Agents</h3>
+
+				<ul>
+    				{#each data.data.agents as agent}
+    				    <li>{agent}</li>
+    				{/each}
+				</ul>
+    		</div>
+		{/if}
+	{/if}
 </div>
 
 <style>
@@ -242,6 +292,42 @@ $effect(() => {
 		position: relative;
 		transition: all 150ms ease;
 		z-index: var(--layer-1);
+
+		.plan {
+			background-color: var(--background-1);
+			border-radius: var(--radius-3);
+			box-shadow: var(--shadow-1);
+			inset-block-start: var(--size-10);
+			inset-inline-end: var(--size-10);
+			position: absolute;
+			inline-size: var(--size-72);
+			padding: var(--size-4);
+			max-block-size: calc(100dvh - var(--size-20));
+			overflow: auto;
+			scrollbar-width: thin;
+			z-index: var(--layer-5);
+
+			h3 {
+				font-weight: var(--font-weight-5);
+
+				&:not(:first-of-type) {
+					margin-block-start: var(--size-4);
+				}
+			}
+
+			p,
+			li {
+				font-size: var(--font-size-2);
+				font-weight: var(--font-weight-4);
+				opacity: 0.7;
+			}
+
+			.close-button {
+				position: absolute;
+				inset-inline-end: var(--size-2);
+				inset-block-start: var(--size-2);
+			}
+		}
 
 		.main {
 			display: flex;
@@ -286,7 +372,7 @@ $effect(() => {
 		flex: 1;
 		overflow-y: scroll;
 		scrollbar-width: thin;
-		padding-block: var(--size-6);
+		padding-block: var(--size-6) var(--size-16);
 		padding-inline: var(--size-10);
 
 		.messages-inner {
@@ -335,6 +421,24 @@ $effect(() => {
 
 				&:hover {
 					background-color: var(--highlight-1);
+				}
+			}
+
+			.stop-process {
+				align-items: center;
+				background-color: var(--accent-1);
+				border-radius: var(--radius-2);
+				block-size: var(--size-5);
+				color: var(--background-1);
+				display: flex;
+				justify-content: center;
+				inline-size: var(--size-5);
+				margin-block-start: var(--size-1);
+				margin-inline-end: var(--size-1);
+				transition: all 150ms ease;
+
+				&:hover {
+					opacity: 0.7;
 				}
 			}
 		}

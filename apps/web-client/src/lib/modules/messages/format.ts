@@ -36,6 +36,14 @@ export function formatMessage(
       author: "Atlas",
       metadata: { toolName: "table_output", result: part.output },
     };
+  } else if (part.type === "tool-workspace_summary") {
+    return {
+      id: crypto.randomUUID(),
+      type: "tool_call",
+      timestamp: new Date().toISOString(),
+      author: "Atlas",
+      metadata: { toolName: "workspace_summary", result: part.output },
+    };
   } else if (part.type.startsWith("tool-") || part.type === "dynamic-tool") {
     return {
       id: crypto.randomUUID(),

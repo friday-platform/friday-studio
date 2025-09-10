@@ -16,6 +16,7 @@ import { resourceReadTool } from "./resource-read.ts";
 import { tableOutput } from "./table.ts";
 import { todoReadTool, todoWriteTool } from "./todo-tools.ts";
 import { workspaceMemoryTool } from "./workspace-memory-tool.ts";
+import { workspaceSummary } from "./workspace-summary.ts";
 import { updateWorkspace } from "./workspace-update/atlas-update-workspace.ts";
 
 /**
@@ -29,6 +30,7 @@ export const conversationTools: AtlasTools = {
   read_atlas_resource: resourceReadTool,
   atlas_update_workspace: updateWorkspace,
   table_output: tableOutput,
+  workspace_summary: workspaceSummary,
 };
 
 export {

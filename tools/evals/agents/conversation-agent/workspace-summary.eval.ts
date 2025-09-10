@@ -19,14 +19,14 @@ Deno.test({
 
       // Test todo creation and management
       const result = await conversationAgent.execute(
-        "Create a table with 3 rows and 3 columns using the table tool. The columns should be 'Name', 'Age', and 'City'. The rows should be 'John', '25', 'New York', 'Jane', '30', 'Los Angeles', 'Jim', '35', 'Chicago'.",
+        "I want to create a workspace that watches a folder on my local computer and analyzes the output. I want that output sent to a Slack channel in my organization.",
         agentContext,
       );
       const metrics = context.getMetrics();
       const trace = context.getTrace();
 
       const pass = await t.step("", () => {
-        assert(result.text === "", "Called table_output");
+        assert(result.text === "", "Called workspace_summary");
       });
 
       await saveSnapshot({
