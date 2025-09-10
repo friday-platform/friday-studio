@@ -412,7 +412,7 @@ The agent MUST attribute information using ONLY these tags:
 - [generated] — created content (templates/formatting/non-factual)
 - [undefined] — source cannot be determined
 
-Note: [input] and [inference:input] DO NOT require any tool evidence, even when referencing external data that is included in the job input.
+Note: [input] and [inference:input] DO NOT require any tool evidence, even when referencing external data that is included in the job input. If the output is clearly a summary/paraphrase of the provided input and no tools were called, treat it as valid (prefer [inference:input]) even if explicit tags are missing.
 
 For strict JSON outputs, close the JSON and include a single trailing line starting with "Attribution:" that contains the required tags (e.g., Attribution: [input] or Attribution: [tool:targeted_research] (https://example.com)).
 
@@ -425,8 +425,8 @@ For strict JSON outputs, close the JSON and include a single trailing line start
 
 ### SPECIFIC VALIDATION CHECKS
 1. Every [tool:{name}] MUST match an actual tool call in this step
-2. External data is allowed if it appears in the job input and is tagged [input]; otherwise, it requires [tool:{name}] attribution
-3. Claims derived from job input are tagged [input]; keep input URLs next to [input]
+2. External data is allowed if it appears in the job input (treat as [input]); otherwise, it requires [tool:{name}] attribution
+3. Claims derived from job input are tagged [input] or summarized as [inference:input]; keep input URLs next to [input] when available
 4. [inference] is ONLY allowed as [inference:input] or [inference:tool:{name}] (tool form requires matching tool call)
 5. Include URL/file path inline next to the tag when available
 6. Negative existence/identity claims require [tool:{name}] evidence and links/paths
@@ -436,6 +436,11 @@ For strict JSON outputs, close the JSON and include a single trailing line start
 - Specific numbers/dates/URLs without attribution
 - [tool:{name}] claims when no tool was called
 - Use of [inference] other than [inference:input] or [inference:tool:{name}]
+
+### SCORING GUIDELINES
+- Input-only summary with strong alignment to provided input, no tools used: valid=true, confidence 0.7-0.95. If tags are missing, subtract at most 0.05-0.15.
+- Mixed content with minor untagged facts that still appear in input: valid=true, confidence 0.55-0.8 with issues.
+- External claims not in input and without tools: valid=false, confidence 0.05-0.3.
 
 ## RESPONSE FORMAT
 Respond with ONLY valid JSON.
@@ -542,8 +547,8 @@ ${detectedUrls.length > 0 ? detectedUrls.join("\n") : "none"}
 **Check for Source Attribution:**
 1. Output must use ONLY: [tool:{name}], [input], [inference:input], [generated], [undefined]. For strict JSON, add a trailing "Attribution:" line with tags.
 2. Every [tool:{name}] tag must match an actual tool call listed above.
-3. Input-derived facts must be tagged [input]; keep input URLs next to [input].
-4. External/web/API claims are allowed if they appear in the job input and are tagged [input]; otherwise they require tool usage and [tool:{name}] attribution.
+3. Input-derived facts may be tagged [input] or summarized as [inference:input]; keep input URLs next to [input] when available.
+4. External/web/API claims are allowed if they appear in the job input; otherwise they require tool usage and [tool:{name}] attribution.
 5. Include URL/file path inline next to the tag when available.
 6. Negative existence/identity claims require [tool:{name}] evidence (and links/paths when applicable), unless directly quoted from input and tagged [input].
 

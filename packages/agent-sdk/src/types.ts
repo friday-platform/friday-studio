@@ -457,6 +457,7 @@ export const AtlasAgentConfigSchema = z.object({
   type: z.literal("atlas"),
   agent: z.string().describe("Atlas Agent ID from registry"),
   description: z.string().describe("Agent description"),
+  prompt: z.string().describe("Agent prompt"),
   // version: z.string().optional().describe("Agent version (defaults to latest)"),
   // config: z
   //   .record(z.string(), z.unknown())

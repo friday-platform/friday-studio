@@ -1433,8 +1433,6 @@ export class SessionSupervisorActor implements BaseActor {
           sessionId: this.sessionId,
           workspaceId: this.workspaceId || "global",
           streamId: this.sessionContext?.streamId,
-          previousResults,
-          agentTools: agentExecutionConfig.tools, // Pass agent-specific tools
           additionalContext: { input, reasoning: agentTask.reasoning },
           abortSignal: agentAbort.signal,
           // Pass callback for stream events

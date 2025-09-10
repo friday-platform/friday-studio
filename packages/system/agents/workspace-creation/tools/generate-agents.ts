@@ -64,9 +64,9 @@ const MODEL_CONFIGS_BY_ARCHETYPE: Record<
  */
 const BundledAgentSpecSchema = z.object({
   source: z.literal("bundled"),
-  id: z.string().describe("Agent ID in kebab-case"),
   bundledId: z.string().describe("ID of the bundled agent to use"),
   name: z.string().describe("Human-readable agent name"),
+  prompt: z.string().describe("Brief prompt (3-5 lines) for the agent"),
   description: z.string().describe("Brief description of agent purpose"),
 });
 
@@ -193,6 +193,7 @@ Keep it direct and actionable.
 ONLY add MCP domains for generated agents when they need explicit external tools.
 
 DO NOT add MCP domains for:
+- Reading from the file system (These tools are provided automatically to all agents)
 - Email tasks (An email tool is provided automatically to all agents)
 - Tasks that the agent can complete with just LLM reasoning
 </mcp_domain_guidelines>`;
@@ -200,7 +201,7 @@ DO NOT add MCP domains for:
       try {
         // Single LLM call to generate all agents
         const { object } = await generateObject({
-          model: anthropic("claude-3-5-haiku-latest"),
+          model: anthropic("claude-sonnet-4-20250514"),
           schema: BatchAgentResponseSchema,
           system: systemPrompt,
           prompt: `Generate agent specifications for these pre-decomposed requirements:
@@ -217,7 +218,7 @@ For each requirement:
 Each agent in the array should follow the discriminated union pattern with "source" field.`,
           temperature: 0.2,
           maxRetries: 3,
-          maxOutputTokens: 8000,
+          maxOutputTokens: 12000,
           abortSignal,
         });
 
@@ -231,8 +232,6 @@ Each agent in the array should follow the discriminated union pattern with "sour
         const agentConfigs: Array<{ id: string; config: AtlasAgentConfig | LLMAgentConfig }> = [];
 
         for (const spec of object.agents) {
-          const agentId = toKebabCase(spec.id);
-
           if (spec.source === "bundled") {
             // Use bundled agent
             const bundledAgent = bundledAgents.find((a) => a.metadata.id === spec.bundledId);
@@ -245,15 +244,18 @@ Each agent in the array should follow the discriminated union pattern with "sour
               type: "atlas",
               agent: spec.bundledId,
               description: spec.description,
+              prompt: spec.prompt,
               env: bundledAgent.environmentConfig?.required
                 ? Object.fromEntries(
                     bundledAgent.environmentConfig.required.map((key) => [key, ""]),
                   )
                 : undefined,
             };
-
-            agentConfigs.push({ id: agentId, config });
+            const agent = { id: spec.bundledId, config };
+            logger.debug("Adding bundled agent to workspace", { agent });
+            agentConfigs.push(agent);
           } else if (spec.source === "generated") {
+            const agentId = toKebabCase(spec.id);
             // Generate LLM agent using archetype config
             const archetypeConfig = MODEL_CONFIGS_BY_ARCHETYPE[spec.archetype];
 
@@ -270,8 +272,9 @@ Each agent in the array should follow the discriminated union pattern with "sour
                 timeout: "5m",
               },
             };
-
-            agentConfigs.push({ id: agentId, config });
+            const agent = { id: agentId, config };
+            logger.debug("Adding LLM agent to workspace", { agent });
+            agentConfigs.push(agent);
           }
         }
 

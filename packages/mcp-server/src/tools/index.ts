@@ -38,7 +38,6 @@ import { registerSignalsTriggerTool } from "./signals/trigger.ts";
 import { registerBashTool } from "./system/bash.ts";
 import type { ToolContext } from "./types.ts";
 // Import workspace tools
-import { registerWorkspaceCreateTool } from "./workspace/create.ts";
 import { registerWorkspaceDeleteTool } from "./workspace/delete.ts";
 import { registerWorkspaceDescribeTool } from "./workspace/describe.ts";
 import { registerWorkspaceListTool } from "./workspace/list.ts";
@@ -49,7 +48,6 @@ import { registerWorkspaceListTool } from "./workspace/list.ts";
 export function registerTools(server: McpServer, context: ToolContext): void {
   // Workspace tools
   registerWorkspaceListTool(server, context);
-  registerWorkspaceCreateTool(server, context);
   registerWorkspaceDeleteTool(server, context);
   registerWorkspaceDescribeTool(server, context);
 

@@ -15,7 +15,9 @@ const systemPrompt = `
   </context>
   <instructions>
 
-  <CRITICAL>Agent and Signal names must match EXACTLY</CRITICAL>
+  <CRITICAL>
+    Agent and Signal names must match EXACTLY
+  </CRITICAL>
 
   1. Map each signal to appropriate job(s):
      - One signal can trigger multiple jobs (different workflows)
@@ -35,18 +37,18 @@ const systemPrompt = `
 
   4. Define agent context flow:
     - id: first-agent
-      # No context needed for first agent
-    - id: second-agent
       context:
         signal: true  # Include original trigger data
+    - id: second-agent
+      context:
         steps: "previous"  # Get first-agent's output
     - id: final-agent
       context:
-        steps: "all"  # Get all previous outputs
+        steps: "previous"  # Get first-agent's output
 
 
     <common_patterns>
-      Pipeline: sequential execution with steps: "previous"
+      Pipeline: sequential execution with all steps given context: steps: "previous"
       Fan-out/fan-in: parallel execution, synthesizer with steps: "all"
     </common_patterns>
   </instructions>`;
@@ -62,8 +64,9 @@ export function getGenerateJobsTool(
     execute: async ({ requirements }) => {
       logger.debug("Generating jobs...");
       const { object } = await generateObject({
-        model: anthropic("claude-3-5-haiku-latest"),
+        model: anthropic("claude-sonnet-4-20250514"),
         system: systemPrompt,
+        maxOutputTokens: 10000,
         schema: z.object({
           jobs: JobSpecificationSchema.extend({
             id: z.string().meta({ description: "Job ID" }),

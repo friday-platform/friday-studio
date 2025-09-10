@@ -436,7 +436,7 @@ export class AgentOrchestrator implements IAgentOrchestrator {
       }
       const mcpSetup = await this.getOrCreateSessionClient(context.sessionId);
 
-      logger.debug("Executing agent via MCP", {
+      logger.debug("🌭🌭🌭🌭🌭🌭🌭🌭🌭 Executing agent via MCP", {
         agentId,
         sessionId: context.sessionId,
         prompt: prompt,

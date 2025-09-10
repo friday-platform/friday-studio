@@ -29,7 +29,6 @@ import {
 import type { Logger } from "@atlas/logger";
 import { type CoALAMemoryManager, CoALAMemoryType } from "@atlas/memory";
 import { type ActorRefFrom, assign, fromPromise, setup } from "xstate";
-import type { CollectableStreamEmitter } from "../streaming/stream-emitters.ts";
 
 // === Input/Output Types for State Machine Actors ===
 

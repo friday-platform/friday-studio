@@ -17,7 +17,7 @@ import { tableOutput } from "./table.ts";
 import { todoReadTool, todoWriteTool } from "./todo-tools.ts";
 import { workspaceMemoryTool } from "./workspace-memory-tool.ts";
 import { workspaceSummary } from "./workspace-summary.ts";
-import { updateWorkspace } from "./workspace-update/atlas-update-workspace.ts";
+// import { updateWorkspace } from "./workspace-update/atlas-update-workspace.ts";
 
 /**
  * All conversation agent tools exported as AtlasTools.
@@ -28,7 +28,6 @@ export const conversationTools: AtlasTools = {
   atlas_todo_read: todoReadTool,
   atlas_todo_write: todoWriteTool,
   read_atlas_resource: resourceReadTool,
-  atlas_update_workspace: updateWorkspace,
   table_output: tableOutput,
   workspace_summary: workspaceSummary,
 };
@@ -39,6 +38,5 @@ export {
   fileOutput,
   tableOutput,
   resourceReadTool,
-  updateWorkspace,
   workspaceMemoryTool,
 };

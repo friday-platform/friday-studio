@@ -18,7 +18,7 @@ Deno.test("Workspace Creation Agent: generateAgentsArchetype", async (t) => {
     const agentRequirements = [
       "reader: Extract and parse meeting transcripts from uploaded PDF/DOCX files",
       "analyzer: Analyze transcripts for critical product feedback and insights",
-      "notifier: Send feedback summary to team Slack channel via API",
+      "notifier: Send feedback summary to team #product-feedback Slack channel",
     ];
 
     const startTime = performance.now();
@@ -121,8 +121,8 @@ Deno.test("Workspace Creation Agent: generateAgentsArchetype", async (t) => {
       "reader: Read and extract code from local repository files for context",
       "analyzer: Analyze issue severity and potential impact on the codebase",
       "reporter: Generate detailed report with recommendations",
-      "notifier: Post summary to Slack channel",
-      "notifier: Create task in Linear with issue details",
+      "notifier: Post summary to #new-issues Slack channel",
+      "notifier: Create task in TEM team Linear with issue details",
     ];
 
     const startTime = performance.now();
@@ -197,7 +197,18 @@ Deno.test("Workspace Creation Agent: generateAgentsArchetype", async (t) => {
       res.totalAgents && res.totalAgents >= 6,
       `Expected at least 6 agents, got ${res.totalAgents}`,
     );
-    assert(res.agentIds, "Should have agentIds");
+    const bundledAgents = Object.entries(workspaceConfig.agents ?? {}).filter(
+      ([, agent]) => agent.type === "atlas",
+    );
+    assert(
+      bundledAgents.every(([id, agent]) => {
+        if (agent.type !== "atlas") {
+          throw new Error(`Agent ${id} is not of type 'atlas'`);
+        }
+        return agent.agent === id;
+      }),
+      "All bundled agents should have matching IDs",
+    );
 
     // Verify evaluations passed
     assert(
@@ -218,7 +229,7 @@ Deno.test("Workspace Creation Agent: generateAgentsArchetype", async (t) => {
   await step(t, "Simple workflow preferring bundled agents", async ({ snapshot }) => {
     const agentRequirements = [
       "collector: Fetch current weather forecast data from weather API",
-      "notifier: Send weather forecast to Slack channel via API",
+      "notifier: Send weather forecast to #current-weather Slack channel",
     ];
 
     const startTime = performance.now();

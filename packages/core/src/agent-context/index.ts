@@ -70,6 +70,25 @@ export function createAgentContextBuilder(deps: AgentContextBuilderDeps) {
       allTools = {};
     }
 
+    // 2. Get the specific prompt from the workspace to provide to the agent
+    let workspaceSystemPrompt = "";
+    const { data, error } = await atlasClient.GET("/api/workspaces/{workspaceId}/config", {
+      params: { path: { workspaceId: sessionData.workspaceId } },
+    });
+    if (error) {
+      logger.error("Failed to fetch workspace config", {
+        operation: "buildAgentContext",
+        workspaceId: sessionData.workspaceId,
+        error,
+      });
+      throw new Error(`Failed to fetch workspace config: ${error}`);
+    }
+
+    const agentConfig = data.config.agents?.[agent.metadata.id];
+    if (agentConfig?.type === "atlas") {
+      workspaceSystemPrompt = agentConfig.prompt;
+    }
+
     // 2. Build environment context with validated variables
     const envContext = await validateEnvironment(
       sessionData.workspaceId,
@@ -92,6 +111,7 @@ export function createAgentContextBuilder(deps: AgentContextBuilderDeps) {
       agent,
       sessionMemory,
       prompt,
+      workspaceSystemPrompt,
       sessionData,
       agentLogger,
     );
@@ -239,6 +259,7 @@ async function enrichPromptWithMemories(
   agent: AtlasAgent,
   sessionMemory: CoALAMemoryManager | null,
   originalPrompt: string,
+  workspacePrompt: string,
   sessionData: AgentSessionData,
   logger: Logger,
 ): Promise<string> {
@@ -301,7 +322,12 @@ async function enrichPromptWithMemories(
       hasRecentContext: !!recentWorkingMemory,
     });
 
-    return enrichedPrompt;
+    logger.debug("🐼🐼🐼🐼🐼🐼🐼🐼🐼🐼🐼🐼🐼🐼🐼🐼🐼🐼🐼🐼🐼", { enrichedPrompt, workspacePrompt });
+
+    return `
+    ${workspacePrompt !== "" ? `Your task: ${workspacePrompt}` : ""}
+    Content: ${enrichedPrompt}
+    `;
   } catch (error) {
     // Graceful fallback - log error but continue with original prompt
     logger.warn("Failed to enhance prompt with memories, using fallback", {

@@ -228,7 +228,7 @@ export const workspaceCreationAgent = createAgent<WorkspaceResult>({
         system: SYSTEM_PROMPT,
         prompt: `Create an Atlas workspace for this automation requirement: ${prompt}`,
         tools,
-        stopWhen: [stepCountIs(10), hasToolCall("exportWorkspace")],
+        stopWhen: [stepCountIs(20), hasToolCall("exportWorkspace")],
         maxRetries: 3,
         maxOutputTokens: 4096,
         abortSignal,
