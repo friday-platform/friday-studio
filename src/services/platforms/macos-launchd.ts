@@ -154,11 +154,18 @@ export class MacOSLaunchdService implements PlatformServiceManager {
   }
 
   async stop(force = false): Promise<void> {
-    const cmd = new Deno.Command("launchctl", {
-      args: force ? ["kill", "TERM", this.serviceName] : ["stop", this.serviceName],
-      stdout: "piped",
-      stderr: "piped",
-    });
+    let args: string[];
+
+    if (force) {
+      // Get current user ID for launchctl kill target specifier
+      const uid = Deno.uid();
+      const target = `gui/${uid}/${this.serviceName}`;
+      args = ["kill", "TERM", target];
+    } else {
+      args = ["stop", this.serviceName];
+    }
+
+    const cmd = new Deno.Command("launchctl", { args, stdout: "piped", stderr: "piped" });
 
     const result = await cmd.output();
 

@@ -1,5 +1,6 @@
 import type { YargsInstance } from "../utils/yargs.ts";
 import * as install from "./service/install.tsx";
+import * as restart from "./service/restart.tsx";
 import * as start from "./service/start.tsx";
 import * as status from "./service/status.tsx";
 import * as stop from "./service/stop.tsx";
@@ -11,7 +12,7 @@ export const aliases = ["svc"];
 
 export function builder(y: YargsInstance) {
   return y
-    .command([install, uninstall, status, start, stop])
+    .command([install, uninstall, status, start, stop, restart])
     .demandCommand(1)
     .fail((msg: string, _: unknown, yargs: YargsInstance) => {
       if (msg && msg.includes("Not enough non-option arguments")) {
@@ -26,6 +27,7 @@ export function builder(y: YargsInstance) {
     .example("$0 service status", "Check service status")
     .example("$0 service start", "Start the service")
     .example("$0 service stop", "Stop the service")
+    .example("$0 service restart", "Restart the service")
     .example("$0 service uninstall", "Remove the service")
     .help()
     .alias("help", "h")
