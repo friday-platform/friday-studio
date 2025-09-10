@@ -107,7 +107,7 @@ Deno.test("fs-watch emits added/modified/removed with expected payload", async (
   });
 });
 
-Deno.test("fs-watch include/exclude filters and teardown stop events", async () => {
+Deno.test("fs-watch teardown stops further event processing", async () => {
   await withTempDir(async (tmp) => {
     const events: Array<Record<string, unknown>> = [];
 
@@ -117,8 +117,6 @@ Deno.test("fs-watch include/exclude filters and teardown stop events", async () 
       provider: "fs-watch",
       path: tmp,
       recursive: true,
-      include: [".md"],
-      exclude: ["IGNORE"],
     });
 
     const runtime = provider
@@ -128,8 +126,6 @@ Deno.test("fs-watch include/exclude filters and teardown stop events", async () 
         provider: "fs-watch",
         path: tmp,
         recursive: true,
-        include: [".md"],
-        exclude: ["IGNORE"],
       })
       .toRuntimeSignal() as {
       initialize: (ctx: {
@@ -144,14 +140,14 @@ Deno.test("fs-watch include/exclude filters and teardown stop events", async () 
       teardown: () => void;
     };
 
-    // Fake iterator emitting various paths
+    // Fake iterator emitting various paths (no filtering expected anymore)
     async function* fakeFsWatch(_path: string): AsyncIterable<Deno.FsEvent> {
       const txtFile = join(tmp, "note.txt");
       const ignoredMd = join(tmp, "README.IGNORE.md");
       const mdFile = join(tmp, "README.md");
-      yield { kind: "create", paths: [txtFile] } as Deno.FsEvent; // filtered by include
-      yield { kind: "create", paths: [ignoredMd] } as Deno.FsEvent; // filtered by exclude
-      yield { kind: "create", paths: [mdFile] } as Deno.FsEvent; // accepted
+      yield { kind: "create", paths: [txtFile] } as Deno.FsEvent;
+      yield { kind: "create", paths: [ignoredMd] } as Deno.FsEvent;
+      yield { kind: "create", paths: [mdFile] } as Deno.FsEvent;
     }
 
     runtime.initialize({
@@ -164,13 +160,7 @@ Deno.test("fs-watch include/exclude filters and teardown stop events", async () 
     });
 
     const mdFile = join(tmp, "README.md");
-    const added = await waitFor(
-      events,
-      (e) => e.path === mdFile && (e.event === "added" || e.event === "modified"),
-      2000,
-      10,
-    );
-    assertEquals(added.relativePath, "README.md");
+    await waitFor(events, (e) => e.path === mdFile && e.event === "added", 2000, 10);
 
     runtime.teardown();
 

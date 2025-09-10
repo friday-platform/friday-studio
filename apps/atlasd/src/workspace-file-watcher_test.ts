@@ -257,6 +257,80 @@ signals:
   }
 });
 
+Deno.test("WorkspaceFileWatcher - does not reload on access-only (no content change)", async () => {
+  const testDir = "./test-workspace-watcher-access-only";
+  try {
+    await Deno.remove(testDir, { recursive: true });
+  } catch {
+    // Ignore if doesn't exist
+  }
+  await Deno.mkdir(testDir, { recursive: true });
+  const configPath = join(testDir, "workspace.yml");
+  let changeDetected = false;
+
+  // Create initial workspace.yml with valid content
+  const initialContent = `
+version: "1.0"
+workspace:
+  name: test-workspace
+  description: Test workspace access-only
+signals:
+  test-signal:
+    provider: http
+    description: Test signal
+    config:
+      path: /webhook
+`;
+  await Deno.writeTextFile(configPath, initialContent);
+
+  const watcher = new watchers.WorkspaceConfigWatcher({
+    onConfigChange: (_workspaceId: string, _filePath: string) => {
+      changeDetected = true;
+      return Promise.resolve();
+    },
+    debounceMs: 100,
+  });
+
+  const workspace: WorkspaceEntry = {
+    id: "test-workspace-access-only",
+    name: "Test Workspace",
+    path: testDir,
+    configPath,
+    status: WorkspaceStatusEnum.RUNNING,
+    createdAt: new Date().toISOString(),
+    lastSeen: new Date().toISOString(),
+  };
+
+  // Start watching
+  await watcher.watchWorkspace(workspace);
+  await delay(150);
+
+  // Access-only: update metadata (mtime) without changing content. This often emits a modify event.
+  try {
+    const stat = await Deno.stat(configPath);
+    const currentMtime = stat.mtime ?? new Date();
+    const newMtime = new Date(currentMtime.getTime() + 1000);
+    const newAtime = new Date();
+    await Deno.utime(configPath, newAtime, newMtime);
+  } catch {
+    // Ignore if utime not supported on platform
+  }
+
+  // Wait for debounce + processing window
+  await delay(300);
+
+  // Verify that no reload was triggered
+  assertEquals(changeDetected, false);
+
+  // Cleanup
+  await watcher.stop();
+  try {
+    await Deno.remove(testDir, { recursive: true });
+  } catch {
+    // Ignore cleanup errors
+  }
+});
+
 Deno.test("WorkspaceFileWatcher - stops watching on unwatch", async () => {
   const testDir = "./test-workspace-watcher-unwatch";
   try {

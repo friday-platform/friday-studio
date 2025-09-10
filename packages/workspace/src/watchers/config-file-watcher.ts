@@ -15,13 +15,14 @@ export class WorkspaceConfigWatcher {
   private watchers = new Map<string, FsWatchRunner>();
   private workspaceConfigPaths = new Map<string, string>();
   private readonly maxConfigSize: number;
+  private lastConfigHashByWorkspace = new Map<string, string>();
 
   constructor(private options: WorkspaceConfigWatcherOptions) {
     // Default to 1MB max config size
     this.maxConfigSize = options.maxConfigSize || 1024 * 1024;
   }
 
-  watchWorkspace(workspace: WorkspaceEntry) {
+  async watchWorkspace(workspace: WorkspaceEntry) {
     // Don't watch if already watching
     if (this.watchers.has(workspace.id)) {
       return;
@@ -36,6 +37,19 @@ export class WorkspaceConfigWatcher {
 
     // Store the config path for this workspace
     this.workspaceConfigPaths.set(workspace.id, configPath);
+
+    // Initialize baseline content hash if file exists and is readable
+    try {
+      const initialContent = await Deno.readTextFile(absoluteConfigPath);
+      const initialHash = await this.computeSha256Hex(initialContent);
+      this.lastConfigHashByWorkspace.set(workspace.id, initialHash);
+    } catch (error) {
+      logger.debug("Could not initialize workspace config hash", {
+        workspaceId: workspace.id,
+        path: absoluteConfigPath,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
 
     try {
       // Create shared runner for the workspace directory
@@ -83,6 +97,7 @@ export class WorkspaceConfigWatcher {
     if (configPath) {
       this.workspaceConfigPaths.delete(workspaceId);
     }
+    this.lastConfigHashByWorkspace.delete(workspaceId);
 
     logger.info("Stopped watching workspace configuration", { workspaceId });
     // keep async contract
@@ -109,8 +124,18 @@ export class WorkspaceConfigWatcher {
         return;
       }
 
-      // Validate the new configuration before reloading
+      // Read file contents and compute content signature
       const configContent = await Deno.readTextFile(filePath);
+      const contentHash = await this.computeSha256Hex(configContent);
+
+      // Gate on content hash: skip if content is unchanged
+      const previousHash = this.lastConfigHashByWorkspace.get(workspaceId);
+      if (previousHash && previousHash === contentHash) {
+        logger.debug("Workspace config unchanged (hash match), skipping reload", { workspaceId });
+        return;
+      }
+
+      // Validate the new configuration before reloading
       const config = parse(configContent);
 
       // Use existing validation
@@ -124,7 +149,8 @@ export class WorkspaceConfigWatcher {
         return;
       }
 
-      // Configuration is valid, trigger reload
+      // Configuration is valid, persist new hash and trigger reload
+      this.lastConfigHashByWorkspace.set(workspaceId, contentHash);
       await this.options.onConfigChange(workspaceId, filePath);
     } catch (error) {
       logger.error("Error handling config change", {
@@ -132,6 +158,19 @@ export class WorkspaceConfigWatcher {
         error: error instanceof Error ? error.message : String(error),
       });
     }
+  }
+
+  private async computeSha256Hex(input: string): Promise<string> {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(input);
+    const digest = await crypto.subtle.digest("SHA-256", data);
+    const bytes = new Uint8Array(digest);
+    let hex = "";
+    for (const byte of bytes) {
+      const byteHex = byte.toString(16).padStart(2, "0");
+      hex += byteHex;
+    }
+    return hex;
   }
 
   async stop() {

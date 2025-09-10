@@ -4,11 +4,6 @@ export type WatchEventKind = "create" | "modify" | "remove" | "any";
 
 export type NormalizedWatchEvent = "added" | "modified" | "removed";
 
-export interface IncludeExcludeFilter {
-  include?: string[];
-  exclude?: string[];
-}
-
 export interface ResolvePathOptions {
   basePath?: string; // workspace root or cwd
 }
@@ -42,20 +37,6 @@ export function mapFsEventKind(kind: Deno.FsEvent["kind"]): NormalizedWatchEvent
   if (kind === "modify") return "modified";
   if (kind === "remove") return "removed";
   return null;
-}
-
-export function filterAbsolutePath(pathAbs: string, filter?: IncludeExcludeFilter): boolean {
-  if (!filter) return true;
-  const { include, exclude } = filter;
-  if (include && include.length > 0) {
-    const matched = include.some((fragment) => pathAbs.includes(fragment));
-    if (!matched) return false;
-  }
-  if (exclude && exclude.length > 0) {
-    const excluded = exclude.some((fragment) => pathAbs.includes(fragment));
-    if (excluded) return false;
-  }
-  return true;
 }
 
 export function computeRelativeToRoot(pathAbs: string, workspaceRoot?: string): string | undefined {

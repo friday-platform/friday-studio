@@ -55,7 +55,6 @@ const systemPrompt = `
 
       - For fs-watch signals, include:
         - config.path: string  # absolute path or relative to workspace
-        - EITHER config.include or config.exclude: mutually exclusive files to include/exclude
   </instructions>
   `;
 

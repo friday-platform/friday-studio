@@ -16,7 +16,6 @@ import { ProviderStatus, ProviderType } from "./types.ts";
 import { isAbsolute, normalize, resolve } from "@std/path";
 import {
   computeRelativeToRoot,
-  filterAbsolutePath,
   mapFsEventKind,
   resolveToAbsolutePath,
   isDirectoryPath,
@@ -29,8 +28,6 @@ export interface FileWatchSignalConfig {
   provider: "fs-watch";
   path: string;
   recursive?: boolean;
-  include?: string[];
-  exclude?: string[];
 }
 
 export interface FileWatchSignalData {
@@ -161,11 +158,6 @@ class FileWatchRuntimeSignal {
         const pathAbs = isAbsolute(p)
           ? normalize(p)
           : normalize(resolve(this.absoluteWatchPath, p));
-        const allowed = filterAbsolutePath(pathAbs, {
-          include: this.config.include,
-          exclude: this.config.exclude,
-        });
-        if (!allowed) continue;
 
         const isDirectory = await isDirectoryPath(pathAbs);
 
@@ -206,8 +198,4 @@ class FileWatchRuntimeSignal {
     }
     this.processSignal = null;
   }
-
-  // Background loop removed; handled by shared runner
-
-  // Path mapping, filtering, and relative computation now use shared core utilities
 }

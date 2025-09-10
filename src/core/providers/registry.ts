@@ -96,8 +96,6 @@ export class ProviderRegistry implements IProviderRegistry {
           provider: "fs-watch" as const,
           path: config.config?.path,
           recursive: config.config?.recursive,
-          include: config.config?.include,
-          exclude: config.config?.exclude,
         });
 
       default:

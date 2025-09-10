@@ -95,7 +95,7 @@ Deno.test("fs-watch integration: emits events with relativePath under workspace 
   });
 });
 
-Deno.test("fs-watch integration: exclude/include filters applied", async () => {
+Deno.test("fs-watch integration: emits events for all paths (no filters)", async () => {
   await withTempDir(async (tmp) => {
     const captured: Array<Record<string, unknown>> = [];
 
@@ -105,8 +105,6 @@ Deno.test("fs-watch integration: exclude/include filters applied", async () => {
       provider: "fs-watch",
       path: tmp,
       recursive: false,
-      include: [".md"],
-      exclude: ["IGNORE"],
     });
 
     const runtime = provider
@@ -116,8 +114,6 @@ Deno.test("fs-watch integration: exclude/include filters applied", async () => {
         provider: "fs-watch",
         path: tmp,
         recursive: false,
-        include: [".md"],
-        exclude: ["IGNORE"],
       })
       .toRuntimeSignal() as {
       initialize: (ctx: {
@@ -134,11 +130,10 @@ Deno.test("fs-watch integration: exclude/include filters applied", async () => {
 
     const included = join(tmp, "notes.md");
     const excluded = join(tmp, "README.IGNORE.md");
-    const ignoredByInclude = join(tmp, "notes.txt");
 
     async function* fakeFsWatch(_path: string): AsyncIterable<Deno.FsEvent> {
-      yield { kind: "create", paths: [ignoredByInclude] } as Deno.FsEvent;
       yield { kind: "create", paths: [excluded] } as Deno.FsEvent;
+      await delay(20);
       yield { kind: "create", paths: [included] } as Deno.FsEvent;
     }
 
@@ -151,10 +146,11 @@ Deno.test("fs-watch integration: exclude/include filters applied", async () => {
 
     await delay(40);
 
-    // Only included file should be captured
-    assertEquals(captured.length, 1);
-    const only = captured[0] as { path: string; relativePath?: string };
-    assertEquals(only.path, included);
+    // No path-based filtering: both events should be captured
+    assertEquals(captured.length, 2);
+    const paths = captured.map((e) => (e as { path: string }).path).sort();
+    assertEquals(paths.includes(included), true);
+    assertEquals(paths.includes(excluded), true);
 
     runtime.teardown();
   });

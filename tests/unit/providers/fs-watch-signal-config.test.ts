@@ -35,23 +35,7 @@ Deno.test("FS-WATCH Signal Configuration Schema - Basic validation", async (t) =
   });
 });
 
-Deno.test("FS-WATCH Signal Configuration Schema - Advanced fields", async (t) => {
-  await t.step("should accept include and exclude arrays", () => {
-    const config = {
-      description: "Watch with filters",
-      provider: "fs-watch",
-      config: {
-        path: "/tmp/project",
-        recursive: false,
-        include: [".md", "README"],
-        exclude: ["node_modules", ".git"],
-      },
-    };
-
-    const result = SignalConfigSchema.safeParse(config);
-    assertEquals(result.success, true);
-  });
-
+Deno.test("FS-WATCH Signal Configuration Schema - Strict objects", async (t) => {
   await t.step("should reject extra fields due to strict objects", () => {
     const invalidExtra: unknown = {
       description: "Strict object - extra field",

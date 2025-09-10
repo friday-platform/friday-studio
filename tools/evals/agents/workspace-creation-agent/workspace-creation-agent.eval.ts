@@ -60,10 +60,6 @@ Deno.test("Workspace Creation Agent", async (t) => {
       "config" in firstSignal && firstSignal.config?.path,
       "Signal should specify a directory path",
     );
-    assert(
-      "config" in firstSignal && firstSignal.config?.include,
-      "Signal should specify file patterns to watch",
-    );
 
     // Verify Slack agent exists in the workspace configuration
     assert(result.config.agents, "Should have agents defined");

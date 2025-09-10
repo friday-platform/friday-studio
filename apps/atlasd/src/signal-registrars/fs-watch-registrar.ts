@@ -45,8 +45,6 @@ export class FsWatchSignalRegistrar implements WorkspaceSignalRegistrar {
               await this.registerRuntimeSignal(workspace.id, workspace.path, signalId, {
                 path: cfg.path,
                 recursive: cfg.recursive !== false,
-                include: cfg.include,
-                exclude: cfg.exclude,
               });
               watchersRegistered++;
               logger.info("Registered file watcher", {
@@ -85,8 +83,6 @@ export class FsWatchSignalRegistrar implements WorkspaceSignalRegistrar {
           await this.registerRuntimeSignal(workspaceId, workspacePath, signalId, {
             path: cfg.path,
             recursive: cfg.recursive !== false,
-            include: cfg.include,
-            exclude: cfg.exclude,
           });
           logger.info("Registered file watcher", { workspaceId, signalId, path: cfg.path });
         }
@@ -138,7 +134,7 @@ export class FsWatchSignalRegistrar implements WorkspaceSignalRegistrar {
     workspaceId: string,
     workspacePath: string,
     signalId: string,
-    cfg: { path: string; recursive?: boolean; include?: string[]; exclude?: string[] },
+    cfg: { path: string; recursive?: boolean },
   ): Promise<void> {
     const key = `${workspaceId}:${signalId}`;
     // Teardown existing if present
@@ -164,8 +160,6 @@ export class FsWatchSignalRegistrar implements WorkspaceSignalRegistrar {
         provider: "fs-watch",
         path: cfg.path,
         recursive: cfg.recursive !== false,
-        include: cfg.include,
-        exclude: cfg.exclude,
       },
     });
 
@@ -181,8 +175,6 @@ export class FsWatchSignalRegistrar implements WorkspaceSignalRegistrar {
       provider: "fs-watch",
       path: cfg.path,
       recursive: cfg.recursive !== false,
-      include: cfg.include,
-      exclude: cfg.exclude,
     });
 
     const runtimeSignal: {

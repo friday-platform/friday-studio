@@ -140,14 +140,12 @@ export const workspaceBuilderTools = {
         .optional()
         .default(true)
         .describe("Watch subdirectories (default true)"),
-      include: z.array(z.string()).optional().describe("Optional include substring filters"),
-      exclude: z.array(z.string()).optional().describe("Optional exclude substring filters"),
     }),
-    execute: ({ signalName, description, path, recursive, include, exclude }) => {
+    execute: ({ signalName, description, path, recursive }) => {
       const signalConfig: WorkspaceSignalConfig = {
         provider: "fs-watch",
         description,
-        config: { path, recursive, include, exclude },
+        config: { path, recursive },
       };
 
       const result = getWorkspaceBuilder().addSignal(signalName, signalConfig);

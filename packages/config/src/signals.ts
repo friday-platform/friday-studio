@@ -60,14 +60,6 @@ export const FileWatchSignalConfigSchema = BaseSignalConfigSchema.extend({
       .optional()
       .default(true)
       .describe("Watch subdirectories when path is a directory"),
-    include: z
-      .array(z.string())
-      .optional()
-      .describe("Optional include filters (simple substring/prefix/suffix)"),
-    exclude: z
-      .array(z.string())
-      .optional()
-      .describe("Optional exclude filters (simple substring/prefix/suffix)"),
   }),
 });
 
