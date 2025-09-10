@@ -174,8 +174,8 @@ function findNpxPath() {
   return null;
 }
 
-// IPC handler for ensuring ATLAS_NPX_PATH is configured
-ipcMain.handle("ensure-npx-path", async () => {
+// IPC handler for saving ATLAS_NPX_PATH to .env file
+ipcMain.handle("save-atlas-npx-path", async () => {
   try {
     const atlasDir = path.join(os.homedir(), ".atlas");
     const envFile = path.join(atlasDir, ".env");
@@ -245,25 +245,14 @@ ipcMain.handle("save-atlas-key", async (event, atlasKey) => {
       existingLines = existingContent.split("\n");
     }
 
-    // Filter out any existing ATLAS_KEY and ATLAS_NPX_PATH lines
+    // Filter out only existing ATLAS_KEY lines (preserve all other lines including ATLAS_NPX_PATH)
     const filteredLines = existingLines.filter((line) => {
       const trimmedLine = line.trim();
-      return !trimmedLine.startsWith("ATLAS_KEY=") && !trimmedLine.startsWith("ATLAS_NPX_PATH=");
+      return !trimmedLine.startsWith("ATLAS_KEY=");
     });
 
     // Add the new ATLAS_KEY
     filteredLines.push(`ATLAS_KEY=${atlasKey}`);
-
-    // Find and store npx path if not already configured
-    const hasExistingNpxPath = existingLines.some((line) =>
-      line.trim().startsWith("ATLAS_NPX_PATH="),
-    );
-    if (!hasExistingNpxPath) {
-      const npxPath = findNpxPath();
-      if (npxPath) {
-        filteredLines.push(`ATLAS_NPX_PATH=${npxPath}`);
-      }
-    }
 
     // Join lines and ensure file ends with newline
     envContent = filteredLines.filter((line) => line.trim()).join("\n") + "\n";

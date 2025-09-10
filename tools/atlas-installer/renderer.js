@@ -315,7 +315,7 @@ class AtlasInstaller {
       {
         progress: 28,
         message: "Configuring NPX path for MCP servers...",
-        action: () => globalThis.electronAPI.ensureNpxPath(),
+        action: () => globalThis.electronAPI.saveAtlasNpxPath(),
       },
       {
         progress: 42,
