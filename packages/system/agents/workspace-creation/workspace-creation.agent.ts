@@ -127,7 +127,8 @@ Examples:
       generateSignals: `Extract signal trigger type(s).
 Examples:
 - "Adding webhook trigger"
-- "Configuring schedule"`,
+- "Configuring schedule"
+- "Adding file system watcher"`,
 
       generateJobs: `Extract job connections being made.
 Examples:

@@ -1,5 +1,9 @@
 import { anthropic } from "@ai-sdk/anthropic";
-import { HTTPSignalConfigSchema, ScheduleSignalConfigSchema } from "@atlas/config";
+import {
+  HTTPSignalConfigSchema,
+  ScheduleSignalConfigSchema,
+  FileWatchSignalConfigSchema,
+} from "@atlas/config";
 import type { Logger } from "@atlas/logger";
 import { toKebabCase } from "@std/text";
 import { generateObject, tool } from "ai";
@@ -9,6 +13,7 @@ import type { WorkspaceBuilder } from "../builder.ts";
 const SignalConfigSchema = z.discriminatedUnion("provider", [
   ScheduleSignalConfigSchema.omit({ schema: true }).extend({ id: z.string() }),
   HTTPSignalConfigSchema.omit({ schema: true }).extend({ id: z.string() }),
+  FileWatchSignalConfigSchema.omit({ schema: true }).extend({ id: z.string() }),
 ]);
 
 const systemPrompt = `
@@ -19,6 +24,7 @@ const systemPrompt = `
   You create signals to start jobs. The available types are:
     - schedule (time-based)
     - http (webhook/event-based)
+    - fs-watch (file system change-based)
   </context>
   <instructions>
     1. Signal creation rules:
@@ -28,6 +34,7 @@ const systemPrompt = `
       - HTTP signals are implicit - every signal can be called via HTTP, so only create explicit HTTP signals when that's the ONLY trigger needed
 
     2. Decision tree:
+      - User wants to watch files? → fs-watch ONLY
       - User wants scheduled execution? → schedule ONLY
       - User needs webhook/external trigger? → http ONLY
       - Default to the primary use case mentioned by the user
@@ -35,15 +42,19 @@ const systemPrompt = `
     3. Identify trigger patterns:
       - Time-based → schedule signal (periodic checks, reports, syncs)
       - Event-based → http signal (webhooks, API calls, external triggers)
+      - File changes → fs-watch signal (watch a directory or file for changes)
 
     4. For each signal, generate:
       - id: kebab-case identifier describing purpose
       - description: When/why it triggers
-      - provider: "schedule" or "http"
+      - provider: "schedule" or "http" or "fs-watch"
 
       - For schedule signals, include:
         - schedule: "cron expression"  # e.g., "*/30 * * * *" for every 30 min
         - timezone: "UTC"  # or user's timezone if specified
+
+      - For fs-watch signals, include:
+        - config.path: string  # absolute path or relative to workspace
   </instructions>
   `;
 
