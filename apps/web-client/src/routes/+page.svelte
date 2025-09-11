@@ -251,11 +251,11 @@ $effect(() => {
 		</div>
 	</div>
 
-	<aside>
+	<!-- <aside>
 		<h2>Artifacts and history</h2>
 
 		<Artifacts />
-	</aside>
+	</aside> -->
 
 	{#if showPlan}
 		{@const latestPlanMessage = ctx.messages.findLast(
