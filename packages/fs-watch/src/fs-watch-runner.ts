@@ -1,3 +1,4 @@
+import { logger } from "@atlas/logger";
 import { debounce } from "@std/async";
 
 export type FsWatchRunner = { stop: () => void };
@@ -25,11 +26,14 @@ export function createFsWatchRunner(options: FsWatchRunnerOptions): FsWatchRunne
       try {
         for await (const event of iterator) {
           if (stopped) break;
+          logger.debug("fs watch event received via watchFactory", { event });
           if (shouldHandleKind(event.kind)) {
+            logger.debug("handling fs watch event via watchFactory", { event });
             debouncedHandler(event);
           }
         }
-      } catch {
+      } catch (error) {
+        logger.error("fs watch error via watchFactory", { error });
         // iterator finished or errored; stop gracefully
       }
     })();
@@ -47,11 +51,14 @@ export function createFsWatchRunner(options: FsWatchRunnerOptions): FsWatchRunne
     try {
       for await (const event of watcher) {
         if (stopped) break;
+        logger.debug("fs watch event received via Deno.watchFs", { event });
         if (shouldHandleKind(event.kind)) {
+          logger.debug("handling fs watch event via Deno.watchFs", { event });
           debouncedHandler(event);
         }
       }
-    } catch {
+    } catch (error) {
+      logger.error("fs watch error via Deno.watchFs", { error });
       // watcher closed or errored; stop gracefully
     }
   })();
@@ -60,7 +67,8 @@ export function createFsWatchRunner(options: FsWatchRunnerOptions): FsWatchRunne
     stop() {
       try {
         watcher.close();
-      } catch {
+      } catch (error) {
+        logger.error("error closing fs watcher", { error });
         // ignore
       }
       stopped = true;

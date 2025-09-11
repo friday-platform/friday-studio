@@ -16,9 +16,9 @@ import { ProviderStatus, ProviderType } from "./types.ts";
 import { isAbsolute, normalize, resolve } from "@std/path";
 import {
   computeRelativeToRoot,
+  isDirectoryPath,
   mapFsEventKind,
   resolveToAbsolutePath,
-  isDirectoryPath,
 } from "@atlas/fs-watch";
 import { createFsWatchRunner } from "@atlas/fs-watch";
 
@@ -175,11 +175,18 @@ class FileWatchRuntimeSignal {
     };
 
     // Create runner using shared helper (supports debouncing and filtering)
+    // We track these filesystem events:
+    // - "create": New files/directories added to watched path
+    // - "modify": Existing files changed (content or metadata)
+    // - "rename": Files/directories renamed or moved within same volume
+    // - "remove": Files/directories deleted from watched path
+    // Note: "rename" includes both filename changes and moves between folders
+    // on the same disk, as both use the same rename() system call on Unix/macOS
     const runner = createFsWatchRunner({
       watchPath: this.absoluteWatchPath,
       recursive,
       debounceMs,
-      filterKind: (k) => k === "create" || k === "modify" || k === "remove",
+      filterKind: (k) => k === "create" || k === "modify" || k === "rename" || k === "remove",
       onEvent: handler,
       watchFactory: context.fsWatchFactory,
     });

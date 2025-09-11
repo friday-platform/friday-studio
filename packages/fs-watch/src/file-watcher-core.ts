@@ -1,4 +1,5 @@
 import { isAbsolute, join, normalize, relative, resolve } from "@std/path";
+import { logger } from "@atlas/logger";
 
 export type WatchEventKind = "create" | "modify" | "remove" | "any";
 
@@ -32,10 +33,30 @@ export function resolveToAbsolutePath(
   return absolutePath;
 }
 
+/**
+ * Maps Deno filesystem events to normalized watch events for consistent processing.
+ *
+ * Event mappings:
+ * - "create" → "added": New file/directory created
+ * - "modify" → "modified": File content or metadata changed
+ * - "remove" → "removed": File/directory deleted
+ * - "rename" → "modified": File/directory renamed or moved within same volume
+ *
+ * Note on "rename" events:
+ * On macOS/Unix systems, moving a file within the same volume (e.g., between folders
+ * on the same disk) is implemented as a rename() system call, not a copy+delete.
+ * This is because the file's data stays in the same physical location - only the
+ * path pointer (inode) changes. FSEvents reports this as a "rename" event whether
+ * you're changing the filename or moving between directories. We map this to
+ * "modified" since it represents a change in the file's identity/location.
+ */
 export function mapFsEventKind(kind: Deno.FsEvent["kind"]): NormalizedWatchEvent | null {
   if (kind === "create") return "added";
   if (kind === "modify") return "modified";
   if (kind === "remove") return "removed";
+  if (kind === "rename") return "modified";
+
+  logger.warn("unmapped fs event kind, ignoring", { kind });
   return null;
 }
 
