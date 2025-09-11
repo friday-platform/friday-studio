@@ -186,7 +186,10 @@ Write brief 3-5 line prompts that specify:
 - Key task to perform
 - Input data format and source (if applicable)
 - Expected output format or action
+- CRITICAL: Include specific destinations (Slack channels, email addresses, webhooks)
 Keep it direct and actionable.
+
+For Slack agents: ALWAYS include the channel name if provided (e.g., "Post to #team-updates")
 </prompt_guidelines>
 
 <mcp_domain_guidelines>

@@ -38,11 +38,14 @@ Execute this sequence:
    - What data sources are involved? (APIs, websites, databases)
    - What processing is needed? (analysis, transformation, filtering)
    - Where should results go? (notifications, databases, other APIs)
+   - CRITICAL: Extract specific destinations (Slack channels, email addresses)
 
 2. SET workspace identity using your analysis
 
 3. GENERATE Agents and Signals IN PARALLEL:
    - Decompose requirements into distinct agent responsibilities
+   - CRITICAL: Include destination specifics in agent requirements
+   - For Slack agents: "Send updates to Slack channel #channel-name"
    - Describe what each agent needs to accomplish (not how)
    - Call generateAllAgents AND generateSignals in parallel (they're independent)
    - CRITICAL: Verify BOTH operations succeeded before proceeding
@@ -68,9 +71,7 @@ Execute this sequence:
 
 Examples:
   - "Extract meeting notes and action items from PDF files in specified directory"
-  - "Send weekly email summaries with formatted event listings"
-  - "Monitor GitHub PRs for review requests and post summaries to Slack"
-  - "Analyze customer feedback sentiment and generate insights report"
+  - "Monitor GitHub PRs for review requests and post summaries to Slack channel #engineering"
 </agent_requirement_format>
 
 <agent_decomposition_examples>
