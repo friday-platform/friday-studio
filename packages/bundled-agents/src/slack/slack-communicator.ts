@@ -29,12 +29,22 @@ export const slackCommunicatorAgent = createAgent<SlackAgentResult>({
   id: "slack",
   displayName: "Slack",
   version: "1.0.0",
-  description: "Can read and write to Slack channels and DMs",
+  description:
+    "Search and summarize Slack channel, DM, and group DM history, and post messages; includes channels/users lookup via slack-mcp-server",
   expertise: {
     domains: ["slack"],
     examples: [
       "Post update to #general: Shipping v1.2 today; changelog attached.",
       "Share learning to #learning: Great article on idempotent APIs; include key takeaways.",
+    ],
+  },
+  environment: {
+    required: [
+      {
+        name: "SLACK_MCP_XOXP_TOKEN",
+        description: "Slack user token used by slack-mcp-server to access Slack APIs",
+        validation: "^(xoxb|xoxc|xoxp|xoxd)-",
+      },
     ],
   },
   // Provide Slack MCP config here so callers (e.g., orchestrator) can merge and use it
@@ -91,6 +101,8 @@ export const slackCommunicatorAgent = createAgent<SlackAgentResult>({
     });
 
     const plan = planResult.object;
+
+    logger.debug("slack-communicator plan", { plan });
 
     // if messageToSend is present, format it according to the slack markdown format using llm
     const formatSystem =
@@ -163,7 +175,7 @@ export const slackCommunicatorAgent = createAgent<SlackAgentResult>({
         JSON.stringify(plan),
         "Follow the plan exactly:",
         "- If needsHistory is true, you MUST call conversations_history with targetChannel (or ask briefly if null), limit=historyLimit, include_activity_messages accordingly, BEFORE producing any user-facing text.",
-        "- If messageToSend is present, call conversations_add_message with targetChannel and the message.",
+        "- IMPORTANT: If messageToSend is present, make sure that the message is sent to the targetChannel.",
         "- Avoid narration entirely; focus on tool calls and minimal final text (the summarizer will produce the user-facing output).",
         "- Never fabricate. Only use information from tool outputs.",
         "- If summarizerPurpose is summarize_history or raw_messages and you did not successfully fetch history, reply briefly: 'Cannot complete: no history fetched.'",
@@ -223,7 +235,7 @@ export const slackCommunicatorAgent = createAgent<SlackAgentResult>({
         "You are a Slack summary refiner. Use the plan to decide the exact output style. " +
         "- summarizerPurpose = summarize_history: Produce a structured summary with sections (channel/timeframe, participants, key topics, decisions, action items with owners/dates, blockers, important links, recent 3–5 messages: author — short timestamp — brief text).\n" +
         "- summarizerPurpose = raw_messages: Output the most relevant raw messages in a concise, readable list with author and timestamp (3–20 messages based on plan.historyLimit).\n" +
-        "- summarizerPurpose = confirm_send: Confirm the message was sent, include channel, a short excerpt, and timestamp/thread info if available.\n" +
+        "- summarizerPurpose = confirm_send: Based on the tool output confirm the message was sent, include channel, a short excerpt, and timestamp/thread info if available. If there is no evidence of sending a message state that clearly.\n" +
         "- summarizerPurpose = generic: Provide a concise, helpful response summarizing what happened.\n" +
         "Rules: no narration; output only the final content; be concise and factual; omit unknowns. For summarize_history or raw_messages, rely ONLY on TOOL_OUTPUT and ignore MODEL_OUTPUT; if TOOL_OUTPUT contains no fetched history/messages, respond: 'Cannot complete: no history fetched.'";
 

@@ -19,6 +19,13 @@ const ATLAS_RESOURCES = {
     mimeType: "text/markdown",
     filePath: new URL("./mcp-servers-guide.md", import.meta.url).pathname,
   },
+  "atlas://guides/slack-setup": {
+    name: "Slack Agent Authentication & Configuration",
+    description: "Guide for configuring Slack agent integration.",
+    mimeType: "text/markdown",
+    filePath: new URL("../../../../bundled-agents/src/slack/slack-setup.md", import.meta.url)
+      .pathname,
+  },
   "atlas://reference/workspace": {
     name: "Atlas Workspace Reference",
     description: "Complete YAML reference for workspace configuration",
@@ -33,6 +40,7 @@ export const resourceReadTool = tool({
 Available resources:
 - atlas://guides/workspace-creation - Comprehensive workspace creation guide with patterns and examples
 - atlas://guides/mcp-servers - MCP servers configuration guide with production-ready patterns
+- atlas://guides/slack-setup - Slack agent authentication and token setup guide
 - atlas://reference/workspace - Workspace YAML reference documentation
 
 Use this tool to access detailed technical documentation when helping users with workspace creation, configuration, or troubleshooting.`,
