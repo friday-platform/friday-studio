@@ -79,6 +79,7 @@ runs:
             --unstable-worker-options \
             --include=src \
             --include=examples \
+            --include=packages/bundled-agents \
             --output "./dist/${binary_name}" \
             ./src/cli.tsx
         else
@@ -96,6 +97,7 @@ runs:
             --unstable-worker-options \
             --include=src \
             --include=examples \
+            --include=packages/bundled-agents \
             --target ${{ inputs.target }} \
             --output "./dist/${binary_name}" \
             ./src/cli.tsx
