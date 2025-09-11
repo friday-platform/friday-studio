@@ -35,7 +35,9 @@
     "mock-mcp-echo": "deno run --allow-all integration-tests/mocks/echo-mcp-server.ts",
     "clean": "deno run --allow-read --allow-write --allow-env scripts/clean.ts",
     "validate-imports": "deno run --allow-read --allow-write scripts/validate-imports.ts",
-    "validate-imports-staged": "deno run --allow-read --allow-write --allow-run scripts/validate-imports-staged.ts"
+    "validate-imports-staged": "deno run --allow-read --allow-write --allow-run scripts/validate-imports-staged.ts",
+    "compile": "mkdir -p ./dist && deno compile --no-check --allow-read --allow-write --allow-net --allow-env --allow-run --allow-sys --allow-ffi --unstable-broadcast-channel --unstable-worker-options --include=src --include=examples --output ./dist/atlas ./src/cli.tsx",
+    "compile:diagnostics": "mkdir -p ./dist && deno compile --no-check --allow-read --allow-write --allow-net --allow-env --allow-run --allow-sys --allow-ffi --unstable-broadcast-channel --unstable-worker-options --include=src --include=examples --output ./dist/atlas-diagnostics ./apps/diagnostics/src/index.ts"
   },
   "imports": {
     "@ai-sdk/provider": "npm:@ai-sdk/provider@^2.0.0",

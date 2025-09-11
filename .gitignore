@@ -64,3 +64,4 @@ apps/web-client/build
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+dist/
