@@ -324,10 +324,7 @@ async function enrichPromptWithMemories(
 
     logger.debug("🐼🐼🐼🐼🐼🐼🐼🐼🐼🐼🐼🐼🐼🐼🐼🐼🐼🐼🐼🐼🐼", { enrichedPrompt, workspacePrompt });
 
-    return `
-    ${workspacePrompt !== "" ? `Your task: ${workspacePrompt}` : ""}
-    Content: ${enrichedPrompt}
-    `;
+    return `${workspacePrompt !== "" ? `Your task: ${workspacePrompt}` : ""} ${enrichedPrompt}`;
   } catch (error) {
     // Graceful fallback - log error but continue with original prompt
     logger.warn("Failed to enhance prompt with memories, using fallback", {

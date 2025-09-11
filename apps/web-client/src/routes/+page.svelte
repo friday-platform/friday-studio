@@ -3,6 +3,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import Textarea from "src/lib/components/textarea.svelte";
 import Artifacts from "src/lib/modules/artifacts/artifacts.svelte";
 import { onMount } from "svelte";
+import { fade } from "svelte/transition";
 import { getAppContext, getFileType } from "$lib/app-context.svelte";
 import { CustomIcons } from "$lib/components/icons/custom";
 import { IconSmall } from "$lib/components/icons/small";
@@ -13,7 +14,6 @@ import Message from "$lib/modules/messages/message.svelte";
 import Progress from "$lib/modules/messages/progress.svelte";
 import Table from "$lib/modules/messages/table.svelte";
 import WorkspaceSummary from "$lib/modules/messages/workspace-summary.svelte";
-import { fade, slide } from "svelte/transition";
 
 const { stagedFiles } = getAppContext();
 
@@ -36,17 +36,17 @@ onMount(() => {
 function handleScroll() {
   userHasScrolled = true;
 
-  // if (!scrollContainer) return;
+  if (!scrollContainer) return;
 
-  // const { scrollTop, scrollHeight, clientHeight } = scrollContainer;
-  // const isAtBottom = Math.abs(scrollHeight - scrollTop - clientHeight) < 50;
-  // // If user scrolls away from bottom, mark as manually scrolled
-  // if (!isAtBottom) {
-  // }
-  // // If user scrolls back to bottom, reset the flag
-  // if (isAtBottom) {
-  // 	userHasScrolled = false;
-  // }
+  const { scrollTop, scrollHeight, clientHeight } = scrollContainer;
+  const isAtBottom = Math.abs(scrollHeight - scrollTop - clientHeight) < 50;
+  // If user scrolls away from bottom, mark as manually scrolled
+  if (!isAtBottom) {
+  }
+  // If user scrolls back to bottom, reset the flag
+  if (isAtBottom) {
+    userHasScrolled = false;
+  }
 }
 
 // Scroll to the bottom of the container
@@ -258,14 +258,16 @@ $effect(() => {
 	</aside>
 
 	{#if showPlan}
-	    {@const latestPlanMessage = ctx.messages.findLast(message => message.type === 'tool-workspace_summary')}
+		{@const latestPlanMessage = ctx.messages.findLast(
+			(message) => message.type === 'tool-workspace_summary'
+		)}
 		{@const formattedPlan = latestPlanMessage ? formatMessage(latestPlanMessage, ctx.user) : null}
 		{#if formattedPlan}
-		    {@const data = formattedPlan.metadata?.result}
-    		<div class="plan" transition:fade={{ duration: 150 }}>
-    			<button type="button" class="close-button" onclick={() => (showPlan = false)}>
-    				<IconSmall.Close />
-    			</button>
+			{@const data = formattedPlan.metadata?.result}
+			<div class="plan" transition:fade={{ duration: 150 }}>
+				<button type="button" class="close-button" onclick={() => (showPlan = false)}>
+					<IconSmall.Close />
+				</button>
 				<h3>Description</h3>
 
 				<p>{data.data.description}</p>
@@ -273,11 +275,11 @@ $effect(() => {
 				<h3>Agents</h3>
 
 				<ul>
-    				{#each data.data.agents as agent}
-    				    <li>{agent}</li>
-    				{/each}
+					{#each data.data.agents as agent}
+						<li>{agent}</li>
+					{/each}
 				</ul>
-    		</div>
+			</div>
 		{/if}
 	{/if}
 </div>

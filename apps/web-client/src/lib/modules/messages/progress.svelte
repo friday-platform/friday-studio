@@ -101,19 +101,6 @@ function getMessage() {
 		padding-inline: var(--size-3);
 	}
 
-	/* .action {
-		align-items: center;
-		border: 1px solid var(--border-2);
-		block-size: var(--size-8);
-		border-radius: var(--radius-round);
-		color: var(--text-1);
-		display: flex;
-		font-weight: var(--font-weight-5);
-		inline-size: max-content;
-		justify-content: center;
-		padding-inline: var(--size-3);
-	} */
-
 	.in-progress-tools {
 		background-color: var(--background-1);
 		border: var(--size-px) solid var(--border-2);
@@ -123,7 +110,8 @@ function getMessage() {
 		display: flex;
 		align-items: center;
 		gap: var(--size-3);
-		inline-size: var(--size-88);
+		max-inline-size: var(--size-88);
+		inline-size: max-content;
 
 		& :global(svg) {
 			flex: none;
