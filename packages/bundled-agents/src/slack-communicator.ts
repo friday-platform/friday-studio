@@ -1,7 +1,7 @@
 import { env } from "node:process";
 import { anthropic } from "@ai-sdk/anthropic";
-import { createAgent } from "@atlas/agent-sdk";
 import type { ToolCall, ToolResult } from "@atlas/agent-sdk";
+import { createAgent } from "@atlas/agent-sdk";
 import { collectToolUsageFromSteps } from "@atlas/agent-sdk/vercel-helpers";
 import { generateObject, generateText } from "ai";
 import { z } from "zod";
@@ -72,7 +72,12 @@ export const slackCommunicatorAgent = createAgent<SlackAgentResult>({
       "You are a Slack task planner. Analyze the user's prompt and produce a strict JSON plan for the executor and summarizer. " +
       "If a #channel is specified, put it in targetChannel; else null. Set needsHistory true when the user asks to check/summary channel messages. " +
       "Remove all pollution from the input data and extract only the relevant information. " +
-      "Set messageToSend when the user asks to draft/post text. Choose summarizerPurpose based on the task: summarize_history, raw_messages, confirm_send, or generic. " +
+      "Set messageToSend when the user asks to draft/post text." +
+      "\nChoose summarizerPurpose based on the task:\n" +
+      "- summarize_history: for channel history summaries \n" +
+      "- raw_messages: for displaying raw message content \n" +
+      "- confirm_send: for message sending confirmation \n" +
+      "- generic: for all other tasks \n" +
       "Only plan; do not execute. Use defaults when unsure.";
 
     const planResult = await generateObject({
@@ -86,6 +91,50 @@ export const slackCommunicatorAgent = createAgent<SlackAgentResult>({
     });
 
     const plan = planResult.object;
+
+    // if messageToSend is present, format it according to the slack markdown format using llm
+    const formatSystem =
+      "You are a Slack message formatter. Check and fix the message according to Slack's mrkdwn format if needed. Do not add any other text that is not part of the message.\n" +
+      "Follow these formatting rules strictly:\n\n" +
+      "TEXT ESCAPING:\n" +
+      "- Always escape control characters: & → &amp;, < → &lt;, > → &gt;\n\n" +
+      "BASIC FORMATTING (mrkdwn):\n" +
+      "- Bold: *text* (asterisks)\n" +
+      "- Italic: _text_ (underscores)\n" +
+      "- Strikethrough: ~text~ (tildes)\n" +
+      "- Line breaks: \\n\n" +
+      "- Block quotes: >quoted text (at line start)\n" +
+      "- Inline code: `code` (backticks)\n" +
+      "- Code blocks: ```code block``` (triple backticks)\n" +
+      "- Lists: Use - item\\n format (no native list syntax)\n\n" +
+      "LINKS & REFERENCES:\n" +
+      "- Auto URLs: http://example.com (auto-converted)\n" +
+      "- Custom links: <http://example.com|Link text>\n" +
+      "- Email links: <mailto:user@domain.com|Email User>\n" +
+      "- Channel links: <#CHANNELID> (use channel ID)\n" +
+      "- User mentions: <@USERID> (use user ID)\n" +
+      "- Special mentions: <!here>, <!channel>, <!everyone>\n\n" +
+      "IMPORTANT CONSTRAINTS:\n" +
+      "- URLs with spaces will break - remove spaces from URLs\n" +
+      "- Text within code blocks ignores other formatting\n" +
+      "- Use mrkdwn type for formatted text, plain_text for unformatted\n" +
+      "- Prefer blocks structure for rich layouts over plain text\n\n" +
+      "You will now receive the message to format.";
+
+    if (plan.messageToSend) {
+      const formatResult = await generateText({
+        model: anthropic("claude-3-5-haiku-latest"),
+        abortSignal,
+        system: formatSystem,
+        prompt: plan.messageToSend,
+        temperature: 0,
+        maxOutputTokens: 700,
+      });
+
+      if (formatResult.text.trim().length > 0) {
+        plan.messageToSend = formatResult.text;
+      }
+    }
 
     // Progress: planning complete
     stream?.emit({
