@@ -41,7 +41,6 @@ class AtlasAgentImpl<T = unknown> implements AtlasAgent<T> {
       version: config.version,
       description: config.description,
       expertise: config.expertise,
-      metadata: config.metadata,
     };
 
     this.handler = config.handler;
@@ -90,7 +89,7 @@ class AtlasAgentImpl<T = unknown> implements AtlasAgent<T> {
   async execute(prompt: string, context: AgentContext): Promise<T> {
     try {
       // Execute the handler with the prompt and context
-      return (await this.handler(prompt, context)) as T;
+      return await this.handler(prompt, context);
     } catch (error) {
       // Re-throw AwaitingSupervisorDecision exceptions
       if (error instanceof Error && error.name === "AwaitingSupervisorDecision") {

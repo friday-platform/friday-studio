@@ -77,7 +77,7 @@ export class StaticMCPDiscovery {
       try {
         const serverWithSource = {
           ...server,
-          source: "static" as MCPSource, // Override source to be consistent
+          source: "static", // Override source to be consistent
         };
 
         // Basic runtime validation instead of strict Zod validation
@@ -178,7 +178,7 @@ export class StaticMCPDiscovery {
           server,
           confidence,
           reasoning: this.generateStaticReasoning(server, request),
-          source: "static" as MCPSource,
+          source: "static",
         };
       })
       .sort((a, b) => b.confidence - a.confidence);

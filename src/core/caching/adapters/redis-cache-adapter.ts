@@ -21,7 +21,7 @@ export interface RedisConfig {
 
 export class RedisCacheAdapter implements SupervisionCacheAdapter {
   name = "redis";
-  private redis: any; // Redis client
+  private redis: unknown; // Redis client
   private config: RedisConfig;
   private keyPrefix: string;
   private stats: CacheStats = {
@@ -91,7 +91,7 @@ export class RedisCacheAdapter implements SupervisionCacheAdapter {
         return null;
       }
 
-      const entry = JSON.parse(data) as SupervisionCacheEntry;
+      const entry = JSON.parse(data);
       this.stats.totalHits++;
       return entry;
     } catch (error) {
@@ -164,7 +164,7 @@ export class RedisCacheAdapter implements SupervisionCacheAdapter {
         const data = values[i];
         if (data) {
           try {
-            const entry = JSON.parse(data) as SupervisionCacheEntry;
+            const entry = JSON.parse(data);
             result.set(keys[i], entry);
             this.stats.totalHits++;
           } catch (parseError) {

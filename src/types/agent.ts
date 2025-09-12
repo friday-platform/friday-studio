@@ -4,6 +4,6 @@
 export interface AgentMetadata {
   id: string;
   type: string;
-  config?: any;
+  config?: unknown;
   parentScopeId?: string;
 }

@@ -50,7 +50,7 @@ export class WorkspaceLogReader {
       const entries: LogEntry[] = [];
       for (const line of lines) {
         try {
-          const entry = JSON.parse(line) as LogEntry;
+          const entry = JSON.parse(line);
           if (this.matchesFilters(entry, filters)) {
             entries.push(entry);
           }
@@ -128,7 +128,7 @@ export class WorkspaceLogReader {
               for (const line of lines) {
                 if (line.trim()) {
                   try {
-                    const entry = JSON.parse(line) as LogEntry;
+                    const entry = JSON.parse(line);
                     if (this.matchesFilters(entry, filters)) {
                       onLog(entry);
                     }
@@ -262,7 +262,7 @@ export function formatLog(
     trace: "\x1b[35m", // magenta
   };
   const reset = "\x1b[0m";
-  const color = colors[entry.level as keyof typeof colors] || reset;
+  const color = colors[entry.level] || reset;
 
   if (flags.timestamps) {
     parts.push(entry.timestamp);

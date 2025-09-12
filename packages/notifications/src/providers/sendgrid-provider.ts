@@ -135,7 +135,7 @@ export class SendGridProvider extends BaseNotificationProvider {
         body: response[0]?.body,
       });
 
-      return this.createSuccessResponse(response[0]?.headers?.["x-message-id"] as string, {
+      return this.createSuccessResponse(response[0]?.headers?.["x-message-id"], {
         statusCode: response[0]?.statusCode,
         body: response[0]?.body,
       });
@@ -251,7 +251,7 @@ export class SendGridProvider extends BaseNotificationProvider {
   /**
    * Build SendGrid email message from parameters
    */
-  private buildEmailMessage(params: EmailParams): sgMail.MailDataRequired {
+  public buildEmailMessage(params: EmailParams): sgMail.MailDataRequired {
     const message: Record<string, unknown> = {
       to: params.to,
       from: { email: params.from || this.fromEmail, name: params.from_name || this.fromName },
@@ -294,13 +294,13 @@ export class SendGridProvider extends BaseNotificationProvider {
     // Add custom Atlas tracking headers
     message.headers = this.buildCustomHeaders();
 
-    return message as unknown as sgMail.MailDataRequired;
+    return message;
   }
 
   /**
    * Build custom headers for Atlas tracking
    */
-  private buildCustomHeaders(): Record<string, string> {
+  public buildCustomHeaders(): Record<string, string> {
     const headers: Record<string, string> = {};
 
     // Add Atlas version
@@ -328,7 +328,7 @@ export class SendGridProvider extends BaseNotificationProvider {
   /**
    * Extract user email from JWT token using proper validation
    */
-  private extractUserFromJWT(token: string): string | null {
+  public extractUserFromJWT(token: string): string | null {
     try {
       // JWT consists of three base64url-encoded parts separated by dots
       const parts = token.split(".");

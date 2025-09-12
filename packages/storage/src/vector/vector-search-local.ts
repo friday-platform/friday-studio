@@ -42,7 +42,7 @@ export class VectorSearchLocalStorageAdapter implements IVectorSearchStorageAdap
   async upsertEmbeddings(embeddings: VectorEmbedding[]): Promise<void> {
     for (const embedding of embeddings) {
       // Store the embedding
-      this.embeddings.set(embedding.id, embedding as StoredEmbedding);
+      this.embeddings.set(embedding.id, embedding);
 
       // Update type index
       const memoryType = embedding.metadata.memoryType;
@@ -211,7 +211,7 @@ export class VectorSearchLocalStorageAdapter implements IVectorSearchStorageAdap
     try {
       const content = Deno.readTextFileSync(this.indexFile);
       if (content.trim()) {
-        const data = JSON.parse(content) as StoredEmbedding[];
+        const data = JSON.parse(content);
 
         // Rebuild indexes
         this.embeddings.clear();
@@ -244,7 +244,7 @@ export class VectorSearchLocalStorageAdapter implements IVectorSearchStorageAdap
     try {
       const content = await Deno.readTextFile(this.indexFile);
       if (content.trim()) {
-        const data = JSON.parse(content) as StoredEmbedding[];
+        const data = JSON.parse(content);
 
         // Rebuild indexes
         this.embeddings.clear();

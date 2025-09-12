@@ -1,4 +1,3 @@
-import { InMemoryStorageAdapter } from "@atlas/storage";
 import { expect } from "@std/expect";
 import { MemoryConfigManager } from "../../../src/core/memory-config.ts";
 import { AtlasScope } from "../../../src/core/scope.ts";
@@ -67,7 +66,7 @@ const mockMemoryConfig = {
   },
 };
 
-Deno.test("MemoryConfigManager - creates memory managers for different scopes", async () => {
+Deno.test("MemoryConfigManager - creates memory managers for different scopes", () => {
   const configManager = new MemoryConfigManager(mockMemoryConfig);
   const scope = new AtlasScope();
 
@@ -88,7 +87,7 @@ Deno.test("MemoryConfigManager - creates memory managers for different scopes", 
   configManager.cleanup();
 });
 
-Deno.test("MemoryConfigManager - reuses memory managers for same scope", async () => {
+Deno.test("MemoryConfigManager - reuses memory managers for same scope", () => {
   const configManager = new MemoryConfigManager(mockMemoryConfig);
   const scope = new AtlasScope();
 
@@ -103,7 +102,7 @@ Deno.test("MemoryConfigManager - reuses memory managers for same scope", async (
   configManager.cleanup();
 });
 
-Deno.test("MemoryConfigManager - creates disabled memory manager when disabled", async () => {
+Deno.test("MemoryConfigManager - creates disabled memory manager when disabled", () => {
   const disabledConfig = {
     ...mockMemoryConfig,
     agent: { ...mockMemoryConfig.agent, enabled: false },
@@ -120,7 +119,7 @@ Deno.test("MemoryConfigManager - creates disabled memory manager when disabled",
   configManager.cleanup();
 });
 
-Deno.test("MemoryConfigManager - builds memory context with limits", async () => {
+Deno.test("MemoryConfigManager - builds memory context with limits", () => {
   const configManager = new MemoryConfigManager(mockMemoryConfig);
   const scope = new AtlasScope();
   const memoryManager = configManager.getMemoryManager(scope, "agent");
@@ -136,7 +135,7 @@ Deno.test("MemoryConfigManager - builds memory context with limits", async () =>
   configManager.cleanup();
 });
 
-Deno.test("MemoryConfigManager - builds empty context when disabled", async () => {
+Deno.test("MemoryConfigManager - builds empty context when disabled", () => {
   const disabledConfig = {
     ...mockMemoryConfig,
     agent: { ...mockMemoryConfig.agent, enabled: false },
@@ -156,7 +155,7 @@ Deno.test("MemoryConfigManager - builds empty context when disabled", async () =
   configManager.cleanup();
 });
 
-Deno.test("MemoryConfigManager - builds empty context when not included", async () => {
+Deno.test("MemoryConfigManager - builds empty context when not included", () => {
   const noContextConfig = {
     ...mockMemoryConfig,
     agent: { ...mockMemoryConfig.agent, include_in_context: false },
@@ -176,7 +175,7 @@ Deno.test("MemoryConfigManager - builds empty context when not included", async 
   configManager.cleanup();
 });
 
-Deno.test("MemoryConfigManager - remembers with scope-specific configuration", async () => {
+Deno.test("MemoryConfigManager - remembers with scope-specific configuration", () => {
   const configManager = new MemoryConfigManager(mockMemoryConfig);
   const scope = new AtlasScope();
   const memoryManager = configManager.getMemoryManager(scope, "agent");
@@ -198,7 +197,7 @@ Deno.test("MemoryConfigManager - remembers with scope-specific configuration", a
   configManager.cleanup();
 });
 
-Deno.test("MemoryConfigManager - skips remembering when disabled", async () => {
+Deno.test("MemoryConfigManager - skips remembering when disabled", () => {
   const disabledConfig = {
     ...mockMemoryConfig,
     agent: { ...mockMemoryConfig.agent, enabled: false },
@@ -225,7 +224,7 @@ Deno.test("MemoryConfigManager - skips remembering when disabled", async () => {
   configManager.cleanup();
 });
 
-Deno.test("MemoryConfigManager - skips remembering when memory type disabled", async () => {
+Deno.test("MemoryConfigManager - skips remembering when memory type disabled", () => {
   const disabledTypeConfig = {
     ...mockMemoryConfig,
     agent: {
@@ -258,7 +257,7 @@ Deno.test("MemoryConfigManager - skips remembering when memory type disabled", a
   configManager.cleanup();
 });
 
-Deno.test("MemoryConfigManager - cleanup disposes memory managers", async () => {
+Deno.test("MemoryConfigManager - cleanup disposes memory managers", () => {
   const configManager = new MemoryConfigManager(mockMemoryConfig);
   const scope = new AtlasScope();
 
@@ -271,7 +270,7 @@ Deno.test("MemoryConfigManager - cleanup disposes memory managers", async () => 
   expect(() => configManager.cleanup()).not.toThrow();
 });
 
-Deno.test("MemoryConfigManager - generates unique memory keys", async () => {
+Deno.test("MemoryConfigManager - generates unique memory keys", () => {
   const configManager = new MemoryConfigManager(mockMemoryConfig);
   const scope1 = new AtlasScope();
   const scope2 = new AtlasScope();
@@ -287,7 +286,7 @@ Deno.test("MemoryConfigManager - generates unique memory keys", async () => {
   configManager.cleanup();
 });
 
-Deno.test("MemoryConfigManager - calculates decay rates based on config", async () => {
+Deno.test("MemoryConfigManager - calculates decay rates based on config", () => {
   const configManager = new MemoryConfigManager(mockMemoryConfig);
   const scope = new AtlasScope();
   const memoryManager = configManager.getMemoryManager(scope, "agent");
@@ -321,7 +320,7 @@ Deno.test("MemoryConfigManager - calculates decay rates based on config", async 
   configManager.cleanup();
 });
 
-Deno.test("MemoryConfigManager - handles streaming configuration", async () => {
+Deno.test("MemoryConfigManager - handles streaming configuration", () => {
   const streamingConfig = {
     ...mockMemoryConfig,
     streaming: { ...mockMemoryConfig.streaming, enabled: true, stream_everything: true },
@@ -338,7 +337,7 @@ Deno.test("MemoryConfigManager - handles streaming configuration", async () => {
   configManager.cleanup();
 });
 
-Deno.test("MemoryConfigManager - handles complex memory type configurations", async () => {
+Deno.test("MemoryConfigManager - handles complex memory type configurations", () => {
   const complexConfig = {
     ...mockMemoryConfig,
     session: {
@@ -368,7 +367,7 @@ Deno.test("MemoryConfigManager - handles complex memory type configurations", as
   configManager.cleanup();
 });
 
-Deno.test("MemoryConfigManager - handles workspace scope memory", async () => {
+Deno.test("MemoryConfigManager - handles workspace scope memory", () => {
   const configManager = new MemoryConfigManager(mockMemoryConfig);
   const scope = new AtlasScope();
   const workspaceMemory = configManager.getMemoryManager(scope, "workspace");

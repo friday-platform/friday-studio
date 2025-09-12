@@ -18,20 +18,6 @@ export type {
 } from "./src/coala-memory.ts";
 // Core memory manager and types
 export { CoALAMemoryManager, CoALAMemoryType } from "./src/coala-memory.ts";
-export type {
-  ExtractedFact,
-  IKnowledgeGraphStorageAdapter,
-  KnowledgeEntity,
-  KnowledgeFact,
-  KnowledgeGraphQuery,
-  KnowledgeRelationship,
-} from "./src/knowledge-graph.ts";
-// Knowledge graph functionality
-export {
-  KnowledgeEntityType,
-  KnowledgeGraphManager,
-  KnowledgeRelationType,
-} from "./src/knowledge-graph.ts";
 export { AsyncMemoryQueue } from "./src/streaming/async-memory-queue.ts";
 export type {
   AgentResultStream,
@@ -69,6 +55,8 @@ export {
   getGlobalMECMFDebugLogger,
   MECMFDebugLogger,
 } from "./src/debug-logger.ts";
+// Global embedding provider for daemon initialization
+export { GlobalEmbeddingProvider } from "./src/global-embedding-provider.ts";
 // Main MECMF exports with factory functions
 export * from "./src/mecmf.ts";
 // Component-specific exports (also available through mecmf.ts)
@@ -87,8 +75,6 @@ export type {
 // Export enum as a VALUE, not type-only, so it can be used at runtime
 export { MemoryType } from "./src/mecmf-interfaces.ts";
 export type { MECMFConfig } from "./src/mecmf-memory-manager.ts";
-// Global embedding provider for daemon initialization
-export { GlobalEmbeddingProvider } from "./src/global-embedding-provider.ts";
 export {
   createSessionMemoryHooks,
   type SessionMemoryHooks,

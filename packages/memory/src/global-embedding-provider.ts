@@ -7,10 +7,10 @@
  * Thread-safe and stateless - safe for concurrent access across sessions.
  */
 
-import { WebEmbeddingProvider } from "./web-embedding-provider.ts";
-import type { AtlasEmbeddingConfig, MECMFEmbeddingProvider } from "./mecmf-interfaces.ts";
-import { getMECMFCacheDir } from "@atlas/utils";
 import { logger } from "@atlas/logger";
+import { getMECMFCacheDir } from "@atlas/utils";
+import type { AtlasEmbeddingConfig, MECMFEmbeddingProvider } from "./mecmf-interfaces.ts";
+import { WebEmbeddingProvider } from "./web-embedding-provider.ts";
 
 /**
  * Global singleton wrapper for WebEmbeddingProvider
@@ -23,10 +23,10 @@ export class GlobalEmbeddingProvider {
   private static _logger: ReturnType<typeof logger.child> | null = null;
 
   private static get logger() {
-    if (!this._logger) {
-      this._logger = logger.child({ component: "GlobalEmbeddingProvider" });
+    if (!GlobalEmbeddingProvider._logger) {
+      GlobalEmbeddingProvider._logger = logger.child({ component: "GlobalEmbeddingProvider" });
     }
-    return this._logger;
+    return GlobalEmbeddingProvider._logger;
   }
 
   /**

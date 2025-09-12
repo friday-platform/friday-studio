@@ -1,8 +1,3 @@
-// import {
-//   createEventSource,
-//   EventSourceMessage,
-// } from "../../core/agents/remote/adapters/sse-utils.ts";
-
 import type { SessionUIMessageChunk } from "@atlas/core";
 import { createAtlasClient } from "@atlas/oapi-client";
 import { stringifyError } from "@atlas/utils";

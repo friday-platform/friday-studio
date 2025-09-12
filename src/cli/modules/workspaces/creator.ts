@@ -1,9 +1,9 @@
+import { type MCPDiscoveryRequest, MCPRegistry } from "@atlas/core";
 import { ensureDir } from "@std/fs";
 import { join } from "@std/path";
 import * as yaml from "@std/yaml";
 import { generateUniqueWorkspaceName } from "../../../core/utils/id-generator.ts";
 import { checkDaemonRunning, getDaemonClient } from "../../utils/daemon-client.ts";
-import { MCPRegistry, type MCPDiscoveryRequest } from "@atlas/core";
 
 interface WorkspaceCreationOptions {
   name: string;
@@ -25,10 +25,10 @@ export async function createAndRegisterWorkspace(
   const workspaceConfig = {
     version: "1.0",
     workspace: { name: name, description: description || `Atlas workspace: ${name}` },
-    signals: {} as Record<string, unknown>,
-    jobs: {} as Record<string, unknown>,
-    agents: {} as Record<string, unknown>,
-    tools: {} as Record<string, unknown>,
+    signals: {},
+    jobs: {},
+    agents: {},
+    tools: {},
   };
 
   // Add configured signals
@@ -160,7 +160,7 @@ export async function createAndRegisterWorkspace(
 async function discoverMCPServersForBasicWorkspace(
   name: string,
   description?: string,
-): Promise<Record<string, any> | null> {
+): Promise<Record<string, unknown> | null> {
   try {
     const registry = await MCPRegistry.getInstance();
     const requirements = extractRequirementsFromNameAndDescription(name, description);
@@ -169,7 +169,7 @@ async function discoverMCPServersForBasicWorkspace(
       return null;
     }
 
-    const mcpServers: Record<string, any> = {};
+    const mcpServers: Record<string, unknown> = {};
     let discoveredCount = 0;
 
     for (const requirement of requirements) {

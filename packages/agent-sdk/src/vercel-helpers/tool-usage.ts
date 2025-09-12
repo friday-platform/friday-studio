@@ -1,5 +1,5 @@
-import type { AtlasTools, ToolCall, ToolResult } from "../types.ts";
 import type { StepResult, TypedToolCall, TypedToolResult } from "ai";
+import type { AtlasTools, ToolCall, ToolResult } from "../types.ts";
 
 /**
  * Collect tool usage from AI SDK responses, preferring per-step data when available.

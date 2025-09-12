@@ -23,7 +23,7 @@ import { AtlasScope } from "./scope.ts";
 // Session Intent types (preserve for API compatibility)
 export interface SessionIntent {
   id: string;
-  signal: { type: string; data: any; metadata?: Record<string, any> };
+  signal: { type: string; data: unknown; metadata?: Record<string, unknown> };
   goals: string[];
   constraints?: { timeLimit?: number; costLimit?: number; requiredApprovals?: string[] };
   suggestedAgents?: string[];
@@ -34,7 +34,7 @@ export interface SessionIntent {
   };
   successCriteria?: {
     type: "all" | "any" | "custom";
-    conditions: Array<{ description: string; evaluator?: (result: any) => boolean }>;
+    conditions: Array<{ description: string; evaluator?: (result: unknown) => boolean }>;
   };
   userPrompt?: string;
 }
@@ -50,7 +50,7 @@ export class Session extends AtlasScope implements IWorkspaceSession {
   // The actual actor that manages this session
   private sessionActor?: SessionSupervisorActor;
   private _status: string = WorkspaceSessionStatus.PENDING;
-  private _executionResult?: any;
+  private _executionResult?: unknown;
   private _error?: Error;
 
   // Execution state
@@ -61,7 +61,7 @@ export class Session extends AtlasScope implements IWorkspaceSession {
     workspaceId: string,
     signals: {
       triggers: IWorkspaceSignal[];
-      callback: IWorkspaceSignalCallback | ((result: any) => Promise<void>);
+      callback: IWorkspaceSignalCallback | ((result: unknown) => Promise<void>);
     },
     agents?: IWorkspaceAgent[],
     workflows?: IWorkspaceWorkflow[],
@@ -375,7 +375,7 @@ export class Session extends AtlasScope implements IWorkspaceSession {
 
   private clearWorkingMemoryForSession(): void {
     try {
-      const coalaMemory = this.memory as CoALAMemoryManager;
+      const coalaMemory = this.memory;
       const cleared = coalaMemory.clearWorkingBySession(this.id);
       this.logger.debug("Cleared working memory for session", { sessionId: this.id, cleared });
     } catch (e) {
@@ -433,7 +433,7 @@ class DefaultSignalCallback implements IWorkspaceSignalCallback {
     return true;
   }
 
-  onSuccess(result: any): void {
+  onSuccess(result: unknown): void {
     this.logger.info("Signal processed successfully", { result });
   }
 
@@ -449,7 +449,7 @@ class DefaultSignalCallback implements IWorkspaceSignalCallback {
 class FunctionCallback implements IWorkspaceSignalCallback {
   private logger: Logger;
 
-  constructor(private fn: (result: any) => Promise<void>) {
+  constructor(private fn: (result: unknown) => Promise<void>) {
     this.logger = logger.child({ workerType: "function-callback" });
   }
 
@@ -461,7 +461,7 @@ class FunctionCallback implements IWorkspaceSignalCallback {
     return true;
   }
 
-  async onSuccess(result: any): Promise<void> {
+  async onSuccess(result: unknown): Promise<void> {
     await this.fn(result);
   }
 

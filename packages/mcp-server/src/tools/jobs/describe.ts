@@ -40,7 +40,7 @@ export function registerJobsDescribeTool(server: McpServer, ctx: ToolContext) {
         const error = new Error(
           `Job '${jobName}' is not discoverable in workspace '${workspaceId}'. Add it to discoverable.jobs in workspace.yml to access job details.`,
         );
-        // deno-lint-ignore no-explicit-any
+
         error.code = -32000;
         throw error;
       }
@@ -56,8 +56,8 @@ export function registerJobsDescribeTool(server: McpServer, ctx: ToolContext) {
         }
 
         const jobs = await response.json();
-        // deno-lint-ignore no-explicit-any
-        const job = jobs.find((j: any) => j.name === jobName);
+
+        const job = jobs.find((j: unknown) => j.name === jobName);
 
         if (!job) {
           throw new Error(`Job not found: ${jobName}`);

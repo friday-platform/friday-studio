@@ -19,12 +19,10 @@ export { KnowledgeGraphLocalStorageAdapter } from "./src/knowledge-graph/knowled
 export { CoALALocalFileStorageAdapter } from "./src/memory/coala-local.ts";
 export { FileWriteCoordinator } from "./src/memory/file-write-coordinator.ts";
 export { InMemoryStorageAdapter } from "./src/memory/in-memory.ts";
-export { LocalFileStorageAdapter } from "./src/memory/local.ts";
 // Core storage interfaces and types
 export type {
   ICoALAMemoryStorageAdapter,
   IKnowledgeGraphStorageAdapter,
-  ITempestMemoryStorageAdapter,
   KnowledgeEntity,
   KnowledgeFact,
   KnowledgeGraphQuery,

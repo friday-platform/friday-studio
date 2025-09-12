@@ -11,9 +11,9 @@
  * - Centralized timer scheduling and execution
  */
 
+import type { WorkspaceSignalTriggerCallback } from "@atlas/workspace/types";
 import { CronExpressionParser } from "cron-parser";
 import type { KVStorage } from "../../../src/core/storage/kv-storage.ts";
-import type { WorkspaceSignalTriggerCallback } from "@atlas/workspace/types";
 
 // Back-compat alias for older imports
 export type WorkspaceWakeupCallback = WorkspaceSignalTriggerCallback;
@@ -622,7 +622,7 @@ export class CronManager {
 
       for (const { key, value } of timers) {
         try {
-          const persistedData = value as PersistedTimerData;
+          const persistedData = value;
           const timerKey = key[key.length - 1]; // Last part of key is timerKey
 
           if (!timerKey) {

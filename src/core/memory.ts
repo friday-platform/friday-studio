@@ -3,19 +3,19 @@ import type { ITempestMemoryManager, ITempestMemoryStorageAdapter } from "../typ
 
 export class MemoryManager implements ITempestMemoryManager {
   private store: ITempestMemoryStorageAdapter;
-  private memoryData: Map<string, any> = new Map();
+  private memoryData: Map<string, unknown> = new Map();
 
   constructor(storageAdapter?: ITempestMemoryStorageAdapter) {
     this.store = storageAdapter || new LocalFileStorageAdapter();
     this.loadFromStorage();
   }
 
-  remember(key: string, value: any): void {
+  remember(key: string, value: unknown): void {
     this.memoryData.set(key, { value, timestamp: new Date(), type: typeof value });
     this.store.commit(Object.fromEntries(this.memoryData));
   }
 
-  recall(key: string): any {
+  recall(key: string): unknown {
     const memory = this.memoryData.get(key);
     return memory ? memory.value : undefined;
   }

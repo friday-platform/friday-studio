@@ -438,7 +438,7 @@ export class AtlasTokenBudgetManager implements TokenBudgetManager {
   /**
    * Extract text content from memory for token estimation
    */
-  private extractContentText(content: any, maxLength?: number): string {
+  private extractContentText(content: unknown, maxLength?: number): string {
     let text = "";
 
     if (typeof content === "string") {

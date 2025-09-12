@@ -184,7 +184,7 @@ Deno.test("Timer Signal - Storage Persistence", async (t) => {
     const originalList = storage.list.bind(storage);
     storage.list = async function* <T>(): AsyncIterableIterator<KVEntry<T>> {
       // Yield a dummy value to make it a valid generator before throwing
-      yield { key: ["dummy"], value: "dummy" as T };
+      yield { key: ["dummy"], value: "dummy" };
       throw new Error("Storage list failure");
     };
 

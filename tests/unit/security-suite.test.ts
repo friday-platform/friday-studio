@@ -344,7 +344,7 @@ Deno.test("Security - Encryption and secrets management", async (t) => {
 
     for (const field of sensitiveFields) {
       if (field in logEntry) {
-        expect(logEntry[field as keyof typeof logEntry]).toBe("[REDACTED]");
+        expect(logEntry[field]).toBe("[REDACTED]");
       }
     }
   });

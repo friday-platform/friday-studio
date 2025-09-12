@@ -71,12 +71,7 @@ export const updateWorkspace = tool({
             );
           }
 
-          const updateResult = response.data as {
-            workspace: unknown;
-            backupPath?: string;
-            filesModified: string[];
-            reloadRequired: boolean;
-          };
+          const updateResult = response.data;
 
           return {
             success: true,

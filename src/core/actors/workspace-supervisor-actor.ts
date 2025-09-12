@@ -24,12 +24,12 @@ import {
   WorkspaceSessionStatus,
   type WorkspaceSessionStatusType,
 } from "@atlas/core";
+import { type Logger, logger } from "@atlas/logger";
 import {
   CoALAMemoryManager,
   StreamingMemoryManager,
-  SupervisorMemoryCoordinator,
+  type SupervisorMemoryCoordinator,
 } from "@atlas/memory";
-import { type Logger, logger } from "@atlas/logger";
 import type { IWorkspaceSignal } from "../../types/core.ts";
 import { type SessionContext, SessionSupervisorActor } from "./session-supervisor-actor.ts";
 
@@ -57,8 +57,8 @@ export class WorkspaceSupervisorActor implements BaseActor {
   private sessions: Map<string, SessionInfo> = new Map();
   private config: WorkspaceSupervisorConfig;
   private agents: Record<string, WorkspaceAgentConfig> = {};
-  private agentOrchestrator?: any; // Will be set by workspace runtime
-  private streamingMemoryManager?: any; // StreamingMemoryManager - loaded dynamically
+  private agentOrchestrator?: unknown; // Will be set by workspace runtime
+  private streamingMemoryManager?: unknown; // StreamingMemoryManager - loaded dynamically
   memoryCoordinator?: SupervisorMemoryCoordinator; // SupervisorMemoryCoordinator - loaded dynamically
 
   constructor(workspaceId: string, config: WorkspaceSupervisorConfig, id?: string) {
@@ -492,8 +492,8 @@ export class WorkspaceSupervisorActor implements BaseActor {
   async streamAgentResult(
     sessionId: string,
     agentId: string,
-    input: any,
-    output: any,
+    input: unknown,
+    output: unknown,
     duration: number,
     success: boolean,
     options: { tokensUsed?: number; error?: string } = {},
@@ -561,7 +561,7 @@ export class WorkspaceSupervisorActor implements BaseActor {
     sessionId: string,
     agentId: string,
     toolName: string,
-    result: any,
+    result: unknown,
   ): Promise<void> {
     if (!this.streamingMemoryManager) {
       return;
@@ -587,7 +587,7 @@ export class WorkspaceSupervisorActor implements BaseActor {
     participants: string[],
     outcome: "success" | "failure" | "partial",
     significance: number,
-    metadata?: any,
+    metadata?: unknown,
   ): Promise<void> {
     if (!this.streamingMemoryManager) {
       return;
@@ -764,7 +764,7 @@ export class WorkspaceSupervisorActor implements BaseActor {
    */
   async analyzeSignalWithMemory(
     signal: IWorkspaceSignal,
-  ): Promise<{ relevantMemories: any[]; analysisContext: string; suggestedAgents: string[] }> {
+  ): Promise<{ relevantMemories: unknown[]; analysisContext: string; suggestedAgents: string[] }> {
     if (!this.memoryCoordinator) {
       this.logger.debug("Memory coordinator not available - using fallback signal analysis");
       return {

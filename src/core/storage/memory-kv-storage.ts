@@ -106,7 +106,7 @@ export class MemoryKVStorage implements KVStorage {
 
     const keyString = this.keyToString(key);
     const value = this.data.get(keyString);
-    return value !== undefined ? (value as T) : null;
+    return value !== undefined ? value : null;
   }
 
   async set<T>(key: string[], value: T): Promise<void> {
@@ -148,7 +148,7 @@ export class MemoryKVStorage implements KVStorage {
         const key = this.stringToKey(keyString);
         yield {
           key,
-          value: value as T,
+          value: value,
           versionstamp: Date.now().toString(), // Simple versioning
         };
       }
@@ -170,7 +170,7 @@ export class MemoryKVStorage implements KVStorage {
       // Filter events that match the prefix
       const matchingEvents: WatchEvent<T>[] = events
         .filter((event) => this.keyToString(event.key).startsWith(prefixString))
-        .map((event) => ({ ...event, value: event.value as T }));
+        .map((event) => ({ ...event, value: event.value }));
 
       if (matchingEvents.length > 0) {
         if (resolveNext) {

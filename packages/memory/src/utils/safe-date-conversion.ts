@@ -23,7 +23,7 @@ export function safeToDate(value: unknown, fallback?: Date): Date {
   }
 
   // Convert string or number to Date
-  const date = new Date(value as string | number);
+  const date = new Date(value);
 
   // Check if the conversion resulted in a valid date
   if (Number.isNaN(date.getTime())) {
@@ -57,7 +57,7 @@ export function restoreMemoryDates(
   }
 
   const now = new Date();
-  const memoryObj = serializedMemory as Record<string, unknown>;
+  const memoryObj = serializedMemory;
 
   return {
     ...memoryObj,

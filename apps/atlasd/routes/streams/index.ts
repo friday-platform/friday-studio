@@ -1,8 +1,8 @@
 import { daemonFactory } from "../../src/factory.ts";
 import { createStreamRoute } from "./create.ts";
-import { sseStreamRoute } from "./sse.ts";
-import { sendMessageRoute } from "./message.ts";
 import { emitEventRoute } from "./emit.ts";
+import { sendMessageRoute } from "./message.ts";
+import { sseStreamRoute } from "./sse.ts";
 
 /**
  * Stream management API routes for Atlas daemon.

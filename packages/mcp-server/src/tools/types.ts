@@ -88,12 +88,12 @@ function sanitizeNotificationForLogging(params: unknown): unknown {
     return params;
   }
 
-  const paramsObj = params as Record<string, unknown>;
+  const paramsObj = params;
 
   // If this looks like notification data with content, sanitize it
   if (paramsObj.data && typeof paramsObj.data === "string") {
     try {
-      const parsedData = JSON.parse(paramsObj.data as string);
+      const parsedData = JSON.parse(paramsObj.data);
       if (parsedData && typeof parsedData === "object") {
         // Check if this is a chunk notification with content
         if (parsedData.type === "library_content_chunk" && parsedData.content) {

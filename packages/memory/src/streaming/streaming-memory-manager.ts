@@ -79,7 +79,7 @@ export class StreamingMemoryManager {
       process: this.processSessionComplete.bind(this),
       processBatch: async (streams) => {
         for (const stream of streams) {
-          await this.processSessionComplete(stream as SessionCompleteStream);
+          await this.processSessionComplete(stream);
         }
       },
     });
@@ -98,8 +98,8 @@ export class StreamingMemoryManager {
    */
   async streamAgentResult(
     agentId: string,
-    input: any,
-    output: any,
+    input: unknown,
+    output: unknown,
     duration: number,
     success: boolean,
     options: { tokensUsed?: number; error?: string; priority?: "low" | "normal" | "high" } = {},
@@ -142,7 +142,7 @@ export class StreamingMemoryManager {
     fact: string,
     confidence: number,
     source: "agent_output" | "user_input" | "system_event",
-    context?: Record<string, any>,
+    context?: Record<string, unknown>,
     agentId?: string,
   ): Promise<void> {
     if (this.isShutdown) return;
@@ -176,8 +176,8 @@ export class StreamingMemoryManager {
     agentId: string,
     strategy: string,
     duration: number,
-    inputCharacteristics: Record<string, any>,
-    outcome: Record<string, any>,
+    inputCharacteristics: Record<string, unknown>,
+    outcome: Record<string, unknown>,
   ): Promise<void> {
     if (this.isShutdown) return;
 
@@ -357,7 +357,7 @@ export class StreamingMemoryManager {
     totalDuration: number,
     agentCount: number,
     successRate: number,
-    finalOutput: any,
+    finalOutput: unknown,
     summary?: string,
   ): Promise<void> {
     if (this.isShutdown) return;

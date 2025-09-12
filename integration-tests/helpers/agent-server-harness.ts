@@ -246,7 +246,7 @@ export class AgentMCPTestHarness {
 
       // Parse the tool result to match AgentExecutionResult format
       // The MCP protocol returns content array, we need to extract the actual result
-      const resultContent = result.content as Array<{ type: string; text?: string }>;
+      const resultContent = result.content;
       if (resultContent && resultContent.length > 0) {
         const content = resultContent[0];
         if (content && content.type === "text" && content.text) {

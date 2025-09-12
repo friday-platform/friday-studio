@@ -74,7 +74,7 @@ async function getSignalPayload(args: TriggerArgs): Promise<Record<string, unkno
     }
 
     if (wantsData) {
-      const dataStr = (await text({
+      const dataStr = await text({
         message: "Enter JSON data:",
         placeholder: '{"message": "Hello"}',
         validate: (value) => {
@@ -87,7 +87,7 @@ async function getSignalPayload(args: TriggerArgs): Promise<Record<string, unkno
             return "Invalid JSON format";
           }
         },
-      })) as string;
+      });
 
       if (isCancel(dataStr)) {
         throw new Error("Signal trigger cancelled");

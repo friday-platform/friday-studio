@@ -201,7 +201,7 @@ export class DiagnosticsCollector {
 
       for await (const entry of workspaces) {
         if (entry.value && typeof entry.value === "object" && "path" in entry.value) {
-          const workspace = entry.value as { name: string; path: string };
+          const workspace = entry.value;
           const workspaceYmlPath = join(workspace.path, "workspace.yml");
 
           try {
@@ -292,13 +292,13 @@ async sendDiagnostics(gzipPath: string): Promise<void> {
   if (await exists(globalAtlasEnv)) {
     await load({ export: true, envPath: globalAtlasEnv, override: false });
   }
-  
+
   // Get ATLAS_KEY from environment (either from .env or env variable)
   const atlasKey = Deno.env.get("ATLAS_KEY");
   if (!atlasKey) {
     throw new Error("ATLAS_KEY not found. Please set it in ~/.atlas/.env or as an environment variable.");
   }
-  
+
   // Validate JWT token
   const validation = CredentialFetcher.validateJWT(atlasKey);
   if (!validation.valid) {
@@ -307,14 +307,14 @@ async sendDiagnostics(gzipPath: string): Promise<void> {
 
   // Read the gzip file
   const diagnosticData = await Deno.readFile(gzipPath);
-  
+
   // Get filename from path
   const filename = gzipPath.split("/").pop() || "diagnostics.tar.gz";
-  
+
   // Get API URL (uses ATLAS_URL env var if set, otherwise uses default)
   // Note: ATLAS_URL supports both http (local testing) and https (production)
   const apiUrl = Deno.env.get("ATLAS_URL") || "https://atlas.tempestdx.com";
-  
+
   // Send to diagnostic endpoint
   const response = await fetch(`${apiUrl}/api/diagnostics/${filename}`, {
     method: "POST",

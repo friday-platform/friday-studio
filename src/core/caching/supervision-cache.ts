@@ -298,7 +298,7 @@ export class SupervisionCache {
   }
 
   // Utilities
-  private hashObject(obj: any): string {
+  private hashObject(obj: unknown): string {
     const str = JSON.stringify(obj, Object.keys(obj).sort());
     return createHash("sha256").update(str).digest("hex").substring(0, 16);
   }

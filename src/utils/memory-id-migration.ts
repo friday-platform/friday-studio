@@ -243,11 +243,7 @@ export async function getMemoryDirectoryStats(): Promise<{
   cache: { files: number; sizeBytes: number } | null;
 }> {
   const memoryDir = getAtlasMemoryDir();
-  const stats = {
-    humanReadable: [] as Array<{ name: string; files: number; sizeBytes: number }>,
-    uuid: [] as Array<{ name: string; files: number; sizeBytes: number }>,
-    cache: null as { files: number; sizeBytes: number } | null,
-  };
+  const stats = { humanReadable: [], uuid: [], cache: null };
 
   try {
     for await (const entry of Deno.readDir(memoryDir)) {

@@ -201,8 +201,7 @@ async function showStats(coalaManager: CoALAMemoryManager, loader: AtlasMemoryLo
   console.log();
 
   for (const [memoryType, typeStats] of Object.entries(stats)) {
-    const storageInfo =
-      storageStats.memoryTypes[memoryType as keyof typeof storageStats.memoryTypes];
+    const storageInfo = storageStats.memoryTypes[memoryType];
 
     console.log(`${memoryType.toUpperCase()} Memory:`);
     console.log(`  Entries: ${typeStats.count}`);
@@ -239,7 +238,7 @@ function validateMemory(coalaManager: CoALAMemoryManager) {
       return errors;
     }
 
-    const entryObj = entry as Record<string, unknown>;
+    const entryObj = entry;
 
     if (!entryObj.id || typeof entryObj.id !== "string" || entryObj.id.trim() === "") {
       errors.push("ID is required");

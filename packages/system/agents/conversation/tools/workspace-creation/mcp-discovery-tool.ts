@@ -168,7 +168,7 @@ function generateIntegrationInstructions(server: MCPServerMetadata) {
 
   instructions.push(`\n## Available Tools\n`);
   instructions.push(
-    server.tools.map((tool: any) => `- **${tool.name}**: ${tool.description}`).join("\n"),
+    server.tools.map((tool: unknown) => `- **${tool.name}**: ${tool.description}`).join("\n"),
   );
 
   instructions.push(`\n## Use Cases\n`);

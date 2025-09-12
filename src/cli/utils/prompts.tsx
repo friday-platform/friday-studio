@@ -56,7 +56,7 @@ export const text = async (options: PromptOptions): Promise<string | symbol> => 
           <Text>{options.message}</Text>
           <TextInput
             placeholder={options.placeholder}
-            defaultValue={options.defaultValue as string}
+            defaultValue={options.defaultValue}
             onSubmit={(value) => {
               if (options.validate) {
                 const error = options.validate(value);

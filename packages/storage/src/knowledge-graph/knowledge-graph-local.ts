@@ -278,7 +278,7 @@ export class KnowledgeGraphLocalStorageAdapter implements IKnowledgeGraphStorage
     subType: string,
     workspaceId: string,
   ): Promise<void> {
-    const index = await this.readJsonFile<any>(this.indexFile);
+    const index = await this.readJsonFile(this.indexFile);
     if (!index[workspaceId]) index[workspaceId] = {};
     if (!index[workspaceId][type]) index[workspaceId][type] = {};
 
@@ -292,7 +292,7 @@ export class KnowledgeGraphLocalStorageAdapter implements IKnowledgeGraphStorage
   }
 
   private async removeFromIndex(type: string, id: string): Promise<void> {
-    const index = await this.readJsonFile<any>(this.indexFile);
+    const index = await this.readJsonFile(this.indexFile);
     for (const workspaceId in index) {
       if (index[workspaceId][type]) {
         delete index[workspaceId][type][id];

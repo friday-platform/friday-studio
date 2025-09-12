@@ -104,7 +104,7 @@ export class AtlasMemoryLoader implements MemoryStorage {
           tags: memory.tags || [],
           confidence: memory.confidence,
           decayRate: memory.decayRate,
-        } as MemoryEntry;
+        };
       }
 
       return entries;

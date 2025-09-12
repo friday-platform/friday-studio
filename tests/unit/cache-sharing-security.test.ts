@@ -57,7 +57,7 @@ Deno.test("Secure cache key generation", () => {
 
 // Test plan sanitization
 Deno.test("Plan data sanitization", () => {
-  function sanitizePlan(plan: any): any {
+  function sanitizePlan(plan: unknown): unknown {
     if (!plan || typeof plan !== "object") {
       return plan;
     }
@@ -133,7 +133,7 @@ Deno.test("Workspace access validation", () => {
 
 // Test plan structure validation
 Deno.test("Plan structure validation", () => {
-  function validatePlanStructure(plan: any, expectedWorkspaceId: string): boolean {
+  function validatePlanStructure(plan: unknown, expectedWorkspaceId: string): boolean {
     try {
       // Verify plan structure
       if (!plan || typeof plan !== "object") {

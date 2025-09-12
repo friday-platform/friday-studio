@@ -5,16 +5,16 @@
  * integrating all MECMF components into a unified memory system for Atlas.
  */
 
-import { GlobalEmbeddingProvider } from "./global-embedding-provider.ts";
-
+import type { IAtlasScope } from "../../../src/types/core.ts";
 // Import existing Atlas components
 import { type CoALAMemoryEntry, CoALAMemoryManager, CoALAMemoryType } from "./coala-memory.ts";
 import { getGlobalMECMFDebugLogger, type PromptEnhancementLog } from "./debug-logger.ts";
 import { MECMFErrorHandler } from "./error-handling.ts";
+import { GlobalEmbeddingProvider } from "./global-embedding-provider.ts";
 import type {
-  MemoryScoper,
-  MECMFMemoryManager,
   MECMFEmbeddingProvider,
+  MECMFMemoryManager,
+  MemoryScoper,
 } from "./mecmf-interfaces.ts";
 import {
   type ConversationContext,
@@ -176,7 +176,7 @@ export class AtlasMECMFMemoryManager implements MECMFMemoryManager {
         tags: fullMemory.tags,
         confidence: fullMemory.confidence,
         decayRate: fullMemory.decayRate,
-        source: (fullMemory.source as MemorySource) || MemorySource.SYSTEM_GENERATED,
+        source: fullMemory.source || MemorySource.SYSTEM_GENERATED,
         sourceMetadata: fullMemory.sourceMetadata,
       };
     }
@@ -462,7 +462,7 @@ export class AtlasMECMFMemoryManager implements MECMFMemoryManager {
 
     const timestamps = Object.values(coalaStats)
       .map((stats) => stats?.oldestEntry)
-      .filter((date) => date !== null) as Date[];
+      .filter((date) => date !== null);
 
     return {
       totalMemories,
@@ -695,7 +695,7 @@ export class AtlasMECMFMemoryManager implements MECMFMemoryManager {
       confidence: coala.confidence,
       decayRate: coala.decayRate,
       embedding: undefined, // Would need to be extracted if needed
-      source: (coala.source as MemorySource) || MemorySource.SYSTEM_GENERATED,
+      source: coala.source || MemorySource.SYSTEM_GENERATED,
       sourceMetadata: coala.sourceMetadata,
     }));
   }

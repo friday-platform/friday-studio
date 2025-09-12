@@ -316,9 +316,9 @@ export class NotificationManager {
   ): Promise<NotificationResult> {
     switch (params.type) {
       case "email":
-        return await provider.sendEmail(params.params as EmailParams);
+        return await provider.sendEmail(params.params);
       case "message":
-        return await provider.sendMessage(params.params as MessageParams);
+        return await provider.sendMessage(params.params);
       default:
         throw new NotificationError(
           `Unsupported notification type: ${params.type}`,
@@ -353,11 +353,11 @@ export class NotificationManager {
    */
   private getRecipientInfo(params: SendNotificationParams): string {
     if (params.type === "email") {
-      const emailParams = params.params as EmailParams;
+      const emailParams = params.params;
       const recipients = Array.isArray(emailParams.to) ? emailParams.to : [emailParams.to];
       return recipients.map((email) => email.replace(/(.{2}).*@/, "$1***@")).join(", ");
     } else if (params.type === "message") {
-      const messageParams = params.params as MessageParams;
+      const messageParams = params.params;
       return messageParams.channel || "unknown";
     }
     return "unknown";

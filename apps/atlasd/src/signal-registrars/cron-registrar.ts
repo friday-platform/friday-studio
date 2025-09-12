@@ -1,7 +1,7 @@
+import type { CronManager, CronTimerConfig } from "@atlas/cron";
 import { logger } from "@atlas/logger";
 import type { WorkspaceManager } from "@atlas/workspace";
 import type { WorkspaceSignalRegistrar } from "./types.ts";
-import type { CronManager, CronTimerConfig } from "@atlas/cron";
 
 /**
  * CronSignalRegistrar bridges workspace configs to CronManager timers,

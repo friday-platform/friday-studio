@@ -109,7 +109,7 @@ export class WorklogManager {
       const worklogEntries: WorklogEntry[] = [];
       for (const memory of episodicMemories) {
         if (this.isWorklogMemoryEntry(memory) && memory.timestamp >= cutoffDate) {
-          worklogEntries.push((memory as WorklogMemoryEntry).worklog_data);
+          worklogEntries.push(memory.worklog_data);
         }
       }
 
@@ -152,7 +152,7 @@ export class WorklogManager {
       const worklogEntries: WorklogEntry[] = [];
       for (const memory of similarMemories) {
         if (this.isWorklogMemoryEntry(memory)) {
-          worklogEntries.push((memory as WorklogMemoryEntry).worklog_data);
+          worklogEntries.push(memory.worklog_data);
         }
       }
 
@@ -177,7 +177,7 @@ export class WorklogManager {
       const sessionWorklogEntries: WorklogEntry[] = [];
       for (const memory of episodicMemories) {
         if (this.isWorklogMemoryEntry(memory)) {
-          const worklogData = (memory as WorklogMemoryEntry).worklog_data;
+          const worklogData = memory.worklog_data;
           if (worklogData.session_id === sessionId) {
             sessionWorklogEntries.push(worklogData);
           }
@@ -207,7 +207,7 @@ export class WorklogManager {
       const typeEntries: WorklogEntry[] = [];
       for (const memory of episodicMemories) {
         if (this.isWorklogMemoryEntry(memory)) {
-          const worklogData = (memory as WorklogMemoryEntry).worklog_data;
+          const worklogData = memory.worklog_data;
           if (worklogData.type === type) {
             typeEntries.push(worklogData);
           }
@@ -245,7 +245,7 @@ export class WorklogManager {
       const worklogEntries: WorklogEntry[] = [];
       for (const memory of episodicMemories) {
         if (this.isWorklogMemoryEntry(memory)) {
-          worklogEntries.push((memory as WorklogMemoryEntry).worklog_data);
+          worklogEntries.push(memory.worklog_data);
         }
       }
 
@@ -392,7 +392,7 @@ export class WorklogManager {
       confidence: worklogEntry.confidence,
       decayRate: 0.1, // Slow decay for institutional memory
       embedding,
-      source: "SYSTEM_GENERATED" as any,
+      source: "SYSTEM_GENERATED",
       sourceMetadata: { sessionId: worklogEntry.session_id, agentId: "worklog_manager" },
       subtype: "worklog",
       worklog_data: worklogEntry,
@@ -406,7 +406,7 @@ export class WorklogManager {
     return (
       memory.memoryType === MemoryType.EPISODIC &&
       "subtype" in memory &&
-      (memory as any).subtype === "worklog" &&
+      memory.subtype === "worklog" &&
       "worklog_data" in memory
     );
   }

@@ -553,15 +553,12 @@ function allocateMemoriesWithSmartPrioritization(
   hasRecentContext: boolean,
 ): MemoryAllocation {
   // Group memories by type
-  const memoriesByType = memories.reduce(
-    (acc, memory) => {
-      const type = memory.memoryType;
-      if (!acc[type]) acc[type] = [];
-      acc[type].push(memory);
-      return acc;
-    },
-    {} as Record<string, typeof memories>,
-  );
+  const memoriesByType = memories.reduce((acc, memory) => {
+    const type = memory.memoryType;
+    if (!acc[type]) acc[type] = [];
+    acc[type].push(memory);
+    return acc;
+  }, {});
 
   // Sort each type by relevance (similarity or relevanceScore)
   Object.values(memoriesByType).forEach((typeMemories) => {

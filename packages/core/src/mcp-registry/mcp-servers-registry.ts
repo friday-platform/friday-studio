@@ -778,7 +778,7 @@ export const mcpServersRegistry = {
       repository: "https://github.com/sentry/sentry-mcp",
       package: "sentry-mcp",
     },
-  ] as MCPServerMetadata[],
+  ],
   categories: [
     "development",
     "cloud",

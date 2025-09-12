@@ -27,7 +27,7 @@ export const libraryItemMetadataSchema = z.object({
   agent_ids: z.array(z.string()).optional(),
   template_id: z.string().optional(),
   generated_by: z.string().optional(),
-  custom_fields: z.record(z.string(), z.any()).optional(),
+  custom_fields: z.record(z.string(), z.unknown()).optional(),
 });
 
 // Full library item schema (for responses)
@@ -57,7 +57,7 @@ export const createLibraryItemSchema = z.object({
   agent_ids: z.array(z.string()).optional(),
   tags: z.array(z.string()).optional().default([]),
   workspace_id: z.string().optional(),
-  metadata: z.record(z.string(), z.any()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
 // Library search query schema
@@ -107,16 +107,16 @@ export const templateConfigSchema = z.object({
   description: z.string().optional(),
   format: z.enum(["markdown", "json", "html", "text"]),
   engine: z.string(),
-  config: z.record(z.string(), z.any()),
-  schema: z.record(z.string(), z.any()).optional(),
+  config: z.record(z.string(), z.unknown()),
+  schema: z.record(z.string(), z.unknown()).optional(),
   metadata: templateMetadataSchema.optional(),
 });
 
 // Generate from template request schema
 export const generateFromTemplateSchema = z.object({
   templateId: z.string().min(1),
-  data: z.record(z.string(), z.any()).optional(),
-  options: z.record(z.string(), z.any()).optional(),
+  data: z.record(z.string(), z.unknown()).optional(),
+  options: z.record(z.string(), z.unknown()).optional(),
 });
 
 // Get item response schema (with optional content)
@@ -159,8 +159,8 @@ export const deleteLibraryItemResponseSchema = z.object({ message: z.string() })
 export const generateTemplateResponseSchema = z.object({
   message: z.string(),
   templateId: z.string(),
-  data: z.any().optional(),
-  options: z.any().optional(),
+  data: z.unknown().optional(),
+  options: z.unknown().optional(),
 });
 
 // Type exports for TypeScript usage

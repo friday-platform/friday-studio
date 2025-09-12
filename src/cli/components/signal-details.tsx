@@ -56,32 +56,27 @@ const parseProperty = (
     return {
       name,
       type: "object",
-      description: prop.description as string | undefined,
+      description: prop.description,
       required: isRequired,
-      properties: Object.entries(prop.properties as Record<string, unknown>).map(
-        ([propName, propDef]) =>
-          parseProperty(
-            propName,
-            propDef as Record<string, unknown>,
-            (prop.required as string[]) || [],
-          ),
+      properties: Object.entries(prop.properties).map(([propName, propDef]) =>
+        parseProperty(propName, propDef, prop.required || []),
       ),
     };
   } else if (prop.type === "array" && prop.items) {
     return {
       name,
       type: "array",
-      description: prop.description as string | undefined,
+      description: prop.description,
       required: isRequired,
-      items: parseProperty("item", prop.items as Record<string, unknown>),
+      items: parseProperty("item", prop.items),
     };
   } else {
     return {
       name,
-      type: (prop.type as string) || "unknown",
-      description: prop.description as string | undefined,
+      type: prop.type || "unknown",
+      description: prop.description,
       required: isRequired,
-      enum: prop.enum as string[] | undefined,
+      enum: prop.enum | undefined,
       default: prop.default,
     };
   }
@@ -90,10 +85,10 @@ const parseProperty = (
 // Helper functions to build markdown for different provider types
 const buildHttpConfigMarkdown = (signal: Record<string, unknown>): string => {
   let content = "";
-  const method = (signal.method as string) || "GET";
-  const path = (signal.path as string) || (signal.endpoint as string) || "/";
-  const headers = (signal.headers as Record<string, string>) || {};
-  const config = (signal.config as Record<string, unknown>) || {};
+  const method = signal.method || "GET";
+  const path = signal.path || signal.endpoint || "/";
+  const headers = signal.headers || {};
+  const config = signal.config || {};
 
   content += `Method: ${method}\n`;
   content += `Path: ${path}\n`;
@@ -124,9 +119,9 @@ const buildHttpConfigMarkdown = (signal: Record<string, unknown>): string => {
 
 const buildCliConfigMarkdown = (signal: Record<string, unknown>): string => {
   let content = "";
-  const command = (signal.command as string) || "";
-  const args = (signal.args as string[]) || [];
-  const flags = (signal.flags as Record<string, unknown>) || {};
+  const command = signal.command || "";
+  const args = signal.args || [];
+  const flags = signal.flags || {};
 
   content += `Command: ${command}\n`;
 
@@ -152,14 +147,14 @@ const buildSpecializedConfigMarkdown = (
   provider: string,
 ): string => {
   let content = "";
-  const config = (signal.config as Record<string, unknown>) || {};
+  const config = signal.config || {};
 
   if (provider === "k8s-events") {
     if (signal.kubeconfig) {
-      content += `Kubeconfig: ${signal.kubeconfig as string}\n`;
+      content += `Kubeconfig: ${signal.kubeconfig}\n`;
     }
     if (signal.namespace) {
-      content += `Namespace: ${signal.namespace as string}\n`;
+      content += `Namespace: ${signal.namespace}\n`;
     }
     if (signal.insecure) {
       content += "Mode: Insecure (development)\n";
@@ -168,14 +163,14 @@ const buildSpecializedConfigMarkdown = (
 
   if (provider === "http-webhook") {
     if (signal.endpoint) {
-      content += `Endpoint: ${signal.endpoint as string}\n`;
+      content += `Endpoint: ${signal.endpoint}\n`;
     }
     if (config.webhook_secret) {
       content += "Security: Webhook secret configured\n";
     }
     if (config.allowed_event_types) {
       content += "\n**Allowed Events:**\n";
-      (config.allowed_event_types as string[]).forEach((eventType) => {
+      config.allowed_event_types.forEach((eventType) => {
         content += `- ${eventType}\n`;
       });
     }
@@ -251,7 +246,7 @@ export const SignalDetails = ({ workspaceId, signalId, workspacePath }: SignalDe
           // Use the new client package method that avoids agent validation
           const signalDetails = await client.describeSignal(workspaceId, signalId, workspacePath);
 
-          setSignalData(signalDetails as unknown as Record<string, unknown>);
+          setSignalData(signalDetails);
         } else {
           setError("Daemon not running. Use 'atlas daemon start' to enable signal management.");
         }
@@ -297,7 +292,7 @@ export const SignalDetails = ({ workspaceId, signalId, workspacePath }: SignalDe
   }
 
   // Provider
-  const provider = signalData.provider as string;
+  const provider = signalData.provider;
   markdown += `Provider: ${provider || "Unknown"}\n\n`;
 
   // Provider-specific configuration
@@ -326,7 +321,7 @@ export const SignalDetails = ({ workspaceId, signalId, workspacePath }: SignalDe
     const validatedSchema = validateSignalSchema(signalData.schema);
     if (validatedSchema) {
       const properties = Object.entries(validatedSchema.properties).map(([name, prop]) =>
-        parseProperty(name, prop as Record<string, unknown>, validatedSchema.required || []),
+        parseProperty(name, prop, validatedSchema.required || []),
       );
 
       const schemaContent = buildSchemaMarkdown(properties);

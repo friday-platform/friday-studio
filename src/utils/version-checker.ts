@@ -140,7 +140,7 @@ async function loadCache(): Promise<VersionCache | null> {
     }
 
     const cacheData = await Deno.readTextFile(cacheFile);
-    const cache = JSON.parse(cacheData) as VersionCache;
+    const cache = JSON.parse(cacheData);
 
     if (isCacheValid(cache)) {
       return cache;
@@ -187,7 +187,7 @@ async function fetchLatestVersion(channel: string): Promise<VersionResponse | nu
       return null;
     }
 
-    return (await response.json()) as VersionResponse;
+    return await response.json();
   } catch {
     // Fail silently - network errors should not interrupt CLI usage
     return null;
@@ -324,7 +324,7 @@ export async function checkForUpdate(channel?: string): Promise<UpdateInfo> {
     const arch = Deno.build.arch === "x86_64" ? "amd64" : "arm64";
     const platformKey = `${platform}_${arch}`;
 
-    const platformData = serverResponse.platforms[platformKey] as { download_url?: string };
+    const platformData = serverResponse.platforms[platformKey];
     let downloadUrl = platformData?.download_url || serverResponse.latest.download_url;
 
     // CRITICAL FIX: The version API is returning .sha256 URLs instead of binary URLs

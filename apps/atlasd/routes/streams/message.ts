@@ -73,7 +73,7 @@ sendMessageRoute.post(
         conversationId: body.conversationId,
       });
 
-      const workspaceId = (body.scope?.workspaceId as string) || "atlas-conversation";
+      const workspaceId = body.scope?.workspaceId || "atlas-conversation";
 
       try {
         const runtime = await ctx.getOrCreateWorkspaceRuntime(workspaceId);

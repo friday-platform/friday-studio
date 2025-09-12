@@ -342,8 +342,8 @@ export const conversationAgent = createAgent({
       );
 
       const executionFlow = {
-        steps: [] as Array<{ type: string; tool?: string; args?: unknown; timestamp: string }>,
-        reasoning: [] as string[],
+        steps: [],
+        reasoning: [],
         responseBuffer: "",
         thinkingBuffer: "",
         startTime: Date.now(), // Track start time for duration calculation

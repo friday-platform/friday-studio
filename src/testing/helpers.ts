@@ -30,7 +30,7 @@ export function createTestSession(
   workspaceId: string = "test-workspace",
   signals?: {
     triggers: IWorkspaceSignal[];
-    callback: IWorkspaceSignalCallback | ((result: any) => Promise<void>);
+    callback: IWorkspaceSignalCallback | ((result: unknown) => Promise<void>);
   },
   agents?: IWorkspaceAgent[],
   workflows?: IWorkspaceWorkflow[],
@@ -48,7 +48,7 @@ export function createTestSession(
       onComplete: () => {},
       execute: () => {},
       validate: () => true,
-    } as IWorkspaceSignalCallback,
+    },
   };
 
   const session = new Session(
@@ -115,13 +115,13 @@ export class MockContextManager implements ITempestContextManager {
  * Mock memory manager for testing
  */
 export class MockMemoryManager implements ITempestMemoryManager {
-  private memory: Map<string, any> = new Map();
+  private memory: Map<string, unknown> = new Map();
 
-  remember(key: string, value: any): void {
+  remember(key: string, value: unknown): void {
     this.memory.set(key, value);
   }
 
-  recall(key: string): any {
+  recall(key: string): unknown {
     return this.memory.get(key);
   }
 

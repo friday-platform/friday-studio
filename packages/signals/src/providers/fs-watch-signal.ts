@@ -5,6 +5,14 @@
  * NOTE: This is a skeleton for initial wiring. Behavior will be implemented next.
  */
 
+import {
+  computeRelativeToRoot,
+  createFsWatchRunner,
+  isDirectoryPath,
+  mapFsEventKind,
+  resolveToAbsolutePath,
+} from "@atlas/fs-watch";
+import { isAbsolute, normalize, resolve } from "@std/path";
 import type {
   HealthStatus,
   IProvider,
@@ -13,14 +21,6 @@ import type {
   ProviderState,
 } from "./types.ts";
 import { ProviderStatus, ProviderType } from "./types.ts";
-import { isAbsolute, normalize, resolve } from "@std/path";
-import {
-  computeRelativeToRoot,
-  isDirectoryPath,
-  mapFsEventKind,
-  resolveToAbsolutePath,
-} from "@atlas/fs-watch";
-import { createFsWatchRunner } from "@atlas/fs-watch";
 
 export interface FileWatchSignalConfig {
   id: string;
@@ -66,7 +66,7 @@ export class FileWatchSignalProvider implements ISignalProvider, IProvider {
   // Lifecycle
   setup(): void {
     this.state.status = ProviderStatus.READY;
-    this.state.config = this.config as unknown as Record<string, unknown>;
+    this.state.config = this.config;
   }
 
   teardown(): void {
@@ -77,7 +77,6 @@ export class FileWatchSignalProvider implements ISignalProvider, IProvider {
     return { ...this.state, lastHealthCheck: new Date() };
   }
 
-  // deno-lint-ignore require-await
   async checkHealth(): Promise<HealthStatus> {
     return { healthy: this.state.status === ProviderStatus.READY, lastCheck: new Date() };
   }

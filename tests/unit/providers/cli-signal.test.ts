@@ -33,7 +33,7 @@ Deno.test("CliSignalProvider - initialization", async (t) => {
     };
 
     try {
-      new CliSignalProvider(config as CliSignalConfig);
+      new CliSignalProvider(config);
       throw new Error("Should have thrown validation error");
     } catch (error) {
       assertEquals(error.message.includes("command"), true);
@@ -63,7 +63,7 @@ Deno.test("CliSignalProvider - initialization", async (t) => {
     };
 
     try {
-      new CliSignalProvider(config as CliSignalConfig);
+      new CliSignalProvider(config);
       throw new Error("Should have thrown validation error");
     } catch (error) {
       assertEquals(error.message.includes("command"), true);
@@ -241,7 +241,7 @@ Deno.test("CliSignalProvider - command validation", async (t) => {
     };
 
     try {
-      await provider.processTrigger(triggerData as unknown as CliTriggerData);
+      await provider.processTrigger(triggerData);
       throw new Error("Should have thrown validation error");
     } catch (error) {
       assertEquals(error.message.includes("args must be array"), true);
@@ -263,7 +263,7 @@ Deno.test("CliSignalProvider - command validation", async (t) => {
     };
 
     try {
-      await provider.processTrigger(triggerData as unknown as CliTriggerData);
+      await provider.processTrigger(triggerData);
       throw new Error("Should have thrown validation error");
     } catch (error) {
       assertEquals(error.message.includes("flags must be object"), true);

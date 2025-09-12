@@ -456,11 +456,9 @@ Respond with ONLY valid JSON.
    */
   private buildValidationInput(result: AgentResult): string {
     // Use top-level toolCalls extracted at AgentResult level
-    const topLevel = Array.isArray((result as { toolCalls?: unknown[] }).toolCalls)
-      ? (result as { toolCalls?: unknown[] }).toolCalls || []
-      : [];
+    const topLevel = Array.isArray(result.toolCalls) ? result.toolCalls || [] : [];
 
-    const normalized = topLevel as unknown as Array<{ toolName: string; input?: unknown }>;
+    const normalized = topLevel;
 
     const toolCount = normalized.length;
     const toolDetails =
@@ -469,19 +467,14 @@ Respond with ONLY valid JSON.
             .map((tc) => {
               const name = tc.toolName || "unknown";
               const argObj = tc.input;
-              const argKeys =
-                argObj && typeof argObj === "object"
-                  ? Object.keys(argObj as Record<string, unknown>)
-                  : [];
+              const argKeys = argObj && typeof argObj === "object" ? Object.keys(argObj) : [];
               return `${name}(${argKeys.length} params)`;
             })
             .join(", ")
         : "NO_TOOLS";
 
     // Summarize tool results for provenance (e.g., targeted_research results saved to library)
-    const topLevelResults = Array.isArray((result as { toolResults?: unknown[] }).toolResults)
-      ? (result as { toolResults?: unknown[] }).toolResults || []
-      : [];
+    const topLevelResults = Array.isArray(result.toolResults) ? result.toolResults || [] : [];
 
     const toolResultsSummary: string[] = [];
     const detectedLibraryItemIds: string[] = [];

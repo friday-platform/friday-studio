@@ -146,13 +146,11 @@ export async function handleDaemonResponse(
   operation: string,
   logger: Logger,
   options: { retryCount?: number; maxRetries?: number } = {},
-  // deno-lint-ignore no-explicit-any
-): Promise<any> {
+): Promise<unknown> {
   const { retryCount = 0, maxRetries = 3 } = options;
 
   if (!response.ok) {
-    // deno-lint-ignore no-explicit-any
-    let errorData: any = {};
+    let errorData: unknown = {};
     let responseText = "";
 
     try {
@@ -208,11 +206,11 @@ export async function handleDaemonResponse(
           errorData.error || errorData.message || response.statusText
         } (retry ${retryCount + 1}/${maxRetries})`,
       );
-      // deno-lint-ignore no-explicit-any
+
       retryError.code = -32000;
-      // deno-lint-ignore no-explicit-any
+
       retryError.details = errorInfo;
-      // deno-lint-ignore no-explicit-any
+
       retryError.shouldRetry = true;
       throw retryError;
     }
@@ -223,11 +221,11 @@ export async function handleDaemonResponse(
         errorData.error || errorData.message || response.statusText
       }${retryCount > 0 ? ` (failed after ${retryCount} retries)` : ""}`,
     );
-    // deno-lint-ignore no-explicit-any
+
     error.code = -32000; // MCP server error code
-    // deno-lint-ignore no-explicit-any
+
     error.details = errorInfo;
-    // deno-lint-ignore no-explicit-any
+
     error.shouldRetry = false;
     throw error;
   }
@@ -252,9 +250,9 @@ export async function handleDaemonResponse(
         error instanceof Error ? error.message : String(error)
       }`,
     );
-    // deno-lint-ignore no-explicit-any
+
     parseError.code = -32603; // Parse error code
-    // deno-lint-ignore no-explicit-any
+
     parseError.details = {
       operation,
       status: response.status,
@@ -264,7 +262,6 @@ export async function handleDaemonResponse(
       timestamp: new Date().toISOString(),
     };
 
-    // deno-lint-ignore no-explicit-any
     logger.error(`Parse error for ${operation}`, parseError.details);
     throw parseError;
   }
@@ -307,9 +304,9 @@ export async function fetchWithTimeout(
 
     if (error instanceof Error && error.name === "AbortError") {
       const timeoutError = new Error(`Request timeout after ${timeoutMs}ms: ${url}`);
-      // deno-lint-ignore no-explicit-any
+
       timeoutError.code = -32000;
-      // deno-lint-ignore no-explicit-any
+
       timeoutError.details = { url, timeoutMs, timestamp: new Date().toISOString() };
       throw timeoutError;
     }

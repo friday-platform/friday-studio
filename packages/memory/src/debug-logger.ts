@@ -278,9 +278,7 @@ export function getGlobalMECMFDebugLogger(): MECMFDebugLogger {
       (Deno.env.get("MECMF_DEBUG") === "true" || Deno.env.get("DEBUG") === "true");
 
     const debugLevel =
-      typeof Deno !== "undefined"
-        ? (Deno.env.get("MECMF_DEBUG_LEVEL") as MECMFDebugConfig["logLevel"]) || "detailed"
-        : "detailed";
+      typeof Deno !== "undefined" ? Deno.env.get("MECMF_DEBUG_LEVEL") || "detailed" : "detailed";
 
     globalDebugLogger = new MECMFDebugLogger({
       enabled: debugEnabled,

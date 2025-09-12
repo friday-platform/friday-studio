@@ -1,13 +1,13 @@
 import { logger } from "@atlas/logger";
+import {
+  type IProvider,
+  type ISignalProvider,
+  ProviderRegistry,
+  ProviderType,
+} from "@atlas/signals";
 import type { WorkspaceManager } from "@atlas/workspace";
 import type { WorkspaceSignalTriggerCallback } from "@atlas/workspace/types";
 import type { WorkspaceSignalRegistrar } from "./types.ts";
-import {
-  ProviderRegistry,
-  ProviderType,
-  type IProvider,
-  type ISignalProvider,
-} from "@atlas/signals";
 
 export class FsWatchSignalRegistrar implements WorkspaceSignalRegistrar {
   private readonly onWakeup: WorkspaceSignalTriggerCallback;

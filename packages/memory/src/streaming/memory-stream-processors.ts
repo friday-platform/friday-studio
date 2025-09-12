@@ -1,9 +1,7 @@
 import { logger } from "@atlas/logger";
 import type { CoALAMemoryManager } from "../coala-memory.ts";
 import type {
-  SessionCompleteStream as _SessionCompleteStream,
   AgentResultStream,
-  ContextualUpdateStream,
   EpisodicEventStream,
   MemoryStream,
   MemoryStreamProcessor,
@@ -379,7 +377,7 @@ export class AgentResultProcessor implements MemoryStreamProcessor {
     await Promise.all(promises);
   }
 
-  private extractSemanticFact(data: any): string {
+  private extractSemanticFact(data: unknown): string {
     // Simple fact extraction - could be enhanced with LLM
     const input = JSON.stringify(data.input);
     const output = JSON.stringify(data.output);
@@ -391,7 +389,7 @@ export class AgentResultProcessor implements MemoryStreamProcessor {
     }
   }
 
-  private analyzeInputCharacteristics(input: any): Record<string, any> {
+  private analyzeInputCharacteristics(input: unknown): Record<string, unknown> {
     const inputStr = JSON.stringify(input);
     return {
       length: inputStr.length,
@@ -401,7 +399,7 @@ export class AgentResultProcessor implements MemoryStreamProcessor {
     };
   }
 
-  private calculateSignificance(data: any): number {
+  private calculateSignificance(data: unknown): number {
     // Calculate significance based on success, duration, and complexity
     let significance = 0.5; // Base significance
 
@@ -413,7 +411,7 @@ export class AgentResultProcessor implements MemoryStreamProcessor {
     return Math.min(1.0, significance);
   }
 
-  private buildEpisodicDescription(data: any): string {
+  private buildEpisodicDescription(data: unknown): string {
     const inputSize = JSON.stringify(data.input).length;
     const outputSize = data.output ? JSON.stringify(data.output).length : 0;
 
@@ -432,7 +430,7 @@ export class AgentResultProcessor implements MemoryStreamProcessor {
     }
   }
 
-  private summarizeInput(input: any): string {
+  private summarizeInput(input: unknown): string {
     if (!input) return "No input";
 
     const inputStr = typeof input === "string" ? input : JSON.stringify(input);
@@ -448,7 +446,7 @@ export class AgentResultProcessor implements MemoryStreamProcessor {
     return inputStr.substring(0, 100) + "...";
   }
 
-  private summarizeOutput(output: any): string {
+  private summarizeOutput(output: unknown): string {
     if (!output) return "No output";
 
     const outputStr = typeof output === "string" ? output : JSON.stringify(output);
@@ -480,7 +478,7 @@ export class WorkingContextProcessor implements MemoryStreamProcessor {
     try {
       const sessionId = stream.sessionId || "unknown";
       if (stream.type === "agent_result") {
-        const data = (stream as AgentResultStream).data;
+        const data = stream.data;
         const tags = ["working", "session", "agent", data.agent_id];
         this.memoryManager.rememberWorking(
           sessionId,
@@ -498,7 +496,7 @@ export class WorkingContextProcessor implements MemoryStreamProcessor {
           { tags, relevanceScore: 0.65, confidence: 0.9 },
         );
       } else if (stream.type === "contextual_update") {
-        const ctx = (stream as ContextualUpdateStream).data;
+        const ctx = stream.data;
         const tags = ["working", "session", "context"];
         this.memoryManager.rememberWorking(
           sessionId,

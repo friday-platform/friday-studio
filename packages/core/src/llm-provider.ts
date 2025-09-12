@@ -39,7 +39,7 @@ const LLMOptionsSchema = z.object({
   systemPrompt: z.string().optional(),
   memoryContext: z.string().optional(),
   operationContext: z.record(z.string(), z.unknown()).optional(),
-  tools: z.record(z.string(), z.any()).optional(),
+  tools: z.record(z.string(), z.unknown()).optional(),
   mcpServers: z.array(z.string()).optional(),
 });
 

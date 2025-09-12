@@ -106,7 +106,7 @@ Deno.test("Agent tool checking validates simple array format", () => {
   const agentWithNoTools = { tools: [] };
 
   // Simulate the tool checking logic used in SessionSupervisor
-  function hasComputerUse(agent: any): boolean {
+  function hasComputerUse(agent: unknown): boolean {
     return agent.tools?.includes("computer_use");
   }
 

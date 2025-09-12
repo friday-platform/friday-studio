@@ -61,6 +61,7 @@
     "npm:@tauri-apps/plugin-opener@^2.5.0": "2.5.0",
     "npm:@tauri-apps/plugin-shell@^2.3.1": "2.3.1",
     "npm:@tavily/core@~0.5.11": "0.5.11",
+    "npm:@total-typescript/ts-reset@~0.6.1": "0.6.1",
     "npm:@types/node@*": "22.15.15",
     "npm:@types/react@^19.1.8": "19.1.12",
     "npm:@worker-tools/html-rewriter@~0.1.0-pre.19": "0.1.0-pre.19",
@@ -1220,6 +1221,9 @@
         "https-proxy-agent",
         "js-tiktoken"
       ]
+    },
+    "@total-typescript/ts-reset@0.6.1": {
+      "integrity": "sha512-cka47fVSo6lfQDIATYqb/vO1nvFfbPw7uWLayIXIhGETj0wcOOlrlkobOMDNQOFr9QOafegUPq13V2+6vtD7yg=="
     },
     "@types/chai@5.2.2": {
       "integrity": "sha512-8kB30R7Hwqf40JPiKhVzodJs2Qc1ZJ5zuT3uzw5Hq/dhNCl3G3l83jfpdI1e20BP348+fV7VIL/+FxaXkqBmWg==",
@@ -4011,6 +4015,7 @@
       "npm:@opentelemetry/api@^1.9.0",
       "npm:@scalar/hono-api-reference@~0.9.9",
       "npm:@tanstack/svelte-query@^5.83.1",
+      "npm:@total-typescript/ts-reset@~0.6.1",
       "npm:@types/react@^19.1.8",
       "npm:ai@^5.0.17",
       "npm:ansi-escapes@7",

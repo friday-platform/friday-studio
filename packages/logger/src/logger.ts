@@ -165,7 +165,7 @@ export class AtlasLoggerV2 implements Logger {
     } as const;
 
     const reset = "\x1b[0m";
-    const color = colors[level as keyof typeof colors] || "";
+    const color = colors[level] || "";
     const componentColor = "\x1b[2m"; // dim
 
     return `${color}[${timestamp}] ${level.toUpperCase()}${reset} ${componentColor}(${component})${reset}: ${message}${contextStr}`;

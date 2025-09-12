@@ -2,8 +2,8 @@
  * Daemon-related utilities for Atlas
  */
 
-import { z } from "zod/v4";
 import { logger } from "@atlas/logger";
+import { z } from "zod/v4";
 
 // Private constants
 const DEFAULT_DAEMON_URL = "http://127.0.0.1:8080";

@@ -138,7 +138,7 @@ async function processStreamQueue(ctx: AppContext, streamId: string): Promise<vo
         const result = await emitToClients(ctx, streamId, item.event);
         item.resolve(result);
       } catch (error) {
-        item.reject(error as Error);
+        item.reject(error);
         logger.error("SSE emission failed", {
           streamId,
           sessionId: currentSessionId,
@@ -187,7 +187,7 @@ async function processStreamQueue(ctx: AppContext, streamId: string): Promise<vo
  */
 function isSessionFinishEvent(event: unknown): boolean {
   if (typeof event === "object" && event !== null) {
-    const evt = event as any;
+    const evt = event;
     // Only check for explicit session-finish event
     // Do NOT rotate on agent-finish or generic finish events
     return evt.type === "data-session-finish";

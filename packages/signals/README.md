@@ -97,7 +97,6 @@ or instantiated directly.
 - `HTTPSignalProvider` - HTTP endpoint signals
 - `HttpWebhookProvider` - Webhook handlers
 - `TimerSignalProvider` - Scheduled signals
-- `StreamSignalProvider` - Real-time stream signals
 - `K8sEventsSignalProvider` - Kubernetes event signals
 - `K8sAuthManager` - Kubernetes authentication
 

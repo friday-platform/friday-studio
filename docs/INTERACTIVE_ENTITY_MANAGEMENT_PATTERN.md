@@ -257,9 +257,9 @@ export async function fetchSignals(workspaceId: string): Promise<EntityEntry[]> 
   return Object.entries(config.signals || {}).map(([id, signal]) => ({
     id,
     name: id,
-    description: (signal as any)?.description,
+    description: signal?.description,
     status: "configured",
-    metadata: signal as Record<string, unknown>,
+    metadata: signal,
   }));
 }
 

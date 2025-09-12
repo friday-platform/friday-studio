@@ -37,10 +37,7 @@ export class DefaultNotificationProviderFactory implements NotificationProviderF
 
       default:
         // Type assertion is safe here since we've exhausted all known provider types
-        throw new ProviderConfigError(
-          name,
-          `Unknown provider type: ${(config as { provider: string }).provider}`,
-        );
+        throw new ProviderConfigError(name, `Unknown provider type: ${config.provider}`);
     }
   }
 

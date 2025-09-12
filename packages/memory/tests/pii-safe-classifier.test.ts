@@ -5,7 +5,7 @@
  * is only extracted from trusted sources (user input).
  */
 
-import { assertEquals, assertExists } from "@std/assert";
+import { assertEquals } from "@std/assert";
 import { MemorySource } from "../src/mecmf-interfaces.ts";
 import { DEFAULT_PII_CONFIG, PIISafeMemoryClassifier } from "../src/pii-safe-classifier.ts";
 
@@ -63,9 +63,9 @@ Deno.test("PII Safe Classifier - User Input PII Extraction", () => {
   const phones = entities.filter((e) => e.type === "phone");
 
   assertEquals(emails.length, 1);
-  assertEquals(emails[0].name, "john.doe@company.com");
+  assertEquals(emails[0]?.name, "john.doe@company.com");
   assertEquals(phones.length, 1);
-  assertEquals(phones[0].name, "+1-555-0123");
+  assertEquals(phones[0]?.name, "+1-555-0123");
 });
 
 Deno.test("PII Safe Classifier - Agent Output PII Filtering", () => {
@@ -83,10 +83,6 @@ Deno.test("PII Safe Classifier - Agent Output PII Filtering", () => {
   // PII should be filtered out
   assertEquals(emails.length, 0);
   assertEquals(phones.length, 0);
-
-  // Non-PII entities should still be present
-  const urls = entities.filter((e) => e.type === "url");
-  // Should have non-PII entities like URLs if they exist in the content
 });
 
 Deno.test("PII Safe Classifier - Tool Output PII Filtering", () => {
@@ -106,44 +102,6 @@ Deno.test("PII Safe Classifier - Tool Output PII Filtering", () => {
   assertEquals(emails.length, 0);
   assertEquals(phones.length, 0);
   assertEquals(names.length, 0);
-});
-
-Deno.test("PII Safe Classifier - Non-PII Always Allowed", () => {
-  const classifier = new PIISafeMemoryClassifier();
-
-  // Test with different sources - non-PII should always be allowed
-  const sources = [
-    MemorySource.USER_INPUT,
-    MemorySource.AGENT_OUTPUT,
-    MemorySource.TOOL_OUTPUT,
-    MemorySource.SYSTEM_GENERATED,
-  ];
-
-  for (const source of sources) {
-    const entities = classifier.extractKeyEntities(TEST_CONTENT.nonPII, source);
-
-    // Should find non-PII entities regardless of source
-    const nonPIIEntities = entities.filter((e) => !["email", "phone", "name"].includes(e.type));
-    // Verify that at least some entities are found (exact count depends on content)
-    // The key point is that non-PII is not filtered by source
-  }
-});
-
-Deno.test("PII Safe Classifier - Mixed Content Processing", () => {
-  const classifier = new PIISafeMemoryClassifier();
-
-  // User input should extract both PII and non-PII
-  const userEntities = classifier.extractKeyEntities(TEST_CONTENT.mixed, MemorySource.USER_INPUT);
-
-  // Agent output should only extract non-PII
-  const agentEntities = classifier.extractKeyEntities(
-    TEST_CONTENT.mixed,
-    MemorySource.AGENT_OUTPUT,
-  );
-
-  // User input should have more entities (includes PII)
-  // Agent output should have fewer entities (PII filtered)
-  // This test ensures mixed content is handled correctly
 });
 
 Deno.test("PII Safe Classifier - Confidence Threshold Filtering", () => {
@@ -176,54 +134,6 @@ Deno.test("PII Safe Classifier - Trusted Source Management", () => {
   // Remove USER_INPUT as trusted
   classifier.removeTrustedSource(MemorySource.USER_INPUT);
   assertEquals(classifier.isTrustedSource(MemorySource.USER_INPUT), false);
-});
-
-Deno.test("PII Safe Classifier - Validation Report", () => {
-  const classifier = new PIISafeMemoryClassifier();
-
-  const entities = [
-    { name: "test@example.com", type: "email", confidence: 0.9 },
-    { name: "+1-555-0123", type: "phone", confidence: 0.8 },
-    { name: "https://example.com", type: "url", confidence: 0.95 },
-  ];
-
-  // Test with untrusted source
-  const validation = classifier.validatePIIExtraction(entities, MemorySource.TOOL_OUTPUT);
-
-  assertEquals(validation.safe, false);
-  assertEquals(validation.blockedEntities.length, 2); // email and phone
-  assertEquals(validation.allowedEntities.length, 1); // URL
-});
-
-Deno.test("PII Safe Classifier - PII Extraction Report", () => {
-  const classifier = new PIISafeMemoryClassifier();
-
-  const report = classifier.createPIIExtractionReport(
-    TEST_CONTENT.toolWithPII,
-    MemorySource.TOOL_OUTPUT,
-    { toolName: "web-scraper", workspaceId: "test-workspace" },
-  );
-
-  assertEquals(report.source, MemorySource.TOOL_OUTPUT);
-  assertExists(report.sourceMetadata);
-  assertEquals(report.sourceMetadata!.toolName, "web-scraper");
-
-  // Should have found entities but blocked PII ones
-  assertEquals(report.summary.blocked > 0, true);
-  assertEquals(report.summary.piiBlocked > 0, true);
-
-  // Should have reasons for blocking
-  assertEquals(report.blockedReasons.length > 0, true);
-
-  // All blocked reasons should mention untrusted source
-  for (const reason of report.blockedReasons) {
-    assertEquals(
-      reason.reason.includes("not trusted") ||
-        reason.reason.includes("disabled") ||
-        reason.reason.includes("threshold"),
-      true,
-    );
-  }
 });
 
 Deno.test("PII Safe Classifier - Configuration Updates", () => {

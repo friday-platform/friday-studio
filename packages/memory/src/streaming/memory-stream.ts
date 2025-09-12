@@ -13,7 +13,7 @@ export type MemoryStreamType =
 export interface MemoryStream {
   id: string;
   type: MemoryStreamType;
-  data: any;
+  data: unknown;
   timestamp: number;
   sessionId: string;
   agentId?: string;
@@ -26,7 +26,7 @@ export interface SemanticFactStream extends MemoryStream {
     fact: string;
     confidence: number;
     source: "agent_output" | "user_input" | "system_event";
-    context?: Record<string, any>;
+    context?: Record<string, unknown>;
   };
 }
 
@@ -37,8 +37,8 @@ export interface ProceduralPatternStream extends MemoryStream {
     agent_id: string;
     strategy: string;
     duration_ms: number;
-    input_characteristics: Record<string, any>;
-    outcome: Record<string, any>;
+    input_characteristics: Record<string, unknown>;
+    outcome: Record<string, unknown>;
   };
 }
 
@@ -56,7 +56,7 @@ export interface EpisodicEventStream extends MemoryStream {
       durationMs?: number;
       tokensUsed?: number;
       error?: string;
-      [key: string]: any;
+      [key: string]: unknown;
     };
   };
 }
@@ -66,8 +66,8 @@ export interface ContextualUpdateStream extends MemoryStream {
   data: {
     update_type: "add" | "modify" | "remove";
     key: string;
-    old_value?: any;
-    new_value?: any;
+    old_value?: unknown;
+    new_value?: unknown;
     relevance_score: number;
   };
 }
@@ -76,8 +76,8 @@ export interface AgentResultStream extends MemoryStream {
   type: "agent_result";
   data: {
     agent_id: string;
-    input: any;
-    output: any;
+    input: unknown;
+    output: unknown;
     duration_ms: number;
     success: boolean;
     tokens_used?: number;
@@ -92,7 +92,7 @@ export interface SessionCompleteStream extends MemoryStream {
     total_duration_ms: number;
     agent_count: number;
     success_rate: number;
-    final_output: any;
+    final_output: unknown;
     summary?: string;
   };
 }

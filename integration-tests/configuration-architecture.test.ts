@@ -107,7 +107,7 @@ memory:
       max_age_days: 30
       max_entries: 1000
       cleanup_interval_hours: 24
-  
+
   agent:
     enabled: true
     scope: "agent"
@@ -121,7 +121,7 @@ memory:
         enabled: true
         max_age_hours: 2
         max_entries: 50
-  
+
   session:
     enabled: true
     scope: "session"
@@ -135,7 +135,7 @@ memory:
         enabled: true
         max_age_hours: 24
         max_entries: 100
-  
+
   workspace:
     enabled: true
     scope: "workspace"
@@ -371,10 +371,10 @@ Deno.test("Workspace configuration loads user-defined components", async () => {
     expect(Object.keys(workspaceConfig.signals!).length).toBe(1);
     expect(workspaceConfig.signals!["test-signal"]).toBeDefined();
     expect(workspaceConfig.signals!["test-signal"].provider).toBe("http");
-    expect((workspaceConfig.signals!["test-signal"] as { jobs?: unknown }).jobs).toBeUndefined();
+    expect(workspaceConfig.signals!["test-signal"].jobs).toBeUndefined();
 
     // Test runtime configuration is NOT in workspace config (moved to atlas)
-    expect((workspaceConfig as { runtime?: unknown }).runtime).toBeUndefined();
+    expect(workspaceConfig.runtime).toBeUndefined();
   } finally {
     Deno.chdir(originalCwd);
     if (tempDir) {
@@ -654,7 +654,7 @@ signals:
     } catch (error) {
       errorCaught = true;
       expect(error).toBeInstanceOf(Error);
-      const errorMessage = (error as Error).message.toLowerCase();
+      const errorMessage = error.message.toLowerCase();
       // Should catch validation error related to protocol field
       expect(
         errorMessage.includes("validation") ||
@@ -729,7 +729,7 @@ signals:
       errorCaught = true;
       console.log("Validation error caught:", error);
       expect(error).toBeInstanceOf(Error);
-      const errorMessage = (error as Error).message.toLowerCase();
+      const errorMessage = error.message.toLowerCase();
       // Should catch validation errors - check for common validation keywords
       expect(
         errorMessage.includes("validation") ||

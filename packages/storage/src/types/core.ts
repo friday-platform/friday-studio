@@ -2,18 +2,12 @@
  * Core storage interfaces and types for Atlas storage adapters
  */
 
-// Legacy memory storage interface
-export interface ITempestMemoryStorageAdapter {
-  commit(data: any): Promise<void>;
-  load(): Promise<any>;
-}
-
 // Enhanced storage adapter for CoALA memory types
-export interface ICoALAMemoryStorageAdapter extends ITempestMemoryStorageAdapter {
-  commitByType(memoryType: string, data: any): Promise<void>;
-  loadByType(memoryType: string): Promise<any>;
-  commitAll(dataByType: Record<string, any>): Promise<void>;
-  loadAll(): Promise<Record<string, any>>;
+export interface ICoALAMemoryStorageAdapter {
+  commitByType(memoryType: string, data: unknown): Promise<void>;
+  loadByType(memoryType: string): Promise<unknown>;
+  commitAll(dataByType: Record<string, unknown>): Promise<void>;
+  loadAll(): Promise<Record<string, unknown>>;
   listMemoryTypes(): Promise<string[]>;
 }
 
@@ -22,7 +16,7 @@ export interface KnowledgeEntity {
   id: string;
   name: string;
   type: KnowledgeEntityType;
-  attributes: Record<string, any>;
+  attributes: Record<string, unknown>;
   confidence: number;
   workspaceId: string;
   createdAt: Date;
@@ -34,7 +28,7 @@ export interface KnowledgeRelationship {
   sourceEntityId: string;
   targetEntityId: string;
   type: KnowledgeRelationType;
-  attributes: Record<string, any>;
+  attributes: Record<string, unknown>;
   confidence: number;
   workspaceId: string;
   createdAt: Date;

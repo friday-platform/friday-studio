@@ -102,11 +102,11 @@ export class AgentTelemetryCollector implements Tracer {
             span.end();
             throw error;
           },
-        ) as ReturnType<F>;
+        );
       }
 
       span.end();
-      return result as ReturnType<F>;
+      return result;
     } catch (error) {
       this.recordSpanError(span, error);
       span.end();
@@ -163,7 +163,7 @@ export class AgentTelemetryCollector implements Tracer {
     this.executionTrace.push(executionSpan);
     const traceIndex = this.executionTrace.length - 1;
 
-    const spanMeta = { name, startTime, toolName: undefined as string | undefined, traceIndex };
+    const spanMeta = { name, startTime, toolName: undefined, traceIndex };
     this.activeSpans.set(spanId, spanMeta);
 
     // AI SDK uses "ai.toolCall" spans for tool invocations
@@ -283,7 +283,7 @@ export class AgentTelemetryCollector implements Tracer {
             message: String(eventAttributes?.["exception.message"] || "Unknown error"),
             context: name,
             timestamp: Date.now(),
-            stack: eventAttributes?.["exception.stack"] as string | undefined,
+            stack: eventAttributes?.["exception.stack"],
           });
         } else if (eventName.includes("warning")) {
           this.warnings.push({

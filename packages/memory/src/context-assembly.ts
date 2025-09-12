@@ -1,5 +1,5 @@
-import { MemoryEntry, MemoryType, WorklogEntry } from "./mecmf-interfaces.ts";
-import { EnhancedTokenBudgetManager } from "./enhanced-token-budget-manager.ts";
+import type { EnhancedTokenBudgetManager } from "./enhanced-token-budget-manager.ts";
+import { type MemoryEntry, MemoryType, type WorklogEntry } from "./mecmf-interfaces.ts";
 
 /**
  * Enum for context section types used in prompt assembly
@@ -209,7 +209,7 @@ export class ContextAssemblyService {
     semanticContext?: string;
     episodicContext?: string;
   }> {
-    const contextSections: any = {};
+    const contextSections: unknown = {};
     let remainingBudget = totalBudget;
     const budgetPerSection = Math.floor(totalBudget / Math.max(1, priority.length));
 
@@ -432,7 +432,7 @@ export class ContextAssemblyService {
    */
   private assemblePrompt(
     originalPrompt: string,
-    contextSections: any,
+    contextSections: unknown,
     priority: SectionType[],
     options: ContextAssemblyOptions,
   ): { enhancedPrompt: string; tokensUsed: number; compressionApplied: boolean } {
@@ -481,7 +481,7 @@ export class ContextAssemblyService {
   /**
    * Extracts text content from various content formats.
    */
-  private extractContentText(content: any, maxLength?: number): string {
+  private extractContentText(content: unknown, maxLength?: number): string {
     let text = "";
 
     if (typeof content === "string") {

@@ -1,8 +1,8 @@
 import { anthropic } from "@ai-sdk/anthropic";
 import {
+  FileWatchSignalConfigSchema,
   HTTPSignalConfigSchema,
   ScheduleSignalConfigSchema,
-  FileWatchSignalConfigSchema,
 } from "@atlas/config";
 import type { Logger } from "@atlas/logger";
 import { toKebabCase } from "@std/text";

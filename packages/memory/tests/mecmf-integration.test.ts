@@ -6,25 +6,16 @@
  */
 
 import { assertEquals, assertExists, assertGreater } from "@std/assert";
-import type { IAtlasScope } from "../../../src/types/core.ts";
 import {
   createConversationContext,
   MECMFConstants,
   MemoryType,
   MemoryUtils,
-  setupMECMF,
 } from "../src/mecmf.ts";
 import { createMemoryClassifier } from "../src/memory-classifier.ts";
 import { createTokenBudgetManager } from "../src/token-budget-manager.ts";
 
-// Mock Atlas scope for testing
-const mockScope: IAtlasScope = {
-  id: "test-workspace-123",
-  type: "workspace",
-  name: "Test Workspace",
-};
-
-Deno.test("MECMF Memory Classification", async () => {
+Deno.test("MECMF Memory Classification", () => {
   const classifier = createMemoryClassifier();
   const context = createConversationContext("session-1", "workspace-1", {
     currentTask: "testing memory classification",
@@ -56,7 +47,7 @@ Deno.test("MECMF Memory Classification", async () => {
   console.log("✓ Memory classification tests passed");
 });
 
-Deno.test("MECMF Token Budget Management", async () => {
+Deno.test("MECMF Token Budget Management", () => {
   const budgetManager = createTokenBudgetManager();
 
   // Test token calculation
@@ -157,7 +148,7 @@ Deno.test("MECMF Conversation Context Creation", () => {
 // Note: Full MECMF setup test is skipped as it requires actual embedding model initialization
 // which would be slow and require network access. In production, this would be tested separately.
 
-Deno.test("MECMF Memory Manager Interface", async () => {
+Deno.test("MECMF Memory Manager Interface", () => {
   // Test that we can create the interface without full initialization
   const classifier = createMemoryClassifier();
   const budgetManager = createTokenBudgetManager();
@@ -177,18 +168,3 @@ Deno.test("MECMF Memory Manager Interface", async () => {
 
   console.log("✓ Memory manager interface tests passed");
 });
-
-console.log("\n🎉 All MECMF tests completed successfully!");
-console.log("\nMECMF Implementation Status:");
-console.log("✓ Core interfaces defined");
-console.log("✓ Memory classification implemented");
-console.log("✓ Token budget management implemented");
-console.log("✓ Error handling and fallback strategies implemented");
-console.log("✓ Web embedding provider implemented (using existing /embeddings/ infrastructure)");
-console.log("✓ Main MECMF memory manager implemented");
-console.log("✓ Integration with existing CoALA system completed");
-console.log("\nNext Steps:");
-console.log("- Initialize with actual workspace to test full vector search");
-console.log("- Test embedding generation with real models");
-console.log("- Benchmark performance against MECMF targets");
-console.log("- Deploy in production Atlas workspaces");

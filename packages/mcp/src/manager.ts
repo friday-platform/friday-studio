@@ -509,7 +509,7 @@ export class MCPManager {
         // Create a new tool object with inputSchema instead of parameters
         // We destructure to exclude 'parameters' and rebuild with 'inputSchema'
         const { parameters, ...restTool } = tool as Tool & { parameters?: Schema<JSONValue> };
-        const convertedTool: Tool = { ...restTool, inputSchema: parameters as Schema<JSONValue> };
+        const convertedTool: Tool = { ...restTool, inputSchema: parameters };
         filtered[toolName] = convertedTool;
       } else {
         filtered[toolName] = tool;

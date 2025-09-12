@@ -28,7 +28,7 @@ export enum ProviderType {
 export interface ProviderState {
   status: ProviderStatus;
   credentials?: ProviderCredentials;
-  config?: Record<string, any>;
+  config?: Record<string, unknown>;
   lastHealthCheck?: Date;
   error?: string;
 }
@@ -51,17 +51,17 @@ export interface HealthStatus {
   healthy: boolean;
   message?: string;
   lastCheck: Date;
-  details?: Record<string, any>;
+  details?: Record<string, unknown>;
 }
 
 export interface ISignalProvider extends IProvider {
   type: ProviderType.SIGNAL;
-  createSignal(config: any): IProviderSignal;
+  createSignal(config: unknown): IProviderSignal;
 }
 
 export interface IAgentProvider extends IProvider {
   type: ProviderType.AGENT;
-  createAgent(config: any): Promise<any>;
+  createAgent(config: unknown): Promise<unknown>;
   getSupportedModels?(): string[];
 }
 
@@ -69,11 +69,11 @@ export interface IAgentProvider extends IProvider {
 export interface IProviderSignal {
   id: string;
   providerId: string;
-  config: Record<string, any>;
+  config: Record<string, unknown>;
 
   // Methods that will be called by runtime
   validate(): boolean;
-  toRuntimeSignal(): any; // Converts to IWorkspaceSignal
+  toRuntimeSignal(): unknown; // Converts to IWorkspaceSignal
 }
 
 // Provider registry
@@ -89,5 +89,5 @@ export interface ProviderConfig {
   id: string;
   type: ProviderType;
   provider: string; // e.g., "github", "anthropic", "openai"
-  config?: Record<string, any>;
+  config?: Record<string, unknown>;
 }

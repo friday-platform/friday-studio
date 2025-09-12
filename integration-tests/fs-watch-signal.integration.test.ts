@@ -41,18 +41,7 @@ Deno.test("fs-watch integration: emits events with relativePath under workspace 
         path: "content/",
         recursive: true,
       })
-      .toRuntimeSignal() as {
-      initialize: (ctx: {
-        id: string;
-        processSignal: (id: string, payload: Record<string, unknown>) => void;
-        workspacePath?: string;
-        fsWatchFactory?: (
-          path: string,
-          options: { recursive: boolean },
-        ) => AsyncIterable<Deno.FsEvent>;
-      }) => void;
-      teardown: () => void;
-    };
+      .toRuntimeSignal();
 
     // Create a content directory inside workspace root
     const contentDir = join(tmp, "content");
@@ -61,11 +50,11 @@ Deno.test("fs-watch integration: emits events with relativePath under workspace 
 
     // Fake iterator emitting events inside workspace
     async function* fakeFsWatch(_path: string): AsyncIterable<Deno.FsEvent> {
-      yield { kind: "create", paths: [file] } as Deno.FsEvent;
+      yield { kind: "create", paths: [file] };
       await delay(5);
-      yield { kind: "modify", paths: [file] } as Deno.FsEvent;
+      yield { kind: "modify", paths: [file] };
       await delay(5);
-      yield { kind: "remove", paths: [file] } as Deno.FsEvent;
+      yield { kind: "remove", paths: [file] };
     }
 
     runtime.initialize({
@@ -80,12 +69,7 @@ Deno.test("fs-watch integration: emits events with relativePath under workspace 
 
     // We expect at least one event; verify relativePath and fields
     assertEquals(captured.length > 0, true);
-    const first = captured[0] as {
-      path: string;
-      relativePath?: string;
-      event: string;
-      isDirectory: boolean;
-    };
+    const first = captured[0];
     assertEquals(typeof first.path, "string");
     assertEquals(first.relativePath, "content/doc.md");
     assertEquals(["added", "modified", "removed"].includes(first.event), true);
@@ -115,26 +99,15 @@ Deno.test("fs-watch integration: emits events for all paths (no filters)", async
         path: tmp,
         recursive: false,
       })
-      .toRuntimeSignal() as {
-      initialize: (ctx: {
-        id: string;
-        processSignal: (id: string, payload: Record<string, unknown>) => void;
-        workspacePath?: string;
-        fsWatchFactory?: (
-          path: string,
-          options: { recursive: boolean },
-        ) => AsyncIterable<Deno.FsEvent>;
-      }) => void;
-      teardown: () => void;
-    };
+      .toRuntimeSignal();
 
     const included = join(tmp, "notes.md");
     const excluded = join(tmp, "README.IGNORE.md");
 
     async function* fakeFsWatch(_path: string): AsyncIterable<Deno.FsEvent> {
-      yield { kind: "create", paths: [excluded] } as Deno.FsEvent;
+      yield { kind: "create", paths: [excluded] };
       await delay(20);
-      yield { kind: "create", paths: [included] } as Deno.FsEvent;
+      yield { kind: "create", paths: [included] };
     }
 
     runtime.initialize({
@@ -148,7 +121,7 @@ Deno.test("fs-watch integration: emits events for all paths (no filters)", async
 
     // No path-based filtering: both events should be captured
     assertEquals(captured.length, 2);
-    const paths = captured.map((e) => (e as { path: string }).path).sort();
+    const paths = captured.map((e) => e.path).sort();
     assertEquals(paths.includes(included), true);
     assertEquals(paths.includes(excluded), true);
 

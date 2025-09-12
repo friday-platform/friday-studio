@@ -19,11 +19,7 @@ export class AtlasWorkspaceManager {
   }
 
   async createWorkspace(name: string, ownerName: string): Promise<IWorkspace> {
-    const owner: IWorkspaceMember = {
-      id: crypto.randomUUID(),
-      name: ownerName,
-      role: "owner" as WorkspaceMemberRole,
-    };
+    const owner: IWorkspaceMember = { id: crypto.randomUUID(), name: ownerName, role: "owner" };
 
     const workspace = new Workspace(owner);
 
@@ -86,7 +82,7 @@ export class AtlasWorkspaceManager {
     await this.saveWorkspace(workspace, workspaceMeta);
   }
 
-  private async saveWorkspace(workspace: IWorkspace, meta: any): Promise<void> {
+  private async saveWorkspace(workspace: IWorkspace, meta: unknown): Promise<void> {
     const workspacePath = join(this.workspacesPath, workspace.id);
     await ensureDir(workspacePath);
 
@@ -195,7 +191,7 @@ export class AtlasWorkspaceManager {
     }
   }
 
-  private getAgentType(agent: any): string {
+  private getAgentType(agent: unknown): string {
     // Try to determine agent type from class name or other properties
     if (agent.constructor?.name === "EchoAgent") return "echo";
     if (agent.constructor?.name === "ClaudeAgent") return "claude";
@@ -210,9 +206,9 @@ export class AtlasWorkspaceManager {
     return "unknown";
   }
 
-  private getAgentConfig(agent: any): any {
+  private getAgentConfig(agent: unknown): unknown {
     // Extract agent-specific configuration
-    const config: any = {};
+    const config: unknown = {};
 
     if (agent.model) {
       config.model = agent.model;

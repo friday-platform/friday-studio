@@ -9,7 +9,7 @@ import { builder } from "../../src/cli/commands/workspace/add.tsx";
 Deno.test({
   name: "Workspace Add CLI - Builder creates valid command structure",
   fn() {
-    let checkFunction: ((argv: any) => boolean) | null = null;
+    let checkFunction: ((argv: unknown) => boolean) | null = null;
 
     // Create a mock yargs instance
     const mockYargs = {
@@ -19,7 +19,7 @@ Deno.test({
       option: function () {
         return this;
       },
-      check: function (fn: (argv: any) => boolean) {
+      check: function (fn: (argv: unknown) => boolean) {
         checkFunction = fn;
         return this;
       },
@@ -57,7 +57,7 @@ Deno.test({
     let errorMessage = "";
     try {
       checkFunction!({ depth: -1, paths: ["/test"] });
-    } catch (e: any) {
+    } catch (e: unknown) {
       threwError = true;
       errorMessage = e.message;
     }
@@ -69,7 +69,7 @@ Deno.test({
     errorMessage = "";
     try {
       checkFunction!({ depth: 11, paths: ["/test"] });
-    } catch (e: any) {
+    } catch (e: unknown) {
       threwError = true;
       errorMessage = e.message;
     }
@@ -81,7 +81,7 @@ Deno.test({
     errorMessage = "";
     try {
       checkFunction!({ depth: 3 });
-    } catch (e: any) {
+    } catch (e: unknown) {
       threwError = true;
       errorMessage = e.message;
     }
@@ -100,7 +100,7 @@ Deno.test({
       option: function () {
         return this;
       },
-      check: function (fn: (argv: any) => boolean) {
+      check: function (fn: (argv: unknown) => boolean) {
         // Test missing both paths and scan
         let error = null;
         try {
@@ -144,7 +144,7 @@ Deno.test({
       option: function () {
         return this;
       },
-      check: function (fn: (argv: any) => boolean) {
+      check: function (fn: (argv: unknown) => boolean) {
         // Test name with single workspace - should pass
         assertEquals(fn({ paths: ["/test"], name: "custom-name" }), true);
 
@@ -209,15 +209,15 @@ Deno.test({
 Deno.test({
   name: "Workspace Add CLI - Builder creates correct options",
   fn() {
-    const options: Record<string, any> = {};
-    const positionals: Record<string, any> = {};
+    const options: Record<string, unknown> = {};
+    const positionals: Record<string, unknown> = {};
 
     const mockYargs = {
-      positional: function (name: string, config: any) {
+      positional: function (name: string, config: unknown) {
         positionals[name] = config;
         return this;
       },
-      option: function (name: string, config: any) {
+      option: function (name: string, config: unknown) {
         options[name] = config;
         return this;
       },

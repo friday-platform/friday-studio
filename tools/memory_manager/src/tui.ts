@@ -146,7 +146,7 @@ export class MemoryManagerTUI {
 
       return results.memories
         .map((memory: CoALAMemoryEntry): VectorSearchResult => {
-          const memoryWithSimilarity = memory as CoALAMemoryEntry & { similarity?: number };
+          const memoryWithSimilarity = memory;
           return {
             ...memory,
             similarity: memoryWithSimilarity.similarity || 0,
@@ -292,13 +292,13 @@ export class MemoryManagerTUI {
       headerText = `${title} | VECTOR SEARCH (${resultCount} results)`;
     } else if (this.coalaManager) {
       const stats = this.getStats();
-      const currentStats = stats[this.state.currentTab as CoALAMemoryType];
+      const currentStats = stats[this.state.currentTab];
       if (currentStats) {
         headerText = `${title} | ${(
-          this.state.currentTab as string
+          this.state.currentTab
         ).toUpperCase()} Memory (${currentStats.count} entries)`;
       } else {
-        headerText = `${title} | ${(this.state.currentTab as string).toUpperCase()} Memory`;
+        headerText = `${title} | ${(this.state.currentTab).toUpperCase()} Memory`;
       }
     } else {
       headerText = title;
@@ -326,7 +326,7 @@ export class MemoryManagerTUI {
       { type: CoALAMemoryType.SEMANTIC, title: "Semantic", count: 0, color: "blue" },
       { type: CoALAMemoryType.PROCEDURAL, title: "Procedural", count: 0, color: "magenta" },
       {
-        type: "vector-search" as any, // Special search mode, not a real memory type
+        type: "vector-search", // Special search mode, not a real memory type
         title: "Vector Search",
         count: 0,
         color: "cyan",
@@ -340,7 +340,7 @@ export class MemoryManagerTUI {
         tab.count = this.state.vectorSearchResults?.length || 0;
       } else {
         // Only access stats for real memory types
-        const realMemoryType = tab.type as CoALAMemoryType;
+        const realMemoryType = tab.type;
         if (stats[realMemoryType]) {
           tab.count = stats[realMemoryType].count;
         } else {
@@ -376,7 +376,7 @@ export class MemoryManagerTUI {
       return;
     }
 
-    const entries = this.list(this.state.currentTab as CoALAMemoryType);
+    const entries = this.list(this.state.currentTab);
     const visibleHeight = this.terminalSize.height - 8; // Account for header, tabs, footer
 
     if (entries.length === 0) {
@@ -435,7 +435,7 @@ export class MemoryManagerTUI {
     if (this.state.currentTab === "vector-search" && this.state.vectorSearchResults) {
       entry = this.state.vectorSearchResults[this.state.selectedIndex];
     } else {
-      const entries = this.list(this.state.currentTab as CoALAMemoryType);
+      const entries = this.list(this.state.currentTab);
       entry = entries[this.state.selectedIndex];
     }
 
@@ -599,7 +599,7 @@ export class MemoryManagerTUI {
     });
   }
 
-  private renderObjectContent(content: any, maxWidth: number): void {
+  private renderObjectContent(content: unknown, maxWidth: number): void {
     if (Array.isArray(content)) {
       // Handle arrays
       console.log(`│ ${this.colorize(`Array (${content.length} items):`, "bold")}`);
@@ -702,10 +702,7 @@ export class MemoryManagerTUI {
     console.log(`Query: ${this.state.searchQuery}_`);
 
     if (this.state.searchQuery.length > 0) {
-      const results = await this.search(
-        this.state.currentTab as CoALAMemoryType,
-        this.state.searchQuery,
-      );
+      const results = await this.search(this.state.currentTab, this.state.searchQuery);
       console.log(`Found ${results.length} results:`);
 
       results.slice(0, 10).forEach((entry, index) => {
@@ -1036,7 +1033,7 @@ export class MemoryManagerTUI {
           }
         } else {
           // Switch to vector search tab and enter vector search mode
-          this.state.currentTab = "vector-search" as any;
+          this.state.currentTab = "vector-search";
           this.state.mode = "vector-search" as const;
           this.state.selectedIndex = 0;
           this.state.scrollOffset = 0;
@@ -1151,16 +1148,14 @@ export class MemoryManagerTUI {
 
     // If current tab is VECTOR_SEARCH, start from WORKING
     let currentIndex =
-      this.state.currentTab === ("vector-search" as any)
-        ? 0
-        : types.indexOf(this.state.currentTab as CoALAMemoryType);
+      this.state.currentTab === "vector-search" ? 0 : types.indexOf(this.state.currentTab);
     if (currentIndex === -1) {
       currentIndex = 0; // fallback to first tab
     }
 
     const newIndex = (currentIndex + direction + types.length) % types.length;
 
-    this.state.currentTab = types[newIndex] as any;
+    this.state.currentTab = types[newIndex];
     this.state.selectedIndex = 0;
     this.state.scrollOffset = 0;
   }
@@ -1182,7 +1177,7 @@ export class MemoryManagerTUI {
     if (this.state.currentTab === "vector-search" && this.state.vectorSearchResults) {
       maxIndex = this.state.vectorSearchResults.length - 1;
     } else {
-      const entries = this.getAllByType(this.state.currentTab as CoALAMemoryType);
+      const entries = this.getAllByType(this.state.currentTab);
       maxIndex = Object.keys(entries).length - 1;
     }
 
@@ -1503,7 +1498,7 @@ export class MemoryManagerTUI {
     if (this.state.currentTab === "vector-search" && this.state.vectorSearchResults) {
       entry = this.state.vectorSearchResults[this.state.selectedIndex];
     } else {
-      const entries = this.list(this.state.currentTab as CoALAMemoryType);
+      const entries = this.list(this.state.currentTab);
       entry = entries[this.state.selectedIndex];
     }
 

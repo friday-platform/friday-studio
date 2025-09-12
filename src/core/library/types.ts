@@ -16,7 +16,7 @@ export interface LibraryItem {
   agent_ids?: string[];
   template_id?: string;
   generated_by?: string;
-  custom_fields?: Record<string, any>;
+  custom_fields?: Record<string, unknown>;
   created_at: string;
   updated_at: string;
   tags: string[];
@@ -36,7 +36,7 @@ export interface StoreItemInput {
   agent_ids?: string[];
   template_id?: string;
   generated_by?: string;
-  custom_fields?: Record<string, any>;
+  custom_fields?: Record<string, unknown>;
   created_at: string;
   updated_at: string;
   tags: string[];
@@ -49,8 +49,8 @@ export interface TemplateConfig {
   description?: string;
   format: "markdown" | "json" | "html" | "text";
   engine: string;
-  config: Record<string, any>;
-  schema?: Record<string, any>;
+  config: Record<string, unknown>;
+  schema?: Record<string, unknown>;
   metadata?: TemplateMetadata;
 }
 
@@ -128,7 +128,7 @@ export interface LibraryStats {
 export interface ITemplateEngine {
   readonly type: string;
   canHandle(template: TemplateConfig): boolean;
-  apply(template: TemplateConfig, data: any): Promise<string>;
+  apply(template: TemplateConfig, data: unknown): Promise<string>;
   validate(template: TemplateConfig): ValidationResult;
 }
 

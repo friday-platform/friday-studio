@@ -5,24 +5,7 @@
  * for easy integration with Atlas workspaces and agents.
  */
 
-// === Core Interfaces ===
-export * from "./mecmf-interfaces.ts";
-
-// === Implementation Components ===
-export { createWebEmbeddingProvider, WebEmbeddingProvider } from "./web-embedding-provider.ts";
-export {
-  getGlobalEmbeddingProvider,
-  GlobalEmbeddingProvider,
-} from "./global-embedding-provider.ts";
-export { AtlasTokenBudgetManager, createTokenBudgetManager } from "./token-budget-manager.ts";
-export { AtlasMemoryClassifier, createMemoryClassifier } from "./memory-classifier.ts";
-export { createErrorHandler, MECMFErrorHandler } from "./error-handling.ts";
-export {
-  AtlasMECMFMemoryManager,
-  createMECMFMemoryManager,
-  type MECMFConfig,
-} from "./mecmf-memory-manager.ts";
-
+export type { MECMFDebugConfig, PromptEnhancementLog } from "./debug-logger.ts";
 // === Debug Logging ===
 export {
   disableMECMFDebugLogging,
@@ -30,7 +13,22 @@ export {
   getGlobalMECMFDebugLogger,
   MECMFDebugLogger,
 } from "./debug-logger.ts";
-export type { MECMFDebugConfig, PromptEnhancementLog } from "./debug-logger.ts";
+export { createErrorHandler, MECMFErrorHandler } from "./error-handling.ts";
+export {
+  GlobalEmbeddingProvider,
+  getGlobalEmbeddingProvider,
+} from "./global-embedding-provider.ts";
+// === Core Interfaces ===
+export * from "./mecmf-interfaces.ts";
+export {
+  AtlasMECMFMemoryManager,
+  createMECMFMemoryManager,
+  type MECMFConfig,
+} from "./mecmf-memory-manager.ts";
+export { AtlasMemoryClassifier, createMemoryClassifier } from "./memory-classifier.ts";
+export { AtlasTokenBudgetManager, createTokenBudgetManager } from "./token-budget-manager.ts";
+// === Implementation Components ===
+export { createWebEmbeddingProvider, WebEmbeddingProvider } from "./web-embedding-provider.ts";
 
 // === Integration Helpers ===
 import { getMECMFCacheDir } from "../../../src/utils/paths.ts";

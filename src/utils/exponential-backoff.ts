@@ -39,7 +39,7 @@ export interface ExponentialBackoffOptions {
  */
 export function isOverloadError(error: unknown): boolean {
   const errorMessage = error instanceof Error ? error.message : String(error);
-  const errorObj = error as { type?: string; message?: string };
+  const errorObj = error;
 
   return errorMessage.toLowerCase().includes("overload") || errorObj?.type === "overloaded_error";
 }
@@ -49,7 +49,7 @@ export function isOverloadError(error: unknown): boolean {
  */
 export function isRateLimitError(error: unknown): boolean {
   const errorMessage = error instanceof Error ? error.message : String(error);
-  const errorObj = error as { type?: string; message?: string; status?: number };
+  const errorObj = error;
 
   return (
     errorObj?.type === "rate_limit_error" ||
@@ -64,7 +64,7 @@ export function isRateLimitError(error: unknown): boolean {
  * This includes overload errors, rate limits, and server errors
  */
 export function isTransientError(error: unknown): boolean {
-  const errorObj = error as { type?: string; status?: number };
+  const errorObj = error;
 
   // Check for specific error types
   if (isOverloadError(error) || isRateLimitError(error)) {

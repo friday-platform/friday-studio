@@ -38,7 +38,7 @@ export interface IAtlasDecisionGraph {
 
 export interface IAtlasGate extends IAtlasDecisionGraph {
   // Policy constraints for agents
-  evaluate(input: any): Promise<boolean>;
+  evaluate(input: unknown): Promise<boolean>;
   reject(reason: string): void;
 }
 
@@ -68,7 +68,7 @@ export interface IWorkspace extends IAtlasScope {
 export interface IWorkspaceArtifact {
   id: string;
   type: string;
-  data: any;
+  data: unknown;
   createdAt: Date;
   createdBy: string;
 }
@@ -90,8 +90,8 @@ export interface IWorkspaceLibrary {
 }
 
 export interface IWorkspaceSupervisor extends IAtlasScope, IWorkspaceAgent {
-  config?: { defaultModel?: string; [key: string]: any };
-  spawnSession(signal: IWorkspaceSignal, payload?: any): Promise<IWorkspaceSession>;
+  config?: { defaultModel?: string; [key: string]: unknown };
+  spawnSession(signal: IWorkspaceSignal, payload?: unknown): Promise<IWorkspaceSession>;
   manageAgentLifecycle(): void;
   processSignalInterrupts(): void;
 }
@@ -111,7 +111,7 @@ export interface IWorkspaceSession extends IAtlasScope {
 }
 
 export interface IWorkspaceSessionPlan extends IAtlasDecisionGraph {
-  steps: any[];
+  steps: unknown[];
   dependencies: string[];
 }
 
@@ -122,7 +122,7 @@ export interface IWorkspaceSignal extends IAtlasScope {
 }
 
 export interface IWorkspaceSignalCallback extends IAtlasDecisionGraph {
-  onSuccess(result: any): void;
+  onSuccess(result: unknown): void;
   onError(error: Error): void;
   onComplete(): void;
 }
@@ -148,20 +148,20 @@ export enum WorkspaceMemberRole {
 export interface IWorkspaceWorkflow {
   id: string;
   name: string;
-  steps: any[];
-  execute(): Promise<any>;
+  steps: unknown[];
+  execute(): Promise<unknown>;
 }
 
 export interface IWorkspaceSource {
   id: string;
   type: string;
-  data: any;
+  data: unknown;
 }
 
 export interface IWorkspaceAction {
   id: string;
   name: string;
-  execute(): Promise<any>;
+  execute(): Promise<unknown>;
 }
 
 // Context and Memory Management
@@ -182,7 +182,7 @@ export interface ITempestMemoryManager {
   // CoALA-specific methods (optional for backwards compatibility)
   rememberWithMetadata?(
     key: string,
-    content: any,
+    content: unknown,
     metadata: {
       memoryType: string;
       tags: string[];
@@ -209,26 +209,21 @@ export interface ITempestMemoryManager {
     maxAge?: number;
     sourceScope?: string;
     limit?: number;
-  }): any[];
+  }): unknown[];
 
   // Cognitive loop methods
-  reflect?(): any[];
+  reflect?(): unknown[];
   consolidate?(): void;
   prune?(): void;
-  adapt?(feedback: any): void;
-}
-
-export interface ITempestMemoryStorageAdapter {
-  commit(data: any): Promise<void>;
-  load(): Promise<any>;
+  adapt?(feedback: unknown): void;
 }
 
 // Enhanced storage adapter for CoALA memory types
-export interface ICoALAMemoryStorageAdapter extends ITempestMemoryStorageAdapter {
-  commitByType(memoryType: string, data: any): Promise<void>;
-  loadByType(memoryType: string): Promise<any>;
-  commitAll(dataByType: Record<string, any>): Promise<void>;
-  loadAll(): Promise<Record<string, any>>;
+export interface ICoALAMemoryStorageAdapter {
+  commitByType(memoryType: string, data: unknown): Promise<void>;
+  loadByType(memoryType: string): Promise<unknown>;
+  commitAll(dataByType: Record<string, unknown>): Promise<void>;
+  loadAll(): Promise<Record<string, unknown>>;
   listMemoryTypes(): Promise<string[]>;
 }
 

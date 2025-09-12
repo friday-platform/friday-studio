@@ -101,12 +101,7 @@ export const generateWorkspace = tool({
             );
           }
 
-          const creationResult = response.data as {
-            workspace: unknown;
-            workspacePath: string;
-            filesCreated: string[];
-          };
-
+          const creationResult = response.data;
           return {
             success: true,
             config,

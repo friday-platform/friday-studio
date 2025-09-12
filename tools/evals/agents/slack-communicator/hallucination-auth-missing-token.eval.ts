@@ -1,13 +1,12 @@
-import { bundledAgents } from "@atlas/bundled-agents";
-import { assert } from "@std/assert";
-import { AgentContextAdapter } from "../../lib/context.ts";
-import { llmJudge } from "../../lib/llm-judge.ts";
-import { saveSnapshot } from "../../lib/snapshot.ts";
-import { loadCredentials } from "../../lib/load-credentials.ts";
 import type { AtlasTools } from "@atlas/agent-sdk";
+import { bundledAgents, SlackAgentResultSchema } from "@atlas/bundled-agents";
+import { assert } from "@std/assert";
 import { tool } from "ai";
 import { z } from "zod/v4";
-import { SlackAgentResultSchema } from "@atlas/bundled-agents";
+import { AgentContextAdapter } from "../../lib/context.ts";
+import { llmJudge } from "../../lib/llm-judge.ts";
+import { loadCredentials } from "../../lib/load-credentials.ts";
+import { saveSnapshot } from "../../lib/snapshot.ts";
 
 function createAuthErrorTools(): AtlasTools {
   return {

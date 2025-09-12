@@ -346,7 +346,7 @@ Deno.test(
           args: ["--invalid"],
         },
         tools: { allow: ["*"] },
-      } as MCPServerConfig,
+      },
     };
 
     // Should not throw, but may log errors
@@ -369,7 +369,7 @@ Deno.test(
       invalid: {
         transport: { type: "stdio", command: "nonexistent-command", args: [] },
         tools: { allow: ["*"] },
-      } as MCPServerConfig,
+      },
     };
 
     const manager = await pool.getMCPManager(mixedConfig);

@@ -1,8 +1,8 @@
 import { readFileSync } from "node:fs";
-import { sveltekit } from "@sveltejs/kit/vite";
 import process from "node:process";
-import tsconfigPaths from "vite-tsconfig-paths";
+import { sveltekit } from "@sveltejs/kit/vite";
 import { defineConfig } from "vite";
+import tsconfigPaths from "vite-tsconfig-paths";
 
 const host = process.env.TAURI_DEV_HOST;
 

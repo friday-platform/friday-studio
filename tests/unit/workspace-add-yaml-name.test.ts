@@ -10,8 +10,8 @@ import { join } from "@std/path";
 // Mock daemon server that simulates the workspace add endpoint
 class MockDaemonServer {
   private port: number;
-  private server: any;
-  private workspaces: Map<string, any> = new Map();
+  private server: unknown;
+  private workspaces: Map<string, unknown> = new Map();
 
   constructor(port: number) {
     this.port = port;

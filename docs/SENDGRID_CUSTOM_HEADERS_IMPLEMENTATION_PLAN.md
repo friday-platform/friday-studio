@@ -56,22 +56,22 @@ private buildEmailMessage(params: EmailParams): sgMail.MailDataRequired {
   // Add custom headers for Atlas tracking
   message.headers = this.buildCustomHeaders();
 
-  return message as unknown as sgMail.MailDataRequired;
+  return message;
 }
 
 private buildCustomHeaders(): Record<string, string> {
   const headers: Record<string, string> = {};
-  
+
   // Add Atlas version
   headers["X-Atlas-Version"] = getAtlasVersion();
-  
+
   // Add hostname
   try {
     headers["X-Atlas-Hostname"] = Deno.hostname();
   } catch {
     headers["X-Atlas-Hostname"] = "unknown";
   }
-  
+
   // Add user from Atlas key if available
   const atlasKey = Deno.env.get("ATLAS_KEY");
   if (atlasKey) {
@@ -80,7 +80,7 @@ private buildCustomHeaders(): Record<string, string> {
       headers["X-Atlas-User"] = userEmail;
     }
   }
-  
+
   return headers;
 }
 
@@ -88,7 +88,7 @@ private extractUserFromJWT(token: string): string | null {
   try {
     const parts = token.split(".");
     if (parts.length !== 3) return null;
-    
+
     const payload = JSON.parse(atob(parts[1]!));
     return payload.email || null;
   } catch {

@@ -26,7 +26,7 @@ Deno.test("ConversationAgent overload scenario", async () => {
     if (callCount <= maxFailures) {
       // Simulate Anthropic overload error
       const error = new Error("Overloaded");
-      (error as { type?: string }).type = "overloaded_error";
+      error.type = "overloaded_error";
       throw error;
     }
 
@@ -127,7 +127,7 @@ Deno.test("ConversationAgent - all retries exhausted scenario", async () => {
     throw new Error("Expected function to throw");
   } catch (error) {
     // Verify the error was thrown after exhausting retries
-    assertEquals((error as { type?: string }).type, "overloaded_error");
+    assertEquals(error.type, "overloaded_error");
     assertEquals(callCount, 4); // Initial + 3 retries
 
     // In real ConversationAgent, this is where we'd send the final error message

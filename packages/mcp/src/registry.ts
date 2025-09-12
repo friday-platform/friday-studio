@@ -159,7 +159,7 @@ export class MCPServerRegistry {
           id: serverId,
           timeout_ms: config.timeout_ms || 30000,
           scope: "platform",
-        } as MCPServerConfig);
+        });
       }
     }
 
@@ -192,7 +192,7 @@ export class MCPServerRegistry {
           id: serverId,
           timeout_ms: config.timeout_ms || 30000,
           scope: "workspace",
-        } as MCPServerConfig);
+        });
       }
     }
 
@@ -399,7 +399,7 @@ export class MCPServerRegistry {
         });
         return tools;
       } catch (error) {
-        lastError = error as Error;
+        lastError = error;
 
         // Only log at debug level for timeout errors
         const isTimeout = error instanceof Error && error.message.includes("timeout");

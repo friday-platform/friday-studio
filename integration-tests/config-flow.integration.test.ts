@@ -456,7 +456,7 @@ Deno.test("MCP tools configuration should pass through actor hierarchy", () => {
   // Verify agent can access tool configurations
   if (agentTools) {
     agentTools.forEach((toolName: string) => {
-      assertExists(availableServers[toolName as keyof typeof availableServers]);
+      assertExists(availableServers[toolName]);
     });
   }
 });

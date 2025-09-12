@@ -784,7 +784,7 @@ export class SessionSupervisorActor implements BaseActor {
         artifacts.push({
           id: crypto.randomUUID(),
           type: "agent_result",
-          data: result as unknown as Record<string, unknown>,
+          data: result,
           createdAt: new Date(),
           createdBy: `agent-${result.agentId}`,
         });
@@ -1317,9 +1317,9 @@ export class SessionSupervisorActor implements BaseActor {
           if (typeof input === "string") {
             inputText = input;
           } else if (typeof input === "object" && input !== null && "message" in input) {
-            inputText = (input as { message: string }).message;
+            inputText = input.message;
           } else if (typeof input === "object" && input !== null && "text" in input) {
-            inputText = (input as { text: string }).text;
+            inputText = input.text;
           } else if (input !== undefined && input !== null) {
             inputText = JSON.stringify(input, null, 2);
           }
@@ -1373,11 +1373,11 @@ export class SessionSupervisorActor implements BaseActor {
         prompt = stripSourceAttributionTags(input);
       } else if (typeof input === "object" && input !== null && "message" in input) {
         // Extract message from signal payload safely
-        const msgValue = (input as Record<string, unknown>)["message"];
+        const msgValue = input["message"];
         prompt = typeof msgValue === "string" ? msgValue : JSON.stringify(msgValue);
       } else if (typeof input === "object" && input !== null && "text" in input) {
         // Extract text from signal payload (common field name) safely
-        const textValue = (input as Record<string, unknown>)["text"];
+        const textValue = input["text"];
         prompt = typeof textValue === "string" ? textValue : JSON.stringify(textValue);
       } else {
         // Fallback to JSON representation
@@ -1608,8 +1608,8 @@ export class SessionSupervisorActor implements BaseActor {
       output: result.output,
       duration,
       timestamp: new Date().toISOString(),
-      toolCalls: (result as { toolCalls?: ToolCall[] }).toolCalls,
-      toolResults: (result as { toolResults?: ToolResult[] }).toolResults,
+      toolCalls: result.toolCalls,
+      toolResults: result.toolResults,
     };
 
     this.logger.info("Agent execution completed", {
@@ -1711,13 +1711,7 @@ export class SessionSupervisorActor implements BaseActor {
                   typeof result.output === "string" ? result.output : JSON.stringify(result.output);
 
                 // Extract entities using the memory classifier
-                const classifier = this.mecmfManager as unknown as {
-                  memoryClassifier?: {
-                    extractKeyEntities(
-                      text: string,
-                    ): Array<{ type: string; name: string; confidence: number }>;
-                  };
-                }; // Access internal classifier
+                const classifier = this.mecmfManager;
                 if (classifier.memoryClassifier) {
                   const entities = classifier.memoryClassifier.extractKeyEntities(outputText);
 
@@ -1772,10 +1766,7 @@ export class SessionSupervisorActor implements BaseActor {
           }
 
           if (result.toolResults?.length) {
-            for (const { toolName, output: toolOutput } of result.toolResults as Array<{
-              toolName: string;
-              output?: unknown;
-            }>) {
+            for (const { toolName, output: toolOutput } of result.toolResults) {
               await this.streamToolResultToMemory(agentTask.agentId, toolName, toolOutput);
             }
           }
@@ -2284,7 +2275,7 @@ Think step by step about the best approach to handle this signal, then use the t
 
       for (const toolCall of toolCalls) {
         if (toolCall.toolName === "plan_agent_execution") {
-          const input = toolCall.input as PlanningToolInput | undefined;
+          const input = toolCall.input;
           const phase = input?.phase || "Default Phase";
           if (!phaseMap.has(phase)) {
             phaseMap.set(phase, []);
@@ -2333,9 +2324,8 @@ Think step by step about the best approach to handle this signal, then use the t
         ([phaseName, agentPlans]) => ({
           id: crypto.randomUUID(),
           name: phaseName,
-          executionStrategy:
-            (agentPlans as PlanningToolInput[])[0]?.executionStrategy || "sequential",
-          agents: (agentPlans as PlanningToolInput[]).map((plan) => ({
+          executionStrategy: agentPlans[0]?.executionStrategy || "sequential",
+          agents: agentPlans.map((plan) => ({
             agentId: plan.agentId || "",
             task: plan.task || "",
             inputSource: plan.inputSource || "signal",
@@ -2450,7 +2440,7 @@ Think step by step about the best approach to handle this signal, then use the t
         extracted: extractedAgents,
         textSnippet: text.substring(0, 300),
       });
-      return extractedAgents as string[];
+      return extractedAgents;
     }
 
     // Alternative: Look for agent names mentioned in order

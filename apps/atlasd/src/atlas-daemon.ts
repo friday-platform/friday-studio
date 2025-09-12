@@ -8,10 +8,11 @@ import {
 } from "@atlas/core";
 import { CronManager } from "@atlas/cron";
 import { logger } from "@atlas/logger";
-import { GlobalEmbeddingProvider } from "@atlas/memory";
 import { PlatformMCPServer } from "@atlas/mcp-server";
+import { GlobalEmbeddingProvider } from "@atlas/memory";
 import { FilesystemWorkspaceCreationAdapter } from "@atlas/storage";
-import { WorkspaceManager } from "@atlas/workspace";
+import { WorkspaceManager, watchers } from "@atlas/workspace";
+import type { WorkspaceSignalTriggerCallback } from "@atlas/workspace/types";
 import { StreamableHTTPTransport } from "@hono/mcp";
 import { dirname, join } from "@std/path";
 import { parse } from "@std/yaml";
@@ -40,11 +41,9 @@ import { todoStorageRoutes } from "../routes/todo-storage/index.ts";
 import { userRoutes } from "../routes/user/index.ts";
 import { workspacesRoutes } from "../routes/workspaces/index.ts";
 import { type AppContext, createApp } from "./factory.ts";
-import { watchers } from "@atlas/workspace";
-import type { WorkspaceSignalRegistrar } from "./signal-registrars/types.ts";
-import { FsWatchSignalRegistrar } from "./signal-registrars/fs-watch-registrar.ts";
 import { CronSignalRegistrar } from "./signal-registrars/cron-registrar.ts";
-import type { WorkspaceSignalTriggerCallback } from "@atlas/workspace/types";
+import { FsWatchSignalRegistrar } from "./signal-registrars/fs-watch-registrar.ts";
+import type { WorkspaceSignalRegistrar } from "./signal-registrars/types.ts";
 
 export interface AtlasDaemonOptions {
   port?: number;
@@ -572,7 +571,7 @@ export class AtlasDaemon implements AppContext {
     // Add a single workspace by path
     this.app.post("/api/workspaces/add", async (c) => {
       try {
-        const body = (await c.req.json()) as { path: string; name?: string; description?: string };
+        const body = await c.req.json();
         const { path, name: providedName, description: providedDescription } = body;
 
         if (!path) {
@@ -607,9 +606,7 @@ export class AtlasDaemon implements AppContext {
         if (!providedName) {
           try {
             const yamlContent = await Deno.readTextFile(workspaceYmlPath);
-            const config = parse(yamlContent) as {
-              workspace?: { name?: string; description?: string };
-            };
+            const config = parse(yamlContent);
 
             if (config.workspace?.name) {
               workspaceName = config.workspace.name;
@@ -675,7 +672,7 @@ export class AtlasDaemon implements AppContext {
     // Add multiple workspaces by paths (batch operation)
     this.app.post("/api/workspaces/add-batch", async (c) => {
       try {
-        const body = (await c.req.json()) as { paths: string[] };
+        const body = await c.req.json();
         const { paths } = body;
 
         if (!paths || !Array.isArray(paths) || paths.length === 0) {
@@ -741,9 +738,7 @@ export class AtlasDaemon implements AppContext {
 
               try {
                 const yamlContent = await Deno.readTextFile(workspaceYmlPath);
-                const config = parse(yamlContent) as {
-                  workspace?: { name?: string; description?: string };
-                };
+                const config = parse(yamlContent);
 
                 if (config.workspace?.name) {
                   workspaceName = config.workspace.name;
@@ -802,14 +797,7 @@ export class AtlasDaemon implements AppContext {
     // Create workspace from configuration YAML
     this.app.post("/api/workspaces/create-from-config", async (c) => {
       try {
-        const body = (await c.req.json()) as {
-          name: string;
-          description: string;
-          config: string;
-          path?: string;
-          cwd?: string; // Add CWD to body type
-        };
-
+        const body = await c.req.json();
         const { name, description, config, path, cwd } = body;
 
         if (!name || !description || !config) {

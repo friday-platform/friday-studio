@@ -43,7 +43,7 @@ export class ProviderRegistry implements IProviderRegistry {
     }
 
     // Get provider class from static map
-    const ProviderClass = PROVIDER_CLASSES[config.provider as keyof typeof PROVIDER_CLASSES];
+    const ProviderClass = PROVIDER_CLASSES[config.provider];
     if (!ProviderClass) {
       throw new Error(`No provider registered for type: ${config.provider}`);
     }
@@ -55,7 +55,7 @@ export class ProviderRegistry implements IProviderRegistry {
     return provider;
   }
 
-  private createProviderInstance(ProviderClass: any, config: ProviderConfig): IProvider {
+  private createProviderInstance(ProviderClass: unknown, config: ProviderConfig): IProvider {
     // Preserve existing configuration transformation logic
     switch (config.provider) {
       case "http":

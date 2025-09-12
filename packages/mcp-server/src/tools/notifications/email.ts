@@ -111,7 +111,7 @@ Common use cases:
             filename: att.filename,
             content: att.content,
             type: att.type,
-            disposition: (att.disposition || "attachment") as "attachment" | "inline",
+            disposition: att.disposition || "attachment",
           })),
         };
 

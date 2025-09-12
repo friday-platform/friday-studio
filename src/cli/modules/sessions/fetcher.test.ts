@@ -217,7 +217,7 @@ Deno.test("fetchSessions - should handle connection refused error", async () => 
     assertEquals(result.success, false);
 
     // Type assertion for error case
-    const errorResult = result as { success: false; error: string; reason?: string };
+    const errorResult = result;
     assertEquals(errorResult.reason, "server_not_running");
     assertExists(errorResult.error);
     assertEquals(
@@ -242,7 +242,7 @@ Deno.test("fetchSessions - should handle 503 HTTP error as server_not_running", 
     assertEquals(result.success, false);
 
     // Type assertion for error case
-    const errorResult = result as { success: false; error: string; reason?: string };
+    const errorResult = result;
     assertEquals(errorResult.reason, "server_not_running");
     assertExists(errorResult.error);
     assertEquals(
@@ -267,7 +267,7 @@ Deno.test("fetchSessions - should handle 4xx HTTP error as api_error", async () 
     assertEquals(result.success, false);
 
     // Type assertion for error case
-    const errorResult = result as { success: false; error: string; reason?: string };
+    const errorResult = result;
     assertEquals(errorResult.reason, "api_error");
     assertExists(errorResult.error);
     assertEquals(errorResult.error, "HTTP 401: ");
@@ -289,7 +289,7 @@ Deno.test("fetchSessions - should handle 5xx HTTP error as network_error", async
     assertEquals(result.success, false);
 
     // Type assertion for error case
-    const errorResult = result as { success: false; error: string; reason?: string };
+    const errorResult = result;
     assertEquals(errorResult.reason, "network_error");
     assertExists(errorResult.error);
     assertEquals(errorResult.error, "HTTP 500: ");
@@ -315,7 +315,7 @@ Deno.test("fetchSessions - should handle timeout error", async () => {
 
     assertEquals(result.success, false);
 
-    const errorResult = result as { success: false; error: string; reason?: string };
+    const errorResult = result;
     assertEquals(errorResult.reason, "api_error");
     assertEquals(
       errorResult.error,
@@ -339,7 +339,7 @@ Deno.test("fetchSessions - should handle invalid JSON response", async () => {
     assertEquals(result.success, false);
 
     // Type assertion for error case
-    const errorResult = result as { success: false; error: string; reason?: string };
+    const errorResult = result;
     assertExists(errorResult.error);
     assertEquals(errorResult.reason, "server_not_running");
     assertEquals(
@@ -574,7 +574,7 @@ Deno.test("fetchSessions - should handle generic network errors", async () => {
 
     assertEquals(result.success, false);
 
-    const errorResult = result as { success: false; error: string; reason?: string };
+    const errorResult = result;
     assertEquals(errorResult.reason, "server_not_running");
     assertEquals(
       errorResult.error,

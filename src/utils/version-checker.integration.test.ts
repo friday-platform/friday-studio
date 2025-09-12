@@ -114,7 +114,7 @@ Deno.test("Version CLI - Remote flag integration test", async () => {
   Deno.exit = (code?: number) => {
     exitCalled = true;
     exitCode = code || 0;
-    return undefined as never;
+    return undefined;
   };
 
   try {
@@ -175,7 +175,7 @@ Deno.test("Version CLI - Remote flag with JSON output", async () => {
 
   Deno.exit = () => {
     exitCalled = true;
-    return undefined as never;
+    return undefined;
   };
 
   try {

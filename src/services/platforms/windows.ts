@@ -329,7 +329,7 @@ exit
   private async getConfiguredPort(): Promise<number> {
     try {
       const text = await Deno.readTextFile(this.configPath);
-      const data = JSON.parse(text) as { port?: number };
+      const data = JSON.parse(text);
       if (typeof data.port === "number" && data.port > 0 && data.port < 65536) {
         return data.port;
       }

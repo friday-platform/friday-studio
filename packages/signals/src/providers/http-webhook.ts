@@ -16,7 +16,7 @@ export class HttpWebhookProvider implements ISignalProvider {
   version = "1.0.0";
 
   private state: ProviderState;
-  private config: any;
+  private config: unknown;
 
   constructor(config: ProviderConfig) {
     this.id = config.id;
@@ -24,7 +24,6 @@ export class HttpWebhookProvider implements ISignalProvider {
     this.state = { status: ProviderStatus.NOT_CONFIGURED };
   }
 
-  // deno-lint-ignore require-await
   async setup(): Promise<void> {
     // TODO: Keep async for IProvider interface compliance, even though no await is used
     console.log(`[HttpWebhookProvider] Setting up ${this.id}`);
@@ -44,7 +43,6 @@ export class HttpWebhookProvider implements ISignalProvider {
     }
   }
 
-  // deno-lint-ignore require-await
   async teardown(): Promise<void> {
     // TODO: Keep async for IProvider interface compliance, even though no await is used
     console.log(`[HttpWebhookProvider] Tearing down ${this.id}`);
@@ -55,7 +53,6 @@ export class HttpWebhookProvider implements ISignalProvider {
     return { ...this.state };
   }
 
-  // deno-lint-ignore require-await
   async checkHealth(): Promise<HealthStatus> {
     // TODO: Keep async for IProvider interface compliance, even though no await is used
     const health: HealthStatus = {
@@ -72,7 +69,7 @@ export class HttpWebhookProvider implements ISignalProvider {
     return health;
   }
 
-  createSignal(config: any): IProviderSignal {
+  createSignal(config: unknown): IProviderSignal {
     return new HttpWebhookSignal(this.id, config);
   }
 }
@@ -80,9 +77,9 @@ export class HttpWebhookProvider implements ISignalProvider {
 class HttpWebhookSignal implements IProviderSignal {
   id: string;
   providerId: string;
-  config: Record<string, any>;
+  config: Record<string, unknown>;
 
-  constructor(providerId: string, config: any) {
+  constructor(providerId: string, config: unknown) {
     this.id = config.id;
     this.providerId = providerId;
     this.config = config;
@@ -109,14 +106,13 @@ class HttpWebhookRuntimeSignal extends AtlasScope implements IWorkspaceSignal {
     this.provider = { id: signalConfig.providerId, name: "HTTP Webhook" };
   }
 
-  // deno-lint-ignore require-await
   async trigger(): Promise<void> {
     // TODO: Keep async for future extensibility, even though no await is used currently
     console.log(`[HttpWebhook] Signal ${this.id} triggered`);
     // In a real implementation, this would handle the webhook payload
   }
 
-  configure(config: any): void {
+  configure(config: unknown): void {
     Object.assign(this.signalConfig.config, config);
   }
 }

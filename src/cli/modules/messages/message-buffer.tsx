@@ -144,10 +144,7 @@ export const MessageBuffer = () => {
     <Box flexDirection="column" flexShrink={0}>
       <Static
         key={staticKey}
-        items={[
-          { type: "header", id: "atlas-header", content: "" } as unknown as OutputEntry,
-          ...output,
-        ].map((entry) => {
+        items={[{ type: "header", id: "atlas-header", content: "" }, ...output].map((entry) => {
           if (entry.type === "header") {
             return <Header key="header" />;
           }

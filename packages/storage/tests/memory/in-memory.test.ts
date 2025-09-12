@@ -1,7 +1,7 @@
 // Set testing mode to disable file logging
 Deno.env.set("DENO_TESTING", "true");
 
-import { CoALAMemoryType } from "@atlas/memory";
+import { MemorySource, MemoryType } from "@atlas/memory";
 import { assertEquals, assertExists } from "@std/assert";
 import { InMemoryStorageAdapter } from "../../src/memory/in-memory.ts";
 
@@ -9,23 +9,75 @@ Deno.test("InMemoryStorageAdapter - should store and retrieve data", async () =>
   const adapter = new InMemoryStorageAdapter();
 
   const testData = {
-    key1: { value: "test1", memoryType: CoALAMemoryType.WORKING },
-    key2: { value: "test2", memoryType: CoALAMemoryType.SEMANTIC },
+    working: [
+      {
+        id: "entry1",
+        content: "test1",
+        timestamp: new Date(),
+        memoryType: MemoryType.WORKING,
+        relevanceScore: 0.8,
+        sourceScope: "test-scope",
+        tags: ["test"],
+        confidence: 0.9,
+        decayRate: 0.1,
+        source: MemorySource.USER_INPUT,
+      },
+    ],
+    semantic: [
+      {
+        id: "entry2",
+        content: "test2",
+        timestamp: new Date(),
+        memoryType: MemoryType.SEMANTIC,
+        relevanceScore: 0.7,
+        sourceScope: "test-scope",
+        tags: ["test"],
+        confidence: 0.8,
+        decayRate: 0.05,
+        source: MemorySource.USER_INPUT,
+      },
+    ],
   };
 
-  await adapter.commit(testData);
-  const loaded = await adapter.load();
+  await adapter.commitAll(testData);
+  const loaded = await adapter.loadAll();
 
-  assertEquals(loaded.key1.value, "test1");
-  assertEquals(loaded.key2.value, "test2");
+  assertEquals(loaded.working?.[0]?.content, "test1");
+  assertEquals(loaded.semantic?.[0]?.content, "test2");
 });
 
 Deno.test("InMemoryStorageAdapter - should store and retrieve data by type", async () => {
   const adapter = new InMemoryStorageAdapter();
 
-  const workingMemory = { task1: { description: "Current task", priority: 1 } };
+  const workingMemory = [
+    {
+      id: "task1",
+      content: "Current task",
+      timestamp: new Date(),
+      memoryType: MemoryType.WORKING,
+      relevanceScore: 0.8,
+      sourceScope: "test-scope",
+      tags: ["task"],
+      confidence: 0.9,
+      decayRate: 0.1,
+      source: MemorySource.USER_INPUT,
+    },
+  ];
 
-  const semanticMemory = { fact1: { knowledge: "The sky is blue", confidence: 0.9 } };
+  const semanticMemory = [
+    {
+      id: "fact1",
+      content: "The sky is blue",
+      timestamp: new Date(),
+      memoryType: MemoryType.SEMANTIC,
+      relevanceScore: 0.9,
+      sourceScope: "test-scope",
+      tags: ["fact"],
+      confidence: 0.9,
+      decayRate: 0.05,
+      source: MemorySource.USER_INPUT,
+    },
+  ];
 
   await adapter.commitByType("working", workingMemory);
   await adapter.commitByType("semantic", semanticMemory);
@@ -33,16 +85,57 @@ Deno.test("InMemoryStorageAdapter - should store and retrieve data by type", asy
   const loadedWorking = await adapter.loadByType("working");
   const loadedSemantic = await adapter.loadByType("semantic");
 
-  assertEquals(loadedWorking.task1.description, "Current task");
-  assertEquals(loadedSemantic.fact1.knowledge, "The sky is blue");
+  assertEquals(loadedWorking[0]?.content, "Current task");
+  assertEquals(loadedSemantic[0]?.content, "The sky is blue");
 });
 
 Deno.test("InMemoryStorageAdapter - should list memory types", async () => {
   const adapter = new InMemoryStorageAdapter();
 
-  await adapter.commitByType("working", { item: "data" });
-  await adapter.commitByType("episodic", { event: "happened" });
-  await adapter.commitByType("semantic", { fact: "known" });
+  await adapter.commitByType("working", [
+    {
+      id: "item1",
+      content: "data",
+      timestamp: new Date(),
+      memoryType: MemoryType.WORKING,
+      relevanceScore: 0.7,
+      sourceScope: "test-scope",
+      tags: [],
+      confidence: 0.8,
+      decayRate: 0.1,
+      source: MemorySource.SYSTEM_GENERATED,
+    },
+  ]);
+
+  await adapter.commitByType("episodic", [
+    {
+      id: "event1",
+      content: "happened",
+      timestamp: new Date(),
+      memoryType: MemoryType.EPISODIC,
+      relevanceScore: 0.6,
+      sourceScope: "test-scope",
+      tags: [],
+      confidence: 0.7,
+      decayRate: 0.2,
+      source: MemorySource.SYSTEM_GENERATED,
+    },
+  ]);
+
+  await adapter.commitByType("semantic", [
+    {
+      id: "fact1",
+      content: "known",
+      timestamp: new Date(),
+      memoryType: MemoryType.SEMANTIC,
+      relevanceScore: 0.8,
+      sourceScope: "test-scope",
+      tags: [],
+      confidence: 0.9,
+      decayRate: 0.05,
+      source: MemorySource.SYSTEM_GENERATED,
+    },
+  ]);
 
   const types = await adapter.listMemoryTypes();
 
@@ -55,13 +148,26 @@ Deno.test("InMemoryStorageAdapter - should list memory types", async () => {
 Deno.test("InMemoryStorageAdapter - should clear all data", async () => {
   const adapter = new InMemoryStorageAdapter();
 
-  await adapter.commitByType("working", { item: "data" });
+  await adapter.commitByType("working", [
+    {
+      id: "item1",
+      content: "data",
+      timestamp: new Date(),
+      memoryType: MemoryType.WORKING,
+      relevanceScore: 0.7,
+      sourceScope: "test-scope",
+      tags: [],
+      confidence: 0.8,
+      decayRate: 0.1,
+      source: MemorySource.SYSTEM_GENERATED,
+    },
+  ]);
   adapter.clear();
 
   const types = await adapter.listMemoryTypes();
   assertEquals(types.length, 0);
 
-  const data = await adapter.load();
+  const data = await adapter.loadAll();
   assertEquals(Object.keys(data).length, 0);
 });
 
@@ -69,12 +175,12 @@ Deno.test("InMemoryStorageAdapter - should handle empty data gracefully", async 
   const adapter = new InMemoryStorageAdapter();
 
   // Test loading empty data
-  const data = await adapter.load();
+  const data = await adapter.loadAll();
   assertEquals(Object.keys(data).length, 0);
 
   // Test loading non-existent type
   const nonExistentData = await adapter.loadByType("nonexistent");
-  assertEquals(Object.keys(nonExistentData).length, 0);
+  assertEquals(nonExistentData.length, 0);
 
   // Test listing types when empty
   const types = await adapter.listMemoryTypes();
@@ -85,46 +191,137 @@ Deno.test("InMemoryStorageAdapter - should handle data isolation", async () => {
   const adapter1 = new InMemoryStorageAdapter();
   const adapter2 = new InMemoryStorageAdapter();
 
-  await adapter1.commitByType("working", { data: "adapter1" });
-  await adapter2.commitByType("working", { data: "adapter2" });
+  await adapter1.commitByType("working", [
+    {
+      id: "data1",
+      content: "adapter1",
+      timestamp: new Date(),
+      memoryType: MemoryType.WORKING,
+      relevanceScore: 0.8,
+      sourceScope: "test-scope",
+      tags: [],
+      confidence: 0.9,
+      decayRate: 0.1,
+      source: MemorySource.SYSTEM_GENERATED,
+    },
+  ]);
+
+  await adapter2.commitByType("working", [
+    {
+      id: "data2",
+      content: "adapter2",
+      timestamp: new Date(),
+      memoryType: MemoryType.WORKING,
+      relevanceScore: 0.8,
+      sourceScope: "test-scope",
+      tags: [],
+      confidence: 0.9,
+      decayRate: 0.1,
+      source: MemorySource.SYSTEM_GENERATED,
+    },
+  ]);
 
   const data1 = await adapter1.loadByType("working");
   const data2 = await adapter2.loadByType("working");
 
-  assertEquals(data1.data, "adapter1");
-  assertEquals(data2.data, "adapter2");
+  assertEquals(data1[0]?.content, "adapter1");
+  assertEquals(data2[0]?.content, "adapter2");
 });
 
 Deno.test("InMemoryStorageAdapter - should support commitAll and loadAll", async () => {
   const adapter = new InMemoryStorageAdapter();
 
   const dataByType = {
-    working: { task: "current task" },
-    semantic: { fact: "important fact" },
-    episodic: { event: "past event" },
+    working: [
+      {
+        id: "task1",
+        content: "current task",
+        timestamp: new Date(),
+        memoryType: MemoryType.WORKING,
+        relevanceScore: 0.8,
+        sourceScope: "test-scope",
+        tags: ["task"],
+        confidence: 0.9,
+        decayRate: 0.1,
+        source: MemorySource.USER_INPUT,
+      },
+    ],
+    semantic: [
+      {
+        id: "fact1",
+        content: "important fact",
+        timestamp: new Date(),
+        memoryType: MemoryType.SEMANTIC,
+        relevanceScore: 0.9,
+        sourceScope: "test-scope",
+        tags: ["fact"],
+        confidence: 0.95,
+        decayRate: 0.05,
+        source: MemorySource.USER_INPUT,
+      },
+    ],
+    episodic: [
+      {
+        id: "event1",
+        content: "past event",
+        timestamp: new Date(),
+        memoryType: MemoryType.EPISODIC,
+        relevanceScore: 0.7,
+        sourceScope: "test-scope",
+        tags: ["event"],
+        confidence: 0.8,
+        decayRate: 0.15,
+        source: MemorySource.USER_INPUT,
+      },
+    ],
   };
 
   await adapter.commitAll(dataByType);
 
   const loadedAll = await adapter.loadAll();
-  assertEquals(loadedAll.working.task, "current task");
-  assertEquals(loadedAll.semantic.fact, "important fact");
-  assertEquals(loadedAll.episodic.event, "past event");
+  assertEquals(loadedAll.working?.[0]?.content, "current task");
+  assertEquals(loadedAll.semantic?.[0]?.content, "important fact");
+  assertEquals(loadedAll.episodic?.[0]?.content, "past event");
 });
 
 Deno.test("InMemoryStorageAdapter - should handle getAllData helper method", async () => {
   const adapter = new InMemoryStorageAdapter();
 
   const testData = {
-    key1: { value: "test1", memoryType: CoALAMemoryType.WORKING },
-    key2: { value: "test2", memoryType: CoALAMemoryType.SEMANTIC },
+    working: [
+      {
+        id: "entry1",
+        content: "test1",
+        timestamp: new Date(),
+        memoryType: MemoryType.WORKING,
+        relevanceScore: 0.8,
+        sourceScope: "test-scope",
+        tags: ["test"],
+        confidence: 0.9,
+        decayRate: 0.1,
+        source: MemorySource.USER_INPUT,
+      },
+    ],
+    semantic: [
+      {
+        id: "entry2",
+        content: "test2",
+        timestamp: new Date(),
+        memoryType: MemoryType.SEMANTIC,
+        relevanceScore: 0.7,
+        sourceScope: "test-scope",
+        tags: ["test"],
+        confidence: 0.8,
+        decayRate: 0.05,
+        source: MemorySource.USER_INPUT,
+      },
+    ],
   };
 
-  await adapter.commit(testData);
+  await adapter.commitAll(testData);
 
   const allData = adapter.getAllData();
   assertExists(allData.legacy);
   assertExists(allData.byType);
-  assertEquals(allData.legacy.key1.value, "test1");
-  assertEquals(allData.byType.working.key1.value, "test1");
+  assertEquals(allData.byType.working?.[0]?.content, "test1");
 });

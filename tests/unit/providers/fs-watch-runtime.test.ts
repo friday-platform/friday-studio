@@ -55,27 +55,16 @@ Deno.test("fs-watch emits added/modified/removed with expected payload", async (
         path: tmp,
         recursive: false,
       })
-      .toRuntimeSignal() as {
-      initialize: (ctx: {
-        id: string;
-        processSignal: (id: string, payload: Record<string, unknown>) => void;
-        workspacePath?: string;
-        fsWatchFactory?: (
-          path: string,
-          options: { recursive: boolean },
-        ) => AsyncIterable<Deno.FsEvent>;
-      }) => void;
-      teardown: () => void;
-    };
+      .toRuntimeSignal();
 
     // Fake iterator emitting three events
     async function* fakeFsWatch(_path: string): AsyncIterable<Deno.FsEvent> {
       const file = join(tmp, "a.txt");
-      yield { kind: "create", paths: [file] } as Deno.FsEvent;
+      yield { kind: "create", paths: [file] };
       await delay(30);
-      yield { kind: "modify", paths: [file] } as Deno.FsEvent;
+      yield { kind: "modify", paths: [file] };
       await delay(30);
-      yield { kind: "remove", paths: [file] } as Deno.FsEvent;
+      yield { kind: "remove", paths: [file] };
     }
 
     runtime.initialize({
@@ -127,27 +116,15 @@ Deno.test("fs-watch teardown stops further event processing", async () => {
         path: tmp,
         recursive: true,
       })
-      .toRuntimeSignal() as {
-      initialize: (ctx: {
-        id: string;
-        processSignal: (id: string, payload: Record<string, unknown>) => void;
-        workspacePath?: string;
-        fsWatchFactory?: (
-          path: string,
-          options: { recursive: boolean },
-        ) => AsyncIterable<Deno.FsEvent>;
-      }) => void;
-      teardown: () => void;
-    };
-
+      .toRuntimeSignal();
     // Fake iterator emitting various paths (no filtering expected anymore)
     async function* fakeFsWatch(_path: string): AsyncIterable<Deno.FsEvent> {
       const txtFile = join(tmp, "note.txt");
       const ignoredMd = join(tmp, "README.IGNORE.md");
       const mdFile = join(tmp, "README.md");
-      yield { kind: "create", paths: [txtFile] } as Deno.FsEvent;
-      yield { kind: "create", paths: [ignoredMd] } as Deno.FsEvent;
-      yield { kind: "create", paths: [mdFile] } as Deno.FsEvent;
+      yield { kind: "create", paths: [txtFile] };
+      yield { kind: "create", paths: [ignoredMd] };
+      yield { kind: "create", paths: [mdFile] };
     }
 
     runtime.initialize({

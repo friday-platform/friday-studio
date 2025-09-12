@@ -31,8 +31,8 @@ Deno.test("CoALALocalFileStorageAdapter - should store and retrieve data", async
       key2: { value: "test2", memoryType: CoALAMemoryType.SEMANTIC },
     };
 
-    await adapter.commit(testData);
-    const loaded = await adapter.load();
+    await adapter.commitAll(testData);
+    const loaded = await adapter.loadAll();
 
     assertEquals(loaded.key1.value, "test1");
     assertEquals(loaded.key2.value, "test2");

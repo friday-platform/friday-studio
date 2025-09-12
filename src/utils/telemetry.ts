@@ -575,7 +575,7 @@ export class AtlasTelemetry {
       return result;
     } catch (error) {
       if (span.recordException) {
-        span.recordException(error as Error);
+        span.recordException(error);
       }
       span.setStatus({ code: statusCodes?.ERROR || 2, message: String(error) });
       throw error;
@@ -677,7 +677,7 @@ export class AtlasTelemetry {
 
       // Set all context attributes directly using static mapping (single loop)
       objectEntries(WORKER_ATTRIBUTE_MAPPING).forEach(([contextKey, attributeKey]) => {
-        const value = validatedContext[contextKey as keyof WorkerSpanContext];
+        const value = validatedContext[contextKey];
         if (value !== undefined && typeof value === "string") {
           span?.setAttribute(attributeKey, value);
         }

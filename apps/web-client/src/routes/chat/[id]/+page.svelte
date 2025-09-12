@@ -136,7 +136,7 @@ const messages = $derived([...ctx.messageHistory, ...ctx.messages]);
 
 					try {
 						const formData = new FormData(e.target as HTMLFormElement);
-						let formMessage = formData.get('message') as string;
+						let formMessage = formData.get('message');
 
 						if (stagedFiles.state.size > 0) {
 							formMessage = formMessage + `\n\nLibrary attachments:`;

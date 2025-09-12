@@ -78,7 +78,7 @@ class MockWorkspaceRuntime {
   }
 
   async initialize(): Promise<void> {
-    const storage = this.cronManager["storage"] as MemoryKVStorage; // Access private storage for initialization
+    const storage = this.cronManager["storage"]; // Access private storage for initialization
     await storage.initialize();
     await this.cronManager.start();
   }

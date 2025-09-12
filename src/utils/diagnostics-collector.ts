@@ -99,7 +99,7 @@ export class DiagnosticsCollector {
               "path" in entry.value &&
               "name" in entry.value
             ) {
-              const workspace = entry.value as { id?: string; name: string; path: string };
+              const workspace = entry.value;
 
               try {
                 // Create workspace subdirectory

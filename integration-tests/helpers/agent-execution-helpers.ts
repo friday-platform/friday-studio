@@ -16,7 +16,7 @@ export function createTestAgent(config: {
   id: string;
   name?: string;
   mcpServers?: Record<string, MCPServerConfig>;
-  handler?: (prompt: string, context: any) => Promise<any>;
+  handler?: (prompt: string, context: unknown) => Promise<unknown>;
 }): AtlasAgent {
   return createAgent({
     id: config.id,
@@ -33,7 +33,7 @@ export function createTestAgent(config: {
       config.handler ||
       (async (prompt, context) => {
         // Default handler that lists available MCP tools
-        const tools: Record<string, any> = {};
+        const tools: Record<string, unknown> = {};
 
         // Get tools from all MCP servers
         if (context.mcp) {
@@ -66,7 +66,7 @@ export function createTestAgent(config: {
 export function createMCPToolAgent(config: {
   id: string;
   mcpServers: Record<string, MCPServerConfig>;
-  toolHandlers: Record<string, (prompt: string, context: any) => Promise<any>>;
+  toolHandlers: Record<string, (prompt: string, context: unknown) => Promise<unknown>>;
 }): AtlasAgent {
   return createAgent({
     id: config.id,
@@ -156,7 +156,7 @@ export class AgentExecutionValidator {
     return undefined;
   }
 
-  getResponseJson<T = any>(): T | undefined {
+  getResponseJson<T>(): T | undefined {
     const text = this.getResponseText();
     if (!text) return undefined;
 
@@ -171,7 +171,7 @@ export class AgentExecutionValidator {
     return !!this.result.error;
   }
 
-  getError(): any {
+  getError(): unknown {
     return this.result.error;
   }
 
@@ -179,7 +179,7 @@ export class AgentExecutionValidator {
     return !!this.result.metadata;
   }
 
-  getMetadata(): any {
+  getMetadata(): unknown {
     return this.result.metadata;
   }
 }

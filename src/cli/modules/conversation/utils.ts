@@ -47,7 +47,7 @@ export const extractPartContent = (part: UIMessagePart): string => {
 
   // Handle data parts (including user messages)
   if (part.type.startsWith("data-")) {
-    const dataPart = part as Extract<UIMessagePart, { type: string; data: unknown }>;
+    const dataPart = part;
     if ("data" in dataPart) {
       if (typeof dataPart.data === "string") return dataPart.data;
       if (typeof dataPart.data === "object") return JSON.stringify(dataPart.data, null, 2);
@@ -56,7 +56,7 @@ export const extractPartContent = (part: UIMessagePart): string => {
 
   // Handle tool parts
   if (part.type.startsWith("tool-")) {
-    const toolPart = part as Extract<UIMessagePart, { type: string; result?: unknown }>;
+    const toolPart = part;
     if ("result" in toolPart && toolPart.result) {
       return typeof toolPart.result === "string"
         ? toolPart.result

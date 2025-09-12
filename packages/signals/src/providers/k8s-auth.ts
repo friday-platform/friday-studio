@@ -138,7 +138,7 @@ export class K8sAuthManager {
    */
   static async loadFromKubeconfigContent(content: string): Promise<K8sAuthConfig> {
     try {
-      const kubeconfig = parseYaml(content) as KubeconfigFile;
+      const kubeconfig = parseYaml(content);
       return await K8sAuthManager.parseKubeconfig(kubeconfig);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);

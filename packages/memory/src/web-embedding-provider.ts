@@ -229,9 +229,7 @@ export class WebEmbeddingProvider implements MECMFEmbeddingProvider {
       try {
         // Try the undocumented handler.dispose() first (if available)
         // This provides more thorough cleanup than session.release() alone
-        const sessionWithHandler = this.session as ort.InferenceSession & {
-          handler?: { dispose?: () => Promise<void> };
-        };
+        const sessionWithHandler = this.session;
         if (
           sessionWithHandler.handler &&
           typeof sessionWithHandler.handler.dispose === "function"
@@ -524,8 +522,8 @@ export class WebEmbeddingProvider implements MECMFEmbeddingProvider {
       const time = Math.round(endTime - startTime);
 
       // Perform mean pooling to get sentence embedding
-      const data = outputTensor.data as Float32Array;
-      const dims = outputTensor.dims as number[];
+      const data = outputTensor.data;
+      const dims = outputTensor.dims;
       if (!dims || dims.length !== 3) {
         throw new Error("Invalid tensor dimensions for sentence embedding");
       }

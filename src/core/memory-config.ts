@@ -173,7 +173,7 @@ export class MemoryConfigManager {
   rememberWithScope(
     memoryManager: CoALAMemoryManager,
     key: string,
-    content: any,
+    content: unknown,
     memoryType: CoALAMemoryType,
     memoryScope: "agent" | "session" | "workspace",
     tags: string[] = [],
@@ -283,7 +283,7 @@ export class MemoryConfigManager {
     userPrompt: string,
     limit: number,
     config: MemoryConfiguration,
-  ): any[] {
+  ): unknown[] {
     if (
       !config.memory_types.working?.enabled &&
       !config.memory_types.episodic?.enabled &&
@@ -299,7 +299,7 @@ export class MemoryConfigManager {
     memoryManager: CoALAMemoryManager,
     limit: number,
     config: MemoryConfiguration,
-  ): any[] {
+  ): unknown[] {
     if (!config.memory_types.procedural?.enabled) {
       return [];
     }
@@ -311,7 +311,7 @@ export class MemoryConfigManager {
     memoryManager: CoALAMemoryManager,
     limit: number,
     config: MemoryConfiguration,
-  ): any[] {
+  ): unknown[] {
     if (!config.memory_types.procedural?.enabled) {
       return [];
     }

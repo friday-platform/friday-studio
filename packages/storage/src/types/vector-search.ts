@@ -95,7 +95,7 @@ export interface IEmbeddingProvider {
   /**
    * Generate embeddings for multiple texts
    */
-  generateEmbeddings(texts: string[]): Promise<number[][]>;
+  generateEmbeddingBatch(texts: string[]): Promise<number[][]>;
 
   /**
    * Get the embedding dimension

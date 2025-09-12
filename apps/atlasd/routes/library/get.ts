@@ -1,10 +1,9 @@
-import { daemonFactory } from "../../src/factory.ts";
-import { describeRoute, resolver } from "hono-openapi";
-import { stringifyError } from "@atlas/utils";
 import { logger } from "@atlas/logger";
+import { stringifyError } from "@atlas/utils";
+import { describeRoute, resolver } from "hono-openapi";
+import { daemonFactory } from "../../src/factory.ts";
 import { errorResponseSchema } from "../../src/utils.ts";
 import { getLibraryItemResponseSchema } from "./schemas.ts";
-import { z } from "zod/v4";
 
 const getLibraryItem = daemonFactory.createApp();
 

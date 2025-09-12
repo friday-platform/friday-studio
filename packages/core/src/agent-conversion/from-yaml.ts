@@ -5,7 +5,14 @@
  * provider setup, tool filtering, and environment validation.
  */
 
-import type { AtlasAgent, AtlasTool, AtlasTools, ToolCall, ToolResult } from "@atlas/agent-sdk";
+import type {
+  AtlasAgent,
+  AtlasTool,
+  AtlasTools,
+  AtlasUIMessage,
+  ToolCall,
+  ToolResult,
+} from "@atlas/agent-sdk";
 import { createAgent } from "@atlas/agent-sdk";
 import { pipeUIMessageStream } from "@atlas/agent-sdk/vercel-helpers";
 import { stepCountIs, streamText } from "ai";
@@ -40,7 +47,6 @@ export function convertYAMLToAgent(yaml: YAMLAgentDefinition): YamlAgent {
     version: yaml.agent.version,
     description: yaml.agent.description,
     expertise: yaml.agent.expertise,
-    metadata: yaml.agent.metadata,
     handler: async (prompt, { stream, tools }) => {
       const allTools = filterTools(tools, extractToolAllowlist(yaml), extractToolDenylist(yaml));
 
@@ -57,7 +63,7 @@ export function convertYAMLToAgent(yaml: YAMLAgentDefinition): YamlAgent {
         ...(llmConfig.provider_options || {}),
       });
 
-      pipeUIMessageStream(result.toUIMessageStream(), stream);
+      pipeUIMessageStream(result.toUIMessageStream<AtlasUIMessage>(), stream);
 
       const [text, reasoning, toolCalls, toolResults] = await Promise.all([
         result.text,

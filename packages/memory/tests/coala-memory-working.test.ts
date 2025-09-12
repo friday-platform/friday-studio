@@ -1,5 +1,5 @@
 import { expect } from "@std/expect";
-import { CoALAMemoryManager, CoALAMemoryType } from "../src/coala-memory.ts";
+import { CoALAMemoryManager, CoALAMemoryType, type IMemoryScope } from "../src/coala-memory.ts";
 
 // Set testing environment to prevent logger file operations
 Deno.env.set("DENO_TESTING", "true");
@@ -8,12 +8,12 @@ Deno.env.set("DENO_TESTING", "true");
 class MockAtlasScope {
   public readonly id: string = "test-scope-123";
   public parentScopeId?: string;
-  public supervisor?: any;
-  public context: any = new MockContextManager();
-  public memory: any = {};
-  public messages: any = {};
+  public supervisor?: unknown;
+  public context: unknown = new MockContextManager();
+  public memory: unknown = {};
+  public messages: unknown = {};
   public prompts = { system: "", user: "" };
-  public gates: any[] = [];
+  public gates: unknown[] = [];
 
   newConversation() {
     return this.messages;
@@ -26,21 +26,21 @@ class MockAtlasScope {
 }
 
 class MockContextManager {
-  getContext(): any {
+  getContext(): unknown {
     return {};
   }
-  setContext(context: any): void {}
+  setContext(_context: unknown): void {}
   clearContext(): void {}
 }
 
 class InMemoryStorageAdapter {
-  private data = new Map<string, any>();
+  private data = new Map<string, unknown>();
 
-  async store(key: string, value: any): Promise<void> {
+  async store(key: string, value: unknown): Promise<void> {
     this.data.set(key, value);
   }
 
-  async retrieve(key: string): Promise<any> {
+  async retrieve(key: string): Promise<unknown> {
     return this.data.get(key) || null;
   }
 
@@ -60,23 +60,19 @@ class InMemoryStorageAdapter {
     return this.data.has(key);
   }
 
-  async commitByType(type: any, memories: any): Promise<void> {
+  async commitByType(_type: unknown, _memories: unknown): Promise<void> {
     // In-memory storage doesn't need file commits
   }
 
-  async commit(memories: any): Promise<void> {
-    // In-memory storage doesn't need file commits
-  }
+  async commit(_memories: unknown): Promise<void> {}
 
-  async load(): Promise<Map<string, any>> {
+  async load(): Promise<Map<string, unknown>> {
     return new Map(this.data);
   }
 
-  async commitAll(dataByType: any): Promise<void> {
-    // In-memory storage doesn't need file commits
-  }
+  async commitAll(_dataByType: unknown): Promise<void> {}
 
-  async loadAll(): Promise<any> {
+  async loadAll(): Promise<unknown> {
     return {};
   }
 }
@@ -94,7 +90,11 @@ const originalConsoleWarn = console.warn;
 console.warn = () => {};
 
 // Helper to create memory manager with immediate commits for tests
-function createTestMemoryManager(scope: any, adapter: any, enableCognitiveLoop = false) {
+function createTestMemoryManager(
+  scope: IMemoryScope,
+  adapter: InMemoryStorageAdapter,
+  enableCognitiveLoop = false,
+) {
   return new CoALAMemoryManager(
     scope,
     adapter,
@@ -103,7 +103,7 @@ function createTestMemoryManager(scope: any, adapter: any, enableCognitiveLoop =
   );
 }
 
-Deno.test("CoALAMemoryManager - basic instantiation", async () => {
+Deno.test("CoALAMemoryManager - basic instantiation", () => {
   const scope = new MockAtlasScope();
   const adapter = new InMemoryStorageAdapter();
 
@@ -112,20 +112,24 @@ Deno.test("CoALAMemoryManager - basic instantiation", async () => {
   expect(memory).toBeDefined();
 });
 
-Deno.test("CoALAMemoryManager - remember and recall", async () => {
+Deno.test("CoALAMemoryManager - remember and recall", () => {
   const scope = new MockAtlasScope();
   const adapter = new InMemoryStorageAdapter();
 
   const memory = createTestMemoryManager(scope, adapter);
 
   // Test basic remember/recall
-  memory.remember("test-key", "test-value");
+  memory.rememberWithMetadata("test-key", "test-value", {
+    memoryType: CoALAMemoryType.WORKING,
+    tags: ["test-key"],
+    relevanceScore: 0.8,
+  });
   const recalled = memory.recall("test-key");
 
   expect(recalled).toBe("test-value");
 });
 
-Deno.test("CoALAMemoryManager - remember with metadata", async () => {
+Deno.test("CoALAMemoryManager - remember with metadata", () => {
   const scope = new MockAtlasScope();
   const adapter = new InMemoryStorageAdapter();
 
@@ -144,7 +148,7 @@ Deno.test("CoALAMemoryManager - remember with metadata", async () => {
   expect(recalled).toBe("metadata-value");
 });
 
-Deno.test("CoALAMemoryManager - query memories", async () => {
+Deno.test("CoALAMemoryManager - query memories", () => {
   const scope = new MockAtlasScope();
   const adapter = new InMemoryStorageAdapter();
 
@@ -167,16 +171,16 @@ Deno.test("CoALAMemoryManager - query memories", async () => {
   const semanticMemories = memory.queryMemories({ memoryType: CoALAMemoryType.SEMANTIC });
 
   expect(semanticMemories).toHaveLength(1);
-  expect(semanticMemories[0].content).toBe("semantic content 1");
+  expect(semanticMemories[0]?.content).toBe("semantic content 1");
 
   // Query by tags
   const taggedMemories = memory.queryMemories({ tags: ["semantic"] });
 
   expect(taggedMemories).toHaveLength(1);
-  expect(taggedMemories[0].tags).toContain("semantic");
+  expect(taggedMemories[0]?.tags).toContain("semantic");
 });
 
-Deno.test("CoALAMemoryManager - get memories by type", async () => {
+Deno.test("CoALAMemoryManager - get memories by type", () => {
   const scope = new MockAtlasScope();
   const adapter = new InMemoryStorageAdapter();
 
@@ -200,18 +204,22 @@ Deno.test("CoALAMemoryManager - get memories by type", async () => {
 
   expect(episodicMemories).toHaveLength(1);
   expect(proceduralMemories).toHaveLength(1);
-  expect(episodicMemories[0].content).toBe("episodic content");
-  expect(proceduralMemories[0].content).toBe("procedural content");
+  expect(episodicMemories[0]?.content).toBe("episodic content");
+  expect(proceduralMemories[0]?.content).toBe("procedural content");
 });
 
-Deno.test("CoALAMemoryManager - forget memories", async () => {
+Deno.test("CoALAMemoryManager - forget memories", () => {
   const scope = new MockAtlasScope();
   const adapter = new InMemoryStorageAdapter();
 
   const memory = createTestMemoryManager(scope, adapter);
 
   // Add a memory
-  memory.remember("forget-me", "temporary content");
+  memory.rememberWithMetadata("forget-me", "temporary content", {
+    memoryType: CoALAMemoryType.WORKING,
+    tags: ["forget-me"],
+    relevanceScore: 0.8,
+  });
 
   // Verify it exists
   let recalled = memory.recall("forget-me");
@@ -225,7 +233,7 @@ Deno.test("CoALAMemoryManager - forget memories", async () => {
   expect(recalled).toBeUndefined();
 });
 
-Deno.test("CoALAMemoryManager - cognitive loop methods", async () => {
+Deno.test("CoALAMemoryManager - cognitive loop methods", () => {
   const scope = new MockAtlasScope();
   const adapter = new InMemoryStorageAdapter();
 
@@ -252,17 +260,21 @@ Deno.test("CoALAMemoryManager - cognitive loop methods", async () => {
 
   expect(() => memory.consolidate()).not.toThrow();
   expect(() => memory.prune()).not.toThrow();
-  expect(() => memory.adapt({ success: true })).not.toThrow();
+  expect(() => memory.adapt({ memoryId: "reflect-1", relevanceAdjustment: 0.1 })).not.toThrow();
 });
 
-Deno.test("CoALAMemoryManager - memory access patterns", async () => {
+Deno.test("CoALAMemoryManager - memory access patterns", () => {
   const scope = new MockAtlasScope();
   const adapter = new InMemoryStorageAdapter();
 
   const memory = createTestMemoryManager(scope, adapter);
 
   // Add a memory
-  memory.remember("access-test", "access content");
+  memory.rememberWithMetadata("access-test", "access content", {
+    memoryType: CoALAMemoryType.WORKING,
+    tags: ["access-test"],
+    relevanceScore: 0.8,
+  });
 
   // Access it multiple times
   memory.recall("access-test");
@@ -272,21 +284,29 @@ Deno.test("CoALAMemoryManager - memory access patterns", async () => {
   // Get the memory to check access count
   const memories = memory.queryMemories({ content: "access content" });
   expect(memories).toHaveLength(1);
-  expect(memories[0].accessCount).toBeGreaterThan(1);
+  expect(memories[0]?.accessCount).toBeGreaterThan(1);
 });
 
-Deno.test("CoALAMemoryManager - disposal", async () => {
+Deno.test("CoALAMemoryManager - disposal", () => {
   const scope = new MockAtlasScope();
   const adapter = new InMemoryStorageAdapter();
 
   const memory = createTestMemoryManager(scope, adapter);
 
   // Add some memories
-  memory.remember("dispose-test-1", "content 1");
-  memory.remember("dispose-test-2", "content 2");
+  memory.rememberWithMetadata("dispose-test-1", "content 1", {
+    memoryType: CoALAMemoryType.WORKING,
+    tags: ["dispose-test-1"],
+    relevanceScore: 0.8,
+  });
+  memory.rememberWithMetadata("dispose-test-2", "content 2", {
+    memoryType: CoALAMemoryType.WORKING,
+    tags: ["dispose-test-2"],
+    relevanceScore: 0.8,
+  });
 
   // Dispose should not throw
-  await expect(memory.dispose()).resolves.not.toThrow();
+  expect(memory.dispose()).resolves.not.toThrow();
 });
 
 // Cleanup after tests

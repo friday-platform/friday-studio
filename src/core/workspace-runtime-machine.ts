@@ -353,22 +353,19 @@ export const workspaceRuntimeMachineSetup = setup({
                 id: signalId,
                 type: ProviderType.SIGNAL,
                 provider: signalConfig.provider,
-                config: (signalConfig as { config?: Record<string, unknown> }).config || {},
+                config: signalConfig.config || {},
               };
 
               // Load the signal provider
               const provider = await registry.loadFromConfig(providerConfig);
-              const signalProvider = provider as ISignalProvider;
+              const signalProvider = provider;
               const signal = signalProvider.createSignal(providerConfig.config);
 
               // Convert to runtime signal
               const runtimeSignal = signal.toRuntimeSignal();
 
               // Store for later initialization
-              activeStreamSignals.set(signalId, {
-                runtimeSignal,
-                signalConfig: signalConfig as Record<string, unknown>,
-              });
+              activeStreamSignals.set(signalId, { runtimeSignal, signalConfig: signalConfig });
 
               logger.info(`Stream signal prepared: ${signalId}`);
             } catch (error) {
@@ -401,7 +398,7 @@ export const workspaceRuntimeMachineSetup = setup({
               typeof streamData.runtimeSignal === "object" &&
               "teardown" in streamData.runtimeSignal
             ) {
-              await (streamData.runtimeSignal as { teardown(): Promise<void> }).teardown();
+              await streamData.runtimeSignal.teardown();
             }
           } catch (error) {
             logger.error(`Failed to cleanup stream signal: ${signalId}`, {
@@ -503,8 +500,8 @@ export const workspaceRuntimeMachineSetup = setup({
       logger.info("assignSupervisor action called", {
         eventType: event.type,
         eventKeys: Object.keys(event),
-        hasOutput: !!(event as { output?: unknown }).output,
-        hasSupervisor: !!(event as { output?: { supervisor?: unknown } }).output?.supervisor,
+        hasOutput: !!event.output,
+        hasSupervisor: !!event.output?.supervisor,
       });
 
       if (event.type === "xstate.done.actor.initializeWorkspace") {
@@ -536,7 +533,7 @@ export const workspaceRuntimeMachineSetup = setup({
     assignError: assign({
       error: ({ event }) => {
         if ("error" in event) {
-          return event.error as Error;
+          return event.error;
         }
         return undefined;
       },
@@ -552,9 +549,8 @@ function isStreamSignal(
     typeof signal === "object" &&
     signal !== null &&
     "provider" in signal &&
-    typeof (signal as { provider?: unknown }).provider === "string" &&
-    ((signal as { provider?: string }).provider === "stream" ||
-      (signal as { provider?: string }).provider === "k8s-events")
+    typeof signal.provider === "string" &&
+    (signal.provider === "stream" || signal.provider === "k8s-events")
   );
 }
 
@@ -646,7 +642,7 @@ export function createWorkspaceRuntimeMachine(_input: WorkspaceRuntimeMachineInp
                     typeof streamData.runtimeSignal === "object" &&
                     "initialize" in streamData.runtimeSignal
                   ) {
-                    (streamData.runtimeSignal as { initialize(config: unknown): void }).initialize({
+                    streamData.runtimeSignal.initialize({
                       id: signalId,
                       processSignal: (signalId: string, payload: Record<string, unknown>) => {
                         // Send signal to state machine for processing
@@ -657,14 +653,14 @@ export function createWorkspaceRuntimeMachine(_input: WorkspaceRuntimeMachineInp
                             name: streamData.signalConfig.provider,
                           },
                           config: streamData.signalConfig,
-                        } as unknown as IWorkspaceSignal; // Convert to proper signal type
+                        };
 
                         self.send({
                           type: "PROCESS_SIGNAL",
                           signal: {
                             ...signal,
                             provider: signal.provider || { id: "unknown", name: "unknown" },
-                          } as IWorkspaceSignal,
+                          },
                           payload,
                         });
                       },

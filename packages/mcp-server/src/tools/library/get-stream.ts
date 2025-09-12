@@ -107,7 +107,7 @@ export function registerLibraryGetStreamTool(server: McpServer, ctx: ToolContext
           throw new Error(`Failed to retrieve content for library item: ${itemId}`);
         }
 
-        const content = result.content as string;
+        const content = result.content;
         const totalSize = content.length;
 
         // Send content size notification
@@ -228,9 +228,9 @@ export function registerLibraryGetStreamTool(server: McpServer, ctx: ToolContext
               data: JSON.stringify({
                 type: "library_stream_error",
                 itemId,
-                error: (error as Error).message,
+                error: error.message,
                 timestamp: new Date().toISOString(),
-                message: `Error retrieving library item: ${(error as Error).message}`,
+                message: `Error retrieving library item: ${error.message}`,
               }),
             },
           });

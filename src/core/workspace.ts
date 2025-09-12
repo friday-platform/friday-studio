@@ -148,8 +148,8 @@ export class Workspace extends AtlasScope implements IWorkspace {
     if (config.signals) {
       // Handle object format from YAML
       for (const [id, signalConfig] of Object.entries(config.signals)) {
-        const typedSignalConfig = signalConfig as Record<string, any>;
-        workspace.addSignal({ id, ...typedSignalConfig } as IWorkspaceSignal);
+        const typedSignalConfig = signalConfig;
+        workspace.addSignal({ id, ...typedSignalConfig });
       }
     }
 

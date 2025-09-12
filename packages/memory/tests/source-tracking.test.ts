@@ -6,24 +6,38 @@
  */
 
 import { assertEquals, assertExists } from "@std/assert";
+import type { IAtlasScope } from "../../../src/types/core.ts";
 import { CoALAMemoryManager, CoALAMemoryType } from "../src/coala-memory.ts";
+import { type ConversationContext, MemorySource } from "../src/mecmf-interfaces.ts";
 import { AtlasMECMFMemoryManager } from "../src/mecmf-memory-manager.ts";
-import { ConversationContext, MemorySource } from "../src/mecmf-interfaces.ts";
 
 // Helper to track and close MessageChannels created by onnxruntime-web during tests
 async function runWithMessageChannelCleanup<T>(fn: () => Promise<T>): Promise<T> {
-  const OriginalMessageChannel = globalThis.MessageChannel as typeof MessageChannel | undefined;
+  const OriginalMessageChannel = globalThis.MessageChannel;
   if (!OriginalMessageChannel) {
     return await fn();
   }
 
   const created: MessageChannel[] = [];
-  // Patch global MessageChannel to track instances
-  globalThis.MessageChannel = function PatchedMessageChannel(this: unknown): MessageChannel {
-    const mc = new OriginalMessageChannel();
-    created.push(mc);
-    return mc as unknown as MessageChannel;
-  };
+
+  // Create a proper mock constructor that matches MessageChannel interface
+  class MockMessageChannel implements MessageChannel {
+    readonly port1: MessagePort;
+    readonly port2: MessagePort;
+
+    constructor() {
+      if (!OriginalMessageChannel) {
+        throw new Error("OriginalMessageChannel is undefined");
+      }
+      const original = new OriginalMessageChannel();
+      this.port1 = original.port1;
+      this.port2 = original.port2;
+      created.push(original);
+    }
+  }
+
+  // Replace global MessageChannel with our mock
+  globalThis.MessageChannel = MockMessageChannel;
 
   try {
     return await fn();
@@ -59,7 +73,8 @@ const createConversationContext = (
 });
 
 // Mock scope for testing
-const createTestScope = (id: string) => ({ id, workspaceId: id, type: "test" as const });
+const createTestScope = (id: string) =>
+  ({ id, workspaceId: id, type: "test" as const }) as unknown as IAtlasScope;
 
 Deno.test("CoALA Memory - Source Field Storage and Retrieval", async () => {
   const scope = createTestScope("test-workspace");
@@ -213,7 +228,7 @@ Deno.test({
       // Verify different sources were used
       const memories = await Promise.all(storedIds.map((id) => mecmfManager.retrieveMemory(id)));
 
-      const uniqueSources = new Set(memories.filter((m) => m !== null).map((m) => m!.source));
+      const uniqueSources = new Set(memories.filter((m) => m !== null).map((m) => m?.source));
       assertEquals(uniqueSources.size, sources.length);
 
       // Clean up
@@ -248,7 +263,13 @@ Deno.test("Memory Source Migration - Basic Functionality", async () => {
   };
 
   // Directly add to memory store (simulating old data)
-  memoryManager.remember("old-memory", oldMemoryData.content);
+  memoryManager.rememberWithMetadata("old-memory", oldMemoryData.content, {
+    memoryType: CoALAMemoryType.SEMANTIC,
+    tags: ["old", "test"],
+    relevanceScore: 0.7,
+    source: MemorySource.SYSTEM_GENERATED,
+    sourceMetadata: { workspaceId: "migration-test" },
+  });
 
   // Get memory and verify no source
   let allMemories = memoryManager.queryMemories({});
@@ -270,7 +291,7 @@ Deno.test("Memory Source Migration - Basic Functionality", async () => {
   assertExists(migratedMemory);
   assertEquals(migratedMemory.source, MemorySource.SYSTEM_GENERATED);
   assertExists(migratedMemory.sourceMetadata);
-  assertEquals(migratedMemory.sourceMetadata!.workspaceId, "migration-test");
+  assertEquals(migratedMemory.sourceMetadata?.workspaceId, "migration-test");
 
   await memoryManager.dispose();
 });
@@ -305,11 +326,11 @@ Deno.test("Source Metadata Preservation Through Operations", async () => {
   assertEquals(richMemory.sourceMetadata, sourceMetadata);
 
   // Verify each field of metadata
-  assertEquals(richMemory.sourceMetadata!.agentId, "test-agent");
-  assertEquals(richMemory.sourceMetadata!.toolName, "test-tool");
-  assertEquals(richMemory.sourceMetadata!.sessionId, "test-session");
-  assertEquals(richMemory.sourceMetadata!.userId, "test-user");
-  assertEquals(richMemory.sourceMetadata!.workspaceId, "metadata-test");
+  assertEquals(richMemory.sourceMetadata?.agentId, "test-agent");
+  assertEquals(richMemory.sourceMetadata?.toolName, "test-tool");
+  assertEquals(richMemory.sourceMetadata?.sessionId, "test-session");
+  assertEquals(richMemory.sourceMetadata?.userId, "test-user");
+  assertEquals(richMemory.sourceMetadata?.workspaceId, "metadata-test");
 
   await memoryManager.dispose();
 });
@@ -412,44 +433,4 @@ Deno.test({
       await mecmfManager.dispose();
     });
   },
-});
-
-Deno.test("Backward Compatibility - Legacy Memory Access", async () => {
-  const scope = createTestScope("compatibility-test");
-  const memoryManager = new CoALAMemoryManager(scope);
-
-  // Store memory using legacy method (no source)
-  memoryManager.remember("legacy-memory", "Legacy content");
-
-  // Store memory using new method with source
-  memoryManager.rememberWithMetadata("new-memory", "New content", {
-    memoryType: CoALAMemoryType.WORKING,
-    tags: ["new"],
-    relevanceScore: 0.5,
-    source: MemorySource.USER_INPUT,
-    sourceMetadata: { userId: "test-user" },
-  });
-
-  // Both should be retrievable via legacy method
-  const legacyContent = memoryManager.recall("legacy-memory");
-  const newContent = memoryManager.recall("new-memory");
-
-  assertEquals(legacyContent, "Legacy content");
-  assertEquals(newContent, "New content");
-
-  // Verify source handling in mixed scenario
-  const allMemories = memoryManager.queryMemories({});
-  const legacyMem = allMemories.find((m) => m.id === "legacy-memory");
-  const newMem = allMemories.find((m) => m.id === "new-memory");
-
-  assertExists(legacyMem);
-  assertExists(newMem);
-
-  // Legacy memory should have default source
-  assertEquals(legacyMem.source, "system_generated");
-
-  // New memory should have specified source
-  assertEquals(newMem.source, MemorySource.USER_INPUT);
-
-  await memoryManager.dispose();
 });

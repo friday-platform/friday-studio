@@ -95,7 +95,7 @@ export class AtlasScope implements IAtlasScope {
 
   archiveConversation(): void {
     // Store current conversation in CoALA memory with appropriate metadata
-    const coalaMemory = this.memory as CoALAMemoryManager;
+    const coalaMemory = this.memory;
     coalaMemory.rememberWithMetadata(`conversation_${Date.now()}`, this.messages.getHistory(), {
       memoryType: CoALAMemoryType.EPISODIC,
       tags: ["conversation", "archived", "historical"],

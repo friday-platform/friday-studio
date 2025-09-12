@@ -34,36 +34,8 @@ export class CoALALocalFileStorageAdapter implements ICoALAMemoryStorageAdapter 
     }
   }
 
-  // Legacy compatibility methods
-  async commit(data: any): Promise<void> {
-    // For backwards compatibility, organize data by memory type
-    const dataByType: Record<string, any> = {};
-
-    for (const [key, memory] of Object.entries(data)) {
-      const memoryType = memory.memoryType || "working";
-      if (!dataByType[memoryType]) {
-        dataByType[memoryType] = {};
-      }
-      dataByType[memoryType][key] = memory;
-    }
-
-    await this.commitAll(dataByType);
-  }
-
-  async load(): Promise<any> {
-    const allData = await this.loadAll();
-    const combinedData: any = {};
-
-    // Combine all memory types into single object for backwards compatibility
-    for (const typeData of Object.values(allData)) {
-      Object.assign(combinedData, typeData);
-    }
-
-    return combinedData;
-  }
-
   // Enhanced CoALA-specific methods
-  async commitByType(memoryType: string, data: any): Promise<void> {
+  async commitByType(memoryType: string, data: unknown): Promise<void> {
     await ensureDir(this.storagePath);
     const fileName = this.memoryTypeFiles[memoryType] || `${memoryType}.json`;
     const filePath = join(this.storagePath, fileName);
@@ -75,7 +47,7 @@ export class CoALALocalFileStorageAdapter implements ICoALAMemoryStorageAdapter 
     });
   }
 
-  async loadByType(memoryType: string): Promise<any> {
+  async loadByType(memoryType: string): Promise<unknown> {
     const fileName = this.memoryTypeFiles[memoryType] || `${memoryType}.json`;
     const filePath = join(this.storagePath, fileName);
 
@@ -105,7 +77,7 @@ export class CoALALocalFileStorageAdapter implements ICoALAMemoryStorageAdapter 
     }
   }
 
-  async commitAll(dataByType: Record<string, any>): Promise<void> {
+  async commitAll(dataByType: Record<string, unknown>): Promise<void> {
     await ensureDir(this.storagePath);
 
     // Write each memory type to its own file sequentially to avoid file descriptor exhaustion
@@ -119,8 +91,8 @@ export class CoALALocalFileStorageAdapter implements ICoALAMemoryStorageAdapter 
     await this.createIndexFile(dataByType);
   }
 
-  async loadAll(): Promise<Record<string, any>> {
-    const allData: Record<string, any> = {};
+  async loadAll(): Promise<Record<string, unknown>> {
+    const allData: Record<string, unknown> = {};
 
     // Load all known memory types
     const loadPromises = Object.keys(this.memoryTypeFiles).map(async (memoryType) => {
@@ -174,8 +146,14 @@ export class CoALALocalFileStorageAdapter implements ICoALAMemoryStorageAdapter 
   }
 
   // Helper methods
-  private async createIndexFile(dataByType: Record<string, any>): Promise<void> {
-    const index = { lastUpdated: new Date().toISOString(), memoryTypes: {} as Record<string, any> };
+  private async createIndexFile(dataByType: Record<string, unknown>): Promise<void> {
+    const index = {
+      lastUpdated: new Date().toISOString(),
+      memoryTypes: {} as Record<
+        string,
+        { count: number; latestTimestamp: string | null; avgRelevance: number; fileName: string }
+      >,
+    };
 
     for (const [memoryType, data] of Object.entries(dataByType)) {
       if (data && typeof data === "object") {
@@ -217,7 +195,7 @@ export class CoALALocalFileStorageAdapter implements ICoALAMemoryStorageAdapter 
     return additionalTypes;
   }
 
-  private getLatestTimestamp(entries: any[]): string | null {
+  private getLatestTimestamp(entries: unknown[]): string | null {
     if (!entries.length) return null;
 
     const timestamps = entries
@@ -230,7 +208,7 @@ export class CoALALocalFileStorageAdapter implements ICoALAMemoryStorageAdapter 
     return timestamps[0] || null;
   }
 
-  private getAverageRelevance(entries: any[]): number {
+  private getAverageRelevance(entries: unknown[]): number {
     if (!entries.length) return 0;
 
     const relevanceScores = entries
@@ -243,7 +221,7 @@ export class CoALALocalFileStorageAdapter implements ICoALAMemoryStorageAdapter 
   }
 
   // Utility methods for memory management
-  async getMemoryStatistics(): Promise<Record<string, any>> {
+  async getMemoryStatistics(): Promise<Record<string, unknown>> {
     try {
       const indexPath = join(this.storagePath, "index.json");
       const content = await Deno.readTextFile(indexPath);
@@ -251,7 +229,7 @@ export class CoALALocalFileStorageAdapter implements ICoALAMemoryStorageAdapter 
     } catch {
       // If index doesn't exist, generate statistics on the fly
       const allData = await this.loadAll();
-      const stats: Record<string, any> = {};
+      const stats: Record<string, unknown> = {};
 
       for (const [memoryType, data] of Object.entries(allData)) {
         const entries = Object.values(data);
@@ -275,7 +253,7 @@ export class CoALALocalFileStorageAdapter implements ICoALAMemoryStorageAdapter 
     }
 
     // Filter out memories with very low relevance (< 0.1)
-    const filteredData: any = {};
+    const filteredData: unknown = {};
     let removedCount = 0;
 
     for (const [key, memory] of Object.entries(data)) {

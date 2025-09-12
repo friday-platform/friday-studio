@@ -1,7 +1,7 @@
 import { InMemoryStorageAdapter } from "@atlas/storage";
 import { expect } from "@std/expect";
-import { AtlasScope } from "../../../src/core/scope.ts";
-import { CoALAMemoryManager, CoALAMemoryType } from "../src/coala-memory.ts";
+import type { ICoALAMemoryStorageAdapter } from "../../../src/types/core.ts";
+import { CoALAMemoryManager, type IMemoryScope } from "../src/coala-memory.ts";
 import { AsyncMemoryQueue } from "../src/streaming/async-memory-queue.ts";
 import type { MemoryStream, StreamingConfig } from "../src/streaming/memory-stream.ts";
 import { StreamingMemoryManager } from "../src/streaming/streaming-memory-manager.ts";
@@ -10,12 +10,15 @@ import { StreamingMemoryManager } from "../src/streaming/streaming-memory-manage
 Deno.env.set("DENO_TESTING", "true");
 
 // Helper to create memory manager with immediate commits for tests
-function createTestMemoryManager(scope: any, adapter: any, enableCognitiveLoop = false) {
+function createTestMemoryManager(
+  scope: IMemoryScope,
+  adapter: ICoALAMemoryStorageAdapter,
+  enableCognitiveLoop = false,
+) {
   return new CoALAMemoryManager(
     scope,
     adapter,
     enableCognitiveLoop,
-    undefined,
     { commitDebounceDelay: 0 }, // Immediate commits for tests
   );
 }
@@ -129,7 +132,9 @@ Deno.test("AsyncMemoryQueue - batch processing", async () => {
   expect(sizeAfterPushBatch).toBeLessThanOrEqual(3);
 
   // Test individual push behavior in background mode
-  await queue.push(streams[0]);
+  if (streams[0]) {
+    await queue.push(streams[0]);
+  }
 
   // Check the actual queue size after push
   const sizeAfterPush = queue.size();
@@ -167,20 +172,20 @@ Deno.test("AsyncMemoryQueue - error handling", async () => {
 
   // Test error handling by registering a failing processor
   let processorCallCount = 0;
+  const process = async (_stream: MemoryStream) => {
+    processorCallCount++;
+    if (processorCallCount <= 2) {
+      errorCounts.push(processorCallCount);
+      throw new Error("Processing error");
+    }
+  };
   const errorCounts: number[] = [];
   queue.registerProcessor("semantic_fact", {
     canProcess: (stream) => stream.type === "semantic_fact",
-    process: async (stream) => {
-      processorCallCount++;
-      if (processorCallCount <= 2) {
-        errorCounts.push(processorCallCount);
-        throw new Error("Processing error");
-      }
-      // Success on third attempt
-    },
+    process: process,
     processBatch: async (streams) => {
       for (const stream of streams) {
-        await this.process(stream);
+        await process(stream);
       }
     },
   });
@@ -232,12 +237,16 @@ Deno.test("AsyncMemoryQueue - capacity management", async () => {
   ];
 
   // Fill the queue to capacity
-  await queue.push(streams[0]);
-  await queue.push(streams[1]);
+  if (streams[0] && streams[1]) {
+    await queue.push(streams[0]);
+    await queue.push(streams[1]);
+  }
   expect(queue.size()).toBe(2);
 
   // Adding more should drop oldest (queue has capacity management)
-  await queue.push(streams[2]);
+  if (streams[2]) {
+    await queue.push(streams[2]);
+  }
   expect(queue.size()).toBe(2); // Still at capacity, oldest dropped
 
   // Verify the correct stream was kept (newest one)

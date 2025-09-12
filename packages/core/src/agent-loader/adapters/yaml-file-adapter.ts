@@ -81,7 +81,7 @@ export class YAMLFileAdapter implements AgentAdapter {
                 const yaml = result.data;
                 agents.push({
                   id,
-                  type: "yaml" as AgentSourceType,
+                  type: "yaml",
                   displayName: yaml.agent.displayName,
                   description: yaml.agent.description,
                   version: yaml.agent.version,

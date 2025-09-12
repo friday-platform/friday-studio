@@ -43,7 +43,7 @@ export interface Entity {
 
 export interface MemoryEntry {
   id: string;
-  content: string;
+  content: string | Record<string, string>;
   timestamp: Date;
   memoryType: MemoryType;
   relevanceScore: number;

@@ -10,7 +10,7 @@ import { delay } from "../tests/utils/mod.ts";
 // Helper to simulate worker message passing
 interface WorkerMessage {
   type: string;
-  data: any;
+  data: unknown;
   traceHeaders?: Record<string, string>;
 }
 
@@ -286,7 +286,7 @@ Deno.test({
 
     await t.step("should handle worker context with trace propagation", async () => {
       // Simulate parent span creating trace headers
-      let childContext: any;
+      let childContext: unknown;
 
       await AtlasTelemetry.withSpan("parent-worker", async () => {
         const traceHeaders = await AtlasTelemetry.createTraceHeaders();
@@ -323,7 +323,7 @@ Deno.test({
         });
       } catch (error) {
         errorCaught = true;
-        assertEquals((error as Error).message, "Inner span error");
+        assertEquals(error.message, "Inner span error");
       }
 
       assertEquals(errorCaught, true);

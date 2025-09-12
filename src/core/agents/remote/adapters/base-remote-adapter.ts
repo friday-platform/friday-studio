@@ -280,7 +280,7 @@ export abstract class BaseRemoteAdapter {
         this.recordSuccess(latency);
         return result;
       } catch (error) {
-        lastError = error as Error;
+        lastError = error;
 
         // Don't retry on final attempt
         if (attempt === retryConfig.max_attempts) {

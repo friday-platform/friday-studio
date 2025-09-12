@@ -1,8 +1,8 @@
 import type { AtlasAgent } from "@atlas/agent-sdk";
 import { bundledAgents } from "@atlas/bundled-agents";
 import { createLogger } from "@atlas/logger";
-import type { AgentAdapter, AgentSourceData, AgentSourceType, AgentSummary } from "./types.ts";
 import { AgentNotFoundError } from "../errors.ts";
+import type { AgentAdapter, AgentSourceData, AgentSourceType, AgentSummary } from "./types.ts";
 
 /**
  * Loads agents bundled with Atlas.
@@ -69,7 +69,7 @@ export class BundledAgentAdapter implements AgentAdapter {
       Array.from(uniqueAgents.values()).map(({ key, agent }) => ({
         id: key,
         displayName: agent.metadata.displayName,
-        type: "bundled" as AgentSourceType,
+        type: "bundled",
         description: agent.metadata.description,
         version: agent.metadata.version,
       })),

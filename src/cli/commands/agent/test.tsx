@@ -97,7 +97,7 @@ export const handler = async (argv: TestArgs): Promise<void> => {
     // Get message either from flag or prompt
     let message = argv.message;
     if (!message) {
-      message = (await text({
+      message = await text({
         message: `Enter message to send to ${argv.name}:`,
         placeholder: "Hello, agent!",
         validate: (value) => {
@@ -105,7 +105,7 @@ export const handler = async (argv: TestArgs): Promise<void> => {
             return "Message cannot be empty";
           }
         },
-      })) as string;
+      });
 
       if (isCancel(message)) {
         infoOutput("Agent test cancelled");

@@ -53,7 +53,7 @@ createLibraryItem.post(
       if (contentType.includes("multipart/form-data")) {
         // Handle File upload from web client
         const formData = await c.req.formData();
-        const file = formData.get("file") as File;
+        const file = formData.get("file");
 
         if (!file) {
           return c.json({ error: "file is required for file uploads" }, 400);

@@ -73,7 +73,7 @@ Deno.test({
 
     Deno.exit = () => {
       exitCalled = true;
-      return undefined as never;
+      return undefined;
     };
 
     try {

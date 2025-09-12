@@ -7,9 +7,9 @@ import { z } from "zod";
 const server = new McpServer({ name: "mock-api-server", version: "1.0.0" });
 
 // In-memory storage for mock data
-const users = new Map<string, any>();
-const posts = new Map<string, any>();
-const items = new Map<string, any>();
+const users = new Map<string, unknown>();
+const posts = new Map<string, unknown>();
+const items = new Map<string, unknown>();
 
 // Initialize with some test data
 users.set("user-1", { id: "user-1", name: "Alice", email: "alice@example.com" });

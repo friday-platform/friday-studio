@@ -8,7 +8,7 @@
  * Each stream (conversation session) maintains its own todo list.
  */
 
-import { type TodoItem } from "@atlas/config";
+import type { TodoItem } from "@atlas/config";
 
 class TodoStorage {
   private todos = new Map<string, TodoItem[]>();

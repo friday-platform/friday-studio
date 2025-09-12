@@ -51,7 +51,7 @@ export interface LibraryItem {
     source: string;
     session_id?: string;
     agent_ids?: string[];
-    custom_fields?: Record<string, any>;
+    custom_fields?: Record<string, unknown>;
   };
   created_at: string;
   updated_at: string;
@@ -80,8 +80,8 @@ export interface TemplateConfig {
   description?: string;
   format: string;
   engine: string;
-  config: Record<string, any>;
-  schema?: Record<string, any>;
+  config: Record<string, unknown>;
+  schema?: Record<string, unknown>;
 }
 
 export class DaemonClient {
@@ -219,8 +219,8 @@ export class DaemonClient {
     signal: string;
     startTime: string;
     endTime?: string;
-    artifacts: Array<{ type: string; data: any }>;
-    results?: any;
+    artifacts: Array<{ type: string; data: unknown }>;
+    results?: unknown;
   }> {
     const response = await this.makeRequest(`/api/sessions/${sessionId}`);
     return response;
@@ -247,7 +247,7 @@ export class DaemonClient {
   /**
    * Describe a specific agent in a workspace
    */
-  async describeAgent(workspaceId: string, agentId: string): Promise<any> {
+  async describeAgent(workspaceId: string, agentId: string): Promise<unknown> {
     const response = await this.makeRequest(`/api/workspaces/${workspaceId}/agents/${agentId}`);
     return response;
   }
@@ -360,7 +360,7 @@ export class DaemonClient {
     templateId: string,
     data: Record<string, unknown>,
     options?: Record<string, unknown>,
-  ): Promise<any> {
+  ): Promise<unknown> {
     const response = await this.makeRequest("/api/library/generate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -396,7 +396,7 @@ export class DaemonClient {
   /**
    * Make a request to the daemon API with error handling
    */
-  private async makeRequest(path: string, options: RequestInit = {}): Promise<any> {
+  private async makeRequest(path: string, options: RequestInit = {}): Promise<unknown> {
     try {
       // Try the request first
       return await this.makeRequestInternal(path, options);
@@ -417,7 +417,7 @@ export class DaemonClient {
   /**
    * Internal request method without auto-start logic
    */
-  private async makeRequestInternal(path: string, options: RequestInit = {}): Promise<any> {
+  private async makeRequestInternal(path: string, options: RequestInit = {}): Promise<unknown> {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), this.timeout);
 

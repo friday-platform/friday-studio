@@ -4,12 +4,11 @@
  */
 
 import { CliSignalProvider } from "./cli-signal.ts";
+import { FileWatchSignalProvider } from "./fs-watch-signal.ts";
 import { HTTPSignalProvider } from "./http-signal.ts";
 import { HttpWebhookProvider } from "./http-webhook.ts";
 import { K8sEventsSignalProvider } from "./k8s-events.ts";
-import { StreamSignalProvider } from "./stream-signal.ts";
 import { TimerSignalProvider } from "./timer-signal.ts";
-import { FileWatchSignalProvider } from "./fs-watch-signal.ts";
 
 /**
  * Map of provider type strings to their corresponding class constructors
@@ -22,7 +21,6 @@ export const PROVIDER_CLASSES = {
   schedule: TimerSignalProvider,
   cron: TimerSignalProvider,
   "cron-scheduler": TimerSignalProvider,
-  stream: StreamSignalProvider,
   "k8s-events": K8sEventsSignalProvider,
   cli: CliSignalProvider,
   "fs-watch": FileWatchSignalProvider,

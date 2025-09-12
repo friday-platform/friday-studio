@@ -48,7 +48,7 @@ Use this tool to access detailed technical documentation when helping users with
     uri: z.string().describe("The resource URI to read (e.g., atlas://guides/workspace-creation)"),
   }),
   execute: async ({ uri }) => {
-    const resource = ATLAS_RESOURCES[uri as keyof typeof ATLAS_RESOURCES];
+    const resource = ATLAS_RESOURCES[uri];
 
     if (!resource) {
       const availableUris = Object.keys(ATLAS_RESOURCES).join(", ");
@@ -68,7 +68,7 @@ Use this tool to access detailed technical documentation when helping users with
         lines: content.split("\n").length,
       };
     } catch (error) {
-      throw new Error(`Failed to read resource ${uri}: ${(error as Error).message}`);
+      throw new Error(`Failed to read resource ${uri}: ${error.message}`);
     }
   },
 });

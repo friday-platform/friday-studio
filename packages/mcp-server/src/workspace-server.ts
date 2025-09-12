@@ -111,7 +111,7 @@ export class WorkspaceMCPServer {
           tools.push({
             name: jobName,
             description:
-              (jobSpec as { description?: string })?.description ||
+              jobSpec?.description ||
               `Execute the '${jobName}' workflow in this workspace. This job will run its configured agents in the defined execution strategy (sequential/parallel), with each agent receiving appropriate input sources (signal payload, previous results, or filesystem context) and using their assigned MCP tools to complete their specialized tasks.`,
             inputSchema: {
               type: "object",
@@ -178,7 +178,7 @@ export class WorkspaceMCPServer {
             }
 
             case "workspace_jobs_describe": {
-              const { jobName } = args as { jobName: string };
+              const { jobName } = args;
               const job = await this.dependencies.workspaceRuntime.describeJob(jobName);
               return { content: [{ type: "text", text: JSON.stringify(job, null, 2) }] };
             }
@@ -191,7 +191,7 @@ export class WorkspaceMCPServer {
         // Check if it's a discoverable job
         const discoverableJobs = this.getDiscoverableJobs();
         if (discoverableJobs.includes(name)) {
-          const { payload } = args as { payload?: unknown };
+          const { payload } = args;
 
           const result = await this.dependencies.workspaceRuntime.triggerJob(name, payload);
 

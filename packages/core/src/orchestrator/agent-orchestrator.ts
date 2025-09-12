@@ -294,7 +294,7 @@ export class AgentOrchestrator implements IAgentOrchestrator {
           },
           displayName: agent.metadata.displayName,
           metadata: agent.metadata.metadata,
-        } as AgentMetadata);
+        });
       }
 
       if (wrappedAgents.length > 0) {
@@ -645,10 +645,7 @@ export class AgentOrchestrator implements IAgentOrchestrator {
       let mappedCalls: ToolCall[] | undefined;
       let mappedResults: ToolResult[] | undefined;
       if (typeof output === "object" && output !== null) {
-        const rec = output as {
-          toolCalls?: typeof mappedCalls;
-          toolResults?: typeof mappedResults;
-        };
+        const rec = output;
         mappedCalls = rec.toolCalls;
         mappedResults = rec.toolResults;
       }

@@ -140,7 +140,7 @@ export class WorkspaceMemoryConsolidator
       const importantMemories = sessionMemory.queryMemories({ minRelevance: 0.6 });
 
       if (importantMemories.length > 0) {
-        this.syncUp({ id: sessionId } as IAtlasScope, importantMemories);
+        this.syncUp({ id: sessionId }, importantMemories);
       }
 
       this.sessionMemories.delete(sessionId);

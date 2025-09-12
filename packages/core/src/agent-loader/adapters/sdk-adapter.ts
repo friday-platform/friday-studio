@@ -61,7 +61,7 @@ export class SDKAgentAdapter implements AgentAdapter {
     return Promise.resolve(
       Array.from(this.agents.entries()).map(([id, agent]) => ({
         id,
-        type: "sdk" as AgentSourceType,
+        type: "sdk",
         displayName: agent.metadata.displayName,
         description: agent.metadata.description,
         version: agent.metadata.version,

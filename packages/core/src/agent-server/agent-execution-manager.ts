@@ -253,7 +253,7 @@ export class AgentExecutionManager {
    */
   getAgentState(agentId: string): string | undefined {
     const actor = this.activeAgents.get(agentId);
-    return actor?.getSnapshot().value as string | undefined;
+    return actor?.getSnapshot().value;
   }
 
   /**
@@ -263,7 +263,7 @@ export class AgentExecutionManager {
     const agentStates: Record<string, string> = {};
 
     for (const [agentId, actor] of this.activeAgents) {
-      agentStates[agentId] = actor.getSnapshot().value as string;
+      agentStates[agentId] = actor.getSnapshot().value;
     }
 
     return { activeAgents: this.activeAgents.size, agentStates };

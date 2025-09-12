@@ -7,8 +7,8 @@ import { join } from "@std/path";
 class MockDaemonServer {
   private server: Deno.HttpServer | null = null;
   private port = 0;
-  private workspaces: Map<string, any> = new Map();
-  private workspacesByPath: Map<string, any> = new Map();
+  private workspaces: Map<string, unknown> = new Map();
+  private workspacesByPath: Map<string, unknown> = new Map();
 
   async start(): Promise<number> {
     this.port = 9000 + Math.floor(Math.random() * 1000);

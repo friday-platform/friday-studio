@@ -580,7 +580,7 @@ class K8sEventsRuntimeSignal extends AtlasScope {
       }
 
       // Process Kubernetes event
-      const k8sEvent = event.object as K8sEvent;
+      const k8sEvent = event.object;
       const eventData = {
         type: event.type, // ADDED, MODIFIED, DELETED
         event: {

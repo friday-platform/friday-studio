@@ -69,15 +69,12 @@ interface TemplatesDisplayProps {
 
 const TemplatesDisplay: React.FC<TemplatesDisplayProps> = ({ templates }) => {
   // Group templates by category
-  const categorized = templates.reduce(
-    (acc, template) => {
-      const category = template.category || "General";
-      if (!acc[category]) acc[category] = [];
-      acc[category].push(template);
-      return acc;
-    },
-    {} as Record<string, Template[]>,
-  );
+  const categorized = templates.reduce((acc, template) => {
+    const category = template.category || "General";
+    if (!acc[category]) acc[category] = [];
+    acc[category].push(template);
+    return acc;
+  }, {});
 
   return (
     <Box flexDirection="column">

@@ -1,9 +1,9 @@
-import { logger } from "@atlas/logger";
-import type { WorkspaceEntry } from "../types.ts";
-import { resolve } from "@std/path";
-import { createFsWatchRunner, type FsWatchRunner } from "@atlas/fs-watch";
-import { parse } from "@std/yaml";
 import { WorkspaceConfigSchema } from "@atlas/config";
+import { createFsWatchRunner, type FsWatchRunner } from "@atlas/fs-watch";
+import { logger } from "@atlas/logger";
+import { resolve } from "@std/path";
+import { parse } from "@std/yaml";
+import type { WorkspaceEntry } from "../types.ts";
 
 interface WorkspaceConfigWatcherOptions {
   onConfigChange: (workspaceId: string, filePath: string) => Promise<void>;

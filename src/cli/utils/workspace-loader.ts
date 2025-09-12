@@ -19,7 +19,7 @@ export async function loadWorkspaceConfig(workspaceSlug: string): Promise<Worksp
       const workspacePath = join(dir, workspaceSlug, "workspace.yml");
       if (await exists(workspacePath)) {
         const workspaceContent = await Deno.readTextFile(workspacePath);
-        const config = parse(workspaceContent) as WorkspaceConfig;
+        const config = parse(workspaceContent);
         return config;
       }
     }
@@ -29,7 +29,7 @@ export async function loadWorkspaceConfig(workspaceSlug: string): Promise<Worksp
     const workspacePath = join(gitRoot, "examples", "workspaces", workspaceSlug, "workspace.yml");
 
     const workspaceContent = await Deno.readTextFile(workspacePath);
-    const config = parse(workspaceContent) as WorkspaceConfig;
+    const config = parse(workspaceContent);
 
     return config;
   } catch (error) {

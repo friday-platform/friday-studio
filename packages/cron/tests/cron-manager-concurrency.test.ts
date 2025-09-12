@@ -209,7 +209,7 @@ Deno.test("CronManager Concurrency - storage operations should be atomic", async
   const mockStorage = new MockStorageWithContention();
   mockStorage.setFailureRate(0.1); // 10% failure rate to simulate contention
 
-  const cronManager = new CronManager(mockStorage as unknown as MemoryKVStorage, mockLogger);
+  const cronManager = new CronManager(mockStorage, mockLogger);
 
   try {
     await cronManager.start();

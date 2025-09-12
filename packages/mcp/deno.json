@@ -3,6 +3,5 @@
   "version": "0.1.0",
   "exports": "./mod.ts",
   "imports": { "@modelcontextprotocol/sdk": "npm:@modelcontextprotocol/sdk@^1.12.1" },
-  "tasks": { "test": "deno test --allow-all" },
-  "compilerOptions": { "strict": true, "noImplicitAny": true }
+  "tasks": { "test": "deno test --allow-all" }
 }

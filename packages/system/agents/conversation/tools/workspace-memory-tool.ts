@@ -127,13 +127,10 @@ export const workspaceMemoryTool = tool({
           logger.debug("Retrieved memories count:", { count: allMemories.length });
           logger.debug(
             "DEBUG: Memory types found:",
-            allMemories.reduce(
-              (acc, m) => {
-                acc[m.memoryType] = (acc[m.memoryType] || 0) + 1;
-                return acc;
-              },
-              {} as Record<string, number>,
-            ),
+            allMemories.reduce((acc, m) => {
+              acc[m.memoryType] = (acc[m.memoryType] || 0) + 1;
+              return acc;
+            }, {}),
           );
           logger.debug("First memory structure:", {
             memory: allMemories[0] ? JSON.stringify(allMemories[0], null, 2) : "No memories",
@@ -156,7 +153,7 @@ export const workspaceMemoryTool = tool({
               const hasAgentExecution =
                 m.content &&
                 typeof m.content === "object" &&
-                (m.content as AgentExecutionContent).eventType === "agent_execution";
+                m.content.eventType === "agent_execution";
               logger.debug("Memory filter result:", { hasAgentExecution, memoryId: m.id });
               logger.debug("Memory content structure:", {
                 content: JSON.stringify(m.content, null, 2),
@@ -164,7 +161,7 @@ export const workspaceMemoryTool = tool({
               return hasAgentExecution;
             })
             .map((m) => {
-              const content = m.content as AgentExecutionContent;
+              const content = m.content;
               logger.debug("Processing agent execution:", { content });
               return {
                 user: content.prompt || "",

@@ -1,11 +1,11 @@
-import {
-  EnhancedPrompt,
-  ExtendedTokenAllocation,
-  MemoryEntry,
-  MemoryType,
-  WorklogEntry,
-} from "./mecmf-interfaces.ts";
 import { logger } from "@atlas/logger";
+import {
+  type EnhancedPrompt,
+  type ExtendedTokenAllocation,
+  type MemoryEntry,
+  MemoryType,
+  type WorklogEntry,
+} from "./mecmf-interfaces.ts";
 
 /**
  * Enhanced Token Budget Manager that includes session bridge and worklog allocations
@@ -539,9 +539,9 @@ export class EnhancedTokenBudgetManager {
       const textFields = ["text", "content", "description", "statement", "summary", "title"];
 
       for (const field of textFields) {
-        const contentObj = content as Record<string, unknown>;
+        const contentObj = content;
         if (contentObj[field] && typeof contentObj[field] === "string") {
-          text = contentObj[field] as string;
+          text = contentObj[field];
           break;
         }
       }

@@ -212,7 +212,7 @@ export class AtlasMemoryClassifier implements MemoryClassifier {
     const nameRegex = /\b([A-Z][a-z]+\s+[A-Z][a-z]+)\b/g;
     const names = Array.from(
       new Set(Array.from(text.matchAll(nameRegex)).map((m) => (m[1] || "").toString())),
-    ).filter(Boolean) as string[];
+    ).filter(Boolean);
     names.forEach((n) => entities.push({ name: n, type: "name", confidence: 0.6 }));
 
     return entities;
@@ -346,11 +346,8 @@ export class AtlasMemoryClassifier implements MemoryClassifier {
 
     // Find the highest scoring type
     const sortedTypes = Object.entries(scores).sort(([, a], [, b]) => b - a);
-    const [topKey, topScore] = (sortedTypes[0] as [keyof typeof MemoryType, number]) || [
-      MemoryType.WORKING,
-      0.5,
-    ];
-    const topType = topKey as MemoryType;
+    const [topKey, topScore] = sortedTypes[0] || [MemoryType.WORKING, 0.5];
+    const topType = topKey;
     const confidence = Math.min(1.0, (topScore || 0.5) * analysis.confidenceLevel);
 
     return {
@@ -398,7 +395,7 @@ export class AtlasMemoryClassifier implements MemoryClassifier {
       const matches = patterns.filter((pattern) => lowercaseContent.includes(pattern)).length;
       if (matches > maxMatches) {
         maxMatches = matches;
-        referencedTimeframe = timeframe as TemporalMarkers["referencedTimeframe"];
+        referencedTimeframe = timeframe;
       }
     }
 
@@ -632,7 +629,7 @@ export class AtlasMemoryClassifier implements MemoryClassifier {
   private calculateAccessRelevance(memory: MemoryEntry): number {
     // Simple access count normalization
     // Note: accessCount may not be available on all MemoryEntry implementations
-    const accessCount = (memory as unknown as { accessCount?: number }).accessCount || 0;
+    const accessCount = memory.accessCount || 0;
     return Math.min(1.0, accessCount / 10);
   }
 
@@ -661,9 +658,9 @@ export class AtlasMemoryClassifier implements MemoryClassifier {
       const textFields = ["text", "content", "description", "statement", "summary"];
 
       for (const field of textFields) {
-        const contentObj = content as Record<string, unknown>;
+        const contentObj = content;
         if (contentObj[field] && typeof contentObj[field] === "string") {
-          return contentObj[field] as string;
+          return contentObj[field];
         }
       }
 

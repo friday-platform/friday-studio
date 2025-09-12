@@ -7,16 +7,16 @@
 export interface ToolCall {
   toolName: string;
   serverName: string;
-  args: any;
-  result?: any;
-  error?: any;
+  args: unknown;
+  result?: unknown;
+  error?: unknown;
   timestamp: number;
   duration?: number;
 }
 
 export class ToolCallRecorder {
   private calls: ToolCall[] = [];
-  private interceptors = new Map<string, (args: any) => any>();
+  private interceptors = new Map<string, (args: unknown) => unknown>();
 
   /**
    * Record a tool call
@@ -31,7 +31,7 @@ export class ToolCallRecorder {
   async recordTimedCall<T>(
     toolName: string,
     serverName: string,
-    args: any,
+    args: unknown,
     fn: () => Promise<T>,
   ): Promise<T> {
     const startTime = Date.now();
@@ -83,14 +83,14 @@ export class ToolCallRecorder {
   /**
    * Add an interceptor for a tool
    */
-  addInterceptor(toolName: string, interceptor: (args: any) => any): void {
+  addInterceptor(toolName: string, interceptor: (args: unknown) => unknown): void {
     this.interceptors.set(toolName, interceptor);
   }
 
   /**
    * Get interceptor for a tool
    */
-  getInterceptor(toolName: string): ((args: any) => any) | undefined {
+  getInterceptor(toolName: string): ((args: unknown) => unknown) | undefined {
     return this.interceptors.get(toolName);
   }
 
@@ -182,7 +182,7 @@ export class ToolCallRecorder {
   /**
    * Assert tool was called with specific arguments
    */
-  assertToolCalledWith(toolName: string, expectedArgs: any, serverName?: string): void {
+  assertToolCalledWith(toolName: string, expectedArgs: unknown, serverName?: string): void {
     const found = this.calls.find(
       (call) =>
         call.toolName === toolName &&

@@ -99,7 +99,7 @@ function createInvalidServerConfig(): MCPServerConfig {
       args: ["--invalid-arg"],
     },
     tools: { allow: ["*"] },
-  } as MCPServerConfig;
+  };
 }
 
 /**

@@ -279,7 +279,7 @@ export function validateEnvelope<T>(
 ): { success: true; data: AtlasMessageEnvelope<T> } | { success: false; error: z.ZodError } {
   const result = AtlasMessageEnvelopeSchema.safeParse(envelope);
   if (result.success) {
-    return { success: true, data: result.data as AtlasMessageEnvelope<T> };
+    return { success: true, data: result.data };
   }
   return { success: false, error: result.error };
 }
@@ -330,7 +330,7 @@ export function createMessage<T>(
 ): AtlasMessageEnvelope<T> {
   const domain = options?.domain || inferDomainFromWorkerType(source.workerType);
 
-  if (!isValidMessageForDomain(type, domain.toUpperCase() as keyof typeof ATLAS_MESSAGE_DOMAINS)) {
+  if (!isValidMessageForDomain(type, domain.toUpperCase())) {
     console.warn(`Message type "${type}" may not be appropriate for domain "${domain}"`);
   }
 
@@ -356,11 +356,7 @@ export function createMessage<T>(
   // Validate the created envelope
   const validation = validateEnvelope(envelope);
   if (!validation.success) {
-    throw new Error(
-      `Invalid envelope created: ${
-        (validation as { success: false; error: z.ZodError }).error.message
-      }`,
-    );
+    throw new Error(`Invalid envelope created: ${(validation).error.message}`);
   }
 
   return envelope;
@@ -412,7 +408,7 @@ export function createResponseMessage<T>(
   return createMessage(responseType, payload, source, {
     ...options,
     correlationId: originalMessage.correlationId,
-    traceHeaders: originalMessage.traceHeaders as Record<string, string>,
+    traceHeaders: originalMessage.traceHeaders,
     destination: {
       workerId: originalMessage.source.workerId,
       workerType: originalMessage.source.workerType,
@@ -451,11 +447,7 @@ export function createAgentExecuteMessage(
   // Validate payload
   const validation = validateAgentExecutePayload(payload);
   if (!validation.success) {
-    throw new Error(
-      `Invalid agent execute payload: ${
-        (validation as { success: false; error: z.ZodError }).error.message
-      }`,
-    );
+    throw new Error(`Invalid agent execute payload: ${(validation).error.message}`);
   }
 
   return createAgentMessage(ATLAS_MESSAGE_TYPES.AGENT.EXECUTE, payload, source, {
@@ -473,11 +465,7 @@ export function createAgentExecutionCompleteMessage(
   // Validate payload
   const validation = validateAgentExecutionCompletePayload(payload);
   if (!validation.success) {
-    throw new Error(
-      `Invalid agent execution complete payload: ${
-        (validation as { success: false; error: z.ZodError }).error.message
-      }`,
-    );
+    throw new Error(`Invalid agent execution complete payload: ${(validation).error.message}`);
   }
 
   return createResponseMessage(
@@ -562,11 +550,7 @@ export function deserializeEnvelope<T = unknown>(
     const validation = validateEnvelope<T>(parsed);
 
     if (!validation.success) {
-      return {
-        error: `Invalid envelope: ${
-          (validation as { success: false; error: z.ZodError }).error.message
-        }`,
-      };
+      return { error: `Invalid envelope: ${(validation).error.message}` };
     }
 
     return { envelope: validation.data };

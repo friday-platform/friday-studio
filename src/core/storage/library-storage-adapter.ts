@@ -87,7 +87,7 @@ interface LibraryMetadata {
   agent_ids?: string[];
   template_id?: string;
   generated_by?: string;
-  custom_fields?: Record<string, any>;
+  custom_fields?: Record<string, unknown>;
   created_at: string;
   updated_at: string;
   tags: string[];

@@ -190,7 +190,7 @@ Deno.test("withExponentialBackoff - custom isRetryable function", async () => {
     {
       initialDelay: 10,
       isRetryable: (error) => {
-        const err = error as { code?: string };
+        const err = error;
         return err?.code === "RATE_LIMITED";
       },
     },
@@ -205,7 +205,7 @@ Deno.test("createRetryWrapper - creates reusable retry function", async () => {
     maxRetries: 2,
     initialDelay: 5,
     isRetryable: (error) => {
-      const err = error as Error;
+      const err = error;
       return err?.message?.includes("retry");
     },
   });
@@ -314,8 +314,8 @@ Deno.test("withExponentialBackoff - zero retries", async () => {
 Deno.test("withExponentialBackoff - preserves error context", async () => {
   const customError = new Error("Custom overload error");
   customError.name = "OverloadError";
-  (customError as { code?: string; retryAfter?: number }).code = "OVERLOADED";
-  (customError as { code?: string; retryAfter?: number }).retryAfter = 5000;
+  customError.code = "OVERLOADED";
+  customError.retryAfter = 5000;
 
   try {
     await withExponentialBackoff(
@@ -326,7 +326,7 @@ Deno.test("withExponentialBackoff - preserves error context", async () => {
     );
   } catch (error) {
     assertEquals(error, customError);
-    assertEquals((error as { code?: string; retryAfter?: number }).code, "OVERLOADED");
-    assertEquals((error as { code?: string; retryAfter?: number }).retryAfter, 5000);
+    assertEquals(error.code, "OVERLOADED");
+    assertEquals(error.retryAfter, 5000);
   }
 });

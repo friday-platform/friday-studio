@@ -72,5 +72,5 @@ export const PROVIDER_ENV_VARS = {
  * Get the environment variable name for a provider
  */
 export function getProviderEnvVar(provider: string): string | undefined {
-  return PROVIDER_ENV_VARS[provider as keyof typeof PROVIDER_ENV_VARS];
+  return PROVIDER_ENV_VARS[provider];
 }

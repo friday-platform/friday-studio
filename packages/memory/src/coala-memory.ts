@@ -12,7 +12,6 @@ import { logger } from "@atlas/logger";
 import {
   CoALALocalFileStorageAdapter,
   type IVectorSearchStorageAdapter,
-  KnowledgeGraphLocalStorageAdapter,
   type VectorEmbedding,
   type VectorSearchConfig,
   VectorSearchLocalStorageAdapter,
@@ -23,22 +22,10 @@ import type {
   IAtlasScope,
   ICoALAMemoryStorageAdapter,
   ITempestMemoryManager,
-  ITempestMemoryStorageAdapter,
 } from "../../../src/types/core.ts";
-import {
-  getWorkspaceKnowledgeGraphDir,
-  getWorkspaceMemoryDir,
-  getWorkspaceVectorDir,
-} from "../../../src/utils/paths.ts";
+import { getWorkspaceMemoryDir, getWorkspaceVectorDir } from "../../../src/utils/paths.ts";
 import { type ProcessedPrompt, tokenizePrompt } from "../../../src/utils/prompt-tokenizer.ts";
 import { GlobalEmbeddingProvider } from "./global-embedding-provider.ts";
-import {
-  type ExtractedFact,
-  type IKnowledgeGraphStorageAdapter,
-  KnowledgeGraphManager,
-  type KnowledgeGraphQuery,
-  type KnowledgeEntity as MemoryKnowledgeEntity,
-} from "./knowledge-graph.ts";
 import type { MECMFEmbeddingProvider } from "./mecmf-interfaces.ts";
 
 // Define the enum first
@@ -86,7 +73,7 @@ export interface CoALACognitiveLoop {
   reflect(): CoALAMemoryEntry[];
   consolidate(): void;
   prune(): void;
-  adapt(feedback: any): void;
+  adapt(feedback: unknown): void;
 }
 
 export interface CoALAMemoryQuery {
@@ -112,7 +99,7 @@ export class CoALAMemoryManager implements ITempestMemoryManager, CoALACognitive
   private scope: IMemoryScope;
   private cognitiveLoopInterval: number = 300000; // 5 minutes
   private loopTimer?: number;
-  private knowledgeGraph?: KnowledgeGraphManager;
+  // private knowledgeGraph?: KnowledgeGraphManager;
   private vectorSearch?: IVectorSearchStorageAdapter;
   private embeddingProvider?: MECMFEmbeddingProvider;
   private vectorSearchConfig: VectorSearchConfig | null = null;
@@ -132,7 +119,7 @@ export class CoALAMemoryManager implements ITempestMemoryManager, CoALACognitive
 
   constructor(
     scope: IMemoryScope | IAtlasScope,
-    storageAdapter?: ITempestMemoryStorageAdapter | ICoALAMemoryStorageAdapter,
+    storageAdapter?: ICoALAMemoryStorageAdapter,
     enableCognitiveLoop: boolean = true,
     options?: { vectorSearchConfig?: Partial<VectorSearchConfig>; commitDebounceDelay?: number },
   ) {
@@ -145,7 +132,7 @@ export class CoALAMemoryManager implements ITempestMemoryManager, CoALACognitive
 
     // Use CoALA storage adapter if provided, otherwise create workspace-specific one
     if (storageAdapter && "commitByType" in storageAdapter) {
-      this.store = storageAdapter as ICoALAMemoryStorageAdapter;
+      this.store = storageAdapter;
     } else if (storageAdapter) {
       // Wrap legacy adapter for backwards compatibility
       const workspaceId = scope.workspaceId || scope.id;
@@ -186,15 +173,6 @@ export class CoALAMemoryManager implements ITempestMemoryManager, CoALACognitive
     } else {
       this.isLoaded = true;
     }
-  }
-
-  // ITempestMemoryManager implementation (legacy compatibility)
-  remember(key: string, value: string): void {
-    this.rememberWithMetadata(key, value, {
-      memoryType: CoALAMemoryType.WORKING,
-      tags: [],
-      relevanceScore: 0.5,
-    });
   }
 
   recall(key: string): unknown {
@@ -380,7 +358,7 @@ export class CoALAMemoryManager implements ITempestMemoryManager, CoALACognitive
       const age = Date.now() - memory.timestamp.getTime();
       const timeSinceAccess = Date.now() - memory.lastAccessed.getTime();
 
-      // Reflect on frequently accessed memories or old unaccessed ones
+      // Reflect on frequently accessed memories or old un-accessed ones
       return (
         (memory.accessCount > 5 && age > 3600000) || // 1 hour old, frequently accessed
         timeSinceAccess > 86400000
@@ -654,28 +632,8 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
     if ("commitAll" in this.store && typeof this.store.commitAll === "function") {
       await this.store.commitAll(dataByType);
     } else {
-      // Fallback to legacy storage (combine all types)
-      const allMemories = Object.fromEntries(
-        Array.from(this.memories.entries()).map(([key, memory]) => {
-          // Validate memory entry before serialization
-          const parseResult = CoALAMemoryEntrySchema.safeParse(memory);
-          if (!parseResult.success) {
-            logger.warn(`Invalid memory entry during legacy commit: ${key}`, {
-              error: parseResult.error,
-            });
-          }
-
-          return [
-            key,
-            {
-              ...memory,
-              timestamp: memory.timestamp.toISOString(),
-              lastAccessed: memory.lastAccessed.toISOString(),
-            },
-          ];
-        }),
-      );
-      await (this.store as ITempestMemoryStorageAdapter).commit(allMemories);
+      logger.warn("Storage adapter does not support commitAll");
+      return;
     }
   }
 
@@ -686,7 +644,7 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
         const dataByType = await this.store.loadAll();
 
         for (const [memoryType, typeData] of Object.entries(dataByType)) {
-          const memoryTypeEnum = memoryType as CoALAMemoryType;
+          const memoryTypeEnum = CoALAMemoryType[memoryType as keyof typeof CoALAMemoryType];
           const typeMap = this.memoriesByType.get(memoryTypeEnum);
 
           if (typeMap && typeData) {
@@ -709,33 +667,6 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
             }
           }
         }
-      } else {
-        // Fallback to legacy loading
-        const data = await (this.store as ITempestMemoryStorageAdapter).load();
-        if (data) {
-          for (const [key, serializedMemory] of Object.entries(data)) {
-            // Validate and parse memory entry
-            const parseResult = CoALAMemoryEntrySchema.safeParse(serializedMemory);
-            if (!parseResult.success) {
-              logger.warn(`Invalid memory entry during legacy load: ${key}`, {
-                error: parseResult.error,
-                serializedData: serializedMemory,
-              });
-              continue; // Skip invalid entries
-            }
-
-            const restoredMemory = parseResult.data;
-
-            // Store in global map
-            this.memories.set(key, restoredMemory);
-
-            // Store in type-specific map
-            const typeMap = this.memoriesByType.get(restoredMemory.memoryType);
-            if (typeMap) {
-              typeMap.set(key, restoredMemory);
-            }
-          }
-        }
       }
     } catch (error) {
       logger.warn("Failed to load CoALA memories from storage", { error });
@@ -752,7 +683,8 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
     string,
     { count: number; avgRelevance: number; oldestEntry: Date | null }
   > {
-    const stats: Record<string, any> = {};
+    const stats: Record<string, { count: number; avgRelevance: number; oldestEntry: Date | null }> =
+      {};
 
     for (const [memoryType, typeMap] of this.memoriesByType.entries()) {
       const memories = Array.from(typeMap.values());
@@ -819,7 +751,7 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
     return this.getMemoriesByType(memoryType).length;
   }
 
-  async getStorageStatistics(): Promise<any> {
+  async getStorageStatistics(): Promise<unknown> {
     if (
       "getMemoryStatistics" in this.store &&
       typeof this.store.getMemoryStatistics === "function"
@@ -838,140 +770,9 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
       if (this.store.constructor.name === "InMemoryStorageAdapter") {
         return;
       }
-
-      // Get base path for storage - assume we can get this from the scope or store
-      const basePath = this.getKnowledgeGraphBasePath();
-      const storageAdapter = new KnowledgeGraphLocalStorageAdapter(basePath);
-      // Create an adapter to convert between storage and memory KnowledgeEntity types
-      const kgStorageAdapter = this.createKnowledgeGraphAdapter(storageAdapter);
-      this.knowledgeGraph = new KnowledgeGraphManager(kgStorageAdapter, this.scope.id);
     } catch (error) {
       logger.warn("Failed to initialize knowledge graph for semantic memory", { error: { error } });
     }
-  }
-
-  private getKnowledgeGraphBasePath(): string {
-    // Use workspace-specific knowledge graph directory
-    const workspaceId = this.scope.workspaceId || this.scope.id;
-    return getWorkspaceKnowledgeGraphDir(workspaceId);
-  }
-
-  // Store facts in knowledge graph (called from semantic memory operations)
-  async storeFactsInKnowledgeGraph(facts: ExtractedFact[]): Promise<string[]> {
-    if (!this.knowledgeGraph) {
-      logger.warn("Knowledge graph not available for fact storage");
-      return [];
-    }
-
-    try {
-      return await this.knowledgeGraph.storeFacts(facts);
-    } catch (error) {
-      logger.error("Error storing facts in knowledge graph", { error });
-      return [];
-    }
-  }
-
-  // Query knowledge graph for semantic memory enhancement
-  async queryKnowledgeGraph(
-    query: KnowledgeGraphQuery,
-  ): Promise<{ entities: any[]; relationships: any[]; facts: any[] }> {
-    if (!this.knowledgeGraph) {
-      return { entities: [], relationships: [], facts: [] };
-    }
-
-    try {
-      return await this.knowledgeGraph.queryKnowledge(query);
-    } catch (error) {
-      logger.error("Error querying knowledge graph", { error });
-      return { entities: [], relationships: [], facts: [] };
-    }
-  }
-
-  // Get semantic facts related to a query
-  async getSemanticFacts(searchTerm: string, limit: number = 10): Promise<any[]> {
-    if (!this.knowledgeGraph) {
-      return [];
-    }
-
-    try {
-      const results = await this.knowledgeGraph.queryKnowledge({ search: searchTerm, limit });
-      return results.facts;
-    } catch (error) {
-      logger.error("Error getting semantic facts", { error });
-      return [];
-    }
-  }
-
-  // Get workspace knowledge summary
-  async getWorkspaceKnowledgeSummary(): Promise<any> {
-    if (!this.knowledgeGraph) {
-      return null;
-    }
-
-    try {
-      return await this.knowledgeGraph.getWorkspaceKnowledgeSummary();
-    } catch (error) {
-      logger.error("Error getting workspace knowledge summary", { error });
-      return null;
-    }
-  }
-
-  // Enhanced semantic memory storage that also updates knowledge graph
-  async rememberSemanticFact(
-    key: string,
-    fact: any,
-    metadata?: {
-      memoryType: CoALAMemoryType;
-      tags: string[];
-      relevanceScore: number;
-      associations?: string[];
-      confidence?: number;
-      decayRate?: number;
-    },
-  ): Promise<void> {
-    // Store in regular semantic memory
-    if (metadata) {
-      await this.rememberWithMetadata(key, fact, metadata);
-    } else {
-      this.remember(key, fact);
-    }
-
-    // If this is a structured fact, also store in knowledge graph
-    if (this.knowledgeGraph && this.isStructuredFact(fact)) {
-      try {
-        const extractedFacts = this.convertToExtractedFacts(fact, key);
-        await this.knowledgeGraph.storeFacts(extractedFacts);
-      } catch (error) {
-        logger.warn("Failed to store fact in knowledge graph", { error });
-      }
-    }
-  }
-
-  // Check if a fact is structured enough for knowledge graph
-  private isStructuredFact(fact: any): boolean {
-    return (
-      fact && (fact.statement || fact.entities || fact.relationships) && typeof fact === "object"
-    );
-  }
-
-  // Convert a fact to ExtractedFact format
-  private convertToExtractedFacts(fact: any, key: string): ExtractedFact[] {
-    if (fact.statement && fact.entities && fact.relationships) {
-      // Already in ExtractedFact format
-      return [fact as ExtractedFact];
-    }
-
-    // Convert simple fact to ExtractedFact format
-    return [
-      {
-        type: "general_fact",
-        statement: fact.statement || JSON.stringify(fact),
-        entities: fact.entities || [],
-        relationships: fact.relationships || [],
-        confidence: fact.confidence || 0.7,
-        context: `Stored as semantic memory: ${key}`,
-      },
-    ];
   }
 
   // === STREAMING MEMORY METHODS ===
@@ -988,7 +789,7 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
     timestamp: number;
     sessionId: string;
     agentId?: string;
-    context?: Record<string, any>;
+    context?: Record<string, unknown>;
   }): Promise<void> {
     // Store as semantic memory with high confidence
     this.rememberWithMetadata(
@@ -1022,7 +823,7 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
       timestamp: number;
       sessionId: string;
       agentId?: string;
-      context?: Record<string, any>;
+      context?: Record<string, unknown>;
     }>,
   ): Promise<void> {
     const promises = facts.map((fact) => this.storeFact(fact));
@@ -1038,8 +839,8 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
     agentId: string;
     strategy: string;
     duration: number;
-    inputCharacteristics: Record<string, any>;
-    outcome: Record<string, any>;
+    inputCharacteristics: Record<string, unknown>;
+    outcome: Record<string, unknown>;
     timestamp: number;
     sessionId: string;
   }): Promise<void> {
@@ -1074,8 +875,8 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
       agentId: string;
       strategy: string;
       duration: number;
-      inputCharacteristics: Record<string, any>;
-      outcome: Record<string, any>;
+      inputCharacteristics: Record<string, unknown>;
+      outcome: Record<string, unknown>;
       timestamp: number;
       sessionId: string;
     }>,
@@ -1183,7 +984,7 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
 
       // Set up configuration
       this.vectorSearchConfig = {
-        embeddingProvider: this.embeddingProvider as any, // MECMFEmbeddingProvider extends the required interface
+        embeddingProvider: this.embeddingProvider, // MECMFEmbeddingProvider extends the required interface
         storageAdapter: this.vectorSearch,
         enabledMemoryTypes: Array.from(this.vectorIndexedTypes).map((t) => t.toString()),
         autoIndexOnWrite: true,
@@ -1743,7 +1544,10 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
     return bullets.length > 0 ? `\n## Relevant Memory:\n${bullets.join("\n")}\n\n` : "";
   }
 
-  private extractMemoryContent(content: any, maxLength?: number): string {
+  private extractMemoryContent(
+    content: string | Record<string, string>,
+    maxLength?: number,
+  ): string {
     let text = "";
 
     if (typeof content === "string") {
@@ -1842,115 +1646,6 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
     } catch (error) {
       logger.error("Failed to rebuild vector index", { error });
     }
-  }
-
-  /**
-   * Create an adapter to convert between storage and memory KnowledgeEntity types
-   */
-  private createKnowledgeGraphAdapter(
-    storageAdapter: KnowledgeGraphLocalStorageAdapter,
-  ): IKnowledgeGraphStorageAdapter {
-    return {
-      // Entity operations - convert between storage and memory entity types
-      storeEntity: async (entity: MemoryKnowledgeEntity) => {
-        // Convert memory entity to storage entity
-        const storageEntity = {
-          ...entity,
-          createdAt: entity.timestamp || new Date(),
-          updatedAt: new Date(),
-        };
-        // Remove memory-specific fields that storage doesn't have
-        const { source, timestamp, ...entityForStorage } = storageEntity;
-        await storageAdapter.storeEntity(entityForStorage);
-      },
-      getEntity: async (id: string) => {
-        const entity = await storageAdapter.getEntity(id);
-        if (!entity) return null;
-        // Convert storage entity to memory entity
-        const { createdAt, updatedAt, ...baseEntity } = entity;
-        return {
-          ...baseEntity,
-          source: "storage",
-          timestamp: createdAt || new Date(),
-        } as MemoryKnowledgeEntity;
-      },
-      queryEntities: async (query: KnowledgeGraphQuery) => {
-        const entities = await storageAdapter.queryEntities(query);
-        // Convert each storage entity to memory entity
-        return entities.map((entity: any) => {
-          const { createdAt, updatedAt, ...baseEntity } = entity;
-          return {
-            ...baseEntity,
-            source: "storage",
-            timestamp: createdAt || new Date(),
-          } as MemoryKnowledgeEntity;
-        });
-      },
-      updateEntity: async (id: string, updates: Partial<MemoryKnowledgeEntity>) => {
-        // Convert updates to storage format
-        const { source, timestamp, ...storageUpdates } = updates;
-        await storageAdapter.updateEntity(id, { ...storageUpdates, updatedAt: new Date() });
-      },
-      deleteEntity: async (id: string) => {
-        await storageAdapter.deleteEntity(id);
-      },
-
-      // Relationship operations - convert between storage and memory types
-      storeRelationship: storageAdapter.storeRelationship.bind(storageAdapter),
-      getRelationship: async (id: string) => {
-        const rel = await storageAdapter.getRelationship(id);
-        return rel ? { ...rel, source: "storage", timestamp: new Date() } : null;
-      },
-      queryRelationships: async (query: KnowledgeGraphQuery) => {
-        const rels = await storageAdapter.queryRelationships(query);
-        return rels.map((rel) => ({ ...rel, source: "storage", timestamp: new Date() }));
-      },
-      getEntityRelationships: async (entityId: string) => {
-        const rels = await storageAdapter.getEntityRelationships(entityId);
-        return rels.map((rel) => ({ ...rel, source: "storage", timestamp: new Date() }));
-      },
-      deleteRelationship: storageAdapter.deleteRelationship.bind(storageAdapter),
-
-      // Fact operations - convert between storage and memory types
-      storeFact: storageAdapter.storeFact.bind(storageAdapter),
-      getFact: async (id: string) => {
-        const fact = await storageAdapter.getFact(id);
-        return fact
-          ? {
-              ...fact,
-              entities: [],
-              relationships: [],
-              source: "storage",
-              timestamp: new Date(),
-              validated: true,
-            }
-          : null;
-      },
-      queryFacts: async (query: KnowledgeGraphQuery) => {
-        const facts = await storageAdapter.queryFacts(query);
-        return facts.map((fact) => ({
-          ...fact,
-          entities: [],
-          relationships: [],
-          source: "storage",
-          timestamp: new Date(),
-          validated: true,
-        }));
-      },
-      deleteFact: storageAdapter.deleteFact.bind(storageAdapter),
-
-      // Graph operations - convert entity arrays
-      getNeighbors: async (entityId: string, depth: number) => {
-        const entities = await storageAdapter.getNeighbors(entityId, depth);
-        return entities.map((entity) => ({ ...entity, source: "storage", timestamp: new Date() }));
-      },
-      findPaths: async (sourceEntityId: string, targetEntityId: string, maxDepth: number) => {
-        const paths = await storageAdapter.findPaths(sourceEntityId, targetEntityId, maxDepth);
-        return paths.map((path) =>
-          path.map((rel) => ({ ...rel, source: "storage", timestamp: new Date() })),
-        );
-      },
-    };
   }
 
   // Cleanup

@@ -160,11 +160,7 @@ export class ConfigLoader {
 
     const result = validateSignalPayload(signal, payload);
     if (!result.success) {
-      throw new Error(
-        `Signal payload validation failed for '${signalName}': ${
-          (result as { success: false; error: string }).error
-        }`,
-      );
+      throw new Error(`Signal payload validation failed for '${signalName}': ${result.error}`);
     }
   }
 }

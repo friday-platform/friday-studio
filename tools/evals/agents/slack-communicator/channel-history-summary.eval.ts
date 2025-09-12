@@ -1,11 +1,10 @@
-import { bundledAgents } from "@atlas/bundled-agents";
+import { bundledAgents, SlackAgentResultSchema } from "@atlas/bundled-agents";
 import { assert } from "@std/assert";
 import { AgentContextAdapter } from "../../lib/context.ts";
-import { loadCredentials } from "../../lib/load-credentials.ts";
 import { llmJudge } from "../../lib/llm-judge.ts";
-import { saveSnapshot } from "../../lib/snapshot.ts";
+import { loadCredentials } from "../../lib/load-credentials.ts";
 import { createSlackMCPMockTools } from "../../lib/slack-mcp-mock-tools.ts";
-import { SlackAgentResultSchema } from "@atlas/bundled-agents";
+import { saveSnapshot } from "../../lib/snapshot.ts";
 
 Deno.test({
   name: "Slack Communicator: Channel history summary",

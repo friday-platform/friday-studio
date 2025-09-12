@@ -6,8 +6,8 @@
  */
 
 import { ConfigLoader } from "@atlas/config";
-import { formatZodError } from "@atlas/utils";
 import { FilesystemConfigAdapter } from "@atlas/storage";
+import { formatZodError } from "@atlas/utils";
 import { expect } from "@std/expect";
 import { walk } from "@std/fs";
 import { join, resolve } from "@std/path";

@@ -478,18 +478,11 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
     decision: unknown,
   ): Promise<AgentExecutionResult> {
     // Validate decision format
-    const decisionObj = decision as {
-      approved?: boolean;
-      reason?: string;
-      modifiedAction?: unknown;
-      conditions?: unknown;
-    };
+    const decisionObj = decision;
     const approvalDecision = {
       approved: Boolean(decisionObj?.approved),
       reason: decisionObj?.reason,
-      conditions: Array.isArray(decisionObj?.conditions)
-        ? (decisionObj?.conditions as string[])
-        : undefined,
+      conditions: Array.isArray(decisionObj?.conditions) ? decisionObj?.conditions : undefined,
     };
 
     try {

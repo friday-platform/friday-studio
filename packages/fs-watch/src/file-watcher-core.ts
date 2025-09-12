@@ -1,5 +1,5 @@
-import { isAbsolute, join, normalize, relative, resolve } from "@std/path";
 import { logger } from "@atlas/logger";
+import { isAbsolute, join, normalize, relative, resolve } from "@std/path";
 
 export type WatchEventKind = "create" | "modify" | "remove" | "any";
 

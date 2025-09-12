@@ -128,7 +128,7 @@ export class MECMFErrorHandler {
               data: fallbackResult,
               usedFallback: true,
               fallbackMethod: "text-based keyword search",
-              originalError: error as Error,
+              originalError: error,
               performanceImpact: "moderate",
             };
           } catch (_fallbackError) {
@@ -176,7 +176,7 @@ export class MECMFErrorHandler {
           data: cachedResult,
           usedFallback: true,
           fallbackMethod: "cached_recent_memories",
-          originalError: error as Error,
+          originalError: error,
           performanceImpact: "minimal",
         };
       } catch (_cacheError) {
@@ -184,7 +184,7 @@ export class MECMFErrorHandler {
           data: [],
           usedFallback: true,
           fallbackMethod: "empty_result",
-          originalError: error as Error,
+          originalError: error,
           performanceImpact: "significant",
         };
       }
@@ -335,7 +335,7 @@ export class MECMFErrorHandler {
             data: result,
             usedFallback: true,
             fallbackMethod: fallback.name,
-            originalError: primaryError as Error,
+            originalError: primaryError,
             performanceImpact: fallback.performanceImpact,
           };
         } catch (_fallbackError) {}

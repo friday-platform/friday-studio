@@ -149,7 +149,7 @@ export type JsonSchema =
 export function jsonSchemaToZod(jsonSchema: JsonSchema): z.ZodSchema<unknown> {
   // Handle boolean schemas
   if (typeof jsonSchema === "boolean") {
-    return jsonSchema ? z.any() : z.never();
+    return jsonSchema ? z.unknown() : z.never();
   }
 
   // Handle $ref (not supported)
@@ -159,23 +159,11 @@ export function jsonSchemaToZod(jsonSchema: JsonSchema): z.ZodSchema<unknown> {
 
   // Handle combinators
   if (jsonSchema.oneOf) {
-    return z.union(
-      jsonSchema.oneOf.map((s) => jsonSchemaToZod(s)) as [
-        z.ZodSchema,
-        z.ZodSchema,
-        ...z.ZodSchema[],
-      ],
-    );
+    return z.union(jsonSchema.oneOf.map((s) => jsonSchemaToZod(s)));
   }
 
   if (jsonSchema.anyOf) {
-    return z.union(
-      jsonSchema.anyOf.map((s) => jsonSchemaToZod(s)) as [
-        z.ZodSchema,
-        z.ZodSchema,
-        ...z.ZodSchema[],
-      ],
-    );
+    return z.union(jsonSchema.anyOf.map((s) => jsonSchemaToZod(s)));
   }
 
   if (jsonSchema.allOf) {
@@ -184,7 +172,7 @@ export function jsonSchemaToZod(jsonSchema: JsonSchema): z.ZodSchema<unknown> {
   }
 
   if (!jsonSchema || !jsonSchema.type) {
-    return z.any();
+    return z.unknown();
   }
 
   const type = Array.isArray(jsonSchema.type) ? jsonSchema.type[0] : jsonSchema.type;
@@ -214,7 +202,7 @@ export function jsonSchemaToZod(jsonSchema: JsonSchema): z.ZodSchema<unknown> {
     case "string": {
       let stringSchema = z.string();
       if (jsonSchema.enum) {
-        return z.enum(jsonSchema.enum as [string, ...string[]]);
+        return z.enum(jsonSchema.enum);
       }
       if (jsonSchema.minLength) {
         stringSchema = stringSchema.min(jsonSchema.minLength);
@@ -253,11 +241,9 @@ export function jsonSchemaToZod(jsonSchema: JsonSchema): z.ZodSchema<unknown> {
     case "array": {
       if (Array.isArray(jsonSchema.items)) {
         // Tuple
-        return z.tuple(
-          jsonSchema.items.map((s) => jsonSchemaToZod(s)) as [z.ZodSchema, ...z.ZodSchema[]],
-        );
+        return z.tuple(jsonSchema.items.map((s) => jsonSchemaToZod(s)));
       }
-      let arraySchema = z.array(jsonSchema.items ? jsonSchemaToZod(jsonSchema.items) : z.any());
+      let arraySchema = z.array(jsonSchema.items ? jsonSchemaToZod(jsonSchema.items) : z.unknown());
       if (jsonSchema.minItems) {
         arraySchema = arraySchema.min(jsonSchema.minItems);
       }
@@ -290,7 +276,7 @@ export function jsonSchemaToZod(jsonSchema: JsonSchema): z.ZodSchema<unknown> {
     }
 
     default:
-      return z.any();
+      return z.unknown();
   }
 }
 

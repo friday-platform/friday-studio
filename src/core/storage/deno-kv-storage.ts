@@ -206,7 +206,7 @@ export class DenoKVStorage implements KVStorage {
 
       for await (const entry of iter) {
         yield {
-          key: entry.key as string[], // Deno KV keys are always string arrays
+          key: entry.key, // Deno KV keys are always string arrays
           value: entry.value,
           versionstamp: entry.versionstamp,
         };
@@ -237,8 +237,8 @@ export class DenoKVStorage implements KVStorage {
           const entry = entries[i];
           if (entry) {
             events.push({
-              key: entry.key as string[],
-              value: entry.value as T,
+              key: entry.key,
+              value: entry.value,
               versionstamp: entry.versionstamp ?? undefined,
             });
           }

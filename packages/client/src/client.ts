@@ -388,7 +388,7 @@ export class AtlasClient {
           if (line.startsWith("data: ")) {
             try {
               const data = JSON.parse(line.slice(6));
-              yield data as LogEntry;
+              yield data;
             } catch {
               // Ignore invalid JSON
             }
@@ -446,7 +446,7 @@ export class AtlasClient {
     const signalConfig = await this.loadSignalConfig(workspacePath, signalName);
 
     // Return without schema validation for now to avoid Zod issues
-    return signalConfig as unknown as SignalDetailedInfo;
+    return signalConfig;
   }
 
   /**
@@ -464,14 +464,14 @@ export class AtlasClient {
 
       const workspaceYmlPath = `${workspacePath}/workspace.yml`;
       const yamlContent = await Deno.readTextFile(workspaceYmlPath);
-      const rawConfig = yaml.parse(yamlContent) as Record<string, unknown>;
+      const rawConfig = yaml.parse(yamlContent);
 
       // Extract signal configuration (signals can be at root or under workspace)
-      const workspace = rawConfig.workspace as Record<string, unknown> | undefined;
+      const workspace = rawConfig.workspace;
       const signals = (workspace?.signals || rawConfig.signals) as
         | Record<string, unknown>
         | undefined;
-      const signalConfig = signals?.[signalName] as Record<string, unknown> | undefined;
+      const signalConfig = signals?.[signalName];
 
       if (!signalConfig) {
         throw new AtlasApiError(`Signal '${signalName}' configuration not found`, 404);
@@ -528,12 +528,12 @@ export class AtlasClient {
 
       const workspaceYmlPath = `${workspacePath}/workspace.yml`;
       const yamlContent = await Deno.readTextFile(workspaceYmlPath);
-      const rawConfig = yaml.parse(yamlContent) as Record<string, unknown>;
+      const rawConfig = yaml.parse(yamlContent);
 
       // Extract job configuration from workspace.yml (jobs can be at root or under workspace)
-      const workspace = rawConfig.workspace as Record<string, unknown> | undefined;
-      const jobs = (workspace?.jobs || rawConfig.jobs) as Record<string, unknown> | undefined;
-      const jobConfig = jobs?.[jobName] as Record<string, unknown> | undefined;
+      const workspace = rawConfig.workspace;
+      const jobs = workspace?.jobs || rawConfig.jobs;
+      const jobConfig = jobs?.[jobName];
 
       if (!jobConfig) {
         throw new AtlasApiError(`Job '${jobName}' configuration not found`, 404);
@@ -601,7 +601,7 @@ export class AtlasClient {
     const jobConfig = await this.loadJobConfig(workspacePath, jobName);
 
     // Return without schema validation for now to avoid Zod issues
-    return jobConfig as unknown as JobDetailedInfo;
+    return jobConfig;
   }
 
   /**

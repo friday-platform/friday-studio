@@ -1,7 +1,7 @@
 import { APICallError } from "@ai-sdk/provider";
 import type { AtlasAgent, ToolCall, ToolResult } from "@atlas/agent-sdk";
-import { createAgent } from "@atlas/agent-sdk";
-import { pipeUIMessageStream, collectToolUsageFromSteps } from "@atlas/agent-sdk/vercel-helpers";
+import { type AtlasUIMessage, createAgent } from "@atlas/agent-sdk";
+import { collectToolUsageFromSteps, pipeUIMessageStream } from "@atlas/agent-sdk/vercel-helpers";
 import type { LLMAgentConfig } from "@atlas/config";
 import type { Logger } from "@atlas/logger";
 import { stepCountIs, streamText } from "ai";
@@ -64,7 +64,7 @@ export function convertLLMToAgent(
           ...(config.config.provider_options || {}),
         });
 
-        pipeUIMessageStream(result.toUIMessageStream(), stream);
+        pipeUIMessageStream(result.toUIMessageStream<AtlasUIMessage>(), stream);
 
         const [text, reasoning, toolCalls, toolResults, steps] = await Promise.all([
           result.text,

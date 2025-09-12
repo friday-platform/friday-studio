@@ -129,10 +129,7 @@ Deno.test("Security - SecureLogger credential sanitization", async (t) => {
       privateKey: "rsa-key-data",
     };
 
-    const sanitized = TestSecureLogger.sanitizeForLogging(sensitiveObject) as Record<
-      string,
-      unknown
-    >;
+    const sanitized = TestSecureLogger.sanitizeForLogging(sensitiveObject);
 
     assertEquals(sanitized.username, "user");
     assertEquals(sanitized.password, "[REDACTED]");

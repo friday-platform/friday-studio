@@ -130,7 +130,7 @@ export class WorkspaceMemoryManager {
   /**
    * Perform health check
    */
-  async healthCheck(): Promise<{ status: "healthy" | "degraded" | "failed"; details?: any }> {
+  async healthCheck(): Promise<{ status: "healthy" | "degraded" | "failed"; details?: unknown }> {
     if (!this.enhancedMemoryManager) {
       return { status: "failed", details: { reason: "Not initialized" } };
     }

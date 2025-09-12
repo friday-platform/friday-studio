@@ -53,9 +53,7 @@ export function Table({ columns, data, borderColor = "gray" }: TableProps) {
         const value = String(row[col.key] || "");
         const color =
           col.color ||
-          (typeof row[col.key + "Color"] === "string"
-            ? (row[col.key + "Color"] as string)
-            : "white");
+          (typeof row[col.key + "Color"] === "string" ? row[col.key + "Color"] : "white");
 
         return (
           <Box key={col.key} width={width} paddingRight={1}>
