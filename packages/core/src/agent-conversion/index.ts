@@ -11,16 +11,6 @@ import type { AtlasAgent } from "@atlas/agent-sdk";
 import type { LLMAgentConfig } from "@atlas/config";
 import type { Logger } from "@atlas/logger";
 import { convertLLMToAgent } from "./from-llm.ts";
-import { convertYAMLToAgent } from "./from-yaml.ts";
-import type { YAMLAgentDefinition } from "./yaml/schema.ts";
-
-/**
- * Convert parsed YAML definition to AtlasAgent.
- * Used during workspace initialization for .agent.yml files.
- */
-export function convertYAMLAgentToSDK(definition: YAMLAgentDefinition): AtlasAgent {
-  return convertYAMLToAgent(definition);
-}
 
 /**
  * Convert workspace LLM config to AtlasAgent.
@@ -35,6 +25,3 @@ export function convertLLMAgentToSDK(
 }
 
 export type { LLMAgentConfig } from "@atlas/config";
-export { convertYAMLToAgent } from "./from-yaml.ts";
-export { parseYAMLAgentContent } from "./yaml/parser.ts";
-export type { YAMLAgentDefinition } from "./yaml/schema.ts";

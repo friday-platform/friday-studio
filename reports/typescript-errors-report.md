@@ -1,56 +1,56 @@
 # TypeScript & Lint Analysis Report
 
-**Generated:** 2025-09-15T19:37:52.020Z
+**Generated:** 2025-09-15T22:27:26.511Z
 
-**Total Issues:** 2006 (1157 type errors, 312 deno lint violations, 537 biome
+**Total Issues:** 1924 (1115 type errors, 294 deno lint violations, 515 biome
 violations)
 
 ## Summary Statistics
 
 ### TypeScript Errors
 
-- **Total errors:** 1157
+- **Total errors:** 1115
 - **Unique error types:** 36
-- **Files with errors:** 224
+- **Files with errors:** 213
 
 ### Deno Lint Violations
 
-- **Total violations:** 312
+- **Total violations:** 294
 - **Unique rules violated:** 6
-- **Files with violations:** 102
+- **Files with violations:** 91
 
 ### Biome Violations
 
-- **Total violations:** 537
+- **Total violations:** 515
 - **Errors:** 1
-- **Warnings:** 536
+- **Warnings:** 514
 - **Unique rules violated:** 30
-- **Files with violations:** 187
+- **Files with violations:** 175
 
 ## TypeScript Error Types Breakdown
 
 | Error Code | Count | Percentage | Description                                  |
 | ---------- | ----- | ---------- | -------------------------------------------- |
-| TS18046    | 299   | 25.8%      | Value is of type 'unknown'                   |
-| TS2339     | 244   | 21.1%      | Property does not exist on type              |
-| TS2322     | 160   | 13.8%      | Type not assignable                          |
-| TS6133     | 97    | 8.4%       | Variable declared but never used             |
-| TS2345     | 84    | 7.3%       | Argument type not assignable                 |
-| TS6196     | 56    | 4.8%       | Catch clause variable unused                 |
-| TS7053     | 41    | 3.5%       | Element implicitly has any type              |
-| TS2532     | 35    | 3.0%       | Object is possibly 'undefined'               |
+| TS18046    | 298   | 26.7%      | Value is of type 'unknown'                   |
+| TS2339     | 244   | 21.9%      | Property does not exist on type              |
+| TS2322     | 143   | 12.8%      | Type not assignable                          |
+| TS6133     | 85    | 7.6%       | Variable declared but never used             |
+| TS2345     | 84    | 7.5%       | Argument type not assignable                 |
+| TS6196     | 49    | 4.4%       | Catch clause variable unused                 |
+| TS7053     | 40    | 3.6%       | Element implicitly has any type              |
+| TS2532     | 35    | 3.1%       | Object is possibly 'undefined'               |
 | TS18048    | 25    | 2.2%       | Value is possibly 'undefined'                |
-| TS2769     | 14    | 1.2%       | No overload matches call                     |
-| TS2305     | 12    | 1.0%       | Module has no exported member                |
+| TS2769     | 12    | 1.1%       | No overload matches call                     |
+| TS2305     | 11    | 1.0%       | Module has no exported member                |
 | TS7006     | 10    | 0.9%       | Parameter implicitly has any type            |
 | TS2698     | 10    | 0.9%       | Spread types may only be object types        |
 | TS2694     | 9     | 0.8%       | Namespace has no exported member             |
 | TS2349     | 9     | 0.8%       | Cannot invoke expression                     |
 | TS2724     | 8     | 0.7%       | Module has no default export                 |
 | TS2571     | 6     | 0.5%       | Object is of type 'unknown'                  |
-| TS2353     | 5     | 0.4%       | Object literal has unknown properties        |
 | TS2459     | 5     | 0.4%       | TypeScript error                             |
 | TS18047    | 5     | 0.4%       | Value is possibly 'null'                     |
+| TS2353     | 4     | 0.4%       | Object literal has unknown properties        |
 | TS2741     | 3     | 0.3%       | Property is missing in type                  |
 | TS2739     | 2     | 0.2%       | Type is missing properties                   |
 | TS2416     | 2     | 0.2%       | Property type not assignable to base         |
@@ -72,32 +72,32 @@ violations)
 
 | Rule Name         | Count | Percentage | Description                      |
 | ----------------- | ----- | ---------- | -------------------------------- |
-| no-unused-vars    | 131   | 42.0%      | Variable declared but never used |
-| require-await     | 97    | 31.1%      | Async function without await     |
-| no-process-global | 64    | 20.5%      | Lint rule violation              |
-| no-explicit-any   | 11    | 3.5%       | Explicit 'any' type usage        |
-| no-empty          | 8     | 2.6%       | Empty block statement            |
+| no-unused-vars    | 115   | 39.1%      | Variable declared but never used |
+| require-await     | 95    | 32.3%      | Async function without await     |
+| no-process-global | 64    | 21.8%      | Lint rule violation              |
+| no-explicit-any   | 11    | 3.7%       | Explicit 'any' type usage        |
+| no-empty          | 8     | 2.7%       | Empty block statement            |
 | no-control-regex  | 1     | 0.3%       | Control characters in regex      |
 
 ## Biome Rules Breakdown
 
 | Rule Name                               | Count | Percentage | Severity Distribution |
 | --------------------------------------- | ----- | ---------- | --------------------- |
-| correctness/noUnusedVariables           | 154   | 28.7%      | 154W                  |
-| style/noNonNullAssertion                | 95    | 17.7%      | 95W                   |
-| style/useTemplate                       | 85    | 15.8%      | 85W                   |
-| complexity/useOptionalChain             | 36    | 6.7%       | 36W                   |
-| correctness/useExhaustiveDependencies   | 25    | 4.7%       | 25W                   |
-| correctness/noUnusedImports             | 19    | 3.5%       | 19W                   |
-| style/useNodejsImportProtocol           | 16    | 3.0%       | 16W                   |
-| suspicious/useIterableCallbackReturn    | 16    | 3.0%       | 16W                   |
-| complexity/useLiteralKeys               | 13    | 2.4%       | 13W                   |
-| suspicious/noExplicitAny                | 11    | 2.0%       | 11W                   |
-| suspicious/noArrayIndexKey              | 11    | 2.0%       | 11W                   |
+| correctness/noUnusedVariables           | 138   | 26.8%      | 138W                  |
+| style/noNonNullAssertion                | 93    | 18.1%      | 93W                   |
+| style/useTemplate                       | 85    | 16.5%      | 85W                   |
+| complexity/useOptionalChain             | 36    | 7.0%       | 36W                   |
+| correctness/useExhaustiveDependencies   | 25    | 4.9%       | 25W                   |
+| style/useNodejsImportProtocol           | 16    | 3.1%       | 16W                   |
+| suspicious/useIterableCallbackReturn    | 16    | 3.1%       | 16W                   |
+| correctness/noUnusedImports             | 15    | 2.9%       | 15W                   |
+| complexity/useLiteralKeys               | 13    | 2.5%       | 13W                   |
+| suspicious/noExplicitAny                | 11    | 2.1%       | 11W                   |
+| suspicious/noArrayIndexKey              | 11    | 2.1%       | 11W                   |
 | complexity/noStaticOnlyClass            | 10    | 1.9%       | 10W                   |
 | suspicious/noImplicitAnyLet             | 9     | 1.7%       | 9W                    |
-| correctness/noUnusedFunctionParameters  | 8     | 1.5%       | 8W                    |
-| suspicious/useBiomeIgnoreFolder         | 6     | 1.1%       | 6W                    |
+| correctness/noUnusedFunctionParameters  | 8     | 1.6%       | 8W                    |
+| suspicious/useBiomeIgnoreFolder         | 6     | 1.2%       | 6W                    |
 | correctness/useParseIntRadix            | 3     | 0.6%       | 3W                    |
 | complexity/noUselessCatch               | 2     | 0.4%       | 2W                    |
 | complexity/noUselessTernary             | 2     | 0.4%       | 2W                    |
@@ -124,7 +124,6 @@ violations)
 | tools/memory_manager/src/tui.ts                                | 8           | 9         | 26    | 43    |
 | packages/memory/src/streaming/memory-stream-processors.ts      | 38          | 1         | 1     | 40    |
 | tests/unit/workspace-add-cli.test.ts                           | 28          | 0         | 9     | 37    |
-| apps/web-client/src/lib/modules/client/daemon.ts               | 26          | 3         | 3     | 32    |
 | packages/memory/src/web-embedding-provider.ts                  | 25          | 0         | 7     | 32    |
 | apps/diagnostics/src/paths.ts                                  | 10          | 10        | 10    | 30    |
 | src/cli/components/signal-details.tsx                          | 27          | 0         | 1     | 28    |
@@ -138,7 +137,8 @@ violations)
 | packages/cron/tests/timer-signal-workspace-integration.test.ts | 0           | 0         | 21    | 21    |
 | packages/client/src/client.ts                                  | 19          | 0         | 1     | 20    |
 | src/core/actors/session-supervisor-actor.ts                    | 11          | 1         | 8     | 20    |
-| ... and 269 more files                                         |             |           |       |       |
+| src/cli/commands/library/stats.tsx                             | 18          | 0         | 1     | 19    |
+| ... and 257 more files                                         |             |           |       |       |
 
 ## Issues by Project
 
@@ -148,26 +148,25 @@ violations)
 | packages/memory         | 154         | 33        | 40    | 227   |
 | tests                   | 113         | 10        | 21    | 144   |
 | tools/atlas-installer   | 0           | 92        | 47    | 139   |
-| packages/core           | 75          | 20        | 35    | 130   |
 | packages/mcp-server     | 89          | 3         | 10    | 102   |
 | apps/atlasd             | 56          | 3         | 26    | 85    |
+| packages/core           | 53          | 5         | 17    | 75    |
 | tools/memory_manager    | 27          | 11        | 29    | 67    |
 | apps/diagnostics        | 29          | 14        | 24    | 67    |
 | packages/storage        | 39          | 6         | 12    | 57    |
 | packages/cron           | 11          | 0         | 43    | 54    |
-| apps/web-client         | 41          | 5         | 7     | 53    |
 | packages/signals        | 23          | 6         | 7     | 36    |
 | other                   | 13          | 4         | 10    | 27    |
 | packages/client         | 22          | 1         | 4     | 27    |
+| apps/web-client         | 19          | 2         | 4     | 25    |
 | packages/system         | 14          | 1         | 2     | 17    |
-| tools/evals             | 5           | 2         | 2     | 9     |
+| tools/evals             | 9           | 2         | 2     | 13    |
 | packages/notifications  | 8           | 0         | 0     | 8     |
 | packages/mcp            | 3           | 0         | 3     | 6     |
-| packages/config         | 2           | 0         | 1     | 3     |
 | packages/agent-sdk      | 3           | 0         | 0     | 3     |
 | packages/openapi-client | 1           | 0         | 2     | 3     |
 | packages/workspace      | 1           | 0         | 0     | 1     |
-| packages/bundled-agents | 1           | 0         | 0     | 1     |
+| packages/config         | 1           | 0         | 0     | 1     |
 
 ## Workspace Dependency Graph
 
@@ -178,15 +177,15 @@ violations)
 | logger                  | utils                                                                                | atlasd, agent-sdk, core, memory, signals, workspace, mcp, bundled-agents, system, fs-watch, notifications, evals | 25               |
 | atlasd                  | config, core, utils, logger, workspace, storage, agent-sdk, cron, mcp-server, memory | mcp-server, mcp, client, openapi-client, evals                                                                   | 20               |
 | core                    | config, logger, mcp, agent-sdk, bundled-agents, oapi-client, memory                  | diagnostics, web-client, atlasd, client, evals                                                                   | 17               |
-| config                  | agent-sdk, storage                                                                   | atlasd, core, workspace, mcp-server, system, notifications                                                       | 14               |
-| utils                   | none                                                                                 | diagnostics, atlasd, logger, memory, storage, system, evals                                                      | 14               |
+| utils                   | none                                                                                 | diagnostics, atlasd, logger, memory, config, storage, system, evals                                              | 16               |
+| config                  | utils, agent-sdk, storage                                                            | atlasd, core, workspace, mcp-server, system, notifications                                                       | 15               |
 | agent-sdk               | logger                                                                               | atlasd, core, config, bundled-agents, system, evals                                                              | 13               |
 | memory                  | storage, logger, utils                                                               | atlasd, core, storage, system, memory_manager                                                                    | 13               |
 | workspace               | config, logger, storage, system, fs-watch                                            | atlasd, cron, memory_manager                                                                                     | 11               |
 | system                  | logger, config, agent-sdk, bundled-agents, utils, oapi-client, memory                | workspace, evals                                                                                                 | 11               |
 | storage                 | memory, utils                                                                        | atlasd, memory, config, workspace                                                                                | 10               |
 | bundled-agents          | agent-sdk, logger                                                                    | core, system, evals                                                                                              | 8                |
-| evals                   | system, agent-sdk, bundled-agents, logger, atlasd, oapi-client, core, utils          | none                                                                                                             | 8                |
+| evals                   | system, bundled-agents, agent-sdk, logger, atlasd, oapi-client, core, utils          | none                                                                                                             | 8                |
 | mcp-server              | oapi-client, notifications, config, atlasd                                           | atlasd                                                                                                           | 6                |
 | mcp                     | logger, atlasd                                                                       | core                                                                                                             | 4                |
 | client                  | atlasd, core                                                                         | diagnostics                                                                                                      | 4                |
@@ -207,17 +206,16 @@ Based on the dependency graph, here's a recommended order for fixing errors:
 
 1. **Start with leaf nodes** (no other packages depend on these):
    - diagnostics (29 errors)
-   - web-client (41 errors)
+   - web-client (19 errors)
    - signals (23 errors)
    - openapi-client (1 errors)
    - memory_manager (27 errors)
-   - evals (5 errors)
+   - evals (9 errors)
 
 2. **Then fix middle-tier packages** (1-3 dependents):
    - workspace (1 errors, 3 dependents)
    - mcp-server (89 errors, 1 dependents)
    - mcp (3 errors, 1 dependents)
-   - bundled-agents (1 errors, 3 dependents)
    - system (14 errors, 2 dependents)
    - client (22 errors, 1 dependents)
    - notifications (8 errors, 1 dependents)
@@ -226,9 +224,9 @@ Based on the dependency graph, here's a recommended order for fixing errors:
 3. **Finally, fix core packages** (many packages depend on these):
    - atlasd (56 errors, 5 dependents)
    - agent-sdk (3 errors, 6 dependents)
-   - core (75 errors, 5 dependents)
+   - core (53 errors, 5 dependents)
    - memory (154 errors, 5 dependents)
-   - config (2 errors, 6 dependents)
+   - config (1 errors, 6 dependents)
    - storage (39 errors, 4 dependents)
 
 ## Code Quality Hotspots Analysis
@@ -239,12 +237,12 @@ Issues that appear across multiple files (potential systematic problems):
 
 - **[Biome] correctness/noUnusedVariables**: "Unused variables are often the
   result of an incomp..."
-  - Occurrences: 154
-  - Files affected: 78
+  - Occurrences: 138
+  - Files affected: 71
 
 - **[Biome] style/noNonNullAssertion**: "Unsafe fix..."
-  - Occurrences: 95
-  - Files affected: 19
+  - Occurrences: 93
+  - Files affected: 18
 
 - **[Biome] style/useTemplate**: "Template literals are preferred over string
   concat..."
@@ -252,8 +250,8 @@ Issues that appear across multiple files (potential systematic problems):
   - Files affected: 42
 
 - **[Type] TS7053**: "Element implicitly has an 'any' type because expre..."
-  - Occurrences: 41
-  - Files affected: 17
+  - Occurrences: 40
+  - Files affected: 16
 
 - **[Type] TS18046**: "'data' is of type 'unknown'...."
   - Occurrences: 38
@@ -280,11 +278,6 @@ Issues that appear across multiple files (potential systematic problems):
   - Occurrences: 19
   - Files affected: 3
 
-- **[Biome] correctness/noUnusedImports**: "Unused imports might be the result
-  of an incomplet..."
-  - Occurrences: 19
-  - Files affected: 18
-
 - **[Type] TS18046**: "'errorData' is of type 'unknown'...."
   - Occurrences: 17
   - Files affected: 14
@@ -298,9 +291,15 @@ Issues that appear across multiple files (potential systematic problems):
   - Occurrences: 16
   - Files affected: 7
 
-- **[Type] TS2769**: "No overload matches this call...."
-  - Occurrences: 14
-  - Files affected: 10
+- **[Biome] correctness/noUnusedImports**: "Unused imports might be the result
+  of an incomplet..."
+  - Occurrences: 15
+  - Files affected: 14
+
+- **[Biome] complexity/useLiteralKeys**: "The computed expression can be
+  simplified without ..."
+  - Occurrences: 13
+  - Files affected: 8
 
 ### High-Impact Files
 
@@ -314,7 +313,7 @@ Files with issues from multiple tools (need attention):
 | tools/memory_manager/src/tui.ts                           | 8           | 9         | 26    | 43    |
 | packages/memory/src/streaming/memory-stream-processors.ts | 38          | 1         | 1     | 40    |
 | tests/unit/workspace-add-cli.test.ts                      | 28          | 0         | 9     | 37    |
-| apps/web-client/src/lib/modules/client/daemon.ts          | 26          | 3         | 3     | 32    |
 | packages/memory/src/web-embedding-provider.ts             | 25          | 0         | 7     | 32    |
 | apps/diagnostics/src/paths.ts                             | 10          | 10        | 10    | 30    |
 | src/cli/components/signal-details.tsx                     | 27          | 0         | 1     | 28    |
+| src/utils/paths.ts                                        | 11          | 8         | 8     | 27    |

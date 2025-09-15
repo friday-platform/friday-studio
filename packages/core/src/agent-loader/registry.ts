@@ -1,11 +1,9 @@
 import type { AgentMetadata, AtlasAgent } from "@atlas/agent-sdk";
 import { createLogger } from "@atlas/logger";
-import { join } from "@std/path";
 import { BundledAgentAdapter } from "./adapters/bundled-adapter.ts";
 import { SDKAgentAdapter } from "./adapters/sdk-adapter.ts";
 import { SystemAgentAdapter } from "./adapters/system-adapter.ts";
 import type { AgentSourceType } from "./adapters/types.ts";
-import { YAMLFileAdapter } from "./adapters/yaml-file-adapter.ts";
 import { AgentLoader, type LoaderOptions } from "./loader.ts";
 
 /** Options for configuring the agent registry */
@@ -31,7 +29,7 @@ export class AgentRegistry {
   private logger = createLogger({ component: "AgentRegistry" });
   private initialized = false;
 
-  constructor(private options: RegistryOptions = {}) {
+  constructor(options: RegistryOptions = {}) {
     this.includeSystemAgents = options.includeSystemAgents ?? false;
     this.loader = new AgentLoader(options);
     this.setupDefaultAdapters();
@@ -47,51 +45,9 @@ export class AgentRegistry {
     this.loader.addAdapter(new BundledAgentAdapter());
     this.logger.debug("Added bundled agent adapter");
 
-    const agentPaths = this.options.agentPaths || this.getDefaultAgentPaths();
-    if (agentPaths.length > 0) {
-      this.loader.addAdapter(
-        new YAMLFileAdapter(agentPaths, { watchForChanges: this.options.watchForChanges }),
-      );
-      this.logger.debug("Added YAML file adapter with paths", { paths: agentPaths });
-    }
-
     this.sdkAdapter = new SDKAgentAdapter();
     this.loader.addAdapter(this.sdkAdapter);
     this.logger.debug("Added SDK agent adapter");
-  }
-
-  /** Get default agent search paths */
-  private getDefaultAgentPaths(): string[] {
-    const paths: string[] = [];
-
-    const systemPath = "/opt/atlas/agents";
-    if (this.existsSync(systemPath)) {
-      paths.push(systemPath);
-    }
-
-    const home = Deno.env.get("HOME");
-    if (home) {
-      const userPath = join(home, ".atlas/agents");
-      if (this.existsSync(userPath)) {
-        paths.push(userPath);
-      }
-    }
-
-    const localPath = join(Deno.cwd(), "agents");
-    if (this.existsSync(localPath)) {
-      paths.push(localPath);
-    }
-
-    return paths;
-  }
-
-  private existsSync(path: string): boolean {
-    try {
-      Deno.statSync(path);
-      return true;
-    } catch {
-      return false;
-    }
   }
 
   /** Initialize the registry by loading all available agents */
@@ -128,7 +84,7 @@ export class AgentRegistry {
   }
 
   /** Register an SDK agent programmatically */
-  async registerAgent(agent: AtlasAgent): Promise<void> {
+  registerAgent(agent: AtlasAgent): void {
     if (!this.sdkAdapter) {
       throw new Error("SDK adapter not initialized");
     }
@@ -164,32 +120,17 @@ export class AgentRegistry {
    * List agents with optional filtering.
    * System agents are excluded unless this is a system workspace registry.
    */
-  async listAgents(filters?: {
-    domains?: string[];
-    tags?: string[];
-    includeSystem?: boolean;
-  }): Promise<AgentMetadata[]> {
+  async listAgents(filters?: { domains?: string[] }): Promise<AgentMetadata[]> {
     if (!this.initialized) {
       await this.initialize();
     }
 
     let agents = Array.from(this.registeredAgents.values());
 
-    if (!this.includeSystemAgents && !filters?.includeSystem) {
-      agents = agents.filter((agent) => !this.isSystemAgent(agent));
-    }
-
     if (filters?.domains && filters.domains.length > 0) {
       agents = agents.filter((agent) => {
         const agentDomains = agent.metadata.expertise.domains;
-        return agentDomains.some((domain) => filters.domains!.includes(domain));
-      });
-    }
-
-    if (filters?.tags && filters.tags.length > 0) {
-      agents = agents.filter((agent) => {
-        const agentTags = agent.metadata.metadata?.tags || [];
-        return filters.tags!.some((tag) => agentTags.includes(tag));
+        return agentDomains.some((domain) => filters.domains?.includes(domain));
       });
     }
 
@@ -222,9 +163,7 @@ export class AgentRegistry {
     totalAgents: number;
     systemAgents: number;
     bundledAgents: number;
-    yamlAgents: number;
     sdkAgents: number;
-    cacheStats: { size: number; maxSize: number; enabled: boolean };
   } {
     const agentIds = Array.from(this.registeredAgents.keys());
 
@@ -232,9 +171,7 @@ export class AgentRegistry {
       totalAgents: agentIds.length,
       systemAgents: agentIds.filter((id) => this.agentSourceTypes.get(id) === "system").length,
       bundledAgents: agentIds.filter((id) => this.agentSourceTypes.get(id) === "bundled").length,
-      yamlAgents: agentIds.filter((id) => this.agentSourceTypes.get(id) === "yaml").length,
       sdkAgents: agentIds.filter((id) => this.agentSourceTypes.get(id) === "sdk").length,
-      cacheStats: this.loader.getCacheStats(),
     };
   }
 
@@ -260,11 +197,5 @@ export class AgentRegistry {
   /** Get agents by domain */
   async getAgentsByDomain(domain: string): Promise<AgentMetadata[]> {
     return await this.listAgents({ domains: [domain] });
-  }
-
-  /** Check if an agent is a system agent */
-  private isSystemAgent(agentIdOrAgent: string | AtlasAgent): boolean {
-    const id = typeof agentIdOrAgent === "string" ? agentIdOrAgent : agentIdOrAgent.metadata.id;
-    return this.agentSourceTypes.get(id) === "system";
   }
 }

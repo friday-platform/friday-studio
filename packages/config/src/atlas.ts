@@ -51,12 +51,8 @@ export type SupervisorsConfig = z.infer<typeof SupervisorsConfigSchema>;
 // PLANNING CONFIGURATION
 // ==============================================================================
 
-const PrecomputationLevel = z.enum(["aggressive", "moderate", "minimal", "disabled"]);
-type PrecomputationLevel = z.infer<typeof PrecomputationLevel>;
-
 export const PlanningConfigSchema = z.strictObject({
   execution: z.strictObject({
-    precomputation: PrecomputationLevel,
     cache_enabled: z.boolean(),
     cache_ttl_hours: z.number().positive(),
     invalidate_on_job_change: z.boolean(),
@@ -76,7 +72,6 @@ export const PlanningConfigSchema = z.strictObject({
   }),
 
   validation: z.strictObject({
-    precomputation: PrecomputationLevel,
     functional_validators: z.boolean(),
     smoke_tests: z.boolean(),
     content_safety: z.boolean(),

@@ -1,4 +1,4 @@
-No Svelte config file found in /Users/ericskram/code/tempest/atlas-env/worktrees/type-cleanup-9-15 - using SvelteKit's default configuration without an adapter.
+No Svelte config file found in /Users/ericskram/code/tempest/atlas-env/worktrees/type-cleanup-9-15-2 - using SvelteKit's default configuration without an adapter.
 # Knip report
 
 ## Unused files (30)
@@ -34,38 +34,20 @@ No Svelte config file found in /Users/ericskram/code/tempest/atlas-env/worktrees
 * src/utils/memory-id-migration.ts
 * src/utils/memory-migration.ts
 
-## Unused dependencies (9)
+## Unused dependencies (4)
 
 | Name                     | Location                          | Severity |
 | :----------------------- | :-------------------------------- | :------- |
-| @tauri-apps/plugin-shell | apps/web-client/package.json:24:6 | error    |
-| streaming-markdown       | apps/web-client/package.json:29:6 | error    |
 | @atlas/workspace         | packages/system/package.json:16:6 | error    |
 | @atlas/core              | packages/system/package.json:11:6 | error    |
-| cookie                   | apps/web-client/package.json:26:6 | error    |
-| nanoid                   | apps/web-client/package.json:28:6 | error    |
 | @hono/standard-validator | package.json:31:6                 | error    |
-| @tanstack/svelte-query   | package.json:42:6                 | error    |
 | @biomejs/biome           | package.json:30:6                 | error    |
 
-## Unused devDependencies (8)
+## Unused devDependencies (1)
 
-| Name                        | Location                           | Severity |
-| :-------------------------- | :--------------------------------- | :------- |
-| electron-builder            | tools/atlas-installer/package.json | warn     |
-| @rollup/rollup-darwin-arm64 | apps/web-client/package.json:40:6  | warn     |
-| @sveltejs/adapter-auto      | apps/web-client/package.json:41:6  | warn     |
-| svelte-adapter-deno         | apps/web-client/package.json:53:6  | warn     |
-| @deno/vite-plugin           | apps/web-client/package.json:33:6  | warn     |
-| svelte-preprocess           | apps/web-client/package.json:56:6  | warn     |
-| @melt-ui/svelte             | apps/web-client/package.json:39:6  | warn     |
-| vitest                      | apps/web-client/package.json:61:6  | warn     |
-
-## Unlisted dependencies (1)
-
-| Name | Location                                                        | Severity |
-| :-- | :-------------------------------------------------------------- | :------- |
-| jsr | apps/web-client/src/lib/modules/messages/markdown-utils.test.ts | error    |
+| Name             | Location                           | Severity |
+| :--------------- | :--------------------------------- | :------- |
+| electron-builder | tools/atlas-installer/package.json | warn     |
 
 ## Unlisted binaries (3)
 

@@ -9,18 +9,11 @@
 import type { AgentEnvironmentConfig } from "@atlas/agent-sdk";
 import type { Logger } from "@atlas/logger";
 
-interface EnvironmentValidationError extends Error {
-  name: "EnvironmentValidationError";
-  missingVariables: string[];
-  workspaceId: string;
-  agentId: string;
-}
-
 /**
  * Create an environment context validator
  */
 export function createEnvironmentContext(logger: Logger) {
-  return async function validateEnvironment(
+  return function validateEnvironment(
     workspaceId: string,
     agentId: string,
     environmentConfig?: AgentEnvironmentConfig,
@@ -34,7 +27,7 @@ export function createEnvironmentContext(logger: Logger) {
         workspaceId,
         agentId,
       });
-      return env;
+      return Promise.resolve(env);
     }
 
     const missingRequired: string[] = [];
@@ -95,68 +88,19 @@ export function createEnvironmentContext(logger: Logger) {
     // If there are missing required variables, throw detailed error
     if (missingRequired.length > 0) {
       const error = new Error(
-        `Cannot execute ${agentId} in workspace '${workspaceId}': Required environment variables not found: ${missingRequired.join(
+        `Can't execute ${agentId} in workspace '${workspaceId}': Required environment variables not found:s ${missingRequired.join(
           ", ",
         )}. Please add these variables to your workspace .env file.`,
+        {
+          cause: { missingVariables: missingRequired, workspaceId: workspaceId, agentId: agentId },
+        },
       );
 
-      error.name = "EnvironmentValidationError";
-      error.missingVariables = missingRequired;
-      error.workspaceId = workspaceId;
-      error.agentId = agentId;
-
-      logger.error("Environment validation failed", {
-        operation: "environment_validation",
-        workspaceId,
-        agentId,
-        missingVariables: missingRequired,
-        requiredCount: environmentConfig.required?.length || 0,
-        optionalCount: environmentConfig.optional?.length || 0,
-      });
-
+      logger.error("Environment variable validation failed", { missingVariables: missingRequired });
       throw error;
     }
 
-    logger.info("Environment validation successful", {
-      operation: "environment_validation",
-      workspaceId,
-      agentId,
-      requiredVariables: environmentConfig.required?.length || 0,
-      optionalVariables: environmentConfig.optional?.length || 0,
-      providedVariables: Object.keys(env).length,
-    });
-
-    return env;
+    logger.info("Validated environment variables", { providedVariables: Object.keys(env).length });
+    return Promise.resolve(env);
   };
-}
-
-/**
- * Generate help text for missing environment variables
- */
-function getEnvironmentHelp(environmentConfig: AgentEnvironmentConfig): string {
-  if (!environmentConfig.required || environmentConfig.required.length === 0) {
-    return "No environment variables required for this agent.";
-  }
-
-  const help = ["Required environment variables:"];
-
-  for (const reqVar of environmentConfig.required) {
-    help.push(`  ${reqVar.name}: ${reqVar.description}`);
-    if (reqVar.validation) {
-      help.push(`    Pattern: ${reqVar.validation}`);
-    }
-  }
-
-  if (environmentConfig.optional && environmentConfig.optional.length > 0) {
-    help.push("", "Optional environment variables:");
-    for (const optVar of environmentConfig.optional) {
-      const desc = optVar.description || "No description provided";
-      const defaultValue = optVar.default ? ` (default: ${optVar.default})` : "";
-      help.push(`  ${optVar.name}: ${desc}${defaultValue}`);
-    }
-  }
-
-  help.push("", "Add these variables to your workspace .env file and retry.");
-
-  return help.join("\n");
 }

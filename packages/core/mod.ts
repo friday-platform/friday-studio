@@ -9,17 +9,10 @@
 export type { WrappedAgentResult } from "./src/agent-conversion/from-llm.ts";
 // Export strongly-typed LLM converter directly to preserve WrappedAgentResult generic
 export { convertLLMToAgent } from "./src/agent-conversion/from-llm.ts";
-export type {
-  LLMAgentConfig,
-  YAMLAgentDefinition,
-} from "./src/agent-conversion/index.ts";
+export type { LLMAgentConfig } from "./src/agent-conversion/index.ts";
 
 // Agent Conversion Layer
-export {
-  convertLLMAgentToSDK,
-  convertYAMLAgentToSDK,
-  convertYAMLToAgent,
-} from "./src/agent-conversion/index.ts";
+export { convertLLMAgentToSDK } from "./src/agent-conversion/index.ts";
 
 // Agent Loader and Registry
 export {
@@ -73,9 +66,4 @@ export * from "./src/types/actors.ts";
 // Actor Types
 export * from "./src/types/actors.ts";
 export * from "./src/types/agent-execution.ts";
-export * from "./src/types/agent-execution.ts";
 export * from "./src/types/session.ts";
-export * from "./src/types/xstate-contexts.ts";
-export * from "./src/types/xstate-contexts.ts";
-export * from "./src/types/xstate-events.ts";
-export * from "./src/types/xstate-events.ts";

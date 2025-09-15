@@ -120,10 +120,7 @@ const ApprovalDecisionSchema = z.object({
   conditions: z.array(z.string()).optional(),
 });
 
-type CompletedAgentResult = z.infer<typeof CompletedAgentResultSchema>;
-type AwaitingApprovalResult = z.infer<typeof AwaitingApprovalResultSchema>;
 type AgentExecutionResult = z.infer<typeof AgentExecutionResultSchema>;
-type ValidatedApprovalDecision = z.infer<typeof ApprovalDecisionSchema>;
 
 /**
  * Orchestrator interface for executing Atlas agents.
@@ -289,11 +286,9 @@ export class AgentOrchestrator implements IAgentOrchestrator {
           description: agent.metadata.description,
           expertise: {
             domains: agent.metadata.expertise.domains,
-            capabilities: agent.metadata.expertise.capabilities,
             examples: agent.metadata.expertise.examples || [],
           },
           displayName: agent.metadata.displayName,
-          metadata: agent.metadata.metadata,
         });
       }
 

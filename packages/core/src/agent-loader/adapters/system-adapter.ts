@@ -2,7 +2,7 @@ import type { AtlasAgent } from "@atlas/agent-sdk";
 import { conversationAgent } from "../../../../system/agents/conversation/conversation.agent.ts";
 import { workspaceCreationAgent } from "../../../../system/agents/workspace-creation/workspace-creation.agent.ts";
 import { AgentNotFoundError } from "../errors.ts";
-import type { AgentAdapter, AgentSourceData, AgentSourceType, AgentSummary } from "./types.ts";
+import type { AgentAdapter, AgentSourceData, AgentSummary } from "./types.ts";
 
 /**
  * Loads built-in Atlas system agents.

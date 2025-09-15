@@ -21,12 +21,10 @@ const BaseNotificationProviderSchema = z.strictObject({
  * Email parameters schema
  */
 export const EmailParamsSchema = z.strictObject({
-  to: z
-    .union([z.string().email(), z.array(z.string().email())])
-    .describe("Recipient email address(es)"),
+  to: z.union([z.email(), z.array(z.email())]).describe("Recipient email address(es)"),
   subject: z.string().describe("Email subject line"),
   content: z.string().describe("Email content (HTML or plain text)"),
-  from: z.string().email().optional().describe("Override sender email"),
+  from: z.email().optional().describe("Override sender email"),
   from_name: z.string().optional().describe("Override sender name"),
   template_id: z.string().optional().describe("Template ID for provider-specific templates"),
   template_data: z.record(z.string(), z.unknown()).optional().describe("Template variables"),
@@ -74,7 +72,7 @@ const SendGridProviderSchema = BaseNotificationProviderSchema.extend({
   provider: z.literal("sendgrid"),
   config: z.strictObject({
     api_key_env: z.string().describe("Environment variable containing SendGrid API key"),
-    from_email: z.string().email().describe("Default from email address"),
+    from_email: z.email().describe("Default from email address"),
     from_name: z.string().optional().describe("Default from name"),
     template_id: z.string().optional().describe("Default template ID"),
     timeout: DurationSchema.optional().default("30s").describe("Request timeout"),
@@ -115,7 +113,7 @@ const DiscordProviderSchema = BaseNotificationProviderSchema.extend({
   config: z.strictObject({
     webhook_url_env: z.string().describe("Environment variable containing Discord webhook URL"),
     username: z.string().optional().describe("Bot username"),
-    avatar_url: z.string().url().optional().describe("Bot avatar URL"),
+    avatar_url: z.url().optional().describe("Bot avatar URL"),
     timeout: DurationSchema.optional().default("30s").describe("Request timeout"),
   }),
 });

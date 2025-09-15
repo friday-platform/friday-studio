@@ -51,18 +51,21 @@ interface SourceContent {
   title: string;
 }
 
-export interface ResearchOutput {
-  prompt: string;
-  parsedQueries: ParsedQueries;
-  synthesis: string;
-  sources: {
-    searchResults: number;
-    extractedCount: number;
-    failedExtractions: number;
-    relevantResults: number;
-  };
-  timing: { total: number; parse: number; search: number; extract: number; synth: number };
-}
+type ResearchOutput =
+  | { isError: true; message: string }
+  | {
+      isError: false;
+      prompt: string;
+      parsedQueries: ParsedQueries;
+      synthesis: string;
+      sources: {
+        searchResults: number;
+        extractedCount: number;
+        failedExtractions: number;
+        relevantResults: number;
+      };
+      timing: { total: number; parse: number; search: number; extract: number; synth: number };
+    };
 
 // Helper Functions
 
@@ -963,7 +966,7 @@ export const targetedResearchAgent = createAgent<ResearchOutput>({
 
       if (searchResults.length === 0) {
         logger?.warn(`No search results found`);
-        return "No relevant results found. Try a broader search query.";
+        return { isError: true, message: "No relevant results found. Try a broader search query." };
       }
 
       logger?.info(`Search phase complete`, { resultCount: searchResults.length });
@@ -1033,6 +1036,7 @@ export const targetedResearchAgent = createAgent<ResearchOutput>({
       metrics.synthTime = Date.now() - synthStart;
 
       const output: ResearchOutput = {
+        isError: false,
         prompt,
         parsedQueries,
         synthesis,

@@ -58,19 +58,3 @@ export function validateProviderConfig(provider: string, env: Record<string, str
     );
   }
 }
-
-/**
- * Map of well-known environment variable names for each provider
- */
-const PROVIDER_ENV_VARS = {
-  anthropic: "ANTHROPIC_API_KEY",
-  openai: "OPENAI_API_KEY",
-  google: "GOOGLE_GENERATIVE_AI_API_KEY",
-} as const;
-
-/**
- * Get the environment variable name for a provider
- */
-function getProviderEnvVar(provider: string): string | undefined {
-  return PROVIDER_ENV_VARS[provider];
-}

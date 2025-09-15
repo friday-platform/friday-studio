@@ -2,7 +2,7 @@ import type { AtlasAgent } from "@atlas/agent-sdk";
 import { bundledAgents } from "@atlas/bundled-agents";
 import { createLogger } from "@atlas/logger";
 import { AgentNotFoundError } from "../errors.ts";
-import type { AgentAdapter, AgentSourceData, AgentSourceType, AgentSummary } from "./types.ts";
+import type { AgentAdapter, AgentSourceData, AgentSummary } from "./types.ts";
 
 /**
  * Loads agents bundled with Atlas.

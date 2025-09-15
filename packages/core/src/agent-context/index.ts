@@ -322,8 +322,6 @@ async function enrichPromptWithMemories(
       hasRecentContext: !!recentWorkingMemory,
     });
 
-    logger.debug("🐼🐼🐼🐼🐼🐼🐼🐼🐼🐼🐼🐼🐼🐼🐼🐼🐼🐼🐼🐼🐼", { enrichedPrompt, workspacePrompt });
-
     return `${workspacePrompt !== "" ? `Your task: ${workspacePrompt}` : ""} ${enrichedPrompt}`;
   } catch (error) {
     // Graceful fallback - log error but continue with original prompt

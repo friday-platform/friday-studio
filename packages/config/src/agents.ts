@@ -4,13 +4,7 @@
 
 import { AtlasAgentConfigSchema } from "@atlas/agent-sdk";
 import { z } from "zod/v4";
-import {
-  DurationSchema,
-  ErrorConfigSchema,
-  SchemaObjectSchema,
-  SuccessConfigSchema,
-} from "./base.ts";
-import { MCPAuthConfigSchema } from "./mcp.ts";
+import { DurationSchema, ErrorConfigSchema, SuccessConfigSchema } from "./base.ts";
 
 // ==============================================================================
 // BASE AGENT SCHEMA
@@ -114,48 +108,6 @@ const SystemAgentConfigSchema = BaseAgentConfigSchema.extend({
 });
 
 // ==============================================================================
-// REMOTE AGENT
-// ==============================================================================
-
-const RemoteAgentConfigSchema = BaseAgentConfigSchema.extend({
-  type: z.literal("remote"),
-  config: z.strictObject({
-    // Only ACP protocol is currently supported
-    protocol: z.literal("acp"),
-    endpoint: z.url(),
-
-    // ACP-specific config (flattened since protocol is fixed)
-    agent_name: z
-      .string()
-      .regex(/^[a-z0-9-]+$/, { message: "Agent name must be lowercase with hyphens" }),
-    default_mode: z.enum(["sync", "async", "stream"]).default("async"),
-    health_check_interval: DurationSchema.default("30s"),
-
-    // Common remote config
-    auth: MCPAuthConfigSchema.optional(),
-    timeout: DurationSchema.optional(),
-    max_retries: z.coerce.number().int().min(0).default(2),
-
-    // Prompt configuration
-    prompt: z.string().describe("System prompt for the agent").optional(),
-
-    // Schema validation
-    schema: z
-      .strictObject({
-        validate_input: z.boolean().default(false),
-        validate_output: z.boolean().default(false),
-        input: SchemaObjectSchema.optional(),
-        output: SchemaObjectSchema.optional(),
-      })
-      .optional(),
-
-    // Success/error handlers
-    success: SuccessConfigSchema.optional(),
-    error: ErrorConfigSchema.optional(),
-  }),
-});
-
-// ==============================================================================
 // DISCRIMINATED UNION
 // ==============================================================================
 
@@ -165,7 +117,6 @@ const RemoteAgentConfigSchema = BaseAgentConfigSchema.extend({
 export const WorkspaceAgentConfigSchema = z.discriminatedUnion("type", [
   LLMAgentConfigSchema,
   SystemAgentConfigSchema,
-  RemoteAgentConfigSchema,
   AtlasAgentConfigSchema,
 ]);
 
@@ -178,4 +129,3 @@ export { SystemAgentConfigObjectSchema };
 export type LLMAgentConfig = z.infer<typeof LLMAgentConfigSchema>;
 export type SystemAgentConfig = z.infer<typeof SystemAgentConfigSchema>;
 export type SystemAgentConfigObject = z.infer<typeof SystemAgentConfigObjectSchema>;
-export type RemoteAgentConfig = z.infer<typeof RemoteAgentConfigSchema>;

@@ -4,6 +4,7 @@
  * This module exports comprehensive Zod schemas for Atlas configuration
  * with improved type safety, tagged unions, and clear separation of concerns.
  */
+import { convertJsonSchemaToZod } from "zod-from-json-schema";
 
 // Agent schemas with tagged unions
 export * from "./src/agents.ts";
@@ -38,16 +39,16 @@ export * from "./src/workspace.ts";
 // HELPER FUNCTIONS
 // ==============================================================================
 
+import { stringifyError } from "@atlas/utils";
 import { z } from "zod/v4";
 import type {
   LLMAgentConfig,
-  RemoteAgentConfig,
   SystemAgentConfig,
   WorkspaceAgentConfig,
   WorkspaceAgentConfigSchema,
 } from "./src/agents.ts";
 import type { JobSpecificationSchema } from "./src/jobs.ts";
-import type { WorkspaceSignalConfigSchema } from "./src/signals.ts";
+import type { WorkspaceSignalConfig } from "./src/signals.ts";
 import type { MergedConfig } from "./src/workspace.ts";
 
 /**
@@ -65,10 +66,7 @@ export function getJob(
  * Get a signal by name from the configuration
  * Checks workspace first, then atlas
  */
-export function getSignal(
-  config: MergedConfig,
-  name: string,
-): z.infer<typeof WorkspaceSignalConfigSchema> | undefined {
+export function getSignal(config: MergedConfig, name: string): WorkspaceSignalConfig | undefined {
   return config.workspace.signals?.[name] || config.atlas?.signals?.[name];
 }
 
@@ -86,7 +84,7 @@ export function getAgent(
 /**
  * Check if a signal is a system signal
  */
-export function isSystemSignal(signal: z.infer<typeof WorkspaceSignalConfigSchema>): boolean {
+export function isSystemSignal(signal: WorkspaceSignalConfig): boolean {
   return signal.provider === "system";
 }
 
@@ -104,201 +102,31 @@ export function isSystemAgent(agent: WorkspaceAgentConfig): agent is SystemAgent
   return agent.type === "system";
 }
 
-/**
- * Check if an agent is a remote agent
- */
-export function isRemoteAgent(agent: WorkspaceAgentConfig): agent is RemoteAgentConfig {
-  return agent.type === "remote";
-}
-
-// ==============================================================================
-// VALIDATION UTILITIES
-// ==============================================================================
-
-// Basic JSON Schema type definition for our use case
-export type JsonSchema =
-  | boolean
-  | {
-      type?: string | string[];
-      properties?: Record<string, JsonSchema>;
-      required?: string[];
-      items?: JsonSchema | JsonSchema[];
-      enum?: unknown[];
-      minLength?: number;
-      maxLength?: number;
-      pattern?: string;
-      minimum?: number;
-      maximum?: number;
-      exclusiveMinimum?: boolean | number;
-      exclusiveMaximum?: boolean | number;
-      minItems?: number;
-      maxItems?: number;
-      default?: unknown;
-      description?: string;
-      additionalProperties?: boolean | JsonSchema;
-      oneOf?: JsonSchema[];
-      anyOf?: JsonSchema[];
-      allOf?: JsonSchema[];
-      $ref?: string;
-    };
-
-/**
- * Convert JSON Schema to Zod schema for runtime validation
- * Used for validating signal payloads against their schemas
- */
-export function jsonSchemaToZod(jsonSchema: JsonSchema): z.ZodSchema<unknown> {
-  // Handle boolean schemas
-  if (typeof jsonSchema === "boolean") {
-    return jsonSchema ? z.unknown() : z.never();
-  }
-
-  // Handle $ref (not supported)
-  if (jsonSchema.$ref) {
-    throw new Error("Unsupported JSON Schema feature: $ref");
-  }
-
-  // Handle combinators
-  if (jsonSchema.oneOf) {
-    return z.union(jsonSchema.oneOf.map((s) => jsonSchemaToZod(s)));
-  }
-
-  if (jsonSchema.anyOf) {
-    return z.union(jsonSchema.anyOf.map((s) => jsonSchemaToZod(s)));
-  }
-
-  if (jsonSchema.allOf) {
-    const schemas = jsonSchema.allOf.map((s) => jsonSchemaToZod(s));
-    return schemas.reduce((acc, schema) => acc.and(schema), z.object({}));
-  }
-
-  if (!jsonSchema || !jsonSchema.type) {
-    return z.unknown();
-  }
-
-  const type = Array.isArray(jsonSchema.type) ? jsonSchema.type[0] : jsonSchema.type;
-
-  switch (type) {
-    case "object": {
-      const shape: Record<string, z.ZodSchema<unknown>> = {};
-      if (jsonSchema.properties) {
-        for (const [key, prop] of Object.entries(jsonSchema.properties)) {
-          let fieldSchema = jsonSchemaToZod(prop);
-          // Handle required fields
-          if (!jsonSchema.required?.includes(key)) {
-            fieldSchema = fieldSchema.optional();
-          }
-          shape[key] = fieldSchema;
-        }
-      }
-      return jsonSchema.additionalProperties === false
-        ? z.object(shape).strict()
-        : jsonSchema.additionalProperties === true
-          ? z.looseObject(shape)
-          : typeof jsonSchema.additionalProperties === "object"
-            ? z.object(shape).catchall(jsonSchemaToZod(jsonSchema.additionalProperties))
-            : z.looseObject(shape);
-    }
-
-    case "string": {
-      let stringSchema = z.string();
-      if (jsonSchema.enum) {
-        return z.enum(jsonSchema.enum);
-      }
-      if (jsonSchema.minLength) {
-        stringSchema = stringSchema.min(jsonSchema.minLength);
-      }
-      if (jsonSchema.maxLength) {
-        stringSchema = stringSchema.max(jsonSchema.maxLength);
-      }
-      if (jsonSchema.pattern) {
-        stringSchema = stringSchema.regex(new RegExp(jsonSchema.pattern));
-      }
-      return stringSchema;
-    }
-
-    case "number": {
-      let numberSchema = z.number();
-      if (jsonSchema.minimum !== undefined) {
-        if (jsonSchema.exclusiveMinimum === true) {
-          numberSchema = numberSchema.gt(jsonSchema.minimum);
-        } else {
-          numberSchema = numberSchema.min(jsonSchema.minimum);
-        }
-      }
-      if (jsonSchema.maximum !== undefined) {
-        if (jsonSchema.exclusiveMaximum === true) {
-          numberSchema = numberSchema.lt(jsonSchema.maximum);
-        } else {
-          numberSchema = numberSchema.max(jsonSchema.maximum);
-        }
-      }
-      return numberSchema;
-    }
-
-    case "boolean":
-      return z.boolean();
-
-    case "array": {
-      if (Array.isArray(jsonSchema.items)) {
-        // Tuple
-        return z.tuple(jsonSchema.items.map((s) => jsonSchemaToZod(s)));
-      }
-      let arraySchema = z.array(jsonSchema.items ? jsonSchemaToZod(jsonSchema.items) : z.unknown());
-      if (jsonSchema.minItems) {
-        arraySchema = arraySchema.min(jsonSchema.minItems);
-      }
-      if (jsonSchema.maxItems) {
-        arraySchema = arraySchema.max(jsonSchema.maxItems);
-      }
-      return arraySchema;
-    }
-
-    case "null":
-      return z.null();
-
-    case "integer": {
-      let intSchema = z.number().int();
-      if (jsonSchema.minimum !== undefined) {
-        if (jsonSchema.exclusiveMinimum === true) {
-          intSchema = intSchema.gt(jsonSchema.minimum);
-        } else {
-          intSchema = intSchema.min(jsonSchema.minimum);
-        }
-      }
-      if (jsonSchema.maximum !== undefined) {
-        if (jsonSchema.exclusiveMaximum === true) {
-          intSchema = intSchema.lt(jsonSchema.maximum);
-        } else {
-          intSchema = intSchema.max(jsonSchema.maximum);
-        }
-      }
-      return intSchema;
-    }
-
-    default:
-      return z.unknown();
-  }
-}
+export type SignalPayload = { success: true; data: unknown } | { success: false; error: string };
 
 /**
  * Validate a signal payload against its schema
  */
 export function validateSignalPayload(
-  signal: z.infer<typeof WorkspaceSignalConfigSchema>,
+  signal: WorkspaceSignalConfig,
   payload: unknown,
-): { success: true; data: unknown } | { success: false; error: string } {
+): SignalPayload {
   if (!signal.schema) {
     return { success: true, data: payload };
   }
-
+  let zodSchema: ReturnType<typeof convertJsonSchemaToZod>;
   try {
-    const zodSchema = jsonSchemaToZod(signal.schema);
+    zodSchema = convertJsonSchemaToZod(signal.schema);
+  } catch (e) {
+    return { success: false, error: stringifyError(e) };
+  }
+  try {
     const validatedData = zodSchema.parse(payload);
     return { success: true, data: validatedData };
   } catch (error) {
     if (error instanceof z.ZodError) {
       return { success: false, error: z.prettifyError(error) };
     }
-    return { success: false, error: String(error) };
+    return { success: false, error: stringifyError(error) };
   }
 }

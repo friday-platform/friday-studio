@@ -1,6 +1,5 @@
 import type { AtlasAgent } from "@atlas/agent-sdk";
 import { createLogger } from "@atlas/logger";
-import { convertYAMLAgentToSDK, parseYAMLAgentContent } from "../agent-conversion/index.ts";
 import type { AgentAdapter, AgentSourceData, AgentSummary } from "./adapters/types.ts";
 import { AgentNotFoundError } from "./errors.ts";
 
@@ -66,9 +65,11 @@ export class AgentLoader {
    */
   async loadAgent(id: string): Promise<AtlasAgent> {
     if (this.options.enableCache && this.agentCache.has(id)) {
-      const cached = this.agentCache.get(id)!;
-      this.logger.debug("Returning cached agent", { id, sourceType: cached.sourceType });
-      return cached.agent;
+      const cached = this.agentCache.get(id);
+      if (cached?.agent) {
+        this.logger.debug("Returning cached agent", { id, sourceType: cached?.sourceType });
+        return cached?.agent;
+      }
     }
 
     const errors: Error[] = [];
@@ -174,15 +175,6 @@ export class AgentLoader {
     this.logger.debug("Cleared agent cache", { entries: size });
   }
 
-  /** Get cache statistics */
-  getCacheStats(): { size: number; maxSize: number; enabled: boolean } {
-    return {
-      size: this.agentCache.size,
-      maxSize: this.options.maxCacheSize!,
-      enabled: this.options.enableCache!,
-    };
-  }
-
   /** Convert agent source data to an AtlasAgent instance */
   private convertToSDKAgent(source: AgentSourceData): AtlasAgent {
     switch (source.type) {
@@ -194,17 +186,6 @@ export class AgentLoader {
         }
         return source.agent;
 
-      case "yaml": {
-        if (!source.content) {
-          throw new Error("YAML agent source missing content");
-        }
-        const yamlDef = parseYAMLAgentContent(source.content, {
-          env: this.options.env,
-          validateEnv: this.options.validateEnv,
-        });
-        return convertYAMLAgentToSDK(yamlDef);
-      }
-
       default:
         throw new Error(`Unknown agent source type: ${source.type}`);
     }
@@ -212,7 +193,7 @@ export class AgentLoader {
 
   /** Cache an agent with LRU eviction */
   private cacheAgent(id: string, agent: AtlasAgent, sourceType: string): void {
-    if (this.agentCache.size >= this.options.maxCacheSize!) {
+    if (this.agentCache.size >= (this.options?.maxCacheSize ?? 0)) {
       let oldestId: string | null = null;
       let oldestTime = Infinity;
 

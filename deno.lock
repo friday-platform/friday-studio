@@ -86,6 +86,7 @@
     "npm:vite@^7.0.4": "7.1.5_picomatch@4.0.3_@types+node@22.15.15",
     "npm:xstate@^5.21.0": "5.21.0",
     "npm:yargs@18": "18.0.0",
+    "npm:zod-from-json-schema@0.5": "0.5.0",
     "npm:zod@^3.23.8": "3.25.76",
     "npm:zod@^3.25.74": "3.25.76",
     "npm:zod@^3.25.76": "3.25.76"
@@ -3562,6 +3563,12 @@
     "zimmerframe@1.1.4": {
       "integrity": "sha512-B58NGBEoc8Y9MWWCQGl/gq9xBCe4IiKM0a2x7GZdQKOW5Exr8S1W24J6OgM1njK8xCRGvAJIL/MxXHf6SkmQKQ=="
     },
+    "zod-from-json-schema@0.5.0": {
+      "integrity": "sha512-W1v1YIoimOJfvuorGGp1QroizLL3jEGELJtgrHiVg/ytxVZdh/BTTVyPypGB7YK30LHrCkkebbjuyHIjBGCEzw==",
+      "dependencies": [
+        "zod@4.1.8"
+      ]
+    },
     "zod-to-json-schema@3.24.6_zod@3.25.76": {
       "integrity": "sha512-h/z3PKvcTcTetyjl1fkj79MHNEjm+HpD6NXheWjzOekY7kV+lwDYnHw+ivHkijnCSMz1yJaWBD9vu/Fcmk+vEg==",
       "dependencies": [
@@ -3579,6 +3586,9 @@
     },
     "zod@3.25.76": {
       "integrity": "sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ=="
+    },
+    "zod@4.1.8": {
+      "integrity": "sha512-5R1P+WwQqmmMIEACyzSvo4JXHY5WiAFHRMg+zBZKgKS+Q1viRa0C1hmUKtHltoIFKtIdki3pRxkmpP74jnNYHQ=="
     }
   },
   "workspace": {
@@ -3707,6 +3717,7 @@
         "packageJson": {
           "dependencies": [
             "npm:@jsr/std__yaml@^1.0.9",
+            "npm:zod-from-json-schema@0.5",
             "npm:zod@^3.25.76"
           ]
         }

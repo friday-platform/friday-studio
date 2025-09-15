@@ -4,7 +4,7 @@ import type { AtlasAgent } from "@atlas/agent-sdk";
  * Agent source type defines where an agent is loaded from in Atlas.
  * Maps to specific adapters in the agent loader system.
  */
-export type AgentSourceType = "system" | "bundled" | "sdk" | "yaml";
+export type AgentSourceType = "system" | "bundled" | "sdk";
 
 /**
  * Raw agent data from an adapter before conversion to AtlasAgent.
@@ -59,12 +59,4 @@ export interface AgentSummary {
   description?: string;
   /** Agent version */
   version?: string;
-}
-
-/**
- * Check if an agent is restricted to system workspaces.
- * System agents are built-in and only available to system workspaces.
- */
-function isSystemAgent(source: AgentSourceData | AgentSummary): boolean {
-  return source.type === "system";
 }
