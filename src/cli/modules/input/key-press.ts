@@ -4,7 +4,7 @@ import stream from "node:stream";
 import { useStdin } from "ink";
 import { useEffect, useRef } from "react";
 
-export interface Key {
+interface Key {
   name: string;
   ctrl: boolean;
   meta: boolean;

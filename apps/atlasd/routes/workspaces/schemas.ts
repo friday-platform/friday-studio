@@ -14,7 +14,7 @@ export const workspaceIdParamSchema = z.object({
 // Base Schemas
 // ============================================================================
 
-export const workspaceRuntimeSchema = z
+const workspaceRuntimeSchema = z
   .object({
     status: z.string().meta({ description: "Runtime status" }),
     startedAt: z.string().meta({ description: "ISO 8601 timestamp when runtime started" }),
@@ -128,13 +128,13 @@ export const errorResponseSchema = z
 // Type Exports
 // ============================================================================
 
-export type WorkspaceResponse = z.infer<typeof workspaceResponseSchema>;
-export type WorkspaceDetailsResponse = z.infer<typeof workspaceDetailsResponseSchema>;
-export type WorkspaceConfigResponse = z.infer<typeof workspaceConfigResponseSchema>;
-export type CreateWorkspaceFromConfigRequest = z.infer<typeof createWorkspaceFromConfigSchema>;
-export type CreateWorkspaceFromConfigResponse = z.infer<
+type WorkspaceResponse = z.infer<typeof workspaceResponseSchema>;
+type WorkspaceDetailsResponse = z.infer<typeof workspaceDetailsResponseSchema>;
+type WorkspaceConfigResponse = z.infer<typeof workspaceConfigResponseSchema>;
+type CreateWorkspaceFromConfigRequest = z.infer<typeof createWorkspaceFromConfigSchema>;
+type CreateWorkspaceFromConfigResponse = z.infer<
   typeof createWorkspaceFromConfigResponseSchema
 >;
-export type UpdateWorkspaceRequest = z.infer<typeof updateWorkspaceSchema>;
-export type UpdateWorkspaceResponse = z.infer<typeof updateWorkspaceResponseSchema>;
-export type ErrorResponse = z.infer<typeof errorResponseSchema>;
+type UpdateWorkspaceRequest = z.infer<typeof updateWorkspaceSchema>;
+type UpdateWorkspaceResponse = z.infer<typeof updateWorkspaceResponseSchema>;
+type ErrorResponse = z.infer<typeof errorResponseSchema>;

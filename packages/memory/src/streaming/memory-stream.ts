@@ -2,7 +2,7 @@
  * Memory streaming interfaces and types for incremental memory processing
  */
 
-export type MemoryStreamType =
+type MemoryStreamType =
   | "semantic_fact"
   | "procedural_pattern"
   | "episodic_event"

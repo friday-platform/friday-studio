@@ -6,7 +6,7 @@ import type { Option } from "./types.ts";
 import { useSelect } from "./use-select.ts";
 import { useSelectState } from "./use-select-state.ts";
 
-export interface SelectProps {
+interface SelectProps {
   /** When disabled, user input is ignored. */
   readonly isDisabled?: boolean;
 

@@ -287,7 +287,7 @@ export function isScreenSession(): boolean {
 /**
  * Check if running in Docker container
  */
-export function isDockerContainer(): boolean {
+function isDockerContainer(): boolean {
   try {
     // Check for .dockerenv file
     Deno.statSync("/.dockerenv");

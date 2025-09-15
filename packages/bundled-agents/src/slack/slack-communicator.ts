@@ -13,7 +13,7 @@ import { z } from "zod";
  * and invoked from Slack through slack-mcp-server. It takes a plain
  * text prompt and returns a concise helpful answer.
  */
-export type SlackAgentResult = {
+type SlackAgentResult = {
   response: string;
   toolCalls?: ToolCall[];
   toolResults?: ToolResult[];

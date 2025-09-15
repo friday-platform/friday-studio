@@ -1,6 +1,6 @@
 import { Box, Text } from "ink";
 
-export interface Agent {
+interface Agent {
   name: string;
   type: string;
   model: string;

@@ -3,4 +3,4 @@
  */
 
 export const DEFAULT_TIMEOUT = 10000; // 10 seconds
-export const DEFAULT_SSE_TIMEOUT = 0; // No timeout for SSE streams
+const DEFAULT_SSE_TIMEOUT = 0; // No timeout for SSE streams

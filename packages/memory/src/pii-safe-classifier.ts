@@ -15,7 +15,7 @@ import {
 } from "./mecmf-interfaces.ts";
 import { AtlasMemoryClassifier } from "./memory-classifier.ts";
 
-export interface PIIExtractionConfig {
+interface PIIExtractionConfig {
   // PII types that require source filtering
   restrictedPIITypes: string[];
   // Sources that are allowed to provide PII
@@ -259,7 +259,7 @@ export class PIISafeMemoryClassifier extends AtlasMemoryClassifier {
 }
 
 // Factory function
-export function createPIISafeMemoryClassifier(
+function createPIISafeMemoryClassifier(
   config?: Partial<PIIExtractionConfig>,
 ): PIISafeMemoryClassifier {
   return new PIISafeMemoryClassifier(config);

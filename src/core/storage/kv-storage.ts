@@ -131,7 +131,7 @@ export interface KVStorage {
 /**
  * Storage configuration options
  */
-export interface KVStorageConfig {
+interface KVStorageConfig {
   /**
    * Storage backend type
    */

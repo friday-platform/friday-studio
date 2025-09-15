@@ -7,7 +7,7 @@
 
 import type { FailureRecoveryStrategies, MemoryType } from "./mecmf-interfaces.ts";
 
-export interface ErrorDetails {
+interface ErrorDetails {
   error?: string;
   attempt?: number;
   timeout?: number;
@@ -15,14 +15,14 @@ export interface ErrorDetails {
   usedFallback?: string;
 }
 
-export interface ErrorStatistic {
+interface ErrorStatistic {
   total: number;
   recent: number;
   errorTypes: string[];
   lastError: Date | null;
 }
 
-export interface ErrorContext {
+interface ErrorContext {
   operation: string;
   memoryType?: MemoryType;
   errorType: string;
@@ -31,7 +31,7 @@ export interface ErrorContext {
   details?: ErrorDetails;
 }
 
-export interface FallbackResult<T> {
+interface FallbackResult<T> {
   data: T;
   usedFallback: boolean;
   fallbackMethod?: string;
@@ -39,7 +39,7 @@ export interface FallbackResult<T> {
   performanceImpact: "none" | "minimal" | "moderate" | "significant";
 }
 
-export interface ResourceMetrics {
+interface ResourceMetrics {
   memoryUsage: number;
   diskUsage: number;
   vectorIndexSize: number;
@@ -47,7 +47,7 @@ export interface ResourceMetrics {
   lastUpdated: Date;
 }
 
-export interface EmergencyPruneResult {
+interface EmergencyPruneResult {
   memoriesRemoved: number;
   spaceReclaimed: number;
   backupCreated: boolean;

@@ -22,7 +22,7 @@ export interface OutputEntry {
 }
 
 // Command context for handlers
-export interface CommandContext {
+interface CommandContext {
   addEntry: (entry: OutputEntry) => void;
 }
 
@@ -34,13 +34,13 @@ export interface CommandDefinition {
 }
 
 // Parse command arguments while preserving complex arguments
-export interface ParsedCommand {
+interface ParsedCommand {
   command: string;
   args: string[];
   rawInput: string;
 }
 
-export interface ConversationEntry {
+interface ConversationEntry {
   id: string;
   type: "user" | "system" | "command_output" | "error" | "intro";
   content: string;

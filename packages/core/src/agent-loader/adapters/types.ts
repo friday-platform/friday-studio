@@ -65,6 +65,6 @@ export interface AgentSummary {
  * Check if an agent is restricted to system workspaces.
  * System agents are built-in and only available to system workspaces.
  */
-export function isSystemAgent(source: AgentSourceData | AgentSummary): boolean {
+function isSystemAgent(source: AgentSourceData | AgentSummary): boolean {
   return source.type === "system";
 }

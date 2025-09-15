@@ -32,7 +32,7 @@ export async function getCurrentWorkspaceName(workspaceDir?: string): Promise<st
 /**
  * Check if the current directory contains a valid workspace
  */
-export async function isValidWorkspace(workspaceDir?: string): Promise<boolean> {
+async function isValidWorkspace(workspaceDir?: string): Promise<boolean> {
   const name = await getCurrentWorkspaceName(workspaceDir);
   return name !== null;
 }

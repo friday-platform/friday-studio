@@ -16,7 +16,7 @@ import type {
   MemoryConfiguration,
 } from "./mecmf-interfaces.ts";
 
-export interface WorkspaceMemoryConfig {
+interface WorkspaceMemoryConfig {
   enabled?: boolean;
   sessionBridge?: {
     enabled?: boolean;

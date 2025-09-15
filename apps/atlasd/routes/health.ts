@@ -2,7 +2,7 @@ import { describeRoute, resolver } from "hono-openapi";
 import { z } from "zod/v4";
 import { daemonFactory } from "../src/factory.ts";
 
-export const healthResponseSchema = z
+const healthResponseSchema = z
   .object({
     activeWorkspaces: z
       .number()

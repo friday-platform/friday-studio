@@ -8,7 +8,7 @@
  */
 export const SOURCE_ATTRIBUTION_PROTOCOL_HEADER = "## MANDATORY SOURCE ATTRIBUTION PROTOCOL";
 
-export const SOURCE_ATTRIBUTION_PROTOCOL_PROMPT = `
+const SOURCE_ATTRIBUTION_PROTOCOL_PROMPT = `
 ${SOURCE_ATTRIBUTION_PROTOCOL_HEADER}
 
 Every piece of information in your output MUST be tagged with its source using this format:

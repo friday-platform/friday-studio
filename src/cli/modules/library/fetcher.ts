@@ -1,7 +1,7 @@
 import { AtlasApiError, getAtlasClient, type LibrarySearchQuery } from "@atlas/client";
 import type { LibraryItem } from "./library-list-component.tsx";
 
-export interface LibraryFetchOptions {
+interface LibraryFetchOptions {
   source?: string;
   tags?: string;
   since?: string;
@@ -10,18 +10,18 @@ export interface LibraryFetchOptions {
   port?: number;
 }
 
-export interface LibraryFetchResult {
+interface LibraryFetchResult {
   success: true;
   items: LibraryItem[];
 }
 
-export interface LibraryFetchError {
+interface LibraryFetchError {
   success: false;
   error: string;
   reason?: "server_not_running" | "api_error" | "network_error";
 }
 
-export type LibraryFetchResponse = LibraryFetchResult | LibraryFetchError;
+type LibraryFetchResponse = LibraryFetchResult | LibraryFetchError;
 
 // Note: Query parameter building is handled by AtlasClient internally
 

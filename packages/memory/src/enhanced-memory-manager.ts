@@ -22,7 +22,7 @@ import { WorklogManager } from "./worklog/worklog-manager.ts";
 /**
  * Enhanced statistics including session bridge and worklog metrics
  */
-export interface EnhancedMemoryStatistics extends MemoryStatistics {
+interface EnhancedMemoryStatistics extends MemoryStatistics {
   sessionBridge: { totalEntries: number; averageAge: number; averageRelevance: number };
   worklog: {
     totalEntries: number;

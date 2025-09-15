@@ -74,7 +74,7 @@ const ThinkingEventSchema = z.object({
   timestamp: z.string(),
 });
 
-export const SSEEventSchema = z.union([
+const SSEEventSchema = z.union([
   RequestEventSchema,
   MessageEventSchema,
   FinishEventSchema,

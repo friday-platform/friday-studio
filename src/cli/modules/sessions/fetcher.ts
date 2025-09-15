@@ -1,24 +1,24 @@
 import { AtlasApiError, getAtlasClient, type SessionInfo } from "@atlas/client";
 import { formatSessionForJson, type Session } from "./session-list-component.tsx";
 
-export interface SessionFetchOptions {
+interface SessionFetchOptions {
   workspace?: string;
   port?: number;
 }
 
-export interface SessionFetchResult {
+interface SessionFetchResult {
   success: true;
   sessions: Session[];
   filteredSessions: Session[];
 }
 
-export interface SessionFetchError {
+interface SessionFetchError {
   success: false;
   error: string;
   reason?: "server_not_running" | "api_error" | "network_error";
 }
 
-export type SessionFetchResponse = SessionFetchResult | SessionFetchError;
+type SessionFetchResponse = SessionFetchResult | SessionFetchError;
 
 // Fetch sessions from daemon API
 export async function fetchSessions(
@@ -98,6 +98,6 @@ export async function fetchSessions(
 }
 
 // Export formatted sessions for JSON output
-export function formatSessionsForJson(sessions: Session[]) {
+function formatSessionsForJson(sessions: Session[]) {
   return { sessions: sessions.map(formatSessionForJson), count: sessions.length };
 }

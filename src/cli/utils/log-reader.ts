@@ -1,18 +1,18 @@
 import type { LogEntry } from "@atlas/logger";
 import { join } from "@std/path";
 
-export interface LogFilters {
+interface LogFilters {
   level?: string;
   since?: Date;
   context?: Record<string, string>;
 }
 
-export interface ReadOptions {
+interface ReadOptions {
   tail?: number;
   filters?: LogFilters;
 }
 
-export interface FollowOptions extends ReadOptions {
+interface FollowOptions extends ReadOptions {
   onLog: (entry: LogEntry) => void;
   pollInterval?: number;
 }

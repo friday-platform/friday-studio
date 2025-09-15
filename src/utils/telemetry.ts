@@ -104,7 +104,7 @@ const MCPAttributesSchema = z
 /**
  * Validation utility functions
  */
-export class TelemetryValidation {
+class TelemetryValidation {
   /**
    * Validate attributes for OpenTelemetry compatibility
    */

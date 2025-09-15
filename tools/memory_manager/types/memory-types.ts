@@ -8,15 +8,14 @@
 import type { CoALAMemoryEntry, CoALAMemoryManager } from "@atlas/memory";
 import { CoALAMemoryType } from "@atlas/memory";
 
-// Re-export for external use
-export type { CoALAMemoryEntry, CoALAMemoryManager };
+// Re-export for external use;
 export { CoALAMemoryType };
 
 // Create a MemoryEntry type alias for consistency
 export type MemoryEntry = CoALAMemoryEntry;
 
 // Local MemoryType for backward compatibility
-export enum LocalMemoryType {
+enum LocalMemoryType {
   WORKING = "working",
   EPISODIC = "episodic",
   SEMANTIC = "semantic",
@@ -58,7 +57,7 @@ export interface TUIState {
   workspaceSelection?: WorkspaceSelectionState;
 }
 
-export interface OverlayContent {
+interface OverlayContent {
   title: string;
   content: unknown;
   scrollOffset: number;
@@ -78,14 +77,14 @@ export interface TabInfo {
   color: string;
 }
 
-export interface EditState {
+interface EditState {
   entryId: string;
   currentField: EditableField;
   fieldValues: Record<string, unknown>;
   originalEntry: MemoryEntry;
 }
 
-export enum EditableField {
+enum EditableField {
   CONTENT = "content",
   TAGS = "tags",
   RELEVANCE_SCORE = "relevanceScore",
@@ -103,7 +102,7 @@ export type WorkspaceEntry = CoreWorkspaceEntry;
 // Re-export WorkspaceStatus for use in other files
 export type { WorkspaceStatus };
 
-export interface WorkspaceSelectionState {
+interface WorkspaceSelectionState {
   availableWorkspaces: WorkspaceEntry[];
   selectedWorkspaceIndex: number;
   loading: boolean;

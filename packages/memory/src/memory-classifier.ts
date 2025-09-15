@@ -15,7 +15,7 @@ import {
   MemoryType,
 } from "./mecmf-interfaces.ts";
 
-export interface ClassificationResult {
+interface ClassificationResult {
   memoryType: MemoryType;
   confidence: number;
   reasoning: string;
@@ -23,14 +23,14 @@ export interface ClassificationResult {
   entities: Entity[];
 }
 
-export interface TemporalMarkers {
+interface TemporalMarkers {
   hasTimeReferences: boolean;
   hasSequenceIndicators: boolean;
   hasOutcomeMarkers: boolean;
   referencedTimeframe: "immediate" | "recent" | "historical" | "future" | "unknown";
 }
 
-export interface ContentAnalysis {
+interface ContentAnalysis {
   isFactual: boolean;
   isProcedural: boolean;
   isExperiential: boolean;

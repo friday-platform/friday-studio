@@ -2,7 +2,7 @@
  * Resource-specific help documentation for Atlas CLI commands
  */
 
-export interface ResourceHelp {
+interface ResourceHelp {
   overview: string;
   concepts?: string;
   commonTasks?: string[];
@@ -10,7 +10,7 @@ export interface ResourceHelp {
   seeAlso?: string[];
 }
 
-export const resourceHelp: Record<string, ResourceHelp> = {
+const resourceHelp: Record<string, ResourceHelp> = {
   daemon: {
     overview: `
 The Atlas daemon is the core service that manages all workspaces and agent
@@ -301,7 +301,7 @@ Key Concepts:
 /**
  * Get detailed help for a resource/command group
  */
-export function getResourceHelp(resource: string): ResourceHelp | undefined {
+function getResourceHelp(resource: string): ResourceHelp | undefined {
   return resourceHelp[resource];
 }
 

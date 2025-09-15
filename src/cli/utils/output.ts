@@ -12,7 +12,7 @@ interface OutputOptions {
  * Write data output to stdout
  * This should be used for primary command output that can be piped
  */
-export function dataOutput(data: unknown, options?: OutputOptions): void {
+function dataOutput(data: unknown, options?: OutputOptions): void {
   if (options?.json) {
     console.log(JSON.stringify(data, null, 2));
   } else {
@@ -51,13 +51,13 @@ export function successOutput(message: string): void {
 /**
  * Check if output is being piped
  */
-export function isPiped(): boolean {
+function isPiped(): boolean {
   return !Deno.stdout.isTerminal();
 }
 
 /**
  * Check if NO_COLOR environment variable is set
  */
-export function shouldDisableColor(): boolean {
+function shouldDisableColor(): boolean {
   return Deno.env.get("NO_COLOR") !== undefined || Deno.env.get("ATLAS_NO_COLOR") !== undefined;
 }

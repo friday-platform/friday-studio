@@ -54,7 +54,7 @@ export interface TemplateConfig {
   metadata?: TemplateMetadata;
 }
 
-export interface TemplateMetadata {
+interface TemplateMetadata {
   version?: string;
   author?: string;
   tags?: string[];
@@ -81,13 +81,13 @@ export interface LibrarySearchResult {
   took_ms: number;
 }
 
-export interface ValidationResult {
+interface ValidationResult {
   valid: boolean;
   errors: string[];
   warnings?: string[];
 }
 
-export interface LibraryStorageConfig {
+interface LibraryStorageConfig {
   platform_path: string;
   workspace_relative: string;
   encryption?: boolean;
@@ -96,7 +96,7 @@ export interface LibraryStorageConfig {
   retention_days?: number;
 }
 
-export interface LibraryIndex {
+interface LibraryIndex {
   version: string;
   workspace_id?: string;
   created: string;
@@ -106,7 +106,7 @@ export interface LibraryIndex {
   stats: LibraryStats;
 }
 
-export interface LibraryIndexItem {
+interface LibraryIndexItem {
   id: string;
   source: string;
   name: string;
@@ -125,14 +125,14 @@ export interface LibraryStats {
 }
 
 // Template engine interfaces
-export interface ITemplateEngine {
+interface ITemplateEngine {
   readonly type: string;
   canHandle(template: TemplateConfig): boolean;
   apply(template: TemplateConfig, data: unknown): Promise<string>;
   validate(template: TemplateConfig): ValidationResult;
 }
 
-export interface TemplateEngineRegistry {
+interface TemplateEngineRegistry {
   register(engine: ITemplateEngine): void;
   getEngine(type: string): ITemplateEngine | undefined;
   findEngine(template: TemplateConfig): ITemplateEngine | undefined;
@@ -140,7 +140,7 @@ export interface TemplateEngineRegistry {
 }
 
 // Storage interfaces
-export interface ILibraryStorage {
+interface ILibraryStorage {
   store(item: LibraryItem, content: string | Uint8Array): Promise<void>;
   retrieve(id: string): Promise<{ item: LibraryItem; content: string | Uint8Array } | null>;
   delete(id: string): Promise<boolean>;

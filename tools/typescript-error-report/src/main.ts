@@ -145,9 +145,6 @@ function getProjectCategory(filePath: string): string {
   if (relativePath.startsWith("src/")) {
     return "src";
   }
-  if (relativePath.startsWith("integration-tests/")) {
-    return "integration-tests";
-  }
   if (relativePath.startsWith("tests/")) {
     return "tests";
   }

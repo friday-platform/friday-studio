@@ -2,7 +2,7 @@
  * Signal-related type definitions
  */
 
-export interface SignalInfo {
+interface SignalInfo {
   name: string;
   description?: string;
 }

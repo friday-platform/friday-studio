@@ -17,7 +17,7 @@ export function getLocalDaemonClient(port: number = 8080, timeout?: number): Atl
   });
 }
 
-export interface DaemonStatus {
+interface DaemonStatus {
   uptime: number;
   activeWorkspaces: number;
   configuration: { maxConcurrentWorkspaces: number; idleTimeoutMs: number };
@@ -25,7 +25,7 @@ export interface DaemonStatus {
   memoryUsage: { rss: number };
 }
 
-export function formatUptime(ms: number): string {
+function formatUptime(ms: number): string {
   const seconds = Math.floor(ms / 1000);
   const minutes = Math.floor(seconds / 60);
   const hours = Math.floor(minutes / 60);
@@ -37,7 +37,7 @@ export function formatUptime(ms: number): string {
   return `${seconds}s`;
 }
 
-export function formatTimeout(ms: number): string {
+function formatTimeout(ms: number): string {
   const minutes = Math.floor(ms / 1000 / 60);
   if (minutes >= 60) {
     const hours = Math.floor(minutes / 60);

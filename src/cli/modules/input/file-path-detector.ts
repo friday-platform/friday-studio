@@ -119,7 +119,7 @@ export function createFileAttachmentPlaceholder(
 /**
  * Detect file paths in pasted content and return structured data
  */
-export interface DetectedPath {
+interface DetectedPath {
   originalText: string;
   fileName: string;
   isDirectory: boolean;

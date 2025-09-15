@@ -14,7 +14,7 @@ import { MCPServerConfigSchema } from "@atlas/config";
 import { z } from "zod/v4";
 
 /** MCP server config with tool filtering and auth options. */
-export const YAMLMCPServerConfigSchema = MCPServerConfigSchema.omit({
+const YAMLMCPServerConfigSchema = MCPServerConfigSchema.omit({
   auth: true,
   tools: true,
 }).extend({
@@ -40,10 +40,10 @@ export const YAMLMCPServerConfigSchema = MCPServerConfigSchema.omit({
     .optional(),
 });
 
-export type YAMLMCPServerConfig = z.infer<typeof YAMLMCPServerConfigSchema>;
+type YAMLMCPServerConfig = z.infer<typeof YAMLMCPServerConfigSchema>;
 
 /** LLM configuration schema for YAML agents. */
-export const YAMLLLMConfigSchema = z.object({
+const YAMLLLMConfigSchema = z.object({
   provider: z
     .enum(["anthropic", "openai", "google"], {
       message: "Provider must be 'anthropic', 'openai', or 'google'",
@@ -86,7 +86,7 @@ export const YAMLLLMConfigSchema = z.object({
     .describe("Provider-specific configuration (e.g., anthropic.thinking, openai.logitBias)"),
 });
 
-export type YAMLLLMConfig = z.infer<typeof YAMLLLMConfigSchema>;
+type YAMLLLMConfig = z.infer<typeof YAMLLLMConfigSchema>;
 
 /** Top-level schema for .agent.yml files. */
 export const YAMLAgentSchema = z.object({
@@ -99,7 +99,7 @@ export const YAMLAgentSchema = z.object({
 export type YAMLAgentDefinition = z.infer<typeof YAMLAgentSchema>;
 
 /** Export simplified JSON Schema for external tooling. */
-export function exportJSONSchema() {
+function exportJSONSchema() {
   return {
     $schema: "http://json-schema.org/draft-07/schema#",
     title: "Atlas YAML Agent Definition",
@@ -136,12 +136,12 @@ export function validateYAMLAgent(data: unknown): YAMLAgentDefinition {
 }
 
 /** Type guard for YAML agent definition validation. */
-export function isYAMLAgentDefinition(data: unknown): data is YAMLAgentDefinition {
+function isYAMLAgentDefinition(data: unknown): data is YAMLAgentDefinition {
   return YAMLAgentSchema.safeParse(data).success;
 }
 
 /** Default YAML agent configuration template. */
-export const DEFAULT_YAML_AGENT: Partial<YAMLAgentDefinition> = {
+const DEFAULT_YAML_AGENT: Partial<YAMLAgentDefinition> = {
   agent: {
     id: "my-agent",
     version: "1.0.0",

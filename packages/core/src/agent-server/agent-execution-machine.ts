@@ -69,7 +69,7 @@ export interface ApprovalDecision {
 }
 
 /** Execution context tracked by the state machine */
-export interface AgentExecutionContext {
+interface AgentExecutionContext {
   agentId: string;
   agent?: AtlasAgent;
   currentPrompt?: string;
@@ -86,7 +86,7 @@ export interface AgentExecutionContext {
 }
 
 /** Events that drive state transitions */
-export type AgentExecutionEvents =
+type AgentExecutionEvents =
   | { type: "LOAD" }
   | { type: "EXECUTE"; prompt: string; sessionData: AgentSessionData; abortSignal?: AbortSignal }
   | { type: "CANCEL" }
@@ -103,7 +103,7 @@ export type AgentExecutionEvents =
   | { type: "xstate.error.actor.persistResults"; error: unknown };
 
 /** Initial configuration for state machine */
-export interface AgentExecutionMachineInput {
+interface AgentExecutionMachineInput {
   agentId: string;
   timeout?: number;
 }
@@ -474,5 +474,5 @@ export function createAgentExecutionMachine(
   });
 }
 
-export type AgentExecutionMachine = ReturnType<typeof createAgentExecutionMachine>;
+type AgentExecutionMachine = ReturnType<typeof createAgentExecutionMachine>;
 export type AgentExecutionMachineActor = ActorRefFrom<AgentExecutionMachine>;

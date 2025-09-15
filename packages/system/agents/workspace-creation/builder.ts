@@ -8,7 +8,7 @@ import {
 } from "@atlas/config";
 import z from "zod/v4";
 
-export interface ValidationResult {
+interface ValidationResult {
   success: boolean;
   errors: string[];
   warnings: string[];
@@ -28,12 +28,12 @@ export interface WorkspaceSummary {
   mcpServerIds: string[];
 }
 
-export const AgentConfigSchema = z.discriminatedUnion("type", [
+const AgentConfigSchema = z.discriminatedUnion("type", [
   LLMAgentConfigSchema,
   AtlasAgentConfigSchema,
 ]);
 
-export type AgentConfig = z.infer<typeof AgentConfigSchema>;
+type AgentConfig = z.infer<typeof AgentConfigSchema>;
 
 /**
  * Builds workspace configurations by accumulating components.

@@ -4,14 +4,14 @@ import { Box, render, Text, useApp, useInput } from "ink";
 import { useState } from "react";
 
 // Types for our prompt utilities
-export interface PromptOptions {
+interface PromptOptions {
   message: string;
   placeholder?: string;
   defaultValue?: string | boolean;
   validate?: (value: string) => string | undefined;
 }
 
-export interface SelectOption {
+interface SelectOption {
   label: string;
   value: string;
   hint?: string;
@@ -114,7 +114,7 @@ export const confirm = async (options: PromptOptions): Promise<boolean | symbol>
 };
 
 // Multi-select prompt
-export const multiselect = async (options: {
+const multiselect = async (options: {
   message: string;
   options: SelectOption[];
   required?: boolean;
@@ -154,7 +154,7 @@ export const multiselect = async (options: {
 };
 
 // Group prompt - manages multiple prompts in sequence
-export const group = async <T extends Record<string, any>>(
+const group = async <T extends Record<string, any>>(
   prompts: Record<string, (results: Partial<T>) => Promise<any>>,
 ): Promise<T | symbol> => {
   const results: Partial<T> = {};
@@ -171,7 +171,7 @@ export const group = async <T extends Record<string, any>>(
 };
 
 // Intro message
-export const intro = (message: string) => {
+const intro = (message: string) => {
   render(
     <Box paddingY={1}>
       <Text bold color="cyan">
@@ -182,7 +182,7 @@ export const intro = (message: string) => {
 };
 
 // Outro message
-export const outro = (message: string) => {
+const outro = (message: string) => {
   render(
     <Box paddingY={1}>
       <Text color="green">└ {message}</Text>
@@ -206,7 +206,7 @@ export const isCancel = (value: any): value is symbol => {
 };
 
 // Note component for additional info
-export const note = (message: string, title?: string) => {
+const note = (message: string, title?: string) => {
   render(
     <Box paddingY={1}>
       <Alert variant="info" title={title}>

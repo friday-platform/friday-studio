@@ -40,7 +40,7 @@ interface StreamSignalData {
   signalConfig: Record<string, unknown>;
 }
 
-export interface WorkspaceRuntimeContext {
+interface WorkspaceRuntimeContext {
   workspace: IWorkspace;
   config: MergedConfig;
   options: {
@@ -75,7 +75,7 @@ export interface WorkspaceRuntimeContext {
   };
 }
 
-export type WorkspaceRuntimeEvent =
+type WorkspaceRuntimeEvent =
   | { type: "INITIALIZE" }
   | {
       type: "PROCESS_SIGNAL";
@@ -125,7 +125,7 @@ export interface WorkspaceRuntimeMachineInput {
 }
 
 // Setup the machine with proper typing
-export const workspaceRuntimeMachineSetup = setup({
+const workspaceRuntimeMachineSetup = setup({
   types: {
     context: {} as WorkspaceRuntimeContext,
     events: {} as WorkspaceRuntimeEvent,
@@ -555,7 +555,7 @@ function isStreamSignal(
 }
 
 // Export the machine type
-export type WorkspaceRuntimeMachine = typeof workspaceRuntimeMachineSetup;
+type WorkspaceRuntimeMachine = typeof workspaceRuntimeMachineSetup;
 
 // Factory function creates machine from setup
 export function createWorkspaceRuntimeMachine(_input: WorkspaceRuntimeMachineInput) {

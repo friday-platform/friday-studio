@@ -22,7 +22,7 @@ import type {
 } from "./types.ts";
 import { ProviderStatus, ProviderType } from "./types.ts";
 
-export interface FileWatchSignalConfig {
+interface FileWatchSignalConfig {
   id: string;
   description: string;
   provider: "fs-watch";
@@ -30,7 +30,7 @@ export interface FileWatchSignalConfig {
   recursive?: boolean;
 }
 
-export interface FileWatchSignalData {
+interface FileWatchSignalData {
   id: string;
   type: "fs-watch";
   timestamp: string;

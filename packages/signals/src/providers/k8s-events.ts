@@ -110,7 +110,7 @@ interface K8sEvent {
   source?: { component?: string; host?: string };
 }
 
-export interface K8sEventsSignalConfig {
+interface K8sEventsSignalConfig {
   // Kubernetes API configuration - flexible kubeconfig support
   kubeconfig?: string; // Path to kubeconfig file
   kubeconfig_content?: string; // Embedded kubeconfig YAML content

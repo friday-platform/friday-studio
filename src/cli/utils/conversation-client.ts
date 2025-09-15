@@ -4,14 +4,14 @@ import { stringifyError } from "@atlas/utils";
 import { createEventSource } from "eventsource-client";
 import { DaemonClient } from "./daemon-client.ts";
 
-export interface ConversationSession {
+interface ConversationSession {
   sessionId: string;
   mode: "private" | "shared";
   participants: Array<{ userId: string; clientType: string; joinedAt: string; lastSeen: string }>;
   sseUrl: string;
 }
 
-export interface ConversationMessage {
+interface ConversationMessage {
   messageId: string;
   status: "processing" | "completed" | "error";
 }

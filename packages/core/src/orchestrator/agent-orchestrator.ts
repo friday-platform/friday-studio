@@ -120,10 +120,10 @@ const ApprovalDecisionSchema = z.object({
   conditions: z.array(z.string()).optional(),
 });
 
-export type CompletedAgentResult = z.infer<typeof CompletedAgentResultSchema>;
-export type AwaitingApprovalResult = z.infer<typeof AwaitingApprovalResultSchema>;
-export type AgentExecutionResult = z.infer<typeof AgentExecutionResultSchema>;
-export type ValidatedApprovalDecision = z.infer<typeof ApprovalDecisionSchema>;
+type CompletedAgentResult = z.infer<typeof CompletedAgentResultSchema>;
+type AwaitingApprovalResult = z.infer<typeof AwaitingApprovalResultSchema>;
+type AgentExecutionResult = z.infer<typeof AgentExecutionResultSchema>;
+type ValidatedApprovalDecision = z.infer<typeof ApprovalDecisionSchema>;
 
 /**
  * Orchestrator interface for executing Atlas agents.

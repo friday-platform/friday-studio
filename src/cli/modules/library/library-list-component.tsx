@@ -3,7 +3,7 @@ import { z } from "zod/v4";
 import { Table } from "../../components/table.tsx";
 
 // Schema for library item
-export const LibraryItemSchema = z.object({
+const LibraryItemSchema = z.object({
   id: z.string(),
   source: z.string(),
   name: z.string(),
@@ -22,7 +22,7 @@ export const LibraryItemSchema = z.object({
 export type LibraryItem = z.infer<typeof LibraryItemSchema>;
 
 // Utility functions
-export const formatBytes = (bytes: number): string => {
+const formatBytes = (bytes: number): string => {
   if (bytes === 0) return "0 B";
   const k = 1024;
   const sizes = ["B", "KB", "MB", "GB"];
@@ -30,7 +30,7 @@ export const formatBytes = (bytes: number): string => {
   return parseFloat((bytes / k ** i).toFixed(1)) + " " + sizes[i];
 };
 
-export const formatDate = (dateString: string): string => {
+const formatDate = (dateString: string): string => {
   const date = new Date(dateString);
   return date.toLocaleDateString() + " " + date.toLocaleTimeString();
 };

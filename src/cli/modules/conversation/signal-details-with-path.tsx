@@ -8,7 +8,7 @@ interface SignalDetailsWithPathProps {
   signalId: string;
 }
 
-export const SignalDetailsWithPath = ({ workspaceId, signalId }: SignalDetailsWithPathProps) => {
+const SignalDetailsWithPath = ({ workspaceId, signalId }: SignalDetailsWithPathProps) => {
   const [workspacePath, setWorkspacePath] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>("");

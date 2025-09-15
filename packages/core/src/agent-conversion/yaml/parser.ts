@@ -15,7 +15,7 @@ import {
 } from "./schema.ts";
 
 /** Options for YAML agent parsing. */
-export interface ParseOptions {
+interface ParseOptions {
   /** Environment variables for interpolation */
   env?: Record<string, string>;
 
@@ -27,7 +27,7 @@ export interface ParseOptions {
 }
 
 /** Parse .agent.yml file into validated definition. */
-export async function parseYAMLAgentFile(
+async function parseYAMLAgentFile(
   filePath: string,
   options: ParseOptions = {},
 ): Promise<YAMLAgentDefinition> {
@@ -98,7 +98,7 @@ export function parseYAMLAgentContent(
  * Interpolate environment variables in YAML content.
  * Supports ${VAR_NAME} and ${VAR_NAME:-default} syntax.
  */
-export function interpolateEnvironmentVariables(
+function interpolateEnvironmentVariables(
   content: string,
   env: Record<string, string>,
 ): string {
@@ -120,7 +120,7 @@ export function interpolateEnvironmentVariables(
 }
 
 /** Load all .agent.yml files from directory. */
-export async function loadYAMLAgentsFromDirectory(
+async function loadYAMLAgentsFromDirectory(
   directory: string,
   options: ParseOptions = {},
 ): Promise<Array<{ path: string; agent: YAMLAgentDefinition }>> {
@@ -151,7 +151,7 @@ export async function loadYAMLAgentsFromDirectory(
 }
 
 /** Extract MCP server names from YAML definition. */
-export function extractMCPServerNames(definition: YAMLAgentDefinition): string[] {
+function extractMCPServerNames(definition: YAMLAgentDefinition): string[] {
   if (!definition.mcp_servers) {
     return [];
   }
@@ -222,7 +222,7 @@ export function extractToolDenylist(
  * Validate YAML agent file without throwing.
  * Returns validation result with errors.
  */
-export async function validateYAMLAgentFile(
+async function validateYAMLAgentFile(
   filePath: string,
   options: ParseOptions = {},
 ): Promise<{ valid: boolean; errors?: string[] }> {

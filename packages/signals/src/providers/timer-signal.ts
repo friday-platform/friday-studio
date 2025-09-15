@@ -28,7 +28,7 @@ export interface TimerSignalData {
   };
 }
 
-export interface TimerSignalPersistentState {
+interface TimerSignalPersistentState {
   id: string;
   schedule: string;
   timezone?: string;

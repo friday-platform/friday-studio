@@ -10,7 +10,7 @@ export interface ConversationSession {
   sseUrl: string;
 }
 
-export interface ConversationMessage {
+interface ConversationMessage {
   messageId: string;
   status: "processing" | "completed" | "error";
 }

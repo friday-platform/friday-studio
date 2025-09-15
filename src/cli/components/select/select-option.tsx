@@ -2,7 +2,7 @@ import { Box, Text } from "ink";
 import type { ReactNode } from "react";
 import { theme } from "./theme.ts";
 
-export interface SelectOptionProps {
+interface SelectOptionProps {
   /** Determines if option is focused. */
   readonly isFocused: boolean;
 

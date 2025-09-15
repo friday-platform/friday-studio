@@ -18,7 +18,7 @@
  * => const safeKeys: string[]
  * => const unsafeKeys: ("x" | "y")[] // Missing "z"
  */
-export const objectKeys = Object.keys as <T>(obj: T) => Array<keyof T>;
+const objectKeys = Object.keys as <T>(obj: T) => Array<keyof T>;
 
 /**
  * The type of a single item in `Object.entries<T>(value: T)`.
@@ -30,7 +30,7 @@ export const objectKeys = Object.keys as <T>(obj: T) => Array<keyof T>;
  * ```
  * => type T2 = ["x", string] | ["y", number]
  */
-export type ObjectEntry<T> = {
+type ObjectEntry<T> = {
   // Without Exclude<keyof T, undefined>, this type produces `ExpectedEntries | undefined`
   // if T has any optional keys.
   [K in Exclude<keyof T, undefined>]: [K, T[K]];

@@ -7,7 +7,7 @@ const markdownParser = parser.configure([
 ]);
 
 // Node structure for rendering
-export interface ASTNode {
+interface ASTNode {
   type: string;
   from: number;
   to: number;

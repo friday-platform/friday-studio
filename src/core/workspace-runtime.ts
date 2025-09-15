@@ -15,7 +15,7 @@ import {
   type WorkspaceRuntimeMachineInput,
 } from "./workspace-runtime-machine.ts";
 
-export interface WorkspaceRuntimeOptions {
+interface WorkspaceRuntimeOptions {
   lazy?: boolean;
   supervisorModel?: string;
   workspacePath?: string;

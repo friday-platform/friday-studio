@@ -145,7 +145,7 @@ export async function setupGhostty(): Promise<SetupResult> {
 /**
  * Restore Ghostty from backup
  */
-export async function restoreGhostty(backupPath: string): Promise<SetupResult> {
+async function restoreGhostty(backupPath: string): Promise<SetupResult> {
   if (!(await fileExists(backupPath))) {
     return { success: false, error: "Backup file no longer exists" };
   }

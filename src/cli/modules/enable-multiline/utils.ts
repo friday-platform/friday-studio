@@ -44,7 +44,7 @@ export async function fileExists(path: string): Promise<boolean> {
 /**
  * Create a backup of a file
  */
-export async function createBackup(
+async function createBackup(
   sourcePath: string,
   backupSuffix: string = ".bak",
 ): Promise<string | null> {
@@ -61,7 +61,7 @@ export async function createBackup(
 /**
  * Generate a unique backup suffix
  */
-export function generateBackupSuffix(): string {
+function generateBackupSuffix(): string {
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
   return `.backup-${timestamp}`;
 }

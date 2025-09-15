@@ -4,12 +4,12 @@
  */
 import { getAtlasDaemonUrl } from "@atlas/atlasd";
 
-export interface DaemonClientOptions {
+interface DaemonClientOptions {
   daemonUrl?: string;
   timeout?: number;
 }
 
-export interface WorkspaceInfo {
+interface WorkspaceInfo {
   id: string;
   name: string;
   description?: string;
@@ -19,19 +19,19 @@ export interface WorkspaceInfo {
   lastSeen: string;
 }
 
-export interface WorkspaceCreateRequest {
+interface WorkspaceCreateRequest {
   name: string;
   description?: string;
   template?: string;
   config?: Record<string, unknown>;
 }
 
-export interface WorkspaceCreateResponse {
+interface WorkspaceCreateResponse {
   id: string;
   name: string;
 }
 
-export interface LibrarySearchQuery {
+interface LibrarySearchQuery {
   query?: string;
   type?: string | string[];
   tags?: string[];
@@ -41,7 +41,7 @@ export interface LibrarySearchQuery {
   offset?: number;
 }
 
-export interface LibraryItem {
+interface LibraryItem {
   id: string;
   type: string;
   name: string;
@@ -60,21 +60,21 @@ export interface LibraryItem {
   workspace_id?: string;
 }
 
-export interface LibrarySearchResult {
+interface LibrarySearchResult {
   items: LibraryItem[];
   total: number;
   query: LibrarySearchQuery;
   took_ms: number;
 }
 
-export interface LibraryStats {
+interface LibraryStats {
   total_items: number;
   total_size_bytes: number;
   types: Record<string, number>;
   recent_activity: Array<{ date: string; items_added: number; items_modified: number }>;
 }
 
-export interface TemplateConfig {
+interface TemplateConfig {
   id: string;
   name: string;
   description?: string;
@@ -466,7 +466,7 @@ export class DaemonClient {
   }
 }
 
-export class DaemonApiError extends Error {
+class DaemonApiError extends Error {
   constructor(
     message: string,
     public status: number,
@@ -487,7 +487,7 @@ export function getDaemonClient(options?: DaemonClientOptions): DaemonClient {
 }
 
 // Reset the default client (useful for testing or when daemon URL changes)
-export function resetDaemonClient(): void {
+function resetDaemonClient(): void {
   defaultClient = null;
 }
 

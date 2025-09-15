@@ -9,7 +9,7 @@ export enum SupervisionLevel {
   PARANOID = "paranoid",
 }
 
-export interface SupervisionConfig {
+interface SupervisionConfig {
   level: SupervisionLevel;
   cacheEnabled: boolean;
   parallelLLMCalls: boolean;
@@ -26,7 +26,7 @@ export interface SupervisionConfig {
   maxConcurrentLLMCalls: number;
 }
 
-export const SUPERVISION_CONFIGS: Record<SupervisionLevel, SupervisionConfig> = {
+const SUPERVISION_CONFIGS: Record<SupervisionLevel, SupervisionConfig> = {
   [SupervisionLevel.MINIMAL]: {
     level: SupervisionLevel.MINIMAL,
     cacheEnabled: true,
@@ -80,18 +80,18 @@ export function getSupervisionConfig(level: SupervisionLevel): SupervisionConfig
   return SUPERVISION_CONFIGS[level];
 }
 
-export function shouldRunAnalysis(level: SupervisionLevel): boolean {
+function shouldRunAnalysis(level: SupervisionLevel): boolean {
   return SUPERVISION_CONFIGS[level].preExecutionAnalysis;
 }
 
-export function shouldRunValidation(level: SupervisionLevel): boolean {
+function shouldRunValidation(level: SupervisionLevel): boolean {
   return SUPERVISION_CONFIGS[level].postExecutionValidation;
 }
 
-export function canUseCache(level: SupervisionLevel): boolean {
+function canUseCache(level: SupervisionLevel): boolean {
   return SUPERVISION_CONFIGS[level].cacheEnabled;
 }
 
-export function canRunParallel(level: SupervisionLevel): boolean {
+function canRunParallel(level: SupervisionLevel): boolean {
   return SUPERVISION_CONFIGS[level].parallelLLMCalls;
 }

@@ -319,7 +319,7 @@ export async function fetchWithTimeout(
 /**
  * Determine if an HTTP status code indicates a retryable error
  */
-export function isRetryableError(status: number): boolean {
+function isRetryableError(status: number): boolean {
   // Retry on server errors (5xx) and specific client errors
   return (
     status >= 500 || // Server errors
@@ -333,7 +333,7 @@ export function isRetryableError(status: number): boolean {
 /**
  * Calculate exponential backoff delay for retries
  */
-export function calculateRetryDelay(retryCount: number): number {
+function calculateRetryDelay(retryCount: number): number {
   // Exponential backoff: 1s, 2s, 4s, 8s, etc. with jitter
   const baseDelay = 2 ** retryCount * 1000;
   const jitter = Math.random() * 0.3 * baseDelay; // 30% jitter
@@ -343,7 +343,7 @@ export function calculateRetryDelay(retryCount: number): number {
 /**
  * Simple sleep utility for retry delays
  */
-export function sleep(ms: number): Promise<void> {
+function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
@@ -351,7 +351,7 @@ export function sleep(ms: number): Promise<void> {
  * Check if a workspace has MCP enabled
  * SECURITY: Respects workspace-level server.mcp.enabled settings
  */
-export async function checkWorkspaceMCPEnabled(
+async function checkWorkspaceMCPEnabled(
   daemonUrl: string,
   workspaceId: string,
   logger: Logger,

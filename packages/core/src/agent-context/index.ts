@@ -16,7 +16,7 @@ import { stripSourceAttributionTags } from "../prompts/source-attribution.ts";
 import { MCPStreamEmitter } from "../streaming/stream-emitters.ts";
 import { createEnvironmentContext } from "./environment-context.ts";
 
-export interface AgentContextBuilderDeps {
+interface AgentContextBuilderDeps {
   daemonUrl: string;
   mcpServerPool: GlobalMCPServerPool;
   logger: Logger;
@@ -632,6 +632,5 @@ interface MemoryAllocation {
   totalTokensUsed: number;
 }
 
-// Re-export types for convenience
-export type { EnvironmentValidationError } from "./environment-context.ts";
-export { getEnvironmentHelp } from "./environment-context.ts";
+// Re-export types for convenience;
+;

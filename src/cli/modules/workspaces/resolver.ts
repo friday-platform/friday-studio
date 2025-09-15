@@ -4,7 +4,7 @@ import { getWorkspaceManager } from "@atlas/workspace"; // TODO: Use @atlas/clie
 import { exists } from "@std/fs";
 
 // Helper function to resolve workspace and load config
-export async function resolveWorkspaceAndConfig(
+async function resolveWorkspaceAndConfig(
   workspaceId?: string,
 ): Promise<{ workspace: { path: string; id: string; name: string }; config: WorkspaceConfig }> {
   const registry = await getWorkspaceManager();
@@ -63,7 +63,7 @@ export async function resolveWorkspaceAndConfig(
 }
 
 // Alternative resolver that doesn't change directories (for interactive use)
-export async function resolveWorkspaceAndConfigNoCwd(
+async function resolveWorkspaceAndConfigNoCwd(
   workspaceId: string,
 ): Promise<{ workspace: { path: string; id: string; name: string }; config: WorkspaceConfig }> {
   const registry = await getWorkspaceManager();
@@ -145,7 +145,7 @@ export async function loadWorkspaceConfig(workspacePath: string): Promise<Worksp
 }
 
 // Load workspace config without directory change (for interactive)
-export async function loadWorkspaceConfigNoCwd(workspacePath: string): Promise<WorkspaceConfig> {
+async function loadWorkspaceConfigNoCwd(workspacePath: string): Promise<WorkspaceConfig> {
   const adapter = new FilesystemConfigAdapter(workspacePath);
   const configLoader = new ConfigLoader(adapter, workspacePath);
   const mergedConfig = await configLoader.load();

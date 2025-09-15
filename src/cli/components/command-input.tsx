@@ -8,7 +8,7 @@ import type { AttachmentData } from "../modules/input/use-text-input-state.ts";
 import { COMMAND_DEFINITIONS } from "../utils/command-definitions.ts";
 import { useResponsiveDimensions } from "../utils/useResponsiveDimensions.ts";
 
-export interface CommandInputProps {
+interface CommandInputProps {
   onSubmit: (command: string) => void;
   isDisabled?: boolean;
   disabled?: boolean;

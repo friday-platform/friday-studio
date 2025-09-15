@@ -24,7 +24,7 @@ export interface WorkspaceCreateResponse {
   name: string;
 }
 
-export interface WorkspaceRuntime {
+interface WorkspaceRuntime {
   status: string;
   startedAt: string;
   sessions: number;

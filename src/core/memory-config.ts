@@ -10,20 +10,20 @@ import { CoALAMemoryManager, type CoALAMemoryType } from "@atlas/memory";
 import { InMemoryStorageAdapter } from "@atlas/storage";
 import type { IAtlasScope } from "../types/core.ts";
 
-export interface MemoryLimits {
+interface MemoryLimits {
   relevant_memories: number;
   past_successes: number;
   past_failures: number;
 }
 
-export interface MemoryTypeConfig {
+interface MemoryTypeConfig {
   enabled: boolean;
   max_age_hours?: number;
   max_age_days?: number;
   max_entries: number;
 }
 
-export interface MemoryConfiguration {
+interface MemoryConfiguration {
   enabled: boolean;
   scope: "agent" | "session" | "workspace";
   include_in_context: boolean;
@@ -31,13 +31,13 @@ export interface MemoryConfiguration {
   memory_types: Record<string, MemoryTypeConfig>;
 }
 
-export interface MemoryRetentionConfig {
+interface MemoryRetentionConfig {
   max_age_days: number;
   max_entries: number;
   cleanup_interval_hours: number;
 }
 
-export interface AtlasMemoryConfig {
+interface AtlasMemoryConfig {
   default: {
     enabled: boolean;
     storage: string;

@@ -38,9 +38,9 @@ export enum CoALAMemoryType {
 }
 
 // Zod schemas for type-safe memory operations
-export const CoALAMemoryTypeSchema = z.nativeEnum(CoALAMemoryType);
+const CoALAMemoryTypeSchema = z.nativeEnum(CoALAMemoryType);
 
-export const CoALASourceMetadataSchema = z
+const CoALASourceMetadataSchema = z
   .object({
     agentId: z.string().optional(),
     toolName: z.string().optional(),
@@ -50,7 +50,7 @@ export const CoALASourceMetadataSchema = z
   })
   .optional();
 
-export const CoALAMemoryEntrySchema = z.object({
+const CoALAMemoryEntrySchema = z.object({
   id: z.string(),
   content: z.union([z.string(), z.record(z.string(), z.string())]),
   timestamp: z.coerce.date(),

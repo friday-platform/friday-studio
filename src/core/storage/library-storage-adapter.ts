@@ -25,7 +25,7 @@ import type { KVStorage } from "./kv-storage.ts";
 /**
  * Library storage configuration
  */
-export interface LibraryStorageConfig {
+interface LibraryStorageConfig {
   /** Base directory for content storage. Defaults to ~/.atlas/library */
   contentDir?: string;
   /** Whether to organize content by source subdirectories */

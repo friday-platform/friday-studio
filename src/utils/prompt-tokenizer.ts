@@ -4,7 +4,7 @@
  * Provides text processing for vector search queries without requiring LLM API calls.
  */
 
-export interface TokenizationOptions {
+interface TokenizationOptions {
   /**
    * Remove common stop words
    */

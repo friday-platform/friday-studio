@@ -8,7 +8,7 @@ interface JobDetailsWithPathProps {
   jobName: string;
 }
 
-export const JobDetailsWithPath = ({ workspaceId, jobName }: JobDetailsWithPathProps) => {
+const JobDetailsWithPath = ({ workspaceId, jobName }: JobDetailsWithPathProps) => {
   const [workspacePath, setWorkspacePath] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>("");

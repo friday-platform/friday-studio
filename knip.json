@@ -2,19 +2,8 @@
   "$schema": "https://unpkg.com/knip@latest/schema.json",
   "workspaces": {
     ".": {
-      "entry": [
-        "mod.ts!",
-        "src/cli.tsx!",
-        "src/**/*.test.ts",
-        "tests/**/*.test.ts",
-        "integration-tests/**/*.test.ts"
-      ],
-      "project": [
-        "src/**/*.{ts,tsx,js,jsx}!",
-        "*.ts!",
-        "src/**/*.test.ts",
-        "integration-tests/**/*.ts"
-      ]
+      "entry": ["mod.ts!", "src/cli.tsx!", "src/**/*.test.ts", "tests/**/*.test.ts"],
+      "project": ["src/**/*.{ts,tsx,js,jsx}!", "*.ts!", "src/**/*.test.ts"]
     },
     "packages/agent-sdk": { "project": ["src/**/*.{ts,tsx,js,jsx}!"] },
     "packages/bundled-agents": { "project": ["src/**/*.{ts,tsx,js,jsx}!"] },

@@ -20,13 +20,13 @@ import { registry, validateProviderConfig } from "../llm-provider-registry/index
 import { extractToolAllowlist, extractToolDenylist } from "./yaml/parser.ts";
 import type { YAMLAgentDefinition } from "./yaml/schema.ts";
 
-export type YamlAgentResult = {
+type YamlAgentResult = {
   response: string;
   reasoning?: string;
   toolCalls?: ToolCall[];
   toolResults?: ToolResult[];
 };
-export type YamlAgent = AtlasAgent<YamlAgentResult>;
+type YamlAgent = AtlasAgent<YamlAgentResult>;
 
 /**
  * Convert parsed YAML definition to AtlasAgent.

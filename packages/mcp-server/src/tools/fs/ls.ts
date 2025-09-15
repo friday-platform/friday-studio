@@ -5,7 +5,7 @@ import { z } from "zod";
 import type { ToolContext } from "../types.ts";
 import { createSuccessResponse } from "../types.ts";
 
-export const IGNORE_PATTERNS = ["node_modules/", ".git/", "dist/", "build/"];
+const IGNORE_PATTERNS = ["node_modules/", ".git/", "dist/", "build/"];
 
 const LIMIT = 100;
 

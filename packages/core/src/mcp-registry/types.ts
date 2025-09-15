@@ -21,16 +21,16 @@ export type MCPSource = "agents" | "static" | "web";
 export type AgentSource = "bundled" | "system" | "sdk" | "yaml";
 
 /** Security rating for MCP servers */
-export type SecurityRating = "high" | "medium" | "low" | "unverified";
+type SecurityRating = "high" | "medium" | "low" | "unverified";
 
 /** Transport types supported by MCP servers */
-export type TransportType = "stdio" | "sse";
+type TransportType = "stdio" | "sse";
 
 /** Authentication types for MCP servers */
-export type AuthType = "bearer" | "api_key" | "oauth" | "service_principal" | "none";
+type AuthType = "bearer" | "api_key" | "oauth" | "service_principal" | "none";
 
 /** Tool metadata for MCP servers */
-export interface ToolMetadata {
+interface ToolMetadata {
   name: string;
   description: string;
   capabilities: string[];
@@ -87,7 +87,7 @@ export interface ValidationResult {
 }
 
 /** Agent-based discovery configuration */
-export interface AgentMCPConfig {
+interface AgentMCPConfig {
   agentId: string;
   mcpServers: string[];
   usagePattern: string;

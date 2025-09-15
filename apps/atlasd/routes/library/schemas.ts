@@ -5,7 +5,7 @@ import { z } from "zod/v4";
  */
 
 // Library item types enum
-export const LIBRARY_ITEM_TYPE = z.enum([
+const LIBRARY_ITEM_TYPE = z.enum([
   "report",
   "session_archive",
   "template",
@@ -14,13 +14,13 @@ export const LIBRARY_ITEM_TYPE = z.enum([
 ]);
 
 // Library metadata format enum
-export const LIBRARY_FORMAT = z.enum(["markdown", "json", "html", "text", "binary"]);
+const LIBRARY_FORMAT = z.enum(["markdown", "json", "html", "text", "binary"]);
 
 // Library metadata source enum
-export const LIBRARY_SOURCE = z.enum(["agent", "job", "user", "system"]);
+const LIBRARY_SOURCE = z.enum(["agent", "job", "user", "system"]);
 
 // Library item metadata schema
-export const libraryItemMetadataSchema = z.object({
+const libraryItemMetadataSchema = z.object({
   format: LIBRARY_FORMAT,
   source: LIBRARY_SOURCE,
   session_id: z.string().optional(),
@@ -31,7 +31,7 @@ export const libraryItemMetadataSchema = z.object({
 });
 
 // Full library item schema (for responses)
-export const libraryItemSchema = z.object({
+const libraryItemSchema = z.object({
   id: z.string(),
   type: LIBRARY_ITEM_TYPE,
   name: z.string(),
@@ -61,7 +61,7 @@ export const createLibraryItemSchema = z.object({
 });
 
 // Library search query schema
-export const librarySearchQuerySchema = z.object({
+const librarySearchQuerySchema = z.object({
   query: z.string().optional(),
   type: z.union([z.string(), z.array(z.string())]).optional(),
   tags: z.array(z.string()).optional(),
@@ -91,7 +91,7 @@ export const libraryStatsSchema = z.object({
 });
 
 // Template metadata schema
-export const templateMetadataSchema = z.object({
+const templateMetadataSchema = z.object({
   version: z.string().optional(),
   author: z.string().optional(),
   tags: z.array(z.string()).optional(),
@@ -164,10 +164,10 @@ export const generateTemplateResponseSchema = z.object({
 });
 
 // Type exports for TypeScript usage
-export type LibraryItem = z.infer<typeof libraryItemSchema>;
-export type CreateLibraryItem = z.infer<typeof createLibraryItemSchema>;
+type LibraryItem = z.infer<typeof libraryItemSchema>;
+type CreateLibraryItem = z.infer<typeof createLibraryItemSchema>;
 export type LibrarySearchQuery = z.infer<typeof librarySearchQuerySchema>;
-export type LibrarySearchResult = z.infer<typeof librarySearchResultSchema>;
-export type LibraryStats = z.infer<typeof libraryStatsSchema>;
-export type TemplateConfig = z.infer<typeof templateConfigSchema>;
-export type GenerateFromTemplate = z.infer<typeof generateFromTemplateSchema>;
+type LibrarySearchResult = z.infer<typeof librarySearchResultSchema>;
+type LibraryStats = z.infer<typeof libraryStatsSchema>;
+type TemplateConfig = z.infer<typeof templateConfigSchema>;
+type GenerateFromTemplate = z.infer<typeof generateFromTemplateSchema>;

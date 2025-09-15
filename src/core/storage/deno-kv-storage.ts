@@ -344,7 +344,7 @@ export class DenoKVStorage implements KVStorage {
  * @param path Optional path for the KV database file
  * @returns Initialized DenoKVStorage instance
  */
-export async function createDenoKVStorage(path?: string): Promise<DenoKVStorage> {
+async function createDenoKVStorage(path?: string): Promise<DenoKVStorage> {
   const storage = new DenoKVStorage(path);
   await storage.initialize();
   return storage;

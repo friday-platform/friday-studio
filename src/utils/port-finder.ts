@@ -4,7 +4,7 @@
 
 const DEFAULT_PORT_RANGE = { start: 8080, end: 8180 };
 
-export interface PortFinderOptions {
+interface PortFinderOptions {
   preferredPort?: number;
   startPort?: number;
   endPort?: number;

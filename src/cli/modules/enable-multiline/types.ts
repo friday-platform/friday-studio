@@ -25,7 +25,7 @@ export interface SetupResult {
   terminalType?: "Apple_Terminal" | "iTerm.app" | "ghostty"; // Terminal type for context
 }
 
-export interface TerminalSetupState {
+interface TerminalSetupState {
   shiftEnterKeyBindingInstalled?: boolean;
   optionAsMetaKeyInstalled?: boolean;
   appleTerminalBackupPath?: string;

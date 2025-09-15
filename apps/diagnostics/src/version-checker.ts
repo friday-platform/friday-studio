@@ -8,7 +8,7 @@ import { ensureDir, existsSync } from "@std/fs";
 import { ReleaseChannel } from "./release-channel.ts";
 import { getVersionInfo } from "./version.ts";
 
-export interface VersionResponse {
+interface VersionResponse {
   channel: string;
   latest: {
     channel: string;
@@ -21,7 +21,7 @@ export interface VersionResponse {
   last_updated: string;
 }
 
-export interface VersionCheckResult {
+interface VersionCheckResult {
   hasUpdate: boolean;
   currentVersion: string;
   latestVersion?: string;
@@ -273,7 +273,7 @@ export async function checkForUpdates(forceCheck: boolean = false): Promise<Vers
 /**
  * Display update message if newer version is available
  */
-export async function checkAndDisplayUpdate(): Promise<void> {
+async function checkAndDisplayUpdate(): Promise<void> {
   const result = await checkForUpdates();
 
   if (result.hasUpdate && result.latestVersion) {
@@ -283,7 +283,7 @@ export async function checkAndDisplayUpdate(): Promise<void> {
   // Silently ignore errors to avoid disrupting CLI usage
 }
 
-export interface UpdateInfo {
+interface UpdateInfo {
   updateAvailable: boolean;
   latestVersion?: string;
   currentVersion: string;
@@ -293,7 +293,7 @@ export interface UpdateInfo {
 /**
  * Check for updates and return download URL for update command
  */
-export async function checkForUpdate(channel?: string): Promise<UpdateInfo> {
+async function checkForUpdate(channel?: string): Promise<UpdateInfo> {
   const versionInfo = getVersionInfo();
   const currentVersion = versionInfo.version;
 

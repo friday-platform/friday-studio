@@ -2,10 +2,10 @@
  * Terminal setup module exports
  */
 
-export { restoreAppleTerminal, setupAppleTerminal } from "./apple-terminal.ts";
+;
 export * from "./detector.ts";
-export { restoreGhostty, setupGhostty } from "./ghostty.ts";
-export { restoreITerm2, setupITerm2 } from "./iterm2.ts";
+;
+;
 export * from "./types.ts";
 export * from "./utils.ts";
 

@@ -1,7 +1,7 @@
 // No React import needed with react-jsx
 import { Box, Text } from "ink";
 
-export interface Column {
+interface Column {
   key: string;
   label: string;
   width?: number;
@@ -9,7 +9,7 @@ export interface Column {
   color?: string;
 }
 
-export interface TableProps {
+interface TableProps {
   columns: Column[];
   data: Record<string, string | number>[];
   borderColor?: string;

@@ -7,7 +7,7 @@ import { generateText, hasToolCall, stepCountIs, streamText } from "ai";
 import { WorkspaceBuilder, type WorkspaceSummary } from "./builder.ts";
 import { getWorkspaceBuilderTools } from "./tools.ts";
 
-export type WorkspaceResult = {
+type WorkspaceResult = {
   success: true;
   workspaceName: string;
   workspacePath?: string;

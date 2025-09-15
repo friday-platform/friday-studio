@@ -16,23 +16,16 @@
  */
 
 // Storage implementations
-export { createDenoKVStorage, DenoKVStorage } from "./deno-kv-storage.ts";
-// Core interfaces
-export type {
-  AtomicOperation,
-  KVEntry,
-  KVStorage,
-  KVStorageConfig,
-  WatchEvent,
-} from "./kv-storage.ts";
+;
+// Core interfaces;
 export {
   createKVStorage,
-  KVConnectionError,
-  KVStorageError,
-  KVTransactionError,
+  
+  
+  
 } from "./kv-storage.ts";
-export { LibraryStorageAdapter, type LibraryStorageConfig } from "./library-storage-adapter.ts";
-export { createMemoryKVStorage, MemoryKVStorage } from "./memory-kv-storage.ts";
+;
+;
 // Domain-specific adapters
 export { RegistryStorageAdapter } from "./registry-storage-adapter.ts";
 
@@ -61,7 +54,7 @@ export async function createLibraryStorage(
 }
 
 // Convenience function to create both registry and library storage
-export async function createAtlasStorage(
+async function createAtlasStorage(
   kvConfig: import("./kv-storage.ts").KVStorageConfig,
   libraryConfig?: import("./library-storage-adapter.ts").LibraryStorageConfig,
 ): Promise<{

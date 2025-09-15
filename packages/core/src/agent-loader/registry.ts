@@ -9,7 +9,7 @@ import { YAMLFileAdapter } from "./adapters/yaml-file-adapter.ts";
 import { AgentLoader, type LoaderOptions } from "./loader.ts";
 
 /** Options for configuring the agent registry */
-export interface RegistryOptions extends LoaderOptions {
+interface RegistryOptions extends LoaderOptions {
   /** Whether to include system agents (only for system workspaces) */
   includeSystemAgents?: boolean;
   /** Custom paths to search for YAML agents */

@@ -18,7 +18,7 @@ export interface ToolContext {
 /**
  * Standard error response format for MCP tools
  */
-export function createErrorResponse(error: unknown): {
+function createErrorResponse(error: unknown): {
   content: Array<{ type: "text"; text: string }>;
 } {
   const errorMessage = error instanceof Error ? error.message : String(error);

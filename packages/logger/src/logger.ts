@@ -6,7 +6,7 @@ import type { LogContext, LogEntry, Logger, LogLevel } from "./types.ts";
 /**
  * Atlas logger that writes JSON to disk files and human-readable output to console
  */
-export class AtlasLoggerV2 implements Logger {
+class AtlasLoggerV2 implements Logger {
   private baseContext: LogContext;
 
   constructor(context: LogContext = {}) {

@@ -4,7 +4,7 @@ import type { YargsInstance } from "./yargs.ts";
 /**
  * Custom help formatter to add alias information and power user tips
  */
-export function customHelp(y: YargsInstance): string {
+function customHelp(y: YargsInstance): string {
   // Get the default help
   let help = y.getHelp();
 

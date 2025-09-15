@@ -9,7 +9,7 @@
 import type { AgentEnvironmentConfig } from "@atlas/agent-sdk";
 import type { Logger } from "@atlas/logger";
 
-export interface EnvironmentValidationError extends Error {
+interface EnvironmentValidationError extends Error {
   name: "EnvironmentValidationError";
   missingVariables: string[];
   workspaceId: string;
@@ -133,7 +133,7 @@ export function createEnvironmentContext(logger: Logger) {
 /**
  * Generate help text for missing environment variables
  */
-export function getEnvironmentHelp(environmentConfig: AgentEnvironmentConfig): string {
+function getEnvironmentHelp(environmentConfig: AgentEnvironmentConfig): string {
   if (!environmentConfig.required || environmentConfig.required.length === 0) {
     return "No environment variables required for this agent.";
   }

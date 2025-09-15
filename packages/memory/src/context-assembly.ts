@@ -4,7 +4,7 @@ import { type MemoryEntry, MemoryType, type WorklogEntry } from "./mecmf-interfa
 /**
  * Enum for context section types used in prompt assembly
  */
-export enum SectionType {
+enum SectionType {
   BRIDGE = "bridge",
   WORKLOG = "worklog",
   WORKING = "working",
@@ -25,7 +25,7 @@ export enum FormatType {
 /**
  * Enhanced prompt with session bridge and worklog context
  */
-export interface EnhancedContextPrompt {
+interface EnhancedContextPrompt {
   enhancedPrompt: string;
   originalPrompt: string;
   contextSections: {
@@ -44,7 +44,7 @@ export interface EnhancedContextPrompt {
 /**
  * Context assembly options for customizing prompt construction
  */
-export interface ContextAssemblyOptions {
+interface ContextAssemblyOptions {
   format?: FormatType;
   prioritizeRecent?: boolean;
   includeMetadata?: boolean;
@@ -572,7 +572,7 @@ export class ContextAssemblyService {
 }
 
 // Factory function
-export function createContextAssemblyService(
+function createContextAssemblyService(
   tokenManager: EnhancedTokenBudgetManager,
 ): ContextAssemblyService {
   return new ContextAssemblyService(tokenManager);

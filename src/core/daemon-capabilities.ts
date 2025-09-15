@@ -7,7 +7,7 @@ import { AtlasLogger } from "@atlas/logger";
 import type { Tool } from "ai";
 import type { AtlasDaemon } from "../../apps/atlasd/src/atlas-daemon.ts";
 
-export interface DaemonCapability {
+interface DaemonCapability {
   id: string;
   name: string;
   description: string;
@@ -16,7 +16,7 @@ export interface DaemonCapability {
   toTool: (context: DaemonExecutionContext) => Tool;
 }
 
-export interface DaemonExecutionContext {
+interface DaemonExecutionContext {
   sessionId: string;
   agentId: string;
   workspaceId: string;

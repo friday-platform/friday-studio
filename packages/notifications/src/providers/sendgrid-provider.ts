@@ -27,7 +27,7 @@ const AtlasJWTPayloadSchema = z.object({
 /**
  * SendGrid-specific configuration
  */
-export interface SendGridProviderConfig extends BaseProviderConfig {
+interface SendGridProviderConfig extends BaseProviderConfig {
   /**
    * SendGrid API key environment variable name
    */

@@ -14,7 +14,7 @@ export type WrappedAgentResult = {
   toolCalls?: ToolCall[];
   toolResults?: ToolResult[];
 };
-export type WrappedAgent = AtlasAgent<WrappedAgentResult>;
+type WrappedAgent = AtlasAgent<WrappedAgentResult>;
 
 // Tool usage collector moved to @atlas/agent-sdk/vercel-helpers
 

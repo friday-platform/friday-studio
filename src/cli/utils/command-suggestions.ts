@@ -1,6 +1,6 @@
 import levenshtein from "js-levenshtein";
 
-export interface CommandInfo {
+interface CommandInfo {
   command: string;
   aliases?: string[];
   description: string;
@@ -162,7 +162,7 @@ export function isValidCommand(input: string): boolean {
 /**
  * Resolve a command or alias to the actual command name
  */
-export function resolveCommand(input: string): string | null {
+function resolveCommand(input: string): string | null {
   const lowerInput = input.toLowerCase();
 
   for (const cmd of COMMANDS) {

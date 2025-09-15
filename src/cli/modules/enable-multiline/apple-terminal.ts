@@ -164,7 +164,7 @@ export async function setupAppleTerminal(): Promise<SetupResult> {
 /**
  * Restore Apple Terminal from backup
  */
-export async function restoreAppleTerminal(backupPath: string): Promise<SetupResult> {
+async function restoreAppleTerminal(backupPath: string): Promise<SetupResult> {
   if (!(await fileExists(backupPath))) {
     return { success: false, error: "Backup file no longer exists" };
   }

@@ -12,7 +12,7 @@ export interface Session {
 }
 
 // Helper functions
-export function formatTime(timestamp: string): string {
+function formatTime(timestamp: string): string {
   if (!timestamp) return "N/A";
   const date = new Date(timestamp);
   const now = new Date();
@@ -26,7 +26,7 @@ export function formatTime(timestamp: string): string {
   return date.toLocaleDateString();
 }
 
-export function formatDuration(start: string, end?: string): string {
+function formatDuration(start: string, end?: string): string {
   if (!start) return "N/A";
   const startTime = new Date(start).getTime();
   const endTime = end ? new Date(end).getTime() : Date.now();
@@ -45,7 +45,7 @@ export function formatDuration(start: string, end?: string): string {
   return `${seconds}s`;
 }
 
-export function calculateDuration(start: string, end?: string): number {
+function calculateDuration(start: string, end?: string): number {
   if (!start) return 0;
   const startTime = new Date(start).getTime();
   const endTime = end ? new Date(end).getTime() : Date.now();

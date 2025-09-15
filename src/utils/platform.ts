@@ -86,7 +86,7 @@ export function getPlatformPaths() {
 /**
  * Check if running as compiled binary
  */
-export function isCompiledBinary(): boolean {
+function isCompiledBinary(): boolean {
   const execPath = Deno.execPath();
   return (
     execPath.endsWith("atlas-test") || execPath.endsWith("atlas") || execPath.endsWith("atlas.exe")

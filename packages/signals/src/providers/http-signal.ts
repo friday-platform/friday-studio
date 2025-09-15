@@ -14,7 +14,7 @@ export interface HTTPSignalConfig {
   method?: "GET" | "POST" | "PUT" | "DELETE";
 }
 
-export interface HTTPRoutePattern {
+interface HTTPRoutePattern {
   path: string;
   method: string;
   signalId: string;

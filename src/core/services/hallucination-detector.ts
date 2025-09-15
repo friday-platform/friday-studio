@@ -15,7 +15,7 @@ import { SupervisionLevel } from "../supervision-levels.ts";
 /**
  * Constants for hallucination detection patterns
  */
-export const HALLUCINATION_PATTERNS = {
+const HALLUCINATION_PATTERNS = {
   // Severe patterns that should immediately stop execution
   SEVERE: {
     FABRICATED: "fabricated",
@@ -188,21 +188,21 @@ export interface HallucinationAnalysis {
   detectionMethods: DetectionMethodResult[];
 }
 
-export interface DetectionMethodResult {
+interface DetectionMethodResult {
   method: "llm";
   agentId: string;
   confidence: number;
   issues: string[];
 }
 
-export interface LLMValidationResult {
+interface LLMValidationResult {
   valid: boolean;
   confidence: number;
   issues: string[];
   source: "llm";
 }
 
-export interface HallucinationDetectorConfig {
+interface HallucinationDetectorConfig {
   supervisionLevel: SupervisionLevel;
   logger?: Logger;
   anthropicApiKey?: string;

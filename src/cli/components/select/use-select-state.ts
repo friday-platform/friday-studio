@@ -104,7 +104,7 @@ const reducer = (state: State, action: Action): State => {
   }
 };
 
-export interface UseSelectStateProps {
+interface UseSelectStateProps {
   visibleOptionCount?: number;
   options: Option[];
   defaultValue?: string;

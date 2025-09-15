@@ -131,7 +131,7 @@ export async function setupITerm2(): Promise<SetupResult> {
 /**
  * Restore iTerm2 from backup
  */
-export async function restoreITerm2(backupPath: string): Promise<SetupResult> {
+async function restoreITerm2(backupPath: string): Promise<SetupResult> {
   if (!(await fileExists(backupPath))) {
     return { success: false, error: "Backup file no longer exists" };
   }

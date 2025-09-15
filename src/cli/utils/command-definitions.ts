@@ -1,4 +1,4 @@
-export interface CommandDefinition {
+interface CommandDefinition {
   command: string;
   description: string;
 }

@@ -6,7 +6,7 @@ import { getAtlasDaemonUrl } from "./utils/daemon.ts";
 const KEY = Symbol();
 
 export type KeyboardModifier = "shift" | "option" | "command" | "control";
-export type KeyboardValue = {
+type KeyboardValue = {
   key: string | null;
   modifiers: KeyboardModifier[];
   pressing?: boolean;
@@ -48,8 +48,8 @@ export function getFileType(path: string) {
   return hasExtension ? "file" : "folder";
 }
 
-export type RouteConfig = ReturnType<typeof getRouteConfig>;
-export function getRouteConfig() {
+type RouteConfig = ReturnType<typeof getRouteConfig>;
+function getRouteConfig() {
   return {
     main: "/",
     library: { list: "/library", item: (id: string) => `/library/${id}` },

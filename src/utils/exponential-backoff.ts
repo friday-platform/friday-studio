@@ -2,7 +2,7 @@
  * Exponential backoff utility for retrying operations with configurable delays
  */
 
-export interface ExponentialBackoffOptions {
+interface ExponentialBackoffOptions {
   /**
    * Maximum number of retry attempts (default: 10)
    */

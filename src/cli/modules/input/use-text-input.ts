@@ -4,7 +4,7 @@ import { useEffect, useMemo } from "react";
 import { useKeypress } from "./key-press.ts";
 import type { TextInputState } from "./use-text-input-state.ts";
 
-export type UseTextInputProps = {
+type UseTextInputProps = {
   /** When disabled, user input is ignored. */
   isDisabled?: boolean;
 
@@ -21,7 +21,7 @@ export type UseTextInputProps = {
   onCancel?: () => void;
 };
 
-export type UseTextInputResult = {
+type UseTextInputResult = {
   /** Input value. */
   inputValue: string;
 };

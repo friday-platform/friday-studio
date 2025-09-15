@@ -16,7 +16,7 @@ import { createProviderRegistry, type ProviderRegistryProvider } from "ai";
  * @param env Environment variables containing API keys
  * @returns Configured provider registry
  */
-export function createProviders(env: Record<string, string> = {}): ProviderRegistryProvider {
+function createProviders(env: Record<string, string> = {}): ProviderRegistryProvider {
   // Use provided env or fall back to Deno.env
   const getEnvVar = (key: string) => env[key] || Deno.env.get(key);
 
@@ -62,7 +62,7 @@ export function validateProviderConfig(provider: string, env: Record<string, str
 /**
  * Map of well-known environment variable names for each provider
  */
-export const PROVIDER_ENV_VARS = {
+const PROVIDER_ENV_VARS = {
   anthropic: "ANTHROPIC_API_KEY",
   openai: "OPENAI_API_KEY",
   google: "GOOGLE_GENERATIVE_AI_API_KEY",
@@ -71,6 +71,6 @@ export const PROVIDER_ENV_VARS = {
 /**
  * Get the environment variable name for a provider
  */
-export function getProviderEnvVar(provider: string): string | undefined {
+function getProviderEnvVar(provider: string): string | undefined {
   return PROVIDER_ENV_VARS[provider];
 }

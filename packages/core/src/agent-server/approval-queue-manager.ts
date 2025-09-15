@@ -33,7 +33,7 @@ import {
 /**
  * Information about a suspended agent execution awaiting approval
  */
-export interface SuspendedExecution {
+interface SuspendedExecution {
   approvalId: string;
   agentId: string;
   sessionId: string;
@@ -50,7 +50,7 @@ export interface SuspendedExecution {
 /**
  * Supervisor's decision on an approval request
  */
-export interface ApprovalDecision {
+interface ApprovalDecision {
   approved: boolean;
   reason?: string;
   /** Modified action to execute instead */
@@ -62,7 +62,7 @@ export interface ApprovalDecision {
 /**
  * Dependencies needed to restore a suspended execution
  */
-export interface RestoreDependencies {
+interface RestoreDependencies {
   loadAgentFn: (id: string) => Promise<AtlasAgent>;
   contextBuilder: (
     agent: AtlasAgent,

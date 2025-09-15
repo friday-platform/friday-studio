@@ -1,13 +1,13 @@
 import { getDaemonClient } from "../../utils/daemon-client.ts";
 import { getCurrentWorkspaceName } from "../../utils/workspace-name.ts";
 
-export interface TriggerSignalOptions {
+interface TriggerSignalOptions {
   workspaceId: string;
   signalName: string;
   payload?: Record<string, unknown>;
 }
 
-export interface TriggerSignalResult {
+interface TriggerSignalResult {
   success: boolean;
   sessionId?: string;
   status?: string;
@@ -17,12 +17,12 @@ export interface TriggerSignalResult {
   workspaceName?: string;
 }
 
-export interface WorkspaceTarget {
+interface WorkspaceTarget {
   id: string;
   name: string;
 }
 
-export interface BatchTriggerOptions {
+interface BatchTriggerOptions {
   signalName: string;
   payload?: Record<string, unknown>;
   workspaceIds?: string[];
@@ -30,7 +30,7 @@ export interface BatchTriggerOptions {
   exclude?: string[];
 }
 
-export interface BatchTriggerResult {
+interface BatchTriggerResult {
   signal: string;
   timestamp: string;
   results: Array<{
@@ -56,7 +56,7 @@ export function validateSignalPayload(data: string): Record<string, unknown> {
 /**
  * Resolves workspace targets based on names/IDs, with fallback to current workspace
  */
-export async function resolveWorkspaceTargets(
+async function resolveWorkspaceTargets(
   workspaceNames?: string[],
   excludeNames?: string[],
   all?: boolean,
@@ -128,7 +128,7 @@ export async function resolveWorkspaceTargets(
 /**
  * Triggers a signal on a single workspace
  */
-export async function triggerSignal(options: TriggerSignalOptions): Promise<TriggerSignalResult> {
+async function triggerSignal(options: TriggerSignalOptions): Promise<TriggerSignalResult> {
   const startTime = performance.now();
 
   try {
@@ -200,7 +200,7 @@ export async function batchTriggerSignal(
 /**
  * Simple trigger function for single workspace/signal (used by interactive UI)
  */
-export async function triggerSignalSimple(
+async function triggerSignalSimple(
   workspaceId: string,
   signalName: string,
   payload?: string,

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 
 import { useAppContext } from "../contexts/app-context.tsx";
 
-export interface ResponsiveDimensions {
+interface ResponsiveDimensions {
   width: number;
   height: number;
   terminalWidth: number;
@@ -14,7 +14,7 @@ export interface ResponsiveDimensions {
   paddedHeight: number;
 }
 
-export interface ResponsiveDimensionsOptions {
+interface ResponsiveDimensionsOptions {
   minHeight?: number;
   padding?: number;
 }

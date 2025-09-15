@@ -15,13 +15,13 @@ import {
   type TokenBudgetManager,
 } from "./mecmf-interfaces.ts";
 
-export interface TokenEstimate {
+interface TokenEstimate {
   tokens: number;
   characters: number;
   words: number;
 }
 
-export interface OptimizationResult {
+interface OptimizationResult {
   optimizedContent: Memory[];
   tokensUsed: number;
   tokensAvailable: number;
@@ -29,7 +29,7 @@ export interface OptimizationResult {
   removedContent: Memory[];
 }
 
-export interface PromptComponents {
+interface PromptComponents {
   originalPrompt: string;
   memoryContext: string;
   recentContext: string;

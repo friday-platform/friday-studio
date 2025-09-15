@@ -10,13 +10,13 @@ import { extractSearchTerms } from "../../../src/utils/prompt-tokenizer.ts";
 import { WorkspaceMemoryConsolidator } from "./coala-consolidation.ts";
 import { CoALAMemoryManager, CoALAMemoryType } from "./coala-memory.ts";
 
-export interface SupervisorMemoryContext {
+interface SupervisorMemoryContext {
   workspaceMemory: CoALAMemoryManager;
   sessionMemories: Map<string, CoALAMemoryManager>;
   consolidator: WorkspaceMemoryConsolidator;
 }
 
-export interface MemoryFilteringPolicy {
+interface MemoryFilteringPolicy {
   filterForSession(workspaceMemories: unknown[], sessionContext: IWorkspaceSession): unknown[];
   filterForAgent(sessionMemories: unknown[], agentId: string): unknown[];
 }

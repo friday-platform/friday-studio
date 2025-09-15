@@ -1,133 +1,143 @@
 # TypeScript & Lint Analysis Report
 
-**Generated:** 2025-09-14T21:02:39.238Z
+**Generated:** 2025-09-15T04:12:46.705Z
 
-**Total Issues:** 751 (0 type errors, 254 deno lint violations, 497 biome
+**Total Issues:** 1526 (1202 type errors, 324 deno lint violations, 0 biome
 violations)
 
 ## Summary Statistics
 
 ### TypeScript Errors
 
-- **Total errors:** 0
-- **Unique error types:** 0
-- **Files with errors:** 0
+- **Total errors:** 1202
+- **Unique error types:** 36
+- **Files with errors:** 235
 
 ### Deno Lint Violations
 
-- **Total violations:** 254
+- **Total violations:** 324
 - **Unique rules violated:** 6
-- **Files with violations:** 73
+- **Files with violations:** 105
 
 ### Biome Violations
 
-- **Total violations:** 497
-- **Errors:** 7
-- **Warnings:** 490
-- **Unique rules violated:** 29
-- **Files with violations:** 151
+- **Total violations:** 0
+- **Errors:** 0
+- **Warnings:** 0
+- **Unique rules violated:** 0
+- **Files with violations:** 0
 
 ## TypeScript Error Types Breakdown
 
-No TypeScript errors found.
+| Error Code | Count | Percentage | Description                                  |
+| ---------- | ----- | ---------- | -------------------------------------------- |
+| TS18046    | 304   | 25.3%      | Value is of type 'unknown'                   |
+| TS2339     | 249   | 20.7%      | Property does not exist on type              |
+| TS2322     | 171   | 14.2%      | Type not assignable                          |
+| TS6133     | 98    | 8.2%       | Variable declared but never used             |
+| TS2345     | 87    | 7.2%       | Argument type not assignable                 |
+| TS6196     | 56    | 4.7%       | Catch clause variable unused                 |
+| TS7053     | 42    | 3.5%       | Element implicitly has any type              |
+| TS2532     | 36    | 3.0%       | Object is possibly 'undefined'               |
+| TS18048    | 25    | 2.1%       | Value is possibly 'undefined'                |
+| TS2571     | 18    | 1.5%       | Object is of type 'unknown'                  |
+| TS2769     | 15    | 1.2%       | No overload matches call                     |
+| TS7006     | 10    | 0.8%       | Parameter implicitly has any type            |
+| TS2305     | 10    | 0.8%       | Module has no exported member                |
+| TS2698     | 10    | 0.8%       | Spread types may only be object types        |
+| TS2724     | 9     | 0.7%       | Module has no default export                 |
+| TS2694     | 9     | 0.7%       | Namespace has no exported member             |
+| TS2349     | 9     | 0.7%       | Cannot invoke expression                     |
+| TS2459     | 7     | 0.6%       | TypeScript error                             |
+| TS2353     | 5     | 0.4%       | Object literal has unknown properties        |
+| TS18047    | 5     | 0.4%       | Value is possibly 'null'                     |
+| TS2559     | 4     | 0.3%       | Type has no common properties                |
+| TS2741     | 3     | 0.2%       | Property is missing in type                  |
+| TS2739     | 2     | 0.2%       | Type is missing properties                   |
+| TS2416     | 2     | 0.2%       | Property type not assignable to base         |
+| TS2540     | 2     | 0.2%       | Cannot assign to read-only property          |
+| TS2367     | 2     | 0.2%       | TypeScript error                             |
+| TS2578     | 2     | 0.2%       | Unused ts-expect-error directive             |
+| TS4104     | 2     | 0.2%       | Parameter property readonly/mutable conflict |
+| TS2638     | 1     | 0.1%       | Cannot augment module                        |
+| TS2304     | 1     | 0.1%       | Cannot find name                             |
+| TS2820     | 1     | 0.1%       | Type predicate incorrect                     |
+| TS6138     | 1     | 0.1%       | Property declared but never used             |
+| TS18050    | 1     | 0.1%       | Value is possibly null or undefined          |
+| TS2554     | 1     | 0.1%       | Argument count mismatch                      |
+| TS2740     | 1     | 0.1%       | Type is missing index signature              |
+| TS7017     | 1     | 0.1%       | Type has no index signature                  |
 
 ## Deno Lint Rules Breakdown
 
 | Rule Name         | Count | Percentage | Description                      |
 | ----------------- | ----- | ---------- | -------------------------------- |
-| require-await     | 118   | 46.5%      | Async function without await     |
-| no-process-global | 64    | 25.2%      | Lint rule violation              |
-| no-unused-vars    | 52    | 20.5%      | Variable declared but never used |
-| no-explicit-any   | 11    | 4.3%       | Explicit 'any' type usage        |
-| no-empty          | 8     | 3.1%       | Empty block statement            |
-| no-control-regex  | 1     | 0.4%       | Control characters in regex      |
+| no-unused-vars    | 131   | 40.4%      | Variable declared but never used |
+| require-await     | 109   | 33.6%      | Async function without await     |
+| no-process-global | 64    | 19.8%      | Lint rule violation              |
+| no-explicit-any   | 11    | 3.4%       | Explicit 'any' type usage        |
+| no-empty          | 8     | 2.5%       | Empty block statement            |
+| no-control-regex  | 1     | 0.3%       | Control characters in regex      |
 
 ## Biome Rules Breakdown
 
-| Rule Name                               | Count | Percentage | Severity Distribution |
-| --------------------------------------- | ----- | ---------- | --------------------- |
-| style/noNonNullAssertion                | 169   | 34.0%      | 169W                  |
-| style/useTemplate                       | 89    | 17.9%      | 89W                   |
-| complexity/useOptionalChain             | 39    | 7.8%       | 39W                   |
-| correctness/noUnusedVariables           | 33    | 6.6%       | 33W                   |
-| correctness/useExhaustiveDependencies   | 25    | 5.0%       | 25W                   |
-| complexity/useLiteralKeys               | 17    | 3.4%       | 17W                   |
-| correctness/noUnusedImports             | 17    | 3.4%       | 17W                   |
-| style/useNodejsImportProtocol           | 16    | 3.2%       | 16W                   |
-| suspicious/useIterableCallbackReturn    | 16    | 3.2%       | 4E/12W                |
-| complexity/noStaticOnlyClass            | 11    | 2.2%       | 11W                   |
-| suspicious/noExplicitAny                | 11    | 2.2%       | 11W                   |
-| suspicious/noArrayIndexKey              | 11    | 2.2%       | 11W                   |
-| suspicious/noImplicitAnyLet             | 9     | 1.8%       | 1E/8W                 |
-| correctness/noUnusedFunctionParameters  | 8     | 1.6%       | 1E/7W                 |
-| correctness/noUnusedPrivateClassMembers | 5     | 1.0%       | 5W                    |
-| correctness/useParseIntRadix            | 3     | 0.6%       | 3W                    |
-| complexity/noUselessCatch               | 2     | 0.4%       | 2W                    |
-| complexity/noUselessTernary             | 2     | 0.4%       | 2W                    |
-| suspicious/noEmptyBlock                 | 2     | 0.4%       | 2W                    |
-| suspicious/noGlobalIsNan                | 2     | 0.4%       | 2W                    |
-| suspicious/noAssignInExpressions        | 2     | 0.4%       | 2W                    |
-| complexity/noUselessConstructor         | 1     | 0.2%       | 1W                    |
-| complexity/noUselessFragments           | 1     | 0.2%       | 1W                    |
-| complexity/noUselessSwitchCase          | 1     | 0.2%       | 1W                    |
-| suspicious/noConfusingVoidType          | 1     | 0.2%       | 1W                    |
-| suspicious/noIrregularWhitespace        | 1     | 0.2%       | 1W                    |
-| complexity/noImportantStyles            | 1     | 0.2%       | 1W                    |
-| correctness/useHookAtTopLevel           | 1     | 0.2%       | 1W                    |
-| suspicious/noControlCharactersInRegex   | 1     | 0.2%       | 1E                    |
+No biome violations found.
 
 ## Files with Most Issues
 
-| File                                                                | Type Errors | Deno Lint | Biome | Total |
-| ------------------------------------------------------------------- | ----------- | --------- | ----- | ----- |
-| tools/atlas-installer/main.js                                       | 0           | 86        | 32    | 118   |
-| tools/memory_manager/src/tui.ts                                     | 0           | 9         | 26    | 35    |
-| integration-tests/config-loader-migration.test.ts                   | 0           | 0         | 30    | 30    |
-| packages/system/agents/conversation/tools/workspace-update/tools.ts | 0           | 0         | 23    | 23    |
-| integration-tests/configuration-architecture.test.ts                | 0           | 0         | 22    | 22    |
-| packages/cron/tests/timer-signal-workspace-integration.test.ts      | 0           | 0         | 21    | 21    |
-| src/cli/modules/sessions/fetcher.test.ts                            | 0           | 18        | 0     | 18    |
-| src/cli/modules/input/tests/file-path-detector-extended.test.ts     | 0           | 0         | 14    | 14    |
-| src/cli/components/agent-details.tsx                                | 0           | 6         | 7     | 13    |
-| tools/atlas-installer/renderer.js                                   | 0           | 3         | 8     | 11    |
-| src/cli/commands/workspace/add.tsx                                  | 0           | 0         | 11    | 11    |
-| packages/cron/tests/timer-signal-error-recovery.test.ts             | 0           | 0         | 11    | 11    |
-| packages/cron/tests/timer-signal-storage-persistence.test.ts        | 0           | 0         | 11    | 11    |
-| src/core/caching/adapters/memory-cache-adapter.ts                   | 0           | 10        | 0     | 10    |
-| src/cli/utils/prompts.tsx                                           | 0           | 6         | 3     | 9     |
-| src/core/actors/session-supervisor-actor.ts                         | 0           | 1         | 8     | 9     |
-| packages/memory/src/coala-memory.ts                                 | 0           | 5         | 4     | 9     |
-| tests/unit/workspace-add-cli.test.ts                                | 0           | 0         | 9     | 9     |
-| src/core/storage/memory-kv-storage.ts                               | 0           | 8         | 0     | 8     |
-| packages/memory/tests/coala-memory-working.test.ts                  | 0           | 8         | 0     | 8     |
-| ... and 155 more files                                              |             |           |       |       |
+| File                                                      | Type Errors | Deno Lint | Biome | Total |
+| --------------------------------------------------------- | ----------- | --------- | ----- | ----- |
+| tools/atlas-installer/main.js                             | 0           | 86        | 0     | 86    |
+| src/cli/modules/sessions/fetcher.test.ts                  | 57          | 18        | 0     | 75    |
+| packages/memory/src/supervisor-memory-coordinator.ts      | 47          | 2         | 0     | 49    |
+| packages/memory/src/streaming/memory-stream-processors.ts | 38          | 1         | 0     | 39    |
+| apps/web-client/src/lib/modules/client/daemon.ts          | 26          | 3         | 0     | 29    |
+| src/utils/version-checker.integration.test.ts             | 28          | 0         | 0     | 28    |
+| tests/unit/workspace-add-cli.test.ts                      | 28          | 0         | 0     | 28    |
+| src/cli/components/signal-details.tsx                     | 27          | 0         | 0     | 27    |
+| packages/memory/src/web-embedding-provider.ts             | 25          | 0         | 0     | 25    |
+| src/core/manager.ts                                       | 23          | 1         | 0     | 24    |
+| src/cli/utils/daemon-client.ts                            | 22          | 1         | 0     | 23    |
+| tests/unit/workspace-add.test.ts                          | 20          | 2         | 0     | 22    |
+| packages/mcp-server/src/tools/utils.ts                    | 20          | 1         | 0     | 21    |
+| apps/diagnostics/src/paths.ts                             | 10          | 10        | 0     | 20    |
+| packages/client/src/client.ts                             | 19          | 0         | 0     | 19    |
+| src/utils/paths.ts                                        | 11          | 8         | 0     | 19    |
+| apps/atlasd/src/atlas-daemon.ts                           | 18          | 0         | 0     | 18    |
+| src/cli/commands/library/stats.tsx                        | 18          | 0         | 0     | 18    |
+| tests/unit/cache-sharing-security.test.ts                 | 17          | 1         | 0     | 18    |
+| tools/memory_manager/main.ts                              | 17          | 0         | 0     | 17    |
+| ... and 234 more files                                    |             |           |       |       |
 
 ## Issues by Project
 
 | Project                 | Type Errors | Deno Lint | Biome | Total |
 | ----------------------- | ----------- | --------- | ----- | ----- |
-| src                     | 0           | 73        | 162   | 235   |
-| tools/atlas-installer   | 0           | 92        | 47    | 139   |
-| integration-tests       | 0           | 9         | 59    | 68    |
-| packages/memory         | 0           | 30        | 34    | 64    |
-| packages/cron           | 0           | 0         | 43    | 43    |
-| tools/memory_manager    | 0           | 9         | 27    | 36    |
-| tests                   | 0           | 10        | 21    | 31    |
-| packages/core           | 0           | 11        | 19    | 30    |
-| packages/system         | 0           | 0         | 25    | 25    |
-| packages/storage        | 0           | 6         | 12    | 18    |
-| packages/signals        | 0           | 6         | 6     | 12    |
-| apps/atlasd             | 0           | 2         | 9     | 11    |
-| apps/diagnostics        | 0           | 0         | 10    | 10    |
-| other                   | 0           | 4         | 4     | 8     |
-| packages/mcp-server     | 0           | 0         | 7     | 7     |
-| tools/evals             | 0           | 2         | 2     | 4     |
-| packages/mcp            | 0           | 0         | 3     | 3     |
-| packages/logger         | 0           | 0         | 2     | 2     |
-| packages/openapi-client | 0           | 0         | 2     | 2     |
-| apps/web-client         | 0           | 0         | 1     | 1     |
-| packages/client         | 0           | 0         | 1     | 1     |
-| packages/config         | 0           | 0         | 1     | 1     |
+| src                     | 459         | 113       | 0     | 572   |
+| packages/memory         | 154         | 33        | 0     | 187   |
+| tests                   | 113         | 10        | 0     | 123   |
+| packages/core           | 75          | 20        | 0     | 95    |
+| packages/mcp-server     | 89          | 3         | 0     | 92    |
+| tools/atlas-installer   | 0           | 92        | 0     | 92    |
+| apps/atlasd             | 56          | 3         | 0     | 59    |
+| apps/web-client         | 41          | 5         | 0     | 46    |
+| packages/storage        | 39          | 6         | 0     | 45    |
+| apps/diagnostics        | 29          | 14        | 0     | 43    |
+| tools/memory_manager    | 27          | 11        | 0     | 38    |
+| packages/signals        | 23          | 6         | 0     | 29    |
+| packages/system         | 24          | 1         | 0     | 25    |
+| packages/client         | 22          | 1         | 0     | 23    |
+| other                   | 13          | 4         | 0     | 17    |
+| packages/cron           | 11          | 0         | 0     | 11    |
+| packages/agent-sdk      | 8           | 0         | 0     | 8     |
+| packages/notifications  | 8           | 0         | 0     | 8     |
+| tools/evals             | 2           | 2         | 0     | 4     |
+| packages/mcp            | 3           | 0         | 0     | 3     |
+| packages/config         | 2           | 0         | 0     | 2     |
+| packages/workspace      | 1           | 0         | 0     | 1     |
+| packages/bundled-agents | 1           | 0         | 0     | 1     |
+| packages/logger         | 1           | 0         | 0     | 1     |
+| packages/openapi-client | 1           | 0         | 0     | 1     |
 
 ## Workspace Dependency Graph
 
@@ -166,10 +176,31 @@ No TypeScript errors found.
 Based on the dependency graph, here's a recommended order for fixing errors:
 
 1. **Start with leaf nodes** (no other packages depend on these):
+   - diagnostics (29 errors)
+   - web-client (41 errors)
+   - signals (23 errors)
+   - openapi-client (1 errors)
+   - memory_manager (27 errors)
+   - evals (2 errors)
 
 2. **Then fix middle-tier packages** (1-3 dependents):
+   - mcp-server (89 errors, 1 dependents)
+   - mcp (3 errors, 1 dependents)
+   - bundled-agents (1 errors, 3 dependents)
+   - system (24 errors, 2 dependents)
+   - client (22 errors, 1 dependents)
+   - notifications (8 errors, 1 dependents)
+   - cron (11 errors, 1 dependents)
 
 3. **Finally, fix core packages** (many packages depend on these):
+   - atlasd (56 errors, 5 dependents)
+   - agent-sdk (8 errors, 6 dependents)
+   - core (75 errors, 6 dependents)
+   - logger (1 errors, 12 dependents)
+   - memory (154 errors, 5 dependents)
+   - config (2 errors, 6 dependents)
+   - workspace (1 errors, 4 dependents)
+   - storage (39 errors, 4 dependents)
 
 ## Code Quality Hotspots Analysis
 
@@ -177,90 +208,80 @@ Based on the dependency graph, here's a recommended order for fixing errors:
 
 Issues that appear across multiple files (potential systematic problems):
 
-- **[Biome] style/noNonNullAssertion**: "Unsafe fix..."
-  - Occurrences: 169
-  - Files affected: 23
+- **[Type] TS7053**: "Element implicitly has an 'any' type because expre..."
+  - Occurrences: 42
+  - Files affected: 18
 
-- **[Biome] style/useTemplate**: "Template literals are preferred over string
-  concat..."
-  - Occurrences: 89
-  - Files affected: 45
+- **[Type] TS18046**: "'data' is of type 'unknown'...."
+  - Occurrences: 38
+  - Files affected: 5
+
+- **[Type] TS2532**: "Object is possibly 'undefined'...."
+  - Occurrences: 36
+  - Files affected: 8
 
 - **[Deno Lint] require-await**: "Async arrow function has no 'await' expression
   or ..."
-  - Occurrences: 41
-  - Files affected: 8
+  - Occurrences: 35
+  - Files affected: 6
 
-- **[Biome] correctness/noUnusedVariables**: "Unused variables are often the
-  result of an incomp..."
-  - Occurrences: 33
-  - Files affected: 20
+- **[Type] TS2345**: "Argument of type 'unknown' is not assignable to pa..."
+  - Occurrences: 26
+  - Files affected: 16
 
-- **[Biome] complexity/useLiteralKeys**: "The computed expression can be
-  simplified without ..."
+- **[Type] TS18046**: "'result' is of type 'unknown'...."
+  - Occurrences: 23
+  - Files affected: 9
+
+- **[Type] TS18046**: "'memory' is of type 'unknown'...."
+  - Occurrences: 19
+  - Files affected: 3
+
+- **[Type] TS2571**: "Object is of type 'unknown'...."
+  - Occurrences: 18
+  - Files affected: 3
+
+- **[Type] TS18046**: "'errorData' is of type 'unknown'...."
+  - Occurrences: 17
+  - Files affected: 14
+
+- **[Type] TS18046**: "'error' is of type 'unknown'...."
   - Occurrences: 17
   - Files affected: 9
 
-- **[Biome] correctness/noUnusedImports**: "Unused imports might be the result
-  of an incomplet..."
-  - Occurrences: 17
-  - Files affected: 16
+- **[Type] TS2769**: "No overload matches this call...."
+  - Occurrences: 15
+  - Files affected: 11
 
-- **[Biome] suspicious/useIterableCallbackReturn**: "This callback passed to
-  forEach() iterable method ..."
-  - Occurrences: 16
-  - Files affected: 7
+- **[Type] TS18046**: "'config' is of type 'unknown'...."
+  - Occurrences: 11
+  - Files affected: 3
 
 - **[Deno Lint] no-explicit-any**: "`any` type is not allowed..."
   - Occurrences: 11
   - Files affected: 4
 
-- **[Biome] complexity/noStaticOnlyClass**: "Prefer using simple functions
-  instead of classes w..."
-  - Occurrences: 11
-  - Files affected: 9
-
-- **[Biome] suspicious/noExplicitAny**: "any disables many type checking rules.
-  Its use sho..."
-  - Occurrences: 11
+- **[Type] TS2322**: "Type 'unknown' is not assignable to type '{ id..."
+  - Occurrences: 10
   - Files affected: 4
 
-- **[Biome] suspicious/noArrayIndexKey**: "Avoid using the index of an array as
-  key property ..."
-  - Occurrences: 11
+- **[Type] TS2305**: "Module '"file..."
+  - Occurrences: 10
   - Files affected: 7
-
-- **[Biome] suspicious/noImplicitAnyLet**: "This variable implicitly has the any
-  type. Variabl..."
-  - Occurrences: 9
-  - Files affected: 9
-
-- **[Deno Lint] no-empty**: "Empty block statement..."
-  - Occurrences: 8
-  - Files affected: 4
-
-- **[Deno Lint] no-unused-vars**: "`error` is never used..."
-  - Occurrences: 8
-  - Files affected: 7
-
-- **[Biome] correctness/noUnusedFunctionParameters**: "Unused parameters might
-  be the result of an incomp..."
-  - Occurrences: 8
-  - Files affected: 5
 
 ### High-Impact Files
 
 Files with issues from multiple tools (need attention):
 
-| File                                        | Type Errors | Deno Lint | Biome | Total |
-| ------------------------------------------- | ----------- | --------- | ----- | ----- |
-| tools/atlas-installer/main.js               | 0           | 86        | 32    | 118   |
-| tools/memory_manager/src/tui.ts             | 0           | 9         | 26    | 35    |
-| src/cli/components/agent-details.tsx        | 0           | 6         | 7     | 13    |
-| tools/atlas-installer/renderer.js           | 0           | 3         | 8     | 11    |
-| src/cli/utils/prompts.tsx                   | 0           | 6         | 3     | 9     |
-| src/core/actors/session-supervisor-actor.ts | 0           | 1         | 8     | 9     |
-| packages/memory/src/coala-memory.ts         | 0           | 5         | 4     | 9     |
-| src/cli/utils/conversation-client.ts        | 0           | 3         | 3     | 6     |
-| src/cli/components/log-viewer.tsx           | 0           | 2         | 4     | 6     |
-| src/cli/modules/messages/message-buffer.tsx | 0           | 1         | 5     | 6     |
+| File                                                      | Type Errors | Deno Lint | Biome | Total |
+| --------------------------------------------------------- | ----------- | --------- | ----- | ----- |
+| src/cli/modules/sessions/fetcher.test.ts                  | 57          | 18        | 0     | 75    |
+| packages/memory/src/supervisor-memory-coordinator.ts      | 47          | 2         | 0     | 49    |
+| packages/memory/src/streaming/memory-stream-processors.ts | 38          | 1         | 0     | 39    |
+| apps/web-client/src/lib/modules/client/daemon.ts          | 26          | 3         | 0     | 29    |
+| src/core/manager.ts                                       | 23          | 1         | 0     | 24    |
+| src/cli/utils/daemon-client.ts                            | 22          | 1         | 0     | 23    |
+| tests/unit/workspace-add.test.ts                          | 20          | 2         | 0     | 22    |
+| packages/mcp-server/src/tools/utils.ts                    | 20          | 1         | 0     | 21    |
+| apps/diagnostics/src/paths.ts                             | 10          | 10        | 0     | 20    |
+| src/utils/paths.ts                                        | 11          | 8         | 0     | 19    |

@@ -1,7 +1,7 @@
 // No React import needed with react-jsx
 import { Text } from "ink";
 
-export interface StatusBadgeProps {
+interface StatusBadgeProps {
   status: string;
   compact?: boolean;
 }

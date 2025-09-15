@@ -31,5 +31,5 @@ export const errorResponseSchema = z
 // Type Exports
 // ============================================================================
 
-export type SignalTriggerResponse = z.infer<typeof signalTriggerResponseSchema>;
-export type ErrorResponse = z.infer<typeof errorResponseSchema>;
+type SignalTriggerResponse = z.infer<typeof signalTriggerResponseSchema>;
+type ErrorResponse = z.infer<typeof errorResponseSchema>;

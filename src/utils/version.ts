@@ -67,7 +67,7 @@ export function getVersionInfo() {
  * Format version info for display
  * Returns an array of lines to be printed
  */
-export function formatVersionDisplay(versionInfo: ReturnType<typeof getVersionInfo>): string[] {
+function formatVersionDisplay(versionInfo: ReturnType<typeof getVersionInfo>): string[] {
   const lines: string[] = [`Atlas ${versionInfo.version}`];
 
   if (versionInfo.isDev) {

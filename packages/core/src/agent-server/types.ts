@@ -63,7 +63,7 @@ export interface AgentSessionState {
 /**
  * Simplified agent state for persistence
  */
-export interface AgentState {
+interface AgentState {
   memory: Record<string, unknown>;
   pendingPrompts: Array<[string, PendingPrompt]>; // Array for JSON serialization
   lastActivity: number;
@@ -74,7 +74,7 @@ export interface AgentState {
 /**
  * State metadata for tracking versions and history
  */
-export interface StateMetadata {
+interface StateMetadata {
   version: number;
   createdAt: number;
   updatedAt: number;
@@ -86,7 +86,7 @@ export interface StateMetadata {
 /**
  * State snapshot for rollback support
  */
-export interface StateSnapshot {
+interface StateSnapshot {
   id: string;
   sessionKey: string;
   state: AgentState;
@@ -97,19 +97,19 @@ export interface StateSnapshot {
 /**
  * State migration function signature
  */
-export type StateMigration = (oldState: AgentState) => AgentState;
+type StateMigration = (oldState: AgentState) => AgentState;
 
 /**
  * State migration registry
  */
-export interface StateMigrationRegistry {
+interface StateMigrationRegistry {
   [fromVersion: number]: StateMigration;
 }
 
 /**
  * External state persistence interface
  */
-export interface StateStore {
+interface StateStore {
   get(key: string): Promise<AgentState | null>;
   set(key: string, state: AgentState): Promise<void>;
   delete(key: string): Promise<void>;
@@ -123,7 +123,7 @@ export interface StateStore {
 /**
  * Session manager configuration
  */
-export interface SessionManagerConfig {
+interface SessionManagerConfig {
   stateStore?: StateStore;
   disableTimeouts?: boolean;
   maxStateSize?: number; // Max size in bytes
@@ -139,7 +139,7 @@ export interface SessionManagerConfig {
  * @FIXME: Remove this once the MCP Server supports Zod/v4.
  * @see packages/agent-sdk/src/types.ts
  */
-export const AgentSessionDataSchema = z.object({
+const AgentSessionDataSchema = z.object({
   sessionId: z.string(),
   workspaceId: z.string(),
   userId: z.string().optional(),

@@ -17,23 +17,23 @@ import { z } from "zod/v4";
 // Types
 // =============================
 
-export type ValidationIssueType =
+type ValidationIssueType =
   | "off_topic"
   | "wrong_source"
   | "format_mismatch"
   | "incomplete"
   | "incorrect";
 
-export type ValidationSeverity = "low" | "medium" | "high" | "critical";
+type ValidationSeverity = "low" | "medium" | "high" | "critical";
 
-export interface ValidationIssue {
+interface ValidationIssue {
   type: ValidationIssueType;
   description: string;
   severity: ValidationSeverity;
   evidence?: string;
 }
 
-export interface JeopardyValidationRequest {
+interface JeopardyValidationRequest {
   originalTask: string;
   agentOutput: unknown;
   agentId: string;
@@ -48,7 +48,7 @@ export interface JeopardyValidationResult {
   reasoning: string;
 }
 
-export interface JeopardyValidatorConfig {
+interface JeopardyValidatorConfig {
   /** Optional explicit provider override; otherwise Anthropic is used */
   llmProvider?: (model: string) => LanguageModel;
   logger?: Logger;

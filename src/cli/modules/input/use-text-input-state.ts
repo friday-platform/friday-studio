@@ -332,7 +332,7 @@ export type AttachmentData = {
   fileName?: string; // Only for file attachments - the extracted file/folder name
 };
 
-export type UseTextInputStateProps = {
+type UseTextInputStateProps = {
   defaultValue?: string;
   suggestions?: string[];
   enableAttachments?: boolean;

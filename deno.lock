@@ -69,6 +69,7 @@
     "npm:hono@^4.9.7": "4.9.7",
     "npm:ink@^6.3.0": "6.3.0_@types+react@19.1.13_react@19.1.1",
     "npm:js-levenshtein@^1.1.6": "1.1.6",
+    "npm:knip@5.63.1": "5.63.1_@types+node@24.3.3_typescript@5.9.2_zod@3.25.76",
     "npm:knip@^5.63.1": "5.63.1_@types+node@24.3.3_typescript@5.9.2_zod@3.25.76",
     "npm:lint-staged@^16.1.6": "16.1.6",
     "npm:marked-terminal@^7.3.0": "7.3.0_marked@16.2.1",

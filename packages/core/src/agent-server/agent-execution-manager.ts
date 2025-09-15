@@ -28,7 +28,7 @@ import {
 } from "./agent-execution-machine.ts";
 import type { ApprovalQueueManager } from "./approval-queue-manager.ts";
 
-export type BuildAgentContext = (
+type BuildAgentContext = (
   agent: AtlasAgent,
   sessionData: AgentSessionData,
   sessionMemory: CoALAMemoryManager | null,

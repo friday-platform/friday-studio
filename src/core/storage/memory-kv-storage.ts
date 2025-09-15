@@ -279,7 +279,7 @@ export class MemoryKVStorage implements KVStorage {
  * Create a configured in-memory storage instance
  * @returns Initialized MemoryKVStorage instance
  */
-export async function createMemoryKVStorage(): Promise<MemoryKVStorage> {
+async function createMemoryKVStorage(): Promise<MemoryKVStorage> {
   const storage = new MemoryKVStorage();
   await storage.initialize();
   return storage;

@@ -14,7 +14,7 @@ import ort from "onnxruntime-web";
 import { getMECMFCacheDir } from "../../../src/utils/paths.ts";
 import type { AtlasEmbeddingConfig, MECMFEmbeddingProvider } from "./mecmf-interfaces.ts";
 
-export interface TokenizerConfig {
+interface TokenizerConfig {
   vocab: Record<string, number>;
   special_tokens: Record<string, number>;
   do_lower_case: boolean;
@@ -31,7 +31,7 @@ export interface TokenizerConfig {
   mask_token_id?: number;
 }
 
-export interface EmbeddingResult {
+interface EmbeddingResult {
   modelName: string;
   time: number;
   embedding: number[];

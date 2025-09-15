@@ -4,7 +4,7 @@ import { useTextInput } from "./use-text-input.ts";
 import type { AttachmentData } from "./use-text-input-state.ts";
 import { useTextInputState } from "./use-text-input-state.ts";
 
-export type TextInputProps = {
+type TextInputProps = {
   /** When disabled, user input is ignored. @default false */
   readonly isDisabled?: boolean;
 

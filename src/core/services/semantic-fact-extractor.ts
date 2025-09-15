@@ -16,18 +16,18 @@ export interface SemanticFact {
   confidence: number;
 }
 
-export interface FactExtractionResult {
+interface FactExtractionResult {
   facts: SemanticFact[];
   reasoning: string;
 }
 
-export interface FactExtractionBatch {
+interface FactExtractionBatch {
   text: string;
   sourceType: FactSourceType;
   sourceAgentId?: string;
 }
 
-export interface SemanticFactExtractorConfig {
+interface SemanticFactExtractorConfig {
   llmProvider?: (model: string) => LanguageModel;
   logger?: Logger;
   enabled?: boolean;

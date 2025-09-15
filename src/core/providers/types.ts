@@ -25,7 +25,7 @@ export enum ProviderType {
   ACTION = "action",
 }
 
-export interface ProviderState {
+interface ProviderState {
   status: ProviderStatus;
   credentials?: ProviderCredentials;
   config?: Record<string, unknown>;
@@ -33,7 +33,7 @@ export interface ProviderState {
   error?: string;
 }
 
-export enum ProviderStatus {
+enum ProviderStatus {
   NOT_CONFIGURED = "not_configured",
   CONFIGURING = "configuring",
   READY = "ready",
@@ -41,32 +41,32 @@ export enum ProviderStatus {
   DISABLED = "disabled",
 }
 
-export interface ProviderCredentials {
+interface ProviderCredentials {
   // Base interface - providers extend this
   type: string;
   isValid(): boolean;
 }
 
-export interface HealthStatus {
+interface HealthStatus {
   healthy: boolean;
   message?: string;
   lastCheck: Date;
   details?: Record<string, unknown>;
 }
 
-export interface ISignalProvider extends IProvider {
+interface ISignalProvider extends IProvider {
   type: ProviderType.SIGNAL;
   createSignal(config: unknown): IProviderSignal;
 }
 
-export interface IAgentProvider extends IProvider {
+interface IAgentProvider extends IProvider {
   type: ProviderType.AGENT;
   createAgent(config: unknown): Promise<unknown>;
   getSupportedModels?(): string[];
 }
 
 // Provider-based signal that can be serialized
-export interface IProviderSignal {
+interface IProviderSignal {
   id: string;
   providerId: string;
   config: Record<string, unknown>;

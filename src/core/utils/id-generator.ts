@@ -222,7 +222,7 @@ const foods = [
   "izakaya",
 ];
 
-export function generateWorkspaceName(): string {
+function generateWorkspaceName(): string {
   const adjective = adjectives[Math.floor(Math.random() * adjectives.length)];
   const name = foods[Math.floor(Math.random() * foods.length)];
   return `${adjective}_${name}`;

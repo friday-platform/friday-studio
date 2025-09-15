@@ -25,28 +25,28 @@ export function getAtlasLogsDir(): string {
 /**
  * Get the Atlas workspaces logs directory
  */
-export function getWorkspaceLogsDir(): string {
+function getWorkspaceLogsDir(): string {
   return join(getAtlasLogsDir(), "workspaces");
 }
 
 /**
  * Get the Atlas registry file path
  */
-export function getRegistryPath(): string {
+function getRegistryPath(): string {
   return join(getAtlasHome(), "registry.json");
 }
 
 /**
  * Get the Atlas config directory
  */
-export function getAtlasConfigDir(): string {
+function getAtlasConfigDir(): string {
   return join(getAtlasHome(), "config");
 }
 
 /**
  * Get the Atlas cache directory
  */
-export function getAtlasCacheDir(): string {
+function getAtlasCacheDir(): string {
   return join(getAtlasHome(), "cache");
 }
 
@@ -65,7 +65,7 @@ function sanitizeWorkspaceName(workspaceId: string): string {
 /**
  * Get the Atlas memory directory (global)
  */
-export function getAtlasMemoryDir(): string {
+function getAtlasMemoryDir(): string {
   return join(getAtlasHome(), "memory");
 }
 
@@ -81,7 +81,7 @@ export function getWorkspaceMemoryDir(workspaceId: string): string {
 /**
  * Get workspace-specific memory file path for a given memory type
  */
-export function getWorkspaceMemoryFilePath(workspaceId: string, memoryType: string): string {
+function getWorkspaceMemoryFilePath(workspaceId: string, memoryType: string): string {
   return join(getWorkspaceMemoryDir(workspaceId), `${memoryType}.json`);
 }
 
@@ -95,7 +95,7 @@ export function getWorkspaceVectorDir(workspaceId: string): string {
 /**
  * Get workspace-specific knowledge graph directory
  */
-export function getWorkspaceKnowledgeGraphDir(workspaceId: string): string {
+function getWorkspaceKnowledgeGraphDir(workspaceId: string): string {
   return join(getWorkspaceMemoryDir(workspaceId), "knowledge-graph");
 }
 
@@ -110,7 +110,7 @@ export function getMECMFCacheDir(): string {
 /**
  * Get workspace-specific MECMF cache directory
  */
-export function getWorkspaceMECMFCacheDir(workspaceId: string): string {
+function getWorkspaceMECMFCacheDir(workspaceId: string): string {
   return join(getWorkspaceMemoryDir(workspaceId), ".cache");
 }
 
@@ -120,7 +120,7 @@ export function getWorkspaceMECMFCacheDir(workspaceId: string): string {
  *
  * @returns Array of directory paths to scan for workspaces
  */
-export function getWorkspaceDiscoveryDirs(): string[] {
+function getWorkspaceDiscoveryDirs(): string[] {
   const envDirs = Deno.env.get("ATLAS_WORKSPACES_DIR");
 
   if (envDirs) {

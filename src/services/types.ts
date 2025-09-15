@@ -63,7 +63,7 @@ export interface LaunchAgentConfig {
   StandardErrorPath?: string;
 }
 
-export interface SystemdServiceConfig {
+interface SystemdServiceConfig {
   Unit: { Description: string; After?: string[] };
   Service: {
     Type: string;
@@ -76,7 +76,7 @@ export interface SystemdServiceConfig {
   Install: { WantedBy: string[] };
 }
 
-export interface WindowsServiceConfig {
+interface WindowsServiceConfig {
   serviceName: string;
   displayName: string;
   description: string;

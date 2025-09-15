@@ -81,7 +81,7 @@ export function formatMessage(
   }
 }
 
-export function getNormalizedToolName(toolName: string) {
+function getNormalizedToolName(toolName: string) {
   if (toolName === "atlas_todo_read") {
     return "Reading Todos";
   }

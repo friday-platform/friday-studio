@@ -662,6 +662,6 @@ export class EnhancedTokenBudgetManager {
 }
 
 // Factory function
-export function createEnhancedTokenBudgetManager(): EnhancedTokenBudgetManager {
+function createEnhancedTokenBudgetManager(): EnhancedTokenBudgetManager {
   return new EnhancedTokenBudgetManager();
 }

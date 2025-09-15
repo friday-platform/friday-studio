@@ -1,7 +1,7 @@
 import { useInput } from "ink";
 import type { SelectState } from "./use-select-state.ts";
 
-export interface UseSelectProps {
+interface UseSelectProps {
   /**
    * When disabled, user input is ignored.
    *

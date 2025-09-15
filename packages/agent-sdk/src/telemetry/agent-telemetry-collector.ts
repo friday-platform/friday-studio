@@ -16,7 +16,7 @@ import { z } from "zod";
  * @see https://ai-sdk.dev/docs/ai-sdk-core/telemetry
  */
 
-export interface ToolExecution {
+interface ToolExecution {
   name: string;
   startTime: number;
   endTime?: number;

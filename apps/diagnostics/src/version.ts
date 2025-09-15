@@ -7,7 +7,7 @@
 const COMPILED_VERSION = "__ATLAS_VERSION__";
 const COMPILED_GIT_SHA = "__ATLAS_GIT_SHA__";
 
-export function getAtlasVersion(): string {
+function getAtlasVersion(): string {
   // Check if running as compiled binary (version was replaced during build)
   // Use computed string to avoid sed replacement
   const versionPlaceholder = "__ATLAS_" + "VERSION__";
@@ -67,7 +67,7 @@ export function getVersionInfo() {
  * Format version info for display
  * Returns an array of lines to be printed
  */
-export function formatVersionDisplay(versionInfo: ReturnType<typeof getVersionInfo>): string[] {
+function formatVersionDisplay(versionInfo: ReturnType<typeof getVersionInfo>): string[] {
   const lines: string[] = [`Atlas ${versionInfo.version}`];
 
   if (versionInfo.isDev) {
@@ -93,7 +93,7 @@ export function formatVersionDisplay(versionInfo: ReturnType<typeof getVersionIn
  * Display version information based on the json flag
  * Handles both human-readable and JSON output formats
  */
-export function displayVersion(jsonOutput: boolean = false): void {
+function displayVersion(jsonOutput: boolean = false): void {
   const versionInfo = getVersionInfo();
 
   if (jsonOutput) {
@@ -109,7 +109,7 @@ export function displayVersion(jsonOutput: boolean = false): void {
 /**
  * Display version information including remote version check results
  */
-export async function displayVersionWithRemote(jsonOutput: boolean = false): Promise<void> {
+async function displayVersionWithRemote(jsonOutput: boolean = false): Promise<void> {
   const versionInfo = getVersionInfo();
 
   if (jsonOutput) {
