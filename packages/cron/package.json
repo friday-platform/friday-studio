@@ -4,6 +4,7 @@
   "type": "module",
   "main": "./mod.ts",
   "exports": { ".": "./mod.ts" },
+  "scripts": { "test": "deno test --allow-all tests/" },
   "dependencies": { "@atlas/workspace": "workspace:*", "cron-parser": "^5.3.1" },
   "devDependencies": {
     "@std/assert": "npm:@jsr/std__assert@^1.0.14",

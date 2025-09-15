@@ -4,6 +4,12 @@
   "type": "module",
   "exports": { ".": "./mod.ts", "./manager": "./src/manager.ts", "./types": "./src/types.ts" },
   "main": "./mod.ts",
+  "scripts": {
+    "test": "deno test --allow-all tests/",
+    "test:unit": "deno test --allow-all tests/unit/",
+    "test:watch": "deno test --allow-all --watch tests/",
+    "check": "deno check mod.ts"
+  },
   "dependencies": {
     "@atlas/config": "workspace:*",
     "@atlas/fs-watch": "workspace:*",

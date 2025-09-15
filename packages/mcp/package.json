@@ -4,6 +4,7 @@
   "type": "module",
   "main": "./mod.ts",
   "exports": { ".": "./mod.ts" },
+  "scripts": { "test": "deno test --allow-all" },
   "dependencies": {
     "@atlas/atlasd": "workspace:*",
     "@atlas/config": "workspace:*",

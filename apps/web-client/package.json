@@ -4,6 +4,17 @@
   "type": "module",
   "main": "./mod.ts",
   "exports": { ".": "./mod.ts" },
+  "scripts": {
+    "dev": "vite dev",
+    "build": "vite build",
+    "preview": "vite preview",
+    "prepare": "svelte-kit sync || echo ''",
+    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+    "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
+    "format": "prettier --write .",
+    "lint": "prettier --check . && eslint .",
+    "tauri": "tauri"
+  },
   "dependencies": {
     "@atlas/core": "workspace:*",
     "@atlas/oapi-client": "workspace:*",

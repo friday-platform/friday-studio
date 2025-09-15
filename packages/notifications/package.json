@@ -4,6 +4,11 @@
   "type": "module",
   "main": "./mod.ts",
   "exports": { ".": "./mod.ts" },
+  "scripts": {
+    "check": "deno check mod.ts",
+    "test": "deno test --allow-env --allow-net",
+    "lint": "deno lint"
+  },
   "dependencies": {
     "@atlas/config": "workspace:*",
     "@atlas/logger": "workspace:*",
