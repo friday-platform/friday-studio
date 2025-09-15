@@ -1,12 +1,12 @@
-import type { AtlasTools } from "@atlas/agent-sdk";
-import { bundledAgents, SlackAgentResultSchema } from "@atlas/bundled-agents";
+import { slackCommunicatorAgent } from "@atlas/bundled-agents";
 import { assert } from "@std/assert";
-import { tool } from "ai";
-import { z } from "zod/v4";
 import { AgentContextAdapter } from "../../lib/context.ts";
 import { llmJudge } from "../../lib/llm-judge.ts";
-import { loadCredentials } from "../../lib/load-credentials.ts";
 import { saveSnapshot } from "../../lib/snapshot.ts";
+import { loadCredentials } from "../../lib/load-credentials.ts";
+import type { AtlasTools } from "@atlas/agent-sdk";
+import { tool } from "ai";
+import { z } from "zod/v4";
 
 function createTimeoutTools(): AtlasTools {
   return {
@@ -33,14 +33,13 @@ Deno.test({
     const adapter = new AgentContextAdapter(createTimeoutTools());
     const context = adapter.createContext();
 
-    const slackAgent = bundledAgents.find((a) => a.metadata.id === "slack");
-    if (!slackAgent) throw new Error("Slack agent not found in bundled agents");
-
-    const result = await slackAgent.execute("Summarize last 5 messages in #engineering.", context);
-    const parsed = SlackAgentResultSchema.parse(result);
+    const result = await slackCommunicatorAgent.execute(
+      "Summarize last 5 messages in #engineering.",
+      context,
+    );
 
     const pass = await t.step("Basic validations", () => {
-      assert(parsed.response.length > 5, "Result.response should have content");
+      assert(result.response.length > 5, "Result.response should have content");
     });
 
     const evaluation = await llmJudge({
@@ -51,7 +50,7 @@ Deno.test({
         3. Be concise and factual, mentioning timeout
         4. Avoid technical stack traces or excessive details
       `,
-      agentOutput: parsed.response,
+      agentOutput: result.response,
     });
 
     const qualityPass = await t.step("Timeout handling quality", () => {
@@ -62,9 +61,9 @@ Deno.test({
       testPath: new URL(import.meta.url),
       data: {
         result,
-        response: parsed.response,
-        toolCalls: parsed.toolCalls,
-        toolResults: parsed.toolResults,
+        response: result.response,
+        toolCalls: result.toolCalls,
+        toolResults: result.toolResults,
         evaluation,
         basicPass: pass,
         qualityPass,

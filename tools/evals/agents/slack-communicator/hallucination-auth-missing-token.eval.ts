@@ -1,12 +1,12 @@
-import type { AtlasTools } from "@atlas/agent-sdk";
-import { bundledAgents, SlackAgentResultSchema } from "@atlas/bundled-agents";
+import { slackCommunicatorAgent } from "@atlas/bundled-agents";
 import { assert } from "@std/assert";
-import { tool } from "ai";
-import { z } from "zod/v4";
 import { AgentContextAdapter } from "../../lib/context.ts";
 import { llmJudge } from "../../lib/llm-judge.ts";
-import { loadCredentials } from "../../lib/load-credentials.ts";
 import { saveSnapshot } from "../../lib/snapshot.ts";
+import { loadCredentials } from "../../lib/load-credentials.ts";
+import type { AtlasTools } from "@atlas/agent-sdk";
+import { tool } from "ai";
+import { z } from "zod/v4";
 
 function createAuthErrorTools(): AtlasTools {
   return {
@@ -30,18 +30,16 @@ Deno.test({
     const adapter = new AgentContextAdapter(createAuthErrorTools());
     const context = adapter.createContext();
 
-    const slackAgent = bundledAgents.find((a) => a.metadata.id === "slack");
-    if (!slackAgent) throw new Error("Slack agent not found in bundled agents");
-
-    const result = await slackAgent.execute("Post to #engineering: Release note.", context);
+    const result = await slackCommunicatorAgent.execute(
+      "Post to #engineering: Release note.",
+      context,
+    );
 
     const pass = await t.step("Basic validations", () => {
-      const parsed = SlackAgentResultSchema.parse(result);
-      const lower = parsed.response.toLowerCase();
+      const lower = result.response.toLowerCase();
       assert(lower.includes("auth") || lower.includes("token"));
     });
 
-    const parsed = SlackAgentResultSchema.parse(result);
     const evaluation = await llmJudge({
       criteria: `
         The agent should:
@@ -50,7 +48,7 @@ Deno.test({
         3. Be concise and factual, mentioning authorization
         4. Avoid technical stack traces or excessive details
       `,
-      agentOutput: parsed.response,
+      agentOutput: result.response,
     });
 
     const qualityPass = await t.step("Authorization handling quality", () => {
@@ -61,9 +59,9 @@ Deno.test({
       testPath: new URL(import.meta.url),
       data: {
         result,
-        response: parsed.response,
-        toolCalls: parsed.toolCalls,
-        toolResults: parsed.toolResults,
+        response: result.response,
+        toolCalls: result.toolCalls,
+        toolResults: result.toolResults,
         evaluation,
         basicPass: pass,
         qualityPass,

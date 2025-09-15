@@ -3,8 +3,13 @@ import { anthropic } from "@ai-sdk/anthropic";
 import type { ToolCall, ToolResult } from "@atlas/agent-sdk";
 import { createAgent } from "@atlas/agent-sdk";
 import { collectToolUsageFromSteps } from "@atlas/agent-sdk/vercel-helpers";
-import { generateObject, generateText } from "ai";
-import { z } from "zod";
+import { generateObject, generateText, stepCountIs } from "ai";
+import { z } from "zod/v4";
+import {
+  executorSystem,
+  plannerSystem as plannerSystemPrompt,
+  summarizerSystem,
+} from "./prompts.ts";
 
 /**
  * Slack Communicator Agent
@@ -14,12 +19,6 @@ import { z } from "zod";
  * text prompt and returns a concise helpful answer.
  */
 type SlackAgentResult = { response: string; toolCalls?: ToolCall[]; toolResults?: ToolResult[] };
-
-export const SlackAgentResultSchema = z.object({
-  response: z.string(),
-  toolCalls: z.array(z.unknown()).optional(),
-  toolResults: z.array(z.unknown()).optional(),
-});
 
 export const slackCommunicatorAgent = createAgent<SlackAgentResult>({
   id: "slack",
@@ -63,33 +62,35 @@ export const slackCommunicatorAgent = createAgent<SlackAgentResult>({
 
     // 1) Plan the execution and summarization
     const planSchema = z.object({
-      intent: z.string().min(1),
-      targetChannel: z.string().min(1).nullable().default(null),
-      needsHistory: z.boolean().default(false),
-      historyLimit: z.number().int().min(1).max(200).default(50),
-      includeActivityMessages: z.boolean().default(true),
-      messageToSend: z.string().min(1).nullable().default(null),
+      intent: z.string().min(1).describe("The intent of execution"),
+      targetChannel: z
+        .string()
+        .min(1)
+        .nullable()
+        .default(null)
+        .describe("The channel to send or read from"),
+      messageToSend: z.string().min(1).nullable().default(null).describe("The message to send"),
+      additionalContext: z
+        .string()
+        .min(1)
+        .nullable()
+        .default(null)
+        .describe("Additional context to be used for execution"),
       summarizerPurpose: z
         .enum(["summarize_history", "raw_messages", "confirm_send", "generic"])
-        .default("generic"),
+        .default("generic")
+        .describe("What should be an output of execution"),
     });
 
-    const plannerSystem =
-      "You are a Slack task planner. Analyze the user's prompt and produce a strict JSON plan for the executor and summarizer. " +
-      "If a #channel is specified, put it in targetChannel; else null. Set needsHistory true when the user asks to check/summary channel messages. " +
-      "Remove all pollution from the input data and extract only the relevant information. " +
-      "Set messageToSend when the user asks to draft/post text." +
-      "\nChoose summarizerPurpose based on the task:\n" +
-      "- summarize_history: for channel history summaries \n" +
-      "- raw_messages: for displaying raw message content \n" +
-      "- confirm_send: for message sending confirmation \n" +
-      "- generic: for all other tasks \n" +
-      "Only plan; do not execute. Use defaults when unsure.";
+    stream?.emit({
+      type: "data-tool-progress",
+      data: { toolName: "Slack", content: `Planning...` },
+    });
 
     const planResult = await generateObject({
       model: anthropic("claude-3-5-haiku-latest"),
       abortSignal,
-      system: plannerSystem,
+      system: plannerSystemPrompt,
       prompt,
       schema: planSchema,
       temperature: 0,
@@ -97,101 +98,53 @@ export const slackCommunicatorAgent = createAgent<SlackAgentResult>({
     });
 
     const plan = planResult.object;
-
     logger.debug("slack-communicator plan", { plan });
 
-    // if messageToSend is present, format it according to the slack markdown format using llm
-    const formatSystem =
-      "You are a Slack message formatter. Check and fix the message according to Slack's mrkdwn format if needed. Do not add any other text that is not part of the message.\n" +
-      "Follow these formatting rules strictly:\n\n" +
-      "TEXT ESCAPING:\n" +
-      "- Always escape control characters: & → &amp;, < → &lt;, > → &gt;\n\n" +
-      "BASIC FORMATTING (mrkdwn):\n" +
-      "- Bold: *text* (asterisks)\n" +
-      "- Italic: _text_ (underscores)\n" +
-      "- Strikethrough: ~text~ (tildes)\n" +
-      "- Line breaks: \\n\n" +
-      "- Block quotes: >quoted text (at line start)\n" +
-      "- Inline code: `code` (backticks)\n" +
-      "- Code blocks: ```code block``` (triple backticks)\n" +
-      "- Lists: Use - item\\n format (no native list syntax)\n\n" +
-      "LINKS & REFERENCES:\n" +
-      "- Auto URLs: http://example.com (auto-converted)\n" +
-      "- Custom links: <http://example.com|Link text>\n" +
-      "- Email links: <mailto:user@domain.com|Email User>\n" +
-      "- Channel links: <#CHANNELID> (use channel ID)\n" +
-      "- User mentions: <@USERID> (use user ID)\n" +
-      "- Special mentions: <!here>, <!channel>, <!everyone>\n\n" +
-      "IMPORTANT CONSTRAINTS:\n" +
-      "- URLs with spaces will break - remove spaces from URLs\n" +
-      "- Text within code blocks ignores other formatting\n" +
-      "- Use mrkdwn type for formatted text, plain_text for unformatted\n" +
-      "- Prefer blocks structure for rich layouts over plain text\n\n" +
-      "You will now receive the message to format.";
+    stream?.emit({
+      type: "data-tool-progress",
+      data: { toolName: "Slack", content: `Planning complete` },
+    });
 
-    if (plan.messageToSend) {
-      const formatResult = await generateText({
-        model: anthropic("claude-3-5-haiku-latest"),
-        abortSignal,
-        system: formatSystem,
-        prompt: plan.messageToSend,
-        temperature: 0,
-        maxOutputTokens: 700,
-      });
-
-      if (formatResult.text.trim().length > 0) {
-        plan.messageToSend = formatResult.text;
-      }
-    }
+    // Removed: dedicated formatter step; formatting is enforced in executor system
 
     // Progress: planning complete
     stream?.emit({
       type: "data-tool-progress",
-      data: {
-        toolName: "Slack",
-        content: `Planned: ${plan.intent}${plan.targetChannel ? ` → ${plan.targetChannel}` : ""}; summarizer: ${plan.summarizerPurpose}`,
-      },
+      data: { toolName: "Slack", content: `Connecting to Slack...` },
     });
-
-    const system =
-      "You are a Slack assistant. Be concise, direct, and factual. " +
-      "Use short paragraphs or bullets and avoid heavy markdown. " +
-      "If the user specifies a #channel, use it. Otherwise, choose the most relevant existing channel; default to #general if unclear. " +
-      "When asked to check recent messages or channel history, immediately use the Slack tools to retrieve the last 20–50 messages from the target channel, then return a concise summary of the conversation. " +
-      "Your summary should include: key topics, decisions, action items (with owners/dates if present), blockers, and important links. Optionally include the last 3–5 messages with author and short timestamp. " +
-      "Do not narrate intentions or plans. Never use phrases like 'I'll', 'I will', or 'Let me'. Output only the result without prefacing text. " +
-      "If the channel is ambiguous, ask one brief clarifying question. " +
-      "When asked to post or draft a message, use the available Slack tools to list channels if needed and send the composed message to the chosen channel. " +
-      "Never fabricate or guess content. Base responses strictly on tool outputs. If tools are unavailable or a tool call fails, respond with a brief factual notice about the limitation (e.g., 'Cannot complete: Slack tools unavailable' or 'Tool call failed: timeout/authorization').";
 
     try {
       // 2) Execute according to plan using tools
-      const executorInstructions = [
-        "Execution plan:",
-        JSON.stringify(plan),
-        "Follow the plan exactly:",
-        "- If needsHistory is true, you MUST call conversations_history with targetChannel (or ask briefly if null), limit=historyLimit, include_activity_messages accordingly, BEFORE producing any user-facing text.",
-        "- IMPORTANT: If messageToSend is present, make sure that the message is sent to the targetChannel.",
-        "- Avoid narration entirely; focus on tool calls and minimal final text (the summarizer will produce the user-facing output).",
-        "- Never fabricate. Only use information from tool outputs.",
-        "- If summarizerPurpose is summarize_history or raw_messages and you did not successfully fetch history, reply briefly: 'Cannot complete: no history fetched.'",
-        "- If no Slack tools are available, reply: 'Cannot complete: Slack tools unavailable.'",
-        "- If any tool call errors (timeout, authorization, unknown), state the failure briefly and stop.",
-      ].join("\n");
+      const executorInstructions = `
+        <task>
+        ${JSON.stringify(plan.intent)}
+        </task>
+
+        <channel>
+        ${plan.targetChannel ? `${plan.targetChannel}` : "Not provided"}
+        </channel>
+
+        <message>
+        ${plan.messageToSend ? `${plan.messageToSend}` : "Not provided"}
+        </message>
+
+        <additional_context>
+        ${plan.additionalContext ? `${plan.additionalContext}` : "Not provided"}
+        </additional_context>
+
+        Execute using the available tools to fulfill the intent. If messageToSend is present, send it to the targetChannel.
+      `;
 
       // Progress: starting execution
       stream?.emit({
         type: "data-tool-progress",
-        data: {
-          toolName: "Slack",
-          content: `Executing: ${plan.needsHistory ? `fetch history (${plan.historyLimit})` : "no history"}${plan.messageToSend ? ", send message" : ""}`,
-        },
+        data: { toolName: "Slack", content: `Executing: ${plan.intent}` },
       });
 
       // If no tools are available, do not attempt execution; return a clear message.
       if (!tools || Object.keys(tools).length === 0) {
         return {
-          response: "Cannot complete: Slack tools unavailable. Provide Slack MCP tools to proceed.",
+          response: "Cannot complete: Slack tools unavailable.",
           toolCalls: [],
           toolResults: [],
         };
@@ -200,13 +153,16 @@ export const slackCommunicatorAgent = createAgent<SlackAgentResult>({
       const result = await generateText({
         model: anthropic("claude-3-7-sonnet-latest"),
         abortSignal,
-        system,
-        prompt: [prompt, "\n\n", executorInstructions].join(""),
+        system: executorSystem,
+        prompt: executorInstructions,
         tools,
+        toolChoice: "auto",
+        stopWhen: stepCountIs(10),
         maxOutputTokens: 800,
         providerOptions: { anthropic: { thinking: { type: "enabled", budgetTokens: 12000 } } },
       });
 
+      // Get tool calls and results
       const [steps, toolCalls, toolResults] = await Promise.all([
         result.steps,
         result.toolCalls,
@@ -225,49 +181,60 @@ export const slackCommunicatorAgent = createAgent<SlackAgentResult>({
         data: { toolName: "Slack", content: "Execution complete" },
       });
 
-      // Second-pass LLM summarization: stringify the first-pass result and refine into a final Slack-ready summary
-      const serialized = JSON.stringify(result);
-      const summarizerSystem =
-        "You are a Slack summary refiner. Use the plan to decide the exact output style. " +
-        "- summarizerPurpose = summarize_history: Produce a structured summary with sections (channel/timeframe, participants, key topics, decisions, action items with owners/dates, blockers, important links, recent 3–5 messages: author — short timestamp — brief text).\n" +
-        "- summarizerPurpose = raw_messages: Output the most relevant raw messages in a concise, readable list with author and timestamp (3–20 messages based on plan.historyLimit).\n" +
-        "- summarizerPurpose = confirm_send: Based on the tool output confirm the message was sent, include channel, a short excerpt, and timestamp/thread info if available. If there is no evidence of sending a message state that clearly.\n" +
-        "- summarizerPurpose = generic: Provide a concise, helpful response summarizing what happened.\n" +
-        "Rules: no narration; output only the final content; be concise and factual; omit unknowns. For summarize_history or raw_messages, rely ONLY on TOOL_OUTPUT and ignore MODEL_OUTPUT; if TOOL_OUTPUT contains no fetched history/messages, respond: 'Cannot complete: no history fetched.'";
-
-      const context = [
-        `PLAN:\n${JSON.stringify(plan)}`,
-        `PROMPT:\n${prompt.trim()}`,
-        result.text ? `MODEL_OUTPUT:\n${result.text.trim()}` : "",
-        `TOOL_OUTPUT:\n${serialized}`,
-      ]
-        .filter((s) => s.length > 0)
-        .join("\n\n");
-
-      // Progress: starting summarization
+      // Progress: execution complete
       stream?.emit({
         type: "data-tool-progress",
-        data: { toolName: "Slack", content: `Summarizing (${plan.summarizerPurpose})` },
+        data: { toolName: "Slack", content: "Summarizing..." },
       });
 
-      const refined = await generateText({
+      const summarizerSchema = z.object({
+        response: z.string().min(1).describe("Execution result or error message"),
+        failed: z.boolean().nullable().describe("Whether the execution failed"),
+      });
+      // Second-pass LLM summarization: stringify the first-pass result and refine into a final Slack-ready summary
+      const summarizerPrompt = `
+      Create execution result basing on following inputs:
+      <summarizer_purpose>
+      ${JSON.stringify(plan.summarizerPurpose)}
+      </summarizer_purpose>
+      <model_output>
+      ${result.text ? `${result.text.trim()}` : "NO MODEL OUTPUT"}
+      </model_output>
+      <tool_calls>
+      ${toolCalls ? `${JSON.stringify(assembledToolCalls)}` : "NO TOOL CALLS"}
+      </tool_calls>
+      <tool_results>
+      ${toolResults ? `${JSON.stringify(assembledToolResults)}` : "NO TOOL RESULTS"}
+      </tool_results>
+      `;
+
+      const summarizerResult = await generateObject({
         model: anthropic("claude-3-5-sonnet-latest"),
         abortSignal,
         system: summarizerSystem,
-        prompt: context,
+        prompt: summarizerPrompt,
+        schema: summarizerSchema,
         temperature: 0.1,
         maxOutputTokens: 800,
       });
+      logger.info("slack-communicator refined summary", { text: summarizerResult.object.response });
 
-      const finalText = refined.text.trim();
-      logger.info("slack-communicator refined summary", { text: finalText });
       // Progress: summarization complete
       stream?.emit({
         type: "data-tool-progress",
         data: { toolName: "Slack", content: "Summary ready" },
       });
+
+      if (summarizerResult.object.failed) {
+        logger.error("slack-communicator failed", { error: summarizerResult.object.response });
+        stream?.emit({
+          type: "data-tool-progress",
+          data: { toolName: "Slack", content: "Failed" },
+        });
+      }
+
       return {
-        response: finalText.length > 0 ? finalText : result.text.trim(),
+        response: summarizerResult.object.response,
         toolCalls: assembledToolCalls,
         toolResults: assembledToolResults,
       };

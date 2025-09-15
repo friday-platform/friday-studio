@@ -1,4 +1,4 @@
-import { bundledAgents, SlackAgentResultSchema } from "@atlas/bundled-agents";
+import { slackCommunicatorAgent } from "@atlas/bundled-agents";
 import { assert } from "@std/assert";
 import { AgentContextAdapter } from "../../lib/context.ts";
 import { llmJudge } from "../../lib/llm-judge.ts";
@@ -14,20 +14,18 @@ Deno.test({
     const adapter = new AgentContextAdapter({});
     const context = adapter.createContext();
 
-    const slackAgent = bundledAgents.find((a) => a.metadata.id === "slack");
-    if (!slackAgent) throw new Error("Slack agent not found in bundled agents");
-
-    const result = await slackAgent.execute("Summarize last 10 messages in #engineering.", context);
+    const result = await slackCommunicatorAgent.execute(
+      "Summarize last 10 messages in #engineering.",
+      context,
+    );
 
     const pass = await t.step("Basic validations", () => {
-      const parsed = SlackAgentResultSchema.parse(result);
       assert(
-        parsed.response.includes("tools unavailable") ||
-          parsed.response.includes("Slack tools unavailable"),
+        result.response.includes("tools unavailable") ||
+          result.response.includes("Slack tools unavailable"),
       );
     });
 
-    const parsed = SlackAgentResultSchema.parse(result);
     const evaluation = await llmJudge({
       criteria: `
         The agent should:
@@ -37,7 +35,7 @@ Deno.test({
         4. Mention the limitation explicitly (tools unavailable / provide tools)
         5. Avoid excessive technical details
       `,
-      agentOutput: parsed.response,
+      agentOutput: result.response,
     });
 
     const qualityPass = await t.step("Non-fabrication confirmation", () => {
@@ -48,9 +46,9 @@ Deno.test({
       testPath: new URL(import.meta.url),
       data: {
         result,
-        response: parsed.response,
-        toolCalls: parsed.toolCalls,
-        toolResults: parsed.toolResults,
+        response: result.response,
+        toolCalls: result.toolCalls,
+        toolResults: result.toolResults,
         evaluation,
         basicPass: pass,
         qualityPass,

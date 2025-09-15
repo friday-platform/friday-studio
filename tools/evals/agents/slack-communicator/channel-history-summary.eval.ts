@@ -1,4 +1,4 @@
-import { bundledAgents, SlackAgentResultSchema } from "@atlas/bundled-agents";
+import { slackCommunicatorAgent } from "@atlas/bundled-agents";
 import { assert } from "@std/assert";
 import { AgentContextAdapter } from "../../lib/context.ts";
 import { llmJudge } from "../../lib/llm-judge.ts";
@@ -16,26 +16,18 @@ Deno.test({
     const adapter = new AgentContextAdapter(tools);
     const context = adapter.createContext();
 
-    // Resolve Slack agent from bundled agents
-    const slackAgent = bundledAgents.find((a) => a.metadata.id === "slack");
-    if (!slackAgent) {
-      throw new Error("Slack agent not found in bundled agents");
-    }
-
     // Test channel history summarization (deterministic prompt for eval)
-    const result = await slackAgent.execute(
+    const result = await slackCommunicatorAgent.execute(
       "Summarize the last 30 messages in #engineering. Output: sections for key topics, decisions, action items (with owners if present), blockers, and 3 recent messages (author — short timestamp — brief text).",
       context,
     );
 
     // Basic structural assertions
     const pass = await t.step("Basic validations", () => {
-      const parsed = SlackAgentResultSchema.parse(result);
-      assert(parsed.response.length > 10, "Result.response should have meaningful content");
+      assert(result.response.length > 10, "Result.response should have meaningful content");
     });
 
     // LLM judge for content quality
-    const parsed = SlackAgentResultSchema.parse(result);
     const evaluation = await llmJudge({
       criteria: `
         The agent should:
@@ -44,7 +36,7 @@ Deno.test({
         3. Include key topics, decisions, action items (with owners if present)
         4. Not include excessive technical details about the execution process
       `,
-      agentOutput: parsed.response,
+      agentOutput: result.response,
     });
 
     const qualityPass = await t.step("Content quality", () => {
@@ -59,9 +51,9 @@ Deno.test({
       testPath: new URL(import.meta.url),
       data: {
         result,
-        response: parsed.response,
-        toolCalls: parsed.toolCalls,
-        toolResults: parsed.toolResults,
+        response: result.response,
+        toolCalls: result.toolCalls,
+        toolResults: result.toolResults,
         evaluation,
         basicPass: pass,
         qualityPass,
