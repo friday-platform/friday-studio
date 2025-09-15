@@ -1,44 +1,8 @@
-No Svelte config file found in /Users/ericskram/code/tempest/atlas-env/worktrees/more-code-cleanup - using SvelteKit's default configuration without an adapter.
+No Svelte config file found in /Users/dwoolf/Documents/atlas - using SvelteKit's default configuration without an adapter.
 # Knip report
 
-## Unused files (66)
+## Unused files (30)
 
-* apps/web-client/src/lib/components/button.svelte
-* apps/web-client/src/lib/components/dropzone/dropzone.svelte
-* apps/web-client/src/lib/components/form/checkbox.svelte
-* apps/web-client/src/lib/components/form/content.svelte
-* apps/web-client/src/lib/components/form/context.ts
-* apps/web-client/src/lib/components/form/field.svelte
-* apps/web-client/src/lib/components/form/group.svelte
-* apps/web-client/src/lib/components/form/handler.svelte
-* apps/web-client/src/lib/components/form/image.svelte
-* apps/web-client/src/lib/components/form/index.ts
-* apps/web-client/src/lib/components/form/input.svelte
-* apps/web-client/src/lib/components/form/label.svelte
-* apps/web-client/src/lib/components/form/native-checkbox.svelte
-* apps/web-client/src/lib/components/form/read-only.svelte
-* apps/web-client/src/lib/components/form/row.svelte
-* apps/web-client/src/lib/components/form/sensitive.svelte
-* apps/web-client/src/lib/components/form/subheading.svelte
-* apps/web-client/src/lib/components/form/textarea.svelte
-* apps/web-client/src/lib/components/form/types.ts
-* apps/web-client/src/lib/components/page/body.svelte
-* apps/web-client/src/lib/components/safe-image.svelte
-* apps/web-client/src/lib/components/segmented-control/context.svelte.ts
-* apps/web-client/src/lib/components/segmented-control/index.ts
-* apps/web-client/src/lib/components/segmented-control/item.svelte
-* apps/web-client/src/lib/components/segmented-control/root.svelte
-* apps/web-client/src/lib/components/select/button.svelte
-* apps/web-client/src/lib/components/select/content.svelte
-* apps/web-client/src/lib/components/select/context.ts
-* apps/web-client/src/lib/components/select/hidden-input.svelte
-* apps/web-client/src/lib/components/select/index.ts
-* apps/web-client/src/lib/components/select/item.svelte
-* apps/web-client/src/lib/components/select/label.svelte
-* apps/web-client/src/lib/components/select/root.svelte
-* apps/web-client/src/lib/components/select/trigger.svelte
-* apps/web-client/src/lib/index.ts
-* apps/web-client/src/lib/utils/index.ts
 * packages/mcp-server/src/tools/signals/describe.ts
 * packages/memory/src/utils/safe-date-conversion.ts
 * src/cli/commands/workspace/restart.tsx
@@ -84,18 +48,17 @@ No Svelte config file found in /Users/ericskram/code/tempest/atlas-env/worktrees
 | @tanstack/svelte-query   | package.json:42:6                 | error    |
 | @biomejs/biome           | package.json:30:6                 | error    |
 
-## Unused devDependencies (8)
+## Unused devDependencies (7)
 
-| Name                        | Location                           | Severity |
-| :-------------------------- | :--------------------------------- | :------- |
-| electron-builder            | tools/atlas-installer/package.json | warn     |
-| @rollup/rollup-darwin-arm64 | apps/web-client/package.json:40:6  | warn     |
-| @sveltejs/adapter-auto      | apps/web-client/package.json:41:6  | warn     |
-| svelte-adapter-deno         | apps/web-client/package.json:53:6  | warn     |
-| @deno/vite-plugin           | apps/web-client/package.json:33:6  | warn     |
-| svelte-preprocess           | apps/web-client/package.json:56:6  | warn     |
-| @melt-ui/svelte             | apps/web-client/package.json:39:6  | warn     |
-| vitest                      | apps/web-client/package.json:61:6  | warn     |
+| Name                        | Location                          | Severity |
+| :-------------------------- | :-------------------------------- | :------- |
+| @rollup/rollup-darwin-arm64 | apps/web-client/package.json:40:6 | warn     |
+| @sveltejs/adapter-auto      | apps/web-client/package.json:41:6 | warn     |
+| svelte-adapter-deno         | apps/web-client/package.json:53:6 | warn     |
+| @deno/vite-plugin           | apps/web-client/package.json:33:6 | warn     |
+| svelte-preprocess           | apps/web-client/package.json:56:6 | warn     |
+| @melt-ui/svelte             | apps/web-client/package.json:39:6 | warn     |
+| vitest                      | apps/web-client/package.json:61:6 | warn     |
 
 ## Unlisted dependencies (1)
 
@@ -103,13 +66,11 @@ No Svelte config file found in /Users/ericskram/code/tempest/atlas-env/worktrees
 | :-- | :-------------------------------------------------------------- | :------- |
 | jsr | apps/web-client/src/lib/modules/messages/markdown-utils.test.ts | error    |
 
-## Unlisted binaries (3)
+## Unlisted binaries (1)
 
 | Name             | Location                                     | Severity |
 | :--------------- | :------------------------------------------- | :------- |
 | electron-builder | .github/actions/create-installers/action.yml | error    |
-| electron-builder | tools/atlas-installer/package.json           | error    |
-| electron         | tools/atlas-installer/package.json           | error    |
 
 ## Unused exported types (1)
 
