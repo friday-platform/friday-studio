@@ -132,9 +132,7 @@ type WorkspaceResponse = z.infer<typeof workspaceResponseSchema>;
 type WorkspaceDetailsResponse = z.infer<typeof workspaceDetailsResponseSchema>;
 type WorkspaceConfigResponse = z.infer<typeof workspaceConfigResponseSchema>;
 type CreateWorkspaceFromConfigRequest = z.infer<typeof createWorkspaceFromConfigSchema>;
-type CreateWorkspaceFromConfigResponse = z.infer<
-  typeof createWorkspaceFromConfigResponseSchema
->;
+type CreateWorkspaceFromConfigResponse = z.infer<typeof createWorkspaceFromConfigResponseSchema>;
 type UpdateWorkspaceRequest = z.infer<typeof updateWorkspaceSchema>;
 type UpdateWorkspaceResponse = z.infer<typeof updateWorkspaceResponseSchema>;
 type ErrorResponse = z.infer<typeof errorResponseSchema>;

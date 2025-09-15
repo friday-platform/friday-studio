@@ -1,9 +1,5 @@
-;
-;
 export * from "./registry.ts";
-;
 export * from "./types.ts";
-;
 
 // Parse command arguments while preserving complex arguments
 export const parseSlashCommand = (input: string) => {

@@ -1,20 +1,5 @@
 {
   "name": "@atlas/workspace",
   "version": "1.0.0",
-  "exports": { ".": "./mod.ts", "./manager": "./src/manager.ts", "./types": "./src/types.ts" },
-  "tasks": {
-    "test": "deno test --allow-all tests/",
-    "test:unit": "deno test --allow-all tests/unit/",
-    "test:watch": "deno test --allow-all --watch tests/",
-    "check": "deno check mod.ts"
-  },
-  "lint": { "rules": { "tags": ["recommended"] } },
-  "fmt": {
-    "useTabs": false,
-    "lineWidth": 100,
-    "indentWidth": 2,
-    "semiColons": true,
-    "singleQuote": false,
-    "proseWrap": "preserve"
-  }
+  "exports": { ".": "./mod.ts", "./manager": "./src/manager.ts", "./types": "./src/types.ts" }
 }

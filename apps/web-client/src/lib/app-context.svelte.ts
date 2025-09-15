@@ -6,11 +6,7 @@ import { getAtlasDaemonUrl } from "./utils/daemon.ts";
 const KEY = Symbol();
 
 export type KeyboardModifier = "shift" | "option" | "command" | "control";
-type KeyboardValue = {
-  key: string | null;
-  modifiers: KeyboardModifier[];
-  pressing?: boolean;
-};
+type KeyboardValue = { key: string | null; modifiers: KeyboardModifier[]; pressing?: boolean };
 
 function createKeyboard() {
   let state = $state<KeyboardValue | undefined>();

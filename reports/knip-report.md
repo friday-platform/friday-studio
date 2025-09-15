@@ -1,7 +1,7 @@
-No Svelte config file found in /Users/ericskram/code/tempest/atlas-env/worktrees/dead-code-cleanup - using SvelteKit's default configuration without an adapter.
+No Svelte config file found in /Users/ericskram/code/tempest/atlas-env/worktrees/more-code-cleanup - using SvelteKit's default configuration without an adapter.
 # Knip report
 
-## Unused files (96)
+## Unused files (66)
 
 * apps/web-client/src/lib/components/button.svelte
 * apps/web-client/src/lib/components/dropzone/dropzone.svelte
@@ -39,24 +39,8 @@ No Svelte config file found in /Users/ericskram/code/tempest/atlas-env/worktrees
 * apps/web-client/src/lib/components/select/trigger.svelte
 * apps/web-client/src/lib/index.ts
 * apps/web-client/src/lib/utils/index.ts
-* packages/core/src/agent-context/mcp-context.ts
-* packages/core/src/agent-conversion/shared/tool-converter.ts
-* packages/core/src/types/index.ts
-* packages/mcp-server/src/resources/workspace-creation-guide.ts
-* packages/mcp-server/src/resources/workspace-reference.ts
 * packages/mcp-server/src/tools/signals/describe.ts
 * packages/memory/src/utils/safe-date-conversion.ts
-* packages/system/agents/conversation/tools/save-env-var.ts
-* packages/system/agents/conversation/tools/workspace-creation/agent-discovery-tool.ts
-* packages/system/agents/conversation/tools/workspace-creation/builder.ts
-* packages/system/agents/conversation/tools/workspace-creation/generation.ts
-* packages/system/agents/conversation/tools/workspace-creation/generator.ts
-* packages/system/agents/conversation/tools/workspace-creation/mcp-discovery-tool.ts
-* packages/system/agents/conversation/tools/workspace-creation/tools.ts
-* packages/system/agents/conversation/tools/workspace-update/atlas-update-workspace.ts
-* packages/system/agents/conversation/tools/workspace-update/tools.ts
-* packages/system/agents/conversation/tools/workspace-update/workspace-updater.ts
-* packages/system/agents/workspace-creation/mod.ts
 * src/cli/commands/workspace/restart.tsx
 * src/cli/components/agent-details.tsx
 * src/cli/components/directory-tree.tsx
@@ -81,22 +65,8 @@ No Svelte config file found in /Users/ericskram/code/tempest/atlas-env/worktrees
 * src/cli/utils/workspace-loader.ts
 * src/cli/views/ConfigView.tsx
 * src/cli/views/InitView.tsx
-* src/core/agents/remote/adapters/base-remote-adapter.ts
-* src/core/agents/remote/index.ts
-* src/core/agents/remote/types.ts
-* src/core/caching/adapters/file-cache-adapter.ts
-* src/core/caching/adapters/memory-cache-adapter.ts
-* src/core/caching/adapters/redis-cache-adapter.ts
-* src/core/caching/supervision-cache.ts
 * src/core/embedding/mock-embedding-provider.ts
-* src/core/providers/state-manager.ts
-* src/core/types/agent-types.ts
-* src/core/utils/message-envelope.ts
-* src/testing/helpers.ts
-* src/tools/file-loader-tool.ts
-* src/types/messages.ts
 * src/types/vector-search.ts
-* src/utils/errors.ts
 * src/utils/memory-id-migration.ts
 * src/utils/memory-migration.ts
 
@@ -104,30 +74,28 @@ No Svelte config file found in /Users/ericskram/code/tempest/atlas-env/worktrees
 
 | Name                     | Location                          | Severity |
 | :----------------------- | :-------------------------------- | :------- |
-| @tauri-apps/plugin-shell | apps/web-client/package.json:13:6 | error    |
-| streaming-markdown       | apps/web-client/package.json:18:6 | error    |
+| @tauri-apps/plugin-shell | apps/web-client/package.json:24:6 | error    |
+| streaming-markdown       | apps/web-client/package.json:29:6 | error    |
 | @atlas/workspace         | packages/system/package.json:16:6 | error    |
 | @atlas/core              | packages/system/package.json:11:6 | error    |
-| cookie                   | apps/web-client/package.json:15:6 | error    |
-| nanoid                   | apps/web-client/package.json:17:6 | error    |
+| cookie                   | apps/web-client/package.json:26:6 | error    |
+| nanoid                   | apps/web-client/package.json:28:6 | error    |
 | @hono/standard-validator | package.json:31:6                 | error    |
 | @tanstack/svelte-query   | package.json:42:6                 | error    |
 | @biomejs/biome           | package.json:30:6                 | error    |
 
-## Unused devDependencies (10)
+## Unused devDependencies (8)
 
 | Name                        | Location                           | Severity |
 | :-------------------------- | :--------------------------------- | :------- |
 | electron-builder            | tools/atlas-installer/package.json | warn     |
-| @rollup/rollup-darwin-arm64 | apps/web-client/package.json:29:6  | warn     |
-| @sveltejs/adapter-auto      | apps/web-client/package.json:30:6  | warn     |
-| svelte-adapter-deno         | apps/web-client/package.json:42:6  | warn     |
-| @deno/vite-plugin           | apps/web-client/package.json:22:6  | warn     |
-| svelte-preprocess           | apps/web-client/package.json:45:6  | warn     |
-| @melt-ui/svelte             | apps/web-client/package.json:28:6  | warn     |
-| @tauri-apps/cli             | apps/web-client/package.json:34:6  | warn     |
-| svelte-check                | apps/web-client/package.json:43:6  | warn     |
-| vitest                      | apps/web-client/package.json:50:6  | warn     |
+| @rollup/rollup-darwin-arm64 | apps/web-client/package.json:40:6  | warn     |
+| @sveltejs/adapter-auto      | apps/web-client/package.json:41:6  | warn     |
+| svelte-adapter-deno         | apps/web-client/package.json:53:6  | warn     |
+| @deno/vite-plugin           | apps/web-client/package.json:33:6  | warn     |
+| svelte-preprocess           | apps/web-client/package.json:56:6  | warn     |
+| @melt-ui/svelte             | apps/web-client/package.json:39:6  | warn     |
+| vitest                      | apps/web-client/package.json:61:6  | warn     |
 
 ## Unlisted dependencies (1)
 

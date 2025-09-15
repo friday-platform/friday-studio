@@ -16,16 +16,8 @@
  */
 
 // Storage implementations
-;
 // Core interfaces;
-export {
-  createKVStorage,
-  
-  
-  
-} from "./kv-storage.ts";
-;
-;
+export { createKVStorage } from "./kv-storage.ts";
 // Domain-specific adapters
 export { RegistryStorageAdapter } from "./registry-storage-adapter.ts";
 

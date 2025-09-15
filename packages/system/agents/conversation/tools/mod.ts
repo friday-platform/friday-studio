@@ -32,11 +32,4 @@ export const conversationTools: AtlasTools = {
   workspace_summary: workspaceSummary,
 };
 
-export {
-  
-  
-  
-  
-  
-  workspaceMemoryTool,
-};
+export { workspaceMemoryTool };

@@ -98,10 +98,7 @@ export function parseYAMLAgentContent(
  * Interpolate environment variables in YAML content.
  * Supports ${VAR_NAME} and ${VAR_NAME:-default} syntax.
  */
-function interpolateEnvironmentVariables(
-  content: string,
-  env: Record<string, string>,
-): string {
+function interpolateEnvironmentVariables(content: string, env: Record<string, string>): string {
   const pattern = /\$\{([A-Z_][A-Z0-9_]*)(:-([^}]*))?\}/g;
 
   return content.replace(pattern, (match, varName, _, defaultValue) => {

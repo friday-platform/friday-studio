@@ -13,11 +13,7 @@ import { z } from "zod";
  * and invoked from Slack through slack-mcp-server. It takes a plain
  * text prompt and returns a concise helpful answer.
  */
-type SlackAgentResult = {
-  response: string;
-  toolCalls?: ToolCall[];
-  toolResults?: ToolResult[];
-};
+type SlackAgentResult = { response: string; toolCalls?: ToolCall[]; toolResults?: ToolResult[] };
 
 export const SlackAgentResultSchema = z.object({
   response: z.string(),

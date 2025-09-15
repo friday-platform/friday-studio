@@ -14,10 +14,7 @@ import { MCPServerConfigSchema } from "@atlas/config";
 import { z } from "zod/v4";
 
 /** MCP server config with tool filtering and auth options. */
-const YAMLMCPServerConfigSchema = MCPServerConfigSchema.omit({
-  auth: true,
-  tools: true,
-}).extend({
+const YAMLMCPServerConfigSchema = MCPServerConfigSchema.omit({ auth: true, tools: true }).extend({
   /** Authentication configuration */
   auth: z
     .object({

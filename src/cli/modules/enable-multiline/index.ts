@@ -2,10 +2,7 @@
  * Terminal setup module exports
  */
 
-;
 export * from "./detector.ts";
-;
-;
 export * from "./types.ts";
 export * from "./utils.ts";
 
