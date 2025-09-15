@@ -1,9 +1,5 @@
 {
   "name": "@atlas/core",
   "version": "1.0.0",
-  "exports": {
-    ".": "./mod.ts",
-    "./workspace-manager": "./src/workspace-manager.ts",
-    "./types": "./src/types/workspace.ts"
-  }
+  "exports": { ".": "./mod.ts", "./types": "./src/types/workspace.ts" }
 }

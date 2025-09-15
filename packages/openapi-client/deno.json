@@ -2,9 +2,5 @@
   "name": "@atlas/oapi-client",
   "version": "1.0.0",
   "exports": "./mod.ts",
-  "imports": {
-    "openapi-typescript": "npm:openapi-typescript@^7.4.4",
-    "openapi-fetch": "npm:openapi-fetch@^0.12.4"
-  },
   "tasks": { "generate": "deno run -A scripts/build.ts" }
 }

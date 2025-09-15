@@ -1,0 +1,6 @@
+# Reports Directory
+
+This directory contains automated code quality reports:
+
+- `knip-report.md` - Dead code analysis from Knip
+- `typescript-errors-report.md` - TypeScript, lint, and Biome violations

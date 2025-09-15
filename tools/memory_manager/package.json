@@ -1,0 +1,12 @@
+{
+  "name": "@atlas/memory-manager",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./main.ts",
+  "exports": { ".": "./main.ts" },
+  "dependencies": {
+    "@atlas/memory": "workspace:*",
+    "@atlas/workspace": "workspace:*",
+    "@std/cli": "npm:@jsr/std__cli@^1.0.20"
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "name": "@atlas/core",
+  "version": "1.0.0",
+  "type": "module",
+  "exports": { ".": "./mod.ts", "./types": "./src/types/workspace.ts" },
+  "main": "./mod.ts",
+  "dependencies": {
+    "@ai-sdk/anthropic": "^2.0.16",
+    "@ai-sdk/google": "^2.0.14",
+    "@ai-sdk/openai": "^2.0.30",
+    "@ai-sdk/provider": "^2.0.0",
+    "@atlas/agent-sdk": "workspace:*",
+    "@atlas/bundled-agents": "workspace:*",
+    "@atlas/config": "workspace:*",
+    "@atlas/logger": "workspace:*",
+    "@atlas/mcp": "workspace:*",
+    "@atlas/memory": "workspace:*",
+    "@atlas/oapi-client": "workspace:*",
+    "@atlas/workspace": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.18.0",
+    "@std/fs": "npm:@jsr/std__fs@^1.0.19",
+    "@std/path": "npm:@jsr/std__path@^1.1.2",
+    "@std/yaml": "npm:@jsr/std__yaml@^1.0.9",
+    "ai": "^5.0.44",
+    "xstate": "^5.21.0",
+    "zod": "^3.25.76"
+  }
+}

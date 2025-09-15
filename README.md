@@ -369,6 +369,60 @@ deno check src/cli.tsx && deno test --allow-all
 deno fmt
 ```
 
+### Code Quality with Knip
+
+[Knip](https://knip.dev/) is a dead code detection tool that finds and removes unused dependencies, exports, and files in JavaScript and TypeScript projects. Atlas uses Knip to maintain a clean codebase by identifying code that's no longer referenced.
+
+#### Running Knip
+
+```bash
+# Analyze all code (production + tests)
+npx knip
+
+# Analyze only production code
+npx knip --production
+
+# Show detailed debug output
+npx knip --debug
+```
+
+#### Understanding Knip Modes
+
+Atlas configures Knip with two distinct analysis modes:
+
+**Regular Mode** (`npx knip`):
+- Analyzes all code including tests and test utilities
+- Test files are treated as entry points
+- Code imported by tests is marked as "used"
+- Identifies truly dead code that nothing references
+- Best for: Finding code not used anywhere in the project
+
+**Production Mode** (`npx knip --production`):
+- Analyzes only code marked with `!` in `knip.json`
+- Excludes test files and test utilities
+- Identifies code only used by tests (not in production)
+- Shows test helpers as "unused" since they're not production code
+- Best for: Finding code that can be removed from production builds
+
+#### Configuration
+
+The `knip.json` file uses these patterns:
+
+```json
+{
+  "entry": [
+    "mod.ts!",           // Production entry (! marker)
+    "tests/**/*.test.ts" // Test entry (no marker)
+  ],
+  "project": [
+    "src/**/*.ts!",      // Production code (! marker)
+    "tests/**/*.ts"      // Test code (no marker)
+  ]
+}
+```
+
+Production code is marked with `!` suffixes, while test code remains unmarked. This distinction enables Knip to differentiate between production and test dependencies.
+
 ### Architecture Documentation
 
 See [`CLAUDE.md`](CLAUDE.md) for comprehensive development guidelines and architecture details.

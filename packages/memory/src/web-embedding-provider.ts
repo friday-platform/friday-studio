@@ -7,8 +7,8 @@
  * Based on MECMF Section 3.5.1 specifications and existing /embeddings/main.ts implementation.
  */
 
-import { crypto } from "jsr:@std/crypto";
 import { logger } from "@atlas/logger";
+import { crypto } from "@std/crypto";
 import { ensureDir } from "@std/fs";
 import ort from "onnxruntime-web";
 import { getMECMFCacheDir } from "../../../src/utils/paths.ts";

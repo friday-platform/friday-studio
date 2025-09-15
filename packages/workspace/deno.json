@@ -2,15 +2,6 @@
   "name": "@atlas/workspace",
   "version": "1.0.0",
   "exports": { ".": "./mod.ts", "./manager": "./src/manager.ts", "./types": "./src/types.ts" },
-  "imports": {
-    "@atlas/config": "../config/mod.ts",
-    "@atlas/storage": "../storage/mod.ts",
-    "zod/v4": "npm:zod@^4.0.0-beta.2",
-    "zod": "npm:zod@^3.25.74",
-    "@std/yaml": "jsr:@std/yaml@^1.0.5",
-    "@std/path": "jsr:@std/path@^1.0.8",
-    "@std/fs": "jsr:@std/fs@^1.0.5"
-  },
   "tasks": {
     "test": "deno test --allow-all tests/",
     "test:unit": "deno test --allow-all tests/unit/",

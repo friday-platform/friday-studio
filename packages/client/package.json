@@ -1,0 +1,12 @@
+{
+  "name": "@atlas/client",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./mod.ts",
+  "exports": { ".": "./mod.ts" },
+  "dependencies": {
+    "@atlas/atlasd": "workspace:*",
+    "@atlas/core": "workspace:*",
+    "zod": "^3.25.76"
+  }
+}

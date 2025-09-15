@@ -1,0 +1,15 @@
+{
+  "name": "@atlas/bundled-agents",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": {
+    "@ai-sdk/anthropic": "^2.0.16",
+    "@atlas/agent-sdk": "workspace:*",
+    "@atlas/logger": "workspace:*",
+    "@tavily/core": "^0.5.12",
+    "ai": "^5.0.44",
+    "zod": "^3.25.76"
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "name": "@atlas/memory",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./mod.ts",
+  "exports": { ".": "./mod.ts" },
+  "dependencies": {
+    "@atlas/logger": "workspace:*",
+    "@atlas/storage": "workspace:*",
+    "@atlas/utils": "workspace:*",
+    "@std/crypto": "npm:@jsr/std__crypto@^1.0.5",
+    "@std/fs": "npm:@jsr/std__fs@^1.0.19",
+    "@std/path": "npm:@jsr/std__path@^1.1.2",
+    "onnxruntime-web": "1.22.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@std/assert": "npm:@jsr/std__assert@^1.0.14",
+    "@std/expect": "npm:@jsr/std__expect@^1.0.17",
+    "@std/testing": "npm:@jsr/std__testing@^1.0.15"
+  }
+}

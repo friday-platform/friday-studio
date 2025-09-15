@@ -1,0 +1,19 @@
+{
+  "name": "@atlas/storage",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./mod.ts",
+  "exports": { ".": "./mod.ts" },
+  "dependencies": {
+    "@atlas/memory": "workspace:*",
+    "@atlas/utils": "workspace:*",
+    "@std/fs": "npm:@jsr/std__fs@^1.0.19",
+    "@std/path": "npm:@jsr/std__path@^1.1.2",
+    "@std/yaml": "npm:@jsr/std__yaml@^1.0.9"
+  },
+  "devDependencies": {
+    "@std/assert": "npm:@jsr/std__assert@^1.0.14",
+    "@std/expect": "npm:@jsr/std__expect@^1.0.17",
+    "@std/testing": "npm:@jsr/std__testing@^1.0.15"
+  }
+}

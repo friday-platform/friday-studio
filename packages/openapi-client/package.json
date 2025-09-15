@@ -1,0 +1,9 @@
+{
+  "name": "@atlas/oapi-client",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./mod.ts",
+  "exports": { ".": "./mod.ts" },
+  "dependencies": { "openapi-fetch": "^0.14.0" },
+  "devDependencies": { "hono-openapi": "^1.0.6", "openapi-typescript": "^7.9.1" }
+}

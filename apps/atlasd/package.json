@@ -1,0 +1,27 @@
+{
+  "name": "@atlas/atlasd",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./mod.ts",
+  "exports": { ".": "./mod.ts" },
+  "dependencies": {
+    "@atlas/agent-sdk": "workspace:*",
+    "@atlas/config": "workspace:*",
+    "@atlas/core": "workspace:*",
+    "@atlas/cron": "workspace:*",
+    "@atlas/logger": "workspace:*",
+    "@atlas/mcp-server": "workspace:*",
+    "@atlas/memory": "workspace:*",
+    "@atlas/signals": "workspace:*",
+    "@atlas/storage": "workspace:*",
+    "@atlas/utils": "workspace:*",
+    "@atlas/workspace": "workspace:*",
+    "@hono/mcp": "^0.1.4",
+    "@scalar/hono-api-reference": "^0.9.18",
+    "@std/fs": "npm:@jsr/std__fs@^1.0.19",
+    "@std/path": "npm:@jsr/std__path@^1.1.2",
+    "hono": "^4.9.7",
+    "hono-openapi": "^1.0.6",
+    "zod": "^3.25.74"
+  }
+}

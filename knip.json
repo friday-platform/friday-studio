@@ -1,0 +1,89 @@
+{
+  "$schema": "https://unpkg.com/knip@latest/schema.json",
+  "workspaces": {
+    ".": {
+      "entry": [
+        "mod.ts!",
+        "src/cli.tsx!",
+        "src/**/*.test.ts",
+        "tests/**/*.test.ts",
+        "integration-tests/**/*.test.ts"
+      ],
+      "project": [
+        "src/**/*.{ts,tsx,js,jsx}!",
+        "*.ts!",
+        "src/**/*.test.ts",
+        "integration-tests/**/*.ts"
+      ]
+    },
+    "packages/agent-sdk": { "project": ["src/**/*.{ts,tsx,js,jsx}!"] },
+    "packages/bundled-agents": { "project": ["src/**/*.{ts,tsx,js,jsx}!"] },
+    "packages/client": { "project": ["**/*.{ts,tsx,js,jsx}!"] },
+    "packages/config": { "project": ["**/*.{ts,tsx,js,jsx}!"] },
+    "packages/core": { "project": ["src/**/*.{ts,tsx,js,jsx}!"] },
+    "packages/cron": { "entry": ["tests/**/*.test.ts"], "project": ["src/**/*.{ts,tsx,js,jsx}!"] },
+    "packages/fs-watch": { "project": ["**/*.{ts,tsx,js,jsx}!"] },
+    "packages/logger": { "project": ["**/*.{ts,tsx,js,jsx}!"] },
+    "packages/mcp": { "project": ["**/*.{ts,tsx,js,jsx}!"] },
+    "packages/mcp-server": { "project": ["src/**/*.{ts,tsx,js,jsx}!"] },
+    "packages/memory": {
+      "entry": ["tests/**/*.test.ts"],
+      "project": ["src/**/*.{ts,tsx,js,jsx}!"]
+    },
+    "packages/notifications": { "project": ["src/**/*.{ts,tsx,js,jsx}!"] },
+    "packages/openapi-client": {
+      "project": ["**/*.{ts,tsx,js,jsx}!"],
+      "entry": ["scripts/build.ts!"]
+    },
+    "packages/signals": { "project": ["src/**/*.{ts,tsx,js,jsx}!"] },
+    "packages/storage": {
+      "entry": ["tests/**/*.test.ts"],
+      "project": ["src/**/*.{ts,tsx,js,jsx}!"]
+    },
+    "packages/system": { "project": ["agents/**/*.ts!", "workspaces/**/*.ts!"] },
+    "packages/utils": { "project": ["**/*.{ts,tsx,js,jsx}!"] },
+    "packages/workspace": { "project": ["src/**/*.{ts,tsx,js,jsx}!"] },
+    "apps/atlasd": { "entry": ["tests/**/*.test.ts"], "project": ["**/*.{ts,tsx,js,jsx}!"] },
+    "apps/diagnostics": { "project": ["src/**/*.{ts,tsx,js,jsx}!"] },
+    "apps/web-client": {
+      "entry": ["src/app.html!", "src/routes/**/*.svelte!", "src/**/*.test.ts"],
+      "project": ["src/**/*.{ts,tsx,js,jsx,svelte}!", "*.js!", "*.ts!"],
+      "paths": {
+        "$lib": ["./src/lib"],
+        "$lib/*": ["./src/lib/*"],
+        "$app": ["../../node_modules/@sveltejs/kit/src/runtime/app"],
+        "$app/*": ["../../node_modules/@sveltejs/kit/src/runtime/app/*"]
+      }
+    },
+    "tools/memory_manager": { "project": ["**/*.{ts,tsx,js,jsx}!"] },
+    "tools/evals": {
+      "entry": ["agents/**/*.eval.ts!", "lib/*.ts!"],
+      "project": ["agents/**/*.{ts,tsx,js,jsx}!", "lib/**/*.{ts,tsx,js,jsx}!"]
+    },
+    "tools/atlas-installer": { "entry": ["preload.js!", "renderer.js!"], "project": ["*.js!"] }
+  },
+  "ignore": [
+    "**/*.d.ts",
+    "**/vendor/**",
+    "**/node_modules/**",
+    "**/.svelte-kit/**",
+    "**/dist/**",
+    "**/build/**"
+  ],
+  "ignoreDependencies": ["@std/*"],
+  "rules": {
+    "files": "error",
+    "dependencies": "error",
+    "devDependencies": "warn",
+    "unlisted": "error",
+    "binaries": "error",
+    "unresolved": "error",
+    "exports": "error",
+    "types": "error",
+    "nsExports": "warn",
+    "nsTypes": "warn",
+    "duplicates": "warn",
+    "enumMembers": "warn",
+    "classMembers": "off"
+  }
+}
