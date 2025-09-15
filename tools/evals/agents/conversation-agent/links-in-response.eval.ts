@@ -24,7 +24,6 @@ Deno.test({
         agentContext,
       );
       const metrics = context.getMetrics();
-      const trace = context.getTrace();
 
       const evaluation = await llmJudge({
         criteria: "Atlas include the source link in the response.",
@@ -38,7 +37,7 @@ Deno.test({
 
       await saveSnapshot({
         testPath: new URL(import.meta.url),
-        data: { result, metrics, trace },
+        data: { result, metrics },
         pass: evaluation.pass,
       });
     } finally {

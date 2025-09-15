@@ -1,13 +1,7 @@
-import {
-  type AgentContext,
-  type AgentMetrics,
-  AgentTelemetryCollector,
-  type AtlasUIMessageChunk,
-  type StreamEmitter,
-  type TelemetrySpan,
-} from "@atlas/agent-sdk";
+import type { AgentContext, AtlasUIMessageChunk, StreamEmitter } from "@atlas/agent-sdk";
 import { createAtlasClient } from "@atlas/oapi-client";
 import type { UIDataTypes } from "ai";
+import { AgentTelemetryCollector, type Metrics } from "./agent-telemetry-collector.ts";
 import { DaemonTestHarness } from "./daemon-harness.ts";
 
 /**
@@ -81,11 +75,9 @@ export class ConversationAgentContext {
     // Add telemetry if enabled
     if (options?.telemetry && this.telemetryCollector) {
       context.telemetry = {
-        isEnabled: true,
         tracer: this.telemetryCollector,
         recordInputs: true,
         recordOutputs: true,
-        metadata: { evalMode: true, testContext: true },
       };
     }
 
@@ -103,15 +95,8 @@ export class ConversationAgentContext {
   /**
    * Get telemetry metrics after execution
    */
-  getMetrics(): AgentMetrics | null {
+  getMetrics(): Metrics | null {
     return this.telemetryCollector?.getMetrics() || null;
-  }
-
-  /**
-   * Get full execution trace
-   */
-  getTrace(): TelemetrySpan[] | null {
-    return this.telemetryCollector?.getExecutionTrace() || null;
   }
 
   /**

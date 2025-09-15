@@ -1,16 +1,16 @@
 # TypeScript & Lint Analysis Report
 
-**Generated:** 2025-09-15T18:52:05.234Z
+**Generated:** 2025-09-15T19:37:52.020Z
 
-**Total Issues:** 2010 (1159 type errors, 312 deno lint violations, 539 biome
+**Total Issues:** 2006 (1157 type errors, 312 deno lint violations, 537 biome
 violations)
 
 ## Summary Statistics
 
 ### TypeScript Errors
 
-- **Total errors:** 1159
-- **Unique error types:** 35
+- **Total errors:** 1157
+- **Unique error types:** 36
 - **Files with errors:** 224
 
 ### Deno Lint Violations
@@ -21,28 +21,28 @@ violations)
 
 ### Biome Violations
 
-- **Total violations:** 539
+- **Total violations:** 537
 - **Errors:** 1
-- **Warnings:** 538
+- **Warnings:** 536
 - **Unique rules violated:** 30
-- **Files with violations:** 188
+- **Files with violations:** 187
 
 ## TypeScript Error Types Breakdown
 
 | Error Code | Count | Percentage | Description                                  |
 | ---------- | ----- | ---------- | -------------------------------------------- |
 | TS18046    | 299   | 25.8%      | Value is of type 'unknown'                   |
-| TS2339     | 243   | 21.0%      | Property does not exist on type              |
-| TS2322     | 165   | 14.2%      | Type not assignable                          |
+| TS2339     | 244   | 21.1%      | Property does not exist on type              |
+| TS2322     | 160   | 13.8%      | Type not assignable                          |
 | TS6133     | 97    | 8.4%       | Variable declared but never used             |
-| TS2345     | 84    | 7.2%       | Argument type not assignable                 |
+| TS2345     | 84    | 7.3%       | Argument type not assignable                 |
 | TS6196     | 56    | 4.8%       | Catch clause variable unused                 |
-| TS7053     | 42    | 3.6%       | Element implicitly has any type              |
+| TS7053     | 41    | 3.5%       | Element implicitly has any type              |
 | TS2532     | 35    | 3.0%       | Object is possibly 'undefined'               |
 | TS18048    | 25    | 2.2%       | Value is possibly 'undefined'                |
 | TS2769     | 14    | 1.2%       | No overload matches call                     |
+| TS2305     | 12    | 1.0%       | Module has no exported member                |
 | TS7006     | 10    | 0.9%       | Parameter implicitly has any type            |
-| TS2305     | 10    | 0.9%       | Module has no exported member                |
 | TS2698     | 10    | 0.9%       | Spread types may only be object types        |
 | TS2694     | 9     | 0.8%       | Namespace has no exported member             |
 | TS2349     | 9     | 0.8%       | Cannot invoke expression                     |
@@ -65,6 +65,7 @@ violations)
 | TS2554     | 1     | 0.1%       | Argument count mismatch                      |
 | TS2559     | 1     | 0.1%       | Type has no common properties                |
 | TS2740     | 1     | 0.1%       | Type is missing index signature              |
+| TS18004    | 1     | 0.1%       | TypeScript error                             |
 | TS7017     | 1     | 0.1%       | Type has no index signature                  |
 
 ## Deno Lint Rules Breakdown
@@ -82,11 +83,11 @@ violations)
 
 | Rule Name                               | Count | Percentage | Severity Distribution |
 | --------------------------------------- | ----- | ---------- | --------------------- |
-| correctness/noUnusedVariables           | 154   | 28.6%      | 154W                  |
-| style/noNonNullAssertion                | 95    | 17.6%      | 95W                   |
-| style/useTemplate                       | 87    | 16.1%      | 87W                   |
+| correctness/noUnusedVariables           | 154   | 28.7%      | 154W                  |
+| style/noNonNullAssertion                | 95    | 17.7%      | 95W                   |
+| style/useTemplate                       | 85    | 15.8%      | 85W                   |
 | complexity/useOptionalChain             | 36    | 6.7%       | 36W                   |
-| correctness/useExhaustiveDependencies   | 25    | 4.6%       | 25W                   |
+| correctness/useExhaustiveDependencies   | 25    | 4.7%       | 25W                   |
 | correctness/noUnusedImports             | 19    | 3.5%       | 19W                   |
 | style/useNodejsImportProtocol           | 16    | 3.0%       | 16W                   |
 | suspicious/useIterableCallbackReturn    | 16    | 3.0%       | 16W                   |
@@ -108,8 +109,8 @@ violations)
 | complexity/noUselessFragments           | 1     | 0.2%       | 1W                    |
 | complexity/noUselessSwitchCase          | 1     | 0.2%       | 1W                    |
 | suspicious/noConfusingVoidType          | 1     | 0.2%       | 1W                    |
-| complexity/noImportantStyles            | 1     | 0.2%       | 1W                    |
 | suspicious/noIrregularWhitespace        | 1     | 0.2%       | 1W                    |
+| complexity/noImportantStyles            | 1     | 0.2%       | 1W                    |
 | correctness/useHookAtTopLevel           | 1     | 0.2%       | 1W                    |
 | suspicious/noControlCharactersInRegex   | 1     | 0.2%       | 1E                    |
 
@@ -158,13 +159,12 @@ violations)
 | packages/signals        | 23          | 6         | 7     | 36    |
 | other                   | 13          | 4         | 10    | 27    |
 | packages/client         | 22          | 1         | 4     | 27    |
-| packages/system         | 13          | 1         | 2     | 16    |
-| packages/agent-sdk      | 8           | 0         | 0     | 8     |
+| packages/system         | 14          | 1         | 2     | 17    |
+| tools/evals             | 5           | 2         | 2     | 9     |
 | packages/notifications  | 8           | 0         | 0     | 8     |
 | packages/mcp            | 3           | 0         | 3     | 6     |
-| tools/evals             | 2           | 2         | 2     | 6     |
 | packages/config         | 2           | 0         | 1     | 3     |
-| packages/logger         | 1           | 0         | 2     | 3     |
+| packages/agent-sdk      | 3           | 0         | 0     | 3     |
 | packages/openapi-client | 1           | 0         | 2     | 3     |
 | packages/workspace      | 1           | 0         | 0     | 1     |
 | packages/bundled-agents | 1           | 0         | 0     | 1     |
@@ -211,23 +211,22 @@ Based on the dependency graph, here's a recommended order for fixing errors:
    - signals (23 errors)
    - openapi-client (1 errors)
    - memory_manager (27 errors)
-   - evals (2 errors)
+   - evals (5 errors)
 
 2. **Then fix middle-tier packages** (1-3 dependents):
    - workspace (1 errors, 3 dependents)
    - mcp-server (89 errors, 1 dependents)
    - mcp (3 errors, 1 dependents)
    - bundled-agents (1 errors, 3 dependents)
-   - system (13 errors, 2 dependents)
+   - system (14 errors, 2 dependents)
    - client (22 errors, 1 dependents)
    - notifications (8 errors, 1 dependents)
    - cron (11 errors, 1 dependents)
 
 3. **Finally, fix core packages** (many packages depend on these):
    - atlasd (56 errors, 5 dependents)
-   - agent-sdk (8 errors, 6 dependents)
+   - agent-sdk (3 errors, 6 dependents)
    - core (75 errors, 5 dependents)
-   - logger (1 errors, 12 dependents)
    - memory (154 errors, 5 dependents)
    - config (2 errors, 6 dependents)
    - storage (39 errors, 4 dependents)
@@ -249,12 +248,12 @@ Issues that appear across multiple files (potential systematic problems):
 
 - **[Biome] style/useTemplate**: "Template literals are preferred over string
   concat..."
-  - Occurrences: 87
-  - Files affected: 43
+  - Occurrences: 85
+  - Files affected: 42
 
 - **[Type] TS7053**: "Element implicitly has an 'any' type because expre..."
-  - Occurrences: 42
-  - Files affected: 18
+  - Occurrences: 41
+  - Files affected: 17
 
 - **[Type] TS18046**: "'data' is of type 'unknown'...."
   - Occurrences: 38

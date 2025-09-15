@@ -89,7 +89,8 @@ class AtlasAgentImpl<T = unknown> implements AtlasAgent<T> {
   async execute(prompt: string, context: AgentContext): Promise<T> {
     try {
       // Execute the handler with the prompt and context
-      return await this.handler(prompt, context);
+      // Intentional cast of the handler result because it can't be inferred by TypeScript.
+      return (await this.handler(prompt, context)) as T;
     } catch (error) {
       // Re-throw AwaitingSupervisorDecision exceptions
       if (error instanceof Error && error.name === "AwaitingSupervisorDecision") {

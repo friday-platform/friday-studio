@@ -132,7 +132,7 @@ class AtlasLoggerV2 implements Logger {
     return error; // Not an Error, return as-is
   }
 
-  private formatConsoleOutput(level: string, message: string, context: LogContext): string {
+  private formatConsoleOutput(level: LogLevel, message: string, context: LogContext): string {
     const now = new Date();
     // Use local timezone for TTY console output
     const timestamp = this.formatLocalTime(now); // HH:MM:SS.mmm in local timezone
@@ -146,7 +146,7 @@ class AtlasLoggerV2 implements Logger {
 
     const contextStr =
       Object.keys(processedContext).length > 0
-        ? " " + JSON.stringify(processedContext, null, 0)
+        ? ` ${JSON.stringify(processedContext, null, 0)}`
         : "";
 
     // Color coding for console output
@@ -213,7 +213,7 @@ class AtlasLoggerV2 implements Logger {
       : join(getAtlasLogsDir(), "global.log");
 
     await ensureDir(dirname(logPath));
-    await Deno.writeTextFile(logPath, jsonLine + "\n", { append: true });
+    await Deno.writeTextFile(logPath, `${jsonLine}\n`, { append: true });
   }
 }
 

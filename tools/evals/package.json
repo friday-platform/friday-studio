@@ -12,6 +12,7 @@
     "@atlas/oapi-client": "workspace:*",
     "@atlas/system": "workspace:*",
     "@atlas/utils": "workspace:*",
+    "@opentelemetry/api": "^1.9.0",
     "@std/assert": "npm:@jsr/std__assert@^1.0.13",
     "@std/dotenv": "npm:@jsr/std__dotenv@^0.225.0",
     "@std/expect": "npm:@jsr/std__expect@^1.0.16",

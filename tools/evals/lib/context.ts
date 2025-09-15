@@ -1,13 +1,11 @@
 import type {
   AgentContext,
-  AgentMetrics,
   AgentSessionData,
   AtlasTools,
   AtlasUIMessageChunk,
   StreamEmitter,
-  TelemetrySpan,
 } from "@atlas/agent-sdk";
-import { AgentTelemetryCollector } from "@atlas/agent-sdk";
+import { AgentTelemetryCollector, type Metrics } from "./agent-telemetry-collector.ts";
 
 /**
  * StreamEmitter implementation that captures emitted events for testing
@@ -91,11 +89,9 @@ export class AgentContextAdapter {
     // Add telemetry if enabled
     if (options?.telemetry && this.telemetryCollector) {
       context.telemetry = {
-        isEnabled: true,
         tracer: this.telemetryCollector,
         recordInputs: true,
         recordOutputs: true,
-        metadata: { evalMode: true, testContext: true },
       };
     }
 
@@ -118,15 +114,8 @@ export class AgentContextAdapter {
   /**
    * Get telemetry metrics after execution
    */
-  getMetrics(): AgentMetrics | null {
+  getMetrics(): Metrics | null {
     return this.telemetryCollector?.getMetrics() || null;
-  }
-
-  /**
-   * Get full execution trace
-   */
-  getTrace(): TelemetrySpan[] | null {
-    return this.telemetryCollector?.getExecutionTrace() || null;
   }
 
   /**

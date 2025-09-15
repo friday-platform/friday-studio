@@ -24,7 +24,6 @@ Deno.test({
         agentContext,
       );
       const metrics = context.getMetrics();
-      const trace = context.getTrace();
 
       const evaluation = await llmJudge({
         criteria: `Atlas should ask questions like:
@@ -32,12 +31,12 @@ Deno.test({
         - What kind of analysis are you looking for?
         - Where do you want to share the results?
         - Who should receive these insights?
-        
+
         Additional rules, which are very important. Atlas should:
         - Ask at most 5 questions.
         - Not suggest add examples to the questions.
-        - Keep the questions concise and to one sentence. 
-        - Not use words like "automation" or "workspace" or "signal" or "agent" in the questions. 
+        - Keep the questions concise and to one sentence.
+        - Not use words like "automation" or "workspace" or "signal" or "agent" in the questions.
         - Not add marketing speak like "this is the perfect use case..."
         `,
         agentOutput: result.text,

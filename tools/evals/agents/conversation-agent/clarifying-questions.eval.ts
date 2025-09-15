@@ -24,7 +24,6 @@ Deno.test({
         agentContext,
       );
       const metrics = context.getMetrics();
-      const trace = context.getTrace();
 
       const evaluation = await llmJudge({
         criteria: "Atlas should ask questions like 'What city do you want to monitor weather for?'",
@@ -38,7 +37,7 @@ Deno.test({
 
       await saveSnapshot({
         testPath: new URL(import.meta.url),
-        data: { result, metrics, trace },
+        data: { result, metrics },
         pass: evaluation.pass,
       });
     } finally {

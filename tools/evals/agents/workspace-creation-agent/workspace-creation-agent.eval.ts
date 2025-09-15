@@ -34,13 +34,11 @@ Deno.test("Workspace Creation Agent", async (t) => {
     const executionTimeMs = performance.now() - startTime;
 
     const metrics = adapter.getMetrics();
-    const trace = adapter.getTrace();
     const streamEvents = adapter.getStreamEvents();
 
     snapshot({
       result,
       metrics,
-      trace,
       streamEvents,
       timing: {
         executionTimeMs,
@@ -97,7 +95,7 @@ Deno.test("Workspace Creation Agent", async (t) => {
     assert(job, "Should have at least one job");
     assert(job.execution?.strategy === "sequential", "Job should execute agents sequentially");
 
-    return { result, metrics, trace, executionTimeMs };
+    return { result, metrics, executionTimeMs };
   });
 
   /**
@@ -117,13 +115,11 @@ Deno.test("Workspace Creation Agent", async (t) => {
     const executionTimeMs = performance.now() - startTime;
 
     const metrics = adapter.getMetrics();
-    const trace = adapter.getTrace();
     const streamEvents = adapter.getStreamEvents();
 
     snapshot({
       result,
       metrics,
-      trace,
       streamEvents,
       timing: {
         executionTimeMs,
@@ -184,7 +180,7 @@ Deno.test("Workspace Creation Agent", async (t) => {
       `Should have at most 3 agents for this simple task, got ${result.summary.agentCount}`,
     );
 
-    return { result, metrics, trace, executionTimeMs };
+    return { result, metrics, executionTimeMs };
   });
 
   /**
@@ -204,13 +200,11 @@ Deno.test("Workspace Creation Agent", async (t) => {
     const executionTimeMs = performance.now() - startTime;
 
     const metrics = adapter.getMetrics();
-    const trace = adapter.getTrace();
     const streamEvents = adapter.getStreamEvents();
 
     snapshot({
       result,
       metrics,
-      trace,
       streamEvents,
       timing: {
         executionTimeMs,
@@ -264,6 +258,6 @@ Deno.test("Workspace Creation Agent", async (t) => {
       `Workflow validation failed: ${workflowEvaluation.justification}`,
     );
 
-    return { result, metrics, trace, executionTimeMs };
+    return { result, metrics, executionTimeMs };
   });
 });

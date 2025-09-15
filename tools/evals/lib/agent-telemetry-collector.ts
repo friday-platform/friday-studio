@@ -1,21 +1,23 @@
-import type { Attributes, Link, Span, SpanOptions, TimeInput, Tracer } from "@opentelemetry/api";
+import type {
+  Attributes,
+  AttributeValue,
+  Link,
+  Span,
+  SpanOptions,
+  SpanStatus,
+  TimeInput,
+  Tracer,
+} from "@opentelemetry/api";
 import { z } from "zod";
 
 /**
- * Telemetry collector implementing OpenTelemetry's Tracer interface for AI SDK integration.
- *
- * Captures metrics from the AI SDK's instrumentation system to track:
- * - Tool executions in order with timing
- * - Errors and warnings with context
- * - Token usage (prompt/completion/total)
- * - Raw span data for execution traces
- *
- * The AI SDK automatically instruments LLM calls and tool usage when provided a tracer.
- * This collector extracts the relevant data from the OpenTelemetry spans.
+ * Collects telemetry from AI SDK by implementing OpenTelemetry's Tracer interface.
+ * Tracks tool executions, errors, token usage, and execution traces.
  *
  * @see https://ai-sdk.dev/docs/ai-sdk-core/telemetry
  */
 
+/** Tool execution with timing and error tracking */
 interface ToolExecution {
   name: string;
   startTime: number;
@@ -24,6 +26,7 @@ interface ToolExecution {
   error?: string;
 }
 
+/** Span data for execution trace */
 export interface ExecutionSpan {
   spanId: string;
   name: string;
@@ -34,14 +37,23 @@ export interface ExecutionSpan {
   status: { code: number; message?: string };
 }
 
+/** All metrics collected during AI SDK operations */
 export interface CollectedMetrics {
   tools: ToolExecution[];
   errors: Array<{ message: string; context: string; timestamp: number; stack?: string }>;
   warnings: Array<{ message: string; timestamp: number }>;
   tokens: { prompt: number; completion: number; total: number };
+  trace: ExecutionSpan[];
 }
 
-// AI SDK token usage attributes from model spans
+/** Internal span metadata */
+interface SpanMeta {
+  name: string;
+  startTime: number;
+  toolName: string | undefined;
+  traceIndex: number;
+}
+
 const TokenAttributesSchema = z
   .object({
     "ai.usage.promptTokens": z.number().optional(),
@@ -59,24 +71,17 @@ const ToolCallAttributesSchema = z
   })
   .passthrough();
 
-/**
- * Collects telemetry from AI SDK by implementing OpenTelemetry's Tracer interface.
- * The AI SDK calls this tracer during LLM operations and tool invocations.
- */
 export class AgentTelemetryCollector implements Tracer {
   private tools: ToolExecution[] = [];
   private errors: CollectedMetrics["errors"] = [];
   private warnings: CollectedMetrics["warnings"] = [];
   private tokens = { prompt: 0, completion: 0, total: 0 };
   private executionTrace: ExecutionSpan[] = [];
-  private activeSpans = new Map<
-    string,
-    { name: string; startTime: number; toolName?: string; traceIndex: number }
-  >();
+  private activeSpans = new Map<string, SpanMeta>();
 
   /**
-   * Creates a span and executes a callback within its context.
-   * Required by OpenTelemetry Tracer interface - handles multiple overloaded signatures.
+   * Starts a span and runs a callback within its context.
+   * Handles OpenTelemetry's overloaded signatures.
    */
   startActiveSpan<F extends (span: Span) => unknown>(
     name: string,
@@ -102,11 +107,11 @@ export class AgentTelemetryCollector implements Tracer {
             span.end();
             throw error;
           },
-        );
+        ) as ReturnType<F>;
       }
 
       span.end();
-      return result;
+      return result as ReturnType<F>;
     } catch (error) {
       this.recordSpanError(span, error);
       span.end();
@@ -114,10 +119,7 @@ export class AgentTelemetryCollector implements Tracer {
     }
   }
 
-  /**
-   * Parses OpenTelemetry's overloaded startActiveSpan signatures.
-   * Handles: (name, fn), (name, options, fn), (name, options, context, fn)
-   */
+  /** Parses startActiveSpan overloads: (name, fn), (name, options, fn), (name, options, context, fn) */
   private parseStartActiveSpanArgs<F extends (span: Span) => unknown>(
     arg1?: SpanOptions | F,
     arg2?: F | unknown,
@@ -136,6 +138,7 @@ export class AgentTelemetryCollector implements Tracer {
     throw new Error("startActiveSpan requires a callback function");
   }
 
+  /** Record an error on a span */
   private recordSpanError(span: Span, error: unknown): void {
     if (error instanceof Error) {
       span.recordException(error);
@@ -145,10 +148,7 @@ export class AgentTelemetryCollector implements Tracer {
     }
   }
 
-  /**
-   * Creates a new span and tracks it for metrics extraction.
-   * Called by AI SDK when starting operations like tool calls or model invocations.
-   */
+  /** Creates and tracks a span for metrics extraction */
   startSpan(name: string, options?: SpanOptions): Span {
     const spanId = crypto.randomUUID();
     const startTime = Date.now();
@@ -163,10 +163,10 @@ export class AgentTelemetryCollector implements Tracer {
     this.executionTrace.push(executionSpan);
     const traceIndex = this.executionTrace.length - 1;
 
-    const spanMeta = { name, startTime, toolName: undefined, traceIndex };
+    const spanMeta: SpanMeta = { name, startTime, toolName: undefined, traceIndex };
     this.activeSpans.set(spanId, spanMeta);
 
-    // AI SDK uses "ai.toolCall" spans for tool invocations
+    // Track tool calls from ai.toolCall spans
     if (name === "ai.toolCall" && options?.attributes) {
       const attrs = ToolCallAttributesSchema.safeParse(options.attributes);
       if (attrs.success && attrs.data["ai.toolCall.name"]) {
@@ -176,31 +176,21 @@ export class AgentTelemetryCollector implements Tracer {
       }
     }
 
-    return this.createMinimalSpan(spanId, name, options);
+    return this.createMinimalSpan(spanId, name);
   }
 
-  /**
-   * Returns captured metrics for the current session.
-   */
+  /** Get all collected metrics */
   getMetrics(): CollectedMetrics {
     return {
       tools: [...this.tools],
       errors: [...this.errors],
       warnings: [...this.warnings],
       tokens: { ...this.tokens },
+      trace: [...this.executionTrace],
     };
   }
 
-  /**
-   * Returns all spans in execution order for debugging.
-   */
-  getExecutionTrace(): ExecutionSpan[] {
-    return [...this.executionTrace];
-  }
-
-  /**
-   * Clears all collected metrics and traces.
-   */
+  /** Clear all metrics and traces */
   reset(): void {
     this.tools = [];
     this.errors = [];
@@ -210,18 +200,15 @@ export class AgentTelemetryCollector implements Tracer {
     this.activeSpans.clear();
   }
 
-  /**
-   * Creates a minimal Span implementation that extracts metrics from AI SDK calls.
-   * Only implements methods the AI SDK actually uses.
-   */
-  private createMinimalSpan(spanId: string, name: string, _options?: SpanOptions): Span {
+  /** Creates a minimal Span that extracts metrics from AI SDK calls */
+  private createMinimalSpan(spanId: string, name: string): Span {
     const spanMeta = this.activeSpans.get(spanId);
     if (!spanMeta) {
       throw new Error(`Span ${spanId} not found in active spans`);
     }
 
     const span: Span = {
-      setAttribute: (key: string, value: unknown) => {
+      setAttribute: (key: string, value: AttributeValue) => {
         this.processAttribute(key, value, name, spanMeta);
         const traceSpan = this.executionTrace[spanMeta.traceIndex];
         if (traceSpan) {
@@ -230,32 +217,29 @@ export class AgentTelemetryCollector implements Tracer {
         return span;
       },
 
-      setAttributes: (attributes: Record<string, unknown>) => {
+      setAttributes: (attributes: Attributes) => {
         const traceSpan = this.executionTrace[spanMeta.traceIndex];
         if (traceSpan) {
           Object.assign(traceSpan.attributes, attributes);
         }
 
-        // AI SDK reports token usage in various spans (doStream, streamText, etc.)
         const parsed = TokenAttributesSchema.safeParse(attributes);
         if (parsed.success) {
           const inputTokens = parsed.data["ai.usage.inputTokens"];
           const outputTokens = parsed.data["ai.usage.outputTokens"];
           const totalTokens = parsed.data["ai.usage.totalTokens"];
 
-          // AI SDK may provide inputTokens/outputTokens or promptTokens/completionTokens
+          // SDK provides either inputTokens/outputTokens or promptTokens/completionTokens
           const promptTokens = inputTokens || parsed.data["ai.usage.promptTokens"] || 0;
           const completionTokens = outputTokens || parsed.data["ai.usage.completionTokens"] || 0;
 
           if (promptTokens > 0 || completionTokens > 0) {
             this.tokens.prompt += promptTokens;
             this.tokens.completion += completionTokens;
-            // Use provided total or calculate it
             this.tokens.total += totalTokens || promptTokens + completionTokens;
           }
         }
 
-        // AI SDK includes tool calls in response attributes
         const toolAttrs = ToolCallAttributesSchema.safeParse(attributes);
         if (toolAttrs.success && toolAttrs.data["ai.response.toolCalls"]) {
           for (const call of toolAttrs.data["ai.response.toolCalls"]) {
@@ -266,11 +250,7 @@ export class AgentTelemetryCollector implements Tracer {
         return span;
       },
 
-      addEvent: (
-        eventName: string,
-        attributesOrStartTime?: Attributes | TimeInput,
-        _startTime?: TimeInput,
-      ) => {
+      addEvent: (eventName: string, attributesOrStartTime?: Attributes | TimeInput) => {
         const eventAttributes =
           attributesOrStartTime &&
           typeof attributesOrStartTime === "object" &&
@@ -283,7 +263,9 @@ export class AgentTelemetryCollector implements Tracer {
             message: String(eventAttributes?.["exception.message"] || "Unknown error"),
             context: name,
             timestamp: Date.now(),
-            stack: eventAttributes?.["exception.stack"],
+            stack: eventAttributes?.["exception.stack"]
+              ? String(eventAttributes["exception.stack"])
+              : undefined,
           });
         } else if (eventName.includes("warning")) {
           this.warnings.push({
@@ -294,7 +276,7 @@ export class AgentTelemetryCollector implements Tracer {
         return span;
       },
 
-      setStatus: (status: { code: number; message?: string }) => {
+      setStatus: (status: SpanStatus) => {
         const traceSpan = this.executionTrace[spanMeta.traceIndex];
         if (traceSpan) {
           traceSpan.status = status;
@@ -351,9 +333,7 @@ export class AgentTelemetryCollector implements Tracer {
     return span;
   }
 
-  /**
-   * Processes individual span attributes to extract tool names and token usage.
-   */
+  /** Extract tool names and token usage from span attributes */
   private processAttribute(
     key: string,
     value: unknown,
@@ -365,7 +345,6 @@ export class AgentTelemetryCollector implements Tracer {
       this.tools.push({ name: value, startTime: spanMeta.startTime });
     }
 
-    // Handle individual token attributes
     if (typeof value === "number") {
       switch (key) {
         case "ai.usage.inputTokens":
@@ -379,7 +358,7 @@ export class AgentTelemetryCollector implements Tracer {
           this.tokens.total += value;
           break;
         case "ai.usage.totalTokens":
-          // Don't add to total here as it's already the sum
+          // Total is already the sum, don't double-count
           break;
       }
     }

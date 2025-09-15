@@ -23,17 +23,12 @@ Deno.test({
         agentContext,
       );
       const metrics = context.getMetrics();
-      const trace = context.getTrace();
 
       const pass = await t.step("", () => {
         assert(result.text === "", "Called table_output");
       });
 
-      await saveSnapshot({
-        testPath: new URL(import.meta.url),
-        data: { result, metrics, trace },
-        pass,
-      });
+      await saveSnapshot({ testPath: new URL(import.meta.url), data: { result, metrics }, pass });
     } finally {
       await context.cleanup();
     }

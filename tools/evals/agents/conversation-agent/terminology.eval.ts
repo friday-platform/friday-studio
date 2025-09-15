@@ -24,7 +24,6 @@ Deno.test({
         agentContext,
       );
       const metrics = context.getMetrics();
-      const trace = context.getTrace();
 
       const judge = await llmJudge({
         criteria: `
@@ -37,7 +36,7 @@ Deno.test({
 
       await saveSnapshot({
         testPath: new URL(import.meta.url),
-        data: { result, metrics, trace, judge },
+        data: { result, metrics, judge },
         pass: judge.pass,
       });
     } finally {

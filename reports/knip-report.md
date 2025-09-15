@@ -1,4 +1,4 @@
-No Svelte config file found in /Users/dwoolf/Documents/atlas - using SvelteKit's default configuration without an adapter.
+No Svelte config file found in /Users/ericskram/code/tempest/atlas-env/worktrees/type-cleanup-9-15 - using SvelteKit's default configuration without an adapter.
 # Knip report
 
 ## Unused files (30)
@@ -48,17 +48,18 @@ No Svelte config file found in /Users/dwoolf/Documents/atlas - using SvelteKit's
 | @tanstack/svelte-query   | package.json:42:6                 | error    |
 | @biomejs/biome           | package.json:30:6                 | error    |
 
-## Unused devDependencies (7)
+## Unused devDependencies (8)
 
-| Name                        | Location                          | Severity |
-| :-------------------------- | :-------------------------------- | :------- |
-| @rollup/rollup-darwin-arm64 | apps/web-client/package.json:40:6 | warn     |
-| @sveltejs/adapter-auto      | apps/web-client/package.json:41:6 | warn     |
-| svelte-adapter-deno         | apps/web-client/package.json:53:6 | warn     |
-| @deno/vite-plugin           | apps/web-client/package.json:33:6 | warn     |
-| svelte-preprocess           | apps/web-client/package.json:56:6 | warn     |
-| @melt-ui/svelte             | apps/web-client/package.json:39:6 | warn     |
-| vitest                      | apps/web-client/package.json:61:6 | warn     |
+| Name                        | Location                           | Severity |
+| :-------------------------- | :--------------------------------- | :------- |
+| electron-builder            | tools/atlas-installer/package.json | warn     |
+| @rollup/rollup-darwin-arm64 | apps/web-client/package.json:40:6  | warn     |
+| @sveltejs/adapter-auto      | apps/web-client/package.json:41:6  | warn     |
+| svelte-adapter-deno         | apps/web-client/package.json:53:6  | warn     |
+| @deno/vite-plugin           | apps/web-client/package.json:33:6  | warn     |
+| svelte-preprocess           | apps/web-client/package.json:56:6  | warn     |
+| @melt-ui/svelte             | apps/web-client/package.json:39:6  | warn     |
+| vitest                      | apps/web-client/package.json:61:6  | warn     |
 
 ## Unlisted dependencies (1)
 
@@ -66,11 +67,13 @@ No Svelte config file found in /Users/dwoolf/Documents/atlas - using SvelteKit's
 | :-- | :-------------------------------------------------------------- | :------- |
 | jsr | apps/web-client/src/lib/modules/messages/markdown-utils.test.ts | error    |
 
-## Unlisted binaries (1)
+## Unlisted binaries (3)
 
 | Name             | Location                                     | Severity |
 | :--------------- | :------------------------------------------- | :------- |
 | electron-builder | .github/actions/create-installers/action.yml | error    |
+| electron-builder | tools/atlas-installer/package.json           | error    |
+| electron         | tools/atlas-installer/package.json           | error    |
 
 ## Unused exported types (1)
 

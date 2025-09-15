@@ -23,7 +23,6 @@ Deno.test({
         agentContext,
       );
       const metrics = context.getMetrics();
-      const trace = context.getTrace();
 
       const pass = await t.step("", () => {
         assert(metrics?.tools.length === 2);
@@ -31,11 +30,7 @@ Deno.test({
         assert(metrics.tools.at(1)?.name === "atlas_todo_read", "Second, called todo_read");
       });
 
-      await saveSnapshot({
-        testPath: new URL(import.meta.url),
-        data: { result, metrics, trace },
-        pass,
-      });
+      await saveSnapshot({ testPath: new URL(import.meta.url), data: { result, metrics }, pass });
     } finally {
       await context.cleanup();
     }

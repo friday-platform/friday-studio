@@ -6,7 +6,7 @@
  */
 
 import type { Logger } from "@atlas/logger";
-import type { AttributeValue, Tracer } from "@opentelemetry/api";
+import type { Tracer } from "@opentelemetry/api";
 import type {
   InferUITools,
   Tool,
@@ -267,23 +267,14 @@ export type AgentSessionData = z.infer<typeof AgentSessionDataSchema>;
 /**
  * Telemetry configuration for agent execution.
  * Compatible with AI SDK's experimental_telemetry option.
+ * @see https://ai-sdk.dev/docs/ai-sdk-core/telemetry
  */
 export interface AgentTelemetryConfig {
-  /** Enable telemetry collection */
-  isEnabled: boolean;
-
   /** OpenTelemetry tracer for span collection */
-  tracer?: Tracer;
-
-  /** Control what data is recorded */
-  recordInputs?: boolean;
-  recordOutputs?: boolean;
-
-  /** Custom function ID for tracing */
-  functionId?: string;
-
-  /** Additional metadata */
-  metadata?: Record<string, AttributeValue>;
+  tracer: Tracer;
+  /** Whether to record agent input/output data */
+  recordInputs: boolean;
+  recordOutputs: boolean;
 }
 
 /**
