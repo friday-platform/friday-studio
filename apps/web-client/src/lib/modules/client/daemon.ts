@@ -4,7 +4,6 @@
  */
 
 import type { LibraryItem, StoreItemInput } from "../../../../../../src/core/library/types.ts";
-import { getAtlasDaemonUrl } from "../../utils/daemon.ts";
 
 interface DaemonClientOptions {
   daemonUrl: string;
@@ -19,18 +18,6 @@ interface WorkspaceInfo {
   path: string;
   createdAt: string;
   lastSeen: string;
-}
-
-interface WorkspaceCreateRequest {
-  name: string;
-  description?: string;
-  template?: string;
-  config?: Record<string, unknown>;
-}
-
-interface WorkspaceCreateResponse {
-  id: string;
-  name: string;
 }
 
 interface LibrarySearchQuery {
@@ -48,23 +35,6 @@ interface LibrarySearchResult {
   total: number;
   query: LibrarySearchQuery;
   took_ms: number;
-}
-
-interface LibraryStats {
-  total_items: number;
-  total_size_bytes: number;
-  types: Record<string, number>;
-  recent_activity: Array<{ date: string; items_added: number; items_modified: number }>;
-}
-
-interface TemplateConfig {
-  id: string;
-  name: string;
-  description?: string;
-  format: string;
-  engine: string;
-  config: Record<string, unknown>;
-  schema?: Record<string, unknown>;
 }
 
 export class DaemonClient {
@@ -94,170 +64,10 @@ export class DaemonClient {
   }
 
   /**
-   * Get daemon status
-   */
-  async getDaemonStatus(): Promise<{
-    status: string;
-    activeWorkspaces: number;
-    uptime: number;
-    workspaces: string[];
-  }> {
-    const response = await this.makeRequest("/api/daemon/status");
-    return response;
-  }
-
-  /**
    * List all workspaces
    */
   async listWorkspaces(): Promise<WorkspaceInfo[]> {
     const response = await this.makeRequest("/api/workspaces");
-    return response;
-  }
-
-  /**
-   * Get detailed workspace information
-   */
-  async getWorkspace(
-    workspaceId: string,
-  ): Promise<
-    WorkspaceInfo & {
-      runtime?: { status: string; startedAt: string; sessions: number; workers: number };
-    }
-  > {
-    const response = await this.makeRequest(`/api/workspaces/${workspaceId}`);
-    return response;
-  }
-
-  /**
-   * Create a new workspace
-   */
-  async createWorkspace(request: WorkspaceCreateRequest): Promise<WorkspaceCreateResponse> {
-    const response = await this.makeRequest("/api/workspaces", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(request),
-    });
-    return response;
-  }
-
-  /**
-   * Delete a workspace
-   */
-  async deleteWorkspace(workspaceId: string, force: boolean = false): Promise<{ message: string }> {
-    const url = new URL(`${this.daemonUrl}/api/workspaces/${workspaceId}`);
-    if (force) {
-      url.searchParams.set("force", "true");
-    }
-
-    const response = await this.makeRequest(url.pathname + url.search, { method: "DELETE" });
-    return response;
-  }
-
-  /**
-   * Trigger a signal in a workspace
-   */
-  async triggerSignal(
-    workspaceId: string,
-    signalId: string,
-    payload: Record<string, unknown> = {},
-  ): Promise<{ message: string; status: string; workspaceId: string; signalId: string }> {
-    const response = await this.makeRequest(`/api/workspaces/${workspaceId}/signals/${signalId}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    return response;
-  }
-
-  /**
-   * List all sessions across workspaces
-   */
-  async listSessions(): Promise<
-    Array<{
-      id: string;
-      workspaceId: string;
-      status: string;
-      summary: string;
-      signal: string;
-      startTime: string;
-      endTime?: string;
-      progress: number;
-    }>
-  > {
-    const response = await this.makeRequest("/api/sessions");
-    return response;
-  }
-
-  /**
-   * Get specific session details
-   */
-  async getSession(
-    sessionId: string,
-  ): Promise<{
-    id: string;
-    workspaceId: string;
-    status: string;
-    progress: number;
-    summary: string;
-    signal: string;
-    startTime: string;
-    endTime?: string;
-    artifacts: Array<{ type: string; data: unknown }>;
-    results?: unknown;
-  }> {
-    const response = await this.makeRequest(`/api/sessions/${sessionId}`);
-    return response;
-  }
-
-  /**
-   * Cancel a session
-   */
-  async cancelSession(sessionId: string): Promise<{ message: string; workspaceId: string }> {
-    const response = await this.makeRequest(`/api/sessions/${sessionId}`, { method: "DELETE" });
-    return response;
-  }
-
-  /**
-   * List agents in a workspace
-   */
-  async listAgents(
-    workspaceId: string,
-  ): Promise<Array<{ id: string; type: string; purpose?: string }>> {
-    const response = await this.makeRequest(`/api/workspaces/${workspaceId}/agents`);
-    return response;
-  }
-
-  /**
-   * Describe a specific agent in a workspace
-   */
-  async describeAgent(workspaceId: string, agentId: string): Promise<unknown> {
-    const response = await this.makeRequest(`/api/workspaces/${workspaceId}/agents/${agentId}`);
-    return response;
-  }
-
-  /**
-   * List signals in a workspace
-   */
-  async listSignals(workspaceId: string): Promise<Array<{ name: string; description?: string }>> {
-    const response = await this.makeRequest(`/api/workspaces/${workspaceId}/signals`);
-    return response;
-  }
-
-  /**
-   * List jobs in a workspace
-   */
-  async listJobs(workspaceId: string): Promise<Array<{ name: string; description?: string }>> {
-    const response = await this.makeRequest(`/api/workspaces/${workspaceId}/jobs`);
-    return response;
-  }
-
-  /**
-   * List sessions in a specific workspace
-   */
-  async listWorkspaceSessions(
-    workspaceId: string,
-  ): Promise<Array<{ id: string; status: string; startedAt: string }>> {
-    const response = await this.makeRequest(`/api/workspaces/${workspaceId}/sessions`);
     return response;
   }
 
@@ -289,78 +99,6 @@ export class DaemonClient {
   }
 
   /**
-   * Get specific library item
-   */
-  async getLibraryItem(
-    itemId: string,
-    includeContent: boolean = false,
-  ): Promise<{ item: LibraryItem; content?: string | Uint8Array }> {
-    const params = new URLSearchParams();
-    if (includeContent) params.set("content", "true");
-
-    const queryString = params.toString();
-    const path = queryString ? `/api/library/${itemId}?${queryString}` : `/api/library/${itemId}`;
-
-    const response = await this.makeRequest(path);
-    return response;
-  }
-
-  /**
-   * Search library items
-   */
-  async searchLibrary(query: LibrarySearchQuery): Promise<LibrarySearchResult> {
-    const params = new URLSearchParams();
-    if (query.query) params.set("q", query.query);
-    if (query.type) {
-      const types = Array.isArray(query.type) ? query.type : [query.type];
-      params.set("type", types.join(","));
-    }
-    if (query.tags) params.set("tags", query.tags.join(","));
-    if (query.since) params.set("since", query.since);
-    if (query.until) params.set("until", query.until);
-    if (query.limit) params.set("limit", query.limit.toString());
-    if (query.offset) params.set("offset", query.offset.toString());
-
-    const queryString = params.toString();
-    const path = `/api/library/search?${queryString}`;
-
-    const response = await this.makeRequest(path);
-    return response;
-  }
-
-  /**
-   * List available templates
-   */
-  async listTemplates(): Promise<TemplateConfig[]> {
-    const response = await this.makeRequest("/api/library/templates");
-    return response;
-  }
-
-  /**
-   * Generate content from template
-   */
-  async generateFromTemplate(
-    templateId: string,
-    data: Record<string, unknown>,
-    options?: Record<string, unknown>,
-  ): Promise<unknown> {
-    const response = await this.makeRequest("/api/library/generate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ templateId, data, options }),
-    });
-    return response;
-  }
-
-  /**
-   * Get library statistics
-   */
-  async getLibraryStats(): Promise<LibraryStats> {
-    const response = await this.makeRequest("/api/library/stats");
-    return response;
-  }
-
-  /**
    * Create library item from File upload
    * Web clients upload files directly - all metadata extracted from File object
    */
@@ -380,30 +118,6 @@ export class DaemonClient {
       method: "POST",
       body: formData, // FormData sets Content-Type automatically
     });
-    return response;
-  }
-
-  /**
-   * Download library item as file
-   */
-  async downloadLibraryItem(itemId: string): Promise<Blob> {
-    const response = await this.makeRequest(`/api/library/${itemId}/download`, { method: "GET" });
-    return response.blob();
-  }
-
-  /**
-   * Delete library item
-   */
-  async deleteLibraryItem(itemId: string): Promise<{ message: string }> {
-    const response = await this.makeRequest(`/api/library/${itemId}`, { method: "DELETE" });
-    return response;
-  }
-
-  /**
-   * Shutdown the daemon
-   */
-  async shutdown(): Promise<{ message: string }> {
-    const response = await this.makeRequest("/api/daemon/shutdown", { method: "POST" });
     return response;
   }
 
@@ -489,32 +203,4 @@ class DaemonApiError extends Error {
     super(message);
     this.name = "DaemonApiError";
   }
-}
-
-// Default client instance
-let defaultClient: DaemonClient | null = null;
-
-function getDaemonClient(options?: DaemonClientOptions): DaemonClient {
-  if (!defaultClient) {
-    defaultClient = new DaemonClient(options || { daemonUrl: getAtlasDaemonUrl() });
-  }
-  return defaultClient;
-}
-
-// Reset the default client (useful for testing or when daemon URL changes)
-function resetDaemonClient(): void {
-  defaultClient = null;
-}
-
-// Utility function for CLI commands to detect if daemon is running
-async function checkDaemonRunning(): Promise<boolean> {
-  const client = getDaemonClient();
-  return await client.isHealthy();
-}
-
-// Utility function to provide helpful error messages when daemon is not running
-function createDaemonNotRunningError(): Error {
-  return new Error(
-    `Atlas daemon is not running. Start it with 'atlas daemon start' or ensure it's accessible at ${getAtlasDaemonUrl()}`,
-  );
 }
