@@ -1,7 +1,18 @@
 {
   "$schema": "https://biomejs.dev/schemas/2.2.4/schema.json",
   "vcs": { "enabled": false, "clientKind": "git", "useIgnoreFile": false },
-  "files": { "ignoreUnknown": false },
+  "files": {
+    "ignoreUnknown": false,
+    "includes": [
+      "**",
+      "!**/.svelte-kit/**",
+      "!**/build/**",
+      "!**/.vite/**",
+      "!**/dist/**",
+      "!**/target/**",
+      "!**/node_modules/**"
+    ]
+  },
   "formatter": {
     "enabled": true,
     "formatWithErrors": false,
@@ -9,8 +20,7 @@
     "indentStyle": "space",
     "indentWidth": 2,
     "lineWidth": 100,
-    "expand": "never",
-    "includes": ["**", "!apps/web-client/src-tauri/target/**"]
+    "expand": "never"
   },
   "assist": { "enabled": true, "actions": { "source": { "organizeImports": "on" } } },
   "overrides": [
