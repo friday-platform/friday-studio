@@ -1231,8 +1231,15 @@ export class SessionSupervisorActor implements BaseActor {
     const startTime = Date.now();
 
     // the signal that triggers the session - payload is whatever json is in -d
-    let input: unknown = this.sessionContext?.payload;
+    let input: unknown;
 
+    logger.info("Executing agent", {
+      agentId: agentTask.agentId,
+      task: agentTask.task,
+      inputSource: agentTask.inputSource,
+    });
+
+    // Provide prvious results to the agent if input source is previous
     if (agentTask.inputSource === "previous" && previousResults.length > 0) {
       const lastOutput = previousResults[previousResults.length - 1]?.output;
       // If the output is an LLM response object, extract the actual response text
@@ -1241,18 +1248,18 @@ export class SessionSupervisorActor implements BaseActor {
       } else {
         input = lastOutput;
       }
-    } else if (agentTask.inputSource === "combined") {
+    } else if (agentTask.inputSource === "combined" || agentTask.inputSource === "all") {
+      //
       const combinedInput: CombinedAgentInput = {
         original: this.sessionContext?.payload || {},
         previous: previousResults.map((r) => ({ agentId: r.agentId, output: r.output })),
       };
       input = combinedInput;
-    } else if (agentTask.dependencies?.length) {
-      const lastDep = agentTask.dependencies[agentTask.dependencies.length - 1];
-      const depResult = previousResults.find((r) => r.agentId === lastDep);
-      if (depResult) {
-        input = depResult.output;
-      }
+    } else if (agentTask.inputSource === "signal") {
+      input = this.sessionContext?.payload;
+    } else {
+      logger.error("Unknown input source", { inputSource: agentTask.inputSource });
+      throw new Error("Unknown input source");
     }
 
     this.logger.info("Executing agent", {
@@ -1276,13 +1283,14 @@ export class SessionSupervisorActor implements BaseActor {
 
     // Use orchestrator if available (new MCP-based execution)
     this.logger.info("Using orchestrator for execution");
-    // Ensure prompt string is available outside the try block to avoid
-    // accidentally referencing the global Deno prompt() function.
+
     let prompt: string = "";
     try {
       // @deprecated Check if this is a system agent that expects objects
       // System agents should receive input as-is, not stringified
       const agentConfig = this.config?.agents?.[agentTask.agentId];
+      // llm agents have ".config" when bundled agents have prompt directly in object
+      const agentConfigPrompt = agentConfig?.config?.prompt || agentConfig?.prompt || "";
       const isSystemAgent = agentConfig?.type === "system";
       // System agents are referenced by ID
       const agentId = isSystemAgent ? agentConfig.agent : agentTask.agentId;
@@ -1295,7 +1303,7 @@ export class SessionSupervisorActor implements BaseActor {
       if (agentTask.task && agentTask.task !== "Execute job task") {
         // Use explicit task if provided
         prompt = agentTask.task;
-      } else if (agentConfig?.config?.prompt && agentConfig?.type !== "system") {
+      } else if (agentConfigPrompt && agentConfig?.type !== "system") {
         // For non-system agents, use the agent's configured prompt from workspace and append the input
         // System agents (like conversation) manage their own system prompts internally
         let inputText = "";
@@ -1342,7 +1350,7 @@ export class SessionSupervisorActor implements BaseActor {
         }
 
         // Add the agent's configured prompt instructions
-        promptSections.push(agentConfig.config.prompt);
+        promptSections.push(agentConfigPrompt);
 
         // If we are retrying due to a previous validation failure for this agent, append feedback
         const priorIssues = this.lastValidationMetaByAgent.get(agentTask.agentId);
@@ -1383,8 +1391,6 @@ export class SessionSupervisorActor implements BaseActor {
         // Fallback to JSON representation
         prompt = JSON.stringify(input);
       }
-      const agentExecutionConfig = this.getAgentExecutionConfig(agentTask.agentId);
-
       // Enhance prompt with MECMF memory context
       if (this.mecmfManager) {
         try {
