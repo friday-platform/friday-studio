@@ -48,10 +48,7 @@ export class WorkspaceMemoryManager {
   /**
    * Initialize the enhanced memory manager with base dependencies
    */
-  async initialize(
-    baseMemoryManager: MECMFMemoryManager,
-    embeddingProvider: MECMFEmbeddingProvider,
-  ): Promise<void> {
+  initialize(baseMemoryManager: MECMFMemoryManager, embeddingProvider: MECMFEmbeddingProvider) {
     try {
       this.enhancedMemoryManager = createEnhancedMemoryManager(
         baseMemoryManager,

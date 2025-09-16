@@ -494,11 +494,11 @@ export class EnhancedMemoryManager implements MECMFMemoryManager {
   }> {
     const issues: string[] = [];
     const components = {
-      baseManager: "healthy",
-      sessionBridge: "healthy",
-      worklog: "healthy",
-      tokenManager: "healthy",
-      contextAssembly: "healthy",
+      baseManager: <"healthy" | "failed">"healthy",
+      sessionBridge: <"healthy" | "disabled" | "failed">"healthy",
+      worklog: <"healthy" | "disabled" | "failed">"healthy",
+      tokenManager: <"healthy" | "failed">"healthy",
+      contextAssembly: <"healthy" | "failed">"healthy",
     };
 
     // Check base memory manager

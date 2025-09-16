@@ -25,8 +25,9 @@ import type {
 } from "../../../src/types/core.ts";
 import { getWorkspaceMemoryDir, getWorkspaceVectorDir } from "../../../src/utils/paths.ts";
 import { type ProcessedPrompt, tokenizePrompt } from "../../../src/utils/prompt-tokenizer.ts";
-import { GlobalEmbeddingProvider } from "./global-embedding-provider.ts";
+import { embeddingProviderGetInstance } from "./global-embedding-provider.ts";
 import type { MECMFEmbeddingProvider } from "./mecmf-interfaces.ts";
+import { MemorySource } from "./mecmf-interfaces.ts";
 
 // Define the enum first
 export enum CoALAMemoryType {
@@ -63,7 +64,7 @@ const CoALAMemoryEntrySchema = z.object({
   tags: z.array(z.string()),
   confidence: z.number(),
   decayRate: z.number(),
-  source: z.string().optional(),
+  source: z.nativeEnum(MemorySource).optional(),
   sourceMetadata: CoALASourceMetadataSchema,
 });
 
@@ -175,7 +176,7 @@ export class CoALAMemoryManager implements ITempestMemoryManager, CoALACognitive
     }
   }
 
-  recall(key: string): unknown {
+  recall(key: string): string | Record<string, string> | undefined {
     const memory = this.memories.get(key);
     if (memory) {
       // Update access patterns for adaptive retrieval
@@ -198,7 +199,7 @@ export class CoALAMemoryManager implements ITempestMemoryManager, CoALACognitive
       associations?: string[];
       confidence?: number;
       decayRate?: number;
-      source?: string;
+      source?: MemorySource;
       sourceMetadata?: {
         agentId?: string;
         toolName?: string;
@@ -221,7 +222,7 @@ export class CoALAMemoryManager implements ITempestMemoryManager, CoALACognitive
       tags: metadata.tags,
       confidence: metadata.confidence || 1.0,
       decayRate: metadata.decayRate || 0.1,
-      source: metadata.source || "system_generated",
+      source: metadata.source || MemorySource.SYSTEM_GENERATED,
       sourceMetadata: metadata.sourceMetadata,
     };
 
@@ -976,7 +977,7 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
   async initializeVectorSearch(config?: Partial<VectorSearchConfig>): Promise<void> {
     try {
       // Initialize embedding provider using global singleton
-      this.embeddingProvider = await GlobalEmbeddingProvider.getInstance();
+      this.embeddingProvider = await embeddingProviderGetInstance();
 
       // Initialize vector storage
       const basePath = this.getVectorSearchBasePath();
@@ -1150,7 +1151,9 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
       tags?: string[];
     },
   ): Promise<{
-    memories: Array<CoALAMemoryEntry & { similarity?: number; source: "working" | "vector" }>;
+    memories: Array<
+      CoALAMemoryEntry & { similarity?: number; retrievalSource: "working" | "vector" }
+    >;
     processedPrompt: ProcessedPrompt;
   }> {
     const {
@@ -1173,7 +1176,7 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
     });
 
     const allMemories: Array<
-      CoALAMemoryEntry & { similarity?: number; source: "working" | "vector" }
+      CoALAMemoryEntry & { similarity?: number; retrievalSource: "working" | "vector" }
     > = [];
 
     // Get WORKING memories using traditional search (unchanged)
@@ -1187,7 +1190,7 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
       });
 
       allMemories.push(
-        ...workingMemories.map((memory) => ({ ...memory, source: "working" as const })),
+        ...workingMemories.map((memory) => ({ ...memory, retrievalSource: "working" as const })),
       );
     }
 
@@ -1223,7 +1226,10 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
           : vectorResults;
 
         allMemories.push(
-          ...filteredVectorResults.map((memory) => ({ ...memory, source: "vector" as const })),
+          ...filteredVectorResults.map((memory) => ({
+            ...memory,
+            retrievalSource: "vector" as const,
+          })),
         );
       } catch (error) {
         logger.warn("Vector search failed, falling back to text search", { error });
@@ -1238,7 +1244,7 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
         }).filter((memory) => vectorMemoryTypes.includes(memory.memoryType));
 
         allMemories.push(
-          ...fallbackMemories.map((memory) => ({ ...memory, source: "vector" as const })),
+          ...fallbackMemories.map((memory) => ({ ...memory, retrievalSource: "vector" as const })),
         );
       }
     }
@@ -1300,7 +1306,7 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
 
         // Apply additional filters from the original query
         let filteredResults = vectorResults.map((result) => {
-          const { similarity, ...memory } = result;
+          const { similarity: _similarity, ...memory } = result;
           return memory;
         });
 
@@ -1403,7 +1409,9 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
    * Format memory context for prompt enhancement
    */
   private formatMemoryContext(
-    memories: Array<CoALAMemoryEntry & { similarity?: number; source: "working" | "vector" }>,
+    memories: Array<
+      CoALAMemoryEntry & { similarity?: number; retrievalSource: "working" | "vector" }
+    >,
     format: "detailed" | "summary" | "bullets",
   ): string {
     if (memories.length === 0) return "";

@@ -11,6 +11,7 @@ import { logger } from "@atlas/logger";
 import { crypto } from "@std/crypto";
 import { ensureDir } from "@std/fs";
 import ort from "onnxruntime-web";
+import { z } from "zod";
 import { getMECMFCacheDir } from "../../../src/utils/paths.ts";
 import type { AtlasEmbeddingConfig, MECMFEmbeddingProvider } from "./mecmf-interfaces.ts";
 
@@ -36,6 +37,14 @@ interface EmbeddingResult {
   time: number;
   embedding: number[];
 }
+
+// Zod schema for Hugging Face tokenizer JSON structure
+const HuggingFaceTokenizerSchema = z.object({
+  model: z.object({ vocab: z.record(z.string(), z.number()) }).optional(),
+  added_tokens: z.array(z.object({ content: z.string(), id: z.number() })).optional(),
+  normalizer: z.object({ lowercase: z.boolean() }).optional(),
+  truncation: z.object({ max_length: z.number() }).optional(),
+});
 
 export class BERTTokenizer {
   private vocab: Record<string, number> = {};
@@ -227,22 +236,6 @@ export class WebEmbeddingProvider implements MECMFEmbeddingProvider {
     // Release the ONNX Runtime session with multiple cleanup approaches
     if (this.session) {
       try {
-        // Try the undocumented handler.dispose() first (if available)
-        // This provides more thorough cleanup than session.release() alone
-        const sessionWithHandler = this.session;
-        if (
-          sessionWithHandler.handler &&
-          typeof sessionWithHandler.handler.dispose === "function"
-        ) {
-          try {
-            await sessionWithHandler.handler.dispose();
-          } catch (_handlerError) {
-            // Handler dispose might fail if already disposed
-          }
-        }
-
-        // Also call the official release() method
-        // Added in PR #16169 for proper session cleanup
         await this.session.release();
       } catch (error) {
         logger.warn("Error releasing ONNX Runtime session:", { error });
@@ -345,13 +338,14 @@ export class WebEmbeddingProvider implements MECMFEmbeddingProvider {
 
     // Load tokenizer config
     const tokenizerData = await Deno.readTextFile(cachedPath);
-    const tokenizerJson = JSON.parse(tokenizerData);
+    const rawTokenizerJson = JSON.parse(tokenizerData);
+    const tokenizerJson = HuggingFaceTokenizerSchema.parse(rawTokenizerJson);
 
     // Extract vocabulary and configuration (using existing logic from /embeddings/main.ts)
     const vocab: Record<string, number> = {};
     const specialTokens: Record<string, number> = {};
 
-    if (tokenizerJson.model && tokenizerJson.model.vocab) {
+    if (tokenizerJson.model?.vocab) {
       Object.assign(vocab, tokenizerJson.model.vocab);
     }
 
@@ -370,7 +364,7 @@ export class WebEmbeddingProvider implements MECMFEmbeddingProvider {
     // Process added_tokens if available
     if (tokenizerJson.added_tokens) {
       for (const token of tokenizerJson.added_tokens) {
-        if (token.content) {
+        if (token.content && token.id !== undefined) {
           specialTokens[token.content] = token.id;
           if (token.content === "[PAD]") {
             padToken = token.content;
@@ -393,11 +387,11 @@ export class WebEmbeddingProvider implements MECMFEmbeddingProvider {
     }
 
     // Fallback to vocab lookup
-    if (vocab[padToken]) padTokenId = vocab[padToken];
-    if (vocab[unkToken]) unkTokenId = vocab[unkToken];
-    if (vocab[clsToken]) clsTokenId = vocab[clsToken];
-    if (vocab[sepToken]) sepTokenId = vocab[sepToken];
-    if (vocab[maskToken]) maskTokenId = vocab[maskToken];
+    padTokenId = vocab[padToken] ?? padTokenId;
+    unkTokenId = vocab[unkToken] ?? unkTokenId;
+    clsTokenId = vocab[clsToken] ?? clsTokenId;
+    sepTokenId = vocab[sepToken] ?? sepTokenId;
+    maskTokenId = vocab[maskToken] ?? maskTokenId;
 
     // Ensure special tokens are in map
     specialTokens[padToken] = padTokenId;
@@ -408,12 +402,12 @@ export class WebEmbeddingProvider implements MECMFEmbeddingProvider {
 
     // Extract normalization and length settings
     let doLowerCase = true;
-    if (tokenizerJson.normalizer && tokenizerJson.normalizer.lowercase !== undefined) {
+    if (tokenizerJson.normalizer?.lowercase !== undefined) {
       doLowerCase = tokenizerJson.normalizer.lowercase;
     }
 
     let maxLen = this.config.maxSequenceLength;
-    if (tokenizerJson.truncation && tokenizerJson.truncation.max_length) {
+    if (tokenizerJson.truncation?.max_length) {
       maxLen = tokenizerJson.truncation.max_length;
     }
 
@@ -517,6 +511,9 @@ export class WebEmbeddingProvider implements MECMFEmbeddingProvider {
         throw new Error("No output tensor found in model results");
       }
       const outputTensor = results[outputKey];
+      if (!outputTensor) {
+        throw new Error("Output tensor is undefined");
+      }
 
       const endTime = performance.now();
       const time = Math.round(endTime - startTime);
@@ -529,6 +526,9 @@ export class WebEmbeddingProvider implements MECMFEmbeddingProvider {
       }
 
       const [_batchSize, seqLength, hiddenSize] = dims;
+      if (seqLength === undefined || hiddenSize === undefined) {
+        throw new Error("Invalid tensor dimensions: seqLength or hiddenSize is undefined");
+      }
 
       const embedding = new Array(hiddenSize).fill(0);
       let validTokens = 0;

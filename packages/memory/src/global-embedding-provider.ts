@@ -13,140 +13,132 @@ import type { AtlasEmbeddingConfig, MECMFEmbeddingProvider } from "./mecmf-inter
 import { WebEmbeddingProvider } from "./web-embedding-provider.ts";
 
 /**
- * Global singleton wrapper for WebEmbeddingProvider
+ * Global singleton state for WebEmbeddingProvider
  */
-export class GlobalEmbeddingProvider {
-  private static instance: WebEmbeddingProvider | null = null;
-  private static initializationPromise: Promise<WebEmbeddingProvider> | null = null;
-  private static referenceCount: number = 0;
-  // Lazy initialization to avoid circular dependency issues
-  private static _logger: ReturnType<typeof logger.child> | null = null;
+let instance: WebEmbeddingProvider | null = null;
+let initializationPromise: Promise<WebEmbeddingProvider> | null = null;
+let referenceCount: number = 0;
+// Lazy initialization to avoid circular dependency issues
+let _logger: ReturnType<typeof logger.child> | null = null;
 
-  private static get logger() {
-    if (!GlobalEmbeddingProvider._logger) {
-      GlobalEmbeddingProvider._logger = logger.child({ component: "GlobalEmbeddingProvider" });
-    }
-    return GlobalEmbeddingProvider._logger;
+function getLogger() {
+  if (!_logger) {
+    _logger = logger.child({ component: "GlobalEmbeddingProvider" });
+  }
+  return _logger;
+}
+
+/**
+ * Create a new WebEmbeddingProvider instance with default config
+ */
+async function createInstance(
+  config?: Partial<AtlasEmbeddingConfig>,
+): Promise<WebEmbeddingProvider> {
+  const defaultConfig: Partial<AtlasEmbeddingConfig> = {
+    model: "sentence-transformers/all-MiniLM-L6-v2",
+    backend: "wasm",
+    batchSize: 10,
+    maxSequenceLength: 512,
+    cacheDirectory: getMECMFCacheDir(),
+    tokenizerConfig: {
+      doLowerCase: true,
+      maxLength: 512,
+      padTokenId: 0,
+      unkTokenId: 100,
+      clsTokenId: 101,
+      sepTokenId: 102,
+    },
+    ...config,
+  };
+
+  const provider = new WebEmbeddingProvider(defaultConfig);
+
+  // Perform explicit initialization and warmup
+  await provider.warmup();
+
+  getLogger().info("Global embedding provider initialized successfully", {
+    modelInfo: provider.getModelInfo(),
+    dimension: provider.getDimension(),
+    ready: provider.isReady(),
+  });
+
+  return provider;
+}
+
+/**
+ * Get the global singleton embedding provider instance
+ */
+export async function embeddingProviderGetInstance(
+  config?: Partial<AtlasEmbeddingConfig>,
+): Promise<MECMFEmbeddingProvider> {
+  // If we have an initialization in progress, wait for it
+  if (initializationPromise) {
+    const providerInstance = await initializationPromise;
+    referenceCount++;
+    getLogger().debug("Reusing existing embedding provider instance", { referenceCount });
+    return providerInstance;
   }
 
-  /**
-   * Get the global singleton embedding provider instance
-   */
-  static async getInstance(
-    config?: Partial<AtlasEmbeddingConfig>,
-  ): Promise<MECMFEmbeddingProvider> {
-    // If we have an initialization in progress, wait for it
-    if (GlobalEmbeddingProvider.initializationPromise) {
-      const instance = await GlobalEmbeddingProvider.initializationPromise;
-      GlobalEmbeddingProvider.referenceCount++;
-      GlobalEmbeddingProvider.logger.debug("Reusing existing embedding provider instance", {
-        referenceCount: GlobalEmbeddingProvider.referenceCount,
-      });
-      return instance;
-    }
-
-    // If we already have an instance, increment reference and return it
-    if (GlobalEmbeddingProvider.instance) {
-      GlobalEmbeddingProvider.referenceCount++;
-      GlobalEmbeddingProvider.logger.debug("Reusing existing embedding provider instance", {
-        referenceCount: GlobalEmbeddingProvider.referenceCount,
-      });
-      return GlobalEmbeddingProvider.instance;
-    }
-
-    // Create new instance with initialization promise to handle concurrent requests
-    GlobalEmbeddingProvider.initializationPromise = GlobalEmbeddingProvider.createInstance(config);
-
-    try {
-      const instance = await GlobalEmbeddingProvider.initializationPromise;
-      GlobalEmbeddingProvider.instance = instance;
-      GlobalEmbeddingProvider.referenceCount++;
-      GlobalEmbeddingProvider.logger.info("Created new global embedding provider instance", {
-        referenceCount: GlobalEmbeddingProvider.referenceCount,
-        modelInfo: instance.getModelInfo(),
-      });
-      return instance;
-    } finally {
-      // Clear the initialization promise regardless of success/failure
-      GlobalEmbeddingProvider.initializationPromise = null;
-    }
+  // If we already have an instance, increment reference and return it
+  if (instance) {
+    referenceCount++;
+    getLogger().debug("Reusing existing embedding provider instance", { referenceCount });
+    return instance;
   }
 
-  /**
-   * Create a new WebEmbeddingProvider instance with default config
-   */
-  private static async createInstance(
-    config?: Partial<AtlasEmbeddingConfig>,
-  ): Promise<WebEmbeddingProvider> {
-    const defaultConfig: Partial<AtlasEmbeddingConfig> = {
-      model: "sentence-transformers/all-MiniLM-L6-v2",
-      backend: "wasm",
-      batchSize: 10,
-      maxSequenceLength: 512,
-      cacheDirectory: getMECMFCacheDir(),
-      tokenizerConfig: {
-        doLowerCase: true,
-        maxLength: 512,
-        padTokenId: 0,
-        unkTokenId: 100,
-        clsTokenId: 101,
-        sepTokenId: 102,
-      },
-      ...config,
-    };
+  // Create new instance with initialization promise to handle concurrent requests
+  initializationPromise = createInstance(config);
 
-    const provider = new WebEmbeddingProvider(defaultConfig);
-
-    // Perform explicit initialization and warmup
-    await provider.warmup();
-
-    GlobalEmbeddingProvider.logger.info("Global embedding provider initialized successfully", {
-      modelInfo: provider.getModelInfo(),
-      dimension: provider.getDimension(),
-      ready: provider.isReady(),
+  try {
+    const providerInstance = await initializationPromise;
+    instance = providerInstance;
+    referenceCount++;
+    getLogger().info("Created new global embedding provider instance", {
+      referenceCount,
+      modelInfo: providerInstance.getModelInfo(),
     });
-
-    return provider;
+    return providerInstance;
+  } finally {
+    // Clear the initialization promise regardless of success/failure
+    initializationPromise = null;
   }
+}
 
-  /**
-   * Release a reference to the global instance
-   * Note: The singleton is never actually disposed, as it's shared across all sessions
-   */
-  static releaseReference(): void {
-    if (GlobalEmbeddingProvider.referenceCount > 0) {
-      GlobalEmbeddingProvider.referenceCount--;
-      GlobalEmbeddingProvider.logger.debug("Released embedding provider reference", {
-        referenceCount: GlobalEmbeddingProvider.referenceCount,
-      });
-    }
+/**
+ * Release a reference to the global instance
+ * Note: The singleton is never actually disposed, as it's shared across all sessions
+ */
+export function embeddingProviderReleaseReference(): void {
+  if (referenceCount > 0) {
+    referenceCount--;
+    getLogger().debug("Released embedding provider reference", { referenceCount });
   }
+}
 
-  /**
-   * Force disposal of the global instance (use with caution - only for shutdown)
-   */
-  static async forceDispose(): Promise<void> {
-    if (GlobalEmbeddingProvider.instance) {
-      GlobalEmbeddingProvider.logger.info("Force disposing global embedding provider");
-      await GlobalEmbeddingProvider.instance.dispose();
-      GlobalEmbeddingProvider.instance = null;
-      GlobalEmbeddingProvider.referenceCount = 0;
-    }
+/**
+ * Force disposal of the global instance (use with caution - only for shutdown)
+ */
+export async function embeddingProviderForceDispose(): Promise<void> {
+  if (instance) {
+    getLogger().info("Force disposing global embedding provider");
+    await instance.dispose();
+    instance = null;
+    referenceCount = 0;
   }
+}
 
-  /**
-   * Get current reference count (for debugging/monitoring)
-   */
-  static getReferenceCount(): number {
-    return GlobalEmbeddingProvider.referenceCount;
-  }
+/**
+ * Get current reference count (for debugging/monitoring)
+ */
+export function embeddingProviderGetReferenceCount(): number {
+  return referenceCount;
+}
 
-  /**
-   * Check if instance is currently initialized
-   */
-  static isInitialized(): boolean {
-    return GlobalEmbeddingProvider.instance?.isReady() ?? false;
-  }
+/**
+ * Check if instance is currently initialized
+ */
+export function embeddingProviderIsInitialized(): boolean {
+  return instance?.isReady() ?? false;
 }
 
 /**
@@ -155,5 +147,5 @@ export class GlobalEmbeddingProvider {
 export async function getGlobalEmbeddingProvider(
   config?: Partial<AtlasEmbeddingConfig>,
 ): Promise<MECMFEmbeddingProvider> {
-  return await GlobalEmbeddingProvider.getInstance(config);
+  return await embeddingProviderGetInstance(config);
 }

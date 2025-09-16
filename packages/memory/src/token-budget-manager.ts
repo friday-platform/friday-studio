@@ -15,20 +15,6 @@ import {
   type TokenBudgetManager,
 } from "./mecmf-interfaces.ts";
 
-interface TokenEstimate {
-  tokens: number;
-  characters: number;
-  words: number;
-}
-
-interface OptimizationResult {
-  optimizedContent: Memory[];
-  tokensUsed: number;
-  tokensAvailable: number;
-  compressionRatio: number;
-  removedContent: Memory[];
-}
-
 interface PromptComponents {
   originalPrompt: string;
   memoryContext: string;
@@ -438,7 +424,7 @@ export class AtlasTokenBudgetManager implements TokenBudgetManager {
   /**
    * Extract text content from memory for token estimation
    */
-  private extractContentText(content: unknown, maxLength?: number): string {
+  private extractContentText(content: string | Record<string, string>, maxLength?: number): string {
     let text = "";
 
     if (typeof content === "string") {

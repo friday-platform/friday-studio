@@ -6,6 +6,7 @@
  */
 
 import type { IAtlasScope } from "../../../src/types/core.ts";
+import type { IMemoryScope } from "./coala-memory.ts";
 import {
   type CoALAMemoryEntry,
   type CoALAMemoryManager,
@@ -71,7 +72,7 @@ export class WorkspaceMemoryConsolidator
   }
 
   // Cross-Scope Memory Sync
-  syncUp(childScope: IAtlasScope, memories: CoALAMemoryEntry[]): void {
+  syncUp(childScope: IMemoryScope, memories: CoALAMemoryEntry[]): void {
     // Consolidate session memories up to workspace level
     const consolidationCandidates = memories.filter((memory) => this.shouldConsolidate(memory));
 
@@ -145,79 +146,5 @@ export class WorkspaceMemoryConsolidator
 
       this.sessionMemories.delete(sessionId);
     }
-  }
-
-  // Cross-session pattern detection
-  detectPatterns(): CoALAMemoryEntry[] {
-    const allMemories = this.workspaceMemory.queryMemories({});
-    const patterns: CoALAMemoryEntry[] = [];
-
-    // Simple pattern detection based on repeated tags and content similarity
-    const tagFrequency = new Map<string, number>();
-
-    for (const memory of allMemories) {
-      for (const tag of memory.tags) {
-        tagFrequency.set(tag, (tagFrequency.get(tag) || 0) + 1);
-      }
-    }
-
-    // Identify frequently occurring patterns
-    const commonTags = Array.from(tagFrequency.entries())
-      .filter(([_, count]) => count >= 3)
-      .map(([tag, _]) => tag);
-
-    for (const tag of commonTags) {
-      const relatedMemories = allMemories.filter((m) => m.tags.includes(tag));
-
-      if (relatedMemories.length >= 3) {
-        // Create a pattern memory
-        const patternMemory: CoALAMemoryEntry = {
-          id: `pattern-${tag}`,
-          content: {
-            type: "pattern",
-            tag: tag,
-            instances: relatedMemories.length,
-            examples: relatedMemories.slice(0, 3).map((m) => m.id),
-          },
-          timestamp: new Date(),
-          accessCount: 0,
-          lastAccessed: new Date(),
-          memoryType: CoALAMemoryType.SEMANTIC,
-          relevanceScore: Math.min(1.0, relatedMemories.length / 10),
-          sourceScope: "workspace-consolidator",
-          associations: relatedMemories.map((m) => m.id),
-          tags: ["pattern", "auto-generated", tag],
-          confidence: 0.8,
-          decayRate: 0.05, // Patterns decay slowly
-        };
-
-        patterns.push(patternMemory);
-      }
-    }
-
-    return patterns;
-  }
-
-  // Cleanup and maintenance
-  performMaintenance(): void {
-    // Detect and store new patterns
-    const patterns = this.detectPatterns();
-    for (const pattern of patterns) {
-      if (!this.workspaceMemory.recall(pattern.id)) {
-        this.workspaceMemory.rememberWithMetadata(pattern.id, pattern.content, {
-          memoryType: pattern.memoryType,
-          tags: pattern.tags,
-          relevanceScore: pattern.relevanceScore,
-          associations: pattern.associations,
-          confidence: pattern.confidence,
-          decayRate: pattern.decayRate,
-        });
-      }
-    }
-
-    // Trigger memory consolidation and pruning
-    this.workspaceMemory.reflect();
-    this.workspaceMemory.consolidate();
-    this.workspaceMemory.prune();
   }
 }

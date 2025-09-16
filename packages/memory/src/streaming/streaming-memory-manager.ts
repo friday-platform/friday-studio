@@ -57,12 +57,7 @@ export class StreamingMemoryManager {
     this.semanticProcessor = new SemanticFactProcessor(memoryManager);
     this.proceduralProcessor = new ProceduralPatternProcessor(memoryManager);
     this.episodicProcessor = new EpisodicEventProcessor(memoryManager);
-    this.agentResultProcessor = new AgentResultProcessor(
-      memoryManager,
-      this.semanticProcessor,
-      this.proceduralProcessor,
-      this.episodicProcessor,
-    );
+    this.agentResultProcessor = new AgentResultProcessor(memoryManager);
     // Working context processor writes WORKING memory entries
     this.workingProcessor = new WorkingContextProcessor(memoryManager);
 
@@ -79,7 +74,7 @@ export class StreamingMemoryManager {
       process: this.processSessionComplete.bind(this),
       processBatch: async (streams) => {
         for (const stream of streams) {
-          await this.processSessionComplete(stream);
+          await this.processSessionComplete(stream as SessionCompleteStream);
         }
       },
     });
@@ -98,8 +93,8 @@ export class StreamingMemoryManager {
    */
   async streamAgentResult(
     agentId: string,
-    input: unknown,
-    output: unknown,
+    input: string,
+    output: string,
     duration: number,
     success: boolean,
     options: { tokensUsed?: number; error?: string; priority?: "low" | "normal" | "high" } = {},
@@ -214,7 +209,7 @@ export class StreamingMemoryManager {
    * Stream episodic event for immediate processing
    */
   async streamEpisodicEvent(
-    eventType: "agent_execution" | "context_change" | "user_interaction",
+    eventType: "agent_execution" | "context_change" | "user_interaction" | "session_complete",
     description: string,
     participants: string[],
     outcome: "success" | "failure" | "partial",

@@ -5,16 +5,18 @@
  * integrating all MECMF components into a unified memory system for Atlas.
  */
 
-import type { IAtlasScope } from "../../../src/types/core.ts";
+import type { IMemoryScope } from "./coala-memory.ts";
 // Import existing Atlas components
 import { type CoALAMemoryEntry, CoALAMemoryManager, CoALAMemoryType } from "./coala-memory.ts";
-import { getGlobalMECMFDebugLogger, type PromptEnhancementLog } from "./debug-logger.ts";
 import { MECMFErrorHandler } from "./error-handling.ts";
-import { GlobalEmbeddingProvider } from "./global-embedding-provider.ts";
+import {
+  embeddingProviderGetInstance,
+  embeddingProviderReleaseReference,
+} from "./global-embedding-provider.ts";
 import type {
   MECMFEmbeddingProvider,
   MECMFMemoryManager,
-  MemoryScoper,
+  MemoryScope,
 } from "./mecmf-interfaces.ts";
 import {
   type ConversationContext,
@@ -50,9 +52,9 @@ export class AtlasMECMFMemoryManager implements MECMFMemoryManager {
   private recentMemoryCache: Map<string, MemoryEntry> = new Map();
   private ready: boolean = false;
   private config: MECMFConfig;
-  private scope: IAtlasScope;
+  private scope: IMemoryScope;
 
-  constructor(scope: IAtlasScope, config: MECMFConfig) {
+  constructor(scope: IMemoryScope, config: MECMFConfig) {
     this.scope = scope;
     this.config = {
       enableVectorSearch: true,
@@ -93,9 +95,7 @@ export class AtlasMECMFMemoryManager implements MECMFMemoryManager {
     try {
       // Initialize embedding provider using singleton if vector search is enabled
       if (this.config.enableVectorSearch) {
-        this.embeddingProvider = await GlobalEmbeddingProvider.getInstance(
-          this.config.embeddingConfig,
-        );
+        this.embeddingProvider = await embeddingProviderGetInstance(this.config.embeddingConfig);
 
         // Configure CoALA manager with vector search now that embedding provider is ready
         this.coalaManager = new CoALAMemoryManager(
@@ -125,27 +125,9 @@ export class AtlasMECMFMemoryManager implements MECMFMemoryManager {
   async storeMemory(entry: MemoryEntry): Promise<void> {
     await this.ensureReady();
 
-    // Convert MECMF MemoryEntry to CoALA format
-    const coalaEntry: Partial<CoALAMemoryEntry> = {
-      id: entry.id,
-      content: entry.content,
-      timestamp: entry.timestamp,
-      memoryType: this.mapMemoryType(entry.memoryType),
-      relevanceScore: entry.relevanceScore,
-      sourceScope: entry.sourceScope,
-      tags: entry.tags,
-      confidence: entry.confidence,
-      decayRate: entry.decayRate,
-      accessCount: 0,
-      lastAccessed: entry.timestamp,
-      associations: [],
-      source: entry.source,
-      sourceMetadata: entry.sourceMetadata,
-    };
-
     // Store in CoALA manager
     this.coalaManager.rememberWithMetadata(entry.id, entry.content, {
-      memoryType: coalaEntry.memoryType!,
+      memoryType: this.mapMemoryType(entry.memoryType),
       tags: entry.tags,
       relevanceScore: entry.relevanceScore,
       confidence: entry.confidence,
@@ -221,9 +203,6 @@ export class AtlasMECMFMemoryManager implements MECMFMemoryManager {
     source: MemorySource = MemorySource.SYSTEM_GENERATED,
     sourceMetadata?: MemorySourceMetadata,
   ): Promise<string> {
-    const startTime = performance.now();
-    const debugLogger = getGlobalMECMFDebugLogger();
-
     await this.ensureReady();
 
     // Check if content is empty or just whitespace
@@ -231,19 +210,13 @@ export class AtlasMECMFMemoryManager implements MECMFMemoryManager {
       throw new Error("Cannot store empty content in memory");
     }
 
-    // Get sanitized content and classification
-    const classificationStart = performance.now();
-
     // For now, store content as-is; classifier handles PII when extracting entities
     const sanitizedContent = content;
 
     const memoryType = this.memoryClassifier.classifyContent(content, context);
-    const classificationTime = performance.now() - classificationStart;
 
     // Extract entities with PII-safe filtering based on source (using original content for entity extraction)
-    const entityStart = performance.now();
     const entities = this.memoryClassifier.extractKeyEntities(content, source);
-    const entityTime = performance.now() - entityStart;
 
     const memoryId = `${memoryType}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
@@ -262,38 +235,6 @@ export class AtlasMECMFMemoryManager implements MECMFMemoryManager {
     };
 
     await this.storeMemory(entry);
-
-    const totalTime = performance.now() - startTime;
-
-    // Log memory classification and storage if debugging is enabled
-    if (debugLogger.isEnabled()) {
-      // Create a simplified log for memory storage (show what was actually stored)
-      const truncatedContent =
-        sanitizedContent.length > 200
-          ? sanitizedContent.substring(0, 200) + "..."
-          : sanitizedContent;
-
-      // Write debug information to stderr if environment variable is set
-      if (typeof Deno !== "undefined" && Deno.env.get("MECMF_DEBUG") === "true") {
-        const debugInfo = [
-          `\n🧠 MECMF MEMORY CLASSIFICATION & STORAGE`,
-          `Memory ID: ${memoryId}`,
-          `Content: "${truncatedContent}"`,
-          `Classified as: ${memoryType}`,
-          `Source: ${source}`,
-          `Source Metadata: ${sourceMetadata ? JSON.stringify(sourceMetadata) : "none"}`,
-          `Entities found: ${entities.length} (${entities.map((e) => e.name).join(", ")})`,
-          `Tags: [${entry.tags.join(", ")}]`,
-          `Classification time: ${classificationTime.toFixed(1)}ms`,
-          `Entity extraction time: ${entityTime.toFixed(1)}ms`,
-          `Total time: ${totalTime.toFixed(1)}ms`,
-          `────────────────────────────────────────\n`,
-        ].join("\n");
-
-        Deno.stderr.writeSync(new TextEncoder().encode(debugInfo));
-      }
-    }
-
     return memoryId;
   }
 
@@ -344,7 +285,6 @@ export class AtlasMECMFMemoryManager implements MECMFMemoryManager {
     tokenBudget: number,
   ): Promise<EnhancedPrompt> {
     const startTime = performance.now();
-    const debugLogger = getGlobalMECMFDebugLogger();
     const transformationSteps: string[] = [];
 
     await this.ensureReady();
@@ -374,30 +314,6 @@ export class AtlasMECMFMemoryManager implements MECMFMemoryManager {
 
     const totalTime = performance.now() - startTime;
     transformationSteps.push(`Total enhancement completed in ${totalTime.toFixed(1)}ms`);
-
-    // Log the enhancement process
-    if (debugLogger.isEnabled()) {
-      const logEntry: PromptEnhancementLog = {
-        sessionId: this.config.workspaceId, // Using workspace ID as session identifier
-        timestamp: new Date(),
-        originalPrompt,
-        enhancedPrompt: enhancedPrompt.enhancedPrompt,
-        memoryContext: enhancedPrompt.memoryContext,
-        tokensOriginal: this.tokenBudgetManager.estimateTokens(originalPrompt),
-        tokensEnhanced: enhancedPrompt.tokensUsed,
-        memoriesUsed: enhancedPrompt.memoriesIncluded,
-        memoryBreakdown: enhancedPrompt.memoryBreakdown,
-        transformationSteps,
-        performanceMetrics: {
-          memoryRetrievalMs: Math.round(memoryRetrievalTime),
-          classificationMs: 0, // Would need to track classification separately
-          embeddingMs: 0, // Would need to track embedding generation separately
-          totalEnhancementMs: Math.round(totalTime),
-        },
-      };
-
-      debugLogger.logPromptEnhancement(logEntry);
-    }
 
     return enhancedPrompt;
   }
@@ -448,6 +364,7 @@ export class AtlasMECMFMemoryManager implements MECMFMemoryManager {
       [MemoryType.EPISODIC]: coalaStats.episodic?.count || 0,
       [MemoryType.SEMANTIC]: coalaStats.semantic?.count || 0,
       [MemoryType.PROCEDURAL]: coalaStats.procedural?.count || 0,
+      [MemoryType.SESSION_BRIDGE]: coalaStats.session_bridge?.count || 0,
     };
 
     const totalMemories = Object.values(byType).reduce((sum, count) => sum + count, 0);
@@ -490,7 +407,6 @@ export class AtlasMECMFMemoryManager implements MECMFMemoryManager {
     },
   ): Promise<EnhancedPrompt> {
     const startTime = performance.now();
-    const debugLogger = getGlobalMECMFDebugLogger();
     const transformationSteps: string[] = [];
 
     await this.ensureReady();
@@ -538,6 +454,7 @@ export class AtlasMECMFMemoryManager implements MECMFMemoryManager {
             [MemoryType.EPISODIC]: 0,
             [MemoryType.SEMANTIC]: 0,
             [MemoryType.PROCEDURAL]: 0,
+            [MemoryType.SESSION_BRIDGE]: 0,
           },
         };
       },
@@ -573,6 +490,9 @@ export class AtlasMECMFMemoryManager implements MECMFMemoryManager {
                 [MemoryType.PROCEDURAL]: memories.filter(
                   (m) => m.memoryType === MemoryType.PROCEDURAL,
                 ).length,
+                [MemoryType.SESSION_BRIDGE]: memories.filter(
+                  (m) => m.memoryType === MemoryType.SESSION_BRIDGE,
+                ).length,
               },
             });
           },
@@ -592,6 +512,7 @@ export class AtlasMECMFMemoryManager implements MECMFMemoryManager {
                 [MemoryType.EPISODIC]: 0,
                 [MemoryType.SEMANTIC]: 0,
                 [MemoryType.PROCEDURAL]: 0,
+                [MemoryType.SESSION_BRIDGE]: 0,
               },
             }),
         },
@@ -601,30 +522,6 @@ export class AtlasMECMFMemoryManager implements MECMFMemoryManager {
 
     const totalTime = performance.now() - startTime;
     transformationSteps.push(`Graceful degradation completed in ${totalTime.toFixed(1)}ms`);
-
-    // Log the enhancement process
-    if (debugLogger.isEnabled()) {
-      const logEntry: PromptEnhancementLog = {
-        sessionId: this.config.workspaceId,
-        timestamp: new Date(),
-        originalPrompt,
-        enhancedPrompt: result.data.enhancedPrompt,
-        memoryContext: result.data.memoryContext,
-        tokensOriginal: this.tokenBudgetManager.estimateTokens(originalPrompt),
-        tokensEnhanced: result.data.tokensUsed,
-        memoriesUsed: result.data.memoriesIncluded,
-        memoryBreakdown: result.data.memoryBreakdown,
-        transformationSteps,
-        performanceMetrics: {
-          memoryRetrievalMs: 0, // Would need more granular tracking
-          classificationMs: 0,
-          embeddingMs: 0,
-          totalEnhancementMs: Math.round(totalTime),
-        },
-      };
-
-      debugLogger.logPromptEnhancement(logEntry);
-    }
 
     return result.data;
   }
@@ -646,7 +543,7 @@ export class AtlasMECMFMemoryManager implements MECMFMemoryManager {
       if (this.embeddingProvider) {
         // Release reference to singleton instead of disposing it
         // The singleton manages its own lifecycle across all sessions
-        GlobalEmbeddingProvider.releaseReference();
+        embeddingProviderReleaseReference();
         this.embeddingProvider = null;
       }
       await this.coalaManager.dispose();
@@ -745,7 +642,7 @@ export class AtlasMECMFMemoryManager implements MECMFMemoryManager {
 
 // Factory function
 export function createMECMFMemoryManager(
-  scope: MemoryScoper,
+  scope: MemoryScope,
   config: MECMFConfig,
 ): MECMFMemoryManager {
   return new AtlasMECMFMemoryManager(scope, config);

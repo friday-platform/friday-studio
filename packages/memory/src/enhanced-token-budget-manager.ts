@@ -530,12 +530,10 @@ export class EnhancedTokenBudgetManager {
   /**
    * Extracts text content from memory (delegated to parent).
    */
-  private extractContentText(content: unknown, maxLength?: number): string {
+  private extractContentText(content: string | Record<string, string>, maxLength?: number): string {
     let text = "";
 
-    if (typeof content === "string") {
-      text = content;
-    } else if (typeof content === "object" && content !== null) {
+    if (typeof content === "object" && content !== null) {
       const textFields = ["text", "content", "description", "statement", "summary", "title"];
 
       for (const field of textFields) {
@@ -659,9 +657,4 @@ export class EnhancedTokenBudgetManager {
       }
     }
   }
-}
-
-// Factory function
-function createEnhancedTokenBudgetManager(): EnhancedTokenBudgetManager {
-  return new EnhancedTokenBudgetManager();
 }

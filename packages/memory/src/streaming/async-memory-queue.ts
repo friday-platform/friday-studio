@@ -55,7 +55,7 @@ export class AsyncMemoryQueue implements MemoryStreamQueue {
 
     // Process immediately if not background mode or high priority
     if (!this.config.background_processing || stream.priority === "high") {
-      this.processIfNeeded();
+      await this.processIfNeeded();
     }
   }
 
@@ -84,7 +84,7 @@ export class AsyncMemoryQueue implements MemoryStreamQueue {
       sessionId: this.context.sessionId,
     });
 
-    this.processIfNeeded();
+    await this.processIfNeeded();
   }
 
   async pop(): Promise<MemoryStream | null> {
@@ -160,7 +160,7 @@ export class AsyncMemoryQueue implements MemoryStreamQueue {
           if (!streamsByType.has(stream.type)) {
             streamsByType.set(stream.type, []);
           }
-          streamsByType.get(stream.type)!.push(stream);
+          streamsByType.get(stream.type)?.push(stream);
         } else {
           logger.warn("No processor found for stream type", {
             streamId: stream.id,
@@ -173,13 +173,13 @@ export class AsyncMemoryQueue implements MemoryStreamQueue {
       // Process each type as a batch
       const processingPromises = Array.from(streamsByType.entries()).map(
         async ([type, streams]) => {
-          const processor = this.processors.get(type)!;
+          const processor = this.processors.get(type);
 
           try {
             if (streams.length === 1 && streams[0]) {
-              await processor.process(streams[0]);
+              await processor?.process(streams[0]);
             } else if (streams.length > 0) {
-              await processor.processBatch(streams);
+              await processor?.processBatch(streams);
             }
 
             logger.debug("Memory stream batch processed", {
@@ -196,7 +196,7 @@ export class AsyncMemoryQueue implements MemoryStreamQueue {
             });
 
             // Retry individual streams if batch fails
-            if (this.config.error_retry_attempts > 0) {
+            if (this.config.error_retry_attempts > 0 && processor) {
               await this.retryStreams(streams, processor);
             }
           }

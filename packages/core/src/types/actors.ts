@@ -85,7 +85,7 @@ export type ActorConfig =
 
 export interface SessionInfo {
   id: string;
-  status: "pending" | "executing" | "completed" | "failed";
+  status: "pending" | "executing" | "completed" | "failed" | "cancelled";
   startTime: number;
   endTime?: number;
   error?: string;

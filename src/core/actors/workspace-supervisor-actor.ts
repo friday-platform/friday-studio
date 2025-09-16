@@ -57,8 +57,8 @@ export class WorkspaceSupervisorActor implements BaseActor {
   private sessions: Map<string, SessionInfo> = new Map();
   private config: WorkspaceSupervisorConfig;
   private agents: Record<string, WorkspaceAgentConfig> = {};
-  private agentOrchestrator?: unknown; // Will be set by workspace runtime
-  private streamingMemoryManager?: unknown; // StreamingMemoryManager - loaded dynamically
+  private agentOrchestrator?: AgentOrchestrator; // Will be set by workspace runtime
+  private streamingMemoryManager?: StreamingMemoryManager; // StreamingMemoryManager - loaded dynamically
   memoryCoordinator?: SupervisorMemoryCoordinator; // SupervisorMemoryCoordinator - loaded dynamically
 
   constructor(workspaceId: string, config: WorkspaceSupervisorConfig, id?: string) {
@@ -492,8 +492,8 @@ export class WorkspaceSupervisorActor implements BaseActor {
   async streamAgentResult(
     sessionId: string,
     agentId: string,
-    input: unknown,
-    output: unknown,
+    input: string,
+    output: string,
     duration: number,
     success: boolean,
     options: { tokensUsed?: number; error?: string } = {},
@@ -587,7 +587,6 @@ export class WorkspaceSupervisorActor implements BaseActor {
     participants: string[],
     outcome: "success" | "failure" | "partial",
     significance: number,
-    metadata?: unknown,
   ): Promise<void> {
     if (!this.streamingMemoryManager) {
       return;
@@ -600,7 +599,6 @@ export class WorkspaceSupervisorActor implements BaseActor {
         participants,
         outcome,
         significance,
-        metadata,
       );
 
       this.logger.debug("Episodic event streamed to memory", {
@@ -667,8 +665,8 @@ export class WorkspaceSupervisorActor implements BaseActor {
                 title: section.title,
                 content: section.content,
                 source: "rules.md",
-                readOnly: true,
-                ingestionTime: Date.now(),
+                readOnly: "true",
+                ingestionTime: Date.now().toString(),
               },
               {
                 memoryType: CoALAMemoryType.PROCEDURAL,
@@ -728,7 +726,7 @@ export class WorkspaceSupervisorActor implements BaseActor {
 
       if (headingMatch) {
         // Save previous section if exists
-        if (currentSection && currentSection.content.trim()) {
+        if (currentSection?.content.trim()) {
           sections.push(currentSection);
         }
 
@@ -747,7 +745,7 @@ export class WorkspaceSupervisorActor implements BaseActor {
     }
 
     // Don't forget the last section
-    if (currentSection && currentSection.content.trim()) {
+    if (currentSection?.content.trim()) {
       sections.push(currentSection);
     }
 

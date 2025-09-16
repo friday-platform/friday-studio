@@ -18,6 +18,33 @@ export type {
 } from "./src/coala-memory.ts";
 // Core memory manager and types
 export { CoALAMemoryManager, CoALAMemoryType } from "./src/coala-memory.ts";
+// === MECMF (Memory-Enhanced Context Management Framework) ===
+// Global embedding provider for daemon initialization
+export {
+  embeddingProviderForceDispose,
+  embeddingProviderGetInstance,
+  embeddingProviderGetReferenceCount,
+  embeddingProviderIsInitialized,
+  embeddingProviderReleaseReference,
+} from "./src/global-embedding-provider.ts";
+// Main MECMF exports with factory functions
+export * from "./src/mecmf.ts";
+// Component-specific exports (also available through mecmf.ts)
+export type {
+  ConversationContext,
+  EnhancedPrompt,
+  EnhancedVectorSearch,
+  MECMFEmbeddingProvider,
+  MECMFMemoryManager,
+  MemoryClassifier,
+  MemoryEntry,
+  MemoryStatistics,
+  RetrievalOptions,
+  TokenBudgetManager,
+} from "./src/mecmf-interfaces.ts";
+// Export enum as a VALUE, not type-only, so it can be used at runtime
+export { MemoryType } from "./src/mecmf-interfaces.ts";
+export type { MECMFConfig } from "./src/mecmf-memory-manager.ts";
 export { AsyncMemoryQueue } from "./src/streaming/async-memory-queue.ts";
 export type {
   AgentResultStream,
@@ -44,37 +71,6 @@ export { SupervisorMemoryCoordinator } from "./src/supervisor-memory-coordinator
 export { TaskCompletionDetector } from "./src/worklog/completion-detector.ts";
 // Worklog System
 export { WorklogManager } from "./src/worklog/worklog-manager.ts";
-
-// === MECMF (Memory-Enhanced Context Management Framework) ===
-
-export type { MECMFDebugConfig, PromptEnhancementLog } from "./src/debug-logger.ts";
-// Debug logging functionality
-export {
-  disableMECMFDebugLogging,
-  enableMECMFDebugLogging,
-  getGlobalMECMFDebugLogger,
-  MECMFDebugLogger,
-} from "./src/debug-logger.ts";
-// Global embedding provider for daemon initialization
-export { GlobalEmbeddingProvider } from "./src/global-embedding-provider.ts";
-// Main MECMF exports with factory functions
-export * from "./src/mecmf.ts";
-// Component-specific exports (also available through mecmf.ts)
-export type {
-  ConversationContext,
-  EnhancedPrompt,
-  EnhancedVectorSearch,
-  MECMFEmbeddingProvider,
-  MECMFMemoryManager,
-  MemoryClassifier,
-  MemoryEntry,
-  MemoryStatistics,
-  RetrievalOptions,
-  TokenBudgetManager,
-} from "./src/mecmf-interfaces.ts";
-// Export enum as a VALUE, not type-only, so it can be used at runtime
-export { MemoryType } from "./src/mecmf-interfaces.ts";
-export type { MECMFConfig } from "./src/mecmf-memory-manager.ts";
 export {
   createSessionMemoryHooks,
   type SessionMemoryHooks,

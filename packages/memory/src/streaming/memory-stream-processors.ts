@@ -183,7 +183,6 @@ export class EpisodicEventProcessor implements MemoryStreamProcessor {
         significance: stream.data.significance,
         timestamp: stream.timestamp,
         sessionId: stream.sessionId,
-        metadata: stream.data.metadata,
       });
 
       logger.debug("Episodic event processed", {
@@ -239,12 +238,7 @@ export class EpisodicEventProcessor implements MemoryStreamProcessor {
  * Processor for agent result streams - extracts multiple memory types
  */
 export class AgentResultProcessor implements MemoryStreamProcessor {
-  constructor(
-    private memoryManager: CoALAMemoryManager,
-    private semanticProcessor: SemanticFactProcessor,
-    private proceduralProcessor: ProceduralPatternProcessor,
-    private episodicProcessor: EpisodicEventProcessor,
-  ) {}
+  constructor(private memoryManager: CoALAMemoryManager) {}
 
   canProcess(stream: MemoryStream): boolean {
     return stream.type === "agent_result";
@@ -254,79 +248,6 @@ export class AgentResultProcessor implements MemoryStreamProcessor {
     const startTime = Date.now();
 
     try {
-      // Extract semantic fact from agent result
-      const semanticFact: SemanticFactStream = {
-        id: `${stream.id}-semantic`,
-        type: "semantic_fact",
-        data: {
-          fact: this.extractSemanticFact(stream.data),
-          confidence: stream.data.success ? 0.8 : 0.3,
-          source: "agent_output",
-          context: {
-            agentId: stream.data.agent_id,
-            inputSize: JSON.stringify(stream.data.input).length,
-            outputSize: JSON.stringify(stream.data.output).length,
-          },
-        },
-        timestamp: stream.timestamp,
-        sessionId: stream.sessionId,
-        agentId: stream.agentId,
-        priority: "normal",
-      };
-
-      // Extract procedural pattern
-      const proceduralPattern: ProceduralPatternStream = {
-        id: `${stream.id}-procedural`,
-        type: "procedural_pattern",
-        data: {
-          pattern_type: stream.data.success ? "success" : "failure",
-          agent_id: stream.data.agent_id,
-          strategy: "llm_execution",
-          duration_ms: stream.data.duration_ms,
-          input_characteristics: this.analyzeInputCharacteristics(stream.data.input),
-          outcome: {
-            success: stream.data.success,
-            tokensUsed: stream.data.tokens_used,
-            error: stream.data.error,
-          },
-        },
-        timestamp: stream.timestamp,
-        sessionId: stream.sessionId,
-        agentId: stream.agentId,
-        priority: "normal",
-      };
-
-      // Extract episodic event with detailed outcome information
-      const episodicEvent: EpisodicEventStream = {
-        id: `${stream.id}-episodic`,
-        type: "episodic_event",
-        data: {
-          event_type: "agent_execution",
-          description: this.buildEpisodicDescription(stream.data),
-          participants: [stream.data.agent_id],
-          outcome: stream.data.success ? "success" : "failure",
-          significance: this.calculateSignificance(stream.data),
-          metadata: {
-            inputSummary: this.summarizeInput(stream.data.input),
-            outputSummary: this.summarizeOutput(stream.data.output),
-            durationMs: stream.data.duration_ms,
-            tokensUsed: stream.data.tokens_used,
-            error: stream.data.error,
-          },
-        },
-        timestamp: stream.timestamp,
-        sessionId: stream.sessionId,
-        agentId: stream.agentId,
-        priority: stream.data.success ? "normal" : "high", // Prioritize failures for learning
-      };
-
-      // Process all extracted memories
-      await Promise.all([
-        this.semanticProcessor.process(semanticFact),
-        this.proceduralProcessor.process(proceduralPattern),
-        this.episodicProcessor.process(episodicEvent),
-      ]);
-
       // Write a WORKING memory entry capturing the raw agent result for session context
       try {
         const tags = ["working", "session", "agent", stream.data.agent_id];
@@ -375,91 +296,6 @@ export class AgentResultProcessor implements MemoryStreamProcessor {
       .map((stream) => this.process(stream));
 
     await Promise.all(promises);
-  }
-
-  private extractSemanticFact(data: unknown): string {
-    // Simple fact extraction - could be enhanced with LLM
-    const input = JSON.stringify(data.input);
-    const output = JSON.stringify(data.output);
-
-    if (data.success) {
-      return `Agent ${data.agent_id} transformed input of ${input.length} chars to output of ${output.length} chars`;
-    } else {
-      return `Agent ${data.agent_id} failed to process input: ${data.error || "unknown error"}`;
-    }
-  }
-
-  private analyzeInputCharacteristics(input: unknown): Record<string, unknown> {
-    const inputStr = JSON.stringify(input);
-    return {
-      length: inputStr.length,
-      type: typeof input,
-      hasMessage: typeof input === "object" && input !== null && "message" in input,
-      complexity: inputStr.length > 100 ? "high" : inputStr.length > 20 ? "medium" : "low",
-    };
-  }
-
-  private calculateSignificance(data: unknown): number {
-    // Calculate significance based on success, duration, and complexity
-    let significance = 0.5; // Base significance
-
-    if (data.success) significance += 0.2;
-    if (data.duration_ms > 2000) significance += 0.1; // Long duration = more significant
-    if (data.tokens_used && data.tokens_used > 1000) significance += 0.1;
-    if (data.error) significance += 0.2; // Errors are significant for learning
-
-    return Math.min(1.0, significance);
-  }
-
-  private buildEpisodicDescription(data: unknown): string {
-    const inputSize = JSON.stringify(data.input).length;
-    const outputSize = data.output ? JSON.stringify(data.output).length : 0;
-
-    if (data.success) {
-      return (
-        `Agent ${data.agent_id} successfully processed ${inputSize} chars of input, ` +
-        `produced ${outputSize} chars of output in ${data.duration_ms}ms using ${
-          data.tokens_used || 0
-        } tokens`
-      );
-    } else {
-      return (
-        `Agent ${data.agent_id} failed to process ${inputSize} chars of input after ${data.duration_ms}ms. ` +
-        `Error: ${data.error || "unknown error"}`
-      );
-    }
-  }
-
-  private summarizeInput(input: unknown): string {
-    if (!input) return "No input";
-
-    const inputStr = typeof input === "string" ? input : JSON.stringify(input);
-    if (inputStr.length <= 100) return inputStr;
-
-    // Extract key information from input
-    if (typeof input === "object" && input !== null) {
-      if ("message" in input) return `Message: ${String(input.message).substring(0, 100)}...`;
-      if ("text" in input) return `Text: ${String(input.text).substring(0, 100)}...`;
-      if ("task" in input) return `Task: ${String(input.task).substring(0, 100)}...`;
-    }
-
-    return inputStr.substring(0, 100) + "...";
-  }
-
-  private summarizeOutput(output: unknown): string {
-    if (!output) return "No output";
-
-    const outputStr = typeof output === "string" ? output : JSON.stringify(output);
-    if (outputStr.length <= 100) return outputStr;
-
-    // Extract key information from output
-    if (typeof output === "object" && output !== null) {
-      if ("response" in output) return `Response: ${String(output.response).substring(0, 100)}...`;
-      if ("result" in output) return `Result: ${String(output.result).substring(0, 100)}...`;
-      if ("data" in output) return `Data: ${JSON.stringify(output.data).substring(0, 100)}...`;
-    }
-
-    return `${outputStr.substring(0, 100)}...`;
   }
 }
 

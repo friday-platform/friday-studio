@@ -35,6 +35,7 @@ class MockContextManager {
 
 class InMemoryStorageAdapter {
   private data = new Map<string, unknown>();
+  private dataByType = new Map<string, Map<string, unknown>>();
 
   async store(key: string, value: unknown): Promise<void> {
     this.data.set(key, value);
@@ -54,14 +55,31 @@ class InMemoryStorageAdapter {
 
   async clear(): Promise<void> {
     this.data.clear();
+    this.dataByType.clear();
   }
 
   async exists(key: string): Promise<boolean> {
     return this.data.has(key);
   }
 
-  async commitByType(_type: unknown, _memories: unknown): Promise<void> {
-    // In-memory storage doesn't need file commits
+  async commitByType(type: string, memories: unknown): Promise<void> {
+    // Store memories by type for loadByType retrieval
+    if (memories && typeof memories === "object") {
+      this.dataByType.set(type, new Map(Object.entries(memories as Record<string, unknown>)));
+    }
+  }
+
+  async loadByType(memoryType: string): Promise<unknown> {
+    const typeData = this.dataByType.get(memoryType);
+    if (!typeData) {
+      return {};
+    }
+    // Convert Map back to object for consistency with expected return type
+    return Object.fromEntries(typeData);
+  }
+
+  async listMemoryTypes(): Promise<string[]> {
+    return Array.from(this.dataByType.keys());
   }
 
   async commit(_memories: unknown): Promise<void> {}
@@ -72,8 +90,13 @@ class InMemoryStorageAdapter {
 
   async commitAll(_dataByType: unknown): Promise<void> {}
 
-  async loadAll(): Promise<unknown> {
-    return {};
+  async loadAll(): Promise<Record<string, unknown>> {
+    // Return all data organized by type as expected by the interface
+    const result: Record<string, unknown> = {};
+    for (const [type, typeData] of this.dataByType) {
+      result[type] = Object.fromEntries(typeData);
+    }
+    return result;
   }
 }
 

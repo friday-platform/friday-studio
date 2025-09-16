@@ -5,19 +5,8 @@
  * for easy integration with Atlas workspaces and agents.
  */
 
-export type { MECMFDebugConfig, PromptEnhancementLog } from "./debug-logger.ts";
-// === Debug Logging ===
-export {
-  disableMECMFDebugLogging,
-  enableMECMFDebugLogging,
-  getGlobalMECMFDebugLogger,
-  MECMFDebugLogger,
-} from "./debug-logger.ts";
 export { createErrorHandler, MECMFErrorHandler } from "./error-handling.ts";
-export {
-  GlobalEmbeddingProvider,
-  getGlobalEmbeddingProvider,
-} from "./global-embedding-provider.ts";
+export { getGlobalEmbeddingProvider } from "./global-embedding-provider.ts";
 // === Core Interfaces ===
 export * from "./mecmf-interfaces.ts";
 export {
@@ -32,20 +21,15 @@ export { createWebEmbeddingProvider, WebEmbeddingProvider } from "./web-embeddin
 
 // === Integration Helpers ===
 import { getMECMFCacheDir } from "../../../src/utils/paths.ts";
-import { enableMECMFDebugLogging } from "./debug-logger.ts";
-import type { MemoryScoper } from "./mecmf-interfaces.ts";
-import { type ConversationContext, MemoryType } from "./mecmf-interfaces.ts";
-import {
-  createMECMFMemoryManager,
-  type MECMFConfig,
-  type MECMFMemoryManager,
-} from "./mecmf-memory-manager.ts";
+import type { ConversationContext, MECMFMemoryManager, MemoryScope } from "./mecmf-interfaces.ts";
+import { MemoryType } from "./mecmf-interfaces.ts";
+import { createMECMFMemoryManager, type MECMFConfig } from "./mecmf-memory-manager.ts";
 
 /**
  * Quick setup function for MECMF in Atlas workspaces
  */
 export async function setupMECMF(
-  scope: MemoryScoper,
+  scope: MemoryScope,
   options?: Partial<MECMFConfig>,
 ): Promise<MECMFMemoryManager> {
   const config: MECMFConfig = {
@@ -67,18 +51,6 @@ export async function setupMECMF(
     fallbackOptions: { enableTextSearch: true, cacheRecentMemories: true, maxCachedMemories: 100 },
     ...options,
   };
-
-  // Enable debug logging if environment variable is set
-  if (typeof Deno !== "undefined" && Deno.env.get("MECMF_DEBUG") === "true") {
-    const debugLevel = Deno.env.get("MECMF_DEBUG_LEVEL");
-    enableMECMFDebugLogging({
-      logLevel:
-        debugLevel === "minimal" || debugLevel === "detailed" || debugLevel === "verbose"
-          ? debugLevel
-          : "detailed",
-      includeMemoryContent: true,
-    });
-  }
 
   const manager = createMECMFMemoryManager(scope, config);
   await manager.initialize();

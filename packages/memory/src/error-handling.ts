@@ -128,7 +128,7 @@ export class MECMFErrorHandler {
               data: fallbackResult,
               usedFallback: true,
               fallbackMethod: "text-based keyword search",
-              originalError: error,
+              originalError: error instanceof Error ? error : undefined,
               performanceImpact: "moderate",
             };
           } catch (_fallbackError) {
@@ -176,7 +176,7 @@ export class MECMFErrorHandler {
           data: cachedResult,
           usedFallback: true,
           fallbackMethod: "cached_recent_memories",
-          originalError: error,
+          originalError: error instanceof Error ? error : undefined,
           performanceImpact: "minimal",
         };
       } catch (_cacheError) {
@@ -184,7 +184,7 @@ export class MECMFErrorHandler {
           data: [],
           usedFallback: true,
           fallbackMethod: "empty_result",
-          originalError: error,
+          originalError: error instanceof Error ? error : undefined,
           performanceImpact: "significant",
         };
       }
@@ -335,10 +335,14 @@ export class MECMFErrorHandler {
             data: result,
             usedFallback: true,
             fallbackMethod: fallback.name,
-            originalError: primaryError,
+            originalError: primaryError instanceof Error ? primaryError : undefined,
             performanceImpact: fallback.performanceImpact,
           };
-        } catch (_fallbackError) {}
+        } catch (_fallbackError) {
+          throw new Error(
+            `All operations failed. Primary: ${primaryError instanceof Error ? primaryError.message : String(primaryError)}`,
+          );
+        }
       }
 
       // All operations failed
@@ -419,7 +423,10 @@ export class MECMFErrorHandler {
       this.errorHistory.set(operation, []);
     }
 
-    const errors = this.errorHistory.get(operation)!;
+    const errors = this.errorHistory.get(operation);
+    if (!errors) {
+      throw new Error(`Error history not found for operation: ${operation}`);
+    }
     errors.push(error);
 
     // Keep only the last 100 errors per operation
@@ -438,7 +445,11 @@ export class MECMFErrorHandler {
         }),
       );
     }
-    return this.circuitBreakers.get(name)!;
+    const circuitBreaker = this.circuitBreakers.get(name);
+    if (!circuitBreaker) {
+      throw new Error(`Circuit breaker not found for name: ${name}`);
+    }
+    return circuitBreaker;
   }
 }
 

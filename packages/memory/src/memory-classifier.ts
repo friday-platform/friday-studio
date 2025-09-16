@@ -163,19 +163,25 @@ export class AtlasMemoryClassifier implements MemoryClassifier {
     // Emails
     const emailRegex = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
     const emails = Array.from(new Set(text.match(emailRegex) || []));
-    emails.forEach((email) => entities.push({ name: email, type: "email", confidence: 0.95 }));
+    emails.forEach((email) => {
+      entities.push({ name: email, type: "email", confidence: 0.95 });
+    });
 
     // URLs
     const urlRegex = /https?:\/\/[\w.-]+(?:\/[\w\-./?%&=]*)?/g;
     const urls = Array.from(new Set(text.match(urlRegex) || []));
-    urls.forEach((u) => entities.push({ name: u, type: "url", confidence: 0.9 }));
+    urls.forEach((u) => {
+      entities.push({ name: u, type: "url", confidence: 0.9 });
+    });
 
     // Phone numbers (simple E.164 and common formats)
     // Updated to handle more formats including +1-555-0123, (555) 123-4567, etc.
     const phoneRegex =
       /(\+\d{1,3}[- ]?)?\(?\d{3}\)?[- ]?\d{3,4}([- ]?\d{3,4})?|\+\d{1,3}-\d{3}-\d{4}/g;
     const phones = Array.from(new Set(text.match(phoneRegex) || []));
-    phones.forEach((p) => entities.push({ name: p, type: "phone", confidence: 0.7 }));
+    phones.forEach((p) => {
+      entities.push({ name: p, type: "phone", confidence: 0.7 });
+    });
 
     // Dates (ISO and common formats)
     const dateRegexes = [
@@ -185,7 +191,9 @@ export class AtlasMemoryClassifier implements MemoryClassifier {
     ];
     for (const rx of dateRegexes) {
       const matches = Array.from(new Set(text.match(rx) || []));
-      matches.forEach((d) => entities.push({ name: d, type: "date", confidence: 0.75 }));
+      matches.forEach((d) => {
+        entities.push({ name: d, type: "date", confidence: 0.75 });
+      });
     }
 
     // Usernames (e.g., @handle)
@@ -193,27 +201,35 @@ export class AtlasMemoryClassifier implements MemoryClassifier {
     const usernames = Array.from(
       new Set(Array.from(text.matchAll(usernameRegex)).map((m) => m[1] || "")),
     ).filter(Boolean);
-    usernames.forEach((u) => entities.push({ name: u, type: "username", confidence: 0.7 }));
+    usernames.forEach((u) => {
+      entities.push({ name: u, type: "username", confidence: 0.7 });
+    });
 
     // Repo identifiers (org/repo)
     const repoRegex = /\b([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)\b/g;
     const repos = Array.from(
       new Set(Array.from(text.matchAll(repoRegex)).map((m) => `${m[1] || ""}/${m[2] || ""}`)),
     ).filter((v) => v !== "/");
-    repos.forEach((r) => entities.push({ name: r, type: "repo", confidence: 0.7 }));
+    repos.forEach((r) => {
+      entities.push({ name: r, type: "repo", confidence: 0.7 });
+    });
 
     // UUIDs
     const uuidRegex =
       /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/gi;
     const uuids = Array.from(new Set(text.match(uuidRegex) || []));
-    uuids.forEach((id) => entities.push({ name: id, type: "id", confidence: 0.95 }));
+    uuids.forEach((id) => {
+      entities.push({ name: id, type: "id", confidence: 0.95 });
+    });
 
     // Fallback simple patterns for names (heuristic)
     const nameRegex = /\b([A-Z][a-z]+\s+[A-Z][a-z]+)\b/g;
     const names = Array.from(
       new Set(Array.from(text.matchAll(nameRegex)).map((m) => (m[1] || "").toString())),
     ).filter(Boolean);
-    names.forEach((n) => entities.push({ name: n, type: "name", confidence: 0.6 }));
+    names.forEach((n) => {
+      entities.push({ name: n, type: "name", confidence: 0.6 });
+    });
 
     return entities;
   }
@@ -224,12 +240,10 @@ export class AtlasMemoryClassifier implements MemoryClassifier {
     // Multi-factor relevance calculation
     const semanticScore = this.calculateSemanticRelevance(contentText, query);
     const temporalScore = this.calculateTemporalRelevance(memory);
-    const accessScore = this.calculateAccessRelevance(memory);
     const typeScore = this.calculateTypeRelevance(memory.memoryType, query);
 
     // Weighted combination
-    const relevanceScore =
-      semanticScore * 0.4 + temporalScore * 0.2 + accessScore * 0.2 + typeScore * 0.2;
+    const relevanceScore = semanticScore * 0.4 + temporalScore * 0.2 + typeScore * 0.2;
 
     return Math.min(1.0, Math.max(0.0, relevanceScore));
   }
@@ -294,6 +308,7 @@ export class AtlasMemoryClassifier implements MemoryClassifier {
       [MemoryType.EPISODIC]: 0,
       [MemoryType.SEMANTIC]: 0,
       [MemoryType.PROCEDURAL]: 0,
+      [MemoryType.SESSION_BRIDGE]: 0,
     };
 
     const reasoning: string[] = [];
@@ -345,9 +360,10 @@ export class AtlasMemoryClassifier implements MemoryClassifier {
     }
 
     // Find the highest scoring type
-    const sortedTypes = Object.entries(scores).sort(([, a], [, b]) => b - a);
-    const [topKey, topScore] = sortedTypes[0] || [MemoryType.WORKING, 0.5];
-    const topType = topKey;
+    const sortedTypes = Object.values(MemoryType)
+      .map((type) => [type, scores[type]] as const)
+      .sort(([, a], [, b]) => b - a);
+    const [topType, topScore] = sortedTypes[0] || [MemoryType.WORKING, 0.5];
     const confidence = Math.min(1.0, (topScore || 0.5) * analysis.confidenceLevel);
 
     return {
@@ -357,6 +373,13 @@ export class AtlasMemoryClassifier implements MemoryClassifier {
       suggestedTags: [...new Set(suggestedTags)], // Remove duplicates
       entities: [], // Would be populated by extractKeyEntities separately
     };
+  }
+
+  /**
+   * Type guard for valid timeframe values
+   */
+  private isValidTimeframe(value: string): value is TemporalMarkers["referencedTimeframe"] {
+    return ["immediate", "recent", "historical", "future", "unknown"].includes(value);
   }
 
   /**
@@ -371,6 +394,7 @@ export class AtlasMemoryClassifier implements MemoryClassifier {
       recent: ["recently", "just", "yesterday", "last", "earlier", "before"],
       historical: ["previously", "in the past", "ago", "former", "old"],
       future: ["will", "going to", "next", "future", "plan", "upcoming"],
+      unknown: ["unknown", "unspecified", "not specified", "not provided", "not available"],
     };
 
     // Sequence indicators
@@ -393,7 +417,7 @@ export class AtlasMemoryClassifier implements MemoryClassifier {
     // Determine primary timeframe
     for (const [timeframe, patterns] of Object.entries(timePatterns)) {
       const matches = patterns.filter((pattern) => lowercaseContent.includes(pattern)).length;
-      if (matches > maxMatches) {
+      if (matches > maxMatches && this.isValidTimeframe(timeframe)) {
         maxMatches = matches;
         referencedTimeframe = timeframe;
       }
@@ -624,16 +648,6 @@ export class AtlasMemoryClassifier implements MemoryClassifier {
   }
 
   /**
-   * Calculate access-based relevance
-   */
-  private calculateAccessRelevance(memory: MemoryEntry): number {
-    // Simple access count normalization
-    // Note: accessCount may not be available on all MemoryEntry implementations
-    const accessCount = memory.accessCount || 0;
-    return Math.min(1.0, accessCount / 10);
-  }
-
-  /**
    * Calculate type-specific relevance
    */
   private calculateTypeRelevance(memoryType: MemoryType, query: string): number {
@@ -651,7 +665,7 @@ export class AtlasMemoryClassifier implements MemoryClassifier {
   /**
    * Extract text content from various content types
    */
-  private extractTextContent(content: unknown): string {
+  private extractTextContent(content: string | Record<string, string>): string {
     if (typeof content === "string") {
       return content;
     } else if (typeof content === "object" && content !== null) {

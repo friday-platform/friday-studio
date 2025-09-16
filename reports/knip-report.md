@@ -1,10 +1,9 @@
-No Svelte config file found in /Users/ericskram/code/tempest/atlas-env/worktrees/type-cleanup-9-15-2 - using SvelteKit's default configuration without an adapter.
+No Svelte config file found in /Users/ericskram/code/tempest/atlas-env/worktrees/memory-cleanup-2 - using SvelteKit's default configuration without an adapter.
 # Knip report
 
-## Unused files (30)
+## Unused files (26)
 
 * packages/mcp-server/src/tools/signals/describe.ts
-* packages/memory/src/utils/safe-date-conversion.ts
 * src/cli/commands/workspace/restart.tsx
 * src/cli/components/agent-details.tsx
 * src/cli/components/directory-tree.tsx
@@ -29,10 +28,7 @@ No Svelte config file found in /Users/ericskram/code/tempest/atlas-env/worktrees
 * src/cli/utils/workspace-loader.ts
 * src/cli/views/ConfigView.tsx
 * src/cli/views/InitView.tsx
-* src/core/embedding/mock-embedding-provider.ts
 * src/types/vector-search.ts
-* src/utils/memory-id-migration.ts
-* src/utils/memory-migration.ts
 
 ## Unused dependencies (4)
 

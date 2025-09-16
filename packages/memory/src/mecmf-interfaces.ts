@@ -14,7 +14,7 @@ export interface ConversationContext {
 }
 
 // Minimal identity for memory scoping used by MECMF/CoALA
-export interface MemoryScoper {
+export interface MemoryScope {
   id: string;
   workspaceId?: string;
 }

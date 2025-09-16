@@ -3,6 +3,7 @@ import {
   type MECMFEmbeddingProvider,
   type MECMFMemoryManager,
   type MemoryEntry,
+  MemorySource,
   MemoryType,
   type WorklogEntry,
   type WorklogMemoryEntry,
@@ -392,7 +393,7 @@ export class WorklogManager {
       confidence: worklogEntry.confidence,
       decayRate: 0.1, // Slow decay for institutional memory
       embedding,
-      source: "SYSTEM_GENERATED",
+      source: MemorySource.SYSTEM_GENERATED,
       sourceMetadata: { sessionId: worklogEntry.session_id, agentId: "worklog_manager" },
       subtype: "worklog",
       worklog_data: worklogEntry,
@@ -417,7 +418,7 @@ export class WorklogManager {
   private getFrequencyMap(items: string[]): Record<string, number> {
     const freq: Record<string, number> = {};
     for (const item of items) {
-      if (item && item.trim()) {
+      if (item.trim()) {
         freq[item] = (freq[item] || 0) + 1;
       }
     }

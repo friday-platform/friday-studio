@@ -9,7 +9,7 @@ import {
 import { CronManager } from "@atlas/cron";
 import { logger } from "@atlas/logger";
 import { PlatformMCPServer } from "@atlas/mcp-server";
-import { GlobalEmbeddingProvider } from "@atlas/memory";
+import { embeddingProviderForceDispose, embeddingProviderGetInstance } from "@atlas/memory";
 import { FilesystemWorkspaceCreationAdapter } from "@atlas/storage";
 import { WorkspaceManager, watchers } from "@atlas/workspace";
 import type { WorkspaceSignalTriggerCallback } from "@atlas/workspace/types";
@@ -316,7 +316,7 @@ export class AtlasDaemon implements AppContext {
     // Start embedding model download in background (non-blocking)
     // This prevents the first conversation from being blocked by model downloads
     logger.info("Starting background initialization of global embedding provider...");
-    GlobalEmbeddingProvider.getInstance()
+    embeddingProviderGetInstance()
       .then(() => {
         logger.info("Global embedding provider initialized successfully in background");
       })
@@ -1884,7 +1884,7 @@ export class AtlasDaemon implements AppContext {
 
     // Dispose global embedding provider
     try {
-      await GlobalEmbeddingProvider.forceDispose();
+      await embeddingProviderForceDispose();
       logger.info("Global embedding provider disposed");
     } catch (error) {
       logger.error("Failed to dispose global embedding provider", { error });

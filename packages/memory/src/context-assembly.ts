@@ -209,7 +209,7 @@ export class ContextAssemblyService {
     semanticContext?: string;
     episodicContext?: string;
   }> {
-    const contextSections: unknown = {};
+    const contextSections: Record<string, string> = {};
     let remainingBudget = totalBudget;
     const budgetPerSection = Math.floor(totalBudget / Math.max(1, priority.length));
 
@@ -432,7 +432,7 @@ export class ContextAssemblyService {
    */
   private assemblePrompt(
     originalPrompt: string,
-    contextSections: unknown,
+    contextSections: Record<string, string>,
     priority: SectionType[],
     options: ContextAssemblyOptions,
   ): { enhancedPrompt: string; tokensUsed: number; compressionApplied: boolean } {
@@ -481,12 +481,10 @@ export class ContextAssemblyService {
   /**
    * Extracts text content from various content formats.
    */
-  private extractContentText(content: unknown, maxLength?: number): string {
+  private extractContentText(content: string | Record<string, string>, maxLength?: number): string {
     let text = "";
 
-    if (typeof content === "string") {
-      text = content;
-    } else if (typeof content === "object" && content !== null) {
+    if (typeof content === "object" && content !== null) {
       const textFields = ["text", "content", "description", "statement", "summary", "title"];
 
       for (const field of textFields) {
@@ -569,11 +567,4 @@ export class ContextAssemblyService {
     // This would typically track statistics in a real implementation
     return { totalPrompts: 0, averageTokenUsage: 0, compressionRate: 0, contextTypesUsed: {} };
   }
-}
-
-// Factory function
-function createContextAssemblyService(
-  tokenManager: EnhancedTokenBudgetManager,
-): ContextAssemblyService {
-  return new ContextAssemblyService(tokenManager);
 }

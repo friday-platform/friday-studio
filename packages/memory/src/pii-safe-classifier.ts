@@ -258,13 +258,6 @@ export class PIISafeMemoryClassifier extends AtlasMemoryClassifier {
   }
 }
 
-// Factory function
-function createPIISafeMemoryClassifier(
-  config?: Partial<PIIExtractionConfig>,
-): PIISafeMemoryClassifier {
-  return new PIISafeMemoryClassifier(config);
-}
-
 // Export default configuration for reference
 export const DEFAULT_PII_CONFIG: PIIExtractionConfig = {
   restrictedPIITypes: ["email", "phone", "name"],
