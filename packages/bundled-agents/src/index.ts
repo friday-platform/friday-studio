@@ -6,11 +6,18 @@
  */
 
 import type { AtlasAgent } from "@atlas/agent-sdk";
-import { targetedResearchAgent } from "./research/targeted-research.ts";
+
+import { GoogleCalendarAgentResultSchema, googleCalendarAgent } from "./google/calendar.ts";
+import { type ResearchOutput, targetedResearchAgent } from "./research/targeted-research.ts";
 import { slackCommunicatorAgent } from "./slack/slack-communicator.ts";
 
 // Add more bundled agents here as they are created
-export const bundledAgents: AtlasAgent[] = [targetedResearchAgent, slackCommunicatorAgent];
+export const bundledAgents: AtlasAgent[] = [
+  targetedResearchAgent,
+  slackCommunicatorAgent,
+  googleCalendarAgent,
+];
 
-export { targetedResearchAgent };
-export { slackCommunicatorAgent };
+export { targetedResearchAgent, slackCommunicatorAgent, GoogleCalendarAgentResultSchema };
+
+export type { ResearchOutput };
