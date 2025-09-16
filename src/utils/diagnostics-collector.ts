@@ -1,9 +1,11 @@
 import { getAtlasClient } from "@atlas/client";
-import { getAtlasHome } from "@atlas/utils";
+import { getAtlasHome, stringifyError } from "@atlas/utils";
 import { ensureDir, exists, walk } from "@std/fs";
 import { join } from "@std/path";
 import { TarStream, type TarStreamInput } from "@std/tar/tar-stream";
 import { stringify } from "@std/yaml";
+import { ServiceManager } from "../services/service-manager.ts";
+import { collectOpenFiles } from "./open-files/mod.ts";
 import { getAtlasLogsDir } from "./paths.ts";
 import { ReleaseChannel } from "./release-channel.ts";
 import { getVersionInfo } from "./version.ts";
@@ -22,6 +24,7 @@ export class DiagnosticsCollector {
     await ensureDir(join(this.tempDir, "memory"));
     await ensureDir(join(this.tempDir, "storage"));
     await ensureDir(join(this.tempDir, "workspaces"));
+    await ensureDir(join(this.tempDir, "system"));
 
     // Collect data
     await this.collectLogs();
@@ -29,6 +32,7 @@ export class DiagnosticsCollector {
     await this.collectStorage();
     await this.collectWorkspaces();
     await this.collectSystemWorkspaces();
+    await this.collectOpenFiles();
 
     // Create tar.gz archive
     const gzipPath = join(Deno.makeTempDirSync(), "diagnostics.tar.gz");
@@ -273,6 +277,34 @@ export class DiagnosticsCollector {
         "Failed to collect system workspaces:",
         err instanceof Error ? err.message : String(err),
       );
+    }
+  }
+
+  private async collectOpenFiles(): Promise<void> {
+    const outputDir = join(this.tempDir, "system", "open-files");
+    await ensureDir(outputDir);
+
+    try {
+      // Get the daemon PID from ServiceManager if available
+      let daemonPid: number | undefined;
+      const serviceManager = ServiceManager.getInstance();
+      const status = await serviceManager.getStatus();
+      if (status.running && status.pid) {
+        daemonPid = status.pid;
+      }
+
+      // Collect from daemon if PID available, otherwise from current process
+      const report = await collectOpenFiles(daemonPid);
+
+      // Save as JSON
+      const jsonPath = join(outputDir, "open-files.json");
+      await Deno.writeTextFile(jsonPath, JSON.stringify(report, null, 2));
+    } catch (error) {
+      // Never let diagnostics crash the main process - fail silently
+
+      // Save error info for debugging
+      const errorPath = join(outputDir, "collection-error.txt");
+      await Deno.writeTextFile(errorPath, stringifyError(error));
     }
   }
 
