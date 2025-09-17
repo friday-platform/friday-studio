@@ -4,8 +4,13 @@
  */
 
 import { getAtlasDaemonUrl } from "@atlas/atlasd";
-import { validateAtlasJWT } from "@atlas/core";
+import { validateAtlasJWT, getDiagnosticsApiUrl } from "@atlas/core";
+import { getAtlasHome } from "@atlas/utils";
 import { z } from "zod/v4";
+import { join, basename } from "@std/path";
+import { exists } from "@std/fs";
+import { load } from "@std/dotenv";
+import * as yaml from "@std/yaml";
 import { DEFAULT_TIMEOUT } from "./constants.ts";
 import { AtlasApiError } from "./errors.ts";
 import {
@@ -460,8 +465,6 @@ export class AtlasClient {
     // Load raw YAML without full ConfigLoader validation to avoid agent/job validation
     try {
       // Read and parse workspace.yml directly to avoid validation issues
-      const yaml = await import("@std/yaml");
-
       const workspaceYmlPath = `${workspacePath}/workspace.yml`;
       const yamlContent = await Deno.readTextFile(workspaceYmlPath);
       const rawConfig = yaml.parse(yamlContent);
@@ -524,8 +527,6 @@ export class AtlasClient {
     // Load raw YAML without full ConfigLoader validation to avoid agent/job validation
     try {
       // Read and parse workspace.yml directly to avoid validation issues
-      const yaml = await import("@std/yaml");
-
       const workspaceYmlPath = `${workspacePath}/workspace.yml`;
       const yamlContent = await Deno.readTextFile(workspaceYmlPath);
       const rawConfig = yaml.parse(yamlContent);
@@ -806,12 +807,6 @@ export class AtlasClient {
    */
   async sendDiagnostics(gzipPath: string): Promise<void> {
     // Load .env from Atlas home directory first
-    const { join } = await import("@std/path");
-    const { exists } = await import("@std/fs");
-    const { load } = await import("@std/dotenv");
-    const { getAtlasHome } = await import("@atlas/utils");
-    const { getDiagnosticsApiUrl } = await import("@atlas/core");
-
     const globalAtlasEnv = join(getAtlasHome(), ".env");
     if (await exists(globalAtlasEnv)) {
       await load({ export: true, envPath: globalAtlasEnv });
@@ -832,7 +827,6 @@ export class AtlasClient {
     const diagnosticData = await Deno.readFile(gzipPath);
 
     // Get filename from path (handle both Unix and Windows paths)
-    const { basename } = await import("@std/path");
     const filename = basename(gzipPath);
 
     // Send to diagnostic endpoint using centralized URL function

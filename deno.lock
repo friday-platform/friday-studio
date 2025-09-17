@@ -3709,6 +3709,10 @@
       "packages/client": {
         "packageJson": {
           "dependencies": [
+            "npm:@jsr/std__dotenv@~0.225.5",
+            "npm:@jsr/std__fs@^1.0.19",
+            "npm:@jsr/std__path@^1.1.2",
+            "npm:@jsr/std__yaml@^1.0.9",
             "npm:zod@^3.25.76"
           ]
         }
