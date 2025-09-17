@@ -26,7 +26,7 @@
     "validate": "deno test --allow-read test-installer.ts"
   },
   "license": "PROPRIETARY",
-  "devDependencies": { "electron": "^37.4.0", "electron-builder": "^26.0.12" },
+  "devDependencies": { "electron": "^37.5.1", "electron-builder": "^26.0.12" },
   "build": {
     "appId": "com.tempestdx.atlas-installer",
     "productName": "Atlas Installer",
