@@ -43,6 +43,26 @@ export function getDefaultServiceName(): string {
 }
 
 /**
+ * Get system-wide binary installation path
+ */
+export function getSystemBinaryPath(): string {
+  const platform = detectPlatform();
+
+  switch (platform) {
+    case "macos":
+      return "/usr/local/bin/atlas";
+    case "linux":
+      return "/usr/local/bin/atlas";
+    case "windows": {
+      const userProfile = Deno.env.get("USERPROFILE") || "";
+      return `${userProfile}\\AppData\\Local\\Atlas\\atlas.exe`;
+    }
+    default:
+      return "/usr/local/bin/atlas";
+  }
+}
+
+/**
  * Get platform-specific paths
  */
 export function getPlatformPaths() {
@@ -55,22 +75,21 @@ export function getPlatformPaths() {
         serviceDir: `${homeDir}/Library/LaunchAgents`,
         configDir: `${homeDir}/.atlas`,
         logDir: `${homeDir}/.atlas/logs`,
-        binaryPath: "/usr/local/bin/atlas",
+        binaryPath: getSystemBinaryPath(),
       };
     case "linux":
       return {
         serviceDir: `${homeDir}/.config/systemd/user`,
         configDir: `${homeDir}/.atlas`,
         logDir: `${homeDir}/.atlas/logs`,
-        binaryPath: "/usr/local/bin/atlas",
+        binaryPath: getSystemBinaryPath(),
       };
     case "windows": {
-      const userProfile = homeDir;
       return {
         serviceDir: "", // Windows services don't use file-based configs like launchd/systemd
         configDir: `${homeDir}\\.atlas`,
         logDir: `${homeDir}\\.atlas\\logs`,
-        binaryPath: `${userProfile}\\AppData\\Local\\Atlas\\atlas.exe`,
+        binaryPath: getSystemBinaryPath(),
       };
     }
     default:
@@ -78,7 +97,7 @@ export function getPlatformPaths() {
         serviceDir: "",
         configDir: `${homeDir}/.atlas`,
         logDir: `${homeDir}/.atlas/logs`,
-        binaryPath: "/usr/local/bin/atlas",
+        binaryPath: getSystemBinaryPath(),
       };
   }
 }

@@ -49,7 +49,13 @@
       "entry": ["agents/**/*.eval.ts!", "lib/*.ts!"],
       "project": ["agents/**/*.{ts,tsx,js,jsx}!", "lib/**/*.{ts,tsx,js,jsx}!"]
     },
-    "tools/atlas-installer": { "entry": ["preload.js!", "renderer.js!"], "project": ["*.js!"] }
+    "tools/atlas-installer": {
+      "entry": ["src/preload.ts!", "src/renderer.ts!"],
+      "project": ["src/**/*.{ts,tsx,js,jsx}!"],
+      "ignoreExportsUsedInFile": { "interface": true, "type": true },
+      "ignore": ["src/preload.ts", "src/renderer.ts"],
+      "ignoreExports": ["ExecError"]
+    }
   },
   "ignore": [
     "**/*.d.ts",
@@ -60,6 +66,7 @@
     "**/build/**"
   ],
   "ignoreDependencies": ["@std/*"],
+  "ignoreExportsUsedInFile": { "interface": true, "type": true },
   "rules": {
     "files": "error",
     "dependencies": "error",

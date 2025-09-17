@@ -697,6 +697,7 @@ body {
   margin: var(--size-4) 0;
   white-space: pre-wrap;
   text-align: left;
+  line-height: 1.6;
 }
 
 .footer {

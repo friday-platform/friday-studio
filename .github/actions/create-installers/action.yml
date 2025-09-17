@@ -59,406 +59,139 @@ outputs:
 runs:
   using: "composite"
   steps:
-    - name: Setup Node.js for Electron installer
+    - name: Setup build environment
       uses: actions/setup-node@v4
       with:
         node-version: "22"
         cache: "npm"
         cache-dependency-path: "tools/atlas-installer/package-lock.json"
 
-    - name: Install Electron installer dependencies
+    - name: Prepare installer
       shell: bash
       run: |
+        set -e
         cd tools/atlas-installer
 
-        # Clean install approach from Stack Overflow for size optimization
+        # Install dependencies
         rm -rf node_modules
         npm install
-        npm prune
 
-        echo "Dependencies optimized for minimal bundle size"
+        # Create binary directory
+        mkdir -p atlas-binary
 
-    - name: Prepare Atlas binaries for installer
-      shell: bash
-      run: |
-        # Create a staging directory for the installer
-        mkdir -p tools/atlas-installer/atlas-binary
+        # Copy binaries using a loop
+        binaries=(
+          "${{ inputs.binary-path }}:${{ inputs.binary-name }}:required"
+          "${{ inputs.diagnostics-binary-path }}:${{ inputs.diagnostics-binary-name }}:optional"
+          "${{ inputs.web-app-binary-path }}:${{ inputs.web-app-binary-name }}:optional"
+        )
 
-        # Copy the main binary
-        cp "${{ inputs.binary-path }}" "tools/atlas-installer/atlas-binary/${{ inputs.binary-name }}"
-        chmod +x "tools/atlas-installer/atlas-binary/${{ inputs.binary-name }}"
+        for entry in "${binaries[@]}"; do
+          IFS=':' read -r path name type <<< "$entry"
 
-        # Copy the diagnostics binary if provided
-        if [ -n "${{ inputs.diagnostics-binary-path }}" ]; then
-          cp "${{ inputs.diagnostics-binary-path }}" "tools/atlas-installer/atlas-binary/${{ inputs.diagnostics-binary-name }}"
-          chmod +x "tools/atlas-installer/atlas-binary/${{ inputs.diagnostics-binary-name }}"
-          echo "Diagnostics binary prepared: tools/atlas-installer/atlas-binary/${{ inputs.diagnostics-binary-name }}"
-        fi
+          # Skip if path is empty
+          [ -z "$path" ] && continue
 
-        # Copy the web app artifact if provided
-        if [ -n "${{ inputs.web-app-binary-path }}" ]; then
-          web_app_file="${{ inputs.web-app-binary-path }}"
-          dest_dir="tools/atlas-installer/atlas-binary"
-          mkdir -p "$dest_dir"
+          # Check if file exists (fail for required, skip for optional)
+          if [ ! -e "../../$path" ]; then
+            [ "$type" = "required" ] && { echo "ERROR: Required binary not found: $path"; exit 1; }
+            continue
+          fi
 
-          if [ -f "$web_app_file" ]; then
-            # On macOS, rename DMG to a simple, stable name
-            if [[ "$web_app_file" == *.dmg ]]; then
-              dest_name="AtlasWebApp.dmg"
-            else
-              # Use provided name if available, otherwise basename of the file
-              dest_name="${{ inputs.web-app-binary-name }}"
-              if [ -z "$dest_name" ]; then
-                dest_name="$(basename "$web_app_file")"
-              fi
-            fi
-
-            echo "Copying web app artifact: $web_app_file -> $dest_dir/$dest_name"
-            cp "$web_app_file" "$dest_dir/$dest_name"
-            echo "Web app artifact prepared at $dest_dir/$dest_name"
+          # Copy based on type (.app directories need -R)
+          if [[ "$path" == *.app ]]; then
+            cp -R "../../$path" "atlas-binary/$name"
           else
-            echo "ERROR: Web app artifact not found: $web_app_file"
-            exit 1
+            cp "../../$path" "atlas-binary/$name"
           fi
-        fi
 
-        echo "Binaries prepared for installer"
-
-    - name: Verify installer has real binary integration
-      shell: bash
-      run: |
-        cd tools/atlas-installer
-
-        # The main.js file already has real binary installation code
-        # Just verify the binary will be available at runtime
-        echo "Binary source: tools/atlas-installer/atlas-binary/atlas"
-        echo "Installer main.js already has install-atlas-binary handler"
-
-        # Verify the binary exists
-        if [ -f "atlas-binary/${{ inputs.binary-name }}" ]; then
-          echo "Atlas binary found and ready for installation"
-          ls -la "atlas-binary/${{ inputs.binary-name }}"
-        else
-          echo "Atlas binary not found: atlas-binary/${{ inputs.binary-name }}"
-          exit 1
-        fi
-
-    - name: Test Electron installer (syntax and basic functionality)
-      shell: bash
-      run: |
-        cd tools/atlas-installer
-
-        # Test 1: Check for mixed module syntax issues
-        echo "Testing for mixed ES module/CommonJS syntax..."
-        if grep -r "^import.*from" *.js | grep -q "require("; then
-          echo "ERROR: Mixed ES module and CommonJS syntax detected!"
-          echo "Files with mixed syntax:"
-          grep -n "^import.*from" *.js && grep -n "require(" *.js
-          exit 1
-        fi
-
-        # Test 2: Syntax validation with Node.js
-        echo "Testing JavaScript syntax..."
-        for js_file in *.js; do
-          if [ -f "$js_file" ]; then
-            echo "Checking syntax: $js_file"
-            node --check "$js_file" || {
-              echo "ERROR: Syntax error in $js_file"
-              exit 1
-            }
-          fi
+          # Make executable (ignore errors)
+          chmod +x "atlas-binary/$name" 2>/dev/null || true
         done
 
-        # Test 3: Check package.json for version consistency
-        echo "Testing package.json configuration..."
-        if [ -f package.json ]; then
-          # Check for Electron version consistency between devDependencies and build config
-          dev_electron=$(node -p "JSON.parse(require('fs').readFileSync('package.json')).devDependencies.electron" 2>/dev/null || echo "null")
-          build_electron=$(node -p "JSON.parse(require('fs').readFileSync('package.json')).build.electronVersion" 2>/dev/null || echo "null")
-
-          if [ "$build_electron" != "null" ] && [ "$dev_electron" != "$build_electron" ]; then
-            echo "WARNING: Electron version mismatch between devDependencies ($dev_electron) and build config ($build_electron)"
-            echo "This can cause runtime issues. Consider removing build.electronVersion to use devDependencies version."
-          fi
-        fi
-
-        echo "All installer pre-flight checks passed"
-
-    - name: Build cross-platform Electron installer
+    - name: Build installer
       shell: bash
+      id: build
       run: |
+        set -e
         cd tools/atlas-installer
 
-        # Convert version to valid semver format for npm
-        version="${{ inputs.version }}"
-        if [[ "$version" == edge-* ]]; then
-          # Convert edge-YYYYMMDD-HHMMSS-gitsha to 0.0.0-edge.gitsha.YYYYMMDD.HHMMSS
-          # Extract parts: edge-20250710-072728-fda047c -> 20250710, 072728, fda047c
-          date_part=$(echo "$version" | sed 's/edge-//' | cut -d'-' -f1)
-          time_part=$(echo "$version" | sed 's/edge-//' | cut -d'-' -f2)
-          git_hash=$(echo "$version" | sed 's/edge-//' | cut -d'-' -f3)
-          semver_version="0.0.0-edge.${git_hash}.${date_part}.${time_part}"
-        elif [[ "$version" == nightly-* ]]; then
-          # Convert nightly-YYYYMMDD-gitsha to 0.0.0-nightly.gitsha.YYYYMMDD
-          date_part=$(echo "$version" | sed 's/nightly-//' | cut -d'-' -f1)
-          git_hash=$(echo "$version" | sed 's/nightly-//' | cut -d'-' -f2)
-          semver_version="0.0.0-nightly.${git_hash}.${date_part}"
-        elif [[ "$version" == v* ]]; then
-          # Remove 'v' prefix for releases: v1.2.3 -> 1.2.3
-          semver_version="${version#v}"
-        else
-          # Use as-is if already valid semver
-          semver_version="$version"
-        fi
+        # Convert version to semver using shared script
+        semver=$(../../scripts/convert-version-to-semver.sh "${{ inputs.version }}")
 
-        echo "Converting version '$version' to semver '$semver_version'"
-        npm version "$semver_version" --no-git-tag-version
+        npm version "$semver" --no-git-tag-version
 
-        # Set up notarization environment for Electron Builder (macOS only)
+        # Setup macOS notarization if needed
         if [ "${{ inputs.platform }}" == "darwin" ] && [ -n "${{ inputs.macos-notary-issuer-id }}" ]; then
           export APPLE_API_ISSUER="${{ inputs.macos-notary-issuer-id }}"
           export APPLE_API_KEY_ID="${{ inputs.macos-notary-key-id }}"
-
-          # Create API key file for Electron Builder
-          echo "${{ inputs.macos-notary-key }}" | base64 --decode > AuthKey_${{ inputs.macos-notary-key-id }}.p8
+          echo "${{ inputs.macos-notary-key }}" | base64 --decode > "AuthKey_${{ inputs.macos-notary-key-id }}.p8"
           export APPLE_API_KEY="$(pwd)/AuthKey_${{ inputs.macos-notary-key-id }}.p8"
-
-          echo "Configured Electron Builder notarization"
         fi
 
-        # Build for the current platform with specific target format
-        if [ "${{ inputs.platform }}" == "darwin" ]; then
-          if [ "${{ inputs.arch }}" == "arm64" ]; then
-            npx electron-builder --mac zip --arm64 --publish=never
-          else
-            npx electron-builder --mac zip --x64 --publish=never
-          fi
-        elif [ "${{ inputs.platform }}" == "windows" ]; then
-          if [ "${{ inputs.arch }}" == "arm64" ]; then
-            npm run build:win:arm64
-          else
-            npm run build:win:x64
-          fi
-        elif [ "${{ inputs.platform }}" == "linux" ]; then
-          if [ "${{ inputs.arch }}" == "arm64" ]; then
-            npm run build:linux:arm64
-          else
-            npm run build:linux:x64
-          fi
-        fi
+        # Build installer using platform mapping
+        platform="${{ inputs.platform }}"
+        npm_arch="${{ inputs.arch == 'arm64' && 'arm64' || 'x64' }}"
 
-        # Clean up API key file
-        if [ "${{ inputs.platform }}" == "darwin" ] && [ -f "AuthKey_${{ inputs.macos-notary-key-id }}.p8" ]; then
-          rm "AuthKey_${{ inputs.macos-notary-key-id }}.p8"
-        fi
+        # Map platform to npm build target
+        case "$platform" in
+          darwin) platform_target="mac" ;;
+          windows) platform_target="win" ;;
+          linux) platform_target="linux" ;;
+        esac
 
-    - name: Test built installer functionality
+        npm_cmd="build:${platform_target}:${npm_arch}"
+        npm run "$npm_cmd"
+
+        # Cleanup sensitive files
+        rm -f AuthKey_*.p8
+
+    - name: Process installer output
       shell: bash
-      run: |
-        cd tools/atlas-installer
-
-        # Test the built installer can start without immediate crashes
-        if [ "${{ inputs.platform }}" == "darwin" ]; then
-          # Find the built app
-          app_path=$(find dist/ -name "*.app" | head -1)
-          if [ -n "$app_path" ]; then
-            echo "Testing macOS app startup: $app_path"
-
-            # Test that the main executable exists and has proper permissions
-            main_exec="$app_path/Contents/MacOS/Atlas Installer"
-            if [ -f "$main_exec" ]; then
-              echo "Main executable found: $main_exec"
-
-              # Check if executable
-              if [ -x "$main_exec" ]; then
-                echo "Main executable is executable"
-              else
-                echo "ERROR: Main executable is not executable"
-                exit 1
-              fi
-
-              # Test loading the main.js without starting GUI (basic syntax check)
-              main_js="$app_path/Contents/Resources/app/main.js"
-              if [ -f "$main_js" ]; then
-                echo "Testing main.js syntax..."
-                node --check "$main_js" || {
-                  echo "ERROR: Runtime syntax error in main.js"
-                  exit 1
-                }
-                echo "main.js syntax check passed"
-              fi
-            else
-              echo "ERROR: Main executable not found"
-              exit 1
-            fi
-          else
-            echo "WARNING: No .app found in dist/ for testing"
-          fi
-        elif [ "${{ inputs.platform }}" == "linux" ]; then
-          # For Linux AppImage, we can test the extracted structure
-          appimage_path=$(find dist/ -name "*.AppImage" | head -1)
-          if [ -n "$appimage_path" ]; then
-            echo "Linux AppImage built: $appimage_path"
-
-            # Check if AppImage is executable
-            if [ -x "$appimage_path" ]; then
-              echo "AppImage is executable"
-            else
-              echo "ERROR: AppImage is not executable"
-              exit 1
-            fi
-          fi
-        elif [ "${{ inputs.platform }}" == "windows" ]; then
-          # For Windows, just check the installer exists
-          exe_path=$(find dist/ -name "*.exe" | head -1)
-          if [ -n "$exe_path" ]; then
-            echo "Windows installer built: $exe_path"
-          else
-            echo "ERROR: Windows installer not found"
-            exit 1
-          fi
-        fi
-
-        echo "Installer functionality tests passed"
-
-    - name: Rename installers to consistent naming format
-      shell: bash
-      run: |
-        cd tools/atlas-installer
-
-        echo "Checking what Electron Builder created..."
-        ls -la dist/
-
-        if [ "${{ inputs.platform }}" == "darwin" ]; then
-          # Find the ZIP installer that Electron Builder created (already signed and notarized)
-          original_zip=$(find dist/ -name "*.zip" -not -name "*.blockmap" | head -1)
-
-          if [ -n "$original_zip" ]; then
-            echo "Found original Electron Builder ZIP: $original_zip"
-
-            # Rename to consistent binary naming format (preserving signatures)
-            if [ "${{ inputs.arch }}" == "arm64" ]; then
-              target_name="atlas_${{ inputs.version }}_darwin_arm64.zip"
-            else
-              target_name="atlas_${{ inputs.version }}_darwin_amd64.zip"
-            fi
-
-            echo "Renaming to: $target_name"
-            mv "$original_zip" "dist/$target_name"
-
-            echo "Using electron-builder ZIP directly (already optimized and signed): $target_name"
-          else
-            echo "ERROR: No ZIP installer found"
-            echo "Contents of dist/:"
-            find dist/ -type f -name "*" || echo "No files found in dist/"
-            exit 1
-          fi
-        elif [ "${{ inputs.platform }}" == "windows" ]; then
-          # Find the EXE installer that Electron Builder created
-          original_exe=$(find dist/ -name "*.exe" | head -1)
-
-          if [ -n "$original_exe" ]; then
-            echo "Found original Electron Builder EXE: $original_exe"
-
-            # Rename to consistent binary naming format
-            if [ "${{ inputs.arch }}" == "arm64" ]; then
-              target_name="atlas_${{ inputs.version }}_windows_arm64.exe"
-            else
-              target_name="atlas_${{ inputs.version }}_windows_amd64.exe"
-            fi
-
-            echo "Renaming to: $target_name"
-            mv "$original_exe" "dist/$target_name"
-
-            echo "Renamed Windows installer: $target_name"
-          else
-            echo "ERROR: No EXE installer found"
-            echo "Contents of dist/:"
-            find dist/ -type f -name "*" || echo "No files found in dist/"
-            exit 1
-          fi
-        elif [ "${{ inputs.platform }}" == "linux" ]; then
-          # Find the AppImage installer that Electron Builder created
-          original_appimage=$(find dist/ -name "*.AppImage" | head -1)
-
-          if [ -n "$original_appimage" ]; then
-            echo "Found original Electron Builder AppImage: $original_appimage"
-
-            # Rename to consistent binary naming format
-            if [ "${{ inputs.arch }}" == "arm64" ]; then
-              target_name="atlas_${{ inputs.version }}_linux_arm64.AppImage"
-            else
-              target_name="atlas_${{ inputs.version }}_linux_amd64.AppImage"
-            fi
-
-            echo "Renaming to: $target_name"
-            mv "$original_appimage" "dist/$target_name"
-
-            echo "Renamed Linux installer: $target_name"
-          else
-            echo "ERROR: No AppImage installer found"
-            echo "Contents of dist/:"
-            find dist/ -type f -name "*" || echo "No files found in dist/"
-            exit 1
-          fi
-        fi
-
-    - name: Find and set installer outputs
       id: create
-      shell: bash
       run: |
+        set -e
         cd tools/atlas-installer
 
-        # Find the created installer based on platform using consistent naming
-        if [ "${{ inputs.platform }}" == "darwin" ]; then
-          if [ "${{ inputs.arch }}" == "arm64" ]; then
-            installer_path="dist/atlas_${{ inputs.version }}_darwin_arm64.zip"
-          else
-            installer_path="dist/atlas_${{ inputs.version }}_darwin_amd64.zip"
-          fi
-        elif [ "${{ inputs.platform }}" == "windows" ]; then
-          if [ "${{ inputs.arch }}" == "arm64" ]; then
-            installer_path="dist/atlas_${{ inputs.version }}_windows_arm64.exe"
-          else
-            installer_path="dist/atlas_${{ inputs.version }}_windows_amd64.exe"
-          fi
-        elif [ "${{ inputs.platform }}" == "linux" ]; then
-          if [ "${{ inputs.arch }}" == "arm64" ]; then
-            installer_path="dist/atlas_${{ inputs.version }}_linux_arm64.AppImage"
-          else
-            installer_path="dist/atlas_${{ inputs.version }}_linux_amd64.AppImage"
-          fi
-        fi
+        # Find installer by platform
+        platform="${{ inputs.platform }}"
+        arch="${{ inputs.arch }}"
+        version="${{ inputs.version }}"
 
-        # Check if installer exists
-        if [ -f "$installer_path" ] || [ -d "$installer_path" ]; then
-          echo "Found installer: $installer_path"
+        # Find installer based on platform
+        case "$platform" in
+          darwin)
+            installer=$(find build/ -type f -name "*.zip" | head -1)
+            ;;
+          windows)
+            installer=$(find build/ -type f -name "*.exe" | head -1)
+            ;;
+          linux)
+            installer=$(find build/ -type f \( -name "*.AppImage" -o -name "*.tar.gz" \) | head -1)
+            ;;
+        esac
 
-          # Generate checksum
-          if [ -f "$installer_path" ]; then
-            if [ "${{ inputs.platform }}" == "darwin" ]; then
-              shasum -a 256 "$installer_path" > "$installer_path.sha256"
-            else
-              sha256sum "$installer_path" > "$installer_path.sha256"
-            fi
-          fi
+        [ -z "$installer" ] && { echo "ERROR: No installer found"; ls -la build/; exit 1; }
 
-          # Copy to main dist directory
-          mkdir -p ../../dist
-          if [ -f "$installer_path" ]; then
-            cp "$installer_path" "../../dist/"
-            cp "$installer_path.sha256" "../../dist/"
-          elif [ -d "$installer_path" ]; then
-            cp -r "$installer_path" "../../dist/"
-          fi
+        # Determine target filename
+        ext="${installer##*.}"
+        [ "$ext" = "gz" ] && ext="tar.gz"
+        target="atlas_${version}_${platform}_${arch}.${ext}"
 
-          # Set outputs
-          installer_name=$(basename "$installer_path")
-          echo "installer-path=./dist/$installer_name" >> $GITHUB_OUTPUT
-          echo "checksum-path=./dist/$installer_name.sha256" >> $GITHUB_OUTPUT
-          echo "Created Electron installer: $installer_name"
-        else
-          echo "No installer found at: $installer_path"
-          echo "installer-path=" >> $GITHUB_OUTPUT
-          echo "checksum-path=" >> $GITHUB_OUTPUT
-        fi
+        # Move and process installer
+        mv "$installer" "build/$target"
+        installer_path="$(pwd)/build/$target"
+
+        # Generate checksum (prefer sha256sum, fallback to shasum)
+        hash_cmd="sha256sum"
+        command -v sha256sum >/dev/null || hash_cmd="shasum -a 256"
+        $hash_cmd "build/$target" | cut -d' ' -f1 > "build/${target}.sha256"
+        checksum_path="$(pwd)/build/${target}.sha256"
+
+        # Copy to dist for workflow compatibility
+        cp "build/$target" "build/${target}.sha256" ../../dist/
+
+        # Set outputs and report
+        echo "installer-path=$installer_path" >> "$GITHUB_OUTPUT"
+        echo "checksum-path=$checksum_path" >> "$GITHUB_OUTPUT"
+        echo "Installer: $target ($(du -h build/$target | cut -f1))"

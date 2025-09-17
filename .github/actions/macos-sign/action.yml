@@ -126,7 +126,12 @@ runs:
         echo "${{ inputs.macos-notary-key }}" | base64 --decode > notary_key.p8
 
         # Create a zip file for notarization (required by Apple)
-        zip atlas-binary.zip "${{ inputs.binary-path }}"
+        # Use recursive flag for .app bundles to include all contents
+        if [[ "${{ inputs.binary-path }}" == *.app ]]; then
+          zip -r atlas-binary.zip "${{ inputs.binary-path }}"
+        else
+          zip atlas-binary.zip "${{ inputs.binary-path }}"
+        fi
 
         # Try notarization with better error handling
         if xcrun notarytool submit atlas-binary.zip \
@@ -136,9 +141,9 @@ runs:
           --wait; then
           echo "Notarization successful"
 
-          # Check if the binary supports stapling (only .app, .dmg, .pkg, .xip can be stapled)
+          # Check if the binary supports stapling (only .app, .pkg, .xip can be stapled)
           # Plain executables cannot be stapled directly, only when inside these containers
-          if [[ "${{ inputs.binary-path }}" == *.app ]] || [[ "${{ inputs.binary-path }}" == *.dmg ]] || [[ "${{ inputs.binary-path }}" == *.pkg ]] || [[ "${{ inputs.binary-path }}" == *.xip ]]; then
+          if [[ "${{ inputs.binary-path }}" == *.app ]] || [[ "${{ inputs.binary-path }}" == *.pkg ]] || [[ "${{ inputs.binary-path }}" == *.xip ]]; then
             echo "Attempting to staple notarization ticket to supported bundle format"
             if xcrun stapler staple "${{ inputs.binary-path }}"; then
               echo "Notarization ticket stapled successfully"
@@ -148,7 +153,7 @@ runs:
               echo "notarized=false" >> $GITHUB_OUTPUT
             fi
           else
-            echo "Skipping stapling - plain binaries cannot have tickets stapled (only .app, .dmg, .pkg, .xip)"
+            echo "Skipping stapling - plain binaries cannot have tickets stapled (only .app, .pkg, .xip)"
             echo "Binary is notarized but ticket cannot be stapled to plain executables"
             echo "notarized=true" >> $GITHUB_OUTPUT
           fi

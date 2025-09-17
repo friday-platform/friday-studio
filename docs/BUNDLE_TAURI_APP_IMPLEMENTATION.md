@@ -21,7 +21,7 @@
 
 ### Critical Path Issues Fixed
 
-1. **Tauri outputs DMG on macOS**, not raw `.app` - documentation now reflects reality
+1. **Tauri outputs `.app` on macOS** - directly bundled without DMG packaging
 2. **Version injection uses jq** for robust JSON manipulation
 3. **Explicit file patterns** to avoid glob expansion failures
 4. **Error handling** that doesn't silently swallow problems
@@ -49,8 +49,8 @@ Add to `.github/workflows/edge-release.yml` in release job after downloading art
 
     # Copy Tauri installers (matching actual output from build-web-app action)
     if [ "${{ matrix.os }}" == "darwin" ]; then
-      cp dist/*.dmg atlas-bundle/ || { echo "Missing Tauri DMG"; exit 1; }
-      echo -e "Installation Steps:\n1. Run atlas installer\n2. Mount the .dmg file\n3. Drag Atlas.app to Applications folder" > atlas-bundle/README.txt
+      cp -r dist/*.app atlas-bundle/ || { echo "Missing Tauri app"; exit 1; }
+      echo -e "Installation Steps:\n1. Run atlas installer\n2. Atlas Web Client.app will be installed automatically" > atlas-bundle/README.txt
     elif [ "${{ matrix.os }}" == "windows" ]; then
       # Copy both .exe and .msi from Tauri
       cp dist/Atlas_*.exe atlas-bundle/ 2>/dev/null || true
@@ -103,7 +103,7 @@ Add to `.github/workflows/edge-release.yml` in release job after downloading art
     path: |
       ./dist/atlas_*.tar.gz
       ./dist/atlas_*.zip
-      ./dist/*.dmg          # Tauri macOS installer
+      ./dist/*.app          # Tauri macOS app bundle
       ./dist/Atlas_*.exe    # Tauri Windows installer
       ./dist/*.msi          # Tauri Windows MSI
       ./dist/*.deb          # Tauri Linux Debian package
@@ -159,7 +159,7 @@ Add this **in the build job**, after building both components but before artifac
     # Copy Electron installer
     if [ "${{ matrix.os }}" == "darwin" ]; then
       cp dist/atlas_*.zip "$bundle_name/"
-      cp -r dist/*.dmg "$bundle_name/" 2>/dev/null || echo "No DMG found"
+      cp -r dist/*.app "$bundle_name/" 2>/dev/null || echo "No app bundle found"
     elif [ "${{ matrix.os }}" == "windows" ]; then  
       cp dist/atlas_*.exe "$bundle_name/"
       cp dist/Atlas_*.exe "$bundle_name/" 2>/dev/null || echo "No Tauri exe"

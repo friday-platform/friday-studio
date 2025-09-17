@@ -1,0 +1,1 @@
+{ "entry": ["src/main.ts", "src/preload.ts", "src/renderer.ts"], "project": ["src/**/*.ts"] }

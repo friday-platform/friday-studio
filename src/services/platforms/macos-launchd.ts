@@ -4,6 +4,7 @@ import {
   getAtlasBinaryPath,
   getDefaultServiceName,
   getPlatformPaths,
+  getSystemBinaryPath,
 } from "../../utils/platform.ts";
 import type {
   LaunchAgentConfig,
@@ -37,8 +38,31 @@ export class MacOSLaunchdService implements PlatformServiceManager {
       }
     }
 
-    // Get binary path
-    const binaryPath = getAtlasBinaryPath();
+    // Get binary path - prefer system binary path if it's a symlink to our binary
+    let binaryPath = getAtlasBinaryPath();
+
+    // Check if system binary exists and is accessible
+    const systemBinaryPath = getSystemBinaryPath();
+    try {
+      const systemBinaryStat = await Deno.lstat(systemBinaryPath);
+      if (systemBinaryStat.isSymlink) {
+        // It's a symlink, check if it points to our binary
+        const symlinkTarget = await Deno.readLink(systemBinaryPath);
+        const resolvedTarget = symlinkTarget.startsWith("/")
+          ? symlinkTarget
+          : "/usr/local/bin/" + symlinkTarget;
+
+        // If the symlink points to a valid atlas binary, use the symlink path instead
+        if (resolvedTarget === binaryPath || resolvedTarget.includes("/.atlas/bin/atlas")) {
+          binaryPath = systemBinaryPath;
+        }
+      } else if (systemBinaryStat.isFile) {
+        // It's a regular file, use it if it's executable
+        binaryPath = systemBinaryPath;
+      }
+    } catch {
+      // System binary doesn't exist or isn't accessible, use default
+    }
 
     // Verify binary exists
     if (!(await exists(binaryPath))) {
@@ -69,6 +93,31 @@ export class MacOSLaunchdService implements PlatformServiceManager {
     // Convert to plist XML format
     const plistXml = this.generatePlistXml(launchAgentConfig);
 
+    // Before writing new plist, check if service is already loaded
+    // If it is, we need to unload it first to avoid conflicts
+    try {
+      const listCmd = new Deno.Command("launchctl", {
+        args: ["list", this.serviceName],
+        stdout: "piped",
+        stderr: "piped",
+      });
+      const listResult = await listCmd.output();
+
+      if (listResult.success) {
+        // Service is loaded, unload it first
+        const unloadCmd = new Deno.Command("launchctl", {
+          args: ["unload", this.plistPath],
+          stdout: "piped",
+          stderr: "piped",
+        });
+        await unloadCmd.output();
+        // Give launchctl a moment to fully unload
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+    } catch {
+      // Service not loaded, continue
+    }
+
     // Write plist file
     try {
       await Deno.writeTextFile(this.plistPath, plistXml);
@@ -81,9 +130,10 @@ export class MacOSLaunchdService implements PlatformServiceManager {
     }
 
     // Load the service with launchctl
+    // The -w flag is CRITICAL - it overrides the disabled state and ensures the service starts
     try {
       const loadCmd = new Deno.Command("launchctl", {
-        args: ["load", this.plistPath],
+        args: ["load", "-w", this.plistPath],
         stdout: "piped",
         stderr: "piped",
       });
@@ -92,15 +142,10 @@ export class MacOSLaunchdService implements PlatformServiceManager {
 
       if (!result.success) {
         const stderr = new TextDecoder().decode(result.stderr);
+        // Don't delete plist on load failure - it might be a temporary issue
         throw new Error(`Failed to load service: ${stderr}`);
       }
     } catch (error) {
-      // Clean up plist file if load failed
-      try {
-        await Deno.remove(this.plistPath);
-      } catch {
-        // Ignore cleanup errors
-      }
       throw new Error(
         `Failed to register service with launchctl: ${
           error instanceof Error ? error.message : String(error)
@@ -236,75 +281,43 @@ export class MacOSLaunchdService implements PlatformServiceManager {
   }
 
   private generatePlistXml(config: LaunchAgentConfig): string {
-    const programArgs = config.ProgramArguments.map(
-      (arg) => `\t\t<string>${this.escapeXml(arg)}</string>`,
-    ).join("\n");
+    // We control all inputs - no need for complex escaping
+    const programArgs = config.ProgramArguments.map((arg) => `    <string>${arg}</string>`).join(
+      "\n",
+    );
 
-    const environmentVars = config.EnvironmentVariables
-      ? Object.entries(config.EnvironmentVariables)
-          .map(
-            ([key, value]) =>
-              `\t\t<key>${this.escapeXml(key)}</key>\n\t\t<string>${this.escapeXml(value)}</string>`,
-          )
-          .join("\n")
-      : "";
-
-    const keepAlive =
-      typeof config.KeepAlive === "boolean"
-        ? config.KeepAlive
-          ? "<true/>"
-          : "<false/>"
-        : `<dict>
-\t\t<key>SuccessfulExit</key>
-\t\t<${config.KeepAlive.SuccessfulExit ? "true" : "false"}/>
-\t</dict>`;
+    const envVars = Object.entries(config.EnvironmentVariables || {})
+      .map(([k, v]) => `    <key>${k}</key>\n    <string>${v}</string>`)
+      .join("\n");
 
     return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-\t<key>Label</key>
-\t<string>${this.escapeXml(config.Label)}</string>
-\t<key>ProgramArguments</key>
-\t<array>
+  <key>Label</key>
+  <string>${config.Label}</string>
+  <key>ProgramArguments</key>
+  <array>
 ${programArgs}
-\t</array>
-${
-  config.WorkingDirectory
-    ? `\t<key>WorkingDirectory</key>\n\t<string>${this.escapeXml(config.WorkingDirectory)}</string>`
-    : ""
-}
-${
-  environmentVars
-    ? `\t<key>EnvironmentVariables</key>\n\t<dict>\n${environmentVars}\n\t</dict>`
-    : ""
-}
-\t<key>RunAtLoad</key>
-\t<${config.RunAtLoad ? "true" : "false"}/>
-\t<key>KeepAlive</key>
-\t${keepAlive}
-${
-  config.StandardOutPath
-    ? `\t<key>StandardOutPath</key>\n\t<string>${this.escapeXml(config.StandardOutPath)}</string>`
-    : ""
-}
-${
-  config.StandardErrorPath
-    ? `\t<key>StandardErrorPath</key>\n\t<string>${this.escapeXml(
-        config.StandardErrorPath,
-      )}</string>`
-    : ""
-}
+  </array>
+  <key>WorkingDirectory</key>
+  <string>${config.WorkingDirectory}</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+${envVars}
+  </dict>
+  <key>RunAtLoad</key>
+  <${config.RunAtLoad}/>
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>${config.StandardOutPath}</string>
+  <key>StandardErrorPath</key>
+  <string>${config.StandardErrorPath}</string>
 </dict>
 </plist>`;
-  }
-
-  private escapeXml(str: string): string {
-    return str
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&apos;");
   }
 }

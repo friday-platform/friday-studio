@@ -3591,6 +3591,25 @@
       "integrity": "sha512-5R1P+WwQqmmMIEACyzSvo4JXHY5WiAFHRMg+zBZKgKS+Q1viRa0C1hmUKtHltoIFKtIdki3pRxkmpP74jnNYHQ=="
     }
   },
+  "remote": {
+    "https://deno.land/x/yargs@v18.0.0-deno/build/lib/argsert.js": "eb085555452eac3ff300935994a42f35d16e04cf698cb775cb5ad4f5653c0627",
+    "https://deno.land/x/yargs@v18.0.0-deno/build/lib/command.js": "26cf4173863eba2cceb6edf01759572d44ea60bfdbb654c0d187c99331c11dd9",
+    "https://deno.land/x/yargs@v18.0.0-deno/build/lib/completion-templates.js": "5aaac47f6d504d5a51931039addfd1f347e471f56510babf11dd0ffb068fe872",
+    "https://deno.land/x/yargs@v18.0.0-deno/build/lib/completion.js": "62e41220b5baa7c082f72638c7eab23a69fff46a78011f2c448e2a2f1fcfd05a",
+    "https://deno.land/x/yargs@v18.0.0-deno/build/lib/middleware.js": "6ab9c953a83264739aa50d7fa6b1ab693500336dfd593b9958865e12beb8bdeb",
+    "https://deno.land/x/yargs@v18.0.0-deno/build/lib/parse-command.js": "327242c0afae207b7aefa13133439e3b321d7db4229febc5b7bd5285770ac7f7",
+    "https://deno.land/x/yargs@v18.0.0-deno/build/lib/typings/common-types.js": "9618b81a86acb88a61fd9988e9bc3ec21c5250d94fc2231ba7d898e71500789d",
+    "https://deno.land/x/yargs@v18.0.0-deno/build/lib/usage.js": "31faaa7aa61e5a57a2cac5a269b773aa8b1fcab2db7cac2f8252396f3ccc2f5e",
+    "https://deno.land/x/yargs@v18.0.0-deno/build/lib/utils/apply-extends.js": "7838a1f68d5ef8d2f0a8a2363457d96d0fe134c9fc81811f6d6ada8f995e81aa",
+    "https://deno.land/x/yargs@v18.0.0-deno/build/lib/utils/is-promise.js": "be45baa3090c5106dd4e442cceef6b357a268783a2ee28ec10fe131a8cd8db72",
+    "https://deno.land/x/yargs@v18.0.0-deno/build/lib/utils/levenshtein.js": "d8638efc3376b5f794b1c8df6ef4f3d484b29d919127c7fdc242400e3cfded91",
+    "https://deno.land/x/yargs@v18.0.0-deno/build/lib/utils/maybe-async-result.js": "31cf4026279e14c87d16faa14ac758f35c8cc5795d29393c5ce07120f5a3caf6",
+    "https://deno.land/x/yargs@v18.0.0-deno/build/lib/utils/obj-filter.js": "5523fb2288d1e86ed48c460e176770b49587554df4ae2405b468c093786b040b",
+    "https://deno.land/x/yargs@v18.0.0-deno/build/lib/utils/set-blocking.js": "6fa8ffc3299f456e42902736bae35fbc1f2dc96b3905a02ba9629f5bd9f80af1",
+    "https://deno.land/x/yargs@v18.0.0-deno/build/lib/validation.js": "af040834cb9201d4238bbeb8f673eb2ebaff9611857270524a7c86dfcf2ca51b",
+    "https://deno.land/x/yargs@v18.0.0-deno/build/lib/yargs-factory.js": "d36113035eca884055c867535e39e815cd771fa49be08ee85154e8e31e2bed61",
+    "https://deno.land/x/yargs@v18.0.0-deno/build/lib/yerror.js": "9729aaa8bce1a0d00c57f470efb2ad76ad2988661bb48f3769e496a3435b4462"
+  },
   "workspace": {
     "packageJson": {
       "dependencies": [

@@ -76,8 +76,9 @@ jobs:
 
       - name: Build binary
         id: build
-        uses: ./.github/actions/build-binary
+        uses: ./.github/actions/build-component
         with:
+          component: binary
           version: ${{ steps.version.outputs.version }}
           platform: ${{ matrix.platform }}
           arch: ${{ matrix.arch }}
@@ -85,8 +86,9 @@ jobs:
 
       - name: Build diagnostics binary
         id: build-diagnostics
-        uses: ./.github/actions/build-diagnostics
+        uses: ./.github/actions/build-component
         with:
+          component: diagnostics
           version: ${{ steps.version.outputs.version }}
           platform: ${{ matrix.platform }}
           arch: ${{ matrix.arch }}
@@ -115,61 +117,7 @@ jobs:
           macos-notary-key: ${{ secrets.MACOS_NOTARY_KEY }}
 
       - name: Create platform bundle
-        shell: bash
-        run: |
-          set -e  # Fail on any error
-          bundle_name="atlas-bundle-${{ steps.version.outputs.version }}-${{ matrix.platform }}-${{ matrix.arch }}"
-          mkdir -p "$bundle_name"
-          
-          # Copy installers with explicit error handling
-          if [ "${{ matrix.platform }}" == "darwin" ]; then
-            cp dist/atlas_*.zip "$bundle_name/" || { echo "Missing Atlas CLI installer"; exit 1; }
-            cp -r dist/*.dmg "$bundle_name/" || { echo "Missing Tauri DMG"; exit 1; }
-            echo -e "Atlas Bundle - macOS\\n\\nInstallation Steps:\\n1. Unzip and run Atlas CLI installer\\n2. Mount DMG and drag Atlas Web Client.app to Applications" > "$bundle_name/README.txt"
-          elif [ "${{ matrix.platform }}" == "windows" ]; then  
-            cp dist/atlas_*.exe "$bundle_name/" || { echo "Missing Atlas CLI installer"; exit 1; }
-            # Copy both .exe and .msi from Tauri
-            cp dist/Atlas_*.exe "$bundle_name/" 2>/dev/null || true
-            cp dist/*.msi "$bundle_name/" 2>/dev/null || true
-            # Check for Tauri installers using proper glob handling
-            tauri_found=false
-            for file in "$bundle_name"/Atlas_*.exe "$bundle_name"/*.msi; do
-              if [ -f "$file" ]; then
-                tauri_found=true
-                break
-              fi
-            done
-            if [ "$tauri_found" = false ]; then
-              echo "Missing Tauri installer"; exit 1
-            fi
-            echo -e "Atlas Bundle - Windows\\n\\nInstallation Steps:\\n1. Run Atlas CLI installer (.exe)\\n2. Run Atlas GUI installer (.exe or .msi)" > "$bundle_name/README.txt"
-          else
-            cp dist/atlas_*.tar.gz "$bundle_name/" || { echo "Missing Atlas CLI installer"; exit 1; }
-            # Linux: multiple possible formats
-            cp dist/*.deb "$bundle_name/" 2>/dev/null || true
-            # Check for Tauri installers using proper glob handling
-            tauri_found=false
-            for file in "$bundle_name"/*.deb; do
-              if [ -f "$file" ]; then
-                tauri_found=true
-                break
-              fi
-            done
-            if [ "$tauri_found" = false ]; then
-              echo "Missing Tauri installer"; exit 1
-            fi
-            echo -e "Atlas Bundle - Linux\\n\\nInstallation Steps:\\n1. Extract and run Atlas CLI installer\\n2. Install .deb package" > "$bundle_name/README.txt"
-          fi
-          
-          # Create archive
-          if [ "${{ matrix.platform }}" == "windows" ]; then
-            7z a "dist/${bundle_name}.zip" "$bundle_name"/*
-          else
-            tar -czf "dist/${bundle_name}.tar.gz" "$bundle_name"
-          fi
-          
-          echo "Bundle created successfully"
-          ls -la dist/${bundle_name}.*
+        run: ./scripts/create-platform-bundle.sh "${{ steps.version.outputs.version }}" "${{ matrix.platform }}" "${{ matrix.arch }}"
 
       - name: Create archive
         run: |
@@ -247,7 +195,6 @@ jobs:
             ./dist/atlas_*.tar.gz
             ./dist/atlas_*.zip
             ./dist/atlas_*.exe
-            ./dist/Atlas*.dmg                # NEW: Include Tauri macOS dmg
             ./dist/Atlas_*.exe               # NEW: Include Tauri Windows installer
             ./dist/*.app                     # NEW: Include Tauri macOS app
             ./dist/Atlas\ Web\ Client.app   # NEW: Include Tauri macOS app (specific)
@@ -331,8 +278,8 @@ jobs:
             echo ""
             echo "### macOS"
             echo ""
-            echo "**Option 1: Electron Installer (Recommended)**"
-            echo "Double-click the Atlas*.dmg file and run the Atlas Installer app. The installer provides:"
+            echo "**Option 1: ZIP Installer (Recommended)**"
+            echo "Extract and run the atlas_*.zip installer. The installer provides:"
             echo "- Professional installation experience with license agreement"
             echo "- Optional API key collection and secure storage"
             echo "- Automatic PATH configuration"
@@ -402,7 +349,6 @@ jobs:
             ./dist/atlas_*.tar.gz
             ./dist/atlas_*.zip
             ./dist/atlas_*.exe
-            ./dist/Atlas*.dmg                 # NEW: Include Tauri macOS dmg
             ./dist/Atlas_*.exe                # NEW: Include Tauri Windows installer
             ./dist/Atlas*.msi                 # NEW: Include Tauri Windows msi
             ./dist/atlas_*.deb

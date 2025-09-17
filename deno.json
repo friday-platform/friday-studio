@@ -48,6 +48,5 @@
     "report:knip": "npx knip --reporter markdown --max-issues 0 > reports/knip-report.md",
     "report:typescript": "deno run --allow-all tools/typescript-error-report/src/main.ts"
   },
-
   "lint": { "rules": { "tags": ["recommended"] } }
 }

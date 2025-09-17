@@ -156,7 +156,7 @@ runs:
           # Prefer NSIS/EXE installer on Windows
           selected=$(echo "$artifacts" | jq -r 'try (map(select(type=="string")) | (map(select(test("\\.exe$"))) | first)) catch ""')
         elif [ "$platform" = "darwin" ]; then
-          # Prefer .app bundle on macOS (DMG is created later in workflow)
+          # Prefer .app bundle on macOS
           selected=$(echo "$artifacts" | jq -r 'try (map(select(type=="string")) | (map(select(test("\\.app$"))) | first)) catch ""')
         else
           # Prefer .deb on Linux
