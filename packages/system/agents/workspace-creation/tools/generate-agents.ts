@@ -250,7 +250,7 @@ Each agent in the array should follow the discriminated union pattern with "sour
               prompt: spec.prompt,
               env: bundledAgent.environmentConfig?.required
                 ? Object.fromEntries(
-                    bundledAgent.environmentConfig.required.map((key) => [key, ""]),
+                    bundledAgent.environmentConfig.required.map((envVar) => [envVar.name, ""]),
                   )
                 : undefined,
             };

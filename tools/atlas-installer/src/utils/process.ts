@@ -158,7 +158,3 @@ export async function safeExec(command: string, options: ExecOptions = {}): Prom
     throw formatExecError(command, error);
   }
 }
-
-// Backwards compatibility exports (will be removed)
-export const safeExecAsync = safeExec;
-export const safeExecSync = safeExec; // Now async, callers need to be updated
