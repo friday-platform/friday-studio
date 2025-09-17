@@ -1290,20 +1290,13 @@ export class SessionSupervisorActor implements BaseActor {
       // System agents should receive input as-is, not stringified
       const agentConfig = this.config?.agents?.[agentTask.agentId];
       // llm agents have ".config" when bundled agents have prompt directly in object
-      const agentConfigPrompt = agentConfig?.config?.prompt || agentConfig?.prompt || "";
       const isSystemAgent = agentConfig?.type === "system";
       // System agents are referenced by ID
       const agentId = isSystemAgent ? agentConfig.agent : agentTask.agentId;
-
-      // Extract the actual message/input to send to the agent
-
       /**
        * @FIXME: this is really rough code.
        */
-      if (agentTask.task && agentTask.task !== "Execute job task") {
-        // Use explicit task if provided
-        prompt = agentTask.task;
-      } else if (agentConfigPrompt && agentConfig?.type !== "system") {
+      if (!isSystemAgent) {
         // For non-system agents, use the agent's configured prompt from workspace and append the input
         // System agents (like conversation) manage their own system prompts internally
         let inputText = "";
@@ -1343,14 +1336,27 @@ export class SessionSupervisorActor implements BaseActor {
         // Always include facts section first
         promptSections.push(facts);
 
-        // Include input if available
+        // Include input if available and remove source attribution tags
         if (inputText) {
           const sanitizedInput = stripSourceAttributionTags(inputText);
           promptSections.push(inputLabel + sanitizedInput);
         }
 
         // Add the agent's configured prompt instructions
-        promptSections.push(agentConfigPrompt);
+        const agentConfigPrompt = agentConfig?.config?.prompt || agentConfig?.prompt || "";
+        if (agentConfigPrompt) {
+          promptSections.push(`## Prompt:\n${agentConfigPrompt}`);
+        } else {
+          // Warn for missing prompts (we're already in non-system agent block)
+          logger.warn(`${agentConfig?.type || "Unknown"} agent missing required prompt`, {
+            agentId: agentTask.agentId,
+            agentType: agentConfig?.type,
+          });
+        }
+
+        if (agentTask.task && agentTask.task !== "Execute job task") {
+          promptSections.push(`## Task:\n${agentTask.task}`);
+        }
 
         // If we are retrying due to a previous validation failure for this agent, append feedback
         const priorIssues = this.lastValidationMetaByAgent.get(agentTask.agentId);
