@@ -11,10 +11,9 @@
  */
 
 import type { AtlasTools } from "@atlas/agent-sdk";
-import { fileOutput } from "./file.ts";
 import { resourceReadTool } from "./resource-read.ts";
+import { recallNotesTool, takeNoteTool } from "./scratchpad-tools.ts";
 import { tableOutput } from "./table.ts";
-import { todoReadTool, todoWriteTool } from "./todo-tools.ts";
 import { workspaceMemoryTool } from "./workspace-memory-tool.ts";
 import { workspaceSummary } from "./workspace-summary.ts";
 // import { updateWorkspace } from "./workspace-update/atlas-update-workspace.ts";
@@ -25,8 +24,8 @@ import { workspaceSummary } from "./workspace-summary.ts";
  */
 export const conversationTools: AtlasTools = {
   atlas_workspace_memory: workspaceMemoryTool,
-  atlas_todo_read: todoReadTool,
-  atlas_todo_write: todoWriteTool,
+  take_note: takeNoteTool,
+  recall_notes: recallNotesTool,
   read_atlas_resource: resourceReadTool,
   table_output: tableOutput,
   workspace_summary: workspaceSummary,

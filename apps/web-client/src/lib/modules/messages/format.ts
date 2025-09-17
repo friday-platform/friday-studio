@@ -7,6 +7,7 @@ export function formatMessage(
 ): OutputEntry | undefined {
   if (part.type === "data-user-message") {
     return {
+      id: crypto.randomUUID(),
       type: "request",
       timestamp: new Date().toISOString(),
       author: currentUser,
@@ -79,20 +80,4 @@ export function formatMessage(
       content: "Something went wrong",
     };
   }
-}
-
-function getNormalizedToolName(toolName: string) {
-  if (toolName === "atlas_todo_read") {
-    return "Reading Todos";
-  }
-
-  if (toolName === "atlas_workspace_list") {
-    return "Reading Workspaces";
-  }
-
-  if (toolName === "atlas_workspace_create") {
-    return "Creating Workspace";
-  }
-
-  return toolName;
 }

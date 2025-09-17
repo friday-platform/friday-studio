@@ -31,8 +31,6 @@ export {
   supervisorDefaults,
   supervisorDefaultsWrapped,
 } from "./src/supervisor-defaults.ts";
-// Todo schemas
-export * from "./src/todos.ts";
 export * from "./src/workspace.ts";
 
 // ==============================================================================

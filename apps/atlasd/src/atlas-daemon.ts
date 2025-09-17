@@ -34,10 +34,10 @@ import { chatStorageRoutes } from "../routes/chat-storage/index.ts";
 import { healthRoutes } from "../routes/health.ts";
 import { libraryRoutes } from "../routes/library/index.ts";
 import { createOpenAPIHandlers } from "../routes/openapi.ts";
+import { scratchpadApp } from "../routes/scratchpad/index.ts";
 import { sessionsRoutes } from "../routes/sessions/index.ts";
 import { signalRoutes } from "../routes/signals/index.ts";
 import { streamsRoutes } from "../routes/streams/index.ts";
-import { todoStorageRoutes } from "../routes/todo-storage/index.ts";
 import { userRoutes } from "../routes/user/index.ts";
 import { workspacesRoutes } from "../routes/workspaces/index.ts";
 import { type AppContext, createApp } from "./factory.ts";
@@ -512,8 +512,8 @@ export class AtlasDaemon implements AppContext {
 
     this.app.route("/api/user", userRoutes);
 
-    // Mount todo storage routes
-    this.app.route("/api/todos", todoStorageRoutes);
+    // Mount scratchpad routes
+    this.app.route("/api/scratchpad", scratchpadApp);
 
     // Mount sessions routes
     this.app.route("/api/sessions", sessionsRoutes);
