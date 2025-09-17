@@ -1,5 +1,10 @@
 import { join } from "@std/path";
 
+// Cache the working directory at startup since it never changes
+// This prevents EMFILE errors from concurrent Deno.cwd() calls
+// and improves performance by avoiding unnecessary syscalls
+const CACHED_CWD = Deno.cwd();
+
 /**
  * Check if Atlas is running as a system service
  */
@@ -53,7 +58,7 @@ export function getAtlasHome(): string {
 
   // Check if we're already running from within .atlas directory
   // This handles the case where the compiled atlas binary runs from ~/.atlas/
-  const cwd = Deno.cwd();
+  const cwd = CACHED_CWD;
   const sep = Deno.build.os === "windows" ? "\\" : "/";
   if (cwd.endsWith(".atlas") || cwd.includes(`.atlas${sep}`)) {
     // We're in .atlas directory, return the parent .atlas directory
