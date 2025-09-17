@@ -317,7 +317,7 @@ export class WebEmbeddingProvider implements MECMFEmbeddingProvider {
     }
 
     // Write to file
-    const file = await Deno.open(filepath, { write: true, create: true });
+    using file = await Deno.open(filepath, { write: true, create: true });
     await response.body?.pipeTo(file.writable);
   }
 
