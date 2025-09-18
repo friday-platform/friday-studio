@@ -250,10 +250,7 @@ Each agent in the array should follow the discriminated union pattern with "sour
               prompt: spec.prompt,
               env: bundledAgent.environmentConfig?.required
                 ? Object.fromEntries(
-                    bundledAgent.environmentConfig.required.map((envVar) => [
-                      envVar.name,
-                      Deno.env.get(envVar.name) || "",
-                    ]),
+                    bundledAgent.environmentConfig.required.map((envVar) => [envVar.name, "auto"]),
                   )
                 : undefined,
             };
