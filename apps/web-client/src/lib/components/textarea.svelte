@@ -59,31 +59,34 @@ function updateDimensions(_value?: string | null | undefined) {
 	p,
 	textarea {
 		font-size: var(--font-size-3);
-		font-weight: var(--font-weight-4);
+		font-weight: var(--font-weight-4-5);
 		line-height: var(--font-lineheight-3);
-		padding-inline: var(--size-3) var(--size-7);
-		padding-block: var(--size-2);
+		padding-inline: var(--size-4) var(--size-7);
+		padding-block: var(--size-2-5) var(--size-1-5);
+		min-block-size: var(--size-10);
 		word-break: break-word;
 	}
 
 	textarea {
-		background-color: transparent;
-		border-radius: var(--radius-4);
+		background-color: var(--color-surface-1);
+		border-radius: var(--radius-5);
 		box-shadow: var(--shadow-1);
 		display: block;
 		caret-color: var(--accent-1);
 		inline-size: 100%;
-		min-block-size: var(--size-9);
-
 		resize: none;
 		scrollbar-width: thin;
+
+		&:disabled {
+			opacity: 1;
+		}
 
 		&:focus {
 			outline: none;
 		}
 
 		&::placeholder {
-			color: color-mix(in oklch, var(--text-3) 70%, transparent);
+			color: color-mix(in oklch, var(--color-text) 50%, transparent);
 		}
 	}
 

@@ -2,16 +2,15 @@
 import { openPath } from "@tauri-apps/plugin-opener";
 import { onMount } from "svelte";
 import { getAppContext } from "$lib/app-context.svelte";
-import { getAtlasDaemonUrl } from "$lib/utils/daemon";
 
 import type { LibraryItem } from "../../../../../src/core/library/types.ts";
 
-const { daemonClient } = getAppContext();
+const appCtx = getAppContext();
 
 let libraryItems = $state<LibraryItem[]>([]);
 
 onMount(async () => {
-  const items = await daemonClient.listLibraryItems({ limit: 50 });
+  const items = await appCtx.daemonClient.listLibraryItems({ limit: 50 });
 
   libraryItems = items.items;
 });
@@ -68,8 +67,8 @@ onMount(async () => {
 
 	h2 {
 		flex: none;
-		font-size: var(--font-size-7);
-		font-weight: var(--font-weight-7);
+		font-size: var(--font-size-4);
+		font-weight: var(--font-weight-6);
 		margin-inline: auto;
 		max-inline-size: 64rem;
 		inline-size: 100%;
@@ -93,7 +92,7 @@ onMount(async () => {
 		.row {
 			align-content: center;
 			block-size: var(--size-16);
-			border-block-end: 1px solid var(--border-1);
+			border-block-end: 1px solid var(--color-border-1);
 			display: grid;
 			grid-template-columns: subgrid;
 			grid-column: 1 / -1;
@@ -104,7 +103,7 @@ onMount(async () => {
 			}
 
 			&:matches(button):hover {
-				background-color: var(--highlight-1);
+				background-color: var(--color-surface-2);
 			}
 		}
 
@@ -116,7 +115,7 @@ onMount(async () => {
 		.cell {
 			align-items: center;
 			display: flex;
-			font-size: var(--font-size-5);
+			font-size: var(--font-size-3);
 		}
 
 		.cell {

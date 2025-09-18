@@ -1,6 +1,7 @@
 # Web Client
 
-**Date revised**: August 06, 2025 **Feature**: Atlas Web Client **Type**: Intent-Based Specification
+**Date revised**: August 06, 2025 **Feature**: Atlas Web Client **Type**:
+Intent-Based Specification
 
 ## 1. Base Policy (Core Intent)
 
@@ -10,10 +11,11 @@ The web client serves as a frontend access point to Atlas via a web browser.
 
 ### Core Problem Solved
 
-Technical and non-technical users need a full featured, rich text experience that compliments the
-existing CLI interface. This interface will provide conversations with the Atlas Conversation Agent
-(see: @/specs/conversation-agent.md) along with a library of documents added by both Atlas and the
-user.
+Technical and non-technical users need a full featured, rich text experience
+that compliments the existing CLI interface. This interface will provide
+conversations with the Atlas Conversation Agent (see:
+@/specs/conversation-agent.md) along with a library of documents added by both
+Atlas and the user.
 
 ## 2. Architecture
 
@@ -33,7 +35,8 @@ user.
 - **Button**: Primary interactive element (`components/button.svelte`)
 - **Loading**: Loading state indicator (`components/loading.svelte`)
 - **Error**: Error state display (`components/error.svelte`)
-- **Separator/Spacer**: Layout utilities (`components/separator.svelte`, `components/spacer.svelte`)
+- **Separator/Spacer**: Layout utilities (`components/separator.svelte`,
+  `components/spacer.svelte`)
 - **Slider**: Range input control (`components/slider.svelte`)
 - **Highlight**: Text emphasis (`components/highlight.svelte`)
 - **Placeholder**: Empty state placeholder (`components/placeholder.svelte`)
@@ -41,41 +44,51 @@ user.
 #### Layout & Navigation
 
 - **App Shell**: Container, sidebar, main content area (`components/app/`)
-- **Page Structure**: Header, body, content, sidebar, toolbar, CTA sections (`components/page/`)
+- **Page Structure**: Header, body, content, sidebar, toolbar, CTA sections
+  (`components/page/`)
 
 #### Forms & Inputs
 
-- **Form System**: Field groups, labels, inputs, textareas, checkboxes, radios (`components/form/`)
-- **Select Components**: Custom select dropdowns with triggers (`components/select/`)
+- **Form System**: Field groups, labels, inputs, textareas, checkboxes, radios
+  (`components/form/`)
+- **Select Components**: Custom select dropdowns with triggers
+  (`components/select/`)
 - **Form Variants**: Read-only fields, sensitive data inputs, image uploads
   (`components/form/read-only.svelte`, `components/form/sensitive.svelte`,
   `components/form/image.svelte`)
-- **Native Controls**: Native checkbox implementation (`components/form/native-checkbox.svelte`)
+- **Native Controls**: Native checkbox implementation
+  (`components/form/native-checkbox.svelte`)
 
 #### Dialogs & Overlays
 
 - **Dialog**: Modal dialog with header, content, footer (`components/dialog/`)
-- **Alert Dialog**: Confirmation dialogs with action buttons (`components/alertdialog/`)
+- **Alert Dialog**: Confirmation dialogs with action buttons
+  (`components/alertdialog/`)
 - **Popover**: Contextual content overlays (`components/popover/`)
-- **Dropdown Menu**: Hierarchical menu system with search (`components/dropdown-menu/`)
-- **Contextual Menu**: Context-specific action menus (`components/contextual-menu/`)
+- **Dropdown Menu**: Hierarchical menu system with search
+  (`components/dropdown-menu/`)
+- **Contextual Menu**: Context-specific action menus
+  (`components/contextual-menu/`)
 - **Image Popover**: Image preview overlay (`components/image-popover/`)
 - **Tooltip**: Simple and detailed tooltip variants (`components/tooltip/`)
 
 #### Data Display
 
-- **Table System**: Full-featured table with sorting, filtering, pagination (`components/table/`)
+- **Table System**: Full-featured table with sorting, filtering, pagination
+  (`components/table/`)
 - **Table Columns**: Specialized columns for apps, teams, resources, tags
   (`components/table/columns/`)
-- **Filters**: Multi-faceted filtering with search and sort (`components/filters/`,
-  `components/table/filters/`)
-- **Tags**: Tag display with gradients, owners, teams (`components/tag.svelte`, `components/tags/`)
+- **Filters**: Multi-faceted filtering with search and sort
+  (`components/filters/`, `components/table/filters/`)
+- **Tags**: Tag display with gradients, owners, teams (`components/tag.svelte`,
+  `components/tags/`)
 - **Avatar/Profile**: User avatar and profile components (`components/avatar/`,
   `components/profile/`)
 
 #### Interactive Elements
 
-- **Collapsible**: Expandable/collapsible content sections (`components/collapsible/`)
+- **Collapsible**: Expandable/collapsible content sections
+  (`components/collapsible/`)
 - **Segmented Control**: Tab-like segmented controls with dropdowns
   (`components/segmented-control/`)
 - **Dropzone**: Drag-and-drop file upload (`components/dropzone/`)
@@ -85,28 +98,34 @@ user.
 
 #### Icons
 
-- **Icon Library**: Comprehensive icon set (100+ icons) (`components/icons/custom/`)
-- **Icon Sizes**: Small, large, and custom icon variants (`components/icons/small/`,
-  `components/icons/large/`)
+- **Icon Library**: Comprehensive icon set (100+ icons)
+  (`components/icons/custom/`)
+- **Icon Sizes**: Small, large, and custom icon variants
+  (`components/icons/small/`, `components/icons/large/`)
 - **Icon Wrapper**: Base icon component (`components/icon.svelte`)
 - **Icon Upload**: Icon upload functionality (`components/icon-upload.svelte`)
 
 #### Utilities
 
-- **Keyboard Listener**: Global keyboard event handling (`components/keyboard-listener.svelte`)
-- **Scroll Listener**: Scroll event monitoring (`components/scroll-listener.svelte`)
-- **Paginated Scroll**: Infinite scroll pagination (`components/paginated-scroll.svelte`)
-- **Copy Attributes**: Clipboard copy functionality (`components/copy-attributes.svelte`)
+- **Keyboard Listener**: Global keyboard event handling
+  (`components/keyboard-listener.svelte`)
+- **Scroll Listener**: Scroll event monitoring
+  (`components/scroll-listener.svelte`)
+- **Paginated Scroll**: Infinite scroll pagination
+  (`components/paginated-scroll.svelte`)
+- **Copy Attributes**: Clipboard copy functionality
+  (`components/copy-attributes.svelte`)
 - **Safe Image**: Error-resistant image loading (`components/safe-image.svelte`)
 
 ### Visual Styles
 
 #### CSS Guidelines
 
-- ALWAYS check for a matching design system css variable in src/app.css before inserting a
-  standalone value
+- ALWAYS check for a matching design system css variable in src/app.css before
+  inserting a standalone value
 - ALWAYS organize CSS properties alphabetically
-- ALWAYS use logical properties (inline-size vs width, padding-inline-start vs padding-left, etc)
+- ALWAYS use logical properties (inline-size vs width, padding-inline-start vs
+  padding-left, etc)
 - NEVER add unnecessary reset values like margin: 0, padding: 0 etc
 
 #### Design System Foundation
@@ -126,7 +145,8 @@ user.
 #### Spacing Tokens
 
 - **Variable Pattern**: `--size-{value}` (e.g., `--size-4`, `--size-16`)
-- **Micro**: `--size-0`, `--size-px`, `--size-1-5px`, `--size-0-5`, `--size-0-75`
+- **Micro**: `--size-0`, `--size-px`, `--size-1-5px`, `--size-0-5`,
+  `--size-0-75`
 - **Small**: `--size-1` through `--size-14-5` (0.25rem to 3.625rem scaled)
 - **Medium**: `--size-16` through `--size-48` (4rem to 12rem scaled)
 - **Large**: `--size-52` through `--size-216` (13rem to 54rem scaled)
@@ -137,33 +157,40 @@ user.
 - **Font Families**:
   - Sans: `--font-family-sans`
   - Monospace: `--font-family-monospace`
-- **Font Sizes**: `--font-size-0` through `--font-size-7` (0.625rem to 1.5rem scaled)
+- **Font Sizes**: `--font-size-1` through `--font-size-4` (0.625rem to 1.5rem
+  scaled)
 - **Font Weights**: `--font-weight-4` (400) through `--font-weight-7` (700)
-- **Line Heights**: `--font-lineheight-0` (100%) through `--font-lineheight-5` (200%)
-- **Letter Spacing**: `--font-letterspacing-1` (0.025em) through `--font-letterspacing-7` (1em)
-- **Usage**: `font-size: var(--font-size-4); font-weight: var(--font-weight-6);`
+- **Line Heights**: `--font-lineheight-0` (100%) through `--font-lineheight-5`
+  (200%)
+- **Letter Spacing**: `--font-letterspacing-1` (0.025em) through
+  `--font-letterspacing-7` (1em)
+- **Usage**: `font-size: var(--font-size-2); font-weight: var(--font-weight-6);`
 
 #### Color System
 
 - **Backgrounds**: `--background-1` through `--background-4`
 - **Text Colors**: `--text-1` through `--text-4` (with opacity)
-- **Borders**: `--border-1`, `--border-2`, `--border-3` (plus solid variants `--border-1s`, etc.)
-- **Highlights**: `--highlight-1`, `--highlight-2`, `--highlight-3` (plus solid `--highlight-1s`,
-  etc.)
+- **Borders**: `--border-1`, `--border-2`, `--border-3` (plus solid variants
+  `--border-1s`, etc.)
+- **Highlights**: `--highlight-1`, `--highlight-2`, `--highlight-3` (plus solid
+  `--highlight-1s`, etc.)
 - **Accent Colors**: `--accent-1` through `--accent-4`
 - **Usage**: `color: var(--text-2); border: 1px solid var(--border-1);`
 
 #### Semantic Colors (OKLCH)
 
-- **Variable Pattern**: `--color-{name}-{variant}` (e.g., `--color-red-1`, `--color-blue-2`)
-- **Base Colors**: Red, Orange, Yellow, Olive, Green, Teal, Blue, Purple, Pink, Gray
-- **Brand Colors**: `--blue-1`, `--orange-1`, `--red-1`, `--plum-1`, `--purple-1`, `--green-1`
+- **Variable Pattern**: `--color-{name}-{variant}` (e.g., `--color-red-1`,
+  `--color-blue-2`)
+- **Base Colors**: Red, Orange, Yellow, Olive, Green, Teal, Blue, Purple, Pink,
+  Gray
+- **Brand Colors**: `--blue-1`, `--orange-1`, `--red-1`, `--plum-1`,
+  `--purple-1`, `--green-1`
 - **Usage**: `background: var(--color-blue-1);`
 
 #### Gradients
 
-- **Variable Pattern**: `--gradient-{color}-{variant}` (e.g., `--gradient-blue-1`,
-  `--gradient-blue-2`)
+- **Variable Pattern**: `--gradient-{color}-{variant}` (e.g.,
+  `--gradient-blue-1`, `--gradient-blue-2`)
 - **Primary Gradients**: Full opacity radial gradients (suffix `-1`)
 - **Secondary Gradients**: Low opacity variants for overlays (suffix `-2`)
 - **Available**: Blue, Orange, Red, Plum, Purple, Green, Black, Grey

@@ -1,3 +1,4 @@
+import ArrowUp from "./arrow-up.svelte";
 import Dashboard from "./dashboard.svelte";
 import Eye from "./eye.svelte";
 import EyeClosed from "./eye-closed.svelte";
@@ -20,4 +21,5 @@ export const CustomIcons = {
   Globe,
   Workspace,
   Slack,
+  ArrowUp,
 };

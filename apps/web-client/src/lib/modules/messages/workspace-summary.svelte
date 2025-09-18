@@ -29,7 +29,7 @@ const {
 		border: 1px solid var(--border-2);
 		border-radius: var(--radius-3);
 		display: flex;
-		font-size: var(--font-size-3);
+		font-size: var(--font-size-1);
 		font-weight: var(--font-weight-5);
 		inline-size: max-content;
 		padding-block: var(--size-2);

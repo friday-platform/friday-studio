@@ -1,10 +1,13 @@
 <script lang="ts">
+import { getAppContext } from "src/lib/app-context.svelte";
 import type { Snippet } from "svelte";
 
 let { children }: { children: Snippet } = $props();
+
+const appCtx = getAppContext();
 </script>
 
-<div>
+<div class:expanded={appCtx.sidebarExpanded}>
 	{@render children()}
 </div>
 
@@ -12,7 +15,12 @@ let { children }: { children: Snippet } = $props();
 	div {
 		block-size: 100dvh;
 		display: grid;
-		grid-template-columns: 12.6875rem 1fr;
+		grid-template-columns: calc(var(--size-23) + var(--size-px)) 1fr;
 		flex-direction: column;
+		transition: all 0.2s ease-in-out;
+
+		&.expanded {
+			grid-template-columns: var(--size-56) 1fr;
+		}
 	}
 </style>

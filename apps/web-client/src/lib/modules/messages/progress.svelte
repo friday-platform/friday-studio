@@ -90,19 +90,17 @@ function getMessage() {
 
 	.progress {
 		align-items: center;
-		background: var(--gradient-black-2);
 		block-size: var(--size-8);
 		border-radius: var(--radius-round);
-		color: var(--text-1);
 		display: flex;
+		font-size: var(--font-size-3);
 		font-weight: var(--font-weight-5);
 		inline-size: max-content;
 		justify-content: center;
-		padding-inline: var(--size-3);
 	}
 
 	.in-progress-tools {
-		background-color: var(--background-1);
+		background-color: var(--color-surface-1);
 		border: var(--size-px) solid var(--border-2);
 		border-radius: var(--radius-4);
 		padding: var(--size-3);
@@ -124,14 +122,14 @@ function getMessage() {
 			overflow: hidden;
 
 			h2 {
-				font-size: var(--font-size-3);
+				font-size: var(--font-size-1);
 				font-weight: var(--font-weight-5);
 				line-height: var(--font-lineheight-1);
 			}
 
 			span {
 				color: var(--text-3);
-				font-size: var(--font-size-2);
+				font-size: var(--font-size-1);
 				font-weight: var(--font-weight-4-5);
 				max-inline-size: 100%;
 				overflow: hidden;

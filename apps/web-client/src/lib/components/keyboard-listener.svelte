@@ -1,7 +1,7 @@
 <script lang="ts">
 import { getAppContext, type KeyboardModifier } from "$lib/app-context.svelte";
 
-const { keyboard } = getAppContext();
+const ctx = getAppContext();
 
 const modifierKeys = new Set(["shift", "meta", "alt", "control"]);
 
@@ -60,12 +60,13 @@ function onKeyDown(e: KeyboardEvent) {
 
   if (
     key === "a" &&
-    (keyboard.state?.modifiers.includes("command") || keyboard.state?.modifiers.includes("control"))
+    (ctx.keyboard.state?.modifiers.includes("command") ||
+      ctx.keyboard.state?.modifiers.includes("control"))
   ) {
     e.preventDefault();
   }
 
-  keyboard.update({
+  ctx.keyboard.update({
     key: isModifierKey(e) ? null : key,
     modifiers: getKeyModifiers(e),
     pressing: true,
@@ -76,12 +77,13 @@ function onKeyUp(e: KeyboardEvent) {
   const key = getNormalizedKey(e.key);
   if (
     key === "a" &&
-    (keyboard.state?.modifiers.includes("command") || keyboard.state?.modifiers.includes("control"))
+    (ctx.keyboard.state?.modifiers.includes("command") ||
+      ctx.keyboard.state?.modifiers.includes("control"))
   ) {
     e.preventDefault();
   }
 
-  keyboard.update({
+  ctx.keyboard.update({
     key: isModifierKey(e) ? null : key,
     modifiers: getKeyModifiers(e),
     pressing: false,

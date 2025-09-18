@@ -14,7 +14,7 @@ import Message from "$lib/modules/messages/message.svelte";
 import Progress from "$lib/modules/messages/progress.svelte";
 import Table from "$lib/modules/messages/table.svelte";
 
-const { stagedFiles } = getAppContext();
+const appCtx = getAppContext();
 
 const ctx = getClientContext();
 
@@ -138,10 +138,10 @@ const messages = $derived([...ctx.messageHistory, ...ctx.messages]);
 						const formData = new FormData(e.target as HTMLFormElement);
 						let formMessage = formData.get('message');
 
-						if (stagedFiles.state.size > 0) {
+						if (appCtx.stagedFiles.state.size > 0) {
 							formMessage = formMessage + `\n\nLibrary attachments:`;
 
-							for (const id of stagedFiles.state.keys()) {
+							for (const id of appCtx.stagedFiles.state.keys()) {
 								formMessage = formMessage + `\n- ${id}`;
 							}
 						}
@@ -181,7 +181,7 @@ const messages = $derived([...ctx.messageHistory, ...ctx.messages]);
 							});
 
 							if (file) {
-								stagedFiles.add(file[0], {
+								appCtx.stagedFiles.add(file[0], {
 									path: file[0],
 									type: getFileType(file[0])
 								});
@@ -193,12 +193,12 @@ const messages = $derived([...ctx.messageHistory, ...ctx.messages]);
 				</div>
 			</form>
 
-			{#if stagedFiles.state.size > 0}
+			{#if appCtx.stagedFiles.state.size > 0}
 				<div class="staged-files">
-					{#each stagedFiles.state.entries() as [itemId, file]}
+					{#each appCtx.stagedFiles.state.entries() as [itemId, file]}
 						<button
 							onclick={async () => {
-								stagedFiles.remove(itemId);
+								appCtx.stagedFiles.remove(itemId);
 							}}
 						>
 							{#if file.type === 'file'}
@@ -248,7 +248,7 @@ const messages = $derived([...ctx.messageHistory, ...ctx.messages]);
 			padding-inline-end: var(--size-10);
 
 			h2 {
-				font-size: var(--font-size-7);
+				font-size: var(--font-size-4);
 				font-weight: var(--font-weight-7);
 				line-height: var(--font-lineheight-1);
 				padding-inline: var(--size-10);
@@ -256,7 +256,7 @@ const messages = $derived([...ctx.messageHistory, ...ctx.messages]);
 			}
 
 			.empty-message {
-				font-size: var(--font-size-4);
+				font-size: var(--font-size-2);
 				font-weight: var(--font-weight-4);
 				margin-block-start: var(--size-6);
 				margin-inline: var(--size-10);
@@ -272,7 +272,7 @@ const messages = $derived([...ctx.messageHistory, ...ctx.messages]);
 
 			h2 {
 				color: var(--text-3);
-				font-size: var(--font-size-2);
+				font-size: var(--font-size-1);
 				font-weight: var(--font-weight-4-5);
 				line-height: var(--font-lineheight-1);
 			}
@@ -302,7 +302,7 @@ const messages = $derived([...ctx.messageHistory, ...ctx.messages]);
 	}
 
 	form {
-		background-color: var(--background-1);
+		background-color: var(--color-surface-1);
 		display: flex;
 		max-inline-size: 75ch;
 		position: relative;
@@ -323,7 +323,7 @@ const messages = $derived([...ctx.messageHistory, ...ctx.messages]);
 				color: var(--accent-1);
 				display: flex;
 				display: flex;
-				font-size: var(--font-size-2);
+				font-size: var(--font-size-1);
 				font-weight: var(--font-weight-5);
 				gap: var(--size-1-5);
 				inline-size: var(--size-7);
@@ -386,7 +386,7 @@ const messages = $derived([...ctx.messageHistory, ...ctx.messages]);
 
 				span:last-child {
 					color: var(--text-3);
-					font-size: var(--font-size-0);
+					font-size: var(--font-size-1);
 					font-weight: var(--font-weight-4);
 					opacity: 0.8;
 				}
@@ -412,7 +412,7 @@ const messages = $derived([...ctx.messageHistory, ...ctx.messages]);
 
 	.daemon-error {
 		color: var(--text-3);
-		font-size: var(--font-size-3);
+		font-size: var(--font-size-1);
 		font-weight: var(--font-weight-4-5);
 		text-align: center;
 		margin-block-end: var(--size-6);

@@ -15,9 +15,9 @@ import Progress from "$lib/modules/messages/progress.svelte";
 import Table from "$lib/modules/messages/table.svelte";
 import WorkspaceSummary from "$lib/modules/messages/workspace-summary.svelte";
 
-const { stagedFiles } = getAppContext();
+const appCtx = getAppContext();
 
-const ctx = getClientContext();
+const clientCtx = getClientContext();
 
 let form = $state<HTMLFormElement | null>(null);
 let message = $state<string>("");
@@ -27,8 +27,8 @@ let animationFrameId = $state<number | null>(null);
 let showPlan = $state(false);
 
 onMount(() => {
-  if (!ctx.conversationSessionId) {
-    ctx.createSession();
+  if (!clientCtx.conversationSessionId) {
+    clientCtx.createSession();
   }
 });
 
@@ -39,9 +39,11 @@ function handleScroll() {
   if (!scrollContainer) return;
 
   const { scrollTop, scrollHeight, clientHeight } = scrollContainer;
-  const isAtBottom = Math.abs(scrollHeight - scrollTop - clientHeight) < 50;
+  const isAtBottom = Math.abs(scrollHeight - scrollTop - clientHeight) < 10;
+
   // If user scrolls away from bottom, mark as manually scrolled
   if (!isAtBottom) {
+    userHasScrolled = true;
   }
   // If user scrolls back to bottom, reset the flag
   if (isAtBottom) {
@@ -66,28 +68,27 @@ $effect(() => {
     animationFrameId = requestAnimationFrame(scrollToBottom);
   }
 });
+
+const hasMessages = $derived(
+  clientCtx.messages.filter((m) => m.type !== "data-connection" && m.type !== "data-heartbeat")
+    .length > 0,
+);
 </script>
 
-<div
-	class="chat"
-	class:has-messages={ctx.messages.filter(
-		(m) => m.type !== 'data-connection' && m.type !== 'data-heartbeat'
-	).length > 0}
->
+<div class="chat" class:has-messages={hasMessages}>
 	<div class="main">
-		<h2>Dashboard</h2>
+		<div class="messages" class:has-messages={hasMessages}>
+			<div class="messages-inner" bind:this={scrollContainer} onscroll={handleScroll}>
+				<div class="first-message">
+					<h2>Welcome</h2>
+					<p>
+						I’m Atlas, your automation partner. What can I help you accomplish today? Provide the
+						details, and I’ll help you make it happen.
+					</p>
+				</div>
 
-		{#if ctx.messages.filter((m) => m.type !== 'data-connection' && m.type !== 'data-heartbeat').length === 0}
-			<div class="empty-message">
-				<p>Welcome to Atlas! What can I help you build?</p>
-				<p>Tip: You can drag and drop files to attach them to your message.</p>
-			</div>
-		{/if}
-
-		<div class="messages" bind:this={scrollContainer} onscroll={handleScroll}>
-			<div class="messages-inner">
-				{#each ctx.messages as message, index (message.id || index)}
-					{@const formattedMessage = formatMessage(message, ctx.user)}
+				{#each clientCtx.messages as message, index (message.id || index)}
+					{@const formattedMessage = formatMessage(message, clientCtx.user)}
 
 					{#if formattedMessage && (formattedMessage.type === 'request' || formattedMessage.type === 'text')}
 						<Message message={formattedMessage} />
@@ -103,10 +104,10 @@ $effect(() => {
 					{/if}
 				{/each}
 
-				{#if ctx.typingState.isTyping}
+				{#if clientCtx.typingState.isTyping}
 					{@const actionsAfterLastUser = (() => {
 						// Find the last data-user-message
-						const lastUserIndex = ctx.messages.findLastIndex(
+						const lastUserIndex = clientCtx.messages.findLastIndex(
 							(msg) => msg.type === 'data-user-message'
 						);
 
@@ -114,154 +115,209 @@ $effect(() => {
 						if (lastUserIndex === -1) return [];
 
 						// Return everything after the last user message
-						return ctx.messages.slice(lastUserIndex + 1);
+						return clientCtx.messages.slice(lastUserIndex + 1);
 					})()}
 
 					<Progress actions={actionsAfterLastUser} />
 				{/if}
 			</div>
-		</div>
-
-		<div class="interactive-container">
-			<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-			<form
-				bind:this={form}
-				title={ctx.typingState.isTyping
-					? 'Processing... (press escape to cancel the current request)'
-					: undefined}
-				method="POST"
-				onkeydown={(e) => {
-					if (e.key === 'Enter' && !e.shiftKey && !e.altKey) {
-						e.preventDefault();
-						e.currentTarget?.requestSubmit();
-					}
-				}}
-				onsubmit={async (e) => {
-					e.preventDefault();
-
-					if (!ctx.conversationClient || !ctx.conversationSessionId || ctx.typingState.isTyping) {
-						return;
-					}
-
-					try {
-						const formData = new FormData(e.target as HTMLFormElement);
-						let formMessage = formData.get('message');
-
-						if (stagedFiles.state.size > 0) {
-							formMessage = formMessage + `\n\nAttachments:`;
-
-							for (const id of stagedFiles.state.keys()) {
-								formMessage = formMessage + `\n- ${id}`;
-							}
+			<div class="interactive-container">
+				<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+				<form
+					bind:this={form}
+					title={clientCtx.typingState.isTyping
+						? 'Processing... (press escape to cancel the current request)'
+						: undefined}
+					method="POST"
+					onkeydown={(e) => {
+						if (e.key === 'Enter' && !e.shiftKey && !e.altKey) {
+							e.preventDefault();
+							e.currentTarget?.requestSubmit();
 						}
+					}}
+					onsubmit={async (e) => {
+						e.preventDefault();
 
-						if (formMessage.trim().length === 0) {
+						if (
+							!clientCtx.conversationClient ||
+							!clientCtx.conversationSessionId ||
+							clientCtx.typingState.isTyping
+						) {
 							return;
 						}
 
-						// Just send the message - the persistent SSE listener will handle the response
-						await ctx.conversationClient.sendMessage(ctx.conversationSessionId, formMessage);
+						try {
+							const formData = new FormData(e.target as HTMLFormElement);
+							let formMessage = formData.get('message');
 
-						message = '';
-						stagedFiles.clear();
+							if (appCtx.stagedFiles.state.size > 0) {
+								formMessage = formMessage + `\n\nAttachments:`;
 
-						// The persistent SSE listener will handle the response
-					} catch (e) {
-						console.error(e);
-					}
-				}}
-			>
-				<Textarea
-					disabled={ctx.typingState.isTyping}
-					name="message"
-					placeholder="Type here..."
-					value={message}
-					onTextChange={(value) => {
-						message = value;
+								for (const id of appCtx.stagedFiles.state.keys()) {
+									formMessage = formMessage + `\n- ${id}`;
+								}
+							}
+
+							if (
+								formMessage &&
+								typeof formMessage === 'string' &&
+								formMessage.trim().length === 0
+							) {
+								return;
+							}
+
+							userHasScrolled = false;
+							scrollToBottom();
+
+							// Just send the message - the persistent SSE listener will handle the response
+							await clientCtx.conversationClient.sendMessage(
+								clientCtx.conversationSessionId,
+								formMessage
+							);
+
+							message = '';
+							appCtx.stagedFiles.clear();
+
+							// The persistent SSE listener will handle the response
+						} catch (e) {
+							console.error(e);
+						}
 					}}
-				/>
+				>
+					<Textarea
+						disabled={clientCtx.typingState.isTyping}
+						name="message"
+						placeholder="Type here..."
+						value={message}
+						onTextChange={(value) => {
+							message = value;
+						}}
+					/>
+
+					<div class="form-action">
+						{#if clientCtx.typingState.isTyping}
+							<button
+								class="stop-process"
+								type="button"
+								onclick={async (e) => {
+									e.preventDefault();
+
+									if (!clientCtx.atlasSessionId) return;
+
+									clientCtx.conversationClient?.cancelSession(clientCtx.atlasSessionId);
+								}}
+							>
+								<IconSmall.Stop />
+							</button>
+						{:else}
+							<button type="submit" aria-label="Send message">
+								<CustomIcons.ArrowUp />
+							</button>
+						{/if}
+					</div>
+				</form>
 
 				<div class="actions">
-					{#if ctx.typingState.isTyping}
-						<button
-							class="stop-process"
-							type="button"
-							onclick={async (e) => {
-								e.preventDefault();
+					<button
+						class="file-drop"
+						type="button"
+						onclick={async (e) => {
+							e.preventDefault();
 
-								if (!ctx.atlasSessionId) return;
+							const file = await open({
+								multiple: true,
+								directory: true
+							});
 
-								ctx.conversationClient?.cancelSession(ctx.atlasSessionId);
-							}}
-						>
-							<IconSmall.Stop />
-						</button>
-					{:else}
-						<button
-							class="file-drop"
-							type="button"
-							onclick={async (e) => {
-								e.preventDefault();
-
-								const file = await open({
-									multiple: true,
-									directory: true
+							if (file) {
+								appCtx.stagedFiles.add(file[0], {
+									path: file[0],
+									type: getFileType(file[0])
 								});
+							}
+						}}
+					>
+						<CustomIcons.Paperclip />
 
-								if (file) {
-									stagedFiles.add(file[0], {
-										path: file[0],
-										type: getFileType(file[0])
-									});
-								}
-							}}
-						>
-							<CustomIcons.Paperclip />
-						</button>
-					{/if}
+						Add Files
+					</button>
+
+					<!-- <button
+						class="file-drop"
+						type="button"
+						onclick={async (e) => {
+							e.preventDefault();
+
+							// @TODO implement some search examples
+						}}
+					>
+						<CustomIcons.Globe />
+
+						Search Sites
+					</button>
+
+					<button
+						class="file-drop"
+						type="button"
+						onclick={async (e) => {
+							e.preventDefault();
+
+							// @TODO implement some event examples
+						}}
+					>
+						<div class="date">
+							{new Date().getDate()}
+						</div>
+
+						Manage Events
+					</button> -->
 				</div>
-			</form>
 
-			{#if stagedFiles.state.size > 0}
-				<div class="staged-files">
-					{#each stagedFiles.state.entries() as [itemId, file]}
-						<button
-							onclick={async () => {
-								stagedFiles.remove(itemId);
-							}}
-						>
-							{#if file.type === 'file'}
-								<IconSmall.File />
-							{:else}
-								<IconSmall.Folder />
-							{/if}
+				{#if appCtx.stagedFiles.state.size > 0}
+					<div class="staged-files">
+						{#each appCtx.stagedFiles.state.entries() as [itemId, file]}
+							<button
+								onclick={async () => {
+									appCtx.stagedFiles.remove(itemId);
+								}}
+							>
+								{#if file.type === 'file'}
+									<IconSmall.File />
+								{:else}
+									<IconSmall.Folder />
+								{/if}
 
-							<div class="file-details">
-								<span>{file.path}</span>
-								<span>{file.type === 'file' ? 'File' : 'Folder'}</span>
-							</div>
+								<div class="file-details">
+									<span>{file.path}</span>
+									<span>{file.type === 'file' ? 'File' : 'Folder'}</span>
+								</div>
 
-							<span class="close-button">
-								<IconSmall.Close />
-							</span>
-						</button>
-					{/each}
-				</div>
-			{/if}
+								<span class="close-button">
+									<IconSmall.Close />
+								</span>
+							</button>
+						{/each}
+					</div>
+				{/if}
+			</div>
+
+			<div class="background-blur"></div>
 		</div>
+
+		{#if !hasMessages}
+			<footer>
+				<span>Made By Tempest</span>
+			</footer>
+		{/if}
 	</div>
 
-	<!-- <aside>
-		<h2>Artifacts and history</h2>
-
-		<Artifacts />
-	</aside> -->
-
 	{#if showPlan}
-		{@const latestPlanMessage = ctx.messages.findLast(
+		{@const latestPlanMessage = clientCtx.messages.findLast(
 			(message) => message.type === 'tool-workspace_summary'
 		)}
-		{@const formattedPlan = latestPlanMessage ? formatMessage(latestPlanMessage, ctx.user) : null}
+		{@const formattedPlan = latestPlanMessage
+			? formatMessage(latestPlanMessage, clientCtx.user)
+			: null}
 		{#if formattedPlan}
 			{@const data = formattedPlan.metadata?.result}
 			<div class="plan" transition:fade={{ duration: 150 }}>
@@ -288,7 +344,7 @@ $effect(() => {
 	.chat {
 		block-size: 100%;
 		display: grid;
-		grid-template-columns: 1fr var(--size-64);
+		grid-template-columns: 1fr;
 		inline-size: 100%;
 		overflow: hidden;
 		position: relative;
@@ -296,7 +352,7 @@ $effect(() => {
 		z-index: var(--layer-1);
 
 		.plan {
-			background-color: var(--background-1);
+			background-color: var(--color-surface-1);
 			border-radius: var(--radius-3);
 			box-shadow: var(--shadow-1);
 			inset-block-start: var(--size-10);
@@ -319,7 +375,7 @@ $effect(() => {
 
 			p,
 			li {
-				font-size: var(--font-size-2);
+				font-size: var(--font-size-1);
 				font-weight: var(--font-weight-4);
 				opacity: 0.7;
 			}
@@ -330,143 +386,200 @@ $effect(() => {
 				inset-block-start: var(--size-2);
 			}
 		}
+	}
 
-		.main {
-			display: flex;
-			block-size: 100%;
-			overflow: hidden;
-			flex-direction: column;
-			padding-inline-end: var(--size-10);
+	.main {
+		justify-content: center;
+		display: flex;
+		block-size: 100%;
+		overflow: hidden;
+		flex-direction: column;
+		position: relative;
+	}
 
-			h2 {
-				font-size: var(--font-size-7);
-				font-weight: var(--font-weight-7);
-				line-height: var(--font-lineheight-1);
-				padding-inline: var(--size-10);
-				padding-block-start: var(--size-10);
-			}
+	.first-message {
+		margin-inline: auto;
+		max-inline-size: var(--size-150);
+		inline-size: 100%;
+		padding-inline-start: var(--size-1);
 
-			.empty-message {
-				font-size: var(--font-size-4);
-				font-weight: var(--font-weight-4);
-				margin-block-start: var(--size-6);
-				margin-inline: var(--size-10);
-
-				p:last-child {
-					opacity: 0.6;
-				}
-			}
+		h2 {
+			font-size: var(--font-size-4);
+			font-weight: var(--font-weight-6);
+			line-height: var(--font-lineheight-1);
+			margin-block-end: var(--size-2);
 		}
 
-		aside {
-			padding-block: var(--size-10);
-
-			h2 {
-				color: var(--text-3);
-				font-size: var(--font-size-2);
-				font-weight: var(--font-weight-4-5);
-				line-height: var(--font-lineheight-1);
-			}
+		p {
+			font-size: var(--font-size-3);
+			font-weight: var(--font-weight-4);
+			opacity: 0.8;
+			text-wrap: balance;
 		}
 	}
 
 	.messages {
-		flex: 1;
-		overflow-y: scroll;
-		scrollbar-width: thin;
-		padding-block: var(--size-6) var(--size-16);
-		padding-inline: var(--size-10);
+		align-content: center;
+		display: grid;
+		block-size: 100%;
+		grid-template-rows: 5.25rem 4.875rem;
+		gap: var(--size-4);
+		padding: var(--size-10);
+		padding-block-start: var(--size-10);
+		transition: grid-template-rows 150ms ease;
+
+		&.has-messages {
+			grid-template-rows:
+				calc(100% - 4.875rem - var(--size-10))
+				4.875rem;
+		}
 
 		.messages-inner {
 			display: flex;
 			flex-direction: column;
-			max-inline-size: 75ch;
+			gap: var(--size-4);
+			margin-inline: auto;
+			max-inline-size: var(--size-150);
+			padding-inline: var(--size-1);
 			inline-size: 100%;
+			overflow-y: scroll;
+			scrollbar-width: none;
 		}
+
+		.background-blur {
+			background: var(--color-surface-1);
+			block-size: var(--size-28);
+			inset-block-end: 0;
+			inset-inline: 0;
+			position: absolute;
+			opacity: 1;
+			pointer-events: none;
+		}
+	}
+
+	footer {
+		font-size: var(--font-size-1);
+		font-weight: var(--font-weight-5);
+		opacity: 0.5;
+		margin-block-start: auto;
+		text-align: center;
+		padding-block-end: var(--size-7);
+		position: absolute;
+		inset-block-end: 0;
+		inset-inline: 0;
 	}
 
 	.interactive-container {
+		margin-block-start: var(--size-1);
 		position: sticky;
-		inset-block-end: var(--size-10);
-		padding-inline: var(--size-10);
+		inset-block-end: 0;
+		margin-inline: auto;
+		max-inline-size: var(--size-150);
+		inline-size: 100%;
 		z-index: var(--layer-2);
-	}
 
-	form {
-		background-color: var(--background-1);
-		display: flex;
-		max-inline-size: 75ch;
-		position: relative;
+		form {
+			display: flex;
+			position: relative;
 
-		& :global(textarea:disabled) {
-			opacity: 0.5;
+			& :global(textarea:disabled) {
+				opacity: 0.5;
+			}
+
+			.form-action {
+				display: flex;
+				inset-inline-end: var(--size-1-5);
+				inset-block-end: var(--size-1-5);
+				position: absolute;
+			}
+
+			button[type='submit'],
+			.stop-process {
+				align-items: center;
+				background-color: var(--color-yellow);
+				block-size: var(--size-7);
+				border-radius: var(--radius-4);
+				color: var(--color-white);
+				display: flex;
+				justify-content: center;
+				inline-size: var(--size-7);
+				transition: all 200ms ease;
+
+				&:hover {
+					background-color: var(--color-text);
+					@media (prefers-color-scheme: dark) {
+						color: var(--color-surface-1);
+					}
+				}
+			}
 		}
 
 		.actions {
-			position: absolute;
-			inset-inline-end: var(--size-1);
-			inset-block-start: var(--size-1);
+			align-items: center;
+			display: flex;
+			gap: var(--size-2);
+			padding-block-start: var(--size-3);
+			padding-inline: var(--size-3);
 
-			.file-drop {
+			button {
 				align-items: center;
-				block-size: var(--size-7);
 				border-radius: var(--radius-3);
 				color: var(--accent-1);
 				display: flex;
-				display: flex;
-				font-size: var(--font-size-2);
+				font-size: var(--font-size-1);
 				font-weight: var(--font-weight-5);
-				gap: var(--size-1-5);
-				inline-size: var(--size-7);
+				gap: var(--size-1);
 				justify-content: center;
+				padding: var(--size-1);
+				opacity: 0.7;
 				transition: all 150ms ease;
 
 				&:hover {
-					background-color: var(--highlight-1);
+					background-color: var(--color-surface-2);
+					opacity: 1;
 				}
-			}
 
-			.stop-process {
-				align-items: center;
-				background-color: var(--accent-1);
-				border-radius: var(--radius-2);
-				block-size: var(--size-5);
-				color: var(--background-1);
-				display: flex;
-				justify-content: center;
-				inline-size: var(--size-5);
-				margin-block-start: var(--size-1);
-				margin-inline-end: var(--size-1);
-				transition: all 150ms ease;
+				& :global(svg) {
+					flex: none;
+					opacity: 0.7;
+				}
 
-				&:hover {
+				.date {
+					align-items: center;
+					block-size: var(--size-3-5);
+					border-radius: var(--radius-1);
+					border: 1.5px solid currentColor;
+					display: flex;
+					font-size: 7px;
+					font-weight: 900;
+					letter-spacing: calc(-1 * var(--font-letterspacing-2));
+					line-height: var(--font-lineheight-0);
+					inline-size: var(--size-3-5);
+					justify-content: center;
+					text-align: center;
 					opacity: 0.7;
 				}
 			}
 		}
 	}
 
-	.chat.has-messages form {
-		margin-block-start: auto;
-	}
-
 	.staged-files {
 		display: flex;
 		gap: var(--size-4);
-		max-inline-size: 75ch;
 		inline-size: 100%;
 		margin-block-start: var(--size-2);
-		padding-inline: var(--size-2);
+		padding-inline: var(--size-4);
 
 		button {
 			align-items: start;
 			border: none;
-			color: var(--text-1);
+			color: var(--color-text);
 			cursor: pointer;
 			display: flex;
 			font-size: var(--font-size-1);
 			gap: var(--size-1-5);
 			max-inline-size: var(--size-56);
+			opacity: 0.7;
 			justify-content: center;
 			overflow: hidden;
 			text-align: left;
@@ -495,7 +608,7 @@ $effect(() => {
 
 				span:last-child {
 					color: var(--text-3);
-					font-size: var(--font-size-0);
+					font-size: var(--font-size-1);
 					font-weight: var(--font-weight-4);
 					opacity: 0.8;
 				}

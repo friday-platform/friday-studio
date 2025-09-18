@@ -31,7 +31,7 @@ const { data }: { data: { data: { headers: string[]; rows: Record<string, string
 		border-spacing: 0;
 		border-radius: var(--radius-3);
 		overflow: hidden;
-		font-size: var(--font-size-3);
+		font-size: var(--font-size-1);
 		margin-block-start: var(--size-2);
 		max-inline-size: 100%;
 		width: max-content;

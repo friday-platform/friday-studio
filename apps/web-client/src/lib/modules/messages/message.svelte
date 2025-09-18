@@ -12,8 +12,6 @@ const htmlContent = $derived(message.content ? markdownToHTML(message.content) :
 <article class="message" class:user={message.type === 'request'}>
 	{#if message.type === 'request'}
 		<div class="request">
-			<span class="header"><IconSmall.Chat /> You</span>
-
 			<div class="content">
 				{#if htmlContent}
 					{@html htmlContent}
@@ -37,32 +35,7 @@ const htmlContent = $derived(message.content ? markdownToHTML(message.content) :
 	.message {
 		display: flex;
 		gap: var(--size-6);
-		inline-size: max-content;
 		max-inline-size: 100%;
-
-		&:global(:not(:first-of-type)) {
-			padding-block-start: var(--size-1-5);
-		}
-
-		&:global(:is(.user):not(:first-of-type)) {
-			padding-block-start: var(--size-8);
-		}
-	}
-
-	.request {
-		.header {
-			align-items: center;
-			color: var(--accent-1);
-			display: flex;
-			font-size: var(--font-size-3);
-			font-weight: var(--font-weight-5);
-			gap: var(--size-1);
-
-			& :global(svg) {
-				flex: none;
-				margin-inline-start: calc(var(--size-0-5) * -1);
-			}
-		}
 	}
 
 	.content {
@@ -70,7 +43,7 @@ const htmlContent = $derived(message.content ? markdownToHTML(message.content) :
 		& :global(li) {
 			color: var(--text-1);
 			opacity: 0.8;
-			font-size: var(--font-size-4);
+			font-size: var(--font-size-3);
 			line-height: var(--font-lineheight-3);
 		}
 
@@ -112,34 +85,37 @@ const htmlContent = $derived(message.content ? markdownToHTML(message.content) :
 		}
 	}
 
-	.request .content {
-		& {
-			padding-block-end: var(--size-1-5);
-		}
-
-		& :global(p),
-		& :global(li) {
-			color: var(--text-3);
-			font-weight: var(--font-weight-4-5);
-			line-height: var(--font-lineheight-2);
-			opacity: 1;
-			font-size: var(--font-size-3);
-		}
-
-		& :global(p),
-		& :global(ul),
-		& :global(ol) {
-			&:global(:has(+ ul, + ol, + p)) {
-				margin-block-end: 0;
+	.request {
+		background-color: var(--color-surface-2);
+		border-radius: var(--radius-3);
+		padding-block: var(--size-2);
+		padding-inline: var(--size-3);
+		inline-size: max-content;
+		margin-inline-start: auto;
+		.content {
+			& :global(p),
+			& :global(li) {
+				font-weight: var(--font-weight-4-5);
+				line-height: var(--font-lineheight-2);
+				opacity: 1;
+				font-size: var(--font-size-2);
 			}
-		}
 
-		& :global(ul) {
-			margin-inline-start: var(--size-3);
-		}
+			& :global(p),
+			& :global(ul),
+			& :global(ol) {
+				&:global(:has(+ ul, + ol, + p)) {
+					margin-block-end: 0;
+				}
+			}
 
-		& :global(ol) {
-			margin-inline-start: var(--size-5);
+			& :global(ul) {
+				margin-inline-start: var(--size-3);
+			}
+
+			& :global(ol) {
+				margin-inline-start: var(--size-5);
+			}
 		}
 	}
 </style>

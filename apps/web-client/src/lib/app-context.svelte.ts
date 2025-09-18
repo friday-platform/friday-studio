@@ -44,7 +44,6 @@ export function getFileType(path: string) {
   return hasExtension ? "file" : "folder";
 }
 
-type RouteConfig = ReturnType<typeof getRouteConfig>;
 function getRouteConfig() {
   return {
     main: "/",
@@ -53,21 +52,24 @@ function getRouteConfig() {
   } as const;
 }
 
+class AppContext {
+  keyboard = createKeyboard();
+  routes = getRouteConfig();
+  daemonClient = new DaemonClient({ daemonUrl: getAtlasDaemonUrl() });
+  stagedFiles = createStagedFiles();
+
+  sidebarExpanded = $state(false);
+}
+
 export function setAppContext() {
-  const routes = getRouteConfig();
-  const keyboard = createKeyboard();
-  const daemonClient = new DaemonClient({ daemonUrl: getAtlasDaemonUrl() });
-  const stagedFiles = createStagedFiles();
+  // const routes = getRouteConfig();
+  // const keyboard = createKeyboard();
+  // const daemonClient = new DaemonClient({ daemonUrl: getAtlasDaemonUrl() });
+  // const stagedFiles = createStagedFiles();
 
-  async function uploadFile(file: File) {
-    const item = await daemonClient.createLibraryItem(file);
+  // const ctx = { keyboard, routes, daemonClient, stagedFiles };
+  const ctx = new AppContext();
 
-    if (item.success) {
-      stagedFiles.add(item.itemId, { name: item.item.name, path: item.path });
-    }
-  }
-
-  const ctx = { keyboard, routes, daemonClient, stagedFiles, uploadFile };
   return setContext(KEY, ctx);
 }
 

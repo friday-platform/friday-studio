@@ -111,7 +111,7 @@ onDestroy(() => {
 		background-color: color-mix(in srgb, #c5634d, transparent 90%);
 		block-size: var(--size-13);
 		display: flex;
-		font-size: var(--font-size-2);
+		font-size: var(--font-size-1);
 		font-weight: var(--font-weight-5);
 		padding-inline: var(--size-5);
 		justify-content: space-between;
