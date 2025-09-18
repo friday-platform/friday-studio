@@ -333,14 +333,32 @@ export class AgentOrchestrator implements IAgentOrchestrator {
     try {
       const parsed = JSON.parse(textContent);
 
+      // Handle error/cancellation responses from agent server
+      if (parsed.type === "error") {
+        throw new Error(`Agent ${parsed.agentId || "unknown"} failed: ${parsed.error}`);
+      }
+
+      if (parsed.type === "cancelled") {
+        return { type: "completed", result: parsed.result || "Cancelled by user" };
+      }
+
       return AgentExecutionResultSchema.parse(parsed);
     } catch (error) {
-      //
+      // Legacy cancellation message format
       if (textContent.includes("No output generated. Check the stream for errors.")) {
         return { type: "completed", result: "Canceled by user" };
       }
+
+      // Re-throw agent errors and validation errors with context
       if (error instanceof z.ZodError) {
         throw new Error(`Invalid agent execution result: ${error.message}`);
+      }
+      if (
+        error instanceof Error &&
+        error.message.includes("Agent") &&
+        error.message.includes("failed:")
+      ) {
+        throw error; // Re-throw our formatted agent errors
       }
       throw new Error(
         `Invalid JSON in MCP response: ${error instanceof Error ? error.message : String(error)}`,

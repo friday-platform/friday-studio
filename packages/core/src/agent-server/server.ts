@@ -38,6 +38,32 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
   private hasActiveSSEFn?: (sessionId?: string) => boolean;
   private sessionMemory?: CoALAMemoryManager;
 
+  /**
+   * Format error/cancellation response for both MCP and direct contexts
+   */
+  private formatErrorResponse(error: unknown, agentId: string, asMcpResponse = false) {
+    const isCancellation =
+      error instanceof Error &&
+      (error.message.includes("cancelled") || error.message.includes("aborted"));
+
+    const payload = isCancellation
+      ? { type: "cancelled", result: "Agent execution was cancelled" }
+      : { type: "error", error: error instanceof Error ? error.message : String(error), agentId };
+
+    if (isCancellation) {
+      this.#logger.info("Agent execution cancelled", { agentId });
+    } else {
+      this.#logger.error("Agent execution failed", { agentId, error });
+    }
+
+    // Wrap for MCP if needed
+    if (asMcpResponse) {
+      return { content: [{ type: "text", text: JSON.stringify(payload) }] };
+    }
+
+    return payload;
+  }
+
   constructor(deps: AgentServerDependencies & { disableTimeouts?: boolean; sessionId: string }) {
     this.agentRegistry = deps.agentRegistry;
     this.#logger = deps.logger.child({
@@ -181,16 +207,8 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
 
           return { content: [{ type: "text", text: JSON.stringify(result) }] };
         } catch (error) {
-          const isCancellation =
-            error instanceof Error &&
-            (error.message.includes("cancelled") || error.message.includes("aborted"));
-
-          if (isCancellation) {
-            this.#logger.info("Agent execution cancelled", { agentId: agent.id });
-          } else {
-            this.#logger.error("Agent execution error", { agentId: agent.id, error });
-          }
-          throw error;
+          // Use helper to format error response
+          return this.formatErrorResponse(error, agent.id, true);
         }
       },
     );
@@ -449,16 +467,8 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
         };
       }
 
-      const isCancellation =
-        error instanceof Error &&
-        (error.message.includes("cancelled") || error.message.includes("aborted"));
-
-      if (isCancellation) {
-        this.#logger.info("Agent execution cancelled", { agentId });
-      } else {
-        this.#logger.error("Agent execution failed", { agentId, error });
-      }
-      throw error;
+      // Use helper to format error response
+      return this.formatErrorResponse(error, agentId, false);
     }
   }
 
