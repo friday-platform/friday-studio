@@ -37,7 +37,10 @@ getWorkspace.get(
     try {
       const ctx = c.get("app");
       const manager = ctx.getWorkspaceManager();
-      const workspace = await manager.find({ id: workspaceId });
+
+      // Try to find by ID first, then by name (matching CLI behavior)
+      const workspace =
+        (await manager.find({ id: workspaceId })) || (await manager.find({ name: workspaceId }));
 
       if (!workspace) {
         return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
