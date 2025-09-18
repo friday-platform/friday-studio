@@ -317,6 +317,11 @@ ${envVars}
   <string>${config.StandardOutPath}</string>
   <key>StandardErrorPath</key>
   <string>${config.StandardErrorPath}</string>
+  <key>SoftResourceLimits</key>
+  <dict>
+    <key>NumberOfFiles</key>
+    <integer>10240</integer>
+  </dict>
   <key>HardResourceLimits</key>
   <dict>
     <key>NumberOfFiles</key>
