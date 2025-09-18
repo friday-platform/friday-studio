@@ -3,7 +3,7 @@ import { anthropic } from "@ai-sdk/anthropic";
 import type { ToolCall, ToolResult } from "@atlas/agent-sdk";
 import { createAgent } from "@atlas/agent-sdk";
 import { collectToolUsageFromSteps } from "@atlas/agent-sdk/vercel-helpers";
-import { generateObject, generateText, stepCountIs } from "ai";
+import { generateText, stepCountIs } from "ai";
 import { z } from "zod";
 
 /**
@@ -61,56 +61,27 @@ export const googleCalendarAgent = createAgent<GoogleCalendarAgentResult>({
   },
 
   handler: async (
-    prompt: string,
+    prompt,
     { tools, logger, abortSignal, stream },
   ): Promise<GoogleCalendarAgentResult> => {
     if (!env.ANTHROPIC_API_KEY) {
       throw new Error("ANTHROPIC_API_KEY environment variable is required");
     }
 
-    // 1) Plan the execution and summarization
-    const planSchema = z.object({ intent: z.string().min(1) });
-
-    // system should describe how to use the schema
-    const plannerSystem = `
-      You are a Google Calendar task planner. Analyze the user's prompt and produce a strict JSON plan for the executor and summarizer.
-      Remove all pollution from the input data and extract only the relevant information.
-      - generic: for all other tasks
-      Only plan; do not execute. Use defaults when unsure.
-    `;
-
-    const planResult = await generateObject({
-      model: anthropic("claude-3-5-haiku-latest"),
-      abortSignal,
-      system: plannerSystem,
-      prompt,
-      schema: planSchema,
-      temperature: 0,
-      maxOutputTokens: 500,
-    });
-
-    // this is the intent to send to the next llm call, which will have access to the mcp
-    const plan = planResult.object;
-
-    logger.debug("google-calendar plan", { plan });
-
     const system = `
       You are a Google Calendar assistant. Be concise, direct, and factual. Do not narrate intentions or plans. Never use phrases like 'I'll', 'I will', or 'Let me'. Output only the result without prefacing text. When asked to obtain events, use the available Google Calendar tools to list events if needed. Never fabricate or guess content. Base responses strictly on tool outputs. If tools are unavailable or a tool call fails, respond with a brief factual notice about the limitation (e.g., 'Cannot complete: Google Calendar tools unavailable' or 'Tool call failed: timeout/authorization').
-
-      Execution plan:
-      ${JSON.stringify(plan)},
-
       Follow the plan exactly:
-      - Never fabricate. Only use information from tool outputs.
+      - Never fabricate information if it is absent. Only use information from tool outputs.
       - If no Google Calendar tools are available, reply: 'Cannot complete: Google Calendar tools unavailable.'
       - If any tool call errors (timeout, authorization, unknown), state the failure briefly and stop.
+      - Summarize tool outputs to provide a concise response, including attendees, email addresses, times, locations, and event details, if available.
     `;
 
     try {
       // Progress: starting execution
       stream?.emit({
         type: "data-tool-progress",
-        data: { toolName: "Google Calendar", content: `Executing: ${plan.intent}` },
+        data: { toolName: "Google Calendar", content: `Executing: ${prompt}` },
       });
 
       // If no tools are available, do not attempt execution; return a clear message.
@@ -124,14 +95,14 @@ export const googleCalendarAgent = createAgent<GoogleCalendarAgentResult>({
       }
 
       const result = await generateText({
-        model: anthropic("claude-3-7-sonnet-latest"),
+        model: anthropic("claude-sonnet-4-20250514"),
         abortSignal,
         system,
-        prompt: prompt,
+        prompt,
         tools,
-        maxOutputTokens: 800,
+        maxOutputTokens: 3000,
         providerOptions: { anthropic: { thinking: { type: "enabled", budgetTokens: 12000 } } },
-        stopWhen: stepCountIs(5),
+        stopWhen: stepCountIs(20),
       });
 
       const [steps, toolCalls, toolResults] = await Promise.all([
@@ -157,8 +128,7 @@ export const googleCalendarAgent = createAgent<GoogleCalendarAgentResult>({
         toolResults: assembledToolResults,
       };
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      logger.error("google-calendar failed", { error: message });
+      logger.error("google-calendar failed", { error });
       throw error;
     }
   },

@@ -7,7 +7,7 @@ import { createSlackMCPMockTools } from "../../lib/slack-mcp-mock-tools.ts";
 import { saveSnapshot } from "../../lib/snapshot.ts";
 
 Deno.test({
-  name: "Google Calendar Agent: Event list",
+  name: "Extracting Portfolio company meetings",
   sanitizeOps: false,
   sanitizeResources: false,
   async fn(t) {
@@ -24,7 +24,9 @@ Deno.test({
 
     // Test channel history summarization (deterministic prompt for eval)
     const result = await googleCalendarAgent.execute(
-      "Please provide availability on my calendar for this upcoming week. I am looking for a good time to meet with someone in Los Angeles for 1 hr.",
+      `Extract today's meetings from Google Calendar and identify portfolio company events by analyzing event titles and attendees.
+      Focus on parsing meeting details to categorize business-related events. Return structured data with meeting times, titles,
+      attendees, and portfolio company flags for downstream processing.`,
       context,
     );
 

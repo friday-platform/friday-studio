@@ -88,7 +88,7 @@ export function createEnvironmentContext(logger: Logger) {
     // If there are missing required variables, throw detailed error
     if (missingRequired.length > 0) {
       const error = new Error(
-        `Can't execute ${agentId} in workspace '${workspaceId}': Required environment variables not found:s ${missingRequired.join(
+        `Can't execute ${agentId} in workspace '${workspaceId}': Required environment variables not found ${missingRequired.join(
           ", ",
         )}. Please add these variables to your workspace .env file.`,
         {

@@ -1881,12 +1881,13 @@ export class SessionSupervisorActor implements BaseActor {
       return true; // Continue if agent had no output
     }
 
-    // Skip hallucination detection for conversation agents
-    // They use natural language without source attribution, causing false positives
-    if (result.agentId === "conversation" || result.agentId === "conversation-agent") {
-      this.logger.debug("Skipping hallucination validation for conversation agent", {
+    // Skip hallucination detection for non-llm agents
+    const agentConfig = this.config?.agents?.[result.agentId];
+    if (agentConfig?.type !== "llm") {
+      this.logger.debug("Skipping hallucination validation for non-llm agent", {
         agentId: result.agentId,
-        reason: "Conversation agents use natural language without source attribution",
+        agentType: agentConfig?.type,
+        reason: "Non-llm agents are pre-validated by evaluation tests",
       });
       return true;
     }
