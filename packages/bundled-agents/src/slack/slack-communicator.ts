@@ -78,7 +78,6 @@ export const slackCommunicatorAgent = createAgent<SlackAgentResult>({
         .describe("Additional context to be used for execution"),
       summarizerPurpose: z
         .enum(["summarize_history", "raw_messages", "confirm_send", "generic"])
-        .default("generic")
         .describe("What should be an output of execution"),
     });
 
@@ -88,13 +87,13 @@ export const slackCommunicatorAgent = createAgent<SlackAgentResult>({
     });
 
     const planResult = await generateObject({
-      model: anthropic("claude-3-5-haiku-latest"),
+      model: anthropic("claude-3-7-sonnet-latest"),
       abortSignal,
       system: plannerSystemPrompt,
       prompt,
       schema: planSchema,
       temperature: 0,
-      maxOutputTokens: 500,
+      maxOutputTokens: 2000,
     });
 
     const plan = planResult.object;
@@ -119,15 +118,12 @@ export const slackCommunicatorAgent = createAgent<SlackAgentResult>({
         <task>
         ${JSON.stringify(plan.intent)}
         </task>
-
         <channel>
         ${plan.targetChannel ? `${plan.targetChannel}` : "Not provided"}
         </channel>
-
         <message>
         ${plan.messageToSend ? `${plan.messageToSend}` : "Not provided"}
         </message>
-
         <additional_context>
         ${plan.additionalContext ? `${plan.additionalContext}` : "Not provided"}
         </additional_context>
@@ -200,6 +196,9 @@ export const slackCommunicatorAgent = createAgent<SlackAgentResult>({
       <model_output>
       ${result.text ? `${result.text.trim()}` : "NO MODEL OUTPUT"}
       </model_output>
+      <additional_context>
+      ${plan.additionalContext ? `${plan.additionalContext}` : "Not provided"}
+      </additional_context>
       <tool_calls>
       ${toolCalls ? `${JSON.stringify(assembledToolCalls)}` : "NO TOOL CALLS"}
       </tool_calls>
@@ -209,13 +208,13 @@ export const slackCommunicatorAgent = createAgent<SlackAgentResult>({
       `;
 
       const summarizerResult = await generateObject({
-        model: anthropic("claude-3-5-sonnet-latest"),
+        model: anthropic("claude-3-7-sonnet-latest"),
         abortSignal,
         system: summarizerSystem,
         prompt: summarizerPrompt,
         schema: summarizerSchema,
         temperature: 0.1,
-        maxOutputTokens: 800,
+        maxOutputTokens: 2000,
       });
       logger.info("slack-communicator refined summary", { text: summarizerResult.object.response });
 
