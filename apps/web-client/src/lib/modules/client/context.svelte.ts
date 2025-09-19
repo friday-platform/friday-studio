@@ -12,6 +12,9 @@ import {
 
 const KEY = Symbol();
 
+// ABSOLUTE notification blocker - prevents ANY duplicate notifications
+let NOTIFICATION_BLOCKED_UNTIL = 0;
+
 class ClientContext {
   client: DaemonClient;
 
@@ -21,9 +24,10 @@ class ClientContext {
   private readonly HEALTH_CHECK_INTERVAL_MS = 5000;
   private windowFocused = true;
   private notificationPermissionGranted = false;
-  private notificationBlockedUntil = 0;
+  private waitingForAtlasResponse = false;
   private notifiedSessions = new Set<string>();
-  private sessionAwaitingNotification: string | null = null;
+  private currentSessionForNotification: string | null = null;
+  private currentConversationId: string | null = null;
 
   public conversationClient: ConversationClient | null = null;
   sseStream: ReadableStream<SessionUIMessageChunk> | null = null;
@@ -71,10 +75,12 @@ class ClientContext {
       document.addEventListener("visibilitychange", () => {
         this.windowFocused = document.visibilityState === "visible";
 
-        // When window gains focus, clear notification state
+        // When window gains focus, clear notification state but keep message tracking
         if (this.windowFocused) {
-          this.sessionAwaitingNotification = null;
-          this.notificationBlockedUntil = 0;
+          this.waitingForAtlasResponse = false;
+          // Don't clear notifiedMessages - we need to remember what we've already notified about
+          // Also reset the blocker when window gains focus
+          NOTIFICATION_BLOCKED_UNTIL = 0;
         }
       });
       this.windowFocused = document.visibilityState === "visible";
@@ -84,13 +90,13 @@ class ClientContext {
   private async sendResponseNotification() {
     const now = Date.now();
 
-    // Block duplicate notifications within cooldown period
-    if (now < this.notificationBlockedUntil) {
+    // ABSOLUTE BLOCK - no notifications allowed until cooldown expires
+    if (now < NOTIFICATION_BLOCKED_UNTIL) {
       return;
     }
 
     // Block all future notifications for 30 seconds
-    this.notificationBlockedUntil = now + 30000;
+    NOTIFICATION_BLOCKED_UNTIL = now + 30000;
 
     try {
       await sendNotification({
@@ -171,7 +177,9 @@ class ClientContext {
         session = await this.conversationClient?.createSession();
         // Clear notification tracking for new conversation
         this.notifiedSessions.clear();
-        this.sessionAwaitingNotification = null;
+        this.waitingForAtlasResponse = false;
+        this.currentSessionForNotification = null;
+        this.currentConversationId = null;
       }
 
       if (!session) return;
@@ -219,9 +227,16 @@ class ClientContext {
             currentBatchSessionId = sessionId;
             this.typingState.isTyping = true;
           } else if (part.type === "data-user-message" && part.data) {
-            if (currentBatchSessionId && !this.notifiedSessions.has(currentBatchSessionId)) {
-              this.notifiedSessions.add(currentBatchSessionId);
-              this.sessionAwaitingNotification = currentBatchSessionId;
+            // User message content is directly in part.data (it's a string)
+            const messageContent = String(part.data);
+
+            if (currentBatchSessionId) {
+              // Check if this is a NEW session we haven't notified for yet
+              if (!this.notifiedSessions.has(currentBatchSessionId)) {
+                this.notifiedSessions.add(currentBatchSessionId);
+                this.currentSessionForNotification = currentBatchSessionId;
+                this.waitingForAtlasResponse = true;
+              }
             }
           } else if (part.type === "data-session-finish") {
             sessionFinishing = this.atlasSessionId;
@@ -232,19 +247,33 @@ class ClientContext {
             const cancelledSessionId = this.atlasSessionId;
             this.typingState.isTyping = false;
             this.atlasSessionId = null;
-            if (this.sessionAwaitingNotification === cancelledSessionId) {
-              this.sessionAwaitingNotification = null;
+            if (this.currentSessionForNotification === cancelledSessionId) {
+              this.waitingForAtlasResponse = false;
+              this.currentSessionForNotification = null;
             }
           }
         });
 
-        // Handle session finish - send notification if needed
-        if (sessionFinishing === this.sessionAwaitingNotification) {
-          this.sessionAwaitingNotification = null;
-
-          if (!this.windowFocused && this.notificationPermissionGranted) {
-            this.sendResponseNotification().catch(console.error);
-          }
+        // Handle session finish - check if we need to send notification
+        if (
+          sessionFinishing &&
+          sessionFinishing === this.currentSessionForNotification &&
+          this.waitingForAtlasResponse &&
+          !this.windowFocused &&
+          this.notificationPermissionGranted
+        ) {
+          // Clear the flag to prevent repeated notifications
+          this.waitingForAtlasResponse = false;
+          this.currentSessionForNotification = null;
+          this.sendResponseNotification().catch(console.error);
+        } else if (
+          sessionFinishing &&
+          sessionFinishing === this.currentSessionForNotification &&
+          this.waitingForAtlasResponse
+        ) {
+          // Clear the flag since we've handled this response
+          this.waitingForAtlasResponse = false;
+          this.currentSessionForNotification = null;
         }
 
         this.messages = uiMessage.parts;
@@ -394,8 +423,11 @@ class ClientContext {
     }
 
     // Clear notification tracking when switching conversations
-    if (this.sessionAwaitingNotification) {
-      this.sessionAwaitingNotification = null;
+    if (this.currentConversationId !== id) {
+      this.notifiedSessions.clear();
+      this.waitingForAtlasResponse = false;
+      this.currentSessionForNotification = null;
+      this.currentConversationId = id;
     }
 
     const messages = await this.conversationClient?.getConversation(id);
