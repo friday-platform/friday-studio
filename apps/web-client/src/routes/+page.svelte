@@ -122,7 +122,7 @@ const hasMessages = $derived(
 				{/if}
 			</div>
 			<div class="interactive-container">
-				<div class="interactive-container-int">
+				<div class="interactive-container-int" class:has-messages={hasMessages}>
 					<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 					<form
 						bind:this={form}
@@ -273,34 +273,33 @@ const hasMessages = $derived(
 						Manage Events
 					</button> -->
 					</div>
+					{#if appCtx.stagedFiles.state.size > 0}
+						<div class="staged-files">
+							{#each appCtx.stagedFiles.state.entries() as [itemId, file]}
+								<button
+									onclick={async () => {
+										appCtx.stagedFiles.remove(itemId);
+									}}
+								>
+									{#if file.type === 'file'}
+										<IconSmall.File />
+									{:else}
+										<IconSmall.Folder />
+									{/if}
+
+									<div class="file-details">
+										<span>{file.path}</span>
+										<span>{file.type === 'file' ? 'File' : 'Folder'}</span>
+									</div>
+
+									<span class="close-button">
+										<IconSmall.Close />
+									</span>
+								</button>
+							{/each}
+						</div>
+					{/if}
 				</div>
-
-				{#if appCtx.stagedFiles.state.size > 0}
-					<div class="staged-files">
-						{#each appCtx.stagedFiles.state.entries() as [itemId, file]}
-							<button
-								onclick={async () => {
-									appCtx.stagedFiles.remove(itemId);
-								}}
-							>
-								{#if file.type === 'file'}
-									<IconSmall.File />
-								{:else}
-									<IconSmall.Folder />
-								{/if}
-
-								<div class="file-details">
-									<span>{file.path}</span>
-									<span>{file.type === 'file' ? 'File' : 'Folder'}</span>
-								</div>
-
-								<span class="close-button">
-									<IconSmall.Close />
-								</span>
-							</button>
-						{/each}
-					</div>
-				{/if}
 			</div>
 
 			<div class="background-blur"></div>
@@ -482,8 +481,13 @@ const hasMessages = $derived(
 
 		.interactive-container-int {
 			position: absolute;
-			inset-block-end: 0;
+			inset-block-start: 0;
 			inline-size: 100%;
+
+			&.has-messages {
+				inset-block-start: auto;
+				inset-block-end: 0;
+			}
 		}
 
 		form {
