@@ -41,12 +41,14 @@
     "npm:@scalar/hono-api-reference@~0.9.18": "0.9.18_hono@4.9.7",
     "npm:@sendgrid/mail@^8.1.5": "8.1.5",
     "npm:@sveltejs/adapter-static@^3.0.6": "3.0.9_@sveltejs+kit@2.39.1__@opentelemetry+api@1.9.0__@sveltejs+vite-plugin-svelte@6.2.0___svelte@5.38.10____acorn@8.15.0___vite@7.1.5____picomatch@4.0.3__svelte@5.38.10___acorn@8.15.0__vite@7.1.5___picomatch@4.0.3__acorn@8.15.0_@opentelemetry+api@1.9.0_@sveltejs+vite-plugin-svelte@6.2.0__svelte@5.38.10___acorn@8.15.0__vite@7.1.5___picomatch@4.0.3_svelte@5.38.10__acorn@8.15.0_vite@7.1.5__picomatch@4.0.3_@types+node@22.15.15",
+    "npm:@sveltejs/kit@2.39.1": "2.39.1_@opentelemetry+api@1.9.0_@sveltejs+vite-plugin-svelte@6.2.0__svelte@5.38.10___acorn@8.15.0__vite@7.1.5___picomatch@4.0.3_svelte@5.38.10__acorn@8.15.0_vite@7.1.5__picomatch@4.0.3_acorn@8.15.0_@types+node@22.15.15",
     "npm:@sveltejs/kit@^2.22.0": "2.39.1_@opentelemetry+api@1.9.0_@sveltejs+vite-plugin-svelte@6.2.0__svelte@5.38.10___acorn@8.15.0__vite@7.1.5___picomatch@4.0.3_svelte@5.38.10__acorn@8.15.0_vite@7.1.5__picomatch@4.0.3_acorn@8.15.0_@types+node@22.15.15",
     "npm:@sveltejs/vite-plugin-svelte@6": "6.2.0_svelte@5.38.10__acorn@8.15.0_vite@7.1.5__picomatch@4.0.3_@types+node@22.15.15",
     "npm:@tauri-apps/api@^2.8.0": "2.8.0",
     "npm:@tauri-apps/cli@2.8.4": "2.8.4",
     "npm:@tauri-apps/cli@^2.8.0": "2.8.4",
     "npm:@tauri-apps/plugin-dialog@^2.4.0": "2.4.0",
+    "npm:@tauri-apps/plugin-notification@2": "2.3.1",
     "npm:@tauri-apps/plugin-opener@^2.5.0": "2.5.0",
     "npm:@tavily/core@~0.5.12": "0.5.12",
     "npm:@total-typescript/ts-reset@~0.6.1": "0.6.1",
@@ -56,6 +58,7 @@
     "npm:ai@^5.0.44": "5.0.44_zod@3.25.76",
     "npm:ansi-escapes@^7.1.0": "7.1.0",
     "npm:chalk@^5.6.2": "5.6.2",
+    "npm:cookie@^1.0.2": "1.0.2",
     "npm:cron-parser@^5.3.1": "5.3.1",
     "npm:eslint-config-prettier@^10.0.1": "10.1.8_eslint@9.35.0",
     "npm:eslint-plugin-svelte@3": "3.12.3_eslint@9.35.0_svelte@5.38.10__acorn@8.15.0_postcss@8.5.6",
@@ -79,6 +82,7 @@
     "npm:prettier@^3.4.2": "3.6.2",
     "npm:react@^19.1.1": "19.1.1",
     "npm:svelte-check@4": "4.3.1_svelte@5.38.10__acorn@8.15.0_typescript@5.9.2",
+    "npm:svelte-check@4.3.1": "4.3.1_svelte@5.38.10__acorn@8.15.0_typescript@5.9.2",
     "npm:svelte-eslint-parser@^1.3.1": "1.3.2_svelte@5.38.10__acorn@8.15.0_postcss@8.5.6",
     "npm:svelte@5": "5.38.10_acorn@8.15.0",
     "npm:typescript-eslint@^8.20.0": "8.44.0_eslint@9.35.0_typescript@5.9.2_@typescript-eslint+parser@8.44.0__eslint@9.35.0__typescript@5.9.2",
@@ -1265,6 +1269,12 @@
         "@tauri-apps/api"
       ]
     },
+    "@tauri-apps/plugin-notification@2.3.1": {
+      "integrity": "sha512-7gqgfANSREKhh35fY1L4j3TUjUdePmU735FYDqRGeIf8nMXWpcx6j4FhN9/4nYz+m0mv79DCTPLqIPTySggGgg==",
+      "dependencies": [
+        "@tauri-apps/api"
+      ]
+    },
     "@tauri-apps/plugin-opener@2.5.0": {
       "integrity": "sha512-B0LShOYae4CZjN8leiNDbnfjSrTwoZakqKaWpfoH6nXiJwt6Rgj6RnVIffG3DoJiKsffRhMkjmBV9VeilSb4TA==",
       "dependencies": [
@@ -1710,6 +1720,9 @@
     },
     "cookie@0.7.2": {
       "integrity": "sha512-yki5XnKuf750l50uGTllt6kKILY4nQ1eNIQatoXEByZ5dWgnKqbnqmTrBE5B4N7lrMJKQ2ytWMiTO2o0v6Ew/w=="
+    },
+    "cookie@1.0.2": {
+      "integrity": "sha512-9Kr/j4O16ISv8zBBhJoi4bXOYNTkFLOqSL3UDB0njXxCXNezjeyVrJyGOWtgfs/q2km1gwBcfH8q1yEGoMYunA=="
     },
     "cors@2.8.5": {
       "integrity": "sha512-KIHbLJqu73RGr/hnbrO9uBeixNGuvSQjul/jdFvS/KFSIH1hWVd1ng7zOHx+YrEfInLG7q4n6GHQ9cDtxv/P6g==",
@@ -3699,8 +3712,10 @@
             "npm:@tauri-apps/api@^2.8.0",
             "npm:@tauri-apps/cli@^2.8.0",
             "npm:@tauri-apps/plugin-dialog@^2.4.0",
+            "npm:@tauri-apps/plugin-notification@2",
             "npm:@tauri-apps/plugin-opener@^2.5.0",
             "npm:ai@^5.0.17",
+            "npm:cookie@^1.0.2",
             "npm:eslint-config-prettier@^10.0.1",
             "npm:eslint-plugin-svelte@3",
             "npm:eslint@^9.18.0",

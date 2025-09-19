@@ -4,6 +4,11 @@ import { getContext, setContext } from "svelte";
 import { getAtlasDaemonUrl } from "../../utils/daemon.ts";
 import { ConversationClient, type ConversationSession } from "./conversation.ts";
 import type { DaemonClient } from "./daemon.ts";
+import {
+  isPermissionGranted,
+  requestPermission,
+  sendNotification,
+} from "@tauri-apps/plugin-notification";
 
 const KEY = Symbol();
 
@@ -14,6 +19,11 @@ class ClientContext {
   private healthCheckInterval: number | null = null;
   private countdownInterval: number | null = null;
   private readonly HEALTH_CHECK_INTERVAL_MS = 5000;
+  private windowFocused = true;
+  private notificationPermissionGranted = false;
+  private notificationBlockedUntil = 0;
+  private notifiedSessions = new Set<string>();
+  private sessionAwaitingNotification: string | null = null;
 
   public conversationClient: ConversationClient | null = null;
   sseStream: ReadableStream<SessionUIMessageChunk> | null = null;
@@ -32,6 +42,65 @@ class ClientContext {
 
   constructor(client: DaemonClient) {
     this.client = client;
+    // Only initialize Tauri features in the browser, not during SSR
+    if (typeof window !== "undefined") {
+      this.initializeNotifications();
+      this.setupWindowFocusTracking();
+    }
+  }
+
+  private async initializeNotifications() {
+    try {
+      // Check if permission to send notifications has already been granted
+      let permissionGranted = await isPermissionGranted();
+
+      // If not, request it
+      if (!permissionGranted) {
+        const permission = await requestPermission();
+        permissionGranted = permission === "granted";
+      }
+
+      this.notificationPermissionGranted = permissionGranted;
+    } catch (error) {
+      console.error("Failed to initialize notifications:", error);
+    }
+  }
+
+  private setupWindowFocusTracking() {
+    if (typeof document !== "undefined") {
+      document.addEventListener("visibilitychange", () => {
+        this.windowFocused = document.visibilityState === "visible";
+
+        // When window gains focus, clear notification state
+        if (this.windowFocused) {
+          this.sessionAwaitingNotification = null;
+          this.notificationBlockedUntil = 0;
+        }
+      });
+      this.windowFocused = document.visibilityState === "visible";
+    }
+  }
+
+  private async sendResponseNotification() {
+    const now = Date.now();
+
+    // Block duplicate notifications within cooldown period
+    if (now < this.notificationBlockedUntil) {
+      return;
+    }
+
+    // Block all future notifications for 30 seconds
+    this.notificationBlockedUntil = now + 30000;
+
+    try {
+      await sendNotification({
+        title: "Atlas",
+        body: "Atlas is waiting for your input",
+        sound: "default",
+      });
+    } catch (error) {
+      console.error("Failed to send notification:", error);
+    }
   }
 
   getAtlasDaemonUrl() {
@@ -91,10 +160,8 @@ class ClientContext {
         );
 
         if (existingSession) {
-          console.log(`Reconnecting to existing session: ${this.conversationSessionId}`);
           session = existingSession;
         } else {
-          console.log("Previous session no longer exists, creating new session");
           session = await this.conversationClient?.createSession();
 
           // Clear messages since we're starting fresh
@@ -102,6 +169,9 @@ class ClientContext {
         }
       } else {
         session = await this.conversationClient?.createSession();
+        // Clear notification tracking for new conversation
+        this.notifiedSessions.clear();
+        this.sessionAwaitingNotification = null;
       }
 
       if (!session) return;
@@ -137,21 +207,45 @@ class ClientContext {
           break;
         }
 
+        // Track sessions and messages in this batch
+        let currentBatchSessionId: string | null = null;
+        let sessionFinishing: string | null = null;
+
+        // Check what's in this message batch
         uiMessage.parts.forEach((part) => {
           if (part.type === "data-session-start") {
-            // Capture the Atlas session ID
-            this.atlasSessionId = part.data.sessionId;
-            if (!this.typingState.isTyping) {
-              this.typingState.isTyping = true;
+            const sessionId = part.data.sessionId;
+            this.atlasSessionId = sessionId;
+            currentBatchSessionId = sessionId;
+            this.typingState.isTyping = true;
+          } else if (part.type === "data-user-message" && part.data) {
+            if (currentBatchSessionId && !this.notifiedSessions.has(currentBatchSessionId)) {
+              this.notifiedSessions.add(currentBatchSessionId);
+              this.sessionAwaitingNotification = currentBatchSessionId;
             }
           } else if (part.type === "data-session-finish") {
+            sessionFinishing = this.atlasSessionId;
             this.typingState.isTyping = false;
             this.atlasSessionId = null;
           } else if (part.type === "data-session-cancel") {
+            // Store the session ID before clearing it
+            const cancelledSessionId = this.atlasSessionId;
             this.typingState.isTyping = false;
             this.atlasSessionId = null;
+            if (this.sessionAwaitingNotification === cancelledSessionId) {
+              this.sessionAwaitingNotification = null;
+            }
           }
         });
+
+        // Handle session finish - send notification if needed
+        if (sessionFinishing === this.sessionAwaitingNotification) {
+          this.sessionAwaitingNotification = null;
+
+          if (!this.windowFocused && this.notificationPermissionGranted) {
+            this.sendResponseNotification().catch(console.error);
+          }
+        }
 
         this.messages = uiMessage.parts;
       }
@@ -297,6 +391,11 @@ class ClientContext {
   async getConversation(id: string) {
     if (!this.conversationClient) {
       this.connect();
+    }
+
+    // Clear notification tracking when switching conversations
+    if (this.sessionAwaitingNotification) {
+      this.sessionAwaitingNotification = null;
     }
 
     const messages = await this.conversationClient?.getConversation(id);

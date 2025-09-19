@@ -30,3 +30,4 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri-plugin-shell = "2.3"
 tauri-plugin-dialog = "2"
+tauri-plugin-notification = "2"

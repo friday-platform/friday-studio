@@ -23,8 +23,10 @@
     "@sveltejs/kit": "^2.22.0",
     "@tauri-apps/api": "^2.8.0",
     "@tauri-apps/plugin-dialog": "^2.4.0",
+    "@tauri-apps/plugin-notification": "^2.0.0",
     "@tauri-apps/plugin-opener": "^2.5.0",
     "ai": "^5.0.17",
+    "cookie": "^1.0.2",
     "eventsource-client": "^1.1.4",
     "svelte": "^5.0.0",
     "zod": "^3.25.74"
