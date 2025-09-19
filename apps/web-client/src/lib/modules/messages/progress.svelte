@@ -101,7 +101,7 @@ function getMessage() {
 
 	.in-progress-tools {
 		background-color: var(--color-surface-1);
-		border: var(--size-px) solid var(--border-2);
+		border: var(--size-px) solid var(--color-border-1);
 		border-radius: var(--radius-4);
 		padding: var(--size-3);
 		padding-inline-end: var(--size-3-5);

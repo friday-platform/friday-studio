@@ -39,7 +39,7 @@ function handleScroll() {
   if (!scrollContainer) return;
 
   const { scrollTop, scrollHeight, clientHeight } = scrollContainer;
-  const isAtBottom = Math.abs(scrollHeight - scrollTop - clientHeight) < 10;
+  const isAtBottom = Math.abs(scrollHeight - scrollTop - clientHeight) < 5;
 
   // If user scrolls away from bottom, mark as manually scrolled
   if (!isAtBottom) {
@@ -122,127 +122,128 @@ const hasMessages = $derived(
 				{/if}
 			</div>
 			<div class="interactive-container">
-				<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-				<form
-					bind:this={form}
-					title={clientCtx.typingState.isTyping
-						? 'Processing... (press escape to cancel the current request)'
-						: undefined}
-					method="POST"
-					onkeydown={(e) => {
-						if (e.key === 'Enter' && !e.shiftKey && !e.altKey) {
-							e.preventDefault();
-							e.currentTarget?.requestSubmit();
-						}
-					}}
-					onsubmit={async (e) => {
-						e.preventDefault();
-
-						if (
-							!clientCtx.conversationClient ||
-							!clientCtx.conversationSessionId ||
-							clientCtx.typingState.isTyping
-						) {
-							return;
-						}
-
-						try {
-							const formData = new FormData(e.target as HTMLFormElement);
-							let formMessage = formData.get('message');
-
-							if (appCtx.stagedFiles.state.size > 0) {
-								formMessage = formMessage + `\n\nAttachments:`;
-
-								for (const id of appCtx.stagedFiles.state.keys()) {
-									formMessage = formMessage + `\n- ${id}`;
-								}
+				<div class="interactive-container-int">
+					<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+					<form
+						bind:this={form}
+						title={clientCtx.typingState.isTyping
+							? 'Processing... (press escape to cancel the current request)'
+							: undefined}
+						method="POST"
+						onkeydown={(e) => {
+							if (e.key === 'Enter' && !e.shiftKey && !e.altKey) {
+								e.preventDefault();
+								e.currentTarget?.requestSubmit();
 							}
+						}}
+						onsubmit={async (e) => {
+							e.preventDefault();
 
 							if (
-								formMessage &&
-								typeof formMessage === 'string' &&
-								formMessage.trim().length === 0
+								!clientCtx.conversationClient ||
+								!clientCtx.conversationSessionId ||
+								clientCtx.typingState.isTyping
 							) {
 								return;
 							}
 
-							userHasScrolled = false;
-							scrollToBottom();
+							try {
+								const formData = new FormData(e.target as HTMLFormElement);
+								let formMessage = formData.get('message');
 
-							// Just send the message - the persistent SSE listener will handle the response
-							await clientCtx.conversationClient.sendMessage(
-								clientCtx.conversationSessionId,
-								formMessage
-							);
+								if (appCtx.stagedFiles.state.size > 0) {
+									formMessage = formMessage + `\n\nAttachments:`;
 
-							message = '';
-							appCtx.stagedFiles.clear();
+									for (const id of appCtx.stagedFiles.state.keys()) {
+										formMessage = formMessage + `\n- ${id}`;
+									}
+								}
 
-							// The persistent SSE listener will handle the response
-						} catch (e) {
-							console.error(e);
-						}
-					}}
-				>
-					<Textarea
-						disabled={clientCtx.typingState.isTyping}
-						name="message"
-						placeholder="Type here..."
-						value={message}
-						onTextChange={(value) => {
-							message = value;
-						}}
-					/>
+								if (
+									formMessage &&
+									typeof formMessage === 'string' &&
+									formMessage.trim().length === 0
+								) {
+									return;
+								}
 
-					<div class="form-action">
-						{#if clientCtx.typingState.isTyping}
-							<button
-								class="stop-process"
-								type="button"
-								onclick={async (e) => {
-									e.preventDefault();
+								userHasScrolled = false;
+								scrollToBottom();
 
-									if (!clientCtx.atlasSessionId) return;
+								// Just send the message - the persistent SSE listener will handle the response
+								await clientCtx.conversationClient.sendMessage(
+									clientCtx.conversationSessionId,
+									formMessage
+								);
 
-									clientCtx.conversationClient?.cancelSession(clientCtx.atlasSessionId);
-								}}
-							>
-								<IconSmall.Stop />
-							</button>
-						{:else}
-							<button type="submit" aria-label="Send message">
-								<CustomIcons.ArrowUp />
-							</button>
-						{/if}
-					</div>
-				</form>
+								message = '';
+								appCtx.stagedFiles.clear();
 
-				<div class="actions">
-					<button
-						class="file-drop"
-						type="button"
-						onclick={async (e) => {
-							e.preventDefault();
-
-							const file = await open({
-								multiple: true,
-								directory: true
-							});
-
-							if (file) {
-								appCtx.stagedFiles.add(file[0], {
-									path: file[0],
-									type: getFileType(file[0])
-								});
+								// The persistent SSE listener will handle the response
+							} catch (e) {
+								console.error(e);
 							}
 						}}
 					>
-						<CustomIcons.Paperclip />
+						<Textarea
+							disabled={clientCtx.typingState.isTyping}
+							name="message"
+							placeholder="Type here..."
+							value={message}
+							onTextChange={(value) => {
+								message = value;
+							}}
+						/>
 
-						Add Files
-					</button>
+						<div class="form-action">
+							{#if clientCtx.typingState.isTyping}
+								<button
+									class="stop-process"
+									type="button"
+									onclick={async (e) => {
+										e.preventDefault();
 
-					<!-- <button
+										if (!clientCtx.atlasSessionId) return;
+
+										clientCtx.conversationClient?.cancelSession(clientCtx.atlasSessionId);
+									}}
+								>
+									<IconSmall.Stop />
+								</button>
+							{:else}
+								<button type="submit" aria-label="Send message">
+									<CustomIcons.ArrowUp />
+								</button>
+							{/if}
+						</div>
+					</form>
+
+					<div class="actions">
+						<button
+							class="file-drop"
+							type="button"
+							onclick={async (e) => {
+								e.preventDefault();
+
+								const file = await open({
+									multiple: true,
+									directory: true
+								});
+
+								if (file) {
+									appCtx.stagedFiles.add(file[0], {
+										path: file[0],
+										type: getFileType(file[0])
+									});
+								}
+							}}
+						>
+							<CustomIcons.Paperclip />
+
+							Add Files
+						</button>
+
+						<!-- <button
 						class="file-drop"
 						type="button"
 						onclick={async (e) => {
@@ -271,6 +272,7 @@ const hasMessages = $derived(
 
 						Manage Events
 					</button> -->
+					</div>
 				</div>
 
 				{#if appCtx.stagedFiles.state.size > 0}
@@ -422,16 +424,15 @@ const hasMessages = $derived(
 		align-content: center;
 		display: grid;
 		block-size: 100%;
-		grid-template-rows: 5.25rem 4.875rem;
-		gap: var(--size-4);
+		grid-template-rows: 6.25rem 4.625rem;
 		padding: var(--size-10);
 		padding-block-start: var(--size-10);
 		transition: grid-template-rows 150ms ease;
 
 		&.has-messages {
 			grid-template-rows:
-				calc(100% - 4.875rem - var(--size-10))
-				4.875rem;
+				calc(100% - 4.625rem)
+				4.625rem;
 		}
 
 		.messages-inner {
@@ -441,6 +442,7 @@ const hasMessages = $derived(
 			margin-inline: auto;
 			max-inline-size: var(--size-150);
 			padding-inline: var(--size-1);
+			padding-block-end: var(--size-4);
 			inline-size: 100%;
 			overflow-y: scroll;
 			scrollbar-width: none;
@@ -470,13 +472,19 @@ const hasMessages = $derived(
 	}
 
 	.interactive-container {
-		margin-block-start: var(--size-1);
-		position: sticky;
-		inset-block-end: 0;
+		block-size: 4.625rem;
+		position: relative;
 		margin-inline: auto;
 		max-inline-size: var(--size-150);
 		inline-size: 100%;
+		overflow: visible;
 		z-index: var(--layer-2);
+
+		.interactive-container-int {
+			position: absolute;
+			inset-block-end: 0;
+			inline-size: 100%;
+		}
 
 		form {
 			display: flex;

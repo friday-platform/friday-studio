@@ -26,7 +26,7 @@ const {
 <style>
 	button {
 		align-items: center;
-		border: 1px solid var(--border-2);
+		border: 1px solid var(--color-border-1);
 		border-radius: var(--radius-3);
 		display: flex;
 		font-size: var(--font-size-1);

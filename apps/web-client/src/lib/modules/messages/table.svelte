@@ -26,7 +26,7 @@ const { data }: { data: { data: { headers: string[]; rows: Record<string, string
 
 <style>
 	table {
-		border: var(--size-px) solid var(--border-2s);
+		border: var(--size-px) solid var(--color-border-1);
 		border-collapse: separate;
 		border-spacing: 0;
 		border-radius: var(--radius-3);
@@ -39,7 +39,7 @@ const { data }: { data: { data: { headers: string[]; rows: Record<string, string
 
 	th,
 	td {
-		border: var(--size-px) solid var(--border-2s);
+		border: var(--size-px) solid var(--color-border-1);
 		border-inline-start: none;
 		border-block-start: none;
 		padding-block: var(--size-2);

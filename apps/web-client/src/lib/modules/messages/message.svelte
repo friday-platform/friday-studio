@@ -92,6 +92,8 @@ const htmlContent = $derived(message.content ? markdownToHTML(message.content) :
 		padding-inline: var(--size-3);
 		inline-size: max-content;
 		margin-inline-start: auto;
+		max-inline-size: 90%;
+
 		.content {
 			& :global(p),
 			& :global(li) {
