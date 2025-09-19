@@ -3,6 +3,10 @@ import { z } from "zod";
 import type { ToolContext } from "../types.ts";
 import { createSendNotification, createSuccessResponse } from "../types.ts";
 import { fetchWithTimeout, handleDaemonResponse } from "../utils.ts";
+import {
+  LibraryItemMetadataResponseSchema,
+  LibraryItemWithContentResponseSchema,
+} from "../../schemas.ts";
 
 export function registerLibraryGetStreamTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(
@@ -57,13 +61,14 @@ export function registerLibraryGetStreamTool(server: McpServer, ctx: ToolContext
         // First, get metadata
         const metadataUrl = `${ctx.daemonUrl}/api/library/${itemId}`;
         const metadataResponse = await fetchWithTimeout(metadataUrl);
-        const metadata = await handleDaemonResponse(
+        const metadataRaw = await handleDaemonResponse(
           metadataResponse,
           "library_get_metadata",
           ctx.logger,
         );
 
-        if (!metadata || !metadata.item) {
+        const metadataParsed = LibraryItemMetadataResponseSchema.safeParse(metadataRaw);
+        if (!metadataParsed.success) {
           throw new Error(`Library item not found: ${itemId}`);
         }
 
@@ -76,9 +81,9 @@ export function registerLibraryGetStreamTool(server: McpServer, ctx: ToolContext
               data: JSON.stringify({
                 type: "library_metadata",
                 itemId,
-                metadata: metadata.item,
+                metadata: metadataParsed.data.item,
                 timestamp: new Date().toISOString(),
-                message: `Found library item: ${metadata.item.name}`,
+                message: `Found library item: ${metadataParsed.data.item.name}`,
               }),
             },
           });
@@ -87,7 +92,7 @@ export function registerLibraryGetStreamTool(server: McpServer, ctx: ToolContext
         if (!includeContent) {
           // Return metadata only
           return createSuccessResponse({
-            item: metadata.item,
+            item: metadataParsed.data.item,
             source: "daemon_api",
             streaming: false,
             timestamp: new Date().toISOString(),
@@ -97,17 +102,17 @@ export function registerLibraryGetStreamTool(server: McpServer, ctx: ToolContext
         // Get content
         const contentUrl = `${ctx.daemonUrl}/api/library/${itemId}?content=true`;
         const contentResponse = await fetchWithTimeout(contentUrl);
-        const result = await handleDaemonResponse(
+        const contentRaw = await handleDaemonResponse(
           contentResponse,
           "library_get_content",
           ctx.logger,
         );
-
-        if (!result || !("content" in result)) {
+        const contentParsed = LibraryItemWithContentResponseSchema.safeParse(contentRaw);
+        if (!contentParsed.success) {
           throw new Error(`Failed to retrieve content for library item: ${itemId}`);
         }
 
-        const content = result.content;
+        const content = contentParsed.data.content;
         const totalSize = content.length;
 
         // Send content size notification
@@ -191,7 +196,7 @@ export function registerLibraryGetStreamTool(server: McpServer, ctx: ToolContext
 
         // Return final response with metadata and streaming info
         const finalResult = {
-          item: result.item,
+          item: contentParsed.data.item,
           content: shouldStream
             ? `[Content streamed in ${Math.ceil(
                 totalSize / chunkSize,
@@ -210,7 +215,7 @@ export function registerLibraryGetStreamTool(server: McpServer, ctx: ToolContext
 
         ctx.logger.info("MCP library_get_stream response", {
           itemId,
-          hasContent: "content" in result,
+          hasContent: true,
           streamingEnabled: shouldStream,
           totalSize,
           totalChunks: Math.ceil(totalSize / chunkSize),
@@ -221,6 +226,7 @@ export function registerLibraryGetStreamTool(server: McpServer, ctx: ToolContext
       } catch (error) {
         // Send error notification
         if (sendNotification) {
+          const errMsg = error instanceof Error ? error.message : String(error);
           await sendNotification({
             method: "notifications/message",
             params: {
@@ -228,15 +234,18 @@ export function registerLibraryGetStreamTool(server: McpServer, ctx: ToolContext
               data: JSON.stringify({
                 type: "library_stream_error",
                 itemId,
-                error: error.message,
+                error: errMsg,
                 timestamp: new Date().toISOString(),
-                message: `Error retrieving library item: ${error.message}`,
+                message: `Error retrieving library item: ${errMsg}`,
               }),
             },
           });
         }
 
-        ctx.logger.error("MCP library_get_stream failed", { itemId, error });
+        ctx.logger.error("MCP library_get_stream failed", {
+          itemId,
+          error: error instanceof Error ? error.message : String(error),
+        });
         throw error;
       }
     },

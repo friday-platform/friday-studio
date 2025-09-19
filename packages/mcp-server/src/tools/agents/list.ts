@@ -21,13 +21,20 @@ export function registerAgentsListTool(server: McpServer, ctx: ToolContext) {
       try {
         const response = await fetch(`${ctx.daemonUrl}/api/workspaces/${workspaceId}/agents`);
         if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          throw new Error(
-            `Daemon API error: ${response.status} - ${errorData.error || response.statusText}`,
-          );
+          const raw = await response.json().catch(() => null);
+          const parsed = z.object({ error: z.string() }).safeParse(raw);
+          const message = parsed.success ? parsed.data.error : response.statusText;
+          throw new Error(`Daemon API error: ${response.status} - ${message}`);
         }
 
-        const agents = await response.json();
+        const rawAgents = await response.json().catch(() => null);
+        const agentsResult = z
+          .array(z.object({ id: z.string(), type: z.string(), purpose: z.string().optional() }))
+          .safeParse(rawAgents);
+        if (!agentsResult.success) {
+          throw new Error("Daemon API returned invalid agents list");
+        }
+        const agents = agentsResult.data;
 
         return createSuccessResponse({
           agents,

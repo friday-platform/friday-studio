@@ -7,6 +7,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { ToolContext } from "../types.ts";
 import { createSuccessResponse } from "../types.ts";
+import { CancelSessionResponseSchema } from "../../schemas.ts";
 
 export function registerSessionCancelTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(
@@ -31,13 +32,18 @@ export function registerSessionCancelTool(server: McpServer, ctx: ToolContext) {
         });
 
         if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          throw new Error(
-            `Daemon API error: ${response.status} - ${errorData.error || response.statusText}`,
-          );
+          const raw = await response.json().catch(() => null);
+          const parsed = z.object({ error: z.string() }).safeParse(raw);
+          const message = parsed.success ? parsed.data.error : response.statusText;
+          throw new Error(`Daemon API error: ${response.status} - ${message}`);
         }
 
-        const result = await response.json();
+        const raw = await response.json().catch(() => null);
+        const parsed = CancelSessionResponseSchema.safeParse(raw);
+        if (!parsed.success) {
+          throw new Error("Daemon API returned invalid cancel session response");
+        }
+        const result = parsed.data;
 
         return createSuccessResponse({
           success: true,

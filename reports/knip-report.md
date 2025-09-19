@@ -1,19 +1,12 @@
-No Svelte config file found in /Users/ericskram/code/tempest/atlas-env/worktrees/memory-cleanup-2 - using SvelteKit's default configuration without an adapter.
+No Svelte config file found in /Users/sara/Projects/atlas - using SvelteKit's default configuration without an adapter.
 # Knip report
 
-## Unused files (26)
+## Unused files (19)
 
+* packages/bundled-agents/src/social/social-scraper.ts
 * packages/mcp-server/src/tools/signals/describe.ts
-* src/cli/commands/workspace/restart.tsx
-* src/cli/components/agent-details.tsx
-* src/cli/components/directory-tree.tsx
-* src/cli/components/error-alert.tsx
-* src/cli/components/git-diff.tsx
 * src/cli/components/job-details.tsx
-* src/cli/components/leader-key-overlay.tsx
-* src/cli/components/log-viewer.tsx
 * src/cli/components/multi-select.tsx
-* src/cli/components/signal-action-selection.tsx
 * src/cli/components/signal-details.tsx
 * src/cli/modules/agents/processor.ts
 * src/cli/modules/conversation/WorkspacesCommand.tsx
@@ -39,32 +32,16 @@ No Svelte config file found in /Users/ericskram/code/tempest/atlas-env/worktrees
 | @hono/standard-validator | package.json:31:6                 | error    |
 | @biomejs/biome           | package.json:30:6                 | error    |
 
-## Unused devDependencies (1)
+## Unused exports (2)
 
-| Name             | Location                           | Severity |
-| :--------------- | :--------------------------------- | :------- |
-| electron-builder | tools/atlas-installer/package.json | warn     |
+| Name              | Location                                    | Severity |
+| :---------------- | :------------------------------------------ | :------- |
+| clearNotes        | apps/atlasd/src/storage/scratchpad.ts:40:23 | error    |
+| LibraryItemSchema | packages/mcp-server/src/schemas.ts:8:14     | error    |
 
-## Unlisted binaries (3)
+## Unused exported enum members (1)
 
-| Name             | Location                                     | Severity |
-| :--------------- | :------------------------------------------- | :------- |
-| electron-builder | .github/actions/create-installers/action.yml | error    |
-| electron-builder | tools/atlas-installer/package.json           | error    |
-| electron         | tools/atlas-installer/package.json           | error    |
-
-## Unused exported types (1)
-
-| Name        | Location                                                 | Severity |
-| :---------- | :------------------------------------------------------- | :------- |
-| LibraryItem | src/cli/modules/library/library-list-component.tsx:22:13 | error    |
-
-## Unused exported enum members (4)
-
-| Name     | Location                                     | Severity |
-| :------- | :------------------------------------------- | :------- |
-| WORKFLOW | packages/signals/src/providers/types.ts:23:3 | warn     |
-| SOURCE   | packages/signals/src/providers/types.ts:24:3 | warn     |
-| ACTION   | packages/signals/src/providers/types.ts:25:3 | warn     |
-| WATCHER  | src/types/core.ts:145:3                      | warn     |
+| Name    | Location                | Severity |
+| :------ | :---------------------- | :------- |
+| WATCHER | src/types/core.ts:145:3 | warn     |
 

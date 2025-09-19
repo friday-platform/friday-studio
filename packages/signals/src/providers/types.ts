@@ -20,9 +20,6 @@ export interface IProvider {
 export enum ProviderType {
   SIGNAL = "signal",
   AGENT = "agent",
-  WORKFLOW = "workflow",
-  SOURCE = "source",
-  ACTION = "action",
 }
 
 export interface ProviderState {

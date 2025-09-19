@@ -5,9 +5,11 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import { JobInfoSchema, type JobInfo } from "../../schemas.ts";
 import type { ToolContext } from "../types.ts";
 import { createSuccessResponse } from "../types.ts";
 import { checkJobDiscoverable } from "../utils.ts";
+import { logger } from "@atlas/logger";
 
 export function registerJobsListTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(
@@ -25,18 +27,25 @@ export function registerJobsListTool(server: McpServer, ctx: ToolContext) {
       ctx.logger.info("MCP workspace_jobs_list called", { workspaceId });
 
       try {
+        // @FIXME: Jobs are not being properly returned from the daemon API
         const response = await fetch(`${ctx.daemonUrl}/api/workspaces/${workspaceId}/jobs`);
+        logger.debug("Jobs response from daemon API for workspace", { workspaceId, response });
         if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          throw new Error(
-            `Daemon API error: ${response.status} - ${errorData.error || response.statusText}`,
-          );
+          const raw = await response.json().catch(() => null);
+          const parsed = z.object({ error: z.string() }).safeParse(raw);
+          const message = parsed.success ? parsed.data.error : response.statusText;
+          throw new Error(`Daemon API error: ${response.status} - ${message}`);
         }
 
-        const allJobs = await response.json();
+        const rawJobs = await response.json().catch(() => null);
+        const jobsResult = z.array(JobInfoSchema).safeParse(rawJobs);
+        if (!jobsResult.success) {
+          throw new Error("Daemon API returned invalid jobs list");
+        }
+        const allJobs: JobInfo[] = jobsResult.data;
 
         // Filter jobs based on discoverability settings
-        const discoverableJobs = [];
+        const discoverableJobs: JobInfo[] = [];
         for (const job of allJobs) {
           const isDiscoverable = await checkJobDiscoverable(
             ctx.daemonUrl,

@@ -50,7 +50,7 @@ export function buildLibraryQueryParams(options: {
   if (options.since) {
     try {
       sinceDate = new Date(options.since);
-      if (isNaN(sinceDate.getTime())) {
+      if (Number.isNaN(sinceDate.getTime())) {
         throw new Error("Invalid since date format");
       }
     } catch {
@@ -63,7 +63,7 @@ export function buildLibraryQueryParams(options: {
   if (options.until) {
     try {
       untilDate = new Date(options.until);
-      if (isNaN(untilDate.getTime())) {
+      if (Number.isNaN(untilDate.getTime())) {
         throw new Error("Invalid until date format");
       }
     } catch {
@@ -345,55 +345,6 @@ function calculateRetryDelay(retryCount: number): number {
  */
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-/**
- * Check if a workspace has MCP enabled
- * SECURITY: Respects workspace-level server.mcp.enabled settings
- */
-async function checkWorkspaceMCPEnabled(
-  daemonUrl: string,
-  workspaceId: string,
-  logger: Logger,
-): Promise<boolean> {
-  let response: Response | undefined;
-  try {
-    response = await fetch(`${daemonUrl}/api/workspaces/${workspaceId}`);
-    if (!response.ok) {
-      // Consume the response body to prevent leaks
-      try {
-        await response.text();
-      } catch {
-        // Ignore errors when consuming error response body
-      }
-      logger.warn("Platform MCP: Failed to check workspace MCP settings", {
-        workspaceId,
-        status: response.status,
-      });
-      return false; // Fail closed - deny access if can't verify
-    }
-
-    const workspace = await response.json();
-    const mcpEnabled = workspace.config?.server?.mcp?.enabled ?? false;
-
-    logger.debug("Platform MCP: Checked workspace MCP settings", { workspaceId, mcpEnabled });
-
-    return mcpEnabled;
-  } catch (error) {
-    // Consume any remaining response body to prevent leaks
-    if (response) {
-      try {
-        await response.text();
-      } catch {
-        // Ignore errors when consuming error response body
-      }
-    }
-    logger.error("Platform MCP: Error checking workspace MCP settings", {
-      workspaceId,
-      error: error instanceof Error ? error.message : String(error),
-    });
-    return false; // Fail closed - deny access on error
-  }
 }
 
 /**

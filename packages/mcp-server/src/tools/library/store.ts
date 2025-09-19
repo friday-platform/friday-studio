@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { ToolContext } from "../types.ts";
 import { createSuccessResponse } from "../types.ts";
 import { fetchWithTimeout, handleDaemonResponse } from "../utils.ts";
+import { LibraryStoreResponseSchema, type LibraryStoreResponse } from "../../schemas.ts";
 
 export function registerLibraryStoreTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(
@@ -107,7 +108,12 @@ export function registerLibraryStoreTool(server: McpServer, ctx: ToolContext) {
           body: JSON.stringify(contextualPayload),
         });
 
-        const result = await handleDaemonResponse(response, "library_store", ctx.logger);
+        const raw = await handleDaemonResponse(response, "library_store", ctx.logger);
+        const parsed = LibraryStoreResponseSchema.safeParse(raw);
+        if (!parsed.success) {
+          throw new Error("Daemon API returned invalid library store response");
+        }
+        const result: LibraryStoreResponse = parsed.data;
 
         ctx.logger.info("MCP library_store response", {
           success: result.success,
@@ -116,7 +122,11 @@ export function registerLibraryStoreTool(server: McpServer, ctx: ToolContext) {
         });
 
         return createSuccessResponse({
-          ...result,
+          success: result.success,
+          itemId: result.itemId,
+          message: result.message,
+          item: result.item,
+          path: result.path,
           source: "daemon_api",
           timestamp: new Date().toISOString(),
         });

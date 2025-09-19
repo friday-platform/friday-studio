@@ -95,7 +95,7 @@ export function registerGrepTool(server: McpServer, _ctx: ToolContext) {
       // Check if ripgrep is available
       const hasRipgrep = await isCommandAvailable("rg");
 
-      let result;
+      let result: { stdout: Uint8Array; stderr: Uint8Array; code: number };
       if (hasRipgrep) {
         result = await runRipgrep(params.pattern, searchPath, params.include);
       } else {
@@ -130,7 +130,7 @@ export function registerGrepTool(server: McpServer, _ctx: ToolContext) {
         if (parts.length < 3) continue;
 
         const filePath = parts[0];
-        const lineNum = parseInt(parts[1], 10);
+        const lineNum = parseInt(parts[1] ?? "0", 10);
         const lineText = parts[2];
 
         if (!filePath) continue;

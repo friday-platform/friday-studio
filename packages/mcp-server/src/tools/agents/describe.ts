@@ -26,10 +26,10 @@ export function registerAgentsDescribeTool(server: McpServer, ctx: ToolContext) 
           `${ctx.daemonUrl}/api/workspaces/${workspaceId}/agents/${agentId}`,
         );
         if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          throw new Error(
-            `Daemon API error: ${response.status} - ${errorData.error || response.statusText}`,
-          );
+          const raw = await response.json().catch(() => null);
+          const parsed = z.object({ error: z.string() }).safeParse(raw);
+          const message = parsed.success ? parsed.data.error : response.statusText;
+          throw new Error(`Daemon API error: ${response.status} - ${message}`);
         }
 
         const agent = await response.json();

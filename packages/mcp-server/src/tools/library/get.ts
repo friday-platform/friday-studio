@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { ToolContext } from "../types.ts";
 import { createSuccessResponse } from "../types.ts";
 import { fetchWithTimeout, handleDaemonResponse } from "../utils.ts";
+import { LibraryItemWithContentSchema } from "../../schemas.ts";
 
 export function registerLibraryGetTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(
@@ -42,16 +43,23 @@ export function registerLibraryGetTool(server: McpServer, ctx: ToolContext) {
         const response = await fetchWithTimeout(url);
         const result = await handleDaemonResponse(response, "library_get", ctx.logger);
 
-        ctx.logger.info("MCP library_get response", {
-          itemId,
-          hasContent: includeContent && "content" in result,
-        });
+        const parsed = LibraryItemWithContentSchema.safeParse(result);
+        if (!parsed.success) {
+          throw new Error("Daemon API returned invalid library item");
+        }
 
-        return createSuccessResponse({
-          ...result,
+        const payload = {
+          ...parsed.data,
           source: "daemon_api",
           timestamp: new Date().toISOString(),
+        };
+
+        ctx.logger.info("MCP library_get response", {
+          itemId,
+          hasContent: includeContent && parsed.data.content !== undefined,
         });
+
+        return createSuccessResponse(payload);
       } catch (error) {
         ctx.logger.error("MCP library_get failed", {
           itemId,

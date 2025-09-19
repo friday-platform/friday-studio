@@ -92,7 +92,7 @@ Usage:
       }
       const lines = await Deno.readTextFile(filePath).then((text) => text.split("\n"));
       const raw = lines.slice(offset, offset + limit).map((line) => {
-        return line.length > MAX_LINE_LENGTH ? line.substring(0, MAX_LINE_LENGTH) + "..." : line;
+        return line.length > MAX_LINE_LENGTH ? `${line.substring(0, MAX_LINE_LENGTH)}...` : line;
       });
       const content = raw.map((line, index) => {
         return `${(index + offset + 1).toString().padStart(5, "0")}| ${line}`;

@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { ToolContext } from "../types.ts";
 import { createSuccessResponse } from "../types.ts";
 import { buildLibraryQueryParams, fetchWithTimeout, handleDaemonResponse } from "../utils.ts";
+import { LibrarySearchResultSchema, type LibrarySearchResult } from "../../schemas.ts";
 
 export function registerLibraryListTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(
@@ -66,7 +67,12 @@ export function registerLibraryListTool(server: McpServer, ctx: ToolContext) {
           : `${ctx.daemonUrl}/api/library`;
 
         const response = await fetchWithTimeout(url);
-        const result = await handleDaemonResponse(response, "library_list", ctx.logger);
+        const raw = await handleDaemonResponse(response, "library_list", ctx.logger);
+        const parsed = LibrarySearchResultSchema.safeParse(raw);
+        if (!parsed.success) {
+          throw new Error("Daemon API returned invalid library list result");
+        }
+        const result: LibrarySearchResult = parsed.data;
 
         ctx.logger.info("MCP library_list response", {
           totalItems: result.total,
@@ -75,7 +81,10 @@ export function registerLibraryListTool(server: McpServer, ctx: ToolContext) {
         });
 
         return createSuccessResponse({
-          ...result,
+          items: result.items,
+          total: result.total,
+          query: result.query,
+          took_ms: result.took_ms,
           source: "daemon_api",
           timestamp: new Date().toISOString(),
         });

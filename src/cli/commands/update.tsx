@@ -661,7 +661,7 @@ async function checkBinaryWritePermission(): Promise<{
             : ["stat", "-c", "%U", actualBinaryPath];
 
       let owner: string | undefined;
-      if (statCmd && statCmd[0]) {
+      if (statCmd?.[0]) {
         const ownerResult = await new Deno.Command(statCmd[0], { args: statCmd.slice(1) }).output();
         owner = new TextDecoder().decode(ownerResult.stdout).trim();
       }

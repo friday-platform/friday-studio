@@ -93,9 +93,7 @@ Usage notes:
         // Truncate output if it's too long
         const truncateOutput = (text: string) => {
           if (text.length > MAX_OUTPUT_LENGTH) {
-            return (
-              text.substring(0, MAX_OUTPUT_LENGTH) + "\n\n... (output truncated due to length)"
-            );
+            return `${text.substring(0, MAX_OUTPUT_LENGTH)}\n\n... (output truncated due to length)`;
           }
           return text;
         };

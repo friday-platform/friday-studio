@@ -68,7 +68,7 @@ export function registerLsTool(server: McpServer, _ctx: ToolContext) {
 
         // Add file to its directory
         if (!filesByDir.has(dir)) filesByDir.set(dir, []);
-        filesByDir.get(dir)!.push(path.basename(file));
+        filesByDir.get(dir)?.push(path.basename(file));
       }
 
       function renderDir(dirPath: string, depth: number): string {
@@ -98,7 +98,7 @@ export function registerLsTool(server: McpServer, _ctx: ToolContext) {
         return output;
       }
 
-      const output = `${searchPath}/\n` + renderDir(".", 0);
+      const output = `${searchPath}/\n${renderDir(".", 0)}`;
 
       return createSuccessResponse({
         title: path.relative(Deno.cwd(), searchPath),

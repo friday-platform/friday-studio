@@ -14,12 +14,12 @@ export function builder(y: YargsInstance) {
     .command([start, stop, status, restart])
     .demandCommand(1)
     .fail((msg: string, _: unknown, yargs: YargsInstance) => {
-      if (msg && msg.includes("Not enough non-option arguments")) {
+      if (msg?.includes("Not enough non-option arguments")) {
         yargs.showHelp();
         Deno.exit(0);
       }
       yargs.showHelp();
-      console.error("\n" + msg);
+      console.error(`\n${msg}`);
       Deno.exit(1);
     })
     .example("$0 daemon start", "Start the Atlas daemon")
