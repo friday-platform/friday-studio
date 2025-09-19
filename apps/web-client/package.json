@@ -7,13 +7,16 @@
   "scripts": {
     "dev": "vite dev",
     "build": "vite build",
+    "build:full": "node scripts/generate-build-info.js && vite build",
     "preview": "vite preview",
     "prepare": "svelte-kit sync || echo ''",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
     "format": "prettier --write .",
     "lint": "prettier --check . && eslint .",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "tauri:build": "tauri build",
+    "generate-build-info": "deno run --allow-read --allow-write --allow-env scripts/generate-build-info.ts"
   },
   "dependencies": {
     "@atlas/core": "workspace:*",

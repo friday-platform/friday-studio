@@ -88,12 +88,17 @@ svg {
   --font-family-monospace:
     ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
     monospace;
+  --font-mono:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
+    monospace;
 
   /* Font sizes */
   --font-size-1: calc(0.75rem * var(--text-scale));
   --font-size-2: calc(0.8125rem * var(--text-scale));
   --font-size-3: calc(0.9375rem * var(--text-scale));
   --font-size-4: calc(1.625rem * var(--text-scale));
+  --font-size-5: calc(1.875rem * var(--text-scale));
+  --font-size-6: calc(2.25rem * var(--text-scale));
 
   /* Font weight */
   --font-weight-4: 400;
@@ -154,6 +159,9 @@ svg {
       239,
       0.5
     );
+  --shadow-4:
+    0px 0px 0px 1px rgba(0, 1, 165, 0.08), 0px 6px 16px -4px rgba(26, 83, 204, 0.12), 0px 16px 32px
+    -8px rgba(26, 83, 204, 0.1), 0px 24px 48px -12px rgba(26, 83, 204, 0.08);
 
   @media (color-gamut: p3) {
     --color-surface-2: color(display-p3 0.9569 0.9529 0.9451);
@@ -189,6 +197,9 @@ svg {
         223,
         0.2
       );
+    --shadow-4:
+      0px 0px 0px 1px rgba(0, 0, 0, 0.2), 0px 6px 16px -4px rgba(0, 0, 0, 0.24), 0px 16px 32px
+      -8px rgba(0, 0, 0, 0.2), 0px 24px 48px -12px rgba(0, 0, 0, 0.16);
   }
 
   @media (prefers-color-scheme: dark) and (color-gamut: p3) {

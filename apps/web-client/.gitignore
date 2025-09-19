@@ -7,3 +7,6 @@ dist
 !.env.example
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# Generated build info
+src/lib/build-info.ts

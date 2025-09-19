@@ -3,6 +3,7 @@
   "specifiers": {
     "jsr:@std/assert@*": "1.0.14",
     "jsr:@std/internal@^1.0.10": "1.0.10",
+    "jsr:@std/path@1": "1.1.2",
     "npm:@ai-sdk/anthropic@^2.0.16": "2.0.17_zod@3.25.76",
     "npm:@ai-sdk/anthropic@^2.0.5": "2.0.17_zod@3.25.76",
     "npm:@ai-sdk/google@^2.0.14": "2.0.14_zod@3.25.76",
@@ -106,6 +107,12 @@
     },
     "@std/internal@1.0.10": {
       "integrity": "e3be62ce42cab0e177c27698e5d9800122f67b766a0bea6ca4867886cbde8cf7"
+    },
+    "@std/path@1.1.2": {
+      "integrity": "c0b13b97dfe06546d5e16bf3966b1cadf92e1cc83e56ba5476ad8b498d9e3038",
+      "dependencies": [
+        "jsr:@std/internal"
+      ]
     }
   },
   "npm": {

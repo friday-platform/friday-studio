@@ -3,6 +3,7 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { onDestroy, onMount } from "svelte";
 import { getFileType, setAppContext } from "$lib/app-context.svelte";
 import favicon from "$lib/assets/favicon.svg";
+import AboutDialog from "$lib/components/about-dialog.svelte";
 import AppContainer from "$lib/components/app/container.svelte";
 import AppSidebar from "$lib/components/app/sidebar.svelte";
 import KeyboardListener from "$lib/components/keyboard-listener.svelte";
@@ -14,6 +15,8 @@ const { children } = $props();
 const { daemonClient, keyboard, stagedFiles } = setAppContext();
 
 const ctx = setClientContext(daemonClient);
+
+let showAboutDialog = $state(false);
 
 $effect(() => {
   if (keyboard.state?.key === "escape" && ctx.atlasSessionId) {
@@ -31,6 +34,20 @@ onMount(() => {
 
   // Ensure periodic health checks are running for auto-reconnect
   ctx.startHealthCheckInterval();
+
+  // Listen for about dialog event from Tauri
+  let unlistenAbout: (() => void) | undefined;
+  async function setupAboutListener() {
+    try {
+      const { listen } = await import("@tauri-apps/api/event");
+      unlistenAbout = await listen("show-about-dialog", () => {
+        showAboutDialog = true;
+      });
+    } catch {
+      // Not in Tauri context
+    }
+  }
+  setupAboutListener();
 
   // Drag and drop support
   let unlisten: () => void = () => {};
@@ -51,6 +68,7 @@ onMount(() => {
   return () => {
     // you need to call unlisten if your handler goes out of scope e.g. the component is unmounted
     unlisten();
+    unlistenAbout?.();
   };
 });
 
@@ -89,6 +107,7 @@ onDestroy(() => {
 </div>
 
 <KeyboardListener />
+<AboutDialog bind:open={showAboutDialog} />
 
 <style>
 	.titlebar {

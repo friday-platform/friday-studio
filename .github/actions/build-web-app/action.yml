@@ -122,6 +122,24 @@ runs:
         fi
         echo "bundle-name=$bundle_name" >> $GITHUB_OUTPUT
 
+    - name: Generate build info
+      shell: bash
+      working-directory: ./apps/web-client
+      run: |
+        # Determine build type from version
+        version="${{ inputs.version }}"
+        if [[ "$version" == edge-* ]]; then
+          build_type="edge"
+        elif [[ "$version" == nightly-* ]]; then
+          build_type="nightly"
+        else
+          build_type="release"
+        fi
+
+        # Generate build info with commit hash and build type
+        GIT_COMMIT_HASH="${GITHUB_SHA:0:8}" BUILD_TYPE="$build_type" npm run generate-build-info
+        echo "Generated build info with commit=${GITHUB_SHA:0:8} and type=$build_type"
+
     - name: Build Tauri app
       # Always use tauri-action for all platforms
       id: tauri-build

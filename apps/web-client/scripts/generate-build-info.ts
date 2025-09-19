@@ -1,0 +1,72 @@
+#!/usr/bin/env -S deno run --allow-read --allow-write --allow-env
+
+// This script generates build information at compile time
+// It should be run before building the application in CI/CD
+
+import { join, dirname, fromFileUrl } from "jsr:@std/path@^1.0.0";
+
+const __dirname = dirname(fromFileUrl(import.meta.url));
+
+// Determine build type based on environment variables or Git branch
+let buildType = "development";
+if (Deno.env.get("BUILD_TYPE")) {
+  buildType = Deno.env.get("BUILD_TYPE")!;
+} else if (Deno.env.get("GITHUB_REF")) {
+  // GitHub Actions context
+  const githubRef = Deno.env.get("GITHUB_REF")!;
+  if (githubRef.includes("edge")) {
+    buildType = "edge";
+  } else if (githubRef.includes("nightly")) {
+    buildType = "nightly";
+  }
+}
+
+// Get commit hash from environment variables
+// For local development, this should be passed via environment variable:
+// GIT_COMMIT_HASH=$(git rev-parse --short HEAD) deno run --allow-all scripts/generate-build-info.ts
+const githubSha = Deno.env.get("GITHUB_SHA");
+const commitHash =
+  Deno.env.get("GIT_COMMIT_HASH") || (githubSha ? githubSha.substring(0, 8) : "unknown");
+
+// Get version from package.json or environment
+let version = Deno.env.get("APP_VERSION");
+if (!version) {
+  try {
+    const packageJson = JSON.parse(await Deno.readTextFile(join(__dirname, "..", "package.json")));
+    version = packageJson.version || "0.1.0";
+  } catch {
+    version = "0.1.0";
+  }
+}
+
+// Get build information
+interface BuildInfo {
+  commitHash: string;
+  buildType: string;
+  buildDate: string;
+  version: string;
+}
+
+const buildInfo: BuildInfo = {
+  commitHash,
+  buildType,
+  buildDate: new Date().toISOString(),
+  version,
+};
+
+// Generate TypeScript module that will be imported at build time
+const content = `// Auto-generated file - DO NOT EDIT
+// Generated at: ${buildInfo.buildDate}
+
+export const BUILD_INFO = ${JSON.stringify(buildInfo, null, 2)} as const;
+`;
+
+const outputPath = join(__dirname, "..", "src", "lib", "build-info.ts");
+
+try {
+  await Deno.writeTextFile(outputPath, content);
+  console.log("Build info generated successfully:", buildInfo);
+} catch (error) {
+  console.error("Failed to generate build info:", error);
+  Deno.exit(1);
+}
