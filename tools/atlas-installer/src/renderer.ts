@@ -35,8 +35,6 @@ interface ElectronAPI {
   installAtlasBinary: () => Promise<IPCResult>;
   setupPath: () => Promise<IPCResult>;
   checkAtlasBinary: () => Promise<BinaryCheckResult>;
-  checkDaemonStatus: () => Promise<IPCResult>;
-  manageDaemon: (action: string) => Promise<IPCResult>;
   manageService: (action: string) => Promise<IPCResult>;
   getEulaText: () => Promise<string>;
   quitApp: () => Promise<void>;
@@ -497,6 +495,12 @@ declare const electronAPI: ElectronAPI;
         try {
           const result = await step.action();
 
+          // Check if result is undefined or not an object
+          if (!result || typeof result !== "object") {
+            console.error("Invalid result from step action:", result);
+            throw new Error("Step action returned invalid result");
+          }
+
           // Remove the "in progress" line and add completion status
           const lines = log.split("\n");
           lines.pop(); // Remove empty line
@@ -723,6 +727,14 @@ declare const electronAPI: ElectronAPI;
 
   // Initialize the installer when the page loads
   document.addEventListener("DOMContentLoaded", () => {
-    new AtlasInstaller();
+    try {
+      new AtlasInstaller();
+    } catch (error) {
+      console.error("Failed to initialize AtlasInstaller:", error);
+      document.body.innerHTML = `<div style="padding: 20px; color: red;">
+        <h1>Initialization Error</h1>
+        <pre>${error instanceof Error ? error.stack : String(error)}</pre>
+      </div>`;
+    }
   });
 })(); // End IIFE

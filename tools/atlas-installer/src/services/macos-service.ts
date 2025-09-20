@@ -33,9 +33,7 @@ export async function installMacOSService(
 
     const env = { ...process.env, ...atlasEnv };
 
-    // Stop any existing service
-    await runQuietly(`"${binaryPath}" daemon stop`, { env, timeout: CONFIG.process.stopTimeout });
-    await runQuietly("pkill -f 'atlas daemon start'");
+    // Clean up any lingering service registration (daemon should already be stopped by binary installer)
     await runQuietly(`launchctl unload "${PLIST_PATH}"`);
     await runQuietly("launchctl remove com.tempestdx.atlas");
 
@@ -97,8 +95,8 @@ export async function uninstallMacOSService(
   try {
     const env = { ...process.env, ...atlasEnv };
 
-    // Stop daemon
-    await runQuietly(`"${binaryPath}" daemon stop`, { env, timeout: CONFIG.process.stopTimeout });
+    // Stop service (which also stops daemon)
+    await runQuietly(`"${binaryPath}" service stop`, { env, timeout: CONFIG.process.stopTimeout });
 
     // Unload and remove service
     await runQuietly(`launchctl unload "${PLIST_PATH}"`);
@@ -125,8 +123,7 @@ export async function stopMacOSService(
   try {
     const env = { ...process.env, ...atlasEnv };
 
-    await runQuietly(`"${binaryPath}" daemon stop`, { env, timeout: CONFIG.process.stopTimeout });
-    await runQuietly("launchctl stop com.tempestdx.atlas");
+    await runQuietly(`"${binaryPath}" service stop`, { env, timeout: CONFIG.process.stopTimeout });
 
     return { success: true, message: "Atlas service stopped" };
   } catch (error: any) {

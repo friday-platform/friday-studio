@@ -20,15 +20,10 @@ export async function installWindowsService(
       return { success: false, error: "Binary not found" };
     }
 
+    // Environment variables kept for consistency and future use
     const env = { ...process.env, ...atlasEnv };
 
-    // Stop any existing service
-    try {
-      await safeExec(`"${binaryPath}" daemon stop`, { env, timeout: CONFIG.process.stopTimeout });
-    } catch {}
-    try {
-      await safeExec("taskkill /F /IM atlas.exe", { windowsHide: true });
-    } catch {}
+    // Clean up any existing scheduled task (daemon should already be stopped by binary installer)
     try {
       await safeExec(`schtasks /Delete /TN "${TASK_NAME}" /F`, { windowsHide: true });
     } catch {}
@@ -102,9 +97,9 @@ export async function uninstallWindowsService(
   try {
     const env = { ...process.env, ...atlasEnv };
 
-    // Stop daemon
+    // Stop service (which also stops daemon)
     try {
-      await safeExec(`"${binaryPath}" daemon stop`, { env, timeout: CONFIG.process.stopTimeout });
+      await safeExec(`"${binaryPath}" service stop`, { env, timeout: CONFIG.process.stopTimeout });
     } catch {}
     try {
       await safeExec("taskkill /F /IM atlas.exe", { windowsHide: true });
@@ -141,7 +136,7 @@ export async function stopWindowsService(
     const env = { ...process.env, ...atlasEnv };
 
     try {
-      await safeExec(`"${binaryPath}" daemon stop`, { env, timeout: CONFIG.process.stopTimeout });
+      await safeExec(`"${binaryPath}" service stop`, { env, timeout: CONFIG.process.stopTimeout });
     } catch {}
     try {
       await safeExec(`schtasks /End /TN "${TASK_NAME}"`, { windowsHide: true });

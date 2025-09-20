@@ -2,23 +2,85 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { safeExec } from "../utils/process";
-import type { BinaryInstallResult } from "../types";
+import type { IPCResult } from "../types";
 import { createLogger } from "../utils/logger";
 import { isWindows, isMac } from "../utils/platform";
 
 const logger = createLogger("BinaryHandler");
 
 /**
+ * Stop running daemon before binary replacement
+ */
+async function stopExistingDaemon(): Promise<void> {
+  try {
+    logger.info("Stopping Atlas service and daemon...");
+
+    // Try to stop using the atlas SERVICE command which properly handles scheduler
+    // This will stop both the service (launchctl/schtasks) AND the daemon
+    const atlasCommand = isWindows() ? "atlas.exe" : "atlas";
+
+    try {
+      // First attempt: use atlas CLI if it's in PATH
+      await safeExec(`${atlasCommand} service stop`, { timeout: 10000 });
+      logger.info("Successfully stopped Atlas service");
+    } catch {
+      // Not in PATH or not running, try using known binary location
+      const binaryPath = path.join(os.homedir(), ".atlas", "bin", atlasCommand);
+      if (fs.existsSync(binaryPath)) {
+        try {
+          await safeExec(`"${binaryPath}" service stop`, { timeout: 10000 });
+          logger.info("Successfully stopped Atlas service using direct path");
+        } catch {
+          logger.info("Service not running or failed to stop gracefully");
+        }
+      }
+    }
+
+    // Platform-specific force cleanup as safety measure
+    // This handles any processes that might not have been managed by the service
+    if (isWindows()) {
+      try {
+        await safeExec("taskkill /F /IM atlas.exe");
+        logger.info("Force terminated any remaining atlas.exe processes");
+      } catch {
+        // Process might not be running, continue
+      }
+    } else {
+      try {
+        // CRITICAL: Use exact match to avoid killing atlas-installer itself!
+        // Only kill the atlas daemon process, not anything with "atlas" in the name
+        await safeExec("pkill -x atlas");
+        logger.info("Force terminated any remaining atlas processes");
+      } catch {
+        // Process might not be running, continue
+      }
+    }
+
+    // Wait for processes to fully terminate
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  } catch (err) {
+    logger.error("Error during service/daemon shutdown", err);
+    // Continue with installation even if stop fails
+  }
+}
+
+/**
  * Install Atlas Web Client on macOS
  */
 async function installWebClient(): Promise<void> {
   try {
-    const appSourcePath = path.join(
-      process.resourcesPath || path.join(__dirname, "..", ".."),
-      "app.asar.unpacked",
-      "atlas-binary",
-      "Atlas Web Client.app",
-    );
+    // Determine the source path - check production path first, then fall back to development
+    let basePath = path.join(process.resourcesPath || "", "app.asar.unpacked", "atlas-binary");
+
+    // If production path doesn't exist, try development path
+    if (!fs.existsSync(basePath)) {
+      const devPath = path.join(__dirname, "..", "..", "atlas-binary");
+      if (fs.existsSync(devPath)) {
+        basePath = devPath;
+      }
+    }
+
+    const appSourcePath = path.join(basePath, "Atlas Web Client.app");
 
     if (!fs.existsSync(appSourcePath)) {
       logger.warn(`Web client app not found at ${appSourcePath}, skipping installation`);
@@ -62,26 +124,37 @@ const BINARIES = {
 /**
  * Copy bundled Atlas binaries to installation directory
  */
-async function copyBundledBinaries(): Promise<BinaryInstallResult> {
+async function copyBundledBinaries(): Promise<IPCResult> {
   try {
+    // CRITICAL: Stop daemon BEFORE replacing binaries to prevent killed process
+    logger.info("Stopping existing Atlas daemon before binary replacement...");
+    await stopExistingDaemon();
+
     const binDir = path.join(os.homedir(), ".atlas", "bin");
     fs.mkdirSync(binDir, { recursive: true });
 
-    const sourcePath = path.join(
-      process.resourcesPath || path.join(__dirname, "..", ".."),
-      "app.asar.unpacked",
-      "atlas-binary",
-    );
+    // Determine the source path - check production path first, then fall back to development
+    let sourcePath = path.join(process.resourcesPath || "", "app.asar.unpacked", "atlas-binary");
 
-    let mainBinaryPath = "";
+    // If production path doesn't exist, try development path
+    if (!fs.existsSync(sourcePath)) {
+      const devPath = path.join(__dirname, "..", "..", "atlas-binary");
+      if (fs.existsSync(devPath)) {
+        sourcePath = devPath;
+        logger.info("Using development binary path");
+      }
+    }
+
+    logger.info(`Looking for binaries in: ${sourcePath}`);
 
     // Install all binaries
-    for (const [key, name] of Object.entries(BINARIES)) {
+    for (const [, name] of Object.entries(BINARIES)) {
       const src = path.join(sourcePath, name);
       const dest = path.join(binDir, name);
 
       if (!fs.existsSync(src)) {
-        throw new Error(`Binary ${name} not found at ${src}`);
+        logger.error(`Binary ${name} not found at ${src}`);
+        return { success: false, error: `Binary ${name} not found at ${src}` };
       }
 
       logger.info(`Installing ${name}`);
@@ -89,10 +162,6 @@ async function copyBundledBinaries(): Promise<BinaryInstallResult> {
 
       if (!isWindows()) {
         fs.chmodSync(dest, 0o755);
-      }
-
-      if (key === "atlas") {
-        mainBinaryPath = dest;
       }
     }
 
@@ -112,11 +181,11 @@ async function copyBundledBinaries(): Promise<BinaryInstallResult> {
       await installWebClient();
     }
 
-    return { success: true, path: mainBinaryPath, message: "Binaries installed successfully" };
+    return { success: true, message: "Binaries installed successfully" };
   } catch (err) {
     logger.error("Binary installation failed", err);
     const message = err instanceof Error ? err.message : String(err);
-    return { success: false, error: `Binary installation failed: ${message}`, path: undefined };
+    return { success: false, error: `Binary installation failed: ${message}` };
   }
 }
 
@@ -172,16 +241,18 @@ async function createSystemSymlinks(binDir: string): Promise<void> {
  */
 export async function installAtlasBinaryHandler(
   _event: unknown,
-  mode: "install" | "update",
-): Promise<BinaryInstallResult> {
-  logger.info(`Starting Atlas binary ${mode}...`);
+  mode?: "install" | "update",
+): Promise<IPCResult> {
+  const installMode = mode || "install";
+  logger.info(`Starting Atlas binary ${installMode}...`);
 
   try {
     // Copy bundled binaries instead of downloading
     logger.info("Installing Atlas binaries from bundled resources...");
     const installResult = await copyBundledBinaries();
-    if (!installResult.success || !installResult.path) {
-      throw new Error(installResult.error || "Installation failed");
+    if (!installResult.success) {
+      logger.error("Binary installation failed:", installResult.error);
+      return installResult;
     }
 
     // Skip verification during installation to prevent UI blocking
@@ -189,14 +260,14 @@ export async function installAtlasBinaryHandler(
     logger.info("Skipping immediate verification to prevent UI blocking...");
 
     const message =
-      mode === "update"
+      installMode === "update"
         ? "Atlas has been updated successfully!"
         : "Atlas binary installed successfully!";
 
-    return { success: true, path: installResult.path, message };
+    return { success: true, message };
   } catch (err) {
-    logger.error(`Binary ${mode} failed`, err);
+    logger.error(`Binary ${installMode} failed`, err);
     const message = err instanceof Error ? err.message : String(err);
-    return { success: false, error: `Binary ${mode} failed: ${message}`, path: undefined };
+    return { success: false, error: `Binary ${installMode} failed: ${message}` };
   }
 }

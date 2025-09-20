@@ -19,11 +19,5 @@ export { checkAtlasBinaryHandler } from "./check-binary";
 // Service handlers
 export { manageAtlasServiceHandler } from "./service";
 
-// Daemon handlers
-export {
-  checkAtlasDaemonStatus,
-  manageAtlasDaemon,
-} from "./daemon";
-
 // EULA handlers
 export { getEulaTextHandler } from "./eula";

@@ -12,11 +12,3 @@ export const IS_WINDOWS = process.platform === "win32";
 // Convenience functions
 export const isWindows = () => IS_WINDOWS;
 export const isMac = () => IS_MAC;
-
-// Path utilities
-const PATH_SEPARATOR = IS_WINDOWS ? ";" : ":";
-
-export function addToPath(binDir: string, existingPath?: string): string {
-  const currentPath = existingPath || process.env.PATH || "";
-  return `${binDir}${PATH_SEPARATOR}${currentPath}`;
-}

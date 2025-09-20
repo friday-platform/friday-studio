@@ -1,5 +1,5 @@
 // Re-export action types from constants
-export type { DaemonAction, ServiceAction } from "../constants/actions";
+export type { ServiceAction } from "../constants/actions";
 
 // Platform and System Types
 export interface PlatformInfo {
@@ -31,22 +31,6 @@ export interface NpxPathResult extends IPCResult {
 export interface BinaryCheckResult {
   exists: boolean;
   path?: string;
-  error?: string;
-}
-
-export interface DaemonStatus {
-  pid?: number;
-  uptime?: number;
-  version?: string;
-  state?: string;
-}
-
-export interface DaemonStatusResult {
-  success: boolean;
-  running?: boolean;
-  status?: DaemonStatus;
-  info?: any;
-  message?: string;
   error?: string;
 }
 
@@ -91,8 +75,6 @@ export interface ElectronAPI {
   installAtlasBinary(): Promise<BinaryInstallResult>;
   setupPath(): Promise<IPCResult>;
   checkAtlasBinary(): Promise<BinaryCheckResult>;
-  checkDaemonStatus(): Promise<DaemonStatusResult>;
-  manageDaemon(action: DaemonAction): Promise<IPCResult>;
   manageService(action: ServiceAction): Promise<IPCResult>;
   quitApp(): Promise<void>;
   getEulaText(): Promise<string>;
@@ -165,8 +147,6 @@ export type IPCChannel =
   | "install-atlas-binary"
   | "setup-path"
   | "check-atlas-binary"
-  | "check-daemon-status"
-  | "manage-atlas-daemon"
   | "manage-atlas-service"
   | "quit-app"
   | "get-eula-text";

@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { DaemonAction, ServiceAction } from "./constants/actions";
+import type { ServiceAction } from "./constants/actions";
 import type { ElectronAPI } from "./types";
 
 // Expose protected methods that allow the renderer process to use
@@ -13,8 +13,6 @@ const electronAPI: ElectronAPI = {
   installAtlasBinary: () => ipcRenderer.invoke("install-atlas-binary"),
   setupPath: () => ipcRenderer.invoke("setup-path"),
   checkAtlasBinary: () => ipcRenderer.invoke("check-atlas-binary"),
-  checkDaemonStatus: () => ipcRenderer.invoke("check-daemon-status"),
-  manageDaemon: (action: DaemonAction) => ipcRenderer.invoke("manage-atlas-daemon", action),
   manageService: (action: ServiceAction) => ipcRenderer.invoke("manage-atlas-service", action),
   quitApp: () => ipcRenderer.invoke("quit-app"),
   getEulaText: () => ipcRenderer.invoke("get-eula-text"),

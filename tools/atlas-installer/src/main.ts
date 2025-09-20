@@ -13,8 +13,6 @@ import {
   installAtlasBinaryHandler,
   checkAtlasBinaryHandler,
   manageAtlasServiceHandler,
-  checkAtlasDaemonStatus,
-  manageAtlasDaemon,
   getEulaTextHandler,
 } from "./handlers";
 
@@ -98,7 +96,5 @@ ipcMain.handle("setup-path", async () => {
   return { success: false, error: `Unsupported platform: ${process.platform}` };
 });
 ipcMain.handle("manage-atlas-service", manageAtlasServiceHandler);
-ipcMain.handle("check-atlas-daemon-status", checkAtlasDaemonStatus);
-ipcMain.handle("manage-atlas-daemon", manageAtlasDaemon);
 ipcMain.handle("get-eula-text", getEulaTextHandler);
 ipcMain.handle("quit-app", quitAppHandler);
