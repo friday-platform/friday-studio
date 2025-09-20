@@ -1,6 +1,7 @@
 use tauri::menu::{Menu, MenuItem, MenuId, PredefinedMenuItem, Submenu};
 use tauri_plugin_opener::OpenerExt;
 use tauri::{AppHandle, Emitter};
+use std::process::Command;
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
@@ -13,16 +14,82 @@ fn show_about_dialog(app: AppHandle) {
     app.emit("show-about-dialog", ()).unwrap();
 }
 
+#[tauri::command]
+async fn run_diagnostics(app: AppHandle) -> Result<String, String> {
+    use std::io::{BufRead, BufReader};
+    use std::process::Stdio;
+
+    // Get the home directory and build path to atlas-diagnostics
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .map_err(|_| "Could not determine home directory".to_string())?;
+
+    let diagnostics_path = if cfg!(target_os = "windows") {
+        format!("{}\\.atlas\\bin\\atlas-diagnostics.exe", home)
+    } else {
+        format!("{}/.atlas/bin/atlas-diagnostics", home)
+    };
+
+    // Emit initial progress update
+    app.emit("diagnostics-progress", "Starting diagnostics collection...").unwrap();
+
+    // Run the diagnostics binary and capture stdout in real-time
+    let mut child = Command::new(&diagnostics_path)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("Failed to run atlas-diagnostics at {}: {}", diagnostics_path, e))?;
+
+    // Read stdout line by line and emit progress updates
+    if let Some(stdout) = child.stdout.take() {
+        let reader = BufReader::new(stdout);
+        for line in reader.lines() {
+            if let Ok(line) = line {
+                // Try to parse JSON log format and extract the message field
+                if line.contains(r#""message":""#) {
+                    // Simple JSON message extraction
+                    let parts: Vec<&str> = line.split(r#""message":""#).collect();
+                    if parts.len() > 1 {
+                        // Find the closing quote for the message value
+                        if let Some(end_pos) = parts[1].find('"') {
+                            let message = &parts[1][..end_pos];
+                            app.emit("diagnostics-progress", message).unwrap();
+                            continue;
+                        }
+                    }
+                }
+                // Fallback to emitting the entire line if not JSON or parsing fails
+                app.emit("diagnostics-progress", &line).unwrap();
+            }
+        }
+    }
+
+    // Wait for the process to complete
+    let output = child.wait_with_output()
+        .map_err(|e| format!("Failed to wait for diagnostics: {}", e))?;
+
+    if output.status.success() {
+        Ok("Diagnostics completed successfully".to_string())
+    } else {
+        let error = String::from_utf8_lossy(&output.stderr).to_string();
+        Err(format!("Diagnostics failed: {}", error))
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![greet, show_about_dialog])
+        .plugin(tauri_plugin_shell::init())
+        .invoke_handler(tauri::generate_handler![greet, show_about_dialog, run_diagnostics])
         .setup(|app| {
             // Create the Discord help menu item
             let discord_help = MenuItem::with_id(app, "discord_help", "Get Help on Discord", true, None::<&str>)?;
+
+            // Create diagnostics menu item
+            let diagnostics_item = MenuItem::with_id(app, "run_diagnostics", "Run Diagnostics", true, None::<&str>)?;
 
             // Create custom About menu item with specific ID
             let about_item = MenuItem::with_id(app, "about-custom", "About Atlas", true, None::<&str>)?;
@@ -62,8 +129,10 @@ pub fn run() {
             window_menu.append(&PredefinedMenuItem::minimize(app, None)?)?;
             window_menu.append(&PredefinedMenuItem::maximize(app, None)?)?;
 
-            // Create help menu with Discord link
+            // Create help menu with Discord link and diagnostics
             let help_menu = Submenu::new(app, "Help", true)?;
+            help_menu.append(&diagnostics_item)?;
+            help_menu.append(&PredefinedMenuItem::separator(app)?)?;
             help_menu.append(&discord_help)?;
 
             // Build the menu
@@ -83,6 +152,9 @@ pub fn run() {
                 } else if event.id() == &MenuId("about-custom".to_string()) {
                     // Emit event to show about dialog
                     let _ = app.emit("show-about-dialog", ());
+                } else if event.id() == &MenuId("run_diagnostics".to_string()) {
+                    // Emit event to show diagnostics dialog
+                    let _ = app.emit("show-diagnostics-dialog", ());
                 }
             });
 

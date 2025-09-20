@@ -4,6 +4,7 @@ import { onDestroy, onMount } from "svelte";
 import { getFileType, setAppContext } from "$lib/app-context.svelte";
 import favicon from "$lib/assets/favicon.svg";
 import AboutDialog from "$lib/components/about-dialog.svelte";
+import DiagnosticsDialog from "$lib/components/diagnostics-dialog.svelte";
 import AppContainer from "$lib/components/app/container.svelte";
 import AppSidebar from "$lib/components/app/sidebar.svelte";
 import KeyboardListener from "$lib/components/keyboard-listener.svelte";
@@ -17,6 +18,7 @@ const { daemonClient, keyboard, stagedFiles } = setAppContext();
 const ctx = setClientContext(daemonClient);
 
 let showAboutDialog = $state(false);
+let showDiagnosticsDialog = $state(false);
 
 $effect(() => {
   if (keyboard.state?.key === "escape" && ctx.atlasSessionId) {
@@ -35,19 +37,24 @@ onMount(() => {
   // Ensure periodic health checks are running for auto-reconnect
   ctx.startHealthCheckInterval();
 
-  // Listen for about dialog event from Tauri
+  // Listen for dialog events from Tauri
   let unlistenAbout: (() => void) | undefined;
-  async function setupAboutListener() {
+  let unlistenDiagnostics: (() => void) | undefined;
+
+  async function setupDialogListeners() {
     try {
       const { listen } = await import("@tauri-apps/api/event");
       unlistenAbout = await listen("show-about-dialog", () => {
         showAboutDialog = true;
       });
+      unlistenDiagnostics = await listen("show-diagnostics-dialog", () => {
+        showDiagnosticsDialog = true;
+      });
     } catch {
       // Not in Tauri context
     }
   }
-  setupAboutListener();
+  setupDialogListeners();
 
   // Drag and drop support
   let unlisten: () => void = () => {};
@@ -69,6 +76,7 @@ onMount(() => {
     // you need to call unlisten if your handler goes out of scope e.g. the component is unmounted
     unlisten();
     unlistenAbout?.();
+    unlistenDiagnostics?.();
   };
 });
 
@@ -108,6 +116,7 @@ onDestroy(() => {
 
 <KeyboardListener />
 <AboutDialog bind:open={showAboutDialog} />
+<DiagnosticsDialog bind:open={showDiagnosticsDialog} />
 
 <style>
 	.titlebar {

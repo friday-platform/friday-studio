@@ -1,4 +1,5 @@
 import { getAtlasClient } from "@atlas/client";
+import { createLogger } from "@atlas/logger";
 import { getAtlasHome } from "@atlas/utils";
 import { ensureDir, exists, walk } from "@std/fs";
 import { join } from "@std/path";
@@ -7,6 +8,8 @@ import { stringify } from "@std/yaml";
 import { getAtlasLogsDir } from "./paths.ts";
 import { ReleaseChannel } from "./release-channel.ts";
 import { getVersionInfo } from "../../../src/utils/version.ts";
+
+const log = createLogger({ component: "diagnostics-collector" });
 
 export class DiagnosticsCollector {
   private tempDir: string;
@@ -24,13 +27,21 @@ export class DiagnosticsCollector {
     await ensureDir(join(this.tempDir, "workspaces"));
 
     // Collect data
+    log.info("Collecting logs...");
     await this.collectLogs();
+
+    log.info("Collecting memory data...");
     await this.collectMemory();
+
+    log.info("Collecting storage data...");
     await this.collectStorage();
+
+    log.info("Collecting workspace configurations...");
     await this.collectWorkspaces();
     await this.collectSystemWorkspaces();
 
     // Create tar.gz archive
+    log.info("Creating compressed archive...");
     const gzipPath = join(Deno.makeTempDirSync(), "diagnostics.tar.gz");
     await this.createTarGzArchive(gzipPath);
 
@@ -44,7 +55,7 @@ export class DiagnosticsCollector {
         await this.copyDirectory(logsDir, join(this.tempDir, "logs"));
       }
     } catch (err) {
-      console.warn("Failed to collect logs:", err instanceof Error ? err.message : String(err));
+      log.warn("Failed to collect logs:", err instanceof Error ? err.message : String(err));
     }
   }
 
@@ -55,7 +66,7 @@ export class DiagnosticsCollector {
         await this.copyDirectory(memoryDir, join(this.tempDir, "memory"));
       }
     } catch (err) {
-      console.warn("Failed to collect memory:", err instanceof Error ? err.message : String(err));
+      log.warn("Failed to collect memory:", err instanceof Error ? err.message : String(err));
     }
   }
 
@@ -72,10 +83,7 @@ export class DiagnosticsCollector {
           await Deno.copyFile(sourcePath, destPath);
         }
       } catch (err) {
-        console.warn(
-          `Failed to collect ${file}:`,
-          err instanceof Error ? err.message : String(err),
-        );
+        log.warn(`Failed to collect ${file}:`, err instanceof Error ? err.message : String(err));
       }
     }
   }
@@ -149,7 +157,7 @@ export class DiagnosticsCollector {
                       !errorMessage.includes("Connection refused") &&
                       !errorMessage.includes("Failed to connect to Atlas daemon")
                     ) {
-                      console.warn(
+                      log.warn(
                         `Failed to fetch runtime config for ${workspace.name}:`,
                         errorMessage,
                       );
@@ -184,7 +192,7 @@ export class DiagnosticsCollector {
                   await this.copyDirectory(workspaceLogsDir, workspaceLogsDest);
                 }
               } catch (err) {
-                console.warn(
+                log.warn(
                   `Failed to collect workspace ${workspace.name}:`,
                   err instanceof Error ? err.message : String(err),
                 );
@@ -196,7 +204,7 @@ export class DiagnosticsCollector {
         }
       }
     } catch (err) {
-      console.warn(
+      log.warn(
         "Failed to collect workspaces from KV:",
         err instanceof Error ? err.message : String(err),
       );
@@ -231,7 +239,7 @@ export class DiagnosticsCollector {
                 `This is a built-in system workspace embedded in the Atlas binary.\n`,
             );
           } catch (err) {
-            console.warn(
+            log.warn(
               `Failed to save system workspace ${id}:`,
               err instanceof Error ? err.message : String(err),
             );
@@ -251,7 +259,7 @@ export class DiagnosticsCollector {
                 const destPath = join(systemDir, entry.name);
                 await Deno.copyFile(sourcePath, destPath);
               } catch (err) {
-                console.warn(
+                log.warn(
                   `Failed to copy system workspace ${entry.name}:`,
                   err instanceof Error ? err.message : String(err),
                 );
@@ -269,7 +277,7 @@ export class DiagnosticsCollector {
         }
       }
     } catch (err) {
-      console.warn(
+      log.warn(
         "Failed to collect system workspaces:",
         err instanceof Error ? err.message : String(err),
       );
@@ -289,7 +297,7 @@ export class DiagnosticsCollector {
         try {
           await Deno.copyFile(sourcePath, destPath);
         } catch (err) {
-          console.warn(
+          log.warn(
             `Failed to copy ${entry.name}:`,
             err instanceof Error ? err.message : String(err),
           );
@@ -308,7 +316,7 @@ export class DiagnosticsCollector {
       systemInfo.osVersion = Deno.osRelease();
       systemInfo.hostname = Deno.hostname();
     } catch (err) {
-      console.warn(
+      log.warn(
         "Failed to collect basic OS info:",
         err instanceof Error ? err.message : String(err),
       );
@@ -896,7 +904,7 @@ export class DiagnosticsCollector {
             }),
           });
         } catch (err) {
-          console.warn(
+          log.warn(
             `Failed to add ${relativePath} to tar:`,
             err instanceof Error ? err.message : String(err),
           );
