@@ -6,7 +6,7 @@ import { TarStream, type TarStreamInput } from "@std/tar/tar-stream";
 import { stringify } from "@std/yaml";
 import { getAtlasLogsDir } from "./paths.ts";
 import { ReleaseChannel } from "./release-channel.ts";
-import { getVersionInfo } from "./version.ts";
+import { getVersionInfo } from "../../../src/utils/version.ts";
 
 export class DiagnosticsCollector {
   private tempDir: string;

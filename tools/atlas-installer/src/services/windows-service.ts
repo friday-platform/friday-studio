@@ -12,7 +12,7 @@ const TASK_NAME = "Atlas Daemon";
  */
 export async function installWindowsService(
   binaryPath: string,
-  atlasEnv: Record<string, string>,
+  _atlasEnv: Record<string, string>,
 ): Promise<IPCResult> {
   try {
     // Validate binary exists
@@ -20,8 +20,8 @@ export async function installWindowsService(
       return { success: false, error: "Binary not found" };
     }
 
-    // Environment variables kept for consistency and future use
-    const env = { ...process.env, ...atlasEnv };
+    // Environment variables kept for consistency with uninstallWindowsService
+    // Currently not used during installation but may be needed in the future
 
     // Clean up any existing scheduled task (daemon should already be stopped by binary installer)
     try {
