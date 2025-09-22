@@ -271,32 +271,4 @@ export class ConversationClient {
       throw new Error(`Failed to cancel session: ${response.error.error}`);
     }
   }
-
-  /**
-   * Lists past conversations
-   */
-  async listConversations(): Promise<string[]> {
-    const client = createAtlasClient();
-    const response = await client.GET("/api/chat-storage", { params: {} });
-
-    if (response.error) {
-      throw new Error(`Failed to list conversations: ${response.error.error}`);
-    }
-
-    return response?.data?.conversations || [];
-  }
-
-  /**
-   * Gets a conversation
-   */
-  async getConversation(id: string): Promise<SessionUIMessage[]> {
-    const client = createAtlasClient();
-    const response = await client.GET("/api/chat-storage/{id}", { params: { path: { id } } });
-
-    if (response.error) {
-      throw new Error(`Failed to get conversation: ${response.error.error}`);
-    }
-
-    return response?.data?.messages || [];
-  }
 }

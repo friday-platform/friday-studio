@@ -112,40 +112,6 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  "/api/chat-storage": {
-    parameters: { query?: never; header?: never; path?: never; cookie?: never };
-    /**
-     * List past conversations
-     * @description List the complete conversation history for the given stream ID
-     */
-    get: operations["getApiChat-storage"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/chat-storage/{streamId}": {
-    parameters: { query?: never; header?: never; path?: never; cookie?: never };
-    /**
-     * Retrieve conversation history
-     * @description Get the complete conversation history for the given stream ID
-     */
-    get: operations["getApiChat-storage:streamId"];
-    /**
-     * Replace conversation messages
-     * @description Replace entire conversation history for the given stream ID
-     */
-    put: operations["putApiChat-storage:streamId"];
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
   "/api/user": {
     parameters: { query?: never; header?: never; path?: never; cookie?: never };
     /**
@@ -161,40 +127,17 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  "/api/todos/{streamId}": {
-    parameters: { query?: never; header?: never; path?: never; cookie?: never };
-    /**
-     * Retrieve todo list
-     * @description Get the todo list for the given stream ID
-     */
-    get: operations["getApiTodos:streamId"];
-    put?: never;
-    /**
-     * Store todo list
-     * @description Store or update the complete todo list for the given stream ID
-     */
-    post: operations["postApiTodos:streamId"];
-    /**
-     * Delete todo list
-     * @description Delete all todos for the given stream ID
-     */
-    delete: operations["deleteApiTodos:streamId"];
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
   "/api/scratchpad/{streamId}": {
     parameters: { query?: never; header?: never; path?: never; cookie?: never };
     /**
      * Retrieve scratchpad notes
-     * @description Get the scratchpad notes for the given stream ID
+     * @description Get notes for a stream
      */
     get: operations["getApiScratchpad:streamId"];
     put?: never;
     /**
      * Append note to scratchpad
-     * @description Add a note to the scratchpad for the given stream ID
+     * @description Add a note to the scratchpad
      */
     post: operations["postApiScratchpad:streamId"];
     delete?: never;
@@ -1578,69 +1521,6 @@ export interface operations {
       };
     };
   };
-  "getApiChat-storage": {
-    parameters: { query?: never; header?: never; path?: never; cookie?: never };
-    requestBody?: never;
-    responses: {
-      /** @description Conversation list retrieved successfully */
-      200: {
-        headers: { [name: string]: unknown };
-        content: { "application/json": { conversations: unknown[]; conversationCount: number } };
-      };
-      /** @description No conversations found */
-      404: {
-        headers: { [name: string]: unknown };
-        content: { "application/json": { error: string } };
-      };
-      /** @description Internal server error */
-      500: {
-        headers: { [name: string]: unknown };
-        content: { "application/json": { error: string } };
-      };
-    };
-  };
-  "getApiChat-storage:streamId": {
-    parameters: { query?: never; header?: never; path: { streamId: string }; cookie?: never };
-    requestBody?: never;
-    responses: {
-      /** @description Conversation history retrieved successfully */
-      200: {
-        headers: { [name: string]: unknown };
-        content: { "application/json": { messages: unknown[]; messageCount: number } };
-      };
-      /** @description Conversation not found */
-      404: {
-        headers: { [name: string]: unknown };
-        content: { "application/json": { error: string } };
-      };
-      /** @description Internal server error */
-      500: {
-        headers: { [name: string]: unknown };
-        content: { "application/json": { error: string } };
-      };
-    };
-  };
-  "putApiChat-storage:streamId": {
-    parameters: { query?: never; header?: never; path: { streamId: string }; cookie?: never };
-    requestBody?: { content: { "application/json": { messages: unknown[] } } };
-    responses: {
-      /** @description Conversation updated successfully */
-      200: {
-        headers: { [name: string]: unknown };
-        content: { "application/json": Record<string, never> };
-      };
-      /** @description Invalid request data */
-      400: {
-        headers: { [name: string]: unknown };
-        content: { "application/json": { error: string } };
-      };
-      /** @description Internal server error */
-      500: {
-        headers: { [name: string]: unknown };
-        content: { "application/json": { error: string } };
-      };
-    };
-  };
   getApiUser: {
     parameters: { query?: never; header?: never; path?: never; cookie?: never };
     requestBody?: never;
@@ -1662,122 +1542,6 @@ export interface operations {
       };
     };
   };
-  "getApiTodos:streamId": {
-    parameters: { query?: never; header?: never; path: { streamId: string }; cookie?: never };
-    requestBody?: never;
-    responses: {
-      /** @description Todo list retrieved successfully */
-      200: {
-        headers: { [name: string]: unknown };
-        content: {
-          "application/json": {
-            todos: {
-              /** @description Unique identifier for the todo item */
-              id: string;
-              /** @description Brief description of the task */
-              content: string;
-              /**
-               * @description Current status of the task
-               * @enum {string}
-               */
-              status: "pending" | "in_progress" | "completed" | "cancelled";
-              /**
-               * @description Priority level of the task
-               * @enum {string}
-               */
-              priority: "high" | "medium" | "low";
-              /** @description Additional context (workspace names, IDs, etc.) */
-              metadata?: { [key: string]: unknown };
-              /** @description ISO timestamp of creation */
-              createdAt: string;
-              /** @description ISO timestamp of last update */
-              updatedAt: string;
-            }[];
-            todoCount: number;
-          };
-        };
-      };
-      /** @description Stream not found */
-      404: {
-        headers: { [name: string]: unknown };
-        content: { "application/json": { error: string } };
-      };
-      /** @description Internal server error */
-      500: {
-        headers: { [name: string]: unknown };
-        content: { "application/json": { error: string } };
-      };
-    };
-  };
-  "postApiTodos:streamId": {
-    parameters: { query?: never; header?: never; path: { streamId: string }; cookie?: never };
-    requestBody?: {
-      content: {
-        "application/json": {
-          todos: {
-            /** @description Unique identifier for the todo item */
-            id: string;
-            /** @description Brief description of the task */
-            content: string;
-            /**
-             * @description Current status of the task
-             * @enum {string}
-             */
-            status: "pending" | "in_progress" | "completed" | "cancelled";
-            /**
-             * @description Priority level of the task
-             * @enum {string}
-             */
-            priority: "high" | "medium" | "low";
-            /** @description Additional context (workspace names, IDs, etc.) */
-            metadata?: { [key: string]: unknown };
-            /** @description ISO timestamp of creation */
-            createdAt: string;
-            /** @description ISO timestamp of last update */
-            updatedAt: string;
-          }[];
-        };
-      };
-    };
-    responses: {
-      /** @description Todos stored successfully */
-      200: {
-        headers: { [name: string]: unknown };
-        content: { "application/json": { success: boolean; message?: string } };
-      };
-      /** @description Invalid request data */
-      400: {
-        headers: { [name: string]: unknown };
-        content: { "application/json": { error: string } };
-      };
-      /** @description Internal server error */
-      500: {
-        headers: { [name: string]: unknown };
-        content: { "application/json": { error: string } };
-      };
-    };
-  };
-  "deleteApiTodos:streamId": {
-    parameters: { query?: never; header?: never; path: { streamId: string }; cookie?: never };
-    requestBody?: never;
-    responses: {
-      /** @description Todos deleted successfully */
-      200: {
-        headers: { [name: string]: unknown };
-        content: { "application/json": { success: boolean; deleted: boolean } };
-      };
-      /** @description Stream not found */
-      404: {
-        headers: { [name: string]: unknown };
-        content: { "application/json": { error: string } };
-      };
-      /** @description Internal server error */
-      500: {
-        headers: { [name: string]: unknown };
-        content: { "application/json": { error: string } };
-      };
-    };
-  };
   "getApiScratchpad:streamId": {
     parameters: {
       query?: { limit?: number };
@@ -1787,7 +1551,7 @@ export interface operations {
     };
     requestBody?: never;
     responses: {
-      /** @description Notes retrieved successfully */
+      /** @description Notes retrieved */
       200: {
         headers: { [name: string]: unknown };
         content: {
@@ -1811,7 +1575,7 @@ export interface operations {
     parameters: { query?: never; header?: never; path: { streamId: string }; cookie?: never };
     requestBody?: { content: { "application/json": { note: string } } };
     responses: {
-      /** @description Note stored successfully */
+      /** @description Note stored */
       200: {
         headers: { [name: string]: unknown };
         content: { "application/json": { success: boolean } };

@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "type": "module",
   "main": "./mod.ts",
-  "exports": { ".": "./mod.ts" },
+  "exports": { ".": "./mod.ts", "./v2": "./v2/mod.ts" },
   "dependencies": {
     "@atlas/atlasd": "workspace:*",
     "@atlas/core": "workspace:*",
@@ -12,6 +12,7 @@
     "@std/fs": "npm:@jsr/std__fs@^1.0.19",
     "@std/dotenv": "npm:@jsr/std__dotenv@^0.225.5",
     "@std/yaml": "npm:@jsr/std__yaml@^1.0.9",
+    "hono": "^4.9.8",
     "zod": "^3.25.76"
   }
 }

@@ -5,6 +5,7 @@ import { z } from "zod/v4";
  */
 
 export { getAtlasHome, getAtlasMemoryDir, getMECMFCacheDir, isSystemService } from "./src/paths.ts";
+export * from "./src/result.ts";
 
 /**
  * Converts an error to a human-readable string.

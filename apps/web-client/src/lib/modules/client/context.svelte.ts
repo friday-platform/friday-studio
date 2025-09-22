@@ -1,14 +1,15 @@
+import { client, parseResult } from "@atlas/client/v2";
 import type { SessionUIMessage, SessionUIMessageChunk, SessionUIMessagePart } from "@atlas/core";
-import { readUIMessageStream } from "ai";
-import { getContext, setContext } from "svelte";
-import { getAtlasDaemonUrl } from "../../utils/daemon.ts";
-import { ConversationClient, type ConversationSession } from "./conversation.ts";
-import type { DaemonClient } from "./daemon.ts";
 import {
   isPermissionGranted,
   requestPermission,
   sendNotification,
 } from "@tauri-apps/plugin-notification";
+import { readUIMessageStream } from "ai";
+import { getContext, setContext } from "svelte";
+import { getAtlasDaemonUrl } from "../../utils/daemon.ts";
+import { ConversationClient, type ConversationSession } from "./conversation.ts";
+import type { DaemonClient } from "./daemon.ts";
 
 const KEY = Symbol();
 
@@ -38,7 +39,6 @@ class ClientContext {
   user = $state<string>("NA");
   atlasSessionId = $state<string | null>(null);
   daemonStatus = $state<"connected" | "error" | "idle">("idle");
-  pastConversations = $state<string[]>([]);
   reconnectCountdown = $state<number>(0);
   conversationSessionId = $state<string | null>(null);
 
@@ -430,22 +430,12 @@ class ClientContext {
       this.currentConversationId = id;
     }
 
-    const messages = await this.conversationClient?.getConversation(id);
-
-    if (messages) {
-      this.messageHistory = messages.flatMap((message) => message.parts);
-    }
-  }
-
-  async listConversations() {
-    if (!this.conversationClient) {
-      this.connect();
-    }
-
-    const conversations = await this.conversationClient?.listConversations();
-
-    if (conversations) {
-      this.pastConversations = conversations;
+    const res = await parseResult(
+      client.chatStorage[":streamId"].$get({ param: { streamId: id } }),
+    );
+    if (res.ok) {
+      const history: SessionUIMessagePart[] = res.data.messages.flatMap((message) => message.parts);
+      this.messageHistory = history;
     }
   }
 

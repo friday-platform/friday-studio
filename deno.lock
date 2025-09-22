@@ -1,20 +1,17 @@
 {
   "version": "5",
   "specifiers": {
-    "jsr:@std/assert@*": "1.0.14",
-    "jsr:@std/internal@^1.0.10": "1.0.10",
-    "jsr:@std/path@1": "1.1.2",
     "npm:@ai-sdk/anthropic@^2.0.16": "2.0.17_zod@3.25.76",
     "npm:@ai-sdk/anthropic@^2.0.5": "2.0.17_zod@3.25.76",
     "npm:@ai-sdk/google@^2.0.14": "2.0.15_zod@3.25.76",
     "npm:@ai-sdk/openai@^2.0.30": "2.0.32_zod@3.25.76",
     "npm:@ai-sdk/provider@2": "2.0.0",
-    "npm:@biomejs/biome@*": "2.2.4",
     "npm:@biomejs/biome@^2.2.4": "2.2.4",
     "npm:@eslint/compat@^1.2.5": "1.4.0_eslint@9.36.0",
     "npm:@eslint/js@^9.18.0": "9.36.0",
     "npm:@hono/mcp@~0.1.4": "0.1.4_@modelcontextprotocol+sdk@1.18.1__express@5.1.0__zod@3.25.76_hono@4.9.8",
     "npm:@hono/standard-validator@~0.1.5": "0.1.5_@standard-schema+spec@1.0.0_hono@4.9.8",
+    "npm:@hono/zod-validator@~0.7.3": "0.7.3_hono@4.9.8_zod@3.25.76",
     "npm:@ianvs/prettier-plugin-sort-imports@^4.4.1": "4.7.0_prettier@3.6.2",
     "npm:@inkjs/ui@2": "2.0.0_ink@6.3.1__@types+react@19.1.13__react@19.1.1_@types+react@19.1.13_react@19.1.1",
     "npm:@jsr/std__assert@^1.0.13": "1.0.14",
@@ -57,14 +54,14 @@
     "npm:ansi-escapes@^7.1.0": "7.1.0",
     "npm:chalk@^5.6.2": "5.6.2",
     "npm:cookie@^1.0.2": "1.0.2",
-    "npm:cron-parser@^5.3.1": "5.3.1",
+    "npm:cron-parser@^5.3.1": "5.4.0",
     "npm:eslint-config-prettier@^10.0.1": "10.1.8_eslint@9.36.0",
     "npm:eslint-plugin-svelte@3": "3.12.4_eslint@9.36.0_svelte@5.39.4__acorn@8.15.0_postcss@8.5.6",
     "npm:eslint@^9.18.0": "9.36.0",
     "npm:eventsource-client@^1.1.4": "1.2.0",
     "npm:globals@16": "16.4.0",
     "npm:hono-openapi@^1.0.6": "1.0.8_@hono+standard-validator@0.1.5__@standard-schema+spec@1.0.0__hono@4.9.8_@standard-community+standard-json@0.3.3__@standard-schema+spec@1.0.0__@types+json-schema@7.0.15__quansync@0.2.11__zod@3.25.76_@standard-community+standard-openapi@0.2.4__@standard-community+standard-json@0.3.3___@standard-schema+spec@1.0.0___@types+json-schema@7.0.15___quansync@0.2.11___zod@3.25.76__@standard-schema+spec@1.0.0__openapi-types@12.1.3__zod@3.25.76__@types+json-schema@7.0.15_@types+json-schema@7.0.15_hono@4.9.8_openapi-types@12.1.3_zod@3.25.76",
-    "npm:hono@^4.9.7": "4.9.8",
+    "npm:hono@^4.9.8": "4.9.8",
     "npm:ink@^6.3.0": "6.3.1_@types+react@19.1.13_react@19.1.1",
     "npm:js-levenshtein@^1.1.6": "1.1.6",
     "npm:knip@^5.63.1": "5.64.0_@types+node@24.5.2_typescript@5.9.2_zod@3.25.76",
@@ -77,36 +74,18 @@
     "npm:prettier-plugin-svelte@^3.3.3": "3.4.0_prettier@3.6.2_svelte@5.39.4__acorn@8.15.0",
     "npm:prettier@^3.4.2": "3.6.2",
     "npm:react@^19.1.1": "19.1.1",
-    "npm:sv@*": "0.8.7",
     "npm:svelte-check@4": "4.3.2_svelte@5.39.4__acorn@8.15.0_typescript@5.9.2",
     "npm:svelte-eslint-parser@^1.3.1": "1.3.3_svelte@5.39.4__acorn@8.15.0_postcss@8.5.6",
     "npm:svelte@5": "5.39.4_acorn@8.15.0",
     "npm:typescript-eslint@^8.20.0": "8.44.1_eslint@9.36.0_typescript@5.9.2_@typescript-eslint+parser@8.44.1__eslint@9.36.0__typescript@5.9.2",
     "npm:typescript@5": "5.9.2",
     "npm:vite@^7.0.4": "7.1.7_picomatch@4.0.3",
-    "npm:xstate@^5.21.0": "5.21.0",
+    "npm:xstate@^5.21.0": "5.22.0",
     "npm:yargs@18": "18.0.0",
     "npm:zod-from-json-schema@0.5": "0.5.0",
     "npm:zod@^3.23.8": "3.25.76",
     "npm:zod@^3.25.74": "3.25.76",
     "npm:zod@^3.25.76": "3.25.76"
-  },
-  "jsr": {
-    "@std/assert@1.0.14": {
-      "integrity": "68d0d4a43b365abc927f45a9b85c639ea18a9fab96ad92281e493e4ed84abaa4",
-      "dependencies": [
-        "jsr:@std/internal"
-      ]
-    },
-    "@std/internal@1.0.10": {
-      "integrity": "e3be62ce42cab0e177c27698e5d9800122f67b766a0bea6ca4867886cbde8cf7"
-    },
-    "@std/path@1.1.2": {
-      "integrity": "c0b13b97dfe06546d5e16bf3966b1cadf92e1cc83e56ba5476ad8b498d9e3038",
-      "dependencies": [
-        "jsr:@std/internal"
-      ]
-    }
   },
   "npm": {
     "@ai-sdk/anthropic@2.0.17_zod@3.25.76": {
@@ -512,6 +491,13 @@
       "dependencies": [
         "@standard-schema/spec",
         "hono"
+      ]
+    },
+    "@hono/zod-validator@0.7.3_hono@4.9.8_zod@3.25.76": {
+      "integrity": "sha512-uYGdgVib3RlGD698WR5dVM0zB3UuPY5vHKXffGUbUh7r4xY+mFIhF3/v4AcQVLrU5CQdBso8BJr4wuVoCrjTuQ==",
+      "dependencies": [
+        "hono",
+        "zod@3.25.76"
       ]
     },
     "@humanfs/core@0.19.1": {
@@ -1684,8 +1670,8 @@
         "vary"
       ]
     },
-    "cron-parser@5.3.1": {
-      "integrity": "sha512-Mu5Jk1b4cUfY8u34+thI9TZxvQiuhaMBS2Ag84rOSoHlU33xtIPkXwr6lWuw3XPmxSxq317B+hl0o4J+LdhwNg==",
+    "cron-parser@5.4.0": {
+      "integrity": "sha512-HxYB8vTvnQFx4dLsZpGRa0uHp6X3qIzS3ZJgJ9v6l/5TJMgeWQbLkR5yiJ5hOxGbc9+jCADDnydIe15ReLZnJA==",
       "dependencies": [
         "luxon"
       ]
@@ -3204,10 +3190,6 @@
         "supports-color@7.2.0"
       ]
     },
-    "sv@0.8.7": {
-      "integrity": "sha512-8HIuAuQWk/4xyFrEkNhkR7WSQ63qYs9WnF7rVvALIIQjnY25VDrPx6eWa7yR5eFL4NXXFFN6+jPJdbW50xSCvg==",
-      "bin": true
-    },
     "svelte-check@4.3.2_svelte@5.39.4__acorn@8.15.0_typescript@5.9.2": {
       "integrity": "sha512-71udP5w2kaSTcX8iV0hn3o2FWlabQHhJTJLIQrCqMsrcOeDUO2VhCQKKCA8AMVHSPwdxLEWkUWh9OKxns5PD9w==",
       "dependencies": [
@@ -3416,8 +3398,8 @@
     "ws@8.18.3": {
       "integrity": "sha512-PEIGCY5tSlUt50cqyMXfCzX+oOPqN0vuGqWzbcJ2xvnkzkq46oOpz7dQaTDBdfICb4N14+GARUDw2XV2N4tvzg=="
     },
-    "xstate@5.21.0": {
-      "integrity": "sha512-y4wmqxjyAa0tgz4k3m/MgTF1kDOahE5+xLfWt5eh1sk+43DatLhKlI8lQDJZpvihZavjbD3TUgy2PRMphhhqgQ=="
+    "xstate@5.22.0": {
+      "integrity": "sha512-5d73WWQaAozOaHl/la5TuriybLab9DNkzzYEte5UG2YwsVCR7SSDZJkyS6qfaOYGCFOjZjjSwEEVro4iqN3Slw=="
     },
     "y18n@5.0.8": {
       "integrity": "sha512-0pfFzegeDWJHJIAmTLRP2DwHjdF5s7jo9tuztdQxAhINCdvS+3nGINqPd00AphqJR/0LhANUS6/+7SCb98YOfA=="
@@ -3476,7 +3458,7 @@
     "zod-from-json-schema@0.5.0": {
       "integrity": "sha512-W1v1YIoimOJfvuorGGp1QroizLL3jEGELJtgrHiVg/ytxVZdh/BTTVyPypGB7YK30LHrCkkebbjuyHIjBGCEzw==",
       "dependencies": [
-        "zod@4.1.8"
+        "zod@4.1.11"
       ]
     },
     "zod-to-json-schema@3.24.6_zod@3.25.76": {
@@ -3497,28 +3479,9 @@
     "zod@3.25.76": {
       "integrity": "sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ=="
     },
-    "zod@4.1.8": {
-      "integrity": "sha512-5R1P+WwQqmmMIEACyzSvo4JXHY5WiAFHRMg+zBZKgKS+Q1viRa0C1hmUKtHltoIFKtIdki3pRxkmpP74jnNYHQ=="
+    "zod@4.1.11": {
+      "integrity": "sha512-WPsqwxITS2tzx1bzhIKsEs19ABD5vmCVa4xBo2tq/SrV4RNZtfws1EnCWQXM6yh8bD08a1idvkB5MZSBiZsjwg=="
     }
-  },
-  "remote": {
-    "https://deno.land/x/yargs@v18.0.0-deno/build/lib/argsert.js": "eb085555452eac3ff300935994a42f35d16e04cf698cb775cb5ad4f5653c0627",
-    "https://deno.land/x/yargs@v18.0.0-deno/build/lib/command.js": "26cf4173863eba2cceb6edf01759572d44ea60bfdbb654c0d187c99331c11dd9",
-    "https://deno.land/x/yargs@v18.0.0-deno/build/lib/completion-templates.js": "5aaac47f6d504d5a51931039addfd1f347e471f56510babf11dd0ffb068fe872",
-    "https://deno.land/x/yargs@v18.0.0-deno/build/lib/completion.js": "62e41220b5baa7c082f72638c7eab23a69fff46a78011f2c448e2a2f1fcfd05a",
-    "https://deno.land/x/yargs@v18.0.0-deno/build/lib/middleware.js": "6ab9c953a83264739aa50d7fa6b1ab693500336dfd593b9958865e12beb8bdeb",
-    "https://deno.land/x/yargs@v18.0.0-deno/build/lib/parse-command.js": "327242c0afae207b7aefa13133439e3b321d7db4229febc5b7bd5285770ac7f7",
-    "https://deno.land/x/yargs@v18.0.0-deno/build/lib/typings/common-types.js": "9618b81a86acb88a61fd9988e9bc3ec21c5250d94fc2231ba7d898e71500789d",
-    "https://deno.land/x/yargs@v18.0.0-deno/build/lib/usage.js": "31faaa7aa61e5a57a2cac5a269b773aa8b1fcab2db7cac2f8252396f3ccc2f5e",
-    "https://deno.land/x/yargs@v18.0.0-deno/build/lib/utils/apply-extends.js": "7838a1f68d5ef8d2f0a8a2363457d96d0fe134c9fc81811f6d6ada8f995e81aa",
-    "https://deno.land/x/yargs@v18.0.0-deno/build/lib/utils/is-promise.js": "be45baa3090c5106dd4e442cceef6b357a268783a2ee28ec10fe131a8cd8db72",
-    "https://deno.land/x/yargs@v18.0.0-deno/build/lib/utils/levenshtein.js": "d8638efc3376b5f794b1c8df6ef4f3d484b29d919127c7fdc242400e3cfded91",
-    "https://deno.land/x/yargs@v18.0.0-deno/build/lib/utils/maybe-async-result.js": "31cf4026279e14c87d16faa14ac758f35c8cc5795d29393c5ce07120f5a3caf6",
-    "https://deno.land/x/yargs@v18.0.0-deno/build/lib/utils/obj-filter.js": "5523fb2288d1e86ed48c460e176770b49587554df4ae2405b468c093786b040b",
-    "https://deno.land/x/yargs@v18.0.0-deno/build/lib/utils/set-blocking.js": "6fa8ffc3299f456e42902736bae35fbc1f2dc96b3905a02ba9629f5bd9f80af1",
-    "https://deno.land/x/yargs@v18.0.0-deno/build/lib/validation.js": "af040834cb9201d4238bbeb8f673eb2ebaff9611857270524a7c86dfcf2ca51b",
-    "https://deno.land/x/yargs@v18.0.0-deno/build/lib/yargs-factory.js": "d36113035eca884055c867535e39e815cd771fa49be08ee85154e8e31e2bed61",
-    "https://deno.land/x/yargs@v18.0.0-deno/build/lib/yerror.js": "9729aaa8bce1a0d00c57f470efb2ad76ad2988661bb48f3769e496a3435b4462"
   },
   "workspace": {
     "packageJson": {
@@ -3562,11 +3525,12 @@
         "packageJson": {
           "dependencies": [
             "npm:@hono/mcp@~0.1.4",
+            "npm:@hono/zod-validator@~0.7.3",
             "npm:@jsr/std__fs@^1.0.19",
             "npm:@jsr/std__path@^1.1.2",
             "npm:@scalar/hono-api-reference@~0.9.18",
             "npm:hono-openapi@^1.0.6",
-            "npm:hono@^4.9.7",
+            "npm:hono@^4.9.8",
             "npm:zod@^3.25.74"
           ]
         }
@@ -3643,6 +3607,7 @@
             "npm:@jsr/std__fs@^1.0.19",
             "npm:@jsr/std__path@^1.1.2",
             "npm:@jsr/std__yaml@^1.0.9",
+            "npm:hono@^4.9.8",
             "npm:zod@^3.25.76"
           ]
         }
@@ -3695,7 +3660,8 @@
         "packageJson": {
           "dependencies": [
             "npm:@jsr/std__fs@^1.0.19",
-            "npm:@jsr/std__path@^1.1.2"
+            "npm:@jsr/std__path@^1.1.2",
+            "npm:hono@^4.9.8"
           ]
         }
       },

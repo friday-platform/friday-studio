@@ -12,8 +12,8 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import type { AtlasTools, AtlasUIMessage } from "@atlas/agent-sdk";
 import { createAgent } from "@atlas/agent-sdk";
 import { pipeUIMessageStream } from "@atlas/agent-sdk/vercel-helpers";
+import { client, parseResult } from "@atlas/client/v2";
 import type { Logger } from "@atlas/logger";
-import { createAtlasClient } from "@atlas/oapi-client";
 import { Client } from "@modelcontextprotocol/sdk/client";
 
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
@@ -128,7 +128,6 @@ export const conversationAgent = createAgent({
     if (!session.streamId) {
       throw new Error("Stream ID is required");
     }
-    const client = createAtlasClient();
     const anthropic = createAnthropic({ apiKey: Deno.env.get("ANTHROPIC_API_KEY") });
 
     /**
@@ -228,14 +227,16 @@ export const conversationAgent = createAgent({
 
     // If chat history exists, load it.
     const messages: AtlasUIMessage[] = [];
-    const chatHistory = await client.GET("/api/chat-storage/{streamId}", {
-      params: { path: { streamId: session.streamId } },
-    });
-    if (chatHistory.data && chatHistory.data.messages.length > 0) {
+    const res = await parseResult(
+      client.chatStorage[":streamId"].$get({ param: { streamId: session.streamId } }),
+    );
+    if (res.ok) {
       // @ts-expect-error the AI sdk doesn't currently export Zod schemas for UIMessage and UIMessageChunk
       // so right now we're accepting a z.record(z.string(), z.unknown());
       // @see: https://github.com/vercel/ai/issues/8100
-      messages.push(...chatHistory.data.messages.slice(-20));
+      messages.push(...res.data.messages.slice(-20));
+    } else {
+      logger.error("Failed to load chat history", { error: res.error });
     }
 
     // convert the prompt to an AtlasUIMessage
@@ -332,10 +333,15 @@ export const conversationAgent = createAgent({
               throw new Error("Stream ID is missing");
             }
             // Store the updated chat
-            await client.PUT("/api/chat-storage/{streamId}", {
-              params: { path: { streamId: session.streamId } },
-              body: { messages },
-            });
+            const res = await parseResult(
+              client.chatStorage[":streamId"].$put({
+                param: { streamId: session.streamId },
+                json: { messages },
+              }),
+            );
+            if (!res.ok) {
+              logger.error("Failed to store chat", { error: res.error });
+            }
           },
         }),
         stream,

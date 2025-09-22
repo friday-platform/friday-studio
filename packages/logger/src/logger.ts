@@ -1,5 +1,6 @@
 import { ensureDir } from "@std/fs";
 import { dirname, join } from "@std/path";
+import { DetailedError } from "hono/client";
 import { getAtlasLogsDir } from "./paths.ts";
 import type { LogContext, LogEntry, Logger, LogLevel } from "./types.ts";
 
@@ -111,9 +112,29 @@ class AtlasLoggerV2 implements Logger {
         serialized.cause = this.serializeError(cause);
       }
 
+      // Handle Hono DetailedError properties explicitly
+      if (error.name === "DetailedError" && error instanceof DetailedError) {
+        if (error.detail !== undefined) {
+          serialized.detail = error.detail;
+        }
+        if (error.code !== undefined) {
+          serialized.code = error.code;
+        }
+        if (error.log !== undefined) {
+          serialized.log = error.log;
+        }
+        if (error.statusCode !== undefined) {
+          serialized.statusCode = error.statusCode;
+        }
+      }
+
       // Capture additional enumerable properties (like 'code' for system errors)
       for (const key of Object.getOwnPropertyNames(error)) {
-        if (!["name", "message", "stack", "cause"].includes(key)) {
+        if (
+          !["name", "message", "stack", "cause", "detail", "code", "log", "statusCode"].includes(
+            key,
+          )
+        ) {
           try {
             const descriptor = Object.getOwnPropertyDescriptor(error, key);
             if (descriptor?.value !== undefined) {

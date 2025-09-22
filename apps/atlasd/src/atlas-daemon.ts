@@ -30,7 +30,7 @@ import { Workspace } from "../../../src/core/workspace.ts";
 import { WorkspaceRuntime } from "../../../src/core/workspace-runtime.ts";
 import { WorkspaceMemberRole } from "../../../src/types/core.ts";
 import { agents as agentsRoutes } from "../routes/agents/index.ts";
-import { chatStorageRoutes } from "../routes/chat-storage/index.ts";
+import { chatStorageRoutes } from "../routes/chat-storage.ts";
 import { healthRoutes } from "../routes/health.ts";
 import { libraryRoutes } from "../routes/library/index.ts";
 import { createOpenAPIHandlers } from "../routes/openapi.ts";
