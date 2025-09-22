@@ -186,7 +186,6 @@ const hasMessages = $derived(
 						}}
 					>
 						<Textarea
-							disabled={clientCtx.typingState.isTyping}
 							name="message"
 							placeholder="Type here..."
 							value={message}
@@ -493,10 +492,6 @@ const hasMessages = $derived(
 		form {
 			display: flex;
 			position: relative;
-
-			& :global(textarea:disabled) {
-				opacity: 0.5;
-			}
 
 			.form-action {
 				display: flex;
