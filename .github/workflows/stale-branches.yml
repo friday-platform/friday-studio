@@ -52,60 +52,17 @@ jobs:
           # Check for open pull requests and don't delete branches with active PRs
           pr-check: true
 
-          # Create issues for stale branches (provides visibility before deletion)
-          stale-branch-message: |
-            This branch has been automatically marked as stale because it has not had any commits for 90 days.
-
-            **Last commit**: 90+ days ago
-            **Scheduled for deletion**: In 30 days (120 days total since last commit)
-
-            To keep this branch:
-            - Push a new commit to the branch
-            - Add branch protection rules
-            - Convert to a long-lived feature branch with regular activity
-
-            This is an automated process to keep our repository clean. If this branch contains important work, please take action to preserve it.
-
-          # Issue title format
-          issue-title: "Stale branch: "
-
           # Labels for stale branch issues
           stale-branch-label: "stale-branch"
 
           # Maximum number of issues to create per run (prevents spam)
-          operations-per-run: ${{ github.event.inputs.max-deletions || '20' }}
+          max-issues: ${{ github.event.inputs.max-deletions || '20' }}
 
           # Dry run mode for testing (set via workflow_dispatch or for initial rollout)
           dry-run: ${{ github.event.inputs.dry-run || 'false' }}
 
-          # Comment on issues when branches are deleted
-          delete-branch-comment: |
-            This branch has been deleted after being stale for 120 days.
-
-            If you need to recover this branch, you can use:
-            ```bash
-            git reflog
-            git checkout -b branch-name <commit-hash>
-            ```
-
-            Deleted branches can typically be recovered for ~30 days after deletion.
-
-          # Close stale branch issues automatically when branch is deleted
-          close-issues: true
-
-          # Exclude specific branches from cleanup (regex patterns)
-          # Protects main and any branch with protection rules
-          exempt-branches: "^main$"
-
-          # Don't process branches with these labels (if using issue tracking)
-          exempt-issue-labels: "keep-branch,long-term,pinned"
-
-          # Rate limiting - pause between operations (milliseconds)
-          # Helps avoid hitting GitHub API rate limits
-          rate-limit: 1000
-
           # GitHub token with appropriate permissions
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Summary Report
         if: always()
