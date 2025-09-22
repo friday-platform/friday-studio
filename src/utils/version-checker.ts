@@ -5,34 +5,41 @@
 
 import { getAtlasBaseUrl } from "@atlas/core";
 import { ensureDir, existsSync } from "@std/fs";
+import { z } from "zod/v4";
 import { ReleaseChannel } from "./release-channel.ts";
 import { getVersionInfo } from "./version.ts";
 
-interface VersionResponse {
-  channel: string;
-  latest: {
-    channel: string;
-    version: string;
-    commit_hash: string;
-    date: string;
-    download_url: string;
-  };
-  platforms: Record<string, unknown>;
-  last_updated: string;
-}
+// Complete version response schema - exhaustive as required
+const versionItemSchema = z.object({
+  channel: z.string(),
+  version: z.string(),
+  commit_hash: z.string(),
+  date: z.string(),
+  download_url: z.string(),
+  checksum_url: z.string(),
+});
 
-interface VersionCheckResult {
-  hasUpdate: boolean;
-  currentVersion: string;
-  latestVersion?: string;
-  errorMessage?: string;
-  fromCache?: boolean;
-}
+const versionResponseSchema = z.object({
+  channel: z.string(),
+  latest: versionItemSchema,
+  platforms: z.record(z.string(), versionItemSchema).optional(),
+  last_updated: z.string(),
+});
 
-interface VersionCache {
-  timestamp: number;
-  result: VersionCheckResult;
-}
+const versionCacheSchema = z.object({
+  timestamp: z.number(),
+  result: z.object({
+    hasUpdate: z.boolean(),
+    currentVersion: z.string(),
+    latestVersion: z.string().optional(),
+    errorMessage: z.string().optional(),
+    fromCache: z.boolean().optional(),
+  }),
+});
+
+type VersionResponse = z.infer<typeof versionResponseSchema>;
+type VersionCheckResult = z.infer<typeof versionCacheSchema>["result"];
+type VersionCache = z.infer<typeof versionCacheSchema>;
 
 /**
  * Parse version string to extract date for comparison
@@ -139,18 +146,21 @@ async function loadCache(): Promise<VersionCache | null> {
       return null;
     }
 
-    const cacheData = await Deno.readTextFile(cacheFile);
-    const cache = JSON.parse(cacheData);
+    const data = await Deno.readTextFile(cacheFile);
+    const cache = versionCacheSchema.safeParse(JSON.parse(data));
 
-    if (isCacheValid(cache)) {
-      return cache;
+    if (!cache.success) {
+      await Deno.remove(cacheFile).catch(() => {});
+      return null;
     }
 
-    // Cache expired, remove it
-    await Deno.remove(cacheFile).catch(() => {}); // Ignore errors
+    if (isCacheValid(cache.data)) {
+      return cache.data;
+    }
+
+    await Deno.remove(cacheFile).catch(() => {});
     return null;
   } catch {
-    // Ignore cache read errors
     return null;
   }
 }
@@ -180,16 +190,16 @@ async function fetchLatestVersion(channel: string): Promise<VersionResponse | nu
     const response = await fetch(`${getAtlasBaseUrl()}/version/${channel}`, {
       method: "GET",
       headers: { "User-Agent": "Atlas-CLI" },
-      signal: AbortSignal.timeout(2000), // 2 second timeout (reduced from 5)
+      signal: AbortSignal.timeout(2000),
     });
 
     if (!response.ok) {
       return null;
     }
 
-    return await response.json();
+    const parsed = versionResponseSchema.safeParse(await response.json());
+    return parsed.success ? parsed.data : null;
   } catch {
-    // Fail silently - network errors should not interrupt CLI usage
     return null;
   }
 }
@@ -324,7 +334,7 @@ export async function checkForUpdate(channel?: string): Promise<UpdateInfo> {
     const arch = Deno.build.arch === "x86_64" ? "amd64" : "arm64";
     const platformKey = `${platform}_${arch}`;
 
-    const platformData = serverResponse.platforms[platformKey];
+    const platformData = serverResponse.platforms?.[platformKey];
     let downloadUrl = platformData?.download_url || serverResponse.latest.download_url;
 
     // CRITICAL FIX: The version API is returning .sha256 URLs instead of binary URLs

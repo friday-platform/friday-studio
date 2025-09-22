@@ -19,7 +19,11 @@
     "jsx": "react-jsx",
     "jsxImportSource": "react"
   },
-  "exclude": ["!integration-tests/**/*.test.ts", "apps/web-client/.svelte-kit"],
+  "exclude": [
+    "!integration-tests/**/*.test.ts",
+    "apps/web-client/.svelte-kit",
+    "tools/atlas-installer"
+  ],
   "unstable": ["broadcast-channel", "worker-options", "otel", "kv", "raw-imports"],
   "nodeModulesDir": "auto",
   "tasks": {
