@@ -26,11 +26,14 @@ outputs:
 runs:
   using: "composite"
   steps:
-    - name: Setup Rust
-      uses: dtolnay/rust-toolchain@master
-      with:
-        toolchain: "1.90.0"
-        targets: ${{ inputs.target }}
+    - name: Add Rust target
+      shell: bash
+      run: |
+        # Use GitHub's pre-installed Rust
+        rustc --version
+        rustup target add ${{ inputs.target }}
+        # Verify the target is installed
+        rustup target list --installed
 
     - name: Setup Rust cache
       uses: Swatinem/rust-cache@v2
@@ -44,15 +47,12 @@ runs:
       if: inputs.platform == 'linux'
       shell: bash
       run: |
-        sudo apt-get update
-
-        # Native x86_64 dependencies
+        # Install Tauri dependencies (patchelf is already pre-installed)
         sudo apt-get install -y \
           libwebkit2gtk-4.1-dev \
           libgtk-3-dev \
           libayatana-appindicator3-dev \
-          librsvg2-dev \
-          patchelf
+          librsvg2-dev
 
     - name: Update version in Tauri config
       shell: bash
