@@ -17,6 +17,7 @@ export class MacOSLaunchdService implements PlatformServiceManager {
   private readonly serviceName: string;
   private readonly serviceDir: string;
   private readonly plistPath: string;
+  private readonly textDecoder = new TextDecoder();
 
   constructor() {
     this.serviceName = getDefaultServiceName();
@@ -141,7 +142,7 @@ export class MacOSLaunchdService implements PlatformServiceManager {
       const result = await loadCmd.output();
 
       if (!result.success) {
-        const stderr = new TextDecoder().decode(result.stderr);
+        const stderr = this.textDecoder.decode(result.stderr);
         // Don't delete plist on load failure - it might be a temporary issue
         throw new Error(`Failed to load service: ${stderr}`);
       }
@@ -193,7 +194,7 @@ export class MacOSLaunchdService implements PlatformServiceManager {
     const result = await cmd.output();
 
     if (!result.success) {
-      const stderr = new TextDecoder().decode(result.stderr);
+      const stderr = this.textDecoder.decode(result.stderr);
       throw new Error(`Failed to start service: ${stderr}`);
     }
   }
@@ -215,7 +216,7 @@ export class MacOSLaunchdService implements PlatformServiceManager {
     const result = await cmd.output();
 
     if (!result.success) {
-      const stderr = new TextDecoder().decode(result.stderr);
+      const stderr = this.textDecoder.decode(result.stderr);
       throw new Error(`Failed to stop service: ${stderr}`);
     }
   }
@@ -243,7 +244,7 @@ export class MacOSLaunchdService implements PlatformServiceManager {
       const result = await listCmd.output();
 
       if (result.success) {
-        const output = new TextDecoder().decode(result.stdout);
+        const output = this.textDecoder.decode(result.stdout);
 
         // Parse launchctl list output for specific service
         // The output is in property list format when querying a specific service

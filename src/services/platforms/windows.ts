@@ -1,9 +1,11 @@
+import { z } from "zod/v4";
 import {
   getAtlasBinaryPath,
   getDefaultServiceName,
   getPlatformPaths,
 } from "../../utils/platform.ts";
 import type { PlatformServiceManager, ServiceConfig, ServiceStatus } from "../types.ts";
+import { portConfigSchema } from "../schemas.ts";
 
 /**
  * Windows service manager for Atlas
@@ -13,6 +15,7 @@ export class WindowsService implements PlatformServiceManager {
   private serviceName: string;
   private paths: ReturnType<typeof getPlatformPaths>;
   private configPath: string;
+  private textDecoder = new TextDecoder();
 
   constructor() {
     this.serviceName = getDefaultServiceName();
@@ -177,11 +180,18 @@ exit
         const listRes = await listCmd.output();
 
         if (listRes.success) {
-          const json = new TextDecoder().decode(listRes.stdout).trim();
+          const json = this.textDecoder.decode(listRes.stdout).trim();
           if (json) {
-            let entries: Array<{ ProcessId: number; CommandLine?: string }>; // may be array or single object
+            // Schema for WMI process entry
+            const WmiProcessSchema = z.object({
+              ProcessId: z.number(),
+              CommandLine: z.string().nullable().optional(),
+            });
+            const WmiProcessArraySchema = z.union([WmiProcessSchema, z.array(WmiProcessSchema)]);
+
+            let entries: z.infer<typeof WmiProcessSchema>[] = [];
             try {
-              const parsed = JSON.parse(json);
+              const parsed = WmiProcessArraySchema.parse(JSON.parse(json));
               entries = Array.isArray(parsed) ? parsed : [parsed];
             } catch {
               entries = [];
@@ -234,7 +244,7 @@ exit
       });
       const netstatResult = await netstatCmd.output();
       if (netstatResult.success) {
-        const output = new TextDecoder().decode(netstatResult.stdout);
+        const output = this.textDecoder.decode(netstatResult.stdout);
         // Match lines like: TCP    0.0.0.0:8080         0.0.0.0:0              LISTENING       1234
         const line = output
           .split("\n")
@@ -254,7 +264,7 @@ exit
                 });
                 const tlRes = await tlCmd.output();
                 if (tlRes.success) {
-                  const tlOut = new TextDecoder().decode(tlRes.stdout).trim();
+                  const tlOut = this.textDecoder.decode(tlRes.stdout).trim();
                   if (tlOut && tlOut.startsWith('"atlas.exe"')) {
                     pid = parsedPid;
                     running = true;
@@ -281,7 +291,7 @@ exit
         });
         const pidResult = await pidCmd.output();
         if (pidResult.success) {
-          const out = new TextDecoder().decode(pidResult.stdout).trim();
+          const out = this.textDecoder.decode(pidResult.stdout).trim();
           if (!(out.includes("INFO:") || out === "")) {
             running = true; // unknown PID/port
           }
@@ -329,10 +339,8 @@ exit
   private async getConfiguredPort(): Promise<number> {
     try {
       const text = await Deno.readTextFile(this.configPath);
-      const data = JSON.parse(text);
-      if (typeof data.port === "number" && data.port > 0 && data.port < 65536) {
-        return data.port;
-      }
+      const configData = portConfigSchema.parse(JSON.parse(text));
+      return configData.port;
     } catch {
       // ignore
     }

@@ -62,26 +62,3 @@ export interface LaunchAgentConfig {
   StandardOutPath?: string;
   StandardErrorPath?: string;
 }
-
-interface SystemdServiceConfig {
-  Unit: { Description: string; After?: string[] };
-  Service: {
-    Type: string;
-    ExecStart: string;
-    WorkingDirectory?: string;
-    Environment?: string[];
-    Restart: string;
-    RestartSec?: number;
-  };
-  Install: { WantedBy: string[] };
-}
-
-interface WindowsServiceConfig {
-  serviceName: string;
-  displayName: string;
-  description: string;
-  executable: string;
-  arguments: string[];
-  workingDirectory?: string;
-  environment?: Record<string, string>;
-}

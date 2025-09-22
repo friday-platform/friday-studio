@@ -23,34 +23,6 @@ export function getAtlasLogsDir(): string {
 }
 
 /**
- * Get the Atlas workspaces logs directory
- */
-function getWorkspaceLogsDir(): string {
-  return join(getAtlasLogsDir(), "workspaces");
-}
-
-/**
- * Get the Atlas registry file path
- */
-function getRegistryPath(): string {
-  return join(getAtlasHome(), "registry.json");
-}
-
-/**
- * Get the Atlas config directory
- */
-function getAtlasConfigDir(): string {
-  return join(getAtlasHome(), "config");
-}
-
-/**
- * Get the Atlas cache directory
- */
-function getAtlasCacheDir(): string {
-  return join(getAtlasHome(), "cache");
-}
-
-/**
  * Sanitize workspace name for use as folder name
  * Converts workspace IDs to safe filesystem folder names
  */
@@ -79,24 +51,10 @@ export function getWorkspaceMemoryDir(workspaceId: string): string {
 }
 
 /**
- * Get workspace-specific memory file path for a given memory type
- */
-function getWorkspaceMemoryFilePath(workspaceId: string, memoryType: string): string {
-  return join(getWorkspaceMemoryDir(workspaceId), `${memoryType}.json`);
-}
-
-/**
  * Get workspace-specific vector search directory
  */
 export function getWorkspaceVectorDir(workspaceId: string): string {
   return join(getWorkspaceMemoryDir(workspaceId), "vectors");
-}
-
-/**
- * Get workspace-specific knowledge graph directory
- */
-function getWorkspaceKnowledgeGraphDir(workspaceId: string): string {
-  return join(getWorkspaceMemoryDir(workspaceId), "knowledge-graph");
 }
 
 /**
@@ -105,38 +63,4 @@ function getWorkspaceKnowledgeGraphDir(workspaceId: string): string {
  */
 export function getMECMFCacheDir(): string {
   return join(getAtlasMemoryDir(), ".cache");
-}
-
-/**
- * Get workspace-specific MECMF cache directory
- */
-function getWorkspaceMECMFCacheDir(workspaceId: string): string {
-  return join(getWorkspaceMemoryDir(workspaceId), ".cache");
-}
-
-/**
- * Get directories to scan for workspace discovery
- * Can be overridden with ATLAS_WORKSPACES_DIR environment variable
- *
- * @returns Array of directory paths to scan for workspaces
- */
-function getWorkspaceDiscoveryDirs(): string[] {
-  const envDirs = Deno.env.get("ATLAS_WORKSPACES_DIR");
-
-  if (envDirs) {
-    // Support multiple paths separated by platform-specific delimiter
-    const delimiter = Deno.build.os === "windows" ? ";" : ":";
-    const dirs = envDirs
-      .split(delimiter)
-      .map((dir) => dir.trim())
-      .filter((dir) => dir.length > 0);
-
-    if (dirs.length > 0) {
-      return dirs;
-    }
-  }
-
-  // Fall back to default paths if env var not set or empty
-  const rootPath = Deno.cwd();
-  return [join(rootPath, "examples", "workspaces"), join(rootPath, "workspaces"), rootPath];
 }

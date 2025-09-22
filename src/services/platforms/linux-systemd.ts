@@ -6,6 +6,7 @@ import {
   getPlatformPaths,
 } from "../../utils/platform.ts";
 import type { PlatformServiceManager, ServiceConfig, ServiceStatus } from "../types.ts";
+import { portConfigSchema } from "../schemas.ts";
 
 /**
  * Linux systemd service manager for Atlas
@@ -15,6 +16,7 @@ export class LinuxSystemdService implements PlatformServiceManager {
   private serviceName: string;
   private serviceFile: string;
   private paths: ReturnType<typeof getPlatformPaths>;
+  private textDecoder = new TextDecoder();
 
   constructor() {
     this.serviceName = getDefaultServiceName();
@@ -39,7 +41,7 @@ export class LinuxSystemdService implements PlatformServiceManager {
 
     const reloadResult = await reloadCmd.output();
     if (!reloadResult.success) {
-      const error = new TextDecoder().decode(reloadResult.stderr);
+      const error = this.textDecoder.decode(reloadResult.stderr);
       throw new Error(`Failed to reload systemd daemon: ${error}`);
     }
 
@@ -52,7 +54,7 @@ export class LinuxSystemdService implements PlatformServiceManager {
 
     const enableResult = await enableCmd.output();
     if (!enableResult.success) {
-      const error = new TextDecoder().decode(enableResult.stderr);
+      const error = this.textDecoder.decode(enableResult.stderr);
       throw new Error(`Failed to enable service: ${error}`);
     }
   }
@@ -102,7 +104,7 @@ export class LinuxSystemdService implements PlatformServiceManager {
 
     const result = await cmd.output();
     if (!result.success) {
-      const error = new TextDecoder().decode(result.stderr);
+      const error = this.textDecoder.decode(result.stderr);
       throw new Error(`Failed to start service: ${error}`);
     }
   }
@@ -116,7 +118,7 @@ export class LinuxSystemdService implements PlatformServiceManager {
 
     const result = await cmd.output();
     if (!result.success) {
-      const error = new TextDecoder().decode(result.stderr);
+      const error = this.textDecoder.decode(result.stderr);
       throw new Error(`Failed to stop service: ${error}`);
     }
   }
@@ -129,7 +131,7 @@ export class LinuxSystemdService implements PlatformServiceManager {
     });
 
     const result = await cmd.output();
-    const output = new TextDecoder().decode(result.stdout).trim();
+    const output = this.textDecoder.decode(result.stdout).trim();
     const running = output === "active";
 
     let pid: number | undefined;
@@ -144,7 +146,7 @@ export class LinuxSystemdService implements PlatformServiceManager {
           stderr: "piped",
         });
         const pidResult = await pidCmd.output();
-        const pidOutput = new TextDecoder().decode(pidResult.stdout).trim();
+        const pidOutput = this.textDecoder.decode(pidResult.stdout).trim();
         const pidMatch = pidOutput.match(/MainPID=(\d+)/);
         const pidString = pidMatch?.[1];
         if (pidString && pidString !== "0") {
@@ -163,8 +165,10 @@ export class LinuxSystemdService implements PlatformServiceManager {
         });
         const atlasResult = await atlasCmd.output();
         if (atlasResult.success) {
-          const statusData = JSON.parse(new TextDecoder().decode(atlasResult.stdout));
-          port = statusData.port || 8080;
+          const statusData = portConfigSchema.parse(
+            JSON.parse(this.textDecoder.decode(atlasResult.stdout)),
+          );
+          port = statusData.port;
         }
       } catch {
         // Default port if detection fails
@@ -229,7 +233,7 @@ WantedBy=default.target
         stderr: "piped",
       });
       const result = await cmd.output();
-      const output = new TextDecoder().decode(result.stdout).trim();
+      const output = this.textDecoder.decode(result.stdout).trim();
       const timestampMatch = output.match(/ActiveEnterTimestamp=(.+)/);
 
       if (timestampMatch && timestampMatch[1]) {
