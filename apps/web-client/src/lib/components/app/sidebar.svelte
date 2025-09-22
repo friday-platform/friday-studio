@@ -9,6 +9,7 @@ import ExpandDecal from "./expand-decal.svelte";
 const ctx = getAppContext();
 
 function getActivePage(value: string | string[]) {
+  console.log(page.route.id);
   if (Array.isArray(value)) {
     return value.some((v) => String(page.route.id).endsWith(v));
   }
@@ -36,7 +37,7 @@ function getActivePage(value: string | string[]) {
 		<nav>
 			<ul>
 				<li>
-					<a href={ctx.routes.main} class:active={getActivePage('/')}>
+					<a href={ctx.routes.main} class:active={getActivePage('/(app)')}>
 						<span style:color="var(--color-blue)">
 							<CustomIcons.Dashboard />
 						</span>
@@ -54,6 +55,16 @@ function getActivePage(value: string | string[]) {
 						</span>
 
 						<span class="text">Library</span>
+					</a>
+				</li>
+
+				<li>
+					<a href={ctx.routes.settings} class:active={getActivePage(['settings'])}>
+						<span style:color="var(--color-yellow)">
+							<CustomIcons.Settings />
+						</span>
+
+						<span class="text">Settings</span>
 					</a>
 				</li>
 			</ul>
@@ -114,7 +125,7 @@ function getActivePage(value: string | string[]) {
 			}
 
 			&.active {
-				background-color: var(--color-surface-1);
+				background-color: color-mix(in srgb, var(--color-border-1) 80%, transparent);
 			}
 		}
 	}

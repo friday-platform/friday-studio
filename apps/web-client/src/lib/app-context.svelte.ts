@@ -49,6 +49,7 @@ function getRouteConfig() {
     main: "/",
     library: { list: "/library", item: (id: string) => `/library/${id}` },
     chat: { item: (id: string) => `/chat/${id}` },
+    settings: "/settings",
   } as const;
 }
 
@@ -62,12 +63,6 @@ class AppContext {
 }
 
 export function setAppContext() {
-  // const routes = getRouteConfig();
-  // const keyboard = createKeyboard();
-  // const daemonClient = new DaemonClient({ daemonUrl: getAtlasDaemonUrl() });
-  // const stagedFiles = createStagedFiles();
-
-  // const ctx = { keyboard, routes, daemonClient, stagedFiles };
   const ctx = new AppContext();
 
   return setContext(KEY, ctx);

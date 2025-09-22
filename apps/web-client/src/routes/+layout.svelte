@@ -1,54 +1,70 @@
 <script lang="ts">
-import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { onDestroy, onMount } from "svelte";
-import { getFileType, setAppContext } from "$lib/app-context.svelte";
-import favicon from "$lib/assets/favicon.svg";
-import AboutDialog from "$lib/components/about-dialog.svelte";
-import DiagnosticsDialog from "$lib/components/diagnostics-dialog.svelte";
-import AppContainer from "$lib/components/app/container.svelte";
-import AppSidebar from "$lib/components/app/sidebar.svelte";
-import KeyboardListener from "$lib/components/keyboard-listener.svelte";
-import { setClientContext } from "$lib/modules/client/context.svelte";
+import { Webview } from "@tauri-apps/api/webview";
+import { Window } from "@tauri-apps/api/window";
 import "../app.css";
+import { onMount } from "svelte";
+import { goto } from "$app/navigation";
+import { setAppContext } from "$lib/app-context.svelte";
+import DiagnosticsDialog from "$lib/components/diagnostics-dialog.svelte";
 
 const { children } = $props();
+const ctx = setAppContext();
 
-const { daemonClient, keyboard, stagedFiles } = setAppContext();
-
-const ctx = setClientContext(daemonClient);
-
-let showAboutDialog = $state(false);
 let showDiagnosticsDialog = $state(false);
 
-$effect(() => {
-  if (keyboard.state?.key === "escape" && ctx.atlasSessionId) {
-    ctx.conversationClient?.cancelSession(ctx.atlasSessionId);
-  }
-});
+async function openSubWindow() {
+  const appWindow = new Window("uniqueLabel", {
+    width: 300,
+    height: 200,
+    resizable: false,
+    minimizable: false,
+    maximizable: false,
+    title: "",
+  });
+
+  appWindow.once("tauri://created", async () => {
+    const webview = new Webview(appWindow, "theUniqueLabel", {
+      // Unique label
+      url: "/about", // Path to your HTML file
+      x: 0,
+      y: 0,
+      width: 300,
+      height: 200,
+    });
+
+    // Optional: Handle window creation events
+    webview.once("tauri://created", () => {});
+
+    webview.once("tauri://error", (e) => {
+      console.error("Error creating sub-window:", e);
+    });
+  });
+
+  appWindow.once("tauri://error", (e) => {
+    console.error("Error creating sub-window:", e);
+  });
+}
 
 onMount(() => {
-  if (!ctx.conversationClient) {
-    ctx.connect();
-  }
-
-  // Start health checks immediately
-  ctx.checkHealth();
-
-  // Ensure periodic health checks are running for auto-reconnect
-  ctx.startHealthCheckInterval();
-
   // Listen for dialog events from Tauri
   let unlistenAbout: (() => void) | undefined;
   let unlistenDiagnostics: (() => void) | undefined;
+  let unlistenSettings: (() => void) | undefined;
 
   async function setupDialogListeners() {
     try {
       const { listen } = await import("@tauri-apps/api/event");
-      unlistenAbout = await listen("show-about-dialog", () => {
-        showAboutDialog = true;
+      unlistenAbout = await listen("show-about-dialog", async () => {
+        openSubWindow();
       });
       unlistenDiagnostics = await listen("show-diagnostics-dialog", () => {
         showDiagnosticsDialog = true;
+      });
+      unlistenSettings = await listen("show-settings-dialog", () => {
+        console.log("show-settings-dialog");
+
+        ctx.sidebarExpanded = true;
+        goto(ctx.routes.settings);
       });
     } catch {
       // Not in Tauri context
@@ -56,108 +72,14 @@ onMount(() => {
   }
   setupDialogListeners();
 
-  // Drag and drop support
-  let unlisten: () => void = () => {};
-
-  async function setupDragDrop() {
-    unlisten = await getCurrentWebview().onDragDropEvent((event) => {
-      if (event.payload.type === "drop") {
-        stagedFiles.add(event.payload.paths[0], {
-          path: event.payload.paths[0],
-          type: getFileType(event.payload.paths[0]),
-        });
-      }
-    });
-  }
-
-  setupDragDrop();
-
   return () => {
-    // you need to call unlisten if your handler goes out of scope e.g. the component is unmounted
-    unlisten();
     unlistenAbout?.();
     unlistenDiagnostics?.();
+    unlistenSettings?.();
   };
-});
-
-onDestroy(() => {
-  ctx.destroy();
 });
 </script>
 
-<svelte:head>
-	<link rel="icon" href={favicon} />
-</svelte:head>
+{@render children?.()}
 
-<div class="titlebar" data-tauri-drag-region></div>
-
-<div role="region">
-	<AppContainer>
-		<AppSidebar />
-
-		<main>
-			{#if ctx.daemonStatus === 'error'}
-				<div class="daemon-error">
-					<p>
-						The connection to Atlas was lost
-						{#if ctx.reconnectCountdown > 0}
-							<span class="reconnect-countdown">(reconnecting in {ctx.reconnectCountdown}s)</span>
-						{:else if ctx.reconnectCountdown === 0}
-							<span class="reconnect-countdown">(reconnecting...)</span>
-						{/if}
-					</p>
-					<button type="button" onclick={() => ctx.checkHealth()}>Try again</button>
-				</div>
-			{/if}
-			{@render children?.()}
-		</main>
-	</AppContainer>
-</div>
-
-<KeyboardListener />
-<AboutDialog bind:open={showAboutDialog} />
 <DiagnosticsDialog bind:open={showDiagnosticsDialog} />
-
-<style>
-	.titlebar {
-		block-size: 3.25rem;
-		inset-block-start: 0;
-		inset-inline: 0;
-		position: absolute;
-		z-index: var(--layer-4);
-	}
-
-	main {
-		display: flex;
-		flex-direction: column;
-		flex: 1 1 100%;
-		overflow: hidden;
-	}
-
-	.daemon-error {
-		align-items: center;
-		background-color: color-mix(in srgb, #c5634d, transparent 90%);
-		block-size: var(--size-13);
-		display: flex;
-		font-size: var(--font-size-1);
-		font-weight: var(--font-weight-5);
-		padding-inline: var(--size-5);
-		justify-content: space-between;
-		position: relative;
-		z-index: var(--layer-5);
-
-		button {
-			color: #c5634d;
-			cursor: pointer;
-			margin-inline-start: var(--size-2);
-
-			&:hover {
-				text-decoration: underline;
-			}
-
-			@media (prefers-color-scheme: dark) {
-				color: color-mix(in srgb, #c5634d, #fff 65%);
-			}
-		}
-	}
-</style>
