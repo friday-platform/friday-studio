@@ -1,7 +1,7 @@
 <script lang="ts">
 import { open } from "@tauri-apps/plugin-dialog";
-import Textarea from "src/lib/components/textarea.svelte";
-import Artifacts from "src/lib/modules/artifacts/artifacts.svelte";
+import Textarea from "$lib/components/textarea.svelte";
+import Artifacts from "$lib/modules/artifacts/artifacts.svelte";
 import { onMount } from "svelte";
 import { page } from "$app/state";
 import { getAppContext, getFileType } from "$lib/app-context.svelte";

@@ -1,6 +1,6 @@
 <script lang="ts">
-import { CustomIcons } from "src/lib/components/icons/custom";
-import { IconSmall } from "src/lib/components/icons/small";
+import { CustomIcons } from "$lib/components/icons/custom";
+import { IconSmall } from "$lib/components/icons/small";
 
 const {
   data,

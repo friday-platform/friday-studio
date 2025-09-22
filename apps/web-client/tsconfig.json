@@ -10,12 +10,7 @@
     "sourceMap": true,
     "strict": true,
     "moduleResolution": "bundler",
-    "allowImportingTsExtensions": true,
-    "baseUrl": ".",
-    "paths": {
-      "@atlas/core": ["../../packages/core/src/index.ts"],
-      "@atlas/oapi-client": ["../../packages/openapi-client/mod.ts"]
-    }
+    "allowImportingTsExtensions": true
   }
   // Path aliases are handled by https://svelte.dev/docs/kit/configuration#alias
   // except $lib which is handled by https://svelte.dev/docs/kit/configuration#files

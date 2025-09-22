@@ -1,5 +1,5 @@
 <script lang="ts">
-import { getAppContext } from "src/lib/app-context.svelte";
+import { getAppContext } from "$lib/app-context.svelte";
 import type { Snippet } from "svelte";
 
 let { children }: { children: Snippet } = $props();

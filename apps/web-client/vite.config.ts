@@ -1,30 +1,11 @@
-import { readFileSync } from "node:fs";
 import process from "node:process";
 import { sveltekit } from "@sveltejs/kit/vite";
 import { defineConfig } from "vite";
-import tsconfigPaths from "vite-tsconfig-paths";
 
 const host = process.env.TAURI_DEV_HOST;
 
-// Custom plugin to handle YAML imports with { type: "text" }
-const yamlTextPlugin = () => ({
-  name: "yaml-text-loader",
-  transform(_code: string, id: string) {
-    if (id.endsWith(".yml") || id.endsWith(".yaml")) {
-      try {
-        const yamlContent = readFileSync(id, "utf-8");
-        return { code: `export default ${JSON.stringify(yamlContent)};`, map: null };
-      } catch (e) {
-        console.error(`Failed to load YAML file: ${id}`, e);
-      }
-    }
-  },
-});
-
 export default defineConfig({
-  plugins: [tsconfigPaths(), yamlTextPlugin(), sveltekit()],
-  resolve: { extensions: [".ts", ".js", ".json", ".jsonc"] },
-  assetsInclude: ["**/*.yml"],
+  plugins: [sveltekit()],
   clearScreen: false,
   server: {
     port: 1420,

@@ -1,6 +1,6 @@
 <script lang="ts">
 import type { UIDataTypes, UIMessagePart, UITools } from "ai";
-import { CustomIcons } from "src/lib/components/icons/custom";
+import { CustomIcons } from "$lib/components/icons/custom";
 
 let time = $state(0);
 

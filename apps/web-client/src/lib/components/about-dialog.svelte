@@ -2,7 +2,6 @@
 import { onMount } from "svelte";
 import logo from "$lib/assets/logo.png";
 // Import build info if it exists (will be generated at build time)
-// @ts-ignore - This file is generated
 import { BUILD_INFO } from "$lib/build-info";
 
 interface Props {
