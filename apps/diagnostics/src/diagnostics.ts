@@ -1,13 +1,13 @@
 import { getAtlasClient } from "@atlas/client";
 import { createLogger } from "@atlas/logger";
-import { getAtlasHome } from "@atlas/utils";
+import { getAtlasHome } from "@atlas/utils/paths.server";
 import { ensureDir, exists, walk } from "@std/fs";
 import { join } from "@std/path";
 import { TarStream, type TarStreamInput } from "@std/tar/tar-stream";
 import { stringify } from "@std/yaml";
+import { getVersionInfo } from "../../../src/utils/version.ts";
 import { getAtlasLogsDir } from "./paths.ts";
 import { ReleaseChannel } from "./release-channel.ts";
-import { getVersionInfo } from "../../../src/utils/version.ts";
 
 const log = createLogger({ component: "diagnostics-collector" });
 

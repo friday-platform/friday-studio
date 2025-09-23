@@ -22,7 +22,7 @@ import {
 } from "@atlas/memory";
 import { type ISignalProvider, ProviderRegistry, ProviderType } from "@atlas/signals";
 import { FilesystemConfigAdapter } from "@atlas/storage";
-import { getAtlasHome } from "@atlas/utils";
+import { getAtlasHome } from "@atlas/utils/paths.server";
 import { load } from "@std/dotenv";
 import { exists } from "@std/fs";
 import { join } from "@std/path";

@@ -1,7 +1,7 @@
 import { AtlasDaemon } from "@atlas/atlasd";
 import { fetchCredentials, setToDenoEnv } from "@atlas/core";
 import { AtlasLogger } from "@atlas/logger";
-import { getAtlasHome } from "@atlas/utils";
+import { getAtlasHome } from "@atlas/utils/paths.server";
 import { load } from "@std/dotenv";
 import { exists } from "@std/fs";
 import { dirname, join } from "@std/path";

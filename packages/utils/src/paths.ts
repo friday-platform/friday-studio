@@ -1,5 +1,9 @@
 import { join } from "@std/path";
 
+/**
+ * This module should only be loaded in server code because it relies
+ * on the Deno namespace to be available - this will crash in browsers!
+ */
 // Cache the working directory at startup since it never changes
 // This prevents EMFILE errors from concurrent Deno.cwd() calls
 // and improves performance by avoiding unnecessary syscalls

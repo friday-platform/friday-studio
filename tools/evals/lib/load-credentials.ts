@@ -1,5 +1,5 @@
 import { fetchCredentials, setToDenoEnv } from "@atlas/core";
-import { getAtlasHome } from "@atlas/utils";
+import { getAtlasHome } from "@atlas/utils/paths.server";
 import { load } from "@std/dotenv";
 import { exists } from "@std/fs";
 import { join } from "@std/path";

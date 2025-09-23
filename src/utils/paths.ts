@@ -1,4 +1,4 @@
-import { getAtlasHome, isSystemService } from "@atlas/utils";
+import { getAtlasHome, isSystemService } from "@atlas/utils/paths.server";
 import { join } from "@std/path";
 
 /**

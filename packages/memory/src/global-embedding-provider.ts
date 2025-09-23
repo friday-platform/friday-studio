@@ -8,7 +8,7 @@
  */
 
 import { logger } from "@atlas/logger";
-import { getMECMFCacheDir } from "@atlas/utils";
+import { getMECMFCacheDir } from "@atlas/utils/paths.server";
 import type { AtlasEmbeddingConfig, MECMFEmbeddingProvider } from "./mecmf-interfaces.ts";
 import { WebEmbeddingProvider } from "./web-embedding-provider.ts";
 

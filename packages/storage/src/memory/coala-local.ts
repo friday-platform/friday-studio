@@ -9,7 +9,7 @@
  * - contextual.json - Session/agent specific context
  */
 
-import { getAtlasHome } from "@atlas/utils";
+import { getAtlasHome } from "@atlas/utils/paths.server";
 import { ensureDir } from "@std/fs";
 import { join } from "@std/path";
 import type { ICoALAMemoryStorageAdapter } from "../types/core.ts";

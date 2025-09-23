@@ -1,5 +1,6 @@
 import { getAtlasClient } from "@atlas/client";
-import { getAtlasHome, stringifyError } from "@atlas/utils";
+import { stringifyError } from "@atlas/utils";
+import { getAtlasHome } from "@atlas/utils/paths.server";
 import { ensureDir, exists, walk } from "@std/fs";
 import { join } from "@std/path";
 import { TarStream, type TarStreamInput } from "@std/tar/tar-stream";

@@ -4,13 +4,13 @@
  */
 
 import { getAtlasDaemonUrl } from "@atlas/atlasd";
-import { validateAtlasJWT, getDiagnosticsApiUrl } from "@atlas/core";
-import { getAtlasHome } from "@atlas/utils";
-import { z } from "zod/v4";
-import { join, basename } from "@std/path";
-import { exists } from "@std/fs";
+import { getDiagnosticsApiUrl, validateAtlasJWT } from "@atlas/core";
+import { getAtlasHome } from "@atlas/utils/paths.server";
 import { load } from "@std/dotenv";
+import { exists } from "@std/fs";
+import { basename, join } from "@std/path";
 import * as yaml from "@std/yaml";
+import { z } from "zod/v4";
 import { DEFAULT_TIMEOUT } from "./constants.ts";
 import { AtlasApiError } from "./errors.ts";
 import {

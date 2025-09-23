@@ -3,6 +3,5 @@
   "version": "1.0.0",
   "type": "module",
   "main": "./mod.ts",
-  "exports": { ".": "./mod.ts" },
   "dependencies": { "@std/path": "npm:@jsr/std__path@^1.1.2", "zod": "^3.25.76" }
 }
