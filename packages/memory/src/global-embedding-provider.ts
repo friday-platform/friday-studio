@@ -97,10 +97,15 @@ export async function embeddingProviderGetInstance(
       referenceCount,
       modelInfo: providerInstance.getModelInfo(),
     });
-    return providerInstance;
-  } finally {
-    // Clear the initialization promise regardless of success/failure
+    // Clear promise on success - it's no longer needed
     initializationPromise = null;
+    return providerInstance;
+  } catch (error) {
+    // CRITICAL: Keep the failed promise to prevent runaway retries
+    // The failed promise will be returned to all subsequent callers
+    // preventing the creation of new initialization attempts
+    getLogger().error("Failed to create global embedding provider instance", { error });
+    throw error;
   }
 }
 

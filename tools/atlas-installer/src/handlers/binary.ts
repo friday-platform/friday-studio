@@ -65,7 +65,7 @@ async function stopExistingDaemon(): Promise<void> {
 }
 
 /**
- * Install Atlas Web Client on macOS
+ * Install Atlas Web Client
  */
 async function installWebClient(): Promise<void> {
   try {
@@ -80,35 +80,108 @@ async function installWebClient(): Promise<void> {
       }
     }
 
-    const appSourcePath = path.join(basePath, "Atlas Web Client.app");
+    if (isMac()) {
+      // macOS: Install .app bundle to Applications
+      const appSourcePath = path.join(basePath, "Atlas Web Client.app");
 
-    if (!fs.existsSync(appSourcePath)) {
-      logger.warn(`Web client app not found at ${appSourcePath}, skipping installation`);
-      return;
+      if (!fs.existsSync(appSourcePath)) {
+        logger.warn(`Web client app not found at ${appSourcePath}, skipping installation`);
+        return;
+      }
+
+      logger.info("Installing Atlas Web Client for macOS");
+
+      // Copy app to user's Applications folder
+      const userAppsDir = path.join(os.homedir(), "Applications");
+
+      // Create user Applications directory if it doesn't exist
+      if (!fs.existsSync(userAppsDir)) {
+        fs.mkdirSync(userAppsDir, { recursive: true });
+      }
+
+      const destPath = path.join(userAppsDir, "Atlas Web Client.app");
+
+      logger.info(`Copying web client from ${appSourcePath} to ${destPath}`);
+
+      // Remove existing app if present
+      if (fs.existsSync(destPath)) {
+        await safeExec(`rm -rf "${destPath}"`);
+      }
+
+      // Copy new app
+      await safeExec(`cp -R "${appSourcePath}" "${destPath}"`);
+      logger.info("Atlas Web Client installed successfully");
+    } else if (isWindows()) {
+      // Windows: Run the NSIS installer for Atlas Web Client
+      const installerPath = path.join(basePath, "Atlas Web Client.exe");
+
+      if (!fs.existsSync(installerPath)) {
+        logger.warn(`Web client installer not found at ${installerPath}, skipping installation`);
+        return;
+      }
+
+      logger.info("Installing Atlas Web Client for Windows");
+
+      // Run the NSIS installer silently
+      // /S = silent install, /D = installation directory
+      const installDir = path.join(
+        process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local"),
+        "Programs",
+        "Atlas Web Client",
+      );
+
+      logger.info(`Running Atlas Web Client installer silently to ${installDir}`);
+
+      try {
+        // Run installer with silent flag
+        await safeExec(`"${installerPath}" /S /D="${installDir}"`, { timeout: 60000 });
+        logger.info("Atlas Web Client installer completed");
+      } catch (err) {
+        logger.warn(`Atlas Web Client installer failed, trying without silent mode: ${err}`);
+        // If silent install fails, just copy the installer for manual installation
+        const fallbackDir = path.join(
+          process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local"),
+          "Atlas Web Client",
+        );
+        if (!fs.existsSync(fallbackDir)) {
+          fs.mkdirSync(fallbackDir, { recursive: true });
+        }
+        const fallbackPath = path.join(fallbackDir, "Atlas Web Client Installer.exe");
+        fs.copyFileSync(installerPath, fallbackPath);
+        logger.info(`Installer copied to ${fallbackPath} for manual installation`);
+      }
+
+      // Create Start Menu shortcut pointing to the installed app
+      try {
+        const startMenuDir = path.join(
+          process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"),
+          "Microsoft",
+          "Windows",
+          "Start Menu",
+          "Programs",
+        );
+
+        // Point to the installed app location
+        const installedAppPath = path.join(installDir, "Atlas Web Client.exe");
+        const shortcutPath = path.join(startMenuDir, "Atlas Web Client.lnk");
+        const psCommand = `
+          $WshShell = New-Object -comObject WScript.Shell
+          $Shortcut = $WshShell.CreateShortcut("${shortcutPath}")
+          $Shortcut.TargetPath = "${installedAppPath}"
+          $Shortcut.WorkingDirectory = "${installDir}"
+          $Shortcut.IconLocation = "${installedAppPath}, 0"
+          $Shortcut.Save()
+        `.replace(/\n/g, "; ");
+
+        await safeExec(`powershell -Command "${psCommand}"`);
+        logger.info("Created Start Menu shortcut");
+      } catch (err) {
+        logger.warn(`Failed to create Start Menu shortcut: ${err}`);
+        // Don't fail the installation if shortcut creation fails
+      }
+
+      logger.info("Atlas Web Client installed successfully");
     }
-
-    logger.info("Installing Atlas Web Client");
-
-    // Copy app to user's Applications folder
-    const userAppsDir = path.join(os.homedir(), "Applications");
-
-    // Create user Applications directory if it doesn't exist
-    if (!fs.existsSync(userAppsDir)) {
-      fs.mkdirSync(userAppsDir, { recursive: true });
-    }
-
-    const destPath = path.join(userAppsDir, "Atlas Web Client.app");
-
-    logger.info(`Copying web client from ${appSourcePath} to ${destPath}`);
-
-    // Remove existing app if present
-    if (fs.existsSync(destPath)) {
-      await safeExec(`rm -rf "${destPath}"`);
-    }
-
-    // Copy new app
-    await safeExec(`cp -R "${appSourcePath}" "${destPath}"`);
-    logger.info("Atlas Web Client installed successfully");
   } catch (err) {
     logger.error("Failed to install web client", err);
     // Don't fail the entire installation if web client fails
@@ -176,10 +249,8 @@ async function copyBundledBinaries(): Promise<IPCResult> {
       }
     }
 
-    // Install web client on macOS
-    if (isMac()) {
-      await installWebClient();
-    }
+    // Install web client
+    await installWebClient();
 
     return { success: true, message: "Binaries installed successfully" };
   } catch (err) {

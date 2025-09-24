@@ -32,11 +32,13 @@ export async function installWindowsService(
     const logsDir = path.join(os.homedir(), ".atlas", "logs");
     fs.mkdirSync(logsDir, { recursive: true });
 
-    // Create scheduled task XML
-    const taskXml = `<?xml version="1.0" encoding="UTF-16"?>
+    // Create scheduled task XML (no encoding declaration to avoid Windows issues)
+    const taskXml = `<?xml version="1.0"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <Triggers>
-    <LogonTrigger><Enabled>true</Enabled></LogonTrigger>
+    <LogonTrigger>
+      <Enabled>true</Enabled>
+    </LogonTrigger>
   </Triggers>
   <Settings>
     <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
@@ -45,23 +47,25 @@ export async function installWindowsService(
     <StartWhenAvailable>true</StartWhenAvailable>
     <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
   </Settings>
-  <Actions>
+  <Actions Context="Author">
     <Exec>
       <Command>${binaryPath}</Command>
-      <Arguments>daemon start</Arguments>
+      <Arguments>service start</Arguments>
     </Exec>
   </Actions>
   <Principals>
-    <Principal>
+    <Principal id="Author">
       <LogonType>InteractiveToken</LogonType>
       <RunLevel>HighestAvailable</RunLevel>
     </Principal>
   </Principals>
 </Task>`;
 
-    // Write and register the task
+    // Write and register the task (UTF-16LE for Windows compatibility)
     const tempXml = path.join(os.tmpdir(), "atlas-task.xml");
-    fs.writeFileSync(tempXml, taskXml, "utf16le");
+    // Write as UTF-16LE which Windows Task Scheduler prefers
+    const buffer = Buffer.from("\ufeff" + taskXml, "utf16le");
+    fs.writeFileSync(tempXml, buffer);
 
     try {
       await safeExec(`schtasks /Create /TN "${TASK_NAME}" /XML "${tempXml}" /F`, {

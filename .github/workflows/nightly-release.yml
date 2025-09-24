@@ -60,230 +60,351 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "Generated version: $version"
 
-  build:
+  # ==================== BUILD JOBS ====================
+  build-binary-linux:
     needs: check-changes
     if: needs.check-changes.outputs.should_release == 'true'
-    timeout-minutes: 60
-    strategy:
-      matrix:
-        include:
-          - runner: ubuntu-latest-8-cores
-            os: linux
-            arch: amd64
-            target: x86_64-unknown-linux-gnu
-          - runner: macos-latest
-            os: darwin
-            arch: amd64
-            target: x86_64-apple-darwin
-          - runner: macos-15-xlarge
-            os: darwin
-            arch: arm64
-            target: aarch64-apple-darwin
-          - runner: windows-latest-8-cores
-            os: windows
-            arch: amd64
-            target: x86_64-pc-windows-msvc
+    uses: ./.github/workflows/build-component.yml
+    with:
+      component: binary
+      version: ${{ needs.check-changes.outputs.version }}
+      platform: linux
+      arch: amd64
+      runner: ubuntu-latest-8-cores
+    secrets: inherit
 
-    runs-on: ${{ matrix.runner }}
+  build-binary-darwin-amd64:
+    needs: check-changes
+    if: needs.check-changes.outputs.should_release == 'true'
+    uses: ./.github/workflows/build-component.yml
+    with:
+      component: binary
+      version: ${{ needs.check-changes.outputs.version }}
+      platform: darwin
+      arch: amd64
+      runner: macos-latest
+    secrets: inherit
+
+  build-binary-darwin-arm64:
+    needs: check-changes
+    if: needs.check-changes.outputs.should_release == 'true'
+    uses: ./.github/workflows/build-component.yml
+    with:
+      component: binary
+      version: ${{ needs.check-changes.outputs.version }}
+      platform: darwin
+      arch: arm64
+      runner: macos-15-xlarge
+    secrets: inherit
+
+  build-binary-windows:
+    needs: check-changes
+    if: needs.check-changes.outputs.should_release == 'true'
+    uses: ./.github/workflows/build-component.yml
+    with:
+      component: binary
+      version: ${{ needs.check-changes.outputs.version }}
+      platform: windows
+      arch: amd64
+      runner: windows-latest-8-cores
+    secrets: inherit
+
+  build-diagnostics-linux:
+    needs: check-changes
+    if: needs.check-changes.outputs.should_release == 'true'
+    uses: ./.github/workflows/build-component.yml
+    with:
+      component: diagnostics
+      version: ${{ needs.check-changes.outputs.version }}
+      platform: linux
+      arch: amd64
+      runner: ubuntu-latest-8-cores
+    secrets: inherit
+
+  build-diagnostics-darwin-amd64:
+    needs: check-changes
+    if: needs.check-changes.outputs.should_release == 'true'
+    uses: ./.github/workflows/build-component.yml
+    with:
+      component: diagnostics
+      version: ${{ needs.check-changes.outputs.version }}
+      platform: darwin
+      arch: amd64
+      runner: macos-latest
+    secrets: inherit
+
+  build-diagnostics-darwin-arm64:
+    needs: check-changes
+    if: needs.check-changes.outputs.should_release == 'true'
+    uses: ./.github/workflows/build-component.yml
+    with:
+      component: diagnostics
+      version: ${{ needs.check-changes.outputs.version }}
+      platform: darwin
+      arch: arm64
+      runner: macos-15-xlarge
+    secrets: inherit
+
+  build-diagnostics-windows:
+    needs: check-changes
+    if: needs.check-changes.outputs.should_release == 'true'
+    uses: ./.github/workflows/build-component.yml
+    with:
+      component: diagnostics
+      version: ${{ needs.check-changes.outputs.version }}
+      platform: windows
+      arch: amd64
+      runner: windows-latest-8-cores
+    secrets: inherit
+
+  build-web-app-darwin-amd64:
+    needs: check-changes
+    if: needs.check-changes.outputs.should_release == 'true'
+    uses: ./.github/workflows/build-component.yml
+    with:
+      component: web-app
+      version: ${{ needs.check-changes.outputs.version }}
+      platform: darwin
+      arch: amd64
+      runner: macos-latest
+    secrets: inherit
+
+  build-web-app-darwin-arm64:
+    needs: check-changes
+    if: needs.check-changes.outputs.should_release == 'true'
+    uses: ./.github/workflows/build-component.yml
+    with:
+      component: web-app
+      version: ${{ needs.check-changes.outputs.version }}
+      platform: darwin
+      arch: arm64
+      runner: macos-15-xlarge
+    secrets: inherit
+
+  # ==================== PACKAGING JOBS ====================
+  package-linux:
+    needs: [check-changes, build-binary-linux, build-diagnostics-linux]
+    if: needs.check-changes.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Setup Deno
-        uses: denoland/setup-deno@v2
+      - name: Download artifacts
+        uses: actions/download-artifact@v5
         with:
-          deno-version: v2.4.5
+          path: ./artifacts/
 
-      - name: Install dependencies
-        run: deno install
+      - name: Cache apt packages
+        uses: awalsh128/cache-apt-pkgs-action@latest
+        with:
+          packages: rpm debhelper devscripts
+          version: 1.0
 
-      - name: Setup cross-compilation for ARM64 (Linux only)
-        if: matrix.os == 'linux' && matrix.arch == 'arm64'
+      - name: Build Linux packages
         run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu
-          echo "CC=aarch64-linux-gnu-gcc" >> "$GITHUB_ENV"
 
-      - name: Build binary
-        id: build
-        uses: ./.github/actions/build-component
+          # Build AMD64 packages
+          mkdir -p build
+          cp artifacts/binary-linux-amd64/atlas build/atlas
+          cp artifacts/diagnostics-linux-amd64/atlas-diagnostics build/atlas-diagnostics
+          chmod +x build/atlas
+          chmod +x build/atlas-diagnostics
+
+          ARCH="amd64" VERSION="${{ needs.check-changes.outputs.version }}" ./scripts/build-deb.sh
+          ARCH="amd64" VERSION="${{ needs.check-changes.outputs.version }}" ./scripts/build-rpm.sh
+        shell: bash
+
+      - name: Create platform bundle
+        run: |
+          mkdir -p dist
+          cp artifacts/binary-linux-amd64/atlas dist/atlas
+          cp artifacts/diagnostics-linux-amd64/atlas-diagnostics dist/atlas-diagnostics
+          ./scripts/create-platform-bundle.sh "${{ needs.check-changes.outputs.version }}" "linux" "amd64"
+        shell: bash
+
+      - name: Upload final artifacts
+        uses: actions/upload-artifact@v4
         with:
-          component: binary
-          version: ${{ needs.check-changes.outputs.version }}
-          platform: ${{ matrix.os }}
-          arch: ${{ matrix.arch }}
-          target: ${{ matrix.target }}
+          name: linux-packages
+          path: |
+            ./dist/atlas_*.deb
+            ./dist/atlas-*.rpm
+            ./dist/atlas-bundle-*.tar.gz
+            ./artifacts/binary-linux-amd64/atlas_*.tar.gz
+            ./artifacts/binary-linux-amd64/atlas_*.sha256
+          retention-days: 5
 
-      - name: Build diagnostics binary
-        id: build-diagnostics
-        uses: ./.github/actions/build-component
+  package-darwin-amd64:
+    needs: [check-changes, build-binary-darwin-amd64, build-diagnostics-darwin-amd64, build-web-app-darwin-amd64]
+    if: needs.check-changes.outputs.should_release == 'true'
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v5
         with:
-          component: diagnostics
-          version: ${{ needs.check-changes.outputs.version }}
-          platform: ${{ matrix.os }}
-          arch: ${{ matrix.arch }}
-          target: ${{ matrix.target }}
+          path: ./artifacts/
 
-      - name: Build web app
-        id: build-web-app
-        uses: ./.github/actions/build-web-app
-        with:
-          version: ${{ needs.check-changes.outputs.version }}
-          platform: ${{ matrix.os }}
-          arch: ${{ matrix.arch }}
-          target: ${{ matrix.target }}
+      - name: Prepare macOS AMD64 files
+        run: |
+          mkdir -p dist
+          cp artifacts/binary-darwin-amd64/atlas dist/atlas
+          cp artifacts/diagnostics-darwin-amd64/atlas-diagnostics dist/atlas-diagnostics
+          # Find and copy the actual .app directory
+          if ls artifacts/web-app-darwin-amd64/*.app 1>/dev/null 2>&1; then
+            cp -r artifacts/web-app-darwin-amd64/*.app "dist/Atlas Web Client.app"
+          fi
+        shell: bash
 
-      - name: Sign macOS binary
-        if: matrix.os == 'darwin'
-        uses: ./.github/actions/macos-sign
-        with:
-          binary-path: ${{ steps.build.outputs.binary-path }}
-          macos-sign-p12: ${{ secrets.MACOS_SIGN_P12 }}
-          macos-sign-password: ${{ secrets.MACOS_SIGN_PASSWORD }}
-          macos-sign-identity: ${{ secrets.MACOS_SIGN_IDENTITY }}
-          macos-notary-issuer-id: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
-          macos-notary-key-id: ${{ secrets.MACOS_NOTARY_KEY_ID }}
-          macos-notary-key: ${{ secrets.MACOS_NOTARY_KEY }}
-
-      # NEW: Sign diagnostics binary on macOS
-      - name: Sign macOS diagnostics binary
-        if: matrix.os == 'darwin'
-        uses: ./.github/actions/macos-sign
-        with:
-          binary-path: ${{ steps.build-diagnostics.outputs.binary-path }}
-          macos-sign-p12: ${{ secrets.MACOS_SIGN_P12 }}
-          macos-sign-password: ${{ secrets.MACOS_SIGN_PASSWORD }}
-          macos-sign-identity: ${{ secrets.MACOS_SIGN_IDENTITY }}
-          macos-notary-issuer-id: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
-          macos-notary-key-id: ${{ secrets.MACOS_NOTARY_KEY_ID }}
-          macos-notary-key: ${{ secrets.MACOS_NOTARY_KEY }}
-
-      # NEW: Sign the .app bundle (will be included directly in installer)
-      - name: Sign macOS app bundle
-        if: matrix.os == 'darwin'
-        uses: ./.github/actions/macos-sign
-        with:
-          binary-path: "./dist/Atlas Web Client.app"
-          macos-sign-p12: ${{ secrets.MACOS_SIGN_P12 }}
-          macos-sign-password: ${{ secrets.MACOS_SIGN_PASSWORD }}
-          macos-sign-identity: ${{ secrets.MACOS_SIGN_IDENTITY }}
-          # Skip notarization - the app will be notarized as part of the installer
-          # macos-notary-issuer-id: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
-          # macos-notary-key-id: ${{ secrets.MACOS_NOTARY_KEY_ID }}
-          # macos-notary-key: ${{ secrets.MACOS_NOTARY_KEY }}
-
-      - name: Create installers
-        if: matrix.os != 'linux'
-        id: installers
+      - name: Create macOS AMD64 installer
         uses: ./.github/actions/create-installers
         with:
           version: ${{ needs.check-changes.outputs.version }}
-          platform: ${{ matrix.os }}
-          arch: ${{ matrix.arch }}
+          platform: darwin
+          arch: amd64
           channel: nightly
-          binary-path: ${{ steps.build.outputs.binary-path }}
-          binary-name: ${{ steps.build.outputs.binary-name }}
-          diagnostics-binary-path: ${{ steps.build-diagnostics.outputs.binary-path }}
-          diagnostics-binary-name: ${{ steps.build-diagnostics.outputs.binary-name }}
-          web-app-binary-path: ${{ matrix.os == 'darwin' && './dist/Atlas Web Client.app' || steps.build-web-app.outputs.bundle-path }}
-          web-app-binary-name: ${{ matrix.os == 'darwin' && 'Atlas Web Client.app' || steps.build-web-app.outputs.bundle-name }}
+          binary-path: dist/atlas
+          binary-name: atlas
+          diagnostics-binary-path: dist/atlas-diagnostics
+          diagnostics-binary-name: atlas-diagnostics
+          web-app-binary-path: dist/Atlas Web Client.app
+          web-app-binary-name: Atlas Web Client.app
           macos-installer-p12: ${{ secrets.MACOS_INSTALLER_P12 }}
           macos-installer-password: ${{ secrets.MACOS_INSTALLER_PASSWORD }}
           macos-notary-issuer-id: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
           macos-notary-key-id: ${{ secrets.MACOS_NOTARY_KEY_ID }}
           macos-notary-key: ${{ secrets.MACOS_NOTARY_KEY }}
 
-      - name: Build Linux packages
-        if: matrix.os == 'linux'
+      - name: Create platform bundle
         run: |
-          # Install build dependencies
-          sudo apt-get update
-          sudo apt-get install -y rpm debhelper devscripts
-
-          # Create build directory and copy BOTH binaries
-          mkdir -p build
-          cp "${{ steps.build.outputs.binary-path }}" build/atlas
-          cp "${{ steps.build-diagnostics.outputs.binary-path }}" build/atlas-diagnostics
-          chmod +x build/atlas
-          chmod +x build/atlas-diagnostics
-
-          # Build DEB package
-          ARCH="${{ matrix.arch }}" VERSION="${{ needs.check-changes.outputs.version }}" ./scripts/build-deb.sh
-
-          # Build RPM package (skip ARM64 on x86_64 runners)
-          ARCH="${{ matrix.arch }}" VERSION="${{ needs.check-changes.outputs.version }}" ./scripts/build-rpm.sh
+          ./scripts/create-platform-bundle.sh "${{ needs.check-changes.outputs.version }}" "darwin" "amd64"
         shell: bash
+
+      - name: Upload final artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: darwin-amd64-packages
+          path: |
+            ./dist/atlas-bundle-*.tar.gz
+            ./dist/atlas_*.zip
+            ./dist/atlas_*.sha256
+            ./artifacts/binary-darwin-amd64/atlas_*.tar.gz
+            ./artifacts/binary-darwin-amd64/atlas_*.sha256
+          retention-days: 5
+
+  package-darwin-arm64:
+    needs: [check-changes, build-binary-darwin-arm64, build-diagnostics-darwin-arm64, build-web-app-darwin-arm64]
+    if: needs.check-changes.outputs.should_release == 'true'
+    runs-on: macos-15-xlarge
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v5
+        with:
+          path: ./artifacts/
+
+      - name: Prepare macOS ARM64 files
+        run: |
+          mkdir -p dist
+          cp artifacts/binary-darwin-arm64/atlas dist/atlas
+          cp artifacts/diagnostics-darwin-arm64/atlas-diagnostics dist/atlas-diagnostics
+          # Find and copy the actual .app directory
+          if ls artifacts/web-app-darwin-arm64/*.app 1>/dev/null 2>&1; then
+            cp -r artifacts/web-app-darwin-arm64/*.app "dist/Atlas Web Client.app"
+          fi
+        shell: bash
+
+      - name: Create macOS ARM64 installer
+        uses: ./.github/actions/create-installers
+        with:
+          version: ${{ needs.check-changes.outputs.version }}
+          platform: darwin
+          arch: arm64
+          channel: nightly
+          binary-path: dist/atlas
+          binary-name: atlas
+          diagnostics-binary-path: dist/atlas-diagnostics
+          diagnostics-binary-name: atlas-diagnostics
+          web-app-binary-path: dist/Atlas Web Client.app
+          web-app-binary-name: Atlas Web Client.app
+          macos-installer-p12: ${{ secrets.MACOS_INSTALLER_P12 }}
+          macos-installer-password: ${{ secrets.MACOS_INSTALLER_PASSWORD }}
+          macos-notary-issuer-id: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+          macos-notary-key-id: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          macos-notary-key: ${{ secrets.MACOS_NOTARY_KEY }}
 
       - name: Create platform bundle
-        run: ./scripts/create-platform-bundle.sh "${{ needs.check-changes.outputs.version }}" "${{ matrix.os }}" "${{ matrix.arch }}"
-
-      - name: Create archive
         run: |
-          binary_name="${{ steps.build.outputs.binary-name }}"
-          diagnostics_name="${{ steps.build-diagnostics.outputs.binary-name }}"  # NEW
-          if [ "${{ matrix.os }}" == "windows" ]; then
-            archive_ext=".zip"
-          else
-            archive_ext=".tar.gz"
-          fi
-
-          archive_name="atlas_${{ needs.check-changes.outputs.version }}_${{ matrix.os }}_${{ matrix.arch }}${archive_ext}"
-
-          if [ "${{ matrix.os }}" == "windows" ]; then
-            # Include CLI binaries, Tauri .exe/.msi, and README
-            7z a "./dist/${archive_name}" "./dist/${binary_name}" "./dist/${diagnostics_name}" "./dist"/*.exe "./dist"/*.msi README.md 2>/dev/null || true
-            # Fallback if no Tauri artifacts exist
-            7z a "./dist/${archive_name}" "./dist/${binary_name}" "./dist/${diagnostics_name}" README.md
-          elif [ "${{ matrix.os }}" == "darwin" ]; then
-            # Use pax format to preserve extended attributes (including code signatures)
-            # Include CLI binaries, Tauri .app, and README
-            tar --format=pax -czf "./dist/${archive_name}" -C ./dist "${binary_name}" "${diagnostics_name}" ./*.app -C .. README.md 2>/dev/null || \
-            tar --format=pax -czf "./dist/${archive_name}" -C ./dist "${binary_name}" "${diagnostics_name}" -C .. README.md
-          else
-            # Include CLI binaries, Tauri .deb, and README
-            tar -czf "./dist/${archive_name}" -C ./dist "${binary_name}" "${diagnostics_name}" ./*.deb -C .. README.md 2>/dev/null || \
-            tar -czf "./dist/${archive_name}" -C ./dist "${binary_name}" "${diagnostics_name}" -C .. README.md
-          fi
-
-          # Generate checksum
-          if [ "${{ matrix.os }}" == "darwin" ]; then
-            shasum -a 256 "./dist/${archive_name}" > "./dist/${archive_name}.sha256"
-          else
-            sha256sum "./dist/${archive_name}" > "./dist/${archive_name}.sha256"
-          fi
+          ./scripts/create-platform-bundle.sh "${{ needs.check-changes.outputs.version }}" "darwin" "arm64"
         shell: bash
 
-      - name: Upload binary archives
+      - name: Upload final artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: atlas-${{ matrix.os }}-${{ matrix.arch }}
+          name: darwin-arm64-packages
           path: |
-            ./dist/atlas-bundle-*.tar.gz     # NEW: Include platform bundles
-            ./dist/atlas-bundle-*.zip        # NEW: Include platform bundles
-            ./dist/atlas_*.tar.gz
+            ./dist/atlas-bundle-*.tar.gz
             ./dist/atlas_*.zip
-            ./dist/atlas_*.deb
-            ./dist/atlas-*.rpm
             ./dist/atlas_*.sha256
-            ./dist/atlas-diagnostics*        # NEW: Include diagnostics binaries
-            ./dist/Atlas\ Web\ Client.app   # NEW: Include Tauri macOS app (specific)
-            ./dist/Atlas_*.exe               # NEW: Include Tauri Windows installer
-            ./dist/Atlas*.msi                # NEW: Include Tauri Windows msi
-          retention-days: 1
+            ./artifacts/binary-darwin-arm64/atlas_*.tar.gz
+            ./artifacts/binary-darwin-arm64/atlas_*.sha256
+          retention-days: 5
 
-      - name: Upload installers
-        if: matrix.os != 'linux'
+  package-windows:
+    needs: [check-changes, build-binary-windows, build-diagnostics-windows]
+    if: needs.check-changes.outputs.should_release == 'true'
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v5
+        with:
+          path: ./artifacts/
+
+      - name: Create Windows installer
+        uses: ./.github/actions/create-installers
+        with:
+          version: ${{ needs.check-changes.outputs.version }}
+          platform: windows
+          arch: amd64
+          channel: nightly
+          binary-path: artifacts/binary-windows-amd64/atlas.exe
+          binary-name: atlas.exe
+          diagnostics-binary-path: artifacts/diagnostics-windows-amd64/atlas-diagnostics.exe
+          diagnostics-binary-name: atlas-diagnostics.exe
+
+      - name: Create platform bundle
+        run: |
+          # Copy Windows files for bundle
+          mkdir -p dist
+          cp artifacts/binary-windows-amd64/atlas.exe dist/atlas.exe
+          cp artifacts/diagnostics-windows-amd64/atlas-diagnostics.exe dist/atlas-diagnostics.exe
+          ./scripts/create-platform-bundle.sh "${{ needs.check-changes.outputs.version }}" "windows" "amd64"
+        shell: bash
+
+      - name: Upload final artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: atlas-installer-${{ needs.check-changes.outputs.version }}-${{ matrix.os }}-${{ matrix.arch }}
+          name: windows-packages
           path: |
-            ./dist/atlas_*.zip
+            ./dist/atlas-bundle-*.zip
             ./dist/atlas_*.exe
             ./dist/atlas_*.sha256
-          retention-days: 1
+            ./dist/Atlas*.msi
+            ./artifacts/binary-windows-amd64/atlas_*.zip
+            ./artifacts/binary-windows-amd64/atlas_*.sha256
+          retention-days: 5
 
+  # ==================== RELEASE & UPLOAD JOBS ====================
   release:
-    needs: [check-changes, build]
+    needs: [check-changes, package-linux, package-darwin-amd64, package-darwin-arm64, package-windows]
     if: needs.check-changes.outputs.should_release == 'true'
     runs-on: ubuntu-latest
     steps:
@@ -292,39 +413,17 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Download binary artifacts
+      - name: Download all artifacts
         uses: actions/download-artifact@v5
         with:
           path: ./dist/
-          pattern: atlas-*
-          merge-multiple: true
 
-      - name: Download installer artifacts
-        uses: actions/download-artifact@v5
-        with:
-          path: ./dist/
-          pattern: atlas-installer-*
-          merge-multiple: true
-
-
-      - name: Create ZIP files for release distribution
+      - name: Prepare release artifacts
         run: |
-          cd ./dist
-          # Create ZIP files for macOS .app bundles for release
-          for app in *.app; do
-            if [ -d "$app" ]; then
-              zip_name="${app%.app}.zip"
-              echo "Creating release ZIP: $zip_name"
-              zip -r "$zip_name" "$app"
-
-              # Generate checksum for the ZIP
-              if command -v shasum >/dev/null 2>&1; then
-                shasum -a 256 "$zip_name" > "$zip_name.sha256"
-              else
-                sha256sum "$zip_name" > "$zip_name.sha256"
-              fi
-            fi
-          done
+          # Move all artifacts to a flat structure for release
+          find ./dist -type f \( -name "*.tar.gz" -o -name "*.zip" -o -name "*.deb" -o -name "*.rpm" -o -name "*.exe" -o -name "*.msi" \) -exec mv {} ./dist/ \; 2>/dev/null || true
+          ls -la ./dist/
+        shell: bash
 
       - name: Generate changelog
         run: |
@@ -350,19 +449,6 @@ jobs:
             echo "**Note:** Nightly builds are more stable than edge builds but may still contain experimental features."
           } >> changelog.md
 
-      - name: List downloaded files
-        run: |
-          echo "Binary files:"
-          find ./dist -type f -name "atlas_*" | grep -v "\.exe$\|\.zip$" || echo "No binary files found"
-          echo "Package files:"
-          find ./dist -type f -name "atlas*" | grep -E "\.(deb|rpm)$" || echo "No package files found"
-          echo "Installer files:"
-          find ./dist -type f -name "atlas_*" | grep -E "\.(exe|zip)$" || echo "No installer files found"
-          echo "Combined bundle files:"
-          find ./dist -type f -name "atlas-complete-*" | grep -E "\.(tar\.gz|zip)$" || echo "No combined bundles found"
-          echo "All files:"
-          find ./dist/ -type f
-
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
@@ -373,8 +459,8 @@ jobs:
           prerelease: true
           make_latest: false
           files: |
-            ./dist/atlas-bundle-*.tar.gz      # NEW: Platform bundles from build jobs
-            ./dist/atlas-bundle-*.zip         # NEW: Platform bundles from build jobs
+            ./dist/atlas-bundle-*.tar.gz
+            ./dist/atlas-bundle-*.zip
             ./dist/atlas_*.tar.gz
             ./dist/atlas_*.zip
             ./dist/atlas_*.exe
@@ -384,7 +470,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   upload-sandbox:
-    needs: [check-changes, build]
+    needs: [check-changes, package-linux, package-darwin-amd64, package-darwin-arm64, package-windows]
     if: needs.check-changes.outputs.should_release == 'true'
     runs-on: ubuntu-latest
     steps:
@@ -398,7 +484,7 @@ jobs:
           version: ${{ needs.check-changes.outputs.version }}
 
   upload-production:
-    needs: [check-changes, build]
+    needs: [check-changes, package-linux, package-darwin-amd64, package-darwin-arm64, package-windows]
     if: needs.check-changes.outputs.should_release == 'true'
     runs-on: ubuntu-latest
     steps:

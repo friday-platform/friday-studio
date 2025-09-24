@@ -32,6 +32,12 @@ inputs:
   web-app-binary-name:
     description: "Name of the web app binary file"
     required: false
+  macos-sign-p12:
+    description: "Base64 encoded P12 certificate for app signing"
+    required: false
+  macos-sign-password:
+    description: "Password for the app P12 certificate"
+    required: false
   macos-installer-p12:
     description: "Base64 encoded P12 certificate for installer signing"
     required: false
@@ -92,17 +98,29 @@ runs:
           # Skip if path is empty
           [ -z "$path" ] && continue
 
+          # Handle glob patterns by finding the first matching file
+          matched_path=""
+          for file in ../../$path; do
+            if [ -e "$file" ]; then
+              matched_path="$file"
+              break
+            fi
+          done
+
           # Check if file exists (fail for required, skip for optional)
-          if [ ! -e "../../$path" ]; then
+          if [ -z "$matched_path" ]; then
             [ "$type" = "required" ] && { echo "ERROR: Required binary not found: $path"; exit 1; }
+            echo "Optional binary not found, skipping: $path"
             continue
           fi
 
+          echo "Copying $matched_path to atlas-binary/$name"
+
           # Copy based on type (.app directories need -R)
-          if [[ "$path" == *.app ]]; then
-            cp -R "../../$path" "atlas-binary/$name"
+          if [[ "$matched_path" == *.app ]]; then
+            cp -R "$matched_path" "atlas-binary/$name"
           else
-            cp "../../$path" "atlas-binary/$name"
+            cp "$matched_path" "atlas-binary/$name"
           fi
 
           # Make executable (ignore errors)
@@ -121,12 +139,31 @@ runs:
 
         npm version "$semver" --no-git-tag-version
 
-        # Setup macOS notarization if needed
-        if [ "${{ inputs.platform }}" == "darwin" ] && [ -n "${{ inputs.macos-notary-issuer-id }}" ]; then
-          export APPLE_API_ISSUER="${{ inputs.macos-notary-issuer-id }}"
-          export APPLE_API_KEY_ID="${{ inputs.macos-notary-key-id }}"
-          echo "${{ inputs.macos-notary-key }}" | base64 --decode > "AuthKey_${{ inputs.macos-notary-key-id }}.p8"
-          export APPLE_API_KEY="$(pwd)/AuthKey_${{ inputs.macos-notary-key-id }}.p8"
+        # Setup macOS installer signing and notarization if needed
+        if [ "${{ inputs.platform }}" == "darwin" ]; then
+          # Electron-builder needs both app and installer certificates
+          # CSC_LINK is for signing the Electron app wrapper (Developer ID Application)
+          # CSC_INSTALLER_LINK is for signing the .zip installer (Developer ID Installer)
+
+          # Set up app signing certificate
+          if [ -n "${{ inputs.macos-sign-p12 }}" ]; then
+            export CSC_LINK="${{ inputs.macos-sign-p12 }}"
+            export CSC_KEY_PASSWORD="${{ inputs.macos-sign-password }}"
+          fi
+
+          # Set up installer signing certificate
+          if [ -n "${{ inputs.macos-installer-p12 }}" ]; then
+            export CSC_INSTALLER_LINK="${{ inputs.macos-installer-p12 }}"
+            export CSC_INSTALLER_KEY_PASSWORD="${{ inputs.macos-installer-password }}"
+          fi
+
+          # Setup notarization
+          if [ -n "${{ inputs.macos-notary-issuer-id }}" ]; then
+            export APPLE_API_ISSUER="${{ inputs.macos-notary-issuer-id }}"
+            export APPLE_API_KEY_ID="${{ inputs.macos-notary-key-id }}"
+            echo "${{ inputs.macos-notary-key }}" | base64 --decode > "AuthKey_${{ inputs.macos-notary-key-id }}.p8"
+            export APPLE_API_KEY="$(pwd)/AuthKey_${{ inputs.macos-notary-key-id }}.p8"
+          fi
         fi
 
         # Build installer using platform mapping
@@ -159,15 +196,16 @@ runs:
         version="${{ inputs.version }}"
 
         # Find installer based on platform
+        # Use ls instead of find for better cross-platform compatibility
         case "$platform" in
           darwin)
-            installer=$(find build/ -type f -name "*.zip" | head -1)
+            installer=$(ls build/*.zip 2>/dev/null | head -1)
             ;;
           windows)
-            installer=$(find build/ -type f -name "*.exe" | head -1)
+            installer=$(ls build/*.exe 2>/dev/null | head -1)
             ;;
           linux)
-            installer=$(find build/ -type f \( -name "*.AppImage" -o -name "*.tar.gz" \) | head -1)
+            installer=$(ls build/*.AppImage build/*.tar.gz 2>/dev/null | head -1)
             ;;
         esac
 
@@ -189,6 +227,7 @@ runs:
         checksum_path="$(pwd)/build/${target}.sha256"
 
         # Copy to dist for workflow compatibility
+        mkdir -p ../../dist/
         cp "build/$target" "build/${target}.sha256" ../../dist/
 
         # Set outputs and report

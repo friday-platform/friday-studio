@@ -436,15 +436,23 @@ export class WebEmbeddingProvider implements MECMFEmbeddingProvider {
 
     // Check if cached file exists
     try {
-      await Deno.stat(cachedPath);
+      const stat = await Deno.stat(cachedPath);
+      logger.debug("Using cached ONNX model", { path: cachedPath, size: stat.size });
     } catch (error) {
       if (error instanceof Deno.errors.NotFound) {
         // Download and cache the model
+        logger.info("Downloading ONNX model", { url, cachedPath });
         await this.downloadFile(url, cachedPath, "model");
+        const stat = await Deno.stat(cachedPath);
+        logger.info("ONNX model downloaded", { path: cachedPath, size: stat.size });
       } else {
         throw error;
       }
     }
+
+    // Read the model file as binary data for better compatibility with compiled binaries
+    const modelData = await Deno.readFile(cachedPath);
+    logger.debug("Model data loaded", { path: cachedPath, byteLength: modelData.byteLength });
 
     // Minimal session options - most settings are controlled by global config
     const sessionOptions: ort.InferenceSession.SessionOptions = {
@@ -455,8 +463,19 @@ export class WebEmbeddingProvider implements MECMFEmbeddingProvider {
       executionMode: "sequential",
     };
 
-    const session = await ort.InferenceSession.create(cachedPath, sessionOptions);
-    return session;
+    // Create session from Uint8Array instead of file path for better compatibility
+    try {
+      const session = await ort.InferenceSession.create(modelData.buffer, sessionOptions);
+      logger.info("ONNX session created successfully");
+      return session;
+    } catch (error) {
+      logger.error("Failed to create ONNX session", {
+        error: error instanceof Error ? error.message : String(error),
+        modelSize: modelData.byteLength,
+        path: cachedPath,
+      });
+      throw error;
+    }
   }
 
   private createAttentionMask(tokenIds: number[], padTokenId: number = 0): number[] {

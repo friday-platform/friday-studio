@@ -189,28 +189,6 @@ runs:
           echo "Selected bundle path: $selected"
         fi
 
-    - name: Debug - List Tauri artifacts
-      shell: bash
-      run: |
-        echo "=== Tauri action outputs ==="
-        echo "artifactPaths: ${{ steps.tauri-build.outputs.artifactPaths }}"
-        echo ""
-        echo "=== Looking for .app bundles in various locations ==="
-        echo "In apps/web-client/src-tauri/target/:"
-        find ./apps/web-client/src-tauri/target -name "*.app" -type d 2>/dev/null || true
-        echo ""
-        echo "In current directory:"
-        find . -maxdepth 3 -name "*.app" -type d 2>/dev/null || true
-        echo ""
-        echo "=== Full directory structure of target/release/bundle ==="
-        if [ -d "./apps/web-client/src-tauri/target/${{ inputs.target }}/release/bundle" ]; then
-          ls -la ./apps/web-client/src-tauri/target/${{ inputs.target }}/release/bundle/
-        else
-          echo "Bundle directory doesn't exist at ./apps/web-client/src-tauri/target/${{ inputs.target }}/release/bundle"
-          echo "Checking for ./apps/web-client/src-tauri/target/release/bundle instead:"
-          ls -la ./apps/web-client/src-tauri/target/release/bundle/ 2>/dev/null || echo "Also doesn't exist"
-        fi
-
     - name: Copy artifacts to dist
       shell: bash
       run: |
@@ -238,8 +216,33 @@ runs:
             find ./apps/web-client/src-tauri/target -name "*.app" -type d -exec cp -r {} ./dist/ \; 2>/dev/null || true
           fi
         elif [ "${{ inputs.platform }}" == "windows" ]; then
-          # For Windows, copy the .exe 
-          find ./apps/web-client/src-tauri/target/${{ inputs.target }}/release/bundle -name "*.exe" -exec cp {} ./dist/ \;
+          # For Windows, copy the NSIS installer from bundle/nsis
+          nsis_dir="./apps/web-client/src-tauri/target/${{ inputs.target }}/release/bundle/nsis"
+
+          if [ -d "$nsis_dir" ]; then
+            echo "Looking for NSIS installer in: $nsis_dir"
+            for exe in "$nsis_dir"/*.exe; do
+              if [ -f "$exe" ]; then
+                echo "Found NSIS installer: $(basename "$exe")"
+                # Rename to standard name for consistency
+                cp "$exe" "./dist/Atlas Web Client.exe"
+                break
+              fi
+            done
+          else
+            echo "NSIS directory not found at $nsis_dir, checking for MSI installer..."
+            # Fallback to MSI if NSIS not found
+            msi_dir="./apps/web-client/src-tauri/target/${{ inputs.target }}/release/bundle/msi"
+            if [ -d "$msi_dir" ]; then
+              for msi in "$msi_dir"/*.msi; do
+                if [ -f "$msi" ]; then
+                  echo "Found MSI installer: $(basename "$msi")"
+                  cp "$msi" "./dist/Atlas Web Client.msi"
+                  break
+                fi
+              done
+            fi
+          fi
         else
           # For Linux, copy the executable and .deb
           find ./apps/web-client/src-tauri/target/${{ inputs.target }}/release/bundle -name "atlas" -exec cp {} ./dist/ \;

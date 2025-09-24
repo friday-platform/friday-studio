@@ -86,6 +86,28 @@ runs:
         # Add platform-specific extensions
         [ "$platform" = "windows" ] && output_name="${output_name}.exe"
 
+        # Replace version placeholders in source before compilation
+        VERSION_FILE="src/utils/version.ts"
+        BACKUP_FILE="${VERSION_FILE}.bak"
+
+        # Backup original file
+        cp "$VERSION_FILE" "$BACKUP_FILE"
+
+        # Get git SHA for version info
+        GIT_SHA=$(git rev-parse --short HEAD || echo "unknown")
+
+        # Replace placeholders
+        echo "Embedding version: $version (git: $GIT_SHA)"
+        if [ "$platform" = "darwin" ]; then
+          # macOS sed syntax
+          sed -i "" "s|__ATLAS_VERSION__|$version|g" "$VERSION_FILE"
+          sed -i "" "s|__ATLAS_GIT_SHA__|$GIT_SHA|g" "$VERSION_FILE"
+        else
+          # GNU sed syntax
+          sed -i "s|__ATLAS_VERSION__|$version|g" "$VERSION_FILE"
+          sed -i "s|__ATLAS_GIT_SHA__|$GIT_SHA|g" "$VERSION_FILE"
+        fi
+
         # Build the component
         echo "Building $component for $platform-$arch..."
         deno compile \
@@ -99,6 +121,9 @@ runs:
           --target "$target" \
           --output "dist/${output_name}" \
           "$entry_point"
+
+        # Restore original version file
+        mv "$BACKUP_FILE" "$VERSION_FILE"
 
         # Set outputs
         echo "binary-path=dist/${output_name}" >> "$GITHUB_OUTPUT"

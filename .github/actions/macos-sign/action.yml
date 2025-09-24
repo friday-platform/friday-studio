@@ -100,6 +100,11 @@ runs:
         # Sign binary with entitlements
         codesign --force --options runtime --deep --entitlements entitlements.plist --sign "$SIGN_IDENTITY" "${{ inputs.binary-path }}"
 
+        # Restore executable permission (codesign sometimes removes it)
+        if [[ "${{ inputs.binary-path }}" != *.app ]]; then
+          chmod +x "${{ inputs.binary-path }}"
+        fi
+
         # Test signed binary (skip for .app bundles)
         echo "Testing signed binary..."
         if [[ "${{ inputs.binary-path }}" == *.app ]]; then

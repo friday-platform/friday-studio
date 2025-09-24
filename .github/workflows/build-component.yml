@@ -1,0 +1,175 @@
+name: Build Component
+
+on:
+  workflow_call:
+    inputs:
+      component:
+        description: 'Component to build (binary, diagnostics, web-app)'
+        required: true
+        type: string
+      version:
+        description: 'Version string'
+        required: true
+        type: string
+      platform:
+        description: 'Platform (linux, darwin, windows)'
+        required: true
+        type: string
+      arch:
+        description: 'Architecture (amd64, arm64)'
+        required: true
+        type: string
+      runner:
+        description: 'GitHub runner to use'
+        required: true
+        type: string
+      retention-days:
+        description: 'Artifact retention days'
+        required: false
+        type: number
+        default: 5
+    secrets:
+      MACOS_SIGN_P12:
+        required: false
+      MACOS_SIGN_PASSWORD:
+        required: false
+      MACOS_SIGN_IDENTITY:
+        required: false
+      MACOS_NOTARY_ISSUER_ID:
+        required: false
+      MACOS_NOTARY_KEY_ID:
+        required: false
+      MACOS_NOTARY_KEY:
+        required: false
+
+jobs:
+  build:
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.4.5
+
+      - name: Install dependencies
+        run: deno install
+
+      - name: Determine target
+        id: target
+        shell: bash
+        run: |
+          case "${{ inputs.platform }}-${{ inputs.arch }}" in
+            linux-amd64)   echo "target=x86_64-unknown-linux-gnu" >> "$GITHUB_OUTPUT" ;;
+            darwin-amd64)  echo "target=x86_64-apple-darwin" >> "$GITHUB_OUTPUT" ;;
+            darwin-arm64)  echo "target=aarch64-apple-darwin" >> "$GITHUB_OUTPUT" ;;
+            windows-amd64) echo "target=x86_64-pc-windows-msvc" >> "$GITHUB_OUTPUT" ;;
+            *) echo "Unsupported platform-arch combination" && exit 1 ;;
+          esac
+
+      # Build binary or diagnostics
+      - name: Build ${{ inputs.component }}
+        if: inputs.component != 'web-app'
+        id: build
+        uses: ./.github/actions/build-component
+        with:
+          component: ${{ inputs.component }}
+          version: ${{ inputs.version }}
+          platform: ${{ inputs.platform }}
+          arch: ${{ inputs.arch }}
+          target: ${{ steps.target.outputs.target }}
+
+      # Build web-app
+      - name: Build web-app
+        if: inputs.component == 'web-app'
+        id: build-web-app
+        uses: ./.github/actions/build-web-app
+        with:
+          version: ${{ inputs.version }}
+          platform: ${{ inputs.platform }}
+          arch: ${{ inputs.arch }}
+          target: ${{ steps.target.outputs.target }}
+
+      # Sign macOS binaries (not web-app, handled separately)
+      - name: Sign macOS ${{ inputs.component }}
+        if: inputs.platform == 'darwin' && inputs.component != 'web-app'
+        uses: ./.github/actions/macos-sign
+        with:
+          binary-path: ${{ steps.build.outputs.binary-path }}
+          macos-sign-p12: ${{ secrets.MACOS_SIGN_P12 }}
+          macos-sign-password: ${{ secrets.MACOS_SIGN_PASSWORD }}
+          macos-sign-identity: ${{ secrets.MACOS_SIGN_IDENTITY }}
+          macos-notary-issuer-id: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+          macos-notary-key-id: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          macos-notary-key: ${{ secrets.MACOS_NOTARY_KEY }}
+
+      # Create archive for binary component
+      - name: Create archive
+        if: inputs.component == 'binary'
+        shell: bash
+        run: |
+          binary_name="${{ steps.build.outputs.binary-name }}"
+          if [ "${{ inputs.platform }}" == "windows" ]; then
+            archive_name="atlas_${{ inputs.version }}_${{ inputs.platform }}_${{ inputs.arch }}.zip"
+            7z a "./dist/${archive_name}" "./dist/${binary_name}" README.md
+          else
+            archive_name="atlas_${{ inputs.version }}_${{ inputs.platform }}_${{ inputs.arch }}.tar.gz"
+            if [ "${{ inputs.platform }}" == "darwin" ]; then
+              tar --format=pax -czf "./dist/${archive_name}" -C ./dist "${binary_name}" -C .. README.md
+            else
+              tar -czf "./dist/${archive_name}" -C ./dist "${binary_name}" -C .. README.md
+            fi
+          fi
+
+          # Generate checksum
+          if [ "${{ inputs.platform }}" == "darwin" ]; then
+            shasum -a 256 "./dist/${archive_name}" > "./dist/${archive_name}.sha256"
+          else
+            sha256sum "./dist/${archive_name}" > "./dist/${archive_name}.sha256"
+          fi
+
+      # Determine output paths for different components
+      - name: Set output path
+        id: output
+        shell: bash
+        run: |
+          if [ "${{ inputs.component }}" == "web-app" ]; then
+            echo "binary-path=${{ steps.build-web-app.outputs.bundle-path || './dist/Atlas Web Client.app' }}" >> "$GITHUB_OUTPUT"
+            echo "binary-name=${{ steps.build-web-app.outputs.bundle-name || 'Atlas Web Client.app' }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "binary-path=${{ steps.build.outputs.binary-path }}" >> "$GITHUB_OUTPUT"
+            echo "binary-name=${{ steps.build.outputs.binary-name }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Upload artifacts based on component type
+      - name: Upload binary artifacts
+        if: inputs.component == 'binary'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.component }}-${{ inputs.platform }}-${{ inputs.arch }}
+          path: |
+            ./dist/${{ steps.output.outputs.binary-name }}
+            ./dist/atlas_*.tar.gz
+            ./dist/atlas_*.zip
+            ./dist/atlas_*.sha256
+          retention-days: ${{ inputs.retention-days }}
+
+      - name: Upload diagnostics artifacts
+        if: inputs.component == 'diagnostics'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.component }}-${{ inputs.platform }}-${{ inputs.arch }}
+          path: ./dist/${{ steps.output.outputs.binary-name }}
+          retention-days: ${{ inputs.retention-days }}
+
+      - name: Upload web-app artifacts
+        if: inputs.component == 'web-app'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.component }}-${{ inputs.platform }}-${{ inputs.arch }}
+          path: |
+            dist/*
+          retention-days: ${{ inputs.retention-days }}
