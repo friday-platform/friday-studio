@@ -29,19 +29,15 @@ try {
   const client = getAtlasClient();
   await client.sendDiagnostics(gzipPath);
 
-  // // Clean up temp file
-  await Deno.remove(gzipPath).catch(() => {}); // Ignore cleanup errors
-
   // Reset to idle after showing success for a moment
   log.info("✓ Diagnostics sent successfully!");
-} catch (err) {
-  // Try to clean up on error too
+} catch (error) {
+  // Reset to idle after showing error for a moment
+  log.error("✗ Failed to send diagnostics", { error });
+} finally {
+  // Clean up temp file
   if (gzipPath) {
     await Deno.remove(gzipPath).catch(() => {});
   }
-
-  // Reset to idle after showing error for a moment
-  log.error("✗ Error: " + (err instanceof Error ? err.message : String(err)));
-} finally {
   Deno.exit();
 }

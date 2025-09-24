@@ -1,10 +1,12 @@
 import { getAtlasClient } from "@atlas/client";
 import { createLogger } from "@atlas/logger";
 import { getAtlasHome } from "@atlas/utils/paths.server";
+import type { WorkspaceEntry } from "@atlas/workspace";
 import { ensureDir, exists, walk } from "@std/fs";
 import { join } from "@std/path";
 import { TarStream, type TarStreamInput } from "@std/tar/tar-stream";
 import { stringify } from "@std/yaml";
+import { z } from "zod/v4";
 import { getVersionInfo } from "../../../src/utils/version.ts";
 import { getAtlasLogsDir } from "./paths.ts";
 import { ReleaseChannel } from "./release-channel.ts";
@@ -54,8 +56,8 @@ export class DiagnosticsCollector {
       if (await exists(logsDir)) {
         await this.copyDirectory(logsDir, join(this.tempDir, "logs"));
       }
-    } catch (err) {
-      log.warn("Failed to collect logs:", err instanceof Error ? err.message : String(err));
+    } catch (error) {
+      log.warn("Failed to collect logs:", { error });
     }
   }
 
@@ -65,8 +67,8 @@ export class DiagnosticsCollector {
       if (await exists(memoryDir)) {
         await this.copyDirectory(memoryDir, join(this.tempDir, "memory"));
       }
-    } catch (err) {
-      log.warn("Failed to collect memory:", err instanceof Error ? err.message : String(err));
+    } catch (error) {
+      log.warn("Failed to collect memory:", { error });
     }
   }
 
@@ -82,8 +84,8 @@ export class DiagnosticsCollector {
         if (await exists(sourcePath)) {
           await Deno.copyFile(sourcePath, destPath);
         }
-      } catch (err) {
-        log.warn(`Failed to collect ${file}:`, err instanceof Error ? err.message : String(err));
+      } catch (error) {
+        log.warn(`Failed to collect ${file}:`, { error });
       }
     }
   }
@@ -98,116 +100,93 @@ export class DiagnosticsCollector {
 
         try {
           // List all workspaces from KV
-          const workspaces = kv.list({ prefix: ["workspaces"] });
+          const workspaces = kv.list<WorkspaceEntry>({ prefix: ["workspaces"] });
 
           for await (const entry of workspaces) {
-            if (
-              entry.value &&
-              typeof entry.value === "object" &&
-              "path" in entry.value &&
-              "name" in entry.value
-            ) {
-              const workspace = entry.value;
+            const workspace = entry.value;
+            try {
+              // Create workspace subdirectory
+              const workspaceDir = join(this.tempDir, "workspaces", workspace.name);
+              await ensureDir(workspaceDir);
 
-              try {
-                // Create workspace subdirectory
-                const workspaceDir = join(this.tempDir, "workspaces", workspace.name);
-                await ensureDir(workspaceDir);
+              // Copy workspace.yml if it exists (skip for system workspaces)
+              let hasYamlFile = false;
+              const isSystemWorkspace = workspace.path.startsWith("system://");
 
-                // Copy workspace.yml if it exists (skip for system workspaces)
-                let hasYamlFile = false;
-                const isSystemWorkspace = workspace.path.startsWith("system://");
+              if (!isSystemWorkspace) {
+                const workspaceYmlPath = join(workspace.path, "workspace.yml");
+                if (await exists(workspaceYmlPath)) {
+                  await Deno.copyFile(workspaceYmlPath, join(workspaceDir, "workspace.yml"));
+                  hasYamlFile = true;
+                }
+              }
 
-                if (!isSystemWorkspace) {
-                  const workspaceYmlPath = join(workspace.path, "workspace.yml");
-                  if (await exists(workspaceYmlPath)) {
-                    await Deno.copyFile(workspaceYmlPath, join(workspaceDir, "workspace.yml"));
-                    hasYamlFile = true;
+              // If no YAML file, try to fetch runtime configuration (skip for system workspaces)
+              if (!hasYamlFile && workspace.id && !isSystemWorkspace) {
+                try {
+                  const client = getAtlasClient({ timeout: 5000 });
+                  const workspaceDetails = await client.getWorkspace(workspace.id);
+
+                  if ("config" in workspaceDetails && workspaceDetails.config) {
+                    // Save runtime config as YAML
+                    const yamlContent = stringify(workspaceDetails.config);
+                    const configPath = join(workspaceDir, "runtime-config.yml");
+                    await Deno.writeTextFile(configPath, yamlContent);
+
+                    // Also save a note explaining this is runtime config
+                    const notePath = join(workspaceDir, "README.txt");
+                    await Deno.writeTextFile(
+                      notePath,
+                      `This workspace configuration was fetched from the runtime.\n` +
+                        `Workspace ID: ${workspace.id}\n` +
+                        `Name: ${workspace.name}\n` +
+                        `Path: ${workspace.path}\n` +
+                        `Type: ${isSystemWorkspace ? "System Workspace" : "User Workspace"}\n` +
+                        `Status: ${workspaceDetails.status || "unknown"}\n`,
+                    );
                   }
+                } catch {
+                  // Silently skip if daemon is not running or workspace not found
+                  continue;
                 }
-
-                // If no YAML file, try to fetch runtime configuration (skip for system workspaces)
-                if (!hasYamlFile && workspace.id && !isSystemWorkspace) {
-                  try {
-                    const client = getAtlasClient({ timeout: 5000 });
-                    const workspaceDetails = await client.getWorkspace(workspace.id);
-
-                    if ("config" in workspaceDetails && workspaceDetails.config) {
-                      // Save runtime config as YAML
-                      const yamlContent = stringify(workspaceDetails.config);
-                      const configPath = join(workspaceDir, "runtime-config.yml");
-                      await Deno.writeTextFile(configPath, yamlContent);
-
-                      // Also save a note explaining this is runtime config
-                      const notePath = join(workspaceDir, "README.txt");
-                      await Deno.writeTextFile(
-                        notePath,
-                        `This workspace configuration was fetched from the runtime.\n` +
-                          `Workspace ID: ${workspace.id}\n` +
-                          `Name: ${workspace.name}\n` +
-                          `Path: ${workspace.path}\n` +
-                          `Type: ${isSystemWorkspace ? "System Workspace" : "User Workspace"}\n` +
-                          `Status: ${workspaceDetails.status || "unknown"}\n`,
-                      );
-                    }
-                  } catch (err) {
-                    // Silently skip if daemon is not running or workspace not found
-                    const errorMessage = err instanceof Error ? err.message : String(err);
-                    if (
-                      !errorMessage.includes("Connection refused") &&
-                      !errorMessage.includes("Failed to connect to Atlas daemon")
-                    ) {
-                      log.warn(
-                        `Failed to fetch runtime config for ${workspace.name}:`,
-                        errorMessage,
-                      );
-                    }
-                  }
-                } else if (isSystemWorkspace && !hasYamlFile) {
-                  // For system workspaces without YAML files, just note their presence
-                  const notePath = join(workspaceDir, "README.txt");
-                  await Deno.writeTextFile(
-                    notePath,
-                    `System workspace (configuration embedded in Atlas binary)\n` +
-                      `Name: ${workspace.name}\n` +
-                      `Path: ${workspace.path}\n` +
-                      `ID: ${workspace.id || "not set"}\n`,
-                  );
-                } else if (!hasYamlFile && !workspace.id) {
-                  // No YAML file and no ID to fetch runtime config
-                  const notePath = join(workspaceDir, "NO_CONFIG.txt");
-                  await Deno.writeTextFile(
-                    notePath,
-                    `This workspace has no workspace.yml file and no workspace ID for fetching runtime config.\n` +
-                      `Name: ${workspace.name}\n` +
-                      `Path: ${workspace.path}\n` +
-                      `Type: ${isSystemWorkspace ? "System Workspace" : "User Workspace"}\n`,
-                  );
-                }
-
-                // Also collect workspace runtime logs if available
-                const workspaceLogsDir = join(getAtlasLogsDir(), "workspaces", workspace.name);
-                if (await exists(workspaceLogsDir)) {
-                  const workspaceLogsDest = join(workspaceDir, "logs");
-                  await this.copyDirectory(workspaceLogsDir, workspaceLogsDest);
-                }
-              } catch (err) {
-                log.warn(
-                  `Failed to collect workspace ${workspace.name}:`,
-                  err instanceof Error ? err.message : String(err),
+              } else if (isSystemWorkspace && !hasYamlFile) {
+                // For system workspaces without YAML files, just note their presence
+                const notePath = join(workspaceDir, "README.txt");
+                await Deno.writeTextFile(
+                  notePath,
+                  `System workspace (configuration embedded in Atlas binary)\n` +
+                    `Name: ${workspace.name}\n` +
+                    `Path: ${workspace.path}\n` +
+                    `ID: ${workspace.id || "not set"}\n`,
+                );
+              } else if (!hasYamlFile && !workspace.id) {
+                // No YAML file and no ID to fetch runtime config
+                const notePath = join(workspaceDir, "NO_CONFIG.txt");
+                await Deno.writeTextFile(
+                  notePath,
+                  `This workspace has no workspace.yml file and no workspace ID for fetching runtime config.\n` +
+                    `Name: ${workspace.name}\n` +
+                    `Path: ${workspace.path}\n` +
+                    `Type: ${isSystemWorkspace ? "System Workspace" : "User Workspace"}\n`,
                 );
               }
+
+              // Also collect workspace runtime logs if available
+              const workspaceLogsDir = join(getAtlasLogsDir(), "workspaces", workspace.name);
+              if (await exists(workspaceLogsDir)) {
+                const workspaceLogsDest = join(workspaceDir, "logs");
+                await this.copyDirectory(workspaceLogsDir, workspaceLogsDest);
+              }
+            } catch (error) {
+              log.warn(`Failed to collect workspace ${workspace.name}:`, { error });
             }
           }
         } finally {
           kv.close();
         }
       }
-    } catch (err) {
-      log.warn(
-        "Failed to collect workspaces from KV:",
-        err instanceof Error ? err.message : String(err),
-      );
+    } catch (error) {
+      log.warn("Failed to collect workspaces from KV:", { error });
     }
   }
 
@@ -238,11 +217,8 @@ export class DiagnosticsCollector {
               `System workspace: ${id}\n` +
                 `This is a built-in system workspace embedded in the Atlas binary.\n`,
             );
-          } catch (err) {
-            log.warn(
-              `Failed to save system workspace ${id}:`,
-              err instanceof Error ? err.message : String(err),
-            );
+          } catch (error) {
+            log.warn(`Failed to save system workspace ${id}:`, { error });
           }
         }
       } catch (_err) {
@@ -258,11 +234,8 @@ export class DiagnosticsCollector {
                 const sourcePath = join(systemWorkspacesPath, entry.name);
                 const destPath = join(systemDir, entry.name);
                 await Deno.copyFile(sourcePath, destPath);
-              } catch (err) {
-                log.warn(
-                  `Failed to copy system workspace ${entry.name}:`,
-                  err instanceof Error ? err.message : String(err),
-                );
+              } catch (error) {
+                log.warn(`Failed to copy system workspace ${entry.name}:`, { error });
               }
             }
           }
@@ -276,11 +249,8 @@ export class DiagnosticsCollector {
           );
         }
       }
-    } catch (err) {
-      log.warn(
-        "Failed to collect system workspaces:",
-        err instanceof Error ? err.message : String(err),
-      );
+    } catch (error) {
+      log.warn("Failed to collect system workspaces:", { error });
     }
   }
 
@@ -296,11 +266,8 @@ export class DiagnosticsCollector {
       } else {
         try {
           await Deno.copyFile(sourcePath, destPath);
-        } catch (err) {
-          log.warn(
-            `Failed to copy ${entry.name}:`,
-            err instanceof Error ? err.message : String(err),
-          );
+        } catch (error) {
+          log.warn(`Failed to copy ${entry.name}:`, { error });
         }
       }
     }
@@ -315,11 +282,8 @@ export class DiagnosticsCollector {
       systemInfo.arch = Deno.build.arch;
       systemInfo.osVersion = Deno.osRelease();
       systemInfo.hostname = Deno.hostname();
-    } catch (err) {
-      log.warn(
-        "Failed to collect basic OS info:",
-        err instanceof Error ? err.message : String(err),
-      );
+    } catch (error) {
+      log.warn("Failed to collect basic OS info:", { error });
     }
 
     // OS Language
@@ -450,7 +414,8 @@ export class DiagnosticsCollector {
         });
         const { stdout } = await command.output();
         const output = new TextDecoder().decode(stdout);
-        const culture = JSON.parse(output);
+        const CultureSchema = z.object({ Name: z.string(), DisplayName: z.string() });
+        const culture = CultureSchema.parse(JSON.parse(output));
 
         // Also get UI language
         const uiCommand = new Deno.Command("powershell", {
@@ -479,7 +444,7 @@ export class DiagnosticsCollector {
         const { stdout } = await command.output();
         const output = new TextDecoder().decode(stdout);
         const resolutionMatch = output.match(/Resolution: (\d+ x \d+)/);
-        return resolutionMatch && resolutionMatch[1] ? resolutionMatch[1] : "unknown";
+        return resolutionMatch?.[1] ? resolutionMatch[1] : "unknown";
       } catch {
         return "unknown";
       }
@@ -491,7 +456,7 @@ export class DiagnosticsCollector {
         const { stdout } = await command.output();
         const output = new TextDecoder().decode(stdout);
         const resolutionMatch = output.match(/(\d+x\d+)\s+\d+\.\d+\*/);
-        if (resolutionMatch && resolutionMatch[1]) {
+        if (resolutionMatch?.[1]) {
           return resolutionMatch[1].replace("x", " x ");
         }
       } catch {
@@ -633,7 +598,7 @@ export class DiagnosticsCollector {
           url: endpoint.url,
           success: true,
           statusCode: response.status,
-          responseTime: Math.round(endTime - startTime) + "ms",
+          responseTime: `${Math.round(endTime - startTime)}ms`,
         });
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error);
@@ -864,7 +829,7 @@ export class DiagnosticsCollector {
           const ext = filename.lastIndexOf(".");
           const name = ext > 0 ? filename.substring(0, ext) : filename;
           const extension = ext > 0 ? filename.substring(ext) : "";
-          const truncatedName = name.substring(0, 85 - extension.length) + "~" + extension;
+          const truncatedName = `${name.substring(0, 85 - extension.length)}~${extension}`;
           parts[parts.length - 1] = truncatedName;
           relativePath = parts.join("/");
         } else {
@@ -873,7 +838,7 @@ export class DiagnosticsCollector {
           for (let i = 0; i < parts.length - 1; i++) {
             const part = parts[i];
             if (part && part.length > maxDirLength) {
-              parts[i] = part.substring(0, maxDirLength - 1) + "~";
+              parts[i] = `${part.substring(0, maxDirLength - 1)}~`;
             }
           }
           relativePath = parts.join("/");
@@ -884,7 +849,7 @@ export class DiagnosticsCollector {
         // Add directory entry with forward slash
         entries.push({
           type: "directory",
-          path: relativePath.endsWith("/") ? relativePath : relativePath + "/",
+          path: relativePath.endsWith("/") ? relativePath : `${relativePath}/`,
         });
       } else if (entry.isFile) {
         try {
@@ -903,11 +868,8 @@ export class DiagnosticsCollector {
               },
             }),
           });
-        } catch (err) {
-          log.warn(
-            `Failed to add ${relativePath} to tar:`,
-            err instanceof Error ? err.message : String(err),
-          );
+        } catch (error) {
+          log.warn(`Failed to add ${relativePath} to tar:`, { error });
         }
       }
     }

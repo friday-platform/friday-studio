@@ -10,14 +10,14 @@ export const WorkspaceMetadataSchema = z.object({
   atlasVersion: z.string().optional(),
   // Error tracking fields
   lastError: z.string().optional(),
-  lastErrorAt: z.string().datetime().optional(),
+  lastErrorAt: z.iso.datetime().optional(),
   failureCount: z.number().optional(),
   // Session tracking fields
   lastFinishedSession: z
     .object({
       id: z.string(),
       status: z.enum(["completed", "failed"]),
-      finishedAt: z.string().datetime(),
+      finishedAt: z.iso.datetime(),
       summary: z.string().optional(),
     })
     .optional(),

@@ -66,6 +66,7 @@
     "npm:hono@^4.9.8": "4.9.8",
     "npm:ink@^6.3.0": "6.3.1_@types+react@19.1.13_react@19.1.1",
     "npm:js-levenshtein@^1.1.6": "1.1.6",
+    "npm:knip@5.64.0": "5.64.0_@types+node@24.5.2_typescript@5.9.2_zod@3.25.76",
     "npm:knip@^5.63.1": "5.64.0_@types+node@24.5.2_typescript@5.9.2_zod@3.25.76",
     "npm:lint-staged@^16.1.2": "16.2.0",
     "npm:lint-staged@^16.1.6": "16.2.0",
@@ -3635,7 +3636,8 @@
             "npm:@jsr/std__fs@^1.0.19",
             "npm:@jsr/std__path@^1.1.2",
             "npm:@jsr/std__tar@~0.1.8",
-            "npm:@jsr/std__yaml@^1.0.9"
+            "npm:@jsr/std__yaml@^1.0.9",
+            "npm:zod@^3.25.74"
           ]
         }
       },

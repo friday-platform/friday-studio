@@ -10,6 +10,7 @@
     "@std/fs": "npm:@jsr/std__fs@^1.0.19",
     "@std/path": "npm:@jsr/std__path@^1.1.2",
     "@std/tar": "npm:@jsr/std__tar@^0.1.8",
-    "@std/yaml": "npm:@jsr/std__yaml@^1.0.9"
+    "@std/yaml": "npm:@jsr/std__yaml@^1.0.9",
+    "zod": "^3.25.74"
   }
 }
