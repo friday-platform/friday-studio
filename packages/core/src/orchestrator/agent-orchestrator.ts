@@ -25,11 +25,8 @@ import { Client } from "@modelcontextprotocol/sdk/client";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
+import { retry } from "@std/async";
 import type { ToolCall } from "../../../../src/core/services/hallucination-detector.ts";
-import {
-  isTransientError,
-  withExponentialBackoff,
-} from "../../../../src/utils/exponential-backoff.ts";
 import { createAgentContextBuilder } from "../agent-context/index.ts";
 import type { WrappedAgentResult } from "../agent-conversion/from-llm.ts";
 import type { AgentToolParams } from "../agent-server/types.ts";
@@ -804,18 +801,22 @@ export class AgentOrchestrator implements IAgentOrchestrator {
         };
       }
 
-      const result = await withExponentialBackoff(() => agent.execute(finalPrompt, agentContext), {
-        maxRetries: 10,
-        isRetryable: isTransientError,
-        onRetry: (attempt, delay, error) => {
-          logger.warn("Retrying wrapped agent execution due to transient LLM error", {
-            agentId,
-            attempt,
-            delay,
-            error: error instanceof Error ? error.message : String(error),
-          });
-        },
-      });
+      let result: WrappedAgentResult;
+      try {
+        result = await retry(() => agent.execute(finalPrompt, agentContext), {
+          maxAttempts: 11, // 1 initial + 10 retries
+          minTimeout: 1000,
+          maxTimeout: 30000,
+          multiplier: 2,
+          jitter: 0,
+        });
+      } catch (error) {
+        // Unwrap RetryError to get the original error
+        if (error && typeof error === "object" && "cause" in error) {
+          throw error.cause;
+        }
+        throw error;
+      }
 
       // Safely persist episodic memory for wrapped-agent execution
       try {

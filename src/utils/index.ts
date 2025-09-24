@@ -57,6 +57,3 @@ type ObjectEntry<T> = {
  * while objectEntries results in a union of 2-tuples.
  */
 export const objectEntries = Object.entries as <T>(o: T) => Array<ObjectEntry<T>>;
-
-// Export exponential backoff utilities
-export * from "./exponential-backoff.ts";

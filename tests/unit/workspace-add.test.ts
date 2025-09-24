@@ -1,14 +1,12 @@
-import { AtlasClient } from "@atlas/client";
-import { WorkspaceManager } from "@atlas/core";
+import { AtlasClient, type WorkspaceInfo, type WorkspaceBatchAddResponse } from "@atlas/client";
 import { assertEquals, assertExists, assertRejects } from "@std/assert";
-import { join } from "@std/path";
 
 // Mock server for testing daemon endpoints
 class MockDaemonServer {
   private server: Deno.HttpServer | null = null;
   private port = 0;
-  private workspaces: Map<string, unknown> = new Map();
-  private workspacesByPath: Map<string, unknown> = new Map();
+  private workspaces: Map<string, WorkspaceInfo> = new Map();
+  private workspacesByPath: Map<string, WorkspaceInfo> = new Map();
 
   async start(): Promise<number> {
     this.port = 9000 + Math.floor(Math.random() * 1000);
@@ -19,7 +17,7 @@ class MockDaemonServer {
 
       // Handle /api/workspaces/add endpoint
       if (method === "POST" && url.pathname === "/api/workspaces/add") {
-        const body = await req.json();
+        const body = (await req.json()) as { path?: string; name?: string; description?: string };
         const { path, name, description } = body;
 
         // Validate path
@@ -40,7 +38,9 @@ class MockDaemonServer {
 
         // Check if name conflicts
         if (name) {
-          const existingByName = Array.from(this.workspaces.values()).find((w) => w.name === name);
+          const existingByName = Array.from(this.workspaces.values()).find(
+            (w: WorkspaceInfo) => w.name === name,
+          );
           if (existingByName) {
             return new Response(
               JSON.stringify({ error: `Workspace with name '${name}' already exists` }),
@@ -51,9 +51,9 @@ class MockDaemonServer {
 
         // Create workspace entry
         const id = `ws_${Math.random().toString(36).substr(2, 9)}`;
-        const workspace = {
+        const workspace: WorkspaceInfo = {
           id,
-          name: name || path.split("/").pop(),
+          name: name || path.split("/").pop()!,
           description,
           status: "inactive",
           path,
@@ -72,7 +72,7 @@ class MockDaemonServer {
 
       // Handle /api/workspaces/add-batch endpoint
       if (method === "POST" && url.pathname === "/api/workspaces/add-batch") {
-        const body = await req.json();
+        const body = (await req.json()) as { paths?: string[] };
         const { paths } = body;
 
         if (!paths || !Array.isArray(paths) || paths.length === 0) {
@@ -82,7 +82,7 @@ class MockDaemonServer {
           });
         }
 
-        const results = { added: [], failed: [] };
+        const results: WorkspaceBatchAddResponse = { added: [], failed: [] };
 
         for (const path of paths) {
           // Check if already exists
@@ -93,9 +93,9 @@ class MockDaemonServer {
 
           // Create workspace
           const id = `ws_${Math.random().toString(36).substr(2, 9)}`;
-          const workspace = {
+          const workspace: WorkspaceInfo = {
             id,
-            name: path.split("/").pop(),
+            name: path.split("/").pop()!,
             status: "inactive",
             path,
             createdAt: new Date().toISOString(),
@@ -136,11 +136,11 @@ class MockDaemonServer {
   }
 
   // Helper method to add a workspace directly (for testing conflicts)
-  addWorkspace(path: string, name?: string) {
+  addWorkspace(path: string, name?: string): WorkspaceInfo {
     const id = `ws_${Math.random().toString(36).substr(2, 9)}`;
-    const workspace = {
+    const workspace: WorkspaceInfo = {
       id,
-      name: name || path.split("/").pop(),
+      name: name || path.split("/").pop()!,
       status: "inactive",
       path,
       createdAt: new Date().toISOString(),
@@ -252,9 +252,9 @@ Deno.test({
 
       assertEquals(result.added.length, 3);
       assertEquals(result.failed.length, 0);
-      assertEquals(result.added[0].path, "/tmp/workspace1");
-      assertEquals(result.added[1].path, "/tmp/workspace2");
-      assertEquals(result.added[2].path, "/tmp/workspace3");
+      assertEquals(result.added[0]?.path, "/tmp/workspace1");
+      assertEquals(result.added[1]?.path, "/tmp/workspace2");
+      assertEquals(result.added[2]?.path, "/tmp/workspace3");
     } finally {
       await mockServer.stop();
     }
@@ -281,10 +281,10 @@ Deno.test({
 
       assertEquals(result.added.length, 2);
       assertEquals(result.failed.length, 1);
-      assertEquals(result.added[0].path, "/tmp/new1");
-      assertEquals(result.added[1].path, "/tmp/new2");
-      assertEquals(result.failed[0].path, "/tmp/existing");
-      assertEquals(result.failed[0].error, "Workspace already registered at path: /tmp/existing");
+      assertEquals(result.added[0]?.path, "/tmp/new1");
+      assertEquals(result.added[1]?.path, "/tmp/new2");
+      assertEquals(result.failed[0]?.path, "/tmp/existing");
+      assertEquals(result.failed[0]?.error, "Workspace already registered at path: /tmp/existing");
     } finally {
       await mockServer.stop();
     }
