@@ -307,7 +307,7 @@ export class WebMCPDiscovery {
     }
 
     // Add domain-specific capability based on request
-    if (request.domain && !capabilities.some((cap) => cap.includes(request.domain!))) {
+    if (request.domain && !capabilities.some((cap) => cap.includes(request.domain))) {
       capabilities.push(request.domain);
     }
 
@@ -348,7 +348,7 @@ export class WebMCPDiscovery {
         if (
           request.domain &&
           server.capabilities.some(
-            (cap) => cap.includes(request.domain!) || request.domain!.includes(cap),
+            (cap) => cap.includes(request.domain) || request.domain.includes(cap),
           )
         ) {
           confidence += 0.2;

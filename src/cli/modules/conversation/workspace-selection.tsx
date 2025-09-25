@@ -1,4 +1,4 @@
-import type { WorkspaceEntry, WorkspaceStatus } from "@atlas/core";
+import type { WorkspaceEntry } from "@atlas/core";
 import { Box, Text, useInput } from "ink";
 import { useEffect, useState } from "react";
 import { Select } from "../../components/select/index.ts";
@@ -27,7 +27,7 @@ export const WorkspaceSelection = ({ onEscape, onWorkspaceSelect }: WorkspaceSel
           name: w.name,
           path: w.path,
           configPath: `${w.path}/workspace.yml`, // Standard workspace config path
-          status: w.status as WorkspaceStatus,
+          status: w.status,
           createdAt: w.createdAt,
           lastSeen: w.lastSeen,
           metadata: { description: w.description },

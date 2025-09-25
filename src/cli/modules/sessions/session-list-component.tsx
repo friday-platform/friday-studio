@@ -45,26 +45,6 @@ function formatDuration(start: string, end?: string): string {
   return `${seconds}s`;
 }
 
-function calculateDuration(start: string, end?: string): number {
-  if (!start) return 0;
-  const startTime = new Date(start).getTime();
-  const endTime = end ? new Date(end).getTime() : Date.now();
-  return endTime - startTime;
-}
-
-export function formatSessionForJson(session: Session) {
-  return {
-    id: session.id,
-    workspace: session.workspaceName || "Unknown",
-    signal: session.signal || "manual",
-    status: session.status,
-    startedAt: session.startedAt,
-    completedAt: session.completedAt,
-    duration: session.startedAt ? calculateDuration(session.startedAt, session.completedAt) : 0,
-    agents: session.agents,
-  };
-}
-
 // Component that renders the session list
 export function SessionListComponent({
   sessions,

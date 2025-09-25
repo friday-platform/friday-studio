@@ -39,12 +39,12 @@ listLibrary.get(
       // Parse query parameters manually for arrays
       const query: LibrarySearchQuery = {
         query: c.req.query("q") || c.req.query("query"),
-        type: c.req.query("type") ? c.req.query("type")!.split(",") : undefined,
-        tags: c.req.query("tags") ? c.req.query("tags")!.split(",") : undefined,
+        type: c.req.query("type") ? c.req.query("type").split(",") : undefined,
+        tags: c.req.query("tags") ? c.req.query("tags").split(",") : undefined,
         since: c.req.query("since"),
         until: c.req.query("until"),
-        limit: c.req.query("limit") ? parseInt(c.req.query("limit")!) : 50,
-        offset: c.req.query("offset") ? parseInt(c.req.query("offset")!) : 0,
+        limit: c.req.query("limit") ? parseInt(c.req.query("limit")) : 50,
+        offset: c.req.query("offset") ? parseInt(c.req.query("offset")) : 0,
       };
 
       const result = await libraryStorage.search(query);

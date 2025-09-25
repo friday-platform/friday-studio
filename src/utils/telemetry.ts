@@ -9,7 +9,6 @@ import type {
   Tracer,
 } from "@opentelemetry/api";
 import { z } from "zod/v4";
-import { objectEntries } from "./index.ts";
 
 // Zod schemas for runtime validation
 
@@ -364,9 +363,9 @@ export class AtlasTelemetry {
     // Create span with appropriate context
     const spanCreator = contextToUse
       ? (callback: (span: Span) => Promise<T>) =>
-          AtlasTelemetry.tracer!.startActiveSpan(name, { kind }, contextToUse!, callback)
+          AtlasTelemetry.tracer.startActiveSpan(name, { kind }, contextToUse, callback)
       : (callback: (span: Span) => Promise<T>) =>
-          AtlasTelemetry.tracer!.startActiveSpan(name, { kind }, callback);
+          AtlasTelemetry.tracer.startActiveSpan(name, { kind }, callback);
 
     return await spanCreator(async (span: Span) => {
       return await AtlasTelemetry.executeSpanLogic(
@@ -676,7 +675,7 @@ export class AtlasTelemetry {
       span?.setAttribute("atlas.component", validatedContext.component);
 
       // Set all context attributes directly using static mapping (single loop)
-      objectEntries(WORKER_ATTRIBUTE_MAPPING).forEach(([contextKey, attributeKey]) => {
+      Object.entries(WORKER_ATTRIBUTE_MAPPING).forEach(([contextKey, attributeKey]) => {
         const value = validatedContext[contextKey];
         if (value !== undefined && typeof value === "string") {
           span?.setAttribute(attributeKey, value);

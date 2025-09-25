@@ -148,8 +148,8 @@ Key Concepts:
 
   library: {
     overview: `
-The library system stores reusable content, templates, and generated artifacts. It 
-provides versioned storage for prompts, configurations, and any content generated 
+The library system stores reusable content, templates, and generated artifacts. It
+provides versioned storage for prompts, configurations, and any content generated
 by agents during execution.`,
     concepts: `
 Key Concepts:
@@ -176,7 +176,7 @@ Note: For workspace initialization templates, use 'atlas workspace init'`,
 
   logs: {
     overview: `
-The logging system provides detailed insights into workspace, session, and agent 
+The logging system provides detailed insights into workspace, session, and agent
 execution. Logs are structured, searchable, and organized by workspace and session.`,
     concepts: `
 Key Concepts:
@@ -317,7 +317,7 @@ export function formatResourceHelp(resource: string): string {
   sections.push(help.overview.trim());
 
   if (help.concepts) {
-    sections.push("\n" + help.concepts.trim());
+    sections.push(`\n${help.concepts.trim()}`);
   }
 
   if (help.commonTasks && help.commonTasks.length > 0) {

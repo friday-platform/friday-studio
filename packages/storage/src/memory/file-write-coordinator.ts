@@ -57,7 +57,7 @@ class FileWriteCoordinator {
     if (!this.fileMutexes.has(filePath)) {
       this.fileMutexes.set(filePath, new Mutex());
     }
-    return this.fileMutexes.get(filePath)!;
+    return this.fileMutexes.get(filePath);
   }
 
   /**
@@ -83,7 +83,7 @@ class FileWriteCoordinator {
       this.writeQueue.set(filePath, []);
     }
 
-    this.writeQueue.get(filePath)!.push({ filePath, writeOperation });
+    this.writeQueue.get(filePath).push({ filePath, writeOperation });
 
     // Process the queue if not already processing
     if (!this.isProcessing.get(filePath)) {
@@ -104,7 +104,7 @@ class FileWriteCoordinator {
     try {
       const queue = this.writeQueue.get(filePath) || [];
       while (queue.length > 0) {
-        const task = queue.shift()!;
+        const task = queue.shift();
         await this.executeWrite(task.filePath, task.writeOperation);
       }
     } finally {

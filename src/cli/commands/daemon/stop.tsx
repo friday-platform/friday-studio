@@ -1,3 +1,4 @@
+import type { DaemonStatus } from "@atlas/client";
 import { getLocalDaemonClient } from "../../utils/daemon-status.ts";
 import { errorOutput, infoOutput, successOutput } from "../../utils/output.ts";
 import type { YargsInstance } from "../../utils/yargs.ts";
@@ -35,7 +36,7 @@ export const handler = async (argv: StopArgs): Promise<void> => {
     const client = getLocalDaemonClient(port, 5000);
 
     // First check if daemon is running
-    let status;
+    let status: DaemonStatus;
     try {
       status = await client.getDaemonStatus();
     } catch {

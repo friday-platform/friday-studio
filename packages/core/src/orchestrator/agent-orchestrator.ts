@@ -24,8 +24,8 @@ import { CoALAMemoryManager, CoALAMemoryType, type IMemoryScope } from "@atlas/m
 import { Client } from "@modelcontextprotocol/sdk/client";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js";
-import { z } from "zod";
 import { retry } from "@std/async";
+import { z } from "zod";
 import type { ToolCall } from "../../../../src/core/services/hallucination-detector.ts";
 import { createAgentContextBuilder } from "../agent-context/index.ts";
 import type { WrappedAgentResult } from "../agent-conversion/from-llm.ts";

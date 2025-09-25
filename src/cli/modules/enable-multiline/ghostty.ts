@@ -141,24 +141,3 @@ export async function setupGhostty(): Promise<SetupResult> {
     };
   }
 }
-
-/**
- * Restore Ghostty from backup
- */
-async function restoreGhostty(backupPath: string): Promise<SetupResult> {
-  if (!(await fileExists(backupPath))) {
-    return { success: false, error: "Backup file no longer exists" };
-  }
-
-  try {
-    const { path: configPath } = await findGhosttyConfig();
-    await Deno.copyFile(backupPath, configPath);
-
-    return { success: true };
-  } catch (error) {
-    return {
-      success: false,
-      error: `Failed to restore: ${error instanceof Error ? error.message : String(error)}`,
-    };
-  }
-}

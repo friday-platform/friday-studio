@@ -422,7 +422,7 @@ export class MCPManager {
         // Debug log the first tool structure
         const toolNames = Object.keys(tools);
         if (toolNames.length > 0) {
-          const firstToolName = toolNames[0]!;
+          const firstToolName = toolNames[0];
           const firstTool = tools[firstToolName];
           logger.debug(`MCP tool structure for ${serverId}`, {
             operation: "mcp_tool_structure_debug",
@@ -499,7 +499,7 @@ export class MCPManager {
       }
 
       // Apply denied list
-      if (filterConfig?.deny && filterConfig.deny.includes(toolName)) {
+      if (filterConfig?.deny?.includes(toolName)) {
         continue;
       }
 
@@ -541,7 +541,7 @@ export class MCPManager {
     if (auth.type === "bearer" && auth.token_env) {
       const token = Deno.env.get(auth.token_env);
       if (token) {
-        headers["Authorization"] = `Bearer ${token}`;
+        headers.Authorization = `Bearer ${token}`;
         logger.debug("Added bearer token authentication", {
           operation: "mcp_auth_headers",
           authType: "bearer",

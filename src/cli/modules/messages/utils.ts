@@ -80,19 +80,3 @@ export function formatMessage(part: SessionUIMessagePart): OutputEntry | undefin
     };
   }
 }
-
-export function getNormalizedToolName(toolName: string) {
-  if (toolName === "atlas_todo_read") {
-    return "Reading Todos";
-  }
-
-  if (toolName === "atlas_workspace_list") {
-    return "Reading Workspaces";
-  }
-
-  if (toolName === "atlas_workspace_create") {
-    return "Creating Workspace";
-  }
-
-  return toolName;
-}

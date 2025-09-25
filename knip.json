@@ -52,9 +52,7 @@
     "tools/atlas-installer": {
       "entry": ["src/preload.ts!", "src/renderer.ts!"],
       "project": ["src/**/*.{ts,tsx,js,jsx}!"],
-      "ignoreExportsUsedInFile": { "interface": true, "type": true },
-      "ignore": ["src/preload.ts", "src/renderer.ts"],
-      "ignoreExports": ["ExecError"]
+      "ignore": ["src/preload.ts", "src/renderer.ts"]
     }
   },
   "ignore": [

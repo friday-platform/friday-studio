@@ -49,7 +49,7 @@ export class VectorSearchLocalStorageAdapter implements IVectorSearchStorageAdap
       if (!this.embeddingsByType.has(memoryType)) {
         this.embeddingsByType.set(memoryType, new Set());
       }
-      this.embeddingsByType.get(memoryType)!.add(embedding.id);
+      this.embeddingsByType.get(memoryType).add(embedding.id);
     }
 
     await this.saveToStorage();
@@ -164,13 +164,13 @@ export class VectorSearchLocalStorageAdapter implements IVectorSearchStorageAdap
 
     // Filter by memory types
     if (query.memoryTypes && query.memoryTypes.length > 0) {
-      candidates = candidates.filter((e) => query.memoryTypes!.includes(e.metadata.memoryType));
+      candidates = candidates.filter((e) => query.memoryTypes.includes(e.metadata.memoryType));
     }
 
     // Filter by tags
     if (query.tags && query.tags.length > 0) {
       candidates = candidates.filter((e) =>
-        query.tags!.some((tag) => e.metadata.tags.includes(tag)),
+        query.tags.some((tag) => e.metadata.tags.includes(tag)),
       );
     }
 
@@ -192,9 +192,9 @@ export class VectorSearchLocalStorageAdapter implements IVectorSearchStorageAdap
     let normB = 0;
 
     for (let i = 0; i < a.length; i++) {
-      dotProduct += a[i]! * b[i]!;
-      normA += a[i]! * a[i]!;
-      normB += b[i]! * b[i]!;
+      dotProduct += a[i] * b[i];
+      normA += a[i] * a[i];
+      normB += b[i] * b[i];
     }
 
     normA = Math.sqrt(normA);
@@ -227,7 +227,7 @@ export class VectorSearchLocalStorageAdapter implements IVectorSearchStorageAdap
           if (!this.embeddingsByType.has(memoryType)) {
             this.embeddingsByType.set(memoryType, new Set());
           }
-          this.embeddingsByType.get(memoryType)!.add(embedding.id);
+          this.embeddingsByType.get(memoryType).add(embedding.id);
         }
       }
     } catch (error) {
@@ -260,7 +260,7 @@ export class VectorSearchLocalStorageAdapter implements IVectorSearchStorageAdap
           if (!this.embeddingsByType.has(memoryType)) {
             this.embeddingsByType.set(memoryType, new Set());
           }
-          this.embeddingsByType.get(memoryType)!.add(embedding.id);
+          this.embeddingsByType.get(memoryType).add(embedding.id);
         }
       }
     } catch (error) {

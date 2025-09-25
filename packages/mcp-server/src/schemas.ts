@@ -5,7 +5,7 @@ export const JobInfoSchema = z.object({ name: z.string(), description: z.string(
 export type JobInfo = z.infer<typeof JobInfoSchema>;
 
 // Library schemas
-export const LibraryItemSchema = z.object({
+const LibraryItemSchema = z.object({
   id: z.string(),
   source: z.enum(["agent", "job", "user", "system"]),
   name: z.string(),

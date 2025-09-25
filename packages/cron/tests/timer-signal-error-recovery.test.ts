@@ -36,11 +36,8 @@ Deno.test("Timer Signal - Error State Recovery", async (t) => {
   await t.step("should handle callback errors gracefully without stopping timer", async () => {
     await setup();
 
-    let callbackErrorCount = 0;
-
     // Set callback that always throws
     cronManager.setWakeupCallback(() => {
-      callbackErrorCount++;
       throw new Error("Simulated callback failure");
     });
 
@@ -49,7 +46,7 @@ Deno.test("Timer Signal - Error State Recovery", async (t) => {
     // Timer should be registered and active despite callback errors
     const timer = cronManager.getTimer(validConfig.workspaceId, validConfig.signalId);
     assertEquals(timer !== undefined, true, "Timer should be registered");
-    assertEquals(timer!.isActive, true, "Timer should remain active despite callback errors");
+    assertEquals(timer.isActive, true, "Timer should remain active despite callback errors");
 
     // CronManager should remain running
     assertEquals(cronManager.isActive(), true, "CronManager should remain active");
@@ -71,7 +68,7 @@ Deno.test("Timer Signal - Error State Recovery", async (t) => {
 
     // Timer should continue to have scheduled executions despite callback errors
     assertEquals(timer !== undefined, true, "Timer should exist");
-    assertEquals(timer!.isActive, true, "Timer should remain active");
+    assertEquals(timer.isActive, true, "Timer should remain active");
     assertEquals(
       initialNextExecution !== undefined,
       true,
@@ -106,7 +103,7 @@ Deno.test("Timer Signal - Error State Recovery", async (t) => {
     // Timer should be registered and active
     const timer = cronManager.getTimer(validConfig.workspaceId, validConfig.signalId);
     assertEquals(timer !== undefined, true, "Timer should be registered");
-    assertEquals(timer!.isActive, true, "Timer should be active despite callback failures");
+    assertEquals(timer.isActive, true, "Timer should be active despite callback failures");
 
     // CronManager continues operating despite callback errors
     assertEquals(cronManager.isActive(), true, "CronManager should remain active");
@@ -196,7 +193,7 @@ Deno.test("Timer Signal - Error State Recovery", async (t) => {
       // Verify timer is registered
       const timer1 = cronManager1.getTimer(validConfig.workspaceId, validConfig.signalId);
       assertEquals(timer1 !== undefined, true, "Timer should be registered");
-      assertEquals(timer1!.isActive, true, "Timer should be active");
+      assertEquals(timer1.isActive, true, "Timer should be active");
 
       // Complete shutdown (as would happen in real Atlas shutdown)
       await cronManager1.shutdown();
@@ -211,9 +208,9 @@ Deno.test("Timer Signal - Error State Recovery", async (t) => {
       // Timer should be restored from storage
       const timer2 = cronManager2.getTimer(validConfig.workspaceId, validConfig.signalId);
       assertEquals(timer2 !== undefined, true, "Timer should be restored after restart");
-      assertEquals(timer2!.isActive, true, "Restored timer should be active");
+      assertEquals(timer2.isActive, true, "Restored timer should be active");
       assertEquals(
-        timer2!.schedule,
+        timer2.schedule,
         validConfig.schedule,
         "Restored timer should have correct schedule",
       );
@@ -241,10 +238,10 @@ Deno.test("Timer Signal - Error State Recovery", async (t) => {
     const stats = cronManager.getStats();
 
     assertEquals(timer !== undefined, true, "Should have timer info");
-    assertEquals(timer!.workspaceId, validConfig.workspaceId, "Should have correct workspace ID");
-    assertEquals(timer!.signalId, validConfig.signalId, "Should have correct signal ID");
-    assertEquals(timer!.schedule, validConfig.schedule, "Should have correct schedule");
-    assertEquals(timer!.isActive, true, "Should be active");
+    assertEquals(timer.workspaceId, validConfig.workspaceId, "Should have correct workspace ID");
+    assertEquals(timer.signalId, validConfig.signalId, "Should have correct signal ID");
+    assertEquals(timer.schedule, validConfig.schedule, "Should have correct schedule");
+    assertEquals(timer.isActive, true, "Should be active");
 
     assertEquals(stats.totalTimers, 1, "Stats should show one timer");
     assertEquals(stats.activeTimers, 1, "Stats should show one active timer");

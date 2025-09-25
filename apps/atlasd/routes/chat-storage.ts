@@ -7,7 +7,7 @@ import { daemonFactory } from "../src/factory.ts";
 /**
  * TODO: Use z.array(UIMessageSchema) once AI SDK exports it.
  */
-export const TEMP_UI_MESSAGE_SCHEMA = z.unknown();
+const TEMP_UI_MESSAGE_SCHEMA = z.unknown();
 
 /**
  * Chat storage API routes for Atlas daemon (RPC version).

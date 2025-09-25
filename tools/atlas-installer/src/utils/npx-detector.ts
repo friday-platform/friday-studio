@@ -1,10 +1,10 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { isWindows, isMac } from "./platform";
 import type { PlatformBinaryName } from "../types";
-import { createLogger } from "./logger";
 import { getErrorMessage } from "./errors";
+import { createLogger } from "./logger";
+import { isMac, isWindows } from "./platform";
 
 /**
  * NPX Detection Utility

@@ -13,14 +13,6 @@ export interface PromptContext {
 }
 
 /**
- * Standard error response format for MCP tools
- */
-function createErrorResponse(error: unknown): { content: Array<{ type: "text"; text: string }> } {
-  const errorMessage = error instanceof Error ? error.message : String(error);
-  return { content: [{ type: "text", text: JSON.stringify({ error: errorMessage }, null, 2) }] };
-}
-
-/**
  * Standard success response format for MCP tools
  */
 export function createSuccessResponse(data: string): {

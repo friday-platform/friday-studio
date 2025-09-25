@@ -153,7 +153,7 @@ export class DenoKVStorage implements KVStorage {
     this.ensureReady();
 
     try {
-      const result = await this.kv!.get<T>(key);
+      const result = await this.kv.get<T>(key);
       return result.value;
     } catch (error) {
       throw new KVStorageError(
@@ -170,7 +170,7 @@ export class DenoKVStorage implements KVStorage {
     this.ensureReady();
 
     try {
-      await this.kv!.set(key, value);
+      await this.kv.set(key, value);
     } catch (error) {
       throw new KVStorageError(
         `Failed to set key [${key.join(", ")}]: ${
@@ -186,7 +186,7 @@ export class DenoKVStorage implements KVStorage {
     this.ensureReady();
 
     try {
-      await this.kv!.delete(key);
+      await this.kv.delete(key);
     } catch (error) {
       throw new KVStorageError(
         `Failed to delete key [${key.join(", ")}]: ${
@@ -202,7 +202,7 @@ export class DenoKVStorage implements KVStorage {
     this.ensureReady();
 
     try {
-      const iter = this.kv!.list<T>({ prefix });
+      const iter = this.kv.list<T>({ prefix });
 
       for await (const entry of iter) {
         yield {
@@ -227,7 +227,7 @@ export class DenoKVStorage implements KVStorage {
 
     try {
       // Deno KV watch expects an array of key arrays to watch
-      const watcher = this.kv!.watch([prefix]);
+      const watcher = this.kv.watch([prefix]);
 
       for await (const entries of watcher) {
         const events: WatchEvent<T>[] = [];
@@ -260,7 +260,7 @@ export class DenoKVStorage implements KVStorage {
   atomic(): AtomicOperation {
     this.ensureReady();
 
-    return new DenoKVAtomicOperation(this.kv!.atomic());
+    return new DenoKVAtomicOperation(this.kv.atomic());
   }
 
   async health(): Promise<boolean> {

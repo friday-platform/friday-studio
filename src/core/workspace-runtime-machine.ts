@@ -20,7 +20,7 @@ import {
   type SessionMemoryHooks,
   WorkspaceMemoryManager,
 } from "@atlas/memory";
-import { type ISignalProvider, ProviderRegistry, ProviderType } from "@atlas/signals";
+import { ProviderRegistry, ProviderType } from "@atlas/signals";
 import { FilesystemConfigAdapter } from "@atlas/storage";
 import { getAtlasHome } from "@atlas/utils/paths.server";
 import { load } from "@std/dotenv";
@@ -235,7 +235,7 @@ const workspaceRuntimeMachineSetup = setup({
       );
 
       // Initialize the orchestrator
-      await agentOrchestrator.initialize();
+      agentOrchestrator.initialize();
 
       logger.info("Agent orchestrator initialized", { workspaceId: context.workspace.id });
 
@@ -289,7 +289,7 @@ const workspaceRuntimeMachineSetup = setup({
       const initDuration = Date.now() - startTime;
       logger.info("Workspace supervisor actor initialized", {
         workspaceId: context.workspace.id,
-        supervisorId: "supervisor-" + context.workspace.id,
+        supervisorId: `supervisor-${context.workspace.id}`,
         agentsCount: Object.keys(mergedConfig.workspace.agents || {}).length,
         initDurationMs: initDuration,
         timestamp: new Date().toISOString(),
@@ -553,9 +553,6 @@ function isStreamSignal(
     (signal.provider === "stream" || signal.provider === "k8s-events")
   );
 }
-
-// Export the machine type
-type WorkspaceRuntimeMachine = typeof workspaceRuntimeMachineSetup;
 
 // Factory function creates machine from setup
 export function createWorkspaceRuntimeMachine(_input: WorkspaceRuntimeMachineInput) {

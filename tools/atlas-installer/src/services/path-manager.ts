@@ -1,10 +1,10 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
-import { isWindows, isMac } from "../utils/platform";
 import * as path from "node:path";
 import type { IPCResult } from "../types";
 import { getErrorMessage } from "../utils/errors";
 import { createLogger } from "../utils/logger";
+import { isMac, isWindows } from "../utils/platform";
 import { safeExec } from "../utils/process";
 import { escapePowerShell } from "../utils/security";
 

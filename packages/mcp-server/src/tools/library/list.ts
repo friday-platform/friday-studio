@@ -1,9 +1,9 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import { type LibrarySearchResult, LibrarySearchResultSchema } from "../../schemas.ts";
 import type { ToolContext } from "../types.ts";
 import { createSuccessResponse } from "../types.ts";
 import { buildLibraryQueryParams, fetchWithTimeout, handleDaemonResponse } from "../utils.ts";
-import { LibrarySearchResultSchema, type LibrarySearchResult } from "../../schemas.ts";
 
 export function registerLibraryListTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(

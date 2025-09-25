@@ -363,9 +363,9 @@ export function createAgentExecutionMachine(
           id: "prepareContext",
           src: "prepareContext",
           input: ({ context }) => ({
-            agent: context.agent!,
-            prompt: context.currentPrompt!,
-            sessionData: context.sessionData!,
+            agent: context.agent,
+            prompt: context.currentPrompt,
+            sessionData: context.sessionData,
             abortSignal: context.abortSignal,
           }),
           onDone: { target: "executing", actions: "assignPreparedContext" },
@@ -382,9 +382,9 @@ export function createAgentExecutionMachine(
           id: "executeAgent",
           src: "executeAgent",
           input: ({ context }) => ({
-            agent: context.agent!,
-            prompt: context.enrichedPrompt || context.currentPrompt!,
-            context: context.preparedContext!,
+            agent: context.agent,
+            prompt: context.enrichedPrompt || context.currentPrompt,
+            context: context.preparedContext,
           }),
           onDone: { target: "persisting", actions: ["assignExecutionResult"] },
           onError: [
@@ -439,9 +439,9 @@ export function createAgentExecutionMachine(
           src: "persistResults",
           input: ({ context }) => ({
             agentId: context.agentId,
-            prompt: context.currentPrompt!,
-            result: context.result!,
-            duration: context.endTime! - context.startTime!,
+            prompt: context.currentPrompt,
+            result: context.result,
+            duration: context.endTime - context.startTime,
           }),
           onDone: { target: "completed", actions: "logCompleted" },
           onError: {

@@ -2,9 +2,6 @@ import { useAppContext } from "../../contexts/app-context.tsx";
 import { getDaemonClient } from "../../utils/daemon-client.ts";
 import { WorkspaceSelection } from "./workspace-selection.tsx";
 
-// import { fetchLibraryItems } from "../library/fetcher.ts";
-// import { LibraryListComponent } from "../library/library-list-component.tsx";
-
 interface LibraryCommandProps {
   onComplete: () => void;
 }

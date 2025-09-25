@@ -42,31 +42,6 @@ export async function fileExists(path: string): Promise<boolean> {
 }
 
 /**
- * Create a backup of a file
- */
-async function createBackup(
-  sourcePath: string,
-  backupSuffix: string = ".bak",
-): Promise<string | null> {
-  try {
-    const backupPath = `${sourcePath}${backupSuffix}`;
-    await Deno.copyFile(sourcePath, backupPath);
-    return backupPath;
-  } catch (error) {
-    console.error(`Failed to create backup: ${error}`);
-    return null;
-  }
-}
-
-/**
- * Generate a unique backup suffix
- */
-function generateBackupSuffix(): string {
-  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-  return `.backup-${timestamp}`;
-}
-
-/**
  * Format success message with color
  */
 export function formatSuccessMessage(message: string): string {

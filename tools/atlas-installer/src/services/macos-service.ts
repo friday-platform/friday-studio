@@ -1,16 +1,16 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { safeExec } from "../utils/process";
 import { CONFIG } from "../config";
-import { type IPCResult } from "../types";
+import type { IPCResult } from "../types";
+import { safeExec } from "../utils/process";
 
 const PLIST_PATH = path.join(os.homedir(), "Library/LaunchAgents/com.tempestdx.atlas.plist");
 
 /**
  * Execute command silently, ignoring errors
  */
-async function runQuietly(cmd: string, options?: any): Promise<void> {
+async function runQuietly(cmd: string, options?: unknown): Promise<void> {
   try {
     await safeExec(cmd, options);
   } catch {
@@ -56,9 +56,9 @@ export async function installMacOSService(
           timeout: CONFIG.process.installTimeout,
         });
       }
-    } catch (error: any) {
+    } catch (error) {
       // Check if it's because service is already installed (shouldn't happen with --force)
-      if (error.message && error.message.includes("already installed")) {
+      if (error.message?.includes("already installed")) {
         // Service already exists, try to just start it
         console.log("Service already installed, attempting to start it");
       } else {
@@ -80,7 +80,7 @@ export async function installMacOSService(
     }
 
     return { success: true, message: "Atlas service installed successfully" };
-  } catch (error: any) {
+  } catch (error) {
     return { success: false, error: `Installation failed: ${error.message || error}` };
   }
 }
@@ -108,7 +108,7 @@ export async function uninstallMacOSService(
     }
 
     return { success: true, message: "Atlas service uninstalled" };
-  } catch (error: any) {
+  } catch (error) {
     return { success: false, error: `Uninstall failed: ${error.message || error}` };
   }
 }
@@ -126,7 +126,7 @@ export async function stopMacOSService(
     await runQuietly(`"${binaryPath}" service stop`, { env, timeout: CONFIG.process.stopTimeout });
 
     return { success: true, message: "Atlas service stopped" };
-  } catch (error: any) {
+  } catch (error) {
     return { success: false, error: `Stop failed: ${error.message || error}` };
   }
 }

@@ -6,7 +6,6 @@ import ansiEscapes from "ansi-escapes";
 import { useStdout } from "ink";
 import type React from "react";
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
-import { DiagnosticsCollector } from "../../utils/diagnostics-collector.ts";
 import { DAEMON_STATUS, type DaemonStatus } from "../constants/daemon-status.ts";
 import { DIAGNOSTICS_STATUS, type DiagnosticsStatus } from "../constants/diagnostics-status.ts";
 import { setupTerminal } from "../modules/enable-multiline/index.ts";
@@ -308,28 +307,9 @@ export const AppProvider = ({ children }: AppProviderProps) => {
     try {
       setDiagnosticsStatus(DIAGNOSTICS_STATUS.COLLECTING);
 
-      // Collect diagnostics
-      const collector = new DiagnosticsCollector();
-      gzipPath = await collector.collectAndArchive();
-
-      // Check size
-      const fileInfo = await Deno.stat(gzipPath);
-      if (fileInfo.size > 100 * 1024 * 1024) {
-        // 100MB
-        throw new Error("Diagnostic archive too large (>100MB). Please contact support.");
-      }
-
-      setDiagnosticsStatus(DIAGNOSTICS_STATUS.UPLOADING);
-
-      // Upload via client
-      const client = getAtlasClient();
-      await client.sendDiagnostics(gzipPath);
-
-      // Clean up temp file
-      await Deno.remove(gzipPath).catch(() => {}); // Ignore cleanup errors
+      await sendDiagnostics();
 
       setDiagnosticsStatus(DIAGNOSTICS_STATUS.DONE);
-      // setMessage("Diagnostics sent successfully!");
 
       // Reset to idle after showing success for a moment
       setTimeout(() => {

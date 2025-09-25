@@ -59,7 +59,7 @@ function extractImports(content: string): Array<{ import: string; line: number }
 
   for (const pattern of IMPORT_PATTERNS) {
     pattern.lastIndex = 0; // Reset regex state
-    let match;
+    let match: RegExpExecArray | null;
 
     while ((match = pattern.exec(content)) !== null) {
       const importPath = match[1];
@@ -165,7 +165,9 @@ async function validateImport(
         if (stat.isFile) {
           return null; // Import is valid
         }
-      } catch {}
+      } catch {
+        // Continue to try with next extension
+      }
     }
 
     // Try as directory with index file
@@ -176,7 +178,9 @@ async function validateImport(
         if (stat.isFile) {
           return null; // Import is valid
         }
-      } catch {}
+      } catch {
+        // Continue to try with next extension
+      }
     }
 
     // Import is invalid

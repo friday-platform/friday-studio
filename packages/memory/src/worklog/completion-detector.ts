@@ -426,7 +426,7 @@ export class TaskCompletionDetector {
       return cleaned;
     }
 
-    return cleaned.substring(0, maxLength - 3) + "...";
+    return `${cleaned.substring(0, maxLength - 3)}...`;
   }
 
   /**

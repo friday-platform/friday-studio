@@ -4,8 +4,8 @@ import {
   getDefaultServiceName,
   getPlatformPaths,
 } from "../../utils/platform.ts";
-import type { PlatformServiceManager, ServiceConfig, ServiceStatus } from "../types.ts";
 import { portConfigSchema } from "../schemas.ts";
+import type { PlatformServiceManager, ServiceConfig, ServiceStatus } from "../types.ts";
 
 /**
  * Windows service manager for Atlas

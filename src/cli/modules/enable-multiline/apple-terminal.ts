@@ -160,30 +160,3 @@ export async function setupAppleTerminal(): Promise<SetupResult> {
     };
   }
 }
-
-/**
- * Restore Apple Terminal from backup
- */
-async function restoreAppleTerminal(backupPath: string): Promise<SetupResult> {
-  if (!(await fileExists(backupPath))) {
-    return { success: false, error: "Backup file no longer exists" };
-  }
-
-  try {
-    const { success } = await execCommand("defaults", ["import", "com.apple.Terminal", backupPath]);
-
-    if (!success) {
-      return { success: false, error: "Failed to restore Terminal.app settings" };
-    }
-
-    // Refresh preferences
-    await refreshPreferences();
-
-    return { success: true };
-  } catch (error) {
-    return {
-      success: false,
-      error: `Failed to restore: ${error instanceof Error ? error.message : String(error)}`,
-    };
-  }
-}

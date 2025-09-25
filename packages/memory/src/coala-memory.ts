@@ -319,11 +319,11 @@ export class CoALAMemoryManager implements ITempestMemoryManager, CoALACognitive
     }
 
     if (query.tags && query.tags.length > 0) {
-      results = results.filter((m) => query.tags!.some((tag) => m.tags.includes(tag)));
+      results = results.filter((m) => query.tags.some((tag) => m.tags.includes(tag)));
     }
 
     if (query.minRelevance) {
-      results = results.filter((m) => m.relevanceScore >= query.minRelevance!);
+      results = results.filter((m) => m.relevanceScore >= query.minRelevance);
     }
 
     if (query.maxAge) {
@@ -338,7 +338,7 @@ export class CoALAMemoryManager implements ITempestMemoryManager, CoALACognitive
     // Content-based search
     if (query.content) {
       results = results.filter((m) =>
-        JSON.stringify(m.content).toLowerCase().includes(query.content!.toLowerCase()),
+        JSON.stringify(m.content).toLowerCase().includes(query.content.toLowerCase()),
       );
     }
 
@@ -1311,7 +1311,7 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
         });
 
         if (query.minRelevance) {
-          filteredResults = filteredResults.filter((m) => m.relevanceScore >= query.minRelevance!);
+          filteredResults = filteredResults.filter((m) => m.relevanceScore >= query.minRelevance);
         }
 
         if (query.maxAge) {

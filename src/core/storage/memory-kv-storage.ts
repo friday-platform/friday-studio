@@ -274,13 +274,3 @@ export class MemoryKVStorage implements KVStorage {
     return keyString.split("\u0000");
   }
 }
-
-/**
- * Create a configured in-memory storage instance
- * @returns Initialized MemoryKVStorage instance
- */
-async function createMemoryKVStorage(): Promise<MemoryKVStorage> {
-  const storage = new MemoryKVStorage();
-  await storage.initialize();
-  return storage;
-}

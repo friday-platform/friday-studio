@@ -6,12 +6,12 @@ import type {
   ApiKeyCheckResult,
   DirectoryResult,
   IPCHandler,
+  IPCResult,
   NpxPathResult,
   PlatformInfo,
-  IPCResult,
 } from "../types";
-import { findNpxPath } from "../utils/npx-detector";
 import { createLogger } from "../utils/logger";
+import { findNpxPath } from "../utils/npx-detector";
 
 const logger = createLogger("BasicHandlers");
 

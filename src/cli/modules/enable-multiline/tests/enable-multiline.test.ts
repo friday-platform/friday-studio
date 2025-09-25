@@ -17,7 +17,6 @@ import {
   formatInfoMessage,
   formatSuccessMessage,
   formatWarningMessage,
-  isCI,
 } from "../utils.ts";
 
 describe("Terminal Detection", () => {

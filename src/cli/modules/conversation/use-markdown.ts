@@ -5,7 +5,7 @@ import { useResponsiveDimensions } from "../../utils/useResponsiveDimensions.ts"
 
 const BULLET_POINT_REGEX = "\\*";
 const NUMBERED_POINT_REGEX = "\\d+\\.";
-const POINT_REGEX = "(?:" + [BULLET_POINT_REGEX, NUMBERED_POINT_REGEX].join("|") + ")";
+const POINT_REGEX = `(?:${[BULLET_POINT_REGEX, NUMBERED_POINT_REGEX].join("|")})`;
 
 const BULLET_POINT = "* ";
 
@@ -18,7 +18,7 @@ function bulletPointLine(indent: number, line: string) {
 }
 
 function isPointedLine(line: string, indent: number) {
-  return line.match("^(?:" + indent + ")*" + POINT_REGEX);
+  return line.match(`^(?:${indent})*${POINT_REGEX}`);
 }
 
 function bulletPointLines(lines: string, indent: number) {
@@ -27,7 +27,7 @@ function bulletPointLines(lines: string, indent: number) {
 }
 
 function numberedPoint(n: number) {
-  return n + ". ";
+  return `${n}. `;
 }
 function numberedLine(indent: number, line: string, num: number) {
   return isPointedLine(line, indent)
@@ -86,9 +86,7 @@ export function useMarkdown(message = "", isDim = false) {
   const markdownParsed = markdown.replace(/[\r\n]+$/g, "").trim();
   const lines = markdownParsed
     .split("\n")
-    .filter((line, index, array) =>
-      line === "" && (index === 0 || index === array.length - 1) ? false : true,
-    );
+    .filter((line, index, array) => !(line === "" && (index === 0 || index === array.length - 1)));
   const height = lines
     .map((line) => Math.max(1, Math.ceil(line.length / dimensions.paddedWidth)))
     .reduce((a, b) => a + b, 0);

@@ -1,4 +1,4 @@
-import { type FileType, type OpenFileEntry, type PlatformCollector } from "./types.ts";
+import type { FileType, OpenFileEntry, PlatformCollector } from "./types.ts";
 
 function mapLsofType(lsofType?: string): FileType {
   switch (lsofType) {

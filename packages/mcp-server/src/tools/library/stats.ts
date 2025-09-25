@@ -1,8 +1,8 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { type LibraryStats, LibraryStatsSchema } from "../../schemas.ts";
 import type { ToolContext } from "../types.ts";
 import { createSuccessResponse } from "../types.ts";
 import { fetchWithTimeout, handleDaemonResponse } from "../utils.ts";
-import { LibraryStatsSchema, type LibraryStats } from "../../schemas.ts";
 
 export function registerLibraryStatsTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(

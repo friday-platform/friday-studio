@@ -29,7 +29,6 @@ const WorkspacePlanArtifactSchema = z.object({
   data: WorkspacePlanDataSchema,
 });
 
-
 /** Artifact data validation by type */
 export const ArtifactDataSchema = z.discriminatedUnion("type", [
   WorkspacePlanArtifactSchema,

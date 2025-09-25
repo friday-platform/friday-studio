@@ -102,7 +102,9 @@ export function displayVersion(jsonOutput: boolean = false): void {
   } else {
     // Human-readable output
     const lines = formatVersionDisplay(versionInfo);
-    lines.forEach((line) => console.log(line));
+    for (const line of lines) {
+      console.log(line);
+    }
   }
 }
 
@@ -143,7 +145,9 @@ export async function displayVersionWithRemote(jsonOutput: boolean = false): Pro
   } else {
     // Human-readable output - show local version first
     const lines = formatVersionDisplay(versionInfo);
-    lines.forEach((line) => console.log(line));
+    for (const line of lines) {
+      console.log(line);
+    }
 
     console.log(); // Empty line
 

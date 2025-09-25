@@ -55,7 +55,7 @@ function parseVersionDate(version: string): Date | null {
 
   // Try to match full datetime format first: YYYYMMDD-HHMMSS
   const fullMatch = cleanVersion.match(/^(\d{8})-(\d{6})/);
-  if (fullMatch && fullMatch[1] && fullMatch[2]) {
+  if (fullMatch?.[1] && fullMatch[2]) {
     const dateStr = fullMatch[1];
     const timeStr = fullMatch[2];
     const year = parseInt(dateStr.substring(0, 4), 10);
@@ -70,7 +70,7 @@ function parseVersionDate(version: string): Date | null {
 
   // Try to match date-only format: YYYYMMDD-hash
   const dateMatch = cleanVersion.match(/^(\d{8})-/);
-  if (dateMatch && dateMatch[1]) {
+  if (dateMatch?.[1]) {
     const dateStr = dateMatch[1];
     const year = parseInt(dateStr.substring(0, 4), 10);
     const month = parseInt(dateStr.substring(4, 6), 10) - 1; // Month is 0-indexed

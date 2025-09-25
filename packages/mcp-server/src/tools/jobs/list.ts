@@ -3,13 +3,13 @@
  * Lists available jobs within a workspace through the daemon API
  */
 
+import { logger } from "@atlas/logger";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { JobInfoSchema, type JobInfo } from "../../schemas.ts";
+import { type JobInfo, JobInfoSchema } from "../../schemas.ts";
 import type { ToolContext } from "../types.ts";
 import { createSuccessResponse } from "../types.ts";
 import { checkJobDiscoverable } from "../utils.ts";
-import { logger } from "@atlas/logger";
 
 export function registerJobsListTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(

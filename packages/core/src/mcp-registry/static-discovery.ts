@@ -1,11 +1,6 @@
 import { createLogger } from "@atlas/logger";
 import { mcpServersRegistry } from "./mcp-servers-registry.ts";
-import type {
-  MCPDiscoveryRequest,
-  MCPDiscoveryResult,
-  MCPServerMetadata,
-  MCPSource,
-} from "./types.ts";
+import type { MCPDiscoveryRequest, MCPDiscoveryResult, MCPServerMetadata } from "./types.ts";
 
 /**
  * Tier 2: Static MCP discovery
@@ -46,7 +41,7 @@ export class StaticMCPDiscovery {
     // Filter by capabilities if specified
     if (request.capabilities && request.capabilities.length > 0) {
       candidates = candidates.filter((server) =>
-        this.serverHasCapabilities(server, request.capabilities!),
+        this.serverHasCapabilities(server, request.capabilities),
       );
     }
 

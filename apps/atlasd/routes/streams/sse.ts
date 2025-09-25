@@ -53,7 +53,7 @@ sseStreamRoute.get(
           ctx.sseStreams.set(streamId, { createdAt: now, lastActivity: now, lastEmit: now });
         } else {
           // Update activity on reconnect
-          const streamMeta = ctx.sseStreams.get(streamId)!;
+          const streamMeta = ctx.sseStreams.get(streamId);
           streamMeta.lastActivity = now;
         }
 
@@ -68,11 +68,11 @@ sseStreamRoute.get(
           textStreamState: new Map<string, { started: boolean; ended: boolean }>(),
         };
 
-        ctx.sseClients.get(streamId)!.push(clientInfo);
+        ctx.sseClients.get(streamId).push(clientInfo);
 
         logger.info("SSE client connected", {
           streamId,
-          clientCount: ctx.sseClients.get(streamId)!.length,
+          clientCount: ctx.sseClients.get(streamId).length,
         });
 
         const connectionEvent = {

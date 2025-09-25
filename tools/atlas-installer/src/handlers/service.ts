@@ -1,23 +1,23 @@
 import * as path from "node:path";
-import type { IPCResult } from "../types";
-import { createLogger } from "../utils/logger";
-import { getErrorMessage } from "../utils/errors";
-import { isWindows, isMac } from "../utils/platform";
-import { validateBinary } from "../utils/validation";
 import { ServiceAction } from "../constants/actions";
 import {
-  installWindowsService,
-  uninstallWindowsService,
-  stopWindowsService,
-  createStartMenuShortcut,
-} from "../services/windows-service";
-import {
   installMacOSService,
-  uninstallMacOSService,
   stopMacOSService,
+  uninstallMacOSService,
 } from "../services/macos-service";
-import { addToSystemPath, addToShellProfiles } from "../services/path-manager";
+import { addToShellProfiles, addToSystemPath } from "../services/path-manager";
+import {
+  createStartMenuShortcut,
+  installWindowsService,
+  stopWindowsService,
+  uninstallWindowsService,
+} from "../services/windows-service";
+import type { IPCResult } from "../types";
 import { getAtlasEnv, getBinaryPath } from "../utils/atlas-env";
+import { getErrorMessage } from "../utils/errors";
+import { createLogger } from "../utils/logger";
+import { isMac, isWindows } from "../utils/platform";
+import { validateBinary } from "../utils/validation";
 
 const logger = createLogger("ServiceHandler");
 

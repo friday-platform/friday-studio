@@ -45,7 +45,7 @@ export async function handler(argv: GetArgs) {
 
     const client = getAtlasClient({ url: `http://localhost:${argv.port}` });
 
-    let itemDetail;
+    let itemDetail: LibraryItemWithContent;
     try {
       // First, try with the exact ID
       itemDetail = await client.getLibraryItem(argv.id, argv.content);
@@ -97,7 +97,7 @@ const ItemDetailDisplay: React.FC<ItemDetailDisplayProps> = ({ itemDetail, inclu
     const k = 1024;
     const sizes = ["B", "KB", "MB", "GB"];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / k ** i).toFixed(1)) + " " + sizes[i];
+    return `${parseFloat((bytes / k ** i).toFixed(1))} ${sizes[i]}`;
   };
 
   const formatDate = (dateString: string): string => {

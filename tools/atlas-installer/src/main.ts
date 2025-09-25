@@ -1,20 +1,20 @@
-import * as path from "node:path";
 import * as os from "node:os";
+import * as path from "node:path";
 import { app, BrowserWindow, ipcMain } from "electron";
-import { isMac, isWindows } from "./utils/platform";
-import { addToSystemPath, addToShellProfiles } from "./services/path-manager";
 import {
-  getPlatformHandler,
-  createAtlasDirHandler,
-  checkExistingApiKeyHandler,
-  saveAtlasNpxPathHandler,
-  saveAtlasKeyHandler,
-  quitAppHandler,
-  installAtlasBinaryHandler,
   checkAtlasBinaryHandler,
-  manageAtlasServiceHandler,
+  checkExistingApiKeyHandler,
+  createAtlasDirHandler,
   getEulaTextHandler,
+  getPlatformHandler,
+  installAtlasBinaryHandler,
+  manageAtlasServiceHandler,
+  quitAppHandler,
+  saveAtlasKeyHandler,
+  saveAtlasNpxPathHandler,
 } from "./handlers";
+import { addToShellProfiles, addToSystemPath } from "./services/path-manager";
+import { isMac, isWindows } from "./utils/platform";
 
 let mainWindow: BrowserWindow | null = null;
 

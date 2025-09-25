@@ -100,7 +100,7 @@ export class BERTTokenizer {
       while (start < end) {
         let subStr = word.substring(start, end);
         if (start > 0) {
-          subStr = "##" + subStr;
+          subStr = `##${subStr}`;
         }
 
         if (this.vocab[subStr]) {
@@ -489,87 +489,83 @@ export class WebEmbeddingProvider implements MECMFEmbeddingProvider {
   ): Promise<EmbeddingResult> {
     const startTime = performance.now();
 
-    try {
-      // Tokenize the input text using BERT tokenizer
-      const tokenIds = tokenizer.tokenize(text);
-      const attentionMask = this.createAttentionMask(tokenIds, tokenizer.getPadTokenId());
+    // Tokenize the input text using BERT tokenizer
+    const tokenIds = tokenizer.tokenize(text);
+    const attentionMask = this.createAttentionMask(tokenIds, tokenizer.getPadTokenId());
 
-      // Prepare tensors
-      const maxLength = tokenIds.length;
-      const inputIdsArray = new BigInt64Array(tokenIds.map((id) => BigInt(id)));
-      const attentionMaskArray = new BigInt64Array(attentionMask.map((mask) => BigInt(mask)));
+    // Prepare tensors
+    const maxLength = tokenIds.length;
+    const inputIdsArray = new BigInt64Array(tokenIds.map((id) => BigInt(id)));
+    const attentionMaskArray = new BigInt64Array(attentionMask.map((mask) => BigInt(mask)));
 
-      const inputIdsTensor = new ort.Tensor("int64", inputIdsArray, [1, maxLength]);
-      const attentionMaskTensor = new ort.Tensor("int64", attentionMaskArray, [1, maxLength]);
+    const inputIdsTensor = new ort.Tensor("int64", inputIdsArray, [1, maxLength]);
+    const attentionMaskTensor = new ort.Tensor("int64", attentionMaskArray, [1, maxLength]);
 
-      const inputs: Record<string, ort.Tensor> = {};
+    const inputs: Record<string, ort.Tensor> = {};
 
-      // Set up inputs based on model requirements
-      if (session.inputNames.includes("input_ids")) {
-        inputs["input_ids"] = inputIdsTensor;
-      } else if (session.inputNames.length > 0 && session.inputNames[0]) {
-        inputs[session.inputNames[0]] = inputIdsTensor;
-      }
-
-      if (session.inputNames.includes("attention_mask")) {
-        inputs["attention_mask"] = attentionMaskTensor;
-      } else if (session.inputNames.length > 1 && session.inputNames[1]) {
-        inputs[session.inputNames[1]] = attentionMaskTensor;
-      }
-
-      // Add token_type_ids if required
-      if (session.inputNames.includes("token_type_ids")) {
-        const tokenTypeIds = new BigInt64Array(maxLength).fill(BigInt(0));
-        const tokenTypeIdsTensor = new ort.Tensor("int64", tokenTypeIds, [1, maxLength]);
-        inputs["token_type_ids"] = tokenTypeIdsTensor;
-      }
-
-      const results = await session.run(inputs);
-      const outputKey = Object.keys(results)[0];
-      if (!outputKey) {
-        throw new Error("No output tensor found in model results");
-      }
-      const outputTensor = results[outputKey];
-      if (!outputTensor) {
-        throw new Error("Output tensor is undefined");
-      }
-
-      const endTime = performance.now();
-      const time = Math.round(endTime - startTime);
-
-      // Perform mean pooling to get sentence embedding
-      const data = outputTensor.data;
-      const dims = outputTensor.dims;
-      if (!dims || dims.length !== 3) {
-        throw new Error("Invalid tensor dimensions for sentence embedding");
-      }
-
-      const [_batchSize, seqLength, hiddenSize] = dims;
-      if (seqLength === undefined || hiddenSize === undefined) {
-        throw new Error("Invalid tensor dimensions: seqLength or hiddenSize is undefined");
-      }
-
-      const embedding = new Array(hiddenSize).fill(0);
-      let validTokens = 0;
-
-      for (let i = 0; i < seqLength; i++) {
-        if (attentionMask[i] === 1) {
-          for (let j = 0; j < hiddenSize; j++) {
-            embedding[j] += data[i * hiddenSize + j];
-          }
-          validTokens++;
-        }
-      }
-
-      // Average the embeddings
-      for (let j = 0; j < hiddenSize; j++) {
-        embedding[j] /= validTokens;
-      }
-
-      return { modelName: this.MODEL_NAME, time, embedding };
-    } catch (error) {
-      throw error;
+    // Set up inputs based on model requirements
+    if (session.inputNames.includes("input_ids")) {
+      inputs.input_ids = inputIdsTensor;
+    } else if (session.inputNames.length > 0 && session.inputNames[0]) {
+      inputs[session.inputNames[0]] = inputIdsTensor;
     }
+
+    if (session.inputNames.includes("attention_mask")) {
+      inputs.attention_mask = attentionMaskTensor;
+    } else if (session.inputNames.length > 1 && session.inputNames[1]) {
+      inputs[session.inputNames[1]] = attentionMaskTensor;
+    }
+
+    // Add token_type_ids if required
+    if (session.inputNames.includes("token_type_ids")) {
+      const tokenTypeIds = new BigInt64Array(maxLength).fill(BigInt(0));
+      const tokenTypeIdsTensor = new ort.Tensor("int64", tokenTypeIds, [1, maxLength]);
+      inputs.token_type_ids = tokenTypeIdsTensor;
+    }
+
+    const results = await session.run(inputs);
+    const outputKey = Object.keys(results)[0];
+    if (!outputKey) {
+      throw new Error("No output tensor found in model results");
+    }
+    const outputTensor = results[outputKey];
+    if (!outputTensor) {
+      throw new Error("Output tensor is undefined");
+    }
+
+    const endTime = performance.now();
+    const time = Math.round(endTime - startTime);
+
+    // Perform mean pooling to get sentence embedding
+    const data = outputTensor.data;
+    const dims = outputTensor.dims;
+    if (!dims || dims.length !== 3) {
+      throw new Error("Invalid tensor dimensions for sentence embedding");
+    }
+
+    const [_batchSize, seqLength, hiddenSize] = dims;
+    if (seqLength === undefined || hiddenSize === undefined) {
+      throw new Error("Invalid tensor dimensions: seqLength or hiddenSize is undefined");
+    }
+
+    const embedding = new Array(hiddenSize).fill(0);
+    let validTokens = 0;
+
+    for (let i = 0; i < seqLength; i++) {
+      if (attentionMask[i] === 1) {
+        for (let j = 0; j < hiddenSize; j++) {
+          embedding[j] += data[i * hiddenSize + j];
+        }
+        validTokens++;
+      }
+    }
+
+    // Average the embeddings
+    for (let j = 0; j < hiddenSize; j++) {
+      embedding[j] /= validTokens;
+    }
+
+    return { modelName: this.MODEL_NAME, time, embedding };
   }
 }
 

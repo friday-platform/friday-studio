@@ -45,29 +45,6 @@ export async function createLibraryStorage(
   return adapter;
 }
 
-// Convenience function to create both registry and library storage
-async function createAtlasStorage(
-  kvConfig: import("./kv-storage.ts").KVStorageConfig,
-  libraryConfig?: import("./library-storage-adapter.ts").LibraryStorageConfig,
-): Promise<{
-  registry: import("./registry-storage-adapter.ts").RegistryStorageAdapter;
-  library: import("./library-storage-adapter.ts").LibraryStorageAdapter;
-}> {
-  const { createKVStorage } = await import("./kv-storage.ts");
-  const storage = await createKVStorage(kvConfig);
-
-  const { RegistryStorageAdapter } = await import("./registry-storage-adapter.ts");
-  const { LibraryStorageAdapter } = await import("./library-storage-adapter.ts");
-
-  const registry = new RegistryStorageAdapter(storage);
-  const library = new LibraryStorageAdapter(storage, libraryConfig);
-
-  await registry.initialize();
-  await library.initialize();
-
-  return { registry, library };
-}
-
 // Common storage configurations
 export const StorageConfigs = {
   /**

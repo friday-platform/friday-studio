@@ -89,7 +89,7 @@ export class MemoryConfigManager {
     const memoryKey = this.generateMemoryKey(scope, memoryScope);
 
     if (this.memoryInstances.has(memoryKey)) {
-      return this.memoryInstances.get(memoryKey)!;
+      return this.memoryInstances.get(memoryKey);
     }
 
     // Create new memory manager with scope-specific configuration

@@ -144,9 +144,9 @@ Deno.test("Timer Signal - Workspace Runtime Integration", async (t) => {
     // Should have created and registered timer
     const timer = runtime.getTimer("timer-test-scan");
     assertEquals(timer !== undefined, true, "Should create timer");
-    assertEquals(timer!.schedule, "*/30 * * * *", "Should configure correct schedule");
-    assertEquals(timer!.timezone, "UTC", "Should configure correct timezone");
-    assertEquals(timer!.isActive, true, "Timer should be active");
+    assertEquals(timer.schedule, "*/30 * * * *", "Should configure correct schedule");
+    assertEquals(timer.timezone, "UTC", "Should configure correct timezone");
+    assertEquals(timer.isActive, true, "Timer should be active");
 
     // Should have registered timer
     assertEquals(runtime.hasTimerRegistered("timer-test-scan"), true, "Should register timer");
@@ -164,11 +164,11 @@ Deno.test("Timer Signal - Workspace Runtime Integration", async (t) => {
     // Should have properly configured timer
     const timer = runtime.getTimer("timer-test-scan");
     assertEquals(timer !== undefined, true, "Timer should be configured");
-    assertEquals(timer!.signalId, "timer-test-scan", "Should have correct signal ID");
-    assertEquals(timer!.schedule, "*/30 * * * *", "Should have correct schedule");
-    assertEquals(timer!.nextExecution !== undefined, true, "Should have next execution scheduled");
+    assertEquals(timer.signalId, "timer-test-scan", "Should have correct signal ID");
+    assertEquals(timer.schedule, "*/30 * * * *", "Should have correct schedule");
+    assertEquals(timer.nextExecution !== undefined, true, "Should have next execution scheduled");
     assertEquals(
-      timer!.nextExecution!.getTime() > Date.now(),
+      timer.nextExecution.getTime() > Date.now(),
       true,
       "Next execution should be in future",
     );
@@ -213,14 +213,14 @@ Deno.test("Timer Signal - Workspace Runtime Integration", async (t) => {
     assertEquals(timer2 !== undefined, true, "Should have second timer");
 
     // Verify different schedules
-    assertEquals(timer1!.schedule, "*/30 * * * *", "Timer 1 should have 30-minute schedule");
-    assertEquals(timer2!.schedule, "*/15 * * * *", "Timer 2 should have 15-minute schedule");
+    assertEquals(timer1.schedule, "*/30 * * * *", "Timer 1 should have 30-minute schedule");
+    assertEquals(timer2.schedule, "*/15 * * * *", "Timer 2 should have 15-minute schedule");
 
     // Both should be active and have next executions
-    assertEquals(timer1!.isActive, true, "Timer 1 should be active");
-    assertEquals(timer2!.isActive, true, "Timer 2 should be active");
-    assertEquals(timer1!.nextExecution !== undefined, true, "Timer 1 should have next execution");
-    assertEquals(timer2!.nextExecution !== undefined, true, "Timer 2 should have next execution");
+    assertEquals(timer1.isActive, true, "Timer 1 should be active");
+    assertEquals(timer2.isActive, true, "Timer 2 should be active");
+    assertEquals(timer1.nextExecution !== undefined, true, "Timer 1 should have next execution");
+    assertEquals(timer2.nextExecution !== undefined, true, "Timer 2 should have next execution");
 
     // CronManager should track both timers
     const cronManager = runtime.getCronManager();
@@ -302,8 +302,8 @@ Deno.test("Timer Signal - Workspace Runtime Integration", async (t) => {
 
     assertEquals(timer1 !== undefined, true, "Should manage workspace 1 timer");
     assertEquals(timer2 !== undefined, true, "Should manage workspace 2 timer");
-    assertEquals(timer1!.workspaceId, "workspace-1", "Timer 1 should belong to workspace 1");
-    assertEquals(timer2!.workspaceId, "workspace-2", "Timer 2 should belong to workspace 2");
+    assertEquals(timer1.workspaceId, "workspace-1", "Timer 1 should belong to workspace 1");
+    assertEquals(timer2.workspaceId, "workspace-2", "Timer 2 should belong to workspace 2");
 
     // Should track all timers centrally
     const stats = sharedCronManager.getStats();
@@ -355,9 +355,9 @@ Deno.test("Timer Signal - Workspace Runtime Integration", async (t) => {
     // Timer should be properly configured
     const timer = runtime.getTimer("timer-test-scan");
     assertEquals(timer !== undefined, true, "Timer should be configured");
-    assertEquals(timer!.isActive, true, "Timer should be active after loading");
+    assertEquals(timer.isActive, true, "Timer should be active after loading");
     assertEquals(
-      timer!.nextExecution !== undefined,
+      timer.nextExecution !== undefined,
       true,
       "Timer should have next execution scheduled",
     );
@@ -375,7 +375,7 @@ Deno.test("Timer Signal - Workspace Runtime Integration", async (t) => {
     // Timer should be properly configured
     const timer = runtime.getTimer("timer-test-scan");
     assertEquals(timer !== undefined, true, "Timer should be configured");
-    assertEquals(timer!.isActive, true, "Timer should be active");
+    assertEquals(timer.isActive, true, "Timer should be active");
 
     // Test unregistering workspace timers (simulates workspace shutdown)
     const cronManager = runtime.getCronManager();

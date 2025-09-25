@@ -36,13 +36,3 @@ export async function getNotes(streamId: string, limit = 100): Promise<Note[]> {
 
   return notes;
 }
-
-export async function clearNotes(streamId: string): Promise<void> {
-  using db = await Deno.openKv();
-  const prefix = ["scratchpad", streamId];
-  const iter = db.list({ prefix });
-
-  for await (const entry of iter) {
-    await db.delete(entry.key);
-  }
-}

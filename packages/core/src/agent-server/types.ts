@@ -95,18 +95,6 @@ interface StateSnapshot {
 }
 
 /**
- * State migration function signature
- */
-type StateMigration = (oldState: AgentState) => AgentState;
-
-/**
- * State migration registry
- */
-interface StateMigrationRegistry {
-  [fromVersion: number]: StateMigration;
-}
-
-/**
  * External state persistence interface
  */
 interface StateStore {
@@ -118,19 +106,6 @@ interface StateStore {
   saveSnapshot(snapshot: StateSnapshot): Promise<void>;
   listSnapshots(sessionKey: string): Promise<StateSnapshot[]>;
   deleteSnapshot(snapshotId: string): Promise<void>;
-}
-
-/**
- * Session manager configuration
- */
-interface SessionManagerConfig {
-  stateStore?: StateStore;
-  disableTimeouts?: boolean;
-  maxStateSize?: number; // Max size in bytes
-  enableCompression?: boolean;
-  currentVersion?: number;
-  migrations?: StateMigrationRegistry;
-  snapshotInterval?: number; // Auto-snapshot every N state changes
 }
 
 /**

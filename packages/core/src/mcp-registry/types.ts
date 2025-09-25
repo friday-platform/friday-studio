@@ -86,14 +86,6 @@ export interface ValidationResult {
   warnings: string[];
 }
 
-/** Agent-based discovery configuration */
-interface AgentMCPConfig {
-  agentId: string;
-  mcpServers: string[];
-  usagePattern: string;
-  successRate?: number;
-}
-
 /** Built-in agent discovery result */
 export interface AgentDiscoveryResult {
   agent: {

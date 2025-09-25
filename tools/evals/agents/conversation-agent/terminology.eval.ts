@@ -1,5 +1,4 @@
 import { conversationAgent } from "@atlas/system/agents";
-import { assert } from "@std/assert";
 import { ConversationAgentContext } from "../../lib/conversation-context.ts";
 import { llmJudge } from "../../lib/llm-judge.ts";
 import { loadCredentials } from "../../lib/load-credentials.ts";
@@ -9,7 +8,7 @@ Deno.test({
   name: "Conversation Agent: Terminology",
   sanitizeOps: false,
   sanitizeResources: false,
-  async fn(t) {
+  async fn() {
     await loadCredentials();
     const context = new ConversationAgentContext();
     context.enableTelemetry();

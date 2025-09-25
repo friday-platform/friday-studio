@@ -26,10 +26,3 @@ export const signalTriggerResponseSchema = z
 export const errorResponseSchema = z
   .object({ error: z.string().meta({ description: "Error message" }) })
   .meta({ description: "Error response" });
-
-// ============================================================================
-// Type Exports
-// ============================================================================
-
-type SignalTriggerResponse = z.infer<typeof signalTriggerResponseSchema>;
-type ErrorResponse = z.infer<typeof errorResponseSchema>;

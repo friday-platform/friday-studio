@@ -1,7 +1,7 @@
 import type { SessionUIMessage, SessionUIMessageChunk } from "@atlas/core";
 import { stringifyError } from "@atlas/utils";
 import { readUIMessageStream } from "ai";
-import { Box, Static, Text } from "ink";
+import { Box, Static } from "ink";
 import { useEffect, useRef, useState } from "react";
 import { ChatMessage } from "../../components/chat-message.tsx";
 import { Header } from "../../components/header.tsx";

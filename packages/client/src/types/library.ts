@@ -64,12 +64,6 @@ export interface LibraryItemWithContent {
   content?: string | Uint8Array;
 }
 
-interface GenerateFromTemplateRequest {
-  templateId: string;
-  data: Record<string, unknown>;
-  options?: Record<string, unknown>;
-}
-
 export interface DeleteLibraryItemResponse {
   message: string;
 }

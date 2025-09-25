@@ -36,7 +36,7 @@
     "test:unit": "OTEL_DENO=true deno test --allow-all --env-file --no-check --ignore='integration-tests/**/*.test.ts'",
     "test:integration": "OTEL_DENO=true ATLAS_USE_LLM_MOCKS=true deno test --allow-all --env-file --no-check 'integration-tests/**/*.test.ts'",
     "fmt": "deno run -A npm:@biomejs/biome format --write",
-    "biome": "deno run -A npm:@biomejs/biome check --write",
+    "biome": "deno run -A npm:@biomejs/biome check",
     "lint": "deno lint",
     "example-acp-server": "deno run --allow-net --allow-env examples/workspaces/remote-agents/server.ts",
     "example-playwright-mcp-server": "deno run --allow-all --unstable-broadcast-channel --unstable-worker-options examples/workspaces/playwright-mcp/server.ts",

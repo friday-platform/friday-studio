@@ -82,7 +82,7 @@ async function resolveWorkspaceTargets(
         if (!excludeSet.has(workspace.id) && !excludeSet.has(workspace.name)) {
           targetWorkspaces.push({ id: workspace.id, name: workspace.name });
         }
-      } catch (error) {
+      } catch {
         // Try to find by name if ID lookup failed
         const allWorkspaces = await client.listWorkspaces();
         const foundWorkspace = allWorkspaces.find((w) => w.name === workspaceName);
@@ -195,17 +195,4 @@ export async function batchTriggerSignal(
   }
 
   return { signal: options.signalName, timestamp: new Date().toISOString(), results };
-}
-
-/**
- * Simple trigger function for single workspace/signal (used by interactive UI)
- */
-async function triggerSignalSimple(
-  workspaceId: string,
-  signalName: string,
-  payload?: string,
-): Promise<TriggerSignalResult> {
-  const parsedPayload = payload ? validateSignalPayload(payload) : undefined;
-
-  return await triggerSignal({ workspaceId, signalName, payload: parsedPayload });
 }

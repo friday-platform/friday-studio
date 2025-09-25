@@ -3,17 +3,17 @@
 // This script generates build information at compile time
 // It should be run before building the application in CI/CD
 
-import { join, dirname, fromFileUrl } from "jsr:@std/path@^1.0.0";
+import { dirname, fromFileUrl, join } from "jsr:@std/path@^1.0.0";
 
 const __dirname = dirname(fromFileUrl(import.meta.url));
 
 // Determine build type based on environment variables or Git branch
 let buildType = "development";
 if (Deno.env.get("BUILD_TYPE")) {
-  buildType = Deno.env.get("BUILD_TYPE")!;
+  buildType = Deno.env.get("BUILD_TYPE");
 } else if (Deno.env.get("GITHUB_REF")) {
   // GitHub Actions context
-  const githubRef = Deno.env.get("GITHUB_REF")!;
+  const githubRef = Deno.env.get("GITHUB_REF");
   if (githubRef.includes("edge")) {
     buildType = "edge";
   } else if (githubRef.includes("nightly")) {

@@ -5,9 +5,9 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import { CancelSessionResponseSchema } from "../../schemas.ts";
 import type { ToolContext } from "../types.ts";
 import { createSuccessResponse } from "../types.ts";
-import { CancelSessionResponseSchema } from "../../schemas.ts";
 
 export function registerSessionCancelTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(

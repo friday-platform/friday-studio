@@ -1,10 +1,10 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { safeExec } from "../utils/process";
 import type { IPCResult } from "../types";
 import { createLogger } from "../utils/logger";
-import { isWindows, isMac } from "../utils/platform";
+import { isMac, isWindows } from "../utils/platform";
+import { safeExec } from "../utils/process";
 
 const logger = createLogger("BinaryHandler");
 

@@ -79,19 +79,3 @@ const SUPERVISION_CONFIGS: Record<SupervisionLevel, SupervisionConfig> = {
 export function getSupervisionConfig(level: SupervisionLevel): SupervisionConfig {
   return SUPERVISION_CONFIGS[level];
 }
-
-function shouldRunAnalysis(level: SupervisionLevel): boolean {
-  return SUPERVISION_CONFIGS[level].preExecutionAnalysis;
-}
-
-function shouldRunValidation(level: SupervisionLevel): boolean {
-  return SUPERVISION_CONFIGS[level].postExecutionValidation;
-}
-
-function canUseCache(level: SupervisionLevel): boolean {
-  return SUPERVISION_CONFIGS[level].cacheEnabled;
-}
-
-function canRunParallel(level: SupervisionLevel): boolean {
-  return SUPERVISION_CONFIGS[level].parallelLLMCalls;
-}

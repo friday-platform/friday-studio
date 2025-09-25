@@ -45,14 +45,14 @@ function emitToStream(
       streamQueues.set(streamId, new Map());
     }
 
-    const streamSessionQueues = streamQueues.get(streamId)!;
+    const streamSessionQueues = streamQueues.get(streamId);
 
     // Get or create session queue
     if (!streamSessionQueues.has(sessionId)) {
       streamSessionQueues.set(sessionId, []);
     }
 
-    const sessionQueue = streamSessionQueues.get(sessionId)!;
+    const sessionQueue = streamSessionQueues.get(sessionId);
     const queueItem = { event, resolve, reject, timestamp: Date.now(), metadata };
     sessionQueue.push(queueItem);
 
@@ -87,12 +87,9 @@ async function processStreamQueue(ctx: AppContext, streamId: string): Promise<vo
   }
   streamProcessing.set(streamId, true);
 
-  let processedCount = 0;
-  const startTime = Date.now();
-
   try {
     while (activeSession.get(streamId)) {
-      const currentSessionId = activeSession.get(streamId)!;
+      const currentSessionId = activeSession.get(streamId);
       const streamSessionQueues = streamQueues.get(streamId);
 
       if (!streamSessionQueues) {
@@ -108,13 +105,12 @@ async function processStreamQueue(ctx: AppContext, streamId: string): Promise<vo
         break; // Exit processing loop but keep session active
       }
 
-      const item = sessionQueue.shift()!;
-      processedCount++;
+      const item = sessionQueue.shift();
 
       // Clear any existing timeout for this session
       const timeoutKey = `${streamId}:${currentSessionId}`;
       if (sessionTimeouts.has(timeoutKey)) {
-        clearTimeout(sessionTimeouts.get(timeoutKey)!);
+        clearTimeout(sessionTimeouts.get(timeoutKey));
         sessionTimeouts.delete(timeoutKey);
       }
 
@@ -212,7 +208,7 @@ function rotateSession(streamId: string): void {
   if (currentSession) {
     const timeoutKey = `${streamId}:${currentSession}`;
     if (sessionTimeouts.has(timeoutKey)) {
-      clearTimeout(sessionTimeouts.get(timeoutKey)!);
+      clearTimeout(sessionTimeouts.get(timeoutKey));
       sessionTimeouts.delete(timeoutKey);
     }
   }

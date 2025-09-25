@@ -1,4 +1,4 @@
-import { getAtlasClient } from "@atlas/client";
+import { getAtlasClient, type SessionDetailedInfo } from "@atlas/client";
 import { WorkspaceSessionStatus } from "@atlas/core";
 import { confirmAction } from "../../utils/confirm.tsx";
 import { errorOutput, infoOutput, successOutput } from "../../utils/output.ts";
@@ -43,7 +43,7 @@ export const handler = async (argv: CancelArgs): Promise<void> => {
     const client = getAtlasClient({ url: `http://localhost:${port}` });
 
     // First, check if the session exists and is running
-    let session;
+    let session: SessionDetailedInfo;
     try {
       session = await client.getSession(argv.id);
     } catch (error) {

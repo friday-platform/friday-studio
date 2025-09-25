@@ -1,4 +1,4 @@
-import { type FileType, type OpenFileEntry, type PlatformCollector } from "./types.ts";
+import type { FileType, OpenFileEntry, PlatformCollector } from "./types.ts";
 
 function detectType(path: string): FileType {
   if (path.startsWith("socket:")) return "SOCK";

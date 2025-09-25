@@ -127,31 +127,3 @@ export async function setupITerm2(): Promise<SetupResult> {
     };
   }
 }
-
-/**
- * Restore iTerm2 from backup
- */
-async function restoreITerm2(backupPath: string): Promise<SetupResult> {
-  if (!(await fileExists(backupPath))) {
-    return { success: false, error: "Backup file no longer exists" };
-  }
-
-  try {
-    const { success } = await execCommand("defaults", [
-      "import",
-      "com.googlecode.iterm2",
-      backupPath,
-    ]);
-
-    if (!success) {
-      return { success: false, error: "Failed to restore iTerm2 settings" };
-    }
-
-    return { success: true };
-  } catch (error) {
-    return {
-      success: false,
-      error: `Failed to restore: ${error instanceof Error ? error.message : String(error)}`,
-    };
-  }
-}

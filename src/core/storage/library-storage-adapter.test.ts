@@ -543,7 +543,7 @@ describe("Enhanced Library Storage - MIME Type Extension Logic", () => {
       ];
 
       for (let i = 0; i < testCases.length; i++) {
-        const testCase = testCases[i]!; // We know the array access is safe
+        const testCase = testCases[i]; // We know the array access is safe
         const result = await storeItemStub({
           id: `test-search-${i}`,
           source: "user",

@@ -227,9 +227,6 @@ class ClientContext {
             currentBatchSessionId = sessionId;
             this.typingState.isTyping = true;
           } else if (part.type === "data-user-message" && part.data) {
-            // User message content is directly in part.data (it's a string)
-            const messageContent = String(part.data);
-
             if (currentBatchSessionId) {
               // Check if this is a NEW session we haven't notified for yet
               if (!this.notifiedSessions.has(currentBatchSessionId)) {

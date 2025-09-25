@@ -1,8 +1,8 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { IS_WINDOWS } from "./platform";
 import { getSystemBinaryPath } from "../constants/paths";
+import { IS_WINDOWS } from "./platform";
 
 /**
  * Read Atlas environment variables from ~/.atlas/.env

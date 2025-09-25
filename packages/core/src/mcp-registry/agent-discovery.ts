@@ -97,11 +97,7 @@ export class AgentBasedMCPDiscovery {
     }
 
     // Check if agent capabilities or domains contain intent keywords
-    const searchableText = [
-      ...agent.expertise.domains,
-      ...agent.expertise.capabilities,
-      agent.description || "",
-    ]
+    const searchableText = [...agent.expertise.domains, agent.description || ""]
       .join(" ")
       .toLowerCase();
 

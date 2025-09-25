@@ -603,7 +603,7 @@ class K8sEventsRuntimeSignal extends AtlasScope {
         `📡 K8s Event ${event.type}: ${k8sEvent.reason} - ${k8sEvent.involvedObject?.kind}/${k8sEvent.involvedObject?.name}`,
       );
 
-      await this.signalProcessor(this.signalId!, eventData);
+      await this.signalProcessor(this.signalId, eventData);
     } catch (error) {
       // SECURITY FIX: Sanitize error before logging
       SecureLogger.secureLog("error", "Failed to process Kubernetes event", error);

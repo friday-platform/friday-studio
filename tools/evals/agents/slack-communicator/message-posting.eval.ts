@@ -1,12 +1,12 @@
 import { slackCommunicatorAgent } from "@atlas/bundled-agents";
 import { assert } from "@std/assert";
+import { tool } from "ai";
+import { z } from "zod/v4";
 import { AgentContextAdapter } from "../../lib/context.ts";
 import { llmJudge } from "../../lib/llm-judge.ts";
 import { loadCredentials } from "../../lib/load-credentials.ts";
 import { createSlackMCPMockTools } from "../../lib/slack-mcp-mock-tools.ts";
 import { saveSnapshot } from "../../lib/snapshot.ts";
-import { tool } from "ai";
-import { z } from "zod/v4";
 
 Deno.test({
   name: "Slack Communicator: Message posting",

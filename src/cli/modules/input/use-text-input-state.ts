@@ -52,12 +52,12 @@ const findNextWordBoundary = (text: string, offset: number): number => {
   let i = offset;
 
   // Skip current word characters
-  while (i < chars.length && chars[i] && /\w/.test(chars[i]!)) {
+  while (i < chars.length && chars[i] && /\w/.test(chars[i])) {
     i++;
   }
 
   // Skip all non-word characters (whitespace, punctuation, symbols)
-  while (i < chars.length && chars[i] && !/\w/.test(chars[i]!)) {
+  while (i < chars.length && chars[i] && !/\w/.test(chars[i])) {
     i++;
   }
 
@@ -69,12 +69,12 @@ const findPrevWordBoundary = (text: string, offset: number): number => {
   let i = Math.max(0, offset - 1);
 
   // Skip all non-word characters (whitespace, punctuation, symbols)
-  while (i >= 0 && chars[i] && !/\w/.test(chars[i]!)) {
+  while (i >= 0 && chars[i] && !/\w/.test(chars[i])) {
     i--;
   }
 
   // Skip current word characters
-  while (i >= 0 && chars[i] && /\w/.test(chars[i]!)) {
+  while (i >= 0 && chars[i] && /\w/.test(chars[i])) {
     i--;
   }
 

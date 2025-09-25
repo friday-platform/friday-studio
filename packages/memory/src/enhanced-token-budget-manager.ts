@@ -556,7 +556,7 @@ export class EnhancedTokenBudgetManager {
     text = text.replace(/\s+/g, " ").trim();
 
     if (maxLength && text.length > maxLength) {
-      text = text.substring(0, maxLength - 3) + "...";
+      text = `${text.substring(0, maxLength - 3)}...`;
     }
 
     return text;
@@ -574,7 +574,7 @@ export class EnhancedTokenBudgetManager {
     const sentences = content.split(/[.!?]+/).filter((s) => s.trim().length > 0);
 
     for (let i = sentences.length; i > 0; i--) {
-      const compressed = sentences.slice(0, i).join(". ") + ".";
+      const compressed = `${sentences.slice(0, i).join(". ")}.`;
       if (this.estimateTokens(compressed) <= maxTokens) {
         return compressed;
       }
@@ -583,7 +583,7 @@ export class EnhancedTokenBudgetManager {
     // Last resort: truncate by estimated character count
     const maxChars = maxTokens * 4; // Avg chars per token
     if (content.length > maxChars) {
-      return content.substring(0, maxChars - 3) + "...";
+      return `${content.substring(0, maxChars - 3)}...`;
     }
 
     return null;

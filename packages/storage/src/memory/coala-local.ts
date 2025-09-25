@@ -126,7 +126,9 @@ export class CoALALocalFileStorageAdapter implements ICoALAMemoryStorageAdapter 
     const types = new Set<string>();
 
     // Add known types
-    Object.keys(this.memoryTypeFiles).forEach((type) => types.add(type));
+    for (const type of Object.keys(this.memoryTypeFiles)) {
+      types.add(type);
+    }
 
     // Scan directory for additional memory type files
     try {

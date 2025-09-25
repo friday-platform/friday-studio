@@ -5,7 +5,7 @@ import { z } from "zod/v4";
  */
 
 // Port number validation with automatic fallback to 8080
-export const portSchema = z.number().int().min(1).max(65535).catch(8080);
+const portSchema = z.number().int().min(1).max(65535).catch(8080);
 
 // Configuration and status schema with port (uses required + catch for auto-fallback)
 export const portConfigSchema = z.object({ port: portSchema });

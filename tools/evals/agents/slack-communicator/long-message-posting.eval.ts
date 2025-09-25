@@ -1,11 +1,11 @@
 import { slackCommunicatorAgent } from "@atlas/bundled-agents";
 import { assert } from "@std/assert";
+import { tool } from "ai";
+import { z } from "zod";
 import { AgentContextAdapter } from "../../lib/context.ts";
 import { loadCredentials } from "../../lib/load-credentials.ts";
 import { createSlackMCPMockTools } from "../../lib/slack-mcp-mock-tools.ts";
 import { saveSnapshot } from "../../lib/snapshot.ts";
-import { tool } from "ai";
-import { z } from "zod";
 
 Deno.test({
   name: "Slack Communicator: Message posting — long message (4000 chars)",

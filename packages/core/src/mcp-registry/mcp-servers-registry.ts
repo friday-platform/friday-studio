@@ -1,5 +1,3 @@
-import type { MCPServerMetadata } from "./types.ts";
-
 /**
  * Static registry of curated MCP servers
  * Converted from JSON for easier TypeScript imports

@@ -118,30 +118,6 @@ export function formatSuggestions(suggestions: CommandInfo[]): string {
 }
 
 /**
- * Get all command aliases as a formatted string for help display
- */
-export function getAliasesHelp(): string {
-  const lines = ["", "Command Aliases:", ""];
-
-  for (const cmd of COMMANDS) {
-    if (cmd.aliases && cmd.aliases.length > 0) {
-      lines.push(`  ${cmd.command} → ${cmd.aliases.join(", ")}`);
-    }
-  }
-
-  lines.push("");
-  lines.push("Power User Tips:");
-  lines.push("  • Use 'atlas ps' as a shortcut for 'atlas session list'");
-  lines.push(
-    "  • Most commands have smart defaults (e.g., 'atlas work' → 'atlas workspace serve')",
-  );
-  lines.push("  • Use --json flag on data commands for scripting");
-  lines.push("  • Commands work from any directory with --workspace flag");
-
-  return lines.join("\n");
-}
-
-/**
  * Check if a command exists (including aliases)
  */
 export function isValidCommand(input: string): boolean {
@@ -157,20 +133,4 @@ export function isValidCommand(input: string): boolean {
   }
 
   return false;
-}
-
-/**
- * Resolve a command or alias to the actual command name
- */
-function resolveCommand(input: string): string | null {
-  const lowerInput = input.toLowerCase();
-
-  for (const cmd of COMMANDS) {
-    if (cmd.command.toLowerCase() === lowerInput) return cmd.command;
-    if (cmd.aliases?.some((alias) => alias.toLowerCase() === lowerInput)) {
-      return cmd.command;
-    }
-  }
-
-  return null;
 }

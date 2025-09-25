@@ -2328,7 +2328,7 @@ Think step by step about the best approach to handle this signal, then use the t
             executionStrategy,
           };
 
-          phaseMap.get(phase)!.push(normalized);
+          phaseMap.get(phase)?.push(normalized);
         }
       }
 
@@ -2445,7 +2445,7 @@ Think step by step about the best approach to handle this signal, then use the t
     const extractedAgents = matches
       .map((match) => match[1])
       .filter(
-        (agent): agent is string => !!agent && this.sessionContext!.availableAgents.includes(agent),
+        (agent): agent is string => !!agent && this.sessionContext.availableAgents.includes(agent),
       );
 
     if (extractedAgents.length > 0) {

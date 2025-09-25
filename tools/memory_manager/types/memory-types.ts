@@ -5,7 +5,7 @@
  */
 
 // Use the MECMF CoALAMemoryEntry interface and CoALAMemoryType enum
-import type { CoALAMemoryEntry, CoALAMemoryManager } from "@atlas/memory";
+import type { CoALAMemoryEntry } from "@atlas/memory";
 import { CoALAMemoryType } from "@atlas/memory";
 
 // Re-export for external use;
@@ -13,14 +13,6 @@ export { CoALAMemoryType };
 
 // Create a MemoryEntry type alias for consistency
 export type MemoryEntry = CoALAMemoryEntry;
-
-// Local MemoryType for backward compatibility
-enum LocalMemoryType {
-  WORKING = "working",
-  EPISODIC = "episodic",
-  SEMANTIC = "semantic",
-  PROCEDURAL = "procedural",
-}
 
 export interface VectorSearchResult extends MemoryEntry {
   similarity: number;

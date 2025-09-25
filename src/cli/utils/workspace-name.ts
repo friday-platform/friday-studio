@@ -28,11 +28,3 @@ export async function getCurrentWorkspaceName(workspaceDir?: string): Promise<st
     return null;
   }
 }
-
-/**
- * Check if the current directory contains a valid workspace
- */
-async function isValidWorkspace(workspaceDir?: string): Promise<boolean> {
-  const name = await getCurrentWorkspaceName(workspaceDir);
-  return name !== null;
-}

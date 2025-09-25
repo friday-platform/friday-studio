@@ -103,7 +103,7 @@ Return ONLY the progress text, no explanations.
   }
 }
 
-export const RESEARCH_TOPIC_WRITER_PROMPT = `Task: Analyze research request and determine appropriate depth.
+const RESEARCH_TOPIC_WRITER_PROMPT = `Task: Analyze research request and determine appropriate depth.
 Purpose: Convert user's request into actionable research parameters.
 Today's date: ${getTodaysDate()}
 

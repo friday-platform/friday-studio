@@ -112,13 +112,6 @@ export const templateConfigSchema = z.object({
   metadata: templateMetadataSchema.optional(),
 });
 
-// Generate from template request schema
-export const generateFromTemplateSchema = z.object({
-  templateId: z.string().min(1),
-  data: z.record(z.string(), z.unknown()).optional(),
-  options: z.record(z.string(), z.unknown()).optional(),
-});
-
 // Get item response schema (with optional content)
 export const getLibraryItemResponseSchema = z.object({
   item: libraryItemSchema,
@@ -155,19 +148,4 @@ export const createLibraryItemResponseSchema = z.object({
 // Delete item response schema
 export const deleteLibraryItemResponseSchema = z.object({ message: z.string() });
 
-// Generate template response schema (placeholder)
-export const generateTemplateResponseSchema = z.object({
-  message: z.string(),
-  templateId: z.string(),
-  data: z.unknown().optional(),
-  options: z.unknown().optional(),
-});
-
-// Type exports for TypeScript usage
-type LibraryItem = z.infer<typeof libraryItemSchema>;
-type CreateLibraryItem = z.infer<typeof createLibraryItemSchema>;
 export type LibrarySearchQuery = z.infer<typeof librarySearchQuerySchema>;
-type LibrarySearchResult = z.infer<typeof librarySearchResultSchema>;
-type LibraryStats = z.infer<typeof libraryStatsSchema>;
-type TemplateConfig = z.infer<typeof templateConfigSchema>;
-type GenerateFromTemplate = z.infer<typeof generateFromTemplateSchema>;

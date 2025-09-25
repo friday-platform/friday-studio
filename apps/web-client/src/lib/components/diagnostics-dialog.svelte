@@ -1,6 +1,6 @@
 <script lang="ts">
-import { onDestroy } from "svelte";
 import type { UnlistenFn } from "@tauri-apps/api/event";
+import { onDestroy } from "svelte";
 
 interface Props {
   open?: boolean;

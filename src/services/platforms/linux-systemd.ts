@@ -5,8 +5,8 @@ import {
   getDefaultServiceName,
   getPlatformPaths,
 } from "../../utils/platform.ts";
-import type { PlatformServiceManager, ServiceConfig, ServiceStatus } from "../types.ts";
 import { portConfigSchema } from "../schemas.ts";
+import type { PlatformServiceManager, ServiceConfig, ServiceStatus } from "../types.ts";
 
 /**
  * Linux systemd service manager for Atlas

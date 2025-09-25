@@ -16,7 +16,7 @@ const LibraryItemSchema = z.object({
   agent_ids: z.array(z.string()).optional(),
   template_id: z.string().optional(),
   generated_by: z.string().optional(),
-  custom_fields: z.record(z.unknown()).optional(),
+  custom_fields: z.record(z.string(), z.unknown()).optional(),
 });
 
 export type LibraryItem = z.infer<typeof LibraryItemSchema>;
@@ -27,12 +27,12 @@ const formatBytes = (bytes: number): string => {
   const k = 1024;
   const sizes = ["B", "KB", "MB", "GB"];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / k ** i).toFixed(1)) + " " + sizes[i];
+  return `${parseFloat((bytes / k ** i).toFixed(1))} ${sizes[i]}`;
 };
 
 const formatDate = (dateString: string): string => {
   const date = new Date(dateString);
-  return date.toLocaleDateString() + " " + date.toLocaleTimeString();
+  return `${date.toLocaleDateString()} ${date.toLocaleTimeString()}`;
 };
 
 // Component that renders the library list

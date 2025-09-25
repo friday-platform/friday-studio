@@ -101,35 +101,27 @@ Deno.test("Timer Signal - Storage Persistence", async (t) => {
 
       assertEquals(restoredTimer !== undefined, true, "Timer should be restored");
       assertEquals(
-        restoredTimer!.workspaceId,
+        restoredTimer.workspaceId,
         validConfig.workspaceId,
         "Should restore correct workspace ID",
       );
       assertEquals(
-        restoredTimer!.signalId,
+        restoredTimer.signalId,
         validConfig.signalId,
         "Should restore correct signal ID",
       );
-      assertEquals(
-        restoredTimer!.schedule,
-        validConfig.schedule,
-        "Should restore correct schedule",
-      );
-      assertEquals(
-        restoredTimer!.timezone,
-        validConfig.timezone,
-        "Should restore correct timezone",
-      );
-      assertEquals(restoredTimer!.isActive, true, "Should restore active status");
+      assertEquals(restoredTimer.schedule, validConfig.schedule, "Should restore correct schedule");
+      assertEquals(restoredTimer.timezone, validConfig.timezone, "Should restore correct timezone");
+      assertEquals(restoredTimer.isActive, true, "Should restore active status");
 
       // Should have a next execution time (may be recalculated if original was in the past)
       assertEquals(
-        restoredTimer!.nextExecution !== undefined,
+        restoredTimer.nextExecution !== undefined,
         true,
         "Should have next execution time",
       );
       assertEquals(
-        restoredTimer!.nextExecution!.getTime() > Date.now(),
+        restoredTimer.nextExecution.getTime() > Date.now(),
         true,
         "Next execution should be in future",
       );
@@ -244,7 +236,7 @@ Deno.test("Timer Signal - Storage Persistence", async (t) => {
     // Should not restore expired time, should calculate new future time
     assertEquals(restoredNextExecution !== undefined, true, "Should have next execution");
     assertEquals(
-      restoredNextExecution!.getTime() > Date.now(),
+      restoredNextExecution.getTime() > Date.now(),
       true,
       "Should calculate new future execution time, not restore expired one",
     );
@@ -267,7 +259,7 @@ Deno.test("Timer Signal - Storage Persistence", async (t) => {
     // Get timer info to verify it's properly configured
     const timer = cronManager.getTimer(validConfig.workspaceId, validConfig.signalId);
     assertEquals(timer !== undefined, true, "Timer should be registered");
-    assertEquals(timer!.isActive, true, "Timer should be active");
+    assertEquals(timer.isActive, true, "Timer should be active");
     assertEquals(
       typeof initialNextExecution,
       "string",
@@ -325,7 +317,7 @@ Deno.test("Timer Signal - Storage Persistence", async (t) => {
     // Get timer info
     const timer = cronManager.getTimer(validConfig.workspaceId, validConfig.signalId);
     assertEquals(timer !== undefined, true, "Timer should exist");
-    assertEquals(timer!.lastExecution, undefined, "Should not have last execution initially");
+    assertEquals(timer.lastExecution, undefined, "Should not have last execution initially");
 
     // Note: CronManager tracks lastExecution internally and persists it
     // after each execution, but testing automatic execution would require

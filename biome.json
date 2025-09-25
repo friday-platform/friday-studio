@@ -5,12 +5,12 @@
     "ignoreUnknown": false,
     "includes": [
       "**",
-      "!**/.svelte-kit/**",
-      "!**/build/**",
-      "!**/.vite/**",
-      "!**/dist/**",
-      "!**/target/**",
-      "!**/node_modules/**"
+      "!**/.svelte-kit",
+      "!**/build",
+      "!**/.vite",
+      "!**/dist",
+      "!**/target",
+      "!**/node_modules"
     ]
   },
   "formatter": {

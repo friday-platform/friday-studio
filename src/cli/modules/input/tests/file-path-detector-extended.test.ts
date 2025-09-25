@@ -65,22 +65,22 @@ C:\\Users\\report.pdf`;
   const [file, directory, windowsFile] = detected;
 
   // Check file detection
-  assertEquals(file!.fileName, "image.png");
-  assertEquals(file!.isDirectory, false);
-  assertEquals(file!.hasExtension, true);
-  assertEquals(file!.extension, "png");
+  assertEquals(file?.fileName, "image.png");
+  assertEquals(file?.isDirectory, false);
+  assertEquals(file?.hasExtension, true);
+  assertEquals(file?.extension, "png");
 
   // Check directory detection
-  assertEquals(directory!.fileName, "Documents");
-  assertEquals(directory!.isDirectory, true);
-  assertEquals(directory!.hasExtension, false);
-  assertEquals(directory!.extension, undefined);
+  assertEquals(directory?.fileName, "Documents");
+  assertEquals(directory?.isDirectory, true);
+  assertEquals(directory?.hasExtension, false);
+  assertEquals(directory?.extension, undefined);
 
   // Check Windows file
-  assertEquals(windowsFile!.fileName, "report.pdf");
-  assertEquals(windowsFile!.isDirectory, false);
-  assertEquals(windowsFile!.hasExtension, true);
-  assertEquals(windowsFile!.extension, "pdf");
+  assertEquals(windowsFile?.fileName, "report.pdf");
+  assertEquals(windowsFile?.isDirectory, false);
+  assertEquals(windowsFile?.hasExtension, true);
+  assertEquals(windowsFile?.extension, "pdf");
 });
 
 Deno.test("detectFilePaths - handles mixed content", () => {
@@ -113,8 +113,8 @@ C:\\Program Files\\App\\config.json`;
   const detected = detectFilePaths(text);
 
   assertEquals(detected.length, 2);
-  assertEquals(detected[0]!.fileName, "presentation.pptx");
-  assertEquals(detected[1]!.fileName, "config.json");
+  assertEquals(detected.at(0)?.fileName, "presentation.pptx");
+  assertEquals(detected.at(1)?.fileName, "config.json");
 });
 
 Deno.test("createFileAttachmentPlaceholder - handles dotfiles correctly", () => {

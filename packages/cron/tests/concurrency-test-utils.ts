@@ -139,7 +139,7 @@ export class RaceConditionDetector {
   detectRaces(): Array<{ op1: string; op2: string; overlap: number }> {
     const completed = Array.from(this.operations.entries())
       .filter(([_, op]) => op.end !== undefined)
-      .map(([id, op]) => ({ id, start: op.start, end: op.end! }));
+      .map(([id, op]) => ({ id, start: op.start, end: op.end }));
 
     this.overlaps = [];
 

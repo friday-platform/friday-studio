@@ -14,8 +14,6 @@ import { z } from "zod/v4";
 import { DEFAULT_TIMEOUT } from "./constants.ts";
 import { AtlasApiError } from "./errors.ts";
 import {
-  JobDetailedInfoSchema as _JobDetailedInfoSchema,
-  SignalDetailedInfoSchema as _SignalDetailedInfoSchema,
   AgentInfoSchema,
   CancelSessionResponseSchema,
   CreateWorkspaceFromTemplateRequestSchema,

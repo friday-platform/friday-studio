@@ -17,14 +17,14 @@ export class InMemoryAgentRegistry implements AgentRegistry {
     // Apply filters if provided
     if (filters?.domains && filters.domains.length > 0) {
       agents = agents.filter((agent) =>
-        agent.metadata.expertise.domains.some((domain) => filters.domains!.includes(domain)),
+        agent.metadata.expertise.domains.some((domain) => filters.domains.includes(domain)),
       );
     }
 
     if (filters?.tags && filters.tags.length > 0) {
       agents = agents.filter(
         (agent) =>
-          agent.metadata.metadata?.tags?.some((tag) => filters.tags!.includes(tag)) ?? false,
+          agent.metadata.metadata?.tags?.some((tag) => filters.tags.includes(tag)) ?? false,
       );
     }
 
