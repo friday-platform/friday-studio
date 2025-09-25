@@ -98,14 +98,20 @@ runs:
           # Skip if path is empty
           [ -z "$path" ] && continue
 
-          # Handle glob patterns by finding the first matching file
-          matched_path=""
-          for file in ../../$path; do
-            if [ -e "$file" ]; then
-              matched_path="$file"
-              break
-            fi
-          done
+          # Handle .app directories as direct paths (no glob expansion)
+          # Handle other paths with glob patterns
+          if [[ "$path" == *.app ]]; then
+            matched_path="../../$path"
+          else
+            # Handle glob patterns by finding the first matching file
+            matched_path=""
+            for file in ../../$path; do
+              if [ -e "$file" ]; then
+                matched_path="$file"
+                break
+              fi
+            done
+          fi
 
           # Check if file exists (fail for required, skip for optional)
           if [ -z "$matched_path" ]; then
