@@ -2,7 +2,7 @@
 # Optimized for production deployment in Kubernetes
 
 # Stage 1: Build stage
-FROM denoland/deno:alpine-2.5.1 AS builder
+FROM denoland/deno:alpine-2.5.2 AS builder
 
 # Set working directory
 WORKDIR /app
@@ -36,7 +36,7 @@ RUN deno compile \
     src/cli.tsx
 
 # Stage 2: Runtime stage - use deno alpine image for compatibility
-FROM denoland/deno:alpine-2.5.1 AS runtime
+FROM denoland/deno:alpine-2.5.2 AS runtime
 
 # Install additional runtime dependencies
 RUN apk add --no-cache \
