@@ -658,7 +658,7 @@ export class SessionSupervisorActor implements BaseActor {
       toolCalls?: ToolCall[];
       toolResults?: ToolResult[];
     } = await generateText({
-      model: this.llmProvider("claude-3-7-sonnet-20250219"),
+      model: this.llmProvider("claude-3-7-sonnet-latest"),
       system: this.buildExecutionPlanningPrompt(this.sessionContext),
       messages: [
         {

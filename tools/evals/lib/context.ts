@@ -5,7 +5,7 @@ import type {
   AtlasUIMessageChunk,
   StreamEmitter,
 } from "@atlas/agent-sdk";
-import { AgentTelemetryCollector, type Metrics } from "./agent-telemetry-collector.ts";
+import { AgentTelemetryCollector, type CollectedMetrics } from "./agent-telemetry-collector.ts";
 
 /**
  * StreamEmitter implementation that captures emitted events for testing
@@ -114,7 +114,7 @@ export class AgentContextAdapter {
   /**
    * Get telemetry metrics after execution
    */
-  getMetrics(): Metrics | null {
+  getMetrics(): CollectedMetrics | null {
     return this.telemetryCollector?.getMetrics() || null;
   }
 

@@ -185,7 +185,7 @@ Deno.test("Workspace Creation Agent", async (t) => {
 
   /**
    * Tests scheduled workflow with bundled agents.
-   * Validates use of targeted-research agent and schedule signals for recurring tasks.
+   * Validates use of research agent and schedule signals for recurring tasks.
    */
   await step(t, "Weekly Cultural Events Email", async ({ snapshot }) => {
     // Reset adapter and create fresh context for this test
@@ -235,13 +235,13 @@ Deno.test("Workspace Creation Agent", async (t) => {
       "Signal should have a cron schedule",
     );
 
-    // Targeted-research is a bundled agent optimized for web data collection
+    // Research is a bundled agent optimized for web data collection
     assert(result.config.agents, "Should have agents defined");
     const agents = Object.values(result.config.agents);
     const hasTargetedResearch = agents.some(
-      (agent) => agent.type === "atlas" && agent.agent === "targeted-research",
+      (agent) => agent.type === "atlas" && agent.agent === "research",
     );
-    assert(hasTargetedResearch, "Should have an atlas targeted-research agent");
+    assert(hasTargetedResearch, "Should have an atlas research agent");
 
     const workflowEvaluation = await llmJudge({
       criteria: `The workspace should effectively:

@@ -1,5 +1,7 @@
 import { z } from "zod/v4";
 
+const formatter = new Intl.DateTimeFormat("en-US", { dateStyle: "full" });
+
 /**
  * @atlas/utils - Shared utility functions for Atlas
  */
@@ -18,7 +20,15 @@ export function formatZodError(error: z.ZodError): string {
   return z.prettifyError(error);
 }
 
-export type Result<T, U> = { ok: true; data: T } | { ok: false; error: U };
+/**
+ * Returns today's date in a human-(or robot)-readable format.
+ * @example Monday, 22 September 2025
+ */
+export function getTodaysDate() {
+  return formatter.format(new Date());
+}
+
+export type Result<T, U = undefined> = { ok: true; data: T } | { ok: false; error: U };
 
 /**
  * Mimics the Result type from Rust/Effect.ts, because it's often

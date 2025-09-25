@@ -177,7 +177,7 @@ For each agent requirement:
 <bundled_agents>
 ${bundledAgentsReference}
 ---
-Research and web scraping tasks should be handled by the 'targeted-research' agent.
+Research and web scraping tasks should be handled by the 'research' agent.
 </bundled_agents>
 
 <prompt_guidelines>

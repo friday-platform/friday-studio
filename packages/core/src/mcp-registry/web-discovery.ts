@@ -1,4 +1,4 @@
-import { targetedResearchAgent } from "@atlas/bundled-agents";
+import { researchAgent } from "@atlas/bundled-agents";
 import { createLogger } from "@atlas/logger";
 import type {
   MCPCategory,
@@ -32,8 +32,6 @@ interface ParsedMCPServer {
  */
 export class WebMCPDiscovery {
   private logger = createLogger({ component: "WebMCPDiscovery" });
-
-  constructor() {}
 
   /**
    * Discover MCP servers via web research using the targeted research agent
@@ -124,7 +122,7 @@ export class WebMCPDiscovery {
         // Use the targeted research agent for web search
         // Note: Passing undefined for stream since there are type compatibility issues
         // with the current research agent stream interface
-        const result = await targetedResearchAgent.execute(
+        const result = await researchAgent.execute(
           `Find MCP servers that can be installed via npx: ${query}. Focus only on NPM packages that support npx installation, not SSE servers or custom installation methods. Include GitHub repositories and official MCP server directories. Provide exact package names, links to the package, and all required environment variables to setup the server.`,
           {
             tools: {},

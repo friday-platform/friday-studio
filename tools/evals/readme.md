@@ -27,7 +27,7 @@ justification explaining why. This forces clarity about what "working" means.
 ### Basic Structure
 
 ```typescript
-import { targetedResearchAgent } from "@atlas/bundled-agents";
+import { slackCommunicatorAgent } from "@atlas/bundled-agents";
 import { assert } from "@std/assert";
 import { AgentContextAdapter } from "../../lib/context.ts";
 import { loadCredentials } from "../../lib/load-credentials.ts";

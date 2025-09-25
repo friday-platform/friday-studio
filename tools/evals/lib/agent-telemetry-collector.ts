@@ -24,11 +24,14 @@ interface ToolExecution {
   endTime?: number;
   duration?: number;
   error?: string;
+  args?: unknown;
+  result?: unknown;
 }
 
 /** Span data for execution trace */
 export interface ExecutionSpan {
   spanId: string;
+  parentSpanId?: string;
   name: string;
   startTime: number;
   endTime?: number;
@@ -51,7 +54,9 @@ interface SpanMeta {
   name: string;
   startTime: number;
   toolName: string | undefined;
+  toolIndex?: number;
   traceIndex: number;
+  parentSpanId?: string;
 }
 
 const TokenAttributesSchema = z
@@ -67,6 +72,8 @@ const TokenAttributesSchema = z
 const ToolCallAttributesSchema = z
   .object({
     "ai.toolCall.name": z.string().optional(),
+    "ai.toolCall.args": z.string().optional(),
+    "ai.toolCall.result": z.string().optional(),
     "ai.response.toolCalls": z.array(z.object({ toolName: z.string() })).optional(),
   })
   .passthrough();
@@ -78,6 +85,7 @@ export class AgentTelemetryCollector implements Tracer {
   private tokens = { prompt: 0, completion: 0, total: 0 };
   private executionTrace: ExecutionSpan[] = [];
   private activeSpans = new Map<string, SpanMeta>();
+  private readonly traceId = crypto.randomUUID(); // Single traceId for entire execution
 
   /**
    * Starts a span and runs a callback within its context.
@@ -153,8 +161,12 @@ export class AgentTelemetryCollector implements Tracer {
     const spanId = crypto.randomUUID();
     const startTime = Date.now();
 
+    // Find current active parent span (if any)
+    const parentSpanId = this.getCurrentParentSpanId();
+
     const executionSpan: ExecutionSpan = {
       spanId,
+      parentSpanId,
       name,
       startTime,
       attributes: options?.attributes || {},
@@ -163,7 +175,7 @@ export class AgentTelemetryCollector implements Tracer {
     this.executionTrace.push(executionSpan);
     const traceIndex = this.executionTrace.length - 1;
 
-    const spanMeta: SpanMeta = { name, startTime, toolName: undefined, traceIndex };
+    const spanMeta: SpanMeta = { name, startTime, toolName: undefined, traceIndex, parentSpanId };
     this.activeSpans.set(spanId, spanMeta);
 
     // Track tool calls from ai.toolCall spans
@@ -172,7 +184,23 @@ export class AgentTelemetryCollector implements Tracer {
       if (attrs.success && attrs.data["ai.toolCall.name"]) {
         const toolName = attrs.data["ai.toolCall.name"];
         spanMeta.toolName = toolName;
-        this.tools.push({ name: toolName, startTime });
+
+        const toolExecution: ToolExecution = {
+          name: toolName,
+          startTime
+        };
+
+        // Parse and store args if available
+        if (attrs.data["ai.toolCall.args"]) {
+          try {
+            toolExecution.args = JSON.parse(attrs.data["ai.toolCall.args"]);
+          } catch {
+            toolExecution.args = attrs.data["ai.toolCall.args"];
+          }
+        }
+
+        this.tools.push(toolExecution);
+        spanMeta.toolIndex = this.tools.length - 1;
       }
     }
 
@@ -200,6 +228,23 @@ export class AgentTelemetryCollector implements Tracer {
     this.activeSpans.clear();
   }
 
+  /** Get the current parent span ID (for nested spans) */
+  private getCurrentParentSpanId(): string | undefined {
+    // Find the most recently started span that hasn't ended yet
+    // This will be the parent for the new span
+    let parentSpanId: string | undefined;
+    let latestStartTime = 0;
+
+    for (const [spanId, meta] of this.activeSpans) {
+      if (meta.startTime > latestStartTime) {
+        latestStartTime = meta.startTime;
+        parentSpanId = spanId;
+      }
+    }
+
+    return parentSpanId;
+  }
+
   /** Creates a minimal Span that extracts metrics from AI SDK calls */
   private createMinimalSpan(spanId: string, name: string): Span {
     const spanMeta = this.activeSpans.get(spanId);
@@ -214,6 +259,19 @@ export class AgentTelemetryCollector implements Tracer {
         if (traceSpan) {
           traceSpan.attributes[key] = value;
         }
+
+        // Capture tool call result
+        if (key === "ai.toolCall.result" && spanMeta.toolIndex !== undefined && typeof value === "string") {
+          const tool = this.tools[spanMeta.toolIndex];
+          if (tool) {
+            try {
+              tool.result = JSON.parse(value);
+            } catch {
+              tool.result = value;
+            }
+          }
+        }
+
         return span;
       },
 
@@ -241,9 +299,24 @@ export class AgentTelemetryCollector implements Tracer {
         }
 
         const toolAttrs = ToolCallAttributesSchema.safeParse(attributes);
-        if (toolAttrs.success && toolAttrs.data["ai.response.toolCalls"]) {
-          for (const call of toolAttrs.data["ai.response.toolCalls"]) {
-            this.tools.push({ name: call.toolName, startTime: Date.now() });
+        if (toolAttrs.success) {
+          // Handle tool result being set
+          if (toolAttrs.data["ai.toolCall.result"] && spanMeta.toolIndex !== undefined) {
+            const tool = this.tools[spanMeta.toolIndex];
+            if (tool) {
+              try {
+                tool.result = JSON.parse(toolAttrs.data["ai.toolCall.result"]);
+              } catch {
+                tool.result = toolAttrs.data["ai.toolCall.result"];
+              }
+            }
+          }
+
+          // Handle response tool calls
+          if (toolAttrs.data["ai.response.toolCalls"]) {
+            for (const call of toolAttrs.data["ai.response.toolCalls"]) {
+              this.tools.push({ name: call.toolName, startTime: Date.now() });
+            }
           }
         }
 
@@ -282,10 +355,10 @@ export class AgentTelemetryCollector implements Tracer {
           traceSpan.status = status;
         }
 
-        if (status.code === 1 && spanMeta.toolName) {
-          const toolIndex = this.tools.findIndex((t) => t.name === spanMeta.toolName && !t.endTime);
-          if (toolIndex !== -1 && this.tools[toolIndex]) {
-            this.tools[toolIndex].error = status.message || "Error";
+        if (status.code === 1 && spanMeta.toolIndex !== undefined) {
+          const tool = this.tools[spanMeta.toolIndex];
+          if (tool) {
+            tool.error = status.message || "Error";
           }
         }
         return span;
@@ -300,13 +373,11 @@ export class AgentTelemetryCollector implements Tracer {
           traceSpan.duration = endTime - traceSpan.startTime;
         }
 
-        if (spanMeta.toolName) {
-          const toolIndex = this.tools.findIndex(
-            (t) => t.name === spanMeta.toolName && t.startTime === spanMeta.startTime && !t.endTime,
-          );
-          if (toolIndex !== -1 && this.tools[toolIndex]) {
-            this.tools[toolIndex].endTime = endTime;
-            this.tools[toolIndex].duration = endTime - spanMeta.startTime;
+        if (spanMeta.toolIndex !== undefined) {
+          const tool = this.tools[spanMeta.toolIndex];
+          if (tool && !tool.endTime) {
+            tool.endTime = endTime;
+            tool.duration = endTime - tool.startTime;
           }
         }
 
@@ -325,7 +396,7 @@ export class AgentTelemetryCollector implements Tracer {
       },
 
       updateName: () => span,
-      spanContext: () => ({ traceId: "", spanId, traceFlags: 0 }),
+      spanContext: () => ({ traceId: this.traceId, spanId, traceFlags: 0 }),
       addLink: (_link: Link) => span,
       addLinks: (_links: Link[]) => span,
     };
@@ -338,11 +409,30 @@ export class AgentTelemetryCollector implements Tracer {
     key: string,
     value: unknown,
     _spanName: string,
-    spanMeta: { name: string; startTime: number; toolName?: string; traceIndex: number },
+    spanMeta: SpanMeta,
   ): void {
     if (key === "ai.toolCall.name" && typeof value === "string") {
-      spanMeta.toolName = value;
-      this.tools.push({ name: value, startTime: spanMeta.startTime });
+      // Only create a new tool if we don't already have one for this span
+      if (!spanMeta.toolName) {
+        spanMeta.toolName = value;
+        const toolExecution: ToolExecution = {
+          name: value,
+          startTime: spanMeta.startTime
+        };
+        this.tools.push(toolExecution);
+        spanMeta.toolIndex = this.tools.length - 1;
+      }
+    }
+
+    if (key === "ai.toolCall.args" && typeof value === "string" && spanMeta.toolIndex !== undefined) {
+      const tool = this.tools[spanMeta.toolIndex];
+      if (tool) {
+        try {
+          tool.args = JSON.parse(value);
+        } catch {
+          tool.args = value;
+        }
+      }
     }
 
     if (typeof value === "number") {

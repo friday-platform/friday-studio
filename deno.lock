@@ -6,7 +6,6 @@
     "npm:@ai-sdk/google@^2.0.14": "2.0.15_zod@3.25.76",
     "npm:@ai-sdk/openai@^2.0.30": "2.0.32_zod@3.25.76",
     "npm:@ai-sdk/provider@2": "2.0.0",
-    "npm:@biomejs/biome@*": "2.2.4",
     "npm:@biomejs/biome@^2.2.4": "2.2.4",
     "npm:@eslint/compat@^1.2.5": "1.4.0_eslint@9.36.0",
     "npm:@eslint/js@^9.18.0": "9.36.0",
@@ -66,9 +65,7 @@
     "npm:hono@^4.9.8": "4.9.8",
     "npm:ink@^6.3.0": "6.3.1_@types+react@19.1.13_react@19.1.1",
     "npm:js-levenshtein@^1.1.6": "1.1.6",
-    "npm:knip@5.64.0": "5.64.0_@types+node@24.5.2_typescript@5.9.2_zod@3.25.76",
     "npm:knip@^5.63.1": "5.64.0_@types+node@24.5.2_typescript@5.9.2_zod@3.25.76",
-    "npm:lint-staged@^16.1.2": "16.2.0",
     "npm:lint-staged@^16.1.6": "16.2.0",
     "npm:marked-terminal@^7.3.0": "7.3.0_marked@16.3.0",
     "npm:marked@^16.2.1": "16.3.0",
@@ -83,7 +80,6 @@
     "npm:svelte@5": "5.39.4_acorn@8.15.0",
     "npm:typescript-eslint@^8.20.0": "8.44.1_eslint@9.36.0_typescript@5.9.2_@typescript-eslint+parser@8.44.1__eslint@9.36.0__typescript@5.9.2",
     "npm:typescript@5": "5.9.2",
-    "npm:vite@7.1.7": "7.1.7_picomatch@4.0.3_@types+node@24.2.0",
     "npm:vite@^7.0.4": "7.1.7_picomatch@4.0.3_@types+node@24.2.0",
     "npm:xstate@^5.21.0": "5.22.0",
     "npm:yargs@18": "18.0.0",
@@ -3851,6 +3847,7 @@
         "packageJson": {
           "dependencies": [
             "npm:@jsr/std__path@^1.1.2",
+            "npm:@opentelemetry/api@^1.9.0",
             "npm:zod@^3.25.76"
           ]
         }
