@@ -1,29 +1,8 @@
-/**
- * Shared utilities for MCP tools
- * These utilities are extracted from the original platform-server.ts
- * to be reused across modular tool implementations
- */
-
+/** Shared utilities for MCP tools */
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { Logger } from "../platform-server.ts";
 
-/**
- * Helper to build query parameters for library API calls
- *
- * Constructs URL query parameters with comprehensive validation and sanitization.
- * Reduces code duplication between library tools while ensuring data integrity.
- *
- * Validation Features:
- * - ISO 8601 date format validation with timezone support
- * - Query string length limits (max 1000 characters)
- * - Array size limits (20 types, 50 tags)
- * - Numeric range validation (limit: 1-1000, offset: ≥0)
- * - Automatic case normalization for types and tags
- * - URL-safe encoding handled by URLSearchParams
- *
- * @param options - Query parameter options
- * @returns URLSearchParams object ready for API requests
- * @throws {Error} Validation errors for invalid input parameters
- */
+/** Build validated query params for library APIs */
 export function buildLibraryQueryParams(options: {
   query?: string;
   type?: string[];
@@ -35,7 +14,6 @@ export function buildLibraryQueryParams(options: {
 }): URLSearchParams {
   const params = new URLSearchParams();
 
-  // Enhanced input validation
   if (options.limit !== undefined && (options.limit < 1 || options.limit > 1000)) {
     throw new Error("Limit must be between 1 and 1000");
   }
@@ -43,7 +21,6 @@ export function buildLibraryQueryParams(options: {
     throw new Error("Offset must be non-negative");
   }
 
-  // Validate and parse ISO 8601 dates
   let sinceDate: Date | undefined;
   let untilDate: Date | undefined;
 
@@ -73,12 +50,10 @@ export function buildLibraryQueryParams(options: {
     }
   }
 
-  // Validate date range logic
   if (sinceDate && untilDate && sinceDate >= untilDate) {
     throw new Error("'since' date must be before 'until' date");
   }
 
-  // Build query params with validated inputs
   if (options.query) {
     if (options.query.length > 1000) {
       throw new Error("Query string too long (max 1000 characters)");
@@ -90,7 +65,6 @@ export function buildLibraryQueryParams(options: {
     if (options.type.length > 20) {
       throw new Error("Too many type filters (max 20)");
     }
-    // Normalize case and join
     params.set("type", options.type.map((t) => t.toLowerCase()).join(","));
   }
 
@@ -98,11 +72,9 @@ export function buildLibraryQueryParams(options: {
     if (options.tags.length > 50) {
       throw new Error("Too many tag filters (max 50)");
     }
-    // Normalize case and join
     params.set("tags", options.tags.map((t) => t.toLowerCase()).join(","));
   }
 
-  // Use validated ISO strings
   if (sinceDate) {
     params.set("since", sinceDate.toISOString());
   }
@@ -110,7 +82,6 @@ export function buildLibraryQueryParams(options: {
     params.set("until", untilDate.toISOString());
   }
 
-  // Safe numeric conversions with validated ranges
   if (options.limit !== undefined) {
     params.set("limit", Math.floor(options.limit).toString());
   }
@@ -121,26 +92,7 @@ export function buildLibraryQueryParams(options: {
   return params;
 }
 
-/**
- * Handle daemon API response with enhanced error handling and retry support
- *
- * Centralizes response processing for daemon API calls with comprehensive error handling,
- * retry logic for transient failures, and detailed logging for troubleshooting.
- *
- * Features:
- * - Automatic JSON parsing with fallback error handling
- * - Structured error details with operation context
- * - Retry support for transient failures (5xx, timeouts)
- * - Performance metrics logging for successful requests
- * - MCP-compliant error codes (-32000 for server errors, -32603 for parse errors)
- *
- * @param response - HTTP Response object from fetch
- * @param operation - Operation name for logging and error context
- * @param options - Retry configuration options
- * @param logger - Logger instance for debugging
- * @returns Parsed JSON response data
- * @throws {Error} Enhanced error with structured details and retry information
- */
+/** Handle daemon API response with retry support */
 export async function handleDaemonResponse(
   response: Response,
   operation: string,
@@ -154,7 +106,6 @@ export async function handleDaemonResponse(
     let responseText = "";
 
     try {
-      // Try to parse as JSON first
       const text = await response.text();
       responseText = text;
       if (text.trim().startsWith("{") || text.trim().startsWith("[")) {
@@ -163,17 +114,14 @@ export async function handleDaemonResponse(
         errorData = { message: text };
       }
     } catch (parseError) {
-      // If parsing fails, preserve the raw response text
       errorData = {
         message: responseText || response.statusText,
         parseError: parseError instanceof Error ? parseError.message : String(parseError),
       };
     }
 
-    // Determine if error is retryable
     const isRetryable = isRetryableError(response.status);
 
-    // Enhanced error with structured information
     const errorInfo = {
       operation,
       status: response.status,
@@ -187,10 +135,8 @@ export async function handleDaemonResponse(
       ...errorData,
     };
 
-    // Log detailed error information
     logger.error(`Daemon API error for ${operation}`, errorInfo);
 
-    // Attempt retry for retryable errors
     if (isRetryable && retryCount < maxRetries) {
       const delay = calculateRetryDelay(retryCount);
       logger.info(
@@ -199,8 +145,6 @@ export async function handleDaemonResponse(
 
       await sleep(delay);
 
-      // Retry the request - this would need to be implemented at the caller level
-      // For now, we'll throw with retry information
       const retryError = new Error(
         `Daemon API error for ${operation}: ${response.status} - ${
           errorData.error || errorData.message || response.statusText
@@ -215,14 +159,13 @@ export async function handleDaemonResponse(
       throw retryError;
     }
 
-    // Create comprehensive error for non-retryable or max retries exceeded
     const error = new Error(
       `Daemon API error for ${operation}: ${response.status} - ${
         errorData.error || errorData.message || response.statusText
       }${retryCount > 0 ? ` (failed after ${retryCount} retries)` : ""}`,
     );
 
-    error.code = -32000; // MCP server error code
+    error.code = -32000;
 
     error.details = errorInfo;
 
@@ -233,7 +176,6 @@ export async function handleDaemonResponse(
   try {
     const result = await response.json();
 
-    // Log successful response metrics
     logger.debug(`Daemon API success for ${operation}`, {
       operation,
       status: response.status,
@@ -251,7 +193,7 @@ export async function handleDaemonResponse(
       }`,
     );
 
-    parseError.code = -32603; // Parse error code
+    parseError.code = -32603;
 
     parseError.details = {
       operation,
@@ -267,26 +209,7 @@ export async function handleDaemonResponse(
   }
 }
 
-/**
- * Fetch with timeout and enhanced error handling
- *
- * Wrapper around fetch() with automatic timeout handling and enhanced error reporting.
- * Prevents hanging requests and provides detailed error context for troubleshooting.
- *
- * Features:
- * - Configurable request timeout (default: 30 seconds)
- * - Automatic request cancellation on timeout
- * - AbortController integration for clean cancellation
- * - Enhanced error messages with URL and timing context
- * - MCP-compliant error codes for timeout scenarios
- *
- * @param url - Target URL for the request
- * @param options - Fetch options (headers, method, body, etc.)
- * @param timeoutMs - Request timeout in milliseconds (default: 30000)
- * @returns HTTP Response object
- * @throws {Error} Timeout error with structured details
- * @throws {Error} Network errors (connection failed, DNS resolution, etc.)
- */
+/** Fetch with configurable timeout */
 export async function fetchWithTimeout(
   url: string,
   options: RequestInit = {},
@@ -311,16 +234,12 @@ export async function fetchWithTimeout(
       throw timeoutError;
     }
 
-    // Re-throw other errors (network, etc.)
     throw error;
   }
 }
 
-/**
- * Determine if an HTTP status code indicates a retryable error
- */
+/** Check if HTTP status is retryable */
 function isRetryableError(status: number): boolean {
-  // Retry on server errors (5xx) and specific client errors
   return (
     status >= 500 || // Server errors
     status === 408 || // Request timeout
@@ -330,27 +249,19 @@ function isRetryableError(status: number): boolean {
   );
 }
 
-/**
- * Calculate exponential backoff delay for retries
- */
+/** Calculate retry delay with exponential backoff */
 function calculateRetryDelay(retryCount: number): number {
-  // Exponential backoff: 1s, 2s, 4s, 8s, etc. with jitter
   const baseDelay = 2 ** retryCount * 1000;
-  const jitter = Math.random() * 0.3 * baseDelay; // 30% jitter
-  return Math.min(baseDelay + jitter, 30000); // Cap at 30 seconds
+  const jitter = Math.random() * 0.3 * baseDelay;
+  return Math.min(baseDelay + jitter, 30000);
 }
 
-/**
- * Simple sleep utility for retry delays
- */
+/** Sleep for specified milliseconds */
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/**
- * Check if a job is discoverable for a workspace
- * SECURITY: Respects workspace-level discoverable.jobs configuration
- */
+/** Check if job is discoverable for workspace */
 export async function checkJobDiscoverable(
   daemonUrl: string,
   workspaceId: string,
@@ -361,19 +272,15 @@ export async function checkJobDiscoverable(
   try {
     response = await fetch(`${daemonUrl}/api/workspaces/${workspaceId}`);
     if (!response.ok) {
-      // Consume the response body to prevent leaks
       try {
         await response.text();
-      } catch {
-        // Ignore errors when consuming error response body
-      }
-      return false; // Fail closed
+      } catch {}
+      return false;
     }
 
     const workspace = await response.json();
     const discoverableJobs = workspace.config?.server?.mcp?.discoverable?.jobs || [];
 
-    // Check if job matches any discoverable pattern
     for (const pattern of discoverableJobs) {
       const isWildcard = pattern.endsWith("*");
       const basePattern = isWildcard ? pattern.slice(0, -1) : pattern;
@@ -388,41 +295,29 @@ export async function checkJobDiscoverable(
 
     return false;
   } catch (error) {
-    // Consume any remaining response body to prevent leaks
     if (response) {
       try {
         await response.text();
-      } catch {
-        // Ignore errors when consuming error response body
-      }
+      } catch {}
     }
     logger.error("Platform MCP: Error checking job discoverability", {
       workspaceId,
       jobName,
       error: error instanceof Error ? error.message : String(error),
     });
-    return false; // Fail closed
+    return false;
   }
 }
 
-/**
- * Create a successful MCP tool response
- */
-export function createSuccessResponse(data: unknown): {
-  content: Array<{ type: "text"; text: string }>;
-  isError?: false;
-} {
+/** Create successful MCP response */
+export function createSuccessResponse(data: unknown): CallToolResult {
   return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }], isError: false };
 }
 
-/**
- * Create an error MCP tool response
- */
-export function createErrorResponse(
-  message: string,
-  details?: unknown,
-): { content: Array<{ type: "text"; text: string }>; isError: true } {
-  const errorData = { error: message, ...(details && { details }) };
-
-  return { content: [{ type: "text", text: JSON.stringify(errorData, null, 2) }], isError: true };
+/** Create error MCP response */
+export function createErrorResponse(message: string, details?: unknown): CallToolResult {
+  return {
+    content: [{ type: "text", text: JSON.stringify({ error: message, details }) }],
+    isError: true,
+  };
 }

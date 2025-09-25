@@ -1,8 +1,9 @@
-import type { ChatStorageRoutes } from "@atlas/atlasd";
+import type { ArtifactsRoutes, ChatStorageRoutes } from "@atlas/atlasd";
 import { fail, type Result, success } from "@atlas/utils";
 import { type ClientResponse, type DetailedError, hc, parseResponse } from "hono/client";
 
 export const client = {
+  artifactsStorage: hc<ArtifactsRoutes>("http://localhost:8080/api/artifacts"),
   chatStorage: hc<ChatStorageRoutes>("http://localhost:8080/api/chat-storage"),
 };
 

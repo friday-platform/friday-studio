@@ -185,10 +185,7 @@ export class AgentTelemetryCollector implements Tracer {
         const toolName = attrs.data["ai.toolCall.name"];
         spanMeta.toolName = toolName;
 
-        const toolExecution: ToolExecution = {
-          name: toolName,
-          startTime
-        };
+        const toolExecution: ToolExecution = { name: toolName, startTime };
 
         // Parse and store args if available
         if (attrs.data["ai.toolCall.args"]) {
@@ -261,7 +258,11 @@ export class AgentTelemetryCollector implements Tracer {
         }
 
         // Capture tool call result
-        if (key === "ai.toolCall.result" && spanMeta.toolIndex !== undefined && typeof value === "string") {
+        if (
+          key === "ai.toolCall.result" &&
+          spanMeta.toolIndex !== undefined &&
+          typeof value === "string"
+        ) {
           const tool = this.tools[spanMeta.toolIndex];
           if (tool) {
             try {
@@ -415,16 +416,17 @@ export class AgentTelemetryCollector implements Tracer {
       // Only create a new tool if we don't already have one for this span
       if (!spanMeta.toolName) {
         spanMeta.toolName = value;
-        const toolExecution: ToolExecution = {
-          name: value,
-          startTime: spanMeta.startTime
-        };
+        const toolExecution: ToolExecution = { name: value, startTime: spanMeta.startTime };
         this.tools.push(toolExecution);
         spanMeta.toolIndex = this.tools.length - 1;
       }
     }
 
-    if (key === "ai.toolCall.args" && typeof value === "string" && spanMeta.toolIndex !== undefined) {
+    if (
+      key === "ai.toolCall.args" &&
+      typeof value === "string" &&
+      spanMeta.toolIndex !== undefined
+    ) {
       const tool = this.tools[spanMeta.toolIndex];
       if (tool) {
         try {
