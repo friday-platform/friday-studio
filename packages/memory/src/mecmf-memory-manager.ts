@@ -5,6 +5,13 @@
  * integrating all MECMF components into a unified memory system for Atlas.
  */
 
+import type { SessionSummary } from "../../../src/core/actors/session-supervisor-actor.ts";
+import {
+  type FactSourceType,
+  type SemanticFact,
+  SemanticFactExtractor,
+} from "../../../src/core/services/semantic-fact-extractor.ts";
+import type { Logger } from "../../logger/src/types.ts";
 import type { IMemoryScope } from "./coala-memory.ts";
 // Import existing Atlas components
 import { type CoALAMemoryEntry, CoALAMemoryManager, CoALAMemoryType } from "./coala-memory.ts";
@@ -28,6 +35,7 @@ import {
   MemoryType,
   type RetrievalOptions,
 } from "./mecmf-interfaces.ts";
+import { createConversationContext } from "./mecmf.ts";
 import { PIISafeMemoryClassifier } from "./pii-safe-classifier.ts";
 import { AtlasTokenBudgetManager } from "./token-budget-manager.ts";
 
@@ -534,6 +542,115 @@ export class AtlasMECMFMemoryManager implements MECMFMemoryManager {
 
     const promises = entries.map((entry) => this.storeMemory(entry));
     await Promise.all(promises);
+  }
+
+  async extractAndStoreSemanticFacts(summary: SessionSummary, logger: Logger): Promise<void> {
+    try {
+      logger.info("Starting semantic fact extraction", {
+        sessionId: summary.sessionId,
+        workspaceId: summary.workspaceId,
+        totalAgents: summary.totalAgents,
+      });
+
+      const batches: Array<{ text: string; sourceType: FactSourceType; sourceAgentId?: string }> =
+        [];
+
+      const summaryBlock = [
+        `Status: ${summary.status}`,
+        `Reasoning: ${summary.reasoning || ""}`,
+        `FailureReason: ${summary.failureReason || ""}`,
+        `Agents: ${summary.totalAgents}, Phases: ${summary.totalPhases}`,
+      ].join("\n");
+      batches.push({ text: summaryBlock, sourceType: "session_summary" });
+
+      for (const r of summary.results) {
+        if (r.input !== undefined && r.input !== null) {
+          const inputText =
+            typeof r.input === "string" ? r.input : JSON.stringify(r.input, null, 2);
+          batches.push({ text: inputText, sourceType: "agent_input", sourceAgentId: r.agentId });
+        }
+        if (r.output !== undefined && r.output !== null) {
+          const outputText =
+            typeof r.output === "string" ? r.output : JSON.stringify(r.output, null, 2);
+          batches.push({ text: outputText, sourceType: "agent_output", sourceAgentId: r.agentId });
+        }
+      }
+
+      const extractor = new SemanticFactExtractor({
+        logger: logger.child({ component: "semantic-fact-extractor" }),
+        enabled: true,
+        model: "claude-3-7-sonnet-latest",
+        confidenceThreshold: 0.6,
+        // Use extractor's default model provider
+        temperature: 0.1,
+        maxOutputTokens: 1200,
+        timeoutMs: 20000,
+      });
+
+      const allFacts: Array<SemanticFact> = [];
+      for (const batch of batches) {
+        const result = await extractor.extractFromBatch({
+          text: batch.text,
+          sourceType: batch.sourceType,
+          sourceAgentId: batch.sourceAgentId,
+        });
+        if (result.facts.length > 0) {
+          allFacts.push(...result.facts);
+        }
+      }
+
+      const seen = new Set<string>();
+      const uniqueFacts = allFacts.filter((f) => {
+        const key = [
+          f.subject.trim().toLowerCase(),
+          f.predicate.trim().toLowerCase(),
+          f.object.trim().toLowerCase(),
+        ].join("|");
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+
+      const conversationContext = createConversationContext(
+        summary.sessionId,
+        summary.workspaceId || "global",
+        {
+          currentTask: "semantic_fact_extraction",
+          activeAgents: summary.results.map((r) => r.agentId),
+        },
+      );
+
+      let stored = 0;
+      for (const fact of uniqueFacts) {
+        try {
+          await this.classifyAndStore(
+            JSON.stringify(fact),
+            conversationContext,
+            MemorySource.SYSTEM_GENERATED,
+            {
+              sessionId: summary.sessionId,
+              workspaceId: summary.workspaceId,
+              agentId: fact.sourceAgentId,
+            },
+          );
+          stored++;
+        } catch (storeError) {
+          logger.error("Failed to store semantic fact", { storeError });
+        }
+      }
+
+      logger.info("Semantic fact extraction completed", {
+        sessionId: summary.sessionId,
+        batches: batches.length,
+        extracted: allFacts.length,
+        stored,
+      });
+    } catch (error) {
+      logger.error("Semantic fact extraction failed", {
+        sessionId: summary.sessionId,
+        error: error,
+      });
+    }
   }
 
   // === Lifecycle Management ===

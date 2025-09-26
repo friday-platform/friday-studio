@@ -5,6 +5,9 @@
  * providing the foundation for intelligent memory management and token-aware operations.
  */
 
+import type { SessionSummary } from "../../../src/core/actors/session-supervisor-actor.ts";
+import type { Logger } from "@atlas/logger";
+
 export interface ConversationContext {
   sessionId: string;
   workspaceId: string;
@@ -246,6 +249,9 @@ export interface MECMFMemoryManager {
   consolidateWorkingMemory(): Promise<void>;
   pruneByRelevance(threshold: number): Promise<number>;
   getMemoryStatistics(): MemoryStatistics;
+
+  // Semantic fact extraction
+  extractAndStoreSemanticFacts(summary: SessionSummary, logger: Logger): Promise<void>;
 }
 
 export interface RetrievalOptions {

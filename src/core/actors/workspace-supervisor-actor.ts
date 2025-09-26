@@ -25,11 +25,7 @@ import {
   type WorkspaceSessionStatusType,
 } from "@atlas/core";
 import { type Logger, logger } from "@atlas/logger";
-import {
-  CoALAMemoryManager,
-  StreamingMemoryManager,
-  type SupervisorMemoryCoordinator,
-} from "@atlas/memory";
+import { CoALAMemoryManager } from "@atlas/memory";
 import type { IWorkspaceSignal } from "../../types/core.ts";
 import { type SessionContext, SessionSupervisorActor } from "./session-supervisor-actor.ts";
 
@@ -58,8 +54,6 @@ export class WorkspaceSupervisorActor implements BaseActor {
   private config: WorkspaceSupervisorConfig;
   private agents: Record<string, WorkspaceAgentConfig> = {};
   private agentOrchestrator?: AgentOrchestrator; // Will be set by workspace runtime
-  private streamingMemoryManager?: StreamingMemoryManager; // StreamingMemoryManager - loaded dynamically
-  memoryCoordinator?: SupervisorMemoryCoordinator; // SupervisorMemoryCoordinator - loaded dynamically
 
   constructor(workspaceId: string, config: WorkspaceSupervisorConfig, id?: string) {
     this.id = id || crypto.randomUUID();
@@ -100,7 +94,6 @@ export class WorkspaceSupervisorActor implements BaseActor {
       workspaceId: this.workspaceId,
       actorId: this.id,
       memoryEnabled: this.config.memory?.session.enabled !== false,
-      streamingMemoryInitialized: !!this.streamingMemoryManager,
     });
   }
 
@@ -134,10 +127,18 @@ export class WorkspaceSupervisorActor implements BaseActor {
         payloadSize: JSON.stringify(payload).length,
       });
 
+      // Create session config with the found job and agents
+      const sessionConfig: SessionSupervisorConfig = {
+        agents: this.agents,
+        memory: this.config.memory,
+        tools: this.config.tools,
+      };
+
       // Create session actor without config initially
       const sessionActor = new SessionSupervisorActor(
         sessionId,
         this.workspaceId,
+        sessionConfig,
         crypto.randomUUID(),
       );
 
@@ -145,9 +146,6 @@ export class WorkspaceSupervisorActor implements BaseActor {
       if (this.agentOrchestrator) {
         sessionActor.setAgentOrchestrator(this.agentOrchestrator);
       }
-
-      // Connect session to workspace supervisor for memory streaming
-      sessionActor.setWorkspaceSupervisor(this);
 
       const sessionInfo: SessionInfo = {
         sessionId,
@@ -192,25 +190,12 @@ export class WorkspaceSupervisorActor implements BaseActor {
             return;
           }
 
-          // Create session config with the found job and agents
-          const sessionConfig: SessionSupervisorConfig = {
-            job: jobSpec,
-            agents: this.agents,
-            memory: this.config.memory,
-            tools: this.config.tools,
-          };
-
-          // Pass config to session actor
-          sessionActor.setConfig(sessionConfig);
-
           // Extract agent IDs from job specification
           const availableAgents: string[] = jobSpec.execution.agents.map((agent) =>
             typeof agent === "string" ? agent : agent.id,
           );
 
           const sessionContext: SessionContext = {
-            sessionId,
-            workspaceId: this.workspaceId,
             signal,
             payload,
             availableAgents,
@@ -261,7 +246,7 @@ export class WorkspaceSupervisorActor implements BaseActor {
                 this.logger.error("Session execution failed", {
                   sessionId,
                   signalId: signal.id,
-                  error: error instanceof Error ? error.message : String(error),
+                  error: error,
                 });
                 sessionInfo.status = WorkspaceSessionStatus.FAILED;
               }
@@ -274,7 +259,7 @@ export class WorkspaceSupervisorActor implements BaseActor {
           this.logger.error("Signal processing setup failed", {
             sessionId,
             signalId: signal.id,
-            error: error instanceof Error ? error.message : String(error),
+            error: error,
           });
           sessionInfo.status = WorkspaceSessionStatus.FAILED;
         }
@@ -291,7 +276,7 @@ export class WorkspaceSupervisorActor implements BaseActor {
       this.logger.error("Failed to process signal", {
         signalId: signal.id,
         sessionId,
-        error: error instanceof Error ? error.message : String(error),
+        error: error,
       });
 
       return Promise.resolve({
@@ -365,10 +350,7 @@ export class WorkspaceSupervisorActor implements BaseActor {
         // Only release heavy memory; do not change status or emit events
         sessionInfo.actor.releaseHeavyMemoryObjects();
       } catch (error) {
-        this.logger.warn("Error during session actor shutdown", {
-          sessionId,
-          error: error instanceof Error ? error.message : String(error),
-        });
+        this.logger.warn("Error during session actor shutdown", { sessionId, error: error });
       }
     }
   }
@@ -443,38 +425,12 @@ export class WorkspaceSupervisorActor implements BaseActor {
 
       const memoryManager = new CoALAMemoryManager(workspaceScope);
 
-      // Initialize streaming memory manager
-      this.streamingMemoryManager = new StreamingMemoryManager(
-        memoryManager,
-        {
-          queue_max_size: 1000,
-          batch_size: 10,
-          flush_interval_ms: 5000,
-          background_processing: true,
-          persistence_enabled: true,
-          error_retry_attempts: 3,
-          priority_processing: true,
-          dual_write_enabled: true,
-          legacy_batch_enabled: false,
-          stream_everything: false,
-          performance_tracking: true,
-        },
-        {
-          workspaceId: this.workspaceId,
-          sessionId: undefined, // Will be set per session
-        },
-      );
-
-      // Initialize memory coordinator
-      //this.memoryCoordinator = new SupervisorMemoryCoordinator(workspaceScope);
-
       // Ingest rules.md if present in workspace
       await this.ingestProceduralRules(memoryManager);
 
       this.logger.info("Memory systems initialized successfully", {
         workspaceId: this.workspaceId,
         streamingMemoryEnabled: true,
-        memoryCoordinatorEnabled: true,
       });
     } catch (error) {
       this.logger.error("Failed to initialize memory systems", {
@@ -483,135 +439,6 @@ export class WorkspaceSupervisorActor implements BaseActor {
         stack: error instanceof Error ? error.stack : undefined,
       });
       // Don't throw - memory failure shouldn't prevent workspace startup
-    }
-  }
-
-  /**
-   * Stream agent result to memory system for automatic processing
-   */
-  async streamAgentResult(
-    sessionId: string,
-    agentId: string,
-    input: string,
-    output: string,
-    duration: number,
-    success: boolean,
-    options: { tokensUsed?: number; error?: string } = {},
-  ): Promise<void> {
-    if (!this.streamingMemoryManager) {
-      this.logger.debug("Streaming memory manager not available - skipping agent result streaming");
-      return;
-    }
-
-    try {
-      await this.streamingMemoryManager.streamAgentResult(
-        agentId,
-        input,
-        output,
-        duration,
-        success,
-        {
-          tokensUsed: options.tokensUsed,
-          error: options.error,
-          priority: success ? "normal" : "high", // Prioritize failures for learning
-        },
-      );
-
-      this.logger.debug("Agent result streamed to memory", {
-        sessionId,
-        agentId,
-        success,
-        duration,
-        tokensUsed: options.tokensUsed,
-      });
-    } catch (error) {
-      this.logger.warn("Failed to stream agent result to memory", {
-        sessionId,
-        agentId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-  }
-
-  async streamToolCall(
-    sessionId: string,
-    agentId: string,
-    toolName: string,
-    args: unknown,
-  ): Promise<void> {
-    if (!this.streamingMemoryManager) {
-      return;
-    }
-
-    try {
-      await this.streamingMemoryManager.streamToolCall(sessionId, agentId, toolName, args);
-
-      this.logger.debug("Tool call streamed to memory", { sessionId, agentId, toolName });
-    } catch (error) {
-      this.logger.warn("Failed to stream tool call to memory", {
-        sessionId,
-        agentId,
-        toolName,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-  }
-
-  async streamToolResult(
-    sessionId: string,
-    agentId: string,
-    toolName: string,
-    result: unknown,
-  ): Promise<void> {
-    if (!this.streamingMemoryManager) {
-      return;
-    }
-
-    try {
-      await this.streamingMemoryManager.streamToolResult(sessionId, agentId, toolName, result);
-
-      this.logger.debug("Tool result streamed to memory", { sessionId, agentId, toolName });
-    } catch (error) {
-      this.logger.warn("Failed to stream tool result to memory", {
-        sessionId,
-        agentId,
-        toolName,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-  }
-
-  async streamEpisodicEvent(
-    eventType: "agent_execution" | "context_change" | "user_interaction" | "session_complete",
-    description: string,
-    participants: string[],
-    outcome: "success" | "failure" | "partial",
-    significance: number,
-  ): Promise<void> {
-    if (!this.streamingMemoryManager) {
-      return;
-    }
-
-    try {
-      await this.streamingMemoryManager.streamEpisodicEvent(
-        eventType,
-        description,
-        participants,
-        outcome,
-        significance,
-      );
-
-      this.logger.debug("Episodic event streamed to memory", {
-        eventType,
-        description: description.substring(0, 100),
-        outcome,
-        significance,
-      });
-    } catch (error) {
-      this.logger.warn("Failed to stream episodic event to memory", {
-        eventType,
-        error: error instanceof Error ? error.message : String(error),
-      });
     }
   }
 
@@ -785,7 +612,7 @@ export class WorkspaceSupervisorActor implements BaseActor {
     } catch (error) {
       this.logger.error("Failed to analyze signal with memory", {
         signalId: signal.id,
-        error: error instanceof Error ? error.message : String(error),
+        error: error,
       });
 
       return {
@@ -793,23 +620,6 @@ export class WorkspaceSupervisorActor implements BaseActor {
         analysisContext: "Memory analysis failed",
         suggestedAgents: [],
       };
-    }
-  }
-
-  /**
-   * Shutdown memory systems cleanly
-   */
-  async shutdownMemorySystems(): Promise<void> {
-    if (this.streamingMemoryManager) {
-      try {
-        await this.streamingMemoryManager.shutdown();
-        this.logger.info("Streaming memory manager shut down", { workspaceId: this.workspaceId });
-      } catch (error) {
-        this.logger.error("Error shutting down streaming memory manager", {
-          workspaceId: this.workspaceId,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
     }
   }
 }

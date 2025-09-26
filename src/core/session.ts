@@ -7,7 +7,7 @@
 
 import { WorkspaceSessionStatus } from "@atlas/core";
 import { type Logger, logger } from "@atlas/logger";
-import { type CoALAMemoryManager, CoALAMemoryType } from "@atlas/memory";
+import { CoALAMemoryType } from "@atlas/memory";
 import type {
   IWorkspaceAgent,
   IWorkspaceArtifact,
@@ -337,28 +337,6 @@ export class Session extends AtlasScope implements IWorkspaceSession {
     }
   }
 
-  getSessionActor(): SessionSupervisorActor | undefined {
-    return this.sessionActor;
-  }
-
-  getExecutionMetadata() {
-    if (this.sessionActor) {
-      return {
-        ...this.sessionActor.getExecutionMetadata(),
-        createdAt: this.createdAt,
-        result: this._executionResult,
-      };
-    }
-
-    return {
-      sessionId: this.id,
-      workspaceId: this.workspaceId || "global",
-      createdAt: this.createdAt,
-      status: this._status,
-      result: this._executionResult,
-    };
-  }
-
   // CoALA Memory Integration
   private rememberSessionEvent(event: string, data: Record<string, string>): void {
     this.memory.rememberWithMetadata(
@@ -389,18 +367,6 @@ export class Session extends AtlasScope implements IWorkspaceSession {
 
   getCurrentState(): string {
     return this.status;
-  }
-
-  getStateMachineContext(): Record<string, unknown> {
-    return {
-      sessionId: this.id,
-      workspaceId: this.workspaceId || "global",
-      status: this.status,
-      progress: this.progress(),
-      createdAt: this.createdAt,
-      hasSessionActor: !!this.sessionActor,
-      executionMetadata: this.getExecutionMetadata(),
-    };
   }
 }
 

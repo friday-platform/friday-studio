@@ -47,7 +47,6 @@ export interface WorkspaceSupervisorConfig {
  * Contains job-specific configuration and agents
  */
 export interface SessionSupervisorConfig {
-  job: JobSpecification;
   agents: Record<string, AgentConfig>;
   memory?: MemoryConfig;
   tools?: ToolsConfig;

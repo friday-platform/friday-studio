@@ -203,10 +203,8 @@ interface LLMValidationResult {
 }
 
 interface HallucinationDetectorConfig {
-  supervisionLevel: SupervisionLevel;
   logger?: Logger;
   anthropicApiKey?: string;
-  enableLLMValidation?: boolean; // Default: true
   retryConfig?: { enabled: boolean; maxRetries: number; baseDelayMs: number };
 }
 
@@ -229,50 +227,30 @@ export class HallucinationDetector {
 
   constructor(config: HallucinationDetectorConfig) {
     this.config = config;
-    // Only create Anthropic client if LLM validation is enabled
-    if (config.enableLLMValidation !== false) {
-      const anthropic = createAnthropic({
-        apiKey: config.anthropicApiKey || Deno.env.get("ANTHROPIC_API_KEY"),
-      });
-      this.llmProvider = (model: string) => anthropic(model);
-    }
-  }
-
-  /**
-   * Update supervision level dynamically to ensure threshold alignment
-   */
-  setSupervisionLevel(level: SupervisionLevel): void {
-    this.config.supervisionLevel = level;
+    const anthropic = createAnthropic({
+      apiKey: config.anthropicApiKey || Deno.env.get("ANTHROPIC_API_KEY"),
+    });
+    this.llmProvider = (model: string) => anthropic(model);
   }
 
   /**
    * Main analysis method for detecting hallucinations
    */
-  async analyzeResults(results: AgentResult[]): Promise<HallucinationAnalysis> {
+  async analyzeResults(
+    results: AgentResult[],
+    supervisionLevel: SupervisionLevel,
+  ): Promise<HallucinationAnalysis> {
     const detectionResults: DetectionMethodResult[] = [];
     const allIssues: string[] = [];
     const suspiciousPatterns: string[] = [];
 
     // Only LLM validation now
     for (const result of results) {
-      if (this.config.enableLLMValidation !== false) {
-        const llmResult = await this.performLLMValidation(result);
-        detectionResults.push(llmResult);
-        allIssues.push(...llmResult.issues.map((issue) => `${result.agentId}: ${issue}`));
+      const llmResult = await this.performLLMValidation(result);
+      detectionResults.push(llmResult);
+      allIssues.push(...llmResult.issues.map((issue) => `${result.agentId}: ${issue}`));
 
-        if (llmResult.confidence < 0.5) {
-          suspiciousPatterns.push(`llm:${result.agentId}`);
-        }
-      } else {
-        // If LLM validation is disabled, add "not validated" result
-        const notValidatedResult: DetectionMethodResult = {
-          method: "llm",
-          agentId: result.agentId,
-          confidence: 0.3,
-          issues: ["Wasn't validated properly", "LLM validation disabled"],
-        };
-        detectionResults.push(notValidatedResult);
-        allIssues.push(...notValidatedResult.issues.map((issue) => `${result.agentId}: ${issue}`));
+      if (llmResult.confidence < 0.5) {
         suspiciousPatterns.push(`llm:${result.agentId}`);
       }
     }
@@ -280,7 +258,7 @@ export class HallucinationDetector {
     // Calculate final confidence scores
     const confidences = this.calculateFinalConfidences(results, detectionResults);
     const averageConfidence = confidences.reduce((a, b) => a + b, 0) / confidences.length;
-    const threshold = this.getConfidenceThreshold();
+    const threshold = this.getThreshold(supervisionLevel);
 
     const lowConfidenceAgents = results
       .map((result, index) => ({ result, confidence: confidences[index] || 0.5 }))
@@ -337,7 +315,7 @@ export class HallucinationDetector {
         agentId: result.agentId,
         errorType: classification.type,
         isRetryable: classification.isRetryable,
-        error: error instanceof Error ? error.message : String(error),
+        error,
       });
 
       // Simple fallback - just add to issues and mark as not validated
@@ -596,8 +574,8 @@ ${detectedUrls.length > 0 ? detectedUrls.join("\n") : "none"}
   /**
    * Get confidence threshold based on supervision level
    */
-  private getConfidenceThreshold(): number {
-    switch (this.config.supervisionLevel) {
+  private getThreshold(supervisionLevel: SupervisionLevel): number {
+    switch (supervisionLevel) {
       case SupervisionLevel.MINIMAL:
         return 0.3;
       case SupervisionLevel.STANDARD:
@@ -607,12 +585,5 @@ ${detectedUrls.length > 0 ? detectedUrls.join("\n") : "none"}
       default:
         return 0.5;
     }
-  }
-
-  /**
-   * Public method to get threshold for external use
-   */
-  getThreshold(): number {
-    return this.getConfidenceThreshold();
   }
 }

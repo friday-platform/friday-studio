@@ -58,6 +58,17 @@ export async function setupMECMF(
 }
 
 /**
+ * Initialize workspace-scoped memory with minimal inputs
+ */
+export async function initializeWorkspaceMemory(
+  workspaceId: string,
+  options?: Partial<MECMFConfig>,
+): Promise<MECMFMemoryManager> {
+  const scope: MemoryScope = { id: workspaceId, workspaceId };
+  return await setupMECMF(scope, { ...options, workspaceId });
+}
+
+/**
  * Create a conversation context for memory classification
  */
 export function createConversationContext(
