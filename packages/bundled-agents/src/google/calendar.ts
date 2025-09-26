@@ -2,7 +2,10 @@ import { env } from "node:process";
 import { anthropic } from "@ai-sdk/anthropic";
 import type { ToolCall, ToolResult } from "@atlas/agent-sdk";
 import { createAgent } from "@atlas/agent-sdk";
-import { collectToolUsageFromSteps } from "@atlas/agent-sdk/vercel-helpers";
+import {
+  collectToolUsageFromSteps,
+  extractArtifactIdsFromToolResults,
+} from "@atlas/agent-sdk/vercel-helpers";
 import { generateText, stepCountIs } from "ai";
 import { z } from "zod";
 
@@ -17,6 +20,7 @@ type GoogleCalendarAgentResult = {
   response: string;
   toolCalls?: ToolCall[];
   toolResults?: ToolResult[];
+  artifactIds?: string[];
 };
 
 export const GoogleCalendarAgentResultSchema = z.object({
@@ -69,12 +73,14 @@ export const googleCalendarAgent = createAgent<GoogleCalendarAgentResult>({
     }
 
     const system = `
-      You are a Google Calendar assistant. Be concise, direct, and factual. Do not narrate intentions or plans. Never use phrases like 'I'll', 'I will', or 'Let me'. Output only the result without prefacing text. When asked to obtain events, use the available Google Calendar tools to list events if needed. Never fabricate or guess content. Base responses strictly on tool outputs. If tools are unavailable or a tool call fails, respond with a brief factual notice about the limitation (e.g., 'Cannot complete: Google Calendar tools unavailable' or 'Tool call failed: timeout/authorization').
+      You are a Google Calendar assistant. Be concise, direct, and factual. Do not narrate intentions or plans. Never use phrases like 'I'll', 'I will', or 'Let me'. Output only the result without prefacing text. When asked to obtain events, use the available Google Calendar tools to list events if needed. Base responses strictly on tool outputs. If tools are unavailable or a tool call fails, respond with a brief factual notice about the limitation (e.g., 'Cannot complete: Google Calendar tools unavailable' or 'Tool call failed: timeout/authorization').
       Follow the plan exactly:
       - Never fabricate information if it is absent. Only use information from tool outputs.
       - If no Google Calendar tools are available, reply: 'Cannot complete: Google Calendar tools unavailable.'
       - If any tool call errors (timeout, authorization, unknown), state the failure briefly and stop.
       - Summarize tool outputs to provide a concise response, including attendees, email addresses, times, locations, and event details, if available.
+      - After successfully retrieving calendar events, create an artifact with 'calendar-schedule' type.
+      - **Only** return the number of events retrieved in the summary. Never return the the calendar schedule, times of events, or details in the response. 
     `;
 
     try {
@@ -111,22 +117,16 @@ export const googleCalendarAgent = createAgent<GoogleCalendarAgentResult>({
         result.toolResults,
       ]);
 
-      const { assembledToolCalls, assembledToolResults } = collectToolUsageFromSteps({
-        steps,
-        toolCalls,
-        toolResults,
-      });
+      const { assembledToolResults } = collectToolUsageFromSteps({ steps, toolCalls, toolResults });
+
+      const artifactIds = extractArtifactIdsFromToolResults(assembledToolResults);
 
       stream?.emit({
         type: "data-tool-progress",
         data: { toolName: "Google Calendar", content: "Execution complete" },
       });
 
-      return {
-        response: result.text.trim(),
-        toolCalls: assembledToolCalls,
-        toolResults: assembledToolResults,
-      };
+      return { response: result.text.trim(), artifactIds: artifactIds };
     } catch (error) {
       logger.error("google-calendar failed", { error });
       throw error;

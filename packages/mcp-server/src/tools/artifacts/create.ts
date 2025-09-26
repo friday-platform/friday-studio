@@ -1,5 +1,5 @@
 import { client, parseResult } from "@atlas/client/v2";
-import { ArtifactTypeSchema } from "@atlas/core/artifacts";
+import { ArtifactDataSchema, ArtifactTypeSchema } from "@atlas/core/artifacts";
 import { stringifyError } from "@atlas/utils";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
@@ -15,9 +15,9 @@ export function registerArtifactsCreateTool(server: McpServer, ctx: ToolContext)
       description: "Create a new artifact",
       inputSchema: {
         type: ArtifactTypeSchema.describe("Artifact type"),
-        data: z.unknown().describe("Type-specific data"),
+        data: ArtifactDataSchema.describe("Type-specific data"),
         workspaceId: z.string().optional().describe("Workspace ID"),
-        streamId: z.string().describe("SSE stream ID"),
+        streamId: z.string().optional().describe("SSE stream ID"),
       },
     },
     async ({ type, data, workspaceId, streamId }): Promise<CallToolResult> => {

@@ -40,6 +40,7 @@ import { signalRoutes } from "../routes/signals/index.ts";
 import { streamsRoutes } from "../routes/streams/index.ts";
 import { userRoutes } from "../routes/user/index.ts";
 import { workspacesRoutes } from "../routes/workspaces/index.ts";
+import { artifactsApp } from "../routes/artifacts.ts";
 import { type AppContext, createApp } from "./factory.ts";
 import { CronSignalRegistrar } from "./signal-registrars/cron-registrar.ts";
 import { FsWatchSignalRegistrar } from "./signal-registrars/fs-watch-registrar.ts";
@@ -506,6 +507,9 @@ export class AtlasDaemon implements AppContext {
 
     // Mount signal routes
     this.app.route("/api/workspaces", signalRoutes);
+
+    // Mount artifacts routes
+    this.app.route("/api/artifacts", artifactsApp);
 
     // Mount chat storage routes
     this.app.route("/api/chat-storage", chatStorageRoutes);

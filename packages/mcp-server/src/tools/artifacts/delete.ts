@@ -7,18 +7,15 @@ import type { ToolContext } from "../types.ts";
 import { createErrorResponse, createSuccessResponse } from "../utils.ts";
 
 /** Register MCP tool for deleting artifacts */
-export function registerArtifactsDeleteTool(server: McpServer, ctx: ToolContext) {
+export function artifactsDeleteTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(
     "artifacts_delete",
     {
       description: "Soft delete artifact (data preserved)",
-      inputSchema: {
-        artifactId: z.string().describe("Artifact ID"),
-        streamId: z.string().describe("SSE stream ID"),
-      },
+      inputSchema: { artifactId: z.string().describe("Artifact ID") },
     },
-    async ({ artifactId, streamId }): Promise<CallToolResult> => {
-      ctx.logger.info("MCP artifacts_delete called", { artifactId, streamId });
+    async ({ artifactId }): Promise<CallToolResult> => {
+      ctx.logger.info("MCP artifacts_delete called", { artifactId });
 
       const response = await parseResult(
         client.artifactsStorage[":id"].$delete({ param: { id: artifactId } }),
@@ -28,7 +25,7 @@ export function registerArtifactsDeleteTool(server: McpServer, ctx: ToolContext)
         return createErrorResponse("Failed to delete artifact", stringifyError(response.error));
       }
 
-      return createSuccessResponse({ ...response.data, artifactId, streamId });
+      return createSuccessResponse({ ...response.data, artifactId });
     },
   );
 }

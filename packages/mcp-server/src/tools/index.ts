@@ -7,13 +7,17 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 // Import agent tools
 import { registerAgentsDescribeTool } from "./agents/describe.ts";
 import { registerAgentsListTool } from "./agents/list.ts";
+import { registerArtifactsCreateTool } from "./artifacts/create.ts";
+import { registerArtifactsGetTool } from "./artifacts/get.ts";
+import { registerArtifactsGetByChatTool } from "./artifacts/get-by-chat.ts";
+import { registerArtifactsUpdateTool } from "./artifacts/update.ts";
+
 // Import filesystem tools
 import { registerGlobTool } from "./fs/glob.ts";
 import { registerGrepTool } from "./fs/grep.ts";
 import { registerLsTool } from "./fs/ls.ts";
 import { registerReadTool } from "./fs/read.ts";
 import { registerWriteTool } from "./fs/write.ts";
-
 // Import job tools
 import { registerJobsDescribeTool } from "./jobs/describe.ts";
 import { registerJobsListTool } from "./jobs/list.ts";
@@ -81,6 +85,12 @@ export function registerTools(server: McpServer, context: ToolContext): void {
   registerLsTool(server, context);
   registerReadTool(server, context);
   registerWriteTool(server, context);
+
+  // Artifact tools
+  registerArtifactsCreateTool(server, context);
+  registerArtifactsUpdateTool(server, context);
+  registerArtifactsGetTool(server, context);
+  registerArtifactsGetByChatTool(server, context);
 
   // System tools
   registerBashTool(server, context);

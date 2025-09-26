@@ -20,11 +20,10 @@ export function registerArtifactsGetTool(server: McpServer, ctx: ToolContext) {
           .positive()
           .optional()
           .describe("Revision number (defaults to latest)"),
-        streamId: z.string().describe("SSE stream ID"),
       },
     },
-    async ({ artifactId, revision, streamId }): Promise<CallToolResult> => {
-      ctx.logger.info("MCP artifacts_get called", { artifactId, revision, streamId });
+    async ({ artifactId, revision }): Promise<CallToolResult> => {
+      ctx.logger.info("MCP artifacts_get called", { artifactId, revision });
 
       const response = await parseResult(
         // toString() workaround: Daemon coerces to number but narrows type to string|string[]
@@ -38,7 +37,7 @@ export function registerArtifactsGetTool(server: McpServer, ctx: ToolContext) {
         return createErrorResponse("Failed to retrieve artifact", stringifyError(response.error));
       }
       const { artifact } = response.data;
-      return createSuccessResponse({ ...artifact, streamId });
+      return createSuccessResponse({ ...artifact });
     },
   );
 }

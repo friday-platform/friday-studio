@@ -1,6 +1,5 @@
 import { fail, type Result, success } from "@atlas/utils";
-import type { Artifact, ArtifactRevisionSummary } from "./model.ts";
-import { ArtifactDataSchema } from "./model.ts";
+import type { Artifact, ArtifactData, ArtifactRevisionSummary, ArtifactType } from "./model.ts";
 
 type ArtifactKey = ["artifact", string, number];
 type LatestKey = ["artifact_latest", string];
@@ -22,8 +21,8 @@ const keys = {
 
 /** Create artifact with initial revision 1 */
 async function create(input: {
-  type: string;
-  data: unknown;
+  type: ArtifactType;
+  data: ArtifactData;
   workspaceId?: string;
   chatId?: string;
 }): Promise<Result<Artifact, string>> {
@@ -32,20 +31,11 @@ async function create(input: {
   const id = crypto.randomUUID();
   const revision = 1;
 
-  const parseResult = ArtifactDataSchema.safeParse({
-    type: input.type,
-    version: 1,
-    data: input.data,
-  });
-  if (!parseResult.success) {
-    return fail(`Invalid artifact data: ${parseResult.error.message}`);
-  }
-
   const artifact: Artifact = {
     id,
     type: input.type,
     revision,
-    data: parseResult.data.data,
+    data: input.data,
     workspaceId: input.workspaceId,
     chatId: input.chatId,
     createdAt: new Date(),
@@ -75,7 +65,7 @@ async function create(input: {
 /** Create new revision (preserves history) */
 async function update(input: {
   id: string;
-  data: unknown;
+  data: ArtifactData;
   revisionMessage?: string;
 }): Promise<Result<Artifact, string>> {
   using db = await Deno.openKv();
@@ -99,20 +89,11 @@ async function update(input: {
 
   const currentArtifact = currentArtifactResult.value;
 
-  const parseResult = ArtifactDataSchema.safeParse({
-    type: currentArtifact.type,
-    version: 1,
-    data: input.data,
-  });
-  if (!parseResult.success) {
-    return fail(`Invalid artifact data: ${parseResult.error.message}`);
-  }
-
   const newArtifact: Artifact = {
     id: input.id,
     type: currentArtifact.type,
     revision: currentRevision + 1,
-    data: parseResult.data.data,
+    data: input.data,
     workspaceId: currentArtifact.workspaceId,
     chatId: currentArtifact.chatId,
     createdAt: new Date(),

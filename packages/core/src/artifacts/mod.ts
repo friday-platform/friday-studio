@@ -9,7 +9,9 @@ export type {
 
 export {
   ArtifactDataSchema,
+  ArtifactSchema,
   ArtifactTypeSchema,
+  CalendarScheduleArtifactSchema,
   CreateArtifactSchema,
   UpdateArtifactSchema,
   WorkspacePlanDataSchema,

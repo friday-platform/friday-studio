@@ -312,11 +312,11 @@ export const conversationAgent = createAgent({
         toolChoice: "auto",
         stopWhen: stepCountIs(40),
         maxOutputTokens: 20000,
+
         experimental_transform: smoothStream({ chunking: "word" }),
         maxRetries: 3, // Enable retries for API resilience (e.g., 529 errors)
         abortSignal, // Pass the abort signal for cancellation
         providerOptions: { anthropic: { thinking: { type: "enabled", budgetTokens: 25000 } } },
-
         // Pass telemetry config if provided in context
         experimental_telemetry: {
           isEnabled: telemetry?.isEnabled ?? false,

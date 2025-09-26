@@ -1,5 +1,6 @@
 import type { StepResult, TypedToolCall, TypedToolResult } from "ai";
 import type { AtlasTools, ToolCall, ToolResult } from "../types.ts";
+import { ArtifactSchema } from "@atlas/core/artifacts";
 
 /**
  * Collect tool usage from AI SDK responses, preferring per-step data when available.
@@ -32,4 +33,22 @@ export function collectToolUsageFromSteps(res: {
         : [];
 
   return { assembledToolCalls, assembledToolResults };
+}
+
+/**
+ * Extract artifact ids from tool results
+ * @param toolResults - Tool results
+ * @returns Artifact IDs
+ */
+export function extractArtifactIdsFromToolResults(toolResults: ToolResult[]): string[] {
+  return toolResults
+    .filter((result) => result.toolName === "artifacts_create")
+    .map((result) => {
+      const outputArtifact = ArtifactSchema.safeParse(JSON.parse(result.output.content[0].text));
+      if (outputArtifact.success) {
+        return outputArtifact.data?.id;
+      }
+      return undefined;
+    })
+    .filter((id) => id !== undefined);
 }

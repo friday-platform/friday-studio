@@ -1,4 +1,5 @@
 import { client, parseResult } from "@atlas/client/v2";
+import { ArtifactDataSchema, ArtifactTypeSchema } from "@atlas/core/artifacts";
 import { stringifyError } from "@atlas/utils";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
@@ -13,19 +14,19 @@ export function registerArtifactsUpdateTool(server: McpServer, ctx: ToolContext)
     {
       description: "Update artifact (creates new revision)",
       inputSchema: {
+        type: ArtifactTypeSchema.describe("Artifact type is required but should not be changed"),
         artifactId: z.string().describe("Artifact ID"),
-        data: z.object({}).describe("New data"),
+        data: ArtifactDataSchema.describe("New data"),
         revisionMessage: z.string().optional().describe("Change description"),
-        streamId: z.string().describe("SSE stream ID"),
       },
     },
-    async ({ artifactId, data, revisionMessage, streamId }): Promise<CallToolResult> => {
-      ctx.logger.info("MCP artifacts_update called", { artifactId, streamId });
+    async ({ artifactId, type, data, revisionMessage }): Promise<CallToolResult> => {
+      ctx.logger.info("MCP artifacts_update called", { artifactId });
 
       const response = await parseResult(
         client.artifactsStorage[":id"].$put({
           param: { id: artifactId },
-          json: { data, revisionMessage },
+          json: { type, data, revisionMessage },
         }),
       );
 
@@ -33,7 +34,7 @@ export function registerArtifactsUpdateTool(server: McpServer, ctx: ToolContext)
         return createErrorResponse("Failed to update artifact", stringifyError(response.error));
       }
       const { artifact } = response.data;
-      return createSuccessResponse({ ...artifact, streamId });
+      return createSuccessResponse({ ...artifact });
     },
   );
 }

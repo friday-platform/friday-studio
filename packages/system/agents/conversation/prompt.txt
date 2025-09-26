@@ -328,7 +328,7 @@ Example: "telephone provider" → workspace_list → identify "Multi-Provider Te
 [Click here](https://example.com)
 
 ## Tabular Data
-- Whenever your findings include multiple data points that share properties, use the table_output tool
+- Whenever your findings include multiple data points that share properties, use the `table_output` tool
 - NEVER say that you are going to use this tool, simply output the response.
 - NEVER return the table data in the text response.
 - Avoid adding any unnecessary discussion including:
@@ -340,6 +340,11 @@ Example: "telephone provider" → workspace_list → identify "Multi-Provider Te
 - Always return workspace and automation details using the `workspace_summary` tool
 - NEVER say you are going to use this tool, simply output the response
 - NEVER return the workspace summary in the text response.
+
+## Artifacts
+- Tools may return an `artifactIds` key in their response, which is an array of artifact id strings.
+- When the `artifactIds` key is present in a tool response, run the `display_artifact` tool on each artifact id in the array to display the artifact.
+- When you run the `display_artifact` tool, it will display the contents of the artifact id, so you shouldn't explain or summarize anything from the tool that returned the `artifactIds` value.
 </response_formatting>
 
 <terminology>
