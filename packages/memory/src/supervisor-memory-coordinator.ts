@@ -7,7 +7,7 @@
 
 import type { IAtlasScope, IWorkspaceSignal } from "../../../src/types/core.ts";
 import { extractSearchTerms } from "../../../src/utils/prompt-tokenizer.ts";
-import { type CoALAMemoryEntry, CoALAMemoryManager, CoALAMemoryType } from "./coala-memory.ts";
+import { type CoALAMemoryEntry, CoALAMemoryManager, type CoALAMemoryType } from "./coala-memory.ts";
 
 export class SupervisorMemoryCoordinator {
   private workspaceMemory: CoALAMemoryManager;
@@ -21,10 +21,10 @@ export class SupervisorMemoryCoordinator {
    * Consolidate working memories for a session
    * Promotes important working memories to long-term storage
    */
-  async consolidateWorkingMemories(
+  consolidateWorkingMemories(
     sessionId: string,
     options: { minAccessCount?: number; minRelevance?: number; markImportant?: boolean } = {},
-  ): Promise<void> {
+  ): void {
     const { minAccessCount = 3, minRelevance = 0.8, markImportant = false } = options;
 
     // Get session memory manager
@@ -32,7 +32,7 @@ export class SupervisorMemoryCoordinator {
 
     // Query working memories for this session
     const workingMemories = sessionMemory.queryMemories({
-      memoryType: CoALAMemoryType.WORKING,
+      memoryType: "working",
       sourceScope: sessionId,
       minRelevance,
     });
@@ -69,7 +69,7 @@ export class SupervisorMemoryCoordinator {
   /**
    * Clear working memory for a specific session
    */
-  async clearWorkingMemoryBySession(sessionId: string): Promise<number> {
+  clearWorkingMemoryBySession(sessionId: string): number {
     // Get session memory manager
     const sessionMemory = this.sessionMemories.get(sessionId);
 
@@ -103,7 +103,7 @@ export class SupervisorMemoryCoordinator {
       content.includes("workflow") ||
       memory.tags.includes("tool")
     ) {
-      return CoALAMemoryType.PROCEDURAL;
+      return "procedural";
     }
 
     // Check for episodic patterns
@@ -113,11 +113,11 @@ export class SupervisorMemoryCoordinator {
       content.includes("result") ||
       memory.tags.includes("agent")
     ) {
-      return CoALAMemoryType.EPISODIC;
+      return "episodic";
     }
 
     // Default to semantic for factual content
-    return CoALAMemoryType.SEMANTIC;
+    return "semantic";
   }
 
   // WorkspaceSupervisor Memory Operations
@@ -143,15 +143,9 @@ export class SupervisorMemoryCoordinator {
     });
 
     // Separate memories by type for targeted analysis
-    const semanticMemories = memoryResults.memories.filter(
-      (m) => m.memoryType === CoALAMemoryType.SEMANTIC,
-    );
-    const proceduralMemories = memoryResults.memories.filter(
-      (m) => m.memoryType === CoALAMemoryType.PROCEDURAL,
-    );
-    const episodicMemories = memoryResults.memories.filter(
-      (m) => m.memoryType === CoALAMemoryType.EPISODIC,
-    );
+    const semanticMemories = memoryResults.memories.filter((m) => m.memoryType === "semantic");
+    const proceduralMemories = memoryResults.memories.filter((m) => m.memoryType === "procedural");
+    const episodicMemories = memoryResults.memories.filter((m) => m.memoryType === "episodic");
 
     // Prioritize procedural memories for workflow patterns
     const prioritizedMemories = [
@@ -178,7 +172,7 @@ export class SupervisorMemoryCoordinator {
         searchTerms: JSON.stringify(memoryResults.processedPrompt.tokens),
       },
       {
-        memoryType: CoALAMemoryType.EPISODIC,
+        memoryType: "episodic",
         tags: ["signal-analysis", "workspace-decision", "vector-enhanced"],
         relevanceScore: 0.7, // Higher relevance since using vector search
       },

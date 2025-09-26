@@ -6,14 +6,14 @@
  * enhanced with pattern recognition.
  */
 
-import {
-  type ClassificationRules,
-  type ConversationContext,
-  type Entity,
-  type MemoryClassifier,
-  type MemoryEntry,
-  MemoryType,
+import type {
+  ClassificationRules,
+  ConversationContext,
+  Entity,
+  MemoryClassifier,
+  MemoryEntry,
 } from "./mecmf-interfaces.ts";
+import { MEMORY_TYPES, type MemoryType } from "./mecmf-interfaces.ts";
 
 interface ClassificationResult {
   memoryType: MemoryType;
@@ -303,67 +303,61 @@ export class AtlasMemoryClassifier implements MemoryClassifier {
     analysis: ContentAnalysis,
     _context: ConversationContext,
   ): ClassificationResult {
-    const scores = {
-      [MemoryType.WORKING]: 0,
-      [MemoryType.EPISODIC]: 0,
-      [MemoryType.SEMANTIC]: 0,
-      [MemoryType.PROCEDURAL]: 0,
-      [MemoryType.SESSION_BRIDGE]: 0,
-    };
+    const scores = { working: 0, episodic: 0, semantic: 0, procedural: 0, contextual: 0 };
 
     const reasoning: string[] = [];
     const suggestedTags: string[] = [];
 
     // Working memory scoring
     if (analysis.isContextual) {
-      scores[MemoryType.WORKING] += 0.4;
+      scores.working += 0.4;
       reasoning.push("Contains session context");
     }
     if (analysis.temporalMarkers.referencedTimeframe === "immediate") {
-      scores[MemoryType.WORKING] += 0.3;
+      scores.working += 0.3;
       reasoning.push("References immediate timeframe");
     }
 
     // Episodic memory scoring
     if (analysis.isExperiential) {
-      scores[MemoryType.EPISODIC] += 0.4;
+      scores.episodic += 0.4;
       reasoning.push("Contains experiential content");
       suggestedTags.push("experience");
     }
     if (analysis.temporalMarkers.hasOutcomeMarkers) {
-      scores[MemoryType.EPISODIC] += 0.3;
+      scores.episodic += 0.3;
       reasoning.push("Contains outcome markers");
       suggestedTags.push("outcome");
     }
     if (analysis.temporalMarkers.hasTimeReferences) {
-      scores[MemoryType.EPISODIC] += 0.2;
+      scores.episodic += 0.2;
       reasoning.push("Has temporal references");
     }
 
     // Semantic memory scoring
     if (analysis.isFactual) {
-      scores[MemoryType.SEMANTIC] += 0.4;
+      scores.semantic += 0.4;
       reasoning.push("Contains factual content");
       suggestedTags.push("fact");
     }
     if (analysis.hasKnowledgeStructures) {
-      scores[MemoryType.SEMANTIC] += 0.3;
+      scores.semantic += 0.3;
       reasoning.push("Has knowledge structures");
       suggestedTags.push("knowledge");
     }
 
     // Procedural memory scoring
     if (analysis.isProcedural) {
-      scores[MemoryType.PROCEDURAL] += 0.5;
+      scores.procedural += 0.5;
       reasoning.push("Contains procedural content");
       suggestedTags.push("procedure");
     }
 
     // Find the highest scoring type
-    const sortedTypes = Object.values(MemoryType)
-      .map((type) => [type, scores[type]] as const)
-      .sort(([, a], [, b]) => b - a);
-    const [topType, topScore] = sortedTypes[0] || [MemoryType.WORKING, 0.5];
+    const sortedTypes = MEMORY_TYPES.map((type) => [type, scores[type]] as const).sort(
+      ([, a], [, b]) => b - a,
+    );
+    const [topType, topScore] = sortedTypes[0] || ["working", 0.5];
     const confidence = Math.min(1.0, (topScore || 0.5) * analysis.confidenceLevel);
 
     return {
@@ -654,10 +648,10 @@ export class AtlasMemoryClassifier implements MemoryClassifier {
     const queryLower = query.toLowerCase();
 
     // Boost scores for certain query patterns
-    if (queryLower.includes("how") && memoryType === MemoryType.PROCEDURAL) return 1.0;
-    if (queryLower.includes("what") && memoryType === MemoryType.SEMANTIC) return 0.8;
-    if (queryLower.includes("when") && memoryType === MemoryType.EPISODIC) return 0.8;
-    if (queryLower.includes("current") && memoryType === MemoryType.WORKING) return 1.0;
+    if (queryLower.includes("how") && memoryType === "procedural") return 1.0;
+    if (queryLower.includes("what") && memoryType === "semantic") return 0.8;
+    if (queryLower.includes("when") && memoryType === "episodic") return 0.8;
+    if (queryLower.includes("current") && memoryType === "working") return 1.0;
 
     return 0.5; // Neutral relevance
   }

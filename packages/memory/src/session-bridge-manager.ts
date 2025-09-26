@@ -1,10 +1,5 @@
 import { logger } from "@atlas/logger";
-import {
-  type MECMFMemoryManager,
-  type MemoryEntry,
-  MemoryType,
-  type SessionBridgeConfig,
-} from "./mecmf-interfaces.ts";
+import type { MECMFMemoryManager, MemoryEntry, SessionBridgeConfig } from "./mecmf-interfaces.ts";
 
 /**
  * SessionBridgeManager handles the promotion of working memory to session bridge
@@ -43,7 +38,7 @@ export class SessionBridgeManager {
       const bridgeMemory: MemoryEntry = {
         ...memory,
         id: `bridge_${memory.id}`,
-        memoryType: MemoryType.SESSION_BRIDGE,
+        memoryType: "contextual",
         tags: [...memory.tags, "session_bridge", `expires_at_${expirationTime.toISOString()}`],
         timestamp: new Date(), // Update timestamp to current time
       };
@@ -57,8 +52,8 @@ export class SessionBridgeManager {
    */
   async loadIntoNewSession(): Promise<MemoryEntry[]> {
     try {
-      const bridgeMemories = await this.memoryManager.getRelevantMemories("", {
-        memoryTypes: [MemoryType.SESSION_BRIDGE],
+      const bridgeMemories = await this.memoryManager.getRelevantMemories("session_bridge", {
+        memoryTypes: ["contextual"],
         maxResults: this.config.max_turns,
         minRelevanceScore: 0.1, // Lower threshold for bridge memories
       });
@@ -94,7 +89,7 @@ export class SessionBridgeManager {
   async pruneExpired(): Promise<void> {
     try {
       const allBridgeMemories = await this.memoryManager.getRelevantMemories("", {
-        memoryTypes: [MemoryType.SESSION_BRIDGE],
+        memoryTypes: ["contextual"],
         maxResults: 1000, // Get all bridge memories for pruning
       });
 
@@ -151,7 +146,7 @@ export class SessionBridgeManager {
   }> {
     try {
       const bridgeMemories = await this.memoryManager.getRelevantMemories("", {
-        memoryTypes: [MemoryType.SESSION_BRIDGE],
+        memoryTypes: ["contextual"],
         maxResults: 1000,
       });
 

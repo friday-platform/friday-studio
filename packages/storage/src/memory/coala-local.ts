@@ -9,6 +9,24 @@
  * - contextual.json - Session/agent specific context
  */
 
+import type { CoALAMemoryEntry } from "@atlas/memory";
+import { CoALAMemoryEntrySchema, type CoALAMemoryType } from "@atlas/memory";
+import { objectKeys } from "@atlas/utils";
+import { z } from "zod";
+
+// Zod schema for memory statistics/index structure
+const MemoryTypeStatSchema = z.object({
+  count: z.number(),
+  latestTimestamp: z.string().nullable(),
+  avgRelevance: z.number(),
+  fileName: z.string(),
+});
+
+const MemoryStatisticsSchema = z.object({
+  lastUpdated: z.string(),
+  memoryTypes: z.record(z.string(), MemoryTypeStatSchema),
+});
+
 import { getAtlasHome } from "@atlas/utils/paths.server";
 import { ensureDir } from "@std/fs";
 import { join } from "@std/path";
@@ -17,7 +35,7 @@ import { FileWriteCoordinator } from "./file-write-coordinator.ts";
 
 export class CoALALocalFileStorageAdapter implements ICoALAMemoryStorageAdapter {
   private storagePath: string;
-  private memoryTypeFiles: Record<string, string> = {
+  private memoryTypeFiles: Record<CoALAMemoryType, string> = {
     working: "working.json",
     episodic: "episodic.json",
     semantic: "semantic.json",
@@ -35,7 +53,7 @@ export class CoALALocalFileStorageAdapter implements ICoALAMemoryStorageAdapter 
   }
 
   // Enhanced CoALA-specific methods
-  async commitByType(memoryType: string, data: unknown): Promise<void> {
+  async commitByType(memoryType: CoALAMemoryType, data: CoALAMemoryEntry[]): Promise<void> {
     await ensureDir(this.storagePath);
     const fileName = this.memoryTypeFiles[memoryType] || `${memoryType}.json`;
     const filePath = join(this.storagePath, fileName);
@@ -47,7 +65,7 @@ export class CoALALocalFileStorageAdapter implements ICoALAMemoryStorageAdapter 
     });
   }
 
-  async loadByType(memoryType: string): Promise<unknown> {
+  async loadByType(memoryType: CoALAMemoryType): Promise<CoALAMemoryEntry[]> {
     const fileName = this.memoryTypeFiles[memoryType] || `${memoryType}.json`;
     const filePath = join(this.storagePath, fileName);
 
@@ -56,33 +74,47 @@ export class CoALALocalFileStorageAdapter implements ICoALAMemoryStorageAdapter 
 
       // Handle empty or whitespace-only files
       if (!content.trim()) {
-        return {};
+        return [];
       }
 
-      return JSON.parse(content);
-    } catch (error) {
+      // Parse and validate using Zod schema
+      const MemoryArraySchema = z.array(CoALAMemoryEntrySchema);
+      const rawData = JSON.parse(content);
+      const validatedData = MemoryArraySchema.parse(rawData);
+
+      return validatedData;
+    } catch (error: unknown) {
       if (error instanceof Deno.errors.NotFound) {
-        return {};
+        return [];
       }
 
       // Handle JSON parsing errors gracefully
       if (error instanceof SyntaxError) {
         console.warn(
-          `Failed to parse JSON in ${filePath}: ${error.message}. Returning empty object.`,
+          `Failed to parse JSON in ${filePath}: ${error.message}. Returning empty array.`,
         );
-        return {};
+        return [];
+      }
+
+      // Handle Zod validation errors gracefully
+      if (error instanceof z.ZodError) {
+        console.warn(
+          `Failed to validate memory data structure in ${filePath}: ${error.message}. Returning empty array.`,
+        );
+        return [];
       }
 
       throw error;
     }
   }
 
-  async commitAll(dataByType: Record<string, unknown>): Promise<void> {
+  async commitAll(dataByType: Record<CoALAMemoryType, CoALAMemoryEntry[]>): Promise<void> {
     await ensureDir(this.storagePath);
 
     // Write each memory type to its own file sequentially to avoid file descriptor exhaustion
-    for (const [memoryType, data] of Object.entries(dataByType)) {
-      if (data && Object.keys(data).length > 0) {
+    for (const memoryType of objectKeys(dataByType)) {
+      const data = dataByType[memoryType];
+      if (data) {
         await this.commitByType(memoryType, data);
       }
     }
@@ -91,75 +123,48 @@ export class CoALALocalFileStorageAdapter implements ICoALAMemoryStorageAdapter 
     await this.createIndexFile(dataByType);
   }
 
-  async loadAll(): Promise<Record<string, unknown>> {
-    const allData: Record<string, unknown> = {};
+  async loadAll(): Promise<Record<CoALAMemoryType, CoALAMemoryEntry[]>> {
+    const allData: Record<CoALAMemoryType, CoALAMemoryEntry[]> = {
+      working: [],
+      episodic: [],
+      semantic: [],
+      procedural: [],
+      contextual: [],
+    };
 
     // Load all known memory types
-    const loadPromises = Object.keys(this.memoryTypeFiles).map(async (memoryType) => {
+    const loadPromises = objectKeys(this.memoryTypeFiles).map(async (memoryType) => {
       const data = await this.loadByType(memoryType);
-      if (data && Object.keys(data).length > 0) {
+      if (data && data.length > 0) {
         allData[memoryType] = data;
       }
     });
 
     await Promise.all(loadPromises);
 
-    // Also check for any additional memory type files
-    try {
-      const additionalTypes = await this.loadAdditionalMemoryTypes();
-      for (const memoryType of additionalTypes) {
-        if (!allData[memoryType]) {
-          const data = await this.loadByType(memoryType);
-          if (data && Object.keys(data).length > 0) {
-            allData[memoryType] = data;
-          }
-        }
-      }
-    } catch {
-      // Ignore errors when scanning for additional files
-    }
-
     return allData;
   }
 
-  async listMemoryTypes(): Promise<string[]> {
-    const types = new Set<string>();
-
-    // Add known types
-    for (const type of Object.keys(this.memoryTypeFiles)) {
-      types.add(type);
-    }
-
-    // Scan directory for additional memory type files
-    try {
-      for await (const dirEntry of Deno.readDir(this.storagePath)) {
-        if (dirEntry.isFile && dirEntry.name.endsWith(".json") && dirEntry.name !== "index.json") {
-          const memoryType = dirEntry.name.replace(".json", "");
-          types.add(memoryType);
-        }
-      }
-    } catch (error) {
-      if (!(error instanceof Deno.errors.NotFound)) {
-        console.warn("Error scanning memory directory:", error);
-      }
-    }
-
-    return Array.from(types);
+  listMemoryTypes(): CoALAMemoryType[] {
+    return objectKeys(this.memoryTypeFiles);
   }
 
   // Helper methods
-  private async createIndexFile(dataByType: Record<string, unknown>): Promise<void> {
+  private async createIndexFile(
+    dataByType: Record<CoALAMemoryType, CoALAMemoryEntry[]>,
+  ): Promise<void> {
     const index = {
       lastUpdated: new Date().toISOString(),
       memoryTypes: {} as Record<
-        string,
+        CoALAMemoryType,
         { count: number; latestTimestamp: string | null; avgRelevance: number; fileName: string }
       >,
     };
 
-    for (const [memoryType, data] of Object.entries(dataByType)) {
-      if (data && typeof data === "object") {
-        const entries = Object.values(data);
+    for (const memoryType of objectKeys(dataByType)) {
+      const data = dataByType[memoryType];
+      if (data && data.length > 0) {
+        const entries = data;
         index.memoryTypes[memoryType] = {
           count: entries.length,
           latestTimestamp: this.getLatestTimestamp(entries),
@@ -178,26 +183,7 @@ export class CoALALocalFileStorageAdapter implements ICoALAMemoryStorageAdapter 
     });
   }
 
-  private async loadAdditionalMemoryTypes(): Promise<string[]> {
-    const additionalTypes: string[] = [];
-
-    try {
-      for await (const dirEntry of Deno.readDir(this.storagePath)) {
-        if (dirEntry.isFile && dirEntry.name.endsWith(".json") && dirEntry.name !== "index.json") {
-          const memoryType = dirEntry.name.replace(".json", "");
-          if (!this.memoryTypeFiles[memoryType]) {
-            additionalTypes.push(memoryType);
-          }
-        }
-      }
-    } catch {
-      // Directory doesn't exist or can't be read
-    }
-
-    return additionalTypes;
-  }
-
-  private getLatestTimestamp(entries: unknown[]): string | null {
+  private getLatestTimestamp(entries: CoALAMemoryEntry[]): string | null {
     if (!entries.length) return null;
 
     const timestamps = entries
@@ -210,7 +196,7 @@ export class CoALALocalFileStorageAdapter implements ICoALAMemoryStorageAdapter 
     return timestamps[0] || null;
   }
 
-  private getAverageRelevance(entries: unknown[]): number {
+  private getAverageRelevance(entries: CoALAMemoryEntry[]): number {
     if (!entries.length) return 0;
 
     const relevanceScores = entries
@@ -227,9 +213,21 @@ export class CoALALocalFileStorageAdapter implements ICoALAMemoryStorageAdapter 
     try {
       const indexPath = join(this.storagePath, "index.json");
       const content = await Deno.readTextFile(indexPath);
-      return JSON.parse(content);
-    } catch {
-      // If index doesn't exist, generate statistics on the fly
+
+      // Parse and validate using Zod schema
+      const rawData = JSON.parse(content);
+      const validatedData = MemoryStatisticsSchema.parse(rawData);
+
+      return validatedData;
+    } catch (error: unknown) {
+      // Handle Zod validation errors
+      if (error instanceof z.ZodError) {
+        console.warn(
+          `Failed to validate memory statistics structure: ${error.message}. Regenerating statistics.`,
+        );
+      }
+
+      // If index doesn't exist or validation fails, generate statistics on the fly
       const allData = await this.loadAll();
       const stats: Record<string, unknown> = {};
 
@@ -243,41 +241,6 @@ export class CoALALocalFileStorageAdapter implements ICoALAMemoryStorageAdapter 
       }
 
       return { lastUpdated: new Date().toISOString(), memoryTypes: stats };
-    }
-  }
-
-  async compactMemoryType(memoryType: string): Promise<void> {
-    // Load memories of this type
-    const data = await this.loadByType(memoryType);
-
-    if (!data || Object.keys(data).length === 0) {
-      return;
-    }
-
-    // Filter out memories with very low relevance (< 0.1)
-    const filteredData: unknown = {};
-    let removedCount = 0;
-
-    for (const [key, memory] of Object.entries(data)) {
-      const memoryObj = memory;
-      if (memoryObj.relevanceScore >= 0.1) {
-        filteredData[key] = memory;
-      } else {
-        removedCount++;
-      }
-    }
-
-    if (removedCount > 0) {
-      await this.commitByType(memoryType, filteredData);
-      console.log(`Compacted ${memoryType} memory: removed ${removedCount} low-relevance entries`);
-    }
-  }
-
-  async compactAllMemoryTypes(): Promise<void> {
-    const memoryTypes = await this.listMemoryTypes();
-    // Compact memory types sequentially to avoid file descriptor exhaustion
-    for (const type of memoryTypes) {
-      await this.compactMemoryType(type);
     }
   }
 }

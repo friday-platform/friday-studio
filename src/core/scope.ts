@@ -1,10 +1,9 @@
-import { CoALAMemoryManager, CoALAMemoryType } from "@atlas/memory";
+import { CoALAMemoryManager } from "@atlas/memory";
 import type {
   IAtlasGate,
   IAtlasScope,
   ICoALAMemoryStorageAdapter,
   ITempestContextManager,
-  ITempestMemoryStorageAdapter,
   ITempestMessageManager,
   IWorkspaceSupervisor,
 } from "../types/core.ts";
@@ -16,7 +15,7 @@ export interface AtlasScopeOptions {
   workspaceId?: string;
   parentScopeId?: string;
   supervisor?: IWorkspaceSupervisor;
-  storageAdapter?: ITempestMemoryStorageAdapter | ICoALAMemoryStorageAdapter;
+  storageAdapter?: ICoALAMemoryStorageAdapter;
   enableCognitiveLoop?: boolean;
 }
 
@@ -34,14 +33,14 @@ export class AtlasScope implements IAtlasScope {
   constructor(
     parentScopeId?: string,
     supervisor?: IWorkspaceSupervisor,
-    storageAdapter?: ITempestMemoryStorageAdapter | ICoALAMemoryStorageAdapter,
+    storageAdapter?: ICoALAMemoryStorageAdapter,
     enableCognitiveLoop?: boolean,
   );
   constructor(options?: AtlasScopeOptions);
   constructor(
     parentScopeIdOrOptions?: string | AtlasScopeOptions,
     supervisor?: IWorkspaceSupervisor,
-    storageAdapter?: ITempestMemoryStorageAdapter | ICoALAMemoryStorageAdapter,
+    storageAdapter?: ICoALAMemoryStorageAdapter,
     enableCognitiveLoop?: boolean,
   ) {
     // Handle overloaded constructor
@@ -49,7 +48,7 @@ export class AtlasScope implements IAtlasScope {
     let actualWorkspaceId: string | undefined;
     let actualParentScopeId: string | undefined;
     let actualSupervisor: IWorkspaceSupervisor | undefined;
-    let actualStorageAdapter: ITempestMemoryStorageAdapter | ICoALAMemoryStorageAdapter | undefined;
+    let actualStorageAdapter: ICoALAMemoryStorageAdapter | undefined;
     let actualEnableCognitiveLoop: boolean = true;
 
     if (typeof parentScopeIdOrOptions === "object" && parentScopeIdOrOptions !== null) {
@@ -96,13 +95,20 @@ export class AtlasScope implements IAtlasScope {
   archiveConversation(): void {
     // Store current conversation in CoALA memory with appropriate metadata
     const coalaMemory = this.memory;
-    coalaMemory.rememberWithMetadata(`conversation_${Date.now()}`, this.messages.getHistory(), {
-      memoryType: CoALAMemoryType.EPISODIC,
-      tags: ["conversation", "archived", "historical"],
-      relevanceScore: 0.5,
-      confidence: 1.0,
-      decayRate: 0.05, // Conversations decay slowly
-    });
+    coalaMemory.rememberWithMetadata(
+      `conversation_${Date.now()}`,
+      this.messages
+        .getHistory()
+        .map((m) => m.message)
+        .join("\n"),
+      {
+        memoryType: "episodic",
+        tags: ["conversation", "archived", "historical"],
+        relevanceScore: 0.5,
+        confidence: 1.0,
+        decayRate: 0.05, // Conversations decay slowly
+      },
+    );
     this.messages = new MessageManager();
   }
 

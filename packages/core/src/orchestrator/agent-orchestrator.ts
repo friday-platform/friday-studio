@@ -20,7 +20,7 @@ import {
   type StreamEmitter,
 } from "@atlas/agent-sdk";
 import type { Logger } from "@atlas/logger";
-import { CoALAMemoryManager, CoALAMemoryType, type IMemoryScope } from "@atlas/memory";
+import { CoALAMemoryManager, type IMemoryScope } from "@atlas/memory";
 import { Client } from "@modelcontextprotocol/sdk/client";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js";
@@ -830,7 +830,7 @@ export class AgentOrchestrator implements IAgentOrchestrator {
             duration: (Date.now() - startTime).toString(),
           },
           {
-            memoryType: CoALAMemoryType.EPISODIC,
+            memoryType: "episodic",
             tags: ["agent-execution", agentId],
             relevanceScore: 0.5,
             confidence: 0.9,

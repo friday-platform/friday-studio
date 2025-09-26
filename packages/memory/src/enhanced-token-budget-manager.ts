@@ -1,10 +1,10 @@
 import { logger } from "@atlas/logger";
-import {
-  type EnhancedPrompt,
-  type ExtendedTokenAllocation,
-  type MemoryEntry,
+import type {
+  EnhancedPrompt,
+  ExtendedTokenAllocation,
+  MemoryEntry,
   MemoryType,
-  type WorklogEntry,
+  WorklogEntry,
 } from "./mecmf-interfaces.ts";
 
 /**
@@ -256,13 +256,7 @@ export class EnhancedTokenBudgetManager {
         memoryContext: "",
         tokensUsed: baseTokens,
         memoriesIncluded: 0,
-        memoryBreakdown: {
-          [MemoryType.WORKING]: 0,
-          [MemoryType.SESSION_BRIDGE]: 0,
-          [MemoryType.EPISODIC]: 0,
-          [MemoryType.SEMANTIC]: 0,
-          [MemoryType.PROCEDURAL]: 0,
-        },
+        memoryBreakdown: { working: 0, episodic: 0, semantic: 0, procedural: 0, contextual: 0 },
         bridgeMemoriesIncluded: 0,
         worklogEntriesIncluded: 0,
         bridgeTokensUsed: 0,
@@ -284,24 +278,24 @@ export class EnhancedTokenBudgetManager {
     // Select and optimize content for each type
     const selectedWorking = this.selectMemoriesByType(
       workingMemories,
-      MemoryType.WORKING,
+      "working",
       allocation.working_memory,
     );
     const selectedBridge = this.optimizeBridgeContent(bridgeMemories, allocation.session_bridge);
     const selectedWorklog = this.optimizeWorklogContent(worklogEntries, allocation.worklog_context);
     const selectedProcedural = this.selectMemoriesByType(
       workingMemories,
-      MemoryType.PROCEDURAL,
+      "procedural",
       allocation.procedural_memory,
     );
     const selectedSemantic = this.selectMemoriesByType(
       workingMemories,
-      MemoryType.SEMANTIC,
+      "semantic",
       allocation.semantic_memory,
     );
     const selectedEpisodic = this.selectMemoriesByType(
       workingMemories,
-      MemoryType.EPISODIC,
+      "episodic",
       allocation.episodic_memory,
     );
 
@@ -369,11 +363,11 @@ export class EnhancedTokenBudgetManager {
       tokensUsed: totalTokens,
       memoriesIncluded: allSelectedMemories.length,
       memoryBreakdown: {
-        [MemoryType.WORKING]: selectedWorking.length,
-        [MemoryType.SESSION_BRIDGE]: selectedBridge.length,
-        [MemoryType.EPISODIC]: selectedEpisodic.length,
-        [MemoryType.SEMANTIC]: selectedSemantic.length,
-        [MemoryType.PROCEDURAL]: selectedProcedural.length,
+        working: selectedWorking.length,
+        contextual: selectedBridge.length,
+        episodic: selectedEpisodic.length,
+        semantic: selectedSemantic.length,
+        procedural: selectedProcedural.length,
       },
       bridgeMemoriesIncluded: selectedBridge.length,
       worklogEntriesIncluded: selectedWorklog.length,
@@ -598,37 +592,29 @@ export class EnhancedTokenBudgetManager {
   ): string {
     // This would call the parent class method - simplified for this implementation
     const groupedMemories = {
-      [MemoryType.WORKING]: memories.filter((m) => m.memoryType === MemoryType.WORKING),
-      [MemoryType.SESSION_BRIDGE]: memories.filter(
-        (m) => m.memoryType === MemoryType.SESSION_BRIDGE,
-      ),
-      [MemoryType.PROCEDURAL]: memories.filter((m) => m.memoryType === MemoryType.PROCEDURAL),
-      [MemoryType.SEMANTIC]: memories.filter((m) => m.memoryType === MemoryType.SEMANTIC),
-      [MemoryType.EPISODIC]: memories.filter((m) => m.memoryType === MemoryType.EPISODIC),
+      working: memories.filter((m) => m.memoryType === "working"),
+      contextual: memories.filter((m) => m.memoryType === "contextual"),
+      procedural: memories.filter((m) => m.memoryType === "procedural"),
+      semantic: memories.filter((m) => m.memoryType === "semantic"),
+      episodic: memories.filter((m) => m.memoryType === "episodic"),
     };
 
     const parts: string[] = [];
 
-    if (groupedMemories[MemoryType.WORKING].length > 0) {
-      parts.push(this.formatMemorySection("Working", groupedMemories[MemoryType.WORKING], format));
+    if (groupedMemories.working.length > 0) {
+      parts.push(this.formatMemorySection("Working", groupedMemories.working, format));
     }
 
-    if (groupedMemories[MemoryType.PROCEDURAL].length > 0) {
-      parts.push(
-        this.formatMemorySection("Procedures", groupedMemories[MemoryType.PROCEDURAL], format),
-      );
+    if (groupedMemories.procedural.length > 0) {
+      parts.push(this.formatMemorySection("Procedures", groupedMemories.procedural, format));
     }
 
-    if (groupedMemories[MemoryType.SEMANTIC].length > 0) {
-      parts.push(
-        this.formatMemorySection("Knowledge", groupedMemories[MemoryType.SEMANTIC], format),
-      );
+    if (groupedMemories.semantic.length > 0) {
+      parts.push(this.formatMemorySection("Knowledge", groupedMemories.semantic, format));
     }
 
-    if (groupedMemories[MemoryType.EPISODIC].length > 0) {
-      parts.push(
-        this.formatMemorySection("Experience", groupedMemories[MemoryType.EPISODIC], format),
-      );
+    if (groupedMemories.episodic.length > 0) {
+      parts.push(this.formatMemorySection("Experience", groupedMemories.episodic, format));
     }
 
     return parts.length > 0 ? `[Memory Context: ${parts.join(" | ")}]\n\n` : "";

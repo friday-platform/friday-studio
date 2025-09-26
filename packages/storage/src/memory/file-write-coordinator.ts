@@ -57,7 +57,14 @@ class FileWriteCoordinator {
     if (!this.fileMutexes.has(filePath)) {
       this.fileMutexes.set(filePath, new Mutex());
     }
-    return this.fileMutexes.get(filePath);
+
+    const m = this.fileMutexes.get(filePath);
+
+    if (!m) {
+      throw new Error(`Mutex not found for file: ${filePath}`);
+    }
+
+    return m;
   }
 
   /**
@@ -83,7 +90,12 @@ class FileWriteCoordinator {
       this.writeQueue.set(filePath, []);
     }
 
-    this.writeQueue.get(filePath).push({ filePath, writeOperation });
+    const queue = this.writeQueue.get(filePath);
+    if (!queue) {
+      throw new Error(`Queue not found for file: ${filePath}`);
+    }
+
+    queue.push({ filePath, writeOperation });
 
     // Process the queue if not already processing
     if (!this.isProcessing.get(filePath)) {
@@ -105,7 +117,9 @@ class FileWriteCoordinator {
       const queue = this.writeQueue.get(filePath) || [];
       while (queue.length > 0) {
         const task = queue.shift();
-        await this.executeWrite(task.filePath, task.writeOperation);
+        if (task) {
+          await this.executeWrite(task.filePath, task.writeOperation);
+        }
       }
     } finally {
       this.isProcessing.set(filePath, false);

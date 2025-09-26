@@ -1,7 +1,6 @@
 import { expect } from "@std/expect";
 import { MemoryConfigManager } from "../../../src/core/memory-config.ts";
 import { AtlasScope } from "../../../src/core/scope.ts";
-import { CoALAMemoryType } from "../src/coala-memory.ts";
 
 // Set testing environment to prevent logger file operations
 Deno.env.set("DENO_TESTING", "true");
@@ -186,7 +185,7 @@ Deno.test("MemoryConfigManager - remembers with scope-specific configuration", (
       memoryManager,
       "test-key",
       "test-content",
-      CoALAMemoryType.WORKING,
+      "working",
       "agent",
       ["test-tag"],
       0.8,
@@ -213,7 +212,7 @@ Deno.test("MemoryConfigManager - skips remembering when disabled", () => {
       memoryManager,
       "test-key",
       "test-content",
-      CoALAMemoryType.WORKING,
+      "working",
       "agent",
       ["test-tag"],
       0.8,
@@ -246,7 +245,7 @@ Deno.test("MemoryConfigManager - skips remembering when memory type disabled", (
       memoryManager,
       "test-key",
       "test-content",
-      CoALAMemoryType.WORKING,
+      "working",
       "agent",
       ["test-tag"],
       0.8,
@@ -297,7 +296,7 @@ Deno.test("MemoryConfigManager - calculates decay rates based on config", () => 
       memoryManager,
       "working-key",
       "working content",
-      CoALAMemoryType.WORKING,
+      "working",
       "agent",
       ["working"],
       0.8,
@@ -309,7 +308,7 @@ Deno.test("MemoryConfigManager - calculates decay rates based on config", () => 
       memoryManager,
       "procedural-key",
       "procedural content",
-      CoALAMemoryType.PROCEDURAL,
+      "procedural",
       "agent",
       ["procedural"],
       0.8,

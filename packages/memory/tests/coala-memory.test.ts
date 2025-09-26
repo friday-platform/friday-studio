@@ -1,7 +1,7 @@
 import { InMemoryStorageAdapter } from "@atlas/storage";
 import { expect } from "@std/expect";
 import { AtlasScope } from "../../../src/core/scope.ts";
-import { CoALAMemoryManager, CoALAMemoryType, type IMemoryScope } from "../src/coala-memory.ts";
+import { CoALAMemoryManager, type IMemoryScope } from "../src/coala-memory.ts";
 
 // Set testing environment to prevent logger file operations
 Deno.env.set("DENO_TESTING", "true");
@@ -26,7 +26,7 @@ Deno.test("CoALAMemoryManager - basic memory operations", async () => {
 
   // Test storing and retrieving memory
   memory.rememberWithMetadata("test-key", "test-value", {
-    memoryType: CoALAMemoryType.WORKING,
+    memoryType: "working",
     tags: ["test", "working"],
     relevanceScore: 0.8,
     confidence: 0.9,
@@ -46,7 +46,7 @@ Deno.test("CoALAMemoryManager - memory with metadata", async () => {
 
   // Test storing memory with metadata
   memory.rememberWithMetadata("test-key", "test-value", {
-    memoryType: CoALAMemoryType.SEMANTIC,
+    memoryType: "semantic",
     tags: ["test", "semantic"],
     relevanceScore: 0.8,
     confidence: 0.9,
@@ -66,7 +66,7 @@ Deno.test("CoALAMemoryManager - memory queries", async () => {
 
   // Store multiple memories
   memory.rememberWithMetadata("key1", "value1", {
-    memoryType: CoALAMemoryType.EPISODIC,
+    memoryType: "episodic",
     tags: ["test", "episodic"],
     relevanceScore: 0.7,
     confidence: 0.8,
@@ -74,7 +74,7 @@ Deno.test("CoALAMemoryManager - memory queries", async () => {
   });
 
   memory.rememberWithMetadata("key2", "value2", {
-    memoryType: CoALAMemoryType.SEMANTIC,
+    memoryType: "semantic",
     tags: ["test", "semantic"],
     relevanceScore: 0.9,
     confidence: 0.95,
@@ -96,7 +96,7 @@ Deno.test("CoALAMemoryManager - memory by type", async () => {
 
   // Store memories of different types
   memory.rememberWithMetadata("episodic1", "episodic value", {
-    memoryType: CoALAMemoryType.EPISODIC,
+    memoryType: "episodic",
     tags: ["episodic"],
     relevanceScore: 0.8,
     confidence: 0.9,
@@ -104,7 +104,7 @@ Deno.test("CoALAMemoryManager - memory by type", async () => {
   });
 
   memory.rememberWithMetadata("semantic1", "semantic value", {
-    memoryType: CoALAMemoryType.SEMANTIC,
+    memoryType: "semantic",
     tags: ["semantic"],
     relevanceScore: 0.9,
     confidence: 0.95,
@@ -112,8 +112,8 @@ Deno.test("CoALAMemoryManager - memory by type", async () => {
   });
 
   // Get memories by type
-  const episodicMemories = memory.getMemoriesByType(CoALAMemoryType.EPISODIC);
-  const semanticMemories = memory.getMemoriesByType(CoALAMemoryType.SEMANTIC);
+  const episodicMemories = memory.getMemoriesByType("episodic");
+  const semanticMemories = memory.getMemoriesByType("semantic");
 
   expect(episodicMemories).toHaveLength(1);
   expect(semanticMemories).toHaveLength(1);
@@ -130,7 +130,7 @@ Deno.test("CoALAMemoryManager - forgetting memories", async () => {
 
   // Store a memory
   memory.rememberWithMetadata("forget-me", "temporary value", {
-    memoryType: CoALAMemoryType.WORKING,
+    memoryType: "working",
     tags: ["forget-me"],
     relevanceScore: 0.8,
     confidence: 0.9,
@@ -159,7 +159,7 @@ Deno.test("CoALAMemoryManager - memory consolidation", async () => {
   // Store similar memories
   for (let i = 0; i < 5; i++) {
     memory.rememberWithMetadata(`similar-${i}`, `similar content ${i}`, {
-      memoryType: CoALAMemoryType.EPISODIC,
+      memoryType: "episodic",
       tags: ["similar", "consolidate"],
       relevanceScore: 0.7,
       confidence: 0.8,
@@ -180,7 +180,7 @@ Deno.test("CoALAMemoryManager - memory pruning", async () => {
 
   // Store memories with different decay rates
   memory.rememberWithMetadata("fast-decay", "fast decaying memory", {
-    memoryType: CoALAMemoryType.WORKING,
+    memoryType: "working",
     tags: ["fast"],
     relevanceScore: 0.5,
     confidence: 0.6,
@@ -188,7 +188,7 @@ Deno.test("CoALAMemoryManager - memory pruning", async () => {
   });
 
   memory.rememberWithMetadata("slow-decay", "slow decaying memory", {
-    memoryType: CoALAMemoryType.SEMANTIC,
+    memoryType: "semantic",
     tags: ["slow"],
     relevanceScore: 0.9,
     confidence: 0.95,
@@ -208,7 +208,7 @@ Deno.test("CoALAMemoryManager - memory adaptation", async () => {
 
   // Store a memory
   memory.rememberWithMetadata("adapt-me", "adaptable memory", {
-    memoryType: CoALAMemoryType.PROCEDURAL,
+    memoryType: "procedural",
     tags: ["adaptable"],
     relevanceScore: 0.7,
     confidence: 0.8,
@@ -229,7 +229,7 @@ Deno.test("CoALAMemoryManager - memory disposal", async () => {
 
   // Store a memory
   memory.rememberWithMetadata("dispose-test", "test value", {
-    memoryType: CoALAMemoryType.WORKING,
+    memoryType: "working",
     tags: ["dispose-test"],
     relevanceScore: 0.8,
     confidence: 0.9,
@@ -252,7 +252,7 @@ Deno.test("CoALAMemoryManager - memory serialization", async () => {
   };
 
   memory.rememberWithMetadata("complex-data", complexData, {
-    memoryType: CoALAMemoryType.WORKING,
+    memoryType: "working",
     tags: ["complex-data"],
     relevanceScore: 0.8,
     confidence: 0.9,

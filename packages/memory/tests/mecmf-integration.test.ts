@@ -6,12 +6,7 @@
  */
 
 import { assertEquals, assertExists, assertGreater } from "@std/assert";
-import {
-  createConversationContext,
-  MECMFConstants,
-  MemoryType,
-  MemoryUtils,
-} from "../src/mecmf.ts";
+import { createConversationContext, MECMFConstants, MemoryUtils } from "../src/mecmf.ts";
 import { createMemoryClassifier } from "../src/memory-classifier.ts";
 import { createTokenBudgetManager } from "../src/token-budget-manager.ts";
 
@@ -24,25 +19,25 @@ Deno.test("MECMF Memory Classification", () => {
   // Test working memory classification
   const workingContent = "The current session is analyzing memory patterns right now";
   const workingType = classifier.classifyContent(workingContent, context);
-  assertEquals(workingType, MemoryType.WORKING);
+  assertEquals(workingType, "working");
 
   // Test procedural memory classification
   const proceduralContent =
     "First, you should configure the system. Then, run the setup command. Finally, verify the installation.";
   const proceduralType = classifier.classifyContent(proceduralContent, context);
-  assertEquals(proceduralType, MemoryType.PROCEDURAL);
+  assertEquals(proceduralType, "procedural");
 
   // Test semantic memory classification
   const semanticContent =
     "TypeScript is a strongly typed programming language that builds on JavaScript";
   const semanticType = classifier.classifyContent(semanticContent, context);
-  assertEquals(semanticType, MemoryType.SEMANTIC);
+  assertEquals(semanticType, "semantic");
 
   // Test episodic memory classification
   const episodicContent =
     "Yesterday we tried to deploy the application but encountered an error. We learned that the database connection was misconfigured.";
   const episodicType = classifier.classifyContent(episodicContent, context);
-  assertEquals(episodicType, MemoryType.EPISODIC);
+  assertEquals(episodicType, "episodic");
 
   console.log("✓ Memory classification tests passed");
 });
@@ -73,22 +68,22 @@ Deno.test("MECMF Memory Utils", () => {
   // Test memory type detection utilities
   const workingText = "The current status is active and we're processing right now";
   assertEquals(MemoryUtils.isWorkingMemoryContent(workingText), true);
-  assertEquals(MemoryUtils.suggestMemoryType(workingText), MemoryType.WORKING);
+  assertEquals(MemoryUtils.suggestMemoryType(workingText), "working");
 
   const proceduralText =
     "How to setup the system: First, install dependencies. Then, configure settings. Finally, start the service.";
   assertEquals(MemoryUtils.isProceduralContent(proceduralText), true);
-  assertEquals(MemoryUtils.suggestMemoryType(proceduralText), MemoryType.PROCEDURAL);
+  assertEquals(MemoryUtils.suggestMemoryType(proceduralText), "procedural");
 
   const semanticText =
     "JavaScript is a dynamic programming language. It represents a flexible approach to web development.";
   assertEquals(MemoryUtils.isSemanticContent(semanticText), true);
-  assertEquals(MemoryUtils.suggestMemoryType(semanticText), MemoryType.SEMANTIC);
+  assertEquals(MemoryUtils.suggestMemoryType(semanticText), "semantic");
 
   const episodicText =
     "Last week we experienced a major outage when the database crashed unexpectedly.";
   assertEquals(MemoryUtils.isEpisodicContent(episodicText), true);
-  assertEquals(MemoryUtils.suggestMemoryType(episodicText), MemoryType.EPISODIC);
+  assertEquals(MemoryUtils.suggestMemoryType(episodicText), "episodic");
 
   // Test key term extraction
   const complexText =

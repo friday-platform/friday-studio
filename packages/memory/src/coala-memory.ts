@@ -29,17 +29,19 @@ import { embeddingProviderGetInstance } from "./global-embedding-provider.ts";
 import type { MECMFEmbeddingProvider } from "./mecmf-interfaces.ts";
 import { MemorySource } from "./mecmf-interfaces.ts";
 
-// Define the enum first
-export enum CoALAMemoryType {
-  WORKING = "working", // Short-term, active processing
-  EPISODIC = "episodic", // Specific experiences and events
-  SEMANTIC = "semantic", // General knowledge and concepts
-  PROCEDURAL = "procedural", // How-to knowledge and skills
-  CONTEXTUAL = "contextual", // Session/agent specific context
-}
+const COALA_MEMORY_TYPES = [
+  "working", // Short-term, active processing
+  "episodic", // Specific experiences and events
+  "semantic", // General knowledge and concepts
+  "procedural", // How-to knowledge and skills
+  "contextual", // Session/agent specific context
+] as const;
 
-// Zod schemas for type-safe memory operations
-const CoALAMemoryTypeSchema = z.nativeEnum(CoALAMemoryType);
+// Zod schema for parsing.
+const CoALAMemoryTypeSchema = z.enum(COALA_MEMORY_TYPES);
+
+// Type inferred from the schema.
+export type CoALAMemoryType = z.infer<typeof CoALAMemoryTypeSchema>;
 
 const CoALASourceMetadataSchema = z
   .object({
@@ -51,7 +53,7 @@ const CoALASourceMetadataSchema = z
   })
   .optional();
 
-const CoALAMemoryEntrySchema = z.object({
+export const CoALAMemoryEntrySchema = z.object({
   id: z.string(),
   content: z.union([z.string(), z.record(z.string(), z.string())]),
   timestamp: z.coerce.date(),
@@ -104,11 +106,7 @@ export class CoALAMemoryManager implements ITempestMemoryManager, CoALACognitive
   private vectorSearch?: IVectorSearchStorageAdapter;
   private embeddingProvider?: MECMFEmbeddingProvider;
   private vectorSearchConfig: VectorSearchConfig | null = null;
-  private vectorIndexedTypes = new Set<CoALAMemoryType>([
-    CoALAMemoryType.EPISODIC,
-    CoALAMemoryType.SEMANTIC,
-    CoALAMemoryType.PROCEDURAL,
-  ]);
+  private vectorIndexedTypes = new Set<CoALAMemoryType>(["episodic", "semantic", "procedural"]);
   private commitDebounceTimer?: number;
   private commitDebounceDelay = 500; // 500ms debounce
   private pendingCommit = false;
@@ -145,9 +143,9 @@ export class CoALAMemoryManager implements ITempestMemoryManager, CoALACognitive
     }
 
     // Initialize memory type maps
-    Object.values(CoALAMemoryType).forEach((type) => {
+    for (const type of COALA_MEMORY_TYPES) {
       this.memoriesByType.set(type, new Map());
-    });
+    }
 
     // In test environments, skip all background operations and timers
     const isTestEnvironment = Deno.env.get("DENO_TESTING") === "true";
@@ -267,7 +265,7 @@ export class CoALAMemoryManager implements ITempestMemoryManager, CoALACognitive
   ): string {
     const key = this.generateWorkingKey(sessionId);
     this.rememberWithMetadata(key, content, {
-      memoryType: CoALAMemoryType.WORKING,
+      memoryType: "working",
       tags: ["working", "session", ...(options?.tags || [])],
       relevanceScore: options?.relevanceScore ?? 0.6,
       confidence: options?.confidence ?? 0.9,
@@ -280,7 +278,7 @@ export class CoALAMemoryManager implements ITempestMemoryManager, CoALACognitive
    * Clear all WORKING memory entries that belong to a given session
    */
   clearWorkingBySession(sessionId: string): number {
-    const typeMap = this.memoriesByType.get(CoALAMemoryType.WORKING);
+    const typeMap = this.memoriesByType.get("working");
     if (!typeMap) return 0;
 
     let deletedCount = 0;
@@ -319,11 +317,12 @@ export class CoALAMemoryManager implements ITempestMemoryManager, CoALACognitive
     }
 
     if (query.tags && query.tags.length > 0) {
-      results = results.filter((m) => query.tags.some((tag) => m.tags.includes(tag)));
+      results = results.filter((m) => query.tags?.some((tag) => m.tags.includes(tag)));
     }
 
     if (query.minRelevance) {
-      results = results.filter((m) => m.relevanceScore >= query.minRelevance);
+      const minRelevance = query.minRelevance;
+      results = results.filter((m) => m.relevanceScore >= minRelevance);
     }
 
     if (query.maxAge) {
@@ -337,8 +336,9 @@ export class CoALAMemoryManager implements ITempestMemoryManager, CoALACognitive
 
     // Content-based search
     if (query.content) {
+      const content = query.content;
       results = results.filter((m) =>
-        JSON.stringify(m.content).toLowerCase().includes(query.content.toLowerCase()),
+        JSON.stringify(m.content).toLowerCase().includes(content.toLowerCase()),
       );
     }
 
@@ -376,10 +376,7 @@ export class CoALAMemoryManager implements ITempestMemoryManager, CoALACognitive
 
   consolidate(): void {
     // Move working memories to long-term storage based on patterns
-    const workingMemories = this.queryMemories({
-      memoryType: CoALAMemoryType.WORKING,
-      minRelevance: 0.7,
-    });
+    const workingMemories = this.queryMemories({ memoryType: "working", minRelevance: 0.7 });
 
     for (const memory of workingMemories) {
       if (memory.accessCount > 3 || memory.relevanceScore > 0.8) {
@@ -508,12 +505,12 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
   private determineMemoryType(memory: CoALAMemoryEntry): CoALAMemoryType {
     // Simple heuristics for memory type classification
     if (memory.tags.includes("procedure") || memory.tags.includes("how-to")) {
-      return CoALAMemoryType.PROCEDURAL;
+      return "procedural";
     }
     if (memory.tags.includes("fact") || memory.tags.includes("knowledge")) {
-      return CoALAMemoryType.SEMANTIC;
+      return "semantic";
     }
-    return CoALAMemoryType.EPISODIC; // Default for experiences
+    return "episodic"; // Default for experiences
   }
 
   private updateAssociations(memory: CoALAMemoryEntry): void {
@@ -599,11 +596,18 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
     // Clear the pending flag
     this.pendingCommit = false;
     // Organize memories by type for multi-file storage
-    const dataByType: Record<string, unknown> = {};
+    const dataByType: Record<CoALAMemoryType, CoALAMemoryEntry[]> = {
+      working: [],
+      episodic: [],
+      semantic: [],
+      procedural: [],
+      contextual: [],
+    };
 
     for (const [memoryType, typeMap] of this.memoriesByType.entries()) {
       if (typeMap.size > 0) {
-        const serializedTypeMemories = Object.fromEntries(
+        let serializedTypeMemories: Record<string, CoALAMemoryEntry> = {};
+        serializedTypeMemories = Object.fromEntries(
           Array.from(typeMap.entries()).map(([key, memory]) => {
             // Validate memory entry before serialization
             const parseResult = CoALAMemoryEntrySchema.safeParse(memory);
@@ -615,17 +619,10 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
               // Use original memory for backward compatibility but log the issue
             }
 
-            return [
-              key,
-              {
-                ...memory,
-                timestamp: memory.timestamp.toISOString(),
-                lastAccessed: memory.lastAccessed.toISOString(),
-              },
-            ];
+            return [key, memory];
           }),
         );
-        dataByType[memoryType] = serializedTypeMemories;
+        dataByType[memoryType].push(...Object.values(serializedTypeMemories));
       }
     }
 
@@ -644,24 +641,24 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
       if ("loadAll" in this.store && typeof this.store.loadAll === "function") {
         const dataByType = await this.store.loadAll();
 
-        for (const [memoryType, typeData] of Object.entries(dataByType)) {
-          const memoryTypeEnum = CoALAMemoryType[memoryType as keyof typeof CoALAMemoryType];
-          const typeMap = this.memoriesByType.get(memoryTypeEnum);
+        for (const memoryType of COALA_MEMORY_TYPES) {
+          const typeData = dataByType[memoryType];
+          const typeMap = this.memoriesByType.get(memoryType);
 
           if (typeMap && typeData) {
-            for (const [key, serializedMemory] of Object.entries(typeData)) {
+            for (const serializedMemory of typeData) {
               // Validate and parse memory entry
               const parseResult = CoALAMemoryEntrySchema.safeParse(serializedMemory);
               if (!parseResult.success) {
-                logger.warn(`Invalid memory entry during load: ${key} (type: ${memoryType})`, {
-                  error: parseResult.error,
-                  serializedData: serializedMemory,
-                });
+                logger.warn(
+                  `Invalid memory entry during load: ${serializedMemory.id} (type: ${memoryType})`,
+                  { error: parseResult.error, serializedData: serializedMemory },
+                );
                 continue; // Skip invalid entries
               }
 
               const restoredMemory = parseResult.data;
-
+              const key = restoredMemory.id;
               // Store in both global and type-specific maps
               this.memories.set(key, restoredMemory);
               typeMap.set(key, restoredMemory);
@@ -706,52 +703,6 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
     return stats;
   }
 
-  async compactMemoryType(memoryType: CoALAMemoryType): Promise<number> {
-    if ("compactMemoryType" in this.store && typeof this.store.compactMemoryType === "function") {
-      await this.store.compactMemoryType(memoryType);
-
-      // Reload the specific memory type to reflect compaction
-      if ("loadByType" in this.store && typeof this.store.loadByType === "function") {
-        const typeData = await this.store.loadByType(memoryType);
-        const typeMap = this.memoriesByType.get(memoryType);
-
-        if (typeMap && typeData) {
-          // Clear current type map
-          typeMap.clear();
-
-          // Remove from global map (will be re-added below)
-          for (const [key, memory] of this.memories.entries()) {
-            if (memory.memoryType === memoryType) {
-              this.memories.delete(key);
-            }
-          }
-
-          // Reload compacted memories
-          for (const [key, serializedMemory] of Object.entries(typeData)) {
-            // Validate and parse memory entry
-            const parseResult = CoALAMemoryEntrySchema.safeParse(serializedMemory);
-            if (!parseResult.success) {
-              logger.warn(
-                `Invalid memory entry during compaction reload: ${key} (type: ${memoryType})`,
-                { error: parseResult.error, serializedData: serializedMemory },
-              );
-              continue; // Skip invalid entries
-            }
-
-            const restoredMemory = parseResult.data;
-
-            this.memories.set(key, restoredMemory);
-            typeMap.set(key, restoredMemory);
-          }
-
-          return Object.keys(typeData).length;
-        }
-      }
-    }
-
-    return this.getMemoriesByType(memoryType).length;
-  }
-
   async getStorageStatistics(): Promise<unknown> {
     if (
       "getMemoryStatistics" in this.store &&
@@ -782,7 +733,7 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
   /**
    * Store a single semantic fact (streaming version)
    */
-  async storeFact(fact: {
+  storeFact(fact: {
     id: string;
     content: string;
     confidence: number;
@@ -791,7 +742,7 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
     sessionId: string;
     agentId?: string;
     context?: Record<string, unknown>;
-  }): Promise<void> {
+  }): void {
     // Store as semantic memory with high confidence
     this.rememberWithMetadata(
       fact.id,
@@ -804,7 +755,7 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
         agentId: fact.agentId || "",
       },
       {
-        memoryType: CoALAMemoryType.SEMANTIC,
+        memoryType: "semantic",
         tags: ["fact", "streaming", fact.source],
         relevanceScore: fact.confidence,
         confidence: fact.confidence,
@@ -834,7 +785,7 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
   /**
    * Store a single procedural pattern (streaming version)
    */
-  async storePattern(pattern: {
+  storePattern(pattern: {
     id: string;
     type: string;
     agentId: string;
@@ -844,7 +795,7 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
     outcome: Record<string, unknown>;
     timestamp: number;
     sessionId: string;
-  }): Promise<void> {
+  }): void {
     this.rememberWithMetadata(
       pattern.id,
       {
@@ -858,7 +809,7 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
         sessionId: pattern.sessionId,
       },
       {
-        memoryType: CoALAMemoryType.PROCEDURAL,
+        memoryType: "procedural",
         tags: ["pattern", pattern.type, pattern.strategy],
         relevanceScore: pattern.outcome.success ? 0.8 : 0.6,
         confidence: 0.9,
@@ -889,7 +840,7 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
   /**
    * Store a single episodic event (streaming version)
    */
-  async storeEpisode(episode: {
+  storeEpisode(episode: {
     id: string;
     eventType: string;
     description: string;
@@ -898,7 +849,7 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
     significance: number;
     timestamp: number;
     sessionId: string;
-  }): Promise<void> {
+  }): void {
     this.rememberWithMetadata(
       episode.id,
       {
@@ -911,7 +862,7 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
         sessionId: episode.sessionId,
       },
       {
-        memoryType: CoALAMemoryType.EPISODIC,
+        memoryType: "episodic",
         tags: ["episode", episode.eventType, episode.outcome],
         relevanceScore: episode.significance,
         confidence: 0.8,
@@ -941,7 +892,7 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
   /**
    * Store session summary (streaming version)
    */
-  async storeSessionSummary(summary: {
+  storeSessionSummary(summary: {
     id: string;
     sessionId: string;
     totalDuration: number;
@@ -949,7 +900,7 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
     successRate: number;
     summary?: string;
     timestamp: number;
-  }): Promise<void> {
+  }): void {
     this.rememberWithMetadata(
       summary.id,
       {
@@ -961,7 +912,7 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
         timestamp: summary.timestamp.toString(),
       },
       {
-        memoryType: CoALAMemoryType.EPISODIC,
+        memoryType: "episodic",
         tags: ["session", "summary", "completion"],
         relevanceScore: summary.successRate,
         confidence: 0.9,
@@ -1182,7 +1133,7 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
     // Get WORKING memories using traditional search (unchanged)
     if (includeWorking) {
       const workingMemories = this.queryMemories({
-        memoryType: CoALAMemoryType.WORKING,
+        memoryType: "working",
         content: processedPrompt.processed,
         limit: Math.ceil(limit / 4), // Allocate portion of limit to working memory
         maxAge,
@@ -1202,9 +1153,9 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
     ) {
       const vectorMemoryTypes: CoALAMemoryType[] = [];
 
-      if (includeEpisodic) vectorMemoryTypes.push(CoALAMemoryType.EPISODIC);
-      if (includeSemantic) vectorMemoryTypes.push(CoALAMemoryType.SEMANTIC);
-      if (includeProcedural) vectorMemoryTypes.push(CoALAMemoryType.PROCEDURAL);
+      if (includeEpisodic) vectorMemoryTypes.push("episodic");
+      if (includeSemantic) vectorMemoryTypes.push("semantic");
+      if (includeProcedural) vectorMemoryTypes.push("procedural");
 
       // Use the processed prompt text for vector search
       const searchText = processedPrompt.processed || promptText;
@@ -1266,7 +1217,7 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
   async queryMemoriesEnhanced(query: CoALAMemoryQuery): Promise<CoALAMemoryEntry[]> {
     // For WORKING memory or when no content query, use traditional search
     if (
-      query.memoryType === CoALAMemoryType.WORKING ||
+      query.memoryType === "working" ||
       !query.content ||
       !this.vectorSearch ||
       !this.embeddingProvider
@@ -1275,11 +1226,7 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
     }
 
     // For vector-indexed memory types with content query, use hybrid approach
-    const vectorIndexedTypes = [
-      CoALAMemoryType.EPISODIC,
-      CoALAMemoryType.SEMANTIC,
-      CoALAMemoryType.PROCEDURAL,
-    ];
+    const vectorIndexedTypes: CoALAMemoryType[] = ["episodic", "semantic", "procedural"];
 
     const shouldUseVectorSearch =
       !query.memoryType || vectorIndexedTypes.includes(query.memoryType);
@@ -1311,7 +1258,8 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
         });
 
         if (query.minRelevance) {
-          filteredResults = filteredResults.filter((m) => m.relevanceScore >= query.minRelevance);
+          const minRelevance = query.minRelevance;
+          filteredResults = filteredResults.filter((m) => m.relevanceScore >= minRelevance);
         }
 
         if (query.maxAge) {
@@ -1417,10 +1365,10 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
     if (memories.length === 0) return "";
 
     const memoryTypeGroups = {
-      working: memories.filter((m) => m.memoryType === CoALAMemoryType.WORKING),
-      episodic: memories.filter((m) => m.memoryType === CoALAMemoryType.EPISODIC),
-      semantic: memories.filter((m) => m.memoryType === CoALAMemoryType.SEMANTIC),
-      procedural: memories.filter((m) => m.memoryType === CoALAMemoryType.PROCEDURAL),
+      working: memories.filter((m) => m.memoryType === "working"),
+      episodic: memories.filter((m) => m.memoryType === "episodic"),
+      semantic: memories.filter((m) => m.memoryType === "semantic"),
+      procedural: memories.filter((m) => m.memoryType === "procedural"),
     };
 
     let context = "";

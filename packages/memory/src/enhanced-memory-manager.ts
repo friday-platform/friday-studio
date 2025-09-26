@@ -1,19 +1,21 @@
 import { logger } from "@atlas/logger";
+import type { SessionSummary } from "../../../src/core/actors/session-supervisor-actor.ts";
+import type { Logger } from "../../logger/src/types.ts";
 import { ContextAssemblyService, type FormatType } from "./context-assembly.ts";
 import { EnhancedTokenBudgetManager } from "./enhanced-token-budget-manager.ts";
-import {
-  type ConversationContext,
-  type EnhancedPrompt,
-  type MECMFEmbeddingProvider,
-  type MECMFMemoryManager,
-  type MemoryConfiguration,
-  type MemoryEntry,
-  type MemorySource,
-  type MemorySourceMetadata,
-  type MemoryStatistics,
+import type {
+  ConversationContext,
+  EnhancedPrompt,
+  MECMFEmbeddingProvider,
+  MECMFMemoryManager,
+  MemoryConfiguration,
+  MemoryEntry,
+  MemorySource,
+  MemorySourceMetadata,
+  MemoryStatistics,
   MemoryType,
-  type RetrievalOptions,
-  type WorklogEntry,
+  RetrievalOptions,
+  WorklogEntry,
 } from "./mecmf-interfaces.ts";
 import { SessionBridgeManager } from "./session-bridge-manager.ts";
 import { SessionTransitionHandler } from "./session-transition.ts";
@@ -75,6 +77,10 @@ export class EnhancedMemoryManager implements MECMFMemoryManager {
   }
 
   // === Core MECMFMemoryManager Interface Implementation ===
+
+  extractAndStoreSemanticFacts(summary: SessionSummary, logger: Logger): Promise<void> {
+    return this.baseMemoryManager.extractAndStoreSemanticFacts(summary, logger);
+  }
 
   async initialize(): Promise<void> {
     // Initialize the base memory manager
@@ -141,12 +147,7 @@ export class EnhancedMemoryManager implements MECMFMemoryManager {
   ): Promise<EnhancedPrompt> {
     // Get all memory types for enhanced context assembly
     const workingMemories = await this.getRelevantMemories("", {
-      memoryTypes: [
-        MemoryType.WORKING,
-        MemoryType.PROCEDURAL,
-        MemoryType.SEMANTIC,
-        MemoryType.EPISODIC,
-      ],
+      memoryTypes: ["working", "procedural", "semantic", "episodic"],
       maxResults: 100,
     });
 
@@ -198,13 +199,7 @@ export class EnhancedMemoryManager implements MECMFMemoryManager {
     return (
       baseStats || {
         totalMemories: 0,
-        byType: {
-          [MemoryType.WORKING]: 0,
-          [MemoryType.SESSION_BRIDGE]: 0,
-          [MemoryType.EPISODIC]: 0,
-          [MemoryType.SEMANTIC]: 0,
-          [MemoryType.PROCEDURAL]: 0,
-        },
+        byType: { working: 0, episodic: 0, semantic: 0, procedural: 0 },
         averageRelevance: 0,
         oldestEntry: null,
         newestEntry: null,
@@ -300,12 +295,7 @@ export class EnhancedMemoryManager implements MECMFMemoryManager {
     worklogEntriesIncluded: number;
   }> {
     const workingMemories = await this.getRelevantMemories("", {
-      memoryTypes: [
-        MemoryType.WORKING,
-        MemoryType.PROCEDURAL,
-        MemoryType.SEMANTIC,
-        MemoryType.EPISODIC,
-      ],
+      memoryTypes: ["working", "procedural", "semantic", "episodic"],
       maxResults: 100,
     });
 

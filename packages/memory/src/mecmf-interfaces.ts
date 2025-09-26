@@ -5,8 +5,9 @@
  * providing the foundation for intelligent memory management and token-aware operations.
  */
 
-import type { SessionSummary } from "../../../src/core/actors/session-supervisor-actor.ts";
 import type { Logger } from "@atlas/logger";
+import { z } from "zod";
+import type { SessionSummary } from "../../../src/core/actors/session-supervisor-actor.ts";
 
 export interface ConversationContext {
   sessionId: string;
@@ -59,13 +60,19 @@ export interface MemoryEntry {
   sourceMetadata?: MemorySourceMetadata;
 }
 
-export enum MemoryType {
-  WORKING = "working",
-  SESSION_BRIDGE = "session_bridge",
-  EPISODIC = "episodic",
-  SEMANTIC = "semantic",
-  PROCEDURAL = "procedural",
-}
+export const MEMORY_TYPES = [
+  "working", // Short-term, active processing
+  "episodic", // Specific experiences and events
+  "semantic", // General knowledge and concepts
+  "procedural", // How-to knowledge and skills
+  "contextual", // Session/agent specific context
+] as const;
+
+// Zod schema for parsing.
+const MemoryTypeSchema = z.enum(MEMORY_TYPES);
+
+// Type inferred from the schema.
+export type MemoryType = z.infer<typeof MemoryTypeSchema>;
 
 export interface VectorEmbedding {
   vector: number[];
@@ -313,7 +320,7 @@ export interface WorklogEntry {
 }
 
 export interface WorklogMemoryEntry extends MemoryEntry {
-  memoryType: MemoryType.EPISODIC;
+  memoryType: "episodic";
   subtype: "worklog";
   worklog_data: WorklogEntry;
 }

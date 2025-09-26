@@ -27,7 +27,7 @@ import {
   AwaitingSupervisorDecision,
 } from "@atlas/agent-sdk";
 import type { Logger } from "@atlas/logger";
-import { type CoALAMemoryManager, CoALAMemoryType } from "@atlas/memory";
+import type { CoALAMemoryManager } from "@atlas/memory";
 import { type ActorRefFrom, assign, fromPromise, setup } from "xstate";
 
 // === Input/Output Types for State Machine Actors ===
@@ -179,7 +179,7 @@ export function createAgentExecutionMachine(
             },
             // Using CoALAMemoryType enum for type safety
             {
-              memoryType: CoALAMemoryType.EPISODIC,
+              memoryType: "episodic",
               tags: ["agent_execution", "episodic", input.agentId],
               relevanceScore: Math.min(1, Math.max(0.3, input.duration / 5000)),
               confidence: 0.9,

@@ -9,8 +9,8 @@
  *   deno run --allow-read --allow-write --unstable tools/memory_manager/main.ts [workspace-path]
  */
 
-import type { CoALAMemoryManager } from "@atlas/memory";
-import { CoALAMemoryType } from "@atlas/memory";
+import type { CoALAMemoryEntry, CoALAMemoryManager } from "@atlas/memory";
+import { type CoALAMemoryType, MEMORY_TYPES } from "@atlas/memory";
 import type { WorkspaceEntry } from "@atlas/workspace";
 import { parseArgs } from "@std/cli";
 import { MemoryManagerTUI } from "./src/tui.ts";
@@ -170,11 +170,17 @@ async function showStats(coalaManager: CoALAMemoryManager, loader: AtlasMemoryLo
 
   // Get stats using CoALA manager
   const stats: Record<
-    string,
+    CoALAMemoryType,
     { count: number; avgRelevance: number; mostRecent?: Date; oldestEntry?: Date }
-  > = {};
+  > = {
+    working: { count: 0, avgRelevance: 0 },
+    episodic: { count: 0, avgRelevance: 0 },
+    semantic: { count: 0, avgRelevance: 0 },
+    procedural: { count: 0, avgRelevance: 0 },
+    contextual: { count: 0, avgRelevance: 0 },
+  };
 
-  for (const memoryType of Object.values(CoALAMemoryType)) {
+  for (const memoryType of MEMORY_TYPES) {
     const entries = coalaManager.getMemoriesByType(memoryType);
     const timestamps = entries.map((e) => e.timestamp);
 
@@ -200,14 +206,15 @@ async function showStats(coalaManager: CoALAMemoryManager, loader: AtlasMemoryLo
   console.log(`Storage Path: ${storageStats.path}`);
   console.log();
 
-  for (const [memoryType, typeStats] of Object.entries(stats)) {
+  for (const memoryType of MEMORY_TYPES) {
+    const typeStats = stats[memoryType];
     const storageInfo = storageStats.memoryTypes[memoryType];
 
     console.log(`${memoryType.toUpperCase()} Memory:`);
     console.log(`  Entries: ${typeStats.count}`);
     console.log(`  Avg Relevance: ${typeStats.avgRelevance.toFixed(2)}`);
     console.log(
-      `  File Size: ${storageInfo?.size ? Math.round(storageInfo.size / 1024) + " KB" : "N/A"}`,
+      `  File Size: ${storageInfo?.size ? `${Math.round(storageInfo.size / 1024)} KB` : "N/A"}`,
     );
     console.log(`  Last Modified: ${storageInfo?.lastModified?.toLocaleString() || "Never"}`);
 
@@ -230,7 +237,7 @@ function validateMemory(coalaManager: CoALAMemoryManager) {
 
   let totalErrors = 0;
 
-  function validateEntry(entry: unknown): string[] {
+  function validateEntry(entry: CoALAMemoryEntry): string[] {
     const errors: string[] = [];
 
     if (typeof entry !== "object" || entry === null) {
@@ -276,7 +283,7 @@ function validateMemory(coalaManager: CoALAMemoryManager) {
     return errors;
   }
 
-  for (const memoryType of Object.values(CoALAMemoryType)) {
+  for (const memoryType of MEMORY_TYPES) {
     const entries = coalaManager.getMemoriesByType(memoryType);
     console.log(`\nValidating ${memoryType.toUpperCase()} memory...`);
 

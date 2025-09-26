@@ -1,5 +1,5 @@
 import type { EnhancedTokenBudgetManager } from "./enhanced-token-budget-manager.ts";
-import { type MemoryEntry, MemoryType, type WorklogEntry } from "./mecmf-interfaces.ts";
+import type { MemoryEntry, WorklogEntry } from "./mecmf-interfaces.ts";
 
 /**
  * Enum for context section types used in prompt assembly
@@ -165,7 +165,7 @@ export class ContextAssemblyService {
     }
 
     // Add other memory types based on availability
-    const proceduralMemories = workingMemory.filter((m) => m.memoryType === MemoryType.PROCEDURAL);
+    const proceduralMemories = workingMemory.filter((m) => m.memoryType === "procedural");
     if (proceduralMemories.length > 0) {
       const avgRelevance =
         proceduralMemories.reduce((sum, m) => sum + m.relevanceScore, 0) /
@@ -173,14 +173,14 @@ export class ContextAssemblyService {
       priority.push({ section: SectionType.PROCEDURAL, score: avgRelevance });
     }
 
-    const semanticMemories = workingMemory.filter((m) => m.memoryType === MemoryType.SEMANTIC);
+    const semanticMemories = workingMemory.filter((m) => m.memoryType === "semantic");
     if (semanticMemories.length > 0) {
       const avgRelevance =
         semanticMemories.reduce((sum, m) => sum + m.relevanceScore, 0) / semanticMemories.length;
       priority.push({ section: SectionType.SEMANTIC, score: avgRelevance });
     }
 
-    const episodicMemories = workingMemory.filter((m) => m.memoryType === MemoryType.EPISODIC);
+    const episodicMemories = workingMemory.filter((m) => m.memoryType === "episodic");
     if (episodicMemories.length > 0) {
       const avgRelevance =
         episodicMemories.reduce((sum, m) => sum + m.relevanceScore, 0) / episodicMemories.length;
@@ -194,21 +194,21 @@ export class ContextAssemblyService {
   /**
    * Builds context sections with intelligent budget allocation.
    */
-  private async buildContextSections(
+  private buildContextSections(
     workingMemory: MemoryEntry[],
     bridgeMemory: MemoryEntry[],
     worklogEntries: WorklogEntry[],
     totalBudget: number,
     priority: SectionType[],
     options: ContextAssemblyOptions,
-  ): Promise<{
+  ): {
     bridgeContext?: string;
     worklogContext?: string;
     workingContext?: string;
     proceduralContext?: string;
     semanticContext?: string;
     episodicContext?: string;
-  }> {
+  } {
     const contextSections: Record<string, string> = {};
     let remainingBudget = totalBudget;
     const budgetPerSection = Math.floor(totalBudget / Math.max(1, priority.length));
@@ -227,7 +227,7 @@ export class ContextAssemblyService {
           context = this.buildWorklogContext(worklogEntries, sectionBudget, options);
           break;
         case SectionType.WORKING: {
-          const workingMems = workingMemory.filter((m) => m.memoryType === MemoryType.WORKING);
+          const workingMems = workingMemory.filter((m) => m.memoryType === "working");
           context = this.buildMemoryTypeContext(
             workingMems,
             "Working Context",
@@ -237,9 +237,7 @@ export class ContextAssemblyService {
           break;
         }
         case SectionType.PROCEDURAL: {
-          const proceduralMems = workingMemory.filter(
-            (m) => m.memoryType === MemoryType.PROCEDURAL,
-          );
+          const proceduralMems = workingMemory.filter((m) => m.memoryType === "procedural");
           context = this.buildMemoryTypeContext(
             proceduralMems,
             "Procedures & Workflows",
@@ -249,7 +247,7 @@ export class ContextAssemblyService {
           break;
         }
         case SectionType.SEMANTIC: {
-          const semanticMems = workingMemory.filter((m) => m.memoryType === MemoryType.SEMANTIC);
+          const semanticMems = workingMemory.filter((m) => m.memoryType === "semantic");
           context = this.buildMemoryTypeContext(
             semanticMems,
             "Knowledge Base",
@@ -259,7 +257,7 @@ export class ContextAssemblyService {
           break;
         }
         case SectionType.EPISODIC: {
-          const episodicMems = workingMemory.filter((m) => m.memoryType === MemoryType.EPISODIC);
+          const episodicMems = workingMemory.filter((m) => m.memoryType === "episodic");
           context = this.buildMemoryTypeContext(
             episodicMems,
             "Past Experiences",

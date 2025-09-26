@@ -5,7 +5,7 @@
  */
 
 import { logger } from "@atlas/logger";
-import { type CoALAMemoryEntry, CoALAMemoryManager, CoALAMemoryType } from "@atlas/memory";
+import { type CoALAMemoryEntry, CoALAMemoryManager } from "@atlas/memory";
 import { tool } from "ai";
 import { z } from "zod/v4";
 
@@ -15,14 +15,6 @@ function getErrorMessage(error: unknown): string {
     return error.message;
   }
   return String(error);
-}
-
-// Type for agent execution memory content
-interface AgentExecutionContent {
-  eventType: string;
-  prompt?: string;
-  output?: { text?: string; [key: string]: unknown };
-  [key: string]: unknown;
 }
 
 export const workspaceMemoryTool = tool({
@@ -92,19 +84,19 @@ export const workspaceMemoryTool = tool({
 
             // Query each memory type separately
             const episodicMemories = memoryManager.queryMemories({
-              memoryType: CoALAMemoryType.EPISODIC,
+              memoryType: "episodic",
               limit: maxEntries,
               sourceScope: "atlas-conversation",
             });
 
             const semanticMemories = memoryManager.queryMemories({
-              memoryType: CoALAMemoryType.SEMANTIC,
+              memoryType: "semantic",
               limit: maxEntries,
               sourceScope: "atlas-conversation",
             });
 
             const proceduralMemories = memoryManager.queryMemories({
-              memoryType: CoALAMemoryType.PROCEDURAL,
+              memoryType: "procedural",
               limit: maxEntries,
               sourceScope: "atlas-conversation",
             });
@@ -125,27 +117,14 @@ export const workspaceMemoryTool = tool({
           }
 
           logger.debug("Retrieved memories count:", { count: allMemories.length });
-          logger.debug(
-            "DEBUG: Memory types found:",
-            allMemories.reduce((acc, m) => {
-              acc[m.memoryType] = (acc[m.memoryType] || 0) + 1;
-              return acc;
-            }, {}),
-          );
           logger.debug("First memory structure:", {
             memory: allMemories[0] ? JSON.stringify(allMemories[0], null, 2) : "No memories",
           });
 
           // Separate memories by type for different processing
-          const episodicMemories = allMemories.filter(
-            (m) => m.memoryType === CoALAMemoryType.EPISODIC,
-          );
-          const semanticMemories = allMemories.filter(
-            (m) => m.memoryType === CoALAMemoryType.SEMANTIC,
-          );
-          const proceduralMemories = allMemories.filter(
-            (m) => m.memoryType === CoALAMemoryType.PROCEDURAL,
-          );
+          const episodicMemories = allMemories.filter((m) => m.memoryType === "episodic");
+          const semanticMemories = allMemories.filter((m) => m.memoryType === "semantic");
+          const proceduralMemories = allMemories.filter((m) => m.memoryType === "procedural");
 
           // Format episodic memories as conversation context
           const conversationHistory = episodicMemories
@@ -163,11 +142,7 @@ export const workspaceMemoryTool = tool({
             .map((m) => {
               const content = m.content;
               logger.debug("Processing agent execution:", { content });
-              return {
-                user: content.prompt || "",
-                assistant: content.output?.text || "",
-                timestamp: m.timestamp,
-              };
+              return { user: content || "", assistant: content || "", timestamp: m.timestamp };
             })
             .slice(0, maxEntries);
 
@@ -192,7 +167,7 @@ export const workspaceMemoryTool = tool({
         case "get_bridge_memories": {
           // Get session bridge memories
           const bridgeMemories = memoryManager.queryMemories({
-            memoryType: CoALAMemoryType.EPISODIC, // Session bridge memories are stored as episodic
+            memoryType: "contextual", // Session bridge memories are stored as contextual
             limit: maxEntries,
             sourceScope: "atlas-conversation",
             tags: ["conversation", "agent_execution"],
@@ -209,7 +184,7 @@ export const workspaceMemoryTool = tool({
         case "get_worklog": {
           // Get recent worklog entries
           const worklogMemories = memoryManager.queryMemories({
-            memoryType: CoALAMemoryType.EPISODIC,
+            memoryType: "episodic",
             limit: maxEntries,
             sourceScope: "atlas-conversation",
             tags: ["worklog", "task_completed"],

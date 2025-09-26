@@ -1,5 +1,6 @@
+import { InMemoryStorageAdapter } from "@atlas/storage";
 import { expect } from "@std/expect";
-import { CoALAMemoryManager, CoALAMemoryType, type IMemoryScope } from "../src/coala-memory.ts";
+import { CoALAMemoryManager, type IMemoryScope } from "../src/coala-memory.ts";
 
 // Set testing environment to prevent logger file operations
 Deno.env.set("DENO_TESTING", "true");
@@ -32,81 +33,6 @@ class MockContextManager {
   setContext(_context: unknown): void {}
   clearContext(): void {}
 }
-
-class InMemoryStorageAdapter {
-  private data = new Map<string, unknown>();
-  private dataByType = new Map<string, Map<string, unknown>>();
-
-  async store(key: string, value: unknown): Promise<void> {
-    this.data.set(key, value);
-  }
-
-  async retrieve(key: string): Promise<unknown> {
-    return this.data.get(key) || null;
-  }
-
-  async delete(key: string): Promise<void> {
-    this.data.delete(key);
-  }
-
-  async list(): Promise<string[]> {
-    return Array.from(this.data.keys());
-  }
-
-  async clear(): Promise<void> {
-    this.data.clear();
-    this.dataByType.clear();
-  }
-
-  async exists(key: string): Promise<boolean> {
-    return this.data.has(key);
-  }
-
-  async commitByType(type: string, memories: unknown): Promise<void> {
-    // Store memories by type for loadByType retrieval
-    if (memories && typeof memories === "object") {
-      this.dataByType.set(type, new Map(Object.entries(memories as Record<string, unknown>)));
-    }
-  }
-
-  async loadByType(memoryType: string): Promise<unknown> {
-    const typeData = this.dataByType.get(memoryType);
-    if (!typeData) {
-      return {};
-    }
-    // Convert Map back to object for consistency with expected return type
-    return Object.fromEntries(typeData);
-  }
-
-  async listMemoryTypes(): Promise<string[]> {
-    return Array.from(this.dataByType.keys());
-  }
-
-  async commit(_memories: unknown): Promise<void> {}
-
-  async load(): Promise<Map<string, unknown>> {
-    return new Map(this.data);
-  }
-
-  async commitAll(_dataByType: unknown): Promise<void> {}
-
-  async loadAll(): Promise<Record<string, unknown>> {
-    // Return all data organized by type as expected by the interface
-    const result: Record<string, unknown> = {};
-    for (const [type, typeData] of this.dataByType) {
-      result[type] = Object.fromEntries(typeData);
-    }
-    return result;
-  }
-}
-
-// Mock the file system dependencies that cause issues
-const originalSetInterval = globalThis.setInterval;
-const originalClearInterval = globalThis.clearInterval;
-
-// Mock timers to prevent actual intervals
-globalThis.setInterval = () => 123;
-globalThis.clearInterval = () => {};
 
 // Mock console methods that don't work in this environment
 const originalConsoleWarn = console.warn;
@@ -143,7 +69,7 @@ Deno.test("CoALAMemoryManager - remember and recall", () => {
 
   // Test basic remember/recall
   memory.rememberWithMetadata("test-key", "test-value", {
-    memoryType: CoALAMemoryType.WORKING,
+    memoryType: "working",
     tags: ["test-key"],
     relevanceScore: 0.8,
   });
@@ -160,7 +86,7 @@ Deno.test("CoALAMemoryManager - remember with metadata", () => {
 
   // Test remember with metadata
   memory.rememberWithMetadata("metadata-key", "metadata-value", {
-    memoryType: CoALAMemoryType.SEMANTIC,
+    memoryType: "semantic",
     tags: ["test", "metadata"],
     relevanceScore: 0.8,
     confidence: 0.9,
@@ -179,19 +105,19 @@ Deno.test("CoALAMemoryManager - query memories", () => {
 
   // Add some memories
   memory.rememberWithMetadata("semantic-1", "semantic content 1", {
-    memoryType: CoALAMemoryType.SEMANTIC,
+    memoryType: "semantic",
     tags: ["test", "semantic"],
     relevanceScore: 0.8,
   });
 
   memory.rememberWithMetadata("working-1", "working content 1", {
-    memoryType: CoALAMemoryType.WORKING,
+    memoryType: "working",
     tags: ["test", "working"],
     relevanceScore: 0.7,
   });
 
   // Query by type
-  const semanticMemories = memory.queryMemories({ memoryType: CoALAMemoryType.SEMANTIC });
+  const semanticMemories = memory.queryMemories({ memoryType: "semantic" });
 
   expect(semanticMemories).toHaveLength(1);
   expect(semanticMemories[0]?.content).toBe("semantic content 1");
@@ -211,19 +137,19 @@ Deno.test("CoALAMemoryManager - get memories by type", () => {
 
   // Add memories of different types
   memory.rememberWithMetadata("episodic-1", "episodic content", {
-    memoryType: CoALAMemoryType.EPISODIC,
+    memoryType: "episodic",
     tags: ["episodic"],
     relevanceScore: 0.9,
   });
 
   memory.rememberWithMetadata("procedural-1", "procedural content", {
-    memoryType: CoALAMemoryType.PROCEDURAL,
+    memoryType: "procedural",
     tags: ["procedural"],
     relevanceScore: 0.8,
   });
 
-  const episodicMemories = memory.getMemoriesByType(CoALAMemoryType.EPISODIC);
-  const proceduralMemories = memory.getMemoriesByType(CoALAMemoryType.PROCEDURAL);
+  const episodicMemories = memory.getMemoriesByType("episodic");
+  const proceduralMemories = memory.getMemoriesByType("procedural");
 
   expect(episodicMemories).toHaveLength(1);
   expect(proceduralMemories).toHaveLength(1);
@@ -239,7 +165,7 @@ Deno.test("CoALAMemoryManager - forget memories", () => {
 
   // Add a memory
   memory.rememberWithMetadata("forget-me", "temporary content", {
-    memoryType: CoALAMemoryType.WORKING,
+    memoryType: "working",
     tags: ["forget-me"],
     relevanceScore: 0.8,
   });
@@ -264,13 +190,13 @@ Deno.test("CoALAMemoryManager - cognitive loop methods", () => {
 
   // Add some memories for reflection
   memory.rememberWithMetadata("reflect-1", "reflection content 1", {
-    memoryType: CoALAMemoryType.EPISODIC,
+    memoryType: "episodic",
     tags: ["reflection"],
     relevanceScore: 0.8,
   });
 
   memory.rememberWithMetadata("reflect-2", "reflection content 2", {
-    memoryType: CoALAMemoryType.SEMANTIC,
+    memoryType: "semantic",
     tags: ["reflection"],
     relevanceScore: 0.9,
   });
@@ -294,7 +220,7 @@ Deno.test("CoALAMemoryManager - memory access patterns", () => {
 
   // Add a memory
   memory.rememberWithMetadata("access-test", "access content", {
-    memoryType: CoALAMemoryType.WORKING,
+    memoryType: "working",
     tags: ["access-test"],
     relevanceScore: 0.8,
   });
@@ -318,12 +244,12 @@ Deno.test("CoALAMemoryManager - disposal", () => {
 
   // Add some memories
   memory.rememberWithMetadata("dispose-test-1", "content 1", {
-    memoryType: CoALAMemoryType.WORKING,
+    memoryType: "working",
     tags: ["dispose-test-1"],
     relevanceScore: 0.8,
   });
   memory.rememberWithMetadata("dispose-test-2", "content 2", {
-    memoryType: CoALAMemoryType.WORKING,
+    memoryType: "working",
     tags: ["dispose-test-2"],
     relevanceScore: 0.8,
   });
@@ -334,9 +260,6 @@ Deno.test("CoALAMemoryManager - disposal", () => {
 
 // Cleanup after tests
 Deno.test("Cleanup test environment", () => {
-  // Restore original functions
-  globalThis.setInterval = originalSetInterval;
-  globalThis.clearInterval = originalClearInterval;
   console.warn = originalConsoleWarn;
 
   expect(true).toBe(true); // Just to make it a valid test

@@ -8,7 +8,7 @@
 import type { AgentContext, AgentSessionData, AtlasAgent, AtlasTool } from "@atlas/agent-sdk";
 import type { MCPServerConfig, WorkspaceConfig } from "@atlas/config";
 import type { Logger } from "@atlas/logger";
-import { type CoALAMemoryManager, CoALAMemoryType, MemorySource } from "@atlas/memory";
+import { type CoALAMemoryManager, MEMORY_TYPES, MemorySource } from "@atlas/memory";
 import { createAtlasClient } from "@atlas/oapi-client";
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import type { GlobalMCPServerPool } from "../mcp-server-pool.ts";
@@ -351,7 +351,7 @@ async function storePreviousResultsAsWorkingMemory(
       const memoryKey = `wrk:${sessionId}:agent_result:${result.agentId}:${Date.now()}`;
 
       sessionMemory.rememberWithMetadata(memoryKey, memoryContent, {
-        memoryType: CoALAMemoryType.WORKING,
+        memoryType: "working",
         tags: ["working", "session", "agent_result", result.agentId],
         relevanceScore: 0.9, // High relevance for recent outputs
         source: MemorySource.AGENT_OUTPUT,
@@ -531,22 +531,16 @@ function allocateMemoriesWithSmartPrioritization(
   totalTokenBudget: number,
   hasRecentContext: boolean,
 ): MemoryAllocation {
-  // Group memories by type
-  const memoriesByType = memories.reduce((acc, memory) => {
-    const type = memory.memoryType;
-    if (!acc[type]) acc[type] = [];
-    acc[type].push(memory);
-    return acc;
-  }, {});
-
   // Sort each type by relevance (similarity or relevanceScore)
-  Object.values(memoriesByType).forEach((typeMemories) => {
-    typeMemories.sort((a, b) => {
-      const aScore = a.similarity || a.relevanceScore || 0;
-      const bScore = b.similarity || b.relevanceScore || 0;
-      return bScore - aScore;
-    });
-  });
+  for (const type of MEMORY_TYPES) {
+    memories
+      .filter((m) => m.memoryType === type)
+      .sort((a, b) => {
+        const aScore = a.similarity || a.relevanceScore || 0;
+        const bScore = b.similarity || b.relevanceScore || 0;
+        return bScore - aScore;
+      });
+  }
 
   const allocation: MemoryAllocation = {
     working: [],
@@ -560,33 +554,33 @@ function allocateMemoriesWithSmartPrioritization(
   const typeAllocations = hasRecentContext
     ? {
         // Reduce working memory allocation since we have recent context
-        WORKING: Math.ceil(totalTokenBudget * 0.2), // Reduced from 40%
-        PROCEDURAL: Math.ceil(totalTokenBudget * 0.35), // Increased for procedures
-        SEMANTIC: Math.ceil(totalTokenBudget * 0.35), // Increased for knowledge
-        EPISODIC: Math.ceil(totalTokenBudget * 0.1),
+        working: Math.ceil(totalTokenBudget * 0.2), // Reduced from 40%
+        procedural: Math.ceil(totalTokenBudget * 0.35), // Increased for procedures
+        semantic: Math.ceil(totalTokenBudget * 0.35), // Increased for knowledge
+        episodic: Math.ceil(totalTokenBudget * 0.1),
       }
     : {
         // Standard MECMF allocation when no recent context
-        WORKING: Math.ceil(totalTokenBudget * 0.4),
-        PROCEDURAL: Math.ceil(totalTokenBudget * 0.25),
-        SEMANTIC: Math.ceil(totalTokenBudget * 0.25),
-        EPISODIC: Math.ceil(totalTokenBudget * 0.1),
+        working: Math.ceil(totalTokenBudget * 0.4),
+        procedural: Math.ceil(totalTokenBudget * 0.25),
+        semantic: Math.ceil(totalTokenBudget * 0.25),
+        episodic: Math.ceil(totalTokenBudget * 0.1),
       };
 
   // Allocate memories within token budget for each type
   for (const [type, budget] of Object.entries(typeAllocations)) {
-    const typeMemories = memoriesByType[type] || [];
+    const typeMemories = memories.filter((m) => m.memoryType === type) || [];
     let usedTokens = 0;
 
     for (const memory of typeMemories) {
       const memoryTokens = Math.ceil(memory.content.length / 4);
       if (usedTokens + memoryTokens <= budget) {
         const targetArray =
-          type === "WORKING"
+          type === "working"
             ? allocation.working
-            : type === "PROCEDURAL"
+            : type === "procedural"
               ? allocation.procedural
-              : type === "SEMANTIC"
+              : type === "semantic"
                 ? allocation.semantic
                 : allocation.episodic;
 

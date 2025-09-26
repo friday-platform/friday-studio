@@ -13,7 +13,7 @@ export class MockLLMProvider {
     this.responses.set(prompt, response);
   }
 
-  async generate(prompt: string): Promise<string> {
+  generate(prompt: string): string {
     // Return predefined response or empty facts array
     return this.responses.get(prompt) || "[]";
   }

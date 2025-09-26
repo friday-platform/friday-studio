@@ -4,7 +4,6 @@ import {
   type MECMFMemoryManager,
   type MemoryEntry,
   MemorySource,
-  MemoryType,
   type WorklogEntry,
   type WorklogMemoryEntry,
 } from "../mecmf-interfaces.ts";
@@ -101,7 +100,7 @@ export class WorklogManager {
 
       // Get all episodic memories that are worklog entries
       const episodicMemories = await this.memoryManager.getRelevantMemories("", {
-        memoryTypes: [MemoryType.EPISODIC],
+        memoryTypes: ["episodic"],
         maxResults: 1000,
         maxAge: days * 24 * 60 * 60 * 1000, // Convert days to milliseconds
       });
@@ -144,7 +143,7 @@ export class WorklogManager {
 
       // Search for similar memories in episodic memory
       const similarMemories = await this.memoryManager.getRelevantMemories(query, {
-        memoryTypes: [MemoryType.EPISODIC],
+        memoryTypes: ["episodic"],
         maxResults: maxResults * 2, // Get more candidates to filter
         minRelevanceScore: 0.3,
       });
@@ -171,7 +170,7 @@ export class WorklogManager {
   async getSessionWorklog(sessionId: string): Promise<WorklogEntry[]> {
     try {
       const episodicMemories = await this.memoryManager.getRelevantMemories("", {
-        memoryTypes: [MemoryType.EPISODIC],
+        memoryTypes: ["episodic"],
         maxResults: 1000,
       });
 
@@ -201,7 +200,7 @@ export class WorklogManager {
   ): Promise<WorklogEntry[]> {
     try {
       const episodicMemories = await this.memoryManager.getRelevantMemories("", {
-        memoryTypes: [MemoryType.EPISODIC],
+        memoryTypes: ["episodic"],
         maxResults: maxResults * 2,
       });
 
@@ -239,7 +238,7 @@ export class WorklogManager {
   }> {
     try {
       const episodicMemories = await this.memoryManager.getRelevantMemories("", {
-        memoryTypes: [MemoryType.EPISODIC],
+        memoryTypes: ["episodic"],
         maxResults: 10000, // Get all worklog entries
       });
 
@@ -345,7 +344,7 @@ export class WorklogManager {
       cutoffDate.setDate(cutoffDate.getDate() - this.config.retention_days);
 
       const episodicMemories = await this.memoryManager.getRelevantMemories("", {
-        memoryTypes: [MemoryType.EPISODIC],
+        memoryTypes: ["episodic"],
         maxResults: 10000,
       });
 
@@ -386,7 +385,7 @@ export class WorklogManager {
       id: `memory_${worklogEntry.id}`,
       content: worklogEntry.description,
       timestamp: worklogEntry.timestamp,
-      memoryType: MemoryType.EPISODIC,
+      memoryType: "episodic",
       relevanceScore: worklogEntry.confidence,
       sourceScope: `session_${worklogEntry.session_id}`,
       tags: [...worklogEntry.tags, "worklog_entry", `type_${worklogEntry.type}`],
@@ -405,7 +404,7 @@ export class WorklogManager {
    */
   private isWorklogMemoryEntry(memory: MemoryEntry): memory is WorklogMemoryEntry {
     return (
-      memory.memoryType === MemoryType.EPISODIC &&
+      memory.memoryType === "episodic" &&
       "subtype" in memory &&
       memory.subtype === "worklog" &&
       "worklog_data" in memory

@@ -14,12 +14,13 @@ import {
 import type { Logger } from "../../logger/src/types.ts";
 import type { IMemoryScope } from "./coala-memory.ts";
 // Import existing Atlas components
-import { type CoALAMemoryEntry, CoALAMemoryManager, CoALAMemoryType } from "./coala-memory.ts";
+import { type CoALAMemoryEntry, CoALAMemoryManager } from "./coala-memory.ts";
 import { MECMFErrorHandler } from "./error-handling.ts";
 import {
   embeddingProviderGetInstance,
   embeddingProviderReleaseReference,
 } from "./global-embedding-provider.ts";
+import { createConversationContext } from "./mecmf.ts";
 import type {
   MECMFEmbeddingProvider,
   MECMFMemoryManager,
@@ -32,10 +33,9 @@ import {
   MemorySource,
   type MemorySourceMetadata,
   type MemoryStatistics,
-  MemoryType,
+  type MemoryType,
   type RetrievalOptions,
 } from "./mecmf-interfaces.ts";
-import { createConversationContext } from "./mecmf.ts";
 import { PIISafeMemoryClassifier } from "./pii-safe-classifier.ts";
 import { AtlasTokenBudgetManager } from "./token-budget-manager.ts";
 
@@ -135,7 +135,7 @@ export class AtlasMECMFMemoryManager implements MECMFMemoryManager {
 
     // Store in CoALA manager
     this.coalaManager.rememberWithMetadata(entry.id, entry.content, {
-      memoryType: this.mapMemoryType(entry.memoryType),
+      memoryType: entry.memoryType,
       tags: entry.tags,
       relevanceScore: entry.relevanceScore,
       confidence: entry.confidence,
@@ -160,7 +160,7 @@ export class AtlasMECMFMemoryManager implements MECMFMemoryManager {
         id: fullMemory.id,
         content: fullMemory.content,
         timestamp: fullMemory.timestamp,
-        memoryType: this.mapCoALAType(fullMemory.memoryType),
+        memoryType: fullMemory.memoryType,
         relevanceScore: fullMemory.relevanceScore,
         sourceScope: fullMemory.sourceScope,
         tags: fullMemory.tags,
@@ -186,7 +186,7 @@ export class AtlasMECMFMemoryManager implements MECMFMemoryManager {
       id,
       content,
       timestamp: new Date(),
-      memoryType: MemoryType.WORKING,
+      memoryType: "working",
       relevanceScore: 0.5,
       sourceScope: this.config.workspaceId,
       tags: [],
@@ -250,12 +250,7 @@ export class AtlasMECMFMemoryManager implements MECMFMemoryManager {
     await this.ensureReady();
 
     const {
-      memoryTypes = [
-        MemoryType.WORKING,
-        MemoryType.EPISODIC,
-        MemoryType.SEMANTIC,
-        MemoryType.PROCEDURAL,
-      ],
+      memoryTypes = ["working", "episodic", "semantic", "procedural"],
       maxResults = 10,
       minRelevanceScore = 0.3,
     } = options || {};
@@ -266,7 +261,7 @@ export class AtlasMECMFMemoryManager implements MECMFMemoryManager {
         // Primary: Vector search via CoALA
         async () => {
           const coalaMemories = await this.coalaManager.searchMemoriesByVector(query, {
-            memoryTypes: memoryTypes.map((t) => this.mapMemoryType(t)),
+            memoryTypes: memoryTypes,
             limit: maxResults,
             minSimilarity: minRelevanceScore,
           });
@@ -368,11 +363,11 @@ export class AtlasMECMFMemoryManager implements MECMFMemoryManager {
     const coalaStats = this.coalaManager.getMemoryTypeStatistics();
 
     const byType = {
-      [MemoryType.WORKING]: coalaStats.working?.count || 0,
-      [MemoryType.EPISODIC]: coalaStats.episodic?.count || 0,
-      [MemoryType.SEMANTIC]: coalaStats.semantic?.count || 0,
-      [MemoryType.PROCEDURAL]: coalaStats.procedural?.count || 0,
-      [MemoryType.SESSION_BRIDGE]: coalaStats.session_bridge?.count || 0,
+      working: coalaStats.working?.count || 0,
+      episodic: coalaStats.episodic?.count || 0,
+      semantic: coalaStats.semantic?.count || 0,
+      procedural: coalaStats.procedural?.count || 0,
+      contextual: coalaStats.session_bridge?.count || 0,
     };
 
     const totalMemories = Object.values(byType).reduce((sum, count) => sum + count, 0);
@@ -423,12 +418,7 @@ export class AtlasMECMFMemoryManager implements MECMFMemoryManager {
     const {
       tokenBudget = this.config.tokenBudgets?.defaultBudget || 4000,
       contextFormat = "summary",
-      includeTypes = [
-        MemoryType.WORKING,
-        MemoryType.EPISODIC,
-        MemoryType.SEMANTIC,
-        MemoryType.PROCEDURAL,
-      ],
+      includeTypes = ["working", "episodic", "semantic", "procedural"],
       maxMemories = 8,
     } = options || {};
 
@@ -443,10 +433,10 @@ export class AtlasMECMFMemoryManager implements MECMFMemoryManager {
       // Primary: Full enhanced prompt with vector search
       async () => {
         const result = await this.coalaManager.enhancePromptWithMemory(originalPrompt, {
-          includeWorking: includeTypes.includes(MemoryType.WORKING),
-          includeEpisodic: includeTypes.includes(MemoryType.EPISODIC),
-          includeSemantic: includeTypes.includes(MemoryType.SEMANTIC),
-          includeProcedural: includeTypes.includes(MemoryType.PROCEDURAL),
+          includeWorking: includeTypes.includes("working"),
+          includeEpisodic: includeTypes.includes("episodic"),
+          includeSemantic: includeTypes.includes("semantic"),
+          includeProcedural: includeTypes.includes("procedural"),
           maxMemories,
           contextFormat,
         });
@@ -458,11 +448,11 @@ export class AtlasMECMFMemoryManager implements MECMFMemoryManager {
           tokensUsed: this.tokenBudgetManager.estimateTokens(result.enhancedPrompt),
           memoriesIncluded: result.memoriesUsed,
           memoryBreakdown: {
-            [MemoryType.WORKING]: 0, // Would need proper mapping
-            [MemoryType.EPISODIC]: 0,
-            [MemoryType.SEMANTIC]: 0,
-            [MemoryType.PROCEDURAL]: 0,
-            [MemoryType.SESSION_BRIDGE]: 0,
+            working: 0, // Would need proper mapping
+            episodic: 0,
+            semantic: 0,
+            procedural: 0,
+            contextual: 0,
           },
         };
       },
@@ -489,18 +479,11 @@ export class AtlasMECMFMemoryManager implements MECMFMemoryManager {
               tokensUsed: this.tokenBudgetManager.estimateTokens(context + originalPrompt),
               memoriesIncluded: memories.length,
               memoryBreakdown: {
-                [MemoryType.WORKING]: memories.filter((m) => m.memoryType === MemoryType.WORKING)
-                  .length,
-                [MemoryType.EPISODIC]: memories.filter((m) => m.memoryType === MemoryType.EPISODIC)
-                  .length,
-                [MemoryType.SEMANTIC]: memories.filter((m) => m.memoryType === MemoryType.SEMANTIC)
-                  .length,
-                [MemoryType.PROCEDURAL]: memories.filter(
-                  (m) => m.memoryType === MemoryType.PROCEDURAL,
-                ).length,
-                [MemoryType.SESSION_BRIDGE]: memories.filter(
-                  (m) => m.memoryType === MemoryType.SESSION_BRIDGE,
-                ).length,
+                working: memories.filter((m) => m.memoryType === "working").length,
+                episodic: memories.filter((m) => m.memoryType === "episodic").length,
+                semantic: memories.filter((m) => m.memoryType === "semantic").length,
+                procedural: memories.filter((m) => m.memoryType === "procedural").length,
+                contextual: memories.filter((m) => m.memoryType === "contextual").length,
               },
             });
           },
@@ -516,11 +499,11 @@ export class AtlasMECMFMemoryManager implements MECMFMemoryManager {
               tokensUsed: this.tokenBudgetManager.estimateTokens(originalPrompt),
               memoriesIncluded: 0,
               memoryBreakdown: {
-                [MemoryType.WORKING]: 0,
-                [MemoryType.EPISODIC]: 0,
-                [MemoryType.SEMANTIC]: 0,
-                [MemoryType.PROCEDURAL]: 0,
-                [MemoryType.SESSION_BRIDGE]: 0,
+                working: 0,
+                episodic: 0,
+                semantic: 0,
+                procedural: 0,
+                contextual: 0,
               },
             }),
         },
@@ -680,21 +663,6 @@ export class AtlasMECMFMemoryManager implements MECMFMemoryManager {
     }
   }
 
-  private mapMemoryType(mecmfType: MemoryType): CoALAMemoryType {
-    switch (mecmfType) {
-      case MemoryType.WORKING:
-        return CoALAMemoryType.WORKING;
-      case MemoryType.EPISODIC:
-        return CoALAMemoryType.EPISODIC;
-      case MemoryType.SEMANTIC:
-        return CoALAMemoryType.SEMANTIC;
-      case MemoryType.PROCEDURAL:
-        return CoALAMemoryType.PROCEDURAL;
-      default:
-        return CoALAMemoryType.WORKING;
-    }
-  }
-
   private convertCoALAToMECMF(
     coalaMemories: Array<CoALAMemoryEntry & { similarity?: number }>,
   ): MemoryEntry[] {
@@ -702,7 +670,7 @@ export class AtlasMECMFMemoryManager implements MECMFMemoryManager {
       id: coala.id,
       content: coala.content,
       timestamp: coala.timestamp,
-      memoryType: this.mapCoALAType(coala.memoryType),
+      memoryType: coala.memoryType,
       relevanceScore: coala.similarity || coala.relevanceScore,
       sourceScope: coala.sourceScope,
       tags: coala.tags,
@@ -712,21 +680,6 @@ export class AtlasMECMFMemoryManager implements MECMFMemoryManager {
       source: coala.source || MemorySource.SYSTEM_GENERATED,
       sourceMetadata: coala.sourceMetadata,
     }));
-  }
-
-  private mapCoALAType(coalaType: CoALAMemoryType): MemoryType {
-    switch (coalaType) {
-      case CoALAMemoryType.WORKING:
-        return MemoryType.WORKING;
-      case CoALAMemoryType.EPISODIC:
-        return MemoryType.EPISODIC;
-      case CoALAMemoryType.SEMANTIC:
-        return MemoryType.SEMANTIC;
-      case CoALAMemoryType.PROCEDURAL:
-        return MemoryType.PROCEDURAL;
-      default:
-        return MemoryType.WORKING;
-    }
   }
 
   private updateRecentMemoryCache(entry: MemoryEntry): void {
@@ -743,13 +696,13 @@ export class AtlasMECMFMemoryManager implements MECMFMemoryManager {
 
   private getDecayRateForType(memoryType: MemoryType): number {
     switch (memoryType) {
-      case MemoryType.WORKING:
+      case "working":
         return 0.5; // Fast decay
-      case MemoryType.EPISODIC:
+      case "episodic":
         return 0.2; // Moderate decay
-      case MemoryType.SEMANTIC:
+      case "semantic":
         return 0.05; // Slow decay
-      case MemoryType.PROCEDURAL:
+      case "procedural":
         return 0.01; // Very slow decay
       default:
         return 0.1;

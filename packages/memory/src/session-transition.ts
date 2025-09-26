@@ -1,5 +1,5 @@
 import { logger } from "@atlas/logger";
-import { type MECMFMemoryManager, type MemoryEntry, MemoryType } from "./mecmf-interfaces.ts";
+import type { MECMFMemoryManager, MemoryEntry } from "./mecmf-interfaces.ts";
 import type { SessionBridgeManager } from "./session-bridge-manager.ts";
 import type { WorklogManager } from "./worklog/worklog-manager.ts";
 
@@ -78,7 +78,7 @@ export class SessionTransitionHandler {
         const workingMemory: MemoryEntry = {
           ...bridgeMemory,
           id: `working_${sessionId}_${bridgeMemory.id}`,
-          memoryType: MemoryType.WORKING,
+          memoryType: "working",
           sourceMetadata: { ...bridgeMemory.sourceMetadata, sessionId },
           tags: [
             ...bridgeMemory.tags.filter((tag) => tag !== "loaded_from_bridge"),
@@ -110,7 +110,7 @@ export class SessionTransitionHandler {
   private async getSessionWorkingMemories(sessionId: string): Promise<MemoryEntry[]> {
     try {
       const allWorkingMemories = await this.memoryManager.getRelevantMemories("", {
-        memoryTypes: [MemoryType.WORKING],
+        memoryTypes: ["working"],
         maxResults: 1000, // Get all working memories
       });
 

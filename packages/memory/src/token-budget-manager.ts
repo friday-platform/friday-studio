@@ -6,13 +6,13 @@
  * efficient use of language model context windows.
  */
 
-import {
-  type EnhancedPrompt,
-  type Memory,
-  type MemoryEntry,
+import type {
+  EnhancedPrompt,
+  Memory,
+  MemoryEntry,
   MemoryType,
-  type TokenAllocation,
-  type TokenBudgetManager,
+  TokenAllocation,
+  TokenBudgetManager,
 } from "./mecmf-interfaces.ts";
 
 interface PromptComponents {
@@ -129,13 +129,7 @@ export class AtlasTokenBudgetManager implements TokenBudgetManager {
         memoryContext: "",
         tokensUsed: baseTokens,
         memoriesIncluded: 0,
-        memoryBreakdown: {
-          [MemoryType.WORKING]: 0,
-          [MemoryType.SESSION_BRIDGE]: 0,
-          [MemoryType.EPISODIC]: 0,
-          [MemoryType.SEMANTIC]: 0,
-          [MemoryType.PROCEDURAL]: 0,
-        },
+        memoryBreakdown: { working: 0, contextual: 0, episodic: 0, semantic: 0, procedural: 0 },
       };
     }
 
@@ -169,18 +163,11 @@ export class AtlasTokenBudgetManager implements TokenBudgetManager {
 
     // Calculate memory breakdown
     const memoryBreakdown = {
-      [MemoryType.WORKING]: selectedMemories.filter((m) => m.memoryType === MemoryType.WORKING)
-        .length,
-      [MemoryType.SESSION_BRIDGE]: selectedMemories.filter(
-        (m) => m.memoryType === MemoryType.SESSION_BRIDGE,
-      ).length,
-      [MemoryType.EPISODIC]: selectedMemories.filter((m) => m.memoryType === MemoryType.EPISODIC)
-        .length,
-      [MemoryType.SEMANTIC]: selectedMemories.filter((m) => m.memoryType === MemoryType.SEMANTIC)
-        .length,
-      [MemoryType.PROCEDURAL]: selectedMemories.filter(
-        (m) => m.memoryType === MemoryType.PROCEDURAL,
-      ).length,
+      working: selectedMemories.filter((m) => m.memoryType === "working").length,
+      contextual: selectedMemories.filter((m) => m.memoryType === "contextual").length,
+      episodic: selectedMemories.filter((m) => m.memoryType === "episodic").length,
+      semantic: selectedMemories.filter((m) => m.memoryType === "semantic").length,
+      procedural: selectedMemories.filter((m) => m.memoryType === "procedural").length,
     };
 
     return {
@@ -199,10 +186,10 @@ export class AtlasTokenBudgetManager implements TokenBudgetManager {
   private adaptiveTokenAllocation(memories: MemoryEntry[], budget: number): TokenAllocation {
     // Analyze memory distribution
     const distribution = {
-      working: memories.filter((m) => m.memoryType === MemoryType.WORKING).length,
-      episodic: memories.filter((m) => m.memoryType === MemoryType.EPISODIC).length,
-      semantic: memories.filter((m) => m.memoryType === MemoryType.SEMANTIC).length,
-      procedural: memories.filter((m) => m.memoryType === MemoryType.PROCEDURAL).length,
+      working: memories.filter((m) => m.memoryType === "working").length,
+      episodic: memories.filter((m) => m.memoryType === "episodic").length,
+      semantic: memories.filter((m) => m.memoryType === "semantic").length,
+      procedural: memories.filter((m) => m.memoryType === "procedural").length,
     };
 
     const totalMemories = memories.length;
@@ -242,10 +229,10 @@ export class AtlasTokenBudgetManager implements TokenBudgetManager {
 
     // Process each memory type
     const typeAllocations = [
-      { type: MemoryType.WORKING, budget: allocation.working_memory },
-      { type: MemoryType.PROCEDURAL, budget: allocation.procedural_memory },
-      { type: MemoryType.SEMANTIC, budget: allocation.semantic_memory },
-      { type: MemoryType.EPISODIC, budget: allocation.episodic_memory },
+      { type: "working", budget: allocation.working_memory },
+      { type: "procedural", budget: allocation.procedural_memory },
+      { type: "semantic", budget: allocation.semantic_memory },
+      { type: "episodic", budget: allocation.episodic_memory },
     ];
 
     for (const { type, budget } of typeAllocations) {
@@ -286,13 +273,11 @@ export class AtlasTokenBudgetManager implements TokenBudgetManager {
     if (memories.length === 0) return "";
 
     const groupedMemories = {
-      [MemoryType.WORKING]: memories.filter((m) => m.memoryType === MemoryType.WORKING),
-      [MemoryType.SESSION_BRIDGE]: memories.filter(
-        (m) => m.memoryType === MemoryType.SESSION_BRIDGE,
-      ),
-      [MemoryType.PROCEDURAL]: memories.filter((m) => m.memoryType === MemoryType.PROCEDURAL),
-      [MemoryType.SEMANTIC]: memories.filter((m) => m.memoryType === MemoryType.SEMANTIC),
-      [MemoryType.EPISODIC]: memories.filter((m) => m.memoryType === MemoryType.EPISODIC),
+      working: memories.filter((m) => m.memoryType === "working"),
+      contextual: memories.filter((m) => m.memoryType === "contextual"),
+      procedural: memories.filter((m) => m.memoryType === "procedural"),
+      semantic: memories.filter((m) => m.memoryType === "semantic"),
+      episodic: memories.filter((m) => m.memoryType === "episodic"),
     };
 
     switch (format) {
@@ -310,37 +295,37 @@ export class AtlasTokenBudgetManager implements TokenBudgetManager {
   private formatDetailedContext(groupedMemories: Record<MemoryType, MemoryEntry[]>): string {
     const sections: string[] = [];
 
-    if (groupedMemories[MemoryType.WORKING].length > 0) {
+    if (groupedMemories.working.length > 0) {
       sections.push("### Current Working Context:");
-      groupedMemories[MemoryType.WORKING].forEach((memory, index) => {
+      groupedMemories.working.forEach((memory, index) => {
         sections.push(`${index + 1}. **${memory.id}**: ${this.extractContentText(memory.content)}`);
       });
     }
 
-    if (groupedMemories[MemoryType.SESSION_BRIDGE].length > 0) {
+    if (groupedMemories.contextual.length > 0) {
       sections.push("### Previous Session Context:");
-      groupedMemories[MemoryType.SESSION_BRIDGE].forEach((memory, index) => {
+      groupedMemories.contextual.forEach((memory, index) => {
         sections.push(`${index + 1}. **${memory.id}**: ${this.extractContentText(memory.content)}`);
       });
     }
 
-    if (groupedMemories[MemoryType.PROCEDURAL].length > 0) {
+    if (groupedMemories.procedural.length > 0) {
       sections.push("### Relevant Procedures & Workflows:");
-      groupedMemories[MemoryType.PROCEDURAL].forEach((memory, index) => {
+      groupedMemories.procedural.forEach((memory, index) => {
         sections.push(`${index + 1}. **${memory.id}**: ${this.extractContentText(memory.content)}`);
       });
     }
 
-    if (groupedMemories[MemoryType.SEMANTIC].length > 0) {
+    if (groupedMemories.semantic.length > 0) {
       sections.push("### Relevant Knowledge:");
-      groupedMemories[MemoryType.SEMANTIC].forEach((memory, index) => {
+      groupedMemories.semantic.forEach((memory, index) => {
         sections.push(`${index + 1}. **${memory.id}**: ${this.extractContentText(memory.content)}`);
       });
     }
 
-    if (groupedMemories[MemoryType.EPISODIC].length > 0) {
+    if (groupedMemories.episodic.length > 0) {
       sections.push("### Past Experiences:");
-      groupedMemories[MemoryType.EPISODIC].forEach((memory, index) => {
+      groupedMemories.episodic.forEach((memory, index) => {
         sections.push(`${index + 1}. **${memory.id}**: ${this.extractContentText(memory.content)}`);
       });
     }
@@ -351,26 +336,24 @@ export class AtlasTokenBudgetManager implements TokenBudgetManager {
   private formatSummaryContext(groupedMemories: Record<MemoryType, MemoryEntry[]>): string {
     const parts: string[] = [];
 
-    if (groupedMemories[MemoryType.WORKING].length > 0) {
-      parts.push(`Current context: ${this.summarizeMemories(groupedMemories[MemoryType.WORKING])}`);
+    if (groupedMemories.working.length > 0) {
+      parts.push(`Current context: ${this.summarizeMemories(groupedMemories.working)}`);
     }
 
-    if (groupedMemories[MemoryType.SESSION_BRIDGE].length > 0) {
-      parts.push(
-        `Previous session: ${this.summarizeMemories(groupedMemories[MemoryType.SESSION_BRIDGE])}`,
-      );
+    if (groupedMemories.contextual.length > 0) {
+      parts.push(`Previous session: ${this.summarizeMemories(groupedMemories.contextual)}`);
     }
 
-    if (groupedMemories[MemoryType.PROCEDURAL].length > 0) {
-      parts.push(`Procedures: ${this.summarizeMemories(groupedMemories[MemoryType.PROCEDURAL])}`);
+    if (groupedMemories.procedural.length > 0) {
+      parts.push(`Procedures: ${this.summarizeMemories(groupedMemories.procedural)}`);
     }
 
-    if (groupedMemories[MemoryType.SEMANTIC].length > 0) {
-      parts.push(`Knowledge: ${this.summarizeMemories(groupedMemories[MemoryType.SEMANTIC])}`);
+    if (groupedMemories.semantic.length > 0) {
+      parts.push(`Knowledge: ${this.summarizeMemories(groupedMemories.semantic)}`);
     }
 
-    if (groupedMemories[MemoryType.EPISODIC].length > 0) {
-      parts.push(`Experience: ${this.summarizeMemories(groupedMemories[MemoryType.EPISODIC])}`);
+    if (groupedMemories.episodic.length > 0) {
+      parts.push(`Experience: ${this.summarizeMemories(groupedMemories.episodic)}`);
     }
 
     return parts.length > 0 ? `[Memory Context: ${parts.join(" | ")}]\n\n` : "";
@@ -379,23 +362,23 @@ export class AtlasTokenBudgetManager implements TokenBudgetManager {
   private formatBulletContext(groupedMemories: Record<MemoryType, MemoryEntry[]>): string {
     const bullets: string[] = [];
 
-    for (const memory of groupedMemories[MemoryType.WORKING]) {
+    for (const memory of groupedMemories.working) {
       bullets.push(`• [Working] ${this.extractContentText(memory.content, 120)}`);
     }
 
-    for (const memory of groupedMemories[MemoryType.SESSION_BRIDGE]) {
+    for (const memory of groupedMemories.contextual) {
       bullets.push(`• [Bridge] ${this.extractContentText(memory.content, 120)}`);
     }
 
-    for (const memory of groupedMemories[MemoryType.PROCEDURAL]) {
+    for (const memory of groupedMemories.procedural) {
       bullets.push(`• [Procedure] ${this.extractContentText(memory.content, 120)}`);
     }
 
-    for (const memory of groupedMemories[MemoryType.SEMANTIC]) {
+    for (const memory of groupedMemories.semantic) {
       bullets.push(`• [Knowledge] ${this.extractContentText(memory.content, 120)}`);
     }
 
-    for (const memory of groupedMemories[MemoryType.EPISODIC]) {
+    for (const memory of groupedMemories.episodic) {
       bullets.push(`• [Experience] ${this.extractContentText(memory.content, 120)}`);
     }
 

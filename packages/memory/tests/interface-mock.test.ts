@@ -2,7 +2,8 @@ import { InMemoryStorageAdapter } from "@atlas/storage";
 import { expect } from "@std/expect";
 import type { ICoALAMemoryStorageAdapter } from "../../../src/types/core.ts";
 import type { IMemoryScope } from "../src/coala-memory.ts";
-import { CoALAMemoryManager, CoALAMemoryType } from "../src/coala-memory.ts";
+import { CoALAMemoryManager } from "../src/coala-memory.ts";
+import type { MemoryType } from "../src/mecmf-interfaces.ts";
 import { MockAtlasScope } from "./mocks/storage.ts";
 
 // Set testing environment to prevent logger file operations
@@ -28,29 +29,29 @@ Deno.test("Integration - memory operations with different types", async () => {
   const memory = createTestMemoryManager(scope, memoryAdapter);
 
   // Store different types of memories
-  const complexMemories = [
+  const complexMemories: { key: string; content: string; type: MemoryType; tags: string[] }[] = [
     {
       key: "working-memory",
       content: JSON.stringify({ task: "debug issue", progress: 0.5 }),
-      type: CoALAMemoryType.WORKING,
+      type: "working",
       tags: ["debugging", "current"],
     },
     {
       key: "episodic-memory",
       content: JSON.stringify({ event: "deployed feature X", outcome: "success" }),
-      type: CoALAMemoryType.EPISODIC,
+      type: "episodic",
       tags: ["deployment", "success"],
     },
     {
       key: "semantic-memory",
       content: JSON.stringify({ concept: "React hooks", description: "state management" }),
-      type: CoALAMemoryType.SEMANTIC,
+      type: "semantic",
       tags: ["knowledge", "react"],
     },
     {
       key: "procedural-memory",
       content: JSON.stringify({ procedure: "code review", steps: ["check tests", "review logic"] }),
-      type: CoALAMemoryType.PROCEDURAL,
+      type: "procedural",
       tags: ["process", "review"],
     },
   ];
@@ -67,10 +68,10 @@ Deno.test("Integration - memory operations with different types", async () => {
   }
 
   // Query memories by type
-  const workingMemories = memory.getMemoriesByType(CoALAMemoryType.WORKING);
-  const episodicMemories = memory.getMemoriesByType(CoALAMemoryType.EPISODIC);
-  const semanticMemories = memory.getMemoriesByType(CoALAMemoryType.SEMANTIC);
-  const proceduralMemories = memory.getMemoriesByType(CoALAMemoryType.PROCEDURAL);
+  const workingMemories = memory.getMemoriesByType("working");
+  const episodicMemories = memory.getMemoriesByType("episodic");
+  const semanticMemories = memory.getMemoriesByType("semantic");
+  const proceduralMemories = memory.getMemoriesByType("procedural");
 
   expect(workingMemories).toHaveLength(1);
   expect(episodicMemories).toHaveLength(1);

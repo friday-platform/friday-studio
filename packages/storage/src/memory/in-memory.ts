@@ -6,56 +6,68 @@
  * is not required.
  */
 
-import type { MemoryEntry } from "@atlas/memory";
+import type { CoALAMemoryEntry, CoALAMemoryType } from "@atlas/memory";
+import { objectKeys } from "@atlas/utils";
 import type { ICoALAMemoryStorageAdapter } from "../types/core.ts";
 
 export class InMemoryStorageAdapter implements ICoALAMemoryStorageAdapter {
-  private data: MemoryEntry[] = [];
-  private dataByType: Record<string, MemoryEntry[]> = {};
+  private dataByType: Record<CoALAMemoryType, CoALAMemoryEntry[]> = {
+    working: [],
+    episodic: [],
+    semantic: [],
+    procedural: [],
+    contextual: [],
+  };
 
   // Enhanced CoALA-specific methods
-  async commitByType(memoryType: string, data: MemoryEntry[]): Promise<void> {
-    this.dataByType[memoryType] = { ...data };
+  async commitByType(memoryType: CoALAMemoryType, data: CoALAMemoryEntry[]): Promise<void> {
+    if (!this.dataByType[memoryType]) {
+      this.dataByType[memoryType] = [];
+    }
+    this.dataByType[memoryType].push(...data);
   }
 
-  async loadByType(memoryType: string): Promise<MemoryEntry[]> {
+  async loadByType(memoryType: CoALAMemoryType): Promise<CoALAMemoryEntry[]> {
     return this.dataByType[memoryType] || [];
   }
 
-  async commitAll(dataByType: Record<string, MemoryEntry[]>): Promise<void> {
+  async commitAll(dataByType: Record<CoALAMemoryType, CoALAMemoryEntry[]>): Promise<void> {
     // Deep clone to avoid reference issues
-    this.dataByType = {};
-    for (const [memoryType, data] of Object.entries(dataByType)) {
-      if (data && Object.keys(data).length > 0) {
-        this.dataByType[memoryType] = { ...data };
+    this.dataByType = { working: [], episodic: [], semantic: [], procedural: [], contextual: [] };
+    for (const memoryType of objectKeys(dataByType) as CoALAMemoryType[]) {
+      const data = dataByType[memoryType];
+      if (data && data.length > 0) {
+        this.dataByType[memoryType].push(...data);
       }
     }
   }
 
-  async loadAll(): Promise<Record<string, MemoryEntry[]>> {
+  async loadAll(): Promise<Record<CoALAMemoryType, CoALAMemoryEntry[]>> {
     // Return a deep clone to avoid external modifications
-    const result: Record<string, MemoryEntry[]> = {};
-    for (const [memoryType, data] of Object.entries(this.dataByType)) {
-      if (data && Object.keys(data).length > 0) {
-        result[memoryType] = { ...data };
+    const result: Record<CoALAMemoryType, CoALAMemoryEntry[]> = {
+      working: [],
+      episodic: [],
+      semantic: [],
+      procedural: [],
+      contextual: [],
+    };
+    for (const memoryType of objectKeys(this.dataByType)) {
+      const data = this.dataByType[memoryType];
+      if (data && data.length > 0) {
+        result[memoryType] = [...data];
       }
     }
     return result;
   }
 
-  async listMemoryTypes(): Promise<string[]> {
-    return Object.keys(this.dataByType).filter(
-      (type) => this.dataByType[type] && Object.keys(this.dataByType[type]).length > 0,
+  listMemoryTypes(): CoALAMemoryType[] {
+    return objectKeys(this.dataByType).filter(
+      (type) => this.dataByType[type] && this.dataByType[type].length > 0,
     );
   }
 
   // Test helper methods
   clear(): void {
-    this.data = [];
-    this.dataByType = {};
-  }
-
-  getAllData(): { legacy: MemoryEntry[]; byType: Record<string, MemoryEntry[]> } {
-    return { legacy: { ...this.data }, byType: { ...this.dataByType } };
+    this.dataByType = { working: [], episodic: [], semantic: [], procedural: [], contextual: [] };
   }
 }

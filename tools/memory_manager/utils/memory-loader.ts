@@ -4,10 +4,10 @@
  * Loads and saves memory data from Atlas workspace memory files using the current MECMF system
  */
 
-import { CoALAMemoryManager } from "@atlas/memory";
+import { CoALAMemoryManager, MEMORY_TYPES } from "@atlas/memory";
 import type { IMemoryScope } from "../../../packages/memory/src/coala-memory.ts";
 import { getWorkspaceMemoryDir } from "../../../src/utils/paths.ts";
-import { CoALAMemoryType, type MemoryEntry, type MemoryStorage } from "../types/memory-types.ts";
+import type { CoALAMemoryType, MemoryEntry, MemoryStorage } from "../types/memory-types.ts";
 
 export class AtlasMemoryLoader implements MemoryStorage {
   private workspacePath: string;
@@ -56,14 +56,14 @@ export class AtlasMemoryLoader implements MemoryStorage {
   async loadAll(): Promise<Record<CoALAMemoryType, Record<string, MemoryEntry>>> {
     await this.getCoALAManager();
     const result: Record<CoALAMemoryType, Record<string, MemoryEntry>> = {
-      [CoALAMemoryType.WORKING]: {},
-      [CoALAMemoryType.EPISODIC]: {},
-      [CoALAMemoryType.SEMANTIC]: {},
-      [CoALAMemoryType.PROCEDURAL]: {},
-      [CoALAMemoryType.CONTEXTUAL]: {},
+      working: {},
+      episodic: {},
+      semantic: {},
+      procedural: {},
+      contextual: {},
     };
 
-    for (const memoryType of Object.values(CoALAMemoryType)) {
+    for (const memoryType of MEMORY_TYPES) {
       try {
         result[memoryType] = await this.loadByType(memoryType);
       } catch (error) {
@@ -125,14 +125,14 @@ export class AtlasMemoryLoader implements MemoryStorage {
   }> {
     await this.getCoALAManager();
     const stats: Record<CoALAMemoryType, { count: number; lastModified?: Date; size?: number }> = {
-      [CoALAMemoryType.WORKING]: { count: 0 },
-      [CoALAMemoryType.EPISODIC]: { count: 0 },
-      [CoALAMemoryType.SEMANTIC]: { count: 0 },
-      [CoALAMemoryType.PROCEDURAL]: { count: 0 },
-      [CoALAMemoryType.CONTEXTUAL]: { count: 0 },
+      working: { count: 0 },
+      episodic: { count: 0 },
+      semantic: { count: 0 },
+      procedural: { count: 0 },
+      contextual: { count: 0 },
     };
 
-    for (const memoryType of Object.values(CoALAMemoryType)) {
+    for (const memoryType of MEMORY_TYPES) {
       try {
         const data = await this.loadByType(memoryType);
         const entries = Object.values(data);

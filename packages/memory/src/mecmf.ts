@@ -21,8 +21,12 @@ export { createWebEmbeddingProvider, WebEmbeddingProvider } from "./web-embeddin
 
 // === Integration Helpers ===
 import { getMECMFCacheDir } from "../../../src/utils/paths.ts";
-import type { ConversationContext, MECMFMemoryManager, MemoryScope } from "./mecmf-interfaces.ts";
-import { MemoryType } from "./mecmf-interfaces.ts";
+import type {
+  ConversationContext,
+  MECMFMemoryManager,
+  MemoryScope,
+  MemoryType,
+} from "./mecmf-interfaces.ts";
 import { createMECMFMemoryManager, type MECMFConfig } from "./mecmf-memory-manager.ts";
 
 /**
@@ -189,12 +193,12 @@ export const MemoryUtils = {
    * Suggest memory type based on simple heuristics
    */
   suggestMemoryType(content: string): MemoryType {
-    if (this.isWorkingMemoryContent(content)) return MemoryType.WORKING;
-    if (this.isProceduralContent(content)) return MemoryType.PROCEDURAL;
-    if (this.isSemanticContent(content)) return MemoryType.SEMANTIC;
-    if (this.isEpisodicContent(content)) return MemoryType.EPISODIC;
+    if (this.isWorkingMemoryContent(content)) return "working";
+    if (this.isProceduralContent(content)) return "procedural";
+    if (this.isSemanticContent(content)) return "semantic";
+    if (this.isEpisodicContent(content)) return "episodic";
 
-    return MemoryType.WORKING; // Default fallback
+    return "working"; // Default fallback
   },
 
   /**

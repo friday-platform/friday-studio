@@ -7,8 +7,8 @@
 
 import { WorkspaceSessionStatus } from "@atlas/core";
 import { type Logger, logger } from "@atlas/logger";
-import { CoALAMemoryType } from "@atlas/memory";
 import type {
+  ICoALAMemoryStorageAdapter,
   IWorkspaceAgent,
   IWorkspaceArtifact,
   IWorkspaceSession,
@@ -50,11 +50,9 @@ export class Session extends AtlasScope implements IWorkspaceSession {
   // The actual actor that manages this session
   private sessionActor?: SessionSupervisorActor;
   private _status: string = WorkspaceSessionStatus.PENDING;
-  private _executionResult?: unknown;
   private _error?: Error;
 
   // Execution state
-  private createdAt: Date;
   protected logger: Logger;
 
   constructor(
@@ -67,9 +65,7 @@ export class Session extends AtlasScope implements IWorkspaceSession {
     workflows?: IWorkspaceWorkflow[],
     sources?: IWorkspaceSource[],
     intent?: SessionIntent,
-    storageAdapter?:
-      | import("../types/core.ts").ITempestMemoryStorageAdapter
-      | import("../types/core.ts").ICoALAMemoryStorageAdapter,
+    storageAdapter?: ICoALAMemoryStorageAdapter,
     enableCognitiveLoop: boolean = true,
   ) {
     super({ workspaceId, storageAdapter, enableCognitiveLoop });
@@ -85,7 +81,6 @@ export class Session extends AtlasScope implements IWorkspaceSession {
     this.workflows = workflows;
     this.sources = sources;
     this.intent = intent;
-    this.createdAt = new Date();
 
     // Initialize logger
     this.logger = logger.child({ sessionId: this.id, workerType: "session" });
@@ -253,7 +248,6 @@ export class Session extends AtlasScope implements IWorkspaceSession {
     this.logger.info("Session completed", { hasResult: !!result });
 
     this._status = WorkspaceSessionStatus.COMPLETED;
-    this._executionResult = result;
 
     this.signals.callback.onSuccess(result || this.getArtifacts());
     this.signals.callback.onComplete();
@@ -305,7 +299,7 @@ export class Session extends AtlasScope implements IWorkspaceSession {
           this.logger.info("Session actor execution completed", { sessionId: this.id });
           this.complete(result);
         },
-        (error) => {
+        (error: Error) => {
           this.logger.error("Session actor execution failed", {
             sessionId: this.id,
             error: error.message,
@@ -325,7 +319,7 @@ export class Session extends AtlasScope implements IWorkspaceSession {
 
           promise.then(
             (result) => this.complete(result),
-            (error) => this.fail(error),
+            (error: Error) => this.fail(error),
           );
         } else {
           // Check again in next microtask
@@ -343,7 +337,7 @@ export class Session extends AtlasScope implements IWorkspaceSession {
       `${event}-${Date.now()}`,
       { sessionId: this.id, workspaceId: this.workspaceId || "global", event, ...data },
       {
-        memoryType: CoALAMemoryType.EPISODIC,
+        memoryType: "episodic",
         tags: ["session", event.replace("session-", ""), this.workspaceId || "global"],
         relevanceScore: event.includes("failed") ? 0.9 : event.includes("completed") ? 0.8 : 0.6,
         confidence: 1.0,

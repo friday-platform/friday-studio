@@ -7,7 +7,7 @@
 
 import { assertEquals, assertExists } from "@std/assert";
 import type { IAtlasScope } from "../../../src/types/core.ts";
-import { CoALAMemoryManager, CoALAMemoryType } from "../src/coala-memory.ts";
+import { CoALAMemoryManager } from "../src/coala-memory.ts";
 import { type ConversationContext, MemorySource } from "../src/mecmf-interfaces.ts";
 import { AtlasMECMFMemoryManager } from "../src/mecmf-memory-manager.ts";
 
@@ -89,7 +89,7 @@ Deno.test("CoALA Memory - Source Field Storage and Retrieval", async () => {
 
   // Store memory with source information
   memoryManager.rememberWithMetadata("test-memory", testContent, {
-    memoryType: CoALAMemoryType.WORKING,
+    memoryType: "working",
     tags: ["test"],
     relevanceScore: 0.8,
     source: MemorySource.AGENT_OUTPUT,
@@ -117,7 +117,7 @@ Deno.test("CoALA Memory - Default Source Assignment", async () => {
 
   // Store memory without explicit source
   memoryManager.rememberWithMetadata("test-memory-default", "content", {
-    memoryType: CoALAMemoryType.SEMANTIC,
+    memoryType: "semantic",
     tags: ["test"],
     relevanceScore: 0.5,
     // No source provided
@@ -252,7 +252,7 @@ Deno.test("Memory Source Migration - Basic Functionality", async () => {
     timestamp: new Date(),
     accessCount: 0,
     lastAccessed: new Date(),
-    memoryType: CoALAMemoryType.SEMANTIC,
+    memoryType: "semantic",
     relevanceScore: 0.7,
     sourceScope: "migration-test",
     associations: [],
@@ -264,7 +264,7 @@ Deno.test("Memory Source Migration - Basic Functionality", async () => {
 
   // Directly add to memory store (simulating old data)
   memoryManager.rememberWithMetadata("old-memory", oldMemoryData.content, {
-    memoryType: CoALAMemoryType.SEMANTIC,
+    memoryType: "semantic",
     tags: ["old", "test"],
     relevanceScore: 0.7,
     source: MemorySource.SYSTEM_GENERATED,
@@ -278,7 +278,7 @@ Deno.test("Memory Source Migration - Basic Functionality", async () => {
 
   // Update memory with source information (simulating migration)
   memoryManager.rememberWithMetadata("old-memory", oldMemoryData.content, {
-    memoryType: CoALAMemoryType.SEMANTIC,
+    memoryType: "semantic",
     tags: ["old", "test", "migrated"],
     relevanceScore: 0.7,
     source: MemorySource.SYSTEM_GENERATED,
@@ -310,7 +310,7 @@ Deno.test("Source Metadata Preservation Through Operations", async () => {
 
   // Store with rich metadata
   memoryManager.rememberWithMetadata("rich-metadata", "content", {
-    memoryType: CoALAMemoryType.PROCEDURAL,
+    memoryType: "procedural",
     tags: ["procedure"],
     relevanceScore: 0.9,
     source: MemorySource.TOOL_OUTPUT,
@@ -364,7 +364,7 @@ Deno.test("Source Tracking with Memory Consolidation", async () => {
   // Store all memories
   for (const memory of memories) {
     memoryManager.rememberWithMetadata(memory.id, memory.content, {
-      memoryType: CoALAMemoryType.WORKING,
+      memoryType: "working",
       tags: ["authentication", "session1"],
       relevanceScore: 0.8,
       source: memory.source,

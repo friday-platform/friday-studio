@@ -2,6 +2,7 @@
 
 import type { WorkspaceSignalConfig } from "@atlas/config";
 import type { AgentOrchestrator } from "@atlas/core";
+import type { CoALAMemoryEntry, CoALAMemoryType } from "@atlas/memory";
 
 export interface IAtlasScope {
   id: string;
@@ -182,9 +183,9 @@ export interface ITempestMemoryManager {
   // CoALA-specific methods (optional for backwards compatibility)
   rememberWithMetadata?(
     key: string,
-    content: unknown,
+    content: string | Record<string, string>,
     metadata: {
-      memoryType: string;
+      memoryType: CoALAMemoryType;
       tags: string[];
       relevanceScore: number;
       associations?: string[];
@@ -220,11 +221,11 @@ export interface ITempestMemoryManager {
 
 // Enhanced storage adapter for CoALA memory types
 export interface ICoALAMemoryStorageAdapter {
-  commitByType(memoryType: string, data: unknown): Promise<void>;
-  loadByType(memoryType: string): Promise<unknown>;
-  commitAll(dataByType: Record<string, unknown>): Promise<void>;
-  loadAll(): Promise<Record<string, unknown>>;
-  listMemoryTypes(): Promise<string[]>;
+  commitByType(memoryType: CoALAMemoryType, data: CoALAMemoryEntry[]): Promise<void>;
+  loadByType(memoryType: CoALAMemoryType): Promise<CoALAMemoryEntry[]>;
+  commitAll(dataByType: Record<CoALAMemoryType, CoALAMemoryEntry[]>): Promise<void>;
+  loadAll(): Promise<Record<CoALAMemoryType, CoALAMemoryEntry[]>>;
+  listMemoryTypes(): CoALAMemoryType[];
 }
 
 export interface ITempestMessageManager {

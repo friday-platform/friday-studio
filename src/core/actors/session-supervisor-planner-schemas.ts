@@ -1,6 +1,6 @@
 import { z } from "zod/v4";
 
-export const AgentTaskSchema = z.object({
+const AgentTaskSchema = z.object({
   agentId: z.string().min(1, "agentId required"),
   task: z.string().min(1, "task required"),
   reasoning: z.string().optional(),
@@ -12,7 +12,7 @@ export const AgentTaskSchema = z.object({
     .catch("signal"),
 });
 
-export const ExecutionPhaseSchema = z.object({
+const ExecutionPhaseSchema = z.object({
   id: z.string().min(1).catch(""),
   name: z.string().min(1),
   executionStrategy: z
@@ -23,7 +23,7 @@ export const ExecutionPhaseSchema = z.object({
   reasoning: z.string().optional(),
 });
 
-export const ReasoningStepSchema = z.object({
+const ReasoningStepSchema = z.object({
   iteration: z.number().int().nonnegative().catch(0),
   thinking: z.string().default("").catch(""),
   action: z.string().default("").catch(""),

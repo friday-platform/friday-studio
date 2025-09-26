@@ -6,12 +6,12 @@
  */
 
 import type { IAtlasScope } from "../../../src/types/core.ts";
-import type { IMemoryScope } from "./coala-memory.ts";
-import {
-  type CoALAMemoryEntry,
-  type CoALAMemoryManager,
-  type CoALAMemoryQuery,
+import type {
+  CoALAMemoryEntry,
+  CoALAMemoryManager,
+  CoALAMemoryQuery,
   CoALAMemoryType,
+  IMemoryScope,
 } from "./coala-memory.ts";
 
 export interface MemoryConsolidationStrategy {
@@ -52,13 +52,13 @@ export class WorkspaceMemoryConsolidator
   getConsolidationTarget(memory: CoALAMemoryEntry): CoALAMemoryType {
     // Determine appropriate long-term memory type
     if (memory.tags.includes("pattern") || memory.tags.includes("workflow")) {
-      return CoALAMemoryType.PROCEDURAL;
+      return "procedural";
     }
     if (memory.tags.includes("knowledge") || memory.tags.includes("fact")) {
-      return CoALAMemoryType.SEMANTIC;
+      return "semantic";
     }
-    if (memory.memoryType === CoALAMemoryType.WORKING) {
-      return CoALAMemoryType.EPISODIC;
+    if (memory.memoryType === "working") {
+      return "episodic";
     }
     return memory.memoryType; // Keep existing type
   }
@@ -101,7 +101,7 @@ export class WorkspaceMemoryConsolidator
     // Provide relevant workspace memories to session
     const workspaceMemories = this.workspaceMemory.queryMemories({
       ...query,
-      memoryType: CoALAMemoryType.SEMANTIC, // Prefer semantic knowledge for sessions
+      memoryType: "semantic", // Prefer semantic knowledge for sessions
       minRelevance: 0.5,
     });
 
@@ -112,15 +112,12 @@ export class WorkspaceMemoryConsolidator
     // Filter memories appropriate for the target scope
     return memories.filter((memory) => {
       // Don't share memories that are too context-specific
-      if (memory.memoryType === CoALAMemoryType.CONTEXTUAL) {
+      if (memory.memoryType === "contextual") {
         return false;
       }
 
       // Share general knowledge and procedures
-      if (
-        memory.memoryType === CoALAMemoryType.SEMANTIC ||
-        memory.memoryType === CoALAMemoryType.PROCEDURAL
-      ) {
+      if (memory.memoryType === "semantic" || memory.memoryType === "procedural") {
         return true;
       }
 

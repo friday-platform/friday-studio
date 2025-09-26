@@ -4,16 +4,16 @@
  * Provides an ncurses-like interface for navigating workspace memory
  */
 
-import type { CoALAMemoryEntry, CoALAMemoryManager } from "@atlas/memory";
-import {
-  CoALAMemoryType,
-  type KeyBinding,
-  type MemoryEntry,
-  type TabInfo,
-  type TUIState,
-  type VectorSearchResult,
-  type WorkspaceEntry,
-  type WorkspaceStatus,
+import type { CoALAMemoryEntry, CoALAMemoryManager, CoALAMemoryType } from "@atlas/memory";
+import { MEMORY_TYPES } from "@atlas/memory";
+import type {
+  KeyBinding,
+  MemoryEntry,
+  TabInfo,
+  TUIState,
+  VectorSearchResult,
+  WorkspaceEntry,
+  WorkspaceStatus,
 } from "../types/memory-types.ts";
 import { MemoryManagerWorkspaceService } from "../utils/workspace-manager.ts";
 
@@ -21,7 +21,7 @@ export class MemoryManagerTUI {
   private coalaManager?: CoALAMemoryManager;
   private workspaceService = new MemoryManagerWorkspaceService();
   private state: TUIState = {
-    currentTab: CoALAMemoryType.WORKING,
+    currentTab: "working",
     selectedIndex: 0,
     scrollOffset: 0,
     searchQuery: "",
@@ -67,15 +67,16 @@ export class MemoryManagerTUI {
         oldestEntry?: Date;
       }
     > = {
-      [CoALAMemoryType.WORKING]: { count: 0, totalRelevance: 0, avgRelevance: 0 },
-      [CoALAMemoryType.EPISODIC]: { count: 0, totalRelevance: 0, avgRelevance: 0 },
-      [CoALAMemoryType.SEMANTIC]: { count: 0, totalRelevance: 0, avgRelevance: 0 },
-      [CoALAMemoryType.PROCEDURAL]: { count: 0, totalRelevance: 0, avgRelevance: 0 },
-      [CoALAMemoryType.CONTEXTUAL]: { count: 0, totalRelevance: 0, avgRelevance: 0 },
+      working: { count: 0, totalRelevance: 0, avgRelevance: 0 },
+      episodic: { count: 0, totalRelevance: 0, avgRelevance: 0 },
+      semantic: { count: 0, totalRelevance: 0, avgRelevance: 0 },
+      procedural: { count: 0, totalRelevance: 0, avgRelevance: 0 },
+      contextual: { count: 0, totalRelevance: 0, avgRelevance: 0 },
     };
 
-    for (const memoryType of Object.values(CoALAMemoryType)) {
+    for (const memoryType of MEMORY_TYPES) {
       const entries = this.coalaManager.getMemoriesByType(memoryType);
+      if (!entries) continue;
       const timestamps = entries.map((e) => e.timestamp);
 
       stats[memoryType] = {
@@ -83,7 +84,7 @@ export class MemoryManagerTUI {
         totalRelevance: entries.reduce((sum, e) => sum + e.relevanceScore, 0),
         avgRelevance:
           entries.length > 0
-            ? entries.reduce((sum, e) => sum + e.relevanceScore, 0) / entries.length
+            ? entries.reduce((sum, e) => sum + e.relevanceScore, 0) / entries.length || 0
             : 0,
         mostRecent:
           timestamps.length > 0
@@ -145,7 +146,7 @@ export class MemoryManagerTUI {
       });
 
       return results.memories
-        .map((memory: CoALAMemoryEntry): VectorSearchResult => {
+        .map((memory: CoALAMemoryEntry & { similarity?: number }): VectorSearchResult => {
           const memoryWithSimilarity = memory;
           return {
             ...memory,
@@ -153,7 +154,7 @@ export class MemoryManagerTUI {
             matchedContent:
               typeof memory.content === "string"
                 ? memory.content.substring(0, 200) + (memory.content.length > 200 ? "..." : "")
-                : JSON.stringify(memory.content).substring(0, 200) + "...",
+                : JSON.stringify(memory.content).substring(0, 200),
           };
         })
         .sort((a, b) => b.similarity - a.similarity);
@@ -252,22 +253,22 @@ export class MemoryManagerTUI {
     // Render current content based on mode
     switch (this.state.mode) {
       case "workspace-selector":
-        await this.renderWorkspaceSelector();
+        this.renderWorkspaceSelector();
         break;
       case "list":
         await this.renderMemoryList();
         break;
       case "view":
-        await this.renderMemoryView();
+        this.renderMemoryView();
         break;
       case "edit":
-        await this.renderMemoryEdit();
+        this.renderMemoryEdit();
         break;
       case "create":
-        await this.renderMemoryCreate();
+        this.renderMemoryCreate();
         break;
       case "delete":
-        await this.renderMemoryDelete();
+        this.renderMemoryDelete();
         break;
       case "search":
         await this.renderSearch();
@@ -281,7 +282,7 @@ export class MemoryManagerTUI {
     this.renderFooter();
   }
 
-  private async renderHeader(): Promise<void> {
+  private renderHeader() {
     const title = "Atlas Memory Manager";
     let headerText: string;
 
@@ -321,10 +322,10 @@ export class MemoryManagerTUI {
     }
 
     const tabs: TabInfo[] = [
-      { type: CoALAMemoryType.WORKING, title: "Working", count: 0, color: "yellow" },
-      { type: CoALAMemoryType.EPISODIC, title: "Episodic", count: 0, color: "green" },
-      { type: CoALAMemoryType.SEMANTIC, title: "Semantic", count: 0, color: "blue" },
-      { type: CoALAMemoryType.PROCEDURAL, title: "Procedural", count: 0, color: "magenta" },
+      { type: "working", title: "Working", count: 0, color: "yellow" },
+      { type: "episodic", title: "Episodic", count: 0, color: "green" },
+      { type: "semantic", title: "Semantic", count: 0, color: "blue" },
+      { type: "procedural", title: "Procedural", count: 0, color: "magenta" },
       {
         type: "vector-search", // Special search mode, not a real memory type
         title: "Vector Search",
@@ -408,7 +409,7 @@ export class MemoryManagerTUI {
         .join(", ")}`;
 
       if (line.length > this.terminalSize.width - 2) {
-        line = line.substring(0, this.terminalSize.width - 5) + "...";
+        line = `${line.substring(0, this.terminalSize.width - 5)}  ...`;
       }
 
       if (isSelected) {
@@ -429,13 +430,16 @@ export class MemoryManagerTUI {
     }
   }
 
-  private async renderMemoryView(): Promise<void> {
+  private renderMemoryView() {
     let entry: MemoryEntry | VectorSearchResult | undefined;
 
     if (this.state.currentTab === "vector-search" && this.state.vectorSearchResults) {
       entry = this.state.vectorSearchResults[this.state.selectedIndex];
     } else {
-      const entries = this.list(this.state.currentTab);
+      let entries: MemoryEntry[] = [];
+      if (this.state.currentTab !== "vector-search") {
+        entries = this.list(this.state.currentTab);
+      }
       entry = entries[this.state.selectedIndex];
     }
 
@@ -450,7 +454,7 @@ export class MemoryManagerTUI {
     // Header
     const headerText = `┌─ Memory Entry: ${entry.id} `;
     const headerPadding = Math.max(0, titleWidth - headerText.length - 1);
-    console.log(this.colorize(headerText + "─".repeat(headerPadding) + "┐", "bold", "cyan"));
+    console.log(this.colorize(`${headerText}${"─".repeat(headerPadding)}┐`, "bold", "cyan"));
 
     // Metadata table with conditional similarity row
     const tableData = [
@@ -475,14 +479,14 @@ export class MemoryManagerTUI {
     if ("similarity" in entry && entry.similarity !== undefined) {
       tableData.push([
         "Similarity",
-        this.renderProgressBar(entry.similarity, 20) + ` ${(entry.similarity * 100).toFixed(1)}%`,
+        `${this.renderProgressBar(entry.similarity, 20)} ${(entry.similarity * 100).toFixed(1)}%`,
       ]);
     }
 
     tableData.push(
       [
         "Confidence",
-        this.renderProgressBar(entry.confidence, 20) + ` ${(entry.confidence * 100).toFixed(1)}%`,
+        `${this.renderProgressBar(entry.confidence, 20)} ${(entry.confidence * 100).toFixed(1)}%`,
       ],
       ["Created", this.formatDate(entry.timestamp)],
       ["Source Scope", this.truncateString(entry.sourceScope, 30)],
@@ -494,7 +498,7 @@ export class MemoryManagerTUI {
     // Tags section
     if (entry.tags.length > 0) {
       console.log(
-        this.colorize("\n├─ Tags " + "─".repeat(Math.max(0, width - 8)), "bold", "yellow"),
+        this.colorize(`\n├─ Tags ${"─".repeat(Math.max(0, width - 8))}`, "bold", "yellow"),
       );
       const tagLine = entry.tags.map((tag) => this.colorize(`#${tag}`, "dim", "yellow")).join("  ");
       console.log(`│ ${tagLine}`);
@@ -502,12 +506,12 @@ export class MemoryManagerTUI {
 
     // Content section
     console.log(
-      this.colorize("\n├─ Content " + "─".repeat(Math.max(0, width - 11)), "bold", "green"),
+      this.colorize(`\n├─ Content ${"─".repeat(Math.max(0, width - 11))}`, "bold", "green"),
     );
-    this.renderContent(entry.content, width);
+    this.renderContent(entry, width);
 
     // Footer
-    console.log(this.colorize("└" + "─".repeat(Math.max(0, width - 1)) + "┘", "bold", "cyan"));
+    console.log(this.colorize(`└${"─".repeat(Math.max(0, width - 1))}┘`, "bold", "cyan"));
   }
 
   private renderTable(rows: string[][], maxWidth: number): void {
@@ -586,7 +590,7 @@ export class MemoryManagerTUI {
         let currentLine = "";
 
         words.forEach((word) => {
-          if ((currentLine + " " + word).length <= maxWidth - 4) {
+          if (`${currentLine} ${word}`.length <= maxWidth - 4) {
             currentLine += (currentLine ? " " : "") + word;
           } else {
             if (currentLine) console.log(`│ ${currentLine}`);
@@ -599,7 +603,7 @@ export class MemoryManagerTUI {
     });
   }
 
-  private renderObjectContent(content: unknown, maxWidth: number): void {
+  private renderObjectContent(content: Record<string, unknown>, maxWidth: number): void {
     if (Array.isArray(content)) {
       // Handle arrays
       console.log(`│ ${this.colorize(`Array (${content.length} items):`, "bold")}`);
@@ -677,22 +681,22 @@ export class MemoryManagerTUI {
 
   private truncateString(str: string, maxLength: number): string {
     if (str.length <= maxLength) return str;
-    return str.substring(0, maxLength - 3) + "...";
+    return `${str.substring(0, maxLength - 3)}  ...`;
   }
 
-  private async renderMemoryEdit(): Promise<void> {
+  private renderMemoryEdit() {
     console.log(this.colorize("Edit Memory Entry", "bold", "yellow"));
     console.log("Use arrow keys to navigate, Enter to confirm, Esc to cancel");
     // Implementation would depend on having a proper input system
     console.log("Edit mode not yet implemented in this simple version");
   }
 
-  private async renderMemoryCreate(): Promise<void> {
+  private renderMemoryCreate() {
     console.log(this.colorize("Create New Memory Entry", "bold", "green"));
     console.log("Create mode not yet implemented in this simple version");
   }
 
-  private async renderMemoryDelete(): Promise<void> {
+  private renderMemoryDelete() {
     console.log(this.colorize("Delete Memory Entry", "bold", "red"));
     console.log("Delete mode not yet implemented in this simple version");
   }
@@ -701,7 +705,7 @@ export class MemoryManagerTUI {
     console.log(this.colorize("Search Memory", "bold", "cyan"));
     console.log(`Query: ${this.state.searchQuery}_`);
 
-    if (this.state.searchQuery.length > 0) {
+    if (this.state.searchQuery.length > 0 && this.state.currentTab !== "vector-search") {
       const results = await this.search(this.state.currentTab, this.state.searchQuery);
       console.log(`Found ${results.length} results:`);
 
@@ -747,7 +751,7 @@ export class MemoryManagerTUI {
         ).toFixed(1)}% │ ${entry.matchedContent}`;
 
         if (line.length > this.terminalSize.width - 2) {
-          line = line.substring(0, this.terminalSize.width - 5) + "...";
+          line = `${line.substring(0, this.terminalSize.width - 5)}  ...`;
         }
 
         if (isSelected) {
@@ -768,7 +772,7 @@ export class MemoryManagerTUI {
     }
   }
 
-  private async renderVectorSearchList(): Promise<void> {
+  private renderVectorSearchList() {
     if (!this.state.vectorSearchQuery || this.state.vectorSearchQuery.length === 0) {
       console.log(this.colorize("Vector Search", "bold", "cyan"));
       console.log(this.colorize("Press 'v' to enter vector search mode", "dim"));
@@ -817,7 +821,7 @@ export class MemoryManagerTUI {
         .join(", ")}`;
 
       if (line.length > this.terminalSize.width - 2) {
-        line = line.substring(0, this.terminalSize.width - 5) + "...";
+        line = `${line.substring(0, this.terminalSize.width - 5)}  ...`;
       }
 
       if (isSelected) {
@@ -870,12 +874,12 @@ export class MemoryManagerTUI {
       console.log(`  ${binding.key.padEnd(15)} - ${binding.description}`);
     });
 
-    console.log("\n" + "─".repeat(this.terminalSize.width));
+    console.log(`\n${"─".repeat(this.terminalSize.width)}`);
     console.log(this.colorize("VECTOR SEARCH MODE:", "bold", "cyan"));
     console.log("  ESC, Tab, Arrow keys work normally for navigation");
     console.log("  All other keys (q,e,n,d,s,r,f,v,h,/,j,k, etc.) are used for typing");
     console.log("  This allows typing queries like 'question', 'environment', 'search'");
-    console.log("\n" + "─".repeat(this.terminalSize.width));
+    console.log(`\n${"─".repeat(this.terminalSize.width)}`);
     console.log("Press any key to return to memory view");
   }
 
@@ -889,7 +893,7 @@ export class MemoryManagerTUI {
       footer = `${modeText} | h:help q:quit ↑↓:navigate Tab:switch Enter:view f:overlay e:edit n:new d:delete /:search v:vector r:reload s:save`;
     }
 
-    console.log("\n" + "─".repeat(this.terminalSize.width));
+    console.log(`\n${"─".repeat(this.terminalSize.width)}`);
     console.log(this.colorize(footer, "dim"));
   }
 
@@ -1139,11 +1143,13 @@ export class MemoryManagerTUI {
 
   private switchTab(direction: 1 | -1): void {
     // Only include actual memory storage types, not VECTOR_SEARCH which is a search mode
-    const types = [
-      CoALAMemoryType.WORKING,
-      CoALAMemoryType.EPISODIC,
-      CoALAMemoryType.SEMANTIC,
-      CoALAMemoryType.PROCEDURAL,
+    const types: (CoALAMemoryType | "vector-search")[] = [
+      "working",
+      "episodic",
+      "semantic",
+      "procedural",
+      "contextual",
+      "vector-search",
     ];
 
     // If current tab is VECTOR_SEARCH, start from WORKING
@@ -1154,10 +1160,11 @@ export class MemoryManagerTUI {
     }
 
     const newIndex = (currentIndex + direction + types.length) % types.length;
-
-    this.state.currentTab = types[newIndex];
-    this.state.selectedIndex = 0;
-    this.state.scrollOffset = 0;
+    if (types[newIndex]) {
+      this.state.currentTab = types[newIndex];
+      this.state.selectedIndex = 0;
+      this.state.scrollOffset = 0;
+    }
   }
 
   private navigateUp(): void {
@@ -1171,14 +1178,16 @@ export class MemoryManagerTUI {
     }
   }
 
-  private async navigateDown(): Promise<void> {
+  private navigateDown(): void {
     let maxIndex: number;
 
     if (this.state.currentTab === "vector-search" && this.state.vectorSearchResults) {
       maxIndex = this.state.vectorSearchResults.length - 1;
-    } else {
+    } else if (this.state.currentTab !== "vector-search") {
       const entries = this.getAllByType(this.state.currentTab);
       maxIndex = Object.keys(entries).length - 1;
+    } else {
+      maxIndex = 0;
     }
 
     if (this.state.selectedIndex < maxIndex) {
@@ -1217,7 +1226,7 @@ export class MemoryManagerTUI {
     }
 
     if (bgColor && colors[bgColor]) {
-      result = `\x1b[${parseInt(colors[bgColor]) + 10}m${result}`;
+      result = `\x1b[${parseInt(colors[bgColor], 10) + 10}m${result}`;
     }
 
     return `${result}\x1b[0m`; // Reset at end
@@ -1306,9 +1315,9 @@ export class MemoryManagerTUI {
     startY: number,
   ): Promise<void> {
     // Draw border
-    const topBorder = "┌" + "─".repeat(width - 2) + "┐";
-    const bottomBorder = "└" + "─".repeat(width - 2) + "┘";
-    const sideBorder = "│" + " ".repeat(width - 2) + "│";
+    const topBorder = `┌${"─".repeat(width - 2)}┐`;
+    const bottomBorder = `└${"─".repeat(width - 2)}┘`;
+    const sideBorder = `│${" ".repeat(width - 2)}│`;
 
     // Position cursor and draw top border
     await Deno.stdout.write(new TextEncoder().encode(`\x1b[${startY + 1};${startX + 1}H`));
@@ -1336,7 +1345,7 @@ export class MemoryManagerTUI {
     const leftPadding = Math.floor(padding / 2);
     const rightPadding = padding - leftPadding;
 
-    const header = "├" + "─".repeat(leftPadding) + headerText + "─".repeat(rightPadding) + "┤";
+    const header = `├${"─".repeat(leftPadding)}${headerText}${"─".repeat(rightPadding)}┤`;
 
     await Deno.stdout.write(new TextEncoder().encode(`\x1b[${startY + 2};${startX + 1}H`));
     console.log(this.colorize(header, "bold", "yellow"));
@@ -1419,11 +1428,12 @@ export class MemoryManagerTUI {
           let currentLine = "";
 
           words.forEach((word) => {
-            if ((currentLine + " " + word).length <= maxWidth) {
+            if (`${currentLine} ${word}`.length <= maxWidth) {
               currentLine += (currentLine ? " " : "") + word;
             } else {
               if (currentLine) lines.push(currentLine);
-              currentLine = word.length > maxWidth ? word.substring(0, maxWidth - 3) + "..." : word;
+              currentLine =
+                word.length > maxWidth ? `${word.substring(0, maxWidth - 3)}  ...` : word;
             }
           });
 
@@ -1472,7 +1482,7 @@ export class MemoryManagerTUI {
               remainingContent = remainingContent.substring(breakPoint);
 
               // Add extra indentation for continuation lines
-              currentIndent = indent + "  ";
+              currentIndent = `${indent}  `;
             }
           }
         }
@@ -1492,14 +1502,16 @@ export class MemoryManagerTUI {
   }
 
   // Show overlay for currently selected memory entry
-  private async showCurrentEntryOverlay(): Promise<void> {
+  private showCurrentEntryOverlay(): void {
     let entry: MemoryEntry | VectorSearchResult | undefined;
 
     if (this.state.currentTab === "vector-search" && this.state.vectorSearchResults) {
       entry = this.state.vectorSearchResults[this.state.selectedIndex];
-    } else {
+    } else if (this.state.currentTab !== "vector-search") {
       const entries = this.list(this.state.currentTab);
       entry = entries[this.state.selectedIndex];
+    } else {
+      entry = undefined;
     }
 
     if (!entry) {
@@ -1580,7 +1592,7 @@ export class MemoryManagerTUI {
   /**
    * Render workspace selector
    */
-  private async renderWorkspaceSelector(): Promise<void> {
+  private renderWorkspaceSelector(): void {
     const selection = this.state.workspaceSelection;
 
     if (!selection) {
@@ -1594,7 +1606,7 @@ export class MemoryManagerTUI {
     }
 
     if (selection.error) {
-      console.log(this.colorize("Error: " + selection.error, "bold", "red"));
+      console.log(this.colorize(`Error: ${selection.error}`, "bold", "red"));
       console.log(this.colorize("Press 'q' to quit", "dim"));
       return;
     }
@@ -1632,13 +1644,13 @@ export class MemoryManagerTUI {
         const maxDescLength = Math.max(20, this.terminalSize.width - line.length - 5);
         const truncatedDesc =
           workspace.metadata.description.length > maxDescLength
-            ? workspace.metadata.description.substring(0, maxDescLength - 3) + "..."
+            ? `${workspace.metadata.description.substring(0, maxDescLength - 3)}  ...`
             : workspace.metadata.description;
         line += ` │ ${this.colorize(truncatedDesc, "dim")}`;
       }
 
       if (line.length > this.terminalSize.width - 2) {
-        line = line.substring(0, this.terminalSize.width - 5) + "...";
+        line = `${line.substring(0, this.terminalSize.width - 5)}  ...`;
       }
 
       if (isSelected) {
