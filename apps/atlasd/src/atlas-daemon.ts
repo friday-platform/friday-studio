@@ -39,6 +39,7 @@ import { streamsRoutes } from "../routes/streams/index.ts";
 import { userRoutes } from "../routes/user/index.ts";
 import { workspacesRoutes } from "../routes/workspaces/index.ts";
 import { createApp } from "./factory.ts";
+import type { AppContext } from "./factory.ts";
 import { CronSignalRegistrar } from "./signal-registrars/cron-registrar.ts";
 import { FsWatchSignalRegistrar } from "./signal-registrars/fs-watch-registrar.ts";
 import type { WorkspaceSignalRegistrar } from "./signal-registrars/types.ts";
@@ -120,7 +121,20 @@ export class AtlasDaemon {
       sseConnectionTimeoutMs: 5 * 60 * 1000, // 5 minutes
       ...options,
     };
-    this.app = createApp({ ...this, daemon: this });
+    const context: AppContext = {
+      runtimes: this.runtimes,
+      startTime: this.startTime,
+      sseClients: this.sseClients,
+      sseStreams: this.sseStreams,
+      getWorkspaceManager: this.getWorkspaceManager.bind(this),
+      getOrCreateWorkspaceRuntime: this.getOrCreateWorkspaceRuntime.bind(this),
+      resetIdleTimeout: this.resetIdleTimeout.bind(this),
+      getWorkspaceRuntime: this.getWorkspaceRuntime.bind(this),
+      destroyWorkspaceRuntime: this.destroyWorkspaceRuntime.bind(this),
+      getLibraryStorage: this.getLibraryStorage.bind(this),
+      daemon: this,
+    };
+    this.app = createApp(context);
     this.setupRoutes();
     this.setupSignalHandlers();
   }
