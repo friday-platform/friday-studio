@@ -1,8 +1,9 @@
-import type { WorkspaceEntry } from "@atlas/core";
+import { client, parseResult } from "@atlas/client/v2";
+import { stringifyError } from "@atlas/utils";
+import type { WorkspaceEntry } from "@atlas/workspace";
 import { Box, Text, useInput } from "ink";
 import { useEffect, useState } from "react";
 import { Select } from "../../components/select/index.ts";
-import { getDaemonClient } from "../../utils/daemon-client.ts";
 import { useResponsiveDimensions } from "../../utils/useResponsiveDimensions.ts";
 
 interface WorkspaceSelectionProps {
@@ -18,11 +19,10 @@ export const WorkspaceSelection = ({ onEscape, onWorkspaceSelect }: WorkspaceSel
 
   useEffect(() => {
     const loadWorkspaces = async () => {
-      try {
-        const client = getDaemonClient();
-        const workspaceList = await client.listWorkspaces();
+      const workspaceList = await parseResult(client.workspace.index.$get());
+      if (workspaceList.ok) {
         // Convert daemon API format to WorkspaceEntry format for compatibility
-        const compatibleWorkspaces = workspaceList.map((w) => ({
+        const compatibleWorkspaces = workspaceList.data.map((w) => ({
           id: w.id,
           name: w.name,
           path: w.path,
@@ -30,15 +30,14 @@ export const WorkspaceSelection = ({ onEscape, onWorkspaceSelect }: WorkspaceSel
           status: w.status,
           createdAt: w.createdAt,
           lastSeen: w.lastSeen,
-          metadata: { description: w.description },
         }));
         setWorkspaces(compatibleWorkspaces);
         setError("");
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
-      } finally {
-        setLoading(false);
+      } else {
+        setError(stringifyError(workspaceList.error));
       }
+
+      setLoading(false);
     };
     loadWorkspaces();
   }, []);

@@ -147,3 +147,11 @@ type ObjectEntry<T> = {
  * while objectEntries results in a union of 2-tuples.
  */
 export const objectEntries = Object.entries as <T>(o: T) => Array<ObjectEntry<T>>;
+
+/**
+ * zzz
+ * @param ms - The number of milliseconds to sleep.
+ */
+export function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}

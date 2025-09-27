@@ -2,7 +2,6 @@ import { formatResourceHelp } from "../utils/resource-help.ts";
 import type { YargsInstance } from "../utils/yargs.ts";
 import * as describe from "./agent/describe.tsx";
 import * as list from "./agent/list.tsx";
-import * as test from "./agent/test.tsx";
 
 export const command = "agent <action>";
 export const desc = "Manage workspace agents";
@@ -10,7 +9,7 @@ export const aliases = ["ag"];
 
 export function builder(y: YargsInstance) {
   return y
-    .command([list, describe, test])
+    .command([list, describe])
     .demandCommand(1)
     .fail((msg: string, _: unknown, yargs: YargsInstance) => {
       if (msg?.includes("Not enough non-option arguments")) {

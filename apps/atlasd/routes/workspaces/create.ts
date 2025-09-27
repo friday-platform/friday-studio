@@ -1,5 +1,6 @@
 import { WorkspaceConfigSchema } from "@atlas/config";
 import { FilesystemWorkspaceCreationAdapter } from "@atlas/storage";
+import { stringifyError } from "@atlas/utils";
 import { stringify } from "@std/yaml";
 import { describeRoute, resolver, validator } from "hono-openapi";
 import { daemonFactory } from "../../src/factory.ts";
@@ -99,10 +100,7 @@ createWorkspace.post(
         );
       }
     } catch (error) {
-      return c.json(
-        { success: false, error: error instanceof Error ? error.message : String(error) },
-        500,
-      );
+      return c.json({ success: false, error: stringifyError(error) }, 500);
     }
   },
 );

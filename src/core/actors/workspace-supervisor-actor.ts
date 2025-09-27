@@ -246,7 +246,7 @@ export class WorkspaceSupervisorActor implements BaseActor {
                 this.logger.error("Session execution failed", {
                   sessionId,
                   signalId: signal.id,
-                  error: error,
+                  error,
                 });
                 sessionInfo.status = WorkspaceSessionStatus.FAILED;
               }
@@ -259,7 +259,7 @@ export class WorkspaceSupervisorActor implements BaseActor {
           this.logger.error("Signal processing setup failed", {
             sessionId,
             signalId: signal.id,
-            error: error,
+            error,
           });
           sessionInfo.status = WorkspaceSessionStatus.FAILED;
         }
@@ -273,11 +273,7 @@ export class WorkspaceSupervisorActor implements BaseActor {
         sessionActor, // Provide direct access to SessionSupervisorActor
       });
     } catch (error) {
-      this.logger.error("Failed to process signal", {
-        signalId: signal.id,
-        sessionId,
-        error: error,
-      });
+      this.logger.error("Failed to process signal", { signalId: signal.id, sessionId, error });
 
       return Promise.resolve({
         sessionId,
@@ -610,10 +606,7 @@ export class WorkspaceSupervisorActor implements BaseActor {
 
       return analysis;
     } catch (error) {
-      this.logger.error("Failed to analyze signal with memory", {
-        signalId: signal.id,
-        error: error,
-      });
+      this.logger.error("Failed to analyze signal with memory", { signalId: signal.id, error });
 
       return {
         relevantMemories: [],

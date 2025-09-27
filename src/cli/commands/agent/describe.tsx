@@ -1,11 +1,8 @@
+import { parseResult, client as v2Client } from "@atlas/client/v2";
 import { ConfigLoader } from "@atlas/config";
 import { FilesystemConfigAdapter } from "@atlas/storage";
 import { Box, render, Text } from "ink";
-import {
-  checkDaemonRunning,
-  createDaemonNotRunningError,
-  getDaemonClient,
-} from "../../utils/daemon-client.ts";
+import { createDaemonNotRunningError, getDaemonClient } from "../../utils/daemon-client.ts";
 
 interface DescribeArgs {
   name: string;
@@ -38,7 +35,8 @@ export const builder = {
 export const handler = async (argv: DescribeArgs): Promise<void> => {
   try {
     // Check if daemon is running
-    if (!(await checkDaemonRunning())) {
+    const health = await parseResult(v2Client.health.index.$get());
+    if (!health.ok) {
       throw createDaemonNotRunningError();
     }
 
@@ -55,15 +53,7 @@ export const handler = async (argv: DescribeArgs): Promise<void> => {
         workspaceId = workspace.id;
         workspaceName = workspace.name;
       } catch {
-        // Try to find by name if ID lookup failed
-        const allWorkspaces = await client.listWorkspaces();
-        const foundWorkspace = allWorkspaces.find((w) => w.name === argv.workspace);
-        if (foundWorkspace) {
-          workspaceId = foundWorkspace.id;
-          workspaceName = foundWorkspace.name;
-        } else {
-          throw new Error(`Workspace '${argv.workspace}' not found`);
-        }
+        throw new Error(`Workspace '${argv.workspace}' not found`);
       }
     } else {
       // Use current workspace (detect from current directory)
@@ -74,8 +64,11 @@ export const handler = async (argv: DescribeArgs): Promise<void> => {
         const currentWorkspaceName = config.workspace.workspace.name;
 
         // Find workspace by name in daemon
-        const allWorkspaces = await client.listWorkspaces();
-        const currentWorkspace = allWorkspaces.find((w) => w.name === currentWorkspaceName);
+        const allWorkspaces = await parseResult(v2Client.workspace.index.$get());
+        if (!allWorkspaces.ok) {
+          throw new Error(`Failed to fetch workspaces: ${allWorkspaces.error}`);
+        }
+        const currentWorkspace = allWorkspaces.data.find((w) => w.name === currentWorkspaceName);
 
         if (currentWorkspace) {
           workspaceId = currentWorkspace.id;
@@ -98,7 +91,7 @@ export const handler = async (argv: DescribeArgs): Promise<void> => {
     const agent: AgentDetail = {
       name: argv.name,
       workspace: workspaceName,
-      workspaceId: workspaceId,
+      workspaceId,
       ...agentConfig,
       model: agentConfig.model || "claude-3-7-sonnet-latest",
     };

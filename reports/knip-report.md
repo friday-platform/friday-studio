@@ -1,4 +1,4 @@
-No Svelte config file found in /Users/ericskram/code/tempest/atlas-env/worktrees/mem-manager-clenup - using SvelteKit's default configuration without an adapter.
+No Svelte config file found in /Users/ericskram/code/tempest/atlas-env/worktrees/type-cleanup-9-26 - using SvelteKit's default configuration without an adapter.
 # Knip report
 
 ## Unused files (10)

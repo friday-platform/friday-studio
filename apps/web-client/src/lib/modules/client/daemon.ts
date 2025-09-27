@@ -10,16 +10,6 @@ interface DaemonClientOptions {
   timeout?: number;
 }
 
-interface WorkspaceInfo {
-  id: string;
-  name: string;
-  description?: string;
-  status: string;
-  path: string;
-  createdAt: string;
-  lastSeen: string;
-}
-
 interface LibrarySearchQuery {
   query?: string;
   type?: string | string[];
@@ -44,31 +34,6 @@ export class DaemonClient {
   constructor(options: DaemonClientOptions) {
     this.daemonUrl = options.daemonUrl;
     this.timeout = options.timeout || 10000; // 10 seconds
-  }
-
-  /**
-   * Check if daemon is running and accessible
-   */
-  async isHealthy(): Promise<boolean> {
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), this.timeout);
-
-      const response = await fetch(`${this.daemonUrl}/health`, { signal: controller.signal });
-
-      clearTimeout(timeoutId);
-      return response.ok;
-    } catch {
-      return false;
-    }
-  }
-
-  /**
-   * List all workspaces
-   */
-  async listWorkspaces(): Promise<WorkspaceInfo[]> {
-    const response = await this.makeRequest("/api/workspaces");
-    return response;
   }
 
   // =================================================================

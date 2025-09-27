@@ -1,5 +1,6 @@
 import { getAtlasDaemonUrl } from "@atlas/atlasd";
-import { getAtlasClient } from "@atlas/client";
+import { client, parseResult } from "@atlas/client/v2";
+import { stringifyError } from "@atlas/utils";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import ansiEscapes from "ansi-escapes";
@@ -10,7 +11,6 @@ import { DAEMON_STATUS, type DaemonStatus } from "../constants/daemon-status.ts"
 import { DIAGNOSTICS_STATUS, type DiagnosticsStatus } from "../constants/diagnostics-status.ts";
 import { setupTerminal } from "../modules/enable-multiline/index.ts";
 import { ConversationClient } from "../utils/conversation-client.ts";
-import { getDaemonClient } from "../utils/daemon-client.ts";
 
 interface ConversationDisplayPrefs {
   showReasoningSteps: boolean;
@@ -148,10 +148,9 @@ export const AppProvider = ({ children }: AppProviderProps) => {
 
     const checkInterval = setInterval(async () => {
       try {
-        const client = getAtlasClient({ timeout: 1000 });
-        const isHealthy = await client.isHealthy();
+        const isHealthy = await parseResult(client.health.index.$get());
 
-        if (isHealthy) {
+        if (isHealthy.ok) {
           // Daemon is now running! Reinitialize the system
           setDaemonStatusState(DAEMON_STATUS.HEALTHY);
 
@@ -223,24 +222,13 @@ export const AppProvider = ({ children }: AppProviderProps) => {
     setHasInitialized(true);
 
     // Check daemon status immediately on startup
-    try {
-      const client = getAtlasClient({ timeout: 1000 });
-      const isHealthy = await client.isHealthy();
-      if (!isHealthy) {
-        setDaemonStatusState(DAEMON_STATUS.UNHEALTHY);
-      }
-    } catch {
-      // Daemon is not running
+    const isHealthy = await parseResult(client.health.index.$get());
+    if (!isHealthy.ok) {
       setDaemonStatusState(DAEMON_STATUS.UNHEALTHY);
     }
 
-    try {
-      // Try to connect to daemon - this will auto-start it if needed
-      const client = getDaemonClient();
-
-      // Try to list workspaces - this will trigger auto-start if needed
-      await client.listWorkspaces();
-
+    const res = await parseResult(client.workspace.index.$get());
+    if (res.ok) {
       // Initialize ConversationClient for system workspace
       try {
         // Use "atlas-conversation" as the workspace ID for the conversation system workspace
@@ -268,34 +256,27 @@ export const AppProvider = ({ children }: AppProviderProps) => {
 
       // Initialize MCP client now that daemon is running
       await initializeMcpClient();
-    } catch {
-      // Set daemon status to unhealthy when initialization fails
-      setDaemonStatusState(DAEMON_STATUS.UNHEALTHY);
-
-      setIsInitializing(false);
-
-      // Don't log to console since we're showing in UI
-      // Silent fail - daemon status indicator will show the issue
     }
+    // Set daemon status to unhealthy when initialization fails
+    setDaemonStatusState(DAEMON_STATUS.UNHEALTHY);
+
+    setIsInitializing(false);
+
+    // Don't log to console since we're showing in UI
+    // Silent fail - daemon status indicator will show the issue
   };
 
   const setDaemonStatus = async () => {
-    try {
-      // Use getAtlasClient for consistent behavior, but with a short timeout
-      const client = getAtlasClient({ timeout: 1000 }); // 1 second timeout for status check
-      const isHealthy = await client.isHealthy();
+    // Use getAtlasClient for consistent behavior, but with a short timeout
+    const isHealthy = await parseResult(client.health.index.$get());
 
-      if (isHealthy) {
-        setDaemonStatusState(DAEMON_STATUS.HEALTHY);
-        // Only hide the success message after 5 seconds
-        setTimeout(() => {
-          setDaemonStatusState(DAEMON_STATUS.IDLE);
-        }, 5000);
-      } else {
-        setDaemonStatusState(DAEMON_STATUS.UNHEALTHY);
-        // Don't hide unhealthy status - it should persist
-      }
-    } catch {
+    if (isHealthy.ok) {
+      setDaemonStatusState(DAEMON_STATUS.HEALTHY);
+      // Only hide the success message after 5 seconds
+      setTimeout(() => {
+        setDaemonStatusState(DAEMON_STATUS.IDLE);
+      }, 5000);
+    } else {
       setDaemonStatusState(DAEMON_STATUS.UNHEALTHY);
       // Don't hide unhealthy status - it should persist
     }
@@ -315,8 +296,8 @@ export const AppProvider = ({ children }: AppProviderProps) => {
       setTimeout(() => {
         setDiagnosticsStatus(DIAGNOSTICS_STATUS.IDLE);
       }, 3000);
-    } catch (err) {
-      setDiagnosticsStatus(err instanceof Error ? err.message : String(err));
+    } catch (error) {
+      setDiagnosticsStatus(stringifyError(error));
 
       // Try to clean up on error too
       if (gzipPath) {
@@ -345,8 +326,8 @@ export const AppProvider = ({ children }: AppProviderProps) => {
       } else {
         setMultilineSetupStatus(result.error || "Failed to configure terminal");
       }
-    } catch (err) {
-      setMultilineSetupStatus(err instanceof Error ? err.message : String(err));
+    } catch (error) {
+      setMultilineSetupStatus(stringifyError(error));
     }
 
     // Reset status after showing for a moment

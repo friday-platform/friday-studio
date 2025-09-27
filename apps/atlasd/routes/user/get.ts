@@ -1,3 +1,4 @@
+import { stringifyError } from "@atlas/utils";
 import { describeRoute, resolver } from "hono-openapi";
 import { daemonFactory } from "../../src/factory.ts";
 import { errorResponseSchema, userGetResponseSchema } from "./schemas.ts";
@@ -32,10 +33,7 @@ getUser.get(
       // get the current user
       return c.json({ success: true, currentUser });
     } catch (error) {
-      return c.json(
-        { success: false, error: error instanceof Error ? error.message : String(error) },
-        500,
-      );
+      return c.json({ success: false, error: stringifyError(error) }, 500);
     }
   },
 );

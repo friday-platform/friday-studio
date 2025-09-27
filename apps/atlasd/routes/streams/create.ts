@@ -1,4 +1,5 @@
 import { logger } from "@atlas/logger";
+import { stringifyError } from "@atlas/utils";
 import { describeRoute, resolver, validator } from "hono-openapi";
 import { z } from "zod/v4";
 import { daemonFactory } from "../../src/factory.ts";
@@ -81,21 +82,16 @@ createStreamRoute.post(
             streamId,
             workspaceId: body.workspaceId,
             signal: body.signal,
-            error: error instanceof Error ? error.message : String(error),
+            error,
           });
         }
       }
 
       return c.json({ success: true, stream_id: streamId, sse_url: `/api/sse/${streamId}/stream` });
     } catch (error) {
-      logger.error("Failed to create stream", {
-        error: error instanceof Error ? error.message : String(error),
-      });
+      logger.error("Failed to create stream", { error });
 
-      return c.json(
-        { error: error instanceof Error ? error.message : "Failed to create stream" },
-        500,
-      );
+      return c.json({ error: stringifyError(error) }, 500);
     }
   },
 );

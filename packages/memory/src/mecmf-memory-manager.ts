@@ -629,10 +629,7 @@ export class AtlasMECMFMemoryManager implements MECMFMemoryManager {
         stored,
       });
     } catch (error) {
-      logger.error("Semantic fact extraction failed", {
-        sessionId: summary.sessionId,
-        error: error,
-      });
+      logger.error("Semantic fact extraction failed", { sessionId: summary.sessionId, error });
     }
   }
 

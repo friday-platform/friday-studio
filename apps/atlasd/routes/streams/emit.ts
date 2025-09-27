@@ -268,10 +268,7 @@ function emitToClients(ctx: AppContext, streamId: string, event: unknown): Promi
       client.controller.enqueue(encodedData);
       client.lastActivity = now;
     } catch (error) {
-      logger.debug("SSE client disconnected during emission", {
-        streamId,
-        error: error instanceof Error ? error.message : String(error),
-      });
+      logger.debug("SSE client disconnected during emission", { streamId, error });
       disconnectedClients.push(client);
     }
   }

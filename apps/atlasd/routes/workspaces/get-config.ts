@@ -1,3 +1,4 @@
+import { stringifyError } from "@atlas/utils";
 import { describeRoute, resolver, validator } from "hono-openapi";
 import { daemonFactory } from "../../src/factory.ts";
 import {
@@ -53,7 +54,7 @@ getWorkspaceConfig.get(
       // Return just the config portion that agents need
       return c.json({ config: config.workspace });
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage = stringifyError(error);
 
       // Check if it's a "not found" error
       if (errorMessage.includes("not found")) {

@@ -1,4 +1,5 @@
 import { AgentRegistry } from "@atlas/core";
+import { stringifyError } from "@atlas/utils";
 import { describeRoute, resolver, validator } from "hono-openapi";
 import { daemonFactory } from "../../src/factory.ts";
 import { agentIdParamsSchema, agentMetadataSchema, errorResponseSchema } from "./schemas.ts";
@@ -41,10 +42,7 @@ getAgent.get(
 
       return c.json(agent.metadata);
     } catch (error) {
-      return c.json(
-        { error: `Failed to get agent: ${error instanceof Error ? error.message : String(error)}` },
-        500,
-      );
+      return c.json({ error: `Failed to get agent: ${stringifyError(error)}` }, 500);
     }
   },
 );

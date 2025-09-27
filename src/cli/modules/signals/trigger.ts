@@ -1,3 +1,5 @@
+import { parseResult, client as v2Client } from "@atlas/client/v2";
+import { stringifyError } from "@atlas/utils";
 import { getDaemonClient } from "../../utils/daemon-client.ts";
 import { getCurrentWorkspaceName } from "../../utils/workspace-name.ts";
 
@@ -48,8 +50,8 @@ interface BatchTriggerResult {
 export function validateSignalPayload(data: string): Record<string, unknown> {
   try {
     return { payload: JSON.parse(data) };
-  } catch (err) {
-    throw new Error(`Invalid JSON data: ${err instanceof Error ? err.message : String(err)}`);
+  } catch (error) {
+    throw new Error(`Invalid JSON data: ${stringifyError(error)}`);
   }
 }
 
@@ -68,8 +70,11 @@ async function resolveWorkspaceTargets(
 
   if (all) {
     // Get all workspaces
-    const allWorkspaces = await client.listWorkspaces();
-    for (const workspace of allWorkspaces) {
+    const allWorkspaces = await parseResult(v2Client.workspace.index.$get());
+    if (!allWorkspaces.ok) {
+      throw new Error("Failed to retrieve workspaces");
+    }
+    for (const workspace of allWorkspaces.data) {
       if (!excludeSet.has(workspace.id) && !excludeSet.has(workspace.name)) {
         targetWorkspaces.push({ id: workspace.id, name: workspace.name });
       }
@@ -84,8 +89,11 @@ async function resolveWorkspaceTargets(
         }
       } catch {
         // Try to find by name if ID lookup failed
-        const allWorkspaces = await client.listWorkspaces();
-        const foundWorkspace = allWorkspaces.find((w) => w.name === workspaceName);
+        const allWorkspaces = await parseResult(v2Client.workspace.index.$get());
+        if (!allWorkspaces.ok) {
+          throw new Error("Failed to retrieve workspaces");
+        }
+        const foundWorkspace = allWorkspaces.data.find((w) => w.name === workspaceName);
         if (
           foundWorkspace &&
           !excludeSet.has(foundWorkspace.id) &&
@@ -106,8 +114,11 @@ async function resolveWorkspaceTargets(
     }
 
     // Find workspace by name in daemon
-    const allWorkspaces = await client.listWorkspaces();
-    const currentWorkspace = allWorkspaces.find((w) => w.name === currentWorkspaceName);
+    const allWorkspaces = await parseResult(v2Client.workspace.index.$get());
+    if (!allWorkspaces.ok) {
+      throw new Error("Failed to retrieve workspaces");
+    }
+    const currentWorkspace = allWorkspaces.data.find((w) => w.name === currentWorkspaceName);
 
     if (!currentWorkspace) {
       throw new Error(`Current workspace '${currentWorkspaceName}' not found in daemon.`);

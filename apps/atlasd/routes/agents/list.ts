@@ -1,4 +1,5 @@
 import { AgentRegistry } from "@atlas/core";
+import { stringifyError } from "@atlas/utils";
 import { describeRoute, resolver } from "hono-openapi";
 import { daemonFactory } from "../../src/factory.ts";
 import { agentListResponseSchema, errorResponseSchema } from "./schemas.ts";
@@ -36,12 +37,7 @@ listAgents.get(
 
       return c.json(response);
     } catch (error) {
-      return c.json(
-        {
-          error: `Failed to list agents: ${error instanceof Error ? error.message : String(error)}`,
-        },
-        500,
-      );
+      return c.json({ error: `Failed to list agents: ${stringifyError(error)}` }, 500);
     }
   },
 );

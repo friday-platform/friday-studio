@@ -14,8 +14,6 @@ import { FilesystemWorkspaceCreationAdapter } from "@atlas/storage";
 import { WorkspaceManager, watchers } from "@atlas/workspace";
 import type { WorkspaceSignalTriggerCallback } from "@atlas/workspace/types";
 import { StreamableHTTPTransport } from "@hono/mcp";
-import { dirname, join } from "@std/path";
-import { parse } from "@std/yaml";
 import type { Context, Next } from "hono";
 import { cors } from "hono/cors";
 import { DaemonCapabilityRegistry } from "../../../src/core/daemon-capabilities.ts";
@@ -30,18 +28,17 @@ import { Workspace } from "../../../src/core/workspace.ts";
 import { WorkspaceRuntime } from "../../../src/core/workspace-runtime.ts";
 import { WorkspaceMemberRole } from "../../../src/types/core.ts";
 import { agents as agentsRoutes } from "../routes/agents/index.ts";
+import { artifactsApp } from "../routes/artifacts.ts";
 import { chatStorageRoutes } from "../routes/chat-storage.ts";
+import { daemonApp } from "../routes/daemon.ts";
 import { healthRoutes } from "../routes/health.ts";
 import { libraryRoutes } from "../routes/library/index.ts";
-import { createOpenAPIHandlers } from "../routes/openapi.ts";
 import { scratchpadApp } from "../routes/scratchpad/index.ts";
 import { sessionsRoutes } from "../routes/sessions/index.ts";
-import { signalRoutes } from "../routes/signals/index.ts";
 import { streamsRoutes } from "../routes/streams/index.ts";
 import { userRoutes } from "../routes/user/index.ts";
 import { workspacesRoutes } from "../routes/workspaces/index.ts";
-import { artifactsApp } from "../routes/artifacts.ts";
-import { type AppContext, createApp } from "./factory.ts";
+import { createApp } from "./factory.ts";
 import { CronSignalRegistrar } from "./signal-registrars/cron-registrar.ts";
 import { FsWatchSignalRegistrar } from "./signal-registrars/fs-watch-registrar.ts";
 import type { WorkspaceSignalRegistrar } from "./signal-registrars/types.ts";
@@ -60,7 +57,7 @@ export interface AtlasDaemonOptions {
  * AtlasDaemon - Single daemon managing multiple workspaces with on-demand runtime creation
  * Replaces the per-workspace WorkspaceServer architecture
  */
-export class AtlasDaemon implements AppContext {
+export class AtlasDaemon {
   private app: ReturnType<typeof createApp>;
   private options: AtlasDaemonOptions;
   // Public properties for AppContext interface
@@ -86,7 +83,7 @@ export class AtlasDaemon implements AppContext {
   private isInitialized = false;
   private supervisorDefaults: SupervisorDefaults | null = null;
   private libraryStorage: LibraryStorageAdapter | null = null;
-  private workspaceCreationAdapter: FilesystemWorkspaceCreationAdapter | null = null;
+  public workspaceCreationAdapter: FilesystemWorkspaceCreationAdapter | null = null;
   private cronManager: CronManager | null = null;
   private mcpServer: PlatformMCPServer | null = null;
   private mcpServerPool: GlobalMCPServerPool | null = null;
@@ -113,7 +110,7 @@ export class AtlasDaemon implements AppContext {
   // Store the actual port after server starts
   #port: number | undefined;
   private fileWatcher: InstanceType<typeof watchers.WorkspaceConfigWatcher> | null = null;
-  private signalRegistrars: WorkspaceSignalRegistrar[] = [];
+  public signalRegistrars: WorkspaceSignalRegistrar[] = [];
 
   constructor(options: AtlasDaemonOptions = {}) {
     this.options = {
@@ -123,7 +120,7 @@ export class AtlasDaemon implements AppContext {
       sseConnectionTimeoutMs: 5 * 60 * 1000, // 5 minutes
       ...options,
     };
-    this.app = createApp(this);
+    this.app = createApp({ ...this, daemon: this });
     this.setupRoutes();
     this.setupSignalHandlers();
   }
@@ -393,7 +390,7 @@ export class AtlasDaemon implements AppContext {
         if (!pool) throw new Error("MCP server pool not initialized");
         return pool;
       })(),
-      sessionId: sessionId,
+      sessionId,
       hasActiveSSE: (sid?: string) => {
         const checkId = sid || sessionId;
         return this.agentSSEConnections.has(checkId);
@@ -498,638 +495,17 @@ export class AtlasDaemon implements AppContext {
     if (this.options.cors) {
       this.app.use("*", cors({ origin: this.options.cors, credentials: true }));
     }
-
-    // Mount health routes
     this.app.route("/health", healthRoutes);
-
-    // Mount workspace routes
     this.app.route("/api/workspaces", workspacesRoutes);
-
-    // Mount signal routes
-    this.app.route("/api/workspaces", signalRoutes);
-
-    // Mount artifacts routes
     this.app.route("/api/artifacts", artifactsApp);
-
-    // Mount chat storage routes
     this.app.route("/api/chat-storage", chatStorageRoutes);
-
     this.app.route("/api/user", userRoutes);
-
-    // Mount scratchpad routes
     this.app.route("/api/scratchpad", scratchpadApp);
-
-    // Mount sessions routes
     this.app.route("/api/sessions", sessionsRoutes);
-
-    // Mount agent routes
     this.app.route("/api/agents", agentsRoutes);
-
     this.app.route("/api/sse", streamsRoutes);
-
-    // Mount library routes
     this.app.route("/api/library", libraryRoutes);
-
-    // Create a new workspace (functionality moved to create-from-template and create-from-config endpoints)
-    this.app.post("/api/workspaces", (c) => {
-      return c.json(
-        {
-          error:
-            "Direct workspace creation not supported. Use /api/workspaces/create-from-template or /api/workspaces/create-from-config instead.",
-        },
-        400,
-      );
-    });
-
-    // Delete a workspace
-    this.app.delete("/api/workspaces/:workspaceId", async (c) => {
-      const workspaceId = c.req.param("workspaceId");
-      const force = c.req.query("force") === "true";
-
-      try {
-        // Unregister signal types for this workspace via registrars
-        for (const registrar of this.signalRegistrars) {
-          try {
-            await Promise.resolve(registrar.unregisterWorkspace(workspaceId));
-          } catch (error) {
-            logger.warn("Signal registrar failed to unregister workspace", { workspaceId, error });
-          }
-        }
-
-        const manager = this.getWorkspaceManager();
-        await manager.deleteWorkspace(workspaceId, { force });
-        return c.json({ message: `Workspace ${workspaceId} deleted` });
-      } catch (error) {
-        logger.error("Failed to delete workspace", { error, workspaceId });
-        return c.json(
-          {
-            error: `Failed to delete workspace: ${
-              error instanceof Error ? error.message : String(error)
-            }`,
-          },
-          500,
-        );
-      }
-    });
-
-    // Add a single workspace by path
-    this.app.post("/api/workspaces/add", async (c) => {
-      try {
-        const body = await c.req.json();
-        const { path, name: providedName, description: providedDescription } = body;
-
-        if (!path) {
-          return c.json({ error: "Path is required" }, 400);
-        }
-
-        // Validate path exists and is a directory
-        let stats: Deno.FileInfo;
-        try {
-          stats = await Deno.stat(path);
-        } catch {
-          return c.json({ error: `Path not found: ${path}` }, 404);
-        }
-
-        if (!stats.isDirectory) {
-          return c.json({ error: `Path is not a directory: ${path}` }, 400);
-        }
-
-        // Check for workspace.yml
-        const workspaceYmlPath = join(path, "workspace.yml");
-        try {
-          await Deno.stat(workspaceYmlPath);
-        } catch {
-          return c.json({ error: `workspace.yml not found in: ${path}` }, 400);
-        }
-
-        // Try to read workspace.yml to get name and description
-        let workspaceName = providedName;
-        let workspaceDescription = providedDescription;
-
-        // Only read workspace.yml if name wasn't explicitly provided
-        if (!providedName) {
-          try {
-            const yamlContent = await Deno.readTextFile(workspaceYmlPath);
-            const config = parse(yamlContent);
-
-            if (config.workspace?.name) {
-              workspaceName = config.workspace.name;
-            }
-            // Also use description from config if not provided
-            if (!providedDescription && config.workspace?.description) {
-              workspaceDescription = config.workspace.description;
-            }
-          } catch {
-            // Ignore parsing errors, registerWorkspace will use directory name as fallback
-          }
-        }
-
-        const manager = this.getWorkspaceManager();
-
-        // Check if workspace already exists at this path
-        const existingByPath = await manager.find({ path });
-        if (existingByPath) {
-          return c.json({ error: `Workspace already registered at path: ${path}` }, 409);
-        }
-
-        // If name is determined (provided or from config), check for naming conflicts
-        if (workspaceName) {
-          const existingByName = await manager.find({ name: workspaceName });
-          if (existingByName) {
-            return c.json({ error: `Workspace with name '${workspaceName}' already exists` }, 409);
-          }
-        }
-
-        // Register the workspace
-        const entry = await manager.registerWorkspace(path, {
-          name: workspaceName,
-          description: workspaceDescription,
-        });
-
-        // Cron signals are now automatically registered via WorkspaceManager hooks
-
-        // Convert to API response format
-        const workspaceInfo = {
-          id: entry.id,
-          name: entry.name,
-          description: entry.metadata?.description,
-          status: entry.status,
-          path: entry.path,
-          createdAt: entry.createdAt,
-          lastSeen: entry.lastSeen,
-        };
-
-        return c.json(workspaceInfo, 201);
-      } catch (error) {
-        logger.error("Failed to add workspace", { error });
-        return c.json(
-          {
-            error: `Failed to add workspace: ${
-              error instanceof Error ? error.message : String(error)
-            }`,
-          },
-          500,
-        );
-      }
-    });
-
-    // Add multiple workspaces by paths (batch operation)
-    this.app.post("/api/workspaces/add-batch", async (c) => {
-      try {
-        const body = await c.req.json();
-        const { paths } = body;
-
-        if (!paths || !Array.isArray(paths) || paths.length === 0) {
-          return c.json({ error: "Paths array is required" }, 400);
-        }
-
-        const manager = this.getWorkspaceManager();
-        const results: {
-          added: Array<{
-            id: string;
-            name: string;
-            description?: string;
-            status: string;
-            path: string;
-            createdAt: string;
-            lastSeen: string;
-          }>;
-          failed: Array<{ path: string; error: string }>;
-        } = { added: [], failed: [] };
-
-        // Process paths with reasonable concurrency (5 parallel)
-        const batchSize = 5;
-        for (let i = 0; i < paths.length; i += batchSize) {
-          const batch = paths.slice(i, i + batchSize);
-          const batchPromises = batch.map(async (path) => {
-            try {
-              // Validate path exists and is a directory
-              let stats: Deno.FileInfo;
-              try {
-                stats = await Deno.stat(path);
-              } catch {
-                results.failed.push({ path, error: `Path not found: ${path}` });
-                return;
-              }
-
-              if (!stats.isDirectory) {
-                results.failed.push({ path, error: `Path is not a directory: ${path}` });
-                return;
-              }
-
-              // Check for workspace.yml
-              const workspaceYmlPath = join(path, "workspace.yml");
-              try {
-                await Deno.stat(workspaceYmlPath);
-              } catch {
-                results.failed.push({ path, error: `workspace.yml not found in: ${path}` });
-                return;
-              }
-
-              // Check if workspace already exists at this path
-              const existingByPath = await manager.find({ path });
-              if (existingByPath) {
-                results.failed.push({
-                  path,
-                  error: `Workspace already registered at path: ${path}`,
-                });
-                return;
-              }
-
-              // Try to read workspace.yml to get name and description
-              let workspaceName: string | undefined;
-              let workspaceDescription: string | undefined;
-
-              try {
-                const yamlContent = await Deno.readTextFile(workspaceYmlPath);
-                const config = parse(yamlContent);
-
-                if (config.workspace?.name) {
-                  workspaceName = config.workspace.name;
-                }
-                if (config.workspace?.description) {
-                  workspaceDescription = config.workspace.description;
-                }
-              } catch {
-                // Ignore parsing errors, registerWorkspace will use directory name as fallback
-              }
-
-              // Register the workspace
-              const entry = await manager.registerWorkspace(path, {
-                name: workspaceName,
-                description: workspaceDescription,
-              });
-
-              // Cron signals are now automatically registered via WorkspaceManager hooks
-
-              results.added.push({
-                id: entry.id,
-                name: entry.name,
-                description: entry.metadata?.description,
-                status: entry.status,
-                path: entry.path,
-                createdAt: entry.createdAt,
-                lastSeen: entry.lastSeen,
-              });
-            } catch (error) {
-              results.failed.push({
-                path,
-                error: error instanceof Error ? error.message : String(error),
-              });
-            }
-          });
-
-          await Promise.all(batchPromises);
-        }
-
-        return c.json(results, 200);
-      } catch (error) {
-        logger.error("Failed to add workspaces", { error });
-        return c.json(
-          {
-            error: `Failed to add workspaces: ${
-              error instanceof Error ? error.message : String(error)
-            }`,
-          },
-          500,
-        );
-      }
-    });
-
-    // Validate workspace configuration
-
-    // Create workspace from configuration YAML
-    this.app.post("/api/workspaces/create-from-config", async (c) => {
-      try {
-        const body = await c.req.json();
-        const { name, description, config, path, cwd } = body;
-
-        if (!name || !description || !config) {
-          return c.json({ error: "name, description, and config are required" }, 400);
-        }
-
-        if (!this.workspaceCreationAdapter) {
-          return c.json({ error: "Workspace creation adapter not initialized" }, 500);
-        }
-
-        // Determine base path
-        let basePath: string;
-        if (path) {
-          // Explicit path provided - use its parent directory
-          basePath = dirname(path);
-        } else if (cwd) {
-          // Use provided CWD
-          basePath = cwd;
-        } else {
-          // Fallback to ~/.atlas/workspaces
-          basePath = join(Deno.env.get("HOME") || "/tmp", ".atlas/workspaces");
-        }
-
-        // Create workspace directory with collision detection
-        const workspacePath = await this.workspaceCreationAdapter.createWorkspaceDirectory(
-          basePath,
-          name,
-        );
-
-        // Write workspace files
-        await this.workspaceCreationAdapter.writeWorkspaceFiles(workspacePath, config);
-
-        // Register the new workspace
-        const manager = this.getWorkspaceManager();
-        const entry = await manager.registerWorkspace(workspacePath, { name, description });
-
-        // Cron signals are now automatically registered via WorkspaceManager hooks
-
-        return c.json(
-          {
-            id: entry.id,
-            name: entry.name,
-            path: entry.path,
-            description,
-            message: `Workspace created from configuration`,
-          },
-          201,
-        );
-      } catch (error) {
-        logger.error("Failed to create workspace from config", { error });
-        return c.json(
-          {
-            error: `Failed to create workspace from config: ${
-              error instanceof Error ? error.message : String(error)
-            }`,
-          },
-          500,
-        );
-      }
-    });
-
-    // Refresh workspace config cache
-    this.app.post("/api/workspaces/:workspaceId/refresh-config", (c) => {
-      const workspaceId = c.req.param("workspaceId");
-
-      try {
-        // TODO/FIXME: The refreshConfig method was removed from WorkspaceManager in the refactor
-        // Need to reimplement config refresh functionality
-        // Previously: await manager.refreshConfig(workspaceId);
-
-        // For now, return a placeholder response
-        return c.json(
-          {
-            message: `Config refresh not implemented - refreshConfig method removed from WorkspaceManager`,
-            workspaceId,
-          },
-          501,
-        );
-      } catch (error) {
-        logger.error("Failed to refresh config", { error });
-        return c.json(
-          {
-            error: `Failed to refresh config: ${
-              error instanceof Error ? error.message : String(error)
-            }`,
-          },
-          500,
-        );
-      }
-    });
-
-    // Refresh atlas config cache
-    this.app.post("/api/atlas/refresh-config", (c) => {
-      try {
-        // TODO/FIXME: The refreshAtlasConfig method was removed from WorkspaceManager in the refactor
-        // Need to reimplement atlas config refresh functionality
-        // Previously: await manager.refreshAtlasConfig();
-
-        // For now, return a placeholder response
-        return c.json(
-          {
-            message: `Atlas config refresh not implemented - refreshAtlasConfig method removed from WorkspaceManager`,
-          },
-          501,
-        );
-      } catch (error) {
-        logger.error("Failed to refresh atlas config", { error });
-        return c.json(
-          {
-            error: `Failed to refresh atlas config: ${
-              error instanceof Error ? error.message : String(error)
-            }`,
-          },
-          500,
-        );
-      }
-    });
-
-    // List sessions across all workspaces
-    this.app.get("/api/sessions", (c) => {
-      interface SessionInfo {
-        id: string;
-        workspaceId: string;
-        status: string;
-        summary: string;
-        signal: string;
-        startTime?: unknown;
-        endTime?: unknown;
-        progress: number;
-      }
-
-      const allSessions: SessionInfo[] = [];
-
-      for (const [workspaceId, runtime] of this.runtimes) {
-        const sessions = runtime.getSessions().map((session) => ({
-          id: session.id,
-          workspaceId,
-          status: session.status,
-          summary: session.summarize(),
-          signal: session.signals?.triggers?.[0]?.id || "unknown",
-          startTime: undefined, // Private property, not accessible
-          endTime: undefined, // Private property, not accessible
-          progress: session.progress(),
-        }));
-        allSessions.push(...sessions);
-      }
-
-      return c.json(allSessions);
-    });
-
-    // Get specific session from any workspace
-    this.app.get("/api/sessions/:sessionId", (c) => {
-      const sessionId = c.req.param("sessionId");
-
-      // Find session across all runtimes
-      for (const [workspaceId, runtime] of this.runtimes) {
-        const session = runtime.getSession(sessionId);
-        if (session) {
-          interface SessionDetails {
-            id: string;
-            workspaceId: string;
-            status: string;
-            progress: number;
-            summary: string;
-            signal: string;
-            startTime?: unknown;
-            endTime?: unknown;
-            artifacts: unknown[];
-            results?: unknown;
-          }
-
-          const sessionData: SessionDetails = {
-            id: session.id,
-            workspaceId,
-            status: session.status,
-            progress: session.progress(),
-            summary: session.summarize(),
-            signal: session.signals?.triggers?.[0]?.id || "unknown",
-            startTime: undefined, // Private property, not accessible
-            endTime: undefined, // Private property, not accessible
-            artifacts: session.getArtifacts(),
-          };
-
-          // Get execution results if available
-          const artifacts = session.getArtifacts();
-          const resultsArtifact = artifacts.find((a) => a.type === "execution_results");
-          if (resultsArtifact?.data) {
-            sessionData.results = resultsArtifact.data.results;
-            sessionData.summary = resultsArtifact.data.summary;
-          }
-
-          return c.json(sessionData);
-        }
-      }
-
-      return c.json({ error: `Session not found: ${sessionId}` }, 404);
-    });
-
-    // List agents in a workspace
-    this.app.get("/api/workspaces/:workspaceId/agents", async (c) => {
-      const workspaceId = c.req.param("workspaceId");
-
-      try {
-        // Get workspace runtime to access agent configuration
-        const runtime = await this.getOrCreateWorkspaceRuntime(workspaceId);
-        const agents = runtime.listAgents();
-        return c.json(agents);
-      } catch (error) {
-        logger.error("Failed to list agents", { error, workspaceId });
-        return c.json(
-          {
-            error: `Failed to list agents: ${
-              error instanceof Error ? error.message : String(error)
-            }`,
-          },
-          500,
-        );
-      }
-    });
-
-    // Describe specific agent in a workspace
-    this.app.get("/api/workspaces/:workspaceId/agents/:agentId", async (c) => {
-      const workspaceId = c.req.param("workspaceId");
-      const agentId = c.req.param("agentId");
-
-      try {
-        const runtime = await this.getOrCreateWorkspaceRuntime(workspaceId);
-        const agent = runtime.describeAgent(agentId);
-        return c.json(agent);
-      } catch (error) {
-        logger.error("Failed to describe agent", { error, workspaceId, agentId });
-        return c.json(
-          {
-            error: `Failed to describe agent: ${
-              error instanceof Error ? error.message : String(error)
-            }`,
-          },
-          500,
-        );
-      }
-    });
-
-    // List signals in a workspace
-    this.app.get("/api/workspaces/:workspaceId/signals", async (c) => {
-      const workspaceId = c.req.param("workspaceId");
-
-      try {
-        const runtime = await this.getOrCreateWorkspaceRuntime(workspaceId);
-        const signals = runtime.listSignals();
-        return c.json(signals);
-      } catch (error) {
-        logger.error("Failed to list signals", { error, workspaceId });
-        return c.json(
-          {
-            error: `Failed to list signals: ${
-              error instanceof Error ? error.message : String(error)
-            }`,
-          },
-          500,
-        );
-      }
-    });
-
-    // List jobs in a workspace
-    this.app.get("/api/workspaces/:workspaceId/jobs", async (c) => {
-      const workspaceId = c.req.param("workspaceId");
-
-      try {
-        const runtime = await this.getOrCreateWorkspaceRuntime(workspaceId);
-        const jobs = await runtime.listJobs();
-        return c.json(jobs);
-      } catch (error) {
-        logger.error("Failed to list jobs", { error, workspaceId });
-        return c.json(
-          {
-            error: `Failed to list jobs: ${error instanceof Error ? error.message : String(error)}`,
-          },
-          500,
-        );
-      }
-    });
-
-    // Get workspace sessions
-    this.app.get("/api/workspaces/:workspaceId/sessions", async (c) => {
-      const workspaceId = c.req.param("workspaceId");
-
-      try {
-        const runtime = this.runtimes.get(workspaceId);
-        if (!runtime) {
-          return c.json([]); // No runtime = no sessions
-        }
-
-        const sessions = await runtime.listSessions();
-        return c.json(sessions);
-      } catch (error) {
-        logger.error("Failed to list workspace sessions", { error, workspaceId });
-        return c.json(
-          {
-            error: `Failed to list workspace sessions: ${
-              error instanceof Error ? error.message : String(error)
-            }`,
-          },
-          500,
-        );
-      }
-    });
-
-    // Daemon management routes
-    this.app.get("/api/daemon/status", (c) => {
-      return c.json({
-        status: "running",
-        ...this.getStatus(),
-        memoryUsage: Deno.memoryUsage(),
-        workspaces: Array.from(this.runtimes.keys()),
-      });
-    });
-
-    // OpenAPI documentation - after all routes are mounted
-    const { openAPIHandler, scalarHandler } = createOpenAPIHandlers(this.app, {
-      hostname: this.options.hostname,
-      port: this.options.port,
-    });
-
-    // Mount OpenAPI spec endpoint
-    this.app.get("/openapi.json", openAPIHandler);
-
-    // Mount Scalar UI endpoint
-    this.app.get("/openapi", scalarHandler);
+    this.app.route("/api/daemon", daemonApp);
 
     // Proxy to platform MCP server with specific CORS for MCP
     this.app.all(
@@ -1247,16 +623,6 @@ export class AtlasDaemon implements AppContext {
         }
       },
     );
-
-    this.app.post("/api/daemon/shutdown", (c) => {
-      // Graceful shutdown endpoint
-      logger.info("Daemon shutdown requested via API");
-
-      // Don't await - respond immediately then shutdown
-      setTimeout(() => this.shutdown(), 100);
-
-      return c.json({ message: "Daemon shutdown initiated" });
-    });
   }
 
   /**
@@ -1430,11 +796,11 @@ export class AtlasDaemon implements AppContext {
                 this.resetIdleTimeout(workspaceId);
               }
             }
-          } catch (e) {
+          } catch (error) {
             logger.warn("Failed to persist lastFinishedSession or update status", {
               workspaceId,
               sessionId,
-              error: e instanceof Error ? e.message : String(e),
+              error,
             });
           }
         },
@@ -1931,7 +1297,7 @@ export class AtlasDaemon implements AppContext {
         : null,
       configuration: {
         maxConcurrentWorkspaces: this.options.maxConcurrentWorkspaces,
-        idleTimeoutMs: this.options.idleTimeoutMs,
+        idleTimeoutMs: this.options.idleTimeoutMs ?? 0,
       },
     };
   }

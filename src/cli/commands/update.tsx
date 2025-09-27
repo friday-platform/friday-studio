@@ -1,5 +1,6 @@
-import { getAtlasClient } from "@atlas/client";
+import { client, parseResult } from "@atlas/client/v2";
 import { logger } from "@atlas/logger";
+import { stringifyError } from "@atlas/utils";
 import { ensureDir, exists } from "@std/fs";
 import { join } from "@std/path";
 import { getAtlasVersion } from "../../utils/version.ts";
@@ -96,10 +97,14 @@ export const handler = async (options: UpdateOptions) => {
     }
 
     // Check for active sessions and daemon status
-    const daemonStatus = await checkDaemonStatus();
-
-    if (daemonStatus.running && daemonStatus.activeSessions > 0 && !options.force) {
-      warningOutput(`Atlas daemon has ${daemonStatus.activeSessions} active session(s)`);
+    const daemonStatus = await parseResult(client.daemon.status.$get());
+    if (
+      daemonStatus.ok &&
+      daemonStatus.data.status === "running" &&
+      daemonStatus.data.activeWorkspaces > 0 &&
+      !options.force
+    ) {
+      warningOutput(`Atlas daemon has ${daemonStatus.data.activeWorkspaces} active session(s)`);
     }
 
     // Confirm update (unless quiet mode)
@@ -177,7 +182,7 @@ export const handler = async (options: UpdateOptions) => {
       Deno.exit(1);
     }
   } catch (error) {
-    errorOutput(`Update failed: ${error instanceof Error ? error.message : String(error)}`);
+    errorOutput(`Update failed: ${stringifyError(error)}`);
     Deno.exit(1);
   }
 };
@@ -187,23 +192,6 @@ function getCurrentChannel(version: string): string {
   if (version.includes("edge")) return "edge";
   if (version.includes("nightly")) return "nightly";
   return "stable";
-}
-
-async function checkDaemonStatus(): Promise<{ running: boolean; activeSessions: number }> {
-  try {
-    const client = getAtlasClient();
-    const isHealthy = await client.isHealthy();
-
-    if (isHealthy) {
-      const status = await client.getDaemonStatus();
-
-      return { running: true, activeSessions: status.activeWorkspaces || 0 };
-    }
-  } catch {
-    // Daemon not running
-  }
-
-  return { running: false, activeSessions: 0 };
 }
 
 async function performUpdate(params: {
@@ -315,26 +303,28 @@ async function performUpdate(params: {
     }
 
     // Check for all running atlas processes (service-managed and manually started)
-    const daemonStatus = await checkDaemonStatus();
+    const status = await parseResult(client.daemon.status.$get());
     const anyAtlasRunning = await checkAnyAtlasProcesses();
 
     // Stop all atlas processes
-    if (anyAtlasRunning || daemonStatus.running) {
+    if (anyAtlasRunning || (status.ok && status.data.status === "running")) {
+      const activeSessions = status.ok ? status.data.activeWorkspaces : 0;
       if (!quiet) {
         infoOutput("Stopping all Atlas processes...");
       }
 
-      if (daemonStatus.activeSessions > 0 && !force) {
+      if (activeSessions > 0 && !force) {
         // Wait for sessions to complete (with timeout)
         const timeout = 5 * 60 * 1000; // 5 minutes
         const startWait = Date.now();
 
         while (Date.now() - startWait < timeout) {
-          const current = await checkDaemonStatus();
-          if (!current.running || current.activeSessions === 0) break;
+          const current = await parseResult(client.daemon.status.$get());
+          if (!current.ok) break;
+          if (current.data.status !== "running" || current.data.activeWorkspaces === 0) break;
 
           if (!quiet) {
-            infoOutput(`Waiting for ${current.activeSessions} session(s) to complete...`);
+            infoOutput(`Waiting for ${current.data.activeWorkspaces} session(s) to complete...`);
           }
 
           await new Promise((resolve) => setTimeout(resolve, 5000));
@@ -342,7 +332,7 @@ async function performUpdate(params: {
       }
 
       // Stop service-managed daemon first
-      if (daemonStatus.running) {
+      if (status.ok && status.data.status === "running") {
         const stopCmd = new Deno.Command("atlas", { args: ["service", "stop"] });
         await stopCmd.output();
       }

@@ -1,5 +1,6 @@
 import { SignalTriggerRequestSchema } from "@atlas/config";
 import { createLogger } from "@atlas/logger";
+import { stringifyError } from "@atlas/utils";
 import { describeRoute, resolver, validator } from "hono-openapi";
 import { AtlasTelemetry } from "../../../../src/utils/telemetry.ts";
 import { daemonFactory } from "../../src/factory.ts";
@@ -90,8 +91,8 @@ enables real-time progress feedback in the UI.
             sessionId: session.id,
           });
         } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : String(error);
-          logger.error(errorMessage);
+          const errorMessage = stringifyError(error);
+          logger.error("Failed to process signal", { error });
 
           // Handle specific error types
           if (errorMessage.includes("Workspace not found")) {

@@ -350,10 +350,8 @@ export class Session extends AtlasScope implements IWorkspaceSession {
       const coalaMemory = this.memory;
       const cleared = coalaMemory.clearWorkingBySession(this.id);
       this.logger.debug("Cleared working memory for session", { sessionId: this.id, cleared });
-    } catch (e) {
-      this.logger.warn("Failed to clear working memory for session", {
-        error: e instanceof Error ? e.message : String(e),
-      });
+    } catch (error) {
+      this.logger.warn("Failed to clear working memory for session", { error });
     }
   }
 

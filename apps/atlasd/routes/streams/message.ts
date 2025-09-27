@@ -96,18 +96,11 @@ sendMessageRoute.post(
 
         return c.json({ success: true, message: "Message sent successfully", messageId });
       } catch (error) {
-        logger.error("Failed to process message", {
-          streamId,
-          messageId,
-          error: error instanceof Error ? error.message : String(error),
-        });
+        logger.error("Failed to process message", { streamId, messageId, error });
         throw error;
       }
     } catch (error) {
-      logger.error("Failed to send message", {
-        streamId,
-        error: error instanceof Error ? error.message : String(error),
-      });
+      logger.error("Failed to send message", { streamId, error });
 
       return c.json(
         { error: error instanceof Error ? error.message : "Failed to send message" },

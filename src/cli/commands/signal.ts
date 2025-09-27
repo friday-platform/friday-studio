@@ -1,6 +1,5 @@
 import { formatResourceHelp } from "../utils/resource-help.ts";
 import type { YargsInstance } from "../utils/yargs.ts";
-import * as history from "./signal/history.tsx";
 import * as list from "./signal/list.tsx";
 import * as trigger from "./signal/trigger.tsx";
 
@@ -10,7 +9,7 @@ export const aliases = ["sig"];
 
 export function builder(y: YargsInstance) {
   return y
-    .command([list, trigger, history])
+    .command([list, trigger])
     .demandCommand(1)
     .fail((msg: string, _: unknown, yargs: YargsInstance) => {
       if (msg?.includes("Not enough non-option arguments")) {

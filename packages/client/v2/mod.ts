@@ -1,10 +1,28 @@
-import type { ArtifactsRoutes, ChatStorageRoutes } from "@atlas/atlasd";
+import type {
+  ArtifactsRoutes,
+  ChatStorageRoutes,
+  DaemonRoutes,
+  HealthRoutes,
+  SessionsRoutes,
+  WorkspaceRoutes,
+} from "@atlas/atlasd";
 import { fail, type Result, success } from "@atlas/utils";
-import { type ClientResponse, type DetailedError, hc, parseResponse } from "hono/client";
+import {
+  type ClientResponse,
+  type DetailedError,
+  hc,
+  type InferRequestType,
+  type InferResponseType,
+  parseResponse,
+} from "hono/client";
 
 export const client = {
+  health: hc<HealthRoutes>("http://localhost:8080/health"),
   artifactsStorage: hc<ArtifactsRoutes>("http://localhost:8080/api/artifacts"),
   chatStorage: hc<ChatStorageRoutes>("http://localhost:8080/api/chat-storage"),
+  daemon: hc<DaemonRoutes>("http://localhost:8080/api/daemon"),
+  sessions: hc<SessionsRoutes>("http://localhost:8080/api/sessions"),
+  workspace: hc<WorkspaceRoutes>("http://localhost:8080/api/workspaces"),
 };
 
 /**
@@ -42,3 +60,5 @@ export async function parseResult<T extends ClientResponse<unknown>>(
     return fail(error);
   }
 }
+
+export type { InferRequestType, InferResponseType };

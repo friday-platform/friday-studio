@@ -91,9 +91,7 @@ export function createEnvironmentContext(logger: Logger) {
         `Can't execute ${agentId} in workspace '${workspaceId}': Required environment variables not found ${missingRequired.join(
           ", ",
         )}. Please add these variables to your workspace .env file.`,
-        {
-          cause: { missingVariables: missingRequired, workspaceId: workspaceId, agentId: agentId },
-        },
+        { cause: { missingVariables: missingRequired, workspaceId, agentId } },
       );
 
       logger.error("Environment variable validation failed", { missingVariables: missingRequired });

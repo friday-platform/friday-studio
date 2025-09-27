@@ -16,9 +16,6 @@ import { AtlasApiError } from "./errors.ts";
 import {
   AgentInfoSchema,
   CancelSessionResponseSchema,
-  CreateWorkspaceFromTemplateRequestSchema,
-  CreateWorkspaceFromTemplateResponseSchema,
-  DaemonStatusSchema,
   DeleteResponseSchema,
   JobInfoSchema,
   LibraryItemWithContentSchema,
@@ -38,15 +35,11 @@ import {
   WorkspaceDetailedInfoSchema,
   WorkspaceInfoSchema,
   WorkspaceSessionInfoSchema,
-  WorkspaceTemplateListResponseSchema,
 } from "./schemas.ts";
 import type {
   AgentInfo,
   AtlasClientOptions,
   CancelSessionResponse,
-  CreateWorkspaceFromTemplateRequest,
-  CreateWorkspaceFromTemplateResponse,
-  DaemonStatus,
   DeleteLibraryItemResponse,
   JobDetailedInfo,
   JobInfo,
@@ -69,7 +62,6 @@ import type {
   WorkspaceDetailedInfo,
   WorkspaceInfo,
   WorkspaceSessionInfo,
-  WorkspaceTemplateInfo,
 } from "./types/index.ts";
 
 export class AtlasClient {
@@ -82,58 +74,11 @@ export class AtlasClient {
   }
 
   /**
-   * Check if Atlas daemon is running and accessible
-   */
-  async isHealthy(): Promise<boolean> {
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), this.timeout);
-
-      const response = await fetch(`${this.url}/health`, { signal: controller.signal });
-
-      clearTimeout(timeoutId);
-      return response.ok;
-    } catch {
-      return false;
-    }
-  }
-
-  /**
-   * Get daemon status
-   */
-  async getDaemonStatus(): Promise<DaemonStatus> {
-    const response = await this.makeRequest("/api/daemon/status");
-    return DaemonStatusSchema.parse(response);
-  }
-
-  /**
-   * List all workspaces
-   */
-  async listWorkspaces(): Promise<WorkspaceInfo[]> {
-    const response = await this.makeRequest("/api/workspaces");
-    return z.array(WorkspaceInfoSchema).parse(response);
-  }
-
-  /**
    * Get detailed workspace information
    */
   async getWorkspace(workspaceId: string): Promise<WorkspaceDetailedInfo> {
     const response = await this.makeRequest(`/api/workspaces/${workspaceId}`);
     return WorkspaceDetailedInfoSchema.parse(response);
-  }
-
-  /**
-   * Get workspace path only without triggering full validation
-   */
-  async getWorkspacePath(workspaceId: string): Promise<string> {
-    const workspaces = await this.listWorkspaces();
-    const workspace = workspaces.find((w) => w.id === workspaceId);
-
-    if (!workspace) {
-      throw new AtlasApiError(`Workspace '${workspaceId}' not found`, 404);
-    }
-
-    return workspace.path;
   }
 
   /**
@@ -183,45 +128,6 @@ export class AtlasClient {
       body: JSON.stringify(WorkspaceBatchAddRequestSchema.parse(request)),
     });
     return WorkspaceBatchAddResponseSchema.parse(response);
-  }
-
-  /**
-   * List available workspace templates
-   */
-  async listWorkspaceTemplates(): Promise<WorkspaceTemplateInfo[]> {
-    const response = await this.makeRequest("/api/templates");
-    return WorkspaceTemplateListResponseSchema.parse(response);
-  }
-
-  /**
-   * Create a new workspace from a template
-   */
-  async createWorkspaceFromTemplate(
-    request: CreateWorkspaceFromTemplateRequest,
-  ): Promise<CreateWorkspaceFromTemplateResponse> {
-    const response = await this.makeRequest("/api/workspaces/create-from-template", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(CreateWorkspaceFromTemplateRequestSchema.parse(request)),
-    });
-    return CreateWorkspaceFromTemplateResponseSchema.parse(response);
-  }
-
-  /**
-   * Create a new workspace from a configuration YAML
-   */
-  async createWorkspaceFromConfig(params: {
-    name: string;
-    description: string;
-    config: string;
-    path?: string;
-  }): Promise<WorkspaceCreateResponse> {
-    const response = await this.makeRequest("/api/workspaces/create-from-config", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(params),
-    });
-    return WorkspaceCreateResponseSchema.parse(response);
   }
 
   /**
@@ -847,14 +753,6 @@ export class AtlasClient {
       }
       throw new Error(errorMessage);
     }
-  }
-
-  /**
-   * Shutdown the daemon
-   */
-  async shutdown(): Promise<{ message: string }> {
-    const response = await this.makeRequest("/api/daemon/shutdown", { method: "POST" });
-    return MessageResponseSchema.parse(response);
   }
 
   /**

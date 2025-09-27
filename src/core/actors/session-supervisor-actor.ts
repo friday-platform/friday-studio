@@ -33,9 +33,8 @@ import {
   type SessionSupervisorStatusType,
 } from "@atlas/core";
 import { type Logger, logger } from "@atlas/logger";
-import { type MECMFMemoryManager, initializeWorkspaceMemory } from "@atlas/memory";
+import { initializeWorkspaceMemory, type MECMFMemoryManager } from "@atlas/memory";
 import { generateObject } from "ai";
-import { ExecutionPlanSchema } from "./session-supervisor-planner-schemas.ts";
 import { stripSourceAttributionTags } from "../../../packages/core/src/prompts/source-attribution.ts";
 import type { IWorkspaceArtifact, IWorkspaceSignal } from "../../types/core.ts";
 import {
@@ -44,6 +43,7 @@ import {
   HallucinationPatternDetector,
 } from "../services/hallucination-detector.ts";
 import { getSupervisionConfig, SupervisionLevel } from "../supervision-levels.ts";
+import { ExecutionPlanSchema } from "./session-supervisor-planner-schemas.ts";
 
 export interface SessionContext {
   signal: IWorkspaceSignal;
@@ -231,7 +231,7 @@ export class SessionSupervisorActor implements BaseActor {
           this.logger.error("Failed to cleanup working memory", {
             sessionId: this.sessionId,
             workspaceId: this.workspaceId,
-            error: error,
+            error,
           });
         });
     }
@@ -371,7 +371,7 @@ export class SessionSupervisorActor implements BaseActor {
       } catch (error) {
         this.logger.warn(
           "Failed to initialize MECMF manager, continuing without prompt enhancement",
-          { error: error, workspaceId: this.workspaceId },
+          { error, workspaceId: this.workspaceId },
         );
       }
     }
@@ -752,7 +752,7 @@ export class SessionSupervisorActor implements BaseActor {
       } else {
         this.logger.error("Session execution failed", {
           sessionId: this.sessionId,
-          error: error,
+          error,
           duration,
         });
       }

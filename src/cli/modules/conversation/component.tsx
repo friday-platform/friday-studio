@@ -1,4 +1,4 @@
-import { getAtlasClient } from "@atlas/client";
+import { client, parseResult } from "@atlas/client/v2";
 import { Box, useInput } from "ink";
 import { useState } from "react";
 import { CommandInput } from "../../components/command-input.tsx";
@@ -51,15 +51,9 @@ export function Component() {
   const handleLLMInput = async (input: string) => {
     if (!conversationClient || !conversationSessionId) {
       // Check daemon health and potentially reinitialize
-      try {
-        const client = getAtlasClient({ timeout: 1000 });
-        const isHealthy = await client.isHealthy();
-        if (!isHealthy) {
-          // Daemon is not running, don't send the message
-          return;
-        }
-      } catch {
-        // Daemon is not available
+      const isHealthy = await parseResult(client.health.index.$get());
+      if (!isHealthy.ok) {
+        // Daemon is not running, don't send the message
         return;
       }
       return;

@@ -1,7 +1,8 @@
 import { getAtlasClient } from "@atlas/client";
+import { parseResult, client as v2Client } from "@atlas/client/v2";
+import { stringifyError } from "@atlas/utils";
 import { Box, Text, useInput } from "ink";
 import { useEffect, useState } from "react";
-import { checkDaemonRunning } from "../utils/daemon-client.ts";
 import { useResponsiveDimensions } from "../utils/useResponsiveDimensions.ts";
 import { Select } from "./select/index.ts";
 
@@ -25,7 +26,8 @@ export const JobSelection = ({ workspaceId, onEscape, onJobSelect }: JobSelectio
   useEffect(() => {
     const loadJobs = async () => {
       try {
-        if (await checkDaemonRunning()) {
+        const health = await parseResult(v2Client.health.index.$get());
+        if (health.ok) {
           const client = getAtlasClient();
 
           // Use Atlas client API to get jobs directly
@@ -37,8 +39,8 @@ export const JobSelection = ({ workspaceId, onEscape, onJobSelect }: JobSelectio
           setError("Daemon not running. Use 'atlas daemon start' to enable job management.");
         }
         setError("");
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
+      } catch (error) {
+        setError(stringifyError(error));
       } finally {
         setLoading(false);
       }

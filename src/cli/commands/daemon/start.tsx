@@ -1,15 +1,12 @@
 import { AtlasDaemon } from "@atlas/atlasd";
+import { client, parseResult } from "@atlas/client/v2";
 import { fetchCredentials, setToDenoEnv } from "@atlas/core";
-import { AtlasLogger } from "@atlas/logger";
+import { logger } from "@atlas/logger";
 import { getAtlasHome } from "@atlas/utils/paths.server";
 import { load } from "@std/dotenv";
 import { exists } from "@std/fs";
 import { dirname, join } from "@std/path";
-import {
-  displayDaemonStatus,
-  fetchDaemonStatus,
-  getLocalDaemonClient,
-} from "../../utils/daemon-status.ts";
+import { displayDaemonStatus } from "../../utils/daemon-status.ts";
 import { errorOutput, infoOutput, successOutput } from "../../utils/output.ts";
 import type { YargsInstance } from "../../utils/yargs.ts";
 
@@ -89,13 +86,12 @@ export const handler = async (argv: StartArgs): Promise<void> => {
 
     // Check if daemon is already running
     const port = argv.port || 8080;
-    const client = getLocalDaemonClient(port);
-    const isRunning = await client.isHealthy();
-    if (isRunning) {
+    const isRunning = await parseResult(client.health.index.$get());
+    if (isRunning.ok) {
       infoOutput(`Atlas daemon is already running on port ${port}`);
-      const status = await fetchDaemonStatus(port);
-      if (status) {
-        displayDaemonStatus(status, port);
+      const status = await parseResult(client.daemon.status.$get());
+      if (status.ok) {
+        displayDaemonStatus(status.data, port);
       }
       Deno.exit(0);
     }
@@ -117,8 +113,6 @@ export const handler = async (argv: StartArgs): Promise<void> => {
     if (await exists(globalAtlasEnv)) {
       await load({ export: true, envPath: globalAtlasEnv });
     }
-
-    const logger = AtlasLogger.getInstance();
 
     // Smart PATH augmentation for npx and other tools
     // This ensures compiled binaries can find tools like npx for MCP servers
@@ -343,9 +337,8 @@ async function startDetached(argv: StartArgs): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 2000));
 
   // Check if it's running
-  const client = getLocalDaemonClient(argv.port || 8080);
-  const isRunning = await client.isHealthy();
-  if (isRunning) {
+  const isRunning = await parseResult(client.health.index.$get());
+  if (isRunning.ok) {
     successOutput(`Atlas daemon started in background`);
     successOutput(`PID: ${pid}`);
     successOutput(`Port: ${argv.port || 8080}`);
@@ -436,9 +429,8 @@ WshShell.Run "${cmdLine}", 0, False`;
   await new Promise((resolve) => setTimeout(resolve, 3000));
 
   // Check if it's running
-  const client = getLocalDaemonClient(argv.port || 8080);
-  const isRunning = await client.isHealthy();
-  if (isRunning) {
+  const isRunning = await parseResult(client.health.index.$get());
+  if (isRunning.ok) {
     successOutput(`Atlas daemon started in background`);
     successOutput(`Port: ${argv.port || 8080}`);
     successOutput(`Status: atlas daemon status`);

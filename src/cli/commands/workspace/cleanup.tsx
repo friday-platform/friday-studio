@@ -1,5 +1,6 @@
 import type { WorkspaceInfo } from "@atlas/client";
-import { checkAtlasRunning, createAtlasNotRunningError, getAtlasClient } from "@atlas/client";
+import { createAtlasNotRunningError, getAtlasClient } from "@atlas/client";
+import { parseResult, client as v2Client } from "@atlas/client/v2";
 import { exists } from "@std/fs";
 import { confirmAction } from "../../utils/confirm.tsx";
 import { errorOutput, infoOutput, successOutput, warningOutput } from "../../utils/output.ts";
@@ -32,15 +33,19 @@ export const builder = {
 export const handler = async (argv: CleanupArgs): Promise<void> => {
   try {
     // Check if daemon is running
-    if (!(await checkAtlasRunning())) {
+    const health = await parseResult(v2Client.health.index.$get());
+    if (!health.ok) {
       throw createAtlasNotRunningError();
     }
 
     // Get workspaces from daemon API
     const client = getAtlasClient();
-    const workspaces = await client.listWorkspaces();
+    const workspaces = await parseResult(v2Client.workspace.index.$get());
+    if (!workspaces.ok) {
+      throw new Error("Failed to fetch workspaces");
+    }
 
-    if (workspaces.length === 0) {
+    if (workspaces.data.length === 0) {
       infoOutput("No workspaces found in registry.");
       Deno.exit(0);
     }
@@ -51,7 +56,7 @@ export const handler = async (argv: CleanupArgs): Promise<void> => {
 
     const invalidWorkspaces: WorkspaceInfo[] = [];
 
-    for (const workspace of workspaces) {
+    for (const workspace of workspaces.data) {
       try {
         const dirExists = await exists(workspace.path);
         if (!dirExists) {

@@ -35,4 +35,4 @@ export type {
   WorkspaceInfo,
 } from "./src/types/index.ts";
 // Utility exports
-export { checkAtlasRunning, createAtlasNotRunningError } from "./src/utils.ts";
+export { createAtlasNotRunningError } from "./src/utils.ts";

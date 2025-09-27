@@ -3,6 +3,7 @@ import {
   type WorkspaceAddRequest,
   type WorkspaceBatchAddRequest,
 } from "@atlas/client";
+import { stringifyError } from "@atlas/utils";
 import { Spinner } from "@inkjs/ui";
 import { exists, walk } from "@std/fs";
 import { basename, dirname, join, resolve } from "@std/path";
@@ -145,8 +146,8 @@ const WorkspaceAddUI = ({ args, onComplete }: { args: AddArgs; onComplete: () =>
 
         setWorkspacePaths(paths);
         setStatus("ready");
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
+      } catch (error) {
+        setError(stringifyError(error));
         setStatus("error");
       }
     };
@@ -183,9 +184,10 @@ const WorkspaceAddUI = ({ args, onComplete }: { args: AddArgs; onComplete: () =>
                 name: workspace.name,
               },
             ]);
-          } catch (err) {
-            const errorMessage = err instanceof Error ? err.message : String(err);
-            setResults([{ path: workspacePaths[0] || "", success: false, error: errorMessage }]);
+          } catch (error) {
+            setResults([
+              { path: workspacePaths[0] || "", success: false, error: stringifyError(error) },
+            ]);
           }
         } else {
           // Batch add
@@ -202,8 +204,8 @@ const WorkspaceAddUI = ({ args, onComplete }: { args: AddArgs; onComplete: () =>
         }
 
         setStatus("complete");
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
+      } catch (error) {
+        setError(stringifyError(error));
         setStatus("error");
       }
     };

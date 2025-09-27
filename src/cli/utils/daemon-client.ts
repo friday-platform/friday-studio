@@ -94,44 +94,6 @@ export class DaemonClient {
   }
 
   /**
-   * Check if daemon is running and accessible
-   */
-  async isHealthy(): Promise<boolean> {
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), this.timeout);
-
-      const response = await fetch(`${this.daemonUrl}/health`, { signal: controller.signal });
-
-      clearTimeout(timeoutId);
-      return response.ok;
-    } catch {
-      return false;
-    }
-  }
-
-  /**
-   * Get daemon status
-   */
-  async getDaemonStatus(): Promise<{
-    status: string;
-    activeWorkspaces: number;
-    uptime: number;
-    workspaces: string[];
-  }> {
-    const response = await this.makeRequest("/api/daemon/status");
-    return response;
-  }
-
-  /**
-   * List all workspaces
-   */
-  async listWorkspaces(): Promise<WorkspaceInfo[]> {
-    const response = await this.makeRequest("/api/workspaces");
-    return response;
-  }
-
-  /**
    * Get detailed workspace information
    */
   async getWorkspace(
@@ -386,14 +348,6 @@ export class DaemonClient {
   }
 
   /**
-   * Shutdown the daemon
-   */
-  async shutdown(): Promise<{ message: string }> {
-    const response = await this.makeRequest("/api/daemon/shutdown", { method: "POST" });
-    return response;
-  }
-
-  /**
    * Make a request to the daemon API with error handling
    */
   private async makeRequest(path: string, options: RequestInit = {}): Promise<unknown> {
@@ -484,17 +438,6 @@ export function getDaemonClient(options?: DaemonClientOptions): DaemonClient {
     defaultClient = new DaemonClient(options);
   }
   return defaultClient;
-}
-
-// Reset the default client (useful for testing or when daemon URL changes)
-function resetDaemonClient(): void {
-  defaultClient = null;
-}
-
-// Utility function for CLI commands to detect if daemon is running
-export async function checkDaemonRunning(): Promise<boolean> {
-  const client = getDaemonClient();
-  return await client.isHealthy();
 }
 
 // Utility function to provide helpful error messages when daemon is not running

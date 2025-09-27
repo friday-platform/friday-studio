@@ -18,7 +18,6 @@
     "@atlas/workspace": "workspace:*",
     "@hono/mcp": "^0.1.4",
     "@hono/zod-validator": "^0.7.3",
-    "@scalar/hono-api-reference": "^0.9.18",
     "@std/fs": "npm:@jsr/std__fs@^1.0.19",
     "@std/path": "npm:@jsr/std__path@^1.1.2",
     "hono": "^4.9.8",

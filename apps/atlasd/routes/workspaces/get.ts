@@ -1,3 +1,4 @@
+import { stringifyError } from "@atlas/utils";
 import { describeRoute, resolver, validator } from "hono-openapi";
 import { daemonFactory } from "../../src/factory.ts";
 import {
@@ -48,7 +49,7 @@ getWorkspace.get(
 
       return c.json(workspace);
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage = stringifyError(error);
 
       // Check if it's a "not found" error
       if (errorMessage.includes("not found")) {

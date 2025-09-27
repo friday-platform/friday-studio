@@ -27,7 +27,7 @@ const workspaceRuntimeSchema = z
 // Response Schemas
 // ============================================================================
 
-export const workspaceResponseSchema = z
+const workspaceResponseSchema = z
   .object({
     id: z.string().meta({ description: "Unique workspace identifier (Docker-style name)" }),
     name: z.string().meta({ description: "Human-readable workspace name" }),
@@ -123,3 +123,26 @@ export const errorResponseSchema = z
     details: z.unknown().optional().meta({ description: "Additional error details" }),
   })
   .meta({ id: "ErrorResponse", description: "Standard error response" });
+
+// ============================================================================
+// Parameter Schemas
+// ============================================================================
+
+export const signalPathSchema = z.object({
+  workspaceId: z.string().meta({ description: "Workspace identifier (ID or name)" }),
+  signalId: z.string().meta({ description: "Signal name as defined in workspace configuration" }),
+});
+
+// ============================================================================
+// Response Schemas
+// ============================================================================
+
+export const signalTriggerResponseSchema = z
+  .object({
+    message: z.string().meta({ description: "Status message" }),
+    status: z.literal("processing").meta({ description: "Processing status" }),
+    workspaceId: z.string().meta({ description: "Workspace identifier" }),
+    signalId: z.string().meta({ description: "Signal identifier" }),
+    sessionId: z.string().meta({ description: "Created session ID" }),
+  })
+  .meta({ description: "Signal trigger response" });

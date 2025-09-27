@@ -1,3 +1,4 @@
+import { client, parseResult } from "@atlas/client/v2";
 import type { SessionUIMessageChunk } from "@atlas/core";
 import { createAtlasClient } from "@atlas/oapi-client";
 import { createEventSource } from "eventsource-client";
@@ -83,8 +84,11 @@ export class ConversationClient {
     }
 
     try {
-      const workspaces = await this.daemonClient.listWorkspaces();
-      const conversationWorkspace = workspaces.find((w) => w.id === "atlas-conversation");
+      const workspaces = await parseResult(client.workspace.index.$get());
+      if (!workspaces.ok) {
+        throw new Error(`Failed to fetch workspaces: ${workspaces.error}`);
+      }
+      const conversationWorkspace = workspaces.data.find((w) => w.id === "atlas-conversation");
 
       if (!conversationWorkspace) {
         throw new Error(

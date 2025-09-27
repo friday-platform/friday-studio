@@ -314,9 +314,9 @@ class ClientContext {
 
     try {
       // First check if daemon is healthy using the client directly
-      const isDaemonHealthy = await this.client.isHealthy();
+      const isDaemonHealthy = await parseResult(client.health.index.$get());
 
-      if (isDaemonHealthy) {
+      if (isDaemonHealthy.ok) {
         const previousStatus = this.daemonStatus;
         this.daemonStatus = "connected";
 

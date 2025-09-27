@@ -1,6 +1,7 @@
 import { WorkspaceConfigSchema } from "@atlas/config";
 import { WorkspaceSessionStatus } from "@atlas/core";
 import { logger } from "@atlas/logger";
+import { stringifyError } from "@atlas/utils";
 import { join } from "@std/path";
 import { stringify } from "@std/yaml";
 import { describeRoute, resolver, validator } from "hono-openapi";
@@ -180,7 +181,7 @@ updateWorkspace.post(
             logger.error("Failed to reload runtime", {
               workspaceId,
               workspaceActualId: workspace.id,
-              error: error instanceof Error ? error.message : String(error),
+              error,
             });
 
             return c.json({
@@ -218,10 +219,7 @@ updateWorkspace.post(
         );
       }
     } catch (error) {
-      return c.json(
-        { success: false, error: error instanceof Error ? error.message : String(error) },
-        500,
-      );
+      return c.json({ success: false, error: stringifyError(error) }, 500);
     }
   },
 );

@@ -3,15 +3,6 @@
  */
 
 import { getAtlasDaemonUrl } from "@atlas/atlasd";
-import { getAtlasClient } from "./client.ts";
-
-/**
- * Check if the Atlas daemon is running and accessible
- */
-export async function checkAtlasRunning(): Promise<boolean> {
-  const client = getAtlasClient();
-  return await client.isHealthy();
-}
 
 /**
  * Create a helpful error message when Atlas is not running

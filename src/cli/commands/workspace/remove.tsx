@@ -1,6 +1,7 @@
 import type { WorkspaceInfo } from "@atlas/client";
-import { checkAtlasRunning, createAtlasNotRunningError, getAtlasClient } from "@atlas/client";
-// import { WorkspaceProcessManager } from "../../../core/workspace-process-manager.ts";
+import { createAtlasNotRunningError } from "@atlas/client";
+import { parseResult, client as v2Client } from "@atlas/client/v2";
+import { stringifyError } from "@atlas/utils";
 import { confirmAction } from "../../utils/confirm.tsx";
 import { errorOutput, infoOutput, successOutput, warningOutput } from "../../utils/output.ts";
 import { spinner } from "../../utils/prompts.tsx";
@@ -43,22 +44,26 @@ export const builder = {
 export const handler = async (argv: RemoveArgs): Promise<void> => {
   try {
     // Check if daemon is running
-    if (!(await checkAtlasRunning())) {
+    const health = await parseResult(v2Client.health.index.$get());
+    if (health.ok) {
       throw createAtlasNotRunningError();
     }
 
     // Get workspaces from daemon API
-    const client = getAtlasClient();
-    const workspaces = await client.listWorkspaces();
+    const workspaces = await parseResult(v2Client.workspace.index.$get());
+    if (!workspaces.ok) {
+      errorOutput("Failed to fetch workspaces.");
+      Deno.exit(1);
+    }
 
     let workspace: WorkspaceInfo | undefined;
     if (argv.workspace) {
       // Find by ID or name
-      workspace = workspaces.find((w) => w.id === argv.workspace || w.name === argv.workspace);
+      workspace = workspaces.data.find((w) => w.id === argv.workspace || w.name === argv.workspace);
     } else {
       // Use current directory
       const currentPath = Deno.cwd();
-      workspace = workspaces.find((w) => w.path === currentPath);
+      workspace = workspaces.data.find((w) => w.path === currentPath);
     }
 
     if (!workspace) {
@@ -84,31 +89,6 @@ export const handler = async (argv: RemoveArgs): Promise<void> => {
         infoOutput("Removal cancelled.");
         Deno.exit(0);
       }
-
-      // // Stop the workspace
-      // const processManager = new WorkspaceProcessManager();
-      // const s = spinner();
-      // s.start(`Stopping workspace '${workspace.name}'...`);
-
-      // try {
-      //   await processManager.stop(workspace.id);
-      //   s.stop("Workspace stopped");
-      // } catch (err) {
-      //   s.stop("Failed to stop workspace");
-      //   errorOutput(
-      //     `Error stopping workspace: ${err instanceof Error ? err.message : String(err)}`,
-      //   );
-
-      //   const forceRemove = await confirmAction(
-      //     "Failed to stop workspace. Remove anyway?",
-      //     { force: argv.force, yes: argv.yes, defaultValue: false },
-      //   );
-
-      //   if (!forceRemove) {
-      //     infoOutput("Removal cancelled.");
-      //     Deno.exit(0);
-      //   }
-      // }
     }
 
     // Confirm removal
@@ -132,35 +112,34 @@ export const handler = async (argv: RemoveArgs): Promise<void> => {
     const s = spinner();
     s.start(`Removing workspace '${workspace.name}' from registry...`);
 
-    try {
-      await client.deleteWorkspace(workspace.id);
-      s.stop(`Workspace '${workspace.name}' removed from registry`);
-
-      // Delete files if requested
-      if (argv.deleteFiles) {
-        const deleteSpinner = spinner();
-        deleteSpinner.start(`Deleting workspace files at ${workspace.path}...`);
-
-        try {
-          await Deno.remove(workspace.path, { recursive: true });
-          deleteSpinner.stop("Workspace files deleted");
-        } catch (err) {
-          deleteSpinner.stop("Failed to delete workspace files");
-          warningOutput(
-            `Failed to delete files: ${err instanceof Error ? err.message : String(err)}`,
-          );
-        }
-      }
-
-      successOutput("Workspace removed successfully.");
-    } catch (err) {
+    const res = await parseResult(
+      v2Client.workspace[":workspaceId"].$delete({ param: { workspaceId: workspace.id } }),
+    );
+    if (!res.ok) {
       s.stop("Failed to remove workspace");
-      throw err;
+      throw res.error;
     }
+    s.stop(`Workspace '${workspace.name}' removed from registry`);
+
+    // Delete files if requested
+    if (argv.deleteFiles) {
+      const deleteSpinner = spinner();
+      deleteSpinner.start(`Deleting workspace files at ${workspace.path}...`);
+
+      try {
+        await Deno.remove(workspace.path, { recursive: true });
+        deleteSpinner.stop("Workspace files deleted");
+      } catch (err) {
+        deleteSpinner.stop("Failed to delete workspace files");
+        warningOutput(`Failed to delete files: ${stringifyError(err)}`);
+      }
+    }
+
+    successOutput("Workspace removed successfully.");
 
     Deno.exit(0);
   } catch (error) {
-    errorOutput(error instanceof Error ? error.message : String(error));
+    errorOutput(stringifyError(error));
     Deno.exit(1);
   }
 };

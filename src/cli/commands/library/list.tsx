@@ -1,11 +1,8 @@
 import process from "node:process";
+import { parseResult, client as v2Client } from "@atlas/client/v2";
 import { render } from "ink";
 import { LibraryListComponent } from "../../modules/library/library-list-component.tsx";
-import {
-  checkDaemonRunning,
-  createDaemonNotRunningError,
-  getDaemonClient,
-} from "../../utils/daemon-client.ts";
+import { createDaemonNotRunningError, getDaemonClient } from "../../utils/daemon-client.ts";
 import { spinner } from "../../utils/prompts.tsx";
 import type { YargsInstance } from "../../utils/yargs.ts";
 
@@ -46,7 +43,8 @@ export async function handler(argv: ListArgs) {
 
   try {
     // Check if daemon is running
-    if (!(await checkDaemonRunning())) {
+    const health = await parseResult(v2Client.health.index.$get());
+    if (!health.ok) {
       s.stop("Failed to fetch library items");
       throw createDaemonNotRunningError();
     }
@@ -54,7 +52,7 @@ export async function handler(argv: ListArgs) {
     s.start("Fetching library items...");
 
     const client = getDaemonClient();
-    const query: any = {};
+    const query: unknown = {};
 
     if (argv.source) query.source = argv.source;
     if (argv.tags) query.tags = argv.tags.split(",").map((tag) => tag.trim());

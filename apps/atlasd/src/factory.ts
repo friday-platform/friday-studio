@@ -1,3 +1,4 @@
+import type { AtlasDaemon } from "@atlas/atlasd";
 import type { WorkspaceManager } from "@atlas/workspace";
 import { cors } from "hono/cors";
 import { createFactory } from "hono/factory";
@@ -30,6 +31,9 @@ export interface AppContext {
 
   // Library storage methods
   getLibraryStorage(): LibraryStorageAdapter;
+
+  // Core daemon access
+  daemon: AtlasDaemon;
 }
 
 // Define variables available in context

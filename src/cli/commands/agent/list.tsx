@@ -1,12 +1,9 @@
+import { parseResult, client as v2Client } from "@atlas/client/v2";
 import { ConfigLoader } from "@atlas/config";
 import { FilesystemConfigAdapter } from "@atlas/storage";
 import { render } from "ink";
 import { AgentListComponent } from "../../modules/agents/agent-list-component.tsx";
-import {
-  checkDaemonRunning,
-  createDaemonNotRunningError,
-  getDaemonClient,
-} from "../../utils/daemon-client.ts";
+import { createDaemonNotRunningError, getDaemonClient } from "../../utils/daemon-client.ts";
 
 interface ListArgs {
   json?: boolean;
@@ -25,7 +22,8 @@ export const builder = {
 export const handler = async (argv: ListArgs): Promise<void> => {
   try {
     // Check if daemon is running
-    if (!(await checkDaemonRunning())) {
+    const health = await parseResult(v2Client.health.index.$get());
+    if (!health.ok) {
       throw createDaemonNotRunningError();
     }
 
@@ -43,8 +41,11 @@ export const handler = async (argv: ListArgs): Promise<void> => {
         workspaceName = workspace.name;
       } catch {
         // Try to find by name if ID lookup failed
-        const allWorkspaces = await client.listWorkspaces();
-        const foundWorkspace = allWorkspaces.find((w) => w.name === argv.workspace);
+        const allWorkspaces = await parseResult(v2Client.workspace.index.$get());
+        if (!allWorkspaces.ok) {
+          throw new Error("Failed to fetch workspaces");
+        }
+        const foundWorkspace = allWorkspaces.data.find((w) => w.name === argv.workspace);
         if (foundWorkspace) {
           workspaceId = foundWorkspace.id;
           workspaceName = foundWorkspace.name;
@@ -61,8 +62,11 @@ export const handler = async (argv: ListArgs): Promise<void> => {
         const currentWorkspaceName = config.workspace.workspace.name;
 
         // Find workspace by name in daemon
-        const allWorkspaces = await client.listWorkspaces();
-        const currentWorkspace = allWorkspaces.find((w) => w.name === currentWorkspaceName);
+        const allWorkspaces = await parseResult(v2Client.workspace.index.$get());
+        if (!allWorkspaces.ok) {
+          throw new Error("Failed to fetch workspaces");
+        }
+        const currentWorkspace = allWorkspaces.data.find((w) => w.name === currentWorkspaceName);
 
         if (currentWorkspace) {
           workspaceId = currentWorkspace.id;

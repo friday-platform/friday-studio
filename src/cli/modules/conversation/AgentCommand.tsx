@@ -29,7 +29,7 @@ export function AgentCommand({ onComplete }: AgentCommandProps) {
     conversationClient.sendPrompt(conversationSessionId, {
       workspaceId: selectedWorkspace,
       promptName: "agent_describe",
-      agentId: agentId,
+      agentId,
     });
 
     onComplete();

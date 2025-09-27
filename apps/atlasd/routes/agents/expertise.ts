@@ -1,4 +1,5 @@
 import { AgentRegistry } from "@atlas/core";
+import { stringifyError } from "@atlas/utils";
 import { describeRoute, resolver, validator } from "hono-openapi";
 import { daemonFactory } from "../../src/factory.ts";
 import { agentExpertiseSchema, agentIdParamsSchema, errorResponseSchema } from "./schemas.ts";
@@ -44,14 +45,7 @@ getAgentExpertise.get(
 
       return c.json(response);
     } catch (error) {
-      return c.json(
-        {
-          error: `Failed to get agent expertise: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        },
-        500,
-      );
+      return c.json({ error: `Failed to get agent expertise: ${stringifyError(error)}` }, 500);
     }
   },
 );

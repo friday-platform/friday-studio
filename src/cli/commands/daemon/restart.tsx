@@ -1,4 +1,5 @@
-import { getAtlasClient } from "@atlas/client";
+import { client, parseResult } from "@atlas/client/v2";
+import { sleep, stringifyError } from "@atlas/utils";
 import { errorOutput, infoOutput, successOutput } from "../../utils/output.ts";
 import type { YargsInstance } from "../../utils/yargs.ts";
 
@@ -51,39 +52,34 @@ export const handler = async (argv: RestartArgs): Promise<void> => {
     infoOutput("Checking daemon status...");
 
     let wasRunning = false;
-    const client = getAtlasClient({ url: `http://localhost:${port}`, timeout: 5000 });
-    try {
-      const status = await client.getDaemonStatus();
-      wasRunning = true;
-
-      // Check for active workspaces
-      if (status.activeWorkspaces > 0 && !argv.force) {
-        errorOutput(
-          `Daemon has ${status.activeWorkspaces} active workspace(s). ` +
-            `Use --force to restart anyway or wait for workspaces to become idle.`,
-        );
-        infoOutput(`Active workspaces: ${status.workspaces.join(", ")}`);
-        Deno.exit(1);
-      }
-
-      // Stop the daemon
-      infoOutput("Stopping existing daemon...");
-      try {
-        await client.shutdown();
-
-        // Wait for shutdown
-        await new Promise((resolve) => setTimeout(resolve, 3000));
-      } catch {
-        // Daemon might have already stopped
-      }
-    } catch {
-      // Daemon not running, that's fine
+    const res = await parseResult(client.daemon.status.$get());
+    // Daemon not running, that's fine
+    if (!res.ok) {
+      return;
     }
+    const status = res.data;
+    wasRunning = true;
+
+    // Check for active workspaces
+    if (status.activeWorkspaces > 0 && !argv.force) {
+      errorOutput(
+        `Daemon has ${status.activeWorkspaces} active workspace(s). ` +
+          `Use --force to restart anyway or wait for workspaces to become idle.`,
+      );
+      infoOutput(`Active workspaces: ${status.workspaces.join(", ")}`);
+      Deno.exit(1);
+    }
+
+    // Stop the daemon
+    infoOutput("Stopping existing daemon...");
+
+    await client.daemon.shutdown.$post();
+    await sleep(3000);
 
     // Verify daemon is stopped
     if (wasRunning) {
-      const stillRunning = await client.isHealthy();
-      if (stillRunning) {
+      const stillRunning = await parseResult(client.health.index.$get());
+      if (stillRunning.ok) {
         errorOutput("Failed to stop existing daemon");
         Deno.exit(1);
       } else {
@@ -129,18 +125,17 @@ export const handler = async (argv: RestartArgs): Promise<void> => {
     }
 
     // Wait a moment and verify it's running
-    await new Promise((resolve) => setTimeout(resolve, 3000));
+    await sleep(3000);
 
-    const newClient = getAtlasClient({ url: `http://localhost:${port}` });
-    const isRunning = await newClient.isHealthy();
-    if (isRunning) {
+    const isRunning = await parseResult(client.health.index.$get());
+    if (isRunning.ok) {
       successOutput(`Atlas daemon restarted successfully on port ${port}`);
     } else {
       errorOutput("Daemon failed to start after restart");
       Deno.exit(1);
     }
   } catch (error) {
-    errorOutput(error instanceof Error ? error.message : String(error));
+    errorOutput(stringifyError(error));
     Deno.exit(1);
   }
 };
