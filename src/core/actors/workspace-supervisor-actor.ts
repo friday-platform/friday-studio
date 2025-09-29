@@ -362,9 +362,8 @@ export class WorkspaceSupervisorActor implements BaseActor {
     }
   }
 
-  async shutdown(): Promise<void> {
+  shutdown(): void {
     this.cleanup();
-    await this.shutdownMemorySystems();
   }
 
   getActiveSessionCount(): number {
@@ -461,8 +460,9 @@ export class WorkspaceSupervisorActor implements BaseActor {
           const sections = this.parseRulesContent(rulesContent);
 
           // Also initialize MECMF for better procedural memory classification
-          const { setupMECMF, createConversationContext, MemorySource, CoALAMemoryType } =
-            await import("@atlas/memory");
+          const { setupMECMF, createConversationContext, MemorySource } = await import(
+            "@atlas/memory"
+          );
           const workspaceScope = {
             id: this.workspaceId,
             workspaceId: this.workspaceId,
@@ -492,7 +492,7 @@ export class WorkspaceSupervisorActor implements BaseActor {
                 ingestionTime: Date.now().toString(),
               },
               {
-                memoryType: CoALAMemoryType.PROCEDURAL,
+                memoryType: "procedural",
                 tags: ["rules", "procedural", "workspace", "read-only", section.slug],
                 relevanceScore: 0.95,
                 confidence: 1.0,
@@ -578,41 +578,5 @@ export class WorkspaceSupervisorActor implements BaseActor {
     }
 
     return sections;
-  }
-
-  /**
-   * Analyze signal with memory context to provide better session planning
-   */
-  async analyzeSignalWithMemory(
-    signal: IWorkspaceSignal,
-  ): Promise<{ relevantMemories: unknown[]; analysisContext: string; suggestedAgents: string[] }> {
-    if (!this.memoryCoordinator) {
-      this.logger.debug("Memory coordinator not available - using fallback signal analysis");
-      return {
-        relevantMemories: [],
-        analysisContext: "No memory context available",
-        suggestedAgents: [],
-      };
-    }
-
-    try {
-      const analysis = await this.memoryCoordinator.analyzeSignalWithMemory(signal);
-
-      this.logger.info("Signal analyzed with memory context", {
-        signalId: signal.id,
-        relevantMemories: analysis.relevantMemories.length,
-        suggestedAgents: analysis.suggestedAgents.length,
-      });
-
-      return analysis;
-    } catch (error) {
-      this.logger.error("Failed to analyze signal with memory", { signalId: signal.id, error });
-
-      return {
-        relevantMemories: [],
-        analysisContext: "Memory analysis failed",
-        suggestedAgents: [],
-      };
-    }
   }
 }

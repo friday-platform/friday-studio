@@ -1,4 +1,4 @@
-No Svelte config file found in /Users/ericskram/code/tempest/atlas-env/worktrees/type-cleanup-9-26 - using SvelteKit's default configuration without an adapter.
+No Svelte config file found in /Users/odk/p/tempest/atlas - using SvelteKit's default configuration without an adapter.
 # Knip report
 
 ## Unused files (10)
@@ -25,19 +25,6 @@ No Svelte config file found in /Users/ericskram/code/tempest/atlas-env/worktrees
 | @atlas/agent-sdk         | apps/atlasd/package.json:8:6      | error    |
 | @hono/standard-validator | package.json:31:6                 | error    |
 | @biomejs/biome           | package.json:30:6                 | error    |
-
-## Unused devDependencies (1)
-
-| Name             | Location                                | Severity |
-| :--------------- | :-------------------------------------- | :------- |
-| electron-builder | tools/atlas-installer/package.json:37:6 | warn     |
-
-## Unlisted binaries (2)
-
-| Name             | Location                           | Severity |
-| :--------------- | :--------------------------------- | :------- |
-| electron-builder | tools/atlas-installer/package.json | error    |
-| electron         | tools/atlas-installer/package.json | error    |
 
 ## Unresolved imports (2)
 

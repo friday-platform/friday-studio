@@ -5,8 +5,7 @@
  * Provides memory coordination between WorkspaceSupervisor and SessionSupervisor
  */
 
-import type { IAtlasScope, IWorkspaceSignal } from "../../../src/types/core.ts";
-import { extractSearchTerms } from "../../../src/utils/prompt-tokenizer.ts";
+import type { IAtlasScope } from "../../../src/types/core.ts";
 import { type CoALAMemoryEntry, CoALAMemoryManager, type CoALAMemoryType } from "./coala-memory.ts";
 
 export class SupervisorMemoryCoordinator {
@@ -118,102 +117,5 @@ export class SupervisorMemoryCoordinator {
 
     // Default to semantic for factual content
     return "semantic";
-  }
-
-  // WorkspaceSupervisor Memory Operations
-  async analyzeSignalWithMemory(
-    signal: IWorkspaceSignal,
-  ): Promise<{
-    relevantMemories: CoALAMemoryEntry[];
-    analysisContext: string;
-    suggestedAgents: string[];
-  }> {
-    // Extract searchable content from signal
-    const signalContent = extractSearchTerms(signal);
-
-    // Use enhanced memory retrieval with vector search for better relevance
-    const memoryResults = await this.workspaceMemory.getRelevantMemoriesForPrompt(signalContent, {
-      includeWorking: false, // Don't include working memory for signal analysis
-      includeEpisodic: true, // Include past experiences
-      includeSemantic: true, // Include knowledge and concepts
-      includeProcedural: true, // Include workflows and patterns
-      limit: 15,
-      minSimilarity: 0.3,
-      tags: undefined, // Search all tags
-    });
-
-    // Separate memories by type for targeted analysis
-    const semanticMemories = memoryResults.memories.filter((m) => m.memoryType === "semantic");
-    const proceduralMemories = memoryResults.memories.filter((m) => m.memoryType === "procedural");
-    const episodicMemories = memoryResults.memories.filter((m) => m.memoryType === "episodic");
-
-    // Prioritize procedural memories for workflow patterns
-    const prioritizedMemories = [
-      ...proceduralMemories.slice(0, 5), // Top procedural memories first
-      ...semanticMemories.slice(0, 5), // Then semantic knowledge
-      ...episodicMemories.slice(0, 5), // Finally past experiences
-    ];
-
-    // Extract agent suggestions from memory patterns
-    const suggestedAgents = this.extractAgentSuggestions(prioritizedMemories);
-
-    // Create analysis context
-    const analysisContext = this.createAnalysisContext(prioritizedMemories, signal);
-
-    // Remember this signal analysis for future reference
-    this.workspaceMemory.rememberWithMetadata(
-      `signal-analysis-${signal.id || Date.now()}`,
-      {
-        signal: signalContent,
-        relevantMemories: JSON.stringify(prioritizedMemories.map((m) => m.id)),
-        suggestedAgents: JSON.stringify(suggestedAgents),
-        analysisResult: analysisContext,
-        vectorSearchUsed: "true",
-        searchTerms: JSON.stringify(memoryResults.processedPrompt.tokens),
-      },
-      {
-        memoryType: "episodic",
-        tags: ["signal-analysis", "workspace-decision", "vector-enhanced"],
-        relevanceScore: 0.7, // Higher relevance since using vector search
-      },
-    );
-
-    return { relevantMemories: prioritizedMemories, analysisContext, suggestedAgents };
-  }
-
-  // Private helper methods
-  private extractAgentSuggestions(memories: CoALAMemoryEntry[]): string[] {
-    const agentMentions = new Map<string, number>();
-
-    for (const memory of memories) {
-      if (memory.tags.includes("agent-result")) {
-        const agentTag = memory.tags.find((tag: string) => tag.startsWith("agent-"));
-        if (agentTag) {
-          const agentId = agentTag.replace("agent-", "");
-          agentMentions.set(agentId, (agentMentions.get(agentId) || 0) + 1);
-        }
-      }
-    }
-
-    return Array.from(agentMentions.entries())
-      .sort(([, a], [, b]) => b - a)
-      .slice(0, 3)
-      .map(([agentId, _]) => agentId);
-  }
-
-  private createAnalysisContext(memories: CoALAMemoryEntry[], _signal: IWorkspaceSignal): string {
-    const patterns = memories
-      .filter((m) => m.tags.includes("pattern"))
-      .map((m) => m.content)
-      .slice(0, 3);
-
-    return (
-      `Signal analysis based on ${memories.length} relevant memories. ` +
-      `Identified patterns: ${
-        patterns.length > 0
-          ? patterns.map((p) => (typeof p === "string" ? p : p.type)).join(", ")
-          : "none"
-      }`
-    );
   }
 }

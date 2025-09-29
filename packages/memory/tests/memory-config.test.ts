@@ -174,88 +174,6 @@ Deno.test("MemoryConfigManager - builds empty context when not included", () => 
   configManager.cleanup();
 });
 
-Deno.test("MemoryConfigManager - remembers with scope-specific configuration", () => {
-  const configManager = new MemoryConfigManager(mockMemoryConfig);
-  const scope = new AtlasScope();
-  const memoryManager = configManager.getMemoryManager(scope, "agent");
-
-  // Remember with scope configuration
-  expect(() => {
-    configManager.rememberWithScope(
-      memoryManager,
-      "test-key",
-      "test-content",
-      "working",
-      "agent",
-      ["test-tag"],
-      0.8,
-    );
-  }).not.toThrow();
-
-  // Cleanup to prevent resource leaks
-  configManager.cleanup();
-});
-
-Deno.test("MemoryConfigManager - skips remembering when disabled", () => {
-  const disabledConfig = {
-    ...mockMemoryConfig,
-    agent: { ...mockMemoryConfig.agent, enabled: false },
-  };
-
-  const configManager = new MemoryConfigManager(disabledConfig);
-  const scope = new AtlasScope();
-  const memoryManager = configManager.getMemoryManager(scope, "agent");
-
-  // Should not throw when disabled
-  expect(() => {
-    configManager.rememberWithScope(
-      memoryManager,
-      "test-key",
-      "test-content",
-      "working",
-      "agent",
-      ["test-tag"],
-      0.8,
-    );
-  }).not.toThrow();
-
-  // Cleanup to prevent resource leaks
-  configManager.cleanup();
-});
-
-Deno.test("MemoryConfigManager - skips remembering when memory type disabled", () => {
-  const disabledTypeConfig = {
-    ...mockMemoryConfig,
-    agent: {
-      ...mockMemoryConfig.agent,
-      memory_types: {
-        ...mockMemoryConfig.agent.memory_types,
-        working: { ...mockMemoryConfig.agent.memory_types.working, enabled: false },
-      },
-    },
-  };
-
-  const configManager = new MemoryConfigManager(disabledTypeConfig);
-  const scope = new AtlasScope();
-  const memoryManager = configManager.getMemoryManager(scope, "agent");
-
-  // Should not throw when memory type disabled
-  expect(() => {
-    configManager.rememberWithScope(
-      memoryManager,
-      "test-key",
-      "test-content",
-      "working",
-      "agent",
-      ["test-tag"],
-      0.8,
-    );
-  }).not.toThrow();
-
-  // Cleanup to prevent resource leaks
-  configManager.cleanup();
-});
-
 Deno.test("MemoryConfigManager - cleanup disposes memory managers", () => {
   const configManager = new MemoryConfigManager(mockMemoryConfig);
   const scope = new AtlasScope();
@@ -280,40 +198,6 @@ Deno.test("MemoryConfigManager - generates unique memory keys", () => {
 
   // Should be different instances for different scopes
   expect(agentMemory1).not.toBe(agentMemory2);
-
-  // Cleanup to prevent resource leaks
-  configManager.cleanup();
-});
-
-Deno.test("MemoryConfigManager - calculates decay rates based on config", () => {
-  const configManager = new MemoryConfigManager(mockMemoryConfig);
-  const scope = new AtlasScope();
-  const memoryManager = configManager.getMemoryManager(scope, "agent");
-
-  // Remember with different memory types to test decay rate calculation
-  expect(() => {
-    configManager.rememberWithScope(
-      memoryManager,
-      "working-key",
-      "working content",
-      "working",
-      "agent",
-      ["working"],
-      0.8,
-    );
-  }).not.toThrow();
-
-  expect(() => {
-    configManager.rememberWithScope(
-      memoryManager,
-      "procedural-key",
-      "procedural content",
-      "procedural",
-      "agent",
-      ["procedural"],
-      0.8,
-    );
-  }).not.toThrow();
 
   // Cleanup to prevent resource leaks
   configManager.cleanup();

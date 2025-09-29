@@ -4,7 +4,6 @@
 export * from "./src/core/actors/session-supervisor-actor.ts";
 export * from "./src/core/actors/workspace-supervisor-actor.ts";
 export * from "./src/core/context.ts";
-export * from "./src/core/memory.ts";
 export * from "./src/core/messages.ts";
 export * from "./src/core/scope.ts";
 export * from "./src/core/session.ts";

@@ -6,7 +6,7 @@
  */
 
 import { logger } from "@atlas/logger";
-import { CoALAMemoryManager, type CoALAMemoryType } from "@atlas/memory";
+import { type CoALAMemoryEntry, CoALAMemoryManager } from "@atlas/memory";
 import { InMemoryStorageAdapter } from "@atlas/storage";
 import type { IAtlasScope } from "../types/core.ts";
 
@@ -89,7 +89,10 @@ export class MemoryConfigManager {
     const memoryKey = this.generateMemoryKey(scope, memoryScope);
 
     if (this.memoryInstances.has(memoryKey)) {
-      return this.memoryInstances.get(memoryKey);
+      const memoryManager = this.memoryInstances.get(memoryKey);
+      if (memoryManager) {
+        return memoryManager;
+      }
     }
 
     // Create new memory manager with scope-specific configuration
@@ -165,44 +168,6 @@ export class MemoryConfigManager {
     }
 
     return { systemContext, userContext };
-  }
-
-  /**
-   * Remember information with scope-appropriate configuration
-   */
-  rememberWithScope(
-    memoryManager: CoALAMemoryManager,
-    key: string,
-    content: unknown,
-    memoryType: CoALAMemoryType,
-    memoryScope: "agent" | "session" | "workspace",
-    tags: string[] = [],
-    relevanceScore: number = 0.5,
-  ): void {
-    const scopeConfig = this.config[memoryScope];
-
-    if (!scopeConfig.enabled) {
-      return;
-    }
-
-    const typeConfig = scopeConfig.memory_types[memoryType];
-    if (!typeConfig?.enabled) {
-      return;
-    }
-
-    // Apply scope-specific tags
-    const scopedTags = [...tags, memoryScope, `scope:${memoryScope}`];
-
-    memoryManager.rememberWithMetadata(key, content, {
-      memoryType,
-      tags: scopedTags,
-      relevanceScore,
-      confidence: 1.0,
-      decayRate: this.calculateDecayRate(typeConfig),
-    });
-
-    // Enforce memory limits
-    this.enforceMemoryLimits(memoryManager, memoryType, typeConfig);
   }
 
   /**
@@ -283,7 +248,7 @@ export class MemoryConfigManager {
     userPrompt: string,
     limit: number,
     config: MemoryConfiguration,
-  ): unknown[] {
+  ): CoALAMemoryEntry[] {
     if (
       !config.memory_types.working?.enabled &&
       !config.memory_types.episodic?.enabled &&
@@ -299,7 +264,7 @@ export class MemoryConfigManager {
     memoryManager: CoALAMemoryManager,
     limit: number,
     config: MemoryConfiguration,
-  ): unknown[] {
+  ): CoALAMemoryEntry[] {
     if (!config.memory_types.procedural?.enabled) {
       return [];
     }
@@ -311,46 +276,11 @@ export class MemoryConfigManager {
     memoryManager: CoALAMemoryManager,
     limit: number,
     config: MemoryConfiguration,
-  ): unknown[] {
+  ): CoALAMemoryEntry[] {
     if (!config.memory_types.procedural?.enabled) {
       return [];
     }
 
     return memoryManager.queryMemories({ tags: ["failure"], minRelevance: 0.5, limit });
-  }
-
-  private calculateDecayRate(typeConfig: MemoryTypeConfig): number {
-    // Calculate decay rate based on max age configuration
-    if (typeConfig.max_age_hours) {
-      return 0.1 / (typeConfig.max_age_hours / 24); // Faster decay for shorter lifespans
-    }
-    if (typeConfig.max_age_days) {
-      return 0.05 / typeConfig.max_age_days; // Slower decay for longer lifespans
-    }
-    return 0.05; // Default decay rate
-  }
-
-  private enforceMemoryLimits(
-    memoryManager: CoALAMemoryManager,
-    memoryType: CoALAMemoryType,
-    typeConfig: MemoryTypeConfig,
-  ): void {
-    const memories = memoryManager.getMemoriesByType(memoryType);
-
-    if (memories.length > typeConfig.max_entries) {
-      // Remove oldest memories that exceed the limit
-      const sortedByAge = memories.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
-
-      const toRemove = sortedByAge.slice(0, memories.length - typeConfig.max_entries);
-      for (const memory of toRemove) {
-        memoryManager.forget(memory.id);
-      }
-
-      logger.debug("Enforced memory limits", {
-        memoryType,
-        removed: toRemove.length,
-        remaining: typeConfig.max_entries,
-      });
-    }
   }
 }

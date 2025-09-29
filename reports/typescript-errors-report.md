@@ -1,17 +1,17 @@
 # TypeScript & Lint Analysis Report
 
-**Generated:** 2025-09-27T21:19:59.538Z
+**Generated:** 2025-09-29T13:53:41.361Z
 
-**Total Issues:** 573 (425 type errors, 43 deno lint violations, 105 biome
+**Total Issues:** 558 (410 type errors, 43 deno lint violations, 105 biome
 violations)
 
 ## Summary Statistics
 
 ### TypeScript Errors
 
-- **Total errors:** 425
-- **Unique error types:** 32
-- **Files with errors:** 96
+- **Total errors:** 410
+- **Unique error types:** 31
+- **Files with errors:** 93
 
 ### Deno Lint Violations
 
@@ -31,20 +31,20 @@ violations)
 
 | Error Code | Count | Percentage | Description                                  |
 | ---------- | ----- | ---------- | -------------------------------------------- |
-| TS2339     | 94    | 22.1%      | Property does not exist on type              |
-| TS2322     | 85    | 20.0%      | Type not assignable                          |
-| TS18046    | 70    | 16.5%      | Value is of type 'unknown'                   |
-| TS2345     | 51    | 12.0%      | Argument type not assignable                 |
-| TS18048    | 23    | 5.4%       | Value is possibly 'undefined'                |
-| TS6133     | 15    | 3.5%       | Variable declared but never used             |
-| TS2532     | 14    | 3.3%       | Object is possibly 'undefined'               |
-| TS6196     | 7     | 1.6%       | Catch clause variable unused                 |
-| TS7053     | 7     | 1.6%       | Element implicitly has any type              |
-| TS2305     | 6     | 1.4%       | Module has no exported member                |
-| TS7006     | 6     | 1.4%       | Parameter implicitly has any type            |
-| TS2571     | 6     | 1.4%       | Object is of type 'unknown'                  |
-| TS2531     | 6     | 1.4%       | Object is possibly 'null'                    |
-| TS2694     | 6     | 1.4%       | Namespace has no exported member             |
+| TS2339     | 89    | 21.7%      | Property does not exist on type              |
+| TS2322     | 84    | 20.5%      | Type not assignable                          |
+| TS18046    | 65    | 15.9%      | Value is of type 'unknown'                   |
+| TS2345     | 50    | 12.2%      | Argument type not assignable                 |
+| TS18048    | 23    | 5.6%       | Value is possibly 'undefined'                |
+| TS6133     | 15    | 3.7%       | Variable declared but never used             |
+| TS2532     | 14    | 3.4%       | Object is possibly 'undefined'               |
+| TS6196     | 7     | 1.7%       | Catch clause variable unused                 |
+| TS7006     | 6     | 1.5%       | Parameter implicitly has any type            |
+| TS2571     | 6     | 1.5%       | Object is of type 'unknown'                  |
+| TS7053     | 6     | 1.5%       | Element implicitly has any type              |
+| TS2531     | 6     | 1.5%       | Object is possibly 'null'                    |
+| TS2694     | 6     | 1.5%       | Namespace has no exported member             |
+| TS2305     | 5     | 1.2%       | Module has no exported member                |
 | TS2554     | 3     | 0.7%       | Argument count mismatch                      |
 | TS6236     | 3     | 0.7%       | TypeScript error                             |
 | TS2769     | 2     | 0.5%       | No overload matches call                     |
@@ -54,13 +54,12 @@ violations)
 | TS2578     | 2     | 0.5%       | Unused ts-expect-error directive             |
 | TS4104     | 2     | 0.5%       | Parameter property readonly/mutable conflict |
 | TS18047    | 2     | 0.5%       | Value is possibly 'null'                     |
+| TS2307     | 1     | 0.2%       | Cannot find module                           |
 | TS2353     | 1     | 0.2%       | Object literal has unknown properties        |
 | TS2741     | 1     | 0.2%       | Property is missing in type                  |
 | TS2538     | 1     | 0.2%       | TypeScript error                             |
 | TS2540     | 1     | 0.2%       | Cannot assign to read-only property          |
 | TS6138     | 1     | 0.2%       | Property declared but never used             |
-| TS2724     | 1     | 0.2%       | Module has no default export                 |
-| TS2559     | 1     | 0.2%       | Type has no common properties                |
 | TS2740     | 1     | 0.2%       | Type is missing index signature              |
 | TS7017     | 1     | 0.2%       | Type has no index signature                  |
 
@@ -92,8 +91,8 @@ violations)
 | complexity/noUselessFragments           | 1     | 1.0%       | 1W                    |
 | complexity/noUselessSwitchCase          | 1     | 1.0%       | 1W                    |
 | suspicious/noConfusingVoidType          | 1     | 1.0%       | 1W                    |
-| suspicious/noIrregularWhitespace        | 1     | 1.0%       | 1W                    |
 | complexity/noImportantStyles            | 1     | 1.0%       | 1W                    |
+| suspicious/noIrregularWhitespace        | 1     | 1.0%       | 1W                    |
 | suspicious/useIterableCallbackReturn    | 1     | 1.0%       | 1E                    |
 | suspicious/noImplicitAnyLet             | 1     | 1.0%       | 1W                    |
 | correctness/useHookAtTopLevel           | 1     | 1.0%       | 1W                    |
@@ -122,19 +121,19 @@ violations)
 | src/cli/utils/output.ts                                | 3           | 3         | 3     | 9     |
 | src/core/storage/deno-kv-storage.ts                    | 7           | 1         | 1     | 9     |
 | packages/core/src/mcp-registry/web-discovery.ts        | 5           | 1         | 2     | 8     |
-| ... and 106 more files                                 |             |           |       |       |
+| ... and 104 more files                                 |             |           |       |       |
 
 ## Issues by Project
 
 | Project                 | Type Errors | Deno Lint | Biome | Total |
 | ----------------------- | ----------- | --------- | ----- | ----- |
-| src                     | 175         | 28        | 72    | 275   |
+| src                     | 159         | 28        | 72    | 259   |
 | packages/core           | 55          | 3         | 6     | 64    |
 | apps/atlasd             | 57          | 0         | 2     | 59    |
 | packages/signals        | 23          | 6         | 7     | 36    |
 | packages/client         | 26          | 0         | 0     | 26    |
 | packages/storage        | 20          | 5         | 1     | 26    |
-| apps/web-client         | 16          | 0         | 2     | 18    |
+| apps/web-client         | 17          | 0         | 2     | 19    |
 | other                   | 12          | 0         | 2     | 14    |
 | packages/cron           | 10          | 0         | 0     | 10    |
 | packages/notifications  | 9           | 0         | 0     | 9     |
@@ -184,7 +183,7 @@ violations)
 Based on the dependency graph, here's a recommended order for fixing errors:
 
 1. **Start with leaf nodes** (no other packages depend on these):
-   - web-client (16 errors)
+   - web-client (17 errors)
    - signals (23 errors)
    - openapi-client (1 errors)
 
@@ -228,10 +227,6 @@ Issues that appear across multiple files (potential systematic problems):
   - Files affected: 4
 
 - **[Type] TS2345**: "Argument of type 'unknown' is not assignable to pa..."
-  - Occurrences: 8
-  - Files affected: 6
-
-- **[Type] TS7053**: "Element implicitly has an 'any' type because expre..."
   - Occurrences: 7
   - Files affected: 5
 
@@ -249,9 +244,9 @@ Issues that appear across multiple files (potential systematic problems):
   - Occurrences: 6
   - Files affected: 3
 
-- **[Type] TS2305**: "Module '"file..."
+- **[Type] TS7053**: "Element implicitly has an 'any' type because expre..."
   - Occurrences: 6
-  - Files affected: 3
+  - Files affected: 4
 
 - **[Type] TS2322**: "Type 'unknown' is not assignable to type 'Record<s..."
   - Occurrences: 5
