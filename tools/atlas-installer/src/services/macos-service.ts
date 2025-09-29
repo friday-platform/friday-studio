@@ -2,7 +2,9 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { CONFIG } from "../config";
+import type { ExecOptions } from "node:child_process";
 import type { IPCResult } from "../types";
+import { getErrorMessage } from "../utils/errors";
 import { safeExec } from "../utils/process";
 
 const PLIST_PATH = path.join(os.homedir(), "Library/LaunchAgents/com.tempestdx.atlas.plist");
@@ -10,7 +12,7 @@ const PLIST_PATH = path.join(os.homedir(), "Library/LaunchAgents/com.tempestdx.a
 /**
  * Execute command silently, ignoring errors
  */
-async function runQuietly(cmd: string, options?: unknown): Promise<void> {
+async function runQuietly(cmd: string, options?: ExecOptions): Promise<void> {
   try {
     await safeExec(cmd, options);
   } catch {
@@ -58,7 +60,8 @@ export async function installMacOSService(
       }
     } catch (error) {
       // Check if it's because service is already installed (shouldn't happen with --force)
-      if (error.message?.includes("already installed")) {
+      const errorMessage = getErrorMessage(error);
+      if (errorMessage.includes("already installed")) {
         // Service already exists, try to just start it
         console.log("Service already installed, attempting to start it");
       } else {
@@ -81,7 +84,7 @@ export async function installMacOSService(
 
     return { success: true, message: "Atlas service installed successfully" };
   } catch (error) {
-    return { success: false, error: `Installation failed: ${error.message || error}` };
+    return { success: false, error: `Installation failed: ${getErrorMessage(error)}` };
   }
 }
 
@@ -109,7 +112,7 @@ export async function uninstallMacOSService(
 
     return { success: true, message: "Atlas service uninstalled" };
   } catch (error) {
-    return { success: false, error: `Uninstall failed: ${error.message || error}` };
+    return { success: false, error: `Uninstall failed: ${getErrorMessage(error)}` };
   }
 }
 
@@ -127,6 +130,6 @@ export async function stopMacOSService(
 
     return { success: true, message: "Atlas service stopped" };
   } catch (error) {
-    return { success: false, error: `Stop failed: ${error.message || error}` };
+    return { success: false, error: `Stop failed: ${getErrorMessage(error)}` };
   }
 }

@@ -3,6 +3,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { CONFIG } from "../config";
 import type { IPCResult } from "../types";
+import { getErrorMessage } from "../utils/errors";
 import { safeExec } from "../utils/process";
 
 const TASK_NAME = "Atlas Daemon";
@@ -87,7 +88,7 @@ export async function installWindowsService(
 
     return { success: true, message: "Atlas service installed successfully" };
   } catch (error) {
-    return { success: false, error: `Installation failed: ${error.message || error}` };
+    return { success: false, error: `Installation failed: ${getErrorMessage(error)}` };
   }
 }
 
@@ -125,7 +126,7 @@ export async function uninstallWindowsService(
 
     return { success: true, message: "Atlas service uninstalled" };
   } catch (error) {
-    return { success: false, error: `Uninstall failed: ${error.message || error}` };
+    return { success: false, error: `Uninstall failed: ${getErrorMessage(error)}` };
   }
 }
 
@@ -151,7 +152,7 @@ export async function stopWindowsService(
 
     return { success: true, message: "Atlas service stopped" };
   } catch (error) {
-    return { success: false, error: `Stop failed: ${error.message || error}` };
+    return { success: false, error: `Stop failed: ${getErrorMessage(error)}` };
   }
 }
 
