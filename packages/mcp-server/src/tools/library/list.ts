@@ -1,9 +1,8 @@
+import { createAtlasClient } from "@atlas/oapi-client";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { type LibrarySearchResult, LibrarySearchResultSchema } from "../../schemas.ts";
 import type { ToolContext } from "../types.ts";
-import { createSuccessResponse } from "../types.ts";
-import { buildLibraryQueryParams, fetchWithTimeout, handleDaemonResponse } from "../utils.ts";
+import { buildLibraryQueryParams, createErrorResponse, createSuccessResponse } from "../utils.ts";
 
 export function registerLibraryListTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(
@@ -57,41 +56,36 @@ export function registerLibraryListTool(server: McpServer, ctx: ToolContext) {
     async ({ query, type, tags, since, until, limit = 50, offset = 0 }) => {
       ctx.logger.info("MCP library_list called", { query, type, tags, limit, offset });
 
-      try {
-        // Build query parameters using helper method
-        const params = buildLibraryQueryParams({ query, type, tags, since, until, limit, offset });
+      // Build query parameters using helper method
+      const params = buildLibraryQueryParams({ query, type, tags, since, until, limit, offset });
 
-        const queryString = params.toString();
-        const url = queryString
-          ? `${ctx.daemonUrl}/api/library?${queryString}`
-          : `${ctx.daemonUrl}/api/library`;
-
-        const response = await fetchWithTimeout(url);
-        const raw = await handleDaemonResponse(response, "library_list", ctx.logger);
-        const parsed = LibrarySearchResultSchema.safeParse(raw);
-        if (!parsed.success) {
-          throw new Error("Daemon API returned invalid library list result");
-        }
-        const result: LibrarySearchResult = parsed.data;
-
-        ctx.logger.info("MCP library_list response", {
-          totalItems: result.total,
-          returnedItems: result.items.length,
-          tookMs: result.took_ms,
+      const client = createAtlasClient();
+      const response = await client.GET("/api/library", { params: { query: params.toString() } });
+      if (response.error) {
+        ctx.logger.error("Failed to search library", {
+          query: params.toString(),
+          error: response.error,
         });
-
-        return createSuccessResponse({
-          items: result.items,
-          total: result.total,
-          query: result.query,
-          took_ms: result.took_ms,
-          source: "daemon_api",
-          timestamp: new Date().toISOString(),
-        });
-      } catch (error) {
-        ctx.logger.error("MCP library_list failed", { error });
-        throw error;
+        return createErrorResponse(
+          `Failed to search library: ${response.error.error || response.response.statusText}`,
+        );
       }
+      const searchResult = response.data;
+
+      ctx.logger.info("MCP library_list response", {
+        totalItems: searchResult.total,
+        returnedItems: searchResult.items.length,
+        tookMs: searchResult.took_ms,
+      });
+
+      return createSuccessResponse({
+        items: searchResult.items,
+        total: searchResult.total,
+        query: searchResult.query,
+        took_ms: searchResult.took_ms,
+        source: "daemon_api",
+        timestamp: new Date().toISOString(),
+      });
     },
   );
 }

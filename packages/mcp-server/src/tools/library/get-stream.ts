@@ -1,12 +1,8 @@
+import { createAtlasClient } from "@atlas/oapi-client";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import {
-  LibraryItemMetadataResponseSchema,
-  LibraryItemWithContentResponseSchema,
-} from "../../schemas.ts";
 import type { ToolContext } from "../types.ts";
-import { createSendNotification, createSuccessResponse } from "../types.ts";
-import { fetchWithTimeout, handleDaemonResponse } from "../utils.ts";
+import { createErrorResponse, createSendNotification, createSuccessResponse } from "../utils.ts";
 
 export function registerLibraryGetStreamTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(
@@ -59,18 +55,20 @@ export function registerLibraryGetStreamTool(server: McpServer, ctx: ToolContext
         }
 
         // First, get metadata
-        const metadataUrl = `${ctx.daemonUrl}/api/library/${itemId}`;
-        const metadataResponse = await fetchWithTimeout(metadataUrl);
-        const metadataRaw = await handleDaemonResponse(
-          metadataResponse,
-          "library_get_metadata",
-          ctx.logger,
-        );
-
-        const metadataParsed = LibraryItemMetadataResponseSchema.safeParse(metadataRaw);
-        if (!metadataParsed.success) {
-          throw new Error(`Library item not found: ${itemId}`);
+        const client = createAtlasClient();
+        const metadataResponse = await client.GET("/api/library/{itemId}", {
+          params: { path: { itemId } },
+        });
+        if (metadataResponse.error) {
+          ctx.logger.error("Failed to get library stream", {
+            itemId,
+            error: metadataResponse.error,
+          });
+          return createErrorResponse(
+            `Failed to get library stream for item '${itemId}': ${metadataResponse.error.error || metadataResponse.response.statusText}`,
+          );
         }
+        const libraryItem = metadataResponse.data;
 
         // Send metadata notification
         if (sendNotification) {
@@ -81,9 +79,9 @@ export function registerLibraryGetStreamTool(server: McpServer, ctx: ToolContext
               data: JSON.stringify({
                 type: "library_metadata",
                 itemId,
-                metadata: metadataParsed.data.item,
+                metadata: libraryItem,
                 timestamp: new Date().toISOString(),
-                message: `Found library item: ${metadataParsed.data.item.name}`,
+                message: `Found library item: ${libraryItem.item.name}`,
               }),
             },
           });
@@ -92,7 +90,7 @@ export function registerLibraryGetStreamTool(server: McpServer, ctx: ToolContext
         if (!includeContent) {
           // Return metadata only
           return createSuccessResponse({
-            item: metadataParsed.data.item,
+            item: libraryItem,
             source: "daemon_api",
             streaming: false,
             timestamp: new Date().toISOString(),
@@ -100,20 +98,22 @@ export function registerLibraryGetStreamTool(server: McpServer, ctx: ToolContext
         }
 
         // Get content
-        const contentUrl = `${ctx.daemonUrl}/api/library/${itemId}?content=true`;
-        const contentResponse = await fetchWithTimeout(contentUrl);
-        const contentRaw = await handleDaemonResponse(
-          contentResponse,
-          "library_get_content",
-          ctx.logger,
-        );
-        const contentParsed = LibraryItemWithContentResponseSchema.safeParse(contentRaw);
-        if (!contentParsed.success) {
-          throw new Error(`Failed to retrieve content for library item: ${itemId}`);
+        const contentResponse = await client.GET("/api/library/{itemId}", {
+          params: { path: { itemId }, query: { content: "true" } },
+        });
+        if (contentResponse.error) {
+          ctx.logger.error("Failed to get library stream content", {
+            itemId,
+            error: contentResponse.error,
+          });
+          return createErrorResponse(
+            `Failed to get library stream content for item '${itemId}': ${contentResponse.error.error || contentResponse.response.statusText}`,
+          );
         }
+        const libraryItemWithContent = contentResponse.data;
 
-        const content = contentParsed.data.content;
-        const totalSize = content.length;
+        const content = libraryItemWithContent.content;
+        const totalSize = content?.length ?? 0;
 
         // Send content size notification
         if (sendNotification) {
@@ -146,30 +146,27 @@ export function registerLibraryGetStreamTool(server: McpServer, ctx: ToolContext
           for (let i = 0; i < totalChunks; i++) {
             const start = i * chunkSize;
             const end = Math.min(start + chunkSize, totalSize);
-            const chunk = content.slice(start, end);
+            const chunk = content?.slice(start, end) ?? "";
             const chunkNumber = i + 1;
 
             // Send chunk via notification silently (no log line per chunk)
-            await sendNotification(
-              {
-                method: "notifications/message",
-                params: {
-                  level: "info",
-                  data: JSON.stringify({
-                    type: "library_content_chunk",
-                    itemId,
-                    chunkNumber,
-                    totalChunks,
-                    chunkSize: chunk.length,
-                    content: chunk,
-                    isLastChunk: chunkNumber === totalChunks,
-                    timestamp: new Date().toISOString(),
-                    message: `Chunk ${chunkNumber}/${totalChunks} (${chunk.length} bytes)`,
-                  }),
-                },
+            await sendNotification({
+              method: "notifications/message",
+              params: {
+                level: "info",
+                data: JSON.stringify({
+                  type: "library_content_chunk",
+                  itemId,
+                  chunkNumber,
+                  totalChunks,
+                  chunkSize: chunk.length,
+                  content: chunk,
+                  isLastChunk: chunkNumber === totalChunks,
+                  timestamp: new Date().toISOString(),
+                  message: `Chunk ${chunkNumber}/${totalChunks} (${chunk.length} bytes)`,
+                }),
               },
-              true,
-            ); // silent = true
+            });
 
             // Small delay between chunks to allow processing
             if (chunkNumber < totalChunks) {
@@ -196,7 +193,7 @@ export function registerLibraryGetStreamTool(server: McpServer, ctx: ToolContext
 
         // Return final response with metadata and streaming info
         const finalResult = {
-          item: contentParsed.data.item,
+          item: libraryItemWithContent,
           content: shouldStream
             ? `[Content streamed in ${Math.ceil(
                 totalSize / chunkSize,
@@ -246,7 +243,9 @@ export function registerLibraryGetStreamTool(server: McpServer, ctx: ToolContext
           itemId,
           error: error instanceof Error ? error.message : String(error),
         });
-        throw error;
+        return createErrorResponse(
+          `Failed to get library stream for item '${itemId}': ${error instanceof Error ? error.message : String(error)}`,
+        );
       }
     },
   );

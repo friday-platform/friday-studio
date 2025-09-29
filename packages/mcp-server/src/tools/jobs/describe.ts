@@ -3,13 +3,11 @@
  * Retrieves detailed information about a specific job through the daemon API
  */
 
-import { logger } from "@atlas/logger";
+import { client, parseResult } from "@atlas/client/v2";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { JobInfoSchema } from "../../schemas.ts";
 import type { ToolContext } from "../types.ts";
-import { createSuccessResponse } from "../types.ts";
-import { checkJobDiscoverable } from "../utils.ts";
+import { createErrorResponse, createSuccessResponse } from "../utils.ts";
 
 export function registerJobsDescribeTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(
@@ -27,55 +25,23 @@ export function registerJobsDescribeTool(server: McpServer, ctx: ToolContext) {
     async ({ workspaceId, jobName }) => {
       ctx.logger.info("MCP workspace_jobs_describe called", { workspaceId, jobName });
 
-      // SECURITY: Check job discoverability
-      const isDiscoverable = await checkJobDiscoverable(
-        ctx.daemonUrl,
-        workspaceId,
-        jobName,
-        ctx.logger,
+      const result = await parseResult(
+        client.workspace[":workspaceId"].jobs.$get({ param: { workspaceId } }),
       );
-      if (!isDiscoverable) {
-        ctx.logger.warn("Platform MCP: Blocked job access - not discoverable", {
-          workspaceId,
-          jobName,
-        });
-        throw Object.assign(
-          new Error(
-            `Job '${jobName}' is not discoverable in workspace '${workspaceId}'. Add it to discoverable.jobs in workspace.yml to access job details.`,
-          ),
-          { code: -32000 },
+      if (!result.ok) {
+        ctx.logger.error("Failed to list jobs", { workspaceId, error: result.error });
+        return createErrorResponse(
+          `Failed to list jobs for workspace '${workspaceId}': ${result.error}`,
         );
       }
-
-      try {
-        // Get all jobs and find the specific one
-        const response = await fetch(`${ctx.daemonUrl}/api/workspaces/${workspaceId}/jobs`);
-        logger.debug("JOB RESPONSE", { response });
-        if (!response.ok) {
-          const raw = await response.json().catch(() => null);
-          const parsed = z.object({ error: z.string() }).safeParse(raw);
-          const message = parsed.success ? parsed.data.error : response.statusText;
-          throw new Error(`Daemon API error: ${response.status} - ${message}`);
-        }
-
-        const rawJobs = await response.json().catch(() => null);
-        const jobsResult = z.array(JobInfoSchema).safeParse(rawJobs);
-        if (!jobsResult.success) {
-          throw new Error("Daemon API returned invalid jobs list");
-        }
-        const jobs = jobsResult.data;
-
-        const job = jobs.find((j) => j.name === jobName);
-
-        if (!job) {
-          throw new Error(`Job not found: ${jobName}`);
-        }
-
-        return createSuccessResponse({ job, workspaceId, source: "daemon_api" });
-      } catch (error) {
-        ctx.logger.error("MCP workspace_jobs_describe failed", { workspaceId, jobName, error });
-        throw error;
+      const jobs = result.data;
+      const job = jobs.find((j) => j.name === jobName);
+      if (!job) {
+        ctx.logger.error("Job not found", { workspaceId, jobName });
+        return createErrorResponse(`Job '${jobName}' not found in workspace '${workspaceId}'`);
       }
+
+      return createSuccessResponse({ job, workspaceId, source: "daemon_api" });
     },
   );
 }

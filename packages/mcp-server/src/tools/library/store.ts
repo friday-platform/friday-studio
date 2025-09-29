@@ -1,9 +1,8 @@
+import { createAtlasClient } from "@atlas/oapi-client";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { type LibraryStoreResponse, LibraryStoreResponseSchema } from "../../schemas.ts";
 import type { ToolContext } from "../types.ts";
-import { createSuccessResponse } from "../types.ts";
-import { fetchWithTimeout, handleDaemonResponse } from "../utils.ts";
+import { createErrorResponse, createSuccessResponse } from "../utils.ts";
 
 export function registerLibraryStoreTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(
@@ -85,55 +84,47 @@ export function registerLibraryStoreTool(server: McpServer, ctx: ToolContext) {
         session_id,
       });
 
-      try {
-        // Note: In the modular pattern, we don't have access to workspaceContext
-        // The workspace_id, session_id, and agent_ids should be passed explicitly
-        const contextualPayload = {
-          type,
-          name,
-          description,
-          content,
-          format,
-          tags,
-          workspace_id,
-          session_id,
-          agent_ids,
-          source,
-          metadata,
-        };
+      // Note: In the modular pattern, we don't have access to workspaceContext
+      // The workspace_id, session_id, and agent_ids should be passed explicitly
+      const contextualPayload = {
+        type,
+        name,
+        description,
+        content,
+        format,
+        tags,
+        workspace_id,
+        session_id,
+        agent_ids,
+        source,
+        metadata,
+      };
 
-        const response = await fetchWithTimeout(`${ctx.daemonUrl}/api/library`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(contextualPayload),
-        });
-
-        const raw = await handleDaemonResponse(response, "library_store", ctx.logger);
-        const parsed = LibraryStoreResponseSchema.safeParse(raw);
-        if (!parsed.success) {
-          throw new Error("Daemon API returned invalid library store response");
-        }
-        const result: LibraryStoreResponse = parsed.data;
-
-        ctx.logger.info("MCP library_store response", {
-          success: result.success,
-          itemId: result.itemId,
-          name: result.item?.name,
-        });
-
-        return createSuccessResponse({
-          success: result.success,
-          itemId: result.itemId,
-          message: result.message,
-          item: result.item,
-          path: result.path,
-          source: "daemon_api",
-          timestamp: new Date().toISOString(),
-        });
-      } catch (error) {
-        ctx.logger.error("MCP library_store failed", { name, type, error });
-        throw error;
+      const client = createAtlasClient();
+      const response = await client.POST("/api/library", { body: contextualPayload });
+      if (response.error) {
+        ctx.logger.error("Failed to store library item", { error: response.error });
+        return createErrorResponse(
+          `Failed to store library item: ${response.error.error || response.response.statusText}`,
+        );
       }
+      const storeResult = response.data;
+
+      ctx.logger.info("MCP library_store response", {
+        success: storeResult.success,
+        itemId: storeResult.itemId,
+        name: storeResult.item?.name,
+      });
+
+      return createSuccessResponse({
+        success: storeResult.success,
+        itemId: storeResult.itemId,
+        message: storeResult.message,
+        item: storeResult.item,
+        path: storeResult.path,
+        source: "daemon_api",
+        timestamp: new Date().toISOString(),
+      });
     },
   );
 }

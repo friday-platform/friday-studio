@@ -3,10 +3,11 @@
  * Retrieves detailed information about a specific agent through the daemon API
  */
 
+import { client, parseResult } from "@atlas/client/v2";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { ToolContext } from "../types.ts";
-import { createSuccessResponse } from "../types.ts";
+import { createErrorResponse, createSuccessResponse } from "../utils.ts";
 
 export function registerAgentsDescribeTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(
@@ -21,24 +22,20 @@ export function registerAgentsDescribeTool(server: McpServer, ctx: ToolContext) 
     async ({ workspaceId, agentId }) => {
       ctx.logger.info("MCP workspace_agents_describe called", { workspaceId, agentId });
 
-      try {
-        const response = await fetch(
-          `${ctx.daemonUrl}/api/workspaces/${workspaceId}/agents/${agentId}`,
+      const result = await parseResult(
+        client.workspace[":workspaceId"].agents[":agentId"].$get({
+          param: { workspaceId, agentId },
+        }),
+      );
+      if (!result.ok) {
+        ctx.logger.error("Failed to describe agent", { workspaceId, agentId, error: result.error });
+        return createErrorResponse(
+          `Failed to get agent '${agentId}' in workspace '${workspaceId}': ${result.error}`,
         );
-        if (!response.ok) {
-          const raw = await response.json().catch(() => null);
-          const parsed = z.object({ error: z.string() }).safeParse(raw);
-          const message = parsed.success ? parsed.data.error : response.statusText;
-          throw new Error(`Daemon API error: ${response.status} - ${message}`);
-        }
-
-        const agent = await response.json();
-
-        return createSuccessResponse({ agent, workspaceId, source: "daemon_api" });
-      } catch (error) {
-        ctx.logger.error("MCP workspace_agents_describe failed", { workspaceId, agentId, error });
-        throw error;
       }
+      const agent = result.data;
+
+      return createSuccessResponse({ agent, workspaceId, source: "daemon_api" });
     },
   );
 }

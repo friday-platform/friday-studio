@@ -1,7 +1,9 @@
 import { logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
+import { zValidator } from "@hono/zod-validator";
 import { join } from "@std/path";
 import { parse } from "@std/yaml";
+import { z } from "zod/v4";
 import { daemonFactory } from "../../src/factory.ts";
 import { createWorkspace } from "./create.ts";
 import { getWorkspace } from "./get.ts";
@@ -307,29 +309,35 @@ const workspacesRoutes = daemonFactory
     }
   })
   // Delete a workspace
-  .delete("/:workspaceId", async (c) => {
-    const ctx = c.get("app");
-    const workspaceId = c.req.param("workspaceId");
-    const force = c.req.query("force") === "true";
+  .delete(
+    "/:workspaceId",
+    zValidator("param", z.object({ workspaceId: z.string() })),
+    zValidator("query", z.object({ force: z.literal("true").optional() })),
+    async (c) => {
+      const { workspaceId } = c.req.valid("param");
+      const ctx = c.get("app");
 
-    try {
-      // Unregister signal types for this workspace via registrars
-      for (const registrar of ctx.daemon.signalRegistrars) {
-        try {
-          await Promise.resolve(registrar.unregisterWorkspace(workspaceId));
-        } catch (error) {
-          logger.warn("Signal registrar failed to unregister workspace", { workspaceId, error });
+      const force = c.req.valid("query").force === "true";
+
+      try {
+        // Unregister signal types for this workspace via registrars
+        for (const registrar of ctx.daemon.signalRegistrars) {
+          try {
+            await Promise.resolve(registrar.unregisterWorkspace(workspaceId));
+          } catch (error) {
+            logger.warn("Signal registrar failed to unregister workspace", { workspaceId, error });
+          }
         }
-      }
 
-      const manager = ctx.daemon.getWorkspaceManager();
-      await manager.deleteWorkspace(workspaceId, { force });
-      return c.json({ message: `Workspace ${workspaceId} deleted` });
-    } catch (error) {
-      logger.error("Failed to delete workspace", { error, workspaceId });
-      return c.json({ error: `Failed to delete workspace: ${stringifyError(error)}` }, 500);
-    }
-  });
+        const manager = ctx.daemon.getWorkspaceManager();
+        await manager.deleteWorkspace(workspaceId, { force });
+        return c.json({ message: `Workspace ${workspaceId} deleted` });
+      } catch (error) {
+        logger.error("Failed to delete workspace", { error, workspaceId });
+        return c.json({ error: `Failed to delete workspace: ${stringifyError(error)}` }, 500);
+      }
+    },
+  );
 
 // Mount individual endpoints
 workspacesRoutes.route("/:workspaceId", getWorkspace);

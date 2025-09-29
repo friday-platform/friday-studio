@@ -1,9 +1,8 @@
+import { createAtlasClient } from "@atlas/oapi-client";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { LibraryItemWithContentSchema } from "../../schemas.ts";
 import type { ToolContext } from "../types.ts";
-import { createSuccessResponse } from "../types.ts";
-import { fetchWithTimeout, handleDaemonResponse } from "../utils.ts";
+import { createErrorResponse, createSuccessResponse } from "../utils.ts";
 
 export function registerLibraryGetTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(
@@ -31,42 +30,26 @@ export function registerLibraryGetTool(server: McpServer, ctx: ToolContext) {
         throw new Error("itemId is required and must be a non-empty string");
       }
 
-      try {
-        const params = new URLSearchParams();
-        if (includeContent) params.set("content", "true");
-
-        const queryString = params.toString();
-        const url = queryString
-          ? `${ctx.daemonUrl}/api/library/${itemId}?${queryString}`
-          : `${ctx.daemonUrl}/api/library/${itemId}`;
-
-        const response = await fetchWithTimeout(url);
-        const result = await handleDaemonResponse(response, "library_get", ctx.logger);
-
-        const parsed = LibraryItemWithContentSchema.safeParse(result);
-        if (!parsed.success) {
-          throw new Error("Daemon API returned invalid library item");
-        }
-
-        const payload = {
-          ...parsed.data,
-          source: "daemon_api",
-          timestamp: new Date().toISOString(),
-        };
-
-        ctx.logger.info("MCP library_get response", {
-          itemId,
-          hasContent: includeContent && parsed.data.content !== undefined,
-        });
-
-        return createSuccessResponse(payload);
-      } catch (error) {
-        ctx.logger.error("MCP library_get failed", {
-          itemId,
-          error: error instanceof Error ? error.message : String(error),
-        });
-        throw error;
+      const client = createAtlasClient();
+      const response = await client.GET("/api/library/{itemId}", {
+        params: { path: { itemId }, query: { content: includeContent ? "true" : undefined } },
+      });
+      if (response.error) {
+        ctx.logger.error("Failed to get library item", { itemId, error: response.error });
+        return createErrorResponse(
+          `Failed to get library item '${itemId}': ${response.error.error || response.response.statusText}`,
+        );
       }
+      const libraryItem = response.data;
+
+      const payload = { ...libraryItem, source: "daemon_api", timestamp: new Date().toISOString() };
+
+      ctx.logger.info("MCP library_get response", {
+        itemId,
+        hasContent: includeContent && libraryItem.content !== undefined,
+      });
+
+      return createSuccessResponse(payload);
     },
   );
 }

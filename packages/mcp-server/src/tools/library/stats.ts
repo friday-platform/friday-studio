@@ -1,8 +1,7 @@
+import { createAtlasClient } from "@atlas/oapi-client";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { type LibraryStats, LibraryStatsSchema } from "../../schemas.ts";
 import type { ToolContext } from "../types.ts";
-import { createSuccessResponse } from "../types.ts";
-import { fetchWithTimeout, handleDaemonResponse } from "../utils.ts";
+import { createErrorResponse, createSuccessResponse } from "../utils.ts";
 
 export function registerLibraryStatsTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(
@@ -14,32 +13,29 @@ export function registerLibraryStatsTool(server: McpServer, ctx: ToolContext) {
     async () => {
       ctx.logger.info("MCP library_stats called");
 
-      try {
-        const response = await fetchWithTimeout(`${ctx.daemonUrl}/api/library/stats`);
-        const raw = await handleDaemonResponse(response, "library_stats", ctx.logger);
-        const parsed = LibraryStatsSchema.safeParse(raw);
-        if (!parsed.success) {
-          throw new Error("Daemon API returned invalid library stats");
-        }
-        const result: LibraryStats = parsed.data;
-
-        ctx.logger.info("MCP library_stats response", {
-          totalItems: result.total_items,
-          totalSizeBytes: result.total_size_bytes,
-          typeCount: Object.keys(result.types || {}).length,
-        });
-
-        return createSuccessResponse({
-          total_items: result.total_items,
-          total_size_bytes: result.total_size_bytes,
-          types: result.types,
-          source: "daemon_api",
-          timestamp: new Date().toISOString(),
-        });
-      } catch (error) {
-        ctx.logger.error("MCP library_stats failed", { error });
-        throw error;
+      const client = createAtlasClient();
+      const response = await client.GET("/api/library/stats");
+      if (response.error) {
+        ctx.logger.error("Failed to get library stats", { error: response.error });
+        return createErrorResponse(
+          `Failed to get library statistics: ${response.error.error || response.response.statusText}`,
+        );
       }
+      const stats = response.data;
+
+      ctx.logger.info("MCP library_stats response", {
+        totalItems: stats.total_items,
+        totalSizeBytes: stats.total_size_bytes,
+        typeCount: Object.keys(stats.types || {}).length,
+      });
+
+      return createSuccessResponse({
+        total_items: stats.total_items,
+        total_size_bytes: stats.total_size_bytes,
+        types: stats.types,
+        source: "daemon_api",
+        timestamp: new Date().toISOString(),
+      });
     },
   );
 }

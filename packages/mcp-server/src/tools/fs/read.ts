@@ -1,14 +1,13 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import * as path from "@std/path";
 import { z } from "zod";
-import type { ToolContext } from "../types.ts";
-import { createSuccessResponse } from "../types.ts";
+import { createSuccessResponse } from "../utils.ts";
 
 const MAX_READ_SIZE = 250 * 1024;
 const DEFAULT_READ_LIMIT = 2000;
 const MAX_LINE_LENGTH = 2000;
 
-export function registerReadTool(server: McpServer, _ctx: ToolContext) {
+export function registerReadTool(server: McpServer) {
   server.registerTool(
     "atlas_read",
     {

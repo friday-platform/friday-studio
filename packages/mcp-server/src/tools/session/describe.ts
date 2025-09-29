@@ -3,10 +3,11 @@
  * Retrieves detailed information about execution sessions through the daemon API
  */
 
+import { client, parseResult } from "@atlas/client/v2";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { ToolContext } from "../types.ts";
-import { createSuccessResponse } from "../types.ts";
+import { createErrorResponse, createSuccessResponse } from "../utils.ts";
 
 export function registerSessionDescribeTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(
@@ -25,22 +26,14 @@ export function registerSessionDescribeTool(server: McpServer, ctx: ToolContext)
     async ({ sessionId }) => {
       ctx.logger.info("MCP session_describe called", { sessionId });
 
-      try {
-        const response = await fetch(`${ctx.daemonUrl}/api/sessions/${sessionId}`);
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          throw new Error(
-            `Daemon API error: ${response.status} - ${errorData.error || response.statusText}`,
-          );
-        }
-
-        const session = await response.json();
-
-        return createSuccessResponse({ session, source: "daemon_api" });
-      } catch (error) {
-        ctx.logger.error("MCP session_describe failed", { sessionId, error });
-        throw error;
+      const response = await parseResult(client.sessions[":id"].$get({ param: { id: sessionId } }));
+      if (!response.ok) {
+        ctx.logger.error("Failed to describe session", { sessionId, error: response.error });
+        return createErrorResponse(`Failed to get session '${sessionId}': ${response.error}`);
       }
+      const session = response.data;
+
+      return createSuccessResponse({ session, source: "daemon_api" });
     },
   );
 }

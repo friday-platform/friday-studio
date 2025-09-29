@@ -1,7 +1,7 @@
 import type { AgentContext, AtlasUIMessageChunk, StreamEmitter } from "@atlas/agent-sdk";
 import { createAtlasClient } from "@atlas/oapi-client";
 import type { UIDataTypes } from "ai";
-import { AgentTelemetryCollector, type Metrics } from "./agent-telemetry-collector.ts";
+import { AgentTelemetryCollector, type CollectedMetrics } from "./agent-telemetry-collector.ts";
 import { DaemonTestHarness } from "./daemon-harness.ts";
 
 /**
@@ -95,7 +95,7 @@ export class ConversationAgentContext {
   /**
    * Get telemetry metrics after execution
    */
-  getMetrics(): Metrics | null {
+  getMetrics(): CollectedMetrics | null {
     return this.telemetryCollector?.getMetrics() || null;
   }
 

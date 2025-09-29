@@ -1,7 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import type { ToolContext } from "../types.ts";
-import { createSuccessResponse } from "../types.ts";
+import { createSuccessResponse } from "../utils.ts";
 
 async function isCommandAvailable(command: string): Promise<boolean> {
   try {
@@ -60,7 +59,7 @@ async function runGrep(
   }
 }
 
-export function registerGrepTool(server: McpServer, _ctx: ToolContext) {
+export function registerGrepTool(server: McpServer) {
   server.registerTool(
     "atlas_grep",
     {

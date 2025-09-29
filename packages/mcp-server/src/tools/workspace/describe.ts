@@ -3,10 +3,11 @@
  * Retrieves detailed information about Atlas workspaces through the daemon API
  */
 
+import { createAtlasClient } from "@atlas/oapi-client";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { ToolContext } from "../types.ts";
-import { createSuccessResponse } from "../types.ts";
+import { createErrorResponse, createSuccessResponse } from "../utils.ts";
 
 export function registerWorkspaceDescribeTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(
@@ -22,32 +23,17 @@ export function registerWorkspaceDescribeTool(server: McpServer, ctx: ToolContex
     },
     async ({ workspaceId }) => {
       ctx.logger.info("MCP workspace_describe called", { workspaceId });
-
-      const response = await fetch(`${ctx.daemonUrl}/api/workspaces/${workspaceId}`);
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        const errorMessage = errorData.error || response.statusText;
-
-        // 404 is expected - log as info, everything else is an error
-        if (response.status === 404) {
-          ctx.logger.info("Workspace not found", { workspaceId, status: 404 });
-        } else {
-          ctx.logger.error("Workspace describe API error", {
-            workspaceId,
-            status: response.status,
-            error: errorMessage,
-          });
-        }
-
-        throw new Error(
-          response.status === 404
-            ? `Workspace not found: ${workspaceId}`
-            : `Failed to describe workspace: ${errorMessage}`,
+      const client = createAtlasClient();
+      const result = await client.GET("/api/workspaces/{workspaceId}", {
+        params: { path: { workspaceId } },
+      });
+      if (result.error) {
+        ctx.logger.error("Failed to describe workspace", { workspaceId, error: result.error });
+        return createErrorResponse(
+          `Failed to get workspace details for '${workspaceId}': ${result.error}`,
         );
       }
-
-      const workspace = await response.json();
+      const workspace = result.data;
 
       ctx.logger.info("Workspace described via daemon API", {
         workspaceId,

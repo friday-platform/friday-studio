@@ -2,10 +2,9 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { expandGlob } from "@std/fs";
 import * as path from "@std/path";
 import { z } from "zod";
-import type { ToolContext } from "../types.ts";
-import { createSuccessResponse } from "../types.ts";
+import { createSuccessResponse } from "../utils.ts";
 
-export function registerGlobTool(server: McpServer, _ctx: ToolContext) {
+export function registerGlobTool(server: McpServer) {
   server.registerTool(
     "atlas_glob",
     {

@@ -1,7 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { ToolContext } from "../types.ts";
-import { createSuccessResponse } from "../types.ts";
+import { createSuccessResponse } from "../utils.ts";
 
 const MAX_OUTPUT_LENGTH = 30000;
 const DEFAULT_TIMEOUT = 120000; // 2 minutes

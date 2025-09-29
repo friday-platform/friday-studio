@@ -49,7 +49,7 @@ Deno.test({
 
       await saveSnapshot({
         testPath: new URL(import.meta.url),
-        data: { result, justification: evaluation.justification, metrics, trace },
+        data: { result, justification: evaluation.justification, metrics },
         pass: evaluation.pass,
       });
     } finally {

@@ -23,7 +23,7 @@ interface SessionInfo {
 const sessionsRoutes = daemonFactory
   .createApp()
   // List sessions across all workspaces
-  .get("/sessions", (c) => {
+  .get("/", (c) => {
     const ctx = c.get("app");
     const allSessions: SessionInfo[] = [];
 
@@ -44,9 +44,9 @@ const sessionsRoutes = daemonFactory
     return c.json(allSessions);
   })
   // Get specific session from any workspace
-  .get("/api/sessions/:sessionId", (c) => {
+  .get("/:id", (c) => {
     const ctx = c.get("app");
-    const sessionId = c.req.param("sessionId");
+    const sessionId = c.req.param("id");
 
     // Find session across all runtimes
     for (const [workspaceId, runtime] of ctx.daemon.runtimes) {
@@ -85,7 +85,7 @@ const sessionsRoutes = daemonFactory
           sessionData.summary = resultsArtifact.data.summary;
         }
 
-        return c.json(sessionData);
+        return c.json(sessionData, 200);
       }
     }
 

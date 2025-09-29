@@ -3,11 +3,11 @@
  * Terminates active execution sessions through the daemon API
  */
 
+import { createAtlasClient } from "@atlas/oapi-client";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { CancelSessionResponseSchema } from "../../schemas.ts";
 import type { ToolContext } from "../types.ts";
-import { createSuccessResponse } from "../types.ts";
+import { createErrorResponse, createSuccessResponse } from "../utils.ts";
 
 export function registerSessionCancelTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(
@@ -26,35 +26,24 @@ export function registerSessionCancelTool(server: McpServer, ctx: ToolContext) {
     async ({ sessionId }) => {
       ctx.logger.info("MCP session_cancel called", { sessionId });
 
-      try {
-        const response = await fetch(`${ctx.daemonUrl}/api/sessions/${sessionId}`, {
-          method: "DELETE",
-        });
-
-        if (!response.ok) {
-          const raw = await response.json().catch(() => null);
-          const parsed = z.object({ error: z.string() }).safeParse(raw);
-          const message = parsed.success ? parsed.data.error : response.statusText;
-          throw new Error(`Daemon API error: ${response.status} - ${message}`);
-        }
-
-        const raw = await response.json().catch(() => null);
-        const parsed = CancelSessionResponseSchema.safeParse(raw);
-        if (!parsed.success) {
-          throw new Error("Daemon API returned invalid cancel session response");
-        }
-        const result = parsed.data;
-
-        return createSuccessResponse({
-          success: true,
-          sessionId,
-          message: result.message,
-          source: "daemon_api",
-        });
-      } catch (error) {
-        ctx.logger.error("MCP session_cancel failed", { sessionId, error });
-        throw error;
+      const client = createAtlasClient();
+      const response = await client.DELETE("/api/sessions/{sessionId}", {
+        params: { path: { sessionId } },
+      });
+      if (response.error) {
+        ctx.logger.error("Failed to cancel session", { sessionId, error: response.error });
+        return createErrorResponse(
+          `Failed to cancel session '${sessionId}': ${response.error.error || response.response.statusText}`,
+        );
       }
+      const result = response.data;
+
+      return createSuccessResponse({
+        success: true,
+        sessionId,
+        message: result.message,
+        source: "daemon_api",
+      });
     },
   );
 }

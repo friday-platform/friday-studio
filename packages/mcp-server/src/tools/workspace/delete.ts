@@ -3,10 +3,11 @@
  * Removes Atlas workspaces through the daemon API
  */
 
+import { client, parseResult } from "@atlas/client/v2";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { ToolContext } from "../types.ts";
-import { createSuccessResponse } from "../types.ts";
+import { createErrorResponse, createSuccessResponse } from "../utils.ts";
 
 export function registerWorkspaceDeleteTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(
@@ -29,35 +30,25 @@ export function registerWorkspaceDeleteTool(server: McpServer, ctx: ToolContext)
     async ({ workspaceId, force }) => {
       ctx.logger.info("MCP workspace_delete called", { workspaceId, force });
 
-      try {
-        const url = new URL(`${ctx.daemonUrl}/api/workspaces/${workspaceId}`);
-        if (force) {
-          url.searchParams.set("force", "true");
-        }
-
-        const response = await fetch(url.toString(), { method: "DELETE" });
-
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          throw new Error(
-            `Daemon API error: ${response.status} - ${errorData.error || response.statusText}`,
-          );
-        }
-
-        const result = await response.json();
-
-        ctx.logger.info("Workspace deleted via daemon API", { workspaceId });
-
-        return createSuccessResponse({
-          success: true,
-          workspaceId,
-          message: result.message,
-          source: "daemon_api",
-        });
-      } catch (error) {
-        ctx.logger.error("MCP workspace_delete failed", { workspaceId, error });
-        throw error;
+      const result = await parseResult(
+        client.workspace[":workspaceId"].$delete({
+          param: { workspaceId },
+          query: force ? { force: "true" } : {},
+        }),
+      );
+      if (!result.ok) {
+        ctx.logger.error("Failed to delete workspace", { workspaceId, error: result.error });
+        return createErrorResponse(`Failed to delete workspace '${workspaceId}': ${result.error}`);
       }
+
+      ctx.logger.info("Workspace deleted via daemon API", { workspaceId });
+
+      return createSuccessResponse({
+        success: true,
+        workspaceId,
+        message: result.data.message,
+        source: "daemon_api",
+      });
     },
   );
 }

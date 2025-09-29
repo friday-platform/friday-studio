@@ -80,11 +80,11 @@ export function registerTools(server: McpServer, context: ToolContext): void {
   registerLibraryTemplatesTool(server, context);
 
   // Filesystem tools
-  registerGlobTool(server, context);
-  registerGrepTool(server, context);
-  registerLsTool(server, context);
-  registerReadTool(server, context);
-  registerWriteTool(server, context);
+  registerGlobTool(server);
+  registerGrepTool(server);
+  registerLsTool(server);
+  registerReadTool(server);
+  registerWriteTool(server);
 
   // Artifact tools
   registerArtifactsCreateTool(server, context);
@@ -98,7 +98,7 @@ export function registerTools(server: McpServer, context: ToolContext): void {
   // Notification tools
   registerEmailNotificationTool(server, context);
 
-  registerVersionTool(server, context);
+  registerVersionTool(server);
 
   context.logger.info("Registered all tools with MCP server");
 }

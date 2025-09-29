@@ -7,7 +7,7 @@ import { createAtlasClient } from "@atlas/oapi-client";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { ToolContext } from "../types.ts";
-import { createSuccessResponse } from "../types.ts";
+import { createErrorResponse, createSuccessResponse } from "../utils.ts";
 
 export function registerSignalsTriggerTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(
@@ -28,34 +28,27 @@ export function registerSignalsTriggerTool(server: McpServer, ctx: ToolContext) 
     async ({ workspaceId, signalName, payload, streamId }) => {
       ctx.logger.info("MCP workspace_signals_trigger called", { workspaceId, signalName });
 
-      try {
-        const client = createAtlasClient();
-        const response = await client.POST("/api/workspaces/{workspaceId}/signals/{signalId}", {
-          params: { path: { workspaceId, signalId: signalName } },
-          body: { payload, streamId },
-        });
+      const client = createAtlasClient();
+      const response = await client.POST("/api/workspaces/{workspaceId}/signals/{signalId}", {
+        params: { path: { workspaceId, signalId: signalName } },
+        body: { payload, streamId },
+      });
 
-        if (response.error) {
-          throw new Error(`API error (${response.response.status}): ${response.error.error}`);
-        }
-
-        return createSuccessResponse({
-          success: true,
-          workspaceId,
-          signalName,
-          streamId,
-          status: response.data.status,
-          message: response.data.message,
-          source: "daemon_api",
-        });
-      } catch (error) {
-        ctx.logger.error("MCP workspace_signals_trigger failed", {
-          workspaceId,
-          signalName,
-          error,
-        });
-        throw error;
+      if (response.error) {
+        return createErrorResponse(
+          `Failed to list signals for workspace '${workspaceId}': ${response.error}`,
+        );
       }
+
+      return createSuccessResponse({
+        success: true,
+        workspaceId,
+        signalName,
+        streamId,
+        status: response.data.status,
+        message: response.data.message,
+        source: "daemon_api",
+      });
     },
   );
 }

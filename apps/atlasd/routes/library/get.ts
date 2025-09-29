@@ -1,6 +1,7 @@
 import { logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
-import { describeRoute, resolver } from "hono-openapi";
+import { describeRoute, resolver, validator } from "hono-openapi";
+import { z } from "zod/v4";
 import { daemonFactory } from "../../src/factory.ts";
 import { errorResponseSchema } from "../../src/utils.ts";
 import { getLibraryItemResponseSchema } from "./schemas.ts";
@@ -35,9 +36,10 @@ getLibraryItem.get(
       },
     },
   }),
+  validator("query", z.object({ content: z.literal("true").optional() })),
   async (c) => {
     const itemId = c.req.param("itemId");
-    const includeContent = c.req.query("content") === "true";
+    const includeContent = c.req.valid("query").content;
 
     try {
       const app = c.get("app");

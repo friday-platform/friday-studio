@@ -3,10 +3,9 @@ import { ensureDir } from "@std/fs";
 import * as path from "@std/path";
 import { dirname } from "@std/path";
 import { z } from "zod";
-import type { ToolContext } from "../types.ts";
-import { createSuccessResponse } from "../types.ts";
+import { createSuccessResponse } from "../utils.ts";
 
-export function registerWriteTool(server: McpServer, _ctx: ToolContext) {
+export function registerWriteTool(server: McpServer) {
   server.registerTool(
     "atlas_write",
     {

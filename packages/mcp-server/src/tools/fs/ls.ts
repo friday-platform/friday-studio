@@ -2,14 +2,13 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { expandGlob } from "@std/fs";
 import * as path from "@std/path";
 import { z } from "zod";
-import type { ToolContext } from "../types.ts";
-import { createSuccessResponse } from "../types.ts";
+import { createSuccessResponse } from "../utils.ts";
 
 const IGNORE_PATTERNS = ["node_modules/", ".git/", "dist/", "build/"];
 
 const LIMIT = 100;
 
-export function registerLsTool(server: McpServer, _ctx: ToolContext) {
+export function registerLsTool(server: McpServer) {
   server.registerTool(
     "atlas_list",
     {

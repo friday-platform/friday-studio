@@ -6,6 +6,7 @@
   "exports": { ".": "./mod.ts" },
   "dependencies": {
     "@atlas/atlasd": "workspace:*",
+    "@atlas/client": "workspace:*",
     "@atlas/config": "workspace:*",
     "@atlas/notifications": "workspace:*",
     "@atlas/oapi-client": "workspace:*",

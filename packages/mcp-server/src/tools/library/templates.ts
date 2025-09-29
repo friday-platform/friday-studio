@@ -1,7 +1,7 @@
+import { createAtlasClient } from "@atlas/oapi-client";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { ToolContext } from "../types.ts";
-import { createSuccessResponse } from "../types.ts";
-import { fetchWithTimeout, handleDaemonResponse } from "../utils.ts";
+import { createErrorResponse, createSuccessResponse } from "../utils.ts";
 
 export function registerLibraryTemplatesTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(
@@ -13,22 +13,24 @@ export function registerLibraryTemplatesTool(server: McpServer, ctx: ToolContext
     async () => {
       ctx.logger.info("MCP library_templates called");
 
-      try {
-        const response = await fetchWithTimeout(`${ctx.daemonUrl}/api/library/templates`);
-        const templates = await handleDaemonResponse(response, "library_templates", ctx.logger);
-
-        ctx.logger.info("MCP library_templates response", { templateCount: templates.length });
-
-        return createSuccessResponse({
-          templates,
-          total: templates.length,
-          source: "daemon_api",
-          timestamp: new Date().toISOString(),
-        });
-      } catch (error) {
-        ctx.logger.error("MCP library_templates failed", { error });
-        throw error;
+      const client = createAtlasClient();
+      const response = await client.GET("/api/library/templates");
+      if (response.error) {
+        ctx.logger.error("Failed to list templates", { error: response.error });
+        return createErrorResponse(
+          `Failed to list library templates: ${response.error.error || response.response.statusText}`,
+        );
       }
+      const templates = response.data;
+
+      ctx.logger.info("MCP library_templates response", { templateCount: templates.length });
+
+      return createSuccessResponse({
+        templates,
+        total: templates.length,
+        source: "daemon_api",
+        timestamp: new Date().toISOString(),
+      });
     },
   );
 }
