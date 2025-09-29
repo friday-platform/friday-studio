@@ -4,8 +4,8 @@ import * as path from "node:path";
 import { CONFIG } from "../config";
 import type { ExecOptions } from "node:child_process";
 import type { IPCResult } from "../types";
-import { getErrorMessage } from "../utils/errors";
 import { safeExec } from "../utils/process";
+import { getErrorMessage } from "../utils/errors";
 
 const PLIST_PATH = path.join(os.homedir(), "Library/LaunchAgents/com.tempestdx.atlas.plist");
 

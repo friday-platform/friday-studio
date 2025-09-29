@@ -7,11 +7,11 @@ import {
 } from "../services/macos-service";
 import { addToShellProfiles, addToSystemPath } from "../services/path-manager";
 import {
-  createStartMenuShortcut,
   installWindowsService,
   stopWindowsService,
   uninstallWindowsService,
 } from "../services/windows-service";
+import { createStartMenuShortcut } from "../utils/windows-shortcuts";
 import type { IPCResult } from "../types";
 import { getAtlasEnv, getBinaryPath } from "../utils/atlas-env";
 import { getErrorMessage } from "../utils/errors";
@@ -45,7 +45,7 @@ export async function manageAtlasServiceHandler(
       switch (action) {
         case ServiceAction.INSTALL: {
           // Install service and update PATH
-          const installResult = await installWindowsService(binaryPath, atlasEnv);
+          const installResult = await installWindowsService(binaryPath);
           if (!installResult.success) {
             return installResult;
           }
@@ -57,17 +57,17 @@ export async function manageAtlasServiceHandler(
           }
 
           // Create Start Menu shortcut
-          await createStartMenuShortcut(binaryPath);
+          await createStartMenuShortcut();
 
           return installResult;
         }
 
         case ServiceAction.STOP: {
-          return await stopWindowsService(binaryPath, atlasEnv);
+          return await stopWindowsService(binaryPath);
         }
 
         case ServiceAction.UNINSTALL:
-          return await uninstallWindowsService(binaryPath, atlasEnv);
+          return await uninstallWindowsService(binaryPath);
 
         case ServiceAction.START:
           return { success: false, error: `Service ${action} not implemented for Windows` };

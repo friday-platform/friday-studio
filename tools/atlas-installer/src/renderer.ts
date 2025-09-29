@@ -518,6 +518,15 @@ declare const electronAPI: ElectronAPI;
           } else {
             lines.push(`✗  ${step.message.replace("...", "")}`);
             lines.push(`    └─ ${result.error || "Unknown error"}`);
+            // If there's a detailed message, show it as well
+            if (result.message) {
+              const messageLines = result.message.split("\n");
+              messageLines.forEach((line) => {
+                if (line.trim()) {
+                  lines.push(`       ${line}`);
+                }
+              });
+            }
             // Keep progress at previous level on failure
             currentProgress = previousProgress;
           }
@@ -614,19 +623,29 @@ declare const electronAPI: ElectronAPI;
           };
         }
 
-        // Install and start Atlas service (on Windows this will create scheduled task if needed)
+        // Install and start Atlas service
+        // On Windows this will prompt for UAC elevation when creating scheduled task
         const installResult = await electronAPI.manageService(ServiceAction.INSTALL);
         if (!installResult.success) {
-          const platform = navigator.userAgent.includes("Windows") ? "windows" : "unix";
-          const manualCommand =
-            platform === "windows"
-              ? "Run installer as Administrator or manually create scheduled task"
+          // Check if the error message already contains detailed instructions
+          if (installResult.message) {
+            // Return the full error with detailed instructions
+            return {
+              success: false,
+              error: installResult.error || "Service installation failed",
+              message: installResult.message,
+            };
+          } else {
+            const isWindows = navigator.userAgent.includes("Windows");
+            const manualCommand = isWindows
+              ? "Please approve the UAC prompt or run installer as Administrator"
               : "atlas service install && atlas service start";
-          // Return FAILURE when service install fails - don't hide it as success!
-          return {
-            success: false,
-            error: `Service install failed: ${installResult.error}. ${manualCommand}`,
-          };
+            // Return FAILURE when service install fails - don't hide it as success!
+            return {
+              success: false,
+              error: `Service install failed: ${installResult.error}. ${manualCommand}`,
+            };
+          }
         }
         return installResult;
       } catch (error) {

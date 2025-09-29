@@ -1,28 +1,27 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import * as sudo from "@vscode/sudo-prompt";
 import { CONFIG } from "../config";
 import type { IPCResult } from "../types";
-import { getErrorMessage } from "../utils/errors";
 import { safeExec } from "../utils/process";
+import { createLogger } from "../utils/logger";
+import { getErrorMessage } from "../utils/errors";
+import { createStartMenuShortcut, removeStartMenuShortcut } from "../utils/windows-shortcuts";
+
+const logger = createLogger("WindowsService");
 
 const TASK_NAME = "Atlas Daemon";
 
 /**
  * Install Windows service using Task Scheduler - Direct operations, no abstractions
  */
-export async function installWindowsService(
-  binaryPath: string,
-  _atlasEnv: Record<string, string>,
-): Promise<IPCResult> {
+export async function installWindowsService(binaryPath: string): Promise<IPCResult> {
   try {
     // Validate binary exists
     if (!fs.existsSync(binaryPath)) {
       return { success: false, error: "Binary not found" };
     }
-
-    // Environment variables kept for consistency with uninstallWindowsService
-    // Currently not used during installation but may be needed in the future
 
     // Clean up any existing scheduled task (daemon should already be stopped by binary installer)
     try {
@@ -68,23 +67,58 @@ export async function installWindowsService(
     const buffer = Buffer.from("\ufeff" + taskXml, "utf16le");
     fs.writeFileSync(tempXml, buffer);
 
-    try {
-      await safeExec(`schtasks /Create /TN "${TASK_NAME}" /XML "${tempXml}" /F`, {
-        windowsHide: true,
+    // Create and start the task with elevation
+    const result = await new Promise<IPCResult>((resolve) => {
+      const commands = [
+        `schtasks /Create /TN "${TASK_NAME}" /XML "${tempXml}" /F`,
+        `schtasks /Run /TN "${TASK_NAME}"`,
+      ].join(" && ");
+
+      sudo.exec(commands, { name: "Atlas Installer" }, (error?: Error) => {
+        // Clean up XML file
+        try {
+          fs.unlinkSync(tempXml);
+        } catch {}
+
+        if (error) {
+          if (error?.message?.includes("cancelled")) {
+            resolve({
+              success: false,
+              error: "Administrator privileges required. Installation cancelled.",
+            });
+            return;
+          }
+          logger.warn(`Service installation completed with warning: ${error?.message}`);
+        }
+
+        resolve({ success: true, message: "Atlas service installed and started successfully" });
       });
-      fs.unlinkSync(tempXml);
-    } catch (error) {
-      fs.unlinkSync(tempXml);
-      throw error;
+    });
+
+    if (!result.success) {
+      return result;
     }
 
-    // Start the service
+    // Install the Atlas service using the binary
     try {
-      await safeExec(`schtasks /Run /TN "${TASK_NAME}"`, { windowsHide: true });
-    } catch {}
+      await safeExec(`"${binaryPath}" service install`, { timeout: CONFIG.process.installTimeout });
+      logger.info("Atlas service installed successfully");
+    } catch (error) {
+      logger.warn(`Service installation warning: ${getErrorMessage(error)}`);
+      // Continue even if this fails, as the scheduled task is already created
+    }
+
+    // Start the Atlas service
+    try {
+      await safeExec(`"${binaryPath}" service start`, { timeout: CONFIG.process.installTimeout });
+      logger.info("Atlas service started successfully");
+    } catch (error) {
+      logger.warn(`Service start warning: ${getErrorMessage(error)}`);
+      // Continue even if this fails
+    }
 
     // Create Start Menu shortcut
-    await createStartMenuShortcut(binaryPath);
+    await createStartMenuShortcut();
 
     return { success: true, message: "Atlas service installed successfully" };
   } catch (error) {
@@ -95,34 +129,32 @@ export async function installWindowsService(
 /**
  * Uninstall Windows service
  */
-export async function uninstallWindowsService(
-  binaryPath: string,
-  atlasEnv: Record<string, string>,
-): Promise<IPCResult> {
+export async function uninstallWindowsService(binaryPath: string): Promise<IPCResult> {
   try {
-    const env = { ...process.env, ...atlasEnv };
-
     // Stop service (which also stops daemon)
     try {
-      await safeExec(`"${binaryPath}" service stop`, { env, timeout: CONFIG.process.stopTimeout });
+      await safeExec(`"${binaryPath}" service stop`, { timeout: CONFIG.process.stopTimeout });
     } catch {}
     try {
       await safeExec("taskkill /F /IM atlas.exe", { windowsHide: true });
     } catch {}
 
-    // Delete scheduled task
-    try {
-      await safeExec(`schtasks /Delete /TN "${TASK_NAME}" /F`, { windowsHide: true });
-    } catch {}
+    // Delete scheduled task with elevation
+    await new Promise<void>((resolve) => {
+      sudo.exec(
+        `schtasks /Delete /TN "${TASK_NAME}" /F`,
+        { name: "Atlas Installer" },
+        (error?: Error) => {
+          if (error) {
+            logger.warn(`Failed to delete scheduled task: ${error?.message}`);
+          }
+          resolve();
+        },
+      );
+    });
 
     // Remove Start Menu shortcut
-    const shortcutPath = path.join(
-      os.homedir(),
-      "AppData/Roaming/Microsoft/Windows/Start Menu/Programs/Atlas.lnk",
-    );
-    if (fs.existsSync(shortcutPath)) {
-      fs.unlinkSync(shortcutPath);
-    }
+    removeStartMenuShortcut();
 
     return { success: true, message: "Atlas service uninstalled" };
   } catch (error) {
@@ -133,15 +165,10 @@ export async function uninstallWindowsService(
 /**
  * Stop Windows service
  */
-export async function stopWindowsService(
-  binaryPath: string,
-  atlasEnv: Record<string, string>,
-): Promise<IPCResult> {
+export async function stopWindowsService(binaryPath: string): Promise<IPCResult> {
   try {
-    const env = { ...process.env, ...atlasEnv };
-
     try {
-      await safeExec(`"${binaryPath}" service stop`, { env, timeout: CONFIG.process.stopTimeout });
+      await safeExec(`"${binaryPath}" service stop`, { timeout: CONFIG.process.stopTimeout });
     } catch {}
     try {
       await safeExec(`schtasks /End /TN "${TASK_NAME}"`, { windowsHide: true });
@@ -153,31 +180,5 @@ export async function stopWindowsService(
     return { success: true, message: "Atlas service stopped" };
   } catch (error) {
     return { success: false, error: `Stop failed: ${getErrorMessage(error)}` };
-  }
-}
-
-/**
- * Create Start Menu shortcut
- */
-export async function createStartMenuShortcut(binaryPath: string): Promise<void> {
-  const shortcutDir = path.join(
-    os.homedir(),
-    "AppData/Roaming/Microsoft/Windows/Start Menu/Programs",
-  );
-
-  if (!fs.existsSync(shortcutDir)) {
-    fs.mkdirSync(shortcutDir, { recursive: true });
-  }
-
-  // Simple PowerShell command to create shortcut
-  const ps1 = `$WshShell = New-Object -comObject WScript.Shell
-$Shortcut = $WshShell.CreateShortcut("${shortcutDir}\\Atlas.lnk")
-$Shortcut.TargetPath = "${binaryPath}"
-$Shortcut.Save()`;
-
-  try {
-    await safeExec(`powershell -Command "${ps1.replace(/"/g, '`"')}"`, { windowsHide: true });
-  } catch {
-    // Shortcut creation is non-critical
   }
 }

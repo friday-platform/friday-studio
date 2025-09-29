@@ -91,5 +91,6 @@
     "win": { "target": "portable", "icon": "icons/icon.ico" },
     "linux": { "target": "AppImage", "category": "Development", "icon": "icons" },
     "electronDownload": { "cache": "./electron-cache" }
-  }
+  },
+  "dependencies": { "@vscode/sudo-prompt": "^9.3.1", "create-desktop-shortcuts": "^1.11.1" }
 }
