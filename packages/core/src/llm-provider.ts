@@ -4,6 +4,7 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { type WorkspaceTimeoutConfig, WorkspaceTimeoutConfigSchema } from "@atlas/config";
 import { logger } from "@atlas/logger";
 import { MCPManager } from "@atlas/mcp";
+import { stringifyError } from "@atlas/utils";
 import {
   createProviderRegistry,
   generateText,
@@ -11,10 +12,11 @@ import {
   stepCountIs,
   streamText,
   type Tool,
-  type ToolCallUnion,
-  type ToolResultUnion,
+  type TypedToolCall,
+  type TypedToolResult,
 } from "ai";
 import { z } from "zod/v4";
+import { createErrorCause, throwWithCause } from "./errors.ts";
 import { WatchdogTimer } from "./watchdog-timer.ts";
 
 // Runtime validation schemas
@@ -67,8 +69,8 @@ export interface LLMOptions {
  */
 export interface LLMResponse {
   text: string;
-  toolCalls: ToolCallUnion<Record<string, Tool>>[];
-  toolResults: ToolResultUnion<Record<string, Tool>>[];
+  toolCalls: TypedToolCall<Record<string, Tool>>[];
+  toolResults: TypedToolResult<Record<string, Tool>>[];
   steps: unknown[];
 }
 
@@ -106,7 +108,7 @@ export class LLMProvider {
    * Single entry point for all LLM operations - tools are detected automatically
    */
   static async generateText(userPrompt: string, options: LLMOptions): Promise<LLMResponse> {
-    const validatedOptions = LLMOptionsSchema.parse(options);
+    const validatedOptions = LLMOptionsSchema.parse(options) as LLMOptions;
 
     // Check if we should use mocks
     const shouldUseMocks =
@@ -215,9 +217,10 @@ export class LLMProvider {
         steps: result.steps || [],
       };
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorCause = createErrorCause(error);
 
       // Check if this is an inactivity timeout (graceful shutdown scenario)
+      const errorMessage = error instanceof Error ? error.message : String(error);
       if (errorMessage.includes("Operation timed out due to inactivity")) {
         logger.info("LLM generation ended due to inactivity timeout", {
           provider: providerConfig.provider,
@@ -229,13 +232,52 @@ export class LLMProvider {
         return { text: "", toolCalls: [], toolResults: [], steps: [] };
       }
 
-      // For other errors, log as error and throw
+      // Log with structured error cause
       logger.error("LLM generation failed", {
-        error: errorMessage,
+        error: stringifyError(error),
+        errorCause,
         provider: providerConfig.provider,
         model: providerConfig.model,
         duration: Date.now() - startTime,
       });
+
+      // Provide context-aware error message based on error type
+      if (errorCause.type === "api") {
+        const retryMessage = errorCause.isRetryable
+          ? " The request will be automatically retried."
+          : "";
+
+        if (errorCause.code === "RATE_LIMIT_ERROR") {
+          throwWithCause(
+            `${providerConfig.provider} rate limit exceeded.${errorCause.retryAfter ? ` Please wait ${errorCause.retryAfter} seconds.` : ""}${retryMessage}`,
+            error,
+          );
+        } else if (errorCause.code === "AUTHENTICATION_ERROR") {
+          const providerHint =
+            errorCause.providerMessage ?? "Please check your API key configuration.";
+          throwWithCause(
+            `Authentication failed for ${providerConfig.provider}: ${providerHint}`,
+            error,
+          );
+        } else if (errorCause.code === "OVERLOADED_ERROR") {
+          throwWithCause(
+            `${providerConfig.provider} service is currently overloaded.${retryMessage}`,
+            error,
+          );
+        } else if (errorCause.statusCode && errorCause.statusCode >= 500) {
+          throwWithCause(
+            `${providerConfig.provider} service is temporarily unavailable.${retryMessage}`,
+            error,
+          );
+        }
+      } else if (errorCause.type === "network") {
+        throwWithCause(
+          `Failed to connect to ${providerConfig.provider} API. Please check your network connection.`,
+          error,
+        );
+      }
+
+      // Re-throw with original error for unknown cases
       throw error;
     } finally {
       // Always clean up watchdog timer
@@ -304,7 +346,7 @@ export class LLMProvider {
     userPrompt: string,
     options: LLMOptions,
   ): AsyncGenerator<string> {
-    const validatedOptions = LLMOptionsSchema.parse(options);
+    const validatedOptions = LLMOptionsSchema.parse(options) as LLMOptions;
 
     // Check if we should use mocks
     const shouldUseMocks =
@@ -347,7 +389,7 @@ export class LLMProvider {
       }
     } catch (error) {
       logger.error("LLM stream generation failed", {
-        error: error instanceof Error ? error.message : String(error),
+        error: stringifyError(error),
         provider: providerConfig.provider,
         model: providerConfig.model,
       });
@@ -463,7 +505,7 @@ export class LLMProvider {
       } catch (error) {
         logger.error("Failed to get MCP tools", {
           servers: context.mcpServers,
-          error: error instanceof Error ? error.message : String(error),
+          error: stringifyError(error),
         });
       }
     }

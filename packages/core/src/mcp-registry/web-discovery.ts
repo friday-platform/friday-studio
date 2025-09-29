@@ -1,5 +1,6 @@
 import { researchAgent } from "@atlas/bundled-agents";
 import { createLogger } from "@atlas/logger";
+import { createErrorCause } from "../errors.ts";
 import type {
   MCPCategory,
   MCPDiscoveryRequest,
@@ -69,8 +70,10 @@ export class WebMCPDiscovery {
 
       return discoveryResults;
     } catch (error) {
+      const errorCause = createErrorCause(error);
       this.logger.error("Web discovery failed", {
-        error: error instanceof Error ? error.message : String(error),
+        error: error,
+        errorCause,
         intent: request.intent,
       });
       return [];
@@ -151,10 +154,8 @@ export class WebMCPDiscovery {
           }
         }
       } catch (error) {
-        this.logger.warn("Search query failed", {
-          query,
-          error: error instanceof Error ? error.message : String(error),
-        });
+        const errorCause = createErrorCause(error);
+        this.logger.warn("Search query failed", { query, error: error, errorCause });
       }
     }
 
@@ -177,9 +178,11 @@ export class WebMCPDiscovery {
 
       const batchPromises = batch.map((result) =>
         this.parseSingleResult(result, request).catch((error) => {
+          const errorCause = createErrorCause(error);
           this.logger.warn("Failed to parse search result", {
             url: result.url,
-            error: error instanceof Error ? error.message : String(error),
+            error: error,
+            errorCause,
           });
           return null;
         }),
@@ -270,9 +273,11 @@ export class WebMCPDiscovery {
         securityRating,
       };
     } catch (error) {
+      const errorCause = createErrorCause(error);
       this.logger.warn("Failed to parse search result", {
         url: result.url,
-        error: error instanceof Error ? error.message : String(error),
+        error: error,
+        errorCause,
       });
       return null;
     }
@@ -307,7 +312,7 @@ export class WebMCPDiscovery {
     }
 
     // Add domain-specific capability based on request
-    if (request.domain && !capabilities.some((cap) => cap.includes(request.domain))) {
+    if (request.domain && !capabilities.some((cap) => cap.includes(request.domain!))) {
       capabilities.push(request.domain);
     }
 
@@ -348,7 +353,7 @@ export class WebMCPDiscovery {
         if (
           request.domain &&
           server.capabilities.some(
-            (cap) => cap.includes(request.domain) || request.domain.includes(cap),
+            (cap) => cap.includes(request.domain!) || request.domain!.includes(cap),
           )
         ) {
           confidence += 0.2;

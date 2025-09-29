@@ -7,12 +7,13 @@
  * - Real-time streaming responses
  * - Task tracking with todos
  */
-
+import process from "node:process";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import type { AtlasTools, AtlasUIMessage } from "@atlas/agent-sdk";
 import { createAgent } from "@atlas/agent-sdk";
 import { pipeUIMessageStream } from "@atlas/agent-sdk/vercel-helpers";
 import { client, parseResult } from "@atlas/client/v2";
+import { createErrorCause, getErrorDisplayMessage, parseAPICallError } from "@atlas/core/errors";
 import type { Logger } from "@atlas/logger";
 import { Client } from "@modelcontextprotocol/sdk/client";
 
@@ -303,28 +304,143 @@ export const conversationAgent = createAgent({
     ${getSystemPrompt(history.messages, allTools, session.streamId)}
     `;
 
-    try {
-      const result = streamText({
-        model: anthropic("claude-sonnet-4-20250514"),
-        system: systemPrompt,
-        messages: convertToModelMessages(messages),
-        tools: allTools,
-        toolChoice: "auto",
-        stopWhen: stepCountIs(40),
-        maxOutputTokens: 20000,
+    // Store the original error if streamText fails
+    let originalStreamError: unknown = null;
+    let interceptedApiError: unknown = null;
+    let result: Awaited<ReturnType<typeof streamText>>;
+    let errorEmitted = false;
 
-        experimental_transform: smoothStream({ chunking: "word" }),
-        maxRetries: 3, // Enable retries for API resilience (e.g., 529 errors)
-        abortSignal, // Pass the abort signal for cancellation
-        providerOptions: { anthropic: { thinking: { type: "enabled", budgetTokens: 25000 } } },
-        // Pass telemetry config if provided in context
-        experimental_telemetry: {
-          isEnabled: telemetry?.isEnabled ?? false,
-          tracer: telemetry?.tracer,
-        },
+    // Set up unhandled rejection interceptor to catch API errors that escape the SDK
+    // This is necessary because Vercel AI SDK doesn't properly propagate auth errors in streaming mode
+    const unhandledRejectionHandler = (event: PromiseRejectionEvent) => {
+      const error = event.reason;
+      // Check if this is an API error from the AI SDK
+      const apiError = parseAPICallError(error);
+      if (apiError) {
+        logger.error("Intercepted AI SDK API error", {
+          error: apiError,
+          statusCode: apiError.statusCode,
+          name: apiError.constructor?.name,
+        });
+        interceptedApiError = apiError;
+        // Prevent default logging to console
+        event.preventDefault();
+      }
+    };
+
+    // Add the handler before starting the stream
+    globalThis.addEventListener("unhandledrejection", unhandledRejectionHandler);
+
+    // Also try to catch process-level unhandled rejections (Node.js style)
+    const processHandler = (reason: unknown) => {
+      const apiError = parseAPICallError(reason);
+      if (apiError) {
+        logger.error("Process caught AI SDK API error", {
+          error: apiError,
+          statusCode: apiError.statusCode,
+        });
+        interceptedApiError = apiError;
+      }
+    };
+
+    if (typeof process !== "undefined" && process.on) {
+      process.on("unhandledRejection", processHandler);
+    }
+
+    try {
+      try {
+        result = streamText({
+          model: anthropic("claude-sonnet-4-20250514"),
+          system: systemPrompt,
+          messages: convertToModelMessages(messages),
+          tools: allTools,
+          toolChoice: "auto",
+          stopWhen: stepCountIs(40),
+          maxOutputTokens: 20000,
+          experimental_transform: smoothStream({ chunking: "word" }),
+          maxRetries: 3, // Enable retries for API resilience (e.g., 529 errors)
+          abortSignal, // Pass the abort signal for cancellation
+          providerOptions: { anthropic: { thinking: { type: "enabled", budgetTokens: 25000 } } },
+
+          // Pass telemetry config if provided in context
+          experimental_telemetry: telemetry ? { isEnabled: true, ...telemetry } : undefined,
+          onError: async ({ error }) => {
+            if (!error) {
+              return;
+            }
+
+            logger.error("Stream chunk error in conversation agent", { error });
+            originalStreamError = originalStreamError ?? error;
+
+            const apiError = parseAPICallError(error);
+            if (apiError) {
+              interceptedApiError = apiError;
+            }
+
+            const errorCause = createErrorCause(error);
+            const displayMessage = getErrorDisplayMessage(errorCause);
+
+            if (stream && !errorEmitted) {
+              stream.emit({
+                id: crypto.randomUUID(),
+                type: "data-error",
+                data: { error: displayMessage, errorCause },
+              });
+              errorEmitted = true;
+            }
+          },
+        });
+      } catch (streamTextError) {
+        // Catch synchronous errors from streamText (e.g., immediate API errors)
+        const apiError = parseAPICallError(streamTextError);
+        logger.error("Caught synchronous error from streamText", {
+          error: streamTextError,
+          statusCode: apiError?.statusCode,
+        });
+
+        // Check if it's an API error
+        if (apiError) {
+          interceptedApiError = apiError;
+
+          // Immediately handle the error
+          const errorCause = createErrorCause(apiError);
+          const displayMessage = getErrorDisplayMessage(errorCause);
+
+          if (stream && !errorEmitted) {
+            stream.emit({
+              id: crypto.randomUUID(),
+              type: "data-error",
+              data: { error: displayMessage, errorCause },
+            });
+            errorEmitted = true;
+          }
+
+          // Clean up and return
+          globalThis.removeEventListener("unhandledrejection", unhandledRejectionHandler);
+          return { text: displayMessage, reasoning: "", executionFlow: [], toolCalls: [] };
+        }
+
+        // Re-throw if not an API error
+        throw streamTextError;
+      }
+
+      // Try to iterate the stream early to trigger API errors immediately
+      // This will cause AI_APICallError to be thrown as unhandled rejection
+      const streamIterator = result.fullStream[Symbol.asyncIterator]();
+      streamIterator.next().catch((streamError) => {
+        // Capture the actual API error before it gets replaced with NoOutputGeneratedError
+        const apiError = parseAPICallError(streamError);
+        if (apiError) {
+          logger.error("Caught API error from stream iteration", {
+            error: apiError,
+            statusCode: apiError.statusCode,
+          });
+          interceptedApiError = apiError;
+        }
       });
 
-      pipeUIMessageStream(
+      // Start piping the UI message stream and catch any immediate errors
+      const pipePromise = pipeUIMessageStream(
         result.toUIMessageStream({
           originalMessages: messages,
           generateMessageId: createIdGenerator({ prefix: "msg", size: 8 }),
@@ -345,7 +461,17 @@ export const conversationAgent = createAgent({
           },
         }),
         stream,
-      );
+      ).catch((pipeError) => {
+        // Capture streaming/piping errors - check if it's an API error
+        logger.error("Error in pipeUIMessageStream", { error: pipeError });
+
+        const apiError = parseAPICallError(pipeError);
+        if (apiError) {
+          interceptedApiError = apiError;
+        } else {
+          originalStreamError = pipeError;
+        }
+      });
 
       const executionFlow = {
         steps: [],
@@ -355,8 +481,74 @@ export const conversationAgent = createAgent({
         startTime: Date.now(), // Track start time for duration calculation
       };
 
-      const finalText = await result.text;
-      const finalReasoning = await result.reasoning;
+      // Wrap the await in try-catch to handle streaming errors
+      let finalText: string;
+      let finalReasoning: any;
+
+      try {
+        // Wait for the stream iteration error to be caught
+        await new Promise((resolve) => setTimeout(resolve, 500));
+
+        // Check if we caught an API error
+        if (interceptedApiError) {
+          const apiError = parseAPICallError(interceptedApiError);
+          logger.error("Using intercepted API error", {
+            error: interceptedApiError,
+            statusCode: apiError?.statusCode,
+          });
+
+          const errorCause = createErrorCause(interceptedApiError);
+          const displayMessage = getErrorDisplayMessage(errorCause);
+
+          if (stream && !errorEmitted) {
+            stream.emit({
+              id: crypto.randomUUID(),
+              type: "data-error",
+              data: { error: displayMessage, errorCause },
+            });
+            errorEmitted = true;
+          }
+
+          return { text: displayMessage, reasoning: "", executionFlow: [], toolCalls: [] };
+        }
+
+        // Wait for both the text/reasoning and the pipe to complete
+        const [textResult, reasoningResult] = await Promise.allSettled([
+          result.text,
+          result.reasoning,
+          pipePromise,
+        ]);
+
+        if (textResult.status === "rejected") {
+          throw textResult.reason;
+        }
+
+        finalText = textResult.status === "fulfilled" ? textResult.value : "";
+        finalReasoning = reasoningResult.status === "fulfilled" ? reasoningResult.value : [];
+      } catch (streamError) {
+        // Handle error that occurs during stream consumption
+        // Use the most specific error available
+        const actualError = interceptedApiError || originalStreamError || streamError;
+
+        logger.error("Error consuming stream", {
+          error: streamError,
+          originalError: originalStreamError,
+          interceptedApiError: interceptedApiError,
+        });
+        const errorCause = createErrorCause(actualError);
+        const displayMessage = getErrorDisplayMessage(errorCause);
+
+        if (stream && !errorEmitted) {
+          stream.emit({
+            id: crypto.randomUUID(),
+            type: "data-error",
+            data: { error: displayMessage, errorCause },
+          });
+          errorEmitted = true;
+        }
+
+        return { text: displayMessage, reasoning: "", executionFlow: [], toolCalls: [] };
+      }
 
       // Convert reasoning to proper format - prioritize collected reasoning if AI SDK reasoning is empty
       const processedReasoning =
@@ -370,7 +562,42 @@ export const conversationAgent = createAgent({
         executionFlow: executionFlow.steps,
         toolCalls: executionFlow.steps.filter((s) => s.type === "tool_call"),
       };
+    } catch (error) {
+      // Handle API errors with user-friendly messages
+      // Use the intercepted API error first (actual auth error), then others
+      const actualError = interceptedApiError || originalStreamError || error;
+      const errorCause = createErrorCause(actualError);
+      const displayMessage = getErrorDisplayMessage(errorCause);
+
+      logger.error("Conversation agent failed", {
+        error,
+        originalError: originalStreamError,
+        interceptedApiError: interceptedApiError,
+        errorCause,
+        displayMessage,
+      });
+
+      // Emit error message to stream so user can see it
+      if (stream && !errorEmitted) {
+        stream.emit({
+          id: crypto.randomUUID(),
+          type: "data-error",
+          data: { error: displayMessage, errorCause },
+        });
+        errorEmitted = true;
+      }
+
+      // Return error response instead of throwing
+      return { text: displayMessage, reasoning: "", executionFlow: [], toolCalls: [] };
     } finally {
+      // Remove the unhandled rejection handler to prevent memory leaks
+      globalThis.removeEventListener("unhandledrejection", unhandledRejectionHandler);
+
+      // Clean up process handler if it was added
+      if (typeof process !== "undefined" && process.off) {
+        process.off("unhandledRejection", processHandler);
+      }
+
       // Clean up MCP connection
       try {
         await agentServerTransport.close();

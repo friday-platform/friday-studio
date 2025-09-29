@@ -27,6 +27,7 @@ import { CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js";
 import { retry } from "@std/async";
 import { z } from "zod";
 import type { ToolCall } from "../../../../src/core/services/hallucination-detector.ts";
+import { createErrorCause, getErrorDisplayMessage, throwWithCause } from "../errors.ts";
 import { createAgentContextBuilder } from "../agent-context/index.ts";
 import type { WrappedAgentResult } from "../agent-conversion/from-llm.ts";
 import type { AgentToolParams } from "../agent-server/types.ts";
@@ -272,7 +273,8 @@ export class AgentOrchestrator implements IAgentOrchestrator {
       this.logger.debug("Discovered agents via MCP", { agentCount: agents.length });
       return agents;
     } catch (error) {
-      this.logger.error("Failed to discover agents", { error });
+      const errorCause = createErrorCause(error);
+      this.logger.error("Failed to discover agents", { error: error, errorCause });
 
       // If MCP discovery fails, check for wrapped agents
       const wrappedAgents: AgentMetadata[] = [];
@@ -574,21 +576,28 @@ export class AgentOrchestrator implements IAgentOrchestrator {
         throw error;
       }
 
+      const errorCause = createErrorCause(error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+
       this.logger.error("Agent execution failed", {
         agentId,
-        error,
+        error: errorMessage,
+        errorCause,
         duration: Date.now() - startTime,
       });
 
       // Create a brief summary of the task instead of storing the entire prompt
       const taskSummary = prompt.length > 100 ? `${prompt.substring(0, 97)}...` : prompt;
 
+      // Provide user-friendly error messages based on error type
+      const userFriendlyError = getErrorDisplayMessage(errorCause) || errorMessage;
+
       return {
         agentId,
         task: taskSummary,
         input: context,
         output: null,
-        error: error instanceof Error ? error.message : String(error),
+        error: userFriendlyError,
         duration: Date.now() - startTime,
         timestamp: new Date().toISOString(),
         toolCalls: undefined,
@@ -686,7 +695,7 @@ export class AgentOrchestrator implements IAgentOrchestrator {
         task: "Resume with approval",
         input: decision,
         output: null,
-        error: error instanceof Error ? error.message : String(error),
+        error: error,
         duration: Date.now() - startTime,
         timestamp: new Date().toISOString(),
       };
@@ -755,7 +764,7 @@ export class AgentOrchestrator implements IAgentOrchestrator {
         } catch (error) {
           logger.error("Failed to build context for wrapped agent, falling back to empty tools", {
             agentId,
-            error: error instanceof Error ? error.message : String(error),
+            error: error,
           });
 
           // Fallback to minimal context on error
@@ -866,7 +875,7 @@ export class AgentOrchestrator implements IAgentOrchestrator {
         task: taskSummary,
         input: context,
         output: null,
-        error: error instanceof Error ? error.message : String(error),
+        error: error,
         duration: Date.now() - startTime,
         timestamp: new Date().toISOString(),
         toolCalls: undefined,

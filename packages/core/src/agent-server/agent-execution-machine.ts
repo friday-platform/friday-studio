@@ -29,6 +29,7 @@ import {
 import type { Logger } from "@atlas/logger";
 import type { CoALAMemoryManager } from "@atlas/memory";
 import { type ActorRefFrom, assign, fromPromise, setup } from "xstate";
+import { createErrorCause } from "../utils/error-helpers.ts";
 
 // === Input/Output Types for State Machine Actors ===
 
@@ -186,7 +187,8 @@ export function createAgentExecutionMachine(
             },
           );
         } catch (e) {
-          logger.error("Failed to persist episodic result", { error: e });
+          const errorCause = createErrorCause(e);
+          logger.error("Failed to persist episodic result", { error: e, errorCause });
         }
         return Promise.resolve();
       }),
@@ -363,9 +365,9 @@ export function createAgentExecutionMachine(
           id: "prepareContext",
           src: "prepareContext",
           input: ({ context }) => ({
-            agent: context.agent,
-            prompt: context.currentPrompt,
-            sessionData: context.sessionData,
+            agent: context.agent!,
+            prompt: context.currentPrompt!,
+            sessionData: context.sessionData!,
             abortSignal: context.abortSignal,
           }),
           onDone: { target: "executing", actions: "assignPreparedContext" },
@@ -382,9 +384,9 @@ export function createAgentExecutionMachine(
           id: "executeAgent",
           src: "executeAgent",
           input: ({ context }) => ({
-            agent: context.agent,
-            prompt: context.enrichedPrompt || context.currentPrompt,
-            context: context.preparedContext,
+            agent: context.agent!,
+            prompt: context.enrichedPrompt || context.currentPrompt!,
+            context: context.preparedContext!,
           }),
           onDone: { target: "persisting", actions: ["assignExecutionResult"] },
           onError: [
@@ -439,9 +441,9 @@ export function createAgentExecutionMachine(
           src: "persistResults",
           input: ({ context }) => ({
             agentId: context.agentId,
-            prompt: context.currentPrompt,
-            result: context.result,
-            duration: context.endTime - context.startTime,
+            prompt: context.currentPrompt!,
+            result: context.result!,
+            duration: context.endTime! - context.startTime!,
           }),
           onDone: { target: "completed", actions: "logCompleted" },
           onError: {

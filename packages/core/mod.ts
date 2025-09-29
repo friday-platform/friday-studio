@@ -15,10 +15,7 @@ export type { LLMAgentConfig } from "./src/agent-conversion/index.ts";
 export { convertLLMAgentToSDK } from "./src/agent-conversion/index.ts";
 
 // Agent Loader and Registry
-export {
-  AgentLoader,
-  AgentRegistry,
-} from "./src/agent-loader/index.ts";
+export { AgentLoader, AgentRegistry } from "./src/agent-loader/index.ts";
 export * from "./src/agent-server/mod.ts";
 // Atlas Configuration
 export {
@@ -34,7 +31,10 @@ export * from "./src/credential-fetcher.ts";
 // Export all LLM provider types and interfaces
 export type { LLMOptions, LLMResponse } from "./src/llm-provider.ts";
 export { LLMProvider } from "./src/llm-provider.ts";
-export type { MCPDiscoveryRequest, MCPServerMetadata } from "./src/mcp-registry/index.ts";
+export type {
+  MCPDiscoveryRequest,
+  MCPServerMetadata,
+} from "./src/mcp-registry/index.ts";
 // MCP Registry
 export { MCPRegistry } from "./src/mcp-registry/index.ts";
 // MCP Server Pool
@@ -65,3 +65,11 @@ export * from "./src/types/actors.ts";
 export * from "./src/types/actors.ts";
 export * from "./src/types/agent-execution.ts";
 export * from "./src/types/session.ts";
+// Export error types explicitly
+export type {
+  APIErrorCause,
+  ErrorCause,
+  NetworkErrorCause,
+  UnknownErrorCause,
+} from "./src/types/error-causes.ts";
+export { createErrorCause, throwWithCause } from "./src/utils/error-helpers.ts";

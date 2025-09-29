@@ -9,7 +9,6 @@ import Textarea from "$lib/components/textarea.svelte";
 import Artifacts from "$lib/modules/artifacts/artifacts.svelte";
 import { getClientContext } from "$lib/modules/client/context.svelte";
 import ErrorMessage from "$lib/modules/messages/error-message.svelte";
-import { formatMessage } from "$lib/modules/messages/format";
 import Message from "$lib/modules/messages/message.svelte";
 import Progress from "$lib/modules/messages/progress.svelte";
 import Table from "$lib/modules/messages/table.svelte";
@@ -69,10 +68,10 @@ $effect(() => {
   }
 });
 
-const hasMessages = $derived(
-  clientCtx.messages.filter((m) => m.type !== "data-connection" && m.type !== "data-heartbeat")
-    .length > 0,
-);
+const formattedMessages = $derived(clientCtx.formattedMessages);
+const rawMessages = $derived([...clientCtx.messageHistory, ...clientCtx.messages]);
+
+const hasMessages = $derived(formattedMessages.filter((m) => m.type !== "header").length > 0);
 </script>
 
 <div class="chat" class:has-messages={hasMessages}>
@@ -87,8 +86,7 @@ const hasMessages = $derived(
 					</p>
 				</div>
 
-				{#each clientCtx.messages as message, index (message.id || index)}
-					{@const formattedMessage = formatMessage(message, clientCtx.user)}
+				{#each formattedMessages as formattedMessage, index (formattedMessage.id || index)}
 
 					{#if formattedMessage && (formattedMessage.type === 'request' || formattedMessage.type === 'text')}
 						<Message message={formattedMessage} />
@@ -107,7 +105,7 @@ const hasMessages = $derived(
 				{#if clientCtx.typingState.isTyping}
 					{@const actionsAfterLastUser = (() => {
 						// Find the last data-user-message
-						const lastUserIndex = clientCtx.messages.findLastIndex(
+						const lastUserIndex = rawMessages.findLastIndex(
 							(msg) => msg.type === 'data-user-message'
 						);
 
@@ -115,7 +113,7 @@ const hasMessages = $derived(
 						if (lastUserIndex === -1) return [];
 
 						// Return everything after the last user message
-						return clientCtx.messages.slice(lastUserIndex + 1);
+						return rawMessages.slice(lastUserIndex + 1);
 					})()}
 
 					<Progress actions={actionsAfterLastUser} />
@@ -312,14 +310,11 @@ const hasMessages = $derived(
 	</div>
 
 	{#if showPlan}
-		{@const latestPlanMessage = clientCtx.messages.findLast(
-			(message) => message.type === 'tool-workspace_summary'
+		{@const latestPlanMessage = formattedMessages.findLast(
+			(message) => message.type === 'tool_call' && message.metadata?.toolName === 'workspace_summary'
 		)}
-		{@const formattedPlan = latestPlanMessage
-			? formatMessage(latestPlanMessage, clientCtx.user)
-			: null}
-		{#if formattedPlan}
-			{@const data = formattedPlan.metadata?.result}
+		{#if latestPlanMessage}
+			{@const data = latestPlanMessage.metadata?.result}
 			<div class="plan" transition:fade={{ duration: 150 }}>
 				<button type="button" class="close-button" onclick={() => (showPlan = false)}>
 					<IconSmall.Close />

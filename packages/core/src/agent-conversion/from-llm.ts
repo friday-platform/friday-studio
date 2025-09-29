@@ -1,6 +1,7 @@
 import { APICallError } from "@ai-sdk/provider";
 import type { AtlasAgent, ToolCall, ToolResult } from "@atlas/agent-sdk";
 import { type AtlasUIMessage, createAgent } from "@atlas/agent-sdk";
+import { throwWithCause } from "../utils/error-helpers.ts";
 import { collectToolUsageFromSteps, pipeUIMessageStream } from "@atlas/agent-sdk/vercel-helpers";
 import type { LLMAgentConfig } from "@atlas/config";
 import type { Logger } from "@atlas/logger";
@@ -118,6 +119,15 @@ export function convertLLMToAgent(
             2. Monitoring API status at status.anthropic.com
             3. Implementing rate limiting if this persists`,
           );
+        }
+
+        // For 529 errors, throw with structured cause and user-friendly message
+        if (isAPIError && error.statusCode === 529) {
+          throwWithCause("API is overloaded. The service will automatically retry.", {
+            type: "api",
+            code: "OVERLOADED_ERROR",
+            statusCode: 529,
+          });
         }
 
         throw error;

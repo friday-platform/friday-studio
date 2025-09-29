@@ -1,5 +1,7 @@
 import { client, parseResult } from "@atlas/client/v2";
 import type { SessionUIMessageChunk } from "@atlas/core";
+import { throwWithCause } from "@atlas/core/errors";
+import { logger } from "@atlas/logger";
 import { createAtlasClient } from "@atlas/oapi-client";
 import { stringifyError } from "@atlas/utils";
 import { createEventSource } from "eventsource-client";
@@ -47,7 +49,19 @@ export class ConversationClient {
       },
     });
     if (res.error) {
-      throw new Error(`Failed to create conversation session (${res.error}): ${res.error.error}`);
+      const errorMessage = res.error.error || "Failed to create conversation session";
+      if (errorMessage.includes("401")) {
+        throwWithCause(
+          "Authentication failed. Please check your API key configuration.",
+          errorMessage,
+        );
+      } else if (errorMessage.includes("ECONNREFUSED")) {
+        throwWithCause(
+          "Cannot connect to Atlas daemon. Please ensure it is running.",
+          errorMessage,
+        );
+      }
+      throwWithCause("Failed to create conversation session. Please try again.", errorMessage);
     }
     // Transform the response to match the expected ConversationSession interface
     return {
@@ -80,15 +94,22 @@ export class ConversationClient {
       }
       const conversationWorkspace = workspaces.data.find((w) => w.id === "atlas-conversation");
       if (!conversationWorkspace) {
-        throw new Error(
-          "Conversation workspace not found - install conversation workspace to use chat features",
+        throwWithCause(
+          "Conversation workspace not found. Please install the conversation workspace to use chat features.",
+          {
+            type: "unknown",
+            code: "WORKSPACE_ATLAS_CONVERSATION_NOT_FOUND_IN_AVAILABLE_WORKSPACES",
+          },
         );
       }
 
       this.conversationWorkspaceId = conversationWorkspace.id;
       return this.conversationWorkspaceId;
     } catch (error) {
-      throw new Error(`Failed to find conversation workspace: ${error}`);
+      throwWithCause(
+        "Failed to locate conversation workspace. Please check your workspace configuration.",
+        error,
+      );
     }
   }
 
@@ -120,9 +141,22 @@ export class ConversationClient {
     });
 
     if (response.error) {
-      throw new Error(
-        `Failed to send message (${response.response.status}): ${response.error.error}`,
-      );
+      const status = response.response?.status || 0;
+      const errorMessage = response.error.error || "Unknown error";
+
+      if (status === 429) {
+        throwWithCause(
+          "Rate limit exceeded. Please wait a moment before sending another message.",
+          errorMessage,
+        );
+      } else if (status >= 500) {
+        throwWithCause(
+          "Atlas service is temporarily unavailable. Please try again later.",
+          errorMessage,
+        );
+      }
+
+      throwWithCause("Failed to send message. Please try again.", `${status}: ${errorMessage}`);
     }
 
     return { messageId: response.data.message || crypto.randomUUID(), status: "processing" };
@@ -145,9 +179,22 @@ export class ConversationClient {
     });
 
     if (response.error) {
-      throw new Error(
-        `Failed to send message (${response.response.status}): ${response.error.error}`,
-      );
+      const status = response.response?.status || 0;
+      const errorMessage = response.error.error || "Unknown error";
+
+      if (status === 429) {
+        throwWithCause(
+          "Rate limit exceeded. Please wait a moment before sending another message.",
+          errorMessage,
+        );
+      } else if (status >= 500) {
+        throwWithCause(
+          "Atlas service is temporarily unavailable. Please try again later.",
+          errorMessage,
+        );
+      }
+
+      throwWithCause("Failed to send message. Please try again.", `${status}: ${errorMessage}`);
     }
 
     return { messageId: response.data.message || crypto.randomUUID(), status: "processing" };
@@ -179,10 +226,11 @@ export class ConversationClient {
             id: parsedData.id,
           };
 
-          console.log("Data: %s", data);
+          logger.debug("SSE data received", { data, sessionId });
           yield event;
         } catch (error) {
-          console.error("💩💩💩", error);
+          logger.error("Failed to parse SSE message", { error, data, sessionId });
+          // Continue processing other messages
         }
       }
     } catch (error) {
@@ -195,7 +243,10 @@ export class ConversationClient {
         message.includes("Connection refused") ||
         message.includes("ECONNREFUSED")
       ) {
-        throw new Error("Connection to Atlas daemon lost. It may have been stopped or restarted.");
+        throwWithCause(
+          "Connection to Atlas daemon lost. Please check if the daemon is running.",
+          error,
+        );
       }
 
       // Check for network issues
@@ -204,95 +255,15 @@ export class ConversationClient {
         message.includes("NetworkError") ||
         message.includes("ERR_NETWORK")
       ) {
-        throw new Error(
+        throwWithCause(
           "Network connection to Atlas daemon failed. Please check your network and daemon status.",
+          error,
         );
       }
 
       // Default error message for other cases
-      throw new Error(`SSE connection error: ${message}`);
+      throwWithCause("Streaming connection error. Please try reconnecting.", error);
     }
-
-    // Use the SSE URL from the session if not provided
-
-    // let eventSource: {
-    //   response: Response;
-    //   consume(): AsyncIterableIterator<EventSourceMessage>;
-    // } | null = null;
-
-    // try {
-    //   eventSource = await createEventSource({
-    //     url: sseUrl,
-    //     options: abortSignal ? { signal: abortSignal } : undefined,
-    //   });
-
-    //   for await (const message of eventSource.consume()) {
-    //     // Check if aborted
-    //     if (abortSignal?.aborted) {
-    //       break;
-    //     }
-
-    //     console.log("🍂🍂🍂🍂", message.data);
-
-    //     try {
-    //       const parsedData = JSON.parse(message.data);
-    //       const event: unknown = {
-    //         type: parsedData.type || "unknown",
-    //         data: parsedData.data || parsedData,
-    //         timestamp: parsedData.timestamp || new Date().toISOString(),
-    //         sessionId: parsedData.sessionId || sessionId,
-    //         messageId: message.id,
-    //         id: parsedData.id,
-    //       };
-
-    //       yield event;
-
-    //       // Only close the connection if explicitly requested
-    //       if (
-    //         // @ts-expect-error event is currently untyped
-    //         event.type === "message_complete" &&
-    //         // @ts-expect-error event is currently untyped
-    //         event.data?.closeConnection === true
-    //       ) {
-    //         // @TODO: cleanup: ensure the connection is closed
-    //         break;
-    //       }
-    //     } catch (error) {
-    //       console.error("Failed to parse SSE message:", error, message);
-    //       // Continue processing other messages
-    //     }
-    //   }
-    // } catch (error) {
-    //   // Handle specific connection errors with user-friendly messages
-    //   const errorMessage = error instanceof Error ? error.message : String(error);
-
-    //   // Check for daemon shutdown or connection loss
-    //   if (
-    //     errorMessage.includes("error reading a body from connection") ||
-    //     errorMessage.includes("Connection refused") ||
-    //     errorMessage.includes("ECONNREFUSED")
-    //   ) {
-    //     throw new Error(
-    //       "Connection to Atlas daemon lost. The daemon may have been stopped or restarted.",
-    //     );
-    //   }
-
-    //   // Check for network issues
-    //   if (
-    //     errorMessage.includes("Failed to fetch") ||
-    //     errorMessage.includes("NetworkError") ||
-    //     errorMessage.includes("ERR_NETWORK")
-    //   ) {
-    //     throw new Error(
-    //       "Network connection to Atlas daemon failed. Please check your network and daemon status.",
-    //     );
-    //   }
-
-    //   // Default error message for other cases
-    //   throw new Error(`SSE connection error: ${errorMessage}`);
-    // } finally {
-    //   // @TODO: cleanup: ensure the connection is closed
-    // }
   }
 
   createMessageStream(
@@ -308,26 +279,12 @@ export class ConversationClient {
         (async () => {
           try {
             for await (const { data, id } of eventSource) {
-              // if (abortSignal?.aborted) {
-              //   controller.close();
-              //   break;
-              // }
-
               try {
                 const parsedData = JSON.parse(data);
-                // const event: SessionUIMessageChunk = {
-                //   type: parsedData.type || "unknown",
-                //   data: parsedData.data || parsedData,
-                //   timestamp: parsedData.timestamp || new Date().toISOString(),
-                //   sessionId: parsedData.sessionId || sessionId,
-                //   messageId: id,
-                //   id: parsedData.id,
-                // };
-
                 controller.enqueue(parsedData);
               } catch (error) {
                 // Skip malformed messages, don't break the stream
-                console.error("Parse error:", error);
+                logger.error("Failed to parse SSE message in stream", { error, data, sessionId });
               }
             }
           } catch (error) {
@@ -355,7 +312,10 @@ export class ConversationClient {
     }
 
     if (!response.ok) {
-      throw new Error(`Failed to get session: ${response.status} ${response.statusText}`);
+      throwWithCause(
+        `Failed to retrieve session information. Status: ${response.status}`,
+        response.statusText,
+      );
     }
 
     return await response.json();
@@ -384,7 +344,14 @@ export class ConversationClient {
 
     if (!response.ok) {
       const errorText = await response.text().catch(() => response.statusText);
-      throw new Error(`Workspace API error (${response.status}): ${errorText}`);
+      switch (response.status) {
+        case 404:
+          throwWithCause("Workspace not found. Please check the workspace ID.", errorText);
+        case 403:
+          throwWithCause("Permission denied. You don't have access to this workspace.", errorText);
+        default:
+          throwWithCause(`Failed to access workspace. Status: ${response.status}`, errorText);
+      }
     }
 
     return await response.json();
@@ -401,7 +368,10 @@ export class ConversationClient {
 
     // Ignore 404 errors (session already finished)
     if (response.error && response.response.status !== 404) {
-      throw new Error(`Failed to cancel session: ${response.error.error}`);
+      throwWithCause(
+        "Failed to cancel session. The session may have already ended.",
+        response.error.error || "Unknown error",
+      );
     }
   }
 }

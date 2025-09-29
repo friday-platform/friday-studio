@@ -78,19 +78,23 @@ sendMessageRoute.post(
       try {
         const runtime = await ctx.getOrCreateWorkspaceRuntime(workspaceId);
 
-        await runtime.triggerSignal("conversation", {
-          streamId,
-          messageId,
-          message: body.message,
-          userId: body.userId || "cli-user",
-          conversationId: body.conversationId,
-          scope: body.scope,
-          metadata: {
-            ...body.metadata,
-            source: "stream-message",
-            timestamp: new Date().toISOString(),
+        await runtime.triggerSignalWithSession(
+          "conversation-stream",
+          {
+            streamId,
+            messageId,
+            message: body.message,
+            userId: body.userId || "cli-user",
+            conversationId: body.conversationId,
+            scope: body.scope,
+            metadata: {
+              ...body.metadata,
+              source: "stream-message",
+              timestamp: new Date().toISOString(),
+            },
           },
-        });
+          streamId,
+        );
 
         logger.info("Message processed and signal triggered", { streamId, messageId, workspaceId });
 

@@ -28,6 +28,14 @@ export function getTodaysDate() {
   return formatter.format(new Date());
 }
 
+/**
+ * Returns a human readable date string based on the given date.
+ * @example Monday, 22 September 2025
+ */
+export function formatDate(d: Date): string {
+  return formatter.format(d);
+}
+
 export type Result<T, U = undefined> = { ok: true; data: T } | { ok: false; error: U };
 
 /**

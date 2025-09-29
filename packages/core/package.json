@@ -2,7 +2,11 @@
   "name": "@atlas/core",
   "version": "1.0.0",
   "type": "module",
-  "exports": { ".": "./mod.ts", "./types": "./src/types/workspace.ts" },
+  "exports": {
+    ".": "./mod.ts",
+    "./types": "./src/types/workspace.ts",
+    "./errors": "./src/errors.ts"
+  },
   "main": "./mod.ts",
   "dependencies": {
     "@ai-sdk/anthropic": "^2.0.16",
@@ -18,6 +22,7 @@
     "@atlas/oapi-client": "workspace:*",
     "@atlas/workspace": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.18.0",
+    "@std/assert": "npm:@jsr/std__assert@^1.0.14",
     "@std/async": "npm:@jsr/std__async@^1.0.14",
     "@std/fs": "npm:@jsr/std__fs@^1.0.19",
     "@std/path": "npm:@jsr/std__path@^1.1.2",

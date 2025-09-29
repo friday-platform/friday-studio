@@ -176,7 +176,7 @@ export const useTextInput = ({
   );
 
   useEffect(() => {
-    if (isDisabled) {
+    if (isDisabled || !stdin.isTTY) {
       return;
     }
 

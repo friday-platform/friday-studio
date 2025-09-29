@@ -9,8 +9,10 @@ import type { WorkspaceSupervisorConfig, WrappedAgentResult } from "@atlas/core"
 import {
   AgentOrchestrator,
   convertLLMToAgent,
+  createErrorCause,
   type GlobalMCPServerPool,
   LLMProvider,
+  throwWithCause,
   WorkspaceSessionStatus,
 } from "@atlas/core";
 import { logger } from "@atlas/logger";
@@ -164,9 +166,11 @@ const workspaceRuntimeMachineSetup = setup({
             });
           }
         } catch (error) {
+          const errorCause = createErrorCause(error);
           logger.debug("Could not load workspace .env file", {
             workspaceId: context.workspace.id,
-            error: error instanceof Error ? error.message : String(error),
+            error: error,
+            errorCause,
           });
         }
       }
@@ -235,7 +239,7 @@ const workspaceRuntimeMachineSetup = setup({
       );
 
       // Initialize the orchestrator
-      agentOrchestrator.initialize();
+      await agentOrchestrator.initialize();
 
       logger.info("Agent orchestrator initialized", { workspaceId: context.workspace.id });
 
@@ -266,9 +270,11 @@ const workspaceRuntimeMachineSetup = setup({
                 domains: wrappedAgent.metadata.expertise.domains,
               });
             } catch (error) {
+              const errorCause = createErrorCause(error);
               logger.error(`Failed to wrap LLM agent ${agentId}:`, {
                 workspaceId: context.workspace.id,
-                error: error instanceof Error ? error.message : String(error),
+                error: error,
+                errorCause,
               });
               // Continue with other agents
             }
@@ -310,9 +316,11 @@ const workspaceRuntimeMachineSetup = setup({
             worklog: mergedConfig.workspace.memory.worklog?.enabled,
           });
         } catch (error) {
+          const errorCause = createErrorCause(error);
           logger.warn("Failed to initialize memory manager", {
             workspaceId: context.workspace.id,
-            error: error instanceof Error ? error.message : String(error),
+            error: error,
+            errorCause,
           });
         }
       }
@@ -369,8 +377,10 @@ const workspaceRuntimeMachineSetup = setup({
 
               logger.info(`Stream signal prepared: ${signalId}`);
             } catch (error) {
+              const errorCause = createErrorCause(error);
               logger.error(`Failed to prepare stream signal: ${signalId}`, {
-                error: error instanceof Error ? error.message : String(error),
+                error: error,
+                errorCause,
               });
             }
           }
@@ -401,8 +411,10 @@ const workspaceRuntimeMachineSetup = setup({
               await streamData.runtimeSignal.teardown();
             }
           } catch (error) {
+            const errorCause = createErrorCause(error);
             logger.error(`Failed to cleanup stream signal: ${signalId}`, {
-              error: error instanceof Error ? error.message : String(error),
+              error: error,
+              errorCause,
             });
           }
         }
@@ -433,9 +445,8 @@ const workspaceRuntimeMachineSetup = setup({
               session.cancel();
             }
           } catch (error) {
-            logger.error(`Failed to cleanup session: ${sessionId}`, {
-              error: error instanceof Error ? error.message : String(error),
-            });
+            const errorCause = createErrorCause(error);
+            logger.error(`Failed to cleanup session: ${sessionId}`, { error: error, errorCause });
           }
         }
 
@@ -465,9 +476,11 @@ const workspaceRuntimeMachineSetup = setup({
     onSessionCreated: ({ context, event }) => {
       if (event.type === "SESSION_CREATED" && context.sessionMemoryHooks) {
         context.sessionMemoryHooks.onStart(event.sessionId).catch((error) => {
+          const errorCause = createErrorCause(error);
           logger.error("Failed to initialize session memory", {
             sessionId: event.sessionId,
-            error: error instanceof Error ? error.message : String(error),
+            error: error,
+            errorCause,
           });
         });
       }
@@ -489,9 +502,11 @@ const workspaceRuntimeMachineSetup = setup({
     onSessionCompleted: ({ context, event }) => {
       if (event.type === "SESSION_COMPLETED" && context.sessionMemoryHooks) {
         context.sessionMemoryHooks.onEnd(event.sessionId).catch((error) => {
+          const errorCause = createErrorCause(error);
           logger.error("Failed to finalize session memory", {
             sessionId: event.sessionId,
-            error: error instanceof Error ? error.message : String(error),
+            error: error,
+            errorCause,
           });
         });
       }
@@ -713,10 +728,13 @@ export function createWorkspaceRuntimeMachine(_input: WorkspaceRuntimeMachineInp
                           currentState: self.getSnapshot().value,
                           hasConfig: !!context.config,
                         });
-                        throw new Error(
-                          `Supervisor not initialized for workspace ${context.workspace.id}. ` +
-                            `This may indicate a race condition during initialization. ` +
-                            `Current state: ${self.getSnapshot().value}`,
+                        throwWithCause(
+                          `Workspace supervisor is not available. Please ensure the workspace is properly initialized.`,
+                          new Error(
+                            `Supervisor not initialized for workspace ${context.workspace.id}. ` +
+                              `This may indicate a race condition during initialization. ` +
+                              `Current state: ${self.getSnapshot().value}`,
+                          ),
                         );
                       }
 
@@ -801,9 +819,11 @@ export function createWorkspaceRuntimeMachine(_input: WorkspaceRuntimeMachineInp
                       // Note: We don't await session.start() as it blocks until completion
                       // Instead, we just trigger the start asynchronously
                       session.start().catch((error) => {
+                        const errorCause = createErrorCause(error);
                         logger.error("Session start failed", {
                           sessionId,
-                          error: error instanceof Error ? error.message : String(error),
+                          error: error,
+                          errorCause,
                         });
                       });
 
@@ -852,9 +872,7 @@ export function createWorkspaceRuntimeMachine(_input: WorkspaceRuntimeMachineInp
                       }
                     },
                     error: (error: unknown) => {
-                      logger.error("Signal processing failed", {
-                        error: error instanceof Error ? error.message : String(error),
-                      });
+                      logger.error("Signal processing failed", { error: error });
 
                       self.send({
                         type: "ERROR",
@@ -951,9 +969,11 @@ export function createWorkspaceRuntimeMachine(_input: WorkspaceRuntimeMachineInp
                     workspace_id: context.workspace.id,
                   })
                   .catch((error: unknown) => {
+                    const errorCause = createErrorCause(error);
                     logger.error("Failed to store session results", {
                       sessionId: event.sessionId,
-                      error: error instanceof Error ? error.message : String(error),
+                      error: error,
+                      errorCause,
                     });
                   });
               }
@@ -1046,7 +1066,7 @@ async function registerMCPServers(config: MergedConfig, workspaceId: string): Pr
       logger.error("MCPServerRegistry initialization failed", {
         operation: "mcp_server_registration",
         workspaceId,
-        error: error instanceof Error ? error.message : String(error),
+        error: error,
       });
       // Continue without MCP servers rather than blocking workspace initialization
     }
@@ -1112,7 +1132,7 @@ async function registerMCPServers(config: MergedConfig, workspaceId: string): Pr
             operation: "mcp_server_registration",
             workspaceId,
             serverId: serverConfig.id,
-            error: error instanceof Error ? error.message : String(error),
+            error: error,
           });
         }
         // Don't throw - continue with other servers
@@ -1131,7 +1151,7 @@ async function registerMCPServers(config: MergedConfig, workspaceId: string): Pr
     logger.error("Failed to register MCP servers for workspace", {
       operation: "mcp_server_registration",
       workspaceId,
-      error: error instanceof Error ? error.message : String(error),
+      error: error,
     });
     // Don't throw - workspace should continue to initialize even if MCP registration fails
   }

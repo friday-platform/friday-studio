@@ -84,6 +84,9 @@ export const MessageBuffer = () => {
             } else if (part.type === "data-session-cancel") {
               setAtlasSessionId(null); // Clear session ID on cancel
               setTypingState(false);
+            } else if (part.type === "data-error" || part.type === "data-agent-error") {
+              setAtlasSessionId(null);
+              setTypingState(false);
             }
           });
 

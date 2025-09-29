@@ -1,6 +1,7 @@
 import type { AgentMetadata } from "@atlas/agent-sdk";
 import { createLogger } from "@atlas/logger";
 import type { AgentRegistry } from "../agent-loader/registry.ts";
+import { createErrorCause } from "../errors.ts";
 import { StaticMCPDiscovery } from "./static-discovery.ts";
 import type { MCPDiscoveryRequest, MCPDiscoveryResult, MCPServerMetadata } from "./types.ts";
 
@@ -65,7 +66,8 @@ export class AgentBasedMCPDiscovery {
       }
       return [];
     } catch (error) {
-      this.logger.error("Agent-based discovery failed", { error });
+      const errorCause = createErrorCause(error);
+      this.logger.error("Agent-based discovery failed", { error: error, errorCause });
       return [];
     }
   }
@@ -97,7 +99,11 @@ export class AgentBasedMCPDiscovery {
     }
 
     // Check if agent capabilities or domains contain intent keywords
-    const searchableText = [...agent.expertise.domains, agent.description || ""]
+    const searchableText = [
+      ...agent.expertise.domains,
+      ...agent.expertise.capabilities,
+      agent.description || "",
+    ]
       .join(" ")
       .toLowerCase();
 

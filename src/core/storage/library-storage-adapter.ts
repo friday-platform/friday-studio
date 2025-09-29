@@ -12,6 +12,9 @@
 
 import { ensureDir } from "@std/fs";
 import { dirname, join } from "@std/path";
+import { throwWithCause } from "../../../packages/core/src/utils/error-helpers.ts";
+import { logger } from "@atlas/logger";
+import { stringifyError } from "@atlas/utils";
 import type {
   LibraryItem,
   LibrarySearchQuery,
@@ -341,7 +344,10 @@ export class LibraryStorageAdapter {
   async storeItem(item: StoreItemInput): Promise<string> {
     // Validate item structure (basic validation)
     if (!item.id || !item.source || !item.name || !item.content) {
-      throw new Error("Missing required fields for library item");
+      throwWithCause(
+        "Cannot store library item: Required fields are missing (id, source, name, or content).",
+        { type: "unknown", code: "MISSING_REQUIRED_FIELDS_FOR_LIBRARY_ITEM" },
+      );
     }
 
     // Use provided MIME type or detect from content/filename
@@ -429,7 +435,10 @@ export class LibraryStorageAdapter {
       } catch {
         // Ignore cleanup errors
       }
-      throw new Error("Failed to store library item - atomic operation failed");
+      throwWithCause(
+        "Failed to store library item. The storage operation could not be completed atomically.",
+        { type: "unknown", code: "FAILED_TO_STORE_LIBRARY_ITEM_ATOMIC_OPERATION_FAILED" },
+      );
     }
 
     return fullContentPath;
@@ -480,10 +489,9 @@ export class LibraryStorageAdapter {
         content = await Deno.readFile(fullContentPath);
       }
     } catch (error) {
-      throw new Error(
-        `Failed to read content for item ${id}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+      throwWithCause(
+        `Failed to read library item '${id}'. The content file may be missing or inaccessible.`,
+        error instanceof Error ? error : new Error(stringifyError(error)),
       );
     }
 
@@ -508,11 +516,7 @@ export class LibraryStorageAdapter {
       await Deno.remove(fullContentPath);
     } catch (error) {
       // Log warning but continue with metadata deletion
-      console.warn(
-        `Failed to delete content file ${fullContentPath}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
+      logger.warn(`Failed to delete content file ${fullContentPath}: ${stringifyError(error)}`);
     }
 
     const atomic = this.storage.atomic();
@@ -734,7 +738,10 @@ export class LibraryStorageAdapter {
 
     const success = await atomic.commit();
     if (!success) {
-      throw new Error("Failed to store template - atomic operation failed");
+      throwWithCause(
+        "Failed to store template. The storage operation could not be completed atomically.",
+        { type: "unknown", code: "FAILED_TO_STORE_TEMPLATE_ATOMIC_OPERATION_FAILED" },
+      );
     }
   }
 
@@ -839,7 +846,10 @@ export class LibraryStorageAdapter {
 
     const success = await atomic.commit();
     if (!success) {
-      throw new Error("Failed to update library index - atomic operation failed");
+      throwWithCause(
+        "Failed to update library index. The storage operation could not be completed atomically.",
+        { type: "unknown", code: "FAILED_TO_UPDATE_LIBRARY_INDEX_ATOMIC_OPERATION_FAILED" },
+      );
     }
   }
 

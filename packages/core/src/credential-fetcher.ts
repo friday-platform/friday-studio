@@ -1,6 +1,9 @@
 import { logger } from "@atlas/logger";
+import { formatDate } from "@atlas/utils";
+import { retry, type RetryOptions } from "@std/async/retry";
 import { z } from "zod/v4";
 import { getCredentialsApiUrl } from "./atlas-config.ts";
+import { throwWithCause } from "./errors.ts";
 
 /**
  * Fetches bundled API credentials from Atlas for Friends & Family users.
@@ -45,7 +48,10 @@ export function validateAtlasJWT(token: string): void {
   const parts = token.split(".");
   const encodedPayload = parts.at(1);
   if (parts.length !== 3 || !encodedPayload) {
-    throw new Error("Invalid JWT format");
+    throwWithCause("Atlas key is invalid. Please ensure you have a valid Atlas API key.", {
+      type: "unknown",
+      code: "INVALID_JWT_FORMAT",
+    });
   }
 
   const payload = JSON.parse(atob(encodedPayload));
@@ -53,7 +59,11 @@ export function validateAtlasJWT(token: string): void {
 
   const now = Math.floor(Date.now() / 1000);
   if (jwtPayload.exp <= now) {
-    throw new Error("Atlas key has expired");
+    const expirationDate = new Date(jwtPayload.exp * 1000);
+    throwWithCause(
+      "Atlas key has expired. Please generate a new key from your Atlas dashboard.",
+      new Error(`Key expired on ${formatDate(expirationDate)}`),
+    );
   }
 }
 
@@ -71,45 +81,45 @@ export async function fetchCredentials(options: FetchCredentialsOptions): Promis
 
   validateAtlasJWT(atlasKey);
 
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    try {
-      const response = await fetch(apiUrl, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${atlasKey}`, "Content-Type": "application/json" },
-        signal: AbortSignal.timeout(30000),
-      });
+  const retryOptions: RetryOptions = {
+    maxAttempts: retries + 1,
+    multiplier: 2, // Use exponential backoff
+    minTimeout: retryDelay,
+    maxTimeout: retryDelay * 10,
+  };
 
-      if (!response.ok) {
-        throw new Error(`Credential fetch failed: ${response.status} ${response.statusText}`);
+  return await retry(async () => {
+    const response = await fetch(apiUrl, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${atlasKey}`, "Content-Type": "application/json" },
+      signal: AbortSignal.timeout(10000),
+    });
+
+    if (!response.ok) {
+      const error = new Error(`${response.status} ${response.statusText}`);
+
+      // 4xx errors should not be retried - these are client errors
+      if (response.status >= 400 && response.status < 500) {
+        if (response.status === 401 || response.status === 403) {
+          throwWithCause("Authentication failed. Please check your Atlas API key.", error);
+        }
+        // All other 4xx errors - don't retry
+        throwWithCause(`Request failed: ${response.statusText}`, error);
       }
 
-      const data = await response.json();
-      const credentialsResponse = CredentialsResponseSchema.parse(data);
-
-      if (credentialsResponse.expires_at) {
-        logger.info(`Credentials expire at: ${credentialsResponse.expires_at}`);
-      }
-
-      return credentialsResponse.credentials;
-    } catch (error) {
-      const isNonRetryable =
-        error instanceof Error &&
-        (error.message.match(/\b4\d{2}\b/) || // Match 4xx status codes
-          error.message.includes("Invalid") ||
-          error.message.includes("expired") ||
-          error.name === "ZodError");
-
-      if (attempt === retries || isNonRetryable) {
-        throw error;
-      }
-
-      const backoffMs = retryDelay * (attempt + 1);
-      logger.warn(`Attempt ${attempt + 1} failed, retrying in ${backoffMs}ms`);
-      await new Promise((resolve) => setTimeout(resolve, backoffMs));
+      // 5xx errors will be retried automatically by @std/async
+      throw error;
     }
-  }
 
-  throw new Error("Unexpected retry loop exit");
+    const data = await response.json();
+    const credentialsResponse = CredentialsResponseSchema.parse(data);
+
+    if (credentialsResponse.expires_at) {
+      logger.info(`Credentials expire at: ${credentialsResponse.expires_at}`);
+    }
+
+    return credentialsResponse.credentials;
+  }, retryOptions);
 }
 
 /**

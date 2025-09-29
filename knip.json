@@ -9,7 +9,7 @@
     "packages/bundled-agents": { "project": ["src/**/*.{ts,tsx,js,jsx}!"] },
     "packages/client": { "project": ["**/*.{ts,tsx,js,jsx}!"] },
     "packages/config": { "project": ["**/*.{ts,tsx,js,jsx}!"] },
-    "packages/core": { "project": ["src/**/*.{ts,tsx,js,jsx}!"] },
+    "packages/core": { "entry": ["src/**/*.test.ts"], "project": ["src/**/*.{ts,tsx,js,jsx}!"] },
     "packages/cron": { "entry": ["tests/**/*.test.ts"], "project": ["src/**/*.{ts,tsx,js,jsx}!"] },
     "packages/fs-watch": { "project": ["**/*.{ts,tsx,js,jsx}!"] },
     "packages/logger": { "project": ["**/*.{ts,tsx,js,jsx}!"] },

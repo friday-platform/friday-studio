@@ -4,6 +4,7 @@ import { createAtlasClient } from "@atlas/oapi-client";
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { NotificationSchema } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
+import { createErrorCause, throwWithCause } from "../errors.ts";
 
 export const CancellationNotificationSchema = NotificationSchema.extend({
   method: z.literal("notifications/cancelled"),
@@ -61,9 +62,14 @@ export class HTTPStreamEmitter<T extends AtlasUIMessageChunk> implements StreamE
         body: event,
       });
     } catch (error) {
+      const errorCause = createErrorCause(error);
       this.logger.error("Failed stream event", {
-        error: error instanceof Error ? error.message : String(error),
+        streamId: this.streamId,
+        sessionId: this.sessionId,
+        error: error,
+        errorCause,
       });
+      // Don't throw - streaming should continue even if one event fails
     }
   }
 
@@ -136,8 +142,26 @@ export class MCPStreamEmitter implements StreamEmitter {
         params: { toolName: this.toolName, sessionId: this.sessionId, event },
       });
     } catch (notifyError) {
-      this.logger.error("Failed to stream Agent Server notification", { error: notifyError });
-      throw notifyError;
+      const errorCause = createErrorCause(notifyError);
+      this.logger.error("Failed to stream Agent Server notification", {
+        toolName: this.toolName,
+        sessionId: this.sessionId,
+        error: notifyError instanceof Error ? notifyError.message : String(notifyError),
+        errorCause,
+      });
+
+      // Provide context-aware error messages
+      if (errorCause.type === "network") {
+        throwWithCause(
+          "MCP connection lost. The agent server may be unavailable or disconnected.",
+          notifyError instanceof Error ? notifyError : new Error(String(notifyError)),
+        );
+      }
+
+      throwWithCause(
+        `Failed to send stream notification to MCP client for tool '${this.toolName}'`,
+        notifyError instanceof Error ? notifyError : new Error(String(notifyError)),
+      );
     }
   }
 

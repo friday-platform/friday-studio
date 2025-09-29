@@ -1,8 +1,16 @@
+import type { MCPCategory, MCPServerMetadata } from "./types.ts";
+
 /**
  * Static registry of curated MCP servers
  * Converted from JSON for easier TypeScript imports
  */
-export const mcpServersRegistry = {
+type RegistryMetadata = { version: string; lastUpdated: string; totalServers: number };
+
+export const mcpServersRegistry: {
+  servers: MCPServerMetadata[];
+  categories: MCPCategory[];
+  metadata: RegistryMetadata;
+} = {
   servers: [
     {
       id: "github-repos-manager",
@@ -793,4 +801,4 @@ export const mcpServersRegistry = {
     "monitoring",
   ],
   metadata: { version: "1.0.0", lastUpdated: "2025-01-27", totalServers: 16 },
-} as const;
+};

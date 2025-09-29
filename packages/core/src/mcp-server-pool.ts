@@ -9,6 +9,7 @@
 import type { MCPServerConfig } from "@atlas/config";
 import type { Logger } from "@atlas/logger";
 import { MCPManager } from "@atlas/mcp";
+import { createErrorCause } from "./errors.ts";
 
 interface PooledMCPManager {
   manager: MCPManager;
@@ -59,10 +60,12 @@ export class GlobalMCPServerPool {
           await manager.registerServer({ ...config, id });
           serverConfigMap.set(id, config);
         } catch (error) {
+          const errorCause = createErrorCause(error);
           this.logger.error(`Failed to register MCP server in pool: ${id}`, {
             operation: "mcp_server_pool_registration",
             serverId: id,
-            error: error instanceof Error ? error.message : String(error),
+            error: error,
+            errorCause,
           });
           // Continue with other servers - don't fail the entire pool
         }
@@ -195,10 +198,12 @@ export class GlobalMCPServerPool {
       try {
         await pooled.manager.dispose();
       } catch (error) {
+        const errorCause = createErrorCause(error);
         this.logger.error(`Error disposing pooled MCP manager: ${key}`, {
           operation: "mcp_server_pool_dispose",
           configKey: key,
-          error: error instanceof Error ? error.message : String(error),
+          error: error,
+          errorCause,
         });
       }
     });
@@ -240,10 +245,12 @@ export class GlobalMCPServerPool {
           success: true,
         });
       } catch (error) {
+        const errorCause = createErrorCause(error);
         this.logger.error(`Error cleaning up MCP server pool entry: ${configKey}`, {
           operation: "mcp_server_pool_cleanup",
           configKey,
-          error: error instanceof Error ? error.message : String(error),
+          error: error,
+          errorCause,
         });
       }
     }

@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "exports": {
     ".": "./mod.ts",
-    "./types": "./src/types/workspace.ts",
-    "./artifacts": "./src/artifacts/mod.ts"
+    "./artifacts": "./src/artifacts/mod.ts",
+    "./errors": "./src/errors.ts",
+    "./types": "./src/types/workspace.ts"
   }
 }

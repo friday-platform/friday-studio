@@ -3680,6 +3680,7 @@
             "npm:@ai-sdk/google@^2.0.14",
             "npm:@ai-sdk/openai@^2.0.30",
             "npm:@ai-sdk/provider@2",
+            "npm:@jsr/std__assert@^1.0.14",
             "npm:@jsr/std__async@^1.0.14",
             "npm:@jsr/std__fs@^1.0.19",
             "npm:@jsr/std__path@^1.1.2",

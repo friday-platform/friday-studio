@@ -1,4 +1,5 @@
 import { createLogger } from "@atlas/logger";
+import { throwWithCause } from "../errors.ts";
 import { mcpServersRegistry } from "./mcp-servers-registry.ts";
 import type { MCPDiscoveryRequest, MCPDiscoveryResult, MCPServerMetadata } from "./types.ts";
 
@@ -39,10 +40,9 @@ export class StaticMCPDiscovery {
     }
 
     // Filter by capabilities if specified
-    if (request.capabilities && request.capabilities.length > 0) {
-      candidates = candidates.filter((server) =>
-        this.serverHasCapabilities(server, request.capabilities),
-      );
+    const { capabilities } = request;
+    if (capabilities?.length) {
+      candidates = candidates.filter((server) => this.serverHasCapabilities(server, capabilities));
     }
 
     // Score and rank candidates
@@ -70,14 +70,9 @@ export class StaticMCPDiscovery {
     // Validate each server in the registry
     for (const server of mcpServersRegistry.servers) {
       try {
-        const serverWithSource = {
-          ...server,
-          source: "static", // Override source to be consistent
-        };
-
         // Basic runtime validation instead of strict Zod validation
-        this.validateServerBasics(serverWithSource);
-        validatedServers.push(serverWithSource);
+        this.validateServerBasics(server);
+        validatedServers.push(server);
       } catch (error) {
         validationErrors.push({
           serverId: server.id || "unknown",
@@ -89,8 +84,9 @@ export class StaticMCPDiscovery {
     // Log validation results
     if (validationErrors.length > 0) {
       this.logger.error("Static registry validation errors", { validationErrors });
-      throw new Error(
-        `Failed to validate static registry: ${validationErrors.length} servers have validation errors`,
+      throwWithCause(
+        `MCP server registry validation failed. Please check the server configurations. ${validationErrors.length} servers have validation errors.`,
+        { type: "unknown", code: "STATIC_REGISTRY_VALIDATION_FAILED" },
       );
     }
 
@@ -104,25 +100,46 @@ export class StaticMCPDiscovery {
   /** Basic runtime validation for server metadata */
   private validateServerBasics(server: MCPServerMetadata): void {
     if (!server.id || typeof server.id !== "string") {
-      throw new Error("Server must have a valid id");
+      throwWithCause(`MCP server configuration is invalid: Missing or invalid server ID.`, {
+        type: "unknown",
+        code: "INVALID_SERVER_ID",
+      });
     }
     if (!server.name || typeof server.name !== "string") {
-      throw new Error("Server must have a valid name");
+      throwWithCause(
+        `MCP server '${server.id}' configuration is invalid: Missing or invalid name.`,
+        { type: "unknown", code: "INVALID_SERVER_NAME" },
+      );
     }
     if (!server.description || typeof server.description !== "string") {
-      throw new Error("Server must have a valid description");
+      throwWithCause(
+        `MCP server '${server.id}' configuration is invalid: Missing or invalid description.`,
+        { type: "unknown", code: "INVALID_SERVER_DESCRIPTION" },
+      );
     }
     if (!server.category || typeof server.category !== "string") {
-      throw new Error("Server must have a valid category");
+      throwWithCause(
+        `MCP server '${server.id}' configuration is invalid: Missing or invalid category.`,
+        { type: "unknown", code: "INVALID_SERVER_CATEGORY" },
+      );
     }
     if (!server.configTemplate || typeof server.configTemplate !== "object") {
-      throw new Error("Server must have a valid configTemplate");
+      throwWithCause(
+        `MCP server '${server.id}' configuration is invalid: Missing or invalid config template.`,
+        { type: "unknown", code: "INVALID_CONFIG_TEMPLATE" },
+      );
     }
     if (!server.tools || !Array.isArray(server.tools) || server.tools.length === 0) {
-      throw new Error("Server must have at least one tool");
+      throwWithCause(
+        `MCP server '${server.id}' configuration is invalid: Must have at least one tool defined.`,
+        { type: "unknown", code: "NO_TOOLS_DEFINED" },
+      );
     }
     if (!server.useCases || !Array.isArray(server.useCases) || server.useCases.length === 0) {
-      throw new Error("Server must have at least one use case");
+      throwWithCause(
+        `MCP server '${server.id}' configuration is invalid: Must have at least one use case defined.`,
+        { type: "unknown", code: "NO_USE_CASES_DEFINED" },
+      );
     }
   }
 
@@ -169,12 +186,13 @@ export class StaticMCPDiscovery {
       .map((server) => {
         const confidence = this.calculateStaticConfidence(server, request);
 
-        return {
+        const result: MCPDiscoveryResult = {
           server,
           confidence,
           reasoning: this.generateStaticReasoning(server, request),
           source: "static",
         };
+        return result;
       })
       .sort((a, b) => b.confidence - a.confidence);
   }
@@ -201,7 +219,7 @@ export class StaticMCPDiscovery {
     confidence += securityBonus[server.securityRating] || 0;
 
     // Capabilities matching bonus
-    if (request.capabilities && request.capabilities.length > 0) {
+    if (request.capabilities?.length) {
       if (this.serverHasCapabilities(server, request.capabilities)) {
         confidence += 0.15;
       }

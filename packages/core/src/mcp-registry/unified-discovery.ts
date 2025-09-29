@@ -1,6 +1,7 @@
 import type { AgentMetadata } from "@atlas/agent-sdk";
 import { createLogger } from "@atlas/logger";
 import type { AgentRegistry } from "../agent-loader/registry.ts";
+import { createErrorCause } from "../errors.ts";
 import { StaticMCPDiscovery } from "./static-discovery.ts";
 import type {
   AgentDiscoveryResult,
@@ -68,7 +69,8 @@ export class UnifiedDiscovery {
       this.logger.info("No suitable solutions found", { intent: request.intent });
       return null;
     } catch (error) {
-      this.logger.error("Unified discovery failed", { error });
+      const errorCause = createErrorCause(error);
+      this.logger.error("Unified discovery failed", { error: error, errorCause });
       return null;
     }
   }
@@ -113,7 +115,8 @@ export class UnifiedDiscovery {
         type: "agent",
       };
     } catch (error) {
-      this.logger.error("Built-in agent discovery failed", { error });
+      const errorCause = createErrorCause(error);
+      this.logger.error("Built-in agent discovery failed", { error: error, errorCause });
       return null;
     }
   }
@@ -132,7 +135,8 @@ export class UnifiedDiscovery {
       }
       return null;
     } catch (error) {
-      this.logger.error("MCP server discovery failed", { error });
+      const errorCause = createErrorCause(error);
+      this.logger.error("MCP server discovery failed", { error: error, errorCause });
       return null;
     }
   }
