@@ -52,7 +52,7 @@ export function createFsWatchRunner(options: FsWatchRunnerOptions): FsWatchRunne
       for await (const event of watcher) {
         if (stopped) break;
         logger.debug("fs watch event received via Deno.watchFs", { event });
-        
+
         // WORKAROUND NOTE: includes check is only for 'removed' actions.
         // There is a bug (https://github.com/denoland/deno/issues/30878) in Deno.watchFs
         // that trigger all registered watchers when a file is removed.

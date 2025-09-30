@@ -106,7 +106,10 @@ const workspacesRoutes = daemonFactory
 
       const manager = ctx.daemon.getWorkspaceManager();
 
-      const { workspace: entry, created } = await manager.registerWorkspace(path, { name, description });
+      const { workspace: entry, created } = await manager.registerWorkspace(path, {
+        name,
+        description,
+      });
 
       // Convert to API response format
       const workspaceInfo = {

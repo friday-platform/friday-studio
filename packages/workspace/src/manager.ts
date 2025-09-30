@@ -22,8 +22,6 @@ import type { WorkspaceRuntime } from "../../../src/core/workspace-runtime.ts";
 import type { WorkspaceEntry, WorkspaceSignalRegistrar, WorkspaceStatus } from "./types.ts";
 import { WorkspaceConfigWatcher } from "./watchers/index.ts";
 
-
-
 export class WorkspaceManager {
   private registry: RegistryStorageAdapter;
   private runtimes = new Map<string, WorkspaceRuntime>();
@@ -65,17 +63,15 @@ export class WorkspaceManager {
       const existingNonSystem = (await this.list({ includeSystem: false })) || [];
       for (const workspace of existingNonSystem) {
         const cfg = await this.getWorkspaceConfig(workspace.id);
-        if (!cfg){
+        if (!cfg) {
           logger.warn("Workspace config not found", { workspaceId: workspace.id });
           continue;
-        };
+        }
         await this.registerWithRegistrars(workspace.id, workspace.path, cfg);
         await this.fileWatcher?.watchWorkspace(workspace);
       }
     } catch (error) {
-      logger.error("Failed to register existing workspaces", {
-        error: error,
-      });
+      logger.error("Failed to register existing workspaces", { error: error });
     }
 
     if (!this.isTestMode()) {
@@ -85,14 +81,10 @@ export class WorkspaceManager {
           logger.info(`Auto-imported ${imported} workspace(s)`);
         }
       } catch (error) {
-        logger.error("Failed during workspace auto-import", {
-          error: error,
-        });
+        logger.error("Failed during workspace auto-import", { error: error });
         // Don't throw - auto-import failure shouldn't prevent daemon startup
       }
     }
-
-
   }
 
   /**
@@ -152,10 +144,7 @@ export class WorkspaceManager {
         await this.fileWatcher.watchWorkspace(entry);
         await this.registerWithRegistrars(entry.id, entry.path, config);
       } catch (error) {
-        logger.warn("Failed to register workspace", {
-          workspaceId: entry.id,
-          error: error,
-        });
+        logger.warn("Failed to register workspace", { workspaceId: entry.id, error: error });
       }
     }
 
@@ -208,10 +197,7 @@ export class WorkspaceManager {
       const configLoader = new ConfigLoader(adapter, workspace.path);
       return await configLoader.load();
     } catch (error) {
-      logger.error(`Failed to load workspace config`, {
-        workspaceId,
-        error: error,
-      });
+      logger.error(`Failed to load workspace config`, { workspaceId, error: error });
       return null;
     }
   }
@@ -290,7 +276,7 @@ export class WorkspaceManager {
       this.runtimes.delete(id);
     }
 
-    // Remove from registry 
+    // Remove from registry
     await this.registry.unregisterWorkspace(id);
 
     // Ensure we stop file watching for this workspace (idempotent)
@@ -580,10 +566,7 @@ export class WorkspaceManager {
       try {
         await registrar.unregisterWorkspace(workspaceId);
       } catch (error) {
-        logger.error("Signal registrar unregisterWorkspace failed", {
-          workspaceId,
-          error: error,
-        });
+        logger.error("Signal registrar unregisterWorkspace failed", { workspaceId, error: error });
       }
     }
   }
@@ -640,7 +623,7 @@ export class WorkspaceManager {
       logger.warn("Change for unknown workspace", { workspaceId });
       return;
     }
-    
+
     if ("filePath" in change) {
       logger.debug("processing filePath change", { workspaceId, filePath: change.filePath });
       await this.handleWorkspaceConfigChange(workspace, change.filePath);
@@ -791,7 +774,10 @@ export class WorkspaceManager {
   }
 
   /** Unregister workspace states: signals + runtime, mark inactive, and keep watcher attached. */
-  private async unregisterWorkspaceStates(workspaceId: string, workspace: WorkspaceEntry): Promise<void> {
+  private async unregisterWorkspaceStates(
+    workspaceId: string,
+    workspace: WorkspaceEntry,
+  ): Promise<void> {
     try {
       await this.unregisterWithRegistrars(workspaceId);
     } catch (error) {

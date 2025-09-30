@@ -63,10 +63,7 @@ export class WorkspaceConfigWatcher {
       // Clean up stored config path if watching fails
       this.workspaceConfigPaths.delete(workspace.id);
 
-      logger.error("Failed to watch workspace", {
-        workspaceId: workspace.id,
-        error: error,
-      });
+      logger.error("Failed to watch workspace", { workspaceId: workspace.id, error: error });
     }
   }
 
@@ -141,10 +138,7 @@ export class WorkspaceConfigWatcher {
       this.lastConfigHashByWorkspace.set(workspaceId, hash);
       await this.options.onConfigChange(workspaceId, { filePath });
     } catch (error) {
-      logger.error("Error handling config change", {
-        workspaceId,
-        error: error,
-      });
+      logger.error("Error handling config change", { workspaceId, error: error });
     }
   }
 
