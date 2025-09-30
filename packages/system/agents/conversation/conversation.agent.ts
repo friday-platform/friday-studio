@@ -141,7 +141,10 @@ export const conversationAgent = createAgent({
     );
     agentServer.setNotificationHandler(StreamContentNotificationSchema, (notification) => {
       const { event } = notification.params;
-      stream?.emit(event);
+      // Event is validated by schema to have required structure
+      if (stream) {
+        stream.emit(event);
+      }
     });
 
     // Track active agent invocations for cancellation
@@ -424,22 +427,8 @@ export const conversationAgent = createAgent({
         throw streamTextError;
       }
 
-      // Try to iterate the stream early to trigger API errors immediately
-      // This will cause AI_APICallError to be thrown as unhandled rejection
-      const streamIterator = result.fullStream[Symbol.asyncIterator]();
-      streamIterator.next().catch((streamError) => {
-        // Capture the actual API error before it gets replaced with NoOutputGeneratedError
-        const apiError = parseAPICallError(streamError);
-        if (apiError) {
-          logger.error("Caught API error from stream iteration", {
-            error: apiError,
-            statusCode: apiError.statusCode,
-          });
-          interceptedApiError = apiError;
-        }
-      });
-
-      // Start piping the UI message stream and catch any immediate errors
+      // Start piping the UI message stream immediately
+      // DO NOT consume the stream elsewhere - it's single-consumer only
       const pipePromise = pipeUIMessageStream(
         result.toUIMessageStream({
           originalMessages: messages,
@@ -461,17 +450,7 @@ export const conversationAgent = createAgent({
           },
         }),
         stream,
-      ).catch((pipeError) => {
-        // Capture streaming/piping errors - check if it's an API error
-        logger.error("Error in pipeUIMessageStream", { error: pipeError });
-
-        const apiError = parseAPICallError(pipeError);
-        if (apiError) {
-          interceptedApiError = apiError;
-        } else {
-          originalStreamError = pipeError;
-        }
-      });
+      );
 
       const executionFlow = {
         steps: [],
@@ -481,44 +460,32 @@ export const conversationAgent = createAgent({
         startTime: Date.now(), // Track start time for duration calculation
       };
 
-      // Wrap the await in try-catch to handle streaming errors
+      // Wait for both the text/reasoning and the pipe to complete
+      // This ensures all streaming events are emitted before we close MCP transport
       let finalText: string;
       let finalReasoning: any;
 
       try {
-        // Wait for the stream iteration error to be caught
-        await new Promise((resolve) => setTimeout(resolve, 500));
-
-        // Check if we caught an API error
-        if (interceptedApiError) {
-          const apiError = parseAPICallError(interceptedApiError);
-          logger.error("Using intercepted API error", {
-            error: interceptedApiError,
-            statusCode: apiError?.statusCode,
-          });
-
-          const errorCause = createErrorCause(interceptedApiError);
-          const displayMessage = getErrorDisplayMessage(errorCause);
-
-          if (stream && !errorEmitted) {
-            stream.emit({
-              id: crypto.randomUUID(),
-              type: "data-error",
-              data: { error: displayMessage, errorCause },
-            });
-            errorEmitted = true;
-          }
-
-          return { text: displayMessage, reasoning: "", executionFlow: [], toolCalls: [] };
-        }
-
-        // Wait for both the text/reasoning and the pipe to complete
-        const [textResult, reasoningResult] = await Promise.allSettled([
+        const [textResult, reasoningResult, pipeResult] = await Promise.allSettled([
           result.text,
           result.reasoning,
           pipePromise,
         ]);
 
+        // Check for pipe errors first - they indicate streaming failures
+        if (pipeResult.status === "rejected") {
+          const pipeError = pipeResult.reason;
+          logger.error("pipeUIMessageStream failed", { error: pipeError });
+
+          const apiError = parseAPICallError(pipeError);
+          if (apiError) {
+            interceptedApiError = apiError;
+          }
+
+          throw pipeError;
+        }
+
+        // Check for text errors
         if (textResult.status === "rejected") {
           throw textResult.reason;
         }
@@ -547,6 +514,14 @@ export const conversationAgent = createAgent({
           errorEmitted = true;
         }
 
+        // Clean up MCP before returning
+        try {
+          await agentServerTransport.close();
+          logger.info("Closed MCP transport after stream error");
+        } catch (closeError) {
+          logger.error("Failed to close MCP transport after error", { error: closeError });
+        }
+
         return { text: displayMessage, reasoning: "", executionFlow: [], toolCalls: [] };
       }
 
@@ -555,6 +530,14 @@ export const conversationAgent = createAgent({
         finalReasoning.length > 0
           ? finalReasoning.map((item) => item.text).join("\n")
           : executionFlow.reasoning.join("\n");
+
+      // Successfully completed - close MCP transport now that streaming is done
+      try {
+        await agentServerTransport.close();
+        logger.info("Closed MCP transport after successful completion");
+      } catch (closeError) {
+        logger.error("Failed to close MCP transport", { error: closeError });
+      }
 
       return {
         text: finalText || executionFlow.responseBuffer,
@@ -587,6 +570,14 @@ export const conversationAgent = createAgent({
         errorEmitted = true;
       }
 
+      // Clean up MCP transport before returning error
+      try {
+        await agentServerTransport.close();
+        logger.info("Closed MCP transport after outer error");
+      } catch (closeError) {
+        logger.error("Failed to close MCP transport after outer error", { error: closeError });
+      }
+
       // Return error response instead of throwing
       return { text: displayMessage, reasoning: "", executionFlow: [], toolCalls: [] };
     } finally {
@@ -596,14 +587,6 @@ export const conversationAgent = createAgent({
       // Clean up process handler if it was added
       if (typeof process !== "undefined" && process.off) {
         process.off("unhandledRejection", processHandler);
-      }
-
-      // Clean up MCP connection
-      try {
-        await agentServerTransport.close();
-        logger.info("Closed MCP transport for conversation agent");
-      } catch (closeError) {
-        logger.error("Failed to close MCP transport", { error: closeError });
       }
     }
   },

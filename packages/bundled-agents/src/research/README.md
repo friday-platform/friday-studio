@@ -1,4 +1,4 @@
-# Research Agent
+# Research
 
 Does parallelized web research using supervisor-subagent orchestration. Currently uses Tavily as the search provider.
 

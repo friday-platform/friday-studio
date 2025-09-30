@@ -7,6 +7,7 @@ import AppContainer from "$lib/components/app/container.svelte";
 import AppSidebar from "$lib/components/app/sidebar.svelte";
 import KeyboardListener from "$lib/components/keyboard-listener.svelte";
 import { setClientContext } from "$lib/modules/client/context.svelte";
+import { isTauriApp } from "$lib/utils/tauri";
 
 const { children } = $props();
 
@@ -35,14 +36,16 @@ onMount(() => {
   let unlisten: () => void = () => {};
 
   async function setupDragDrop() {
-    unlisten = await getCurrentWebview().onDragDropEvent((event) => {
-      if (event.payload.type === "drop") {
-        appCtx.stagedFiles.add(event.payload.paths[0], {
-          path: event.payload.paths[0],
-          type: getFileType(event.payload.paths[0]),
-        });
-      }
-    });
+    if (isTauriApp()) {
+      unlisten = await getCurrentWebview().onDragDropEvent((event) => {
+        if (event.payload.type === "drop") {
+          appCtx.stagedFiles.add(event.payload.paths[0], {
+            path: event.payload.paths[0],
+            type: getFileType(event.payload.paths[0]),
+          });
+        }
+      });
+    }
   }
 
   setupDragDrop();

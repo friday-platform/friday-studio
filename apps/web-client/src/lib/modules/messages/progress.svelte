@@ -48,23 +48,27 @@ function getMessage() {
 			{#if 'data' in action}
 				{#if typeof action.data === 'object' && action.data !== null && 'content' in action.data && 'toolName' in action.data}
 					<div class="in-progress-tools">
-						{#if action.data.toolName === 'Research Agent'}
+						{#if action.data.toolName === 'Research'}
 							<CustomIcons.Globe />
 						{:else if action.data.toolName === 'Slack'}
 							<CustomIcons.Slack />
 						{:else if action.data.toolName === 'Workspace Creator'}
+							<CustomIcons.Workspace />
+						{:else if action.data.toolName === 'Google Calendar'}
 							<CustomIcons.Workspace />
 						{:else}
 							<CustomIcons.Workspace />
 						{/if}
 
 						<div class="details">
-							{#if action.data.toolName === 'Research Agent'}
+							{#if action.data.toolName === 'Research'}
 								<h2>Searching the web</h2>
 							{:else if action.data.toolName === 'Slack'}
 								<h2>Sending message to Slack</h2>
 							{:else if action.data.toolName === 'Workspace Creator'}
 								<h2>Creating Workspace</h2>
+							{:else if action.data.toolName === 'Google Calendar'}
+								<h2>Checking calendar</h2>
 							{:else}
 								<h2>Working...</h2>
 							{/if}

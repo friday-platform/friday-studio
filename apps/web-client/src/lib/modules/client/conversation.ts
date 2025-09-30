@@ -1,6 +1,7 @@
 import { client, parseResult } from "@atlas/client/v2";
 import type { SessionUIMessageChunk } from "@atlas/core";
 import { createAtlasClient } from "@atlas/oapi-client";
+import { stringifyError } from "@atlas/utils";
 import { createEventSource } from "eventsource-client";
 import { DaemonClient } from "./daemon.ts";
 
@@ -175,6 +176,11 @@ export class ConversationClient {
         (async () => {
           try {
             for await (const { data } of eventSource) {
+              // Check if stream is closed before attempting operations
+              if (closed) {
+                break;
+              }
+
               try {
                 const parsedData = JSON.parse(data);
                 controller.enqueue(parsedData);
@@ -184,7 +190,10 @@ export class ConversationClient {
               }
             }
           } catch (error) {
-            controller.error(error);
+            if (!closed) {
+              controller.error(error);
+              closed = true;
+            }
           } finally {
             if (!closed) {
               controller.close();
@@ -192,6 +201,10 @@ export class ConversationClient {
             }
           }
         })();
+      },
+      cancel() {
+        // Mark as closed when stream is cancelled
+        closed = true;
       },
     });
   }
@@ -272,7 +285,7 @@ export class ConversationClient {
 
     // Ignore 404 errors (session already finished)
     if (response.error && response.response.status !== 404) {
-      throw new Error(`Failed to cancel session: ${response.error.error}`);
+      throw new Error(`Failed to cancel session: ${stringifyError(response.error.error)}`);
     }
   }
 }

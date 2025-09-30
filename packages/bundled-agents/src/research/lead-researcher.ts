@@ -221,7 +221,7 @@ type ResearchAgentResult = Result<
 
 export const researchAgent = createAgent<ResearchAgentResult>({
   id: "research",
-  displayName: "Research Agent",
+  displayName: "Research",
   version: "1.0.0",
   description: "Performs web research.",
   expertise: {
@@ -267,7 +267,7 @@ export const researchAgent = createAgent<ResearchAgentResult>({
 
       stream?.emit({
         type: "data-tool-progress",
-        data: { toolName: "Fast Research", content: analyzingMessage },
+        data: { toolName: "Research", content: analyzingMessage },
       });
 
       const { object: researchTask } = await generateObject({
@@ -339,7 +339,7 @@ export const researchAgent = createAgent<ResearchAgentResult>({
 
               stream?.emit({
                 type: "data-tool-progress",
-                data: { toolName: "Fast Research", content: startingMessage },
+                data: { toolName: "Research", content: startingMessage },
               });
             }
           }
@@ -376,7 +376,7 @@ export const researchAgent = createAgent<ResearchAgentResult>({
 
       stream?.emit({
         type: "data-tool-progress",
-        data: { toolName: "Fast Research", content: reportingMessage },
+        data: { toolName: "Research", content: reportingMessage },
       });
 
       const finalReport = await finalReportGenerator.generate(prompt);

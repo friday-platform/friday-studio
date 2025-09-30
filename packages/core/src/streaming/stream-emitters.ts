@@ -4,7 +4,7 @@ import { createAtlasClient } from "@atlas/oapi-client";
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { NotificationSchema } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
-import { createErrorCause, throwWithCause } from "../errors.ts";
+import { createErrorCause } from "../errors.ts";
 
 export const CancellationNotificationSchema = NotificationSchema.extend({
   method: z.literal("notifications/cancelled"),
@@ -18,8 +18,15 @@ export const StreamContentNotificationSchema = NotificationSchema.extend({
   params: z.object({
     toolName: z.string(),
     sessionId: z.string(),
-    // type AtlasUIMessageChunk from @atlas/agent-sdk
-    event: z.record(z.string(), z.unknown()),
+    // Runtime validation: event must have a type property (AtlasUIMessageChunk)
+    event: z
+      .object({
+        type: z.string(),
+        id: z.string().optional(),
+        data: z.unknown().optional(),
+        transient: z.boolean().optional(),
+      })
+      .passthrough(),
   }),
 });
 
@@ -63,11 +70,12 @@ export class HTTPStreamEmitter<T extends AtlasUIMessageChunk> implements StreamE
       });
     } catch (error) {
       const errorCause = createErrorCause(error);
-      this.logger.error("Failed stream event", {
+      this.logger.error("Failed to emit stream event", {
         streamId: this.streamId,
         sessionId: this.sessionId,
         error: error,
         errorCause,
+        eventType: event.type,
       });
       // Don't throw - streaming should continue even if one event fails
     }
@@ -149,19 +157,8 @@ export class MCPStreamEmitter implements StreamEmitter {
         error: notifyError instanceof Error ? notifyError.message : String(notifyError),
         errorCause,
       });
-
-      // Provide context-aware error messages
-      if (errorCause.type === "network") {
-        throwWithCause(
-          "MCP connection lost. The agent server may be unavailable or disconnected.",
-          notifyError instanceof Error ? notifyError : new Error(String(notifyError)),
-        );
-      }
-
-      throwWithCause(
-        `Failed to send stream notification to MCP client for tool '${this.toolName}'`,
-        notifyError instanceof Error ? notifyError : new Error(String(notifyError)),
-      );
+      // Don't throw - streaming should continue even if one notification fails
+      // This prevents agent crashes when MCP notifications fail to send
     }
   }
 

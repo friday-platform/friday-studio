@@ -8,6 +8,7 @@ import {
 import { readUIMessageStream } from "ai";
 import { getContext, setContext } from "svelte";
 import { getAtlasDaemonUrl } from "../../utils/daemon.ts";
+import { isTauriApp } from "../../utils/tauri.ts";
 import { ConversationClient, type ConversationSession } from "./conversation.ts";
 import type { DaemonClient } from "./daemon.ts";
 
@@ -55,16 +56,16 @@ class ClientContext {
 
   private async initializeNotifications() {
     try {
-      // Check if permission to send notifications has already been granted
-      let permissionGranted = await isPermissionGranted();
+      if (isTauriApp()) {
+        let permissionGranted = await isPermissionGranted();
 
-      // If not, request it
-      if (!permissionGranted) {
-        const permission = await requestPermission();
-        permissionGranted = permission === "granted";
+        if (!permissionGranted) {
+          const permission = await requestPermission();
+          permissionGranted = permission === "granted";
+        }
+
+        this.notificationPermissionGranted = permissionGranted;
       }
-
-      this.notificationPermissionGranted = permissionGranted;
     } catch (error) {
       console.error("Failed to initialize notifications:", error);
     }

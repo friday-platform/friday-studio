@@ -8,9 +8,44 @@ const formatter = new Intl.DateTimeFormat("en-US", { dateStyle: "full" });
 
 /**
  * Converts an error to a human-readable string.
+ *
+ * Handles multiple error formats because different libraries and AI SDKs
+ * return errors in different shapes:
+ * - Standard Error instances (e.g., new Error("message"))
+ * - Plain objects with message property (e.g., {type: "api_error", message: "..."})
+ * - Plain objects without message (need JSON.stringify to see content)
+ * - Primitive values (strings, numbers)
+ *
+ * Without this handling, plain object errors would display as "[object Object]"
+ * which provides no useful information to users or developers.
+ *
+ * @example
+ * stringifyError(new Error("Failed")) // => "Failed"
+ * stringifyError({type: "overloaded_error", message: "Overloaded"}) // => "Overloaded"
+ * stringifyError({statusCode: 500}) // => '{"statusCode":500}'
+ * stringifyError("simple error") // => "simple error"
  */
 export function stringifyError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  // Handle plain objects with message or type properties
+  // Common in AI SDK errors: {type: "api_error", message: "Internal server error"}
+  if (typeof error === "object" && error !== null) {
+    const obj = error as Record<string, unknown>;
+    if ("message" in obj && typeof obj.message === "string") {
+      return obj.message;
+    }
+    // Try to stringify meaningfully - better than "[object Object]"
+    try {
+      return JSON.stringify(error);
+    } catch {
+      return String(error);
+    }
+  }
+
+  return String(error);
 }
 
 /**
