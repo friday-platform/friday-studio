@@ -87,14 +87,22 @@ export function createAgentContextBuilder(deps: AgentContextBuilderDeps) {
       );
     }
 
-    // 4. Retrieve and format memories into the prompt using memory-based approach
-    const enrichedPrompt = await enrichPromptWithMemories(
-      agent,
-      sessionMemory,
-      prompt,
-      sessionData,
-      agentLogger,
-    );
+    /**
+     * 4. Retrieve and format memories into the prompt using memory-based approach
+     * This is temporarily disabled due to a bad interaction with the Conversation agent.
+     * User messages are persisted in the chat history verbatim. When this was enabled,
+     * any memories would be persisted as if the user had written them, resulting in
+     * extremely strange user-facing behavior. The correct fix here is to separate chat
+     * history from user messages in the conversation agent.
+     */
+    // const enrichedPrompt = await enrichPromptWithMemories(
+    //   agent,
+    //   sessionMemory,
+    //   prompt,
+    //   sessionData,
+    //   agentLogger,
+    // );
+    const enrichedPrompt = prompt;
 
     // 5. Create stream emitter based on context
     let streamEmitter = overrides?.stream;
@@ -235,6 +243,9 @@ function mergeServerConfigs(
  * Enrich prompt with relevant memories using memory-based approach
  * Implements MECMF memory enhancement with 200k token-aware optimization
  */
+
+// @ts-expect-error temporarily unused.
+// deno-lint-ignore no-unused-vars
 async function enrichPromptWithMemories(
   agent: AtlasAgent,
   sessionMemory: CoALAMemoryManager | null,
