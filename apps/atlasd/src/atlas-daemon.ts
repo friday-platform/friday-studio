@@ -1,8 +1,9 @@
+import type { AgentRegistry as AgentRegistryType } from "@atlas/agent-sdk";
 import { getAtlasDaemonUrl } from "@atlas/atlasd";
 import { type SupervisorDefaults, supervisorDefaultsWrapped } from "@atlas/config";
 import {
-  AgentRegistry,
   AtlasAgentsMCPServer,
+  AgentRegistry as CoreAgentRegistry,
   GlobalMCPServerPool,
   WorkspaceSessionStatus,
 } from "@atlas/core";
@@ -10,8 +11,7 @@ import { CronManager } from "@atlas/cron";
 import { logger } from "@atlas/logger";
 import { PlatformMCPServer } from "@atlas/mcp-server";
 import { embeddingProviderForceDispose, embeddingProviderGetInstance } from "@atlas/memory";
-import { FilesystemWorkspaceCreationAdapter } from "@atlas/storage";
-import { WorkspaceManager, watchers } from "@atlas/workspace";
+import { WorkspaceManager } from "@atlas/workspace";
 import type { WorkspaceSignalTriggerCallback } from "@atlas/workspace/types";
 import { StreamableHTTPTransport } from "@hono/mcp";
 import type { Context, Next } from "hono";
@@ -39,10 +39,8 @@ import { streamsRoutes } from "../routes/streams/index.ts";
 import { userRoutes } from "../routes/user/index.ts";
 import { workspacesRoutes } from "../routes/workspaces/index.ts";
 import { createApp } from "./factory.ts";
-import type { AppContext } from "./factory.ts";
 import { CronSignalRegistrar } from "./signal-registrars/cron-registrar.ts";
 import { FsWatchSignalRegistrar } from "./signal-registrars/fs-watch-registrar.ts";
-import type { WorkspaceSignalRegistrar } from "./signal-registrars/types.ts";
 
 export interface AtlasDaemonOptions {
   port?: number;
@@ -84,7 +82,6 @@ export class AtlasDaemon {
   private isInitialized = false;
   private supervisorDefaults: SupervisorDefaults | null = null;
   private libraryStorage: LibraryStorageAdapter | null = null;
-  public workspaceCreationAdapter: FilesystemWorkspaceCreationAdapter | null = null;
   private cronManager: CronManager | null = null;
   private mcpServer: PlatformMCPServer | null = null;
   private mcpServerPool: GlobalMCPServerPool | null = null;
@@ -104,14 +101,12 @@ export class AtlasDaemon {
   // Track active SSE connections per session
   private agentSSEConnections = new Set<string>();
   // Single shared agent registry
-  private agentRegistry: AgentRegistry | null = null;
+  private agentRegistry: AgentRegistryType | null = null;
   // Session limits
   private readonly MAX_AGENT_SESSIONS = 100;
   private readonly AGENT_SESSION_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
   // Store the actual port after server starts
   #port: number | undefined;
-  private fileWatcher: InstanceType<typeof watchers.WorkspaceConfigWatcher> | null = null;
-  public signalRegistrars: WorkspaceSignalRegistrar[] = [];
 
   constructor(options: AtlasDaemonOptions = {}) {
     this.options = {
@@ -121,7 +116,7 @@ export class AtlasDaemon {
       sseConnectionTimeoutMs: 5 * 60 * 1000, // 5 minutes
       ...options,
     };
-    const context: AppContext = {
+    const context = {
       runtimes: this.runtimes,
       startTime: this.startTime,
       sseClients: this.sseClients,
@@ -165,35 +160,10 @@ export class AtlasDaemon {
     // Load supervisor defaults once at startup
     this.loadSupervisorDefaults();
 
-    // Initialize WorkspaceManager
-    logger.info("Initializing WorkspaceManager...");
+    // Create WorkspaceManager (initialize later once registrars and watcher are ready)
+    logger.info("Creating WorkspaceManager...");
     const registry = await createRegistryStorage(StorageConfigs.defaultKV());
     this.workspaceManager = new WorkspaceManager(registry);
-    await this.workspaceManager.initialize();
-
-    // Register signal hooks for automatic registration
-    this.workspaceManager.addRegistrationHook(async (entry) => {
-      // Skip system workspaces
-      if (!entry.metadata?.system) {
-        logger.debug("Executing signal registration hook for workspace", {
-          workspaceId: entry.id,
-          workspacePath: entry.path,
-        });
-        for (const registrar of this.signalRegistrars) {
-          try {
-            await registrar.registerWorkspace(entry.id, entry.path);
-          } catch (error) {
-            logger.error("Signal registrar failed to register workspace", {
-              workspaceId: entry.id,
-              workspacePath: entry.path,
-              error,
-            });
-          }
-        }
-      }
-    });
-
-    // System workspaces are now registered automatically during manager.initialize()
 
     // Initialize LibraryStorage with hybrid storage
     logger.info("Initializing LibraryStorage...");
@@ -207,10 +177,6 @@ export class AtlasDaemon {
     logger.info("Initializing daemon capabilities...");
     DaemonCapabilityRegistry.setDaemonInstance(this);
     DaemonCapabilityRegistry.initialize();
-
-    // Initialize workspace creation adapter
-    logger.info("Initializing workspace creation adapter...");
-    this.workspaceCreationAdapter = new FilesystemWorkspaceCreationAdapter();
 
     // Initialize CronManager with KV storage
     logger.info("Initializing CronManager...");
@@ -233,19 +199,10 @@ export class AtlasDaemon {
 
     // Initialize agent registry with bundled agents
     logger.info("Initializing agent registry...");
-    const agentRegistry = new AgentRegistry({ includeSystemAgents: true });
+    const agentRegistry = new CoreAgentRegistry({ includeSystemAgents: true });
     await agentRegistry.initialize();
     logger.info("Agent registry initialized");
     this.agentRegistry = agentRegistry;
-
-    // Initialize file watcher
-    logger.info("Initializing file watcher...");
-    this.fileWatcher = new watchers.WorkspaceConfigWatcher({
-      onConfigChange: this.handleWorkspaceConfigChange.bind(this),
-      debounceMs: 1000, // Wait 1 second after last change
-    });
-
-    await this.workspaceManager.watchWorkspaces(this.fileWatcher, { includeSystem: false });
 
     // Set up workspace wakeup callback
     const wakeupCallback: WorkspaceSignalTriggerCallback = async (
@@ -254,11 +211,7 @@ export class AtlasDaemon {
       signalData,
     ) => {
       try {
-        // Get or create workspace runtime (this will wake up the workspace)
-        const runtime = await this.getOrCreateWorkspaceRuntime(workspaceId);
-
-        // Process the timer signal using triggerSignal which handles signal creation
-        await runtime.triggerSignal(signalId, signalData);
+        await this.triggerWorkspaceSignal(workspaceId, signalId, signalData);
 
         logger.info("Signal processed", { workspaceId, signalId });
       } catch (error) {
@@ -281,7 +234,7 @@ export class AtlasDaemon {
           logger.info("Marked workspace as failed with error details", {
             workspaceId,
             signalId,
-            error: error instanceof Error ? error.message : String(error),
+            error: error,
             failureCount: (workspace?.metadata?.failureCount || 0) + 1,
           });
 
@@ -299,25 +252,16 @@ export class AtlasDaemon {
 
     this.cronManager.setWakeupCallback(wakeupCallback);
 
+    // Create signal registrars and pass them to WorkspaceManager.initialize
+    const fsRegistrar = new FsWatchSignalRegistrar(wakeupCallback);
+    const cronRegistrar = new CronSignalRegistrar(this.cronManager);
+
+    // Initialize WorkspaceManager with registrars and watcher (manager owns lifecycle)
+    const signalRegistrars = [fsRegistrar, cronRegistrar];
+    await this.workspaceManager.initialize(signalRegistrars);
+
     // Start CronManager
     await this.cronManager.start();
-
-    // Initialize signal registrars and discover existing signals
-    try {
-      this.signalRegistrars = [];
-      const fsRegistrar = new FsWatchSignalRegistrar(wakeupCallback);
-      await fsRegistrar.initialize();
-      await fsRegistrar.discoverAndRegisterExisting(this.getWorkspaceManager());
-      this.signalRegistrars.push(fsRegistrar);
-
-      // Cron registrar: mirror fs-watch pattern using existing CronManager
-      const cronRegistrar = new CronSignalRegistrar(this.cronManager);
-      await cronRegistrar.initialize();
-      await cronRegistrar.discoverAndRegisterExisting(this.getWorkspaceManager());
-      this.signalRegistrars.push(cronRegistrar);
-    } catch (error) {
-      logger.error("Failed to initialize signal registrars", { error });
-    }
 
     // Start SSE health check interval
     this.startSSEHealthCheck();
@@ -449,9 +393,6 @@ export class AtlasDaemon {
    * Initialize the daemon - load supervisor defaults, initialize WorkspaceManager, etc.
    * Must be called before start()
    */
-  // System workspace methods removed - using standard workspace pattern
-
-  // setupWorkspaceRoutes removed - using standard workspace pattern
 
   /**
    * Get cached supervisor defaults
@@ -828,11 +769,7 @@ export class AtlasDaemon {
       await manager.registerRuntime(workspace.id, runtime);
       logger.debug("Runtime registered with WorkspaceManager", { workspaceId: workspace.id });
 
-      // Start watching workspace configuration file if not a system workspace
-      if (this.fileWatcher && !workspace.metadata?.system) {
-        await this.fileWatcher.watchWorkspace(workspace);
-        logger.debug("Started watching workspace configuration", { workspaceId: workspace.id });
-      }
+      // Watcher is managed centrally by WorkspaceManager.initialize()
 
       // Set idle timeout
       this.resetIdleTimeout(workspace.id);
@@ -878,6 +815,32 @@ export class AtlasDaemon {
 
       throw error;
     }
+  }
+
+  /**
+   * Trigger a workspace signal and handle lifecycle updates (lastSeen, idle timeout)
+   */
+  public async triggerWorkspaceSignal(
+    workspaceId: string,
+    signalId: string,
+    payload?: Record<string, unknown>,
+    streamId?: string,
+  ): Promise<{ sessionId: string }> {
+    const runtime = await this.getOrCreateWorkspaceRuntime(workspaceId);
+    const session = await runtime.triggerSignalWithSession(signalId, payload || {}, streamId);
+
+    try {
+      const manager = this.getWorkspaceManager();
+      await manager.updateWorkspaceLastSeen(runtime.workspaceId);
+    } catch (error) {
+      logger.warn("Failed to update lastSeen for workspace", {
+        workspaceId: runtime.workspaceId,
+        error,
+      });
+    }
+
+    this.resetIdleTimeout(runtime.workspaceId);
+    return { sessionId: session.id };
   }
 
   /**
@@ -1004,35 +967,6 @@ export class AtlasDaemon {
     logger.info("Workspace runtime destroyed", { workspaceId });
   }
 
-  // setupSystemWorkspaceRoutes removed - using standard workspace + daemon capabilities pattern
-
-  /**
-   * Handle workspace configuration changes detected by file watcher
-   */
-  private async handleWorkspaceConfigChange(workspaceId: string, filePath: string) {
-    logger.info("Workspace configuration changed, reloading runtime", { workspaceId, filePath });
-
-    // Check if the workspace is in an inactive state
-    const manager = this.getWorkspaceManager();
-    const workspace = await manager.find({ id: workspaceId });
-
-    // Destroy the existing runtime
-    await this.destroyWorkspaceRuntime(workspaceId);
-    // Notify registrars about config change to re-register their signals
-    if (workspace) {
-      for (const registrar of this.signalRegistrars) {
-        try {
-          await registrar.onWorkspaceConfigChanged(workspaceId, workspace.path);
-        } catch (err) {
-          logger.warn("Signal registrar failed to handle config change", {
-            workspaceId,
-            error: err,
-          });
-        }
-      }
-    }
-  }
-
   private setupSignalHandlers() {
     const daemonId = crypto.randomUUID().slice(0, 8);
 
@@ -1157,46 +1091,11 @@ export class AtlasDaemon {
     );
     await Promise.all(shutdownPromises);
 
-    // Unregister all signals via registrars
-    if (this.signalRegistrars.length > 0 && this.workspaceManager) {
-      const workspaces = await this.workspaceManager.list();
-      for (const ws of workspaces) {
-        for (const registrar of this.signalRegistrars) {
-          try {
-            await Promise.resolve(registrar.unregisterWorkspace(ws.id));
-          } catch (error) {
-            logger.debug("Error unregistering workspace signals during shutdown", {
-              error,
-              workspaceId: ws.id,
-            });
-          }
-        }
-      }
-    }
-
     // Clear all idle timeouts
     for (const timeoutId of this.idleTimeouts.values()) {
       clearTimeout(timeoutId);
     }
     this.idleTimeouts.clear();
-
-    // Stop file watcher
-    if (this.fileWatcher) {
-      await this.fileWatcher.stop();
-      this.fileWatcher = null;
-    }
-
-    // Shutdown signal registrars
-    if (this.signalRegistrars.length > 0) {
-      for (const registrar of this.signalRegistrars) {
-        try {
-          await registrar.shutdown();
-        } catch (error) {
-          logger.debug("Error shutting down signal registrar", { error });
-        }
-      }
-      this.signalRegistrars = [];
-    }
 
     // Stop SSE health check
     if (this.sseHealthCheckInterval) {
@@ -1294,10 +1193,6 @@ export class AtlasDaemon {
 
   getWorkspaceRuntime(workspaceId: string): WorkspaceRuntime | undefined {
     return this.runtimes.get(workspaceId);
-  }
-
-  getCronManager(): CronManager | null {
-    return this.cronManager;
   }
 
   getStatus() {

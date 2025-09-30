@@ -1,12 +1,9 @@
 /**
- * Unified WorkspaceManager - Single source of truth for workspace lifecycle
+ * WorkspaceManager: single source of truth for workspace lifecycle/state.
  *
- * This refactored implementation:
- * - Uses embedded system workspaces from build-time imports
- * - Removes virtual workspace complexity
- * - Uses ConfigLoader for configuration loading
- * - Removes atlas.yml special handling
- * - Provides clean separation between system and user workspaces
+ * - System workspaces are embedded at build time
+ * - No virtual workspaces or atlas.yml special cases
+ * - Separation of system vs user workspaces is explicit
  */
 
 import { ConfigLoader, type MergedConfig } from "@atlas/config";
@@ -14,7 +11,7 @@ import { logger } from "@atlas/logger";
 import { FilesystemConfigAdapter } from "@atlas/storage";
 import { SYSTEM_WORKSPACES } from "@atlas/system/workspaces";
 import { exists } from "@std/fs";
-import { basename, join } from "@std/path";
+import { basename, dirname, join } from "@std/path";
 import {
   createRegistryStorage,
   type RegistryStorageAdapter,
@@ -22,113 +19,66 @@ import {
 } from "../../../src/core/storage/index.ts";
 import { generateUniqueWorkspaceName } from "../../../src/core/utils/id-generator.ts";
 import type { WorkspaceRuntime } from "../../../src/core/workspace-runtime.ts";
-import type { WorkspaceEntry, WorkspaceStatus } from "./types.ts";
+import type { WorkspaceEntry, WorkspaceSignalRegistrar, WorkspaceStatus } from "./types.ts";
+import { WorkspaceConfigWatcher } from "./watchers/index.ts";
 
-export interface WorkspaceManagerOptions {
-  autoImport?: boolean;
-  registerSystemWorkspaces?: boolean;
-}
 
-/**
- * Hook function called after workspace registration
- * Receives the registered workspace entry
- * Should not throw - errors are logged but don't fail registration
- */
-export type WorkspaceRegistrationHook = (entry: WorkspaceEntry) => Promise<void>;
 
 export class WorkspaceManager {
   private registry: RegistryStorageAdapter;
   private runtimes = new Map<string, WorkspaceRuntime>();
-  private registrationHooks: WorkspaceRegistrationHook[] = [];
+  private signalRegistrars: WorkspaceSignalRegistrar[] = [];
+  private fileWatcher: WorkspaceConfigWatcher | null = null;
 
   constructor(registry: RegistryStorageAdapter) {
     this.registry = registry;
   }
 
   /**
-   * Start watching all existing and newly registered workspaces using the provided watcher.
-   * Errors in the watcher are logged and do not stop processing.
+   * Initialize registry and observers.
+   *
+   * - Registers system workspaces (idempotent)
+   * - Auto-imports user workspaces from common roots; failures never block startup
+   * - Registers existing user workspaces with signal registrars
+   * - Starts config file watching for user workspaces
    */
-  public async watchWorkspaces(
-    watcher: { watchWorkspace(workspace: WorkspaceEntry): void | Promise<void> },
-    options?: { includeSystem?: boolean },
-  ): Promise<void> {
-    const includeSystem = options?.includeSystem === true;
-
-    // Invoke for existing workspaces first
-    const existing = await this.list({ includeSystem });
-    for (const workspace of existing) {
-      try {
-        await watcher.watchWorkspace(workspace);
-      } catch (error) {
-        logger.warn("watchWorkspaces failed for existing workspace", {
-          workspaceId: workspace.id,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-    }
-
-    // Subscribe for future registrations
-    this.addRegistrationHook(async (entry) => {
-      // Filter system workspaces unless explicitly included
-      if (entry.metadata?.system && !includeSystem) return;
-      try {
-        await watcher.watchWorkspace(entry);
-      } catch (error) {
-        logger.warn("watchWorkspaces failed for newly registered workspace", {
-          workspaceId: entry.id,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-    });
-  }
-
-  /**
-   * Add a hook to be called after workspace registration
-   * Hooks are called in the order they were added
-   * Hook errors are logged but don't fail the registration
-   */
-  public addRegistrationHook(hook: WorkspaceRegistrationHook): void {
-    this.registrationHooks.push(hook);
-    logger.debug("Added workspace registration hook", {
-      totalHooks: this.registrationHooks.length,
-    });
-  }
-
-  /**
-   * Execute all registration hooks for a workspace
-   * Errors are logged but don't propagate
-   */
-  private async executeRegistrationHooks(entry: WorkspaceEntry): Promise<void> {
-    if (this.registrationHooks.length === 0) return;
-
-    for (const [index, hook] of this.registrationHooks.entries()) {
-      try {
-        await hook(entry);
-        logger.debug("Registration hook executed successfully", {
-          hookIndex: index,
-          workspaceId: entry.id,
-        });
-      } catch (error) {
-        // Log error but continue with other hooks
-        logger.error("Registration hook failed", {
-          hookIndex: index,
-          workspaceId: entry.id,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-    }
-  }
-
-  async initialize(options: WorkspaceManagerOptions = {}): Promise<void> {
+  async initialize(signalRegistrars: WorkspaceSignalRegistrar[]): Promise<void> {
     await this.registry.initialize();
 
-    if (options.registerSystemWorkspaces !== false) {
-      // System workspaces should never fail - if they do, it's a build/code issue
-      await this.registerSystemWorkspaces();
+    this.signalRegistrars = signalRegistrars;
+
+    this.fileWatcher = new WorkspaceConfigWatcher({
+      onConfigChange: async (
+        workspaceId: string,
+        change: { filePath: string } | { oldPath: string; newPath?: string },
+      ) => {
+        await this.handleWatcherChange(workspaceId, change);
+      },
+      debounceMs: 1000,
+    });
+
+    // System workspaces should never fail - if they do, it's a build/code issue
+    await this.registerSystemWorkspaces();
+
+    // Watch existing non-system workspaces
+    try {
+      const existingNonSystem = (await this.list({ includeSystem: false })) || [];
+      for (const workspace of existingNonSystem) {
+        const cfg = await this.getWorkspaceConfig(workspace.id);
+        if (!cfg){
+          logger.warn("Workspace config not found", { workspaceId: workspace.id });
+          continue;
+        };
+        await this.registerWithRegistrars(workspace.id, workspace.path, cfg);
+        await this.fileWatcher?.watchWorkspace(workspace);
+      }
+    } catch (error) {
+      logger.error("Failed to register existing workspaces", {
+        error: error,
+      });
     }
 
-    if (options.autoImport !== false && !this.isTestMode()) {
+    if (!this.isTestMode()) {
       try {
         const imported = await this.importExistingWorkspaces();
         if (imported > 0) {
@@ -136,26 +86,31 @@ export class WorkspaceManager {
         }
       } catch (error) {
         logger.error("Failed during workspace auto-import", {
-          error: error instanceof Error ? error.message : String(error),
+          error: error,
         });
         // Don't throw - auto-import failure shouldn't prevent daemon startup
       }
     }
+
+
   }
 
   /**
-   * Register a workspace from filesystem path
+   * Register workspace by filesystem path.
+   *
+   * Validates config via ConfigLoader. On first registration, attaches watcher and
+   * registers signals (non-system only). Returns the entry and whether it was created.
    */
   async registerWorkspace(
     workspacePath: string,
     metadata?: { name?: string; description?: string; tags?: string[] },
-  ): Promise<WorkspaceEntry> {
+  ): Promise<{ workspace: WorkspaceEntry; created: boolean }> {
     const absolutePath = await Deno.realPath(workspacePath);
 
     // Check if already registered
     const existing = await this.registry.findWorkspaceByPath(absolutePath);
     if (existing) {
-      return existing;
+      return { workspace: existing, created: false };
     }
 
     // Load and validate configuration using v2
@@ -167,11 +122,7 @@ export class WorkspaceManager {
     try {
       config = await configLoader.load();
     } catch (error) {
-      const errorDetails =
-        error instanceof Error
-          ? { message: error.message, stack: error.stack }
-          : { message: String(error) };
-      logger.error("Invalid workspace configuration", { path: absolutePath, error: errorDetails });
+      logger.error("Invalid workspace configuration", { path: absolutePath, error });
       throw error;
     }
 
@@ -195,15 +146,23 @@ export class WorkspaceManager {
     await this.registry.registerWorkspace(entry);
     logger.info(`Workspace registered: ${entry.name}`, { id: entry.id });
 
-    // Execute post-registration hooks
-    await this.executeRegistrationHooks(entry);
+    // Attach file watcher for this workspace (non-system only)
+    if (this.fileWatcher && !entry.metadata?.system) {
+      try {
+        await this.fileWatcher.watchWorkspace(entry);
+        await this.registerWithRegistrars(entry.id, entry.path, config);
+      } catch (error) {
+        logger.warn("Failed to register workspace", {
+          workspaceId: entry.id,
+          error: error,
+        });
+      }
+    }
 
-    return entry;
+    return { workspace: entry, created: true };
   }
 
-  /**
-   * Register all system workspaces
-   */
+  /** Register embedded system workspaces in the registry (idempotent). */
   private async registerSystemWorkspaces(): Promise<void> {
     logger.info("Registering system workspaces...");
 
@@ -224,16 +183,11 @@ export class WorkspaceManager {
       if (!existing) {
         await this.registry.registerWorkspace(entry);
         logger.info(`System workspace registered: ${entry.name}`);
-
-        // Execute post-registration hooks for system workspaces too
-        await this.executeRegistrationHooks(entry);
       }
     }
   }
 
-  /**
-   * Get workspace configuration (handles system workspaces)
-   */
+  /** Return workspace config; use embedded config for system workspaces. */
   async getWorkspaceConfig(workspaceId: string): Promise<MergedConfig | null> {
     const workspace = await this.registry.getWorkspace(workspaceId);
     if (!workspace) return null;
@@ -256,15 +210,13 @@ export class WorkspaceManager {
     } catch (error) {
       logger.error(`Failed to load workspace config`, {
         workspaceId,
-        error: error instanceof Error ? error.message : String(error),
+        error: error,
       });
       return null;
     }
   }
 
-  /**
-   * Unified find method
-   */
+  /** Find by id/name/path; reflect running status if a runtime is registered. */
   async find(query: { id?: string; name?: string; path?: string }): Promise<WorkspaceEntry | null> {
     let workspace: WorkspaceEntry | null = null;
 
@@ -289,9 +241,7 @@ export class WorkspaceManager {
     return workspace;
   }
 
-  /**
-   * List workspaces with optional filtering
-   */
+  /** List workspaces; filter by status; exclude system by default. */
   async list(options?: {
     status?: WorkspaceStatus;
     includeSystem?: boolean;
@@ -311,7 +261,10 @@ export class WorkspaceManager {
   }
 
   /**
-   * Delete a workspace
+   * Delete workspace entry.
+   *
+   * Blocks deletion of system workspaces unless force. Unregisters signals, shuts down
+   * runtime, stops watcher, optionally removes directory.
    */
   async deleteWorkspace(
     id: string,
@@ -319,7 +272,8 @@ export class WorkspaceManager {
   ): Promise<void> {
     const workspace = await this.registry.getWorkspace(id);
     if (!workspace) {
-      throw new Error(`Workspace not found: ${id}`);
+      logger.info("Workspace already deleted", { id });
+      return;
     }
 
     // Prevent deletion of system workspaces
@@ -327,6 +281,8 @@ export class WorkspaceManager {
       throw new Error(`Cannot delete system workspace '${id}'. Use force=true to override.`);
     }
 
+    // Unregister from signal registrars first
+    await this.unregisterWithRegistrars(id);
     // Stop runtime if active
     const runtime = this.runtimes.get(id);
     if (runtime) {
@@ -334,8 +290,15 @@ export class WorkspaceManager {
       this.runtimes.delete(id);
     }
 
-    // Remove from registry
+    // Remove from registry 
     await this.registry.unregisterWorkspace(id);
+
+    // Ensure we stop file watching for this workspace (idempotent)
+    try {
+      this.fileWatcher?.unwatchWorkspace(id);
+    } catch (error) {
+      logger.debug("Error stopping watcher during workspace deletion", { id, error });
+    }
 
     // Optionally remove directory
     if (options?.removeDirectory && !workspace.path.startsWith("system://")) {
@@ -350,9 +313,7 @@ export class WorkspaceManager {
     logger.info("Workspace deleted", { id, name: workspace.name });
   }
 
-  /**
-   * Register an active runtime
-   */
+  /** Register active runtime and persist status=running. */
   async registerRuntime(workspaceId: string, runtime: WorkspaceRuntime): Promise<void> {
     this.runtimes.set(workspaceId, runtime);
     logger.info("Runtime registered", { workspaceId });
@@ -366,9 +327,7 @@ export class WorkspaceManager {
     }
   }
 
-  /**
-   * Unregister a runtime
-   */
+  /** Unregister runtime and persist status=stopped. */
   async unregisterRuntime(workspaceId: string): Promise<void> {
     if (this.runtimes.delete(workspaceId)) {
       logger.info("Runtime unregistered", { workspaceId });
@@ -398,15 +357,34 @@ export class WorkspaceManager {
   }
 
   /**
-   * Update workspace last seen timestamp
+   * Extract results/summary from artifacts.
+   *
+   * Ignores unexpected shapes and returns only present fields. Keeps the daemon
+   * agnostic of artifact structure.
    */
+  extractExecutionResults(artifacts: Array<{ type: string; data?: unknown }>): {
+    results?: unknown;
+    summary?: string;
+  } {
+    const resultsArtifact = artifacts.find((a) => a.type === "execution_results");
+    if (!resultsArtifact || typeof resultsArtifact.data !== "object" || !resultsArtifact.data) {
+      return {};
+    }
+    const dataObj = resultsArtifact.data as Record<string, unknown>;
+    const out: { results?: unknown; summary?: string } = {};
+    if ("results" in dataObj) out.results = (dataObj as { results?: unknown }).results;
+    if (typeof (dataObj as { summary?: unknown }).summary === "string") {
+      out.summary = (dataObj as { summary?: string }).summary as string;
+    }
+    return out;
+  }
+
+  // Update last-seen timestamp in registry
   async updateWorkspaceLastSeen(workspaceId: string): Promise<void> {
     await this.registry.updateWorkspaceLastSeen(workspaceId);
   }
 
-  /**
-   * Update workspace status
-   */
+  // Update status and optional partial entry fields in registry
   async updateWorkspaceStatus(
     workspaceId: string,
     status: WorkspaceStatus,
@@ -426,6 +404,12 @@ export class WorkspaceManager {
     return Deno.env.get("DENO_TEST") === "true";
   }
 
+  /**
+   * Auto-import user workspaces from common roots.
+   *
+   * Searches a small depth for directories containing workspace.yml, de-dupes, validates
+   * configs, logs and skips invalid ones. Never throws; returns import count.
+   */
   private async importExistingWorkspaces(): Promise<number> {
     const workspaces: string[] = [];
     const rootPath = Deno.cwd();
@@ -455,7 +439,7 @@ export class WorkspaceManager {
           skipped++;
           logger.warn("Skipping invalid workspace during auto-import", {
             path: workspacePath,
-            error: error instanceof Error ? error.message : String(error),
+            error: error,
           });
         }
       }
@@ -470,6 +454,12 @@ export class WorkspaceManager {
     return imported;
   }
 
+  /**
+   * Collect directories containing workspace.yml up to maxDepth.
+   *
+   * Skips common non-workspace dirs. Does not recurse into a directory once identified
+   * as a workspace.
+   */
   private async scanDirectory(
     path: string,
     results: string[],
@@ -507,7 +497,23 @@ export class WorkspaceManager {
     }
   }
 
+  /**
+   * Gracefully shut down manager.
+   *
+   * Unregisters signals, shuts down runtimes, stops watcher, shuts down registrars,
+   * then closes the registry. Best-effort: logs errors and continues.
+   */
   async close(): Promise<void> {
+    // Unregister all signals via registrars for all known workspaces
+    try {
+      const all = await this.list({ includeSystem: false });
+      for (const ws of all) {
+        await this.unregisterWithRegistrars(ws.id);
+      }
+    } catch (error) {
+      logger.debug("Error unregistering workspace signals during manager close", { error });
+    }
+
     // Shutdown all active workspace runtimes before clearing the map
     const shutdownPromises = Array.from(this.runtimes.values()).map(async (runtime) => {
       try {
@@ -520,11 +526,296 @@ export class WorkspaceManager {
 
     await Promise.all(shutdownPromises);
     this.runtimes.clear();
+
+    // Stop file watcher if present
+    if (this.fileWatcher) {
+      try {
+        this.fileWatcher.stop();
+      } catch (error) {
+        logger.debug("Error stopping workspace config watcher", { error });
+      }
+      this.fileWatcher = null;
+    }
+
+    // Gracefully shutdown signal registrars
+    if (this.signalRegistrars.length > 0) {
+      for (const registrar of this.signalRegistrars) {
+        try {
+          await registrar.shutdown?.();
+        } catch (error) {
+          logger.debug("Error shutting down signal registrar in manager close", { error });
+        }
+      }
+      this.signalRegistrars = [];
+    }
+
+    // Close registry last
     await this.registry.close();
+  }
+
+  /** Register workspace with all signal registrars (best-effort). */
+  private async registerWithRegistrars(
+    workspaceId: string,
+    workspacePath: string,
+    config: MergedConfig,
+  ): Promise<void> {
+    if (this.signalRegistrars.length === 0) return;
+    for (const registrar of this.signalRegistrars) {
+      try {
+        await registrar.registerWorkspace(workspaceId, workspacePath, config);
+      } catch (error) {
+        logger.error("Signal registrar registerWorkspace failed", {
+          workspaceId,
+          workspacePath,
+          error: error,
+        });
+      }
+    }
+  }
+
+  /** Unregister workspace from all signal registrars (best-effort). */
+  private async unregisterWithRegistrars(workspaceId: string): Promise<void> {
+    if (this.signalRegistrars.length === 0) return;
+    for (const registrar of this.signalRegistrars) {
+      try {
+        await registrar.unregisterWorkspace(workspaceId);
+      } catch (error) {
+        logger.error("Signal registrar unregisterWorkspace failed", {
+          workspaceId,
+          error: error,
+        });
+      }
+    }
+  }
+
+  /**
+   * React to workspace config change.
+   *
+   * If config is missing, delete the workspace entry. If invalid, mark inactive and
+   * record error metadata. Otherwise, stop runtime, restart signals, and mark inactive
+   * (ready state; runtime is started elsewhere).
+   */
+  async handleWorkspaceConfigChange(workspace: WorkspaceEntry, filePath: string): Promise<void> {
+    logger.info("Handling workspace configuration change", {
+      workspaceId: workspace.id,
+      filePath,
+      workspacePath: workspace.path,
+    });
+
+    const changeType = await this.determineChangeType(workspace);
+    if (changeType === "deleted") {
+      await this.unregisterWorkspaceStates(workspace.id, workspace);
+      return;
+    }
+
+    const validation = await this.validateWorkspaceConfig(workspace);
+    if (!validation.ok) {
+      await this.markWorkspaceInactive(workspace.id, {
+        ...workspace.metadata,
+        lastError: validation.error.message,
+        lastErrorAt: new Date().toISOString(),
+      });
+      return;
+    }
+
+    await this.stopRuntimeIfActive(workspace.id);
+    await this.restartSignalsForWorkspace(workspace.id, workspace.path, validation.config);
+    await this.markWorkspaceInactive(workspace.id);
+  }
+
+  /**
+   * Entry point for watcher events that include renames.
+   *
+   * For plain file changes, delegate to config-change handler. For renames, adopt
+   * new path if it exists and is valid; otherwise, delete the workspace entry.
+   */
+  private async handleWatcherChange(
+    workspaceId: string,
+    change: { filePath: string } | { oldPath: string; newPath?: string },
+  ): Promise<void> {
+    logger.debug("workspace watcher change received", { workspaceId, change });
+
+    const workspace = await this.find({ id: workspaceId });
+    if (!workspace) {
+      logger.warn("Change for unknown workspace", { workspaceId });
+      return;
+    }
+    
+    if ("filePath" in change) {
+      logger.debug("processing filePath change", { workspaceId, filePath: change.filePath });
+      await this.handleWorkspaceConfigChange(workspace, change.filePath);
+      return;
+    }
+
+    // Rename branch: attempt to adopt newPath if valid; otherwise process deletion
+    const { oldPath, newPath } = change;
+    logger.debug("processing rename change", { workspaceId, oldPath, newPath });
+
+    // If no newPath or the newPath doesn't exist, treat as missing config
+    if (!newPath || !(await exists(newPath))) {
+      logger.debug("rename with missing or nonexistent newPath; handling as missing config", {
+        workspaceId,
+        oldPath,
+        newPath,
+      });
+      await this.unregisterWorkspaceStates(workspaceId, workspace);
+      return;
+    }
+    await this.adoptRenamedWorkspace(workspaceId, workspace, newPath);
+  }
+
+  /**
+   * Adopt a renamed config path.
+   *
+   * Validates new config first, then: stop runtime, atomically update registry paths,
+   * restart signals, reattach watcher, and mark inactive. On failure, delete entry.
+   */
+  private async adoptRenamedWorkspace(
+    workspaceId: string,
+    workspace: WorkspaceEntry,
+    newPath: string,
+  ): Promise<void> {
+    const newWorkspaceDir = dirname(newPath);
+    try {
+      // Validate the new config before adopting and keep it to pass to registrars
+      const adapter = new FilesystemConfigAdapter(newWorkspaceDir);
+      const loader = new ConfigLoader(adapter, newWorkspaceDir);
+      const config = await loader.load();
+
+      // Stop runtime if active
+      await this.stopRuntimeIfActive(workspaceId);
+
+      // Update registry status and paths atomically via updateWorkspaceStatus with partial updates
+      await this.registry.updateWorkspaceStatus(workspaceId, workspace.status, {
+        path: newWorkspaceDir,
+        configPath: newPath,
+        metadata: workspace.metadata,
+      });
+
+      logger.debug("workspace registry updated for rename", {
+        workspaceId,
+        newWorkspaceDir,
+        newPath,
+      });
+
+      // Rewire signals to the new path with validated config
+      await this.restartSignalsForWorkspace(workspaceId, newWorkspaceDir, config);
+
+      // Reattach watcher to the new config path
+      try {
+        this.fileWatcher?.unwatchWorkspace(workspaceId);
+      } catch (error) {
+        logger.debug("Error unwatching before rename reattach", { workspaceId, error });
+      }
+
+      if (this.fileWatcher) {
+        const updated = { ...workspace, path: newWorkspaceDir, configPath: newPath };
+        logger.debug("reattaching workspace config watcher after rename", {
+          workspaceId,
+          configPath: updated.configPath,
+        });
+        await this.fileWatcher.watchWorkspace(updated);
+      }
+
+      // Mark workspace inactive (ready state) after adoption
+      await this.markWorkspaceInactive(workspaceId);
+    } catch (error) {
+      logger.error("Failed to adopt renamed workspace config; deleting entry", {
+        workspaceId,
+        oldPath: workspace.configPath,
+        newPath,
+        error: error,
+      });
+      await this.deleteWorkspace(workspaceId, { removeDirectory: false });
+    }
+  }
+
+  private async determineChangeType(workspace: WorkspaceEntry): Promise<"deleted" | "updated"> {
+    const dirExists = await exists(workspace.path);
+    const cfgExists = await exists(workspace.configPath);
+    return !dirExists || !cfgExists ? "deleted" : "updated";
+  }
+
+  private async validateWorkspaceConfig(
+    workspace: WorkspaceEntry,
+  ): Promise<{ ok: true; config: MergedConfig } | { ok: false; error: Error }> {
+    try {
+      const adapter = new FilesystemConfigAdapter(workspace.path);
+      const configLoader = new ConfigLoader(adapter, workspace.path);
+      const config = await configLoader.load();
+      return { ok: true, config };
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error : new Error(String(error)) };
+    }
+  }
+
+  private async stopRuntimeIfActive(workspaceId: string): Promise<void> {
+    const runtime = this.runtimes.get(workspaceId);
+    if (!runtime) return;
+    try {
+      await runtime.shutdown();
+    } catch (error) {
+      logger.warn("Error shutting down runtime", { workspaceId, error });
+    }
+    this.runtimes.delete(workspaceId);
+  }
+
+  /** Unregister then register signals for a workspace (best-effort). */
+  private async restartSignalsForWorkspace(
+    workspaceId: string,
+    workspacePath: string,
+    config: MergedConfig,
+  ): Promise<void> {
+    try {
+      await this.unregisterWithRegistrars(workspaceId);
+    } catch (error) {
+      logger.debug("Error during signal unregister", { workspaceId, error });
+    }
+    try {
+      await this.registerWithRegistrars(workspaceId, workspacePath, config);
+    } catch (error) {
+      logger.error("Error during signal register", { workspaceId, error });
+    }
+  }
+
+  /** Set status to inactive; optionally replace metadata. */
+  private async markWorkspaceInactive(
+    workspaceId: string,
+    metadata?: Record<string, unknown>,
+  ): Promise<void> {
+    try {
+      await this.registry.updateWorkspaceStatus(workspaceId, "inactive", { metadata });
+    } catch (error) {
+      logger.debug("Failed to update workspace status to inactive", { workspaceId, error });
+    }
+  }
+
+  /** Unregister workspace states: signals + runtime, mark inactive, and keep watcher attached. */
+  private async unregisterWorkspaceStates(workspaceId: string, workspace: WorkspaceEntry): Promise<void> {
+    try {
+      await this.unregisterWithRegistrars(workspaceId);
+    } catch (error) {
+      logger.debug("Error during signal unregister after config removal", { workspaceId, error });
+    }
+
+    await this.stopRuntimeIfActive(workspaceId);
+
+    await this.markWorkspaceInactive(workspaceId, {
+      ...workspace.metadata,
+      lastError: "Workspace configuration file removed",
+      lastErrorAt: new Date().toISOString(),
+    });
+
+    // Reattach watcher to continue monitoring for config restoration
+    try {
+      this.fileWatcher?.unwatchWorkspace(workspaceId);
+    } catch (error) {
+      logger.debug("Error unwatching before reattach after config removal", { workspaceId, error });
+    }
   }
 }
 
-// Global singleton instance - lazy initialization with new storage
+// Singleton manager; lazily initialized
 let _workspaceManager: WorkspaceManager | null = null;
 
 export async function getWorkspaceManager(): Promise<WorkspaceManager> {

@@ -84,13 +84,14 @@ export class AgentRegistry {
   }
 
   /** Register an SDK agent programmatically */
-  registerAgent(agent: AtlasAgent): void {
+  async registerAgent(agent: AtlasAgent): Promise<void> {
     if (!this.sdkAdapter) {
       throw new Error("SDK adapter not initialized");
     }
 
     const id = agent.metadata.id;
-    this.sdkAdapter.registerAgent(agent);
+    // Align with SDK interface which expects a Promise-returning method
+    await Promise.resolve(this.sdkAdapter.registerAgent(agent));
     this.registeredAgents.set(id, agent);
     this.agentSourceTypes.set(id, "sdk");
     this.logger.debug("Registered SDK agent", { id });

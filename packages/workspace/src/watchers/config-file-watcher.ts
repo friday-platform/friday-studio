@@ -1,18 +1,21 @@
 import { WorkspaceConfigSchema } from "@atlas/config";
 import { createFsWatchRunner, type FsWatchRunner } from "@atlas/fs-watch";
 import { logger } from "@atlas/logger";
-import { resolve } from "@std/path";
+import { basename, dirname, join, resolve } from "@std/path";
 import { parse } from "@std/yaml";
 import type { WorkspaceEntry } from "../types.ts";
 
 interface WorkspaceConfigWatcherOptions {
-  onConfigChange: (workspaceId: string, filePath: string) => Promise<void>;
+  onConfigChange: (
+    workspaceId: string,
+    change: { filePath: string } | { oldPath: string; newPath?: string },
+  ) => Promise<void>;
   debounceMs?: number;
   maxConfigSize?: number; // Maximum config file size in bytes
 }
 
 export class WorkspaceConfigWatcher {
-  private watchers = new Map<string, FsWatchRunner>();
+  private watchers = new Map<string, { fileRunner: FsWatchRunner; dirRunner: FsWatchRunner }>();
   private workspaceConfigPaths = new Map<string, string>();
   private readonly maxConfigSize: number;
   private lastConfigHashByWorkspace = new Map<string, string>();
@@ -31,39 +34,26 @@ export class WorkspaceConfigWatcher {
     // Use the actual config path from the workspace entry
     const configPath = workspace.configPath;
 
-    // Normalize the config path to absolute for comparison with file events
-    // Use resolve instead of realPath to avoid issues if file doesn't exist yet
-    const absoluteConfigPath = resolve(configPath);
+    const { absoluteConfigPath, configDir, parentDir, configFileName } =
+      this.normalizeConfigPaths(configPath);
 
     // Store the config path for this workspace
     this.workspaceConfigPaths.set(workspace.id, configPath);
 
     // Initialize baseline content hash if file exists and is readable
-    try {
-      const initialContent = await Deno.readTextFile(absoluteConfigPath);
-      const initialHash = await this.computeSha256Hex(initialContent);
-      this.lastConfigHashByWorkspace.set(workspace.id, initialHash);
-    } catch (error) {
-      logger.debug("Could not initialize workspace config hash", {
-        workspaceId: workspace.id,
-        path: absoluteConfigPath,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
+    await this.initializeBaselineHash(workspace.id, absoluteConfigPath);
 
     try {
-      // Create shared runner for the workspace directory
-      const runner = createFsWatchRunner({
-        watchPath: absoluteConfigPath,
-        recursive: false,
-        debounceMs: this.options.debounceMs || 1000,
-        filterKind: (k) => k === "modify" || k === "remove",
-        onEvent: async (_event: Deno.FsEvent) => {
-          await this.handleConfigChange(workspace.id, absoluteConfigPath);
-        },
-      });
+      const fileRunner = this.createFileWatcherRunner(workspace.id, absoluteConfigPath);
+      const dirRunner = this.createDirWatcherRunner(
+        workspace.id,
+        configDir,
+        parentDir,
+        configFileName,
+        absoluteConfigPath,
+      );
 
-      this.watchers.set(workspace.id, runner);
+      this.watchers.set(workspace.id, { fileRunner, dirRunner });
 
       logger.debug("Started watching workspace configuration", {
         workspaceId: workspace.id,
@@ -75,22 +65,14 @@ export class WorkspaceConfigWatcher {
 
       logger.error("Failed to watch workspace", {
         workspaceId: workspace.id,
-        error: error instanceof Error ? error.message : String(error),
+        error: error,
       });
     }
   }
 
-  async unwatchWorkspace(workspaceId: string) {
-    // Close watcher
-    const runner = this.watchers.get(workspaceId);
-    if (runner) {
-      try {
-        runner.stop();
-      } catch {
-        // Ignore errors on close
-      }
-      this.watchers.delete(workspaceId);
-    }
+  unwatchWorkspace(workspaceId: string) {
+    // Close watchers
+    this.stopWatchers(workspaceId);
 
     // Clear file hash for this workspace's config file
     const configPath = this.workspaceConfigPaths.get(workspaceId);
@@ -101,61 +83,67 @@ export class WorkspaceConfigWatcher {
 
     logger.info("Stopped watching workspace configuration", { workspaceId });
     // keep async contract
-    await Promise.resolve();
   }
 
-  private async handleConfigChange(workspaceId: string, filePath: string) {
-    // Check if workspace still exists and is being watched
+  private stopWatchers(workspaceId: string): void {
+    const runners = this.watchers.get(workspaceId);
+    if (!runners) return;
+    try {
+      runners.fileRunner.stop();
+    } catch {
+      // ignore
+    }
+    try {
+      runners.dirRunner.stop();
+    } catch {
+      // ignore
+    }
+    this.watchers.delete(workspaceId);
+  }
+
+  private async handleFsEvent(
+    workspaceId: string,
+    filePath: string,
+    kind: Deno.FsEvent["kind"],
+  ): Promise<void> {
+    logger.debug("Workspace config file watcher event received", { workspaceId, filePath, kind });
+    // Ensure we're still watching this workspace
     if (!this.watchers.has(workspaceId)) {
-      logger.debug("Workspace no longer watched, skipping config change", { workspaceId });
+      logger.debug("Workspace no longer watched, skipping fs event", { workspaceId });
+      return;
+    }
+
+    if (kind === "remove") {
+      this.lastConfigHashByWorkspace.delete(workspaceId);
+      await this.options.onConfigChange(workspaceId, { filePath });
       return;
     }
 
     try {
-      // Check file size before processing
-      const stats = await Deno.stat(filePath);
-      if (stats.size > this.maxConfigSize) {
-        logger.warn("Config file too large, skipping reload", {
-          workspaceId,
-          filePath,
-          size: stats.size,
-          maxSize: this.maxConfigSize,
-        });
+      const tooLarge = await this.isConfigTooLarge(filePath);
+      if (tooLarge) {
         return;
       }
 
-      // Read file contents and compute content signature
-      const configContent = await Deno.readTextFile(filePath);
-      const contentHash = await this.computeSha256Hex(configContent);
+      const { content, hash } = await this.readConfigAndHash(filePath);
 
-      // Gate on content hash: skip if content is unchanged
       const previousHash = this.lastConfigHashByWorkspace.get(workspaceId);
-      if (previousHash && previousHash === contentHash) {
+      if (previousHash && previousHash === hash) {
         logger.debug("Workspace config unchanged (hash match), skipping reload", { workspaceId });
         return;
       }
 
-      // Validate the new configuration before reloading
-      const config = parse(configContent);
-
-      // Use existing validation
-      const validationResult = WorkspaceConfigSchema.safeParse(config);
-
-      if (!validationResult.success) {
-        logger.error("Invalid workspace configuration detected, skipping reload", {
-          workspaceId,
-          errors: validationResult.error.issues,
-        });
+      const isValid = this.validateConfigOrLog(workspaceId, content);
+      if (!isValid) {
         return;
       }
 
-      // Configuration is valid, persist new hash and trigger reload
-      this.lastConfigHashByWorkspace.set(workspaceId, contentHash);
-      await this.options.onConfigChange(workspaceId, filePath);
+      this.lastConfigHashByWorkspace.set(workspaceId, hash);
+      await this.options.onConfigChange(workspaceId, { filePath });
     } catch (error) {
       logger.error("Error handling config change", {
         workspaceId,
-        error: error instanceof Error ? error.message : String(error),
+        error: error,
       });
     }
   }
@@ -173,9 +161,204 @@ export class WorkspaceConfigWatcher {
     return hex;
   }
 
-  async stop() {
+  stop() {
     // Stop all watchers
     const workspaceIds = Array.from(this.watchers.keys());
-    await Promise.all(workspaceIds.map((id) => this.unwatchWorkspace(id)));
+    workspaceIds.map((id) => this.unwatchWorkspace(id));
+  }
+
+  // ----- Private helpers: path normalization and setup -----
+  private normalizeConfigPaths(configPath: string): {
+    absoluteConfigPath: string;
+    configDir: string;
+    parentDir: string;
+    configFileName: string;
+  } {
+    const absoluteConfigPath = resolve(configPath);
+    const configDir = dirname(absoluteConfigPath);
+    const parentDir = dirname(configDir);
+    const configFileName = basename(absoluteConfigPath);
+    return { absoluteConfigPath, configDir, parentDir, configFileName };
+  }
+
+  private async initializeBaselineHash(
+    workspaceId: string,
+    absoluteConfigPath: string,
+  ): Promise<void> {
+    try {
+      const initialContent = await Deno.readTextFile(absoluteConfigPath);
+      const initialHash = await this.computeSha256Hex(initialContent);
+      this.lastConfigHashByWorkspace.set(workspaceId, initialHash);
+    } catch (error) {
+      logger.debug("Could not initialize workspace config hash", {
+        workspaceId,
+        path: absoluteConfigPath,
+        error: error,
+      });
+    }
+  }
+
+  // ----- Private helpers: watcher creation -----
+
+  private createFileWatcherRunner(workspaceId: string, absoluteConfigPath: string): FsWatchRunner {
+    return createFsWatchRunner({
+      watchPath: absoluteConfigPath,
+      recursive: false,
+      debounceMs: this.options.debounceMs || 1000,
+      filterKind: (k) => k === "modify" || k === "remove" || k === "rename",
+      onEvent: async (event: Deno.FsEvent) => {
+        await this.onFileWatcherEvent(workspaceId, absoluteConfigPath, event);
+      },
+    });
+  }
+
+  private createDirWatcherRunner(
+    workspaceId: string,
+    configDir: string,
+    parentDir: string,
+    configFileName: string,
+    absoluteConfigPath: string,
+  ): FsWatchRunner {
+    return createFsWatchRunner({
+      watchPath: parentDir,
+      recursive: false,
+      debounceMs: this.options.debounceMs || 1000,
+      filterKind: (k) => k === "rename" || k === "remove",
+      onEvent: async (event: Deno.FsEvent) => {
+        await this.onDirWatcherEvent(
+          workspaceId,
+          configDir,
+          parentDir,
+          configFileName,
+          absoluteConfigPath,
+          event,
+        );
+      },
+    });
+  }
+
+  // ----- Private helpers: watcher event handling -----
+
+  private async onFileWatcherEvent(
+    workspaceId: string,
+    absoluteConfigPath: string,
+    event: Deno.FsEvent,
+  ): Promise<void> {
+    logger.debug("workspace config file fs event", {
+      workspaceId,
+      kind: event.kind,
+      paths: event.paths,
+      watchedPath: absoluteConfigPath,
+    });
+
+    if (event.kind === "rename") {
+      const newPath = this.getRenamedPath(absoluteConfigPath, event);
+      logger.debug("workspace config rename detected (file watcher)", {
+        workspaceId,
+        oldPath: absoluteConfigPath,
+        newPath,
+      });
+      await this.handleRename(workspaceId, absoluteConfigPath, newPath);
+      return;
+    }
+
+    if (event.kind === "remove") {
+      await this.handleRemoval(workspaceId, absoluteConfigPath);
+      return;
+    }
+
+    await this.handleFsEvent(workspaceId, absoluteConfigPath, event.kind);
+  }
+
+  private async onDirWatcherEvent(
+    workspaceId: string,
+    configDir: string,
+    parentDir: string,
+    configFileName: string,
+    absoluteConfigPath: string,
+    event: Deno.FsEvent,
+  ): Promise<void> {
+    logger.debug("workspace config dir fs event", {
+      workspaceId,
+      kind: event.kind,
+      paths: event.paths,
+      watchedPath: parentDir,
+    });
+
+    const affectsWorkspaceDir = event.paths.some((p) => resolve(p) === configDir);
+    if (!affectsWorkspaceDir) return;
+
+    if (event.kind === "rename") {
+      const newDir = event.paths.find((p) => resolve(p) !== configDir);
+      const newPath = newDir ? join(resolve(newDir), configFileName) : undefined;
+      logger.debug("workspace directory rename detected (dir watcher)", {
+        workspaceId,
+        oldDir: configDir,
+        newDir,
+        oldPath: absoluteConfigPath,
+        newPath,
+      });
+      await this.handleRename(workspaceId, absoluteConfigPath, newPath);
+      return;
+    }
+
+    await this.handleRemoval(workspaceId, absoluteConfigPath);
+  }
+
+  private getRenamedPath(oldAbsolutePath: string, event: Deno.FsEvent): string | undefined {
+    if (!event.paths || event.paths.length < 2) return undefined;
+    const oldNorm = oldAbsolutePath;
+    const candidate = event.paths.find((p) => resolve(p) !== oldNorm);
+    return candidate;
+  }
+
+  private async handleRename(
+    workspaceId: string,
+    oldPath: string,
+    newPath?: string,
+  ): Promise<void> {
+    // Stop both watchers immediately; manager will adopt or delete and reattach as needed
+    this.stopWatchers(workspaceId);
+    await this.options.onConfigChange(workspaceId, { oldPath, newPath });
+  }
+
+  private async handleRemoval(workspaceId: string, filePath: string): Promise<void> {
+    // Stop both watchers when file or directory is removed
+    this.stopWatchers(workspaceId);
+    await this.options.onConfigChange(workspaceId, { filePath });
+  }
+
+  // ----- Private helpers: config validation -----
+
+  private async isConfigTooLarge(filePath: string): Promise<boolean> {
+    const stats = await Deno.stat(filePath);
+    if (stats.size > this.maxConfigSize) {
+      logger.warn("Config file too large, skipping reload", {
+        filePath,
+        size: stats.size,
+        maxSize: this.maxConfigSize,
+      });
+      return true;
+    }
+    return false;
+  }
+
+  private async readConfigAndHash(filePath: string): Promise<{ content: string; hash: string }> {
+    const content = await Deno.readTextFile(filePath);
+    const hash = await this.computeSha256Hex(content);
+    return { content, hash };
+  }
+
+  private validateConfigOrLog(workspaceId: string, content: string): boolean {
+    const config = parse(content);
+    const validationResult = WorkspaceConfigSchema.safeParse(config);
+    if (!validationResult.success) {
+      logger.error("Invalid workspace configuration detected, skipping reload", {
+        workspaceId,
+        errors: validationResult.error.issues,
+      });
+      return false;
+    }
+    return true;
   }
 }

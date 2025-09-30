@@ -1,15 +1,13 @@
+import { WorkspaceConfigSchema } from "@atlas/config";
 import { logger } from "@atlas/logger";
+import { FilesystemWorkspaceCreationAdapter } from "@atlas/storage";
 import { stringifyError } from "@atlas/utils";
 import { zValidator } from "@hono/zod-validator";
 import { join } from "@std/path";
-import { parse } from "@std/yaml";
+import { stringify } from "@std/yaml";
 import { z } from "zod/v4";
 import { daemonFactory } from "../../src/factory.ts";
-import { createWorkspace } from "./create.ts";
-import { getWorkspace } from "./get.ts";
-import { getWorkspaceConfig } from "./get-config.ts";
-import { triggerSignal } from "./trigger-signal.ts";
-import { updateWorkspace } from "./update.ts";
+import { createWorkspaceFromConfigSchema } from "./schemas.ts";
 
 // Export shared schemas and types
 export * from "./schemas.ts";
@@ -28,82 +26,87 @@ const workspacesRoutes = daemonFactory
       return c.json({ error: `Failed to list workspaces: ${stringifyError(error)}` }, 500);
     }
   })
+  // Create workspace from configuration
+  .post("/create", zValidator("json", createWorkspaceFromConfigSchema), async (c) => {
+    try {
+      const { config, workspaceName } = c.req.valid("json");
+
+      // Validate configuration
+      const validationResult = WorkspaceConfigSchema.safeParse(config);
+      if (!validationResult.success) {
+        return c.json(
+          {
+            success: false,
+            error: `Invalid workspace configuration: ${validationResult.error.issues
+              .map((issue) => issue.message)
+              .join(", ")}`,
+          },
+          400,
+        );
+      }
+
+      const validatedConfig = validationResult.data;
+
+      // Convert config to YAML
+      const yamlConfig = stringify(validatedConfig, { indent: 2, lineWidth: 100 });
+
+      // Create workspace files
+      const workspaceAdapter = new FilesystemWorkspaceCreationAdapter();
+      const finalWorkspaceName = workspaceName || validatedConfig.workspace.name;
+      const basePath = Deno.cwd();
+
+      try {
+        const workspacePath = await workspaceAdapter.createWorkspaceDirectory(
+          basePath,
+          finalWorkspaceName,
+        );
+
+        await workspaceAdapter.writeWorkspaceFiles(workspacePath, yamlConfig);
+
+        // Register workspace with manager
+        const ctx = c.get("app");
+        const manager = ctx.daemon.getWorkspaceManager();
+        const { workspace, created } = await manager.registerWorkspace(workspacePath, {
+          name: finalWorkspaceName,
+          description: validatedConfig.workspace.description,
+        });
+
+        return c.json({
+          success: true,
+          workspace,
+          created,
+          workspacePath,
+          filesCreated: ["workspace.yml", ".env"],
+        });
+      } catch (creationError) {
+        return c.json(
+          {
+            success: false,
+            error: `Failed to create workspace files: ${
+              creationError instanceof Error ? creationError.message : String(creationError)
+            }`,
+          },
+          500,
+        );
+      }
+    } catch (error) {
+      return c.json({ success: false, error: stringifyError(error) }, 500);
+    }
+  })
   // Add a single workspace by path
   .post("/add", async (c) => {
     const ctx = c.get("app");
     try {
       const body = await c.req.json();
-      const { path, name: providedName, description: providedDescription } = body;
+      const { path, name, description } = body;
 
       if (!path) {
         return c.json({ error: "Path is required" }, 400);
       }
 
-      // Validate path exists and is a directory
-      let stats: Deno.FileInfo;
-      try {
-        stats = await Deno.stat(path);
-      } catch {
-        return c.json({ error: `Path not found: ${path}` }, 404);
-      }
-
-      if (!stats.isDirectory) {
-        return c.json({ error: `Path is not a directory: ${path}` }, 400);
-      }
-
-      // Check for workspace.yml
-      const workspaceYmlPath = join(path, "workspace.yml");
-      try {
-        await Deno.stat(workspaceYmlPath);
-      } catch {
-        return c.json({ error: `workspace.yml not found in: ${path}` }, 400);
-      }
-
-      // Try to read workspace.yml to get name and description
-      let workspaceName = providedName;
-      let workspaceDescription = providedDescription;
-
-      // Only read workspace.yml if name wasn't explicitly provided
-      if (!providedName) {
-        try {
-          const yamlContent = await Deno.readTextFile(workspaceYmlPath);
-          const config = parse(yamlContent);
-
-          if (config.workspace?.name) {
-            workspaceName = config.workspace.name;
-          }
-          // Also use description from config if not provided
-          if (!providedDescription && config.workspace?.description) {
-            workspaceDescription = config.workspace.description;
-          }
-        } catch {
-          // Ignore parsing errors, registerWorkspace will use directory name as fallback
-        }
-      }
-
       const manager = ctx.daemon.getWorkspaceManager();
 
-      // Check if workspace already exists at this path
-      const existingByPath = await manager.find({ path });
-      if (existingByPath) {
-        return c.json({ error: `Workspace already registered at path: ${path}` }, 409);
-      }
-
-      // If name is determined (provided or from config), check for naming conflicts
-      if (workspaceName) {
-        const existingByName = await manager.find({ name: workspaceName });
-        if (existingByName) {
-          return c.json({ error: `Workspace with name '${workspaceName}' already exists` }, 409);
-        }
-      }
-
-      // Register the workspace
-      const entry = await manager.registerWorkspace(path, {
-        name: workspaceName,
-        description: workspaceDescription,
-      });
-
-      // Cron signals are now automatically registered via WorkspaceManager hooks
+      const { workspace: entry, created } = await manager.registerWorkspace(path, { name, description });
 
       // Convert to API response format
       const workspaceInfo = {
@@ -114,12 +117,16 @@ const workspacesRoutes = daemonFactory
         path: entry.path,
         createdAt: entry.createdAt,
         lastSeen: entry.lastSeen,
+        created,
       };
 
-      return c.json(workspaceInfo, 201);
+      return c.json(workspaceInfo, created ? 201 : 200);
     } catch (error) {
-      logger.error("Failed to add workspace", { error });
-      return c.json({ error: `Failed to add workspace: ${stringifyError(error)}` }, 500);
+      const message = stringifyError(error);
+      logger.error("Failed to add workspace", { error: message });
+      // Treat registration errors as bad requests (invalid path/config)
+      if (message) return c.json({ error: message }, 400);
+      return c.json({ error: `Failed to add workspace: ${message}` }, 500);
     }
   })
   // Add multiple workspaces by paths (batch operation)
@@ -127,7 +134,7 @@ const workspacesRoutes = daemonFactory
     const ctx = c.get("app");
     try {
       const body = await c.req.json();
-      const { paths } = body;
+      const paths = Array.isArray(body?.paths) ? (body.paths as string[]) : [];
 
       if (!paths || !Array.isArray(paths) || paths.length === 0) {
         return c.json({ error: "Paths array is required" }, 400);
@@ -143,6 +150,7 @@ const workspacesRoutes = daemonFactory
           path: string;
           createdAt: string;
           lastSeen: string;
+          created: boolean;
         }>;
         failed: Array<{ path: string; error: string }>;
       } = { added: [], failed: [] };
@@ -153,61 +161,7 @@ const workspacesRoutes = daemonFactory
         const batch = paths.slice(i, i + batchSize);
         const batchPromises = batch.map(async (path) => {
           try {
-            // Validate path exists and is a directory
-            let stats: Deno.FileInfo;
-            try {
-              stats = await Deno.stat(path);
-            } catch {
-              results.failed.push({ path, error: `Path not found: ${path}` });
-              return;
-            }
-
-            if (!stats.isDirectory) {
-              results.failed.push({ path, error: `Path is not a directory: ${path}` });
-              return;
-            }
-
-            // Check for workspace.yml
-            const workspaceYmlPath = join(path, "workspace.yml");
-            try {
-              await Deno.stat(workspaceYmlPath);
-            } catch {
-              results.failed.push({ path, error: `workspace.yml not found in: ${path}` });
-              return;
-            }
-
-            // Check if workspace already exists at this path
-            const existingByPath = await manager.find({ path });
-            if (existingByPath) {
-              results.failed.push({ path, error: `Workspace already registered at path: ${path}` });
-              return;
-            }
-
-            // Try to read workspace.yml to get name and description
-            let workspaceName: string | undefined;
-            let workspaceDescription: string | undefined;
-
-            try {
-              const yamlContent = await Deno.readTextFile(workspaceYmlPath);
-              const config = parse(yamlContent);
-
-              if (config.workspace?.name) {
-                workspaceName = config.workspace.name;
-              }
-              if (config.workspace?.description) {
-                workspaceDescription = config.workspace.description;
-              }
-            } catch {
-              // Ignore parsing errors, registerWorkspace will use directory name as fallback
-            }
-
-            // Register the workspace
-            const entry = await manager.registerWorkspace(path, {
-              name: workspaceName,
-              description: workspaceDescription,
-            });
-
-            // Cron signals are now automatically registered via WorkspaceManager hooks
+            const { workspace: entry, created } = await manager.registerWorkspace(path);
 
             results.added.push({
               id: entry.id,
@@ -217,6 +171,7 @@ const workspacesRoutes = daemonFactory
               path: entry.path,
               createdAt: entry.createdAt,
               lastSeen: entry.lastSeen,
+              created,
             });
           } catch (error) {
             results.failed.push({ path, error: stringifyError(error) });
@@ -232,6 +187,179 @@ const workspacesRoutes = daemonFactory
       return c.json({ error: "Failed to add workspaces" }, 500);
     }
   })
+  // Get workspace details
+  .get("/:workspaceId", async (c) => {
+    const workspaceId = c.req.param("workspaceId");
+    try {
+      const ctx = c.get("app");
+      const manager = ctx.getWorkspaceManager();
+      const workspace =
+        (await manager.find({ id: workspaceId })) || (await manager.find({ name: workspaceId }));
+      if (!workspace) {
+        return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
+      }
+      return c.json(workspace);
+    } catch (error) {
+      const errorMessage = stringifyError(error);
+      if (errorMessage.includes("not found")) {
+        return c.json({ error: errorMessage }, 404);
+      }
+      return c.json({ error: `Failed to get workspace: ${errorMessage}` }, 500);
+    }
+  })
+  // Get workspace configuration
+  .get("/:workspaceId/config", async (c) => {
+    const workspaceId = c.req.param("workspaceId");
+    try {
+      const ctx = c.get("app");
+      const manager = ctx.getWorkspaceManager();
+      const workspace = await manager.find({ id: workspaceId });
+      if (!workspace) {
+        return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
+      }
+      const config = await manager.getWorkspaceConfig(workspace.id);
+      if (!config) {
+        return c.json({ error: `Failed to load workspace configuration: ${workspace.id}` }, 500);
+      }
+      return c.json({ config: config.workspace });
+    } catch (error) {
+      const errorMessage = stringifyError(error);
+      if (errorMessage.includes("not found")) {
+        return c.json({ error: errorMessage }, 404);
+      }
+      return c.json({ error: `Failed to get workspace config: ${errorMessage}` }, 500);
+    }
+  })
+  // Update workspace configuration
+  .post(
+    "/:workspaceId/update",
+    zValidator("param", z.object({ workspaceId: z.string() })),
+    zValidator("json", z.any()),
+    async (c) => {
+      try {
+        const { workspaceId } = c.req.valid("param");
+        const { config, backup } = await c.req.valid("json");
+
+        const ctx = c.get("app");
+        const manager = ctx.getWorkspaceManager();
+        const workspace = await manager.find({ id: workspaceId });
+        if (!workspace) {
+          return c.json({ success: false, error: `Workspace not found: ${workspaceId}` }, 400);
+        }
+
+        const validationResult = WorkspaceConfigSchema.safeParse(config);
+        if (!validationResult.success) {
+          return c.json(
+            {
+              success: false,
+              error: `Invalid workspace configuration: ${validationResult.error.issues
+                .map((issue) => issue.message)
+                .join(", ")}`,
+            },
+            400,
+          );
+        }
+
+        const validatedConfig = validationResult.data;
+        const yamlConfig = stringify(validatedConfig, { indent: 2, lineWidth: 100 });
+        const workspacePath = workspace.path;
+        const workspaceYmlPath = join(workspacePath, "workspace.yml");
+
+        try {
+          if (backup) {
+            const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+            const backupPath = join(workspacePath, `workspace.yml.backup-${timestamp}`);
+            try {
+              const existingContent = await Deno.readTextFile(workspaceYmlPath);
+              await Deno.writeTextFile(backupPath, existingContent);
+            } catch (backupError) {
+              return c.json(
+                {
+                  success: false,
+                  error: `Failed to create backup: ${
+                    backupError instanceof Error ? backupError.message : String(backupError)
+                  }`,
+                },
+                500,
+              );
+            }
+          }
+
+          await Deno.writeTextFile(workspaceYmlPath, yamlConfig);
+
+          const runtime = ctx.getWorkspaceRuntime(workspace.id);
+          if (runtime) {
+            await ctx.destroyWorkspaceRuntime(workspace.id);
+            return c.json({
+              success: true,
+              workspace,
+              runtimeReloaded: true,
+              runtimeDestroyed: true,
+            });
+          }
+
+          return c.json({
+            success: true,
+            workspace,
+            runtimeReloaded: false,
+            message: "No active runtime",
+          });
+        } catch (updateError) {
+          return c.json(
+            {
+              success: false,
+              error: `Failed to update workspace files: ${
+                updateError instanceof Error ? updateError.message : String(updateError)
+              }`,
+            },
+            500,
+          );
+        }
+      } catch (error) {
+        return c.json({ success: false, error: stringifyError(error) }, 500);
+      }
+    },
+  )
+  // Trigger a workspace signal
+  .post(
+    "/:workspaceId/signals/:signalId",
+    zValidator("param", z.object({ workspaceId: z.string(), signalId: z.string() })),
+    zValidator("json", z.any()),
+    async (c) => {
+      const { workspaceId, signalId } = c.req.valid("param");
+      const { payload, streamId } = c.req.valid("json");
+      const ctx = c.get("app");
+
+      try {
+        const result = await ctx.daemon.triggerWorkspaceSignal(
+          workspaceId,
+          signalId,
+          payload,
+          streamId,
+        );
+        return c.json({
+          message: "Signal accepted for processing",
+          status: "processing" as const,
+          workspaceId,
+          signalId,
+          sessionId: result.sessionId,
+        });
+      } catch (error) {
+        const errorMessage = stringifyError(error);
+        logger.error("Failed to process signal", { error });
+        if (errorMessage.includes("Workspace not found")) {
+          return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
+        }
+        if (errorMessage.includes("Signal not found") || errorMessage.includes("not found")) {
+          return c.json(
+            { error: `Signal '${signalId}' not found in workspace '${workspaceId}'` },
+            404,
+          );
+        }
+        return c.json({ error: `Failed to process signal: ${errorMessage}` }, 500);
+      }
+    },
+  )
   // List jobs in a workspace
   .get("/:workspaceId/jobs", async (c) => {
     const workspaceId = c.req.param("workspaceId");
@@ -247,12 +375,18 @@ const workspacesRoutes = daemonFactory
     }
   })
   // Get workspace sessions
-  .get("/:workspaceId/sessions", (c) => {
+  .get("/:workspaceId/sessions", async (c) => {
     const workspaceId = c.req.param("workspaceId");
     const ctx = c.get("app");
 
     try {
-      const runtime = ctx.daemon.runtimes.get(workspaceId);
+      const manager = ctx.getWorkspaceManager();
+      const workspace = await manager.find({ id: workspaceId });
+      if (!workspace) {
+        return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
+      }
+
+      const runtime = ctx.daemon.runtimes.get(workspace.id);
       if (!runtime) {
         return c.json([]); // No runtime = no sessions
       }
@@ -299,7 +433,6 @@ const workspacesRoutes = daemonFactory
     const ctx = c.get("app");
 
     try {
-      // Get workspace runtime to access agent configuration
       const runtime = await ctx.daemon.getOrCreateWorkspaceRuntime(workspaceId);
       const agents = runtime.listAgents();
       return c.json(agents);
@@ -320,15 +453,6 @@ const workspacesRoutes = daemonFactory
       const force = c.req.valid("query").force === "true";
 
       try {
-        // Unregister signal types for this workspace via registrars
-        for (const registrar of ctx.daemon.signalRegistrars) {
-          try {
-            await Promise.resolve(registrar.unregisterWorkspace(workspaceId));
-          } catch (error) {
-            logger.warn("Signal registrar failed to unregister workspace", { workspaceId, error });
-          }
-        }
-
         const manager = ctx.daemon.getWorkspaceManager();
         await manager.deleteWorkspace(workspaceId, { force });
         return c.json({ message: `Workspace ${workspaceId} deleted` });
@@ -338,13 +462,6 @@ const workspacesRoutes = daemonFactory
       }
     },
   );
-
-// Mount individual endpoints
-workspacesRoutes.route("/:workspaceId", getWorkspace);
-workspacesRoutes.route("/:workspaceId/config", getWorkspaceConfig);
-workspacesRoutes.route("/:workspaceId/update", updateWorkspace);
-workspacesRoutes.route("/create", createWorkspace);
-workspacesRoutes.route("/:workspaceId/signals/:signalId", triggerSignal);
 
 export { workspacesRoutes };
 export type WorkspaceRoutes = typeof workspacesRoutes;

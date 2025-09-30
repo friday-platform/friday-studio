@@ -1,17 +1,15 @@
+import type { MergedConfig } from "@atlas/config";
 import { logger } from "@atlas/logger";
-import {
-  type IProvider,
-  type ISignalProvider,
-  ProviderRegistry,
-  ProviderType,
-} from "@atlas/signals";
-import type { WorkspaceManager } from "@atlas/workspace";
-import type { WorkspaceSignalTriggerCallback } from "@atlas/workspace/types";
-import type { WorkspaceSignalRegistrar } from "./types.ts";
+import { FileWatchSignalProvider, ProviderRegistry, ProviderType } from "@atlas/signals";
+import type {
+  WorkspaceSignalRegistrar,
+  WorkspaceSignalTriggerCallback,
+} from "@atlas/workspace/types";
+
+import { z } from "zod";
 
 export class FsWatchSignalRegistrar implements WorkspaceSignalRegistrar {
   private readonly onWakeup: WorkspaceSignalTriggerCallback;
-  private workspaceManager: WorkspaceManager | null = null;
   // Track active runtime signals per workspace:signal
   private activeRuntimes = new Map<string, { teardown: () => void }>();
 
@@ -19,61 +17,13 @@ export class FsWatchSignalRegistrar implements WorkspaceSignalRegistrar {
     this.onWakeup = onWakeup;
   }
 
-  initialize(): Promise<void> {
-    // Nothing to initialize for provider-centric registrar
-    return Promise.resolve();
-  }
-
-  async discoverAndRegisterExisting(workspaceManager: WorkspaceManager): Promise<void> {
-    this.workspaceManager = workspaceManager;
+  async registerWorkspace(
+    workspaceId: string,
+    workspacePath: string,
+    config: MergedConfig,
+  ): Promise<void> {
     try {
-      const workspaces = await workspaceManager.list();
-      logger.info("Discovering fs-watch signals for existing workspaces", {
-        workspaceCount: workspaces.length,
-      });
-
-      let watchersRegistered = 0;
-      for (const workspace of workspaces) {
-        try {
-          const merged = await workspaceManager.getWorkspaceConfig(workspace.id);
-          const signals = merged?.workspace?.signals;
-          if (!signals) continue;
-          for (const signalId of Object.keys(signals)) {
-            const signalConfig = signals[signalId];
-            if (signalConfig && signalConfig.provider === "fs-watch") {
-              const cfg = signalConfig.config;
-              await this.registerRuntimeSignal(workspace.id, workspace.path, signalId, {
-                path: cfg.path,
-                recursive: cfg.recursive !== false,
-              });
-              watchersRegistered++;
-              logger.info("Registered file watcher", {
-                workspaceId: workspace.id,
-                signalId,
-                path: cfg.path,
-              });
-            }
-          }
-        } catch (error) {
-          logger.warn("Failed to register fs-watch signals for workspace", {
-            workspaceId: workspace.id,
-            workspacePath: workspace.path,
-            error,
-          });
-        }
-      }
-
-      logger.info("fs-watch signal discovery complete", { watchersRegistered });
-    } catch (error) {
-      logger.error("Failed to discover existing workspace fs-watch signals", { error });
-    }
-  }
-
-  async registerWorkspace(workspaceId: string, workspacePath: string): Promise<void> {
-    try {
-      const wm = this.workspaceManager;
-      const merged = wm ? await wm.getWorkspaceConfig(workspaceId) : null;
-      const signals = merged?.workspace?.signals;
+      const signals = config.workspace?.signals;
       if (!signals) return;
 
       for (const signalId of Object.keys(signals)) {
@@ -104,16 +54,11 @@ export class FsWatchSignalRegistrar implements WorkspaceSignalRegistrar {
       try {
         this.activeRuntimes.get(key)?.teardown();
       } catch {
-        // ignore teardown errors
+        logger.error("Failed to teardown fs-watch signal", { workspaceId, signalId: key });
       }
       this.activeRuntimes.delete(key);
     }
     return Promise.resolve();
-  }
-
-  async onWorkspaceConfigChanged(workspaceId: string, workspacePath: string): Promise<void> {
-    await this.unregisterWorkspace(workspaceId);
-    await this.registerWorkspace(workspaceId, workspacePath);
   }
 
   shutdown(): Promise<void> {
@@ -136,6 +81,12 @@ export class FsWatchSignalRegistrar implements WorkspaceSignalRegistrar {
     signalId: string,
     cfg: { path: string; recursive?: boolean },
   ): Promise<void> {
+    const parsedPath = z.string().min(1).safeParse(cfg.path);
+    if (!parsedPath.success) {
+      logger.warn("Skipping fs-watch signal without valid path", { workspaceId, signalId });
+      return;
+    }
+
     const key = `${workspaceId}:${signalId}`;
     // Teardown existing if present
     const existing = this.activeRuntimes.get(key);
@@ -158,42 +109,52 @@ export class FsWatchSignalRegistrar implements WorkspaceSignalRegistrar {
         id: signalId,
         description: `File watch signal for ${signalId}`,
         provider: "fs-watch",
-        path: cfg.path,
+        path: parsedPath.data,
         recursive: cfg.recursive !== false,
       },
     });
 
-    // Narrow to signal provider without unsafe casts
-    const isSignalProvider = (p: IProvider): p is ISignalProvider => p.type === ProviderType.SIGNAL;
-    if (!isSignalProvider(provider)) {
-      throw new Error("Loaded provider is not a signal provider");
+    // Use class check for clarity and strong typing
+    if (!(provider instanceof FileWatchSignalProvider)) {
+      throw new Error("Loaded provider is not a fs-watch signal provider");
     }
 
     const signal = provider.createSignal({
       id: signalId,
       description: `File watch signal for ${signalId}`,
       provider: "fs-watch",
-      path: cfg.path,
+      path: parsedPath.data,
       recursive: cfg.recursive !== false,
     });
 
-    const runtimeSignal: {
+    // TODO: @Sara cleanup: clean typing on signals. Here we should fs watcher signals which implement IWorkspaceSignal interface
+    const runtime = signal.toRuntimeSignal() as {
       initialize: (ctx: {
         id: string;
         processSignal: (id: string, payload: Record<string, unknown>) => Promise<void> | void;
         workspacePath?: string;
       }) => void;
       teardown: () => void;
-    } = signal.toRuntimeSignal();
+    };
 
-    runtimeSignal.initialize({
-      id: signalId,
-      processSignal: (id: string, payload: Record<string, unknown>) => {
-        return this.onWakeup(workspaceId, id, payload);
-      },
-      workspacePath,
-    });
+    try {
+      runtime.initialize({
+        id: signalId,
+        processSignal: (id: string, payload: Record<string, unknown>) => {
+          return this.onWakeup(workspaceId, id, payload);
+        },
+        workspacePath,
+      });
 
-    this.activeRuntimes.set(key, { teardown: () => runtimeSignal.teardown() });
+      this.activeRuntimes.set(key, { teardown: () => runtime.teardown() });
+    } catch (error) {
+      // Handle invalid/non-existent watch paths gracefully
+      logger.warn("Failed to initialize fs-watch runtime signal", {
+        workspaceId,
+        signalId,
+        path: cfg.path,
+        error,
+      });
+    }
   }
 }

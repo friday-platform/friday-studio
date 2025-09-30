@@ -19,11 +19,15 @@
 // Export system workspaces
 export { SYSTEM_WORKSPACES } from "@atlas/system/workspaces";
 // Export WorkspaceManagerOptions interface
-export type { WorkspaceManagerOptions } from "./src/manager.ts";
 // Export main components
 export { getWorkspaceManager, WorkspaceManager } from "./src/manager.ts";
 // Export all types and schemas
-export type { WorkspaceEntry, WorkspaceMetadata, WorkspaceStatus } from "./src/types.ts";
+export type {
+  WorkspaceEntry,
+  WorkspaceMetadata,
+  WorkspaceSignalRegistrar,
+  WorkspaceStatus,
+} from "./src/types.ts";
 export {
   WorkspaceEntrySchema,
   WorkspaceMetadataSchema,

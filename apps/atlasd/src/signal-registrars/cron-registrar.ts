@@ -1,7 +1,7 @@
+import type { MergedConfig } from "@atlas/config";
 import type { CronManager, CronTimerConfig } from "@atlas/cron";
 import { logger } from "@atlas/logger";
-import type { WorkspaceManager } from "@atlas/workspace";
-import type { WorkspaceSignalRegistrar } from "./types.ts";
+import type { WorkspaceSignalRegistrar } from "@atlas/workspace/types";
 
 /**
  * CronSignalRegistrar bridges workspace configs to CronManager timers,
@@ -9,41 +9,18 @@ import type { WorkspaceSignalRegistrar } from "./types.ts";
  */
 export class CronSignalRegistrar implements WorkspaceSignalRegistrar {
   private readonly cronManager: CronManager;
-  private workspaceManager: WorkspaceManager | null = null;
 
   constructor(cronManager: CronManager) {
     this.cronManager = cronManager;
   }
 
-  async initialize(): Promise<void> {}
-
-  async discoverAndRegisterExisting(workspaceManager: WorkspaceManager): Promise<void> {
-    this.workspaceManager = workspaceManager;
+  async registerWorkspace(
+    workspaceId: string,
+    workspacePath: string,
+    config: MergedConfig,
+  ): Promise<void> {
     try {
-      const workspaces = await workspaceManager.list();
-      logger.info("Discovering cron signals for existing workspaces", {
-        workspaceCount: workspaces.length,
-      });
-
-      let registeredTimers = 0;
-      for (const workspace of workspaces) {
-        const before = this.cronManager.listActiveTimers().length;
-        await this.registerWorkspace(workspace.id, workspace.path);
-        const after = this.cronManager.listActiveTimers().length;
-        registeredTimers += after - before;
-      }
-
-      logger.info("Cron signal discovery complete", { timersRegistered: registeredTimers });
-    } catch (error) {
-      logger.error("Failed to discover existing workspace cron signals", { error });
-    }
-  }
-
-  async registerWorkspace(workspaceId: string, workspacePath: string): Promise<void> {
-    try {
-      // Centralized config loading
-      const merged = await this.workspaceManager?.getWorkspaceConfig(workspaceId);
-      const signals = merged?.workspace?.signals;
+      const signals = config.workspace?.signals;
       if (!signals) return;
 
       const timers: CronTimerConfig[] = [];
@@ -98,11 +75,6 @@ export class CronSignalRegistrar implements WorkspaceSignalRegistrar {
     } catch (error) {
       logger.error("Failed to unregister workspace cron signals", { error, workspaceId });
     }
-  }
-
-  async onWorkspaceConfigChanged(workspaceId: string, workspacePath: string): Promise<void> {
-    await this.unregisterWorkspace(workspaceId);
-    await this.registerWorkspace(workspaceId, workspacePath);
   }
 
   async shutdown(): Promise<void> {}

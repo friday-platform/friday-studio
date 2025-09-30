@@ -34,7 +34,7 @@ export async function resolveWorkspaceOnly(
     // Fallback to checking for workspace.yml in current directory
     if (await exists("workspace.yml")) {
       // Register this workspace if not already registered
-      const workspace = await registry.registerWorkspace(Deno.cwd());
+      const { workspace } = await registry.registerWorkspace(Deno.cwd());
       return { path: workspace.path, id: workspace.id, name: workspace.name };
     }
 

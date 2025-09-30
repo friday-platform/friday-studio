@@ -1,4 +1,5 @@
 import { z } from "zod/v4";
+import { MergedConfig } from "@atlas/config";
 
 // Single source of truth for workspace types
 export const WorkspaceStatusSchema = z.enum(["inactive", "running", "stopped"]);
@@ -49,6 +50,16 @@ export const WorkspaceStatusEnum = {
   RUNNING: "running",
   STOPPED: "stopped",
 } as const;
+
+export interface WorkspaceSignalRegistrar {
+  registerWorkspace: (
+    workspaceId: string,
+    workspacePath: string,
+    config: MergedConfig,
+  ) => Promise<void>;
+  unregisterWorkspace: (workspaceId: string) => Promise<void> | void;
+  shutdown?: () => Promise<void>;
+}
 
 /**
  * Callback interface for workspace wake-up
