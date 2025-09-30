@@ -27,7 +27,7 @@ import { CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js";
 import { retry } from "@std/async";
 import { z } from "zod";
 import type { ToolCall } from "../../../../src/core/services/hallucination-detector.ts";
-import { createErrorCause, getErrorDisplayMessage, throwWithCause } from "../errors.ts";
+import { createErrorCause, getErrorDisplayMessage } from "../errors.ts";
 import { createAgentContextBuilder } from "../agent-context/index.ts";
 import type { WrappedAgentResult } from "../agent-conversion/from-llm.ts";
 import type { AgentToolParams } from "../agent-server/types.ts";

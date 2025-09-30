@@ -22,24 +22,12 @@ import type {
 } from "./types.ts";
 import { ProviderStatus, ProviderType } from "./types.ts";
 
-interface FileWatchSignalConfig {
+interface FileWatchSignalConfig extends Record<string, unknown> {
   id: string;
   description: string;
   provider: "fs-watch";
   path: string;
   recursive?: boolean;
-}
-
-interface FileWatchSignalData {
-  id: string;
-  type: "fs-watch";
-  timestamp: string;
-  data: {
-    path: string;
-    relativePath?: string;
-    event: "added" | "modified" | "removed";
-    isDirectory: boolean;
-  };
 }
 
 export class FileWatchSignalProvider implements ISignalProvider, IProvider {
@@ -77,8 +65,11 @@ export class FileWatchSignalProvider implements ISignalProvider, IProvider {
     return { ...this.state, lastHealthCheck: new Date() };
   }
 
-  async checkHealth(): Promise<HealthStatus> {
-    return { healthy: this.state.status === ProviderStatus.READY, lastCheck: new Date() };
+  checkHealth(): Promise<HealthStatus> {
+    return Promise.resolve({
+      healthy: this.state.status === ProviderStatus.READY,
+      lastCheck: new Date(),
+    });
   }
 
   createSignal(config: FileWatchSignalConfig): IProviderSignal {

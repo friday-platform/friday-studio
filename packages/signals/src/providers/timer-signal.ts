@@ -4,12 +4,13 @@
  */
 
 import { logger } from "@atlas/logger";
+import { stringifyError } from "@atlas/utils";
 import { CronExpressionParser } from "cron-parser";
 import type { KVStorage } from "../../../../src/core/storage/kv-storage.ts";
 import type { HealthStatus, IProvider, ProviderState } from "./types.ts";
 import { ProviderStatus, ProviderType } from "./types.ts";
 
-export interface TimerSignalConfig {
+export interface TimerSignalConfig extends Record<string, unknown> {
   id: string;
   description: string;
   provider: "timer" | "schedule" | "cron" | "cron-scheduler";
@@ -73,11 +74,7 @@ export class TimerSignalProvider implements IProvider {
       // Validate cron expression
       CronExpressionParser.parse(config.schedule);
     } catch (error) {
-      throw new Error(
-        `Invalid cron expression '${config.schedule}': ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
+      throw new Error(`Invalid cron expression '${config.schedule}': ${stringifyError(error)}`);
     }
 
     // Validate timezone if provided
@@ -85,11 +82,7 @@ export class TimerSignalProvider implements IProvider {
       try {
         Intl.DateTimeFormat(undefined, { timeZone: config.timezone });
       } catch (error) {
-        throw new Error(
-          `Invalid timezone '${config.timezone}': ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        );
+        throw new Error(`Invalid timezone '${config.timezone}': ${stringifyError(error)}`);
       }
     }
   }
@@ -121,10 +114,10 @@ export class TimerSignalProvider implements IProvider {
       .catch((error) => {
         logger.error("Failed to complete timer signal provider async setup", {
           signalId: this.config.id,
-          error: error instanceof Error ? error.message : String(error),
+          error: stringifyError(error),
         });
         this.state.status = ProviderStatus.ERROR;
-        this.state.error = error instanceof Error ? error.message : String(error);
+        this.state.error = stringifyError(error);
       });
 
     logger.info("Timer signal provider setup initiated", {
@@ -173,7 +166,7 @@ export class TimerSignalProvider implements IProvider {
     this.persistState().catch((error) => {
       logger.warn("Failed to persist timer signal state during teardown", {
         signalId: this.config.id,
-        error: error instanceof Error ? error.message : String(error),
+        error: stringifyError(error),
       });
     });
 
@@ -290,12 +283,12 @@ export class TimerSignalProvider implements IProvider {
     } catch (error) {
       logger.error("Failed to schedule next timer signal execution", {
         signalId: this.config.id,
-        error: error instanceof Error ? error.message : String(error),
+        error: stringifyError(error),
       });
 
       // Only set error status if not already disabled
       this.state.status = ProviderStatus.ERROR;
-      this.state.error = error instanceof Error ? error.message : String(error);
+      this.state.error = stringifyError(error);
     }
   }
 
@@ -323,7 +316,7 @@ export class TimerSignalProvider implements IProvider {
     } catch (error) {
       logger.warn("Failed to load persisted timer signal state", {
         signalId: this.config.id,
-        error: error instanceof Error ? error.message : String(error),
+        error: stringifyError(error),
       });
     }
   }
@@ -352,7 +345,7 @@ export class TimerSignalProvider implements IProvider {
     } catch (error) {
       logger.warn("Failed to persist timer signal state", {
         signalId: this.config.id,
-        error: error instanceof Error ? error.message : String(error),
+        error: stringifyError(error),
       });
     }
   }
@@ -411,7 +404,7 @@ export class TimerSignalProvider implements IProvider {
         } catch (callbackError) {
           logger.error("Timer signal callback failed", {
             signalId: this.config.id,
-            error: callbackError instanceof Error ? callbackError.message : String(callbackError),
+            error: stringifyError(callbackError),
           });
           // Continue execution despite callback error
         }
@@ -427,11 +420,11 @@ export class TimerSignalProvider implements IProvider {
     } catch (error) {
       logger.error("Failed to execute timer signal", {
         signalId: this.config.id,
-        error: error instanceof Error ? error.message : String(error),
+        error: stringifyError(error),
       });
 
       this.state.status = ProviderStatus.ERROR;
-      this.state.error = error instanceof Error ? error.message : String(error);
+      this.state.error = stringifyError(error);
     }
   }
 

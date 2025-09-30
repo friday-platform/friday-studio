@@ -3,13 +3,9 @@
  * Built-in signal providers for HTTP, webhooks, timers, streams, and Kubernetes events
  */
 
-export type { CliSignalConfig, CliSignalData, CliTriggerData } from "./cli-signal.ts";
-export { CliSignalProvider } from "./cli-signal.ts";
 export { FileWatchSignalProvider } from "./fs-watch-signal.ts";
 export { type HTTPSignalConfig, type HTTPSignalData, HTTPSignalProvider } from "./http-signal.ts";
 export { HttpWebhookProvider } from "./http-webhook.ts";
-export { K8sAuthManager } from "./k8s-auth.ts";
-export { K8sEventsSignalProvider } from "./k8s-events.ts";
 export {
   type TimerSignalConfig,
   type TimerSignalData,

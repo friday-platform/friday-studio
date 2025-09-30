@@ -309,7 +309,7 @@ class ClientContext {
             if (!this.seenPartKeys.has(key)) {
               transientParts.push(part);
             }
-          } catch (error) {
+          } catch {
             transientParts.push(part);
           }
         }
@@ -330,10 +330,7 @@ class ClientContext {
           this.startHealthCheckInterval();
         }
       }
-    } catch (error) {
-      // Clear any loading messages and show error
-      const errorMessage = error instanceof Error ? error.message : String(error);
-
+    } catch {
       // Mark setup as incomplete and set error status
       this.isSetupComplete = false;
       this.daemonStatus = "error";
@@ -493,7 +490,7 @@ class ClientContext {
       this.seenPartKeys.add(key);
       this.messageHistory = [...this.messageHistory, structuredClone(part)];
       this.refreshFormattedMessages();
-    } catch (error) {
+    } catch {
       // Silent fail - part won't be persisted
     }
   }
@@ -511,7 +508,7 @@ class ClientContext {
       }
 
       this.formattedMessages = formatted;
-    } catch (error) {
+    } catch {
       // Silent fail - formatted messages will be empty
     }
   }

@@ -338,14 +338,3 @@ export class DenoKVStorage implements KVStorage {
     this.state = "closed";
   }
 }
-
-/**
- * Create a configured Deno KV storage instance
- * @param path Optional path for the KV database file
- * @returns Initialized DenoKVStorage instance
- */
-async function createDenoKVStorage(path?: string): Promise<DenoKVStorage> {
-  const storage = new DenoKVStorage(path);
-  await storage.initialize();
-  return storage;
-}

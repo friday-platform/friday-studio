@@ -9,6 +9,10 @@ import type {
 } from "./types.ts";
 import { ProviderStatus, ProviderType } from "./types.ts";
 
+interface HttpWebhookConfig extends Record<string, unknown> {
+  endpoint: string;
+}
+
 export class HttpWebhookProvider implements ISignalProvider {
   id: string;
   readonly type = ProviderType.SIGNAL;
@@ -16,16 +20,16 @@ export class HttpWebhookProvider implements ISignalProvider {
   version = "1.0.0";
 
   private state: ProviderState;
-  private config: unknown;
+  private config: HttpWebhookConfig;
 
   constructor(config: ProviderConfig) {
     this.id = config.id;
-    this.config = config.config || {};
+    const providerConfig = (config.config || {}) as HttpWebhookConfig;
+    this.config = providerConfig;
     this.state = { status: ProviderStatus.NOT_CONFIGURED };
   }
 
-  async setup(): Promise<void> {
-    // TODO: Keep async for IProvider interface compliance, even though no await is used
+  setup(): Promise<void> {
     console.log(`[HttpWebhookProvider] Setting up ${this.id}`);
 
     try {
@@ -41,20 +45,21 @@ export class HttpWebhookProvider implements ISignalProvider {
       this.state.error = error instanceof Error ? error.message : String(error);
       throw error;
     }
+
+    return Promise.resolve();
   }
 
-  async teardown(): Promise<void> {
-    // TODO: Keep async for IProvider interface compliance, even though no await is used
+  teardown(): Promise<void> {
     console.log(`[HttpWebhookProvider] Tearing down ${this.id}`);
     this.state.status = ProviderStatus.DISABLED;
+    return Promise.resolve();
   }
 
   getState(): ProviderState {
     return { ...this.state };
   }
 
-  async checkHealth(): Promise<HealthStatus> {
-    // TODO: Keep async for IProvider interface compliance, even though no await is used
+  checkHealth(): Promise<HealthStatus> {
     const health: HealthStatus = {
       healthy: this.state.status === ProviderStatus.READY,
       lastCheck: new Date(),
@@ -66,12 +71,16 @@ export class HttpWebhookProvider implements ISignalProvider {
 
     this.state.lastHealthCheck = health.lastCheck;
 
-    return health;
+    return Promise.resolve(health);
   }
 
   createSignal(config: unknown): IProviderSignal {
     return new HttpWebhookSignal(this.id, config);
   }
+}
+
+interface HttpWebhookSignalConfig extends Record<string, unknown> {
+  id: string;
 }
 
 class HttpWebhookSignal implements IProviderSignal {
@@ -80,9 +89,10 @@ class HttpWebhookSignal implements IProviderSignal {
   config: Record<string, unknown>;
 
   constructor(providerId: string, config: unknown) {
-    this.id = config.id;
+    const signalConfig = config as HttpWebhookSignalConfig;
+    this.id = signalConfig.id;
     this.providerId = providerId;
-    this.config = config;
+    this.config = signalConfig;
   }
 
   validate(): boolean {
@@ -100,16 +110,15 @@ class HttpWebhookRuntimeSignal extends AtlasScope implements IWorkspaceSignal {
   private signalConfig: IProviderSignal;
 
   constructor(signalConfig: IProviderSignal) {
-    super();
+    super({ id: signalConfig.id });
     this.signalConfig = signalConfig;
-    this.id = signalConfig.id;
     this.provider = { id: signalConfig.providerId, name: "HTTP Webhook" };
   }
 
-  async trigger(): Promise<void> {
-    // TODO: Keep async for future extensibility, even though no await is used currently
+  trigger(): Promise<void> {
     console.log(`[HttpWebhook] Signal ${this.id} triggered`);
     // In a real implementation, this would handle the webhook payload
+    return Promise.resolve();
   }
 
   configure(config: unknown): void {

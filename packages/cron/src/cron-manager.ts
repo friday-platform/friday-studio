@@ -611,9 +611,9 @@ export class CronManager {
    */
   private async loadPersistedTimers(): Promise<void> {
     try {
-      const timerEntries = this.storage.list([`cron_timers`]);
+      const timerEntries = this.storage.list<PersistedTimerData>([`cron_timers`]);
 
-      const timers: Array<{ key: string[]; value: unknown }> = [];
+      const timers: Array<{ key: string[]; value: PersistedTimerData }> = [];
       for await (const { key, value } of timerEntries) {
         timers.push({ key, value });
       }

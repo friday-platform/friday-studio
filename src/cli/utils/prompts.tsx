@@ -1,7 +1,6 @@
 import process from "node:process";
-import { Alert, ConfirmInput, MultiSelect, Spinner, StatusMessage, TextInput } from "@inkjs/ui";
+import { ConfirmInput, Spinner, StatusMessage, TextInput } from "@inkjs/ui";
 import { Box, render, Text, useApp, useInput } from "ink";
-import { useState } from "react";
 
 // Types for our prompt utilities
 interface PromptOptions {
@@ -113,83 +112,6 @@ export const confirm = async (options: PromptOptions): Promise<boolean | symbol>
   });
 };
 
-// Multi-select prompt
-const multiselect = async (options: {
-  message: string;
-  options: SelectOption[];
-  required?: boolean;
-}): Promise<string[] | symbol> => {
-  return new Promise((resolve) => {
-    const MultiSelectPrompt = () => {
-      const [_, setSelected] = useState<string[]>([]);
-      const { exit } = useApp();
-
-      useInput((input, key) => {
-        if (key.escape || (key.ctrl && input === "c")) {
-          resolve(Symbol("cancel"));
-          exit();
-        }
-      });
-
-      return (
-        <Box flexDirection="column" gap={1}>
-          <Text>{options.message}</Text>
-          <MultiSelect
-            options={options.options.map((opt) => ({
-              label: opt.hint ? `${opt.label} (${opt.hint})` : opt.label,
-              value: opt.value,
-            }))}
-            onChange={setSelected}
-            onSubmit={(values) => {
-              resolve(values);
-              exit();
-            }}
-          />
-        </Box>
-      );
-    };
-
-    render(<MultiSelectPrompt />);
-  });
-};
-
-// Group prompt - manages multiple prompts in sequence
-const group = async <T extends Record<string, any>>(
-  prompts: Record<string, (results: Partial<T>) => Promise<any>>,
-): Promise<T | symbol> => {
-  const results: Partial<T> = {};
-
-  for (const [key, promptFn] of Object.entries(prompts)) {
-    const result = await promptFn(results);
-    if (isCancel(result)) {
-      return Symbol("cancel");
-    }
-    results[key as keyof T] = result;
-  }
-
-  return results as T;
-};
-
-// Intro message
-const intro = (message: string) => {
-  render(
-    <Box paddingY={1}>
-      <Text bold color="cyan">
-        ┌ {message}
-      </Text>
-    </Box>,
-  );
-};
-
-// Outro message
-const outro = (message: string) => {
-  render(
-    <Box paddingY={1}>
-      <Text color="green">└ {message}</Text>
-    </Box>,
-  );
-};
-
 // Cancel helper
 export const cancel = (message: string) => {
   render(
@@ -203,15 +125,4 @@ export const cancel = (message: string) => {
 // Check if value is cancelled
 export const isCancel = (value: any): value is symbol => {
   return typeof value === "symbol" && value.description === "cancel";
-};
-
-// Note component for additional info
-const note = (message: string, title?: string) => {
-  render(
-    <Box paddingY={1}>
-      <Alert variant="info" title={title}>
-        {message}
-      </Alert>
-    </Box>,
-  );
 };

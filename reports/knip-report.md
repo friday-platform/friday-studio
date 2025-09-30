@@ -1,4 +1,4 @@
-No Svelte config file found in /Users/odk/p/tempest/atlas - using SvelteKit's default configuration without an adapter.
+No Svelte config file found in /Users/lcf/code/github.com/tempestteam/atlas - using SvelteKit's default configuration without an adapter.
 # Knip report
 
 ## Unused files (10)
@@ -14,24 +14,22 @@ No Svelte config file found in /Users/odk/p/tempest/atlas - using SvelteKit's de
 * tools/evals/agents/google-calendar-agent/extracting-portfolio-meetings.ts
 * tools/evals/agents/research/research-tasks.ts
 
-## Unused dependencies (7)
+## Unused dependencies (6)
 
 | Name                     | Location                          | Severity |
 | :----------------------- | :-------------------------------- | :------- |
 | @atlas/workspace         | packages/system/package.json:16:6 | error    |
-| @atlas/core              | packages/system/package.json:11:6 | error    |
 | cookie                   | apps/web-client/package.json:32:6 | error    |
 | @opentelemetry/api       | packages/utils/package.json:7:6   | error    |
 | @atlas/agent-sdk         | apps/atlasd/package.json:8:6      | error    |
 | @hono/standard-validator | package.json:31:6                 | error    |
 | @biomejs/biome           | package.json:30:6                 | error    |
 
-## Unresolved imports (2)
+## Unresolved imports (1)
 
 | Name                                     | Location                                                   | Severity |
 | :--------------------------------------- | :--------------------------------------------------------- | :------- |
 | ../../../../../src/core/library/types.ts | apps/web-client/src/routes/(app)/library/+page.svelte:4:34 | error    |
-| $lib/build-info                          | apps/web-client/src/routes/about/+page.svelte:4:28         | error    |
 
 ## Unused exported enum members (2)
 

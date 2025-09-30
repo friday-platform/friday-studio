@@ -269,7 +269,7 @@ export class ConversationClient {
   createMessageStream(
     sseUrl: string,
     sessionId: string,
-    abortSignal?: AbortSignal,
+    _abortSignal?: AbortSignal,
   ): ReadableStream<SessionUIMessageChunk> {
     const eventSource = createEventSource(sseUrl);
 
@@ -278,7 +278,7 @@ export class ConversationClient {
         // Start consuming the async iterator in the background
         (async () => {
           try {
-            for await (const { data, id } of eventSource) {
+            for await (const { data } of eventSource) {
               try {
                 const parsedData = JSON.parse(data);
                 controller.enqueue(parsedData);

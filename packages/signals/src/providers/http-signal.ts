@@ -6,7 +6,7 @@
 import type { HealthStatus, IProvider, ProviderState } from "./types.ts";
 import { ProviderStatus, ProviderType } from "./types.ts";
 
-export interface HTTPSignalConfig {
+export interface HTTPSignalConfig extends Record<string, unknown> {
   id: string;
   description: string;
   provider: "http";
@@ -157,7 +157,11 @@ export class HTTPSignalProvider implements IProvider {
           if (body.trim()) {
             try {
               const parsedBody = JSON.parse(body);
-              signal.data = { ...signal.data, ...parsedBody };
+              if (typeof parsedBody === "object" && parsedBody !== null) {
+                signal.data = { ...signal.data, ...parsedBody };
+              } else {
+                signal.data.body = parsedBody;
+              }
             } catch {
               // If JSON parsing fails, store as raw body
               signal.data.body = body;

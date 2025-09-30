@@ -48,7 +48,7 @@
     "validate-imports-staged": "deno run --allow-read --allow-write --allow-run scripts/validate-imports-staged.ts",
     "compile": "mkdir -p ./dist && deno compile --no-check --allow-read --allow-write --allow-net --allow-env --allow-run --allow-sys --allow-ffi --unstable-broadcast-channel --unstable-worker-options --include=src --include=examples --output ./dist/atlas ./src/cli.tsx",
     "compile:diagnostics": "mkdir -p ./dist && deno compile --no-check --allow-read --allow-write --allow-net --allow-env --allow-run --allow-sys --allow-ffi --unstable-broadcast-channel --unstable-worker-options --include=src --include=examples --output ./dist/atlas-diagnostics ./apps/diagnostics/src/index.ts",
-    "report": "deno task report:knip && deno task report:typescript",
+    "report": "deno task report:knip ; deno task report:typescript",
     "report:knip": "npx knip --reporter markdown --max-issues 0 > reports/knip-report.md",
     "report:typescript": "deno run --allow-all tools/typescript-error-report/src/main.ts"
   },
