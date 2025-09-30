@@ -30,19 +30,11 @@ $effect(() => {
 function getMessage() {
   const lastItem = staticActions.at(-1);
 
-  if (!lastItem) {
-    return "Thinking";
-  }
-
-  if (lastItem.type === "data-error" || lastItem.type === "data-agent-error") {
-    return "Error";
-  }
-
-  if (lastItem.type === "text") {
+  if (lastItem?.type === "text") {
     return "Typing";
-  } else if (lastItem.type === "step-start") {
+  } else if (lastItem?.type === "step-start") {
     return "Processing";
-  } else if (lastItem.type.startsWith("tool-")) {
+  } else if (lastItem?.type.startsWith("tool-")) {
     return "Calling Tools";
   } else {
     return "Thinking";

@@ -9,6 +9,7 @@ import Textarea from "$lib/components/textarea.svelte";
 import Artifacts from "$lib/modules/artifacts/artifacts.svelte";
 import { getClientContext } from "$lib/modules/client/context.svelte";
 import ErrorMessage from "$lib/modules/messages/error-message.svelte";
+import { formatMessage } from "$lib/modules/messages/format";
 import Message from "$lib/modules/messages/message.svelte";
 import Progress from "$lib/modules/messages/progress.svelte";
 import Table from "$lib/modules/messages/table.svelte";
@@ -62,18 +63,19 @@ $effect(() => {
   }
 });
 
-const formattedMessages = $derived(ctx.formattedMessages);
-const rawMessages = $derived([...ctx.messageHistory, ...ctx.messages]);
+const messages = $derived([...ctx.messageHistory, ...ctx.messages]);
 </script>
 
 <div
 	class="chat"
-	class:has-messages={formattedMessages.length > 0}
+	class:has-messages={messages.filter(
+		(m) => m.type !== 'data-connection' && m.type !== 'data-heartbeat'
+	).length > 0}
 >
 	<div class="main">
 		<h2>{page.params.id}</h2>
 
-		{#if formattedMessages.length === 0}
+		{#if messages.filter((m) => m.type !== 'data-connection' && m.type !== 'data-heartbeat').length === 0}
 			<div class="empty-message">
 				<p>Welcome to Atlas! What can I help you build?</p>
 				<p>Tip: You can drag and drop files to attach them to your message.</p>
@@ -82,7 +84,8 @@ const rawMessages = $derived([...ctx.messageHistory, ...ctx.messages]);
 
 		<div class="messages" bind:this={scrollContainer} onscroll={handleScroll}>
 			<div class="messages-inner">
-				{#each formattedMessages as formattedMessage, index (formattedMessage.id || index)}
+				{#each messages as message, index (message.id || index)}
+					{@const formattedMessage = formatMessage(message, ctx.user)}
 
 					{#if formattedMessage && (formattedMessage.type === 'request' || formattedMessage.type === 'text')}
 						<Message message={formattedMessage} />
@@ -96,13 +99,13 @@ const rawMessages = $derived([...ctx.messageHistory, ...ctx.messages]);
 				{#if ctx.typingState.isTyping}
 					{@const actionsAfterLastUser = (() => {
 						// Find the last data-user-message
-						const lastUserIndex = rawMessages.findLastIndex((msg) => msg.type === 'data-user-message');
+						const lastUserIndex = messages.findLastIndex((msg) => msg.type === 'data-user-message');
 
 						// If no user message found, return empty
 						if (lastUserIndex === -1) return [];
 
 						// Return everything after the last user message
-						return rawMessages.slice(lastUserIndex + 1);
+						return messages.slice(lastUserIndex + 1);
 					})()}
 
 					<Progress actions={actionsAfterLastUser} />

@@ -1,7 +1,5 @@
 import { client, parseResult } from "@atlas/client/v2";
 import type { SessionUIMessage, SessionUIMessageChunk, SessionUIMessagePart } from "@atlas/core";
-import { formatMessage } from "../messages/format";
-import type { OutputEntry } from "../messages/types";
 import {
   isPermissionGranted,
   requestPermission,
@@ -31,7 +29,6 @@ class ClientContext {
   private notifiedSessions = new Set<string>();
   private currentSessionForNotification: string | null = null;
   private currentConversationId: string | null = null;
-  private seenPartKeys = new Set<string>();
 
   public conversationClient: ConversationClient | null = null;
   sseStream: ReadableStream<SessionUIMessageChunk> | null = null;
@@ -39,7 +36,6 @@ class ClientContext {
   typingState = $state({ isTyping: false, elapsedSeconds: 0 });
   messages = $state<SessionUIMessagePart[]>([]);
   messageHistory = $state<SessionUIMessagePart[]>([]);
-  formattedMessages = $state<OutputEntry[]>([]);
   user = $state<string>("NA");
   atlasSessionId = $state<string | null>(null);
   daemonStatus = $state<"connected" | "error" | "idle">("idle");
@@ -126,7 +122,6 @@ class ClientContext {
 
     if (data.success) {
       this.user = data.currentUser;
-      this.refreshFormattedMessages();
     }
   }
 
@@ -177,9 +172,6 @@ class ClientContext {
 
           // Clear messages since we're starting fresh
           this.messages = [];
-          this.messageHistory = [];
-          this.formattedMessages = [];
-          this.seenPartKeys.clear();
         }
       } else {
         session = await this.conversationClient?.createSession();
@@ -188,9 +180,6 @@ class ClientContext {
         this.waitingForAtlasResponse = false;
         this.currentSessionForNotification = null;
         this.currentConversationId = null;
-        this.messageHistory = [];
-        this.formattedMessages = [];
-        this.seenPartKeys.clear();
       }
 
       if (!session) return;
@@ -231,14 +220,12 @@ class ClientContext {
         let sessionFinishing: string | null = null;
 
         // Check what's in this message batch
-        let isTyping = this.typingState.isTyping;
-
         uiMessage.parts.forEach((part) => {
           if (part.type === "data-session-start") {
             const sessionId = part.data.sessionId;
             this.atlasSessionId = sessionId;
             currentBatchSessionId = sessionId;
-            isTyping = true;
+            this.typingState.isTyping = true;
           } else if (part.type === "data-user-message" && part.data) {
             if (currentBatchSessionId) {
               // Check if this is a NEW session we haven't notified for yet
@@ -250,35 +237,19 @@ class ClientContext {
             }
           } else if (part.type === "data-session-finish") {
             sessionFinishing = this.atlasSessionId;
-            isTyping = false;
+            this.typingState.isTyping = false;
             this.atlasSessionId = null;
-          } else if (part.type === "text" && (part as { state?: string }).state === "done") {
-            isTyping = false;
           } else if (part.type === "data-session-cancel") {
             // Store the session ID before clearing it
             const cancelledSessionId = this.atlasSessionId;
-            isTyping = false;
+            this.typingState.isTyping = false;
             this.atlasSessionId = null;
             if (this.currentSessionForNotification === cancelledSessionId) {
               this.waitingForAtlasResponse = false;
               this.currentSessionForNotification = null;
             }
-          } else if (part.type === "data-error" || part.type === "data-agent-error") {
-            // Ensure progress indicators stop when an error occurs
-            isTyping = false;
-            this.atlasSessionId = null;
-            if (this.currentSessionForNotification) {
-              this.waitingForAtlasResponse = false;
-              this.currentSessionForNotification = null;
-            }
-          }
-
-          if (!this.isEphemeralPart(part)) {
-            this.persistPart(part);
           }
         });
-
-        this.typingState.isTyping = isTyping;
 
         // Handle session finish - check if we need to send notification
         if (
@@ -301,26 +272,14 @@ class ClientContext {
           this.waitingForAtlasResponse = false;
           this.currentSessionForNotification = null;
         }
-        const transientParts: SessionUIMessagePart[] = [];
 
-        for (const part of uiMessage.parts) {
-          try {
-            const key = this.getPartKey(part);
-            if (!this.seenPartKeys.has(key)) {
-              transientParts.push(part);
-            }
-          } catch {
-            transientParts.push(part);
-          }
-        }
-
-        this.messages = transientParts;
-        this.refreshFormattedMessages();
+        this.messages = uiMessage.parts;
       }
 
       // If we reached here and the abort signal wasn't triggered,
       // it means the SSE stream ended unexpectedly (daemon likely stopped)
       if (this.sseAbortController && !this.sseAbortController.signal.aborted) {
+        console.error("SSE stream ended unexpectedly - daemon may be down");
         this.daemonStatus = "error";
         this.isSetupComplete = false;
         // Keep health checks running and preserve session to reconnect
@@ -330,7 +289,12 @@ class ClientContext {
           this.startHealthCheckInterval();
         }
       }
-    } catch {
+    } catch (error) {
+      // Clear any loading messages and show error
+      const errorMessage = error instanceof Error ? error.message : String(error);
+
+      console.error(`Failed to setup conversation client: ${errorMessage}`);
+
       // Mark setup as incomplete and set error status
       this.isSetupComplete = false;
       this.daemonStatus = "error";
@@ -398,9 +362,6 @@ class ClientContext {
       this.atlasSessionId = null;
       // Only clear messages if not preserving session
       this.messages = [];
-      this.messageHistory = [];
-      this.formattedMessages = [];
-      this.seenPartKeys.clear();
     }
 
     // Reset typing state
@@ -472,96 +433,7 @@ class ClientContext {
     if (res.ok) {
       const history: SessionUIMessagePart[] = res.data.messages.flatMap((message) => message.parts);
       this.messageHistory = history;
-      this.seenPartKeys.clear();
-      for (const part of history) {
-        this.seenPartKeys.add(this.getPartKey(part));
-      }
-      this.refreshFormattedMessages();
     }
-  }
-
-  private persistPart(part: SessionUIMessagePart) {
-    try {
-      const key = this.getPartKey(part);
-      if (this.seenPartKeys.has(key)) {
-        return;
-      }
-
-      this.seenPartKeys.add(key);
-      this.messageHistory = [...this.messageHistory, structuredClone(part)];
-      this.refreshFormattedMessages();
-    } catch {
-      // Silent fail - part won't be persisted
-    }
-  }
-
-  private refreshFormattedMessages() {
-    try {
-      const formatted: OutputEntry[] = [];
-
-      for (const part of this.messageHistory) {
-        const entry = formatMessage(part, this.user);
-        if (entry) {
-          // Keep the ID from formatMessage which generates proper UUIDs
-          formatted.push(entry);
-        }
-      }
-
-      this.formattedMessages = formatted;
-    } catch {
-      // Silent fail - formatted messages will be empty
-    }
-  }
-
-  private isEphemeralPart(part: SessionUIMessagePart): boolean {
-    const ephemeralTypes = new Set([
-      "data-connection",
-      "data-heartbeat",
-      "data-tool-progress",
-      "data-session-start",
-      "data-session-finish",
-      "data-session-cancel",
-      "data-agent-start",
-      "data-agent-finish",
-    ]);
-
-    if (ephemeralTypes.has(part.type)) {
-      return true;
-    }
-
-    if (part.type.startsWith("tool-result-")) {
-      return true;
-    }
-
-    if (part.type === "text") {
-      return "state" in part && part.state !== "done";
-    }
-
-    if (part.type === "reasoning") {
-      return "state" in part && part.state !== "done";
-    }
-
-    return false;
-  }
-
-  private getPartKey(part: SessionUIMessagePart): string {
-    // If part has an ID, use it as the key
-    if ("id" in part && part.id) {
-      return String(part.id);
-    }
-
-    // For text-based parts, use type + text as key
-    if ("text" in part && part.text) {
-      return `${part.type}:${part.text}`;
-    }
-
-    // For data-based parts, stringify the data
-    if ("data" in part && part.data) {
-      return `${part.type}:${JSON.stringify(part.data)}`;
-    }
-
-    // For simple parts, just use the type
-    return part.type;
   }
 
   // Method to stop all monitoring when component is destroyed
