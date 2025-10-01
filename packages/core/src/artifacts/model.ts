@@ -15,8 +15,8 @@ export const CalendarScheduleDataSchema = z.object({
   events: z.array(
     z.object({
       eventName: z.string().describe("Name of the event"),
-      startDate: z.coerce.date().describe("Start date of the event (ISO 8601 accepted)"),
-      endDate: z.coerce.date().describe("End date of the event (ISO 8601 accepted)"),
+      startDate: z.iso.datetime().describe("Start date of the event (ISO 8601 accepted)"),
+      endDate: z.iso.datetime().describe("End date of the event (ISO 8601 accepted)"),
     }),
   ),
   source: z.string().describe("Source of the schedule (eg. Google Calendar, iCal, etc.)"),
@@ -74,7 +74,7 @@ export const ArtifactSchema = z.object({
   type: ArtifactTypeSchema,
   revision: z.number(),
   data: ArtifactDataSchema,
-  createdAt: z.coerce.date(),
+  createdAt: z.iso.datetime(),
   workspaceId: z.string().optional(),
   chatId: z.string().optional(),
   revisionMessage: z.string().optional(),
