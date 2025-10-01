@@ -5,6 +5,8 @@
   "exports": {
     ".": "./mod.ts",
     "./types": "./src/types/workspace.ts",
+    "./artifacts": "./src/artifacts/mod.ts",
+    "./artifacts/server": "./src/artifacts/storage.ts",
     "./errors": "./src/errors.ts"
   },
   "main": "./mod.ts",

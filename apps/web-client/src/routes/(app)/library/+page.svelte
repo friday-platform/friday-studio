@@ -67,7 +67,7 @@ onMount(async () => {
 
 	h2 {
 		flex: none;
-		font-size: var(--font-size-4);
+		font-size: var(--font-size-5);
 		font-weight: var(--font-weight-6);
 		margin-inline: auto;
 		max-inline-size: 64rem;

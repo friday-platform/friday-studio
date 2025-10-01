@@ -248,7 +248,7 @@ const messages = $derived([...ctx.messageHistory, ...ctx.messages]);
 			padding-inline-end: var(--size-10);
 
 			h2 {
-				font-size: var(--font-size-4);
+				font-size: var(--font-size-5);
 				font-weight: var(--font-weight-7);
 				line-height: var(--font-lineheight-1);
 				padding-inline: var(--size-10);

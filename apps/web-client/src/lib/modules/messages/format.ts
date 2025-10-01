@@ -45,6 +45,15 @@ export function formatMessage(
       author: "Atlas",
       metadata: { toolName: "workspace_summary", result: part.output },
     };
+  } else if (part.type === "tool-display_artifact") {
+    return {
+      id: crypto.randomUUID(),
+      type: "tool_call",
+      timestamp: new Date().toISOString(),
+      author: "Atlas",
+      // @ts-expect-error: this is accurate but poorly typed right now
+      metadata: { toolName: "display_artifact", artifactId: part?.output?.artifactId },
+    };
   } else if (part.type.startsWith("tool-") || part.type === "dynamic-tool") {
     return {
       id: crypto.randomUUID(),

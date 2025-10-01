@@ -28,7 +28,7 @@ const { message }: { message: OutputEntry } = $props();
 		p {
 			color: var(--color-red-2);
 
-			font-size: var(--font-size-4);
+			font-size: var(--font-size-5);
 			line-height: var(--font-lineheight-3);
 		}
 	}

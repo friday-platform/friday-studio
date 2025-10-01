@@ -9,7 +9,6 @@ import ExpandDecal from "./expand-decal.svelte";
 const ctx = getAppContext();
 
 function getActivePage(value: string | string[]) {
-  console.log(page.route.id);
   if (Array.isArray(value)) {
     return value.some((v) => String(page.route.id).endsWith(v));
   }

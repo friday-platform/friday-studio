@@ -157,7 +157,7 @@ Atlas and the user.
 - **Font Families**:
   - Sans: `--font-family-sans`
   - Monospace: `--font-family-monospace`
-- **Font Sizes**: `--font-size-1` through `--font-size-4` (0.625rem to 1.5rem
+- **Font Sizes**: `--font-size-1` through `--font-size-5` (0.625rem to 1.5rem
   scaled)
 - **Font Weights**: `--font-weight-4` (400) through `--font-weight-7` (700)
 - **Line Heights**: `--font-lineheight-0` (100%) through `--font-lineheight-5`

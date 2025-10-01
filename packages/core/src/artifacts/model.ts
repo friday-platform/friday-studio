@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { CalendarScheduleSchema, WorkspacePlanSchema } from "./primitives.ts";
 
 /** Revision summary for history */
 export interface ArtifactRevisionSummary {
@@ -7,36 +8,17 @@ export interface ArtifactRevisionSummary {
   revisionMessage?: string;
 }
 
-/** Workspace plan data schema */
-export const WorkspacePlanDataSchema = z.object({});
-
-/** Calendar schedule data schema */
-export const CalendarScheduleDataSchema = z.object({
-  events: z.array(
-    z.object({
-      eventName: z.string().describe("Name of the event"),
-      startDate: z.iso.datetime().describe("Start date of the event (ISO 8601 accepted)"),
-      endDate: z.iso.datetime().describe("End date of the event (ISO 8601 accepted)"),
-    }),
-  ),
-  source: z.string().describe("Source of the schedule (eg. Google Calendar, iCal, etc.)"),
-  sourceUrl: z
-    .string()
-    .optional()
-    .describe("URL of the source of the schedule (eg. Google Calendar URL, iCal URL, etc.)"),
-});
-
 /** Individual artifact type schemas */
-const WorkspacePlanArtifactSchema = z.object({
+export const WorkspacePlanArtifactSchema = z.object({
   type: z.literal("workspace-plan"),
   version: z.literal(1),
-  data: WorkspacePlanDataSchema,
+  data: WorkspacePlanSchema,
 });
 
 export const CalendarScheduleArtifactSchema = z.object({
   type: z.literal("calendar-schedule"),
   version: z.literal(1),
-  data: CalendarScheduleDataSchema,
+  data: CalendarScheduleSchema,
 });
 
 /** Artifact data validation by type */
@@ -49,7 +31,6 @@ export const ArtifactDataSchema = z.discriminatedUnion("type", [
 /** Extract the artifact type union */
 export type ArtifactType = z.infer<typeof ArtifactDataSchema>["type"];
 export type ArtifactData = z.infer<typeof ArtifactDataSchema>;
-export type WorkspacePlanData = z.infer<typeof WorkspacePlanDataSchema>;
 
 /** Schema for valid artifact types - using enum for single type support */
 export const ArtifactTypeSchema = z.enum(["workspace-plan", "calendar-schedule"]);

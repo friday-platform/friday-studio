@@ -1,7 +1,7 @@
 import type { SessionUIMessage, SessionUIMessageChunk } from "@atlas/core";
 import { stringifyError } from "@atlas/utils";
 import { readUIMessageStream } from "ai";
-import { Box, Static } from "ink";
+import { Box } from "ink";
 import { useEffect, useRef, useState } from "react";
 import { ChatMessage } from "../../components/chat-message.tsx";
 import { Header } from "../../components/header.tsx";
@@ -10,6 +10,7 @@ import { Progress } from "../../components/progress.tsx";
 import { TableOutput } from "../../components/table-output.tsx";
 import { DAEMON_STATUS } from "../../constants/daemon-status.ts";
 import { useAppContext } from "../../contexts/app-context.tsx";
+import { DisplayArtifact } from "../../modules/artifacts/display.tsx";
 import type { OutputEntry } from "../conversation/types.ts";
 import { formatMessage } from "./utils.ts";
 
@@ -18,7 +19,6 @@ export const MessageBuffer = () => {
     conversationClient,
     conversationSessionId,
     sseAbortControllerRef,
-    staticKey,
     setDaemonStatusState,
     setAtlasSessionId,
     typingState,
@@ -145,105 +145,87 @@ export const MessageBuffer = () => {
 
   return (
     <Box flexDirection="column" flexShrink={0}>
-      <Static
-        key={staticKey}
-        items={[{ type: "header", id: "atlas-header", content: "" }, ...output].map((entry) => {
-          if (entry.type === "header") {
-            return <Header key="header" />;
-          }
+      {[{ type: "header", id: "atlas-header", content: "" }, ...output].map((entry) => {
+        if (entry.type === "header") {
+          return <Header key="header" />;
+        }
 
-          if (entry.type === "request") {
-            return (
-              <Box key={entry.id} flexShrink={0} paddingX={2} flexDirection="column">
-                <Box height={1} />
-                <MessageHeader author={entry.author} date={entry.timestamp} authorColor="green" />
+        if (entry.type === "request") {
+          return (
+            <Box key={entry.id} flexShrink={0} paddingX={2} flexDirection="column">
+              <Box height={1} />
+              <MessageHeader author={entry.author} date={entry.timestamp} authorColor="green" />
 
-                <ChatMessage
-                  message={entry.content?.replace("## Current Request\n", "")}
-                  author={entry.author}
-                  authorColor="green"
-                  date={entry.timestamp}
-                  fixedHeight
-                />
-              </Box>
-            );
-          }
+              <ChatMessage
+                message={entry.content?.replace("## Current Request\n", "")}
+                author={entry.author}
+                authorColor="green"
+                date={entry.timestamp}
+                fixedHeight
+              />
+            </Box>
+          );
+        }
 
-          // response
-          if (entry.type === "text") {
-            return (
-              <Box key={entry.id} flexShrink={0} paddingX={2} flexDirection="column">
-                <Box height={1} />
-                <MessageHeader author="Atlas" date={entry.timestamp} authorColor="blue" />
+        // response
+        if (entry.type === "text") {
+          return (
+            <Box key={entry.id} flexShrink={0} paddingX={2} flexDirection="column">
+              <Box height={1} />
+              <MessageHeader author="Atlas" date={entry.timestamp} authorColor="blue" />
 
-                <ChatMessage
-                  message={entry.content}
-                  author={entry.author}
-                  authorColor="blue"
-                  date={entry.timestamp}
-                  fixedHeight
-                />
-              </Box>
-            );
-          }
+              <ChatMessage
+                message={entry.content}
+                author={entry.author}
+                authorColor="blue"
+                date={entry.timestamp}
+                fixedHeight
+              />
+            </Box>
+          );
+        }
 
-          if (entry.type === "tool_call" && entry.metadata?.toolName === "table_output") {
-            return (
-              <Box key={entry.id} flexShrink={0} paddingX={2} flexDirection="column">
-                <Box height={1} />
-                <MessageHeader author="Atlas" date={entry.timestamp} authorColor="blue" />
+        if (entry.type === "tool_call" && entry.metadata?.toolName === "table_output") {
+          return (
+            <Box key={entry.id} flexShrink={0} paddingX={2} flexDirection="column">
+              <Box height={1} />
+              <MessageHeader author="Atlas" date={entry.timestamp} authorColor="blue" />
 
-                <TableOutput data={entry.metadata?.result} />
-              </Box>
-            );
-          }
+              <TableOutput data={entry.metadata?.result} />
+            </Box>
+          );
+        }
 
-          // if (entry.type === "thinking") {
-          //   return (
-          //     <Box key={entry.id} flexShrink={0} paddingX={2} flexDirection="column">
-          //       <Box height={1} />
-          //       <ChatMessage
-          //         message={entry.content}
-          //         hideHeader
-          //         dimColor
-          //         fixedHeight
-          //         showCollapsible
-          //       />
-          //     </Box>
-          //   );
-          // }
+        if (entry.type === "tool_call" && entry.metadata?.toolName === "display_artifact") {
+          return (
+            <Box key={entry.id} flexShrink={0} paddingX={2} flexDirection="column">
+              <Box height={1} />
+              <MessageHeader author="Atlas" date={entry.timestamp} authorColor="blue" />
 
-          // if (entry.type === "tool_call" || entry.type === "tool_result") {
-          //   return (
-          //     <Box key={entry.id} flexShrink={0} paddingX={2} flexDirection="column">
-          //       <Box height={1} />
-          //       <ToolCall metadata={entry.metadata} />
-          //     </Box>
-          //   );
-          // }
+              <DisplayArtifact artifactId={entry.metadata?.artifactId} />
+            </Box>
+          );
+        }
 
-          if (entry.type === "error") {
-            return (
-              <Box key={entry.id} flexShrink={0} paddingX={2} flexDirection="column">
-                <Box height={1} />
-                <ChatMessage
-                  message={entry.content}
-                  hideHeader
-                  author="Error"
-                  authorColor="red"
-                  date={entry.timestamp}
-                  fixedHeight
-                  showCollapsible
-                />
-              </Box>
-            );
-          }
+        if (entry.type === "error") {
+          return (
+            <Box key={entry.id} flexShrink={0} paddingX={2} flexDirection="column">
+              <Box height={1} />
+              <ChatMessage
+                message={entry.content}
+                hideHeader
+                author="Error"
+                authorColor="red"
+                date={entry.timestamp}
+                fixedHeight
+                showCollapsible
+              />
+            </Box>
+          );
+        }
 
-          return null;
-        })}
-      >
-        {(item) => item}
-      </Static>
+        return null;
+      })}
 
       {typingState && (
         <Box paddingX={1} paddingTop={1} flexShrink={0}>

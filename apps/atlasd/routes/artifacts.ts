@@ -1,4 +1,5 @@
-import { ArtifactStorage, CreateArtifactSchema, UpdateArtifactSchema } from "@atlas/core/artifacts";
+import { CreateArtifactSchema, UpdateArtifactSchema } from "@atlas/core/artifacts";
+import { ArtifactStorage } from "@atlas/core/artifacts/server";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import { daemonFactory } from "../src/factory.ts";

@@ -6,7 +6,7 @@ import { getAppContext, getFileType } from "$lib/app-context.svelte";
 import { CustomIcons } from "$lib/components/icons/custom";
 import { IconSmall } from "$lib/components/icons/small";
 import Textarea from "$lib/components/textarea.svelte";
-import Artifacts from "$lib/modules/artifacts/artifacts.svelte";
+import DisplayArtifact from "$lib/modules/artifacts/display.svelte";
 import { getClientContext } from "$lib/modules/client/context.svelte";
 import ErrorMessage from "$lib/modules/messages/error-message.svelte";
 import { formatMessage } from "$lib/modules/messages/format";
@@ -99,6 +99,9 @@ const hasMessages = $derived(
 							data={formattedMessage.metadata?.result}
 							onShowPlan={() => (showPlan = true)}
 						/>
+					{:else if formattedMessage && formattedMessage.type === 'tool_call' && formattedMessage.metadata?.toolName === 'display_artifact'}
+						<!-- @ts-expect-error: this is accurate but poorly typed right now -->
+						<DisplayArtifact artifactId={formattedMessage.metadata?.artifactId} />
 					{:else if formattedMessage && formattedMessage.type === 'error'}
 						<ErrorMessage message={formattedMessage} />
 					{/if}
@@ -401,10 +404,9 @@ const hasMessages = $derived(
 		margin-inline: auto;
 		max-inline-size: var(--size-150);
 		inline-size: 100%;
-		padding-inline-start: var(--size-1);
 
 		h2 {
-			font-size: var(--font-size-4);
+			font-size: var(--font-size-5);
 			font-weight: var(--font-weight-6);
 			line-height: var(--font-lineheight-1);
 			margin-block-end: var(--size-2);

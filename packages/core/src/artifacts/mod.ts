@@ -4,9 +4,7 @@ export type {
   ArtifactData,
   ArtifactRevisionSummary,
   ArtifactType,
-  WorkspacePlanData,
 } from "./model.ts";
-
 export {
   ArtifactDataSchema,
   ArtifactSchema,
@@ -14,8 +12,8 @@ export {
   CalendarScheduleArtifactSchema,
   CreateArtifactSchema,
   UpdateArtifactSchema,
-  WorkspacePlanDataSchema,
 } from "./model.ts";
 
-// Storage operations
-export { ArtifactStorage } from "./storage.ts";
+// Primitives
+export type { CalendarSchedule, WorkspacePlan } from "./primitives.ts";
+export { CalendarScheduleSchema, WorkspacePlanSchema } from "./primitives.ts";

@@ -61,8 +61,6 @@ onMount(() => {
         showDiagnosticsDialog = true;
       });
       unlistenSettings = await listen("show-settings-dialog", () => {
-        console.log("show-settings-dialog");
-
         ctx.sidebarExpanded = true;
         goto(ctx.routes.settings);
       });

@@ -93,12 +93,13 @@ svg {
     monospace;
 
   /* Font sizes */
+  --font-size-00: calc(0.625rem * var(--text-scale));
+  --font-size-0: calc(0.6875rem * var(--text-scale));
   --font-size-1: calc(0.75rem * var(--text-scale));
   --font-size-2: calc(0.8125rem * var(--text-scale));
   --font-size-3: calc(0.9375rem * var(--text-scale));
-  --font-size-4: calc(1.625rem * var(--text-scale));
-  --font-size-5: calc(1.875rem * var(--text-scale));
-  --font-size-6: calc(2.25rem * var(--text-scale));
+  --font-size-4: calc(1.125rem * var(--text-scale));
+  --font-size-5: calc(1.625rem * var(--text-scale));
 
   /* Font weight */
   --font-weight-4: 400;

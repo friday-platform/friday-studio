@@ -100,7 +100,7 @@ export const googleCalendarAgent = createAgent<GoogleCalendarAgentResult>({
         };
       }
 
-      const result = await generateText({
+      const { steps, toolCalls, toolResults, text } = await generateText({
         model: anthropic("claude-sonnet-4-20250514"),
         abortSignal,
         system,
@@ -111,12 +111,6 @@ export const googleCalendarAgent = createAgent<GoogleCalendarAgentResult>({
         stopWhen: stepCountIs(20),
       });
 
-      const [steps, toolCalls, toolResults] = await Promise.all([
-        result.steps,
-        result.toolCalls,
-        result.toolResults,
-      ]);
-
       const { assembledToolResults } = collectToolUsageFromSteps({ steps, toolCalls, toolResults });
 
       const artifactIds = extractArtifactIdsFromToolResults(assembledToolResults);
@@ -126,7 +120,7 @@ export const googleCalendarAgent = createAgent<GoogleCalendarAgentResult>({
         data: { toolName: "Google Calendar", content: "Execution complete" },
       });
 
-      return { response: result.text.trim(), artifactIds: artifactIds };
+      return { response: text.trim(), artifactIds };
     } catch (error) {
       logger.error("google-calendar failed", { error });
       throw error;
