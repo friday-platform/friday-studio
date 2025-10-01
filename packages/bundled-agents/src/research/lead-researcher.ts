@@ -9,7 +9,7 @@ import type { Logger } from "@atlas/logger";
 import { fail, getTodaysDate, type Result, success } from "@atlas/utils";
 import { tavily as createTavily } from "@tavily/core";
 import { generateObject, generateText, hasToolCall, stepCountIs, streamText, tool } from "ai";
-import { z } from "zod/v4";
+import { z } from "zod";
 import { getFinalReportGeneratorSubAgent } from "./final-report-generator.ts";
 import { memoryStore } from "./memory-store.ts";
 import { getResearcherSubAgent } from "./sub-researcher.ts";

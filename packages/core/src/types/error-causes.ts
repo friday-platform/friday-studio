@@ -1,4 +1,4 @@
-import { z } from "zod/v4";
+import { z } from "zod";
 
 // Base error cause schema - just metadata, no message
 const BaseErrorCauseSchema = z.object({ code: z.string() });

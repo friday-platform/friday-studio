@@ -15,7 +15,7 @@ import {
   type TypedToolCall,
   type TypedToolResult,
 } from "ai";
-import { z } from "zod/v4";
+import { z } from "zod";
 import { createErrorCause, throwWithCause } from "./errors.ts";
 import { WatchdogTimer } from "./watchdog-timer.ts";
 

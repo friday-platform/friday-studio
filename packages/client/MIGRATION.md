@@ -5,10 +5,12 @@ This guide explains how to migrate routes from OpenAPI or direct daemon routes t
 ## Key Differences
 
 ### Old Patterns
+
 1. **OpenAPI Routes**: Multiple files with `describeRoute`, `resolver`, `validator`
 2. **Direct Daemon Routes**: Inline `this.app.get("/path", handler)` in atlas-daemon.ts
 
 ### New Pattern
+
 Single file with chained route definitions, zValidator, and exported types.
 
 ## Migration Steps
@@ -16,6 +18,7 @@ Single file with chained route definitions, zValidator, and exported types.
 ### 1. Convert OpenAPI Routes to RPC Routes
 
 #### Before (OpenAPI)
+
 ```typescript
 // routes/agents/list.ts
 import { describeRoute, resolver, validator } from "hono-openapi";
@@ -31,27 +34,32 @@ listAgents.get(
     responses: {
       200: {
         description: "Successfully retrieved agents",
-        content: { "application/json": { schema: resolver(agentListResponseSchema) } },
+        content: {
+          "application/json": { schema: resolver(agentListResponseSchema) },
+        },
       },
       500: {
         description: "Internal server error",
-        content: { "application/json": { schema: resolver(errorResponseSchema) } },
+        content: {
+          "application/json": { schema: resolver(errorResponseSchema) },
+        },
       },
     },
   }),
   async (c) => {
     // handler logic
-  }
+  },
 );
 
 export { listAgents };
 ```
 
 #### After (RPC)
+
 ```typescript
 // routes/agents.ts
 import { zValidator } from "@hono/zod-validator";
-import { z } from "zod/v4";
+import { z } from "zod";
 import { daemonFactory } from "../src/factory.ts";
 
 const agentRoutes = daemonFactory
@@ -64,13 +72,10 @@ const agentRoutes = daemonFactory
       return c.json({ error: stringifyError(error) }, 500);
     }
   })
-  .get("/:id",
-    zValidator("param", z.object({ id: z.string() })),
-    async (c) => {
-      const { id } = c.req.valid("param");
-      // handler logic
-    }
-  );
+  .get("/:id", zValidator("param", z.object({ id: z.string() })), async (c) => {
+    const { id } = c.req.valid("param");
+    // handler logic
+  });
 
 export { agentRoutes };
 export type AgentRoutes = typeof agentRoutes;
@@ -79,6 +84,7 @@ export type AgentRoutes = typeof agentRoutes;
 ### 2. Convert Direct Daemon Routes
 
 #### Before (Direct)
+
 ```typescript
 // atlas-daemon.ts
 this.app.get("/api/sessions/:sessionId", (c) => {
@@ -89,17 +95,19 @@ this.app.get("/api/sessions/:sessionId", (c) => {
 ```
 
 #### After (RPC)
+
 ```typescript
 // routes/sessions.ts
 const sessionRoutes = daemonFactory
   .createApp()
-  .get("/:sessionId",
+  .get(
+    "/:sessionId",
     zValidator("param", z.object({ sessionId: z.string() })),
     (c) => {
       const { sessionId } = c.req.valid("param");
       // handler logic
       return c.json(response, 200);
-    }
+    },
   );
 
 export { sessionRoutes };
@@ -107,6 +115,7 @@ export type SessionRoutes = typeof sessionRoutes;
 ```
 
 Then mount in daemon:
+
 ```typescript
 this.app.route("/api/sessions", sessionRoutes);
 ```
@@ -123,6 +132,7 @@ this.app.route("/api/sessions", sessionRoutes);
 ### 4. Client Usage Changes
 
 #### Before (OpenAPI Client)
+
 ```typescript
 import { AtlasdApi } from "@atlas/openapi-client";
 
@@ -131,11 +141,12 @@ const response = await api.getChatStorage({ streamId: "123" });
 ```
 
 #### After (RPC Client)
+
 ```typescript
 import { client, parseResult } from "@atlas/client/v2";
 
 const result = await parseResult(
-  client.chatStorage[":streamId"].$get({ param: { streamId: "123" } })
+  client.chatStorage[":streamId"].$get({ param: { streamId: "123" } }),
 );
 
 if (result.ok) {
@@ -148,19 +159,21 @@ if (result.ok) {
 ### 5. Adding New Routes to Client
 
 In `packages/client/v2/mod.ts`:
+
 ```typescript
 import type { ChatStorageRoutes } from "@atlas/atlasd";
-import type { AgentRoutes } from "@atlas/atlasd";  // Add import
+import type { AgentRoutes } from "@atlas/atlasd"; // Add import
 
 export const client = {
   chatStorage: hc<ChatStorageRoutes>("http://localhost:8080/api/chat-storage"),
-  agents: hc<AgentRoutes>("http://localhost:8080/api/agents"),  // Add route
+  agents: hc<AgentRoutes>("http://localhost:8080/api/agents"), // Add route
 };
 ```
 
 ## Migration Checklist
 
 ### For Each Route Group:
+
 - [ ] Combine separate operation files into single route file
 - [ ] Replace `describeRoute` and OpenAPI decorators with plain handlers
 - [ ] Replace `validator` with `zValidator`
@@ -175,6 +188,7 @@ export const client = {
 ## Common Patterns
 
 ### Parameter Validation
+
 ```typescript
 // Path params
 .get("/:id", zValidator("param", z.object({ id: z.string() })), handler)
@@ -187,7 +201,9 @@ export const client = {
 ```
 
 ### Error Responses
+
 Always return consistent error shape:
+
 ```typescript
 catch (error) {
   return c.json({ error: stringifyError(error) }, 500);
@@ -195,7 +211,9 @@ catch (error) {
 ```
 
 ### Multiple Validators
+
 Chain validators for routes with multiple inputs:
+
 ```typescript
 .put("/:id",
   zValidator("param", z.object({ id: z.string() })),
@@ -222,11 +240,13 @@ Chain validators for routes with multiple inputs:
 ## Trade-offs
 
 ### Lost with Migration
+
 - OpenAPI documentation generation (no more Swagger/Scalar UI)
 - OpenAPI client generation for other languages
 - Detailed response schema documentation in code
 
 ### Gained with Migration
+
 - Zero-cost type safety (no runtime overhead)
 - No code generation step
 - Simpler mental model (routes are the contract)

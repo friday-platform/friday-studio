@@ -7,7 +7,7 @@ import type { Logger } from "@atlas/logger";
 import { getTodaysDate } from "@atlas/utils";
 import type { TavilyClient, TavilyExtractResponse, TavilySearchResponse } from "@tavily/core";
 import { generateObject, tool } from "ai";
-import { z } from "zod/v4";
+import { z } from "zod";
 import { memoryStore } from "../memory-store.ts";
 
 const SummarizedResultSchema = z.object({

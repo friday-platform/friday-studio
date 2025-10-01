@@ -3,7 +3,7 @@ import type { AtlasTools } from "@atlas/agent-sdk";
 import type { Logger } from "@atlas/logger";
 import { getTodaysDate } from "@atlas/utils";
 import { generateText, stepCountIs, tool } from "ai";
-import { z } from "zod/v4";
+import { z } from "zod";
 import { memoryStore } from "./memory-store.ts";
 
 const FINAL_REPORT_GENERATOR_PROMPT = `Generate research report from completed searches.

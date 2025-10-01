@@ -10,7 +10,7 @@ import { load } from "@std/dotenv";
 import { exists } from "@std/fs";
 import { basename, join } from "@std/path";
 import * as yaml from "@std/yaml";
-import { z } from "zod/v4";
+import { z } from "zod";
 import { DEFAULT_TIMEOUT } from "./constants.ts";
 import { AtlasApiError } from "./errors.ts";
 import {

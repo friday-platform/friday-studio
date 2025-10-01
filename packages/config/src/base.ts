@@ -2,7 +2,7 @@
  * Base types and enums for Atlas configuration v2
  */
 
-import { z } from "zod/v4";
+import { z } from "zod";
 
 // ==============================================================================
 // ENUMS AND CONSTANTS

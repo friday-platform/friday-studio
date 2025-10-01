@@ -10,7 +10,7 @@ import type {
 } from "@atlas/config";
 import { logger } from "@atlas/logger";
 import sgMail from "@sendgrid/mail";
-import { z } from "zod/v4";
+import { z } from "zod";
 import { getAtlasVersion } from "../../../../src/utils/version.ts";
 import { NotificationSendError, ProviderConfigError } from "../types.ts";
 import { BaseNotificationProvider, type BaseProviderConfig } from "./base-provider.ts";

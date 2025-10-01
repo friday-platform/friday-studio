@@ -7,7 +7,7 @@
 import { logger } from "@atlas/logger";
 import { type CoALAMemoryEntry, CoALAMemoryManager } from "@atlas/memory";
 import { tool } from "ai";
-import { z } from "zod/v4";
+import { z } from "zod";
 
 // Helper to safely extract error message from unknown error
 function getErrorMessage(error: unknown): string {

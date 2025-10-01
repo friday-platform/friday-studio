@@ -5,7 +5,7 @@
  * prompts and accomplish tasks within their expertise.
  */
 
-import { z } from "zod/v4";
+import { z } from "zod";
 import type {
   AgentContext,
   AgentEnvironmentConfig,

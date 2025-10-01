@@ -1,6 +1,6 @@
 import { anthropic } from "@ai-sdk/anthropic";
 import { generateObject } from "ai";
-import { z } from "zod/v4";
+import { z } from "zod";
 
 const evaluationSchema = z.object({
   pass: z.boolean().describe("Did the agent meet the given criteria"),

@@ -16,7 +16,7 @@ import {
   type MCPTransportConfig,
   MCPTransportConfigSchema,
 } from "@atlas/agent-sdk";
-import { z } from "zod/v4";
+import { z } from "zod";
 import { WorkspaceTimeoutConfigSchema } from "./base.ts";
 
 // ==============================================================================

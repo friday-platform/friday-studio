@@ -2,7 +2,7 @@ import type { AtlasTools } from "@atlas/agent-sdk";
 import { slackCommunicatorAgent } from "@atlas/bundled-agents";
 import { assert } from "@std/assert";
 import { tool } from "ai";
-import { z } from "zod/v4";
+import { z } from "zod";
 import { AgentContextAdapter } from "../../lib/context.ts";
 import { llmJudge } from "../../lib/llm-judge.ts";
 import { loadCredentials } from "../../lib/load-credentials.ts";

@@ -3,7 +3,7 @@
  */
 
 import { tool } from "ai";
-import { z } from "zod/v4";
+import { z } from "zod";
 
 const ATLAS_RESOURCES = {
   "atlas://guides/workspace-creation": {

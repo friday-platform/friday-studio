@@ -8,7 +8,7 @@ import type {
   TraceAPI,
   Tracer,
 } from "@opentelemetry/api";
-import { z } from "zod/v4";
+import { z } from "zod";
 
 // Zod schemas for runtime validation
 

@@ -17,7 +17,7 @@ import type {
   UIMessageChunk,
   UIMessagePart,
 } from "ai";
-import { z } from "zod/v4";
+import { z } from "zod";
 
 // ==============================================================================
 // BASE UTILITY SCHEMAS

@@ -16,7 +16,7 @@ const APICallErrorSchema = z.object({
   url: z.string(),
   requestBodyValues: z.unknown(),
   statusCode: z.number().optional(),
-  responseHeaders: z.record(z.string()).optional(),
+  responseHeaders: z.record(z.string(), z.string()).optional(),
   responseBody: z.string().optional(),
   isRetryable: z.boolean().optional(),
   data: z.unknown(),

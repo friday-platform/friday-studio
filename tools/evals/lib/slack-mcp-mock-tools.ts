@@ -1,6 +1,6 @@
 import type { AtlasTools } from "@atlas/agent-sdk";
 import { tool } from "ai";
-import { z } from "zod/v4";
+import { z } from "zod";
 
 export type SlackMockCounters = {
   conversations_history: number;

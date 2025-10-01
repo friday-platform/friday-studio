@@ -1,4 +1,4 @@
-import { z } from "zod/v4";
+import { z } from "zod";
 
 const formatter = new Intl.DateTimeFormat("en-US", { dateStyle: "full" });
 

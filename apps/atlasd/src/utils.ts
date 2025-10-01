@@ -3,7 +3,7 @@
  */
 
 import { logger } from "@atlas/logger";
-import { z } from "zod/v4";
+import { z } from "zod";
 
 // Private constants
 const DEFAULT_DAEMON_URL = "http://127.0.0.1:8080";

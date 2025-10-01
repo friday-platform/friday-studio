@@ -1,5 +1,5 @@
 import { tool } from "ai";
-import { z } from "zod/v4";
+import { z } from "zod";
 
 export const displayArtifact = tool({
   description: "Display an artifact by id",

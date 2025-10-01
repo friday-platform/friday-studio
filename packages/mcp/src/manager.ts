@@ -19,7 +19,7 @@ import {
   type Tool,
 } from "ai";
 import { Experimental_StdioMCPTransport as StdioMCPTransport } from "ai/mcp-stdio";
-import { z } from "zod/v4";
+import { z } from "zod";
 import { AtlasTelemetry } from "../../../src/utils/telemetry.ts";
 
 // ai doesn't export the MCPClient type, so we need to infer it.

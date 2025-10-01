@@ -1,6 +1,6 @@
 import { stringifyError } from "@atlas/utils";
 import { describeRoute, resolver, validator } from "hono-openapi";
-import z from "zod/v4";
+import z from "zod";
 import { daemonFactory } from "../../src/factory.ts";
 import { appendNote, getNotes, NoteSchema } from "../../src/storage/scratchpad.ts";
 import { errorResponseSchema } from "../../src/utils.ts";

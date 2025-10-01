@@ -5,7 +5,7 @@ import { stringifyError } from "@atlas/utils";
 import { zValidator } from "@hono/zod-validator";
 import { join } from "@std/path";
 import { stringify } from "@std/yaml";
-import { z } from "zod/v4";
+import { z } from "zod";
 import { daemonFactory } from "../../src/factory.ts";
 import { createWorkspaceFromConfigSchema } from "./schemas.ts";
 

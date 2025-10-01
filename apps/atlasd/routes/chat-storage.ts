@@ -1,7 +1,7 @@
 import { conversationStorage, type SessionUIMessage } from "@atlas/core";
 import { stringifyError } from "@atlas/utils";
 import { zValidator } from "@hono/zod-validator";
-import { z } from "zod/v4";
+import { z } from "zod";
 import { daemonFactory } from "../src/factory.ts";
 
 /**

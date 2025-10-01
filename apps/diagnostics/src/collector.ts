@@ -7,7 +7,7 @@ import { ensureDir, exists, walk } from "@std/fs";
 import { join } from "@std/path";
 import { TarStream, type TarStreamInput } from "@std/tar/tar-stream";
 import { stringify } from "@std/yaml";
-import { z } from "zod/v4";
+import { z } from "zod";
 import { ServiceManager } from "../../../src/services/service-manager.ts";
 import { getVersionInfo } from "../../../src/utils/version.ts";
 import { collectOpenFiles } from "./open-files/collector.ts";

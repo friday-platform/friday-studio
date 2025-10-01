@@ -1,7 +1,7 @@
 import { logger } from "@atlas/logger";
 import { formatDate } from "@atlas/utils";
-import { retry, type RetryOptions } from "@std/async/retry";
-import { z } from "zod/v4";
+import { type RetryOptions, retry } from "@std/async/retry";
+import { z } from "zod";
 import { getCredentialsApiUrl } from "./atlas-config.ts";
 import { throwWithCause } from "./errors.ts";
 

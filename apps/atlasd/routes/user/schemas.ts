@@ -1,4 +1,4 @@
-import { z } from "zod/v4";
+import { z } from "zod";
 
 export const userGetResponseSchema = z
   .object({ success: z.boolean(), user: z.string() })

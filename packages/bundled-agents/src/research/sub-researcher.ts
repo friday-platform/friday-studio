@@ -9,7 +9,7 @@ import { getTodaysDate } from "@atlas/utils";
 import { withSpan } from "@atlas/utils/telemetry.server";
 import type { TavilyClient } from "@tavily/core";
 import { stepCountIs, streamText, tool } from "ai";
-import { z } from "zod/v4";
+import { z } from "zod";
 import { memoryStore } from "./memory-store.ts";
 import { createSubAgentTools } from "./tools/search-tools.ts";
 import type { ResearchDepth } from "./types.ts";

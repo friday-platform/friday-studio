@@ -1,7 +1,7 @@
 import { anthropic } from "@ai-sdk/anthropic";
 import type { Logger } from "@atlas/logger";
 import { generateObject, tool } from "ai";
-import { z } from "zod/v4";
+import { z } from "zod";
 import type { WorkspaceBuilder } from "../builder.ts";
 import { blessedMCPServers } from "./mcp-server-registry.ts";
 

@@ -1,8 +1,8 @@
 export type { ArtifactsRoutes } from "./routes/artifacts.ts";
 export type { ChatStorageRoutes } from "./routes/chat-storage.ts";
 export type { DaemonRoutes } from "./routes/daemon.ts";
-export type { healthRoutes } from "./routes/health.ts";
-export type { sessionsRoutes } from "./routes/sessions/index.ts";
+export type { HealthRoutes } from "./routes/health.ts";
+export type { SessionsRoutes } from "./routes/sessions/index.ts";
 export type { WorkspaceRoutes } from "./routes/workspaces/index.ts";
 export * from "./src/atlas-daemon.ts";
 export { type AppContext, type AppVariables, createApp } from "./src/factory.ts";

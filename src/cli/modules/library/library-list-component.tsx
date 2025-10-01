@@ -1,5 +1,5 @@
 import { Box, Text } from "ink";
-import { z } from "zod/v4";
+import { z } from "zod";
 import { Table } from "../../components/table.tsx";
 
 // Schema for library item

@@ -2,7 +2,7 @@
  * Signal configuration schemas with tagged unions
  */
 
-import { z } from "zod/v4";
+import { z } from "zod";
 import { DurationSchema, SchemaObjectSchema } from "./base.ts";
 
 // ==============================================================================

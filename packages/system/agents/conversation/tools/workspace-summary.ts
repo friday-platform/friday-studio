@@ -6,7 +6,7 @@
 
 import { anthropic } from "@ai-sdk/anthropic";
 import { generateObject, tool } from "ai";
-import { z } from "zod/v4";
+import { z } from "zod";
 
 /**
  * Workspace Creation Tool - Create a workspace from a prompt

@@ -13,6 +13,6 @@
     "@std/dotenv": "npm:@jsr/std__dotenv@^0.225.5",
     "@std/yaml": "npm:@jsr/std__yaml@^1.0.9",
     "hono": "^4.9.8",
-    "zod": "^3.25.76"
+    "zod": "^4.1.11"
   }
 }

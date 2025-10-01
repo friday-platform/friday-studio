@@ -65,7 +65,7 @@ Each tool in the platform server follows a consistent pattern that aligns with
 
 ```typescript
 // Example from src/tools/fs/ls.ts
-import { z } from "zod/v4";
+import { z } from "zod";
 import type { ToolContext } from "../types.ts";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { createSuccessResponse } from "../types.ts";
@@ -316,7 +316,8 @@ export function registerWorkspaceReferenceResource(
     "atlas://reference/workspace", // Resource URI
     {
       name: "Workspace Configuration Reference",
-      description: "Comprehensive reference showing all Atlas workspace configuration options",
+      description:
+        "Comprehensive reference showing all Atlas workspace configuration options",
       mimeType: "text/yaml",
     },
     () => {

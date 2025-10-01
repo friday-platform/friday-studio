@@ -4,7 +4,7 @@ import type { ToolCall, ToolResult } from "@atlas/agent-sdk";
 import { createAgent } from "@atlas/agent-sdk";
 import { collectToolUsageFromSteps } from "@atlas/agent-sdk/vercel-helpers";
 import { generateObject, generateText, stepCountIs } from "ai";
-import { z } from "zod/v4";
+import { z } from "zod";
 import {
   executorSystem,
   plannerSystem as plannerSystemPrompt,

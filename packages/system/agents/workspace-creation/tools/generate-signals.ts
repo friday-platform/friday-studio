@@ -7,7 +7,7 @@ import {
 import type { Logger } from "@atlas/logger";
 import { toKebabCase } from "@std/text";
 import { generateObject, tool } from "ai";
-import { z } from "zod/v4";
+import { z } from "zod";
 import type { WorkspaceBuilder } from "../builder.ts";
 
 const SignalConfigSchema = z.discriminatedUnion("provider", [

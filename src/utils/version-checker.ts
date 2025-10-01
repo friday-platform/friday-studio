@@ -5,7 +5,7 @@
 
 import { getAtlasBaseUrl } from "@atlas/core";
 import { ensureDir, existsSync } from "@std/fs";
-import { z } from "zod/v4";
+import { z } from "zod";
 import { ReleaseChannel } from "./release-channel.ts";
 import { getVersionInfo } from "./version.ts";
 

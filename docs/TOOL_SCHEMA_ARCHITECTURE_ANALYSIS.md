@@ -34,14 +34,18 @@ Similar to daemon capabilities but for workspace-specific operations
 
 ```typescript
 // Uses ZodRawShape type from Zod
-server.registerTool<ZodRawShape, ZodRawShape>(name, {
-  description: string,
-  inputSchema: {
-    // Zod schemas directly as property values (ZodRawShape)
-    workspaceId: z.string().describe("Workspace ID"),
-    force: z.boolean().default(false).describe("Force deletion"),
+server.registerTool<ZodRawShape, ZodRawShape>(
+  name,
+  {
+    description: string,
+    inputSchema: {
+      // Zod schemas directly as property values (ZodRawShape)
+      workspaceId: z.string().describe("Workspace ID"),
+      force: z.boolean().default(false).describe("Force deletion"),
+    },
   },
-}, implementation);
+  implementation,
+);
 ```
 
 **Key insight:** The MCP SDK already uses `ZodRawShape` for `inputSchema`, which is:
@@ -117,14 +121,21 @@ The MCP server tools already demonstrate the correct pattern:
 
 ```typescript
 // MCP pattern - clean, explicit, type-safe
-server.registerTool("delete_workspace", {
-  description: "Delete a workspace",
-  inputSchema: {
-    workspaceId: z.string().describe("Workspace ID"),
-    force: z.boolean().default(false).describe("Force deletion"),
-    config: z.record(z.string(), z.unknown()).optional().describe("Optional config"),
+server.registerTool(
+  "delete_workspace",
+  {
+    description: "Delete a workspace",
+    inputSchema: {
+      workspaceId: z.string().describe("Workspace ID"),
+      force: z.boolean().default(false).describe("Force deletion"),
+      config: z
+        .record(z.string(), z.unknown())
+        .optional()
+        .describe("Optional config"),
+    },
   },
-}, implementation);
+  implementation,
+);
 ```
 
 ### 1. **Standardize Capabilities to Return AI SDK Tools**
@@ -134,7 +145,7 @@ Update capability interfaces to directly produce AI SDK Tools:
 ```typescript
 // packages/core/src/daemon-capabilities.ts
 import { type Tool } from "ai";
-import { z } from "zod/v4";
+import { z } from "zod";
 
 export interface DaemonCapability {
   id: string;
@@ -157,8 +168,14 @@ const streamReplyCapability: DaemonCapability = {
       parameters: z.object({
         stream_id: z.string().min(1).describe("Stream ID for the reply"),
         message: z.string().min(1).describe("Message content to stream"),
-        metadata: z.record(z.string(), z.unknown()).optional().describe("Optional metadata"),
-        conversationId: z.string().optional().describe("Optional conversation ID"),
+        metadata: z
+          .record(z.string(), z.unknown())
+          .optional()
+          .describe("Optional metadata"),
+        conversationId: z
+          .string()
+          .optional()
+          .describe("Optional conversation ID"),
       }),
       execute: async (args) => {
         // Validation already handled by AI SDK
@@ -201,10 +218,14 @@ const workspaceDraftUpdateCapability: WorkspaceCapability = {
       description: this.description,
       parameters: z.object({
         draftId: z.uuid().describe("Draft workspace ID"),
-        updates: z.record(z.string(), z.unknown()).describe(
-          "Configuration updates to apply (Partial<WorkspaceConfig>)",
-        ),
-        updateDescription: z.string().describe("Natural language description of what changed"),
+        updates: z
+          .record(z.string(), z.unknown())
+          .describe(
+            "Configuration updates to apply (Partial<WorkspaceConfig>)",
+          ),
+        updateDescription: z
+          .string()
+          .describe("Natural language description of what changed"),
       }),
       execute: async (args) => {
         const { draftId, updates, updateDescription } = args;
@@ -237,18 +258,18 @@ private static async prepareTools(context: {
   mcpServers?: string[];
 }): Promise<Record<string, Tool>> {
   const allTools: Record<string, Tool> = {};
-  
+
   // All tools are already AI SDK Tools - no conversion needed
   if (context.tools) {
     Object.assign(allTools, context.tools);
   }
-  
+
   // MCP tools already return AI SDK Tools
   if (context.mcpServers?.length > 0) {
     const mcpTools = await this.mcpManager.getToolsForServers(context.mcpServers);
     Object.assign(allTools, mcpTools);
   }
-  
+
   return allTools;
 }
 ```
@@ -268,20 +289,20 @@ Simplify tool retrieval in ConversationAgent:
 private getDaemonCapabilityTools(streamId?: string): Record<string, Tool> {
   const tools: Record<string, Tool> = {};
   const context = this.buildExecutionContext(streamId);
-  
+
   for (const toolName of this.agentConfig.tools || []) {
     const daemonCapability = DaemonCapabilityRegistry.getCapability(toolName);
     if (daemonCapability) {
       tools[toolName] = daemonCapability.toTool(context);
       continue;
     }
-    
+
     const workspaceCapability = WorkspaceCapabilityRegistry.getCapability(toolName);
     if (workspaceCapability) {
       tools[toolName] = workspaceCapability.toTool(context);
     }
   }
-  
+
   return tools;
 }
 ```
@@ -399,7 +420,7 @@ works end-to-end:
 import { experimental_createMCPClient } from "ai";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
-import { z } from "zod/v4";
+import { z } from "zod";
 import { findAvailablePort } from "@src/utils/port-finder.ts";
 
 interface TestMCPServer {
@@ -420,54 +441,92 @@ export async function createTestMCPServer(): Promise<TestMCPServer> {
   });
 
   // Register simple test tools
-  server.registerTool("test_add", {
-    title: "Test Addition Tool",
-    description: "Add two numbers for testing",
-    inputSchema: {
-      a: z.number().describe("First number"),
-      b: z.number().describe("Second number"),
+  server.registerTool(
+    "test_add",
+    {
+      title: "Test Addition Tool",
+      description: "Add two numbers for testing",
+      inputSchema: {
+        a: z.number().describe("First number"),
+        b: z.number().describe("Second number"),
+      },
     },
-  }, async ({ a, b }) => ({
-    content: [{
-      type: "text",
-      text: `Result: ${a + b}`,
-    }],
-  }));
+    async ({ a, b }) => ({
+      content: [
+        {
+          type: "text",
+          text: `Result: ${a + b}`,
+        },
+      ],
+    }),
+  );
 
-  server.registerTool("test_echo", {
-    title: "Test Echo Tool",
-    description: "Echo back a message for testing",
-    inputSchema: {
-      message: z.string().describe("Message to echo"),
-      metadata: z.record(z.string(), z.unknown()).optional().describe("Optional metadata"),
+  server.registerTool(
+    "test_echo",
+    {
+      title: "Test Echo Tool",
+      description: "Echo back a message for testing",
+      inputSchema: {
+        message: z.string().describe("Message to echo"),
+        metadata: z
+          .record(z.string(), z.unknown())
+          .optional()
+          .describe("Optional metadata"),
+      },
     },
-  }, async ({ message, metadata }) => ({
-    content: [{
-      type: "text",
-      text: `Echo: ${message}${metadata ? ` (metadata: ${JSON.stringify(metadata)})` : ""}`,
-    }],
-  }));
+    async ({ message, metadata }) => ({
+      content: [
+        {
+          type: "text",
+          text: `Echo: ${message}${metadata ? ` (metadata: ${JSON.stringify(metadata)})` : ""}`,
+        },
+      ],
+    }),
+  );
 
-  server.registerTool("test_workspace_list", {
-    title: "Test Workspace List Tool",
-    description: "Return mock workspace data for testing",
-    inputSchema: {
-      includeSystem: z.boolean().default(false).describe("Include system workspaces"),
+  server.registerTool(
+    "test_workspace_list",
+    {
+      title: "Test Workspace List Tool",
+      description: "Return mock workspace data for testing",
+      inputSchema: {
+        includeSystem: z
+          .boolean()
+          .default(false)
+          .describe("Include system workspaces"),
+      },
     },
-  }, async ({ includeSystem }) => ({
-    content: [{
-      type: "text",
-      text: JSON.stringify({
-        workspaces: [
-          { id: "test-workspace-1", name: "Test Workspace 1", path: "/test/workspace1" },
-          { id: "test-workspace-2", name: "Test Workspace 2", path: "/test/workspace2" },
-          ...(includeSystem
-            ? [{ id: "system-workspace", name: "System", path: "system://test" }]
-            : []),
-        ],
-      }),
-    }],
-  }));
+    async ({ includeSystem }) => ({
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({
+            workspaces: [
+              {
+                id: "test-workspace-1",
+                name: "Test Workspace 1",
+                path: "/test/workspace1",
+              },
+              {
+                id: "test-workspace-2",
+                name: "Test Workspace 2",
+                path: "/test/workspace2",
+              },
+              ...(includeSystem
+                ? [
+                    {
+                      id: "system-workspace",
+                      name: "System",
+                      path: "system://test",
+                    },
+                  ]
+                : []),
+            ],
+          }),
+        },
+      ],
+    }),
+  );
 
   // Start server on random port with SSE transport
   const transport = new SSEServerTransport(`/mcp`, { port });

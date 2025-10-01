@@ -1,6 +1,6 @@
 import { ArtifactStorage, CreateArtifactSchema, UpdateArtifactSchema } from "@atlas/core/artifacts";
 import { zValidator } from "@hono/zod-validator";
-import { z } from "zod/v4";
+import { z } from "zod";
 import { daemonFactory } from "../src/factory.ts";
 
 const GetArtifactQuery = z.object({ revision: z.coerce.number().int().positive().optional() });

@@ -11,7 +11,7 @@
  * @module scratchpad
  */
 
-import { z } from "zod/v4";
+import { z } from "zod";
 
 export const NoteSchema = z.object({ note: z.string().describe("A note to track") });
 

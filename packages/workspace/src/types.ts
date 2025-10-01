@@ -1,5 +1,5 @@
-import { z } from "zod/v4";
-import { MergedConfig } from "@atlas/config";
+import type { MergedConfig } from "@atlas/config";
+import { z } from "zod";
 
 // Single source of truth for workspace types
 export const WorkspaceStatusSchema = z.enum(["inactive", "running", "stopped"]);

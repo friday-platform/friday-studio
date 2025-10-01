@@ -6,7 +6,7 @@ import type { Logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
 import { toKebabCase } from "@std/text";
 import { generateObject, tool } from "ai";
-import { z } from "zod/v4";
+import { z } from "zod";
 import type { WorkspaceBuilder } from "../builder.ts";
 
 /**

@@ -9,7 +9,7 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import type { AgentResult } from "@atlas/agent-sdk";
 import type { Logger } from "@atlas/logger";
 import { generateObject, type LanguageModel } from "ai";
-import { z } from "zod/v4";
+import { z } from "zod";
 import { SupervisionLevel } from "../supervision-levels.ts";
 
 /**

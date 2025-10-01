@@ -38,7 +38,7 @@ export * from "./src/workspace.ts";
 // ==============================================================================
 
 import { stringifyError } from "@atlas/utils";
-import { z } from "zod/v4";
+import { z } from "zod";
 import type {
   LLMAgentConfig,
   SystemAgentConfig,

@@ -1,5 +1,5 @@
 import { tool } from "ai";
-import { z } from "zod/v4";
+import { z } from "zod";
 import type { WorkspaceBuilder } from "../builder.ts";
 
 export function getSetWorkspaceIdentityTool(builder: WorkspaceBuilder) {

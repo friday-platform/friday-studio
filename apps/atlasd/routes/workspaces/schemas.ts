@@ -1,6 +1,6 @@
 import { WorkspaceConfigSchema } from "@atlas/config";
 import { WorkspaceMetadataSchema, WorkspaceStatusSchema } from "@atlas/workspace";
-import { z } from "zod/v4";
+import { z } from "zod";
 
 // ============================================================================
 // Shared Parameter Schemas

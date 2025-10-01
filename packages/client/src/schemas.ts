@@ -2,7 +2,7 @@
  * Zod schemas for API response validation
  */
 
-import { z } from "zod/v4";
+import { z } from "zod";
 
 // Daemon schemas
 export const DaemonStatusSchema = z.object({

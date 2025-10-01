@@ -6,7 +6,7 @@ import {
   type WorkspaceConfig,
   type WorkspaceSignalConfig,
 } from "@atlas/config";
-import z from "zod/v4";
+import z from "zod";
 
 interface ValidationResult {
   success: boolean;

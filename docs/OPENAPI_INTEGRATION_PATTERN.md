@@ -23,7 +23,7 @@ maintain type safety across the codebase.
 Create a new route file in `apps/atlasd/routes/` (e.g., `workspaces.ts`):
 
 ```typescript
-import { z } from "zod/v4";
+import { z } from "zod";
 import { daemonFactory } from "../src/factory.ts";
 import { describeRoute } from "hono-openapi";
 import { resolver, validator } from "hono-openapi/zod";
@@ -329,7 +329,8 @@ export const OPENAPI_DOCUMENTATION = {
   info: {
     title: "Atlas Daemon API",
     version: "1.0.0",
-    description: "API for managing workspaces, sessions, and AI agent orchestration",
+    description:
+      "API for managing workspaces, sessions, and AI agent orchestration",
   },
   tags: [
     { name: "System", description: "System health and status endpoints" },

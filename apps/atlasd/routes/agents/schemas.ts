@@ -1,4 +1,4 @@
-import { z } from "zod/v4";
+import { z } from "zod";
 
 export const agentIdParamsSchema = z.object({ id: z.string().min(1).describe("Agent identifier") });
 

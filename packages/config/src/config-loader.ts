@@ -13,7 +13,7 @@ import {
   type WorkspaceSignalConfigSchema,
 } from "@atlas/config";
 import type { ConfigurationAdapter } from "@atlas/storage";
-import { z } from "zod/v4";
+import { z } from "zod";
 
 /**
  * Configuration loader v2 with improved type safety

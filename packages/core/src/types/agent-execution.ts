@@ -5,7 +5,7 @@
  * replacing the missing types/messages.ts import.
  */
 
-import { z } from "zod/v4";
+import { z } from "zod";
 
 // ==============================================================================
 // AGENT EXECUTE PAYLOAD

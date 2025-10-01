@@ -10,9 +10,9 @@
     "@atlas/config": "workspace:*",
     "@atlas/notifications": "workspace:*",
     "@atlas/oapi-client": "workspace:*",
-    "@modelcontextprotocol/sdk": "^1.18.0",
+    "@modelcontextprotocol/sdk": "npm:@socotra/modelcontextprotocol-sdk@^1.18.0",
     "@std/fs": "npm:@jsr/std__fs@^1.0.19",
     "@std/path": "npm:@jsr/std__path@^1.1.2",
-    "zod": "^3.25.76"
+    "zod": "^4.1.11"
   }
 }

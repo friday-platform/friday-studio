@@ -1,6 +1,6 @@
 import { createAtlasClient } from "@atlas/oapi-client";
 import { tool } from "ai";
-import { z } from "zod/v4";
+import { z } from "zod";
 
 export const takeNoteTool = tool({
   name: "take_note",

@@ -3,7 +3,7 @@
  * These are only available in atlas.yml, not workspace.yml
  */
 
-import { z } from "zod/v4";
+import { z } from "zod";
 import { DurationSchema, SupervisionLevel } from "./base.ts";
 
 // ==============================================================================
