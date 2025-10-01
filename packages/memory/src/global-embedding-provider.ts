@@ -17,7 +17,6 @@ import { WebEmbeddingProvider } from "./web-embedding-provider.ts";
  */
 let instance: WebEmbeddingProvider | null = null;
 let initializationPromise: Promise<WebEmbeddingProvider> | null = null;
-let referenceCount: number = 0;
 // Lazy initialization to avoid circular dependency issues
 let _logger: ReturnType<typeof logger.child> | null = null;
 
@@ -74,15 +73,13 @@ export async function embeddingProviderGetInstance(
   // If we have an initialization in progress, wait for it
   if (initializationPromise) {
     const providerInstance = await initializationPromise;
-    referenceCount++;
-    getLogger().debug("Reusing existing embedding provider instance", { referenceCount });
+    getLogger().debug("Reusing existing embedding provider instance");
     return providerInstance;
   }
 
   // If we already have an instance, increment reference and return it
   if (instance) {
-    referenceCount++;
-    getLogger().debug("Reusing existing embedding provider instance", { referenceCount });
+    getLogger().debug("Reusing existing embedding provider instance");
     return instance;
   }
 
@@ -92,9 +89,7 @@ export async function embeddingProviderGetInstance(
   try {
     const providerInstance = await initializationPromise;
     instance = providerInstance;
-    referenceCount++;
     getLogger().info("Created new global embedding provider instance", {
-      referenceCount,
       modelInfo: providerInstance.getModelInfo(),
     });
     // Clear promise on success - it's no longer needed
@@ -110,17 +105,6 @@ export async function embeddingProviderGetInstance(
 }
 
 /**
- * Release a reference to the global instance
- * Note: The singleton is never actually disposed, as it's shared across all sessions
- */
-export function embeddingProviderReleaseReference(): void {
-  if (referenceCount > 0) {
-    referenceCount--;
-    getLogger().debug("Released embedding provider reference", { referenceCount });
-  }
-}
-
-/**
  * Force disposal of the global instance (use with caution - only for shutdown)
  */
 export async function embeddingProviderForceDispose(): Promise<void> {
@@ -128,15 +112,7 @@ export async function embeddingProviderForceDispose(): Promise<void> {
     getLogger().info("Force disposing global embedding provider");
     await instance.dispose();
     instance = null;
-    referenceCount = 0;
   }
-}
-
-/**
- * Get current reference count (for debugging/monitoring)
- */
-export function embeddingProviderGetReferenceCount(): number {
-  return referenceCount;
 }
 
 /**

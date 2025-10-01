@@ -130,14 +130,6 @@ export interface TokenAllocation {
   episodic_memory: number; // 10% of budget
 }
 
-// === MECMF Section 2.5.3: Vector Search Integration ===
-
-export interface EnhancedVectorSearch {
-  generateEmbedding(text: string): Promise<VectorEmbedding>;
-  findSimilarMemories(query: VectorEmbedding, threshold: number): Promise<MemoryEntry[]>;
-  hybridSearch(textQuery: string, vectorQuery: VectorEmbedding): Promise<MemoryEntry[]>;
-}
-
 export interface AtlasEmbeddingConfig {
   model: "sentence-transformers/all-MiniLM-L6-v2"; // Production model from /embeddings/
   backend: "onnxruntime-node" | "wasm";
@@ -208,7 +200,6 @@ export interface ResourceManagement {
 
 export interface MECMFEmbeddingProvider {
   generateEmbedding(text: string): Promise<number[]>;
-  generateEmbeddingBatch(texts: string[]): Promise<number[][]>;
   getDimension(): number;
   getModelInfo(): string;
   isReady(): boolean;

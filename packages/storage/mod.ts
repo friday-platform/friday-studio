@@ -8,32 +8,17 @@
  * - Various storage adapter implementations
  * - Memory persistence utilities
  * - Vector search storage adapters
- * - Knowledge graph storage adapters
  */
 
 export const STORAGE_VERSION = "1.0.0";
 
-// Knowledge graph storage adapters
-export { KnowledgeGraphLocalStorageAdapter } from "./src/knowledge-graph/knowledge-graph-local.ts";
 // Memory storage adapters
 export { CoALALocalFileStorageAdapter } from "./src/memory/coala-local.ts";
 export { FileWriteCoordinator } from "./src/memory/file-write-coordinator.ts";
 export { InMemoryStorageAdapter } from "./src/memory/in-memory.ts";
 // Core storage interfaces and types
-export type {
-  ICoALAMemoryStorageAdapter,
-  IKnowledgeGraphStorageAdapter,
-  KnowledgeEntity,
-  KnowledgeFact,
-  KnowledgeGraphQuery,
-  KnowledgeRelationship,
-} from "./src/types/core.ts";
+export type { ICoALAMemoryStorageAdapter } from "./src/types/core.ts";
 
-// Export enums as values (not types)
-export {
-  KnowledgeEntityType,
-  KnowledgeRelationType,
-} from "./src/types/core.ts";
 // Vector search interfaces
 export type {
   IEmbeddingProvider,

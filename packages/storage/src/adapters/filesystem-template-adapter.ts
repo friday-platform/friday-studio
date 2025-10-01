@@ -16,6 +16,8 @@ export class FilesystemTemplateAdapter implements TemplateStorageAdapter {
     this.templatesPath = resolve(templatesPath);
   }
 
+  // This is required in the interface, but we don't need to await in this implementation
+  // deno-lint-ignore require-await
   async listTemplates(): Promise<TemplateInfo[]> {
     // Since starters package was removed, return empty array
     // Templates can be added in the future if needed

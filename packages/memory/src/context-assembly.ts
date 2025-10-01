@@ -504,7 +504,7 @@ export class ContextAssemblyService {
     text = text.replace(/\s+/g, " ").trim();
 
     if (maxLength && text.length > maxLength) {
-      text = text.substring(0, maxLength - 3) + "...";
+      text = `${text.substring(0, maxLength - 3)}...`;
     }
 
     return text;

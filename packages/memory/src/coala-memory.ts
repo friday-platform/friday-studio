@@ -102,7 +102,6 @@ export class CoALAMemoryManager implements ITempestMemoryManager, CoALACognitive
   private scope: IMemoryScope;
   private cognitiveLoopInterval: number = 300000; // 5 minutes
   private loopTimer?: number;
-  // private knowledgeGraph?: KnowledgeGraphManager;
   private vectorSearch?: IVectorSearchStorageAdapter;
   private embeddingProvider?: MECMFEmbeddingProvider;
   private vectorSearchConfig: VectorSearchConfig | null = null;
@@ -146,31 +145,15 @@ export class CoALAMemoryManager implements ITempestMemoryManager, CoALACognitive
     for (const type of COALA_MEMORY_TYPES) {
       this.memoriesByType.set(type, new Map());
     }
-
-    // In test environments, skip all background operations and timers
-    const isTestEnvironment = Deno.env.get("DENO_TESTING") === "true";
-
-    if (!isTestEnvironment) {
-      // Initialize knowledge graph for semantic memory enhancement
-      this.initializeKnowledgeGraph();
-
-      // Only load from storage if not using in-memory adapter
-      if (this.store.constructor.name !== "InMemoryStorageAdapter") {
-        // Start loading asynchronously but make it available for awaiting
-        this.loadingPromise = this.loadFromStorage().then(async () => {
-          this.isLoaded = true;
-          // Initialize vector search after loading is complete
-          await this.initializeVectorSearch(options?.vectorSearchConfig);
-        });
-      } else {
-        this.isLoaded = true;
-      }
-
-      if (enableCognitiveLoop) {
-        this.startCognitiveLoop();
-      }
-    } else {
+    // Start loading asynchronously but make it available for awaiting
+    this.loadingPromise = this.loadFromStorage().then(async () => {
       this.isLoaded = true;
+      // Initialize vector search after loading is complete
+      await this.initializeVectorSearch(options?.vectorSearchConfig);
+    });
+
+    if (enableCognitiveLoop) {
+      this.startCognitiveLoop();
     }
   }
 
@@ -712,19 +695,6 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
     }
 
     return { lastUpdated: new Date().toISOString(), memoryTypes: this.getMemoryTypeStatistics() };
-  }
-
-  // Initialize knowledge graph for semantic memory enhancement
-  private initializeKnowledgeGraph(): void {
-    try {
-      // Skip knowledge graph initialization for in-memory storage
-      // to avoid file system access in tests
-      if (this.store.constructor.name === "InMemoryStorageAdapter") {
-        return;
-      }
-    } catch (error) {
-      logger.warn("Failed to initialize knowledge graph for semantic memory", { error: { error } });
-    }
   }
 
   // === STREAMING MEMORY METHODS ===
@@ -1530,7 +1500,7 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
     text = text.replace(/\s+/g, " ").trim();
 
     if (maxLength && text.length > maxLength) {
-      text = text.substring(0, maxLength - 3) + "...";
+      text = `${text.substring(0, maxLength - 3)}...`;
     }
 
     return text;

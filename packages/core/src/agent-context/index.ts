@@ -292,7 +292,7 @@ async function enrichPromptWithMemories(
       : null;
     const sanitizedMemories = memoryResults.memories.map((m) => ({
       ...m,
-      content: stripSourceAttributionTags(m.content),
+      content: stripSourceAttributionTags(JSON.stringify(m.content)),
     }));
 
     const enrichedPrompt = buildMemoryEnhancedPrompt(
@@ -335,12 +335,12 @@ async function enrichPromptWithMemories(
  * Store previous agent results as WORKING memory items
  * This prevents context growth in long-running sessions
  */
-async function storePreviousResultsAsWorkingMemory(
+function storePreviousResultsAsWorkingMemory(
   sessionMemory: CoALAMemoryManager,
   previousResults: Array<{ agentId: string; task: string; input: unknown; output: unknown }>,
   sessionId: string,
   logger: Logger,
-): Promise<void> {
+): void {
   try {
     for (const result of previousResults) {
       // Store the actual output as the primary content for the next agent
@@ -409,7 +409,10 @@ async function getMostRecentWorkingMemory(
     if (workingMemories.memories.length > 0) {
       const recent = workingMemories.memories[0];
       if (recent) {
-        return { content: recent.content, timestamp: recent.timestamp || new Date() };
+        return {
+          content: JSON.stringify(recent.content),
+          timestamp: recent.timestamp || new Date(),
+        };
       }
     }
 

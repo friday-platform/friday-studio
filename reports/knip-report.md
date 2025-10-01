@@ -1,4 +1,4 @@
-No Svelte config file found in /Users/ericskram/code/tempest/atlas-env/worktrees/feature/anthropic-proxy-support - using SvelteKit's default configuration without an adapter.
+No Svelte config file found in /Users/ericskram/code/tempest/atlas-env/worktrees/vector-search-improvements - using SvelteKit's default configuration without an adapter.
 # Knip report
 
 ## Unused files (10)

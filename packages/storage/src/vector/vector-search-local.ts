@@ -8,6 +8,7 @@
 import { getAtlasHome } from "@atlas/utils/paths.server";
 import { ensureDir } from "@std/fs";
 import { join } from "@std/path";
+import { z } from "zod";
 import type {
   IVectorSearchStorageAdapter,
   VectorEmbedding,
@@ -15,14 +16,11 @@ import type {
   VectorSearchQuery,
   VectorSearchResult,
 } from "../types/vector-search.ts";
-
-interface StoredEmbedding extends VectorEmbedding {
-  // Additional storage-specific fields can be added here
-}
+import { VectorEmbeddingSchema } from "../types/vector-search.ts";
 
 export class VectorSearchLocalStorageAdapter implements IVectorSearchStorageAdapter {
   private storagePath: string;
-  private embeddings: Map<string, StoredEmbedding> = new Map();
+  private embeddings: Map<string, VectorEmbedding> = new Map();
   private embeddingsByType: Map<string, Set<string>> = new Map();
   private indexFile: string;
   private statsFile: string;
@@ -36,7 +34,7 @@ export class VectorSearchLocalStorageAdapter implements IVectorSearchStorageAdap
     }
     this.indexFile = join(this.storagePath, "embeddings.json");
     this.statsFile = join(this.storagePath, "stats.json");
-    this.loadFromStorageSync();
+    this.loadFromStorage();
   }
 
   async upsertEmbeddings(embeddings: VectorEmbedding[]): Promise<void> {
@@ -49,7 +47,7 @@ export class VectorSearchLocalStorageAdapter implements IVectorSearchStorageAdap
       if (!this.embeddingsByType.has(memoryType)) {
         this.embeddingsByType.set(memoryType, new Set());
       }
-      this.embeddingsByType.get(memoryType).add(embedding.id);
+      this.embeddingsByType.get(memoryType)?.add(embedding.id);
     }
 
     await this.saveToStorage();
@@ -159,18 +157,18 @@ export class VectorSearchLocalStorageAdapter implements IVectorSearchStorageAdap
     });
   }
 
-  private filterEmbeddings(query: VectorSearchQuery): StoredEmbedding[] {
+  private filterEmbeddings(query: VectorSearchQuery): VectorEmbedding[] {
     let candidates = Array.from(this.embeddings.values());
 
     // Filter by memory types
     if (query.memoryTypes && query.memoryTypes.length > 0) {
-      candidates = candidates.filter((e) => query.memoryTypes.includes(e.metadata.memoryType));
+      candidates = candidates.filter((e) => query.memoryTypes?.includes(e.metadata.memoryType));
     }
 
     // Filter by tags
     if (query.tags && query.tags.length > 0) {
       candidates = candidates.filter((e) =>
-        query.tags.some((tag) => e.metadata.tags.includes(tag)),
+        query.tags?.some((tag) => e.metadata.tags.includes(tag)),
       );
     }
 
@@ -182,69 +180,30 @@ export class VectorSearchLocalStorageAdapter implements IVectorSearchStorageAdap
     return candidates;
   }
 
-  private cosineSimilarity(a: number[], b: number[]): number {
-    if (a.length !== b.length) {
+  // implementation from https://alexop.dev/posts/how-to-implement-a-cosine-similarity-function-in-typescript-for-vector-comparison/
+  private cosineSimilarity(vecA: number[], vecB: number[]): number {
+    if (vecA.length !== vecB.length) {
       throw new Error("Vectors must have the same dimension");
     }
 
-    let dotProduct = 0;
-    let normA = 0;
-    let normB = 0;
+    // biome-ignore lint/style/noNonNullAssertion: vecB is guaranteed to have the same length as vecA
+    const dotProduct = vecA.reduce((sum, a, i) => sum + a * vecB[i]!, 0);
+    const magnitudeA = Math.hypot(...vecA);
+    const magnitudeB = Math.hypot(...vecB);
 
-    for (let i = 0; i < a.length; i++) {
-      dotProduct += a[i] * b[i];
-      normA += a[i] * a[i];
-      normB += b[i] * b[i];
-    }
-
-    normA = Math.sqrt(normA);
-    normB = Math.sqrt(normB);
-
-    if (normA === 0 || normB === 0) {
+    if (magnitudeA === 0 || magnitudeB === 0) {
       return 0;
     }
 
-    return dotProduct / (normA * normB);
-  }
-
-  private loadFromStorageSync(): void {
-    try {
-      const content = Deno.readTextFileSync(this.indexFile);
-      if (content.trim()) {
-        const data = JSON.parse(content);
-
-        // Rebuild indexes
-        this.embeddings.clear();
-        this.embeddingsByType.clear();
-
-        for (const embedding of data) {
-          // Convert timestamp strings back to Date objects
-          embedding.metadata.timestamp = new Date(embedding.metadata.timestamp);
-
-          this.embeddings.set(embedding.id, embedding);
-
-          const memoryType = embedding.metadata.memoryType;
-          if (!this.embeddingsByType.has(memoryType)) {
-            this.embeddingsByType.set(memoryType, new Set());
-          }
-          this.embeddingsByType.get(memoryType).add(embedding.id);
-        }
-      }
-    } catch (error) {
-      if (!(error instanceof Deno.errors.NotFound)) {
-        console.warn(
-          `Failed to load vector index: ${error instanceof Error ? error.message : String(error)}`,
-        );
-      }
-      // File doesn't exist or is corrupted, start with empty index
-    }
+    return dotProduct / (magnitudeA * magnitudeB);
   }
 
   private async loadFromStorage(): Promise<void> {
     try {
       const content = await Deno.readTextFile(this.indexFile);
       if (content.trim()) {
-        const data = JSON.parse(content);
+        const vectorArraySchema = z.array(VectorEmbeddingSchema);
+        const data = vectorArraySchema.parse(JSON.parse(content));
 
         // Rebuild indexes
         this.embeddings.clear();
@@ -260,7 +219,7 @@ export class VectorSearchLocalStorageAdapter implements IVectorSearchStorageAdap
           if (!this.embeddingsByType.has(memoryType)) {
             this.embeddingsByType.set(memoryType, new Set());
           }
-          this.embeddingsByType.get(memoryType).add(embedding.id);
+          this.embeddingsByType.get(memoryType)?.add(embedding.id);
         }
       }
     } catch (error) {

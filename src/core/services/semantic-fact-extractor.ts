@@ -150,7 +150,7 @@ export class SemanticFactExtractor {
 
   private truncate(text: string, max: number): string {
     if (text.length <= max) return text;
-    return text.slice(0, max - 20) + "\n[TRUNCATED]";
+    return `${text.slice(0, max - 20)}\n[TRUNCATED]`;
   }
 
   private deduplicateFacts(facts: SemanticFact[]): SemanticFact[] {
@@ -194,12 +194,12 @@ export class SemanticFactExtractor {
 
   private cleanString(value: string): string {
     const trimmed = value.trim();
-    return trimmed.length > 400 ? trimmed.slice(0, 380) + "…" : trimmed;
+    return trimmed.length > 400 ? `${trimmed.slice(0, 380)}…` : trimmed;
   }
 
   private cleanEvidence(value: string): string {
     const cleaned = value.replace(/\s+/g, " ").trim();
-    return cleaned.length > 300 ? cleaned.slice(0, 280) + "…" : cleaned;
+    return cleaned.length > 300 ? `${cleaned.slice(0, 280)}…` : cleaned;
   }
 
   private sanitizeQualifiers(

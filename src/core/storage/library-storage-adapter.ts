@@ -10,11 +10,11 @@
  * while maintaining complete storage backend independence.
  */
 
+import { logger } from "@atlas/logger";
+import { stringifyError } from "@atlas/utils";
 import { ensureDir } from "@std/fs";
 import { dirname, join } from "@std/path";
 import { throwWithCause } from "../../../packages/core/src/utils/error-helpers.ts";
-import { logger } from "@atlas/logger";
-import { stringifyError } from "@atlas/utils";
 import type {
   LibraryItem,
   LibrarySearchQuery,
@@ -649,7 +649,7 @@ export class LibraryStorageAdapter {
       filteredItems = filteredItems.filter(
         (item) =>
           item.name.toLowerCase().includes(searchTerm) ||
-          (item.description && item.description.toLowerCase().includes(searchTerm)),
+          item.description?.toLowerCase().includes(searchTerm),
       );
     }
 

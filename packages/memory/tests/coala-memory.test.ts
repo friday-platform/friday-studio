@@ -2,9 +2,16 @@ import { InMemoryStorageAdapter } from "@atlas/storage";
 import { expect } from "@std/expect";
 import { AtlasScope } from "../../../src/core/scope.ts";
 import { CoALAMemoryManager, type IMemoryScope } from "../src/coala-memory.ts";
+import {
+  embeddingProviderForceDispose,
+  embeddingProviderGetInstance,
+} from "../src/global-embedding-provider.ts";
 
 // Set testing environment to prevent logger file operations
 Deno.env.set("DENO_TESTING", "true");
+
+// Initialize global embedding provider before tests to avoid message port leak detection
+await embeddingProviderGetInstance();
 
 // Helper to create memory manager with immediate commits for tests
 function createTestMemoryManager(
@@ -36,8 +43,11 @@ Deno.test("CoALAMemoryManager - basic memory operations", async () => {
 
   expect(retrieved).toBe("test-value");
 
-  // Cleanup
+  // Cleanup - wait for any pending operations
+  await memory.ensureLoaded();
+  await scope.memory.ensureLoaded();
   await memory.dispose();
+  await scope.memory.dispose();
 });
 
 Deno.test("CoALAMemoryManager - memory with metadata", async () => {
@@ -56,8 +66,11 @@ Deno.test("CoALAMemoryManager - memory with metadata", async () => {
   const retrieved = memory.recall("test-key");
   expect(retrieved).toBe("test-value");
 
-  // Cleanup
+  // Cleanup - wait for any pending operations
+  await memory.ensureLoaded();
+  await scope.memory.ensureLoaded();
   await memory.dispose();
+  await scope.memory.dispose();
 });
 
 Deno.test("CoALAMemoryManager - memory queries", async () => {
@@ -86,8 +99,11 @@ Deno.test("CoALAMemoryManager - memory queries", async () => {
 
   expect(memories).toHaveLength(2);
 
-  // Cleanup
+  // Cleanup - wait for any pending operations
+  await memory.ensureLoaded();
+  await scope.memory.ensureLoaded();
   await memory.dispose();
+  await scope.memory.dispose();
 });
 
 Deno.test("CoALAMemoryManager - memory by type", async () => {
@@ -120,8 +136,11 @@ Deno.test("CoALAMemoryManager - memory by type", async () => {
   expect(episodicMemories[0]?.content).toBe("episodic value");
   expect(semanticMemories[0]?.content).toBe("semantic value");
 
-  // Cleanup
+  // Cleanup - wait for any pending operations
+  await memory.ensureLoaded();
+  await scope.memory.ensureLoaded();
   await memory.dispose();
+  await scope.memory.dispose();
 });
 
 Deno.test("CoALAMemoryManager - forgetting memories", async () => {
@@ -148,8 +167,11 @@ Deno.test("CoALAMemoryManager - forgetting memories", async () => {
   retrieved = memory.recall("forget-me");
   expect(retrieved).toBeUndefined();
 
-  // Cleanup
+  // Cleanup - wait for any pending operations
+  await memory.ensureLoaded();
+  await scope.memory.ensureLoaded();
   await memory.dispose();
+  await scope.memory.dispose();
 });
 
 Deno.test("CoALAMemoryManager - memory consolidation", async () => {
@@ -170,8 +192,11 @@ Deno.test("CoALAMemoryManager - memory consolidation", async () => {
   // Consolidate should not throw
   expect(() => memory.consolidate()).not.toThrow();
 
-  // Cleanup
+  // Cleanup - wait for any pending operations
+  await memory.ensureLoaded();
+  await scope.memory.ensureLoaded();
   await memory.dispose();
+  await scope.memory.dispose();
 });
 
 Deno.test("CoALAMemoryManager - memory pruning", async () => {
@@ -198,8 +223,11 @@ Deno.test("CoALAMemoryManager - memory pruning", async () => {
   // Prune should not throw
   expect(() => memory.prune()).not.toThrow();
 
-  // Cleanup
+  // Cleanup - wait for any pending operations
+  await memory.ensureLoaded();
+  await scope.memory.ensureLoaded();
   await memory.dispose();
+  await scope.memory.dispose();
 });
 
 Deno.test("CoALAMemoryManager - memory adaptation", async () => {
@@ -219,8 +247,11 @@ Deno.test("CoALAMemoryManager - memory adaptation", async () => {
   const feedback = { memoryId: "adapt-me", relevanceAdjustment: 0.9 };
   expect(() => memory.adapt(feedback)).not.toThrow();
 
-  // Cleanup
+  // Cleanup - wait for any pending operations
+  await memory.ensureLoaded();
+  await scope.memory.ensureLoaded();
   await memory.dispose();
+  await scope.memory.dispose();
 });
 
 Deno.test("CoALAMemoryManager - memory disposal", async () => {
@@ -236,8 +267,12 @@ Deno.test("CoALAMemoryManager - memory disposal", async () => {
     decayRate: 0.1,
   });
 
+  // Cleanup - wait for any pending operations
+  await memory.ensureLoaded();
+  await scope.memory.ensureLoaded();
   // Dispose should not throw
   await expect(memory.dispose()).resolves.not.toThrow();
+  await scope.memory.dispose();
 });
 
 Deno.test("CoALAMemoryManager - memory serialization", async () => {
@@ -262,6 +297,14 @@ Deno.test("CoALAMemoryManager - memory serialization", async () => {
 
   expect(retrieved).toEqual(complexData);
 
-  // Cleanup
+  // Cleanup - wait for any pending operations
+  await memory.ensureLoaded();
+  await scope.memory.ensureLoaded();
   await memory.dispose();
+  await scope.memory.dispose();
+});
+
+// Cleanup global resources after all tests
+Deno.test("Cleanup - dispose global embedding provider", async () => {
+  await embeddingProviderForceDispose();
 });

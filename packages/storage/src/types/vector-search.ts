@@ -5,36 +5,47 @@
  * EPISODIC, SEMANTIC, and PROCEDURAL memory types.
  */
 
-export interface VectorEmbedding {
-  id: string;
-  vector: number[];
-  metadata: {
-    memoryId: string;
-    memoryType: string;
-    content: string;
-    timestamp: Date;
-    sourceScope: string;
-    tags: string[];
-  };
-}
+import { z } from "zod";
 
-export interface VectorSearchQuery {
-  query: string;
-  vector?: number[];
-  memoryTypes?: string[];
-  tags?: string[];
-  sourceScope?: string;
-  minSimilarity?: number;
-  limit?: number;
-  includeMetadata?: boolean;
-}
+// Zod schemas for type-safe storage and loading from disk
+const VectorEmbeddingMetadataSchema = z.object({
+  memoryId: z.string(),
+  memoryType: z.string(),
+  content: z.string(),
+  timestamp: z.coerce.date(),
+  sourceScope: z.string(),
+  tags: z.array(z.string()),
+});
 
-export interface VectorSearchResult {
-  id: string;
-  memoryId: string;
-  similarity: number;
-  metadata: VectorEmbedding["metadata"];
-}
+export const VectorEmbeddingSchema = z.object({
+  id: z.string(),
+  vector: z.array(z.number()),
+  metadata: VectorEmbeddingMetadataSchema,
+});
+
+export type VectorEmbedding = z.infer<typeof VectorEmbeddingSchema>;
+
+const VectorSearchQuerySchema = z.object({
+  query: z.string(),
+  vector: z.array(z.number()).optional(),
+  memoryTypes: z.array(z.string()).optional(),
+  tags: z.array(z.string()).optional(),
+  sourceScope: z.string().optional(),
+  minSimilarity: z.number().optional(),
+  limit: z.number().optional(),
+  includeMetadata: z.boolean().optional(),
+});
+
+export type VectorSearchQuery = z.infer<typeof VectorSearchQuerySchema>;
+
+const VectorSearchResultSchema = z.object({
+  id: z.string(),
+  memoryId: z.string(),
+  similarity: z.number(),
+  metadata: VectorEmbeddingMetadataSchema,
+});
+
+export type VectorSearchResult = z.infer<typeof VectorSearchResultSchema>;
 
 /**
  * Interface for vector search index storage
@@ -76,12 +87,14 @@ export interface IVectorSearchStorageAdapter {
   getStats(): Promise<VectorIndexStats>;
 }
 
-export interface VectorIndexStats {
-  totalEmbeddings: number;
-  embeddingsByType: Record<string, number>;
-  indexSize: number;
-  lastUpdated: Date;
-}
+const VectorIndexStatsSchema = z.object({
+  totalEmbeddings: z.number(),
+  embeddingsByType: z.record(z.string(), z.number()),
+  indexSize: z.number(),
+  lastUpdated: z.coerce.date(),
+});
+
+export type VectorIndexStats = z.infer<typeof VectorIndexStatsSchema>;
 
 /**
  * Interface for generating embeddings from text
@@ -91,11 +104,6 @@ export interface IEmbeddingProvider {
    * Generate embeddings for text content
    */
   generateEmbedding(text: string): Promise<number[]>;
-
-  /**
-   * Generate embeddings for multiple texts
-   */
-  generateEmbeddingBatch(texts: string[]): Promise<number[][]>;
 
   /**
    * Get the embedding dimension

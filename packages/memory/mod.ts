@@ -27,9 +27,7 @@ export {
 export {
   embeddingProviderForceDispose,
   embeddingProviderGetInstance,
-  embeddingProviderGetReferenceCount,
   embeddingProviderIsInitialized,
-  embeddingProviderReleaseReference,
 } from "./src/global-embedding-provider.ts";
 // Main MECMF exports with factory functions
 export * from "./src/mecmf.ts";
@@ -38,7 +36,6 @@ export * from "./src/mecmf.ts";
 export type {
   ConversationContext,
   EnhancedPrompt,
-  EnhancedVectorSearch,
   MECMFEmbeddingProvider,
   MECMFMemoryManager,
   MemoryClassifier,

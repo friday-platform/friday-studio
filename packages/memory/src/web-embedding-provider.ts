@@ -85,7 +85,7 @@ export class BERTTokenizer {
     return text.split(/\s+/).filter((token) => token.length > 0);
   }
 
-  private wordpieceTokenize(word: string): string[] {
+  private wordPieceTokenize(word: string): string[] {
     if (word.length > 200) {
       return [this.unkToken];
     }
@@ -127,7 +127,7 @@ export class BERTTokenizer {
 
     const words = this.basicTokenize(text);
     for (const word of words) {
-      const wordTokens = this.wordpieceTokenize(word);
+      const wordTokens = this.wordPieceTokenize(word);
       tokens.push(...wordTokens);
     }
 
@@ -193,20 +193,6 @@ export class WebEmbeddingProvider implements MECMFEmbeddingProvider {
 
     const result = await this.calculateEmbedding(text, this.session, this.tokenizer);
     return result.embedding;
-  }
-
-  async generateEmbeddingBatch(texts: string[]): Promise<number[][]> {
-    const embeddings: number[][] = [];
-
-    // Process in batches for optimal performance
-    for (let i = 0; i < texts.length; i += this.config.batchSize) {
-      const batch = texts.slice(i, i + this.config.batchSize);
-      const batchPromises = batch.map((text) => this.generateEmbedding(text));
-      const batchResults = await Promise.all(batchPromises);
-      embeddings.push(...batchResults);
-    }
-
-    return embeddings;
   }
 
   getDimension(): number {

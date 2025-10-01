@@ -20,6 +20,8 @@ export class InMemoryStorageAdapter implements ICoALAMemoryStorageAdapter {
   };
 
   // Enhanced CoALA-specific methods
+  // This is required in the interface, but we don't need to await in this implementation
+  // deno-lint-ignore require-await
   async commitByType(memoryType: CoALAMemoryType, data: CoALAMemoryEntry[]): Promise<void> {
     if (!this.dataByType[memoryType]) {
       this.dataByType[memoryType] = [];
@@ -27,10 +29,14 @@ export class InMemoryStorageAdapter implements ICoALAMemoryStorageAdapter {
     this.dataByType[memoryType].push(...data);
   }
 
+  // This is required in the interface, but we don't need to await in this implementation
+  // deno-lint-ignore require-await
   async loadByType(memoryType: CoALAMemoryType): Promise<CoALAMemoryEntry[]> {
     return this.dataByType[memoryType] || [];
   }
 
+  // This is required in the interface, but we don't need to await in this implementation
+  // deno-lint-ignore require-await
   async commitAll(dataByType: Record<CoALAMemoryType, CoALAMemoryEntry[]>): Promise<void> {
     // Deep clone to avoid reference issues
     this.dataByType = { working: [], episodic: [], semantic: [], procedural: [], contextual: [] };
@@ -42,6 +48,8 @@ export class InMemoryStorageAdapter implements ICoALAMemoryStorageAdapter {
     }
   }
 
+  // This is required in the interface, but we don't need to await in this implementation
+  // deno-lint-ignore require-await
   async loadAll(): Promise<Record<CoALAMemoryType, CoALAMemoryEntry[]>> {
     // Return a deep clone to avoid external modifications
     const result: Record<CoALAMemoryType, CoALAMemoryEntry[]> = {

@@ -16,10 +16,7 @@ import type { IMemoryScope } from "./coala-memory.ts";
 // Import existing Atlas components
 import { type CoALAMemoryEntry, CoALAMemoryManager } from "./coala-memory.ts";
 import { MECMFErrorHandler } from "./error-handling.ts";
-import {
-  embeddingProviderGetInstance,
-  embeddingProviderReleaseReference,
-} from "./global-embedding-provider.ts";
+import { embeddingProviderGetInstance } from "./global-embedding-provider.ts";
 import { createConversationContext } from "./mecmf.ts";
 import type {
   MECMFEmbeddingProvider,
@@ -640,7 +637,6 @@ export class AtlasMECMFMemoryManager implements MECMFMemoryManager {
       if (this.embeddingProvider) {
         // Release reference to singleton instead of disposing it
         // The singleton manages its own lifecycle across all sessions
-        embeddingProviderReleaseReference();
         this.embeddingProvider = null;
       }
       await this.coalaManager.dispose();

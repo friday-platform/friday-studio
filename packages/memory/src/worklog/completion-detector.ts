@@ -104,7 +104,7 @@ export class TaskCompletionDetector {
   /**
    * Detects completion patterns in a single memory entry.
    */
-  private async detectCompletions(memory: MemoryEntry, sessionId: string): Promise<WorklogEntry[]> {
+  private detectCompletions(memory: MemoryEntry, sessionId: string): WorklogEntry[] {
     const completions: WorklogEntry[] = [];
     const content = this.getMemoryContentAsString(memory);
 
