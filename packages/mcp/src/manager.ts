@@ -774,11 +774,11 @@ export class MCPManager {
 
           return true;
         } catch (error) {
-          logger.warn(`MCP server connection verification failed: ${serverId}`, {
+          logger.fatal(`Failed to connect to MCP server: ${serverId}`, {
             operation: "mcp_connection_verification",
             serverId,
             transportType,
-            error: error instanceof Error ? error.message : String(error),
+            error,
             success: false,
           });
 

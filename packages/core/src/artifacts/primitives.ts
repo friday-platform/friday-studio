@@ -9,8 +9,8 @@ export const CalendarScheduleSchema = z.object({
   events: z.array(
     z.object({
       eventName: z.string().describe("Name of the event"),
-      startDate: z.coerce.date().describe("Start date of the event (ISO 8601 accepted)"),
-      endDate: z.coerce.date().describe("End date of the event (ISO 8601 accepted)"),
+      startDate: z.iso.datetime().describe("Start date of the event (ISO 8601 accepted)"),
+      endDate: z.iso.datetime().describe("End date of the event (ISO 8601 accepted)"),
       link: z.string().optional().describe("Direct url to the event, if available"),
     }),
   ),
