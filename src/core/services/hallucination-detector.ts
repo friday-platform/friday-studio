@@ -5,10 +5,10 @@
  * with retry logic and configurable supervision levels.
  */
 
-import { createAnthropic } from "@ai-sdk/anthropic";
 import type { AgentResult } from "@atlas/agent-sdk";
 import type { Logger } from "@atlas/logger";
 import { generateObject, type LanguageModel } from "ai";
+import { anthropic } from "@atlas/core";
 import { z } from "zod";
 import { SupervisionLevel } from "../supervision-levels.ts";
 
@@ -204,7 +204,6 @@ interface LLMValidationResult {
 
 interface HallucinationDetectorConfig {
   logger?: Logger;
-  anthropicApiKey?: string;
   retryConfig?: { enabled: boolean; maxRetries: number; baseDelayMs: number };
 }
 
@@ -227,9 +226,6 @@ export class HallucinationDetector {
 
   constructor(config: HallucinationDetectorConfig) {
     this.config = config;
-    const anthropic = createAnthropic({
-      apiKey: config.anthropicApiKey || Deno.env.get("ANTHROPIC_API_KEY"),
-    });
     this.llmProvider = (model: string) => anthropic(model);
   }
 

@@ -1,4 +1,4 @@
-import { anthropic } from "@ai-sdk/anthropic";
+import { anthropic } from "@atlas/core";
 import type { Logger } from "@atlas/logger";
 import { generateObject, tool } from "ai";
 import { z } from "zod";

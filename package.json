@@ -12,7 +12,6 @@
     "generate:package-json": "deno run --allow-read --allow-write scripts/generate-package-json.ts"
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "^2.0.22",
     "@atlas/agent-sdk": "workspace:*",
     "@atlas/atlasd": "workspace:*",
     "@atlas/client": "workspace:*",

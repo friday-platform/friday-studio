@@ -1,6 +1,6 @@
-import { createAnthropic } from "@ai-sdk/anthropic";
 import type { Logger } from "@atlas/logger";
 import { generateObject, type LanguageModel } from "ai";
+import { anthropic } from "@atlas/core";
 import { z } from "zod";
 
 export type FactSourceType = "session_summary" | "agent_input" | "agent_output" | "payload";
@@ -76,7 +76,6 @@ export class SemanticFactExtractor {
     if (config.llmProvider) {
       this.llmProvider = config.llmProvider;
     } else {
-      const anthropic = createAnthropic({ apiKey: Deno.env.get("ANTHROPIC_API_KEY") });
       this.llmProvider = (model: string) => anthropic(model);
     }
   }

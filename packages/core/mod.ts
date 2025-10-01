@@ -30,7 +30,7 @@ export * from "./src/constants/supervisor-status.ts";
 export * from "./src/credential-fetcher.ts";
 // Export all LLM provider types and interfaces
 export type { LLMOptions, LLMResponse } from "./src/llm-provider.ts";
-export { LLMProvider } from "./src/llm-provider.ts";
+export { anthropic, createAnthropicWithOptions, LLMProvider } from "./src/llm-provider.ts";
 export type {
   MCPDiscoveryRequest,
   MCPServerMetadata,

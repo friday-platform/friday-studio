@@ -2,7 +2,7 @@
  * Create Tavily search and extract tools that auto-store results.
  */
 
-import { anthropic } from "@ai-sdk/anthropic";
+import { anthropic } from "@atlas/core";
 import type { Logger } from "@atlas/logger";
 import { getTodaysDate } from "@atlas/utils";
 import type { TavilyClient, TavilyExtractResponse, TavilySearchResponse } from "@tavily/core";

@@ -1,4 +1,4 @@
-import { anthropic } from "@ai-sdk/anthropic";
+import { anthropic } from "@atlas/core";
 import {
   FileWatchSignalConfigSchema,
   HTTPSignalConfigSchema,

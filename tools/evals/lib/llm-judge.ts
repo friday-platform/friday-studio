@@ -1,4 +1,4 @@
-import { anthropic } from "@ai-sdk/anthropic";
+import { anthropic } from "@atlas/core";
 import { generateObject } from "ai";
 import { z } from "zod";
 

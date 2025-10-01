@@ -11,7 +11,6 @@
  * - Handles memory operations for fact extraction and summaries
  */
 
-import { createAnthropic } from "@ai-sdk/anthropic";
 import type { AgentResult, StreamEmitter } from "@atlas/agent-sdk";
 import type { JobSpecification } from "@atlas/config";
 import type {
@@ -26,6 +25,7 @@ import type {
   SessionUIMessageChunk,
 } from "@atlas/core";
 import {
+  anthropic,
   HTTPStreamEmitter,
   ReasoningResultStatus,
   type ReasoningResultStatusType,
@@ -114,7 +114,7 @@ export class SessionSupervisorActor implements BaseActor {
   private cachedPlan?: ExecutionPlan;
   private agentOrchestrator?: IAgentOrchestrator; // Agent orchestrator for MCP-based execution
   private artifacts: IWorkspaceArtifact[] = []; // Store session artifacts
-  private llmProvider = createAnthropic({ apiKey: Deno.env.get("ANTHROPIC_API_KEY") });
+  private llmProvider = anthropic;
 
   // Session evaluation services
   private hallucinationDetector: HallucinationDetector;

@@ -1,4 +1,4 @@
-No Svelte config file found in /Users/lcf/code/github.com/tempestteam/atlas - using SvelteKit's default configuration without an adapter.
+No Svelte config file found in /Users/ericskram/code/tempest/atlas-env/worktrees/feature/anthropic-proxy-support - using SvelteKit's default configuration without an adapter.
 # Knip report
 
 ## Unused files (10)
@@ -18,17 +18,31 @@ No Svelte config file found in /Users/lcf/code/github.com/tempestteam/atlas - us
 
 | Name                     | Location                          | Severity |
 | :----------------------- | :-------------------------------- | :------- |
-| @atlas/workspace         | packages/system/package.json:16:6 | error    |
+| @atlas/workspace         | packages/system/package.json:15:6 | error    |
 | cookie                   | apps/web-client/package.json:32:6 | error    |
 | @opentelemetry/api       | packages/utils/package.json:7:6   | error    |
-| @hono/standard-validator | package.json:31:6                 | error    |
-| @biomejs/biome           | package.json:30:6                 | error    |
+| @hono/standard-validator | package.json:30:6                 | error    |
+| @biomejs/biome           | package.json:29:6                 | error    |
 
-## Unresolved imports (1)
+## Unused devDependencies (1)
+
+| Name             | Location                                | Severity |
+| :--------------- | :-------------------------------------- | :------- |
+| electron-builder | tools/atlas-installer/package.json:37:6 | warn     |
+
+## Unlisted binaries (2)
+
+| Name             | Location                           | Severity |
+| :--------------- | :--------------------------------- | :------- |
+| electron-builder | tools/atlas-installer/package.json | error    |
+| electron         | tools/atlas-installer/package.json | error    |
+
+## Unresolved imports (2)
 
 | Name                                     | Location                                                   | Severity |
 | :--------------------------------------- | :--------------------------------------------------------- | :------- |
 | ../../../../../src/core/library/types.ts | apps/web-client/src/routes/(app)/library/+page.svelte:4:34 | error    |
+| $lib/build-info                          | apps/web-client/src/routes/about/+page.svelte:4:28         | error    |
 
 ## Unused exports (9)
 
@@ -43,13 +57,6 @@ No Svelte config file found in /Users/lcf/code/github.com/tempestteam/atlas - us
 | workspaceConfigResponseSchema           | apps/atlasd/routes/workspaces/schemas.ts:66:14  | error    |
 | updateWorkspaceSchema                   | apps/atlasd/routes/workspaces/schemas.ts:94:14  | error    |
 | workspaceIdParamSchema                  | apps/atlasd/routes/workspaces/schemas.ts:9:14   | error    |
-
-## Unused exported types (2)
-
-| Name           | Location                                    | Severity |
-| :------------- | :------------------------------------------ | :------- |
-| SessionsRoutes | apps/atlasd/routes/sessions/index.ts:118:13 | error    |
-| HealthRoutes   | apps/atlasd/routes/health.ts:15:13          | error    |
 
 ## Unused exported enum members (2)
 

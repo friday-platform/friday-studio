@@ -8,12 +8,12 @@
  * - Task tracking with todos
  */
 import process from "node:process";
-import { createAnthropic } from "@ai-sdk/anthropic";
 import type { AtlasTools, AtlasUIMessage } from "@atlas/agent-sdk";
 import { createAgent } from "@atlas/agent-sdk";
 import { pipeUIMessageStream } from "@atlas/agent-sdk/vercel-helpers";
 import { client, parseResult } from "@atlas/client/v2";
 import { createErrorCause, getErrorDisplayMessage, parseAPICallError } from "@atlas/core/errors";
+import { anthropic } from "@atlas/core";
 import type { Logger } from "@atlas/logger";
 import { Client } from "@modelcontextprotocol/sdk/client";
 
@@ -129,7 +129,6 @@ export const conversationAgent = createAgent({
     if (!session.streamId) {
       throw new Error("Stream ID is required");
     }
-    const anthropic = createAnthropic({ apiKey: Deno.env.get("ANTHROPIC_API_KEY") });
 
     /**
      * Connect directly to the Atlas Agent server so that we can invoke agents and

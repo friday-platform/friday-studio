@@ -2,7 +2,7 @@
  * Sub-agent that executes individual research tasks.
  */
 
-import { anthropic } from "@ai-sdk/anthropic";
+import { anthropic } from "@atlas/core";
 import type { AgentTelemetryConfig, AtlasTool } from "@atlas/agent-sdk";
 import type { Logger } from "@atlas/logger";
 import { getTodaysDate } from "@atlas/utils";

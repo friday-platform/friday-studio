@@ -1,4 +1,4 @@
-import { anthropic } from "@ai-sdk/anthropic";
+import { anthropic } from "@atlas/core";
 import type { AtlasAgentConfig } from "@atlas/agent-sdk";
 import { bundledAgents } from "@atlas/bundled-agents";
 import type { LLMAgentConfig } from "@atlas/config";

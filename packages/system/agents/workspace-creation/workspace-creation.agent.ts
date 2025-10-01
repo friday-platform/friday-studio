@@ -1,4 +1,4 @@
-import { anthropic } from "@ai-sdk/anthropic";
+import { anthropic } from "@atlas/core";
 import { createAgent } from "@atlas/agent-sdk";
 import type { WorkspaceConfig } from "@atlas/config";
 import type { Logger } from "@atlas/logger";

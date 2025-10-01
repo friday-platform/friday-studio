@@ -1,4 +1,4 @@
-import { anthropic } from "@ai-sdk/anthropic";
+import { anthropic } from "@atlas/core";
 import { JobSpecificationSchema } from "@atlas/config";
 import type { Logger } from "@atlas/logger";
 import { toKebabCase } from "@std/text";

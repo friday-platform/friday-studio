@@ -3,7 +3,7 @@
  * Each sub-agent searches independently, results are stored for final report.
  */
 
-import { anthropic } from "@ai-sdk/anthropic";
+import { anthropic } from "@atlas/core";
 import { createAgent } from "@atlas/agent-sdk";
 import type { Logger } from "@atlas/logger";
 import { fail, getTodaysDate, type Result, success } from "@atlas/utils";

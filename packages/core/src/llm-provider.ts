@@ -80,10 +80,54 @@ const PROVIDER_ENV_VARS = {
   google: "GOOGLE_GENERATIVE_AI_API_KEY",
 } as const;
 
+/**
+ * Configuration options for creating an Anthropic client
+ */
+export interface AnthropicOptions {
+  /** API key for Anthropic. Defaults to ANTHROPIC_API_KEY env var */
+  apiKey?: string;
+  /** HTTP proxy URL. Defaults to ANTHROPIC_PROXY_URL env var */
+  httpProxy?: string;
+}
+
+/**
+ * Creates an Anthropic client with configurable options
+ * This is exported for use in other parts of the codebase that need direct Anthropic access
+ *
+ * @param options Configuration options for the Anthropic client
+ * @returns Configured Anthropic provider instance
+ */
+export function createAnthropicWithOptions(
+  options: AnthropicOptions = {},
+): ReturnType<typeof createAnthropic> {
+  const apiKey = options.apiKey || Deno.env.get(PROVIDER_ENV_VARS.anthropic);
+  const httpProxy = options.httpProxy || Deno.env.get("ANTHROPIC_PROXY_URL");
+
+  const anthropicOptions: Parameters<typeof createAnthropic>[0] = { apiKey };
+
+  if (httpProxy) {
+    anthropicOptions.fetch = createProxyFetch(httpProxy);
+  }
+
+  return createAnthropic(anthropicOptions);
+}
+
+/** Pre-configured Anthropic instance with proxy support from environment */
+export const anthropic = createAnthropicWithOptions();
+
+function createProxyFetch(proxyUrl: string): typeof fetch {
+  const httpClient = Deno.createHttpClient({ proxy: { url: proxyUrl } });
+  logger.info("Anthropic proxy configured", { proxyUrl });
+
+  return async (url: RequestInfo | URL, options?: RequestInit): Promise<Response> => {
+    return await fetch(url, { ...options, client: httpClient });
+  };
+}
+
 // Create provider registry for centralized provider management
 function createLLMRegistry() {
   return createProviderRegistry({
-    anthropic: createAnthropic({ apiKey: Deno.env.get(PROVIDER_ENV_VARS.anthropic) }),
+    anthropic: createAnthropicWithOptions(),
     openai: createOpenAI({ apiKey: Deno.env.get(PROVIDER_ENV_VARS.openai) }),
     google: createGoogleGenerativeAI({ apiKey: Deno.env.get(PROVIDER_ENV_VARS.google) }),
   });
@@ -541,7 +585,7 @@ export class LLMProvider {
         [config.provider]: (() => {
           switch (config.provider) {
             case "anthropic":
-              return createAnthropic({ apiKey: config.apiKey });
+              return createAnthropicWithOptions({ apiKey: config.apiKey });
             case "openai":
               return createOpenAI({ apiKey: config.apiKey });
             case "google":

@@ -4,7 +4,7 @@
  * Create an object with table headers and rows from a prompt using the Vercel `tool` function
  */
 
-import { anthropic } from "@ai-sdk/anthropic";
+import { anthropic } from "@atlas/core";
 import { generateObject, tool } from "ai";
 import { z } from "zod";
 

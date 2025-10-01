@@ -4,7 +4,6 @@
   "type": "module",
   "exports": { "./workspaces": "./workspaces/mod.ts", "./agents": "./agents/mod.ts" },
   "dependencies": {
-    "@ai-sdk/anthropic": "^2.0.22",
     "@atlas/agent-sdk": "workspace:*",
     "@atlas/bundled-agents": "workspace:*",
     "@atlas/config": "workspace:*",

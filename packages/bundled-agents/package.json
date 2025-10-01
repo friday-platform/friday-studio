@@ -5,7 +5,6 @@
   "main": "./src/index.ts",
   "exports": { ".": "./src/index.ts" },
   "dependencies": {
-    "@ai-sdk/anthropic": "^2.0.22",
     "@atlas/agent-sdk": "workspace:*",
     "@atlas/logger": "workspace:*",
     "@tavily/core": "^0.5.12",

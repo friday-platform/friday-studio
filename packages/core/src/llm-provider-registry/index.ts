@@ -5,10 +5,10 @@
  * Anthropic, OpenAI, and Google AI providers. Loads API keys from environment.
  */
 
-import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createProviderRegistry, type ProviderRegistryProvider } from "ai";
+import { createAnthropicWithOptions } from "../llm-provider.ts";
 
 /**
  * Create the AI SDK provider registry with all supported providers
@@ -21,7 +21,7 @@ function createProviders(env: Record<string, string> = {}): ProviderRegistryProv
   const getEnvVar = (key: string) => env[key] || Deno.env.get(key);
 
   return createProviderRegistry({
-    anthropic: createAnthropic({ apiKey: getEnvVar("ANTHROPIC_API_KEY") }),
+    anthropic: createAnthropicWithOptions({ apiKey: getEnvVar("ANTHROPIC_API_KEY") }),
     openai: createOpenAI({ apiKey: getEnvVar("OPENAI_API_KEY") }),
     google: createGoogleGenerativeAI({ apiKey: getEnvVar("GOOGLE_GENERATIVE_AI_API_KEY") }),
   });
