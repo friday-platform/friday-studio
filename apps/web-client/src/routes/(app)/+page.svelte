@@ -82,8 +82,8 @@ const hasMessages = $derived(
 				<div class="first-message">
 					<h2>Welcome</h2>
 					<p>
-						I’m Atlas, your automation partner. What can I help you accomplish today? Provide the
-						details, and I’ll help you make it happen.
+						Welcome to Atlas. I can help turn your ideas into action. <br />What would you like to
+						work on today?
 					</p>
 				</div>
 
@@ -414,7 +414,6 @@ const hasMessages = $derived(
 			font-size: var(--font-size-3);
 			font-weight: var(--font-weight-4);
 			opacity: 0.8;
-			text-wrap: balance;
 		}
 	}
 
