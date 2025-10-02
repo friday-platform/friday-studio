@@ -6,6 +6,7 @@
     "./types": "./src/types/workspace.ts",
     "./artifacts": "./src/artifacts/mod.ts",
     "./artifacts/server": "./src/artifacts/storage.ts",
-    "./errors": "./src/errors.ts"
+    "./errors": "./src/errors.ts",
+    "./library": "./src/library/types.ts"
   }
 }
