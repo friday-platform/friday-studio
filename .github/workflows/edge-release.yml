@@ -21,7 +21,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Generate edge version
+      - name: Generate version
         id: version
         run: |
           # Generate edge version: edge-YYYYMMDD-HHMMSS-gitsha
@@ -30,7 +30,7 @@ jobs:
           git_sha=$(git rev-parse --short HEAD)
           version="edge-${date_part}-${time_part}-${git_sha}"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
-          echo "Edge version: ${version}"
+          echo "Version: ${version}"
 
   # ==================== BUILD JOBS ====================
   build-binary-linux:
@@ -189,8 +189,8 @@ jobs:
 
           # Build AMD64 packages
           mkdir -p build
-          cp artifacts/binary-linux-amd64/atlas build/atlas
-          cp artifacts/diagnostics-linux-amd64/atlas-diagnostics build/atlas-diagnostics
+          cp ./artifacts/binary-linux-amd64/atlas build/atlas
+          cp ./artifacts/diagnostics-linux-amd64/atlas-diagnostics build/atlas-diagnostics
           chmod +x build/atlas
           chmod +x build/atlas-diagnostics
 
@@ -201,8 +201,8 @@ jobs:
       - name: Create platform bundle
         run: |
           mkdir -p dist
-          cp artifacts/binary-linux-amd64/atlas dist/atlas
-          cp artifacts/diagnostics-linux-amd64/atlas-diagnostics dist/atlas-diagnostics
+          cp ./artifacts/binary-linux-amd64/atlas dist/atlas
+          cp ./artifacts/diagnostics-linux-amd64/atlas-diagnostics dist/atlas-diagnostics
           ./scripts/create-platform-bundle.sh "${{ needs.version.outputs.version }}" "linux" "amd64"
         shell: bash
 
@@ -211,11 +211,11 @@ jobs:
         with:
           name: linux-packages
           path: |
-            dist/atlas_*.deb
-            dist/atlas-*.rpm
-            dist/atlas-bundle-*.tar.gz
-            artifacts/binary-linux-amd64/atlas_*.tar.gz
-            artifacts/binary-linux-amd64/atlas_*.sha256
+            ./dist/atlas_*.deb
+            ./dist/atlas-*.rpm
+            ./dist/atlas-bundle-*.tar.gz
+            ./artifacts/binary-linux-amd64/atlas_*.tar.gz
+            ./artifacts/binary-linux-amd64/atlas_*.sha256
           retention-days: 1
 
   package-darwin-amd64:
@@ -233,11 +233,11 @@ jobs:
       - name: Prepare macOS AMD64 files
         run: |
           mkdir -p dist
-          cp artifacts/binary-darwin-amd64/atlas dist/atlas
-          cp artifacts/diagnostics-darwin-amd64/atlas-diagnostics dist/atlas-diagnostics
+          cp ./artifacts/binary-darwin-amd64/atlas dist/atlas
+          cp ./artifacts/diagnostics-darwin-amd64/atlas-diagnostics dist/atlas-diagnostics
           # Find and copy the actual .app directory
-          if ls artifacts/web-app-darwin-amd64/*.app 1>/dev/null 2>&1; then
-            cp -r artifacts/web-app-darwin-amd64/*.app "dist/Atlas Web Client.app"
+          if ls ./artifacts/web-app-darwin-amd64/*.app 1>/dev/null 2>&1; then
+            cp -r ./artifacts/web-app-darwin-amd64/*.app "dist/Atlas Web Client.app"
             # Fix executable permissions on Tauri binary inside the app
             chmod +x "dist/Atlas Web Client.app/Contents/MacOS/tauri-app"
           fi
@@ -296,11 +296,11 @@ jobs:
         with:
           name: darwin-amd64-packages
           path: |
-            dist/atlas-bundle-*.tar.gz
-            dist/atlas_*.zip
-            dist/atlas_*.sha256
-            artifacts/binary-darwin-amd64/atlas_*.tar.gz
-            artifacts/binary-darwin-amd64/atlas_*.sha256
+            ./dist/atlas-bundle-*.tar.gz
+            ./dist/atlas_*.zip
+            ./dist/atlas_*.sha256
+            ./artifacts/binary-darwin-amd64/atlas_*.tar.gz
+            ./artifacts/binary-darwin-amd64/atlas_*.sha256
           retention-days: 1
 
   package-darwin-arm64:
@@ -318,11 +318,11 @@ jobs:
       - name: Prepare macOS ARM64 files
         run: |
           mkdir -p dist
-          cp artifacts/binary-darwin-arm64/atlas dist/atlas
-          cp artifacts/diagnostics-darwin-arm64/atlas-diagnostics dist/atlas-diagnostics
+          cp ./artifacts/binary-darwin-arm64/atlas dist/atlas
+          cp ./artifacts/diagnostics-darwin-arm64/atlas-diagnostics dist/atlas-diagnostics
           # Find and copy the actual .app directory
-          if ls artifacts/web-app-darwin-arm64/*.app 1>/dev/null 2>&1; then
-            cp -r artifacts/web-app-darwin-arm64/*.app "dist/Atlas Web Client.app"
+          if ls ./artifacts/web-app-darwin-arm64/*.app 1>/dev/null 2>&1; then
+            cp -r ./artifacts/web-app-darwin-arm64/*.app "dist/Atlas Web Client.app"
             # Fix executable permissions on Tauri binary inside the app
             chmod +x "dist/Atlas Web Client.app/Contents/MacOS/tauri-app"
           fi
@@ -381,11 +381,11 @@ jobs:
         with:
           name: darwin-arm64-packages
           path: |
-            dist/atlas-bundle-*.tar.gz
-            dist/atlas_*.zip
-            dist/atlas_*.sha256
-            artifacts/binary-darwin-arm64/atlas_*.tar.gz
-            artifacts/binary-darwin-arm64/atlas_*.sha256
+            ./dist/atlas-bundle-*.tar.gz
+            ./dist/atlas_*.zip
+            ./dist/atlas_*.sha256
+            ./artifacts/binary-darwin-arm64/atlas_*.tar.gz
+            ./artifacts/binary-darwin-arm64/atlas_*.sha256
           retention-days: 1
 
   package-windows:
@@ -403,11 +403,11 @@ jobs:
       - name: Prepare Windows files
         run: |
           mkdir -p dist
-          cp artifacts/binary-windows-amd64/atlas.exe dist/atlas.exe
-          cp artifacts/diagnostics-windows-amd64/atlas-diagnostics.exe dist/atlas-diagnostics.exe
+          cp ./artifacts/binary-windows-amd64/atlas.exe dist/atlas.exe
+          cp ./artifacts/diagnostics-windows-amd64/atlas-diagnostics.exe dist/atlas-diagnostics.exe
           # Find and copy the web app installer
-          if (Test-Path artifacts/web-app-windows-amd64/*.exe) {
-            Copy-Item artifacts/web-app-windows-amd64/*.exe dist/
+          if (Test-Path ./artifacts/web-app-windows-amd64/*.exe) {
+            Copy-Item ./artifacts/web-app-windows-amd64/*.exe dist/
           }
         shell: pwsh
 
@@ -435,12 +435,11 @@ jobs:
         with:
           name: windows-packages
           path: |
-            dist/atlas-bundle-*.zip
-            dist/atlas_*.exe
-            dist/atlas_*.sha256
-            dist/Atlas*.msi
-            artifacts/binary-windows-amd64/atlas_*.zip
-            artifacts/binary-windows-amd64/atlas_*.sha256
+            ./dist/atlas-bundle-*.zip
+            ./dist/atlas_*.exe
+            ./dist/atlas_*.sha256
+            ./artifacts/binary-windows-amd64/atlas_*.zip
+            ./artifacts/binary-windows-amd64/atlas_*.sha256
           retention-days: 1
 
   # ==================== RELEASE & UPLOAD JOBS ====================

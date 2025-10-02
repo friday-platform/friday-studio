@@ -23,6 +23,11 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
       - name: Get version
         id: version
         run: |
@@ -34,8 +39,8 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "Version: $version"
 
-  # ==================== BINARY COMPONENT BUILDS ====================
-  build-binary-linux-amd64:
+  # ==================== BUILD JOBS ====================
+  build-binary-linux:
     needs: version
     uses: ./.github/workflows/build-component.yml
     with:
@@ -68,7 +73,7 @@ jobs:
       runner: macos-15-xlarge
     secrets: inherit
 
-  build-binary-windows-amd64:
+  build-binary-windows:
     needs: version
     uses: ./.github/workflows/build-component.yml
     with:
@@ -79,8 +84,7 @@ jobs:
       runner: windows-latest-8-cores
     secrets: inherit
 
-  # ==================== DIAGNOSTICS COMPONENT BUILDS ====================
-  build-diagnostics-linux-amd64:
+  build-diagnostics-linux:
     needs: version
     uses: ./.github/workflows/build-component.yml
     with:
@@ -113,7 +117,7 @@ jobs:
       runner: macos-15-xlarge
     secrets: inherit
 
-  build-diagnostics-windows-amd64:
+  build-diagnostics-windows:
     needs: version
     uses: ./.github/workflows/build-component.yml
     with:
@@ -124,7 +128,6 @@ jobs:
       runner: windows-latest-8-cores
     secrets: inherit
 
-  # ==================== WEB APP COMPONENT BUILDS ====================
   build-web-app-darwin-amd64:
     needs: version
     uses: ./.github/workflows/build-component.yml
@@ -147,7 +150,7 @@ jobs:
       runner: macos-15-xlarge
     secrets: inherit
 
-  build-web-app-windows-amd64:
+  build-web-app-windows:
     needs: version
     uses: ./.github/workflows/build-component.yml
     with:
@@ -158,25 +161,13 @@ jobs:
       runner: windows-latest-8-cores
     secrets: inherit
 
-  # ==================== PACKAGING AND INSTALLER JOBS ====================
+  # ==================== PACKAGING JOBS ====================
   package-linux:
-    needs: [build-binary-linux-amd64, build-diagnostics-linux-amd64]
+    needs: [version, build-binary-linux, build-diagnostics-linux]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v5
-
-      - name: Get version
-        id: version
-        run: |
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            version="${{ inputs.tag }}"
-          else
-            version="${{ github.ref_name }}"
-          fi
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "Version: $version"
-        shell: bash
 
       - name: Download artifacts
         uses: actions/download-artifact@v5
@@ -194,21 +185,21 @@ jobs:
 
           # Build AMD64 packages
           mkdir -p build
-          cp artifacts/binary-linux-amd64/atlas build/atlas
-          cp artifacts/diagnostics-linux-amd64/atlas-diagnostics build/atlas-diagnostics
+          cp ./artifacts/binary-linux-amd64/atlas build/atlas
+          cp ./artifacts/diagnostics-linux-amd64/atlas-diagnostics build/atlas-diagnostics
           chmod +x build/atlas
           chmod +x build/atlas-diagnostics
 
-          ARCH="amd64" VERSION="${{ steps.version.outputs.version }}" ./scripts/build-deb.sh
-          ARCH="amd64" VERSION="${{ steps.version.outputs.version }}" ./scripts/build-rpm.sh
+          ARCH="amd64" VERSION="${{ needs.version.outputs.version }}" ./scripts/build-deb.sh
+          ARCH="amd64" VERSION="${{ needs.version.outputs.version }}" ./scripts/build-rpm.sh
         shell: bash
 
-      - name: Create platform bundles
+      - name: Create platform bundle
         run: |
           mkdir -p dist
-          cp artifacts/binary-linux-amd64/atlas dist/atlas
-          cp artifacts/diagnostics-linux-amd64/atlas-diagnostics dist/atlas-diagnostics
-          ./scripts/create-platform-bundle.sh "${{ steps.version.outputs.version }}" "linux" "amd64"
+          cp ./artifacts/binary-linux-amd64/atlas dist/atlas
+          cp ./artifacts/diagnostics-linux-amd64/atlas-diagnostics dist/atlas-diagnostics
+          ./scripts/create-platform-bundle.sh "${{ needs.version.outputs.version }}" "linux" "amd64"
         shell: bash
 
       - name: Upload final artifacts
@@ -221,26 +212,13 @@ jobs:
             ./dist/atlas-bundle-*.tar.gz
             ./artifacts/binary-linux-amd64/atlas_*.tar.gz
             ./artifacts/binary-linux-amd64/atlas_*.sha256
-          retention-days: 5
 
   package-darwin-amd64:
-    needs: [build-binary-darwin-amd64, build-diagnostics-darwin-amd64, build-web-app-darwin-amd64]
+    needs: [version, build-binary-darwin-amd64, build-diagnostics-darwin-amd64, build-web-app-darwin-amd64]
     runs-on: macos-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v5
-
-      - name: Get version
-        id: version
-        run: |
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            version="${{ inputs.tag }}"
-          else
-            version="${{ github.ref_name }}"
-          fi
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "Version: $version"
-        shell: bash
 
       - name: Download artifacts
         uses: actions/download-artifact@v5
@@ -250,11 +228,11 @@ jobs:
       - name: Prepare macOS AMD64 files
         run: |
           mkdir -p dist
-          cp artifacts/binary-darwin-amd64/atlas dist/atlas
-          cp artifacts/diagnostics-darwin-amd64/atlas-diagnostics dist/atlas-diagnostics
+          cp ./artifacts/binary-darwin-amd64/atlas dist/atlas
+          cp ./artifacts/diagnostics-darwin-amd64/atlas-diagnostics dist/atlas-diagnostics
           # Find and copy the actual .app directory
-          if ls artifacts/web-app-darwin-amd64/*.app 1>/dev/null 2>&1; then
-            cp -r artifacts/web-app-darwin-amd64/*.app "dist/Atlas Web Client.app"
+          if ls ./artifacts/web-app-darwin-amd64/*.app 1>/dev/null 2>&1; then
+            cp -r ./artifacts/web-app-darwin-amd64/*.app "dist/Atlas Web Client.app"
             # Fix executable permissions on Tauri binary inside the app
             chmod +x "dist/Atlas Web Client.app/Contents/MacOS/tauri-app"
           fi
@@ -285,7 +263,7 @@ jobs:
       - name: Create macOS AMD64 installer
         uses: ./.github/actions/create-installers
         with:
-          version: ${{ steps.version.outputs.version }}
+          version: ${{ needs.version.outputs.version }}
           platform: darwin
           arch: amd64
           channel: release
@@ -305,7 +283,7 @@ jobs:
 
       - name: Create platform bundle
         run: |
-          ./scripts/create-platform-bundle.sh "${{ steps.version.outputs.version }}" "darwin" "amd64"
+          ./scripts/create-platform-bundle.sh "${{ needs.version.outputs.version }}" "darwin" "amd64"
         shell: bash
 
       - name: Upload final artifacts
@@ -318,26 +296,13 @@ jobs:
             ./dist/atlas_*.sha256
             ./artifacts/binary-darwin-amd64/atlas_*.tar.gz
             ./artifacts/binary-darwin-amd64/atlas_*.sha256
-          retention-days: 5
 
   package-darwin-arm64:
-    needs: [build-binary-darwin-arm64, build-diagnostics-darwin-arm64, build-web-app-darwin-arm64]
+    needs: [version, build-binary-darwin-arm64, build-diagnostics-darwin-arm64, build-web-app-darwin-arm64]
     runs-on: macos-15-xlarge
     steps:
       - name: Checkout
         uses: actions/checkout@v5
-
-      - name: Get version
-        id: version
-        run: |
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            version="${{ inputs.tag }}"
-          else
-            version="${{ github.ref_name }}"
-          fi
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "Version: $version"
-        shell: bash
 
       - name: Download artifacts
         uses: actions/download-artifact@v5
@@ -347,11 +312,11 @@ jobs:
       - name: Prepare macOS ARM64 files
         run: |
           mkdir -p dist
-          cp artifacts/binary-darwin-arm64/atlas dist/atlas
-          cp artifacts/diagnostics-darwin-arm64/atlas-diagnostics dist/atlas-diagnostics
+          cp ./artifacts/binary-darwin-arm64/atlas dist/atlas
+          cp ./artifacts/diagnostics-darwin-arm64/atlas-diagnostics dist/atlas-diagnostics
           # Find and copy the actual .app directory
-          if ls artifacts/web-app-darwin-arm64/*.app 1>/dev/null 2>&1; then
-            cp -r artifacts/web-app-darwin-arm64/*.app "dist/Atlas Web Client.app"
+          if ls ./artifacts/web-app-darwin-arm64/*.app 1>/dev/null 2>&1; then
+            cp -r ./artifacts/web-app-darwin-arm64/*.app "dist/Atlas Web Client.app"
             # Fix executable permissions on Tauri binary inside the app
             chmod +x "dist/Atlas Web Client.app/Contents/MacOS/tauri-app"
           fi
@@ -382,7 +347,7 @@ jobs:
       - name: Create macOS ARM64 installer
         uses: ./.github/actions/create-installers
         with:
-          version: ${{ steps.version.outputs.version }}
+          version: ${{ needs.version.outputs.version }}
           platform: darwin
           arch: arm64
           channel: release
@@ -402,7 +367,7 @@ jobs:
 
       - name: Create platform bundle
         run: |
-          ./scripts/create-platform-bundle.sh "${{ steps.version.outputs.version }}" "darwin" "arm64"
+          ./scripts/create-platform-bundle.sh "${{ needs.version.outputs.version }}" "darwin" "arm64"
         shell: bash
 
       - name: Upload final artifacts
@@ -415,26 +380,13 @@ jobs:
             ./dist/atlas_*.sha256
             ./artifacts/binary-darwin-arm64/atlas_*.tar.gz
             ./artifacts/binary-darwin-arm64/atlas_*.sha256
-          retention-days: 5
 
   package-windows:
-    needs: [build-binary-windows-amd64, build-diagnostics-windows-amd64, build-web-app-windows-amd64]
+    needs: [version, build-binary-windows, build-diagnostics-windows, build-web-app-windows]
     runs-on: windows-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v5
-
-      - name: Get version
-        id: version
-        run: |
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            version="${{ inputs.tag }}"
-          else
-            version="${{ github.ref_name }}"
-          fi
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "Version: $version"
-        shell: bash
 
       - name: Download artifacts
         uses: actions/download-artifact@v5
@@ -444,18 +396,18 @@ jobs:
       - name: Prepare Windows files
         run: |
           mkdir -p dist
-          cp artifacts/binary-windows-amd64/atlas.exe dist/atlas.exe
-          cp artifacts/diagnostics-windows-amd64/atlas-diagnostics.exe dist/atlas-diagnostics.exe
+          cp ./artifacts/binary-windows-amd64/atlas.exe dist/atlas.exe
+          cp ./artifacts/diagnostics-windows-amd64/atlas-diagnostics.exe dist/atlas-diagnostics.exe
           # Find and copy the web app installer
-          if (Test-Path artifacts/web-app-windows-amd64/*.exe) {
-            Copy-Item artifacts/web-app-windows-amd64/*.exe dist/
+          if (Test-Path ./artifacts/web-app-windows-amd64/*.exe) {
+            Copy-Item ./artifacts/web-app-windows-amd64/*.exe dist/
           }
         shell: pwsh
 
       - name: Create Windows installer
         uses: ./.github/actions/create-installers
         with:
-          version: ${{ steps.version.outputs.version }}
+          version: ${{ needs.version.outputs.version }}
           platform: windows
           arch: amd64
           channel: release
@@ -468,7 +420,7 @@ jobs:
 
       - name: Create platform bundle
         run: |
-          ./scripts/create-platform-bundle.sh "${{ steps.version.outputs.version }}" "windows" "amd64"
+          ./scripts/create-platform-bundle.sh "${{ needs.version.outputs.version }}" "windows" "amd64"
         shell: bash
 
       - name: Upload final artifacts
@@ -479,43 +431,35 @@ jobs:
             ./dist/atlas-bundle-*.zip
             ./dist/atlas_*.exe
             ./dist/atlas_*.sha256
-            ./dist/Atlas*.msi
             ./artifacts/binary-windows-amd64/atlas_*.zip
             ./artifacts/binary-windows-amd64/atlas_*.sha256
-          retention-days: 5
 
+  # ==================== RELEASE & UPLOAD JOBS ====================
   release:
-    needs: [package-linux, package-darwin-amd64, package-darwin-arm64, package-windows]
+    needs: [version, package-linux, package-darwin-amd64, package-darwin-arm64, package-windows]
     runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.version.outputs.version }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
-      - name: Get version
-        id: version
-        run: |
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            version="${{ inputs.tag }}"
-          else
-            version="${{ github.ref_name }}"
-          fi
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "Version: $version"
-
       - name: Download all artifacts
         uses: actions/download-artifact@v5
         with:
           path: ./dist/
 
+      - name: Prepare release artifacts
+        run: |
+          # Move all artifacts to a flat structure for release
+          find ./dist -type f \( -name "*.tar.gz" -o -name "*.zip" -o -name "*.deb" -o -name "*.rpm" -o -name "*.exe" -o -name "*.msi" \) -exec mv {} ./dist/ \; 2>/dev/null || true
+          ls -la ./dist/
+        shell: bash
+
       - name: Generate changelog
-        id: changelog
         run: |
           # Get the previous tag for changelog generation
-          previous_tag=$(git tag --sort=-version:refname | grep -v "${{ steps.version.outputs.version }}" | head -n1)
+          previous_tag=$(git tag --sort=-version:refname | grep -v "${{ needs.version.outputs.version }}" | head -n1)
 
           if [ -z "$previous_tag" ]; then
             # First release
@@ -529,24 +473,24 @@ jobs:
             git log --oneline --no-merges -20 --pretty=format:"- %s" >> changelog.md
           else
             # Generate changelog since previous tag
-            echo "## What's New in ${{ steps.version.outputs.version }}" > changelog.md
+            echo "## What's New in ${{ needs.version.outputs.version }}" > changelog.md
             echo "" >> changelog.md
 
             # Categorize commits
             echo "###  Features" >> changelog.md
-            git log --oneline --no-merges "${previous_tag}..${{ steps.version.outputs.version }}" --grep="feat" --pretty=format:"- %s" >> changelog.md || echo "- No new features" >> changelog.md
+            git log --oneline --no-merges "${previous_tag}..${{ needs.version.outputs.version }}" --grep="feat" --pretty=format:"- %s" >> changelog.md || echo "- No new features" >> changelog.md
             echo "" >> changelog.md
 
             echo "###  Bug Fixes" >> changelog.md
-            git log --oneline --no-merges "${previous_tag}..${{ steps.version.outputs.version }}" --grep="fix" --pretty=format:"- %s" >> changelog.md || echo "- No bug fixes" >> changelog.md
+            git log --oneline --no-merges "${previous_tag}..${{ needs.version.outputs.version }}" --grep="fix" --pretty=format:"- %s" >> changelog.md || echo "- No bug fixes" >> changelog.md
             echo "" >> changelog.md
 
             echo "###  Documentation" >> changelog.md
-            git log --oneline --no-merges "${previous_tag}..${{ steps.version.outputs.version }}" --grep="docs" --pretty=format:"- %s" >> changelog.md || echo "- No documentation changes" >> changelog.md
+            git log --oneline --no-merges "${previous_tag}..${{ needs.version.outputs.version }}" --grep="docs" --pretty=format:"- %s" >> changelog.md || echo "- No documentation changes" >> changelog.md
             echo "" >> changelog.md
 
             echo "###  Other Changes" >> changelog.md
-            git log --oneline --no-merges "${previous_tag}..${{ steps.version.outputs.version }}" --invert-grep --grep="feat" --grep="fix" --grep="docs" --pretty=format:"- %s" >> changelog.md || echo "- No other changes" >> changelog.md
+            git log --oneline --no-merges "${previous_tag}..${{ needs.version.outputs.version }}" --invert-grep --grep="feat" --grep="fix" --grep="docs" --pretty=format:"- %s" >> changelog.md || echo "- No other changes" >> changelog.md
           fi
 
           {
@@ -613,19 +557,11 @@ jobs:
             echo ""
           } >> changelog.md
 
-      - name: Prepare release artifacts
-        run: |
-          # Move all artifacts to a flat structure for release
-          find ./dist -type f \( -name "*.tar.gz" -o -name "*.zip" -o -name "*.deb" -o -name "*.rpm" -o -name "*.exe" -o -name "*.msi" \) -exec mv {} ./dist/ \; 2>/dev/null || true
-          # Remove any duplicate files (keep originals)
-          ls -la ./dist/
-        shell: bash
-
-      - name: Create release
+      - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.version.outputs.version }}
-          name: "Atlas (${{ steps.version.outputs.version }})"
+          tag_name: ${{ needs.version.outputs.version }}
+          name: "Atlas (${{ needs.version.outputs.version }})"
           body_path: changelog.md
           draft: true
           prerelease: false
@@ -636,15 +572,13 @@ jobs:
             ./dist/atlas_*.tar.gz
             ./dist/atlas_*.zip
             ./dist/atlas_*.exe
-            ./dist/Atlas_*.exe
-            ./dist/Atlas*.msi
             ./dist/atlas_*.deb
             ./dist/atlas-*.rpm
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   upload-sandbox:
-    needs: [package-linux, package-darwin-amd64, package-darwin-arm64, package-windows, release]
+    needs: [version, package-linux, package-darwin-amd64, package-darwin-arm64, package-windows]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -654,10 +588,10 @@ jobs:
         uses: ./.github/actions/gcs-upload-sandbox
         with:
           bucket-prefix: ""
-          version: ${{ needs.release.outputs.version }}
+          version: ${{ needs.version.outputs.version }}
 
   upload-production:
-    needs: [package-linux, package-darwin-amd64, package-darwin-arm64, package-windows, release]
+    needs: [version, package-linux, package-darwin-amd64, package-darwin-arm64, package-windows]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -667,4 +601,4 @@ jobs:
         uses: ./.github/actions/gcs-upload-production
         with:
           bucket-prefix: ""
-          version: ${{ needs.release.outputs.version }}
+          version: ${{ needs.version.outputs.version }}
