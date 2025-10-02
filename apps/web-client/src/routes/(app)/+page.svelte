@@ -5,6 +5,7 @@ import { fade } from "svelte/transition";
 import { getAppContext, getFileType } from "$lib/app-context.svelte";
 import { CustomIcons } from "$lib/components/icons/custom";
 import { IconSmall } from "$lib/components/icons/small";
+import Summary from "$lib/components/primitives/summary.svelte";
 import Textarea from "$lib/components/textarea.svelte";
 import DisplayArtifact from "$lib/modules/artifacts/display.svelte";
 import { getClientContext } from "$lib/modules/client/context.svelte";

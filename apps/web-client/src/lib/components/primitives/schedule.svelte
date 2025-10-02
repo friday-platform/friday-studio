@@ -35,15 +35,15 @@ const EventsSchema = CalendarScheduleSchema.shape.events;
 
 let eventsContainer: HTMLDivElement | null = $state(null);
 
-let parsedEvents: Map<number, Event> = $derived.by(() => {
-  const eventsMap = new Map<number, Event>();
+let parsedEvents: Map<string, Event> = $derived.by(() => {
+  const eventsMap = new Map<string, Event>();
   events
     ?.filter((event) => EventsSchema.safeParse(event))
-    .forEach((event, index) => {
+    .forEach((event) => {
       const start = new Date(event.startDate);
       const end = new Date(event.endDate);
 
-      eventsMap.set(index, {
+      eventsMap.set(event.id, {
         name: event.eventName,
         link: event?.link,
         date: start,
@@ -86,7 +86,7 @@ const largestColumn = $derived.by(() => {
 });
 
 // we don't have unique ids, so we created a map to ensure the order is always accurate
-function hasConflictingEvents(id: number, start: number, end: number) {
+function hasConflictingEvents(id: string, start: number, end: number) {
   const otherEvents = new Map(parsedEvents);
   otherEvents.delete(id);
 
@@ -96,6 +96,8 @@ function hasConflictingEvents(id: number, start: number, end: number) {
       (event.hourStart < end && event.hourStart >= start),
   );
 }
+
+$inspect({ events, parsedEvents });
 </script>
 
 {#snippet hour(time: number)}
@@ -113,7 +115,7 @@ function hasConflictingEvents(id: number, start: number, end: number) {
 	</div>
 {/snippet}
 
-{#snippet event(item: [number, Event])}
+{#snippet event(item: [string, Event])}
 	{@const conflicts = hasConflictingEvents(item[0], item[1].hourStart, item[1].hourEnd)}
 
 	<article
@@ -190,7 +192,7 @@ function hasConflictingEvents(id: number, start: number, end: number) {
 <style>
 	.component {
 		/* Component level css variables */
-		--border-color: color-mix(in oklch, var(--color-purple), white 90%);
+		--border-color: color-mix(in oklch, var(--color-purple), var(--color-surface-1) 90%);
 		max-inline-size: var(--size-96);
 	}
 
@@ -319,6 +321,7 @@ function hasConflictingEvents(id: number, start: number, end: number) {
 
 	.event {
 		grid-row: var(--grid-row-start) / var(--grid-row-end);
+		overflow: hidden;
 		padding: var(--size-0-5);
 
 		div,
@@ -356,6 +359,10 @@ function hasConflictingEvents(id: number, start: number, end: number) {
 			line-height: var(--font-lineheight-0);
 			text-overflow: ellipsis;
 			white-space: nowrap;
+
+			@media (prefers-color-scheme: dark) {
+				color: color-mix(in oklch, var(--color-purple), var(--color-text) 65%);
+			}
 		}
 
 		time {

@@ -1,6 +1,6 @@
+import { ArtifactSchema } from "@atlas/core/artifacts";
 import type { StepResult, TypedToolCall, TypedToolResult } from "ai";
 import type { AtlasTools, ToolCall, ToolResult } from "../types.ts";
-import { ArtifactSchema } from "@atlas/core/artifacts";
 
 /**
  * Collect tool usage from AI SDK responses, preferring per-step data when available.

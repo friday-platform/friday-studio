@@ -1,5 +1,4 @@
 <script lang="ts">
-import { IconSmall } from "$lib/components/icons/small";
 import { markdownToHTML } from "./markdown-utils";
 import type { OutputEntry } from "./types";
 

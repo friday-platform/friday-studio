@@ -3,6 +3,7 @@ import { client, parseResult } from "@atlas/client/v2";
 import { ArtifactDataSchema } from "@atlas/core/artifacts";
 import { z } from "zod";
 import Schedule from "$lib/components/primitives/schedule.svelte";
+import Summary from "$lib/components/primitives/summary.svelte";
 
 type Props = { artifactId: string };
 
@@ -38,5 +39,9 @@ $effect(() => {
 			source={artifact.data.source}
 			sourceUrl={artifact.data.sourceUrl}
 		/>
+	{:else if artifact.type === 'summary'}
+		<Summary data={artifact.data} />
+	{:else if artifact.type === 'slack-summary'}
+		<Summary data={artifact.data} source="slack" />
 	{/if}
 {/if}

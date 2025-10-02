@@ -1,11 +1,11 @@
 import { env } from "node:process";
-import { anthropic } from "@atlas/core";
 import type { ToolCall, ToolResult } from "@atlas/agent-sdk";
 import { createAgent } from "@atlas/agent-sdk";
 import {
   collectToolUsageFromSteps,
   extractArtifactIdsFromToolResults,
 } from "@atlas/agent-sdk/vercel-helpers";
+import { anthropic } from "@atlas/core";
 import { generateText, stepCountIs } from "ai";
 import { z } from "zod";
 
@@ -87,7 +87,7 @@ export const googleCalendarAgent = createAgent<GoogleCalendarAgentResult>({
       // Progress: starting execution
       stream?.emit({
         type: "data-tool-progress",
-        data: { toolName: "Google Calendar", content: `Executing: ${prompt}` },
+        data: { toolName: "Google Calendar", content: `Fetching...` },
       });
 
       // If no tools are available, do not attempt execution; return a clear message.
@@ -114,11 +114,6 @@ export const googleCalendarAgent = createAgent<GoogleCalendarAgentResult>({
       const { assembledToolResults } = collectToolUsageFromSteps({ steps, toolCalls, toolResults });
 
       const artifactIds = extractArtifactIdsFromToolResults(assembledToolResults);
-
-      stream?.emit({
-        type: "data-tool-progress",
-        data: { toolName: "Google Calendar", content: "Execution complete" },
-      });
 
       return { response: text.trim(), artifactIds };
     } catch (error) {

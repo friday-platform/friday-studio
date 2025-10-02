@@ -1,5 +1,10 @@
 import { z } from "zod";
-import { CalendarScheduleSchema, WorkspacePlanSchema } from "./primitives.ts";
+import {
+  CalendarScheduleSchema,
+  SlackSummaryDataSchema,
+  SummaryDataSchema,
+  WorkspacePlanSchema,
+} from "./primitives.ts";
 
 /** Revision summary for history */
 export interface ArtifactRevisionSummary {
@@ -8,7 +13,6 @@ export interface ArtifactRevisionSummary {
   revisionMessage?: string;
 }
 
-/** Individual artifact type schemas */
 export const WorkspacePlanArtifactSchema = z.object({
   type: z.literal("workspace-plan"),
   version: z.literal(1),
@@ -21,10 +25,24 @@ export const CalendarScheduleArtifactSchema = z.object({
   data: CalendarScheduleSchema,
 });
 
+export const SummaryArtifactSchema = z.object({
+  type: z.literal("summary"),
+  version: z.literal(1),
+  data: SummaryDataSchema,
+});
+
+export const SlackSummaryArtifactSchema = z.object({
+  type: z.literal("slack-summary"),
+  version: z.literal(1),
+  data: SlackSummaryDataSchema,
+});
+
 /** Artifact data validation by type */
 export const ArtifactDataSchema = z.discriminatedUnion("type", [
   WorkspacePlanArtifactSchema,
   CalendarScheduleArtifactSchema,
+  SummaryArtifactSchema,
+  SlackSummaryArtifactSchema,
   // Add future schemas here
 ]);
 
@@ -33,7 +51,12 @@ export type ArtifactType = z.infer<typeof ArtifactDataSchema>["type"];
 export type ArtifactData = z.infer<typeof ArtifactDataSchema>;
 
 /** Schema for valid artifact types - using enum for single type support */
-export const ArtifactTypeSchema = z.enum(["workspace-plan", "calendar-schedule"]);
+export const ArtifactTypeSchema = z.enum([
+  "workspace-plan",
+  "calendar-schedule",
+  "summary",
+  "slack-summary",
+]);
 
 /** Shared request schemas for REST and MCP */
 export const CreateArtifactSchema = z.object({
