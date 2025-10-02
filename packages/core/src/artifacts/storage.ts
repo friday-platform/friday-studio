@@ -1,4 +1,6 @@
 import { fail, type Result, success } from "@atlas/utils";
+import { getAtlasHome } from "@atlas/utils/paths.server";
+import { join } from "@std/path";
 import type { Artifact, ArtifactData, ArtifactRevisionSummary, ArtifactType } from "./model.ts";
 
 type ArtifactKey = ["artifact", string, number];
@@ -19,6 +21,8 @@ const keys = {
   deleted: (id: string): DeletedKey => ["artifact_deleted", id],
 };
 
+const kvPath = join(getAtlasHome(), "storage.db");
+
 /** Create artifact with initial revision 1 */
 async function create(input: {
   type: ArtifactType;
@@ -26,7 +30,7 @@ async function create(input: {
   workspaceId?: string;
   chatId?: string;
 }): Promise<Result<Artifact, string>> {
-  using db = await Deno.openKv();
+  using db = await Deno.openKv(kvPath);
 
   const id = crypto.randomUUID();
   const revision = 1;
@@ -68,7 +72,7 @@ async function update(input: {
   data: ArtifactData;
   revisionMessage?: string;
 }): Promise<Result<Artifact, string>> {
-  using db = await Deno.openKv();
+  using db = await Deno.openKv(kvPath);
 
   const latestRevisionResult = await db.get<number>(keys.latest(input.id));
   if (!latestRevisionResult.value) {
@@ -126,7 +130,7 @@ async function get(input: {
   id: string;
   revision?: number;
 }): Promise<Result<Artifact | null, string>> {
-  using db = await Deno.openKv();
+  using db = await Deno.openKv(kvPath);
 
   const deletedResult = await db.get<Date>(keys.deleted(input.id));
   if (deletedResult.value) {
@@ -151,7 +155,7 @@ async function listByWorkspace(input: {
   workspaceId: string;
   limit?: number;
 }): Promise<Result<Artifact[], string>> {
-  using db = await Deno.openKv();
+  using db = await Deno.openKv(kvPath);
 
   const artifacts: Artifact[] = [];
   const limit = input.limit ?? 100;
@@ -180,7 +184,7 @@ async function listByChat(input: {
   chatId: string;
   limit?: number;
 }): Promise<Result<Artifact[], string>> {
-  using db = await Deno.openKv();
+  using db = await Deno.openKv(kvPath);
 
   const artifacts: Artifact[] = [];
   const limit = input.limit ?? 100;
@@ -208,7 +212,7 @@ async function listByChat(input: {
 async function listRevisions(input: {
   id: string;
 }): Promise<Result<ArtifactRevisionSummary[], string>> {
-  using db = await Deno.openKv();
+  using db = await Deno.openKv(kvPath);
 
   const latestRevisionResult = await db.get<number>(keys.latest(input.id));
   if (!latestRevisionResult.value) {
@@ -232,7 +236,7 @@ async function listRevisions(input: {
 
 /** Soft delete (data preserved) */
 async function deleteArtifact(input: { id: string }): Promise<Result<void, string>> {
-  using db = await Deno.openKv();
+  using db = await Deno.openKv(kvPath);
 
   const latestRevisionResult = await db.get<number>(keys.latest(input.id));
   if (!latestRevisionResult.value) {

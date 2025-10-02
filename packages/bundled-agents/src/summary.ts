@@ -62,6 +62,11 @@ export const summaryAgent = createAgent({
         **Important Formatting Constraints:**
         - Text within code blocks ignores other formatting
         - Prefer blocks structure for rich layouts over plain text
+
+        ## Citations in responses
+        - ALWAYS Preserve and include all citations/links next to the statements they support.
+        - Do not modify or drop links; keep original anchor text and URLs.
+        - When summarizing or paraphrasing, carry forward the original citations.
       `;
 
       // Progress: planning
