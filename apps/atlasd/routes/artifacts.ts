@@ -55,11 +55,11 @@ const artifactsApp = daemonFactory
   .get(
     "/:id",
     zValidator("param", z.object({ id: z.string() })),
-    zValidator("query", GetArtifactQuery),
+    zValidator("query", GetArtifactQuery.optional()),
     async (c) => {
       const { id } = c.req.valid("param");
-      const { revision } = c.req.valid("query");
-      const result = await ArtifactStorage.get({ id, revision });
+      const query = c.req.valid("query");
+      const result = await ArtifactStorage.get({ id, revision: query?.revision });
 
       if (!result.ok) {
         return c.json({ error: result.error }, 500);

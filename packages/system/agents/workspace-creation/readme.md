@@ -1,224 +1,265 @@
-# Workspace Creation Agent
+# Workspace Creation
 
-Converts automation requirements into working Atlas workspace configurations.
-
-## What It Does
-
-Takes natural language automation requests and generates complete workspace configurations with signals (triggers), AI agents, orchestration jobs, and MCP server tool connections.
+Converts workspace plan artifacts into WorkspaceConfig via LLM enrichment. Generates agent implementations, job orchestrations, signal configurations, and MCP server selections.
 
 ## Architecture
 
+### Parallel Enrichment Pipeline
+
+The agent transforms high-level plans into executable configurations using parallel LLM calls:
+
+**Input**: Workspace plan artifact (from workspace-planner agent)
+**Output**: WorkspaceConfig + workspace created on filesystem
+
+**Pipeline**:
+1. Load plan artifact from storage
+2. Enrich all components in parallel:
+   - Signals → signal configs (schedule/http/fs-watch)
+   - Agents → agent configs (bundled/LLM) + MCP domain extraction
+   - Jobs → job specs (sequential/parallel execution)
+3. Generate MCP server configs from collected domains
+4. Construct WorkspaceConfig
+5. Create workspace via API
+
+Parallel enrichment reduces latency from ~15s (sequential) to ~5s (parallel) for typical workspaces.
+
+### Key Files
+
+- `workspace-creation.agent.ts` - Main orchestrator
+- `enrichers/signals.ts` - Signal type classification (Haiku)
+- `enrichers/agents.ts` - Agent implementation selection (Sonnet 4) + archetype mapping
+- `enrichers/jobs.ts` - Job execution specification (Sonnet 4)
+- `enrichers/mcp-servers.ts` - MCP server matching (Haiku)
+- `enrichers/mcp-server-registry.ts` - Vetted MCP server catalog
+- `types.ts` - WorkspaceSummary output schema
+
+## How It Works
+
+### 1. Load Plan Artifact
+
+Fetches workspace plan by artifact ID. Validates type is `workspace-plan`.
+
+```typescript
+const plan: WorkspacePlan = {
+  workspace: { name, purpose },
+  signals: [{ id, name, description }],
+  agents: [{ id, name, description, needs, configuration? }],
+  jobs: [{ id, name, triggerSignalId, steps, behavior }]
+};
 ```
-┌────────────────────────────────────────────────────────────────────────────────┐
-│                            WORKSPACE GENERATION PIPELINE                       │
-├────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                │
-│ ┌────────────┐  ┌────────────┐  ┌────────────┐  ┌────────────┐  ┌────────────┐ │
-│ │   ANALYZE  │→ │   IDENTIFY │→ │  GENERATE  │→ │ ORCHESTRATE│→ │  VALIDATE  │ │
-│ └────────────┘  └────────────┘  └────────────┘  └────────────┘  └────────────┘ │
-│       ↓               ↓               ↓               ↓               ↓        │
-│ Requirements    Workspace ID    Components      Jobs/Links     Export Config   │
-│                                                                                │
-└────────────────────────────────────────────────────────────────────────────────┘
 
-INPUT:       "Monitor GitHub issues and send Slack notifications"
-    ↓
-ANALYZE:     Identify triggers (GitHub webhooks), processing (issue analysis), outputs (Slack)
-    ↓
-IDENTIFY:    Set workspace name/description
-    ↓
-GENERATE:    Create webhook signal, issue-analyzer agent, slack-notifier agent
-    ↓
-ORCHESTRATE: Connect webhook → analyzer → notifier via jobs
-    ↓
-VALIDATE:    Check all references exist, export final config
-    ↓
-OUTPUT:      Complete workspace.yml ready for Atlas daemon
-```
+### 2. Enrich Signals
 
-### Core Pipeline Functions
+**Model**: Haiku 3.5 (fast classification)
 
-**`workspaceCreationAgent()`** - Main agent using Claude Sonnet 4 for orchestration
+Classifies signal type and extracts config parameters:
 
-- Executes 6-step pipeline with parallel tool calls
-- Uses WorkspaceBuilder to accumulate components
-- Creates workspace via Atlas API on completion
+- **schedule**: Cron expression + timezone
+- **http**: Method + path
+- **fs-watch**: Directory/file path
 
-**`WorkspaceBuilder`** - Configuration accumulator
+Example: "Runs every hour" → `{ provider: "schedule", schedule: "0 * * * *", timezone: "UTC" }`
 
-- Builds workspace config incrementally via tools
-- Validates component references and completeness
-- Exports final WorkspaceConfig format
+### 3. Enrich Agents
 
-### Tool Pipeline
+**Model**: Sonnet 4 (requires reasoning for bundled agent matching)
 
-**Identity Tools**
+Two-stage process:
 
-- `setWorkspaceIdentity` - Sets name/description from requirements
+**Stage 1 - Implementation Selection**:
+- Check bundled agents for capability match (prefer bundled)
+- If bundled: auto-configure required env vars with `"auto"` value
+- If no match: select archetype (collector/reader/analyzer/evaluator/reporter/notifier/executor)
+- Generate 3-5 line prompt
 
-**Component Generation**
+**Stage 2 - MCP Domain Collection** (LLM agents only):
+- Extract required MCP domains from agent capabilities
+- Filter out platform domains (email/filesystem/notifications)
+- Bundled agents manage their own MCP connections
 
-- `generateSignals` - Creates schedule/HTTP triggers using Haiku
-- `generateAgents` - Batch generates all agents in a single Haiku call using archetype patterns
-- `generateMCPServers` - Adds tool servers from MCP registry
+Archetype determines model and parameters:
 
-**Orchestration Tools**
+| Archetype | Model | Temp | Max Tokens | Use Case |
+|-----------|-------|------|------------|----------|
+| collector | Haiku | 0.1 | 4000 | API data retrieval |
+| reader | Haiku | 0.1 | 8000 | File content extraction |
+| analyzer | Sonnet 3.7 | 0.3 | 8000 | Analysis and reasoning |
+| evaluator | Sonnet 3.7 | 0.2 | 6000 | Decisions and recommendations |
+| reporter | Haiku | 0.2 | 6000 | Report generation |
+| notifier | Haiku | 0.1 | 3000 | External notifications |
+| executor | Haiku | 0.1 | 3000 | System operations |
 
-- `generateJobs` - Links signals to agents via execution jobs
-- `removeJob` - Removes invalid job configurations
+### 4. Enrich Jobs
 
-**Validation Tools**
+**Model**: Sonnet 4 (context flow requires reasoning)
 
-- `validateWorkspace` - Checks references, unused components, required fields
-- `exportWorkspace` - Produces final WorkspaceConfig
-- `getSummary` - Returns component counts and IDs
+Converts job plans into JobSpecifications with:
+- Execution strategy (sequential/parallel)
+- Agent pipeline with context flow
+- Trigger signal reference
 
-## Atlas Integration
+Context flow patterns:
+- **First agent**: `{ signal: true }` (receives signal data)
+- **Sequential**: `{ steps: "previous" }` (receives prior agent output)
+- **Parallel**: `{ signal: true }` for all (no cross-agent flow)
+- **Fan-out/fan-in**: Parallel + final synthesizer with `{ steps: "all" }`
 
-Built as Atlas system agent using `@atlas/agent-sdk`:
+### 5. Generate MCP Servers
 
-- **Input**: `{prompt: string}` - Natural language automation requirements
-- **Output**: `WorkspaceResult` with config, API response, and summary
-- **Models**: Claude Sonnet 4 (orchestration), Haiku (signals, agents, jobs, MCP servers)
-- **API**: Creates workspace via Atlas `/api/workspaces/create`
+**Model**: Haiku 3.5 (simple domain matching)
 
-## Agent Generation Strategy
+Matches collected MCP domains to blessed MCP server registry. Only adds external servers (platform provides email/filesystem/notifications built-in).
 
-### Archetype-Based Batch Generation
+Registry includes: GitHub, Azure, Stripe, Playwright, Git, Weather, Linear, Trello, RSS, PostHog, etc.
 
-All agents generated in a single LLM call using 7 archetypes:
+### 6. Construct Config & Create Workspace
 
-- **collector**: Retrieves data from external APIs (Slack, GitHub, web)
-- **reader**: Extracts content from files (PDFs, docs, CSVs)
-- **analyzer**: Performs analysis and reasoning on data
-- **evaluator**: Makes decisions and recommendations
-- **reporter**: Generates structured reports and summaries
-- **notifier**: Sends output to external services
-- **executor**: Performs system operations (file cleanup, command execution, maintenance tasks)
-
-Each archetype has predefined model configurations:
-- Simple tasks (collector, reader, notifier, executor): Haiku with low temperature
-- Complex reasoning (analyzer, evaluator): Sonnet with higher temperature
-- Balanced tasks (reporter): Haiku with moderate temperature
-
-### Bundled Agent Priority
-
-Always checks bundled agents first before generating:
-
-- Email agents for notifications
-- File system agents for monitoring
-- API agents for external integrations
-- Research agents for data gathering
-
-### Condensed Prompt Generation
-
-Instead of full XML structures, uses 3-5 line prompts specifying:
-- Agent's responsibility and expertise
-- Key task to perform
-- Input data format and source
-- Expected output format or action
-
-### Single Responsibility Decomposition
-
-Breaks complex automation into focused agents:
-
-- ❌ One agent: read files, analyze content, send notifications
-- ✅ Three agents: file-reader (reader archetype), content-analyzer (analyzer archetype), slack-notifier (bundled or notifier archetype)
-
-## Configuration Output
-
-### Workspace Structure
+Assembles final WorkspaceConfig:
 
 ```typescript
 {
   version: "1.0",
-  workspace: { name: string, description: string },
-  signals: { [id: string]: SignalConfig },    // Triggers
-  agents: { [id: string]: AgentConfig },      // AI executors
-  jobs: { [id: string]: JobSpecification },   // Orchestration
-  tools: {
-    mcp: {
-      servers: { [id: string]: MCPServerConfig }  // Tool access
-    }
+  workspace: { name, description },
+  signals: { [id]: config },
+  agents: { [id]: config },
+  jobs: { [id]: spec },
+  tools: { mcp: { client_config, servers } }
+}
+```
+
+Creates workspace via API, returns path + summary:
+
+```typescript
+{
+  workspaceName: string,
+  workspacePath: string,
+  config: WorkspaceConfig,
+  summary: {
+    signalCount, signalTypes, signalIds,
+    agentCount, agentTypes, agentIds,
+    jobCount, jobIds,
+    mcpServerCount, mcpServerIds
   }
 }
 ```
 
-### Signal Types
+## Design Decisions
 
-- **Schedule**: Cron expressions for time-based triggers
-- **HTTP**: Webhook endpoints for event-based triggers
+### Why Parallel Enrichment?
 
-### Agent Types
+Early versions enriched components sequentially. This was simple but slow (~15s). Signals, agents, and jobs are independent - enriching in parallel cuts latency by 60-70%.
 
-- **Atlas**: References bundled agents by ID
-  - See: `@atlas/bundled-agents`
-- **LLM**: Generated agents with archetype-based configurations
-  - Uses predefined model settings per archetype
-  - Condensed 3-5 line prompts instead of XML structures
-  - See: `packages/core/src/agent-conversion/from-llm.ts`
+### Why LLM-Based Agent Selection?
 
-## Usage Examples
+Agent implementation (bundled vs generated, archetype, MCP domains) requires semantic matching. Rule-based systems fail on edge cases. LLM with structured output (Zod schemas) provides reliable classification with natural language flexibility.
 
-**GitHub Integration**
+### Why Separate MCP Domain Collection?
 
-```
-"Monitor new GitHub issues and create Slack notifications"
-→ HTTP signal for GitHub webhooks
-→ issue-analyzer agent (LLM)
-→ slack-notifier agent (bundled)
-→ Job connecting webhook → analyzer → notifier
-```
+Initial approach had agents specify MCP domains during implementation selection. This caused hallucinated domains and platform domain leakage. Two-stage process (implementation → domain extraction) with explicit platform filtering prevents this.
 
-**Scheduled Reports**
+### Why Archetype System?
 
-```
-"Generate daily sales reports from Salesforce data"
-→ Schedule signal (daily cron)
-→ salesforce-fetcher agent (LLM with Salesforce tools)
-→ report-generator agent (LLM with PDF tools)
-→ Job connecting schedule → fetcher → generator
-```
+Different agent types need different model capabilities and token budgets:
+- Simple tasks (collection, notification) → Haiku (fast, cheap)
+- Complex tasks (analysis, evaluation) → Sonnet (reasoning, depth)
 
-**File Monitoring**
+Archetype maps to optimal model config without per-agent tuning.
 
-```
-"Watch uploads folder and process new documents"
-→ Schedule signal (periodic checks)
-→ file-watcher agent (bundled)
-→ document-processor agent (LLM with PDF/OCR tools)
-→ Job connecting schedule → watcher → processor
-```
+### Why Blessed MCP Registry?
 
-## Validation Rules
+Allowing arbitrary MCP servers creates security and reliability risks. Curated registry ensures:
+- Known-good server implementations
+- Documented authentication patterns
+- Tested tool interfaces
+- Security review
 
-**Required Components**
+### Why Platform Domain Filtering?
 
-- At least one signal (trigger)
-- At least one agent (executor)
-- At least one job (orchestration)
-- Valid workspace name/description
+Atlas provides email/filesystem/notifications via built-in MCP server. Adding external servers for these domains causes conflicts and redundancy. Explicit filtering keeps configs clean.
 
-**Reference Integrity**
+## Progress Streaming
 
-- Jobs must reference existing signals and agents
-- No orphaned signals or agents
-- MCP servers match agent tool requirements
-
-**Naming Conventions**
-
-- All IDs converted to kebab-case
-- Component names must be MCP-compliant (letters, numbers, underscores, hyphens)
+Agent emits progress events during execution:
+- "Loading plan" - Fetching artifact from storage
+- "Enriching components" - Parallel LLM enrichment in progress
+- "Adding MCP servers" - Generating MCP server configs
+- "Creating workspace" - API call to create workspace
 
 ## Error Handling
 
-- Invalid references fail validation with specific error messages
-- Missing components trigger regeneration attempts
-- MCP server mismatches suggest alternative tools
-- API failures include response status and error details
+Failures at any stage abort the entire operation:
+- **Artifact not found**: Returns error if artifact ID doesn't exist or isn't workspace-plan type
+- **Enrichment failure**: Any LLM call failure (after 3 retries) aborts creation
+- **Unknown MCP server**: Throws if domain matching returns unregistered server ID
+- **API failure**: Workspace creation API errors propagate to caller
 
-## Setup
+All errors include context (artifact ID, component being enriched, etc.) for debugging.
 
-1. Agent auto-registers as system agent with Atlas daemon
-2. Call via workspace: `agents.call("workspace-creation", {prompt: "your requirements"})`
-3. Returns complete workspace configuration ready for deployment
+## Configuration
+
+### Models
+
+| Component | Model | Reason |
+|-----------|-------|--------|
+| Signal enrichment | Haiku 3.5 | Fast classification, simple config |
+| Agent selection | Sonnet 4 | Bundled agent matching requires reasoning |
+| Domain extraction | Haiku 3.5 | Simple domain mapping |
+| Job enrichment | Sonnet 4 | Context flow requires execution planning |
+| MCP matching | Haiku 3.5 | Registry lookup |
+
+### Retries & Timeouts
+
+All LLM calls use:
+- `maxRetries: 3`
+- `abortSignal` propagation for cancellation
+
+MCP client timeout:
+- `progressTimeout: 30s` (per-tool)
+- `maxTotalTimeout: 300s` (session)
+
+## Example Workflows
+
+### Simple Sequential Job
+
+**Input Plan**:
+```
+Signal: "Daily at 9am"
+Agents: [issue-reader, slack-notifier]
+Job: Read GitHub issues, post to Slack
+```
+
+**Output Config**:
+- Signal: `{ provider: "schedule", schedule: "0 9 * * *" }`
+- Agents: `issue-reader` (bundled: research), `slack-notifier` (LLM: notifier)
+- Job: Sequential, context flow: signal → previous → previous
+- MCP: GitHub (from bundled research agent)
+
+### Parallel Analysis Job
+
+**Input Plan**:
+```
+Signal: "On webhook"
+Agents: [sentiment-analyzer, topic-classifier, report-generator]
+Job: Analyze feedback from multiple angles, synthesize report
+```
+
+**Output Config**:
+- Signal: `{ provider: "http", method: "POST", path: "/webhook" }`
+- Agents: All LLM (analyzer archetype)
+- Job: Parallel + sequential synthesizer, context: all parallel → synthesizer gets "all"
+- MCP: None (analysis only)
+
+### File Watcher Job
+
+**Input Plan**:
+```
+Signal: "Watch ./uploads for new files"
+Agents: [file-processor, email-notifier]
+Job: Process uploaded files, email results
+```
+
+**Output Config**:
+- Signal: `{ provider: "fs-watch", config: { path: "./uploads" } }`
+- Agents: `file-processor` (LLM: reader), `email-notifier` (LLM: notifier)
+- Job: Sequential
+- MCP: None (platform provides email + filesystem)

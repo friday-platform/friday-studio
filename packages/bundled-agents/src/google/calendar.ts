@@ -29,7 +29,7 @@ export const GoogleCalendarAgentResultSchema = z.object({
   toolResults: z.array(z.unknown()).optional(),
 });
 
-export const googleCalendarAgent = createAgent<GoogleCalendarAgentResult>({
+export const googleCalendarAgent = createAgent<string, GoogleCalendarAgentResult>({
   id: "google-calendar",
   displayName: "Google Calendar",
   version: "1.0.0",
@@ -80,7 +80,7 @@ export const googleCalendarAgent = createAgent<GoogleCalendarAgentResult>({
       - If any tool call errors (timeout, authorization, unknown), state the failure briefly and stop.
       - Summarize tool outputs to provide a concise response, including attendees, email addresses, times, locations, and event details, if available.
       - After successfully retrieving calendar events, create an artifact with 'calendar-schedule' type.
-      - **Only** return the number of events retrieved in the summary. Never return the the calendar schedule, times of events, or details in the response. 
+      - **Only** return the number of events retrieved in the summary. Never return the the calendar schedule, times of events, or details in the response.
     `;
 
     try {

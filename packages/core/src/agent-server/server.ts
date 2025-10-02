@@ -13,7 +13,11 @@ import type {
   AgentServerAdapter,
   AtlasAgent,
 } from "@atlas/agent-sdk";
-import { type AgentSessionData, AwaitingSupervisorDecision } from "@atlas/agent-sdk";
+import {
+  type AgentSessionData,
+  AgentSessionDataSchema,
+  AwaitingSupervisorDecision,
+} from "@atlas/agent-sdk";
 import type { GlobalMCPServerPool } from "@atlas/core";
 import type { Logger } from "@atlas/logger";
 import { CoALAMemoryManager, type IMemoryScope } from "@atlas/memory";
@@ -136,13 +140,18 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
   /** Register a single agent as MCP tool */
   private registerSingleAgentTool(agent: AgentMetadata): void {
     const toolName = agent.id;
+
+    // Build input schema - use agent's schema if available, fallback to string prompt
+    const inputSchema = agent.inputSchema
+      ? z.object({
+          input: agent.inputSchema, // Structured typed input
+          _sessionContext: AgentSessionDataSchema,
+        })
+      : AgentToolParamsSchema; // Fallback: { prompt: string, ... }
+
     this.server.registerTool(
       toolName,
-      {
-        title: agent.displayName,
-        description: agent.description,
-        inputSchema: AgentToolParamsSchema.shape,
-      },
+      { title: agent.displayName, description: agent.description, inputSchema: inputSchema.shape },
       async (args, request) => {
         try {
           const agentId = agent.id;
@@ -174,12 +183,6 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
             requestId,
           });
 
-          // Approval flow remains the same
-          if (args._approvalId && args._approvalDecision) {
-            const result = await this.resumeWithApproval(args._approvalId, args._approvalDecision);
-            return { content: [{ type: "text", text: JSON.stringify(result) }] };
-          }
-
           // Session still comes from _sessionContext parameter - no changes!
           const session = args._sessionContext;
 
@@ -196,8 +199,11 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
             throw new Error("No session data available - authentication required");
           }
 
+          // Extract input - use structured input if schema exists, otherwise use prompt string
+          const input = agent.inputSchema ? args.input : args.prompt;
+
           // Pass requestId directly to executeAgent - no instance variable
-          const result = await this.executeAgent(agentId, args.prompt, session, requestId);
+          const result = await this.executeAgent(agentId, input, session, requestId);
 
           this.#logger.debug("Agent execution result", {
             agentId,
@@ -219,6 +225,7 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
       displayName: agent.displayName,
       domains: agent.expertise.domains,
       capabilities: agent.expertise,
+      hasStructuredInput: !!agent.inputSchema,
     });
   }
 

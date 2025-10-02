@@ -118,8 +118,7 @@ Agents are exposed as tools with this schema:
   parameters: {
     prompt: string,      // Natural language prompt
     context?: any,       // Optional additional context
-    _approvalId?: string,    // For approval resumption
-    _approvalDecision?: any, // Approval decision
+    _sessionContext?: AgentSessionDataSchema, // Session context
   },
   _meta?: {
     requestId?: string,  // Correlation ID for cancellation
@@ -137,18 +136,19 @@ The server implements MCP cancellation handling:
 4. **Agent Context**: AbortSignal is passed to agent handlers in their execution context
 
 Example cancellation flow:
+
 ```typescript
 // Client initiates execution with requestId
 await client.callTool({
   name: "my-agent",
   arguments: { prompt: "analyze data" },
-  _meta: { requestId: "req-123" }
+  _meta: { requestId: "req-123" },
 });
 
 // Client cancels the execution
 await client.notification({
   method: "notifications/cancelled",
-  params: { requestId: "req-123", reason: "User cancelled" }
+  params: { requestId: "req-123", reason: "User cancelled" },
 });
 
 // Agent handler receives abort signal
@@ -157,7 +157,7 @@ handler: async (prompt, { abortSignal }) => {
     throw new Error("Operation cancelled");
   }
   // ... agent logic
-}
+};
 ```
 
 ## Resources
@@ -192,12 +192,9 @@ await server.registerAgent(agent);
 
 // Execute via MCP with cancellation support
 const requestId = crypto.randomUUID();
-const executePromise = server.executeAgent(
-  "test-agent",
-  "Hello",
-  sessionData,
-  { requestId }
-);
+const executePromise = server.executeAgent("test-agent", "Hello", sessionData, {
+  requestId,
+});
 
 // Cancel the execution
 await server.handleCancellation(requestId);

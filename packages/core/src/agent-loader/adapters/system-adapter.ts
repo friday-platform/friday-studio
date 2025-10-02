@@ -1,6 +1,9 @@
 import type { AtlasAgent } from "@atlas/agent-sdk";
-import { conversationAgent } from "../../../../system/agents/conversation/conversation.agent.ts";
-import { workspaceCreationAgent } from "../../../../system/agents/workspace-creation/workspace-creation.agent.ts";
+import {
+  conversationAgent,
+  workspaceCreationAgent,
+  workspacePlannerAgent,
+} from "@atlas/system/agents";
 import { AgentNotFoundError } from "../errors.ts";
 import type { AgentAdapter, AgentSourceData, AgentSummary } from "./types.ts";
 
@@ -12,7 +15,7 @@ export class SystemAgentAdapter implements AgentAdapter {
   readonly adapterName = "system-agent-adapter";
   readonly sourceType = "system" as const;
 
-  private agents = new Map<string, AtlasAgent>();
+  private agents = new Map<string, AtlasAgent<unknown, unknown>>();
 
   constructor() {
     this.registerSystemAgents();
@@ -20,6 +23,7 @@ export class SystemAgentAdapter implements AgentAdapter {
 
   private registerSystemAgents(): void {
     this.agents.set(conversationAgent.metadata.id, conversationAgent);
+    this.agents.set(workspacePlannerAgent.metadata.id, workspacePlannerAgent);
     this.agents.set(workspaceCreationAgent.metadata.id, workspaceCreationAgent);
   }
 

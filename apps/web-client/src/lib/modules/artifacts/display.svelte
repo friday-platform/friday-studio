@@ -43,5 +43,7 @@ $effect(() => {
 		<Summary data={artifact.data} />
 	{:else if artifact.type === 'slack-summary'}
 		<Summary data={artifact.data} source="slack" />
+	{:else}
+		<span>{JSON.stringify(artifact.data, null, 2)}</span>
 	{/if}
 {/if}

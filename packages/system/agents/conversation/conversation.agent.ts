@@ -12,21 +12,20 @@ import type { AtlasTools, AtlasUIMessage } from "@atlas/agent-sdk";
 import { createAgent } from "@atlas/agent-sdk";
 import { pipeUIMessageStream } from "@atlas/agent-sdk/vercel-helpers";
 import { client, parseResult } from "@atlas/client/v2";
-import { createErrorCause, getErrorDisplayMessage, parseAPICallError } from "@atlas/core/errors";
 import { anthropic } from "@atlas/core";
+import { createErrorCause, getErrorDisplayMessage, parseAPICallError } from "@atlas/core/errors";
 import type { Logger } from "@atlas/logger";
 import { Client } from "@modelcontextprotocol/sdk/client";
-
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import {
   convertToModelMessages,
   createIdGenerator,
+  jsonSchema,
   smoothStream,
   stepCountIs,
   streamText,
   tool,
 } from "ai";
-import { z } from "zod";
 import {
   type CancellationNotification,
   StreamContentNotificationSchema,
@@ -186,10 +185,26 @@ export const conversationAgent = createAgent({
     for (const agent of agentTools) {
       // Skip the conversation agent. The universe might implode.
       if (agent.name === "conversation") continue;
+
+      /**
+       * @hack
+       * Right now, we're stuffing session context into the input schema for the agent.
+       * This is because when I originally wrote it, I was unaware of the _meta property.
+       * Subsequently, I figured it out (see the requestId) but didn't yet move over
+       * the session context.
+       *
+       * The structured cloning and deletion of params is to trim those from the input schema
+       * that the conversation agent will have to generate since they're injected programatically.
+       */
+      const paramsSchema = structuredClone(agent.inputSchema);
+      delete paramsSchema.properties?._sessionContext;
+      paramsSchema.required = paramsSchema.required?.filter((r) => r !== "_sessionContext");
+
       agents[agent.name] = tool({
         name: agent.name,
         description: agent.description,
-        inputSchema: z.object({ prompt: z.string() }),
+        // @ts-expect-error the JSON Schema output by the MCP SDK tool definition doesn't align with the AI SDK.
+        inputSchema: jsonSchema(paramsSchema),
         execute: async (input) => {
           const requestId = crypto.randomUUID();
           const invocationId = crypto.randomUUID(); // Unique ID for this specific invocation
@@ -203,7 +218,7 @@ export const conversationAgent = createAgent({
               {
                 name: agent.name,
                 arguments: {
-                  prompt: input.prompt,
+                  ...input,
                   _sessionContext: {
                     sessionId: session.sessionId,
                     workspaceId: session.workspaceId,

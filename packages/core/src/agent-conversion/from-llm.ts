@@ -1,13 +1,13 @@
 import { APICallError } from "@ai-sdk/provider";
 import type { AtlasAgent, ToolCall, ToolResult } from "@atlas/agent-sdk";
 import { type AtlasUIMessage, createAgent } from "@atlas/agent-sdk";
-import { throwWithCause } from "../utils/error-helpers.ts";
 import { collectToolUsageFromSteps, pipeUIMessageStream } from "@atlas/agent-sdk/vercel-helpers";
 import type { LLMAgentConfig } from "@atlas/config";
 import type { Logger } from "@atlas/logger";
 import { stepCountIs, streamText } from "ai";
 import { registry, validateProviderConfig } from "../llm-provider-registry/index.ts";
 import { ensureSourceAttributionProtocol } from "../prompts/source-attribution.ts";
+import { throwWithCause } from "../utils/error-helpers.ts";
 
 export type WrappedAgentResult = {
   response: string;
@@ -15,7 +15,7 @@ export type WrappedAgentResult = {
   toolCalls?: ToolCall[];
   toolResults?: ToolResult[];
 };
-type WrappedAgent = AtlasAgent<WrappedAgentResult>;
+type WrappedAgent = AtlasAgent<string, WrappedAgentResult>;
 
 // Tool usage collector moved to @atlas/agent-sdk/vercel-helpers
 
@@ -34,7 +34,7 @@ export function convertLLMToAgent(
   validateProviderConfig(config.config.provider);
   const model = registry.languageModel(`${config.config.provider}:${config.config.model}`);
 
-  const agent = createAgent<WrappedAgentResult>({
+  const agent = createAgent<string, WrappedAgentResult>({
     id: agentId,
     version: "1.0.0",
     description: config.description,

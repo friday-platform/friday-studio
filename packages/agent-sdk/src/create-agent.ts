@@ -26,14 +26,14 @@ import {
 /**
  * Internal implementation of AtlasAgent
  */
-class AtlasAgentImpl<T = unknown> implements AtlasAgent<T> {
+class AtlasAgentImpl<TInput = string, TOutput = unknown> implements AtlasAgent<TInput, TOutput> {
   metadata: AgentMetadata;
-  private handler: AgentHandler;
+  private handler: AgentHandler<TInput, TOutput>;
   private environment?: AgentEnvironmentConfig;
   private mcp?: Record<string, AgentMCPServerConfig>;
   private llm?: AgentLLMConfig;
 
-  constructor(config: CreateAgentConfig) {
+  constructor(config: CreateAgentConfig<TInput, TOutput>) {
     // Extract metadata from config
     this.metadata = {
       id: config.id,
@@ -41,6 +41,7 @@ class AtlasAgentImpl<T = unknown> implements AtlasAgent<T> {
       version: config.version,
       description: config.description,
       expertise: config.expertise,
+      inputSchema: config.inputSchema,
     };
 
     this.handler = config.handler;
@@ -86,11 +87,10 @@ class AtlasAgentImpl<T = unknown> implements AtlasAgent<T> {
     }
   }
 
-  async execute(prompt: string, context: AgentContext): Promise<T> {
+  async execute(input: TInput, context: AgentContext): Promise<TOutput> {
     try {
-      // Execute the handler with the prompt and context
-      // Intentional cast of the handler result because it can't be inferred by TypeScript.
-      return (await this.handler(prompt, context)) as T;
+      // Execute the handler with the input and context
+      return await this.handler(input, context);
     } catch (error) {
       // Re-throw AwaitingSupervisorDecision exceptions
       if (error instanceof Error && error.name === "AwaitingSupervisorDecision") {
@@ -125,61 +125,45 @@ class AtlasAgentImpl<T = unknown> implements AtlasAgent<T> {
 }
 
 /**
- * Create a domain expert agent with typed return values
+ * Create a domain expert agent with typed input and output
  *
- * The generic type parameter T allows you to specify the exact return type
- * of your agent handler, enabling full type safety for agent results.
- * This is especially important for agents controlled by Atlas (like LLM agents)
- * where we need to ensure consistent return structures.
+ * Generic type parameters allow specifying exact types for input and output.
  *
- * @param T - The return type of the agent handler (defaults to unknown)
+ * @param TInput - The input type (string by default, or structured via inputSchema)
+ * @param TOutput - The output type (defaults to unknown)
  *
  * @example
  * ```typescript
- * // Custom agent with typed return value
- * interface MyAgentResult {
- *   status: 'success' | 'error';
- *   data: unknown;
+ * // Agent with structured input
+ * const plannerInput = z.object({
+ *   intent: z.string(),
+ *   artifactId: z.string().optional(),
+ * });
+ *
+ * type PlannerInput = z.infer<typeof plannerInput>;
+ *
+ * interface PlannerResult {
+ *   planSummary: string;
+ *   artifactId: string;
  * }
  *
- * export const githubAgent = createAgent<MyAgentResult>({
- *   id: "github",
- *   displayName: "GitHub Agent",
+ * export const plannerAgent = createAgent<PlannerInput, PlannerResult>({
+ *   id: "planner",
+ *   displayName: "Planner",
  *   version: "1.0.0",
- *   description: "GitHub domain expert for repository operations",
- *
- *   expertise: {
- *     domains: ["github", "vcs", "security"],
- *     capabilities: [
- *       "repository security scanning",
- *       "pull request review",
- *       "issue management"
- *     ],
- *     examples: [
- *       "scan my repository for vulnerabilities",
- *       "review PR #123 for code quality"
- *     ]
- *   },
- *
- *   handler: async (prompt, { tools, logger }) => {
- *     // Handler must return MyAgentResult type
- *     const { generateText } = await import('ai');
- *     const { anthropic } = await import('@ai-sdk/anthropic');
- *
- *     const result = await generateText({
- *       model: anthropic('claude-3-sonnet-20240229'),
- *       prompt,
- *       tools
- *     });
- *
- *     return {
- *       status: 'success' as const,
- *       data: result.text
- *     };
+ *   description: "Plans workspaces",
+ *   expertise: { domains: ["planning"], examples: [] },
+ *   inputSchema: plannerInput,
+ *   handler: async (input, { logger }) => {
+ *     // input is typed as { intent: string; artifactId?: string }
+ *     logger.info("Planning", { artifactId: input.artifactId });
+ *     return { planSummary: "...", artifactId: "..." };
  *   }
  * });
  * ```
  */
-export function createAgent<T = unknown>(config: CreateAgentConfig<T>): AtlasAgent<T> {
-  return new AtlasAgentImpl<T>(config);
+export function createAgent<TInput = string, TOutput = unknown>(
+  config: CreateAgentConfig<TInput, TOutput>,
+): AtlasAgent<TInput, TOutput> {
+  return new AtlasAgentImpl<TInput, TOutput>(config);
 }

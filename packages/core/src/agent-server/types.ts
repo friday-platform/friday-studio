@@ -138,10 +138,6 @@ export const AgentToolParamsSchema = z.object({
 
   /** Session context for agent isolation and tracking */
   _sessionContext: AgentSessionDataSchema,
-
-  /** Resume support for supervisor approvals */
-  _approvalId: z.string().optional(),
-  _approvalDecision: z.unknown().optional(),
 });
 
 export type AgentToolParams = z.infer<typeof AgentToolParamsSchema>;

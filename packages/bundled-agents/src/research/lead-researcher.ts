@@ -219,7 +219,7 @@ type ResearchAgentResult = Result<
   { reason: string }
 >;
 
-export const researchAgent = createAgent<ResearchAgentResult>({
+export const researchAgent = createAgent<string, ResearchAgentResult>({
   id: "research",
   displayName: "Research",
   version: "1.0.0",

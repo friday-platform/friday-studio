@@ -54,6 +54,11 @@ const testLogger = {
 };
 
 /**
+ * We're overriding StreamID here because it will always be provided in the test harness.
+ */
+type EvalAgentContext = AgentContext & { session: { streamId: string } };
+
+/**
  * Minimal context adapter for testing agents without full Atlas infrastructure
  */
 export class AgentContextAdapter {
@@ -66,13 +71,12 @@ export class AgentContextAdapter {
     private memories?: string[],
   ) {}
 
-  createContext(options?: { telemetry?: boolean }): AgentContext {
+  createContext(options?: { telemetry?: boolean }): EvalAgentContext {
     const testSessionId = crypto.randomUUID();
     const session: AgentSessionData = {
       sessionId: testSessionId,
       workspaceId: "eval-workspace",
       userId: "eval-user",
-      streamId: `stream-${testSessionId}`,
     };
 
     // Create capturing stream emitter
@@ -94,8 +98,8 @@ export class AgentContextAdapter {
         recordOutputs: true,
       };
     }
-
-    return context;
+    // Manually appending the Stream ID is required here. See EvalAgentContext.
+    return { ...context, session: { ...session, streamId: `stream-${testSessionId}` } };
   }
 
   enrichPrompt(prompt: string): string {

@@ -254,7 +254,7 @@ const workspaceRuntimeMachineSetup = setup({
 
             try {
               // Convert LLM config to SDK agent
-              const wrappedAgent: AtlasAgent<WrappedAgentResult> = convertLLMToAgent(
+              const wrappedAgent: AtlasAgent<string, WrappedAgentResult> = convertLLMToAgent(
                 agentConfig,
                 agentId,
                 logger.child({ component: "LLMAgentWrapper", agentId }),

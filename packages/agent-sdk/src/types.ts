@@ -134,6 +134,10 @@ export const AgentMetadataSchema = z.object({
   version: z.string().meta({ description: "Agent version" }),
   description: z.string().min(1).meta({ description: "What this agent does" }),
   expertise: AgentExpertiseSchema,
+  inputSchema: z
+    .any()
+    .optional()
+    .meta({ description: "Optional input schema for structured input" }),
 });
 
 export type AgentMetadata = z.infer<typeof AgentMetadataSchema>;
@@ -311,12 +315,15 @@ export interface AgentContext {
 }
 
 /**
- * Agent handler function - receives natural language prompts
+ * Agent handler function - receives input and context
  *
  * This is where agents interpret requests and decide what to do.
- * No action routing or structured inputs - just natural language.
+ * Input can be a string prompt or structured data based on inputSchema.
  */
-export type AgentHandler<T = unknown> = (prompt: string, context: AgentContext) => Promise<T>;
+export type AgentHandler<TInput = string, TOutput = unknown> = (
+  input: TInput,
+  context: AgentContext,
+) => Promise<TOutput>;
 
 /**
  * Config for createAgent() function
@@ -324,9 +331,12 @@ export type AgentHandler<T = unknown> = (prompt: string, context: AgentContext) 
  * TypeScript interface because handler functions can't be validated with Zod.
  * Use CreateAgentConfigValidationSchema for validating the non-function parts.
  */
-export interface CreateAgentConfig<T = unknown> extends AgentMetadata {
+export interface CreateAgentConfig<TInput = string, TOutput = unknown> extends AgentMetadata {
+  /** Optional input schema for structured input validation */
+  inputSchema?: z.ZodSchema<TInput>;
+
   /** Handler that processes all prompts for this agent */
-  handler: AgentHandler<T>;
+  handler: AgentHandler<TInput, TOutput>;
 
   /** Environment variables this agent needs */
   environment?: AgentEnvironmentConfig;
@@ -351,12 +361,12 @@ export const CreateAgentConfigValidationSchema = AgentMetadataSchema.extend({
  * Created by createAgent() function.
  * Stored in registry and executed by AtlasAgentsMCPServer.
  */
-export interface AtlasAgent<T = unknown> {
+export interface AtlasAgent<TInput = string, TOutput = unknown> {
   /** Agent metadata for registry */
   metadata: AgentMetadata;
 
-  /** Execute agent with natural language prompt */
-  execute(prompt: string, context: AgentContext): Promise<T>;
+  /** Execute agent with input (string or structured based on inputSchema) */
+  execute(input: TInput, context: AgentContext): Promise<TOutput>;
 
   /** Environment config (used by server for validation) */
   readonly environmentConfig: AgentEnvironmentConfig | undefined;

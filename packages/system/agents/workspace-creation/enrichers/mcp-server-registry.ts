@@ -12,9 +12,7 @@ type RegistryItem = {
   package: string;
 };
 
-/**
- * Registry of available MCP servers
- */
+/** MCP servers vetted for workspace creation */
 export const blessedMCPServers: Record<string, RegistryItem> = {
   "github-repos-manager": {
     id: "github-repos-manager",

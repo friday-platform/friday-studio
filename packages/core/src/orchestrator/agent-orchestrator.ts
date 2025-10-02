@@ -27,10 +27,10 @@ import { CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js";
 import { retry } from "@std/async";
 import { z } from "zod";
 import type { ToolCall } from "../../../../src/core/services/hallucination-detector.ts";
-import { createErrorCause, getErrorDisplayMessage } from "../errors.ts";
 import { createAgentContextBuilder } from "../agent-context/index.ts";
 import type { WrappedAgentResult } from "../agent-conversion/from-llm.ts";
 import type { AgentToolParams } from "../agent-server/types.ts";
+import { createErrorCause, getErrorDisplayMessage } from "../errors.ts";
 import type { GlobalMCPServerPool } from "../mcp-server-pool.ts";
 import {
   CallbackStreamEmitter,
@@ -168,7 +168,7 @@ export class AgentOrchestrator implements IAgentOrchestrator {
   private logger: Logger;
   private approvalCleanupInterval?: number;
   private sessionCleanupInterval?: number;
-  private wrappedAgents = new Map<string, AtlasAgent<WrappedAgentResult>>(); // LLM agents that bypass MCP
+  private wrappedAgents = new Map<string, AtlasAgent<string, WrappedAgentResult>>(); // LLM agents that bypass MCP
   // Track active stream handlers by sessionId:agentId to handle multi-workspace scenarios
   private activeStreamHandlers = new Map<string, (event: AtlasUIMessageChunk) => void>();
   private buildAgentContext?: ReturnType<typeof createAgentContextBuilder>;
@@ -307,7 +307,7 @@ export class AgentOrchestrator implements IAgentOrchestrator {
    * Register an LLM agent that runs in-process instead of via MCP.
    * Used for lightweight agents that don't need service isolation.
    */
-  registerWrappedAgent(agentId: string, agent: AtlasAgent<WrappedAgentResult>): void {
+  registerWrappedAgent(agentId: string, agent: AtlasAgent<string, WrappedAgentResult>): void {
     this.wrappedAgents.set(agentId, agent);
     this.logger.debug("Registered wrapped agent for direct execution", {
       agentId,
@@ -625,8 +625,6 @@ export class AgentOrchestrator implements IAgentOrchestrator {
       const mcpSetup = await this.getOrCreateSessionClient(pending.sessionContext.sessionId);
 
       const resumeArgs: Partial<AgentToolParams> = {
-        _approvalId: approvalId,
-        _approvalDecision: validatedDecision,
         _sessionContext: {
           sessionId: pending.sessionContext.sessionId,
           workspaceId: pending.sessionContext.workspaceId,
@@ -706,7 +704,7 @@ export class AgentOrchestrator implements IAgentOrchestrator {
    * Execute in-process LLM agents without MCP overhead.
    */
   private async executeWrappedAgent(
-    agent: AtlasAgent<WrappedAgentResult>,
+    agent: AtlasAgent<string, WrappedAgentResult>,
     agentId: string,
     prompt: string,
     context: AgentExecutionContext,

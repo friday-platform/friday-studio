@@ -18,7 +18,7 @@ import { executorSystem, planSystem, translateSystem } from "./prompts.ts";
  */
 type Result = { response: string; artifactIds: string[] | null };
 
-export const slackCommunicatorAgent = createAgent<Result>({
+export const slackCommunicatorAgent = createAgent<string, Result>({
   id: "slack",
   displayName: "Slack",
   version: "1.0.0",
@@ -54,7 +54,7 @@ export const slackCommunicatorAgent = createAgent<Result>({
     },
   },
 
-  handler: async (prompt: string, { tools, logger, abortSignal, stream }): Promise<Result> => {
+  handler: async (prompt, { tools, logger, abortSignal, stream }): Promise<Result> => {
     if (!env.ANTHROPIC_API_KEY) {
       throw new Error("ANTHROPIC_API_KEY environment variable is required");
     }
@@ -163,7 +163,7 @@ export const slackCommunicatorAgent = createAgent<Result>({
         <channel>
           ${plan.targetChannel ? `${plan.targetChannel}` : "Not provided"}
         </channel>
-        
+
         <content>
           <message>
             ${plan.message ? `${plan.message}` : "Not provided"}
@@ -173,7 +173,7 @@ export const slackCommunicatorAgent = createAgent<Result>({
             ${artifactIds ? artifactIds : "Not provided"}
           </artifactIds>
         </content>
-        
+
         <additional_context>
           ${plan.additionalContext ? `${plan.additionalContext}` : "Not provided"}
         </additional_context>
