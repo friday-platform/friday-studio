@@ -33,7 +33,6 @@
     "@atlas/utils": "workspace:*",
     "@atlas/workspace": "workspace:*",
     "@atlas-vendor/hono-mcp": "workspace:*",
-    "@biomejs/biome": "^2.2.4",
     "@hono/standard-validator": "^0.1.5",
     "@inkjs/ui": "^2.0.0",
     "@modelcontextprotocol/sdk": "npm:@socotra/modelcontextprotocol-sdk@^1.18.0",
@@ -61,6 +60,7 @@
     "zod": "^4.1.11"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.2.5",
     "@std/assert": "npm:@jsr/std__assert@^1.0.14",
     "@std/expect": "npm:@jsr/std__expect@^1.0.17",
     "@std/testing": "npm:@jsr/std__testing@^1.0.15",
