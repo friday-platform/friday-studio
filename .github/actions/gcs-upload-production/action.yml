@@ -123,7 +123,7 @@ runs:
             local pattern="$1"
             local bucket_path="gs://tempest-production-atlas-binaries/${{ inputs.bucket-prefix }}"
 
-            gsutil ls -l "${bucket_path}${pattern}" 2>/dev/null | \
+            (gsutil ls -l "${bucket_path}${pattern}" 2>/dev/null || true) | \
             while read -r size timestamp url; do
               # Skip the TOTAL line
               if [[ "$size" == "TOTAL:" ]]; then

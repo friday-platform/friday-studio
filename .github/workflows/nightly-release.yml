@@ -256,8 +256,32 @@ jobs:
           # Find and copy the actual .app directory
           if ls artifacts/web-app-darwin-amd64/*.app 1>/dev/null 2>&1; then
             cp -r artifacts/web-app-darwin-amd64/*.app "dist/Atlas Web Client.app"
+            # Fix executable permissions on Tauri binary inside the app
+            chmod +x "dist/Atlas Web Client.app/Contents/MacOS/tauri-app"
           fi
         shell: bash
+
+      - name: Sign atlas binary
+        uses: ./.github/actions/macos-sign
+        with:
+          binary-path: ./dist/atlas
+          macos-sign-p12: ${{ secrets.MACOS_SIGN_P12 }}
+          macos-sign-password: ${{ secrets.MACOS_SIGN_PASSWORD }}
+          macos-sign-identity: ${{ secrets.MACOS_SIGN_IDENTITY }}
+          macos-notary-issuer-id: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+          macos-notary-key-id: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          macos-notary-key: ${{ secrets.MACOS_NOTARY_KEY }}
+
+      - name: Sign atlas-diagnostics binary
+        uses: ./.github/actions/macos-sign
+        with:
+          binary-path: ./dist/atlas-diagnostics
+          macos-sign-p12: ${{ secrets.MACOS_SIGN_P12 }}
+          macos-sign-password: ${{ secrets.MACOS_SIGN_PASSWORD }}
+          macos-sign-identity: ${{ secrets.MACOS_SIGN_IDENTITY }}
+          macos-notary-issuer-id: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+          macos-notary-key-id: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          macos-notary-key: ${{ secrets.MACOS_NOTARY_KEY }}
 
       - name: Create macOS AMD64 installer
         uses: ./.github/actions/create-installers
@@ -272,6 +296,8 @@ jobs:
           diagnostics-binary-name: atlas-diagnostics
           web-app-binary-path: dist/Atlas Web Client.app
           web-app-binary-name: Atlas Web Client.app
+          macos-sign-p12: ${{ secrets.MACOS_SIGN_P12 }}
+          macos-sign-password: ${{ secrets.MACOS_SIGN_PASSWORD }}
           macos-installer-p12: ${{ secrets.MACOS_INSTALLER_P12 }}
           macos-installer-password: ${{ secrets.MACOS_INSTALLER_PASSWORD }}
           macos-notary-issuer-id: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
@@ -316,8 +342,32 @@ jobs:
           # Find and copy the actual .app directory
           if ls artifacts/web-app-darwin-arm64/*.app 1>/dev/null 2>&1; then
             cp -r artifacts/web-app-darwin-arm64/*.app "dist/Atlas Web Client.app"
+            # Fix executable permissions on Tauri binary inside the app
+            chmod +x "dist/Atlas Web Client.app/Contents/MacOS/tauri-app"
           fi
         shell: bash
+
+      - name: Sign atlas binary
+        uses: ./.github/actions/macos-sign
+        with:
+          binary-path: ./dist/atlas
+          macos-sign-p12: ${{ secrets.MACOS_SIGN_P12 }}
+          macos-sign-password: ${{ secrets.MACOS_SIGN_PASSWORD }}
+          macos-sign-identity: ${{ secrets.MACOS_SIGN_IDENTITY }}
+          macos-notary-issuer-id: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+          macos-notary-key-id: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          macos-notary-key: ${{ secrets.MACOS_NOTARY_KEY }}
+
+      - name: Sign atlas-diagnostics binary
+        uses: ./.github/actions/macos-sign
+        with:
+          binary-path: ./dist/atlas-diagnostics
+          macos-sign-p12: ${{ secrets.MACOS_SIGN_P12 }}
+          macos-sign-password: ${{ secrets.MACOS_SIGN_PASSWORD }}
+          macos-sign-identity: ${{ secrets.MACOS_SIGN_IDENTITY }}
+          macos-notary-issuer-id: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+          macos-notary-key-id: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          macos-notary-key: ${{ secrets.MACOS_NOTARY_KEY }}
 
       - name: Create macOS ARM64 installer
         uses: ./.github/actions/create-installers
@@ -332,6 +382,8 @@ jobs:
           diagnostics-binary-name: atlas-diagnostics
           web-app-binary-path: dist/Atlas Web Client.app
           web-app-binary-name: Atlas Web Client.app
+          macos-sign-p12: ${{ secrets.MACOS_SIGN_P12 }}
+          macos-sign-password: ${{ secrets.MACOS_SIGN_PASSWORD }}
           macos-installer-p12: ${{ secrets.MACOS_INSTALLER_P12 }}
           macos-installer-password: ${{ secrets.MACOS_INSTALLER_PASSWORD }}
           macos-notary-issuer-id: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}

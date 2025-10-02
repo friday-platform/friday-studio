@@ -260,6 +260,28 @@ jobs:
           fi
         shell: bash
 
+      - name: Sign atlas binary
+        uses: ./.github/actions/macos-sign
+        with:
+          binary-path: ./dist/atlas
+          macos-sign-p12: ${{ secrets.MACOS_SIGN_P12 }}
+          macos-sign-password: ${{ secrets.MACOS_SIGN_PASSWORD }}
+          macos-sign-identity: ${{ secrets.MACOS_SIGN_IDENTITY }}
+          macos-notary-issuer-id: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+          macos-notary-key-id: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          macos-notary-key: ${{ secrets.MACOS_NOTARY_KEY }}
+
+      - name: Sign atlas-diagnostics binary
+        uses: ./.github/actions/macos-sign
+        with:
+          binary-path: ./dist/atlas-diagnostics
+          macos-sign-p12: ${{ secrets.MACOS_SIGN_P12 }}
+          macos-sign-password: ${{ secrets.MACOS_SIGN_PASSWORD }}
+          macos-sign-identity: ${{ secrets.MACOS_SIGN_IDENTITY }}
+          macos-notary-issuer-id: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+          macos-notary-key-id: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          macos-notary-key: ${{ secrets.MACOS_NOTARY_KEY }}
+
       - name: Create macOS AMD64 installer
         uses: ./.github/actions/create-installers
         with:
@@ -334,6 +356,28 @@ jobs:
             chmod +x "dist/Atlas Web Client.app/Contents/MacOS/tauri-app"
           fi
         shell: bash
+
+      - name: Sign atlas binary
+        uses: ./.github/actions/macos-sign
+        with:
+          binary-path: ./dist/atlas
+          macos-sign-p12: ${{ secrets.MACOS_SIGN_P12 }}
+          macos-sign-password: ${{ secrets.MACOS_SIGN_PASSWORD }}
+          macos-sign-identity: ${{ secrets.MACOS_SIGN_IDENTITY }}
+          macos-notary-issuer-id: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+          macos-notary-key-id: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          macos-notary-key: ${{ secrets.MACOS_NOTARY_KEY }}
+
+      - name: Sign atlas-diagnostics binary
+        uses: ./.github/actions/macos-sign
+        with:
+          binary-path: ./dist/atlas-diagnostics
+          macos-sign-p12: ${{ secrets.MACOS_SIGN_P12 }}
+          macos-sign-password: ${{ secrets.MACOS_SIGN_PASSWORD }}
+          macos-sign-identity: ${{ secrets.MACOS_SIGN_IDENTITY }}
+          macos-notary-issuer-id: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+          macos-notary-key-id: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          macos-notary-key: ${{ secrets.MACOS_NOTARY_KEY }}
 
       - name: Create macOS ARM64 installer
         uses: ./.github/actions/create-installers
