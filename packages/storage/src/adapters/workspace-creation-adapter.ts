@@ -23,7 +23,11 @@ export interface WorkspaceCreationAdapter {
    * @param workspacePath - Directory path
    * @param config - Workspace YAML configuration
    */
-  writeWorkspaceFiles(workspacePath: string, config: string): Promise<void>;
+  writeWorkspaceFiles(
+    workspacePath: string,
+    config: string,
+    options?: { ephemeral?: boolean },
+  ): Promise<void>;
 }
 
 /**
@@ -67,9 +71,14 @@ export class FilesystemWorkspaceCreationAdapter implements WorkspaceCreationAdap
    * Write workspace configuration files
    * Creates workspace.yml and .env template
    */
-  async writeWorkspaceFiles(workspacePath: string, config: string): Promise<void> {
-    // Write workspace.yml
-    const configPath = join(workspacePath, "workspace.yml");
+  async writeWorkspaceFiles(
+    workspacePath: string,
+    config: string,
+    options?: { ephemeral?: boolean },
+  ): Promise<void> {
+    // Write workspace.yml or eph_workspace.yml
+    const configFileName = options?.ephemeral ? "eph_workspace.yml" : "workspace.yml";
+    const configPath = join(workspacePath, configFileName);
     await Deno.writeTextFile(configPath, config);
 
     // Create .env file with placeholder

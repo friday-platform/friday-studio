@@ -21,7 +21,11 @@ const workspacesRoutes = daemonFactory
       const ctx = c.get("app");
       const manager = ctx.getWorkspaceManager();
       const workspaces = await manager.list({ includeSystem: true });
-      return c.json(workspaces);
+      const response = workspaces.map((w) => ({
+        ...w,
+        type: w.metadata?.ephemeral ? "ephemeral" : "persistent",
+      }));
+      return c.json(response);
     } catch (error) {
       return c.json({ error: `Failed to list workspaces: ${stringifyError(error)}` }, 500);
     }
@@ -29,7 +33,7 @@ const workspacesRoutes = daemonFactory
   // Create workspace from configuration
   .post("/create", zValidator("json", createWorkspaceFromConfigSchema), async (c) => {
     try {
-      const { config, workspaceName } = c.req.valid("json");
+      const { config, workspaceName, ephemeral } = c.req.valid("json");
 
       // Validate configuration
       const validationResult = WorkspaceConfigSchema.safeParse(config);
@@ -61,7 +65,7 @@ const workspacesRoutes = daemonFactory
           finalWorkspaceName,
         );
 
-        await workspaceAdapter.writeWorkspaceFiles(workspacePath, yamlConfig);
+        await workspaceAdapter.writeWorkspaceFiles(workspacePath, yamlConfig, { ephemeral });
 
         // Register workspace with manager
         const ctx = c.get("app");
@@ -76,7 +80,7 @@ const workspacesRoutes = daemonFactory
           workspace,
           created,
           workspacePath,
-          filesCreated: ["workspace.yml", ".env"],
+          filesCreated: [ephemeral ? "eph_workspace.yml" : "workspace.yml", ".env"],
         });
       } catch (creationError) {
         return c.json(
@@ -201,7 +205,10 @@ const workspacesRoutes = daemonFactory
       if (!workspace) {
         return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
       }
-      return c.json(workspace);
+      return c.json({
+        ...workspace,
+        type: workspace.metadata?.ephemeral ? "ephemeral" : "persistent",
+      });
     } catch (error) {
       const errorMessage = stringifyError(error);
       if (errorMessage.includes("not found")) {
@@ -224,7 +231,11 @@ const workspacesRoutes = daemonFactory
       if (!config) {
         return c.json({ error: `Failed to load workspace configuration: ${workspace.id}` }, 500);
       }
-      return c.json({ config: config.workspace });
+      return c.json({
+        config: config.workspace,
+        type: workspace.metadata?.ephemeral ? "ephemeral" : "persistent",
+        expiresAt: workspace.metadata?.expiresAt,
+      });
     } catch (error) {
       const errorMessage = stringifyError(error);
       if (errorMessage.includes("not found")) {
@@ -320,6 +331,31 @@ const workspacesRoutes = daemonFactory
         }
       } catch (error) {
         return c.json({ success: false, error: stringifyError(error) }, 500);
+      }
+    },
+  )
+  // Toggle persistence
+  .post(
+    "/:workspaceId/persistence",
+    zValidator("param", z.object({ workspaceId: z.string() })),
+    zValidator("json", z.object({ persistent: z.boolean() })),
+    async (c) => {
+      const { workspaceId } = c.req.valid("param");
+      const { persistent } = c.req.valid("json");
+      const ctx = c.get("app");
+      try {
+        const manager = ctx.getWorkspaceManager();
+        await manager.updateWorkspacePersistence(workspaceId, persistent);
+        const workspace = await manager.find({ id: workspaceId });
+        if (!workspace) {
+          return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
+        }
+        return c.json({
+          ...workspace,
+          type: workspace.metadata?.ephemeral ? "ephemeral" : "persistent",
+        });
+      } catch (error) {
+        return c.json({ error: `Failed to update persistence: ${stringifyError(error)}` }, 500);
       }
     },
   )

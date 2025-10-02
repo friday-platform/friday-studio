@@ -67,7 +67,13 @@ export class WorkspaceManager {
           logger.warn("Workspace config not found", { workspaceId: workspace.id });
           continue;
         }
-        await this.registerWithRegistrars(workspace.id, workspace.path, cfg);
+        // Only register signals for persistent workspaces
+        const isEphemeral =
+          Boolean(workspace.metadata?.ephemeral) ||
+          workspace.configPath.endsWith("eph_workspace.yml");
+        if (!isEphemeral) {
+          await this.registerWithRegistrars(workspace.id, workspace.path, cfg);
+        }
         await this.fileWatcher?.watchWorkspace(workspace);
       }
     } catch (error) {
@@ -118,13 +124,25 @@ export class WorkspaceManager {
       throw error;
     }
 
+    // Determine config filename and ephemeral status
+    const persistentPath = join(absolutePath, "workspace.yml");
+    const ephemeralPath = join(absolutePath, "eph_workspace.yml");
+    const hasPersistent = await exists(persistentPath);
+    const hasEphemeral = await exists(ephemeralPath);
+    const isEphemeral = !hasPersistent && hasEphemeral;
+    const configPath = hasPersistent
+      ? persistentPath
+      : hasEphemeral
+        ? ephemeralPath
+        : join(absolutePath, "workspace.yml");
+
     const id = await this.generateUniqueId();
 
     const entry: WorkspaceEntry = {
       id,
       name: metadata?.name || config.workspace.workspace.name || basename(absolutePath),
       path: absolutePath,
-      configPath: join(absolutePath, "workspace.yml"),
+      configPath,
       status: "inactive",
       createdAt: new Date().toISOString(),
       lastSeen: new Date().toISOString(),
@@ -132,6 +150,10 @@ export class WorkspaceManager {
         description: metadata?.description || config.workspace.workspace.description,
         tags: metadata?.tags,
         atlasVersion: Deno.version.deno,
+        ephemeral: isEphemeral,
+        expiresAt: isEphemeral
+          ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+          : undefined,
       },
     };
 
@@ -142,7 +164,10 @@ export class WorkspaceManager {
     if (this.fileWatcher && !entry.metadata?.system) {
       try {
         await this.fileWatcher.watchWorkspace(entry);
-        await this.registerWithRegistrars(entry.id, entry.path, config);
+        // Only register signals for persistent workspaces
+        if (!entry.metadata?.ephemeral) {
+          await this.registerWithRegistrars(entry.id, entry.path, config);
+        }
       } catch (error) {
         logger.warn("Failed to register workspace", { workspaceId: entry.id, error: error });
       }
@@ -328,43 +353,6 @@ export class WorkspaceManager {
     }
   }
 
-  /**
-   * Get active runtime
-   */
-  getRuntime(workspaceId: string): WorkspaceRuntime | undefined {
-    return this.runtimes.get(workspaceId);
-  }
-
-  /**
-   * Get active runtime count
-   */
-  getActiveRuntimeCount(): number {
-    return this.runtimes.size;
-  }
-
-  /**
-   * Extract results/summary from artifacts.
-   *
-   * Ignores unexpected shapes and returns only present fields. Keeps the daemon
-   * agnostic of artifact structure.
-   */
-  extractExecutionResults(artifacts: Array<{ type: string; data?: unknown }>): {
-    results?: unknown;
-    summary?: string;
-  } {
-    const resultsArtifact = artifacts.find((a) => a.type === "execution_results");
-    if (!resultsArtifact || typeof resultsArtifact.data !== "object" || !resultsArtifact.data) {
-      return {};
-    }
-    const dataObj = resultsArtifact.data as Record<string, unknown>;
-    const out: { results?: unknown; summary?: string } = {};
-    if ("results" in dataObj) out.results = (dataObj as { results?: unknown }).results;
-    if (typeof (dataObj as { summary?: unknown }).summary === "string") {
-      out.summary = (dataObj as { summary?: string }).summary as string;
-    }
-    return out;
-  }
-
   // Update last-seen timestamp in registry
   async updateWorkspaceLastSeen(workspaceId: string): Promise<void> {
     await this.registry.updateWorkspaceLastSeen(workspaceId);
@@ -419,6 +407,10 @@ export class WorkspaceManager {
       const existing = await this.find({ path: workspacePath });
       if (!existing) {
         try {
+          // Ephemeral expiration pre-check and cleanup
+          if (await this.cleanupExpiredEphemeralConfig(workspacePath)) {
+            continue;
+          }
           await this.registerWorkspace(workspacePath);
           imported++;
         } catch (error) {
@@ -441,6 +433,42 @@ export class WorkspaceManager {
   }
 
   /**
+   * Check for expired eph_workspace.yml and remove it if past TTL.
+   * Returns true if the workspace should be skipped from import (expired), false otherwise.
+   */
+  private async cleanupExpiredEphemeralConfig(workspacePath: string): Promise<boolean> {
+    const ephPath = join(workspacePath, "eph_workspace.yml");
+    if (!(await exists(ephPath))) return false;
+    try {
+      const info = await Deno.stat(ephPath);
+      const mtime = info.mtime ?? new Date();
+      const ageMs = Date.now() - mtime.getTime();
+      const ttlMs = 30 * 24 * 60 * 60 * 1000;
+      if (ageMs > ttlMs) {
+        logger.info("Skipping expired ephemeral workspace during auto-import", {
+          path: workspacePath,
+        });
+        try {
+          await Deno.remove(ephPath);
+          logger.info("Removed expired eph_workspace.yml", { path: ephPath });
+        } catch (removeError) {
+          logger.warn("Failed to remove expired eph_workspace.yml", {
+            path: ephPath,
+            error: removeError,
+          });
+        }
+        return true;
+      }
+    } catch (error) {
+      logger.debug("auto-import: failed to stat eph_workspace.yml; treating as non-expired", {
+        path: ephPath,
+        error,
+      });
+    }
+    return false;
+  }
+
+  /**
    * Collect directories containing workspace.yml up to maxDepth.
    *
    * Skips common non-workspace dirs. Does not recurse into a directory once identified
@@ -455,11 +483,16 @@ export class WorkspaceManager {
     if (currentDepth > maxDepth) return;
 
     try {
-      // Check if this directory has workspace.yml
+      // Check if this directory has workspace.yml or eph_workspace.yml
       const workspaceYmlPath = join(path, "workspace.yml");
+      const ephWorkspaceYmlPath = join(path, "eph_workspace.yml");
       if (await exists(workspaceYmlPath)) {
         results.push(path);
         return; // Don't scan subdirectories of a workspace
+      }
+      if (await exists(ephWorkspaceYmlPath)) {
+        results.push(path);
+        return; // Treat as workspace root as well
       }
 
       // Skip common non-workspace directories
@@ -478,8 +511,8 @@ export class WorkspaceManager {
           await this.scanDirectory(join(path, entry.name), results, maxDepth, currentDepth + 1);
         }
       }
-    } catch {
-      // Ignore directories we can't read
+    } catch (error) {
+      logger.debug("scanDirectory: unable to read path; skipping", { path, error });
     }
   }
 
@@ -659,6 +692,13 @@ export class WorkspaceManager {
     newPath: string,
   ): Promise<void> {
     const newWorkspaceDir = dirname(newPath);
+
+    try {
+      this.fileWatcher?.unwatchWorkspace(workspaceId);
+    } catch (error) {
+      logger.debug("Error unwatching before rename reattach", { workspaceId, error });
+    }
+
     try {
       // Validate the new config before adopting and keep it to pass to registrars
       const adapter = new FilesystemConfigAdapter(newWorkspaceDir);
@@ -669,10 +709,18 @@ export class WorkspaceManager {
       await this.stopRuntimeIfActive(workspaceId);
 
       // Update registry status and paths atomically via updateWorkspaceStatus with partial updates
+      const becameEphemeral = newPath.endsWith("eph_workspace.yml");
+      const updatedMetadata = {
+        ...workspace.metadata,
+        ephemeral: becameEphemeral,
+        expiresAt: becameEphemeral
+          ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+          : undefined,
+      };
       await this.registry.updateWorkspaceStatus(workspaceId, workspace.status, {
         path: newWorkspaceDir,
         configPath: newPath,
-        metadata: workspace.metadata,
+        metadata: updatedMetadata,
       });
 
       logger.debug("workspace registry updated for rename", {
@@ -681,14 +729,18 @@ export class WorkspaceManager {
         newPath,
       });
 
-      // Rewire signals to the new path with validated config
-      await this.restartSignalsForWorkspace(workspaceId, newWorkspaceDir, config);
-
-      // Reattach watcher to the new config path
-      try {
-        this.fileWatcher?.unwatchWorkspace(workspaceId);
-      } catch (error) {
-        logger.debug("Error unwatching before rename reattach", { workspaceId, error });
+      // Rewire signals to the new path with validated config (skip for ephemeral)
+      if (!becameEphemeral) {
+        await this.restartSignalsForWorkspace(workspaceId, newWorkspaceDir, config);
+      } else {
+        try {
+          await this.unregisterWithRegistrars(workspaceId);
+        } catch (err) {
+          logger.debug("Error unregistering signals after becoming ephemeral", {
+            workspaceId,
+            err,
+          });
+        }
       }
 
       if (this.fileWatcher) {
@@ -749,6 +801,9 @@ export class WorkspaceManager {
     workspacePath: string,
     config: MergedConfig,
   ): Promise<void> {
+    // Skip for ephemeral workspaces
+    const ws = await this.registry.getWorkspace(workspaceId);
+    if (ws?.metadata?.ephemeral) return;
     try {
       await this.unregisterWithRegistrars(workspaceId);
     } catch (error) {
@@ -773,7 +828,7 @@ export class WorkspaceManager {
     }
   }
 
-  /** Unregister workspace states: signals + runtime, mark inactive, and keep watcher attached. */
+  /** Unregister workspace states: signals + runtime, mark inactive */
   private async unregisterWorkspaceStates(
     workspaceId: string,
     workspace: WorkspaceEntry,
@@ -792,11 +847,88 @@ export class WorkspaceManager {
       lastErrorAt: new Date().toISOString(),
     });
 
-    // Reattach watcher to continue monitoring for config restoration
     try {
       this.fileWatcher?.unwatchWorkspace(workspaceId);
     } catch (error) {
       logger.debug("Error unwatching before reattach after config removal", { workspaceId, error });
+    }
+  }
+
+  /**
+   * Toggle persistence of a workspace by renaming config file and updating metadata.
+   */
+  async updateWorkspacePersistence(id: string, makePersistent: boolean): Promise<void> {
+    const workspace = await this.registry.getWorkspace(id);
+    if (!workspace) throw new Error(`Workspace not found: ${id}`);
+
+    const currentIsEphemeral =
+      Boolean(workspace.metadata?.ephemeral) || workspace.configPath.endsWith("eph_workspace.yml");
+
+    if (makePersistent === !currentIsEphemeral) {
+      return;
+    }
+
+    const fromName = makePersistent ? "eph_workspace.yml" : "workspace.yml";
+    const toName = makePersistent ? "workspace.yml" : "eph_workspace.yml";
+    const fromPath = join(workspace.path, fromName);
+    const toPath = join(workspace.path, toName);
+
+    // Stop runtime before changing
+    await this.stopRuntimeIfActive(id);
+
+    // Detach watcher before filesystem rename/registry updates
+    try {
+      this.fileWatcher?.unwatchWorkspace(id);
+    } catch {
+      logger.debug("Error unwatching before persistence update", { id });
+    }
+
+    try {
+      // Rename config file if source exists; otherwise, if target exists, use it
+      if (await exists(fromPath)) {
+        await Deno.rename(fromPath, toPath);
+      } else if (!(await exists(toPath))) {
+        // If neither exists, throw
+        throw new Error(`Neither ${fromName} nor ${toName} exists in ${workspace.path}`);
+      }
+
+      // Update registry paths and metadata
+      const newMetadata: Record<string, unknown> = { ...workspace.metadata };
+      if (makePersistent) {
+        newMetadata.ephemeral = false;
+        newMetadata.expiresAt = undefined;
+      } else {
+        newMetadata.ephemeral = true;
+        newMetadata.expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+      }
+
+      await this.registry.updateWorkspaceStatus(id, "inactive", {
+        configPath: toPath,
+        metadata: newMetadata,
+      });
+
+      if (this.fileWatcher) {
+        const updated: WorkspaceEntry = {
+          ...workspace,
+          configPath: toPath,
+          metadata: newMetadata,
+          status: "inactive",
+        };
+        await this.fileWatcher.watchWorkspace(updated);
+      }
+
+      // Update signals according to persistence
+      if (makePersistent) {
+        const adapter = new FilesystemConfigAdapter(workspace.path);
+        const loader = new ConfigLoader(adapter, workspace.path);
+        const cfg = await loader.load();
+        await this.registerWithRegistrars(id, workspace.path, cfg);
+      } else {
+        await this.unregisterWithRegistrars(id);
+      }
+    } catch (error) {
+      logger.error("Failed to update workspace persistence", { id, error });
+      throw error;
     }
   }
 }

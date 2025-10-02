@@ -25,14 +25,29 @@ export class ConfigLoader {
   ) {}
 
   /**
-   * Load and validate workspace configuration from workspace.yml only
+   * Resolve the workspace configuration file path. Prefer persistent when both exist.
+   */
+  private async resolveWorkspaceConfigPath(): Promise<{ path: string; ephemeral: boolean }> {
+    const persistentPath = `${this.workspacePath}/workspace.yml`;
+    const ephemeralPath = `${this.workspacePath}/eph_workspace.yml`;
+
+    const hasPersistent = await this.adapter.exists(persistentPath);
+    const hasEphemeral = await this.adapter.exists(ephemeralPath);
+
+    if (hasPersistent) {
+      return { path: persistentPath, ephemeral: false };
+    }
+    if (hasEphemeral) {
+      return { path: ephemeralPath, ephemeral: true };
+    }
+    throw new Error(`Workspace configuration not found at ${persistentPath} or ${ephemeralPath}`);
+  }
+
+  /**
+   * Load and validate workspace configuration from workspace.yml or eph_workspace.yml
    */
   async loadWorkspace(): Promise<z.infer<typeof WorkspaceConfigSchema>> {
-    const configPath = `${this.workspacePath}/workspace.yml`;
-
-    if (!(await this.adapter.exists(configPath))) {
-      throw new Error(`Workspace configuration not found at ${configPath}`);
-    }
+    const { path: configPath } = await this.resolveWorkspaceConfigPath();
 
     const rawConfig = await this.adapter.readYaml(configPath);
 

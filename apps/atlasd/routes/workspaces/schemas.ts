@@ -39,6 +39,7 @@ const workspaceResponseSchema = z
     metadata: WorkspaceMetadataSchema.optional().meta({
       description: "Workspace metadata including error tracking",
     }),
+    type: z.enum(["ephemeral", "persistent"]).meta({ description: "Workspace type" }).optional(),
   })
   .meta({ description: "Workspace information" });
 
@@ -54,6 +55,7 @@ export const workspaceDetailsResponseSchema = z
     metadata: WorkspaceMetadataSchema.optional().meta({
       description: "Workspace metadata including error tracking",
     }),
+    type: z.enum(["ephemeral", "persistent"]).meta({ description: "Workspace type" }).optional(),
     config: z.unknown().meta({ description: "Full workspace configuration" }),
     runtime: workspaceRuntimeSchema
       .optional()
@@ -64,8 +66,16 @@ export const workspaceDetailsResponseSchema = z
   });
 
 export const workspaceConfigResponseSchema = z
-  .object({ config: WorkspaceConfigSchema })
+  .object({
+    config: WorkspaceConfigSchema,
+    type: z.enum(["ephemeral", "persistent"]).meta({ description: "Workspace type" }),
+    expiresAt: z.string().optional().meta({ description: "Ephemeral expiration timestamp" }),
+  })
   .meta({ description: "Workspace configuration data for agent server consumption" });
+
+export const togglePersistenceSchema = z
+  .object({ persistent: z.boolean().describe("Set true for persistent, false for ephemeral") })
+  .meta({ description: "Toggle workspace persistence" });
 
 // ============================================================================
 // Input Schemas
@@ -78,6 +88,7 @@ export const createWorkspaceFromConfigSchema = z
       .string()
       .optional()
       .describe("Custom workspace directory name (auto-resolves conflicts with -2, -3, etc.)"),
+    ephemeral: z.boolean().optional().default(false).describe("Create as ephemeral workspace"),
   })
   .meta({ description: "Create workspace from configuration" });
 

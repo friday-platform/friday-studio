@@ -9,6 +9,9 @@ export const WorkspaceMetadataSchema = z.object({
   tags: z.array(z.string()).optional(),
   system: z.boolean().optional(),
   atlasVersion: z.string().optional(),
+  // Ephemeral workspace controls
+  ephemeral: z.boolean().optional(),
+  expiresAt: z.iso.datetime().optional(),
   // Error tracking fields
   lastError: z.string().optional(),
   lastErrorAt: z.iso.datetime().optional(),
