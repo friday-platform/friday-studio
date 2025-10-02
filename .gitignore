@@ -65,3 +65,4 @@ vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
 dist/
+.playwright-mcp/

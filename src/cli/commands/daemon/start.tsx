@@ -237,10 +237,7 @@ export const handler = async (argv: StartArgs): Promise<void> => {
       Deno.env.set("ATLAS_CONFIG_PATH", argv.atlasConfig);
     }
 
-    // Check if we're running as a detached process - if so, run in foreground mode
-    const isDetachedProcess = Deno.env.get("ATLAS_DETACHED") === "true";
-
-    if (argv.detached && !isDetachedProcess) {
+    if (argv.detached) {
       await startDetached(argv);
     } else {
       await startForeground(argv);
@@ -294,36 +291,38 @@ async function startDetached(argv: StartArgs): Promise<void> {
         ...(argv.logLevel ? ["--log-level", argv.logLevel] : []),
         ...(argv.atlasConfig ? ["--atlas-config", argv.atlasConfig] : []),
       ],
-      env: { ...Deno.env.toObject(), ATLAS_DETACHED: "true" },
+      env: Deno.env.toObject(),
       stdout: "null",
       stderr: "null",
       stdin: "null",
     });
   } else {
     // For source code execution, use deno run
+    const denoArgs = [
+      "run",
+      "--allow-all",
+      "--unstable-kv",
+      "--unstable-broadcast-channel",
+      "--unstable-worker-options",
+      "--env-file",
+      mainModule,
+      "daemon",
+      "start",
+      "--port",
+      (argv.port || 8080).toString(),
+      "--hostname",
+      argv.hostname || "127.0.0.1",
+      "--max-workspaces",
+      (argv.maxWorkspaces || 10).toString(),
+      "--idle-timeout",
+      (argv.idleTimeout || 300).toString(),
+      ...(argv.logLevel ? ["--log-level", argv.logLevel] : []),
+      ...(argv.atlasConfig ? ["--atlas-config", argv.atlasConfig] : []),
+    ];
+
     cmd = new Deno.Command(execPath, {
-      args: [
-        "run",
-        "--allow-all",
-        "--unstable-kv",
-        "--unstable-broadcast-channel",
-        "--unstable-worker-options",
-        "--env-file",
-        mainModule,
-        "daemon",
-        "start",
-        "--port",
-        (argv.port || 8080).toString(),
-        "--hostname",
-        argv.hostname || "127.0.0.1",
-        "--max-workspaces",
-        (argv.maxWorkspaces || 10).toString(),
-        "--idle-timeout",
-        (argv.idleTimeout || 300).toString(),
-        ...(argv.logLevel ? ["--log-level", argv.logLevel] : []),
-        ...(argv.atlasConfig ? ["--atlas-config", argv.atlasConfig] : []),
-      ],
-      env: { ...Deno.env.toObject(), ATLAS_DETACHED: "true" },
+      args: denoArgs,
+      env: Deno.env.toObject(),
       stdout: "null",
       stderr: "null",
       stdin: "null",

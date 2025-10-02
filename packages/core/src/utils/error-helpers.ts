@@ -1,5 +1,5 @@
-import { APICallError } from "@ai-sdk/provider";
 import { stringifyError } from "@atlas/utils";
+import { APICallError, RetryError } from "ai";
 import { z } from "zod";
 import {
   type APIErrorCause,
@@ -9,7 +9,8 @@ import {
 } from "../types/error-causes.ts";
 
 /**
- * Zod schema for validating APICallError structure
+ * Zod schema for validating AI SDK API Call errors
+ * @see https://ai-sdk.dev/docs/reference/ai-sdk-errors/ai-api-call-error
  */
 const APICallErrorSchema = z.object({
   message: z.string(),
@@ -20,6 +21,21 @@ const APICallErrorSchema = z.object({
   responseBody: z.string().optional(),
   isRetryable: z.boolean().optional(),
   data: z.unknown(),
+});
+
+/**
+ * Zod schema for parsing AI SDK Retry errors
+ * Only message, reason, and errors are set by the constructor
+ * @see https://ai-sdk.dev/docs/reference/ai-sdk-errors/ai-retry-error
+ */
+const AiRetryErrorSchema = z.object({
+  reason: z
+    .union([z.literal("maxRetriesExceeded"), z.literal("errorNotRetryable"), z.literal("abort")])
+    .optional(),
+  message: z.string(),
+  lastError: z.unknown().optional(),
+  requestBodyValues: z.unknown().optional(),
+  errors: z.unknown().array(),
 });
 
 /**
@@ -117,35 +133,122 @@ export function parseAPICallError(error: unknown): APICallError | null {
   });
 }
 
+export function parseAiRetryError(error: unknown): RetryError | null {
+  if (RetryError.isInstance(error)) {
+    return error;
+  }
+
+  // Otherwise, validate structure with Zod and construct new instance
+  const result = AiRetryErrorSchema.safeParse(error);
+  if (!result.success) {
+    return null;
+  }
+
+  // Construct from validated data
+  // Default to maxRetriesExceeded if reason is missing (e.g., from serialization)
+  return new RetryError({
+    message: result.data.message,
+    errors: result.data.errors,
+    reason: result.data.reason ?? "maxRetriesExceeded",
+  });
+}
+
+/**
+ * Try to create an API error cause from a value
+ * Returns validated ErrorCause if value is an APICallError, null otherwise
+ */
+function getCauseFromAiApiCallError(value: unknown): ErrorCause | null {
+  const apiError = parseAPICallError(value);
+  if (!apiError) return null;
+  return ErrorCauseSchema.parse(createAPIErrorCause(apiError));
+}
+
+/**
+ * Detect if an error is a network/connection error
+ * Returns NetworkErrorCause if detected, null otherwise
+ *
+ * Note: Fetch/HTTP errors in Deno/browsers are TypeErrors without standard error codes.
+ * We classify based on error type first, then use minimal keywords only to distinguish
+ * subtypes (timeout vs connection vs certificate). This is the most reliable approach
+ * available without standard error codes.
+ */
+function tryCreateNetworkErrorCause(error: unknown): ErrorCause | null {
+  // Network errors from fetch are TypeErrors
+  if (!(error instanceof TypeError)) return null;
+
+  const errorMessage = error.message.toLowerCase();
+
+  // Minimal keyword checks to distinguish error subtypes
+  // These are standard error categories, not arbitrary string matching
+  const isCertificateError = errorMessage.includes("certificate") || errorMessage.includes("tls");
+  const isTimeout = errorMessage.includes("timeout");
+  const isConnectionError = errorMessage.includes("connection") || errorMessage.includes("connect");
+
+  // If it's a TypeError but doesn't match network patterns, it's not a network error
+  if (!isCertificateError && !isTimeout && !isConnectionError) return null;
+
+  let code: string;
+  if (isCertificateError) {
+    code = "NETWORK_CERTIFICATE_ERROR";
+  } else if (isTimeout) {
+    code = "NETWORK_TIMEOUT";
+  } else {
+    code = "NETWORK_CONNECTION_FAILED";
+  }
+
+  const cause: NetworkErrorCause = { type: "network" as const, code };
+
+  return ErrorCauseSchema.parse(cause);
+}
+
 /**
  * Create a structured, VALIDATED cause from various error types
  * Only classifies errors when we have concrete data (e.g., HTTP status codes)
  */
 export function createErrorCause(error: unknown): ErrorCause {
   // Handle APICallError from @ai-sdk/provider - we have concrete status codes
-  const apiError = parseAPICallError(error);
-  if (apiError) {
-    const cause = createAPIErrorCause(apiError);
-    return ErrorCauseSchema.parse(cause);
-  }
+  let cause = getCauseFromAiApiCallError(error);
+  if (cause) return cause;
 
-  // Check if error already has a structured cause
-  if (error instanceof Error) {
-    const existingCause = parseErrorCause(error);
-    if (existingCause) {
-      return existingCause; // Already validated
+  // Check against retry errors from the AI SDK
+  const retryError = parseAiRetryError(error);
+  if (retryError) {
+    // AI SDK's RetryError.lastError is declared but never populated by constructor
+    // The actual errors are stored in the errors array
+    if (retryError.lastError) {
+      cause = getCauseFromAiApiCallError(retryError.lastError);
+      if (cause) return cause;
+    }
+
+    // Check errors array as that's where AI SDK actually stores errors
+    if (retryError.errors && retryError.errors.length > 0) {
+      cause = getCauseFromAiApiCallError(retryError.errors[0]);
+      if (cause) return cause;
     }
   }
 
+  // Check if error already has a structured cause (Error instances only)
+  if (error instanceof Error) {
+    const existingCause = parseErrorCause(error);
+    if (existingCause) return existingCause;
+
+    // Check if the error cause contains an APICallError (other retry patterns)
+    if (error.cause) {
+      cause = getCauseFromAiApiCallError(error.cause);
+      if (cause) return cause;
+    }
+  }
+
+  // Check for network/connection errors (TypeError with specific patterns)
+  cause = tryCreateNetworkErrorCause(error);
+  if (cause) return cause;
+
   // Everything else is unknown - don't guess from error messages
-  const cause = {
+  return ErrorCauseSchema.parse({
     type: "unknown" as const,
     code: "UNKNOWN_ERROR",
     originalError: stringifyError(error),
-  };
-
-  // ALWAYS validate with Zod before returning
-  return ErrorCauseSchema.parse(cause);
+  });
 }
 
 /**
@@ -173,7 +276,9 @@ export function getErrorDisplayMessage(errorCause: ErrorCause): string {
           ? "Service temporarily unavailable. Retrying automatically..."
           : "Service temporarily unavailable. Please try again later.";
       case "OVERLOADED_ERROR":
-        return "Service is currently overloaded. Request will be retried automatically.";
+        return apiCause.providerMessage
+          ? `API response: ${apiCause.providerMessage}`
+          : "Service is currently overloaded.";
       case "DEADLINE_EXCEEDED":
         return "Request took too long to complete. Try simplifying your request.";
       default:
@@ -182,6 +287,19 @@ export function getErrorDisplayMessage(errorCause: ErrorCause): string {
           : `API error (${apiCause.statusCode}): ${apiCause.code}`;
     }
   } else if (isNetworkErrorCause(errorCause)) {
+    const networkCause = errorCause;
+
+    // Certificate/TLS errors
+    if (networkCause.code === "NETWORK_CERTIFICATE_ERROR") {
+      return "Security certificate verification failed. This may be a proxy or network configuration issue.";
+    }
+
+    // Timeout errors
+    if (networkCause.code === "NETWORK_TIMEOUT") {
+      return "Request timed out. The service may be overloaded or unreachable.";
+    }
+
+    // Connection failures
     return "Network connection failed. Please check your internet connection and try again.";
   } else {
     // For unknown errors, include the original error if available

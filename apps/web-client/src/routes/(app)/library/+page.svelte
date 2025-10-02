@@ -3,7 +3,7 @@ import { openPath } from "@tauri-apps/plugin-opener";
 import { onMount } from "svelte";
 import { getAppContext } from "$lib/app-context.svelte";
 
-import type { LibraryItem } from "../../../../../src/core/library/types.ts";
+import type { LibraryItem } from "@atlas/core/library";
 
 const appCtx = getAppContext();
 

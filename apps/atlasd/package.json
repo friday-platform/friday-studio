@@ -16,7 +16,7 @@
     "@atlas/storage": "workspace:*",
     "@atlas/utils": "workspace:*",
     "@atlas/workspace": "workspace:*",
-    "@hono/mcp": "^0.1.4",
+    "@atlas-vendor/hono-mcp": "workspace:*",
     "@hono/zod-validator": "^0.7.3",
     "@std/fs": "npm:@jsr/std__fs@^1.0.19",
     "@std/path": "npm:@jsr/std__path@^1.1.2",

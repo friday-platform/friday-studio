@@ -4,12 +4,7 @@ import { z } from "zod";
 const BaseErrorCauseSchema = z.object({ code: z.string() });
 
 // Network errors (connection issues, timeouts, daemon connectivity)
-const NetworkErrorCauseSchema = BaseErrorCauseSchema.extend({
-  type: z.literal("network"),
-  statusCode: z.number().optional(),
-  url: z.string().optional(),
-  timeout: z.boolean().optional(),
-});
+const NetworkErrorCauseSchema = BaseErrorCauseSchema.extend({ type: z.literal("network") });
 
 // API errors (from AI providers, external services)
 const APIErrorCauseSchema = BaseErrorCauseSchema.extend({

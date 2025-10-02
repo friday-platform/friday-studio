@@ -6,7 +6,7 @@ import { getAppContext, getFileType } from "$lib/app-context.svelte";
 import { CustomIcons } from "$lib/components/icons/custom";
 import { IconSmall } from "$lib/components/icons/small";
 import Textarea from "$lib/components/textarea.svelte";
-import Artifacts from "$lib/modules/artifacts/artifacts.svelte";
+import Artifacts from "$lib/modules/artifacts/display.svelte";
 import { getClientContext } from "$lib/modules/client/context.svelte";
 import ErrorMessage from "$lib/modules/messages/error-message.svelte";
 import { formatMessage } from "$lib/modules/messages/format";

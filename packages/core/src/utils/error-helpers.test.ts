@@ -197,3 +197,52 @@ Deno.test("getErrorDisplayMessage - handles unknown errors", () => {
   const message = getErrorDisplayMessage(errorCause);
   assertEquals(message, "An unexpected error occurred. Please try again.");
 });
+
+Deno.test("createErrorCause - unwraps APICallError from .errors array (AI SDK RetryError)", () => {
+  // Simulate AI SDK's RetryError structure
+  const retryError = {
+    name: "RetryError",
+    message: "Failed after 2 attempts",
+    errors: [
+      new APICallError({
+        message: "Overloaded",
+        url: "https://api.example.com/v1/messages",
+        requestBodyValues: { prompt: "test" },
+        statusCode: 529,
+        isRetryable: true,
+      }),
+    ],
+  };
+
+  const cause = createErrorCause(retryError);
+
+  assertEquals(cause.type, "api");
+  assertEquals(cause.code, "OVERLOADED_ERROR");
+  if (cause.type === "api") {
+    assertEquals(cause.statusCode, 529);
+    assertEquals(cause.isRetryable, true);
+  }
+});
+
+Deno.test("createErrorCause - unwraps APICallError from .cause (Deno std/async retry)", () => {
+  // Simulate @std/async RetryError structure
+  const apiCallError = new APICallError({
+    message: "Authentication failed",
+    url: "https://api.example.com/v1/chat",
+    requestBodyValues: { model: "test" },
+    statusCode: 401,
+    isRetryable: false,
+    data: { error: { message: "invalid api key" } },
+  });
+
+  const retryError = new Error("Operation failed after 5 attempts", { cause: apiCallError });
+
+  const cause = createErrorCause(retryError);
+
+  assertEquals(cause.type, "api");
+  assertEquals(cause.code, "AUTHENTICATION_ERROR");
+  if (cause.type === "api") {
+    assertEquals(cause.statusCode, 401);
+    assertEquals(cause.providerMessage, "invalid api key");
+  }
+});

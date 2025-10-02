@@ -3,7 +3,7 @@
  * All CLI commands should use this to communicate with the daemon
  */
 
-import type { LibraryItem, StoreItemInput } from "../../../../../../src/core/library/types.ts";
+import type { LibraryItem, StoreItemInput } from "@atlas/core/library";
 
 interface DaemonClientOptions {
   daemonUrl: string;

@@ -81,12 +81,18 @@ export function formatMessage(
     part.type === "data-error" ||
     part.type === "data-agent-error"
   ) {
+    // Extract actual error message from the data payload
+    const errorMessage =
+      part.data && typeof part.data === "object" && "error" in part.data
+        ? String(part.data.error)
+        : "Something went wrong";
+
     return {
       id: crypto.randomUUID(),
       type: "error",
       timestamp: new Date().toISOString(),
       author: "Atlas",
-      content: "Something went wrong",
+      content: errorMessage,
     };
   }
 }

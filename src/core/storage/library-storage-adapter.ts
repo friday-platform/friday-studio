@@ -22,7 +22,7 @@ import type {
   LibraryStats,
   StoreItemInput,
   TemplateConfig,
-} from "../library/types.ts";
+} from "@atlas/core/library";
 import type { KVStorage } from "./kv-storage.ts";
 
 /**

@@ -2,7 +2,13 @@
   "name": "atlas",
   "version": "1.0.0",
   "type": "module",
-  "workspaces": ["./apps/*", "./packages/*", "./tools/memory_manager", "./tools/evals"],
+  "workspaces": [
+    "./apps/*",
+    "./packages/*",
+    "./packages/vendor/*",
+    "./tools/memory_manager",
+    "./tools/evals"
+  ],
   "scripts": {
     "lint": "deno lint",
     "test": "deno test",
@@ -26,6 +32,7 @@
     "@atlas/system": "workspace:*",
     "@atlas/utils": "workspace:*",
     "@atlas/workspace": "workspace:*",
+    "@atlas-vendor/hono-mcp": "workspace:*",
     "@biomejs/biome": "^2.2.4",
     "@hono/standard-validator": "^0.1.5",
     "@inkjs/ui": "^2.0.0",
