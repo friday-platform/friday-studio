@@ -9,15 +9,17 @@ const __dirname = dirname(fromFileUrl(import.meta.url));
 
 // Determine build type based on environment variables or Git branch
 let buildType = "development";
-if (Deno.env.get("BUILD_TYPE")) {
-  buildType = Deno.env.get("BUILD_TYPE");
-} else if (Deno.env.get("GITHUB_REF")) {
-  // GitHub Actions context
+const envBuildType = Deno.env.get("BUILD_TYPE");
+if (envBuildType) {
+  buildType = envBuildType;
+} else {
   const githubRef = Deno.env.get("GITHUB_REF");
-  if (githubRef.includes("edge")) {
-    buildType = "edge";
-  } else if (githubRef.includes("nightly")) {
-    buildType = "nightly";
+  if (githubRef) {
+    if (githubRef.includes("edge")) {
+      buildType = "edge";
+    } else if (githubRef.includes("nightly")) {
+      buildType = "nightly";
+    }
   }
 }
 
@@ -29,13 +31,21 @@ const commitHash =
   Deno.env.get("GIT_COMMIT_HASH") || (githubSha ? githubSha.substring(0, 8) : "unknown");
 
 // Get version from package.json or environment
-let version = Deno.env.get("APP_VERSION");
-if (!version) {
+let version = Deno.env.get("APP_VERSION") || "0.1.0";
+if (!Deno.env.get("APP_VERSION")) {
   try {
-    const packageJson = JSON.parse(await Deno.readTextFile(join(__dirname, "..", "package.json")));
-    version = packageJson.version || "0.1.0";
+    const packageJsonText = await Deno.readTextFile(join(__dirname, "..", "package.json"));
+    const packageJson = JSON.parse(packageJsonText);
+    if (
+      typeof packageJson === "object" &&
+      packageJson !== null &&
+      "version" in packageJson &&
+      typeof packageJson.version === "string"
+    ) {
+      version = packageJson.version;
+    }
   } catch {
-    version = "0.1.0";
+    // Keep default version
   }
 }
 

@@ -361,11 +361,15 @@ export class AtlasTelemetry {
     }
 
     // Create span with appropriate context
+    const tracer = AtlasTelemetry.tracer;
+    if (!tracer) {
+      return await fn(null);
+    }
+
     const spanCreator = contextToUse
       ? (callback: (span: Span) => Promise<T>) =>
-          AtlasTelemetry.tracer.startActiveSpan(name, { kind }, contextToUse, callback)
-      : (callback: (span: Span) => Promise<T>) =>
-          AtlasTelemetry.tracer.startActiveSpan(name, { kind }, callback);
+          tracer.startActiveSpan(name, { kind }, contextToUse, callback)
+      : (callback: (span: Span) => Promise<T>) => tracer.startActiveSpan(name, { kind }, callback);
 
     return await spanCreator(async (span: Span) => {
       return await AtlasTelemetry.executeSpanLogic(
@@ -573,7 +577,7 @@ export class AtlasTelemetry {
       span.setStatus({ code: statusCodes?.OK || 1 });
       return result;
     } catch (error) {
-      if (span.recordException) {
+      if (span.recordException && error instanceof Error) {
         span.recordException(error);
       }
       span.setStatus({ code: statusCodes?.ERROR || 2, message: String(error) });
@@ -675,7 +679,10 @@ export class AtlasTelemetry {
       span?.setAttribute("atlas.component", validatedContext.component);
 
       // Set all context attributes directly using static mapping (single loop)
-      Object.entries(WORKER_ATTRIBUTE_MAPPING).forEach(([contextKey, attributeKey]) => {
+      (
+        Object.keys(WORKER_ATTRIBUTE_MAPPING) as Array<keyof typeof WORKER_ATTRIBUTE_MAPPING>
+      ).forEach((contextKey) => {
+        const attributeKey = WORKER_ATTRIBUTE_MAPPING[contextKey];
         const value = validatedContext[contextKey];
         if (value !== undefined && typeof value === "string") {
           span?.setAttribute(attributeKey, value);
