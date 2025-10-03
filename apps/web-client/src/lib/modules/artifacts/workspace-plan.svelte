@@ -1,30 +1,40 @@
 <script lang="ts">
-import type { SlackSummaryData, SummaryData } from "@atlas/core/artifacts";
-import { CustomIcons } from "$lib/components/icons/custom";
-import { markdownToHTML } from "$lib/modules/messages/markdown-utils";
+import type { WorkspacePlan } from "@atlas/core/artifacts";
 
-type Props = { data: SummaryData | SlackSummaryData; source?: "slack" };
-
-let { data, source }: Props = $props();
-const htmlContent = $derived(markdownToHTML(data));
+type Props = { workspacePlan: WorkspacePlan };
+let { workspacePlan }: Props = $props();
 
 let isExpanded = $state(false);
 </script>
 
 <div class="component">
 	<header>
-		<h2>
-			{#if source === 'slack'}
-				<CustomIcons.Slack />
-			{/if}
-
-			<span> Summary </span>
-		</h2>
+		<span>Plan</span>
 
 		<button onclick={() => (isExpanded = !isExpanded)}>{isExpanded ? 'Collapse' : 'Expand'}</button>
 	</header>
+
 	<div class="summary" class:expanded={isExpanded}>
-		{@html htmlContent}
+		<h1>{workspacePlan.workspace.name}</h1>
+		<p>{workspacePlan.workspace.purpose}</p>
+
+		{#each workspacePlan.jobs as job}
+			{@const signal = workspacePlan.signals.find((s) => s.id === job.triggerSignalId)}
+
+			<h2>{job.name}</h2>
+			<p>{signal?.description}</p>
+
+			<ul>
+				{#each job.steps as step}
+					{@const agent = workspacePlan.agents.find((a) => a.id === step.agentId)}
+					<li>
+						<strong>{agent?.name}</strong>
+
+						<p>{agent?.description}</p>
+					</li>
+				{/each}
+			</ul>
+		{/each}
 	</div>
 </div>
 
@@ -47,15 +57,9 @@ let isExpanded = $state(false);
 			position: relative;
 			z-index: var(--layer-2);
 
-			h2 {
-				display: flex;
-				align-items: center;
-				gap: var(--size-2);
-
-				span {
-					font-weight: var(--font-weight-4-5);
-					opacity: 0.5;
-				}
+			span {
+				font-weight: var(--font-weight-4-5);
+				opacity: 0.5;
 			}
 
 			button {
@@ -104,51 +108,38 @@ let isExpanded = $state(false);
 			font-size: var(--font-size-4);
 			font-weight: var(--font-weight-6);
 			line-height: var(--font-lineheight-0);
+			margin-block-end: var(--size-1-5);
+		}
+
+		& :global(h2) {
+			font-size: var(--font-size-3);
+			font-weight: var(--font-weight-6);
+			line-height: var(--font-lineheight-0);
+			margin-block: var(--size-3) var(--size-0-5);
+		}
+
+		& :global(ul:not(:last-child)) {
+			margin-block-end: var(--size-2);
+		}
+
+		& :global(li) {
+			margin-block-start: var(--size-2);
+		}
+
+		& :global(p) {
+			opacity: 0.7;
 		}
 
 		& :global(p),
 		& :global(li) {
 			color: var(--text-1);
-			opacity: 0.8;
-			font-size: var(--font-size-3);
+
+			font-size: var(--font-size-2);
 			line-height: var(--font-lineheight-3);
 		}
 
-		& :global(li li) {
-			opacity: 1;
-		}
-
-		& :global(p),
-		& :global(ul),
-		& :global(ol) {
-			&:global(:has(+ ul, + ol, + p)) {
-				margin-block-end: var(--size-1-5);
-			}
-		}
-
-		& :global(ul) {
-			list-style-type: '⋅ ';
-			margin-inline-start: var(--size-4);
-		}
-
-		& :global(ol) {
-			list-style-type: decimal;
-			margin-inline-start: var(--size-5);
-		}
-
 		& :global(strong) {
-			font-weight: var(--font-weight-6);
-		}
-
-		& :global(a) {
-			color: var(--text-1);
 			font-weight: var(--font-weight-5);
-			transition: color 150ms ease;
-			text-decoration: underline;
-
-			&:hover {
-				color: var(--text-3);
-			}
 		}
 	}
 </style>

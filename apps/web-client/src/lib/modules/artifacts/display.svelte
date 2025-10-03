@@ -4,6 +4,7 @@ import { ArtifactDataSchema } from "@atlas/core/artifacts";
 import { z } from "zod";
 import Schedule from "$lib/components/primitives/schedule.svelte";
 import Summary from "$lib/components/primitives/summary.svelte";
+import WorkspacePlan from "./workspace-plan.svelte";
 
 type Props = { artifactId: string };
 
@@ -43,7 +44,7 @@ $effect(() => {
 		<Summary data={artifact.data} />
 	{:else if artifact.type === 'slack-summary'}
 		<Summary data={artifact.data} source="slack" />
-	{:else}
-		<span>{JSON.stringify(artifact.data, null, 2)}</span>
+	{:else if artifact.type === 'workspace-plan'}
+		<WorkspacePlan workspacePlan={artifact.data} />
 	{/if}
 {/if}

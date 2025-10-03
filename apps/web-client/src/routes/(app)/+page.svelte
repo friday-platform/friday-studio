@@ -1,11 +1,9 @@
 <script lang="ts">
 import { open } from "@tauri-apps/plugin-dialog";
 import { onMount } from "svelte";
-import { fade } from "svelte/transition";
 import { getAppContext, getFileType } from "$lib/app-context.svelte";
 import { CustomIcons } from "$lib/components/icons/custom";
 import { IconSmall } from "$lib/components/icons/small";
-import Summary from "$lib/components/primitives/summary.svelte";
 import Textarea from "$lib/components/textarea.svelte";
 import DisplayArtifact from "$lib/modules/artifacts/display.svelte";
 import { getClientContext } from "$lib/modules/client/context.svelte";
@@ -14,7 +12,6 @@ import { formatMessage } from "$lib/modules/messages/format";
 import Message from "$lib/modules/messages/message.svelte";
 import Progress from "$lib/modules/messages/progress.svelte";
 import Table from "$lib/modules/messages/table.svelte";
-import WorkspaceSummary from "$lib/modules/messages/workspace-summary.svelte";
 
 const appCtx = getAppContext();
 
@@ -25,7 +22,6 @@ let message = $state<string>("");
 let scrollContainer = $state<HTMLDivElement | null>(null);
 let userHasScrolled = $state(false);
 let animationFrameId = $state<number | null>(null);
-let showPlan = $state(false);
 
 onMount(() => {
   if (!clientCtx.conversationSessionId) {
@@ -95,11 +91,6 @@ const hasMessages = $derived(
 						<Message message={formattedMessage} />
 					{:else if formattedMessage && formattedMessage.type === 'tool_call' && formattedMessage.metadata?.toolName === 'table_output'}
 						<Table data={formattedMessage.metadata?.result} />
-					{:else if formattedMessage && formattedMessage.type === 'tool_call' && formattedMessage.metadata?.toolName === 'workspace_summary'}
-						<WorkspaceSummary
-							data={formattedMessage.metadata?.result}
-							onShowPlan={() => (showPlan = true)}
-						/>
 					{:else if formattedMessage && formattedMessage.type === 'tool_call' && formattedMessage.metadata?.toolName === 'display_artifact'}
 						<!-- @ts-expect-error: this is accurate but poorly typed right now -->
 						<DisplayArtifact artifactId={formattedMessage.metadata?.artifactId} />
@@ -314,34 +305,6 @@ const hasMessages = $derived(
 			</footer>
 		{/if}
 	</div>
-
-	{#if showPlan}
-		{@const latestPlanMessage = clientCtx.messages.findLast(
-			(message) => message.type === 'tool-workspace_summary'
-		)}
-		{@const formattedPlan = latestPlanMessage
-			? formatMessage(latestPlanMessage, clientCtx.user)
-			: null}
-		{#if formattedPlan}
-			{@const data = formattedPlan.metadata?.result}
-			<div class="plan" transition:fade={{ duration: 150 }}>
-				<button type="button" class="close-button" onclick={() => (showPlan = false)}>
-					<IconSmall.Close />
-				</button>
-				<h3>Description</h3>
-
-				<p>{data.data.description}</p>
-
-				<h3>Agents</h3>
-
-				<ul>
-					{#each data.data.agents as agent}
-						<li>{agent}</li>
-					{/each}
-				</ul>
-			</div>
-		{/if}
-	{/if}
 </div>
 
 <style>
@@ -354,42 +317,6 @@ const hasMessages = $derived(
 		position: relative;
 		transition: all 150ms ease;
 		z-index: var(--layer-1);
-
-		.plan {
-			background-color: var(--color-surface-1);
-			border-radius: var(--radius-3);
-			box-shadow: var(--shadow-1);
-			inset-block-start: var(--size-10);
-			inset-inline-end: var(--size-10);
-			position: absolute;
-			inline-size: var(--size-72);
-			padding: var(--size-4);
-			max-block-size: calc(100dvh - var(--size-20));
-			overflow: auto;
-			scrollbar-width: thin;
-			z-index: var(--layer-5);
-
-			h3 {
-				font-weight: var(--font-weight-5);
-
-				&:not(:first-of-type) {
-					margin-block-start: var(--size-4);
-				}
-			}
-
-			p,
-			li {
-				font-size: var(--font-size-1);
-				font-weight: var(--font-weight-4);
-				opacity: 0.7;
-			}
-
-			.close-button {
-				position: absolute;
-				inset-inline-end: var(--size-2);
-				inset-block-start: var(--size-2);
-			}
-		}
 	}
 
 	.main {
