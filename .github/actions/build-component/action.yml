@@ -1,9 +1,9 @@
 name: "Build Atlas Component"
-description: "Build any Atlas component (binary, diagnostics, web-app)"
+description: "Build any Atlas component (binary, web-app)"
 
 inputs:
   component:
-    description: "Component to build (binary, diagnostics, web-app)"
+    description: "Component to build (binary, web-app)"
     required: true
   version:
     description: "Version string for the build"
@@ -56,11 +56,6 @@ runs:
             entry_point="src/cli.tsx"
             output_name="atlas"
             compile_args="--include=src --include=examples"
-            ;;
-          diagnostics)
-            entry_point="apps/diagnostics/src/index.ts"
-            output_name="atlas-diagnostics"
-            compile_args=""
             ;;
           web-app)
             # Web app uses different build process

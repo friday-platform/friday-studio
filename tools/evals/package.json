@@ -7,7 +7,6 @@
     "@atlas/atlasd": "workspace:*",
     "@atlas/bundled-agents": "workspace:*",
     "@atlas/core": "workspace:*",
-    "@atlas/logger": "workspace:*",
     "@atlas/oapi-client": "workspace:*",
     "@atlas/system": "workspace:*",
     "@atlas/utils": "workspace:*",

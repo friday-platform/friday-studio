@@ -1,62 +1,37 @@
-No Svelte config file found in /Users/ericskram/code/tempest/atlas-env/worktrees/vector-search-improvements - using SvelteKit's default configuration without an adapter.
+No Svelte config file found in /Users/lcf/code/github.com/tempestteam/atlas - using SvelteKit's default configuration without an adapter.
 # Knip report
 
-## Unused files (10)
+## Unused files (8)
 
-* apps/web-client/src/lib/components/about-dialog.svelte
 * apps/web-client/src/lib/components/icons/custom/calendar.svelte
 * apps/web-client/src/lib/components/settings-dialog.svelte
-* packages/core/src/artifacts/mod.ts
-* packages/core/src/artifacts/model.ts
-* packages/core/src/artifacts/storage.ts
+* packages/mcp-server/src/tools/workspace/persistence.ts
+* packages/system/agents/conversation/tools/workspace-summary.ts
 * packages/utils/src/paths.ts
 * packages/utils/src/telemetry.ts
 * tools/evals/agents/google-calendar-agent/extracting-portfolio-meetings.ts
 * tools/evals/agents/research/research-tasks.ts
 
-## Unused dependencies (5)
+## Unused exports (16)
 
-| Name                     | Location                          | Severity |
-| :----------------------- | :-------------------------------- | :------- |
-| @atlas/workspace         | packages/system/package.json:15:6 | error    |
-| cookie                   | apps/web-client/package.json:32:6 | error    |
-| @opentelemetry/api       | packages/utils/package.json:7:6   | error    |
-| @hono/standard-validator | package.json:30:6                 | error    |
-| @biomejs/biome           | package.json:29:6                 | error    |
-
-## Unused devDependencies (1)
-
-| Name             | Location                                | Severity |
-| :--------------- | :-------------------------------------- | :------- |
-| electron-builder | tools/atlas-installer/package.json:37:6 | warn     |
-
-## Unlisted binaries (2)
-
-| Name             | Location                           | Severity |
-| :--------------- | :--------------------------------- | :------- |
-| electron-builder | tools/atlas-installer/package.json | error    |
-| electron         | tools/atlas-installer/package.json | error    |
-
-## Unresolved imports (2)
-
-| Name                                     | Location                                                   | Severity |
-| :--------------------------------------- | :--------------------------------------------------------- | :------- |
-| ../../../../../src/core/library/types.ts | apps/web-client/src/routes/(app)/library/+page.svelte:4:34 | error    |
-| $lib/build-info                          | apps/web-client/src/routes/about/+page.svelte:4:28         | error    |
-
-## Unused exports (9)
-
-| Name                                    | Location                                        | Severity |
-| :-------------------------------------- | :---------------------------------------------- | :------- |
-| updateWorkspaceResponseSchema           | apps/atlasd/routes/workspaces/schemas.ts:101:14 | error    |
-| signalTriggerResponseSchema             | apps/atlasd/routes/workspaces/schemas.ts:140:14 | error    |
-| errorResponseSchema                     | apps/atlasd/routes/workspaces/schemas.ts:119:14 | error    |
-| signalPathSchema                        | apps/atlasd/routes/workspaces/schemas.ts:131:14 | error    |
-| createWorkspaceFromConfigResponseSchema | apps/atlasd/routes/workspaces/schemas.ts:84:14  | error    |
-| workspaceDetailsResponseSchema          | apps/atlasd/routes/workspaces/schemas.ts:45:14  | error    |
-| workspaceConfigResponseSchema           | apps/atlasd/routes/workspaces/schemas.ts:66:14  | error    |
-| updateWorkspaceSchema                   | apps/atlasd/routes/workspaces/schemas.ts:94:14  | error    |
-| workspaceIdParamSchema                  | apps/atlasd/routes/workspaces/schemas.ts:9:14   | error    |
+| Name                                    | Location                                                             | Severity |
+| :-------------------------------------- | :------------------------------------------------------------------- | :------- |
+| enrichAgent                             | packages/system/agents/workspace-creation/enrichers/agents.ts:115:23 | error    |
+| updateWorkspaceResponseSchema           | apps/atlasd/routes/workspaces/schemas.ts:112:14                      | error    |
+| signalTriggerResponseSchema             | apps/atlasd/routes/workspaces/schemas.ts:151:14                      | error    |
+| updateWorkspaceSchema                   | apps/atlasd/routes/workspaces/schemas.ts:105:14                      | error    |
+| errorResponseSchema                     | apps/atlasd/routes/workspaces/schemas.ts:130:14                      | error    |
+| parseAiRetryError                       | packages/core/src/utils/error-helpers.ts:136:17                      | error    |
+| signalPathSchema                        | apps/atlasd/routes/workspaces/schemas.ts:142:14                      | error    |
+| createWorkspaceFromConfigResponseSchema | apps/atlasd/routes/workspaces/schemas.ts:95:14                       | error    |
+| workspaceDetailsResponseSchema          | apps/atlasd/routes/workspaces/schemas.ts:46:14                       | error    |
+| workspaceConfigResponseSchema           | apps/atlasd/routes/workspaces/schemas.ts:68:14                       | error    |
+| togglePersistenceSchema                 | apps/atlasd/routes/workspaces/schemas.ts:76:14                       | error    |
+| workspaceIdParamSchema                  | apps/atlasd/routes/workspaces/schemas.ts:9:14                        | error    |
+| CalendarScheduleArtifactSchema          | packages/core/src/artifacts/model.ts:22:14                           | error    |
+| WorkspacePlanArtifactSchema             | packages/core/src/artifacts/model.ts:16:14                           | error    |
+| SlackSummaryArtifactSchema              | packages/core/src/artifacts/model.ts:34:14                           | error    |
+| SummaryArtifactSchema                   | packages/core/src/artifacts/model.ts:28:14                           | error    |
 
 ## Unused exported enum members (2)
 

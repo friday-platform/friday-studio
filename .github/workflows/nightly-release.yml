@@ -81,54 +81,6 @@ jobs:
       retention-days: 5
     secrets: inherit
 
-  build-diagnostics-linux:
-    needs: version
-    uses: ./.github/workflows/build-component.yml
-    with:
-      component: diagnostics
-      version: ${{ needs.version.outputs.version }}
-      platform: linux
-      arch: amd64
-      runner: ubuntu-latest-8-cores
-      retention-days: 5
-    secrets: inherit
-
-  build-diagnostics-darwin-amd64:
-    needs: version
-    uses: ./.github/workflows/build-component.yml
-    with:
-      component: diagnostics
-      version: ${{ needs.version.outputs.version }}
-      platform: darwin
-      arch: amd64
-      runner: macos-latest
-      retention-days: 5
-    secrets: inherit
-
-  build-diagnostics-darwin-arm64:
-    needs: version
-    uses: ./.github/workflows/build-component.yml
-    with:
-      component: diagnostics
-      version: ${{ needs.version.outputs.version }}
-      platform: darwin
-      arch: arm64
-      runner: macos-15-xlarge
-      retention-days: 5
-    secrets: inherit
-
-  build-diagnostics-windows:
-    needs: version
-    uses: ./.github/workflows/build-component.yml
-    with:
-      component: diagnostics
-      version: ${{ needs.version.outputs.version }}
-      platform: windows
-      arch: amd64
-      runner: windows-latest-8-cores
-      retention-days: 5
-    secrets: inherit
-
   build-web-app-darwin-amd64:
     needs: version
     uses: ./.github/workflows/build-component.yml
@@ -167,7 +119,7 @@ jobs:
 
   # ==================== PACKAGING JOBS ====================
   package-linux:
-    needs: [version, build-binary-linux, build-diagnostics-linux]
+    needs: [version, build-binary-linux]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -190,9 +142,7 @@ jobs:
           # Build AMD64 packages
           mkdir -p build
           cp ./artifacts/binary-linux-amd64/atlas build/atlas
-          cp ./artifacts/diagnostics-linux-amd64/atlas-diagnostics build/atlas-diagnostics
           chmod +x build/atlas
-          chmod +x build/atlas-diagnostics
 
           ARCH="amd64" VERSION="${{ needs.version.outputs.version }}" ./scripts/build-deb.sh
           ARCH="amd64" VERSION="${{ needs.version.outputs.version }}" ./scripts/build-rpm.sh
@@ -202,7 +152,6 @@ jobs:
         run: |
           mkdir -p dist
           cp ./artifacts/binary-linux-amd64/atlas dist/atlas
-          cp ./artifacts/diagnostics-linux-amd64/atlas-diagnostics dist/atlas-diagnostics
           ./scripts/create-platform-bundle.sh "${{ needs.version.outputs.version }}" "linux" "amd64"
         shell: bash
 
@@ -219,7 +168,7 @@ jobs:
           retention-days: 5
 
   package-darwin-amd64:
-    needs: [version, build-binary-darwin-amd64, build-diagnostics-darwin-amd64, build-web-app-darwin-amd64]
+    needs: [version, build-binary-darwin-amd64, build-web-app-darwin-amd64]
     runs-on: macos-latest
     steps:
       - name: Checkout
@@ -234,7 +183,6 @@ jobs:
         run: |
           mkdir -p dist
           cp ./artifacts/binary-darwin-amd64/atlas dist/atlas
-          cp ./artifacts/diagnostics-darwin-amd64/atlas-diagnostics dist/atlas-diagnostics
           # Find and copy the actual .app directory
           if ls ./artifacts/web-app-darwin-amd64/*.app 1>/dev/null 2>&1; then
             cp -r ./artifacts/web-app-darwin-amd64/*.app "dist/Atlas Web Client.app"
@@ -254,17 +202,6 @@ jobs:
           macos-notary-key-id: ${{ secrets.MACOS_NOTARY_KEY_ID }}
           macos-notary-key: ${{ secrets.MACOS_NOTARY_KEY }}
 
-      - name: Sign atlas-diagnostics binary
-        uses: ./.github/actions/macos-sign
-        with:
-          binary-path: ./dist/atlas-diagnostics
-          macos-sign-p12: ${{ secrets.MACOS_SIGN_P12 }}
-          macos-sign-password: ${{ secrets.MACOS_SIGN_PASSWORD }}
-          macos-sign-identity: ${{ secrets.MACOS_SIGN_IDENTITY }}
-          macos-notary-issuer-id: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
-          macos-notary-key-id: ${{ secrets.MACOS_NOTARY_KEY_ID }}
-          macos-notary-key: ${{ secrets.MACOS_NOTARY_KEY }}
-
       - name: Create macOS AMD64 installer
         uses: ./.github/actions/create-installers
         with:
@@ -274,8 +211,6 @@ jobs:
           channel: nightly
           binary-path: dist/atlas
           binary-name: atlas
-          diagnostics-binary-path: dist/atlas-diagnostics
-          diagnostics-binary-name: atlas-diagnostics
           web-app-binary-path: dist/Atlas Web Client.app
           web-app-binary-name: Atlas Web Client.app
           macos-sign-p12: ${{ secrets.MACOS_SIGN_P12 }}
@@ -304,7 +239,7 @@ jobs:
           retention-days: 5
 
   package-darwin-arm64:
-    needs: [version, build-binary-darwin-arm64, build-diagnostics-darwin-arm64, build-web-app-darwin-arm64]
+    needs: [version, build-binary-darwin-arm64, build-web-app-darwin-arm64]
     runs-on: macos-15-xlarge
     steps:
       - name: Checkout
@@ -319,7 +254,6 @@ jobs:
         run: |
           mkdir -p dist
           cp ./artifacts/binary-darwin-arm64/atlas dist/atlas
-          cp ./artifacts/diagnostics-darwin-arm64/atlas-diagnostics dist/atlas-diagnostics
           # Find and copy the actual .app directory
           if ls ./artifacts/web-app-darwin-arm64/*.app 1>/dev/null 2>&1; then
             cp -r ./artifacts/web-app-darwin-arm64/*.app "dist/Atlas Web Client.app"
@@ -339,17 +273,6 @@ jobs:
           macos-notary-key-id: ${{ secrets.MACOS_NOTARY_KEY_ID }}
           macos-notary-key: ${{ secrets.MACOS_NOTARY_KEY }}
 
-      - name: Sign atlas-diagnostics binary
-        uses: ./.github/actions/macos-sign
-        with:
-          binary-path: ./dist/atlas-diagnostics
-          macos-sign-p12: ${{ secrets.MACOS_SIGN_P12 }}
-          macos-sign-password: ${{ secrets.MACOS_SIGN_PASSWORD }}
-          macos-sign-identity: ${{ secrets.MACOS_SIGN_IDENTITY }}
-          macos-notary-issuer-id: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
-          macos-notary-key-id: ${{ secrets.MACOS_NOTARY_KEY_ID }}
-          macos-notary-key: ${{ secrets.MACOS_NOTARY_KEY }}
-
       - name: Create macOS ARM64 installer
         uses: ./.github/actions/create-installers
         with:
@@ -359,8 +282,6 @@ jobs:
           channel: nightly
           binary-path: dist/atlas
           binary-name: atlas
-          diagnostics-binary-path: dist/atlas-diagnostics
-          diagnostics-binary-name: atlas-diagnostics
           web-app-binary-path: dist/Atlas Web Client.app
           web-app-binary-name: Atlas Web Client.app
           macos-sign-p12: ${{ secrets.MACOS_SIGN_P12 }}
@@ -389,7 +310,7 @@ jobs:
           retention-days: 5
 
   package-windows:
-    needs: [version, build-binary-windows, build-diagnostics-windows, build-web-app-windows]
+    needs: [version, build-binary-windows, build-web-app-windows]
     runs-on: windows-latest
     steps:
       - name: Checkout
@@ -404,7 +325,6 @@ jobs:
         run: |
           mkdir -p dist
           cp ./artifacts/binary-windows-amd64/atlas.exe dist/atlas.exe
-          cp ./artifacts/diagnostics-windows-amd64/atlas-diagnostics.exe dist/atlas-diagnostics.exe
           # Find and copy the web app installer
           if (Test-Path ./artifacts/web-app-windows-amd64/*.exe) {
             Copy-Item ./artifacts/web-app-windows-amd64/*.exe dist/
@@ -420,8 +340,6 @@ jobs:
           channel: nightly
           binary-path: dist/atlas.exe
           binary-name: atlas.exe
-          diagnostics-binary-path: dist/atlas-diagnostics.exe
-          diagnostics-binary-name: atlas-diagnostics.exe
           web-app-binary-path: dist/Atlas*.exe
           web-app-binary-name: Atlas Web Client.exe
 

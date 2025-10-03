@@ -22,39 +22,41 @@ async fn run_diagnostics(app: AppHandle) -> Result<String, String> {
     use std::io::{BufRead, BufReader};
     use std::process::Stdio;
 
-    // Get the home directory and build path to atlas-diagnostics
+    // Get the home directory and build path to atlas
     let home = std::env::var("HOME")
         .or_else(|_| std::env::var("USERPROFILE"))
         .map_err(|_| "Could not determine home directory".to_string())?;
 
-    let diagnostics_path = if cfg!(target_os = "windows") {
-        format!("{}\\.atlas\\bin\\atlas-diagnostics.exe", home)
+    let atlas_path = if cfg!(target_os = "windows") {
+        format!("{}\\.atlas\\bin\\atlas.exe", home)
     } else {
-        format!("{}/.atlas/bin/atlas-diagnostics", home)
+        format!("{}/.atlas/bin/atlas", home)
     };
 
     // Emit initial progress update
     app.emit("diagnostics-progress", "Starting diagnostics collection...").unwrap();
 
-    // Run the diagnostics binary and capture stdout in real-time
+    // Run atlas diagnostics send and capture stdout in real-time
     #[cfg(target_os = "windows")]
     let mut child = {
         use std::os::windows::process::CommandExt;
         const CREATE_NO_WINDOW: u32 = 0x08000000;
-        Command::new(&diagnostics_path)
+        Command::new(&atlas_path)
+            .args(&["diagnostics", "send"])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .creation_flags(CREATE_NO_WINDOW)
             .spawn()
-            .map_err(|e| format!("Failed to run atlas-diagnostics at {}: {}", diagnostics_path, e))?
+            .map_err(|e| format!("Failed to run atlas diagnostics send at {}: {}", atlas_path, e))?
     };
 
     #[cfg(not(target_os = "windows"))]
-    let mut child = Command::new(&diagnostics_path)
+    let mut child = Command::new(&atlas_path)
+        .args(&["diagnostics", "send"])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|e| format!("Failed to run atlas-diagnostics at {}: {}", diagnostics_path, e))?;
+        .map_err(|e| format!("Failed to run atlas diagnostics send at {}: {}", atlas_path, e))?;
 
     // Read stdout line by line and emit progress updates
     if let Some(stdout) = child.stdout.take() {

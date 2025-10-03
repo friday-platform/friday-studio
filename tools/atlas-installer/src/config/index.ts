@@ -20,14 +20,12 @@ export const CONFIG = {
     windows: {
       installDir: "AppData\\Local\\Atlas",
       binaryName: "atlas.exe",
-      diagnosticsName: "atlas-diagnostics.exe",
       webAppName: "atlas-web-app.exe",
     },
     macos: {
       installDir: "/usr/local/bin",
       userBinDir: ".atlas/bin",
       binaryName: "atlas",
-      diagnosticsName: "atlas-diagnostics",
       webAppName: "Atlas Web Client.app",
       plistPath: "Library/LaunchAgents/com.tempestdx.atlas.plist",
     },
@@ -42,14 +40,7 @@ export const CONFIG = {
   // Security
   security: {
     maxPathLength: 4096,
-    allowedBinaryNames: [
-      "atlas",
-      "atlas.exe",
-      "atlas-diagnostics",
-      "atlas-diagnostics.exe",
-      "atlas-web-app",
-      "atlas-web-app.exe",
-    ],
+    allowedBinaryNames: ["atlas", "atlas.exe", "atlas-web-app", "atlas-web-app.exe"],
     jwtClockSkewTolerance: 300, // 5 minutes
   },
 

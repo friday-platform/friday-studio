@@ -13,10 +13,9 @@ Analysis of migrating from dual-runtime (Electron installer + Tauri web app) to 
 - **User experience**: Two separate installers, confusing installation flow
 
 ### Components
-1. **Atlas CLI** (`atlas`) - Deno compiled binary, persistent daemon
-2. **Atlas Diagnostics** (`atlas-diagnostics`) - Standalone Deno binary
-3. **Atlas Web Client** - Tauri app (Svelte/Deno build system)
-4. **Atlas Installer** - Electron app that copies binaries and configures system
+1. **Atlas CLI** (`atlas`) - Deno compiled binary, persistent daemon (includes diagnostics)
+2. **Atlas Web Client** - Tauri app (Svelte/Deno build system)
+3. **Atlas Installer** - Electron app that copies binaries and configures system
 
 ## Unified Electron Architecture
 
@@ -26,7 +25,7 @@ atlas.app/exe/AppImage (Single Electron Application)
 ├── Main Process
 │   ├── Installation Manager (current installer logic)
 │   ├── Web Client Host (migrated from Tauri)
-│   ├── Binary Management (atlas, atlas-diagnostics)
+│   ├── Binary Management (atlas binary with diagnostics)
 │   └── Service Controller (daemon lifecycle)
 └── Renderer Process(es)
     ├── Installer UI (shown if not installed)
@@ -55,8 +54,8 @@ If installed:
 
 **Current Tauri usage (minimal):**
 - Basic menu creation
-- Two IPC commands (`greet`, `send_diagnostics`)
-- Shell plugin for process spawning
+- Two IPC commands (`greet`, `run_diagnostics`)
+- Shell plugin for process spawning (calls `atlas diagnostics send`)
 - No complex Rust logic
 - No platform-specific native code
 

@@ -1138,7 +1138,7 @@ async function main() {
     runCommand(["check"], "deno check"),
     runCommand(["lint"], "deno lint"),
     runCommand(
-      ["run", "-A", "npm:@biomejs/biome@^2.2.4", "check", "--max-diagnostics=10000"],
+      ["run", "-A", "npm:@biomejs/biome@^2.2.5", "check", "--max-diagnostics=10000"],
       "biome check",
     ),
   ]);

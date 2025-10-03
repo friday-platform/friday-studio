@@ -189,10 +189,7 @@ async function installWebClient(): Promise<void> {
 }
 
 // Platform-specific binary configuration
-const BINARIES = {
-  atlas: isWindows() ? "atlas.exe" : "atlas",
-  diagnostics: isWindows() ? "atlas-diagnostics.exe" : "atlas-diagnostics",
-};
+const BINARIES = { atlas: isWindows() ? "atlas.exe" : "atlas" };
 
 /**
  * Copy bundled Atlas binaries to installation directory
@@ -267,7 +264,7 @@ async function createSystemSymlinks(binDir: string): Promise<void> {
   const symlinksNeeded = [];
 
   // Check which symlinks need updating
-  for (const name of ["atlas", "atlas-diagnostics"]) {
+  for (const name of ["atlas"]) {
     const userPath = path.join(binDir, name);
     const systemPath = `/usr/local/bin/${name}`;
 

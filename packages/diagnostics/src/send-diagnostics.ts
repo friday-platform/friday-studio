@@ -1,17 +1,18 @@
 import { getAtlasClient } from "@atlas/client";
 import { createLogger } from "@atlas/logger";
-import { DiagnosticsCollector } from "./collector.ts";
+import { DiagnosticsCollector, type DiagnosticsCollectorOptions } from "./collector.ts";
 
 const log = createLogger({ component: "diagnostics" });
-let gzipPath: string | undefined;
 
-export async function sendDiagnostics() {
+export async function sendDiagnostics(options: DiagnosticsCollectorOptions = {}) {
+  let gzipPath: string | undefined;
+
   try {
     log.info("Atlas Diagnostics Collection Starting...");
     log.info("Gathering system information...");
 
     // Collect diagnostics
-    const collector = new DiagnosticsCollector();
+    const collector = new DiagnosticsCollector(options);
     gzipPath = await collector.collectAndArchive();
 
     // Check size
@@ -35,6 +36,7 @@ export async function sendDiagnostics() {
   } catch (error) {
     // Reset to idle after showing error for a moment
     log.error("✗ Failed to send diagnostics", { error });
+    throw error;
   } finally {
     // Clean up temp file
     if (gzipPath) {

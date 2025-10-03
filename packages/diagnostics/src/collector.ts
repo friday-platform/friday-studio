@@ -8,18 +8,36 @@ import { join } from "@std/path";
 import { TarStream, type TarStreamInput } from "@std/tar/tar-stream";
 import { stringify } from "@std/yaml";
 import { z } from "zod";
-import { ServiceManager } from "../../../src/services/service-manager.ts";
-import { getVersionInfo } from "../../../src/utils/version.ts";
 import { collectOpenFiles } from "./open-files/collector.ts";
 import { getAtlasLogsDir } from "./paths.ts";
 import { ReleaseChannel } from "./release-channel.ts";
 
 const log = createLogger({ component: "diagnostics-collector" });
 
+export interface VersionInfo {
+  version: string;
+  gitSha?: string;
+  isNightly: boolean;
+  isDev: boolean;
+  isCompiled: boolean;
+}
+
+export interface ServiceStatus {
+  running: boolean;
+  pid?: number;
+}
+
+export interface DiagnosticsCollectorOptions {
+  getServiceStatus?: () => Promise<ServiceStatus>;
+  versionInfo?: VersionInfo;
+}
+
 export class DiagnosticsCollector {
   private tempDir: string;
+  private options: DiagnosticsCollectorOptions;
 
-  constructor() {
+  constructor(options: DiagnosticsCollectorOptions = {}) {
+    this.options = options;
     // Create temp directory directly without subdirectory
     this.tempDir = Deno.makeTempDirSync({ prefix: "atlas-diagnostics-" });
   }
@@ -109,7 +127,24 @@ export class DiagnosticsCollector {
           const workspaces = kv.list<WorkspaceEntry>({ prefix: ["workspaces"] });
 
           for await (const entry of workspaces) {
+            // Only process actual workspace entries: ["workspaces", "<workspace-id>"]
+            // This filters out metadata entries like ["workspaces", "_list"]
+            if (entry.key.length !== 2 || entry.key[0] !== "workspaces") {
+              continue;
+            }
+
             const workspace = entry.value;
+
+            // Skip workspaces with missing required fields (corrupted data)
+            if (!workspace?.name || !workspace?.path) {
+              log.warn(`Skipping workspace with invalid data:`, {
+                key: entry.key,
+                value: workspace,
+                reason: !workspace?.name ? "missing name" : "missing path",
+              });
+              continue;
+            }
+
             try {
               // Create workspace subdirectory
               const workspaceDir = join(this.tempDir, "workspaces", workspace.name);
@@ -267,10 +302,11 @@ export class DiagnosticsCollector {
     try {
       // Get the daemon PID from ServiceManager if available
       let daemonPid: number | undefined;
-      const serviceManager = ServiceManager.getInstance();
-      const status = await serviceManager.getStatus();
-      if (status.running && status.pid) {
-        daemonPid = status.pid;
+      if (this.options.getServiceStatus) {
+        const status = await this.options.getServiceStatus();
+        if (status.running && status.pid) {
+          daemonPid = status.pid;
+        }
       }
 
       // Collect from daemon if PID available, otherwise from current process
@@ -771,7 +807,13 @@ export class DiagnosticsCollector {
   private async createTarGzArchive(outputPath: string): Promise<void> {
     // Create metadata file
     const metadataPath = join(this.tempDir, "metadata.json");
-    const versionInfo = getVersionInfo();
+    const versionInfo = this.options.versionInfo || {
+      version: "unknown",
+      gitSha: undefined,
+      isNightly: false,
+      isDev: true,
+      isCompiled: false,
+    };
 
     // Collect system information
     const systemInfo = await this.collectSystemInfo();

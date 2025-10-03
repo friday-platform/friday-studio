@@ -23,7 +23,7 @@ export function Component() {
     atlasSessionId,
     setIsCollapsed,
     exitApp,
-    sendDiagnostics,
+    handleSendDiagnostics,
     setDaemonStatus,
     enableMultiline,
     typingState,
@@ -122,7 +122,7 @@ export function Component() {
     }
 
     if (parsed.command === "send-diagnostics") {
-      sendDiagnostics();
+      handleSendDiagnostics();
       return;
     }
 

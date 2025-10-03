@@ -1,5 +1,6 @@
 import * as agentCmd from "./agent.ts";
 import * as daemonCmd from "./daemon.ts";
+import * as diagnosticsCmd from "./diagnostics.ts";
 import * as interactiveCmd from "./interactive.tsx";
 import * as libraryCmd from "./library/index.ts";
 import * as psCmd from "./ps.ts";
@@ -22,5 +23,6 @@ export const commands = [
   libraryCmd,
   daemonCmd,
   serviceCmd,
+  diagnosticsCmd,
   interactiveCmd,
 ];

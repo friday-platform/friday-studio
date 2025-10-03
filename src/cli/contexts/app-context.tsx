@@ -1,5 +1,6 @@
 import { getAtlasDaemonUrl } from "@atlas/atlasd";
 import { client, parseResult } from "@atlas/client/v2";
+import { sendDiagnostics } from "@atlas/diagnostics";
 import { stringifyError } from "@atlas/utils";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
@@ -7,6 +8,8 @@ import ansiEscapes from "ansi-escapes";
 import { useStdout } from "ink";
 import type React from "react";
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { ServiceManager } from "../../services/service-manager.ts";
+import { getVersionInfo } from "../../utils/version.ts";
 import { DAEMON_STATUS, type DaemonStatus } from "../constants/daemon-status.ts";
 import { DIAGNOSTICS_STATUS, type DiagnosticsStatus } from "../constants/diagnostics-status.ts";
 import { setupTerminal } from "../modules/enable-multiline/index.ts";
@@ -42,7 +45,7 @@ interface AppContextType {
   sseAbortControllerRef: React.RefObject<AbortController | null>;
   isInitializing: boolean;
   exitApp: () => Promise<void>;
-  sendDiagnostics: () => Promise<void>;
+  handleSendDiagnostics: () => Promise<void>;
   diagnosticsStatus: DiagnosticsStatus;
   daemonStatus: DaemonStatus;
   setDaemonStatus: () => Promise<void>;
@@ -282,13 +285,22 @@ export const AppProvider = ({ children }: AppProviderProps) => {
     }
   };
 
-  const sendDiagnostics = async () => {
-    let gzipPath: string | undefined;
-
+  const handleSendDiagnostics = async () => {
     try {
       setDiagnosticsStatus(DIAGNOSTICS_STATUS.COLLECTING);
 
-      await sendDiagnostics();
+      // Get service manager status for daemon PID
+      const serviceManager = ServiceManager.getInstance();
+      const getServiceStatus = async () => {
+        const status = await serviceManager.getStatus();
+        return { running: status.running, pid: status.pid };
+      };
+
+      // Get version info
+      const versionInfo = getVersionInfo();
+
+      // Send diagnostics with options
+      await sendDiagnostics({ getServiceStatus, versionInfo });
 
       setDiagnosticsStatus(DIAGNOSTICS_STATUS.DONE);
 
@@ -298,11 +310,6 @@ export const AppProvider = ({ children }: AppProviderProps) => {
       }, 3000);
     } catch (error) {
       setDiagnosticsStatus(stringifyError(error));
-
-      // Try to clean up on error too
-      if (gzipPath) {
-        await Deno.remove(gzipPath).catch(() => {});
-      }
 
       // Reset to idle after showing error for a moment
       setTimeout(() => {
@@ -371,7 +378,7 @@ export const AppProvider = ({ children }: AppProviderProps) => {
         sseAbortControllerRef,
         isInitializing,
         exitApp,
-        sendDiagnostics,
+        handleSendDiagnostics,
         diagnosticsStatus,
         daemonStatus,
         setDaemonStatus,

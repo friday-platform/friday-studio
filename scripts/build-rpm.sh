@@ -64,11 +64,9 @@ rm -rf "${BUILD_ROOT}"
 mkdir -p "${BUILD_ROOT}"/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
 mkdir -p "${BUILD_ROOT}/BUILDROOT/atlas-${RPM_VERSION}-${RPM_RELEASE}.${RPM_ARCH}"/{usr/bin,etc/atlas,"usr/share/doc/atlas-${RPM_VERSION}"}
 
-# Copy both binaries to RPM build structure
+# Copy binary to RPM build structure
 cp "build/atlas" "${BUILD_ROOT}/BUILDROOT/atlas-${RPM_VERSION}-${RPM_RELEASE}.${RPM_ARCH}/usr/bin/atlas"
-cp "build/atlas-diagnostics" "${BUILD_ROOT}/BUILDROOT/atlas-${RPM_VERSION}-${RPM_RELEASE}.${RPM_ARCH}/usr/bin/atlas-diagnostics"
 chmod 755 "${BUILD_ROOT}/BUILDROOT/atlas-${RPM_VERSION}-${RPM_RELEASE}.${RPM_ARCH}/usr/bin/atlas"
-chmod 755 "${BUILD_ROOT}/BUILDROOT/atlas-${RPM_VERSION}-${RPM_RELEASE}.${RPM_ARCH}/usr/bin/atlas-diagnostics"
 
 # Copy credential fetching script
 mkdir -p "${BUILD_ROOT}/BUILDROOT/atlas-${RPM_VERSION}-${RPM_RELEASE}.${RPM_ARCH}/usr/share/atlas/scripts"
@@ -298,7 +296,6 @@ fi
 %files
 %defattr(-,root,root,-)
 /usr/bin/atlas
-/usr/bin/atlas-diagnostics
 /usr/lib/systemd/system/atlas.service
 /usr/share/atlas/scripts/fetch-credentials.sh
 %doc /usr/share/doc/atlas-${RPM_VERSION}/LICENSE
