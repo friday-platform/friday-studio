@@ -248,6 +248,9 @@ pub fn run() {
             // Create diagnostics menu item
             let diagnostics_item = MenuItem::with_id(app, "run_diagnostics", "Run Diagnostics", true, None::<&str>)?;
 
+            // Create atlas logs menu item
+            let atlas_logs_item = MenuItem::with_id(app, "atlas_logs", "Atlas Logs", true, None::<&str>)?;
+
             // Create custom About menu item with specific ID and icon
             let about_item = MenuItem::with_id(app, "about-custom", "About Atlas", true, None::<&str>)?;
 
@@ -291,6 +294,7 @@ pub fn run() {
             // Create help menu with Discord link and diagnostics
             let help_menu = Submenu::new(app, "Help", true)?;
             help_menu.append(&diagnostics_item)?;
+            help_menu.append(&atlas_logs_item)?;
             help_menu.append(&PredefinedMenuItem::separator(app)?)?;
             help_menu.append(&discord_help)?;
 
@@ -317,6 +321,21 @@ pub fn run() {
                 } else if event.id() == &MenuId("run_diagnostics".to_string()) {
                     // Emit event to show diagnostics dialog
                     let _ = app.emit("show-diagnostics-dialog", ());
+                } else if event.id() == &MenuId("atlas_logs".to_string()) {
+                    // Open Atlas logs file with default system editor
+                    if let Ok(home) = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")) {
+                        let log_path = PathBuf::from(home).join(".atlas").join("logs").join("global.log");
+                        if log_path.exists() {
+                            let _ = app.opener().open_path(log_path.to_string_lossy().to_string(), None::<String>);
+                        } else {
+                            use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
+                            let _ = app.dialog()
+                                .message("Log file does not exist")
+                                .kind(MessageDialogKind::Info)
+                                .title("Atlas Logs")
+                                .blocking_show();
+                        }
+                    }
                 }
             });
 

@@ -40,6 +40,7 @@
     "npm:@sveltejs/kit@^2.22.0": "2.43.7_@opentelemetry+api@1.9.0_@sveltejs+vite-plugin-svelte@6.2.1__svelte@5.39.8___acorn@8.15.0__vite@7.1.8___picomatch@4.0.3_svelte@5.39.8__acorn@8.15.0_vite@7.1.8__picomatch@4.0.3_acorn@8.15.0",
     "npm:@sveltejs/vite-plugin-svelte@6": "6.2.1_svelte@5.39.8__acorn@8.15.0_vite@7.1.8__picomatch@4.0.3",
     "npm:@tauri-apps/api@^2.8.0": "2.8.0",
+    "npm:@tauri-apps/cli@2.8.4": "2.8.4",
     "npm:@tauri-apps/cli@^2.8.0": "2.8.4",
     "npm:@tauri-apps/plugin-dialog@^2.4.0": "2.4.0",
     "npm:@tauri-apps/plugin-notification@2": "2.3.1",
@@ -77,7 +78,7 @@
     "npm:svelte@5": "5.39.8_acorn@8.15.0",
     "npm:typescript-eslint@^8.20.0": "8.45.0_eslint@9.36.0_typescript@5.9.3_@typescript-eslint+parser@8.45.0__eslint@9.36.0__typescript@5.9.3",
     "npm:typescript@5": "5.9.3",
-    "npm:vite@^7.0.4": "7.1.8_picomatch@4.0.3",
+    "npm:vite@^7.1.8": "7.1.8_picomatch@4.0.3",
     "npm:xstate@^5.21.0": "5.22.0",
     "npm:yargs@18": "18.0.0",
     "npm:zod-from-json-schema@0.5": "0.5.0",
@@ -3527,7 +3528,7 @@
             "npm:svelte@5",
             "npm:typescript-eslint@^8.20.0",
             "npm:typescript@5",
-            "npm:vite@^7.0.4",
+            "npm:vite@^7.1.8",
             "npm:zod@^4.1.11"
           ]
         }
