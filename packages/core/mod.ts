@@ -64,7 +64,6 @@ export * from "./src/types/actors.ts";
 // Actor Types
 export * from "./src/types/actors.ts";
 export * from "./src/types/agent-execution.ts";
-export * from "./src/types/session.ts";
 // Export error types explicitly
 export type {
   APIErrorCause,
@@ -72,4 +71,5 @@ export type {
   NetworkErrorCause,
   UnknownErrorCause,
 } from "./src/types/error-causes.ts";
+export * from "./src/types/session.ts";
 export { createErrorCause, throwWithCause } from "./src/utils/error-helpers.ts";

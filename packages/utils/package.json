@@ -3,5 +3,9 @@
   "version": "1.0.0",
   "type": "module",
   "main": "./mod.ts",
-  "dependencies": { "@std/path": "npm:@jsr/std__path@^1.1.2", "zod": "^4.1.11" }
+  "dependencies": {
+    "@opentelemetry/api": "^1.9.0",
+    "@std/path": "npm:@jsr/std__path@^1.1.2",
+    "zod": "^4.1.11"
+  }
 }

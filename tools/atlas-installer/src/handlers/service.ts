@@ -11,13 +11,13 @@ import {
   stopWindowsService,
   uninstallWindowsService,
 } from "../services/windows-service";
-import { createStartMenuShortcut } from "../utils/windows-shortcuts";
 import type { IPCResult } from "../types";
 import { getAtlasEnv, getBinaryPath } from "../utils/atlas-env";
 import { getErrorMessage } from "../utils/errors";
 import { createLogger } from "../utils/logger";
 import { isMac, isWindows } from "../utils/platform";
 import { validateBinary } from "../utils/validation";
+import { createStartMenuShortcut } from "../utils/windows-shortcuts";
 
 const logger = createLogger("ServiceHandler");
 

@@ -3,8 +3,8 @@
  * Each sub-agent searches independently, results are stored for final report.
  */
 
-import { anthropic } from "@atlas/core";
 import { createAgent } from "@atlas/agent-sdk";
+import { anthropic } from "@atlas/core";
 import type { Logger } from "@atlas/logger";
 import { fail, getTodaysDate, type Result, success } from "@atlas/utils";
 import { tavily as createTavily } from "@tavily/core";

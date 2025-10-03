@@ -1,6 +1,6 @@
+import { anthropic } from "@atlas/core";
 import type { Logger } from "@atlas/logger";
 import { generateObject, type LanguageModel } from "ai";
-import { anthropic } from "@atlas/core";
 import { z } from "zod";
 
 export type FactSourceType = "session_summary" | "agent_input" | "agent_output" | "payload";

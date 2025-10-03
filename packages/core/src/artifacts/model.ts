@@ -13,25 +13,25 @@ export interface ArtifactRevisionSummary {
   revisionMessage?: string;
 }
 
-export const WorkspacePlanArtifactSchema = z.object({
+const WorkspacePlanArtifactSchema = z.object({
   type: z.literal("workspace-plan"),
   version: z.literal(1),
   data: WorkspacePlanSchema,
 });
 
-export const CalendarScheduleArtifactSchema = z.object({
+const CalendarScheduleArtifactSchema = z.object({
   type: z.literal("calendar-schedule"),
   version: z.literal(1),
   data: CalendarScheduleSchema,
 });
 
-export const SummaryArtifactSchema = z.object({
+const SummaryArtifactSchema = z.object({
   type: z.literal("summary"),
   version: z.literal(1),
   data: SummaryDataSchema,
 });
 
-export const SlackSummaryArtifactSchema = z.object({
+const SlackSummaryArtifactSchema = z.object({
   type: z.literal("slack-summary"),
   version: z.literal(1),
   data: SlackSummaryDataSchema,

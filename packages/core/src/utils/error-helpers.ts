@@ -133,7 +133,7 @@ export function parseAPICallError(error: unknown): APICallError | null {
   });
 }
 
-export function parseAiRetryError(error: unknown): RetryError | null {
+function parseAiRetryError(error: unknown): RetryError | null {
   if (RetryError.isInstance(error)) {
     return error;
   }

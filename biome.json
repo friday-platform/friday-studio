@@ -10,7 +10,8 @@
       "!**/.vite",
       "!**/dist",
       "!**/target",
-      "!**/node_modules"
+      "!**/node_modules",
+      "!packages/vendor/**"
     ]
   },
   "formatter": {

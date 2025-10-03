@@ -6,9 +6,9 @@
  */
 
 import type { AgentResult } from "@atlas/agent-sdk";
+import { anthropic } from "@atlas/core";
 import type { Logger } from "@atlas/logger";
 import { generateObject, type LanguageModel } from "ai";
-import { anthropic } from "@atlas/core";
 import { z } from "zod";
 import { SupervisionLevel } from "../supervision-levels.ts";
 

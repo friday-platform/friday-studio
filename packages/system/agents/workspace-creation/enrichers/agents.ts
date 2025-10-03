@@ -112,7 +112,7 @@ Keep it direct and actionable.
 For Slack agents: ALWAYS include the channel name if provided (e.g., "Post to #team-updates")
 </prompt_guidelines>`;
 
-export async function enrichAgent(
+async function enrichAgent(
   agent: {
     id: string;
     name: string;

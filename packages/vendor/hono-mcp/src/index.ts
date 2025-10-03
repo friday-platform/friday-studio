@@ -8,6 +8,7 @@ import type {
   StreamableHTTPServerTransportOptions,
 } from "@socotra/modelcontextprotocol-sdk/server/streamableHttp.js";
 import type { Transport } from "@socotra/modelcontextprotocol-sdk/shared/transport.js";
+import type { JSONRPCMessage, RequestId } from "@socotra/modelcontextprotocol-sdk/types.js";
 import {
   isInitializeRequest,
   isJSONRPCError,
@@ -15,7 +16,6 @@ import {
   isJSONRPCResponse,
   JSONRPCMessageSchema,
 } from "@socotra/modelcontextprotocol-sdk/types.js";
-import type { JSONRPCMessage, RequestId } from "@socotra/modelcontextprotocol-sdk/types.js";
 import type { Context } from "hono";
 import { HTTPException } from "hono/http-exception";
 import type { SSEStreamingApi } from "hono/streaming";

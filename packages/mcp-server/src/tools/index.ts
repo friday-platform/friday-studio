@@ -45,6 +45,7 @@ import type { ToolContext } from "./types.ts";
 import { registerWorkspaceDeleteTool } from "./workspace/delete.ts";
 import { registerWorkspaceDescribeTool } from "./workspace/describe.ts";
 import { registerWorkspaceListTool } from "./workspace/list.ts";
+import { registerWorkspacePersistenceTool } from "./workspace/persistence.ts";
 
 /**
  * Register all tools with the MCP server
@@ -54,6 +55,7 @@ export function registerTools(server: McpServer, context: ToolContext): void {
   registerWorkspaceListTool(server, context);
   registerWorkspaceDeleteTool(server, context);
   registerWorkspaceDescribeTool(server, context);
+  registerWorkspacePersistenceTool(server, context);
 
   // Session tools
   registerSessionDescribeTool(server, context);

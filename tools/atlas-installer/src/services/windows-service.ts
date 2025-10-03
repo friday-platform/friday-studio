@@ -4,9 +4,9 @@ import * as path from "node:path";
 import * as sudo from "@vscode/sudo-prompt";
 import { CONFIG } from "../config";
 import type { IPCResult } from "../types";
-import { safeExec } from "../utils/process";
-import { createLogger } from "../utils/logger";
 import { getErrorMessage } from "../utils/errors";
+import { createLogger } from "../utils/logger";
+import { safeExec } from "../utils/process";
 import { createStartMenuShortcut, removeStartMenuShortcut } from "../utils/windows-shortcuts";
 
 const logger = createLogger("WindowsService");

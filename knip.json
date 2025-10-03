@@ -30,7 +30,10 @@
       "project": ["src/**/*.{ts,tsx,js,jsx}!"]
     },
     "packages/system": { "project": ["agents/**/*.ts!", "workspaces/**/*.ts!"] },
-    "packages/utils": { "project": ["**/*.{ts,tsx,js,jsx}!"] },
+    "packages/utils": {
+      "entry": ["src/telemetry.ts", "src/paths.ts"],
+      "project": ["**/*.{ts,tsx,js,jsx}!"]
+    },
     "packages/workspace": { "project": ["src/**/*.{ts,tsx,js,jsx}!"] },
     "apps/atlasd": { "entry": ["tests/**/*.test.ts"], "project": ["**/*.{ts,tsx,js,jsx}!"] },
     "apps/diagnostics": { "project": ["src/**/*.{ts,tsx,js,jsx}!"] },
@@ -61,7 +64,8 @@
     "**/node_modules/**",
     "**/.svelte-kit/**",
     "**/dist/**",
-    "**/build/**"
+    "**/build/**",
+    "packages/vendor/**"
   ],
   "ignoreDependencies": ["@std/*"],
   "ignoreExportsUsedInFile": { "interface": true, "type": true },

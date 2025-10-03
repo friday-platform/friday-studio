@@ -22,7 +22,8 @@
   "exclude": [
     "!integration-tests/**/*.test.ts",
     "apps/web-client/.svelte-kit",
-    "tools/atlas-installer"
+    "tools/atlas-installer",
+    "packages/vendor/**"
   ],
   "unstable": ["broadcast-channel", "worker-options", "otel", "kv", "raw-imports"],
   "nodeModulesDir": "auto",
@@ -52,5 +53,5 @@
     "report:knip": "npx knip --reporter markdown --max-issues 0 > reports/knip-report.md",
     "report:typescript": "deno run --allow-all tools/typescript-error-report/src/main.ts"
   },
-  "lint": { "rules": { "tags": ["recommended"] } }
+  "lint": { "rules": { "tags": ["recommended"] }, "exclude": ["packages/vendor/**"] }
 }

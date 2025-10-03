@@ -1,8 +1,10 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-// @ts-ignore - CommonJS module without type definitions
+
+// @ts-expect-error - CommonJS module without type definitions
 import createShortcut = require("create-desktop-shortcuts");
+
 import { createLogger } from "./logger";
 
 const logger = createLogger("WindowsShortcuts");

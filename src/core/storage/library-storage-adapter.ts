@@ -10,11 +10,6 @@
  * while maintaining complete storage backend independence.
  */
 
-import { logger } from "@atlas/logger";
-import { stringifyError } from "@atlas/utils";
-import { ensureDir } from "@std/fs";
-import { dirname, join } from "@std/path";
-import { throwWithCause } from "../../../packages/core/src/utils/error-helpers.ts";
 import type {
   LibraryItem,
   LibrarySearchQuery,
@@ -23,6 +18,11 @@ import type {
   StoreItemInput,
   TemplateConfig,
 } from "@atlas/core/library";
+import { logger } from "@atlas/logger";
+import { stringifyError } from "@atlas/utils";
+import { ensureDir } from "@std/fs";
+import { dirname, join } from "@std/path";
+import { throwWithCause } from "../../../packages/core/src/utils/error-helpers.ts";
 import type { KVStorage } from "./kv-storage.ts";
 
 /**
