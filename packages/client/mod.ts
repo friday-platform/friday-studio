@@ -8,7 +8,7 @@
  */
 
 // Main exports
-export { AtlasClient, getAtlasClient, resetAtlasClientForTesting } from "./src/client.ts";
+export { AtlasClient, getAtlasClient } from "./src/client.ts";
 export { AtlasApiError } from "./src/errors.ts";
 // Schema exports (for advanced usage)
 export * from "./src/schemas.ts";

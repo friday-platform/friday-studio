@@ -1,4 +1,4 @@
-No Svelte config file found in /Users/ericskram/code/tempest/atlas-env/worktrees/more-surgical-type-fixes - using SvelteKit's default configuration without an adapter.
+No Svelte config file found in /Users/ericskram/code/tempest/atlas-env/worktrees/10-3-type-cleanup-2 - using SvelteKit's default configuration without an adapter.
 # Knip report
 
 ## Unused devDependencies (1)

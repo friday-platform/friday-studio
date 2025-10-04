@@ -838,18 +838,3 @@ export function getAtlasClient(options?: AtlasClientOptions): AtlasClient {
   }
   return defaultClient;
 }
-
-/**
- * Reset the default client instance.
- *
- * ⚠️ WARNING: This function is intended for testing purposes only.
- * It should not be used in production code.
- *
- * This is a temporary solution to address test isolation issues
- * while architectural improvements are being discussed.
- *
- * @internal
- */
-export function resetAtlasClientForTesting(): void {
-  defaultClient = null;
-}

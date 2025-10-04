@@ -3,6 +3,7 @@
  * All CLI commands should use this to communicate with the daemon
  */
 import { getAtlasDaemonUrl } from "@atlas/atlasd";
+import { parseResult, client as v2Client } from "@atlas/client/v2";
 
 interface DaemonClientOptions {
   daemonUrl?: string;
@@ -203,14 +204,6 @@ export class DaemonClient {
     workspaceId: string,
   ): Promise<Array<{ id: string; type: string; purpose?: string }>> {
     const response = await this.makeRequest(`/api/workspaces/${workspaceId}/agents`);
-    return response;
-  }
-
-  /**
-   * Describe a specific agent in a workspace
-   */
-  async describeAgent(workspaceId: string, agentId: string): Promise<unknown> {
-    const response = await this.makeRequest(`/api/workspaces/${workspaceId}/agents/${agentId}`);
     return response;
   }
 

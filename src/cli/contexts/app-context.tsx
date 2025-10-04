@@ -108,7 +108,7 @@ export const AppProvider = ({ children }: AppProviderProps) => {
   const refreshStatic = useCallback(() => {
     stdout.write(ansiEscapes.clearTerminal);
     setStaticKey((prev) => prev + 1);
-  }, [setStaticKey, stdout]);
+  }, [stdout]);
 
   async function cleanup() {
     if (mcpTransportRef.current) {
@@ -131,19 +131,22 @@ export const AppProvider = ({ children }: AppProviderProps) => {
     Deno.exit(0);
   }
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: This should run once.
   useEffect(() => {
     refreshStatic();
-  }, [isCollapsed]);
+  }, []);
 
   useEffect(() => {
     configRef.current = config;
   }, [config]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: This should run once.
   useEffect(() => {
     initializeSystem();
   }, []);
 
   // Periodic health check when daemon is unhealthy
+  // biome-ignore lint/correctness/useExhaustiveDependencies: initializeMcpClient won't change.
   useEffect(() => {
     if (daemonStatus !== DAEMON_STATUS.UNHEALTHY) {
       return;
@@ -184,7 +187,7 @@ export const AppProvider = ({ children }: AppProviderProps) => {
           }
 
           // Initialize MCP client
-          await initializeMcpClient();
+          initializeMcpClient();
         }
       } catch {
         // Still unhealthy, keep checking

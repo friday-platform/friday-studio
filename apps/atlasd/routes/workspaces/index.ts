@@ -205,10 +205,10 @@ const workspacesRoutes = daemonFactory
       if (!workspace) {
         return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
       }
-      return c.json({
-        ...workspace,
-        type: workspace.metadata?.ephemeral ? "ephemeral" : "persistent",
-      });
+      return c.json(
+        { ...workspace, type: workspace.metadata?.ephemeral ? "ephemeral" : "persistent" },
+        200,
+      );
     } catch (error) {
       const errorMessage = stringifyError(error);
       if (errorMessage.includes("not found")) {
@@ -460,7 +460,7 @@ const workspacesRoutes = daemonFactory
     try {
       const runtime = await ctx.daemon.getOrCreateWorkspaceRuntime(workspaceId);
       const agent = runtime.describeAgent(agentId);
-      return c.json(agent);
+      return c.json(agent, 200);
     } catch (error) {
       logger.error("Failed to describe agent", { error, workspaceId, agentId });
       return c.json({ error: `Failed to describe agent: ${stringifyError(error)}` }, 500);
@@ -484,12 +484,12 @@ const workspacesRoutes = daemonFactory
   .delete(
     "/:workspaceId",
     zValidator("param", z.object({ workspaceId: z.string() })),
-    zValidator("query", z.object({ force: z.literal("true").optional() })),
+    zValidator("query", z.object({ force: z.literal("true").optional() }).optional()),
     async (c) => {
       const { workspaceId } = c.req.valid("param");
       const ctx = c.get("app");
 
-      const force = c.req.valid("query").force === "true";
+      const force = c.req.valid("query")?.force === "true";
 
       try {
         const manager = ctx.daemon.getWorkspaceManager();

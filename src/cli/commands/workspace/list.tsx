@@ -1,13 +1,10 @@
-import { createAtlasClient, type paths } from "@atlas/oapi-client";
+import { client, type InferResponseType, parseResult } from "@atlas/client/v2";
+import { stringifyError } from "@atlas/utils";
 import { Box, render, Text, useStdout } from "ink";
 import React from "react";
 import type { YargsInstance } from "../../utils/yargs.ts";
 
-// Note: avoid enum coupling here; API types may lag. Treat status as string.
-
-// Extract WorkspaceResponse type from OpenAPI generated types
-type WorkspaceResponse =
-  paths["/api/workspaces"]["get"]["responses"]["200"]["content"]["application/json"][number];
+type WorkspaceResponse = InferResponseType<(typeof client.workspace)["index"]["$get"], 200>[number];
 
 interface ListArgs {
   json?: boolean;
@@ -28,24 +25,18 @@ export const handler = async (argv: ListArgs): Promise<void> => {
   let unmount: (() => void) | undefined;
 
   try {
-    // Get workspaces from daemon API using OpenAPI client
-    // Note: Unlike the old daemon-client, this doesn't auto-start the daemon
-    const client = createAtlasClient();
-    const { data, error } = await client.GET("/api/workspaces");
+    const response = await parseResult(client.workspace.index.$get());
 
-    if (error) {
-      throw new Error(error.error || "Failed to fetch workspaces");
+    if (!response.ok) {
+      throw new Error(stringifyError(response.error) || "Failed to fetch workspaces");
     }
-
-    // Use the data directly from the API
-    const workspaces = data;
 
     // Render appropriate view based on output format
     const renderResult = render(
       argv.json ? (
-        <JsonOutput workspaces={workspaces} />
+        <JsonOutput workspaces={response.data} />
       ) : (
-        <WorkspaceList registeredWorkspaces={workspaces} />
+        <WorkspaceList registeredWorkspaces={response.data} />
       ),
     );
 
@@ -107,7 +98,7 @@ function WorkspaceList({ registeredWorkspaces }: { registeredWorkspaces: Workspa
 
   const padRight = (str: string, width: number) => {
     return str.length >= width
-      ? str.substring(0, width - 1) + "…"
+      ? `${str.substring(0, width - 1)}…`
       : str + " ".repeat(width - str.length);
   };
 
@@ -146,7 +137,7 @@ function WorkspaceList({ registeredWorkspaces }: { registeredWorkspaces: Workspa
       </Box>
 
       {/* Table Rows */}
-      {registeredWorkspaces.map((workspace, i) => {
+      {registeredWorkspaces.map((workspace) => {
         // Cast to our actual status type since OpenAPI types aren't regenerated yet
         const statusStr = String(workspace.status);
         const statusColor =
@@ -166,7 +157,7 @@ function WorkspaceList({ registeredWorkspaces }: { registeredWorkspaces: Workspa
         });
 
         return (
-          <Box key={i}>
+          <Box key={workspace.name}>
             <Text>
               <Text color="blue">{padRight(workspace.id, 30)}</Text>
               <Text color="yellow">{padRight(workspace.name, 50)}</Text>

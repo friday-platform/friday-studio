@@ -153,7 +153,7 @@ const WorkspaceAddUI = ({ args, onComplete }: { args: AddArgs; onComplete: () =>
     };
 
     collectPaths();
-  }, []);
+  }, [args]);
 
   // Process workspaces
   useEffect(() => {
@@ -211,7 +211,7 @@ const WorkspaceAddUI = ({ args, onComplete }: { args: AddArgs; onComplete: () =>
     };
 
     processWorkspaces();
-  }, [status, processing]);
+  }, [status, processing, workspacePaths, args]);
 
   // Handle completion
   useEffect(() => {
@@ -265,8 +265,8 @@ const WorkspaceAddUI = ({ args, onComplete }: { args: AddArgs; onComplete: () =>
         <Box marginTop={1}>
           <Spinner label="Registering with Atlas daemon" />
         </Box>
-        {workspacePaths.map((path, i) => (
-          <Box key={i} marginLeft={2}>
+        {workspacePaths.map((path) => (
+          <Box key={path} marginLeft={2}>
             <Text dimColor>• {path}</Text>
           </Box>
         ))}
@@ -298,11 +298,9 @@ const WorkspaceAddUI = ({ args, onComplete }: { args: AddArgs; onComplete: () =>
               </Text>
             )}
             {successCount > 0 && failedCount > 0 && (
-              <>
-                <Text color="yellow">
-                  ⚠ Partially completed: {successCount} succeeded, {failedCount} failed
-                </Text>
-              </>
+              <Text color="yellow">
+                ⚠ Partially completed: {successCount} succeeded, {failedCount} failed
+              </Text>
             )}
             {successCount === 0 && failedCount > 0 && (
               <Text color="red">
@@ -320,8 +318,8 @@ const WorkspaceAddUI = ({ args, onComplete }: { args: AddArgs; onComplete: () =>
           </Text>
         </Box>
 
-        {results.map((result, i) => (
-          <Box key={i} flexDirection="column" marginLeft={2}>
+        {results.map((result) => (
+          <Box key={result.path} flexDirection="column" marginLeft={2}>
             {result.success ? (
               <Box>
                 <Text color="green">{`✓ `}</Text>

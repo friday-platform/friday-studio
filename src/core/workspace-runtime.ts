@@ -483,7 +483,7 @@ export class WorkspaceRuntime {
   /**
    * Get detailed information about an agent
    */
-  describeAgent(agentId: string): Record<string, unknown> {
+  describeAgent(agentId: string) {
     const agents = this.config?.workspace?.agents || {};
     if (!agents[agentId]) {
       throw new Error(`Agent '${agentId}' not found`);

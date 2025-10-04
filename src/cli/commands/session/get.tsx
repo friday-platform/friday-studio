@@ -117,8 +117,8 @@ function SessionDetailCommand({ session }: { session: SessionDetail }) {
         <>
           <Text></Text>
           <Text bold>Agents Executed:</Text>
-          {session.agents.map((agent, i) => (
-            <Box key={i} marginLeft={1}>
+          {session.agents.map((agent) => (
+            <Box key={agent.name} marginLeft={1}>
               <Text>
                 • {agent.name} <Text color="gray">({agent.status})</Text>
               </Text>

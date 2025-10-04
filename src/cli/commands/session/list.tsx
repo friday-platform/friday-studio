@@ -22,7 +22,7 @@ export function builder(y: YargsInstance) {
     .example("$0 ps", "Use the 'ps' alias to list sessions");
 }
 
-export const handler = async (argv: ListArgs): Promise<void> => {
+export const handler = async ({ workspace, json }: ListArgs): Promise<void> => {
   try {
     // Get client - it will auto-start daemon if needed
     const client = getDaemonClient();
@@ -32,15 +32,14 @@ export const handler = async (argv: ListArgs): Promise<void> => {
 
     // Filter by workspace if specified
     let filteredSessions = allSessions;
-    if (argv.workspace) {
+    if (workspace) {
       // Filter by workspace name or ID
       filteredSessions = allSessions.filter(
-        (session) =>
-          session.workspaceId === argv.workspace || session.workspaceId.includes(argv.workspace!),
+        (session) => session.workspaceId === workspace || session.workspaceId.includes(workspace),
       );
     }
 
-    if (argv.json) {
+    if (json) {
       // JSON output for scripting
       console.log(
         JSON.stringify(
@@ -55,8 +54,8 @@ export const handler = async (argv: ListArgs): Promise<void> => {
       );
     } else {
       if (filteredSessions.length === 0) {
-        if (argv.workspace) {
-          console.log(`No active sessions found for workspace: ${argv.workspace}`);
+        if (workspace) {
+          console.log(`No active sessions found for workspace: ${workspace}`);
         } else {
           console.log("No active sessions found");
         }
