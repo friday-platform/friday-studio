@@ -43,7 +43,7 @@ export async function handler(argv: GetArgs) {
   try {
     s.start(`Fetching item ${argv.id}...`);
 
-    const client = getAtlasClient({ url: `http://localhost:${argv.port}` });
+    const client = getAtlasClient();
 
     let itemDetail: LibraryItemWithContent;
     try {

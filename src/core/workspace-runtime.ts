@@ -324,11 +324,11 @@ export class WorkspaceRuntime {
   /**
    * Cancel a session
    */
-  async cancelSession(sessionId: string): Promise<void> {
+  cancelSession(sessionId: string): void {
     const state = this.stateMachine.getSnapshot();
     const session = state.context.sessions.get(sessionId);
     if (session) {
-      await session.cancel();
+      session.cancel();
 
       // Notify state machine
       this.stateMachine.send({ type: "SESSION_COMPLETED", sessionId });

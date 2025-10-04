@@ -552,7 +552,21 @@ export interface operations {
     };
   };
   getApiLibrary: {
-    parameters: { query?: never; header?: never; path?: never; cookie?: never };
+    parameters: {
+      query?: {
+        query?: string;
+        q?: string;
+        type?: string;
+        tags?: string;
+        since?: string;
+        until?: string;
+        limit?: string;
+        offset?: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
     requestBody?: never;
     responses: {
       /** @description Library search results */
@@ -656,7 +670,21 @@ export interface operations {
     };
   };
   getApiLibrarySearch: {
-    parameters: { query?: never; header?: never; path?: never; cookie?: never };
+    parameters: {
+      query?: {
+        query?: string;
+        q?: string;
+        type?: string;
+        tags?: string;
+        since?: string;
+        until?: string;
+        limit?: string;
+        offset?: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
     requestBody?: never;
     responses: {
       /** @description Library search results */
@@ -788,9 +816,15 @@ export interface operations {
         content: { "application/octet-stream": string };
       };
       /** @description Item not found */
-      404: { headers: { [name: string]: unknown }; content: { "application/json": unknown } };
+      404: {
+        headers: { [name: string]: unknown };
+        content: { "application/json": { error: string } };
+      };
       /** @description Internal server error */
-      500: { headers: { [name: string]: unknown }; content: { "application/json": unknown } };
+      500: {
+        headers: { [name: string]: unknown };
+        content: { "application/json": { error: string } };
+      };
     };
   };
   "getApiLibrary:itemId": {

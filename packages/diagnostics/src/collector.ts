@@ -165,7 +165,7 @@ export class DiagnosticsCollector {
               // If no YAML file, try to fetch runtime configuration (skip for system workspaces)
               if (!hasYamlFile && workspace.id && !isSystemWorkspace) {
                 try {
-                  const client = getAtlasClient({ timeout: 5000 });
+                  const client = getAtlasClient();
                   const workspaceDetails = await client.getWorkspace(workspace.id);
 
                   if ("config" in workspaceDetails && workspaceDetails.config) {

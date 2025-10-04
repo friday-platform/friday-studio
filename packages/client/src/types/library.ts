@@ -63,7 +63,3 @@ export interface LibraryItemWithContent {
   item: LibraryItem;
   content?: string | Uint8Array;
 }
-
-export interface DeleteLibraryItemResponse {
-  message: string;
-}

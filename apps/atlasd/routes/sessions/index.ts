@@ -10,8 +10,8 @@ interface SessionInfo {
   status: string;
   summary: string;
   signal: string;
-  startTime?: unknown;
-  endTime?: unknown;
+  startTime?: string;
+  endTime?: string;
   progress: number;
 }
 
@@ -41,7 +41,7 @@ const sessionsRoutes = daemonFactory
       allSessions.push(...sessions);
     }
 
-    return c.json(allSessions);
+    return c.json(allSessions, 200);
   })
   // Get specific session from any workspace
   .get("/:id", (c) => {
@@ -52,40 +52,20 @@ const sessionsRoutes = daemonFactory
     for (const [workspaceId, runtime] of ctx.daemon.runtimes) {
       const session = runtime.getSession(sessionId);
       if (session) {
-        interface SessionDetails {
-          id: string;
-          workspaceId: string;
-          status: string;
-          progress: number;
-          summary: string;
-          signal: string;
-          startTime?: unknown;
-          endTime?: unknown;
-          artifacts: unknown[];
-          results?: unknown;
-        }
-
-        const sessionData: SessionDetails = {
-          id: session.id,
-          workspaceId,
-          status: session.status,
-          progress: session.progress(),
-          summary: session.summarize(),
-          signal: session.signals?.triggers?.[0]?.id || "unknown",
-          startTime: undefined, // Private property, not accessible
-          endTime: undefined, // Private property, not accessible
-          artifacts: session.getArtifacts(),
-        };
-
-        // Get execution results if available
-        const artifacts = session.getArtifacts();
-        const resultsArtifact = artifacts.find((a) => a.type === "execution_results");
-        if (resultsArtifact?.data) {
-          sessionData.results = resultsArtifact.data.results;
-          sessionData.summary = resultsArtifact.data.summary;
-        }
-
-        return c.json(sessionData, 200);
+        return c.json(
+          {
+            id: session.id,
+            workspaceId,
+            status: session.status,
+            progress: session.progress(),
+            summary: session.summarize(),
+            signal: session.signals?.triggers?.[0]?.id || "unknown",
+            startTime: undefined, // Private property, not accessible
+            endTime: undefined, // Private property, not accessible
+            artifacts: session.getArtifacts(),
+          },
+          200,
+        );
       }
     }
 
@@ -103,7 +83,7 @@ const sessionsRoutes = daemonFactory
       if (session) {
         try {
           await runtime.cancelSession(sessionId);
-          return c.json({ message: `Session ${sessionId} cancelled`, workspaceId });
+          return c.json({ message: `Session ${sessionId} cancelled`, workspaceId }, 200);
         } catch (error) {
           logger.error("Failed to cancel session", { error, sessionId, workspaceId });
           return c.json({ error: stringifyError(error) }, 500);

@@ -4,11 +4,8 @@
  */
 import { getAtlasDaemonUrl } from "@atlas/atlasd";
 import { parseResult, client as v2Client } from "@atlas/client/v2";
-
-interface DaemonClientOptions {
-  daemonUrl?: string;
-  timeout?: number;
-}
+import { createAtlasClient } from "@atlas/oapi-client";
+import { stringifyError } from "@atlas/utils";
 
 interface WorkspaceInfo {
   id: string;
@@ -20,22 +17,10 @@ interface WorkspaceInfo {
   lastSeen: string;
 }
 
-interface WorkspaceCreateRequest {
-  name: string;
-  description?: string;
-  template?: string;
-  config?: Record<string, unknown>;
-}
-
-interface WorkspaceCreateResponse {
-  id: string;
-  name: string;
-}
-
 interface LibrarySearchQuery {
   query?: string;
   type?: string | string[];
-  tags?: string[];
+  tags?: string | string[];
   since?: string;
   until?: string;
   limit?: number;
@@ -68,32 +53,7 @@ interface LibrarySearchResult {
   took_ms: number;
 }
 
-interface LibraryStats {
-  total_items: number;
-  total_size_bytes: number;
-  types: Record<string, number>;
-  recent_activity: Array<{ date: string; items_added: number; items_modified: number }>;
-}
-
-interface TemplateConfig {
-  id: string;
-  name: string;
-  description?: string;
-  format: string;
-  engine: string;
-  config: Record<string, unknown>;
-  schema?: Record<string, unknown>;
-}
-
 export class DaemonClient {
-  private daemonUrl: string;
-  private timeout: number;
-
-  constructor(options: DaemonClientOptions = {}) {
-    this.daemonUrl = options.daemonUrl || getAtlasDaemonUrl();
-    this.timeout = options.timeout || 10000; // 10 seconds
-  }
-
   /**
    * Get detailed workspace information
    */
@@ -104,49 +64,29 @@ export class DaemonClient {
       runtime?: { status: string; startedAt: string; sessions: number; workers: number };
     }
   > {
-    const response = await this.makeRequest(`/api/workspaces/${workspaceId}`);
-    return response;
-  }
-
-  /**
-   * Create a new workspace
-   */
-  async createWorkspace(request: WorkspaceCreateRequest): Promise<WorkspaceCreateResponse> {
-    const response = await this.makeRequest("/api/workspaces", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(request),
-    });
-    return response;
+    const response = await parseResult(
+      v2Client.workspace[":workspaceId"].$get({ param: { workspaceId } }),
+    );
+    if (!response.ok) {
+      throw new Error(`Failed to get workspace: ${stringifyError(response.error)}`);
+    }
+    return response.data;
   }
 
   /**
    * Delete a workspace
    */
   async deleteWorkspace(workspaceId: string, force: boolean = false): Promise<{ message: string }> {
-    const url = new URL(`${this.daemonUrl}/api/workspaces/${workspaceId}`);
-    if (force) {
-      url.searchParams.set("force", "true");
+    const response = await parseResult(
+      v2Client.workspace[":workspaceId"].$delete({
+        param: { workspaceId },
+        query: force ? { force: "true" } : {},
+      }),
+    );
+    if (!response.ok) {
+      throw new Error(`Failed to delete workspace: ${stringifyError(response.error)}`);
     }
-
-    const response = await this.makeRequest(url.pathname + url.search, { method: "DELETE" });
-    return response;
-  }
-
-  /**
-   * Trigger a signal in a workspace
-   */
-  async triggerSignal(
-    workspaceId: string,
-    signalId: string,
-    payload: Record<string, unknown> = {},
-  ): Promise<{ message: string; status: string; workspaceId: string; signalId: string }> {
-    const response = await this.makeRequest(`/api/workspaces/${workspaceId}/signals/${signalId}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    return response;
+    return response.data;
   }
 
   /**
@@ -159,13 +99,14 @@ export class DaemonClient {
       status: string;
       summary: string;
       signal: string;
-      startTime: string;
-      endTime?: string;
       progress: number;
     }>
   > {
-    const response = await this.makeRequest("/api/sessions");
-    return response;
+    const response = await parseResult(v2Client.sessions.index.$get());
+    if (!response.ok) {
+      throw new Error(`Failed to list sessions: ${stringifyError(response.error)}`);
+    }
+    return response.data;
   }
 
   /**
@@ -180,21 +121,25 @@ export class DaemonClient {
     progress: number;
     summary: string;
     signal: string;
-    startTime: string;
-    endTime?: string;
     artifacts: Array<{ type: string; data: unknown }>;
     results?: unknown;
   }> {
-    const response = await this.makeRequest(`/api/sessions/${sessionId}`);
-    return response;
+    const response = await parseResult(v2Client.sessions[":id"].$get({ param: { id: sessionId } }));
+    if (!response.ok) {
+      throw new Error(`Failed to get session: ${stringifyError(response.error)}`);
+    }
+    return response.data;
   }
 
   /**
    * Cancel a session
    */
   async cancelSession(sessionId: string): Promise<{ message: string; workspaceId: string }> {
-    const response = await this.makeRequest(`/api/sessions/${sessionId}`, { method: "DELETE" });
-    return response;
+    const response = await parseResult(v2Client.sessions[":id"].$delete({ param: { sessionId } }));
+    if (!response.ok) {
+      throw new Error(`Failed to cancel session: ${stringifyError(response.error)}`);
+    }
+    return response.data;
   }
 
   /**
@@ -203,24 +148,39 @@ export class DaemonClient {
   async listAgents(
     workspaceId: string,
   ): Promise<Array<{ id: string; type: string; purpose?: string }>> {
-    const response = await this.makeRequest(`/api/workspaces/${workspaceId}/agents`);
-    return response;
+    const response = await parseResult(
+      v2Client.workspace[":workspaceId"].agents.$get({ param: { workspaceId } }),
+    );
+    if (!response.ok) {
+      throw new Error(`Failed to list agents: ${stringifyError(response.error)}`);
+    }
+    return response.data;
   }
 
   /**
    * List signals in a workspace
    */
   async listSignals(workspaceId: string): Promise<Array<{ name: string; description?: string }>> {
-    const response = await this.makeRequest(`/api/workspaces/${workspaceId}/signals`);
-    return response;
+    const response = await parseResult(
+      v2Client.workspace[":workspaceId"].signals.$get({ param: { workspaceId } }),
+    );
+    if (!response.ok) {
+      throw new Error(`Failed to list signals: ${stringifyError(response.error)}`);
+    }
+    return response.data.signals;
   }
 
   /**
    * List jobs in a workspace
    */
   async listJobs(workspaceId: string): Promise<Array<{ name: string; description?: string }>> {
-    const response = await this.makeRequest(`/api/workspaces/${workspaceId}/jobs`);
-    return response;
+    const response = await parseResult(
+      v2Client.workspace[":workspaceId"].jobs.$get({ param: { workspaceId } }),
+    );
+    if (!response.ok) {
+      throw new Error(`Failed to list jobs: ${stringifyError(response.error)}`);
+    }
+    return response.data;
   }
 
   /**
@@ -229,8 +189,13 @@ export class DaemonClient {
   async listWorkspaceSessions(
     workspaceId: string,
   ): Promise<Array<{ id: string; status: string; startedAt: string }>> {
-    const response = await this.makeRequest(`/api/workspaces/${workspaceId}/sessions`);
-    return response;
+    const response = await parseResult(
+      v2Client.workspace[":workspaceId"].sessions.$get({ param: { workspaceId } }),
+    );
+    if (!response.ok) {
+      throw new Error(`Failed to list workspace sessions: ${stringifyError(response.error)}`);
+    }
+    return response.data;
   }
 
   // =================================================================
@@ -241,23 +206,22 @@ export class DaemonClient {
    * List library items
    */
   async listLibraryItems(query?: Partial<LibrarySearchQuery>): Promise<LibrarySearchResult> {
-    const params = new URLSearchParams();
-    if (query?.query) params.set("q", query.query);
-    if (query?.type) {
-      const types = Array.isArray(query.type) ? query.type : [query.type];
-      params.set("type", types.join(","));
+    const q = {
+      query: query?.query,
+      type: Array.isArray(query?.type) ? query.type.join(",") : query?.type,
+      tags: Array.isArray(query?.tags) ? query.tags.join(",") : query?.tags,
+      since: query?.since,
+      until: query?.until,
+      limit: query?.limit?.toString(),
+      offset: query?.offset?.toString(),
+    };
+
+    const client = createAtlasClient();
+    const response = await client.GET("/api/library", { params: { query: q } });
+    if (response.error) {
+      throw new Error(stringifyError(response.error));
     }
-    if (query?.tags) params.set("tags", query.tags.join(","));
-    if (query?.since) params.set("since", query.since);
-    if (query?.until) params.set("until", query.until);
-    if (query?.limit) params.set("limit", query.limit.toString());
-    if (query?.offset) params.set("offset", query.offset.toString());
-
-    const queryString = params.toString();
-    const path = queryString ? `/api/library?${queryString}` : "/api/library";
-
-    const response = await this.makeRequest(path);
-    return response;
+    return response.data;
   }
 
   /**
@@ -267,168 +231,23 @@ export class DaemonClient {
     itemId: string,
     includeContent: boolean = false,
   ): Promise<{ item: LibraryItem; content?: string | Uint8Array }> {
-    const params = new URLSearchParams();
-    if (includeContent) params.set("content", "true");
-
-    const queryString = params.toString();
-    const path = queryString ? `/api/library/${itemId}?${queryString}` : `/api/library/${itemId}`;
-
-    const response = await this.makeRequest(path);
-    return response;
-  }
-
-  /**
-   * Search library items
-   */
-  async searchLibrary(query: LibrarySearchQuery): Promise<LibrarySearchResult> {
-    const params = new URLSearchParams();
-    if (query.query) params.set("q", query.query);
-    if (query.type) {
-      const types = Array.isArray(query.type) ? query.type : [query.type];
-      params.set("type", types.join(","));
-    }
-    if (query.tags) params.set("tags", query.tags.join(","));
-    if (query.since) params.set("since", query.since);
-    if (query.until) params.set("until", query.until);
-    if (query.limit) params.set("limit", query.limit.toString());
-    if (query.offset) params.set("offset", query.offset.toString());
-
-    const queryString = params.toString();
-    const path = `/api/library/search?${queryString}`;
-
-    const response = await this.makeRequest(path);
-    return response;
-  }
-
-  /**
-   * List available templates
-   */
-  async listTemplates(): Promise<TemplateConfig[]> {
-    const response = await this.makeRequest("/api/library/templates");
-    return response;
-  }
-
-  /**
-   * Generate content from template
-   */
-  async generateFromTemplate(
-    templateId: string,
-    data: Record<string, unknown>,
-    options?: Record<string, unknown>,
-  ): Promise<unknown> {
-    const response = await this.makeRequest("/api/library/generate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ templateId, data, options }),
+    const client = createAtlasClient();
+    const response = await client.GET("/api/library/{itemId}", {
+      params: { query: { content: includeContent ? "true" : undefined }, path: { itemId } },
     });
-    return response;
-  }
-
-  /**
-   * Get library statistics
-   */
-  async getLibraryStats(): Promise<LibraryStats> {
-    const response = await this.makeRequest("/api/library/stats");
-    return response;
-  }
-
-  /**
-   * Delete library item
-   */
-  async deleteLibraryItem(itemId: string): Promise<{ message: string }> {
-    const response = await this.makeRequest(`/api/library/${itemId}`, { method: "DELETE" });
-    return response;
-  }
-
-  /**
-   * Make a request to the daemon API with error handling
-   */
-  private async makeRequest(path: string, options: RequestInit = {}): Promise<unknown> {
-    try {
-      // Try the request first
-      return await this.makeRequestInternal(path, options);
-    } catch (error) {
-      // If it's a connection error, provide a helpful message
-      if (error instanceof DaemonApiError && error.status === 503) {
-        // Replace the technical error with a user-friendly message
-        throw new DaemonApiError(
-          "Atlas daemon is not running. Please start it manually with 'atlas service start'",
-          503,
-        );
-      }
-
-      throw error;
+    if (response.error) {
+      throw new Error(stringifyError(response.error));
     }
-  }
-
-  /**
-   * Internal request method without auto-start logic
-   */
-  private async makeRequestInternal(path: string, options: RequestInit = {}): Promise<unknown> {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), this.timeout);
-
-    try {
-      const response = await fetch(`${this.daemonUrl}${path}`, {
-        signal: controller.signal,
-        ...options,
-      });
-
-      clearTimeout(timeoutId);
-
-      if (!response.ok) {
-        let errorMessage: string;
-        try {
-          const errorData = await response.json();
-          errorMessage = errorData.error || `HTTP ${response.status}: ${response.statusText}`;
-        } catch {
-          errorMessage = `HTTP ${response.status}: ${response.statusText}`;
-        }
-        throw new DaemonApiError(errorMessage, response.status);
-      }
-
-      return await response.json();
-    } catch (error) {
-      clearTimeout(timeoutId);
-
-      if (error instanceof DaemonApiError) {
-        throw error;
-      }
-
-      if (error instanceof Error && error.name === "AbortError") {
-        throw new DaemonApiError(
-          `Request to daemon timed out after ${this.timeout}ms. Is the daemon running?`,
-          408,
-        );
-      }
-
-      // Network errors
-      throw new DaemonApiError(
-        `Failed to connect to daemon at ${this.daemonUrl}. Is the daemon running? Error: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-        503,
-      );
-    }
-  }
-}
-
-class DaemonApiError extends Error {
-  constructor(
-    message: string,
-    public status: number,
-  ) {
-    super(message);
-    this.name = "DaemonApiError";
+    return response.data;
   }
 }
 
 // Default client instance
 let defaultClient: DaemonClient | null = null;
 
-export function getDaemonClient(options?: DaemonClientOptions): DaemonClient {
+export function getDaemonClient(): DaemonClient {
   if (!defaultClient) {
-    defaultClient = new DaemonClient(options);
+    defaultClient = new DaemonClient();
   }
   return defaultClient;
 }

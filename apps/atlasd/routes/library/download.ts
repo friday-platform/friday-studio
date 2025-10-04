@@ -1,6 +1,6 @@
 import { logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
-import { describeRoute } from "hono-openapi";
+import { describeRoute, resolver } from "hono-openapi";
 import { daemonFactory } from "../../src/factory.ts";
 import { errorResponseSchema } from "../../src/utils.ts";
 
@@ -33,11 +33,11 @@ downloadLibraryItem.get(
       },
       404: {
         description: "Item not found",
-        content: { "application/json": { schema: errorResponseSchema } },
+        content: { "application/json": { schema: resolver(errorResponseSchema) } },
       },
       500: {
         description: "Internal server error",
-        content: { "application/json": { schema: errorResponseSchema } },
+        content: { "application/json": { schema: resolver(errorResponseSchema) } },
       },
     },
   }),

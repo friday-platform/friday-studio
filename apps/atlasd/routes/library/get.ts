@@ -36,9 +36,10 @@ getLibraryItem.get(
       },
     },
   }),
+  validator("param", z.object({ itemId: z.string() })),
   validator("query", z.object({ content: z.literal("true").optional() })),
   async (c) => {
-    const itemId = c.req.param("itemId");
+    const itemId = c.req.valid("param").itemId;
     const includeContent = c.req.valid("query").content;
 
     try {

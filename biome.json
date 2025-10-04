@@ -11,7 +11,7 @@
       "!**/dist",
       "!**/target",
       "!**/node_modules",
-      "!packages/vendor/**"
+      "!packages/vendor"
     ]
   },
   "formatter": {

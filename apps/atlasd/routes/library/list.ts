@@ -1,5 +1,6 @@
 import { stringifyError } from "@atlas/utils";
-import { describeRoute, resolver } from "hono-openapi";
+import { describeRoute, resolver, validator } from "hono-openapi";
+import z from "zod";
 import { daemonFactory } from "../../src/factory.ts";
 import { errorResponseSchema } from "../../src/utils.ts";
 import type { LibrarySearchQuery } from "./schemas.ts";
@@ -31,20 +32,34 @@ listLibrary.get(
       },
     },
   }),
+  validator(
+    "query",
+    z.object({
+      query: z.string().optional(),
+      q: z.string().optional(),
+      type: z.string().optional(),
+      tags: z.string().optional(),
+      since: z.string().optional(),
+      until: z.string().optional(),
+      limit: z.string().optional(),
+      offset: z.string().optional(),
+    }),
+  ),
   async (c) => {
     try {
       const app = c.get("app");
+      const queryParams = c.req.valid("query");
       const libraryStorage = app.getLibraryStorage();
 
       // Parse query parameters manually for arrays
       const query: LibrarySearchQuery = {
-        query: c.req.query("q") || c.req.query("query"),
-        type: c.req.query("type") ? c.req.query("type").split(",") : undefined,
-        tags: c.req.query("tags") ? c.req.query("tags").split(",") : undefined,
-        since: c.req.query("since"),
-        until: c.req.query("until"),
-        limit: c.req.query("limit") ? parseInt(c.req.query("limit")) : 50,
-        offset: c.req.query("offset") ? parseInt(c.req.query("offset")) : 0,
+        query: queryParams.query || queryParams.q,
+        type: queryParams.type ? queryParams.type.split(",") : undefined,
+        tags: queryParams.tags ? queryParams.tags.split(",") : undefined,
+        since: queryParams.since,
+        until: queryParams.until,
+        limit: queryParams.limit ? parseInt(queryParams.limit, 10) : 50,
+        offset: queryParams.offset ? parseInt(queryParams.offset, 10) : 0,
       };
 
       const result = await libraryStorage.search(query);

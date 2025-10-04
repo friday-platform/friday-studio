@@ -1,6 +1,7 @@
 import { logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
-import { describeRoute, resolver } from "hono-openapi";
+import { describeRoute, resolver, validator } from "hono-openapi";
+import z from "zod";
 import { daemonFactory } from "../../src/factory.ts";
 import { errorResponseSchema } from "../../src/utils.ts";
 import { deleteLibraryItemResponseSchema } from "./schemas.ts";
@@ -33,8 +34,9 @@ deleteLibraryItem.delete(
       },
     },
   }),
+  validator("param", z.object({ itemId: z.string() })),
   async (c) => {
-    const itemId = c.req.param("itemId");
+    const itemId = c.req.valid("param").itemId;
 
     try {
       const app = c.get("app");
@@ -45,7 +47,7 @@ deleteLibraryItem.delete(
         return c.json({ error: `Library item not found: ${itemId}` }, 404);
       }
 
-      return c.json({ message: `Library item ${itemId} deleted` });
+      return c.json({ message: `Library item ${itemId} deleted` }, 200);
     } catch (error) {
       logger.error("Failed to delete library item", { error, itemId });
       return c.json({ error: `Failed to delete library item: ${stringifyError(error)}` }, 500);

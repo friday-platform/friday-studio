@@ -1,4 +1,5 @@
 import process from "node:process";
+import type { LibrarySearchQuery } from "@atlas/client";
 import { parseResult, client as v2Client } from "@atlas/client/v2";
 import { render } from "ink";
 import { LibraryListComponent } from "../../modules/library/library-list-component.tsx";
@@ -52,7 +53,7 @@ export async function handler(argv: ListArgs) {
     s.start("Fetching library items...");
 
     const client = getDaemonClient();
-    const query: unknown = {};
+    const query: LibrarySearchQuery = {};
 
     if (argv.source) query.source = argv.source;
     if (argv.tags) query.tags = argv.tags.split(",").map((tag) => tag.trim());
@@ -77,19 +78,16 @@ export async function handler(argv: ListArgs) {
     // Convert to format expected by component
     const componentItems = items.map((item) => ({
       id: item.id,
-      source: item.source,
+      source: item.metadata.source,
       name: item.name,
       description: item.description,
       created_at: item.created_at,
       updated_at: item.updated_at,
       tags: item.tags,
       size_bytes: item.size_bytes,
-      mime_type: item.mime_type,
-      session_id: item.session_id,
-      agent_ids: item.agent_ids,
-      template_id: item.template_id,
-      generated_by: item.generated_by,
-      custom_fields: item.custom_fields,
+      session_id: item.metadata.session_id,
+      agent_ids: item.metadata.agent_ids,
+      custom_fields: item.metadata.custom_fields,
     }));
 
     const { unmount } = render(<LibraryListComponent items={componentItems} />);

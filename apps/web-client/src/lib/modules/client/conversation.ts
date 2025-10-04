@@ -3,7 +3,6 @@ import type { SessionUIMessageChunk } from "@atlas/core";
 import { createAtlasClient } from "@atlas/oapi-client";
 import { stringifyError } from "@atlas/utils";
 import { createEventSource } from "eventsource-client";
-import { DaemonClient } from "./daemon.ts";
 
 export interface ConversationSession {
   sessionId: string;
@@ -22,16 +21,13 @@ interface ConversationMessage {
  * Handles HTTP requests and SSE streaming for real-time chat experience
  */
 export class ConversationClient {
-  private daemonClient: DaemonClient;
   private conversationWorkspaceId?: string; // Cache the conversation workspace ID
 
   constructor(
     private daemonUrl: string,
     private workspaceId: string,
     private userId: string = "atlas-user",
-  ) {
-    this.daemonClient = new DaemonClient({ daemonUrl });
-  }
+  ) {}
 
   /**
    * Create a new conversation session using direct daemon API
@@ -278,14 +274,10 @@ export class ConversationClient {
    * Cancel an active Atlas session
    */
   async cancelSession(sessionId: string): Promise<void> {
-    const client = createAtlasClient();
-    const response = await client.DELETE("/api/sessions/{sessionId}", {
-      params: { path: { sessionId } },
-    });
+    const response = await parseResult(client.sessions[":id"].$delete({ param: { sessionId } }));
 
-    // Ignore 404 errors (session already finished)
-    if (response.error && response.response.status !== 404) {
-      throw new Error(`Failed to cancel session: ${stringifyError(response.error.error)}`);
+    if (!response.ok) {
+      throw new Error(`Failed to cancel session: ${stringifyError(response.error)}`);
     }
   }
 }

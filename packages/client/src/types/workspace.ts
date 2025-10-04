@@ -16,7 +16,7 @@ export interface WorkspaceCreateRequest {
   name: string;
   description?: string;
   template?: string;
-  config?: Record<string, unknown>;
+  config: Record<string, unknown>;
 }
 
 export interface WorkspaceCreateResponse {

@@ -39,8 +39,7 @@ export const builder = {
 
 export const handler = async (argv: CancelArgs): Promise<void> => {
   try {
-    const port = argv.port || 8080;
-    const client = getAtlasClient({ url: `http://localhost:${port}` });
+    const client = getAtlasClient();
 
     // First, check if the session exists and is running
     let session: SessionDetailedInfo;

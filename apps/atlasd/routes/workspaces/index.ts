@@ -445,7 +445,10 @@ const workspacesRoutes = daemonFactory
     try {
       const runtime = await ctx.daemon.getOrCreateWorkspaceRuntime(workspaceId);
       const signals = runtime.listSignals();
-      return c.json(signals);
+      return c.json(
+        { signals: Object.entries(signals).map(([name, signal]) => ({ name, signal })) },
+        200,
+      );
     } catch (error) {
       logger.error("Failed to list signals", { error, workspaceId });
       return c.json({ error: `Failed to list signals: ${stringifyError(error)}` }, 500);
