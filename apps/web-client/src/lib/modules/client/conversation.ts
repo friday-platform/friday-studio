@@ -1,5 +1,5 @@
 import { client, DetailedError, parseResult } from "@atlas/client/v2";
-import { type SessionUIMessageChunk, throwWithCause } from "@atlas/core";
+import type { SessionUIMessageChunk } from "@atlas/core";
 import { createAtlasClient } from "@atlas/oapi-client";
 import { stringifyError } from "@atlas/utils";
 import { createEventSource } from "eventsource-client";
@@ -45,7 +45,7 @@ export class ConversationClient {
     });
 
     if (response.error) {
-      throwWithCause("Failed to create SSE stream", response.error);
+      throw new Error("Failed to create SSE stream", { cause: response.error });
     }
 
     // Transform the response to match the expected ConversationSession interface
@@ -123,21 +123,17 @@ export class ConversationClient {
     if (!response.ok) {
       if (response.error instanceof DetailedError) {
         if (response.error.statusCode === 429) {
-          throwWithCause(
+          throw new Error(
             "Rate limit exceeded. Please wait a moment before sending another message.",
-            response.error.message,
+            { cause: response.error },
           );
         } else if (response.error.statusCode >= 500) {
-          throwWithCause(
-            "Atlas service is temporarily unavailable. Please try again later.",
-            response.error.message,
-          );
+          throw new Error("Atlas service is temporarily unavailable. Please try again later.", {
+            cause: response.error,
+          });
         }
       }
-      throwWithCause(
-        "Failed to send message. Please try again.",
-        `${stringifyError(response.error)}`,
-      );
+      throw new Error("Failed to send message. Please try again.", { cause: response.error });
     }
 
     return { messageId: response.data.message || crypto.randomUUID(), status: "processing" };
@@ -163,21 +159,17 @@ export class ConversationClient {
     if (!response.ok) {
       if (response.error instanceof DetailedError) {
         if (response.error.statusCode === 429) {
-          throwWithCause(
+          throw new Error(
             "Rate limit exceeded. Please wait a moment before sending another message.",
-            response.error.message,
+            { cause: response.error },
           );
         } else if (response.error.statusCode >= 500) {
-          throwWithCause(
-            "Atlas service is temporarily unavailable. Please try again later.",
-            response.error.message,
-          );
+          throw new Error("Atlas service is temporarily unavailable. Please try again later.", {
+            cause: response.error,
+          });
         }
       }
-      throwWithCause(
-        "Failed to send message. Please try again.",
-        `${stringifyError(response.error)}`,
-      );
+      throw new Error("Failed to send message. Please try again.", { cause: response.error });
     }
 
     return { messageId: response.data.message || crypto.randomUUID(), status: "processing" };
@@ -253,7 +245,7 @@ export class ConversationClient {
     );
 
     if (!response.ok) {
-      throwWithCause(`Failed to access workspace.`, response.error);
+      throw new Error(`Failed to access workspace.`, { cause: response.error });
     }
     return response.data;
   }
@@ -267,7 +259,7 @@ export class ConversationClient {
       headers: { "Access-Control-Allow-Origin": "*" },
     });
     if (response.error) {
-      throwWithCause(`Failed to fetch user information.`, response.error);
+      throw new Error(`Failed to fetch user information.`, { cause: response.error });
     }
     return { currentUser: response.data.user, success: response.data.success };
   }
