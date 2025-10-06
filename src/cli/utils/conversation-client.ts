@@ -1,4 +1,4 @@
-import { client, parseResult } from "@atlas/client/v2";
+import { client, DetailedError, parseResult } from "@atlas/client/v2";
 import type { SessionUIMessageChunk } from "@atlas/core";
 import { throwWithCause } from "@atlas/core/errors";
 import { logger } from "@atlas/logger";
@@ -124,39 +124,34 @@ export class ConversationClient {
   ): Promise<ConversationMessage> {
     // Get the conversation workspace ID
     const workspaceId = await this.getConversationWorkspaceId();
-    const client = createAtlasClient();
 
-    const response = await client.POST("/api/workspaces/{workspaceId}/signals/{signalId}", {
-      params: { path: { workspaceId, signalId: "conversation-stream" } },
-      body: {
-        streamId: sessionId,
-        payload: {
+    const response = await parseResult(
+      client.workspace[":workspaceId"].signals[":signalId"].$post({
+        param: { workspaceId, signalId: "conversation-stream" },
+        json: {
           streamId: sessionId,
-          message,
-          userId: this.userId,
-          type,
-          ...(conversationId && { conversationId }), // Include conversationId if provided
+          payload: {
+            streamId: sessionId,
+            message,
+            userId: this.userId,
+            type,
+            ...(conversationId && { conversationId }), // Include conversationId if provided
+          },
         },
-      },
-    });
+      }),
+    );
 
-    if (response.error) {
-      const status = response.response?.status || 0;
-      const errorMessage = response.error.error || "Unknown error";
-
-      if (status === 429) {
-        throwWithCause(
-          "Rate limit exceeded. Please wait a moment before sending another message.",
-          errorMessage,
-        );
-      } else if (status >= 500) {
+    if (!response.ok) {
+      if (response.error instanceof DetailedError && response.error.statusCode >= 500) {
         throwWithCause(
           "Atlas service is temporarily unavailable. Please try again later.",
-          errorMessage,
+          response.error.message,
         );
       }
-
-      throwWithCause("Failed to send message. Please try again.", `${status}: ${errorMessage}`);
+      throwWithCause(
+        "Failed to send message. Please try again.",
+        `${stringifyError(response.error)}`,
+      );
     }
 
     return { messageId: response.data.message || crypto.randomUUID(), status: "processing" };
@@ -171,99 +166,28 @@ export class ConversationClient {
   ): Promise<ConversationMessage> {
     // Get the conversation workspace ID
     const workspaceId = await this.getConversationWorkspaceId();
-    const client = createAtlasClient();
 
-    const response = await client.POST("/api/workspaces/{workspaceId}/signals/{signalId}", {
-      params: { path: { workspaceId, signalId: "conversation-stream" } },
-      body: { streamId: sessionId, payload: { type: "prompt", streamId: sessionId, parameters } },
-    });
+    const response = await parseResult(
+      client.workspace[":workspaceId"].signals[":signalId"].$post({
+        param: { workspaceId, signalId: "conversation-stream" },
+        json: { streamId: sessionId, payload: { type: "prompt", streamId: sessionId, parameters } },
+      }),
+    );
 
-    if (response.error) {
-      const status = response.response?.status || 0;
-      const errorMessage = response.error.error || "Unknown error";
-
-      if (status === 429) {
-        throwWithCause(
-          "Rate limit exceeded. Please wait a moment before sending another message.",
-          errorMessage,
-        );
-      } else if (status >= 500) {
+    if (!response.ok) {
+      if (response.error instanceof DetailedError && response.error.statusCode >= 500) {
         throwWithCause(
           "Atlas service is temporarily unavailable. Please try again later.",
-          errorMessage,
+          response.error.message,
         );
       }
-
-      throwWithCause("Failed to send message. Please try again.", `${status}: ${errorMessage}`);
+      throwWithCause(
+        "Failed to send message. Please try again.",
+        `${stringifyError(response.error)}`,
+      );
     }
 
     return { messageId: response.data.message || crypto.randomUUID(), status: "processing" };
-  }
-
-  /**
-   * Stream conversation events via Server-Sent Events
-   */
-  async *streamEvents(
-    sessionId: string,
-    sseUrl: string,
-    abortSignal?: AbortSignal,
-  ): AsyncIterableIterator<SessionUIMessageChunk> {
-    try {
-      const eventSource = createEventSource(sseUrl);
-      for await (const { data, id } of eventSource) {
-        if (abortSignal?.aborted) {
-          break;
-        }
-
-        try {
-          const parsedData = JSON.parse(data);
-          const event: unknown = {
-            type: parsedData.type || "unknown",
-            data: parsedData.data || parsedData,
-            timestamp: parsedData.timestamp || new Date().toISOString(),
-            sessionId: parsedData.sessionId || sessionId,
-            messageId: id,
-            id: parsedData.id,
-          };
-
-          logger.debug("SSE data received", { data, sessionId });
-          yield event;
-        } catch (error) {
-          logger.error("Failed to parse SSE message", { error, data, sessionId });
-          // Continue processing other messages
-        }
-      }
-    } catch (error) {
-      // Handle specific connection errors with user-friendly messages
-      const message = stringifyError(error);
-
-      // Check for daemon shutdown or connection loss
-      if (
-        message.includes("error reading a body from connection") ||
-        message.includes("Connection refused") ||
-        message.includes("ECONNREFUSED")
-      ) {
-        throwWithCause(
-          "Connection to Atlas daemon lost. Please check if the daemon is running.",
-          error,
-        );
-      }
-
-      // Check for network issues
-      if (
-        message.includes("Failed to fetch") ||
-        message.includes("NetworkError") ||
-        message.includes("ERR_NETWORK")
-      ) {
-        throwWithCause(
-          "Network connection to Atlas daemon failed. Please check your network and daemon status.",
-          error,
-        );
-      }
-
-      // Default error message for other cases
-      throwWithCause("Streaming connection error. Please try reconnecting.", error);
-    }
   }
 
   createMessageStream(
@@ -281,6 +205,11 @@ export class ConversationClient {
             for await (const { data } of eventSource) {
               try {
                 const parsedData = JSON.parse(data);
+                /**
+                 * Explicit type assertion  - we're currently not validating UI Message chunks.
+                 * @todo https://ai-sdk.dev/docs/reference/ai-sdk-core/validate-ui-messages#validateuimessages
+                 */
+                // @ts-expect-error see above
                 controller.enqueue(parsedData);
               } catch (error) {
                 // Skip malformed messages, don't break the stream
@@ -298,27 +227,6 @@ export class ConversationClient {
         eventSource.close();
       },
     });
-  }
-  /**
-   * Get session information
-   */
-  async getSession(sessionId: string): Promise<ConversationSession | null> {
-    const response = await fetch(
-      `${this.daemonUrl}/api/workspaces/${this.workspaceId}/conversation/sessions/${sessionId}`,
-    );
-
-    if (response.status === 404) {
-      return null;
-    }
-
-    if (!response.ok) {
-      throwWithCause(
-        `Failed to retrieve session information. Status: ${response.status}`,
-        response.statusText,
-      );
-    }
-
-    return await response.json();
   }
 
   /**
@@ -340,38 +248,23 @@ export class ConversationClient {
    * Get workspace information to verify workspace exists
    */
   async getWorkspace(): Promise<{ id: string; name: string; status: string }> {
-    const response = await fetch(`${this.daemonUrl}/api/workspaces/${this.workspaceId}`);
+    const response = await parseResult(
+      client.workspace[":workspaceId"].$get({ param: { workspaceId: this.workspaceId } }),
+    );
 
     if (!response.ok) {
-      const errorText = await response.text().catch(() => response.statusText);
-      switch (response.status) {
-        case 404:
-          throwWithCause("Workspace not found. Please check the workspace ID.", errorText);
-        case 403:
-          throwWithCause("Permission denied. You don't have access to this workspace.", errorText);
-        default:
-          throwWithCause(`Failed to access workspace. Status: ${response.status}`, errorText);
-      }
+      throwWithCause(`Failed to access workspace.`, response.error);
     }
-
-    return await response.json();
+    return response.data;
   }
 
   /**
    * Cancel an active Atlas session
    */
   async cancelSession(sessionId: string): Promise<void> {
-    const client = createAtlasClient();
-    const response = await client.DELETE("/api/sessions/{sessionId}", {
-      params: { path: { sessionId } },
-    });
-
-    // Ignore 404 errors (session already finished)
-    if (response.error && response.response.status !== 404) {
-      throwWithCause(
-        "Failed to cancel session. The session may have already ended.",
-        response.error.error || "Unknown error",
-      );
+    const response = await parseResult(client.sessions[":id"].$delete({ param: { sessionId } }));
+    if (!response.ok) {
+      throw new Error(`Failed to cancel session: ${stringifyError(response.error)}`);
     }
   }
 }

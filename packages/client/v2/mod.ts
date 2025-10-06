@@ -16,6 +16,8 @@ import {
   parseResponse,
 } from "hono/client";
 
+export { DetailedError } from "hono/client";
+
 export const client = {
   health: hc<HealthRoutes>("http://localhost:8080/health"),
   artifactsStorage: hc<ArtifactsRoutes>("http://localhost:8080/api/artifacts"),

@@ -1,102 +1,93 @@
 # TypeScript & Lint Analysis Report
 
-**Generated:** 2025-10-04T20:47:12.107Z
+**Generated:** 2025-10-05T20:42:55.778Z
 
-**Total Issues:** 323 (246 type errors, 20 deno lint violations, 57 biome
+**Total Issues:** 256 (190 type errors, 15 deno lint violations, 51 biome
 violations)
 
 ## Summary Statistics
 
 ### TypeScript Errors
 
-- **Total errors:** 246
-- **Unique error types:** 23
-- **Files with errors:** 75
+- **Total errors:** 190
+- **Unique error types:** 22
+- **Files with errors:** 70
 
 ### Deno Lint Violations
 
-- **Total violations:** 20
-- **Unique rules violated:** 4
-- **Files with violations:** 9
+- **Total violations:** 15
+- **Unique rules violated:** 2
+- **Files with violations:** 6
 
 ### Biome Violations
 
-- **Total violations:** 57
-- **Errors:** 3
-- **Warnings:** 54
-- **Unique rules violated:** 19
-- **Files with violations:** 37
+- **Total violations:** 51
+- **Errors:** 1
+- **Warnings:** 50
+- **Unique rules violated:** 17
+- **Files with violations:** 34
 
 ## TypeScript Error Types Breakdown
 
 | Error Code | Count | Percentage | Description                                  |
 | ---------- | ----- | ---------- | -------------------------------------------- |
-| TS2339     | 89    | 36.2%      | Property does not exist on type              |
-| TS2322     | 39    | 15.9%      | Type not assignable                          |
-| TS2345     | 33    | 13.4%      | Argument type not assignable                 |
-| TS18046    | 19    | 7.7%       | Value is of type 'unknown'                   |
-| TS18048    | 16    | 6.5%       | Value is possibly 'undefined'                |
-| TS7006     | 7     | 2.8%       | Parameter implicitly has any type            |
-| TS6196     | 7     | 2.8%       | Catch clause variable unused                 |
-| TS2531     | 6     | 2.4%       | Object is possibly 'null'                    |
-| TS2694     | 6     | 2.4%       | Namespace has no exported member             |
-| TS2305     | 5     | 2.0%       | Module has no exported member                |
-| TS2532     | 3     | 1.2%       | Object is possibly 'undefined'               |
-| TS2554     | 2     | 0.8%       | Argument count mismatch                      |
-| TS2769     | 2     | 0.8%       | No overload matches call                     |
-| TS2578     | 2     | 0.8%       | Unused ts-expect-error directive             |
-| TS4104     | 2     | 0.8%       | Parameter property readonly/mutable conflict |
-| TS6133     | 1     | 0.4%       | Variable declared but never used             |
-| TS2741     | 1     | 0.4%       | Property is missing in type                  |
-| TS2559     | 1     | 0.4%       | Type has no common properties                |
-| TS2538     | 1     | 0.4%       | TypeScript error                             |
-| TS2367     | 1     | 0.4%       | TypeScript error                             |
-| TS7053     | 1     | 0.4%       | Element implicitly has any type              |
-| TS2740     | 1     | 0.4%       | Type is missing index signature              |
-| TS7017     | 1     | 0.4%       | Type has no index signature                  |
+| TS2339     | 79    | 41.6%      | Property does not exist on type              |
+| TS2322     | 28    | 14.7%      | Type not assignable                          |
+| TS2345     | 23    | 12.1%      | Argument type not assignable                 |
+| TS18046    | 12    | 6.3%       | Value is of type 'unknown'                   |
+| TS6196     | 7     | 3.7%       | Catch clause variable unused                 |
+| TS7006     | 6     | 3.2%       | Parameter implicitly has any type            |
+| TS2531     | 6     | 3.2%       | Object is possibly 'null'                    |
+| TS2694     | 6     | 3.2%       | Namespace has no exported member             |
+| TS2305     | 5     | 2.6%       | Module has no exported member                |
+| TS2578     | 3     | 1.6%       | Unused ts-expect-error directive             |
+| TS2554     | 2     | 1.1%       | Argument count mismatch                      |
+| TS18048    | 2     | 1.1%       | Value is possibly 'undefined'                |
+| TS4104     | 2     | 1.1%       | Parameter property readonly/mutable conflict |
+| TS6133     | 1     | 0.5%       | Variable declared but never used             |
+| TS2741     | 1     | 0.5%       | Property is missing in type                  |
+| TS2559     | 1     | 0.5%       | Type has no common properties                |
+| TS2538     | 1     | 0.5%       | TypeScript error                             |
+| TS2532     | 1     | 0.5%       | Object is possibly 'undefined'               |
+| TS2367     | 1     | 0.5%       | TypeScript error                             |
+| TS7053     | 1     | 0.5%       | Element implicitly has any type              |
+| TS2740     | 1     | 0.5%       | Type is missing index signature              |
+| TS7017     | 1     | 0.5%       | Type has no index signature                  |
 
 ## Deno Lint Rules Breakdown
 
-| Rule Name        | Count | Percentage | Description                  |
-| ---------------- | ----- | ---------- | ---------------------------- |
-| require-await    | 15    | 75.0%      | Async function without await |
-| no-explicit-any  | 2     | 10.0%      | Explicit 'any' type usage    |
-| no-fallthrough   | 2     | 10.0%      | Case statement fallthrough   |
-| no-global-assign | 1     | 5.0%       | Global variable assignment   |
+| Rule Name       | Count | Percentage | Description                  |
+| --------------- | ----- | ---------- | ---------------------------- |
+| require-await   | 14    | 93.3%      | Async function without await |
+| no-explicit-any | 1     | 6.7%       | Explicit 'any' type usage    |
 
 ## Biome Rules Breakdown
 
 | Rule Name                               | Count | Percentage | Severity Distribution |
 | --------------------------------------- | ----- | ---------- | --------------------- |
-| style/useTemplate                       | 12    | 21.1%      | 12W                   |
-| correctness/useExhaustiveDependencies   | 9     | 15.8%      | 1E/8W                 |
-| correctness/noUnusedVariables           | 8     | 14.0%      | 8W                    |
-| complexity/noStaticOnlyClass            | 5     | 8.8%       | 5W                    |
-| complexity/useOptionalChain             | 5     | 8.8%       | 5W                    |
-| suspicious/noEmptyBlock                 | 2     | 3.5%       | 2W                    |
-| suspicious/noExplicitAny                | 2     | 3.5%       | 2W                    |
-| suspicious/noAssignInExpressions        | 2     | 3.5%       | 2W                    |
-| suspicious/noFallthroughSwitchClause    | 2     | 3.5%       | 2W                    |
-| complexity/noUselessSwitchCase          | 1     | 1.8%       | 1W                    |
-| complexity/useLiteralKeys               | 1     | 1.8%       | 1W                    |
-| suspicious/noConfusingVoidType          | 1     | 1.8%       | 1W                    |
-| correctness/noUnusedPrivateClassMembers | 1     | 1.8%       | 1W                    |
-| style/noNonNullAssertion                | 1     | 1.8%       | 1W                    |
-| suspicious/noIrregularWhitespace        | 1     | 1.8%       | 1W                    |
-| complexity/noImportantStyles            | 1     | 1.8%       | 1E                    |
-| suspicious/noGlobalAssign               | 1     | 1.8%       | 1W                    |
-| suspicious/useIterableCallbackReturn    | 1     | 1.8%       | 1E                    |
-| correctness/useHookAtTopLevel           | 1     | 1.8%       | 1W                    |
+| style/useTemplate                       | 12    | 23.5%      | 12W                   |
+| correctness/useExhaustiveDependencies   | 9     | 17.6%      | 1E/8W                 |
+| correctness/noUnusedVariables           | 8     | 15.7%      | 8W                    |
+| complexity/noStaticOnlyClass            | 5     | 9.8%       | 5W                    |
+| complexity/useOptionalChain             | 3     | 5.9%       | 3W                    |
+| suspicious/noEmptyBlock                 | 2     | 3.9%       | 2W                    |
+| suspicious/noAssignInExpressions        | 2     | 3.9%       | 2W                    |
+| complexity/noUselessSwitchCase          | 1     | 2.0%       | 1W                    |
+| complexity/useLiteralKeys               | 1     | 2.0%       | 1W                    |
+| suspicious/noConfusingVoidType          | 1     | 2.0%       | 1W                    |
+| correctness/noUnusedPrivateClassMembers | 1     | 2.0%       | 1W                    |
+| style/noNonNullAssertion                | 1     | 2.0%       | 1W                    |
+| suspicious/noExplicitAny                | 1     | 2.0%       | 1W                    |
+| suspicious/noIrregularWhitespace        | 1     | 2.0%       | 1W                    |
+| complexity/noImportantStyles            | 1     | 2.0%       | 1W                    |
+| suspicious/useIterableCallbackReturn    | 1     | 2.0%       | 1W                    |
+| correctness/useHookAtTopLevel           | 1     | 2.0%       | 1W                    |
 
 ## Files with Most Issues
 
 | File                                                          | Type Errors | Deno Lint | Biome | Total |
 | ------------------------------------------------------------- | ----------- | --------- | ----- | ----- |
-| apps/atlasd/routes/streams/emit.ts                            | 21          | 0         | 0     | 21    |
 | src/cli/modules/messages/message-buffer.tsx                   | 15          | 0         | 4     | 19    |
-| src/cli/utils/conversation-client.ts                          | 14          | 2         | 2     | 18    |
-| apps/web-client/src/lib/modules/client/conversation.ts        | 10          | 1         | 1     | 12    |
-| packages/system/agents/conversation/conversation.agent.ts     | 6           | 2         | 3     | 11    |
 | src/core/storage/memory-kv-storage.ts                         | 2           | 8         | 0     | 10    |
 | packages/core/src/agent-server/server.ts                      | 8           | 0         | 1     | 9     |
 | packages/core/src/orchestrator/agent-orchestrator.ts          | 9           | 0         | 0     | 9     |
@@ -112,24 +103,27 @@ violations)
 | src/core/storage/index.ts                                     | 6           | 0         | 0     | 6     |
 | packages/client/src/types/index.ts                            | 5           | 0         | 0     | 5     |
 | packages/core/src/mcp-registry/agent-discovery.ts             | 4           | 0         | 1     | 5     |
-| ... and 78 more files                                         |             |           |       |       |
+| packages/core/src/mcp-registry/unified-discovery.ts           | 4           | 0         | 1     | 5     |
+| src/cli/modules/input/use-text-input-state.ts                 | 4           | 0         | 1     | 5     |
+| apps/atlasd/routes/library/create.ts                          | 4           | 0         | 0     | 4     |
+| apps/web-client/src/lib/modules/messages/format.ts            | 4           | 0         | 0     | 4     |
+| ... and 73 more files                                         |             |           |       |       |
 
 ## Issues by Project
 
 | Project                 | Type Errors | Deno Lint | Biome | Total |
 | ----------------------- | ----------- | --------- | ----- | ----- |
-| src                     | 83          | 15        | 27    | 125   |
+| src                     | 69          | 13        | 25    | 107   |
 | packages/core           | 45          | 2         | 13    | 60    |
-| apps/atlasd             | 30          | 0         | 0     | 30    |
-| apps/web-client         | 16          | 1         | 2     | 19    |
 | tools/evals             | 18          | 0         | 0     | 18    |
-| packages/mcp-server     | 16          | 0         | 0     | 16    |
-| packages/system         | 6           | 2         | 3     | 11    |
+| packages/mcp-server     | 15          | 0         | 0     | 15    |
 | packages/notifications  | 9           | 0         | 0     | 9     |
 | other                   | 6           | 0         | 2     | 8     |
+| apps/web-client         | 7           | 0         | 1     | 8     |
 | tools/atlas-installer   | 0           | 0         | 8     | 8     |
 | packages/client         | 7           | 0         | 0     | 7     |
 | packages/mcp            | 4           | 0         | 1     | 5     |
+| apps/atlasd             | 4           | 0         | 0     | 4     |
 | packages/agent-sdk      | 4           | 0         | 0     | 4     |
 | packages/openapi-client | 1           | 0         | 1     | 2     |
 | packages/workspace      | 1           | 0         | 0     | 1     |
@@ -171,18 +165,17 @@ violations)
 Based on the dependency graph, here's a recommended order for fixing errors:
 
 1. **Start with leaf nodes** (no other packages depend on these):
-   - web-client (16 errors)
+   - web-client (7 errors)
    - openapi-client (1 errors)
    - evals (18 errors)
 
 2. **Then fix middle-tier packages** (1-3 dependents):
-   - mcp-server (16 errors, 1 dependents)
+   - mcp-server (15 errors, 1 dependents)
    - mcp (4 errors, 1 dependents)
-   - system (6 errors, 2 dependents)
    - notifications (9 errors, 1 dependents)
 
 3. **Finally, fix core packages** (many packages depend on these):
-   - atlasd (30 errors, 5 dependents)
+   - atlasd (4 errors, 5 dependents)
    - agent-sdk (4 errors, 6 dependents)
    - core (45 errors, 8 dependents)
    - workspace (1 errors, 4 dependents)
@@ -220,32 +213,28 @@ Issues that appear across multiple files (potential systematic problems):
   - Occurrences: 6
   - Files affected: 3
 
-- **[Type] TS2345**: "Argument of type '"/api/workspaces/{workspaceId}/s..."
-  - Occurrences: 5
-  - Files affected: 3
-
-- **[Type] TS2339**: "Property 'message' does not exist on type 'never'...."
-  - Occurrences: 5
-  - Files affected: 3
-
 - **[Biome] complexity/noStaticOnlyClass**: "Prefer using simple functions
   instead of classes w..."
   - Occurrences: 5
   - Files affected: 4
 
+- **[Type] TS2578**: "Unused '@ts-expect-error' directive...."
+  - Occurrences: 3
+  - Files affected: 3
+
 ### High-Impact Files
 
 Files with issues from multiple tools (need attention):
 
-| File                                                      | Type Errors | Deno Lint | Biome | Total |
-| --------------------------------------------------------- | ----------- | --------- | ----- | ----- |
-| src/cli/modules/messages/message-buffer.tsx               | 15          | 0         | 4     | 19    |
-| src/cli/utils/conversation-client.ts                      | 14          | 2         | 2     | 18    |
-| apps/web-client/src/lib/modules/client/conversation.ts    | 10          | 1         | 1     | 12    |
-| packages/system/agents/conversation/conversation.agent.ts | 6           | 2         | 3     | 11    |
-| src/core/storage/memory-kv-storage.ts                     | 2           | 8         | 0     | 10    |
-| packages/core/src/agent-server/server.ts                  | 8           | 0         | 1     | 9     |
-| packages/core/src/library/types.ts                        | 4           | 0         | 4     | 8     |
-| src/core/providers/registry.ts                            | 6           | 1         | 0     | 7     |
-| packages/core/src/mcp-registry/web-discovery.ts           | 2           | 1         | 3     | 6     |
-| src/cli/utils/prompts.tsx                                 | 1           | 3         | 2     | 6     |
+| File                                                | Type Errors | Deno Lint | Biome | Total |
+| --------------------------------------------------- | ----------- | --------- | ----- | ----- |
+| src/cli/modules/messages/message-buffer.tsx         | 15          | 0         | 4     | 19    |
+| src/core/storage/memory-kv-storage.ts               | 2           | 8         | 0     | 10    |
+| packages/core/src/agent-server/server.ts            | 8           | 0         | 1     | 9     |
+| packages/core/src/library/types.ts                  | 4           | 0         | 4     | 8     |
+| src/core/providers/registry.ts                      | 6           | 1         | 0     | 7     |
+| packages/core/src/mcp-registry/web-discovery.ts     | 2           | 1         | 3     | 6     |
+| src/cli/utils/prompts.tsx                           | 1           | 3         | 2     | 6     |
+| packages/core/src/mcp-registry/agent-discovery.ts   | 4           | 0         | 1     | 5     |
+| packages/core/src/mcp-registry/unified-discovery.ts | 4           | 0         | 1     | 5     |
+| src/cli/modules/input/use-text-input-state.ts       | 4           | 0         | 1     | 5     |

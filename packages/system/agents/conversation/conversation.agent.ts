@@ -21,6 +21,7 @@ import {
   convertToModelMessages,
   createIdGenerator,
   jsonSchema,
+  type ReasoningOutput,
   smoothStream,
   stepCountIs,
   streamText,
@@ -141,6 +142,7 @@ export const conversationAgent = createAgent({
       const { event } = notification.params;
       // Event is validated by schema to have required structure
       if (stream) {
+        // @ts-expect-error will be addressed during Chat
         stream.emit(event);
       }
     });
@@ -288,7 +290,9 @@ export const conversationAgent = createAgent({
         { messages: [], toolCallId: crypto.randomUUID() },
       );
 
+      // @ts-expect-error will be addressed during Chat
       if (memoryResult?.success && memoryResult.conversationHistory.length > 0) {
+        // @ts-expect-error will be addressed during Chat
         const conversationHistory = memoryResult.conversationHistory;
 
         // Convert workspace memory format to conversation format
@@ -360,7 +364,7 @@ export const conversationAgent = createAgent({
       }
     };
 
-    if (typeof process !== "undefined" && process.on) {
+    if (process?.on) {
       process.on("unhandledRejection", processHandler);
     }
 
@@ -381,7 +385,7 @@ export const conversationAgent = createAgent({
 
           // Pass telemetry config if provided in context
           experimental_telemetry: telemetry ? { isEnabled: true, ...telemetry } : undefined,
-          onError: async ({ error }) => {
+          onError: ({ error }) => {
             if (!error) {
               return;
             }
@@ -477,7 +481,7 @@ export const conversationAgent = createAgent({
       // Wait for both the text/reasoning and the pipe to complete
       // This ensures all streaming events are emitted before we close MCP transport
       let finalText: string;
-      let finalReasoning: any;
+      let finalReasoning: ReasoningOutput[];
 
       try {
         const [textResult, reasoningResult, pipeResult] = await Promise.allSettled([
@@ -557,7 +561,6 @@ export const conversationAgent = createAgent({
         text: finalText || executionFlow.responseBuffer,
         reasoning: processedReasoning,
         executionFlow: executionFlow.steps,
-        toolCalls: executionFlow.steps.filter((s) => s.type === "tool_call"),
       };
     } catch (error) {
       // Handle API errors with user-friendly messages
@@ -599,7 +602,7 @@ export const conversationAgent = createAgent({
       globalThis.removeEventListener("unhandledrejection", unhandledRejectionHandler);
 
       // Clean up process handler if it was added
-      if (typeof process !== "undefined" && process.off) {
+      if (process?.off) {
         process.off("unhandledRejection", processHandler);
       }
     }

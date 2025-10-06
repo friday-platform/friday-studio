@@ -432,6 +432,7 @@ class ClientContext {
       client.chatStorage[":streamId"].$get({ param: { streamId: id } }),
     );
     if (res.ok) {
+      // @ts-expect-error this will be addressed during chat
       const history: SessionUIMessagePart[] = res.data.messages.flatMap((message) => message.parts);
       this.messageHistory = history;
     }

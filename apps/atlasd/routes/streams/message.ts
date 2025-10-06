@@ -73,7 +73,11 @@ sendMessageRoute.post(
         conversationId: body.conversationId,
       });
 
-      const workspaceId = body.scope?.workspaceId || "atlas-conversation";
+      /**
+       * @FIXME: this should be addressed as part of immplementing chat.
+       */
+      /** @ts-expect-error */
+      const workspaceId: string = body.scope?.workspaceId || "atlas-conversation";
 
       try {
         const runtime = await ctx.getOrCreateWorkspaceRuntime(workspaceId);

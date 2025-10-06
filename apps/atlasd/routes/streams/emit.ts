@@ -1,3 +1,4 @@
+import type { SessionUIMessageChunk } from "@atlas/core";
 import { logger } from "@atlas/logger";
 import { describeRoute, resolver, validator } from "hono-openapi";
 import { z } from "zod";
@@ -8,7 +9,7 @@ const emitEventRoute = daemonFactory.createApp();
 
 // Queue structure types
 interface QueuedEmission {
-  event: unknown;
+  event: SessionUIMessageChunk;
   resolve: (value: EmissionResult) => void;
   reject: (error: Error) => void;
   timestamp: number;
@@ -34,7 +35,7 @@ const sessionTimeouts = new Map<string, ReturnType<typeof setTimeout>>(); // Dea
 function emitToStream(
   ctx: AppContext,
   streamId: string,
-  event: unknown,
+  event: SessionUIMessageChunk,
   metadata?: QueuedEmission["metadata"],
 ): Promise<EmissionResult> {
   return new Promise((resolve, reject) => {
@@ -48,13 +49,13 @@ function emitToStream(
     const streamSessionQueues = streamQueues.get(streamId);
 
     // Get or create session queue
-    if (!streamSessionQueues.has(sessionId)) {
-      streamSessionQueues.set(sessionId, []);
+    if (!streamSessionQueues?.has(sessionId)) {
+      streamSessionQueues?.set(sessionId, []);
     }
 
-    const sessionQueue = streamSessionQueues.get(sessionId);
+    const sessionQueue = streamSessionQueues?.get(sessionId);
     const queueItem = { event, resolve, reject, timestamp: Date.now(), metadata };
-    sessionQueue.push(queueItem);
+    sessionQueue?.push(queueItem);
 
     // If no active session, make this one active
     if (!activeSession.get(streamId) && !streamProcessing.get(streamId)) {
@@ -97,6 +98,11 @@ async function processStreamQueue(ctx: AppContext, streamId: string): Promise<vo
         break;
       }
 
+      if (!currentSessionId) {
+        logger.debug("No active session found", { streamId });
+        break;
+      }
+
       const sessionQueue = streamSessionQueues.get(currentSessionId);
       if (!sessionQueue || sessionQueue.length === 0) {
         // DO NOT rotate on empty queue - wait for explicit session-finish event
@@ -112,6 +118,11 @@ async function processStreamQueue(ctx: AppContext, streamId: string): Promise<vo
       if (sessionTimeouts.has(timeoutKey)) {
         clearTimeout(sessionTimeouts.get(timeoutKey));
         sessionTimeouts.delete(timeoutKey);
+      }
+
+      if (!item) {
+        logger.debug("No item found in session queue", { streamId, sessionId: currentSessionId });
+        break;
       }
 
       // Check if this is a session-finish event
@@ -134,7 +145,7 @@ async function processStreamQueue(ctx: AppContext, streamId: string): Promise<vo
         const result = await emitToClients(ctx, streamId, item.event);
         item.resolve(result);
       } catch (error) {
-        item.reject(error);
+        item.reject(new Error("SSE Emission failed", { cause: error }));
         logger.error("SSE emission failed", {
           streamId,
           sessionId: currentSessionId,
@@ -181,14 +192,9 @@ async function processStreamQueue(ctx: AppContext, streamId: string): Promise<vo
  * Check if an event indicates session completion
  * IMPORTANT: Only detect actual session-finish events, not agent-level events
  */
-function isSessionFinishEvent(event: unknown): boolean {
-  if (typeof event === "object" && event !== null) {
-    const evt = event;
-    // Only check for explicit session-finish event
-    // Do NOT rotate on agent-finish or generic finish events
-    return evt.type === "data-session-finish";
-  }
-  return false;
+function isSessionFinishEvent(event: SessionUIMessageChunk): boolean {
+  // Only check for explicit session-finish event
+  return event.type === "data-session-finish";
 }
 
 /**
@@ -339,7 +345,11 @@ emitEventRoute.post(
   async (c) => {
     const ctx = c.get("app");
     const { streamId } = c.req.valid("param");
-    const event = c.req.valid("json");
+    /**
+     * Explicit type assertion  - we're currently not validating UI Message chunks.
+     * @todo https://ai-sdk.dev/docs/reference/ai-sdk-core/validate-ui-messages#validateuimessages
+     */
+    const event = c.req.valid("json") as SessionUIMessageChunk;
 
     // Extract metadata from headers if available
     const metadata = {
