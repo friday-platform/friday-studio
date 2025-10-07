@@ -120,7 +120,6 @@ const messages = $derived([...ctx.messageHistory, ...ctx.messages]);
 				title={ctx.typingState.isTyping
 					? 'Processing... (press escape to cancel the current request)'
 					: undefined}
-				method="POST"
 				onkeydown={(e) => {
 					if (e.key === 'Enter' && !e.shiftKey && !e.altKey) {
 						e.preventDefault();
