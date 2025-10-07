@@ -6,6 +6,23 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 
+#[cfg(target_os = "macos")]
+use objc2_app_kit::NSOpenPanel;
+#[cfg(target_os = "macos")]
+use objc2_foundation::MainThreadMarker;
+
+#[cfg(target_os = "windows")]
+use windows::{
+    Win32::Foundation::HWND,
+    Win32::System::Com::{CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED},
+    Win32::UI::Shell::{FileOpenDialog, IFileOpenDialog, FOS_ALLOWMULTISELECT, FOS_PICKFOLDERS, SIGDN_FILESYSPATH},
+};
+
+#[cfg(target_os = "linux")]
+use gtk4::prelude::*;
+#[cfg(target_os = "linux")]
+use gtk4::FileDialog;
+
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
 fn greet(name: &str) -> String {
@@ -181,6 +198,206 @@ fn write_env_file(env_vars: HashMap<String, String>) -> Result<(), String> {
 }
 
 #[tauri::command]
+async fn open_file_or_folder_picker(app: AppHandle, multiple: bool, _folders_only: bool) -> Result<Vec<String>, String> {
+    #[cfg(target_os = "macos")]
+    {
+        use std::sync::mpsc;
+
+        let (tx, rx) = mpsc::channel();
+
+        // Run on main thread
+        app.run_on_main_thread(move || {
+            unsafe {
+                let mtm = MainThreadMarker::new_unchecked();
+                let panel = NSOpenPanel::openPanel(mtm);
+                panel.setCanChooseFiles(true);
+                panel.setCanChooseDirectories(true);
+                panel.setAllowsMultipleSelection(multiple);
+
+                let response = panel.runModal();
+
+                let result = if response == 1 {  // NSModalResponseOK = 1
+                    let urls = panel.URLs();
+                    let mut paths = Vec::new();
+
+                    for i in 0..urls.count() {
+                        let url = urls.objectAtIndex(i);
+                        if let Some(path) = url.path() {
+                            paths.push(path.to_string());
+                        }
+                    }
+                    Ok(paths)
+                } else {
+                    Ok(Vec::new())
+                };
+
+                let _ = tx.send(result);
+            }
+        }).map_err(|e| format!("Failed to run on main thread: {}", e))?;
+
+        rx.recv().map_err(|e| format!("Failed to receive result: {}", e))?
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        use std::sync::mpsc;
+
+        let (tx, rx) = mpsc::channel();
+
+        // Run on main thread
+        app.run_on_main_thread(move || {
+            let result = unsafe {
+                // Initialize COM
+                let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+
+                let dialog_result = (|| -> Result<Vec<String>, String> {
+                    // Create FileOpenDialog
+                    let dialog: IFileOpenDialog = CoCreateInstance(&FileOpenDialog, None, CLSCTX_INPROC_SERVER)
+                        .map_err(|e| format!("Failed to create dialog: {}", e))?;
+
+                    // Set options for multiple selection and file/folder mode
+                    let mut options = dialog.GetOptions()
+                        .map_err(|e| format!("Failed to get options: {}", e))?;
+
+                    if multiple {
+                        options |= FOS_ALLOWMULTISELECT;
+                    }
+
+                    if folders_only {
+                        options |= FOS_PICKFOLDERS;
+                    }
+
+                    dialog.SetOptions(options)
+                        .map_err(|e| format!("Failed to set options: {}", e))?;
+
+                    // Show the dialog
+                    dialog.Show(HWND(0))
+                        .map_err(|e| format!("Dialog cancelled or failed: {}", e))?;
+
+                    // Get results
+                    if multiple {
+                        let results = dialog.GetResults()
+                            .map_err(|e| format!("Failed to get results: {}", e))?;
+
+                        let count = results.GetCount()
+                            .map_err(|e| format!("Failed to get count: {}", e))?;
+
+                        let mut paths = Vec::new();
+                        for i in 0..count {
+                            let item = results.GetItemAt(i)
+                                .map_err(|e| format!("Failed to get item {}: {}", i, e))?;
+
+                            let path = item.GetDisplayName(SIGDN_FILESYSPATH)
+                                .map_err(|e| format!("Failed to get path: {}", e))?;
+
+                            paths.push(path.to_string_lossy());
+                        }
+
+                        Ok(paths)
+                    } else {
+                        let item = dialog.GetResult()
+                            .map_err(|e| format!("Failed to get result: {}", e))?;
+
+                        let path = item.GetDisplayName(SIGDN_FILESYSPATH)
+                            .map_err(|e| format!("Failed to get path: {}", e))?;
+
+                        Ok(vec![path.to_string_lossy()])
+                    }
+                })();
+
+                // Uninitialize COM
+                CoUninitialize();
+
+                dialog_result
+            };
+
+            let _ = tx.send(result);
+        }).map_err(|e| format!("Failed to run on main thread: {}", e))?;
+
+        rx.recv().map_err(|e| format!("Failed to receive result: {}", e))?
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        use std::sync::mpsc;
+
+        let (tx, rx) = mpsc::channel();
+
+        // Run on main thread
+        app.run_on_main_thread(move || {
+            let result = || -> Result<Vec<String>, String> {
+                // Initialize GTK if not already initialized
+                gtk4::init().map_err(|_| "Failed to initialize GTK4".to_string())?;
+
+                let dialog = FileDialog::new();
+                dialog.set_title("Select Files or Folders");
+
+                // Note: GTK4 FileDialog doesn't support selecting both files and folders
+                // in the same dialog like macOS. File selection is default.
+                // For folder selection, we'd need to use open_folder_future instead
+
+                // GTK4 uses async callbacks
+                let (dialog_tx, dialog_rx) = std::sync::mpsc::channel();
+
+                if multiple {
+                    dialog.open_multiple(
+                        None::<&gtk4::Window>,
+                        None::<&gtk4::gio::Cancellable>,
+                        move |result| {
+                            let paths = match result {
+                                Ok(files) => {
+                                    files
+                                        .iter::<gtk4::gio::File>()
+                                        .filter_map(|f| f.ok())
+                                        .filter_map(|file| file.path())
+                                        .filter_map(|path| path.to_str().map(|s| s.to_string()))
+                                        .collect()
+                                },
+                                Err(_) => Vec::new(),
+                            };
+                            let _ = dialog_tx.send(paths);
+                        },
+                    );
+                } else {
+                    dialog.open(
+                        None::<&gtk4::Window>,
+                        None::<&gtk4::gio::Cancellable>,
+                        move |result| {
+                            let paths = match result {
+                                Ok(file) => {
+                                    if let Some(path) = file.path() {
+                                        if let Some(path_str) = path.to_str() {
+                                            vec![path_str.to_string()]
+                                        } else {
+                                            Vec::new()
+                                        }
+                                    } else {
+                                        Vec::new()
+                                    }
+                                },
+                                Err(_) => Vec::new(),
+                            };
+                            let _ = dialog_tx.send(paths);
+                        },
+                    );
+                }
+
+                dialog_rx.recv().map_err(|e| format!("Failed to receive dialog result: {}", e))
+            };
+
+            let _ = tx.send(result());
+        }).map_err(|e| format!("Failed to run on main thread: {}", e))?;
+
+        rx.recv().map_err(|e| format!("Failed to receive result: {}", e))?
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+    {
+        Err("Custom file picker only supported on macOS, Windows, and Linux.".to_string())
+    }
+}
+
+#[tauri::command]
 async fn restart_atlas_daemon() -> Result<String, String> {
     // Get the atlas binary path
     let home = std::env::var("HOME")
@@ -230,13 +447,15 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_os::init())
         .invoke_handler(tauri::generate_handler![
             greet,
             show_about_dialog,
             run_diagnostics,
             read_env_file,
             write_env_file,
-            restart_atlas_daemon
+            restart_atlas_daemon,
+            open_file_or_folder_picker
         ])
         .setup(|app| {
             // Create Settings menu item with keyboard shortcut

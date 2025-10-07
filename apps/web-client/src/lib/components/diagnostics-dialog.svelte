@@ -98,6 +98,8 @@ onDestroy(() => {
   class="diagnostics-dialog"
   onclick={handleBackdropClick}
 >
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="dialog-content" onclick={(e) => e.stopPropagation()}>
     {#if status !== "running"}
       <button class="close-button" onclick={handleClose} aria-label="Close">

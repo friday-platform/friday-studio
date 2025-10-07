@@ -21,6 +21,8 @@ $effect(() => {
   }
 });
 
+let unlisten: (() => void) | undefined;
+
 onMount(() => {
   if (!ctx.conversationClient) {
     ctx.connect();
@@ -33,29 +35,25 @@ onMount(() => {
   ctx.startHealthCheckInterval();
 
   // Drag and drop support
-  let unlisten: () => void = () => {};
-
   async function setupDragDrop() {
     if (isTauriApp()) {
       unlisten = await getCurrentWebview().onDragDropEvent((event) => {
         if (event.payload.type === "drop") {
-          appCtx.stagedFiles.add(event.payload.paths[0], {
-            path: event.payload.paths[0],
-            type: getFileType(event.payload.paths[0]),
-          });
+          for (const path of event.payload.paths) {
+            appCtx.stagedFiles.add(path, { path, type: getFileType(path) });
+          }
         }
       });
     }
   }
 
   setupDragDrop();
-
-  return () => {
-    unlisten();
-  };
 });
 
 onDestroy(() => {
+  if (unlisten) {
+    unlisten();
+  }
   ctx.destroy();
 });
 </script>

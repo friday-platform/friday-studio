@@ -9,9 +9,13 @@
     "core:window:allow-create",
     "core:webview:allow-create-webview",
     "core:webview:allow-create-webview-window",
+    "core:webview:allow-webview-position",
+    "core:webview:allow-webview-size",
+    "core:webview:allow-internal-toggle-devtools",
     "core:window:allow-show",
     "core:window:allow-start-dragging",
     "core:webview:allow-set-webview-zoom",
+    "core:event:default",
     "opener:default",
     "shell:default",
     { "identifier": "opener:allow-open-path", "allow": [{ "path": "**/*" }] },
@@ -23,6 +27,7 @@
     "notification:default",
     "notification:allow-is-permission-granted",
     "notification:allow-request-permission",
-    "notification:allow-notify"
+    "notification:allow-notify",
+    "os:default"
   ]
 }

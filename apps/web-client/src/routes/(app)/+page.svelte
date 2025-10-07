@@ -1,5 +1,5 @@
 <script lang="ts">
-import { open } from "@tauri-apps/plugin-dialog";
+import { invoke } from "@tauri-apps/api/core";
 import { onMount } from "svelte";
 import { getAppContext, getFileType } from "$lib/app-context.svelte";
 import { CustomIcons } from "$lib/components/icons/custom";
@@ -219,16 +219,18 @@ const hasMessages = $derived(
 							onclick={async (e) => {
 								e.preventDefault();
 
-								const file = await open({
+								const paths = await invoke<string[]>('open_file_or_folder_picker', {
 									multiple: true,
-									directory: true
+									foldersOnly: false
 								});
 
-								if (file) {
-									appCtx.stagedFiles.add(file[0], {
-										path: file[0],
-										type: getFileType(file[0])
-									});
+								if (paths && paths.length > 0) {
+									for (const path of paths) {
+										appCtx.stagedFiles.add(path, {
+											path,
+											type: getFileType(path)
+										});
+									}
 								}
 							}}
 						>
@@ -477,22 +479,6 @@ const hasMessages = $derived(
 
 				& :global(svg) {
 					flex: none;
-					opacity: 0.7;
-				}
-
-				.date {
-					align-items: center;
-					block-size: var(--size-3-5);
-					border-radius: var(--radius-1);
-					border: 1.5px solid currentColor;
-					display: flex;
-					font-size: 7px;
-					font-weight: 900;
-					letter-spacing: calc(-1 * var(--font-letterspacing-2));
-					line-height: var(--font-lineheight-0);
-					inline-size: var(--size-3-5);
-					justify-content: center;
-					text-align: center;
 					opacity: 0.7;
 				}
 			}
