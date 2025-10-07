@@ -7,7 +7,6 @@
   "dependencies": {
     "@atlas/atlasd": "workspace:*",
     "@atlas/client": "workspace:*",
-    "@atlas/config": "workspace:*",
     "@atlas/notifications": "workspace:*",
     "@atlas/oapi-client": "workspace:*",
     "@modelcontextprotocol/sdk": "npm:@socotra/modelcontextprotocol-sdk@^1.18.0",

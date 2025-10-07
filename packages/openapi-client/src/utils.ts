@@ -17,7 +17,7 @@ export function getAtlasDaemonUrl(): string {
   if (typeof Deno !== "undefined" && Deno.env) {
     daemonUrl = Deno.env.get("ATLAS_DAEMON_URL");
   } // Check if we're in Node.js
-  else if (typeof process !== "undefined" && process.env) {
+  else if (process?.env) {
     daemonUrl = process.env.ATLAS_DAEMON_URL;
   }
 

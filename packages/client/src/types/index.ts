@@ -12,7 +12,6 @@ export type { AgentInfo, JobDetailedInfo, JobInfo } from "./agent.ts";
 // Re-export all types
 export type { DaemonStatus } from "./daemon.ts";
 export type {
-  DeleteLibraryItemResponse,
   LibraryItem,
   LibraryItemWithContent,
   LibrarySearchQuery,
@@ -29,13 +28,10 @@ export type {
 } from "./session.ts";
 
 export type {
-  SignalDetailedInfo,
   SignalResponse,
   SignalTriggerResponse,
 } from "./signal.ts";
 export type {
-  CreateWorkspaceFromTemplateRequest,
-  CreateWorkspaceFromTemplateResponse,
   WorkspaceAddRequest,
   WorkspaceBatchAddRequest,
   WorkspaceBatchAddResponse,
@@ -43,5 +39,4 @@ export type {
   WorkspaceCreateResponse,
   WorkspaceDetailedInfo,
   WorkspaceInfo,
-  WorkspaceTemplateInfo,
 } from "./workspace.ts";

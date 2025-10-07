@@ -168,11 +168,7 @@ export class UnifiedDiscovery {
     }
 
     // Check if agent capabilities or domains contain intent keywords
-    const searchableText = [
-      ...agent.expertise.domains,
-      ...agent.expertise.capabilities,
-      agent.description || "",
-    ]
+    const searchableText = [...agent.expertise.domains, agent.description || ""]
       .join(" ")
       .toLowerCase();
 
@@ -207,13 +203,7 @@ export class UnifiedDiscovery {
 
     // Intent matching bonus
     const intentLower = request.intent.toLowerCase();
-    const agentText = [
-      ...agent.expertise.domains,
-      ...agent.expertise.capabilities,
-      agent.description || "",
-    ]
-      .join(" ")
-      .toLowerCase();
+    const agentText = [...agent.expertise.domains, agent.description || ""].join(" ").toLowerCase();
 
     const intentWords = intentLower.split(/\s+/).filter((word) => word.length > 2);
     const matchingWords = intentWords.filter((word) => agentText.includes(word));
@@ -241,14 +231,10 @@ export class UnifiedDiscovery {
       reasons.push(`Specializes in: ${agent.expertise.domains.join(", ")}`);
     }
 
-    if (agent.expertise.capabilities.length > 0) {
-      reasons.push(`Capabilities: ${agent.expertise.capabilities.join(", ")}`);
-    }
-
     reasons.push(`Confidence: ${(confidence * 100).toFixed(0)}%`);
     reasons.push("No external dependencies required - runs directly within Atlas");
 
-    return reasons.join(". ") + ".";
+    return `${reasons.join(". ")}.`;
   }
 
   /** Get the source type for an agent */

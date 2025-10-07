@@ -22,7 +22,7 @@ import type {
 } from "./types.ts";
 import { ProviderStatus, ProviderType } from "./types.ts";
 
-interface FileWatchSignalConfig extends Record<string, unknown> {
+export interface FileWatchSignalConfig extends Record<string, unknown> {
   id: string;
   description: string;
   provider: "fs-watch";

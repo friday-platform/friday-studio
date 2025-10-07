@@ -40,7 +40,10 @@ export interface SessionContext {
 /**
  * Workspace-level MCP Server Registry
  * Manages hierarchical MCP server configuration resolution
+ * This should be turned into a collection of helper functions instead of a static class.
  */
+
+// biome-ignore lint/complexity/noStaticOnlyClass: see above.
 export class MCPServerRegistry {
   private static serverConfigs: Map<string, MCPServerConfig> = new Map();
   private static initialized = false;
@@ -154,6 +157,10 @@ export class MCPServerRegistry {
     const mcpServers = atlasConfig.tools?.mcp?.servers;
     if (mcpServers) {
       for (const [serverId, config] of Object.entries(mcpServers)) {
+        /**
+         * @FIXME remove the Partial<> type from the server config.
+         */
+        // @ts-expect-error server transport will always be set.
         servers.set(serverId, {
           ...config,
           id: serverId,
@@ -187,6 +194,10 @@ export class MCPServerRegistry {
     const mcpServers = workspaceConfig.tools?.mcp?.servers;
     if (mcpServers) {
       for (const [serverId, config] of Object.entries(mcpServers)) {
+        /**
+         * @FIXME remove the Partial<> type from the server config.
+         */
+        // @ts-expect-error server transport will always be set.
         servers.set(serverId, {
           ...config,
           id: serverId,
@@ -382,7 +393,7 @@ export class MCPServerRegistry {
   private static platformToolsFetchPromise: Promise<string[]> | null = null;
 
   private static async fetchPlatformToolsWithRetry(maxRetries: number): Promise<string[]> {
-    let lastError: Error | null = null;
+    let lastError: unknown;
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
@@ -428,7 +439,7 @@ export class MCPServerRegistry {
     // The platform server will be registered without specific tool filtering
     logger.info("Platform MCP server tools unavailable, registering without tool list", {
       operation: "mcp_registry_initialization",
-      error: lastError?.message,
+      error: lastError,
       retries: maxRetries,
     });
 

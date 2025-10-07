@@ -63,7 +63,7 @@ export class StaticMCPDiscovery {
   }
 
   /** Load static registry from TypeScript registry */
-  private async loadStaticRegistry(): Promise<void> {
+  private loadStaticRegistry(): void {
     const validatedServers: MCPServerMetadata[] = [];
     const validationErrors: Array<{ serverId: string; errors: string[] }> = [];
 

@@ -60,8 +60,6 @@ Deno.test({
       data: {
         result,
         response: result.response,
-        toolCalls: result.toolCalls,
-        toolResults: result.toolResults,
         evaluation,
         basicPass: pass,
         qualityPass,
@@ -114,8 +112,6 @@ Deno.test({
       data: {
         result,
         response: result.response,
-        toolCalls: result.toolCalls,
-        toolResults: result.toolResults,
         evaluation,
         basicPass: pass,
         noPostPass,
@@ -174,8 +170,6 @@ Deno.test({
       data: {
         result,
         response: result.response,
-        toolCalls: result.toolCalls,
-        toolResults: result.toolResults,
         evaluation,
         basicPass: pass,
         qualityPass,
@@ -264,8 +258,6 @@ Deno.test({
       data: {
         result,
         response: result.response,
-        toolCalls: result.toolCalls,
-        toolResults: result.toolResults,
         captured,
         evaluation,
         basicPass: pass,

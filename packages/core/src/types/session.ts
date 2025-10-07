@@ -14,6 +14,7 @@ type SessionEvents = {
   "agent-finish": { agentId: string; duration: number };
   "agent-error": { agentId: string; duration: number; error: string };
   "agent-timeout": { agentId: string; task: string; duration: number; error: string };
+  error: { error: string; errorCause: unknown };
 };
 
 export type SessionUIMessage = AtlasUIMessage<SessionEvents>;

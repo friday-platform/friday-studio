@@ -66,14 +66,7 @@ Deno.test({
 
     await saveSnapshot({
       testPath: new URL(import.meta.url),
-      data: {
-        result,
-        response: result.response,
-        toolCalls: result.toolCalls,
-        toolResults: result.toolResults,
-        captured,
-        counters,
-      },
+      data: { result, response: result.response, captured, counters },
       pass: basicPass && postedPass && channelPass && lengthPass,
     });
   },

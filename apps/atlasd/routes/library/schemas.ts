@@ -45,21 +45,6 @@ const libraryItemSchema = z.object({
   workspace_id: z.string().optional(),
 });
 
-// Create library item request schema
-export const createLibraryItemSchema = z.object({
-  type: LIBRARY_ITEM_TYPE,
-  name: z.string().min(1),
-  description: z.string().optional(),
-  content: z.string(), // Required for creation
-  format: LIBRARY_FORMAT.optional().default("markdown"),
-  source: LIBRARY_SOURCE.optional().default("agent"),
-  session_id: z.string().optional(),
-  agent_ids: z.array(z.string()).optional(),
-  tags: z.array(z.string()).optional().default([]),
-  workspace_id: z.string().optional(),
-  metadata: z.record(z.string(), z.unknown()).optional(),
-});
-
 // Library search query schema
 const librarySearchQuerySchema = z.object({
   query: z.string().optional(),

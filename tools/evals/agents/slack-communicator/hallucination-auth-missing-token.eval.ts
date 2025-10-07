@@ -57,15 +57,7 @@ Deno.test({
 
     await saveSnapshot({
       testPath: new URL(import.meta.url),
-      data: {
-        result,
-        response: result.response,
-        toolCalls: result.toolCalls,
-        toolResults: result.toolResults,
-        evaluation,
-        basicPass: pass,
-        qualityPass,
-      },
+      data: { result, response: result.response, evaluation, basicPass: pass, qualityPass },
       pass: pass && qualityPass,
     });
   },

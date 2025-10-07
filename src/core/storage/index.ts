@@ -15,6 +15,10 @@
  * - Clean testing with mock adapters
  */
 
+import { createKVStorage, type KVStorageConfig } from "./kv-storage.ts";
+import { LibraryStorageAdapter, type LibraryStorageConfig } from "./library-storage-adapter.ts";
+import { RegistryStorageAdapter } from "./registry-storage-adapter.ts";
+
 // Storage implementations
 // Core interfaces;
 export { createKVStorage } from "./kv-storage.ts";
@@ -23,23 +27,19 @@ export { RegistryStorageAdapter } from "./registry-storage-adapter.ts";
 
 // Factory functions for common configurations
 export async function createRegistryStorage(
-  config: import("./kv-storage.ts").KVStorageConfig,
-): Promise<import("./registry-storage-adapter.ts").RegistryStorageAdapter> {
-  const { createKVStorage } = await import("./kv-storage.ts");
+  config: KVStorageConfig,
+): Promise<RegistryStorageAdapter> {
   const storage = await createKVStorage(config);
-  const { RegistryStorageAdapter } = await import("./registry-storage-adapter.ts");
   const adapter = new RegistryStorageAdapter(storage);
   await adapter.initialize();
   return adapter;
 }
 
 export async function createLibraryStorage(
-  kvConfig: import("./kv-storage.ts").KVStorageConfig,
-  libraryConfig?: import("./library-storage-adapter.ts").LibraryStorageConfig,
-): Promise<import("./library-storage-adapter.ts").LibraryStorageAdapter> {
-  const { createKVStorage } = await import("./kv-storage.ts");
+  kvConfig: KVStorageConfig,
+  libraryConfig?: LibraryStorageConfig,
+): Promise<LibraryStorageAdapter> {
   const storage = await createKVStorage(kvConfig);
-  const { LibraryStorageAdapter } = await import("./library-storage-adapter.ts");
   const adapter = new LibraryStorageAdapter(storage, libraryConfig);
   await adapter.initialize();
   return adapter;
@@ -50,7 +50,7 @@ export const StorageConfigs = {
   /**
    * Default Deno KV storage in ~/.atlas/
    */
-  defaultKV(): import("./kv-storage.ts").KVStorageConfig {
+  defaultKV(): KVStorageConfig {
     const homeDir = Deno.env.get("HOME") || Deno.env.get("USERPROFILE") || Deno.cwd();
     return { type: "deno-kv", connection: `${homeDir}/.atlas/storage.db` };
   },
@@ -58,14 +58,14 @@ export const StorageConfigs = {
   /**
    * In-memory storage for testing
    */
-  memory(): import("./kv-storage.ts").KVStorageConfig {
+  memory(): KVStorageConfig {
     return { type: "memory" };
   },
 
   /**
    * Custom Deno KV path
    */
-  customKV(path: string): import("./kv-storage.ts").KVStorageConfig {
+  customKV(path: string): KVStorageConfig {
     return { type: "deno-kv", connection: path };
   },
 } as const;

@@ -136,7 +136,11 @@ function createLLMRegistry() {
 /**
  * Unified LLM provider that automatically detects when tools are needed.
  * Design principle: One method, consistent returns, automatic tool wrapping.
+ * @FIXME this method is deprecated and should be removed.
+ * @deprecated
  */
+
+// biome-ignore lint/complexity/noStaticOnlyClass: see above.
 export class LLMProvider {
   private static registry = createLLMRegistry();
   private static mcpManager = new MCPManager();

@@ -198,7 +198,6 @@ export class AgentOrchestrator implements IAgentOrchestrator {
     // Initialize context builder if we have the required dependencies
     if (config.mcpServerPool && config.daemonUrl) {
       this.buildAgentContext = createAgentContextBuilder({
-        daemonUrl: config.daemonUrl,
         mcpServerPool: config.mcpServerPool,
         logger: this.logger,
         // No server needed for wrapped agents (no MCP notification support)
@@ -333,11 +332,15 @@ export class AgentOrchestrator implements IAgentOrchestrator {
       const parsed = JSON.parse(textContent);
 
       // Handle error/cancellation responses from agent server
+      // @ts-expect-error `agents-should-produce-structured-output`
       if (parsed.type === "error") {
+        // @ts-expect-error `agents-should-produce-structured-output`
         throw new Error(`Agent ${parsed.agentId || "unknown"} failed: ${parsed.error}`);
       }
 
+      // @ts-expect-error `agents-should-produce-structured-output`
       if (parsed.type === "cancelled") {
+        // @ts-expect-error `agents-should-produce-structured-output`
         return { type: "completed", result: parsed.result || "Cancelled by user" };
       }
 
@@ -537,10 +540,10 @@ export class AgentOrchestrator implements IAgentOrchestrator {
         "toolResults" in output
       ) {
         // @FIXME: tool calls should be parsed.
-        // `agents-should-produce-structured-output`
+        // @ts-expect-error `agents-should-produce-structured-output`
         mappedCalls = output.toolCalls;
         // @FIXME: tool results should be parsed.
-        // `agents-should-produce-structured-output`
+        // @ts-expect-error `agents-should-produce-structured-output`
         mappedResults = output.toolResults;
       }
 
@@ -560,6 +563,7 @@ export class AgentOrchestrator implements IAgentOrchestrator {
         output,
         duration: Date.now() - startTime,
         timestamp: new Date().toISOString(),
+        // @ts-expect-error `agents-should-produce-structured-output`
         toolCalls: mappedCalls && mappedCalls.length > 0 ? mappedCalls : undefined,
         toolResults: mappedResults && mappedResults.length > 0 ? mappedResults : undefined,
       };
@@ -663,7 +667,9 @@ export class AgentOrchestrator implements IAgentOrchestrator {
       let mappedResults: ToolResult[] | undefined;
       if (typeof output === "object" && output !== null) {
         const rec = output;
+        // @ts-expect-error `agents-should-produce-structured-output`
         mappedCalls = rec.toolCalls;
+        // @ts-expect-error `agents-should-produce-structured-output`
         mappedResults = rec.toolResults;
       }
 
@@ -674,6 +680,7 @@ export class AgentOrchestrator implements IAgentOrchestrator {
         output,
         duration: Date.now() - startTime,
         timestamp: new Date().toISOString(),
+        // @ts-expect-error `agents-should-produce-structured-output`
         toolCalls: mappedCalls && mappedCalls.length > 0 ? mappedCalls : undefined,
         toolResults: mappedResults && mappedResults.length > 0 ? mappedResults : undefined,
       };
@@ -693,6 +700,7 @@ export class AgentOrchestrator implements IAgentOrchestrator {
         task: "Resume with approval",
         input: decision,
         output: null,
+        // @ts-expect-error `agents-should-produce-structured-output`
         error: error,
         duration: Date.now() - startTime,
         timestamp: new Date().toISOString(),
@@ -873,6 +881,7 @@ export class AgentOrchestrator implements IAgentOrchestrator {
         task: taskSummary,
         input: context,
         output: null,
+        // @ts-expect-error `agents-should-produce-structured-output`
         error: error,
         duration: Date.now() - startTime,
         timestamp: new Date().toISOString(),

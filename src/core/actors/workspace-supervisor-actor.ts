@@ -563,7 +563,7 @@ export class WorkspaceSupervisorActor implements BaseActor {
         currentSection = { slug, title, content: "" };
       } else if (currentSection) {
         // Add content to current section
-        currentSection.content += line + "\n";
+        currentSection.content += `${line}\n`;
       }
     }
 

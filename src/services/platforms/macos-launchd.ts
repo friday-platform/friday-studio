@@ -51,7 +51,7 @@ export class MacOSLaunchdService implements PlatformServiceManager {
         const symlinkTarget = await Deno.readLink(systemBinaryPath);
         const resolvedTarget = symlinkTarget.startsWith("/")
           ? symlinkTarget
-          : "/usr/local/bin/" + symlinkTarget;
+          : `/usr/local/bin/${symlinkTarget}`;
 
         // If the symlink points to a valid atlas binary, use the symlink path instead
         if (resolvedTarget === binaryPath || resolvedTarget.includes("/.atlas/bin/atlas")) {

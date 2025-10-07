@@ -52,8 +52,6 @@ Deno.test({
       data: {
         result,
         response: result.response,
-        toolCalls: result.toolCalls,
-        toolResults: result.toolResults,
         evaluation,
         basicPass: pass,
         qualityPass,

@@ -32,8 +32,8 @@ export function registerSignalsListTool(server: McpServer, ctx: ToolContext) {
       const signals = result.data;
 
       return createSuccessResponse({
-        signals,
-        total: signals.length,
+        signals: signals.signals,
+        total: signals.signals.length,
         workspaceId,
         source: "daemon_api",
       });

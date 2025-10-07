@@ -1,8 +1,8 @@
-import type { UIDataTypes, UIMessagePart, UITools } from "ai";
+import type { SessionUIMessagePart } from "@atlas/core";
 import type { OutputEntry } from "./types.ts";
 
 export function formatMessage(
-  part: UIMessagePart<UIDataTypes, UITools>,
+  part: SessionUIMessagePart,
   currentUser: string | undefined,
 ): OutputEntry | undefined {
   if (part.type === "data-user-message") {
@@ -51,7 +51,6 @@ export function formatMessage(
       type: "tool_call",
       timestamp: new Date().toISOString(),
       author: "Atlas",
-      // @ts-expect-error: this is accurate but poorly typed right now
       metadata: { toolName: "display_artifact", artifactId: part?.output?.artifactId },
     };
   } else if (part.type.startsWith("tool-") || part.type === "dynamic-tool") {
@@ -76,23 +75,29 @@ export function formatMessage(
       author: "Atlas",
       content: "Agent timed out",
     };
-  } else if (
-    part.type === "tool-error" ||
-    part.type === "data-error" ||
-    part.type === "data-agent-error"
-  ) {
-    // Extract actual error message from the data payload
-    const errorMessage =
-      part.data && typeof part.data === "object" && "error" in part.data
-        ? String(part.data.error)
-        : "Something went wrong";
-
+  } else if (part.type === "data-error") {
     return {
       id: crypto.randomUUID(),
       type: "error",
       timestamp: new Date().toISOString(),
       author: "Atlas",
-      content: errorMessage,
+      content: part.data.error,
+    };
+  } else if (part.type === "tool-error") {
+    return {
+      id: crypto.randomUUID(),
+      type: "error",
+      timestamp: new Date().toISOString(),
+      author: "Atlas",
+      content: part.errorText,
+    };
+  } else if (part.type === "data-agent-error") {
+    return {
+      id: crypto.randomUUID(),
+      type: "error",
+      timestamp: new Date().toISOString(),
+      author: "Atlas",
+      content: part.data.error,
     };
   }
 }

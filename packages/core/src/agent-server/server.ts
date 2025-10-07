@@ -51,8 +51,12 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
       (error.message.includes("cancelled") || error.message.includes("aborted"));
 
     const payload = isCancellation
-      ? { type: "cancelled", result: "Agent execution was cancelled" }
-      : { type: "error", error: error instanceof Error ? error.message : String(error), agentId };
+      ? ({ type: "cancelled", result: "Agent execution was cancelled" } as const)
+      : ({
+          type: "error",
+          error: error instanceof Error ? error.message : String(error),
+          agentId,
+        } as const);
 
     if (isCancellation) {
       this.#logger.info("Agent execution cancelled", { agentId });
@@ -103,7 +107,6 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
     );
 
     this.buildAgentContext = createAgentContextBuilder({
-      daemonUrl: deps.daemonUrl,
       mcpServerPool: deps.mcpServerPool,
       logger: deps.logger,
       server: this.server.server,
@@ -152,6 +155,7 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
     this.server.registerTool(
       toolName,
       { title: agent.displayName, description: agent.description, inputSchema: inputSchema.shape },
+      // @ts-expect-error the JSON Schema output by the MCP SDK tool definition doesn't align with the AI SDK.
       async (args, request) => {
         try {
           const agentId = agent.id;
@@ -475,6 +479,7 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
       }
 
       // Use helper to format error response
+      // @ts-expect-error error return typing is messy because of approvals.
       return this.formatErrorResponse(error, agentId, false);
     }
   }
@@ -483,51 +488,6 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
   async getAgentExpertise(agentId: string): Promise<AgentExpertise | undefined> {
     const agent = await this.agentRegistry.getAgent(agentId);
     return agent?.metadata.expertise;
-  }
-
-  /**
-   * Resume suspended agent execution with human approval decision.
-   * Processes approval responses from supervisors and continues agent
-   * execution with the provided decision context.
-   */
-  private async resumeWithApproval(
-    approvalId: string,
-    decision: unknown,
-  ): Promise<AgentExecutionResult> {
-    // Validate decision format
-    const decisionObj = decision;
-    const approvalDecision = {
-      approved: Boolean(decisionObj?.approved),
-      reason: decisionObj?.reason,
-      conditions: Array.isArray(decisionObj?.conditions) ? decisionObj?.conditions : undefined,
-    };
-
-    try {
-      const result = await this.executionManager.resumeAgentWithApproval(
-        approvalId,
-        approvalDecision,
-      );
-
-      if (!result) {
-        throw new Error(`No suspended agent found for approval ID: ${approvalId}`);
-      }
-
-      // Wrap successful results in structured response
-      return { type: "completed", result };
-    } catch (error) {
-      if (error instanceof AwaitingSupervisorDecision) {
-        // Another approval needed - return structured response
-        return {
-          type: "awaiting_approval",
-          approvalId: error.approvalId,
-          agentId: error.agentId,
-          sessionId: error.sessionId,
-          request: error.request,
-        };
-      }
-      this.#logger.error("Failed to resume agent with approval", { approvalId, error });
-      throw error;
-    }
   }
 
   /**

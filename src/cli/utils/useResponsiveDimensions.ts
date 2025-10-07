@@ -56,7 +56,7 @@ export const useResponsiveDimensions = (
       process.stdout.off("resize", handleResize);
       process.off("SIGWINCH", handleResize);
     };
-  }, []);
+  }, [refreshStatic]);
 
   return {
     width: terminalWidth,

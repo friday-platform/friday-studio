@@ -7,6 +7,7 @@
 
 import { WorkspaceSessionStatus } from "@atlas/core";
 import { type Logger, logger } from "@atlas/logger";
+import type { SessionSummary } from "../../mod.ts";
 import type {
   ICoALAMemoryStorageAdapter,
   IWorkspaceAgent,
@@ -170,7 +171,7 @@ export class Session extends AtlasScope implements IWorkspaceSession {
 
   // Session Lifecycle Management
 
-  async start(): Promise<void> {
+  start(): void {
     this.logger.info(`Starting session with ${this.signals.triggers.length} signals`, {
       signalCount: this.signals.triggers.length,
     });
@@ -179,7 +180,6 @@ export class Session extends AtlasScope implements IWorkspaceSession {
     if (this.sessionActor) {
       this._status = WorkspaceSessionStatus.EXECUTING;
     }
-    // Session execution is initiated by attaching the SessionSupervisorActor
   }
 
   cancel(): void {
@@ -244,12 +244,13 @@ export class Session extends AtlasScope implements IWorkspaceSession {
     // Only clean up active resources like actors and connections
   }
 
-  complete(result?: unknown): void {
+  complete(result: SessionSummary): void {
     this.logger.info("Session completed", { hasResult: !!result });
 
     this._status = WorkspaceSessionStatus.COMPLETED;
 
-    this.signals.callback.onSuccess(result || this.getArtifacts());
+    // @ts-expect-error the SessionSummary isn't being effectively broadened to a Record<string, unknown>
+    this.signals.callback.onSuccess(result);
     this.signals.callback.onComplete();
 
     // Clear session-scoped WORKING memory on successful completion

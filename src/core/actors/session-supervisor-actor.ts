@@ -1054,6 +1054,11 @@ export class SessionSupervisorActor implements BaseActor {
         abortSignal: agentAbort.signal,
         // Pass callback for stream events
         onStreamEvent: (event) => {
+          /**
+           * Explicit type assertion  - we're currently not validating UI Message chunks.
+           * @todo https://ai-sdk.dev/docs/reference/ai-sdk-core/validate-ui-messages#validateuimessages
+           */
+          // @ts-expect-error see above
           this.baseStreamEmitter?.emit(event);
         },
       });
@@ -1365,7 +1370,6 @@ export class SessionSupervisorActor implements BaseActor {
       case "detailed": // Config schema uses "detailed", maps to PARANOID
         return SupervisionLevel.PARANOID;
       case "standard":
-      default:
         return SupervisionLevel.STANDARD;
     }
   }

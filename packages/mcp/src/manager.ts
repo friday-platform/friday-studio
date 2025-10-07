@@ -422,17 +422,10 @@ export class MCPManager {
         // Debug log the first tool structure
         const toolNames = Object.keys(tools);
         if (toolNames.length > 0) {
-          const firstToolName = toolNames[0];
-          const firstTool = tools[firstToolName];
           logger.debug(`MCP tool structure for ${serverId}`, {
             operation: "mcp_tool_structure_debug",
             serverId,
-            firstToolName,
-            firstToolType: typeof firstTool,
-            firstToolKeys: firstTool && typeof firstTool === "object" ? Object.keys(firstTool) : [],
-            hasParameters: firstTool && typeof firstTool === "object" && "parameters" in firstTool,
-            hasInputSchema:
-              firstTool && typeof firstTool === "object" && "input_schema" in firstTool,
+            toolNames,
           });
         }
 
@@ -509,6 +502,7 @@ export class MCPManager {
         // Create a new tool object with inputSchema instead of parameters
         // We destructure to exclude 'parameters' and rebuild with 'inputSchema'
         const { parameters, ...restTool } = tool as Tool & { parameters?: Schema<JSONValue> };
+        // @ts-expect-error the JSON Schema output by the MCP SDK tool definition doesn't align with the AI SDK.
         const convertedTool: Tool = { ...restTool, inputSchema: parameters };
         filtered[toolName] = convertedTool;
       } else {

@@ -8,7 +8,7 @@ export async function resolveWorkspaceOnly(
   workspaceId?: string,
 ): Promise<{ path: string; id: string; name: string }> {
   const registry = await getWorkspaceManager();
-  await registry.initialize();
+  await registry.initialize([]);
 
   if (workspaceId) {
     // Find by ID or name in registry

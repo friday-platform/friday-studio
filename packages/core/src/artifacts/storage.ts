@@ -42,7 +42,7 @@ async function create(input: {
     data: input.data,
     workspaceId: input.workspaceId,
     chatId: input.chatId,
-    createdAt: new Date(),
+    createdAt: new Date().toISOString(),
   };
 
   const tx = db.atomic();
@@ -100,7 +100,7 @@ async function update(input: {
     data: input.data,
     workspaceId: currentArtifact.workspaceId,
     chatId: currentArtifact.chatId,
-    createdAt: new Date(),
+    createdAt: new Date().toISOString(),
     revisionMessage: input.revisionMessage,
   };
 

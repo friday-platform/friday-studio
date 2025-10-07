@@ -99,8 +99,8 @@ function setupMacOSPath(): IPCResult {
 
         // Add export line
         const newContent = content.endsWith("\n")
-          ? content + exportLine + "\n"
-          : content + "\n" + exportLine + "\n";
+          ? `${content + exportLine}\n`
+          : `${content}\n${exportLine}\n`;
         fs.writeFileSync(configFile, newContent);
         logger.info(`Added Atlas to PATH in ${configFile}`);
         configsUpdated++;

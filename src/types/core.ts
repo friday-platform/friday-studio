@@ -3,6 +3,7 @@
 import type { WorkspaceSignalConfig } from "@atlas/config";
 import type { AgentOrchestrator } from "@atlas/core";
 import type { CoALAMemoryEntry, CoALAMemoryType } from "@atlas/memory";
+import type { MaybePromise } from "@atlas/utils";
 
 export interface IAtlasScope {
   id: string;
@@ -103,7 +104,7 @@ export interface IWorkspaceSession extends IAtlasScope {
   workflows?: IWorkspaceWorkflow[];
   sources?: IWorkspaceSource[];
   status: string; // 'pending' | 'running' | 'completed' | 'cancelled'
-  start(): Promise<void>;
+  start(): MaybePromise<void>;
   cancel(): void;
   cleanup(): void;
   progress(): number;
@@ -123,7 +124,7 @@ export interface IWorkspaceSignal extends IAtlasScope {
 }
 
 export interface IWorkspaceSignalCallback extends IAtlasDecisionGraph {
-  onSuccess(result: unknown): void;
+  onSuccess(result: Record<string, unknown>): void;
   onError(error: Error): void;
   onComplete(): void;
 }

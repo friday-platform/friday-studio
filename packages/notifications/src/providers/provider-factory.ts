@@ -34,10 +34,6 @@ export class DefaultNotificationProviderFactory implements NotificationProviderF
       case "discord":
         // TODO: Implement DiscordProvider
         throw new ProviderConfigError(name, "Discord provider not yet implemented");
-
-      default:
-        // Type assertion is safe here since we've exhausted all known provider types
-        throw new ProviderConfigError(name, `Unknown provider type: ${config.provider}`);
     }
   }
 

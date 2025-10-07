@@ -23,7 +23,6 @@ export const MaxListenersFix = () => {
 
   useEffect(() => {
     // Access Ink's internal event emitter through stdin context
-    // @ts-expect-error - accessing internal property
     const eventEmitter = stdin?.internal_eventEmitter;
 
     if (eventEmitter && typeof eventEmitter.setMaxListeners === "function") {

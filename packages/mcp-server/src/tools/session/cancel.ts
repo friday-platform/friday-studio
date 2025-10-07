@@ -3,7 +3,8 @@
  * Terminates active execution sessions through the daemon API
  */
 
-import { createAtlasClient } from "@atlas/oapi-client";
+import { client, parseResult } from "@atlas/client/v2";
+import { stringifyError } from "@atlas/utils";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { ToolContext } from "../types.ts";
@@ -26,18 +27,15 @@ export function registerSessionCancelTool(server: McpServer, ctx: ToolContext) {
     async ({ sessionId }) => {
       ctx.logger.info("MCP session_cancel called", { sessionId });
 
-      const client = createAtlasClient();
-      const response = await client.DELETE("/api/sessions/{sessionId}", {
-        params: { path: { sessionId } },
-      });
-      if (response.error) {
+      const response = await parseResult(client.sessions[":id"].$delete({ param: { sessionId } }));
+
+      if (!response.ok) {
         ctx.logger.error("Failed to cancel session", { sessionId, error: response.error });
         return createErrorResponse(
-          `Failed to cancel session '${sessionId}': ${response.error.error || response.response.statusText}`,
+          `Failed to cancel session '${sessionId}': ${stringifyError(response.error)}`,
         );
       }
       const result = response.data;
-
       return createSuccessResponse({
         success: true,
         sessionId,

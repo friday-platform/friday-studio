@@ -139,6 +139,7 @@ export class ApprovalQueueManager {
       this.logger,
     );
 
+    // @ts-expect-error - this code isn't in use.
     const actor = createActor(machine, { snapshot: suspended.snapshot });
 
     // Start the actor and send the approval decision

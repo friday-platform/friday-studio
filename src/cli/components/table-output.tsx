@@ -1,14 +1,11 @@
+import type { Table } from "@atlas/system/agents/conversation/tools";
 import { Box, Text } from "ink";
 import { useResponsiveDimensions } from "../utils/useResponsiveDimensions.ts";
 
-export function TableOutput({
-  data,
-}: {
-  data: { data: { headers: string[]; rows: Record<string, string | number>[] } };
-}) {
-  if (!data) return null;
-
+export function TableOutput({ data }: { data: Table }) {
   const dimensions = useResponsiveDimensions({ minHeight: 24, padding: 1 });
+
+  if (!data) return null;
 
   function getMaxColumnWidth(header: string) {
     let maxLen = header.length;

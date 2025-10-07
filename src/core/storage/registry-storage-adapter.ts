@@ -342,17 +342,6 @@ export class RegistryStorageAdapter {
   }
 
   /**
-   * Watch for workspace changes
-   */
-  async *watchWorkspaces(): AsyncIterable<WorkspaceEntry[]> {
-    for await (const _events of this.storage.watch<WorkspaceEntry>(["workspaces"])) {
-      // When any workspace changes, return the full list
-      // TODO: Optimize to only return changed workspaces
-      yield await this.listWorkspaces();
-    }
-  }
-
-  /**
    * Cleanup orphaned workspaces (paths that no longer exist)
    */
   async cleanupOrphanedWorkspaces(): Promise<string[]> {

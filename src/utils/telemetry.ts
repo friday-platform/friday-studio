@@ -5,6 +5,7 @@ import type {
   ContextAPI,
   Span,
   SpanKind,
+  SpanStatusCode,
   TraceAPI,
   Tracer,
 } from "@opentelemetry/api";
@@ -102,7 +103,11 @@ const MCPAttributesSchema = z
 
 /**
  * Validation utility functions
+ *
+ * @FIXME this should be simplified dramatically and likely changed into a
+ * set of helper functions.
  */
+// biome-ignore lint/complexity/noStaticOnlyClass: see above.
 class TelemetryValidation {
   /**
    * Validate attributes for OpenTelemetry compatibility
@@ -246,15 +251,19 @@ const WORKER_ATTRIBUTE_MAPPING = {
 // Dynamic imports for OpenTelemetry to avoid worker import issues
 let trace: TraceAPI | null = null;
 let context: ContextAPI | null = null;
-let statusCodes: typeof import("@opentelemetry/api").SpanStatusCode | null = null;
-let spanKinds: typeof import("@opentelemetry/api").SpanKind | null = null;
+let statusCodes: typeof SpanStatusCode | null = null;
+let spanKinds: typeof SpanKind | null = null;
 
 /**
  * Atlas Telemetry utilities for OpenTelemetry instrumentation
  *
  * This module provides utilities for creating connected span hierarchies
  * across the Atlas architecture: workspace → supervisor → session → agent
+ *
+ * @FIXME this should be simplified dramatically and likely changed into a
+ * set of helper functions.
  */
+// biome-ignore lint/complexity/noStaticOnlyClass: see above.
 export class AtlasTelemetry {
   private static tracer: Tracer | null = null;
   private static isEnabled = false;
@@ -299,10 +308,7 @@ export class AtlasTelemetry {
       } catch (error) {
         logger.warn(
           "Failed to initialize OpenTelemetry (worker environment may not support npm imports)",
-          {
-            error: String(error),
-            workerType: typeof globalThis.WorkerGlobalScope !== "undefined" ? "worker" : "main",
-          },
+          { error: String(error) },
         );
         AtlasTelemetry.isEnabled = false;
       }
@@ -645,7 +651,7 @@ export class AtlasTelemetry {
    * Extract trace context from headers
    */
   static extractTraceContext(headers: Record<string, unknown>): string | null {
-    const traceparent = headers?.["traceparent"];
+    const traceparent = headers?.traceparent;
     return typeof traceparent === "string" ? traceparent : null;
   }
 

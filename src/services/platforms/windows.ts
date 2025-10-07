@@ -265,7 +265,7 @@ exit
                 const tlRes = await tlCmd.output();
                 if (tlRes.success) {
                   const tlOut = this.textDecoder.decode(tlRes.stdout).trim();
-                  if (tlOut && tlOut.startsWith('"atlas.exe"')) {
+                  if (tlOut?.startsWith('"atlas.exe"')) {
                     pid = parsedPid;
                     running = true;
                     port = configuredPort;

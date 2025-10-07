@@ -92,7 +92,7 @@ export interface AgentDiscoveryResult {
     id: string;
     name: string;
     description: string;
-    expertise: { domains: string[]; capabilities: string[]; examples?: string[] };
+    expertise: { domains: string[]; examples?: string[] };
     source: AgentSource;
   };
   confidence: number;

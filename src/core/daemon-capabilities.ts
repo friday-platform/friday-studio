@@ -1,8 +1,3 @@
-/**
- * Daemon-level capabilities - global capabilities managed by the daemon
- * These are orthogonal to workspaces and handle daemon-level operations
- */
-
 import { AtlasLogger } from "@atlas/logger";
 import type { Tool } from "ai";
 import type { AtlasDaemon } from "../../apps/atlasd/src/atlas-daemon.ts";
@@ -35,6 +30,13 @@ interface DaemonExecutionContext {
   };
 }
 
+/**
+ * Daemon-level capabilities - global capabilities managed by the daemon
+ * These are orthogonal to workspaces and handle daemon-level operations
+ * @FIXME remove this class, since it's most likely a no-op.
+ * @deprecated
+ */
+// biome-ignore lint/complexity/noStaticOnlyClass: see above.
 export class DaemonCapabilityRegistry {
   private static capabilities = new Map<string, DaemonCapability>();
   private static initialized = false;

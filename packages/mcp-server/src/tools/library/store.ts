@@ -121,7 +121,6 @@ export function registerLibraryStoreTool(server: McpServer, ctx: ToolContext) {
         itemId: storeResult.itemId,
         message: storeResult.message,
         item: storeResult.item,
-        path: storeResult.path,
         source: "daemon_api",
         timestamp: new Date().toISOString(),
       });

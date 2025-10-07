@@ -198,3 +198,8 @@ export const objectEntries = Object.entries as <T>(o: T) => Array<ObjectEntry<T>
 export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
+
+/**
+ * For types that may or may not return a Promise.
+ */
+export type MaybePromise<T> = Promise<T> | T;

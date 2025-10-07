@@ -252,7 +252,8 @@ export class SendGridProvider extends BaseNotificationProvider {
    * Build SendGrid email message from parameters
    */
   public buildEmailMessage(params: EmailParams): sgMail.MailDataRequired {
-    const message: Record<string, unknown> = {
+    // @ts-expect-error the message is built piecemeal below.
+    const message: sgMail.MailDataRequired = {
       to: params.to,
       from: { email: params.from || this.fromEmail, name: params.from_name || this.fromName },
       subject: params.subject,
@@ -404,12 +405,14 @@ export class SendGridProvider extends BaseNotificationProvider {
    */
   private static parseDuration(duration: string): number {
     const match = duration.match(/^(\d+)([smh])$/);
-    if (!match) {
+    const rawValue = match?.at(1);
+    const rawUnit = match?.at(2);
+    if (!rawValue || !rawUnit) {
       throw new Error(`Invalid duration format: ${duration}`);
     }
 
-    const value = parseInt(match[1], 10);
-    const unit = match[2];
+    const value = parseInt(rawValue, 10);
+    const unit = rawUnit;
 
     switch (unit) {
       case "s":

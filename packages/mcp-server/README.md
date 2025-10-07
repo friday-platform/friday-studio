@@ -34,28 +34,6 @@ The platform server automatically registers:
 - **Tools**: For workspace management, job execution, library operations, and more
 - **Resources**: Including the workspace configuration reference at `atlas://reference/workspace`
 
-### Workspace MCP Server
-
-The workspace server provides job execution capabilities for a specific workspace:
-
-```typescript
-import { WorkspaceMCPServer } from "@atlas/mcp-server";
-
-// Create workspace server with runtime and config
-const workspaceServer = new WorkspaceMCPServer({
-  workspaceRuntime: {
-    listJobs: async () => [...],
-    triggerJob: async (name, payload) => {...},
-    describeJob: async (name) => {...},
-  },
-  workspaceConfig: config,  // Workspace configuration
-  logger: logger,
-});
-
-// Start the server (uses stdio transport)
-await workspaceServer.start();
-```
-
 ## Tool Development Guide
 
 ### Tool Definition Structure

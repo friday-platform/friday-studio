@@ -10,11 +10,9 @@
 import {
   type AtomicOperation,
   KVConnectionError,
-  type KVEntry,
   type KVStorage,
   KVStorageError,
   KVTransactionError,
-  type WatchEvent,
 } from "./kv-storage.ts";
 
 /**
@@ -24,17 +22,17 @@ import {
 class DenoKVAtomicOperation implements AtomicOperation {
   constructor(private operation: Deno.AtomicOperation) {}
 
-  set<T>(key: string[], value: T): AtomicOperation {
+  set<T>(key: string[], value: T) {
     this.operation = this.operation.set(key, value);
     return this;
   }
 
-  delete(key: string[]): AtomicOperation {
+  delete(key: string[]) {
     this.operation = this.operation.delete(key);
     return this;
   }
 
-  check<T>(key: string[], expectedValue: T | null): AtomicOperation {
+  check<T>(key: string[], expectedValue: T | null) {
     // Store check for validation during commit
     // Deno KV check API requires a KvEntryMaybe object
     const checkEntry = { key, value: expectedValue, versionstamp: null };
@@ -42,7 +40,7 @@ class DenoKVAtomicOperation implements AtomicOperation {
     return this;
   }
 
-  async commit(): Promise<boolean> {
+  async commit() {
     try {
       const result = await this.operation.commit();
       return result.ok;
@@ -75,7 +73,7 @@ export class DenoKVStorage implements KVStorage {
     this.path = path;
   }
 
-  async initialize(): Promise<void> {
+  async initialize() {
     switch (this.state) {
       case "ready":
         return; // Already initialized
@@ -110,7 +108,7 @@ export class DenoKVStorage implements KVStorage {
     }
   }
 
-  private async doInitialize(): Promise<void> {
+  private async doInitialize() {
     try {
       // Ensure parent directory exists for file-based KV
       if (this.path) {
@@ -134,7 +132,7 @@ export class DenoKVStorage implements KVStorage {
     }
   }
 
-  private ensureReady(): void {
+  private ensureReady() {
     if (this.state !== "ready") {
       throw new KVStorageError(
         `Storage is not ready (current state: ${this.state})`,
@@ -149,9 +147,11 @@ export class DenoKVStorage implements KVStorage {
     }
   }
 
-  async get<T>(key: string[]): Promise<T | null> {
+  async get<T>(key: string[]) {
     this.ensureReady();
-
+    if (!this.kv) {
+      throw new Error("KV is not ready");
+    }
     try {
       const result = await this.kv.get<T>(key);
       return result.value;
@@ -168,7 +168,9 @@ export class DenoKVStorage implements KVStorage {
 
   async set<T>(key: string[], value: T): Promise<void> {
     this.ensureReady();
-
+    if (!this.kv) {
+      throw new Error("KV is not ready");
+    }
     try {
       await this.kv.set(key, value);
     } catch (error) {
@@ -182,9 +184,11 @@ export class DenoKVStorage implements KVStorage {
     }
   }
 
-  async delete(key: string[]): Promise<void> {
+  async delete(key: string[]) {
     this.ensureReady();
-
+    if (!this.kv) {
+      throw new Error("KV is not ready");
+    }
     try {
       await this.kv.delete(key);
     } catch (error) {
@@ -198,18 +202,17 @@ export class DenoKVStorage implements KVStorage {
     }
   }
 
-  async *list<T>(prefix: string[]): AsyncIterableIterator<KVEntry<T>> {
+  // @ts-expect-error issue with narrowing Deno.KVKey in the `*list` asyncIterator.
+  async *list<T>(prefix: string[]) {
     this.ensureReady();
-
+    if (!this.kv) {
+      throw new Error("KV is not ready");
+    }
     try {
       const iter = this.kv.list<T>({ prefix });
 
       for await (const entry of iter) {
-        yield {
-          key: entry.key, // Deno KV keys are always string arrays
-          value: entry.value,
-          versionstamp: entry.versionstamp,
-        };
+        yield { key: entry.key, value: entry.value, versionstamp: entry.versionstamp };
       }
     } catch (error) {
       throw new KVStorageError(
@@ -222,48 +225,15 @@ export class DenoKVStorage implements KVStorage {
     }
   }
 
-  async *watch<T>(prefix: string[]): AsyncIterable<WatchEvent<T>[]> {
-    this.ensureReady();
-
-    try {
-      // Deno KV watch expects an array of key arrays to watch
-      const watcher = this.kv.watch([prefix]);
-
-      for await (const entries of watcher) {
-        const events: WatchEvent<T>[] = [];
-
-        // entries is a tuple of KvEntryMaybe<unknown>[]
-        for (let i = 0; i < entries.length; i++) {
-          const entry = entries[i];
-          if (entry) {
-            events.push({
-              key: entry.key,
-              value: entry.value,
-              versionstamp: entry.versionstamp ?? undefined,
-            });
-          }
-        }
-
-        yield events;
-      }
-    } catch (error) {
-      throw new KVStorageError(
-        `Failed to watch prefix [${prefix.join(", ")}]: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-        "WATCH_FAILED",
-        error instanceof Error ? error : new Error(String(error)),
-      );
-    }
-  }
-
   atomic(): AtomicOperation {
     this.ensureReady();
-
+    if (!this.kv) {
+      throw new Error("KV is not ready");
+    }
     return new DenoKVAtomicOperation(this.kv.atomic());
   }
 
-  async health(): Promise<boolean> {
+  async health() {
     if (this.state !== "ready" || !this.kv) {
       return false;
     }
@@ -277,42 +247,7 @@ export class DenoKVStorage implements KVStorage {
     }
   }
 
-  async stats(): Promise<{
-    totalKeys: number;
-    totalSize: number;
-    isConnected: boolean;
-    lastError?: string;
-  }> {
-    const isConnected = await this.health();
-
-    if (!isConnected) {
-      return { totalKeys: 0, totalSize: 0, isConnected: false, lastError: "Storage not connected" };
-    }
-
-    try {
-      // Count keys by iterating through all entries
-      // Note: This is expensive for large datasets, but Deno KV doesn't provide count operations
-      let totalKeys = 0;
-      let totalSize = 0;
-
-      for await (const _entry of this.list([])) {
-        totalKeys++;
-        // Approximate size calculation (rough estimate)
-        totalSize += JSON.stringify(_entry.value).length;
-      }
-
-      return { totalKeys, totalSize, isConnected: true };
-    } catch (error) {
-      return {
-        totalKeys: 0,
-        totalSize: 0,
-        isConnected: false,
-        lastError: error instanceof Error ? error.message : String(error),
-      };
-    }
-  }
-
-  async close(): Promise<void> {
+  async close() {
     if (this.state === "closed") {
       return; // Already closed
     }

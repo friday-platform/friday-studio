@@ -49,6 +49,7 @@ type ExecuteAgentInput = { agent: AtlasAgent; prompt: string; context: AgentCont
 type ExecuteAgentOutput = unknown;
 
 type PersistResultsInput = { agentId: string; prompt: string; result: unknown; duration: number };
+// biome-ignore lint/suspicious/noConfusingVoidType: `void` is the correct type for the state machine state.
 type PersistResultsOutput = void;
 
 // === External Dependencies ===

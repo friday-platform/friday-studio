@@ -3,6 +3,7 @@ import { logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
 import { ensureDir, exists } from "@std/fs";
 import { join } from "@std/path";
+import z from "zod";
 import { getAtlasVersion } from "../../utils/version.ts";
 import { checkForUpdate } from "../../utils/version-checker.ts";
 import { errorOutput, infoOutput, successOutput, warningOutput } from "../utils/output.ts";
@@ -1234,7 +1235,7 @@ async function saveChannelPreference(channel: string): Promise<void> {
   // Read existing config if it exists
   try {
     const content = await Deno.readTextFile(configPath);
-    config = JSON.parse(content);
+    config = z.record(z.string(), z.unknown()).parse(JSON.parse(content));
   } catch {
     // Config doesn't exist yet
   }

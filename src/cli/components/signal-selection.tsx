@@ -39,7 +39,7 @@ export const SignalSelection = ({
           const signals = Object.entries(signalList).map(([name, signal]) => ({
             id: name,
             name: name,
-            description: signal.description || undefined,
+            description: signal.signal.description || undefined,
           }));
 
           setSignals(signals);

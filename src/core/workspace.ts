@@ -149,6 +149,7 @@ export class Workspace extends AtlasScope implements IWorkspace {
       // Handle object format from YAML
       for (const [id, signalConfig] of Object.entries(config.signals)) {
         const typedSignalConfig = signalConfig;
+        // @ts-expect-error right now the state machine is misusing config <> runtime signals.
         workspace.addSignal({ id, ...typedSignalConfig });
       }
     }

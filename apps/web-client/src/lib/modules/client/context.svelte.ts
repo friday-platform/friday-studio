@@ -88,7 +88,7 @@ class ClientContext {
     }
   }
 
-  private async sendResponseNotification() {
+  private sendResponseNotification() {
     const now = Date.now();
 
     // ABSOLUTE BLOCK - no notifications allowed until cooldown expires
@@ -100,7 +100,7 @@ class ClientContext {
     NOTIFICATION_BLOCKED_UNTIL = now + 30000;
 
     try {
-      await sendNotification({
+      sendNotification({
         title: "Atlas",
         body: "Atlas is waiting for your input",
         sound: "default",
@@ -263,7 +263,7 @@ class ClientContext {
           // Clear the flag to prevent repeated notifications
           this.waitingForAtlasResponse = false;
           this.currentSessionForNotification = null;
-          this.sendResponseNotification().catch(console.error);
+          this.sendResponseNotification();
         } else if (
           sessionFinishing &&
           sessionFinishing === this.currentSessionForNotification &&
@@ -432,8 +432,9 @@ class ClientContext {
       client.chatStorage[":streamId"].$get({ param: { streamId: id } }),
     );
     if (res.ok) {
-      // @ts-expect-error this will be addressed during chat
-      const history: SessionUIMessagePart[] = res.data.messages.flatMap((message) => message.parts);
+      const history = res.data.messages.flatMap(
+        (message) => message.parts,
+      ) as SessionUIMessagePart[];
       this.messageHistory = history;
     }
   }

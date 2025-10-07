@@ -5,7 +5,6 @@
 import type { AgentRegistry } from "@atlas/agent-sdk";
 import type { Logger } from "@atlas/logger";
 import { z } from "zod";
-import type { AtlasDaemon } from "../../../../apps/atlasd/src/atlas-daemon.ts";
 import type { GlobalMCPServerPool } from "../mcp-server-pool.ts";
 
 /**
@@ -32,9 +31,6 @@ export interface AgentServerDependencies {
 
   /** Check if a session has an active SSE connection */
   hasActiveSSE?: (sessionId?: string) => boolean;
-
-  /** The Atlas daemon instance */
-  daemon: AtlasDaemon;
 }
 
 /**

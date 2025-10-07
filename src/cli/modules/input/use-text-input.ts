@@ -185,7 +185,7 @@ export const useTextInput = ({
     return () => {
       setRawMode(false);
     };
-  }, [stdin, isDisabled]);
+  }, [stdin, isDisabled, setRawMode]);
 
   const renderedValue = useMemo(() => {
     if (isDisabled) {

@@ -1,4 +1,5 @@
 import type { SessionUIMessage, SessionUIMessageChunk } from "@atlas/core";
+import { TableSchema } from "@atlas/system/agents/conversation/tools";
 import { stringifyError } from "@atlas/utils";
 import { readUIMessageStream } from "ai";
 import { Box } from "ink";
@@ -125,7 +126,14 @@ export const MessageBuffer = () => {
     return () => {
       sseListenerStarted.current = false;
     };
-  }, [sseStream, sseAbortControllerRef]);
+  }, [
+    sseStream,
+    sseAbortControllerRef,
+    setAtlasSessionId,
+    setDaemonStatusState,
+    setTypingState,
+    typingState,
+  ]);
 
   useEffect(() => {
     if (!sseMessages) return;
@@ -143,9 +151,11 @@ export const MessageBuffer = () => {
     setOutput(output);
   }, [sseMessages]);
 
+  const header: OutputEntry = { type: "header", id: "atlas-header", content: "" };
+
   return (
     <Box flexDirection="column" flexShrink={0}>
-      {[{ type: "header", id: "atlas-header", content: "" }, ...output].map((entry) => {
+      {[header, ...output].map((entry) => {
         if (entry.type === "header") {
           return <Header key="header" />;
         }
@@ -186,23 +196,28 @@ export const MessageBuffer = () => {
         }
 
         if (entry.type === "tool_call" && entry.metadata?.toolName === "table_output") {
-          return (
-            <Box key={entry.id} flexShrink={0} paddingX={2} flexDirection="column">
-              <Box height={1} />
-              <MessageHeader author="Atlas" date={entry.timestamp} authorColor="blue" />
-
-              <TableOutput data={entry.metadata?.result} />
-            </Box>
-          );
+          const data = TableSchema.safeParse(entry.metadata?.result);
+          if (data.success) {
+            return (
+              <Box key={entry.id} flexShrink={0} paddingX={2} flexDirection="column">
+                <Box height={1} />
+                <MessageHeader author="Atlas" date={entry.timestamp} authorColor="blue" />
+                <TableOutput data={data.data} />
+              </Box>
+            );
+          }
         }
 
-        if (entry.type === "tool_call" && entry.metadata?.toolName === "display_artifact") {
+        if (
+          entry.type === "tool_call" &&
+          entry.metadata?.toolName === "display_artifact" &&
+          typeof entry.metadata?.artifactId === "string"
+        ) {
           return (
             <Box key={entry.id} flexShrink={0} paddingX={2} flexDirection="column">
               <Box height={1} />
               <MessageHeader author="Atlas" date={entry.timestamp} authorColor="blue" />
-
-              <DisplayArtifact artifactId={entry.metadata?.artifactId} />
+              <DisplayArtifact artifactId={entry.metadata.artifactId} />
             </Box>
           );
         }

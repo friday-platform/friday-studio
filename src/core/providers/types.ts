@@ -2,6 +2,9 @@
  * Provider system for loading and managing external integrations
  */
 
+import type { ProviderTypeKeys } from "@atlas/signals";
+import type { MaybePromise } from "@atlas/utils";
+
 export interface IProvider {
   id: string;
   type: ProviderType;
@@ -54,40 +57,18 @@ interface HealthStatus {
   details?: Record<string, unknown>;
 }
 
-interface ISignalProvider extends IProvider {
-  type: ProviderType.SIGNAL;
-  createSignal(config: unknown): IProviderSignal;
-}
-
-interface IAgentProvider extends IProvider {
-  type: ProviderType.AGENT;
-  createAgent(config: unknown): Promise<unknown>;
-  getSupportedModels?(): string[];
-}
-
-// Provider-based signal that can be serialized
-interface IProviderSignal {
-  id: string;
-  providerId: string;
-  config: Record<string, unknown>;
-
-  // Methods that will be called by runtime
-  validate(): boolean;
-  toRuntimeSignal(): unknown; // Converts to IWorkspaceSignal
-}
-
 // Provider registry
 export interface IProviderRegistry {
   register(provider: IProvider): void;
   get(id: string): IProvider | undefined;
   getByType(type: ProviderType): IProvider[];
-  loadFromConfig(config: ProviderConfig): Promise<IProvider>;
+  loadFromConfig(config: ProviderConfig): MaybePromise<IProvider>;
 }
 
 // Serializable provider config
 export interface ProviderConfig {
   id: string;
   type: ProviderType;
-  provider: string; // e.g., "github", "anthropic", "openai"
-  config?: Record<string, unknown>;
+  provider: ProviderTypeKeys; // e.g., "github", "anthropic", "openai"
+  config: Record<string, unknown>;
 }

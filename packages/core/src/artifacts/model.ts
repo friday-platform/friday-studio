@@ -9,7 +9,7 @@ import {
 /** Revision summary for history */
 export interface ArtifactRevisionSummary {
   revision: number;
-  createdAt: Date;
+  createdAt: string;
   revisionMessage?: string;
 }
 

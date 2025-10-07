@@ -3,7 +3,8 @@
  * Retrieves detailed information about Atlas workspaces through the daemon API
  */
 
-import { createAtlasClient } from "@atlas/oapi-client";
+import { client, parseResult } from "@atlas/client/v2";
+import { stringifyError } from "@atlas/utils";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { ToolContext } from "../types.ts";
@@ -23,17 +24,16 @@ export function registerWorkspaceDescribeTool(server: McpServer, ctx: ToolContex
     },
     async ({ workspaceId }) => {
       ctx.logger.info("MCP workspace_describe called", { workspaceId });
-      const client = createAtlasClient();
-      const result = await client.GET("/api/workspaces/{workspaceId}", {
-        params: { path: { workspaceId } },
-      });
-      if (result.error) {
-        ctx.logger.error("Failed to describe workspace", { workspaceId, error: result.error });
+      const response = await parseResult(
+        client.workspace[":workspaceId"].$get({ param: { workspaceId } }),
+      );
+      if (!response.ok) {
+        ctx.logger.error("Failed to describe workspace", { workspaceId, error: response.error });
         return createErrorResponse(
-          `Failed to get workspace details for '${workspaceId}': ${result.error}`,
+          `Failed to get workspace details for '${workspaceId}': ${stringifyError(response.error)}`,
         );
       }
-      const workspace = result.data;
+      const workspace = response.data;
 
       ctx.logger.info("Workspace described via daemon API", {
         workspaceId,

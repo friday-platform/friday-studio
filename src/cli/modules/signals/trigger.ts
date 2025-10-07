@@ -149,17 +149,25 @@ async function triggerSignal(options: TriggerSignalOptions): Promise<TriggerSign
     // Get workspace info for result
     const workspace = await client.getWorkspace(options.workspaceId);
 
-    const result = await client.triggerSignal(
-      options.workspaceId,
-      options.signalName,
-      options.payload || {},
+    const response = await parseResult(
+      v2Client.workspace[":workspaceId"].signals[":signalId"].$post({
+        param: { workspaceId: options.workspaceId, signalId: options.signalName },
+        json: options.payload,
+      }),
     );
 
     const duration = performance.now() - startTime;
-
+    if (!response.ok) {
+      return {
+        duration,
+        workspaceId: options.workspaceId,
+        success: false,
+        error: stringifyError(response.error),
+      };
+    }
     return {
       success: true,
-      status: result.status,
+      status: response.data.status,
       duration,
       workspaceId: options.workspaceId,
       workspaceName: workspace.name,
@@ -168,7 +176,7 @@ async function triggerSignal(options: TriggerSignalOptions): Promise<TriggerSign
     const duration = performance.now() - startTime;
     return {
       success: false,
-      error: error instanceof Error ? error.message : String(error),
+      error: stringifyError(error),
       duration,
       workspaceId: options.workspaceId,
     };

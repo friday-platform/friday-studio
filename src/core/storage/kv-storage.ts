@@ -7,6 +7,10 @@
  * accessing storage-specific APIs.
  */
 
+import type { MaybePromise } from "@atlas/utils";
+import { DenoKVStorage } from "./deno-kv-storage.ts";
+import { MemoryKVStorage } from "./memory-kv-storage.ts";
+
 /**
  * Atomic operation builder for transactional consistency
  */
@@ -31,27 +35,17 @@ export interface AtomicOperation {
    * Commit the atomic operation
    * @returns true if successful, false if any checks failed
    */
-  commit(): Promise<boolean>;
+  commit(): MaybePromise<boolean>;
 }
 
 /**
  * Entry returned by list operations
  */
-export interface KVEntry<T> {
-  key: string[];
+export interface KVEntry<T, U extends readonly (string | number | bigint)[] = string[]> {
+  key: U;
   value: T;
   versionstamp?: string; // Optional version for optimistic concurrency
 }
-
-/**
- * Watch event for real-time updates
- */
-export interface WatchEvent<T> {
-  key: string[];
-  value: T | null; // null indicates deletion
-  versionstamp?: string;
-}
-
 /**
  * Base Key-Value Storage Interface
  *
@@ -64,41 +58,36 @@ export interface KVStorage {
    * Initialize the storage system
    * Should be called once before any operations
    */
-  initialize(): Promise<void>;
+  initialize(): MaybePromise<void>;
 
   /**
    * Get a value by key
    * @param key Hierarchical key path (e.g., ["workspaces", "abc123"])
    * @returns Value if found, null if not found
    */
-  get<T>(key: string[]): Promise<T | null>;
+  get<T>(key: string[]): MaybePromise<T | null>;
 
   /**
    * Set a key-value pair
    * @param key Hierarchical key path
    * @param value Value to store
    */
-  set<T>(key: string[], value: T): Promise<void>;
+  set<T>(key: string[], value: T): MaybePromise<void>;
 
   /**
    * Delete a key
    * @param key Hierarchical key path
    */
-  delete(key: string[]): Promise<void>;
+  delete(key: string[]): MaybePromise<void>;
 
   /**
    * List all entries with a given key prefix
    * @param prefix Key prefix to match (e.g., ["workspaces"] matches all workspace keys)
    * @returns Async iterator of matching entries
    */
-  list<T>(prefix: string[]): AsyncIterableIterator<KVEntry<T>>;
-
-  /**
-   * Watch for changes to keys with a given prefix
-   * @param prefix Key prefix to watch
-   * @returns Async iterable of change events
-   */
-  watch<T>(prefix: string[]): AsyncIterable<WatchEvent<T>[]>;
+  list<T, U extends readonly (string | number | bigint)[] = string[]>(
+    prefix: string[],
+  ): AsyncIterableIterator<KVEntry<T, U>>;
 
   /**
    * Create an atomic operation for transactional consistency
@@ -110,28 +99,18 @@ export interface KVStorage {
    * Check if the storage system is healthy and accessible
    * @returns true if healthy, false otherwise
    */
-  health(): Promise<boolean>;
-
-  /**
-   * Get storage statistics and metadata
-   */
-  stats(): Promise<{
-    totalKeys: number;
-    totalSize: number;
-    isConnected: boolean;
-    lastError?: string;
-  }>;
+  health(): MaybePromise<boolean>;
 
   /**
    * Close the storage connection and cleanup resources
    */
-  close(): Promise<void>;
+  close(): MaybePromise<void>;
 }
 
 /**
  * Storage configuration options
  */
-interface KVStorageConfig {
+export interface KVStorageConfig {
   /**
    * Storage backend type
    */
@@ -154,15 +133,15 @@ interface KVStorageConfig {
 export async function createKVStorage(config: KVStorageConfig): Promise<KVStorage> {
   switch (config.type) {
     case "deno-kv": {
-      const { DenoKVStorage } = await import("./deno-kv-storage.ts");
       const storage = new DenoKVStorage(config.connection);
       await storage.initialize();
+      // @ts-expect-error issue with narrowing Deno.KVKey in the `*list` asyncIterator.
       return storage;
     }
     case "memory": {
-      const { MemoryKVStorage } = await import("./memory-kv-storage.ts");
       const storage = new MemoryKVStorage();
-      await storage.initialize();
+      storage.initialize();
+      // @ts-expect-error issue with narrowing Deno.KVKey in the `*list` asyncIterator.
       return storage;
     }
     default:

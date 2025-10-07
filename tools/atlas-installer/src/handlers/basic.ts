@@ -109,7 +109,7 @@ export const saveAtlasNpxPathHandler: IPCHandler<
     if (envContent.includes("ATLAS_NPX_PATH=")) {
       envContent = envContent.replace(/ATLAS_NPX_PATH=.*$/m, npxPathLine);
     } else {
-      envContent = envContent.trim() + (envContent ? "\n" : "") + npxPathLine + "\n";
+      envContent = `${envContent.trim() + (envContent ? "\n" : "") + npxPathLine}\n`;
     }
 
     // Write back to file
@@ -154,7 +154,7 @@ export const saveAtlasKeyHandler: IPCHandler<string, IPCResult> = async (
     if (envContent.includes("ATLAS_KEY=")) {
       envContent = envContent.replace(/ATLAS_KEY=.*$/m, keyLine);
     } else {
-      envContent = envContent.trim() + (envContent ? "\n" : "") + keyLine + "\n";
+      envContent = `${envContent.trim() + (envContent ? "\n" : "") + keyLine}\n`;
     }
 
     // Write back to file

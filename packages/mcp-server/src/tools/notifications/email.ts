@@ -2,7 +2,7 @@
  * Email notification tool for Atlas MCP server
  */
 
-import { NotificationManager } from "@atlas/notifications";
+import { type EmailParams, NotificationManager } from "@atlas/notifications";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { ToolContext } from "../types.ts";
@@ -62,7 +62,7 @@ Common use cases:
               content: z.string().describe("Base64 encoded attachment content"),
               type: z.string().describe("MIME type"),
               disposition: z
-                .string()
+                .enum(["attachment", "inline"])
                 .optional()
                 .describe("Attachment disposition: 'attachment' or 'inline'"),
             }),
@@ -99,7 +99,7 @@ Common use cases:
         });
 
         // Build email parameters with environment variable defaults
-        const emailParams = {
+        const emailParams: EmailParams = {
           to,
           subject,
           content,

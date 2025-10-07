@@ -14,7 +14,7 @@ import type { AtlasTools } from "@atlas/agent-sdk";
 import { displayArtifact } from "./display-artifact.ts";
 import { resourceReadTool } from "./resource-read.ts";
 import { recallNotesTool, takeNoteTool } from "./scratchpad-tools.ts";
-import { tableOutput } from "./table.ts";
+import { type Table, TableSchema, tableOutput } from "./table.ts";
 import { workspaceMemoryTool } from "./workspace-memory-tool.ts";
 
 /**
@@ -30,4 +30,4 @@ export const conversationTools: AtlasTools = {
   display_artifact: displayArtifact,
 };
 
-export { workspaceMemoryTool };
+export { workspaceMemoryTool, tableOutput, TableSchema, type Table };

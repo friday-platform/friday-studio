@@ -3,7 +3,8 @@
  * Triggers workspace signals through the daemon API
  */
 
-import { createAtlasClient } from "@atlas/oapi-client";
+import { client, parseResult } from "@atlas/client/v2";
+import { stringifyError } from "@atlas/utils";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { ToolContext } from "../types.ts";
@@ -27,16 +28,16 @@ export function registerSignalsTriggerTool(server: McpServer, ctx: ToolContext) 
     },
     async ({ workspaceId, signalName, payload, streamId }) => {
       ctx.logger.info("MCP workspace_signals_trigger called", { workspaceId, signalName });
+      const response = await parseResult(
+        client.workspace[":workspaceId"].signals[":signalId"].$post({
+          param: { workspaceId, signalId: signalName },
+          json: { payload, streamId },
+        }),
+      );
 
-      const client = createAtlasClient();
-      const response = await client.POST("/api/workspaces/{workspaceId}/signals/{signalId}", {
-        params: { path: { workspaceId, signalId: signalName } },
-        body: { payload, streamId },
-      });
-
-      if (response.error) {
+      if (!response.ok) {
         return createErrorResponse(
-          `Failed to list signals for workspace '${workspaceId}': ${response.error}`,
+          `Failed to list signals for workspace '${workspaceId}': ${stringifyError(response.error)}`,
         );
       }
 

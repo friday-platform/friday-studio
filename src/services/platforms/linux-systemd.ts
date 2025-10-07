@@ -236,7 +236,7 @@ WantedBy=default.target
       const output = this.textDecoder.decode(result.stdout).trim();
       const timestampMatch = output.match(/ActiveEnterTimestamp=(.+)/);
 
-      if (timestampMatch && timestampMatch[1]) {
+      if (timestampMatch?.[1]) {
         const startTime = new Date(timestampMatch[1]);
         const now = new Date();
         const uptimeMs = now.getTime() - startTime.getTime();

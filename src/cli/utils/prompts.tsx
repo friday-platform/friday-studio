@@ -10,12 +10,6 @@ interface PromptOptions {
   validate?: (value: string) => string | undefined;
 }
 
-interface SelectOption {
-  label: string;
-  value: string;
-  hint?: string;
-}
-
 // Spinner utility that matches @clack/prompts API
 export const spinner = () => {
   let stopFn: (() => void) | null = null;
@@ -38,7 +32,7 @@ export const spinner = () => {
 };
 
 // Text input prompt
-export const text = async (options: PromptOptions): Promise<string | symbol> => {
+export const text = (options: PromptOptions): Promise<string | symbol> => {
   return new Promise((resolve) => {
     const TextPrompt = () => {
       const { exit } = useApp();
@@ -50,12 +44,17 @@ export const text = async (options: PromptOptions): Promise<string | symbol> => 
         }
       });
 
+      const defaultValue =
+        typeof options.defaultValue === "boolean"
+          ? String(options.defaultValue)
+          : options.defaultValue;
+
       return (
         <Box flexDirection="column" gap={1}>
           <Text>{options.message}</Text>
           <TextInput
             placeholder={options.placeholder}
-            defaultValue={options.defaultValue}
+            defaultValue={defaultValue}
             onSubmit={(value) => {
               if (options.validate) {
                 const error = options.validate(value);
@@ -78,7 +77,7 @@ export const text = async (options: PromptOptions): Promise<string | symbol> => 
 };
 
 // Confirm prompt
-export const confirm = async (options: PromptOptions): Promise<boolean | symbol> => {
+export const confirm = (options: PromptOptions): Promise<boolean | symbol> => {
   return new Promise((resolve) => {
     const ConfirmPrompt = () => {
       const { exit } = useApp();
@@ -123,6 +122,6 @@ export const cancel = (message: string) => {
 };
 
 // Check if value is cancelled
-export const isCancel = (value: any): value is symbol => {
+export const isCancel = (value: boolean | symbol | string): value is symbol => {
   return typeof value === "symbol" && value.description === "cancel";
 };

@@ -64,7 +64,7 @@ export async function installWindowsService(binaryPath: string): Promise<IPCResu
     // Write and register the task (UTF-16LE for Windows compatibility)
     const tempXml = path.join(os.tmpdir(), "atlas-task.xml");
     // Write as UTF-16LE which Windows Task Scheduler prefers
-    const buffer = Buffer.from("\ufeff" + taskXml, "utf16le");
+    const buffer = Buffer.from(`\ufeff${taskXml}`, "utf16le");
     fs.writeFileSync(tempXml, buffer);
 
     // Create and start the task with elevation

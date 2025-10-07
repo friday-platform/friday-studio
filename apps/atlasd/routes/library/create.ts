@@ -4,7 +4,7 @@ import { stringifyError } from "@atlas/utils";
 import { describeRoute, resolver } from "hono-openapi";
 import { daemonFactory } from "../../src/factory.ts";
 import { errorResponseSchema } from "../../src/utils.ts";
-import { createLibraryItemResponseSchema, createLibraryItemSchema } from "./schemas.ts";
+import { createLibraryItemResponseSchema } from "./schemas.ts";
 
 const createLibraryItem = daemonFactory.createApp();
 
@@ -19,13 +19,6 @@ createLibraryItem.post(
     tags: ["Library"],
     summary: "Create library item",
     description: "Create a new library item with content and metadata.",
-    requestBody: {
-      required: true,
-      content: {
-        "application/json": { schema: resolver(createLibraryItemSchema) },
-        "multipart/form-data": {}, // Browser handles FormData structure
-      },
-    },
     responses: {
       201: {
         description: "Library item created successfully",
@@ -53,7 +46,11 @@ createLibraryItem.post(
       if (contentType.includes("multipart/form-data")) {
         // Handle File upload from web client
         const formData = await c.req.formData();
-        const file = formData.get("file");
+        /**
+         * Expected type assertion - the canonical approach from Deno documentation.
+         * @TODO: Explore/identify the correct type guard for this
+         */
+        const file = formData.get("file") as File | undefined;
 
         if (!file) {
           return c.json({ error: "file is required for file uploads" }, 400);

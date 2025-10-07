@@ -6,10 +6,11 @@
  */
 
 import type { AgentContext, AgentSessionData, AtlasAgent, AtlasTool } from "@atlas/agent-sdk";
+import { client, parseResult } from "@atlas/client/v2";
 import type { MCPServerConfig, WorkspaceConfig } from "@atlas/config";
 import type { Logger } from "@atlas/logger";
 import { type CoALAMemoryManager, MEMORY_TYPES, MemorySource } from "@atlas/memory";
-import { createAtlasClient } from "@atlas/oapi-client";
+import { stringifyError } from "@atlas/utils";
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import type { GlobalMCPServerPool } from "../mcp-server-pool.ts";
 import { stripSourceAttributionTags } from "../prompts/source-attribution.ts";
@@ -17,7 +18,6 @@ import { MCPStreamEmitter } from "../streaming/stream-emitters.ts";
 import { createEnvironmentContext } from "./environment-context.ts";
 
 interface AgentContextBuilderDeps {
-  daemonUrl: string;
   mcpServerPool: GlobalMCPServerPool;
   logger: Logger;
   server?: Server;
@@ -28,8 +28,7 @@ interface AgentContextBuilderDeps {
  * Create an agent context builder function
  */
 export function createAgentContextBuilder(deps: AgentContextBuilderDeps) {
-  const { daemonUrl, mcpServerPool, logger } = deps;
-  const atlasClient = createAtlasClient({ baseUrl: daemonUrl });
+  const { mcpServerPool, logger } = deps;
 
   // Create factory functions
   const validateEnvironment = createEnvironmentContext(logger);
@@ -58,7 +57,6 @@ export function createAgentContextBuilder(deps: AgentContextBuilderDeps) {
       allTools = await fetchAllTools(
         sessionData.workspaceId,
         agent.mcpConfig,
-        atlasClient,
         mcpServerPool,
         logger,
       );
@@ -79,7 +77,7 @@ export function createAgentContextBuilder(deps: AgentContextBuilderDeps) {
 
     // 3. Store previous results as WORKING memory items if available
     if (previousResults && previousResults.length > 0 && sessionMemory) {
-      await storePreviousResultsAsWorkingMemory(
+      storePreviousResultsAsWorkingMemory(
         sessionMemory,
         previousResults,
         sessionData.sessionId,
@@ -147,7 +145,6 @@ export function createAgentContextBuilder(deps: AgentContextBuilderDeps) {
 async function fetchAllTools(
   workspaceId: string,
   agentMCPConfig: Record<string, MCPServerConfig> | undefined,
-  atlasClient: ReturnType<typeof createAtlasClient>,
   mcpServerPool: GlobalMCPServerPool,
   logger: Logger,
 ): Promise<Record<string, AtlasTool>> {
@@ -157,18 +154,19 @@ async function fetchAllTools(
   });
 
   // Get workspace config from daemon
-  const { data, error } = await atlasClient.GET("/api/workspaces/{workspaceId}/config", {
-    params: { path: { workspaceId } },
-  });
-  if (error) {
+  const response = await parseResult(
+    client.workspace[":workspaceId"].config.$get({ param: { workspaceId } }),
+  );
+
+  if (!response.ok) {
     logger.error("Failed to fetch workspace config", {
       operation: "fetch_all_tools",
       workspaceId,
-      error,
+      error: response.error,
     });
-    throw new Error(`Failed to fetch workspace config: ${error}`);
+    throw new Error(`Failed to fetch workspace config: ${stringifyError(response.error)}`);
   }
-  const workspaceConfig: WorkspaceConfig = data.config;
+  const workspaceConfig: WorkspaceConfig = response.data.config;
 
   // Merge workspace and agent MCP servers (agent takes precedence)
   const allServerConfigs = mergeServerConfigs(
@@ -245,8 +243,7 @@ function mergeServerConfigs(
  */
 
 // @ts-expect-error temporarily unused.
-// deno-lint-ignore no-unused-vars
-async function enrichPromptWithMemories(
+async function _enrichPromptWithMemories(
   agent: AtlasAgent,
   sessionMemory: CoALAMemoryManager | null,
   originalPrompt: string,

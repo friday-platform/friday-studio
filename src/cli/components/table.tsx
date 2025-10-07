@@ -1,4 +1,3 @@
-// No React import needed with react-jsx
 import { Box, Text } from "ink";
 
 interface Column {
@@ -53,11 +52,18 @@ export function Table({ columns, data, borderColor = "gray" }: TableProps) {
         const value = String(row[col.key] || "");
         const color =
           col.color ||
-          (typeof row[col.key + "Color"] === "string" ? row[col.key + "Color"] : "white");
+          (typeof row[`${col.key}Color`] === "string" ? row[`${col.key}Color`] : "white");
+
+        /**
+         * This is required because `row` is a Record<string, string | number>, meaning
+         * that values can either be a string or a number. Ink's `Text` only supports
+         * strings.
+         */
+        const colorString = String(color);
 
         return (
           <Box key={col.key} width={width} paddingRight={1}>
-            <Text color={color}>
+            <Text color={colorString}>
               {col.align === "right"
                 ? value.padStart(width - 2)
                 : col.align === "center"

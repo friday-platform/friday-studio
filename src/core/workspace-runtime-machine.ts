@@ -39,7 +39,7 @@ import type { LibraryStorageAdapter } from "./storage/library-storage-adapter.ts
 
 interface StreamSignalData {
   runtimeSignal: unknown; // Runtime signal instance
-  signalConfig: Record<string, unknown>;
+  signalConfig: { provider: string; [key: string]: unknown };
 }
 
 interface WorkspaceRuntimeContext {
@@ -367,6 +367,7 @@ const workspaceRuntimeMachineSetup = setup({
               // Load the signal provider
               const provider = await registry.loadFromConfig(providerConfig);
               const signalProvider = provider;
+              // @ts-expect-error right now the state machine is misusing config <> runtime signals.
               const signal = signalProvider.createSignal(providerConfig.config);
 
               // Convert to runtime signal
@@ -408,6 +409,7 @@ const workspaceRuntimeMachineSetup = setup({
               typeof streamData.runtimeSignal === "object" &&
               "teardown" in streamData.runtimeSignal
             ) {
+              // @ts-expect-error right now runtime signals are mis/untyped.
               await streamData.runtimeSignal.teardown();
             }
           } catch (error) {
@@ -515,8 +517,6 @@ const workspaceRuntimeMachineSetup = setup({
       logger.info("assignSupervisor action called", {
         eventType: event.type,
         eventKeys: Object.keys(event),
-        hasOutput: !!event.output,
-        hasSupervisor: !!event.output?.supervisor,
       });
 
       if (event.type === "xstate.done.actor.initializeWorkspace") {
@@ -548,7 +548,10 @@ const workspaceRuntimeMachineSetup = setup({
     assignError: assign({
       error: ({ event }) => {
         if ("error" in event) {
-          return event.error;
+          if (event.error instanceof Error) {
+            return event.error;
+          }
+          return new Error(event.error);
         }
         return undefined;
       },
@@ -654,6 +657,7 @@ export function createWorkspaceRuntimeMachine(_input: WorkspaceRuntimeMachineInp
                     typeof streamData.runtimeSignal === "object" &&
                     "initialize" in streamData.runtimeSignal
                   ) {
+                    // @ts-expect-error right now runtime signals are mis/untyped.
                     streamData.runtimeSignal.initialize({
                       id: signalId,
                       processSignal: (signalId: string, payload: Record<string, unknown>) => {
@@ -669,6 +673,7 @@ export function createWorkspaceRuntimeMachine(_input: WorkspaceRuntimeMachineInp
 
                         self.send({
                           type: "PROCESS_SIGNAL",
+                          // @ts-expect-error right now runtime signals are mis/untyped.
                           signal: {
                             ...signal,
                             provider: signal.provider || { id: "unknown", name: "unknown" },
@@ -818,14 +823,7 @@ export function createWorkspaceRuntimeMachine(_input: WorkspaceRuntimeMachineInp
                       // Start the session to transition from "created" state
                       // Note: We don't await session.start() as it blocks until completion
                       // Instead, we just trigger the start asynchronously
-                      session.start().catch((error) => {
-                        const errorCause = createErrorCause(error);
-                        logger.error("Session start failed", {
-                          sessionId,
-                          error: error,
-                          errorCause,
-                        });
-                      });
+                      session.start();
 
                       // Process signal through supervisor
                       const result = await context.supervisor.processSignal(

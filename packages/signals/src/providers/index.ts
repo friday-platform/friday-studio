@@ -3,9 +3,8 @@
  * Built-in signal providers for HTTP, webhooks, timers, streams, and Kubernetes events
  */
 
-export { FileWatchSignalProvider } from "./fs-watch-signal.ts";
+export { type FileWatchSignalConfig, FileWatchSignalProvider } from "./fs-watch-signal.ts";
 export { type HTTPSignalConfig, type HTTPSignalData, HTTPSignalProvider } from "./http-signal.ts";
-export { HttpWebhookProvider } from "./http-webhook.ts";
 export {
   type TimerSignalConfig,
   type TimerSignalData,

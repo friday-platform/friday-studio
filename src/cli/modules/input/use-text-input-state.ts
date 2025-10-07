@@ -52,12 +52,14 @@ const findNextWordBoundary = (text: string, offset: number): number => {
   let i = offset;
 
   // Skip current word characters
-  while (i < chars.length && chars[i] && /\w/.test(chars[i])) {
+  // biome-ignore lint/style/noNonNullAssertion: We're testing for index presence earlier in the conditional.
+  while (i < chars.length && chars[i] && /\w/.test(chars[i]!)) {
     i++;
   }
 
   // Skip all non-word characters (whitespace, punctuation, symbols)
-  while (i < chars.length && chars[i] && !/\w/.test(chars[i])) {
+  // biome-ignore lint/style/noNonNullAssertion: We're testing for index presence earlier in the conditional.
+  while (i < chars.length && chars[i] && !/\w/.test(chars[i]!)) {
     i++;
   }
 
@@ -69,12 +71,14 @@ const findPrevWordBoundary = (text: string, offset: number): number => {
   let i = Math.max(0, offset - 1);
 
   // Skip all non-word characters (whitespace, punctuation, symbols)
-  while (i >= 0 && chars[i] && !/\w/.test(chars[i])) {
+  // biome-ignore lint/style/noNonNullAssertion: We're testing for index presence earlier in the conditional.
+  while (i >= 0 && chars[i] && !/\w/.test(chars[i]!)) {
     i--;
   }
 
   // Skip current word characters
-  while (i >= 0 && chars[i] && /\w/.test(chars[i])) {
+  // biome-ignore lint/style/noNonNullAssertion: We're testing for index presence earlier in the conditional.
+  while (i >= 0 && chars[i] && /\w/.test(chars[i]!)) {
     i--;
   }
 
@@ -434,7 +438,7 @@ export const useTextInputState = ({
       state.attachments.clear();
       exitApp();
     }
-  }, [exitApp]);
+  }, [exitApp, state.attachments.clear]);
 
   const insertAttachment = useCallback(
     (text: string) => {

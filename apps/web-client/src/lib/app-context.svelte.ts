@@ -1,7 +1,6 @@
 import { getContext, setContext } from "svelte";
 import { SvelteMap } from "svelte/reactivity";
 import { DaemonClient } from "./modules/client/daemon.ts";
-import { getAtlasDaemonUrl } from "./utils/daemon.ts";
 
 const KEY = Symbol();
 
@@ -56,7 +55,7 @@ function getRouteConfig() {
 class AppContext {
   keyboard = createKeyboard();
   routes = getRouteConfig();
-  daemonClient = new DaemonClient({ daemonUrl: getAtlasDaemonUrl() });
+  daemonClient = new DaemonClient();
   stagedFiles = createStagedFiles();
 
   sidebarExpanded = $state(false);

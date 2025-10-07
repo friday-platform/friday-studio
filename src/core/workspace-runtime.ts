@@ -107,12 +107,7 @@ export class WorkspaceRuntime {
    * Process a signal and create a session
    */
   async processSignal(
-    signal: {
-      id: string;
-      name?: string;
-      provider?: { id: string; name: string };
-      [key: string]: unknown;
-    },
+    signal: { id: string; name?: string; provider: string; [key: string]: unknown },
     payload: Record<string, unknown>,
     _sessionId?: string,
     streamId?: string,
@@ -124,7 +119,7 @@ export class WorkspaceRuntime {
         AtlasTelemetry.addComponentAttributes(span, "workspace", { id: this.workspace.id });
         AtlasTelemetry.addComponentAttributes(span, "signal", {
           id: signal.id,
-          type: signal.provider?.name || signal.provider?.id || "unknown",
+          type: signal.provider || signal.provider || "unknown",
         });
 
         const state = this.stateMachine.getSnapshot();
@@ -202,7 +197,8 @@ export class WorkspaceRuntime {
         // The state machine will create and manage the session
         this.stateMachine.send({
           type: "PROCESS_SIGNAL",
-          signal: { ...signal, provider: signal.provider || { id: "unknown", name: "unknown" } }, // Ensure provider field is present
+          // @ts-expect-error right now the state machine is misusing config <> runtime signals.
+          signal: { ...signal, provider: { id: signal.provider, name: signal.provider } }, // Ensure provider field is present
           payload,
           sessionId,
           streamId,
@@ -471,13 +467,9 @@ export class WorkspaceRuntime {
   /**
    * List all agents in the workspace
    */
-  listAgents(): Array<{ id: string; type: string; purpose?: string }> {
+  listAgents(): Array<{ id: string; type: string }> {
     const agents = this.config?.workspace?.agents || {};
-    return Object.entries(agents).map(([id, config]) => ({
-      id,
-      type: config?.type || "unknown",
-      purpose: config?.purpose,
-    }));
+    return Object.entries(agents).map(([id, config]) => ({ id, type: config?.type || "unknown" }));
   }
 
   /**

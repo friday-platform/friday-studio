@@ -5,7 +5,6 @@
 
 import { FileWatchSignalProvider } from "./fs-watch-signal.ts";
 import { HTTPSignalProvider } from "./http-signal.ts";
-import { HttpWebhookProvider } from "./http-webhook.ts";
 import { TimerSignalProvider } from "./timer-signal.ts";
 
 /**
@@ -14,7 +13,6 @@ import { TimerSignalProvider } from "./timer-signal.ts";
  */
 export const PROVIDER_CLASSES = {
   http: HTTPSignalProvider,
-  "http-webhook": HttpWebhookProvider,
   timer: TimerSignalProvider,
   schedule: TimerSignalProvider,
   cron: TimerSignalProvider,

@@ -15,16 +15,10 @@ export class InMemoryAgentRegistry implements AgentRegistry {
     let agents = Array.from(this.agents.values());
 
     // Apply filters if provided
-    if (filters?.domains && filters.domains.length > 0) {
+    const domains = filters?.domains;
+    if (domains && domains.length > 0) {
       agents = agents.filter((agent) =>
-        agent.metadata.expertise.domains.some((domain) => filters.domains.includes(domain)),
-      );
-    }
-
-    if (filters?.tags && filters.tags.length > 0) {
-      agents = agents.filter(
-        (agent) =>
-          agent.metadata.metadata?.tags?.some((tag) => filters.tags.includes(tag)) ?? false,
+        agent.metadata.expertise.domains.some((domain) => domains.includes(domain)),
       );
     }
 
@@ -52,8 +46,7 @@ export class InMemoryAgentRegistry implements AgentRegistry {
           return (
             meta.displayName?.toLowerCase().includes(lowerQuery) ||
             meta.description.toLowerCase().includes(lowerQuery) ||
-            meta.expertise.domains.some((d) => d.toLowerCase().includes(lowerQuery)) ||
-            meta.expertise.capabilities.some((c) => c.toLowerCase().includes(lowerQuery))
+            meta.expertise.domains.some((d) => d.toLowerCase().includes(lowerQuery))
           );
         })
         .map((agent) => agent.metadata),

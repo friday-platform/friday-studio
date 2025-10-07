@@ -2,7 +2,11 @@
   "name": "@atlas/system",
   "version": "1.0.0",
   "type": "module",
-  "exports": { "./workspaces": "./workspaces/mod.ts", "./agents": "./agents/mod.ts" },
+  "exports": {
+    "./workspaces": "./workspaces/mod.ts",
+    "./agents": "./agents/mod.ts",
+    "./agents/conversation/tools": "./agents/conversation/tools/mod.ts"
+  },
   "dependencies": {
     "@atlas/agent-sdk": "workspace:*",
     "@atlas/bundled-agents": "workspace:*",

@@ -1,4 +1,8 @@
 {
   "name": "@atlas/system",
-  "exports": { "./workspaces": "./workspaces/mod.ts", "./agents": "./agents/mod.ts" }
+  "exports": {
+    "./workspaces": "./workspaces/mod.ts",
+    "./agents": "./agents/mod.ts",
+    "./agents/conversation/tools": "./agents/conversation/tools/mod.ts"
+  }
 }

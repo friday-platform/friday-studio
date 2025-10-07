@@ -57,7 +57,7 @@ export class WebMCPDiscovery {
       }
 
       // Parse and validate discovered servers
-      const parsedServers = await this.parseSearchResults(searchResults, request);
+      const parsedServers = this.parseSearchResults(searchResults, request);
 
       // Convert to discovery results with scoring
       const discoveryResults = this.scoreWebCandidates(parsedServers, request);
@@ -140,14 +140,17 @@ export class WebMCPDiscovery {
           },
         );
 
+        if (!result.ok) {
+          throw new Error("Failed to execute research");
+        }
         // Parse URLs and content from the research result
-        const urls = this.extractUrlsFromResult(result);
+        const urls = this.extractUrlsFromResult(result.data.summary);
 
         for (const url of urls) {
           if (!seenUrls.has(url) && this.isMCPRelevant(url)) {
             allResults.push({
               url,
-              content: result.slice(0, 400), // Use portion of synthesis as content
+              content: result.data.summary.slice(0, 400), // Use portion of synthesis as content
               score: 0.5, // Default score for web results
             });
             seenUrls.add(url);
@@ -165,10 +168,10 @@ export class WebMCPDiscovery {
   /**
    * Parse search results to extract MCP server information
    */
-  private async parseSearchResults(
+  private parseSearchResults(
     results: WebSearchResult[],
     request: MCPDiscoveryRequest,
-  ): Promise<ParsedMCPServer[]> {
+  ): ParsedMCPServer[] {
     const parsedServers: ParsedMCPServer[] = [];
 
     // Process in batches to avoid overwhelming the system
@@ -176,19 +179,7 @@ export class WebMCPDiscovery {
     for (let i = 0; i < results.length; i += BATCH_SIZE) {
       const batch = results.slice(i, Math.min(i + BATCH_SIZE, results.length));
 
-      const batchPromises = batch.map((result) =>
-        this.parseSingleResult(result, request).catch((error) => {
-          const errorCause = createErrorCause(error);
-          this.logger.warn("Failed to parse search result", {
-            url: result.url,
-            error: error,
-            errorCause,
-          });
-          return null;
-        }),
-      );
-
-      const batchResults = await Promise.all(batchPromises);
+      const batchResults = batch.map((result) => this.parseSingleResult(result, request));
       parsedServers.push(
         ...batchResults.filter((server): server is ParsedMCPServer => server !== null),
       );
@@ -200,10 +191,10 @@ export class WebMCPDiscovery {
   /**
    * Parse a single search result to extract MCP server metadata
    */
-  private async parseSingleResult(
+  private parseSingleResult(
     result: WebSearchResult,
     request: MCPDiscoveryRequest,
-  ): Promise<ParsedMCPServer | null> {
+  ): ParsedMCPServer | null {
     try {
       // Use simple heuristics for parsing since we have limited content
       const url = result.url;
@@ -312,8 +303,9 @@ export class WebMCPDiscovery {
     }
 
     // Add domain-specific capability based on request
-    if (request.domain && !capabilities.some((cap) => cap.includes(request.domain!))) {
-      capabilities.push(request.domain);
+    const domain = request.domain;
+    if (domain && !capabilities.some((cap) => cap.includes(domain))) {
+      capabilities.push(domain);
     }
 
     return capabilities.length > 0 ? capabilities : ["general"];
@@ -327,7 +319,7 @@ export class WebMCPDiscovery {
     const sentences = content.split(".").filter((s) => s.trim().length > 10);
     const firstSentence = sentences.at(0)?.trim();
     if (firstSentence) {
-      return firstSentence.length > 200 ? firstSentence.slice(0, 200) + "..." : firstSentence;
+      return firstSentence.length > 200 ? `${firstSentence.slice(0, 200)}...` : firstSentence;
     }
 
     return `MCP server for ${intent}`;
@@ -350,11 +342,10 @@ export class WebMCPDiscovery {
         confidence += securityBonus[server.securityRating];
 
         // Boost for capability match
+        const domain = request.domain;
         if (
-          request.domain &&
-          server.capabilities.some(
-            (cap) => cap.includes(request.domain!) || request.domain!.includes(cap),
-          )
+          domain &&
+          server.capabilities.some((cap) => cap.includes(domain) || domain.includes(cap))
         ) {
           confidence += 0.2;
         }
@@ -491,7 +482,7 @@ export class WebMCPDiscovery {
 
     reasons.push(`Confidence: ${(confidence * 100).toFixed(0)}%`);
 
-    return reasons.join(". ") + ". Requires validation before production use.";
+    return `${reasons.join(". ")}. Requires validation before production use.`;
   }
 
   /**

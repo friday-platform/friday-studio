@@ -1,0 +1,28 @@
+name: Type check
+
+on:
+  pull_request:
+    branches: [main]
+  merge_group:
+
+permissions:
+  contents: read
+
+jobs:
+  type-check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.5.3
+
+      - name: Install dependencies
+        run: deno install --frozen
+
+      - name: Run type check
+        run: deno check

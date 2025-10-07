@@ -44,7 +44,7 @@ const parseSlashCommand = (input: string) => {
     return null;
   }
 
-  return { command: args[0].toLowerCase(), args: args.slice(1), rawInput: input };
+  return { command: args[0]?.toLowerCase(), args: args.slice(1), rawInput: input };
 };
 
 Deno.test("parseSlashCommand - Basic command parsing", () => {

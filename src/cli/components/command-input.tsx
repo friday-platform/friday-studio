@@ -260,7 +260,6 @@ export const CommandInput = ({
               DIAGNOSTICS_STATUS.COLLECTING,
               DIAGNOSTICS_STATUS.UPLOADING,
               DIAGNOSTICS_STATUS.DONE,
-              // @ts-expect-error checking a string in another array of strings is perfectly valid
             ].includes(diagnosticsStatus) && <Text color="red">Error: {diagnosticsStatus}</Text>}
           </Box>
         ) : daemonStatus !== DAEMON_STATUS.IDLE ? (

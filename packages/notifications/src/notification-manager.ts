@@ -319,12 +319,6 @@ export class NotificationManager {
         return await provider.sendEmail(params.params);
       case "message":
         return await provider.sendMessage(params.params);
-      default:
-        throw new NotificationError(
-          `Unsupported notification type: ${params.type}`,
-          "UNSUPPORTED_TYPE",
-          provider.name,
-        );
     }
   }
 
@@ -368,12 +362,14 @@ export class NotificationManager {
    */
   private static parseDuration(duration: string): number {
     const match = duration.match(/^(\d+)([smh])$/);
-    if (!match) {
+    const rawValue = match?.at(1);
+    const rawUnit = match?.at(2);
+    if (!rawValue || !rawUnit) {
       throw new Error(`Invalid duration format: ${duration}`);
     }
 
-    const value = parseInt(match[1], 10);
-    const unit = match[2];
+    const value = parseInt(rawValue, 10);
+    const unit = rawUnit;
 
     switch (unit) {
       case "s":

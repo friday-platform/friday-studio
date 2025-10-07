@@ -22,7 +22,6 @@ export const ChatMessage = ({
   message,
   children,
   dimColor = false,
-  hideHeader = false,
   showCollapsible = false,
   fixedHeight = false,
 }: ChatMessageProps) => {
@@ -40,7 +39,7 @@ export const ChatMessage = ({
     }
 
     return height;
-  }, [fixedHeight, height, hideHeader, showCollapsible]);
+  }, [fixedHeight, height, isCollapsed, showCollapsible]);
 
   return (
     <Box

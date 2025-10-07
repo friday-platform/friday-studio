@@ -27,7 +27,12 @@ export class AgentBasedMCPDiscovery {
     this.initialized = true;
   }
 
-  /** Discover MCP servers based on agent usage patterns and requirements */
+  /**
+   * Discover MCP servers based on agent usage patterns and requirements
+   * @FIXME: Agents do not self-report their MCP requirements as part of Agent Metadata.
+   * We should discover capabilities through natural language processing of the Workspace
+   * Plan defined by the workspace planner agent.
+   */
   async discover(request: MCPDiscoveryRequest): Promise<MCPDiscoveryResult[]> {
     await this.initialize();
 
@@ -43,7 +48,7 @@ export class AgentBasedMCPDiscovery {
       }
 
       // Analyze agent capabilities to infer MCP requirements
-      const mcpRecommendations = this.inferMCPRequirements(relevantAgents);
+      const mcpRecommendations = this.inferMCPRequirements();
 
       if (mcpRecommendations.length === 0) {
         this.logger.debug("No MCP requirements inferred from agents");
@@ -99,11 +104,7 @@ export class AgentBasedMCPDiscovery {
     }
 
     // Check if agent capabilities or domains contain intent keywords
-    const searchableText = [
-      ...agent.expertise.domains,
-      ...agent.expertise.capabilities,
-      agent.description || "",
-    ]
+    const searchableText = [...agent.expertise.domains, agent.description || ""]
       .join(" ")
       .toLowerCase();
 
@@ -114,15 +115,8 @@ export class AgentBasedMCPDiscovery {
   }
 
   /** Infer MCP requirements from agent definitions */
-  private inferMCPRequirements(agents: AgentMetadata[]): string[] {
+  private inferMCPRequirements(): string[] {
     const mcpIds = new Set<string>();
-
-    for (const agent of agents) {
-      if (agent.mcpRequirements) {
-        agent.mcpRequirements.forEach((id) => mcpIds.add(id));
-      }
-    }
-
     return Array.from(mcpIds);
   }
 

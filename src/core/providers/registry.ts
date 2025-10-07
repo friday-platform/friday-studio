@@ -1,4 +1,12 @@
-import { PROVIDER_CLASSES } from "@atlas/signals";
+import {
+  type FileWatchSignalConfig,
+  FileWatchSignalProvider,
+  type HTTPSignalConfig,
+  HTTPSignalProvider,
+  type TimerSignalConfig,
+  TimerSignalProvider,
+} from "@atlas/signals";
+import type { MaybePromise } from "@atlas/utils";
 import type { IProvider, IProviderRegistry, ProviderConfig, ProviderType } from "./types.ts";
 
 export class ProviderRegistry implements IProviderRegistry {
@@ -35,71 +43,56 @@ export class ProviderRegistry implements IProviderRegistry {
     this.factories.set(providerId, factory);
   }
 
-  async loadFromConfig(config: ProviderConfig): Promise<IProvider> {
+  loadFromConfig(config: ProviderConfig): MaybePromise<IProvider> {
     // Check if already loaded
     const existing = this.providers.get(config.id);
     if (existing) {
       return existing;
     }
 
-    // Get provider class from static map
-    const ProviderClass = PROVIDER_CLASSES[config.provider];
-    if (!ProviderClass) {
-      throw new Error(`No provider registered for type: ${config.provider}`);
-    }
-
     // Create and register provider
-    const provider = this.createProviderInstance(ProviderClass, config);
+    const provider = this.createProviderInstance(config);
     this.register(provider);
 
     return provider;
   }
 
-  private createProviderInstance(ProviderClass: unknown, config: ProviderConfig): IProvider {
+  /**
+   * @FIXME
+   * This function currently does a weird cross between static and dynamic registration
+   * of signal providers. Right now ProviderConfig is a Record<string, unknown> base
+   * implementation. What we need to do to address this on a type level is to turn
+   * ProviderConfig into a tagged union based on the `provider` field.
+   *
+   * Longer-term, this should be a complete registry like the Agent server, where configuration
+   * is encapsulated within the signal provider itself. Since these are already classes,
+   * there really is no reason for them to be separate.
+   */
+  private createProviderInstance(config: ProviderConfig): IProvider {
     // Preserve existing configuration transformation logic
     switch (config.provider) {
-      case "http":
-        return new ProviderClass({
-          id: config.id,
-          description: config.config?.description || `HTTP signal for ${config.id}`,
-          provider: "http" as const,
-          path: config.config?.path,
-          method: config.config?.method,
-        });
+      case "http": {
+        const cfg: HTTPSignalConfig = config.config as HTTPSignalConfig;
+        return new HTTPSignalProvider(cfg);
+      }
 
+      /**
+       * @FIXME why are there 4 aliases for the same signal provider?
+       */
       case "timer":
       case "schedule":
       case "cron":
-      case "cron-scheduler":
-        return new ProviderClass({
-          id: config.id,
-          description: config.config?.description || `Timer signal for ${config.id}`,
-          provider: config.provider,
-          schedule: config.config?.schedule,
-          timezone: config.config?.timezone,
-        });
+      case "cron-scheduler": {
+        const cfg: TimerSignalConfig = config.config as TimerSignalConfig;
+        return new TimerSignalProvider(cfg);
+      }
 
-      case "cli":
-        return new ProviderClass({
-          id: config.id,
-          description: config.config?.description || `CLI signal for ${config.id}`,
-          provider: "cli" as const,
-          command: config.config?.command,
-          args: config.config?.args,
-          flags: config.config?.flags,
-        });
-
-      case "fs-watch":
-        return new ProviderClass({
-          id: config.id,
-          description: config.config?.description || `File watch signal for ${config.id}`,
-          provider: "fs-watch" as const,
-          path: config.config?.path,
-          recursive: config.config?.recursive,
-        });
-
+      case "fs-watch": {
+        const cfg: FileWatchSignalConfig = config.config as FileWatchSignalConfig;
+        return new FileWatchSignalProvider(cfg);
+      }
       default:
-        return new ProviderClass(config);
+        throw new Error("Unknown signal provider");
     }
   }
 }

@@ -81,70 +81,9 @@ export interface LibrarySearchResult {
   took_ms: number;
 }
 
-interface ValidationResult {
-  valid: boolean;
-  errors: string[];
-  warnings?: string[];
-}
-
-interface LibraryStorageConfig {
-  platform_path: string;
-  workspace_relative: string;
-  encryption?: boolean;
-  compression?: boolean;
-  max_file_size_mb?: number;
-  retention_days?: number;
-}
-
-interface LibraryIndex {
-  version: string;
-  workspace_id?: string;
-  created: string;
-  updated: string;
-  items: LibraryIndexItem[];
-  tags: Record<string, number>;
-  stats: LibraryStats;
-}
-
-interface LibraryIndexItem {
-  id: string;
-  source: string;
-  name: string;
-  path: string;
-  created_at: string;
-  tags: string[];
-  size_bytes: number;
-  metadata_hash: string;
-}
-
 export interface LibraryStats {
   total_items: number;
   total_size_bytes: number;
   sources: Record<string, number>;
   recent_activity: Array<{ date: string; items_added: number; items_modified: number }>;
-}
-
-// Template engine interfaces
-interface ITemplateEngine {
-  readonly type: string;
-  canHandle(template: TemplateConfig): boolean;
-  apply(template: TemplateConfig, data: unknown): Promise<string>;
-  validate(template: TemplateConfig): ValidationResult;
-}
-
-interface TemplateEngineRegistry {
-  register(engine: ITemplateEngine): void;
-  getEngine(type: string): ITemplateEngine | undefined;
-  findEngine(template: TemplateConfig): ITemplateEngine | undefined;
-  listEngines(): ITemplateEngine[];
-}
-
-// Storage interfaces
-interface ILibraryStorage {
-  store(item: LibraryItem, content: string | Uint8Array): Promise<void>;
-  retrieve(id: string): Promise<{ item: LibraryItem; content: string | Uint8Array } | null>;
-  delete(id: string): Promise<boolean>;
-  list(query: LibrarySearchQuery): Promise<LibraryItem[]>;
-  updateIndex(): Promise<void>;
-  getStats(): Promise<LibraryStats>;
 }

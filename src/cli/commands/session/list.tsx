@@ -68,8 +68,6 @@ export const handler = async ({ workspace, json }: ListArgs): Promise<void> => {
         workspaceName: session.workspaceId, // Use workspaceId as workspaceName
         signal: session.signal,
         status: session.status,
-        startedAt: session.startTime, // Map startTime to startedAt
-        completedAt: session.endTime,
         agents: [], // Default empty agents array
       }));
 

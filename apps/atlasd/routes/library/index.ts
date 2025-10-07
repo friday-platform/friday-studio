@@ -1,7 +1,6 @@
 import { daemonFactory } from "../../src/factory.ts";
 import { createLibraryItem } from "./create.ts";
 import { deleteLibraryItem } from "./delete.ts";
-import { downloadLibraryItem } from "./download.ts";
 import { getLibraryItem } from "./get.ts";
 import { listLibrary } from "./list.ts";
 import { getLibraryStats } from "./stats.ts";
@@ -26,9 +25,6 @@ libraryRoutes.route("/search", listLibrary);
 // Mount specific routes before parameterized routes
 libraryRoutes.route("/templates", listTemplates);
 libraryRoutes.route("/stats", getLibraryStats);
-
-// Mount download route before generic itemId route
-libraryRoutes.route("/:itemId/download", downloadLibraryItem);
 
 // Mount parameterized routes last
 libraryRoutes.route("/:itemId", getLibraryItem);

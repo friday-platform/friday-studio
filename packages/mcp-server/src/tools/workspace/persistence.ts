@@ -2,8 +2,8 @@
  * Workspace persistence tool for MCP server
  * Toggles Atlas workspace persistence (ephemeral <-> persistent) via the daemon API
  */
-
-import { createAtlasClient } from "@atlas/oapi-client";
+import { client, parseResult } from "@atlas/client/v2";
+import { stringifyError } from "@atlas/utils";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { ToolContext } from "../types.ts";
@@ -24,20 +24,20 @@ export function registerWorkspacePersistenceTool(server: McpServer, ctx: ToolCon
     },
     async ({ workspaceId, persistent }) => {
       ctx.logger.info("MCP workspace_set_persistence called", { workspaceId, persistent });
+      const response = await parseResult(
+        client.workspace[":workspaceId"].persistence.$post({
+          param: { workspaceId },
+          json: { persistent },
+        }),
+      );
 
-      const client = createAtlasClient();
-      const response = await client.POST("/api/workspaces/{workspaceId}/persistence", {
-        params: { path: { workspaceId } },
-        body: { persistent },
-      });
-
-      if (response.error) {
+      if (!response.ok) {
         ctx.logger.error("Failed to set workspace persistence", {
           workspaceId,
           error: response.error,
         });
         return createErrorResponse(
-          `Failed to set persistence for workspace '${workspaceId}': ${response.error}`,
+          `Failed to set persistence for workspace '${workspaceId}': ${stringifyError(response.error)}`,
         );
       }
 

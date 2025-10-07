@@ -92,21 +92,11 @@ export interface NotificationManagerConfig {
 /**
  * Send notification parameters
  */
-export interface SendNotificationParams {
+export type SendNotificationParams = {
   /**
    * Provider name to use (optional, falls back to default)
    */
   provider?: string;
-
-  /**
-   * Notification type
-   */
-  type: "email" | "message";
-
-  /**
-   * Notification parameters
-   */
-  params: EmailParams | MessageParams;
 
   /**
    * Override retry configuration
@@ -117,7 +107,7 @@ export interface SendNotificationParams {
    * Override timeout
    */
   timeout?: number;
-}
+} & ({ type: "email"; params: EmailParams } | { type: "message"; params: MessageParams });
 
 /**
  * Provider status information
