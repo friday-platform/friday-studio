@@ -199,6 +199,8 @@ fn write_env_file(env_vars: HashMap<String, String>) -> Result<(), String> {
 
 #[tauri::command]
 async fn open_file_or_folder_picker(app: AppHandle, multiple: bool, _folders_only: bool) -> Result<Vec<String>, String> {
+    #[cfg(target_os = "windows")]
+    let folders_only = _folders_only;
     #[cfg(target_os = "macos")]
     {
         use std::sync::mpsc;
@@ -271,7 +273,7 @@ async fn open_file_or_folder_picker(app: AppHandle, multiple: bool, _folders_onl
                         .map_err(|e| format!("Failed to set options: {}", e))?;
 
                     // Show the dialog
-                    dialog.Show(HWND(0))
+                    dialog.Show(Some(HWND(std::ptr::null_mut())))
                         .map_err(|e| format!("Dialog cancelled or failed: {}", e))?;
 
                     // Get results
@@ -290,7 +292,8 @@ async fn open_file_or_folder_picker(app: AppHandle, multiple: bool, _folders_onl
                             let path = item.GetDisplayName(SIGDN_FILESYSPATH)
                                 .map_err(|e| format!("Failed to get path: {}", e))?;
 
-                            paths.push(path.to_string_lossy());
+                            paths.push(path.to_string()
+                                .map_err(|e| format!("Failed to convert path to string: {}", e))?);
                         }
 
                         Ok(paths)
@@ -301,7 +304,8 @@ async fn open_file_or_folder_picker(app: AppHandle, multiple: bool, _folders_onl
                         let path = item.GetDisplayName(SIGDN_FILESYSPATH)
                             .map_err(|e| format!("Failed to get path: {}", e))?;
 
-                        Ok(vec![path.to_string_lossy()])
+                        Ok(vec![path.to_string()
+                            .map_err(|e| format!("Failed to convert path to string: {}", e))?])
                     }
                 })();
 
@@ -531,8 +535,8 @@ pub fn run() {
             // Handle menu item clicks
             app.on_menu_event(move |app, event| {
                 if event.id() == &MenuId("discord_help".to_string()) {
-                    // Open Discord channel in browser using the opener plugin
-                    let _ = app.opener().open_url("https://discord.com/channels/1400973996505436300/1404928095009509489", None::<String>);
+                    // Use invite link - redirects members to channel, shows invite for non-members
+                    let _ = app.opener().open_url("https://discord.gg/VxzKrJHW", None::<String>);
                 } else if event.id() == &MenuId("settings".to_string()) {
                     // Emit event to show settings dialog
                     let _ = app.emit("show-settings-dialog", ());

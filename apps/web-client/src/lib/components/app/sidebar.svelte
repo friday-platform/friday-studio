@@ -71,7 +71,7 @@ function getActivePage(value: string | string[]) {
 	{/if}
 
 	<a
-		href="https://discord.com/channels/1400973996505436300/1404928095009509489"
+		href="https://discord.gg/VxzKrJHW"
 		target="_blank"
 		class="help"
 		aria-label="Get Help"
