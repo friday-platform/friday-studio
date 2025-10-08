@@ -7,7 +7,7 @@ edition = "2021"
 
 # Security Note: This project has a transitive dependency on glib 0.18.x through
 # webkit2gtk (Linux only), which has a medium severity vulnerability (GHSA-wrw7-89jp-8q8g).
-# The vulnerability is fixed in glib 0.20.0+, but webkit2gtk 2.0.1 still depends on 
+# The vulnerability is fixed in glib 0.20.0+, but webkit2gtk 2.0.1 still depends on
 # glib 0.18.x. This issue only affects Linux builds.
 # Tracking upstream fix at: https://github.com/tauri-apps/webkit2gtk-rs
 
@@ -42,4 +42,4 @@ objc2-foundation = { version = "0.3", features = ["NSArray", "NSString", "NSURL"
 windows = { version = "0.62", features = ["Win32_UI_Shell", "Win32_System_Com", "Win32_Foundation"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-gtk4 = "0.10"
+gtk4 = { version = "0.10", features = ["v4_10"] }

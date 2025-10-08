@@ -799,7 +799,7 @@ prompt: |
   Analyze stock performance with data from Yahoo Finance.
   Include source URLs, timestamps, and tool names for all financial data.
 
-# Web Scraping  
+# Web Scraping
 prompt: |
   Extract product information from e-commerce sites.
   Document which CSS selectors were used and which pages were accessed.

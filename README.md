@@ -79,7 +79,7 @@ brew tap tempestteam/tap
 # Stable Channel (Default) - Official releases only
 HOMEBREW_GITHUB_API_TOKEN=$(gh auth token) brew install tempest-atlas
 
-# Nightly Channel - Daily builds  
+# Nightly Channel - Daily builds
 HOMEBREW_GITHUB_API_TOKEN=$(gh auth token) brew install tempest-atlas-nightly
 
 # Edge Channel - Bleeding edge builds from every commit (⚠️ unstable)
@@ -112,7 +112,7 @@ export ATLAS_DEFAULT_MODEL="claude-3-7-sonnet-latest"
 # Optional: Specify custom directories for workspace discovery
 # Unix/Linux/macOS (use colon separator for multiple paths)
 export ATLAS_WORKSPACES_DIR="/path/to/workspaces:/another/path"
-# Windows (use semicolon separator for multiple paths)  
+# Windows (use semicolon separator for multiple paths)
 export ATLAS_WORKSPACES_DIR="C:\path\to\workspaces;D:\another\path"
 ```
 
@@ -180,7 +180,7 @@ help                                    # Show all commands
 
 ```bash
 atlas daemon start                 # Start Atlas daemon
-atlas daemon stop                  # Stop Atlas daemon  
+atlas daemon stop                  # Stop Atlas daemon
 atlas daemon status                # Check daemon status
 atlas daemon restart               # Restart daemon
 ```

@@ -99,12 +99,12 @@ export class EventCapture<T> {
 ```typescript
 export class WorkspaceSupervisorActor implements BaseActor {
   private agents: Record<string, WorkspaceAgentConfig> = {};
-  
+
   setAgents(agents: Record<string, WorkspaceAgentConfig>): void {
     this.agents = agents;
     // ...
   }
-  
+
   processSignal(...) {
     // Create session config with found job and agents
     const sessionConfig: SessionSupervisorConfig = {
@@ -113,7 +113,7 @@ export class WorkspaceSupervisorActor implements BaseActor {
       memory: this.config.memory,
       tools: this.config.tools,
     };
-    
+
     // Pass config to session actor
     sessionActor.setConfig(sessionConfig);
   }

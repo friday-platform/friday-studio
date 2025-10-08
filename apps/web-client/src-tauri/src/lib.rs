@@ -59,7 +59,7 @@ async fn run_diagnostics(app: AppHandle) -> Result<String, String> {
         use std::os::windows::process::CommandExt;
         const CREATE_NO_WINDOW: u32 = 0x08000000;
         Command::new(&atlas_path)
-            .args(&["diagnostics", "send"])
+            .args(["diagnostics", "send"])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .creation_flags(CREATE_NO_WINDOW)
@@ -69,7 +69,7 @@ async fn run_diagnostics(app: AppHandle) -> Result<String, String> {
 
     #[cfg(not(target_os = "windows"))]
     let mut child = Command::new(&atlas_path)
-        .args(&["diagnostics", "send"])
+        .args(["diagnostics", "send"])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -78,24 +78,22 @@ async fn run_diagnostics(app: AppHandle) -> Result<String, String> {
     // Read stdout line by line and emit progress updates
     if let Some(stdout) = child.stdout.take() {
         let reader = BufReader::new(stdout);
-        for line in reader.lines() {
-            if let Ok(line) = line {
-                // Try to parse JSON log format and extract the message field
-                if line.contains(r#""message":""#) {
-                    // Simple JSON message extraction
-                    let parts: Vec<&str> = line.split(r#""message":""#).collect();
-                    if parts.len() > 1 {
-                        // Find the closing quote for the message value
-                        if let Some(end_pos) = parts[1].find('"') {
-                            let message = &parts[1][..end_pos];
-                            app.emit("diagnostics-progress", message).unwrap();
-                            continue;
-                        }
+        for line in reader.lines().map_while(Result::ok) {
+            // Try to parse JSON log format and extract the message field
+            if line.contains(r#""message":""#) {
+                // Simple JSON message extraction
+                let parts: Vec<&str> = line.split(r#""message":""#).collect();
+                if parts.len() > 1 {
+                    // Find the closing quote for the message value
+                    if let Some(end_pos) = parts[1].find('"') {
+                        let message = &parts[1][..end_pos];
+                        app.emit("diagnostics-progress", message).unwrap();
+                        continue;
                     }
                 }
-                // Fallback to emitting the entire line if not JSON or parsing fails
-                app.emit("diagnostics-progress", &line).unwrap();
             }
+            // Fallback to emitting the entire line if not JSON or parsing fails
+            app.emit("diagnostics-progress", &line).unwrap();
         }
     }
 
@@ -424,7 +422,7 @@ async fn restart_atlas_daemon() -> Result<String, String> {
         use std::os::windows::process::CommandExt;
         const CREATE_NO_WINDOW: u32 = 0x08000000;
         Command::new(&atlas_bin)
-            .args(&["service", "restart"])
+            .args(["service", "restart"])
             .creation_flags(CREATE_NO_WINDOW)
             .output()
             .map_err(|e| format!("Failed to restart atlas service: {}", e))?
@@ -432,7 +430,7 @@ async fn restart_atlas_daemon() -> Result<String, String> {
 
     #[cfg(not(target_os = "windows"))]
     let output = Command::new(&atlas_bin)
-        .args(&["service", "restart"])
+        .args(["service", "restart"])
         .output()
         .map_err(|e| format!("Failed to restart atlas service: {}", e))?;
 

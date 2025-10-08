@@ -406,9 +406,9 @@ import { setupTerminal } from "../modules/enable-multiline/index.ts";
 const enableMultiline = async () => {
   try {
     setMultilineSetupStatus("running");
-    
+
     const result = await setupTerminal();
-    
+
     if (result.success) {
       setMultilineSetupStatus("done");
     } else {

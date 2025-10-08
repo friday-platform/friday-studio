@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
+#[cfg(not(target_os = "windows"))]
+use std::path::Path;
 use std::process::Command;
 use tauri::{AppHandle, Manager};
 
@@ -224,7 +226,7 @@ async fn save_atlas_npx_path() -> IPCResult {
         };
 
         let output = create_hidden_command(shell)
-            .args(&[shell_flag, &find_cmd])
+            .args([shell_flag, &find_cmd])
             .output();
 
         let npx_path = match output {
@@ -372,7 +374,7 @@ fn stop_existing_daemon() -> Result<(), String> {
     // Try to stop using atlas service command - wait for graceful shutdown
     if binary_path.exists() {
         let _ = create_hidden_command(&binary_path.to_string_lossy())
-            .args(&["service", "stop"])
+            .args(["service", "stop"])
             .output();
 
         // Give it time to gracefully shut down
@@ -383,7 +385,7 @@ fn stop_existing_daemon() -> Result<(), String> {
     if cfg!(target_os = "windows") {
         // Check if process still exists
         let check = create_hidden_command("tasklist")
-            .args(&["/FI", "IMAGENAME eq atlas.exe"])
+            .args(["/FI", "IMAGENAME eq atlas.exe"])
             .output();
 
         let process_running = if let Ok(output) = check {
@@ -395,7 +397,7 @@ fn stop_existing_daemon() -> Result<(), String> {
         // Only force kill if still running after graceful stop
         if process_running {
             let _ = create_hidden_command("taskkill")
-                .args(&["/F", "/IM", "atlas.exe"])
+                .args(["/F", "/IM", "atlas.exe"])
                 .output();
 
             // Wait for file handles to be released
@@ -404,7 +406,7 @@ fn stop_existing_daemon() -> Result<(), String> {
             // Verify process is gone - retry if needed
             for _ in 0..3 {
                 let check = create_hidden_command("tasklist")
-                    .args(&["/FI", "IMAGENAME eq atlas.exe"])
+                    .args(["/FI", "IMAGENAME eq atlas.exe"])
                     .output();
 
                 if let Ok(output) = check {
@@ -417,7 +419,7 @@ fn stop_existing_daemon() -> Result<(), String> {
             }
         }
     } else {
-        let _ = create_hidden_command("pkill").args(&["-x", "atlas"]).output();
+        let _ = create_hidden_command("pkill").args(["-x", "atlas"]).output();
         std::thread::sleep(std::time::Duration::from_secs(1));
     }
 
@@ -475,7 +477,7 @@ async fn install_atlas_binary(app: AppHandle) -> IPCResult {
         }
 
         if src.as_os_str().is_empty() || !src.exists() {
-            return IPCResult::error(format!("Binary not found. Checked resource dir and ../atlas-binary"));
+            return IPCResult::error("Binary not found. Checked resource dir and ../atlas-binary".to_string());
         }
 
         let dest = bin_dir.join(binary_name);
@@ -533,7 +535,7 @@ async fn install_atlas_binary(app: AppHandle) -> IPCResult {
 
 // Create system symlinks on macOS
 #[cfg(target_os = "macos")]
-fn create_system_symlinks(bin_dir: &PathBuf) -> Result<(), String> {
+fn create_system_symlinks(bin_dir: &Path) -> Result<(), String> {
     let user_path = bin_dir.join("atlas");
     let system_path = "/usr/local/bin/atlas";
 
@@ -546,7 +548,7 @@ fn create_system_symlinks(bin_dir: &PathBuf) -> Result<(), String> {
 
     // Ensure /usr/local/bin exists
     let _ = Command::new("osascript")
-        .args(&[
+        .args([
             "-e",
             "do shell script \"mkdir -p /usr/local/bin\" with administrator privileges",
         ])
@@ -561,7 +563,7 @@ fn create_system_symlinks(bin_dir: &PathBuf) -> Result<(), String> {
     );
 
     let output = Command::new("osascript")
-        .args(&[
+        .args([
             "-e",
             &format!(
                 "do shell script \"{}\" with administrator privileges",
@@ -622,7 +624,7 @@ fn create_start_menu_shortcut() -> Result<(), String> {
     );
 
     let output = create_hidden_command("powershell")
-        .args(&["-NoProfile", "-Command", &ps_script])
+        .args(["-NoProfile", "-Command", &ps_script])
         .output()
         .map_err(|e| format!("Failed to create shortcut: {}", e))?;
 
@@ -675,7 +677,7 @@ fn install_web_client(app: &AppHandle) -> Result<(), String> {
 
         // Copy app using cp -R for proper .app bundle handling
         let output = Command::new("cp")
-            .args(&[
+            .args([
                 "-R",
                 &app_source.display().to_string(),
                 &dest.display().to_string(),
@@ -704,7 +706,7 @@ fn install_web_client(app: &AppHandle) -> Result<(), String> {
 
         // Run installer silently
         let _ = create_hidden_command(&installer_path.to_string_lossy())
-            .args(&["/S", &format!("/D={}", install_dir)])
+            .args(["/S", &format!("/D={}", install_dir)])
             .output();
     }
 
@@ -751,7 +753,7 @@ async fn setup_path() -> IPCResult {
 
 // Add to Windows PATH
 #[cfg(target_os = "windows")]
-fn add_to_windows_path(directory: &PathBuf) -> Result<(), String> {
+fn add_to_windows_path(directory: &std::path::Path) -> Result<(), String> {
     let dir_str = directory.display().to_string();
     let ps_command = format!(
         "$userPath = [Environment]::GetEnvironmentVariable('Path', 'User'); \
@@ -763,7 +765,7 @@ fn add_to_windows_path(directory: &PathBuf) -> Result<(), String> {
     );
 
     let output = create_hidden_command("powershell")
-        .args(&["-Command", &ps_command])
+        .args(["-Command", &ps_command])
         .output()
         .map_err(|e| format!("Failed to update PATH: {}", e))?;
 
@@ -776,7 +778,7 @@ fn add_to_windows_path(directory: &PathBuf) -> Result<(), String> {
 
 // Add to shell profiles on macOS
 #[cfg(target_os = "macos")]
-fn add_to_shell_profiles(directory: &PathBuf) -> Result<(), String> {
+fn add_to_shell_profiles(directory: &Path) -> Result<(), String> {
     let home = get_home_dir()?;
     let export_line = format!("export PATH=\"{}:$PATH\"\n", directory.display());
 
@@ -878,7 +880,7 @@ async fn run_shell_command(command: String) -> Result<CommandOutput, String> {
             let home_dir = dirs::home_dir().unwrap_or_else(|| PathBuf::from("C:\\"));
 
             let output = Command::new(shell)
-                .args(&[shell_flag, &command])
+                .args([shell_flag, &command])
                 .current_dir(&home_dir)  // Set working directory to home
                 .creation_flags(CREATE_NO_WINDOW)
                 .output()
@@ -894,7 +896,7 @@ async fn run_shell_command(command: String) -> Result<CommandOutput, String> {
         #[cfg(not(target_os = "windows"))]
         {
             let output = Command::new(shell)
-                .args(&[shell_flag, &command])
+                .args([shell_flag, &command])
                 .output()
                 .map_err(|e| format!("Failed to execute command: {}", e))?;
 
@@ -969,7 +971,7 @@ async fn execute_elevated_command(command: String) -> Result<CommandOutput, Stri
             // Execute elevated using ShellExecute with "runas" verb
             unsafe {
                 let result = ShellExecuteW(
-                    HWND::default(),
+                    Some(HWND::default()),
                     PCWSTR(verb_wide.as_ptr()),
                     PCWSTR(exe_wide.as_ptr()),
                     PCWSTR(args_wide.as_ptr()),
@@ -1083,7 +1085,7 @@ async fn run_shell_command_visible(command: String) -> Result<CommandOutput, Str
 
             // Use DETACHED_PROCESS to allow child process spawning while hiding window
             let output = Command::new("cmd")
-                .args(&["/C", &command])
+                .args(["/C", &command])
                 .current_dir(&home_dir)  // Set working directory to home
                 .creation_flags(DETACHED_PROCESS | CREATE_NO_WINDOW)
                 .output()
@@ -1099,7 +1101,7 @@ async fn run_shell_command_visible(command: String) -> Result<CommandOutput, Str
         #[cfg(not(target_os = "windows"))]
         {
             let output = Command::new("sh")
-                .args(&["-c", &command])
+                .args(["-c", &command])
                 .output()
                 .map_err(|e| format!("Failed to execute command: {}", e))?;
 
@@ -1172,7 +1174,7 @@ async fn launch_web_client() -> IPCResult {
             let ps_command = format!("Start-Process -FilePath '{}' -WindowStyle Normal", exe_path);
 
             let result = Command::new("powershell")
-                .args(&["-WindowStyle", "Hidden", "-Command", &ps_command])
+                .args(["-WindowStyle", "Hidden", "-Command", &ps_command])
                 .creation_flags(CREATE_NO_WINDOW)
                 .spawn();
 

@@ -18,7 +18,7 @@ show_help() {
     cat << EOF
 Atlas Memory Manager - MECMF Edition
 
-A terminal-based tool for navigating and managing Atlas workspace memory using 
+A terminal-based tool for navigating and managing Atlas workspace memory using
 the Memory-Enhanced Context Management Framework (MECMF).
 
 USAGE:

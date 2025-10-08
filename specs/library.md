@@ -65,7 +65,7 @@ performance and scalability.
 ```
 library/indexes/
 ├── by_type/{type}/{id} → id
-├── by_tag/{tag}/{id} → id  
+├── by_tag/{tag}/{id} → id
 ├── by_workspace/{workspace_id}/{id} → id
 └── by_date/{YYYY-MM}/{id} → id
 ```
@@ -181,7 +181,7 @@ const MIME_TO_EXTENSION = {
 const EXTENSION_TO_MIME = {
   // Programming languages (all stored as text/plain with specific extensions)
   "md": "text/plain",
-  "markdown": "text/plain", 
+  "markdown": "text/plain",
   "ts": "text/plain",
   "js": "text/plain",
   "py": "text/plain",
@@ -199,15 +199,15 @@ const EXTENSION_TO_MIME = {
   "scala": "text/plain",
   "r": "text/plain",
   "sql": "text/plain",
-  
+
   // Config files
   "yml": "text/plain",
-  "yaml": "text/plain", 
+  "yaml": "text/plain",
   "toml": "text/plain",
   "ini": "text/plain",
   "conf": "text/plain",
   "env": "text/plain",
-  
+
   // Other text formats
   "txt": "text/plain",
   "log": "text/plain",
@@ -227,7 +227,7 @@ type SupportedMimeType = keyof typeof MIME_TO_EXTENSION | string; // Known types
 
 **Processing Logic**:
 - `"text/plain"` + filename `"code.md"` → stored as `id.md`
-- `"text/plain"` + filename `"script.ts"` → stored as `id.ts` 
+- `"text/plain"` + filename `"script.ts"` → stored as `id.ts`
 - `""` (empty) + filename `"README.md"` → MIME becomes `"text/plain"`, stored as `id.md`
 - `"application/json"` → stored as `id.json` (from MIME mapping)
 
@@ -262,7 +262,7 @@ field uses standard MIME types.
   content: string | Uint8Array,  // Support binary content
   mime_type?: string,             // MIME type (auto-detected if omitted/empty)
   filename?: string,              // Original filename for extension detection
-  source?: string,                // Default: "agent" 
+  source?: string,                // Default: "agent"
   session_id?: string,
   agent_ids?: string[],
   tags?: string[],
@@ -276,7 +276,7 @@ field uses standard MIME types.
 {
   id: string,               // Generated UUID
   created_at: string,       // Generated timestamp
-  updated_at: string,       // Generated timestamp  
+  updated_at: string,       // Generated timestamp
   metadata: {               // Structured composition
     mime_type: string,      // Standard MIME type
     source: ContentSource,
@@ -317,7 +317,7 @@ function detectMimeType(
   if (providedMimeType && providedMimeType.trim() !== "") {
     return providedMimeType.trim();
   }
-  
+
   // 2. For empty/missing MIME type, detect from filename extension
   if (filename) {
     const ext = getFileExtension(filename);
@@ -325,13 +325,13 @@ function detectMimeType(
       return EXTENSION_TO_MIME[ext];
     }
   }
-  
+
   // 3. Check content signatures (magic bytes) for binary content
   if (content instanceof Uint8Array) {
     const detected = detectFromMagicBytes(content);
     if (detected) return detected;
   }
-  
+
   // 4. Analyze content structure for text formats (JSON, XML, etc.)
   if (typeof content === "string") {
     if (content.trim().startsWith("{") || content.trim().startsWith("[")) {
@@ -341,7 +341,7 @@ function detectMimeType(
       return "application/xml";
     }
   }
-  
+
   // 5. Defaults
   return content instanceof Uint8Array ? "application/octet-stream" : "text/plain";
 }
@@ -395,7 +395,7 @@ function getExtensionForMimeType(mimeType: string, filename?: string): string {
       return ext; // Use original extension (md, ts, go, etc.)
     }
   }
-  
+
   // Use known mapping if available
   if (MIME_TO_EXTENSION[mimeType]) {
     return MIME_TO_EXTENSION[mimeType];

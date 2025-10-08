@@ -222,7 +222,7 @@ directly but always through a supervision layer that provides:
 ```
 SessionSupervisor (Orchestration)
     ↓ delegates agent task
-AgentSupervisor (Safety & Management)  
+AgentSupervisor (Safety & Management)
     ↓ analyzes with LLM
 Agent Analysis & Environment Prep
     ↓ loads safely

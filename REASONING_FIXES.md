@@ -74,34 +74,34 @@ Update the `isComplete` callback in conversation-agent.ts (around line 1131):
 ```typescript
 isComplete: (context) => {
   const lastStep = context.steps[context.steps.length - 1];
-  
+
   // Complete if action type is "complete"
   if (lastStep?.action?.type === "complete") {
     return true;
   }
-  
+
   // Complete if we've hit max iterations
   if (context.currentIteration >= context.maxIterations) {
     return true;
   }
-  
+
   // For simple queries that only need a stream_reply
   const hasStreamReply = context.steps.some(
     step => step.action?.toolName === "stream_reply" && step.result
   );
-  
+
   // If this is a simple conversation (no workspace operations mentioned)
   const userMessage = context.userContext.message.toLowerCase();
-  const isSimpleQuery = !userMessage.includes("workspace") && 
+  const isSimpleQuery = !userMessage.includes("workspace") &&
                        !userMessage.includes("agent") &&
                        !userMessage.includes("create") &&
                        !userMessage.includes("build");
-  
+
   // Complete after stream_reply for simple queries
   if (hasStreamReply && isSimpleQuery && context.currentIteration >= 2) {
     return true;
   }
-  
+
   // Continue for workspace operations
   return false;
 },

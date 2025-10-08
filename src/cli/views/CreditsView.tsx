@@ -27,18 +27,18 @@ export default function CreditsView({ onExit }: CreditsViewProps) {
     >
       <Text color="blue">
         {`
-                ${symbol}${symbol}                 
-          ${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}             
-           ${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}            
-             ${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}            
-             ${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}           
-            ${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}            
-          ${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}             
-                ${symbol}${symbol}     ${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}  
-                ${symbol}${symbol}   ${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}     
-    ${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}     
-     ${symbol}${symbol}${symbol}${symbol}${symbol}${symbol} ${symbol}${symbol}${symbol}${symbol} ${symbol}${symbol}${symbol}${symbol} ${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}       
-      ${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}        
+                ${symbol}${symbol}
+          ${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}
+           ${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}
+             ${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}
+             ${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}
+            ${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}
+          ${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}
+                ${symbol}${symbol}     ${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}
+                ${symbol}${symbol}   ${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}
+    ${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}
+     ${symbol}${symbol}${symbol}${symbol}${symbol}${symbol} ${symbol}${symbol}${symbol}${symbol} ${symbol}${symbol}${symbol}${symbol} ${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}
+      ${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}
          ${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}${symbol}`}
       </Text>
 

@@ -35,7 +35,7 @@ export const summaryAgent = createAgent({
         - **Avoid** overuse of emoji.
         - **Always** follow the message formatting rules below.
         - If any tool call errors (timeout, authorization, unknown), state the failure briefly and stop.
-        - After successfully creating the summary, **always** create an artifact with a type equal to 'summary', 
+        - After successfully creating the summary, **always** create an artifact with a type equal to 'summary',
         - You can only return the artifact id, so failure to do this will result in an error.
 
         ## Message Formatting

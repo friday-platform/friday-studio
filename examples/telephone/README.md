@@ -72,7 +72,7 @@ Original: "The cat sat on the mat"
 ↓
 Memory Load: "Based on past sessions, focus on creative sound changes and narrative expansion..."
 ↓
-Mishearing: "The cat sat on the hat"  
+Mishearing: "The cat sat on the hat"
 ↓
 Embellishment: "The cat carefully sat on the old woolen hat that was left on the chair..."
 ↓

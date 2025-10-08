@@ -101,7 +101,7 @@ agents through standard protocols. This creates a "matryoshka doll" architecture
 ```
 External Agent (Claude Desktop)
   ↓ MCP Protocol
-Atlas WorkspaceSupervisor 
+Atlas WorkspaceSupervisor
   ↓ Internal Orchestration
 Atlas LLM Agent (with MCP tools)
   ↓ MCP Protocol
@@ -122,7 +122,7 @@ Atlas follows a clean hierarchical model:
 Atlas (Platform)
 ├── Workspace (Isolated environment)
 │   ├── Job (Pre-configured workflow)
-│   │   ├── Session (Execution instance) 
+│   │   ├── Session (Execution instance)
 │   │   │   ├── Agent (Individual executor)
 ```
 
@@ -324,7 +324,7 @@ Atlas uses a **git-like remote system** for managing multiple Atlas instances:
 ```bash
 # Add Atlas instances as remotes
 atlas remote add company https://atlas.company.com
-atlas remote add partner https://partner.atlas.tempest.cloud  
+atlas remote add partner https://partner.atlas.tempest.cloud
 atlas remote add local http://localhost:8080
 
 # Set default remote

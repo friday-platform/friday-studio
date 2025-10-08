@@ -95,7 +95,7 @@ async function determineStartupMode() {
     hasConfig: await checkFile('~/.atlas/.env'),
     daemonRunning: await checkDaemonStatus()
   };
-  
+
   if (!setup.hasAtlas || !setup.hasConfig) {
     return 'installer';
   }

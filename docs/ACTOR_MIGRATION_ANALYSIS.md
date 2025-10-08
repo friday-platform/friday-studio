@@ -11,7 +11,7 @@ implementation using XState 5.
 
 ```typescript
 // Complex worker hierarchy with separate processes
-WorkspaceRuntime 
+WorkspaceRuntime
   → WorkerManager
     → WorkspaceSupervisorWorker (separate Deno Worker)
       → SessionSupervisorWorker (separate Deno Worker)

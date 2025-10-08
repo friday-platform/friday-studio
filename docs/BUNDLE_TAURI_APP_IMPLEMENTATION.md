@@ -75,7 +75,7 @@ Add to `.github/workflows/edge-release.yml` in release job after downloading art
     else
       tar -czf "dist/atlas_bundle_${{ needs.check-changes.outputs.version }}_${{ matrix.os }}_${{ matrix.arch }}.tar.gz" -C atlas-bundle .
     fi
-    
+
     echo "Bundle created successfully"
     ls -la dist/atlas_bundle_*
 ```
@@ -130,12 +130,12 @@ Add before the Tauri build step in `.github/actions/build-web-app/action.yml`:
         choco install jq
       fi
     fi
-    
+
     # Update version in tauri.conf.json
     jq --arg version "${{ inputs.version }}" '.version = $version' \
       src-tauri/tauri.conf.json > src-tauri/tauri.conf.json.tmp
     mv src-tauri/tauri.conf.json.tmp src-tauri/tauri.conf.json
-    
+
     echo "Updated Tauri version to: ${{ inputs.version }}"
     jq '.version' src-tauri/tauri.conf.json
 ```
@@ -155,12 +155,12 @@ Add this **in the build job**, after building both components but before artifac
     set -e
     bundle_name="atlas-bundle-${{ needs.check-changes.outputs.version }}-${{ matrix.os }}-${{ matrix.arch }}"
     mkdir -p "$bundle_name"
-    
+
     # Copy Electron installer
     if [ "${{ matrix.os }}" == "darwin" ]; then
       cp dist/atlas_*.zip "$bundle_name/"
       cp -r dist/*.app "$bundle_name/" 2>/dev/null || echo "No app bundle found"
-    elif [ "${{ matrix.os }}" == "windows" ]; then  
+    elif [ "${{ matrix.os }}" == "windows" ]; then
       cp dist/atlas_*.exe "$bundle_name/"
       cp dist/Atlas_*.exe "$bundle_name/" 2>/dev/null || echo "No Tauri exe"
       cp dist/*.msi "$bundle_name/" 2>/dev/null || echo "No MSI found"
@@ -169,23 +169,23 @@ Add this **in the build job**, after building both components but before artifac
       cp dist/*.AppImage "$bundle_name/" 2>/dev/null || echo "No AppImage"
       cp dist/*.deb "$bundle_name/" 2>/dev/null || echo "No deb"
     fi
-    
+
     # Add README
     cat > "$bundle_name/README.txt" << 'EOF'
     Atlas Bundle - Two Components:
     1. Atlas CLI (installer)
     2. Atlas Web App (Tauri app)
-    
+
     Install both for full functionality.
     EOF
-    
+
     # Create archive
     if [ "${{ matrix.os }}" == "windows" ]; then
       7z a "dist/${bundle_name}.zip" "$bundle_name/*"
     else
       tar -czf "dist/${bundle_name}.tar.gz" "$bundle_name"
     fi
-    
+
     echo "Bundle created: dist/${bundle_name}.*"
     ls -la dist/${bundle_name}.*
 ```
@@ -226,7 +226,7 @@ Then update artifact upload to include the bundle:
 ## The Real Timeline
 
 - **Hour 1**: Implement bundling in build jobs
-- **Hours 2-4**: Debug Windows path issues and shell problems  
+- **Hours 2-4**: Debug Windows path issues and shell problems
 - **Hours 5-8**: Fix artifact upload/download coordination
 - **Day 2**: Discover edge cases, fix signing issues
 - **Day 3**: Actually works across all platforms

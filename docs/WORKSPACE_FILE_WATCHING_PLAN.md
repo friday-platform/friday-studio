@@ -231,16 +231,16 @@ private fileHashes = new Map<string, string>();
 private async hasFileChanged(filePath: string): Promise<boolean> {
   const content = await Deno.readTextFile(filePath);
   const hash = await crypto.subtle.digest(
-    "SHA-256", 
+    "SHA-256",
     new TextEncoder().encode(content)
   );
   const hashHex = Array.from(new Uint8Array(hash))
     .map(b => b.toString(16).padStart(2, "0"))
     .join("");
-  
+
   const previousHash = this.fileHashes.get(filePath);
   this.fileHashes.set(filePath, hashHex);
-  
+
   return previousHash !== hashHex;
 }
 ```
@@ -256,7 +256,7 @@ private async notifyReload(workspaceId: string, status: "started" | "completed" 
     status,
     timestamp: new Date().toISOString(),
   };
-  
+
   // Broadcast to SSE clients
   this.broadcastToSSEClients(workspaceId, event);
 }

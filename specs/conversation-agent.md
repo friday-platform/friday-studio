@@ -454,7 +454,7 @@ user's goal.
 💭 I'll create todos for this multi-step workspace creation...
 🔧 Calling: atlas_todo_write
    todos: [
-     { id: "1", content: "Create Nike monitoring workspace", status: "pending", 
+     { id: "1", content: "Create Nike monitoring workspace", status: "pending",
        metadata: {} },
      { id: "2", content: "Configure web scraping job", status: "pending" },
      { id: "3", content: "Set up Discord notifications", status: "pending" }
@@ -464,7 +464,7 @@ user's goal.
 🔧 Calling: atlas_workspace_draft_create(name: "nike-monitor")
 ✅ Workspace created with ID: ws-nike-abc123
 
-🔧 Calling: atlas_todo_write  
+🔧 Calling: atlas_todo_write
    todos: [
      { id: "1", content: "Create Nike monitoring workspace", status: "completed",
        metadata: { workspaceId: "ws-nike-abc123", workspaceName: "nike-monitor" } },
@@ -487,7 +487,7 @@ scraping. The workspace ID is ws-nike-abc123. Ready to continue with Discord not
 🔧 Calling: atlas_todo_read(streamId: "user-123")
 ✅ Found existing todos:
    - [completed] Create Nike monitoring workspace (ws-nike-abc123)
-   - [in_progress] Configure web scraping job  
+   - [in_progress] Configure web scraping job
    - [pending] Set up Discord notifications
 
 💭 I can see we already have the Nike workspace created. Let me work on the Discord setup...

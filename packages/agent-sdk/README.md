@@ -39,29 +39,29 @@ export const githubAgent = createAgent({
   id: "github",
   version: "1.0.0",
   description: "GitHub operations expert",
-  
+
   expertise: {
     domains: ["github", "vcs", "security"],
     capabilities: ["scan repositories", "review PRs", "manage issues"],
     examples: ["scan my repo for vulnerabilities", "review PR #123"]
   },
-  
+
   // 2. Handler receives prompts and context
   handler: async (prompt, { tools, env, stream }) => {
     // 3. Bring your own LLM
     import { generateText } from 'ai';
     import { anthropic } from '@ai-sdk/anthropic';
-    
+
     // 4. Access MCP tools
     const githubTools = tools; // Pre-loaded by server
-    
+
     // 5. Execute with your LLM
     const result = await generateText({
       model: anthropic('claude-3-sonnet-20240229'),
       prompt,
       tools: githubTools
     });
-    
+
     return result;
   }
 });
@@ -259,13 +259,13 @@ export const slackAgent = createAgent({
   id: "slack",
   version: "1.0.0",
   description: "Slack messaging expert",
-  
+
   expertise: {
     domains: ["messaging", "communication"],
     capabilities: ["send messages", "manage channels"],
     examples: ["send a message to #general"]
   },
-  
+
   mcp: {
     slack: {
       transport: {
@@ -275,17 +275,17 @@ export const slackAgent = createAgent({
       }
     }
   },
-  
+
   handler: async (prompt, { tools }) => {
     import { generateText } from 'ai';
     import { anthropic } from '@ai-sdk/anthropic';
-    
+
     const result = await generateText({
       model: anthropic('claude-3-sonnet'),
       prompt,
       tools: tools  // Slack tools available here
     });
-    
+
     return result;
   }
 });

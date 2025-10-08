@@ -199,7 +199,7 @@ runs:
           # For macOS, the .app bundle should be in the standard location
           # Tauri builds it at: src-tauri/target/{target}/release/bundle/macos/*.app
           app_source="./apps/web-client/src-tauri/target/${{ inputs.target }}/release/bundle/macos"
-          
+
           if [ -d "$app_source" ]; then
             echo "Looking for .app bundle in: $app_source"
             # Copy the .app bundle (there should only be one)
