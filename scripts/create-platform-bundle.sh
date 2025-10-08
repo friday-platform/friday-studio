@@ -29,25 +29,14 @@ Installation Steps:
     ;;
 
   windows)
-    cp dist/atlas_*.exe "$BUNDLE_NAME/" || { echo "Missing Atlas CLI installer"; exit 1; }
+    # Copy Atlas Installer (GUI app in zip format)
+    cp dist/atlas_*.zip "$BUNDLE_NAME/" || { echo "Missing Atlas Installer"; exit 1; }
 
-    # Copy Tauri installers if they exist (optional for Windows)
-    cp dist/"Atlas Web Client"*.exe "$BUNDLE_NAME/" 2>/dev/null || true
-    cp dist/*.msi "$BUNDLE_NAME/" 2>/dev/null || true
-
-    # Check if we have any Tauri installers
-    if ls "$BUNDLE_NAME"/"Atlas Web Client"*.exe "$BUNDLE_NAME"/*.msi 2>/dev/null | grep -q .; then
-      echo "Atlas Bundle - Windows
+    echo "Atlas Bundle - Windows
 
 Installation Steps:
-1. Run Atlas CLI installer (.exe)
-2. Run Atlas GUI installer (.exe or .msi)" > "$BUNDLE_NAME/README.txt"
-    else
-      echo "Atlas Bundle - Windows
-
-Installation Steps:
-1. Run Atlas CLI installer (.exe)" > "$BUNDLE_NAME/README.txt"
-    fi
+1. Extract atlas_*.zip
+2. Run Atlas Installer.exe to install Atlas" > "$BUNDLE_NAME/README.txt"
     ;;
 
   linux)

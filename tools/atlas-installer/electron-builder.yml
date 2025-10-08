@@ -1,9 +1,0 @@
-# Electron Builder Configuration Override
-# This file provides additional configuration for electron-builder
-
-# Prevent processing of bundled app files
-mac:
-  # Files to exclude from code signing and notarization
-  signIgnore:
-    - "**/Atlas Web Client.app"
-    - "**/Atlas Web Client.app/**"

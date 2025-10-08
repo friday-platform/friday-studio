@@ -70,7 +70,7 @@ chmod 755 "${BUILD_ROOT}/BUILDROOT/atlas-${RPM_VERSION}-${RPM_RELEASE}.${RPM_ARC
 
 # Copy credential fetching script
 mkdir -p "${BUILD_ROOT}/BUILDROOT/atlas-${RPM_VERSION}-${RPM_RELEASE}.${RPM_ARCH}/usr/share/atlas/scripts"
-cp "tools/atlas-installer/scripts/fetch-credentials.sh" "${BUILD_ROOT}/BUILDROOT/atlas-${RPM_VERSION}-${RPM_RELEASE}.${RPM_ARCH}/usr/share/atlas/scripts/fetch-credentials.sh"
+cp "scripts/fetch-credentials.sh" "${BUILD_ROOT}/BUILDROOT/atlas-${RPM_VERSION}-${RPM_RELEASE}.${RPM_ARCH}/usr/share/atlas/scripts/fetch-credentials.sh"
 chmod 755 "${BUILD_ROOT}/BUILDROOT/atlas-${RPM_VERSION}-${RPM_RELEASE}.${RPM_ARCH}/usr/share/atlas/scripts/fetch-credentials.sh"
 
 # Create systemd service file

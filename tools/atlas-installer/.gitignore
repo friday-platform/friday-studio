@@ -1,6 +1,0 @@
-electron-cache/
-dist/
-build/
-*.js.map
-src/**/*.js
-!src/types/*.d.ts

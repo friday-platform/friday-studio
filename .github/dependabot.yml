@@ -21,9 +21,9 @@ updates:
   # using Deno's native `deno outdated` command (available in Deno 2.x+)
   # GitHub Dependabot doesn't have native support for Deno's deno.json yet
 
-  # Keep npm dependencies up to date (for tools/atlas-installer)
+  # Keep npm dependencies up to date (for atlas-installer)
   - package-ecosystem: "npm"
-    directory: "/tools/atlas-installer"
+    directory: "/apps/atlas-installer"
     schedule:
       interval: "daily"
       time: "09:00"
@@ -36,14 +36,8 @@ updates:
     labels:
       - "dependencies"
       - "npm"
-      - "electron"
+      - "tauri"
     rebase-strategy: "auto"
-    ignore:
-      # Ignore major version updates for electron to avoid compatibility issues
-      - dependency-name: "electron"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "electron-builder"
-        update-types: ["version-update:semver-major"]
 
   # Keep Docker dependencies up to date
   - package-ecosystem: "docker"
@@ -65,6 +59,29 @@ updates:
   # Keep Rust dependencies up to date (for web-client/src-tauri)
   - package-ecosystem: "cargo"
     directory: "/apps/web-client/src-tauri"
+    schedule:
+      interval: "daily"
+      time: "09:00"
+    open-pull-requests-limit: 5
+    assignees:
+      - "ljagiello"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "rust"
+      - "tauri"
+    rebase-strategy: "auto"
+    # Known transitive dependency issue - glib vulnerability in webkit2gtk (Linux only)
+    # Waiting for upstream fix in https://github.com/tauri-apps/webkit2gtk-rs
+    ignore:
+      - dependency-name: "glib"
+        # Will be resolved when webkit2gtk updates to use glib 0.20.0+
+
+  # Keep Rust dependencies up to date (for atlas-installer/src-tauri)
+  - package-ecosystem: "cargo"
+    directory: "/apps/atlas-installer/src-tauri"
     schedule:
       interval: "daily"
       time: "09:00"

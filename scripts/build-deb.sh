@@ -52,7 +52,7 @@ chmod 755 "${PKG_DIR}/usr/bin/atlas"
 
 # Copy credential fetching script
 mkdir -p "${PKG_DIR}/usr/share/atlas/scripts"
-cp "tools/atlas-installer/scripts/fetch-credentials.sh" "${PKG_DIR}/usr/share/atlas/scripts/fetch-credentials.sh"
+cp "scripts/fetch-credentials.sh" "${PKG_DIR}/usr/share/atlas/scripts/fetch-credentials.sh"
 chmod 755 "${PKG_DIR}/usr/share/atlas/scripts/fetch-credentials.sh"
 
 

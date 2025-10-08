@@ -7,7 +7,6 @@
  * - Edge: Development builds including source runs and pre-release versions
  */
 export enum ReleaseChannel {
-  Stable = "stable",
   Nightly = "nightly",
   Edge = "edge",
 }

@@ -1,5 +1,5 @@
 name: "Create Platform Installers"
-description: "Creates cross-platform Electron installers for macOS, Windows, and Linux"
+description: "Creates cross-platform Tauri installers for macOS and Windows"
 
 inputs:
   version:
@@ -65,22 +65,63 @@ outputs:
 runs:
   using: "composite"
   steps:
-    - name: Setup build environment
-      uses: actions/setup-node@v4
+    - name: Determine Rust target
+      id: rust-target
+      shell: bash
+      run: |
+        platform="${{ inputs.platform }}"
+        arch="${{ inputs.arch }}"
+
+        # Map to Tauri target
+        if [ "$platform" == "darwin" ]; then
+          if [ "$arch" == "arm64" ]; then
+            target="aarch64-apple-darwin"
+          else
+            target="x86_64-apple-darwin"
+          fi
+        elif [ "$platform" == "windows" ]; then
+          target="x86_64-pc-windows-msvc"
+        else
+          target="x86_64-unknown-linux-gnu"
+        fi
+
+        echo "target=$target" >> $GITHUB_OUTPUT
+        echo "Rust target: $target"
+
+    - name: Add Rust target
+      shell: bash
+      run: |
+        # Use GitHub's pre-installed Rust
+        rustc --version
+        rustup target add ${{ steps.rust-target.outputs.target }}
+        # Verify the target is installed
+        rustup target list --installed
+
+    - name: Setup Rust cache
+      uses: Swatinem/rust-cache@v2
       with:
-        node-version: "22"
-        cache: "npm"
-        cache-dependency-path: "tools/atlas-installer/package-lock.json"
+        workspaces: "./apps/atlas-installer/src-tauri -> target"
+        key: ${{ steps.rust-target.outputs.target }}
+        cache-on-failure: true
+        cache-all-crates: true
+
+    - name: Install Tauri CLI
+      shell: bash
+      run: cargo install tauri-cli --version "^2.8" --locked
+
+    - name: Setup Deno
+      uses: denoland/setup-deno@v2
+      with:
+        deno-version: v2.x
 
     - name: Prepare installer
       shell: bash
       run: |
         set -e
-        cd tools/atlas-installer
+        cd apps/atlas-installer
 
-        # Install dependencies
-        rm -rf node_modules
-        npm install
+        # Vendor @tauri-apps/api and compile TypeScript using Deno
+        deno task prepare
 
         # Create binary directory
         mkdir -p atlas-binary
@@ -88,7 +129,6 @@ runs:
         # Copy binaries using a loop
         binaries=(
           "${{ inputs.binary-path }}:${{ inputs.binary-name }}:required"
-          "${{ inputs.diagnostics-binary-path }}:${{ inputs.diagnostics-binary-name }}:optional"
           "${{ inputs.web-app-binary-path }}:${{ inputs.web-app-binary-name }}:optional"
         )
 
@@ -133,58 +173,142 @@ runs:
           chmod +x "atlas-binary/$name" 2>/dev/null || true
         done
 
+        # Remove .gitkeep and other hidden files from atlas-binary
+        find atlas-binary -name ".*" -type f -delete
+
+        # Debug: List atlas-binary contents and sizes
+        echo "=== atlas-binary directory contents ==="
+        ls -lh atlas-binary/
+        echo "=== Total size of atlas-binary ==="
+        du -sh atlas-binary/
+
+        # Create clean frontend distribution directory
+        mkdir -p dist-tauri
+        cp index.html dist-tauri/
+        cp *.css dist-tauri/ 2>/dev/null || true
+        cp *.png dist-tauri/ 2>/dev/null || true
+        cp eula.txt dist-tauri/ 2>/dev/null || true
+        cp -r dist dist-tauri/
+
+        # Vendor directory is already created by deno task prepare
+        # No need to copy - it's already in dist-tauri/vendor/@tauri-apps/api
+
+        # Debug: List frontend directory contents
+        echo "Frontend directory contents:"
+        ls -laR dist-tauri/ | head -50
+
     - name: Build installer
       shell: bash
       id: build
       run: |
         set -e
-        cd tools/atlas-installer
+        cd apps/atlas-installer
 
         # Convert version to semver using shared script
         semver=$(../../scripts/convert-version-to-semver.sh "${{ inputs.version }}")
 
-        npm version "$semver" --no-git-tag-version
+        # Update version in Cargo.toml
+        sed -i.bak "s/^version = .*/version = \"$semver\"/" src-tauri/Cargo.toml
+        rm src-tauri/Cargo.toml.bak
 
-        # Setup macOS installer signing and notarization if needed
+        # Setup macOS signing and notarization for Tauri
         if [ "${{ inputs.platform }}" == "darwin" ]; then
-          # Electron-builder needs both app and installer certificates
-          # CSC_LINK is for signing the Electron app wrapper (Developer ID Application)
-          # CSC_INSTALLER_LINK is for signing the .zip installer (Developer ID Installer)
-
-          # Set up app signing certificate
+          # Tauri uses different environment variable names than Electron
           if [ -n "${{ inputs.macos-sign-p12 }}" ]; then
-            export CSC_LINK="${{ inputs.macos-sign-p12 }}"
-            export CSC_KEY_PASSWORD="${{ inputs.macos-sign-password }}"
-          fi
-
-          # Set up installer signing certificate
-          if [ -n "${{ inputs.macos-installer-p12 }}" ]; then
-            export CSC_INSTALLER_LINK="${{ inputs.macos-installer-p12 }}"
-            export CSC_INSTALLER_KEY_PASSWORD="${{ inputs.macos-installer-password }}"
+            export APPLE_CERTIFICATE="${{ inputs.macos-sign-p12 }}"
+            export APPLE_CERTIFICATE_PASSWORD="${{ inputs.macos-sign-password }}"
           fi
 
           # Setup notarization
           if [ -n "${{ inputs.macos-notary-issuer-id }}" ]; then
-            export APPLE_API_ISSUER="${{ inputs.macos-notary-issuer-id }}"
-            export APPLE_API_KEY_ID="${{ inputs.macos-notary-key-id }}"
+            # Decode and write API key file
             echo "${{ inputs.macos-notary-key }}" | base64 --decode > "AuthKey_${{ inputs.macos-notary-key-id }}.p8"
-            export APPLE_API_KEY="$(pwd)/AuthKey_${{ inputs.macos-notary-key-id }}.p8"
+
+            # Tauri requires APPLE_API_KEY (key ID), APPLE_API_ISSUER, and APPLE_API_KEY_PATH
+            export APPLE_API_KEY="${{ inputs.macos-notary-key-id }}"
+            export APPLE_API_ISSUER="${{ inputs.macos-notary-issuer-id }}"
+            export APPLE_API_KEY_PATH="$(pwd)/AuthKey_${{ inputs.macos-notary-key-id }}.p8"
           fi
         fi
 
-        # Build installer using platform mapping
-        platform="${{ inputs.platform }}"
-        npm_arch="${{ inputs.arch == 'arm64' && 'arm64' || 'x64' }}"
+        # Re-sign bundled .app files with hardened runtime before Tauri builds
+        if [ "${{ inputs.platform }}" == "darwin" ] && [ -n "${{ inputs.macos-sign-p12 }}" ]; then
+          echo "Importing certificate for re-signing..."
+          # Create temporary keychain for signing
+          KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
+          KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
 
-        # Map platform to npm build target
-        case "$platform" in
-          darwin) platform_target="mac" ;;
-          windows) platform_target="win" ;;
-          linux) platform_target="linux" ;;
-        esac
+          # Create temporary keychain
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
 
-        npm_cmd="build:${platform_target}:${npm_arch}"
-        npm run "$npm_cmd"
+          # Decode and import certificate
+          echo "${{ inputs.macos-sign-p12 }}" | base64 --decode > certificate.p12
+          security import certificate.p12 -k "$KEYCHAIN_PATH" -P "${{ inputs.macos-sign-password }}" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          # Add to search list
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | sed s/\"//g)
+
+          # Clean up certificate file
+          rm certificate.p12
+
+          # Find the Developer ID Application identity
+          SIGNING_IDENTITY=$(security find-identity -v -p codesigning | grep "Developer ID Application" | head -1 | sed -E 's/.*"(.*)"/\1/')
+
+          if [ -n "$SIGNING_IDENTITY" ]; then
+            echo "Found signing identity: $SIGNING_IDENTITY"
+
+            # Disable exit on error for signing operations
+            set +e
+
+            for app in atlas-binary/*.app; do
+              if [ -d "$app" ]; then
+                echo "Re-signing $app with hardened runtime..."
+                # Find all executables and libraries in the app bundle and sign them
+                find "$app/Contents/MacOS" "$app/Contents/Frameworks" -type f -perm +111 2>/dev/null | while read binary; do
+                  echo "  Signing $binary"
+                  codesign --force --sign "$SIGNING_IDENTITY" \
+                    --timestamp \
+                    --options runtime \
+                    --entitlements "$app/Contents/Resources/entitlements.plist" \
+                    "$binary" 2>/dev/null || \
+                  codesign --force --sign "$SIGNING_IDENTITY" \
+                    --timestamp \
+                    --options runtime \
+                    "$binary" || echo "    Warning: Failed to sign $binary"
+                done
+                # Sign the app bundle itself
+                echo "  Signing $app bundle"
+                codesign --force --sign "$SIGNING_IDENTITY" \
+                  --timestamp \
+                  --options runtime \
+                  --entitlements "$app/Contents/Resources/entitlements.plist" \
+                  "$app" 2>/dev/null || \
+                codesign --force --sign "$SIGNING_IDENTITY" \
+                  --timestamp \
+                  --options runtime \
+                  "$app" || echo "    Warning: Failed to sign $app"
+
+                # Verify the signature
+                codesign --verify --deep --strict "$app" && echo "  ✓ Signature verified" || echo "  ✗ Signature verification failed"
+              fi
+            done
+
+            # Re-enable exit on error
+            set -e
+          else
+            echo "Warning: No Developer ID Application signing identity found"
+          fi
+        fi
+
+        # Build using Tauri
+        tauri_target="${{ steps.rust-target.outputs.target }}"
+        echo "Building with Tauri target: $tauri_target"
+
+        # Build with Tauri (using cargo-installed tauri-cli)
+        cargo tauri build --target "$tauri_target"
 
         # Cleanup sensitive files
         rm -f AuthKey_*.p8
@@ -194,49 +318,92 @@ runs:
       id: create
       run: |
         set -e
-        cd tools/atlas-installer
+        cd apps/atlas-installer
 
         # Find installer by platform
         platform="${{ inputs.platform }}"
         arch="${{ inputs.arch }}"
         version="${{ inputs.version }}"
+        tauri_target="${{ steps.rust-target.outputs.target }}"
 
-        # Find installer based on platform
-        # Use ls instead of find for better cross-platform compatibility
+        # Tauri outputs to different paths than Electron
+        # Find installer based on platform and architecture
+        target_dir="src-tauri/target/${tauri_target}/release/bundle"
+
         case "$platform" in
           darwin)
-            installer=$(ls build/*.zip 2>/dev/null | head -1)
+            # Tauri creates .app in macos/ directory - use find to handle spaces in names
+            app_file=$(find "$target_dir/macos" -maxdepth 1 -name "*.app" -type d -print -quit)
+            [ -z "$app_file" ] && { echo "ERROR: No .app found"; ls -la "$target_dir/macos" 2>/dev/null || true; exit 1; }
+
+            app_name=$(basename "$app_file")
+            echo "Found app: $app_file"
+            echo "App name: $app_name"
+
+            # Create .zip with the .app inside
+            mkdir -p build
+            # Use ditto to properly copy macOS .app bundles
+            ditto "$app_file" "build/$app_name"
+            target="atlas_${version}_${platform}_${arch}.zip"
+            (cd build && zip -r "$target" "$app_name")
+            installer="build/$target"
             ;;
           windows)
-            installer=$(ls build/*.exe 2>/dev/null | head -1)
-            ;;
-          linux)
-            installer=$(ls build/*.AppImage build/*.tar.gz 2>/dev/null | head -1)
+            # For Windows, Tauri places resources NEXT to the exe, not embedded in it
+            # We need to package the entire directory structure
+
+            # Look for the exe and check what's around it
+            exe_file="src-tauri/target/${tauri_target}/release/atlas-installer.exe"
+            [ ! -f "$exe_file" ] && { echo "ERROR: Atlas Installer executable not found at $exe_file"; ls -la "src-tauri/target/${tauri_target}/release" 2>/dev/null || true; exit 1; }
+
+            echo "Found Atlas Installer executable: $exe_file"
+            exe_size=$(stat -c%s "$exe_file" 2>/dev/null || stat -f%z "$exe_file" 2>/dev/null || echo "unknown")
+            echo "Atlas Installer size: $exe_size bytes"
+
+            # Check what Tauri created in the release directory
+            echo "=== Contents of release directory ==="
+            ls -lah "src-tauri/target/${tauri_target}/release" | head -30
+            echo "=== Looking for bundled resources ==="
+            find "src-tauri/target/${tauri_target}/release" -name "_up_" -o -name "resources" 2>/dev/null || echo "No resource directories found"
+
+            # Create build directory and copy everything needed
+            mkdir -p build
+            cp "$exe_file" "build/Atlas Installer.exe"
+
+            # Check if there's a resources directory or _up_ directory that needs to be included
+            if [ -d "src-tauri/target/${tauri_target}/release/_up_" ]; then
+              echo "Found _up_ directory with resources"
+              cp -r "src-tauri/target/${tauri_target}/release/_up_" "build/"
+            fi
+
+            # Create zip package using PowerShell on Windows
+            target="atlas_${version}_${platform}_${arch}.zip"
+            powershell -Command "Compress-Archive -Path 'build/*' -DestinationPath 'build/$target' -Force"
+            installer="build/$target"
             ;;
         esac
 
-        [ -z "$installer" ] && { echo "ERROR: No installer found"; ls -la build/; exit 1; }
-
-        # Determine target filename
-        ext="${installer##*.}"
-        [ "$ext" = "gz" ] && ext="tar.gz"
-        target="atlas_${version}_${platform}_${arch}.${ext}"
-
-        # Move and process installer
-        mv "$installer" "build/$target"
-        installer_path="$(pwd)/build/$target"
+        installer_path="$(pwd)/$installer"
 
         # Generate checksum (prefer sha256sum, fallback to shasum)
         hash_cmd="sha256sum"
         command -v sha256sum >/dev/null || hash_cmd="shasum -a 256"
-        $hash_cmd "build/$target" | cut -d' ' -f1 > "build/${target}.sha256"
-        checksum_path="$(pwd)/build/${target}.sha256"
+        $hash_cmd "$installer" | cut -d' ' -f1 > "${installer}.sha256"
+        checksum_path="$(pwd)/${installer}.sha256"
 
         # Copy to dist for workflow compatibility
         mkdir -p ../../dist/
-        cp "build/$target" "build/${target}.sha256" ../../dist/
+        cp "$installer" "${installer}.sha256" ../../dist/
 
         # Set outputs and report
         echo "installer-path=$installer_path" >> "$GITHUB_OUTPUT"
         echo "checksum-path=$checksum_path" >> "$GITHUB_OUTPUT"
-        echo "Installer: $target ($(du -h build/$target | cut -f1))"
+
+        # Get file size (cross-platform compatible)
+        if command -v stat >/dev/null 2>&1; then
+          # macOS and BSD use -f, Linux uses -c
+          size=$(stat -f%z "$installer" 2>/dev/null || stat -c%s "$installer" 2>/dev/null || echo "unknown")
+        else
+          size="unknown"
+        fi
+        echo "Installer: $target (size: $size bytes)"

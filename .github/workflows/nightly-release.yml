@@ -182,6 +182,7 @@ jobs:
       - name: Prepare macOS AMD64 files
         run: |
           mkdir -p dist
+          # Binary is already signed in build job
           cp ./artifacts/binary-darwin-amd64/atlas dist/atlas
           # Find and copy the actual .app directory
           if ls ./artifacts/web-app-darwin-amd64/*.app 1>/dev/null 2>&1; then
@@ -190,17 +191,6 @@ jobs:
             chmod +x "dist/Atlas Web Client.app/Contents/MacOS/tauri-app"
           fi
         shell: bash
-
-      - name: Sign atlas binary
-        uses: ./.github/actions/macos-sign
-        with:
-          binary-path: ./dist/atlas
-          macos-sign-p12: ${{ secrets.MACOS_SIGN_P12 }}
-          macos-sign-password: ${{ secrets.MACOS_SIGN_PASSWORD }}
-          macos-sign-identity: ${{ secrets.MACOS_SIGN_IDENTITY }}
-          macos-notary-issuer-id: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
-          macos-notary-key-id: ${{ secrets.MACOS_NOTARY_KEY_ID }}
-          macos-notary-key: ${{ secrets.MACOS_NOTARY_KEY }}
 
       - name: Create macOS AMD64 installer
         uses: ./.github/actions/create-installers
@@ -253,6 +243,7 @@ jobs:
       - name: Prepare macOS ARM64 files
         run: |
           mkdir -p dist
+          # Binary is already signed in build job
           cp ./artifacts/binary-darwin-arm64/atlas dist/atlas
           # Find and copy the actual .app directory
           if ls ./artifacts/web-app-darwin-arm64/*.app 1>/dev/null 2>&1; then
@@ -261,17 +252,6 @@ jobs:
             chmod +x "dist/Atlas Web Client.app/Contents/MacOS/tauri-app"
           fi
         shell: bash
-
-      - name: Sign atlas binary
-        uses: ./.github/actions/macos-sign
-        with:
-          binary-path: ./dist/atlas
-          macos-sign-p12: ${{ secrets.MACOS_SIGN_P12 }}
-          macos-sign-password: ${{ secrets.MACOS_SIGN_PASSWORD }}
-          macos-sign-identity: ${{ secrets.MACOS_SIGN_IDENTITY }}
-          macos-notary-issuer-id: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
-          macos-notary-key-id: ${{ secrets.MACOS_NOTARY_KEY_ID }}
-          macos-notary-key: ${{ secrets.MACOS_NOTARY_KEY }}
 
       - name: Create macOS ARM64 installer
         uses: ./.github/actions/create-installers
@@ -311,7 +291,7 @@ jobs:
 
   package-windows:
     needs: [version, build-binary-windows, build-web-app-windows]
-    runs-on: windows-latest
+    runs-on: windows-latest-8-cores
     steps:
       - name: Checkout
         uses: actions/checkout@v5

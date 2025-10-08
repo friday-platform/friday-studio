@@ -11,10 +11,18 @@ if [[ "$version" =~ ^(edge|nightly)-(.+)-(.+)(-(.+))?$ ]]; then
 
   if [ "$channel" = "edge" ] && [ "${#parts[@]}" -eq 4 ]; then
     # edge-DATE-TIME-SHA -> 0.0.0-edge.SHA.DATE.TIME
-    echo "0.0.0-edge.${parts[3]}.${parts[1]}.${parts[2]}"
+    # Remove leading zeros from TIME and SHA to comply with semver
+    time_no_zeros=$(echo "${parts[2]}" | sed 's/^0*//')
+    [ -z "$time_no_zeros" ] && time_no_zeros="0"
+    sha_no_zeros=$(echo "${parts[3]}" | sed 's/^0*//')
+    [ -z "$sha_no_zeros" ] && sha_no_zeros="0"
+    echo "0.0.0-edge.${sha_no_zeros}.${parts[1]}.${time_no_zeros}"
   else
     # nightly-DATE-SHA -> 0.0.0-nightly.SHA.DATE
-    echo "0.0.0-nightly.${parts[2]}.${parts[1]}"
+    # Remove leading zeros from SHA to comply with semver
+    sha_no_zeros=$(echo "${parts[2]}" | sed 's/^0*//')
+    [ -z "$sha_no_zeros" ] && sha_no_zeros="0"
+    echo "0.0.0-nightly.${sha_no_zeros}.${parts[1]}"
   fi
 elif [[ "$version" =~ ^v(.+)$ ]]; then
   # v1.2.3 -> 1.2.3

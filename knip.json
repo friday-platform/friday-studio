@@ -51,11 +51,6 @@
     "tools/evals": {
       "entry": ["agents/**/*.eval.ts!", "lib/*.ts!"],
       "project": ["agents/**/*.{ts,tsx,js,jsx}!", "lib/**/*.{ts,tsx,js,jsx}!"]
-    },
-    "tools/atlas-installer": {
-      "entry": ["src/preload.ts!", "src/renderer.ts!"],
-      "project": ["src/**/*.{ts,tsx,js,jsx}!"],
-      "ignore": ["src/preload.ts", "src/renderer.ts"]
     }
   },
   "ignore": [
@@ -65,9 +60,11 @@
     "**/.svelte-kit/**",
     "**/dist/**",
     "**/build/**",
-    "packages/vendor/**"
+    "packages/vendor/**",
+    "apps/atlas-installer/**"
   ],
   "ignoreDependencies": ["@std/*"],
+  "ignoreBinaries": ["tauri"],
   "ignoreExportsUsedInFile": { "interface": true, "type": true },
   "rules": {
     "files": "error",

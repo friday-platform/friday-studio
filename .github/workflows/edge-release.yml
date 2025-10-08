@@ -138,6 +138,10 @@ jobs:
 
       - name: Build Linux packages
         run: |
+          # Debug: List artifact contents
+          echo "=== Artifacts directory structure ==="
+          find ./artifacts -type f || true
+          echo "=================================="
 
           # Build AMD64 packages
           mkdir -p build
@@ -182,6 +186,7 @@ jobs:
       - name: Prepare macOS AMD64 files
         run: |
           mkdir -p dist
+          # Binary is already signed in build job
           cp ./artifacts/binary-darwin-amd64/atlas dist/atlas
           # Find and copy the actual .app directory
           if ls ./artifacts/web-app-darwin-amd64/*.app 1>/dev/null 2>&1; then
@@ -190,17 +195,6 @@ jobs:
             chmod +x "dist/Atlas Web Client.app/Contents/MacOS/tauri-app"
           fi
         shell: bash
-
-      - name: Sign atlas binary
-        uses: ./.github/actions/macos-sign
-        with:
-          binary-path: ./dist/atlas
-          macos-sign-p12: ${{ secrets.MACOS_SIGN_P12 }}
-          macos-sign-password: ${{ secrets.MACOS_SIGN_PASSWORD }}
-          macos-sign-identity: ${{ secrets.MACOS_SIGN_IDENTITY }}
-          macos-notary-issuer-id: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
-          macos-notary-key-id: ${{ secrets.MACOS_NOTARY_KEY_ID }}
-          macos-notary-key: ${{ secrets.MACOS_NOTARY_KEY }}
 
       - name: Create macOS AMD64 installer
         uses: ./.github/actions/create-installers
@@ -253,6 +247,7 @@ jobs:
       - name: Prepare macOS ARM64 files
         run: |
           mkdir -p dist
+          # Binary is already signed in build job
           cp ./artifacts/binary-darwin-arm64/atlas dist/atlas
           # Find and copy the actual .app directory
           if ls ./artifacts/web-app-darwin-arm64/*.app 1>/dev/null 2>&1; then
@@ -261,17 +256,6 @@ jobs:
             chmod +x "dist/Atlas Web Client.app/Contents/MacOS/tauri-app"
           fi
         shell: bash
-
-      - name: Sign atlas binary
-        uses: ./.github/actions/macos-sign
-        with:
-          binary-path: ./dist/atlas
-          macos-sign-p12: ${{ secrets.MACOS_SIGN_P12 }}
-          macos-sign-password: ${{ secrets.MACOS_SIGN_PASSWORD }}
-          macos-sign-identity: ${{ secrets.MACOS_SIGN_IDENTITY }}
-          macos-notary-issuer-id: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
-          macos-notary-key-id: ${{ secrets.MACOS_NOTARY_KEY_ID }}
-          macos-notary-key: ${{ secrets.MACOS_NOTARY_KEY }}
 
       - name: Create macOS ARM64 installer
         uses: ./.github/actions/create-installers
@@ -311,7 +295,7 @@ jobs:
 
   package-windows:
     needs: [version, build-binary-windows, build-web-app-windows]
-    runs-on: windows-latest
+    runs-on: windows-latest-8-cores
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -354,10 +338,8 @@ jobs:
           name: windows-packages
           path: |
             ./dist/atlas-bundle-*.zip
-            ./dist/atlas_*.exe
+            ./dist/atlas_*.zip
             ./dist/atlas_*.sha256
-            ./artifacts/binary-windows-amd64/atlas_*.zip
-            ./artifacts/binary-windows-amd64/atlas_*.sha256
           retention-days: 1
 
   # ==================== RELEASE & UPLOAD JOBS ====================
@@ -377,8 +359,18 @@ jobs:
 
       - name: Prepare release artifacts
         run: |
+          # Preserve Windows installer before flattening (to avoid collision with CLI binary)
+          mkdir -p ./installer-temp
+          cp ./dist/windows-packages/atlas_*.zip ./installer-temp/ 2>/dev/null || true
+          cp ./dist/windows-packages/atlas_*.sha256 ./installer-temp/ 2>/dev/null || true
+
           # Move all artifacts to a flat structure for release
           find ./dist -type f \( -name "*.tar.gz" -o -name "*.zip" -o -name "*.deb" -o -name "*.rpm" -o -name "*.exe" -o -name "*.msi" \) -exec mv {} ./dist/ \; 2>/dev/null || true
+
+          # Restore Windows installer to overwrite CLI binary zip (both named atlas_*.zip)
+          cp ./installer-temp/* ./dist/ 2>/dev/null || true
+          rm -rf ./installer-temp
+
           ls -la ./dist/
         shell: bash
 
@@ -412,7 +404,6 @@ jobs:
             ./dist/atlas-bundle-*.zip
             ./dist/atlas_*.tar.gz
             ./dist/atlas_*.zip
-            ./dist/atlas_*.exe
             ./dist/atlas_*.deb
             ./dist/atlas-*.rpm
         env:

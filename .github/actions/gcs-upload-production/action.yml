@@ -17,7 +17,6 @@ runs:
       uses: actions/download-artifact@v5
       with:
         path: ./artifacts/
-        merge-multiple: true
 
     - name: Authenticate to Google Cloud (Production)
       uses: google-github-actions/auth@v3
@@ -54,8 +53,17 @@ runs:
         VERSION="${{ inputs.version }}"
         cd ./artifacts
 
+        # Preserve Windows installer before flattening (to avoid collision with CLI binary)
+        mkdir -p ../installer-temp
+        cp ./windows-packages/atlas_*.zip ../installer-temp/ 2>/dev/null || true
+        cp ./windows-packages/atlas_*.sha256 ../installer-temp/ 2>/dev/null || true
+
         # Move all atlas files to current directory (flatten structure)
         find . -type f -name "atlas_*" -exec mv {} . \; 2>/dev/null || true
+
+        # Restore Windows installer to overwrite CLI binary zip (both named atlas_*.zip)
+        cp ../installer-temp/* . 2>/dev/null || true
+        rm -rf ../installer-temp
 
         # Upload all artifacts to production bucket with version prefix (flat structure)
         if ls atlas_*.tar.gz 1> /dev/null 2>&1; then

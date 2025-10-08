@@ -22,7 +22,7 @@
   "exclude": [
     "!integration-tests/**/*.test.ts",
     "apps/web-client/.svelte-kit",
-    "tools/atlas-installer",
+    "apps/atlas-installer",
     "packages/vendor/**"
   ],
   "unstable": ["broadcast-channel", "worker-options", "otel", "kv", "raw-imports"],

@@ -1,0 +1,18 @@
+{
+  "name": "@atlas/installer",
+  "version": "1.0.0",
+  "exports": "./mod.ts",
+  "tasks": {
+    "vendor": "deno run --allow-read --allow-write --allow-env --allow-net --allow-run vendor.ts",
+    "compile": "deno run --allow-read --allow-write --allow-env npm:typescript/tsc -p tsconfig.json",
+    "prepare": "deno task vendor && deno task compile",
+    "serve": "deno run --allow-net --allow-read jsr:@std/http/file-server --port 1420",
+    "dev": "deno task prepare && deno task serve",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "deno task prepare && tauri build",
+    "tauri:build:mac": "deno task prepare && tauri build --target aarch64-apple-darwin",
+    "tauri:build:mac:x64": "deno task prepare && tauri build --target x86_64-apple-darwin",
+    "tauri:build:win": "deno task prepare && tauri build --target x86_64-pc-windows-msvc"
+  }
+}
