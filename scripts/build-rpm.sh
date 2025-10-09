@@ -64,7 +64,7 @@ rm -rf "${BUILD_ROOT}"
 mkdir -p "${BUILD_ROOT}"/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
 mkdir -p "${BUILD_ROOT}/BUILDROOT/atlas-${RPM_VERSION}-${RPM_RELEASE}.${RPM_ARCH}"/{usr/bin,etc/atlas,"usr/share/doc/atlas-${RPM_VERSION}"}
 
-# Copy binary to RPM build structure
+# Copy CLI binary to RPM build structure
 cp "build/atlas" "${BUILD_ROOT}/BUILDROOT/atlas-${RPM_VERSION}-${RPM_RELEASE}.${RPM_ARCH}/usr/bin/atlas"
 chmod 755 "${BUILD_ROOT}/BUILDROOT/atlas-${RPM_VERSION}-${RPM_RELEASE}.${RPM_ARCH}/usr/bin/atlas"
 
@@ -72,6 +72,16 @@ chmod 755 "${BUILD_ROOT}/BUILDROOT/atlas-${RPM_VERSION}-${RPM_RELEASE}.${RPM_ARC
 mkdir -p "${BUILD_ROOT}/BUILDROOT/atlas-${RPM_VERSION}-${RPM_RELEASE}.${RPM_ARCH}/usr/share/atlas/scripts"
 cp "scripts/fetch-credentials.sh" "${BUILD_ROOT}/BUILDROOT/atlas-${RPM_VERSION}-${RPM_RELEASE}.${RPM_ARCH}/usr/share/atlas/scripts/fetch-credentials.sh"
 chmod 755 "${BUILD_ROOT}/BUILDROOT/atlas-${RPM_VERSION}-${RPM_RELEASE}.${RPM_ARCH}/usr/share/atlas/scripts/fetch-credentials.sh"
+
+# Copy web-app files if they exist
+if [ -d "build/web-app-extract" ]; then
+    echo "Including Atlas Web Client in package..."
+    # Copy all extracted web-app files into the package
+    cp -r build/web-app-extract/* "${BUILD_ROOT}/BUILDROOT/atlas-${RPM_VERSION}-${RPM_RELEASE}.${RPM_ARCH}/"
+    echo "Web-app files included."
+else
+    echo "No web-app files found - building CLI-only package"
+fi
 
 # Create systemd service file
 mkdir -p "${BUILD_ROOT}/BUILDROOT/atlas-${RPM_VERSION}-${RPM_RELEASE}.${RPM_ARCH}/usr/lib/systemd/system"
@@ -81,11 +91,11 @@ Description=Atlas AI Agent Orchestration Daemon
 After=network.target
 # Ensure environment file exists before starting
 ConditionPathExists=/etc/atlas/env
-# Additional check that ANTHROPIC_API_KEY is configured
-ExecCondition=/bin/bash -c 'grep -q "^ATLAS_KEY=" /etc/atlas/env'
 
 [Service]
 Type=exec
+# Additional check that ATLAS_KEY is configured
+ExecCondition=/bin/bash -c 'grep -q "^ATLAS_KEY=" /etc/atlas/env'
 ExecStart=/usr/bin/atlas daemon start --port 8080
 ExecStop=/usr/bin/atlas daemon stop
 Restart=on-failure
@@ -120,12 +130,51 @@ cat > "${BUILD_ROOT}/BUILDROOT/atlas-${RPM_VERSION}-${RPM_RELEASE}.${RPM_ARCH}/u
 ${EULA_CONTENT}
 EOF
 
+# Generate file list for %files section dynamically
+# This captures all files including web-app files if present
+BUILDROOT_PATH="${BUILD_ROOT}/BUILDROOT/atlas-${RPM_VERSION}-${RPM_RELEASE}.${RPM_ARCH}"
+
+# Create a temporary file for the file list to avoid shell expansion issues
+FILES_LIST_FILE="${BUILD_ROOT}/files.list"
+> "${FILES_LIST_FILE}"
+
+# Find all files and symlinks, output with null delimiter to handle spaces
+while IFS= read -r -d '' file; do
+    # Remove the buildroot prefix to get the actual install path
+    install_path="${file#${BUILDROOT_PATH}}"
+    if [[ -n "$install_path" && "$install_path" != "/" ]]; then
+        # Quote paths with spaces for RPM spec
+        if [[ "$install_path" =~ [[:space:]] ]]; then
+            echo "\"${install_path}\"" >> "${FILES_LIST_FILE}"
+        else
+            echo "${install_path}" >> "${FILES_LIST_FILE}"
+        fi
+    fi
+done < <(find "${BUILDROOT_PATH}" \( -type f -o -type l \) -print0 | sort -z)
+
+# Create a temporary file for the directory list
+DIRS_LIST_FILE="${BUILD_ROOT}/dirs.list"
+> "${DIRS_LIST_FILE}"
+
+# Find all directories, output with null delimiter
+while IFS= read -r -d '' dir; do
+    dir_path="${dir#${BUILDROOT_PATH}}"
+    if [[ -n "$dir_path" && "$dir_path" != "/" ]]; then
+        # Quote paths with spaces for RPM spec
+        if [[ "$dir_path" =~ [[:space:]] ]]; then
+            echo "%dir \"${dir_path}\"" >> "${DIRS_LIST_FILE}"
+        else
+            echo "%dir ${dir_path}" >> "${DIRS_LIST_FILE}"
+        fi
+    fi
+done < <(find "${BUILDROOT_PATH}" -type d ! -path "${BUILDROOT_PATH}" -print0 | sort -z)
+
 # Create spec file
 cat > "${BUILD_ROOT}/SPECS/atlas.spec" << EOF
 Name:           atlas
 Version:        ${RPM_VERSION}
 Release:        ${RPM_RELEASE}%{?dist}
-Summary:        Atlas AI Agent Orchestration Platform
+Summary:        Atlas AI Agent Orchestration Platform (CLI and GUI)
 License:        Proprietary
 URL:            https://atlas.tempestdx.com
 BuildArch:      ${RPM_ARCH}
@@ -133,6 +182,9 @@ BuildArch:      ${RPM_ARCH}
 Requires:       glibc
 Requires:       systemd
 Requires:       wget
+Requires:       gtk3
+Requires:       webkit2gtk4.1
+Requires:       libayatana-appindicator-gtk3
 Requires(pre):  /usr/sbin/useradd, /usr/bin/getent
 Requires(post): systemd
 Requires(preun): systemd
@@ -143,7 +195,14 @@ Atlas creates intelligent systems from simple conversations. Simply tell Atlas
 what you want to achieve, and it creates intelligent operations that plan,
 execute, and adapt, all without brittle workflows or technical setup.
 
+This package includes both the Atlas CLI and Atlas Web Client GUI.
+
 %pre
+# Backup /etc/atlas/env if it contains user configuration (not just placeholder)
+if [ -f /etc/atlas/env ] && grep -q "^ATLAS_KEY=" /etc/atlas/env 2>/dev/null; then
+    cp /etc/atlas/env /etc/atlas/env.backup-upgrade
+fi
+
 # Create atlas user if it doesn't exist
 getent group atlas >/dev/null || groupadd -r atlas
 getent passwd atlas >/dev/null || useradd -r -g atlas -d /var/lib/atlas -s /sbin/nologin -c "Atlas daemon user" atlas
@@ -168,6 +227,24 @@ chown atlas:atlas /var/lib/atlas
 chown atlas:atlas /var/log/atlas
 chmod 755 /usr/bin/atlas
 
+# Restore backed up configuration if it exists
+if [ -f /etc/atlas/env.backup-upgrade ]; then
+    mv /etc/atlas/env.backup-upgrade /etc/atlas/env
+elif [ ! -f /etc/atlas/env ]; then
+    # Create default environment file with placeholder only if no backup and doesn't exist
+    cat > /etc/atlas/env << 'ENVFILE'
+# Atlas Configuration
+# Get your Atlas Key from: https://atlas.tempestdx.com/
+#
+# Uncomment and add your Atlas Key below:
+# ATLAS_KEY=your_atlas_key_here
+ENVFILE
+fi
+
+# Always ensure correct permissions (fix upgrades from older versions)
+chmod 640 /etc/atlas/env
+chown root:atlas /etc/atlas/env
+
 # Only configure on first install, not upgrades
 if [ \$1 -eq 1 ]; then
     # Display EULA for acceptance
@@ -184,55 +261,6 @@ EULA_TEXT
         echo "You must accept the End User License Agreement to install Atlas."
         exit 1
     fi
-
-    # Check if credentials already exist
-    if [ ! -f /etc/atlas/env ] || ! grep -q "^ANTHROPIC_API_KEY=" /etc/atlas/env 2>/dev/null; then
-        echo ""
-        echo "=== Atlas Key Configuration ==="
-        echo ""
-        echo "To use Atlas, you need an Atlas Key (JWT token)."
-        echo "Get your Atlas Key from: https://atlas.tempestdx.com/"
-        echo ""
-
-        # Read Atlas Key
-        while true; do
-            read -r -p "Enter your Atlas Key (JWT token): " ATLAS_KEY
-
-            if [ -z "\${ATLAS_KEY}" ]; then
-                echo "No Atlas Key provided. You can configure credentials manually in /etc/atlas/env"
-                break
-            fi
-
-            # Basic JWT format validation (three parts separated by dots)
-            if echo "\${ATLAS_KEY}" | grep -q '^[A-Za-z0-9_-]\+\.[A-Za-z0-9_-]\+\.[A-Za-z0-9_-]\+$'; then
-                # Save the Atlas Key to environment file
-                echo "Saving Atlas Key..."
-
-                # Create or update the environment file
-                if [ -f /etc/atlas/env ]; then
-                    # Remove any existing ATLAS_KEY line
-                    grep -v "^ATLAS_KEY=" /etc/atlas/env > /etc/atlas/env.tmp || true
-                    mv /etc/atlas/env.tmp /etc/atlas/env
-                fi
-
-                # Add the new ATLAS_KEY
-                echo "ATLAS_KEY=\${ATLAS_KEY}" >> /etc/atlas/env
-                chmod 644 /etc/atlas/env
-                chown root:root /etc/atlas/env
-
-                echo "Atlas Key saved successfully."
-                echo "Credentials will be fetched when the daemon starts."
-                break
-            else
-                echo "Invalid Atlas Key format. Atlas Keys are JWT tokens with three parts separated by dots."
-                read -r -p "Try again? (y/n): " TRY_AGAIN
-                if [ "\${TRY_AGAIN}" != "y" ]; then
-                    echo "Skipping Atlas Key configuration. Configure manually in /etc/atlas/env"
-                    break
-                fi
-            fi
-        done
-    fi
 fi
 
 # Reload systemd
@@ -245,24 +273,26 @@ systemctl enable atlas.service
 if [ -f /etc/atlas/env ] && grep -q "^ATLAS_KEY=" /etc/atlas/env 2>/dev/null; then
     echo "Starting Atlas daemon with configured credentials..."
     systemctl start atlas.service
-else
-    echo "Atlas daemon enabled but not started - no credentials configured."
-    echo "Configure credentials in /etc/atlas/env and run: systemctl start atlas.service"
 fi
 
 echo ""
 echo "=== Atlas Installation Complete ==="
 echo ""
 if systemctl is-active --quiet atlas.service 2>/dev/null; then
-    echo "Atlas daemon has been installed and started as a systemd service."
+    echo "✓ Atlas daemon is running"
+    echo "  Status: systemctl status atlas.service"
+    echo "  Logs:   journalctl -u atlas.service -f"
 else
-    echo "Atlas daemon has been installed and enabled as a systemd service."
-    echo "Service will start automatically when credentials are properly configured."
+    echo "⚠ Atlas daemon is installed but not running"
+    echo ""
+    echo "To start Atlas:"
+    echo "  1. Get your Atlas Key from https://atlas.tempestdx.com/"
+    echo "  2. Edit /etc/atlas/env and add: ATLAS_KEY=your_key_here"
+    echo "  3. Start the daemon: sudo systemctl start atlas.service"
 fi
-echo "Service status: systemctl status atlas.service"
-echo "View logs: journalctl -u atlas.service -f"
 echo ""
-echo "Atlas CLI is available at: /usr/bin/atlas"
+echo "Atlas CLI: /usr/bin/atlas"
+echo "Atlas Web Client: atlas-web-client"
 echo ""
 
 %preun
@@ -295,10 +325,8 @@ fi
 
 %files
 %defattr(-,root,root,-)
-/usr/bin/atlas
-/usr/lib/systemd/system/atlas.service
-/usr/share/atlas/scripts/fetch-credentials.sh
-%doc /usr/share/doc/atlas-${RPM_VERSION}/LICENSE
+$(cat "${DIRS_LIST_FILE}")
+$(cat "${FILES_LIST_FILE}")
 
 %changelog
 * $(date "+%a %b %d %Y") Tempest Labs <support@tempestdx.com> - ${VERSION}-1
@@ -306,10 +334,12 @@ fi
 EOF
 
 # Build the RPM
+# The %defattr(-,root,root,-) in the spec file handles ownership
 cd "${BUILD_ROOT}"
 rpmbuild --define "_topdir $(pwd)" \
          --define "_rpmdir $(pwd)/RPMS" \
          --define "debug_package %{nil}" \
+         --define "_build_id_links none" \
          --buildroot "$(pwd)/BUILDROOT/atlas-${RPM_VERSION}-${RPM_RELEASE}.${RPM_ARCH}" \
          -bb SPECS/atlas.spec
 

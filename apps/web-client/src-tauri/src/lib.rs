@@ -19,9 +19,10 @@ use windows::{
 };
 
 #[cfg(target_os = "linux")]
-use gtk4::prelude::*;
+use gtk::prelude::*;
 #[cfg(target_os = "linux")]
-use gtk4::FileDialog;
+use gtk::{FileChooserAction, FileChooserNative, ResponseType};
+
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
@@ -39,15 +40,22 @@ async fn run_diagnostics(app: AppHandle) -> Result<String, String> {
     use std::io::{BufRead, BufReader};
     use std::process::Stdio;
 
-    // Get the home directory and build path to atlas
-    let home = std::env::var("HOME")
-        .or_else(|_| std::env::var("USERPROFILE"))
-        .map_err(|_| "Could not determine home directory".to_string())?;
-
+    // Try to find atlas binary in multiple locations
     let atlas_path = if cfg!(target_os = "windows") {
+        let home = std::env::var("USERPROFILE")
+            .map_err(|_| "Could not determine home directory".to_string())?;
         format!("{}\\.atlas\\bin\\atlas.exe", home)
     } else {
-        format!("{}/.atlas/bin/atlas", home)
+        // Try system path first (for package installations)
+        let system_path = "/usr/bin/atlas";
+        if std::path::Path::new(system_path).exists() {
+            system_path.to_string()
+        } else {
+            // Fall back to user installation
+            let home = std::env::var("HOME")
+                .map_err(|_| "Could not determine home directory".to_string())?;
+            format!("{}/.atlas/bin/atlas", home)
+        }
     };
 
     // Emit initial progress update
@@ -329,62 +337,39 @@ async fn open_file_or_folder_picker(app: AppHandle, multiple: bool, _folders_onl
         app.run_on_main_thread(move || {
             let result = || -> Result<Vec<String>, String> {
                 // Initialize GTK if not already initialized
-                gtk4::init().map_err(|_| "Failed to initialize GTK4".to_string())?;
-
-                let dialog = FileDialog::new();
-                dialog.set_title("Select Files or Folders");
-
-                // Note: GTK4 FileDialog doesn't support selecting both files and folders
-                // in the same dialog like macOS. File selection is default.
-                // For folder selection, we'd need to use open_folder_future instead
-
-                // GTK4 uses async callbacks
-                let (dialog_tx, dialog_rx) = std::sync::mpsc::channel();
-
-                if multiple {
-                    dialog.open_multiple(
-                        None::<&gtk4::Window>,
-                        None::<&gtk4::gio::Cancellable>,
-                        move |result| {
-                            let paths = match result {
-                                Ok(files) => {
-                                    files
-                                        .iter::<gtk4::gio::File>()
-                                        .filter_map(|f| f.ok())
-                                        .filter_map(|file| file.path())
-                                        .filter_map(|path| path.to_str().map(|s| s.to_string()))
-                                        .collect()
-                                },
-                                Err(_) => Vec::new(),
-                            };
-                            let _ = dialog_tx.send(paths);
-                        },
-                    );
-                } else {
-                    dialog.open(
-                        None::<&gtk4::Window>,
-                        None::<&gtk4::gio::Cancellable>,
-                        move |result| {
-                            let paths = match result {
-                                Ok(file) => {
-                                    if let Some(path) = file.path() {
-                                        if let Some(path_str) = path.to_str() {
-                                            vec![path_str.to_string()]
-                                        } else {
-                                            Vec::new()
-                                        }
-                                    } else {
-                                        Vec::new()
-                                    }
-                                },
-                                Err(_) => Vec::new(),
-                            };
-                            let _ = dialog_tx.send(paths);
-                        },
-                    );
+                if !gtk::is_initialized() {
+                    gtk::init().map_err(|_| "Failed to initialize GTK".to_string())?;
                 }
 
-                dialog_rx.recv().map_err(|e| format!("Failed to receive dialog result: {}", e))
+                // Use FileChooserNative for native Linux file dialog
+                let action = if _folders_only {
+                    FileChooserAction::SelectFolder
+                } else {
+                    FileChooserAction::Open
+                };
+
+                let dialog = FileChooserNative::new(
+                    Some("Select Files or Folders"),
+                    None::<&gtk::Window>,
+                    action,
+                    Some("Open"),
+                    Some("Cancel"),
+                );
+
+                dialog.set_select_multiple(multiple);
+
+                let response = dialog.run();
+
+                if response == ResponseType::Accept {
+                    let paths: Vec<String> = dialog
+                        .filenames()
+                        .into_iter()
+                        .filter_map(|path| path.to_str().map(|s| s.to_string()))
+                        .collect();
+                    Ok(paths)
+                } else {
+                    Ok(Vec::new())
+                }
             };
 
             let _ = tx.send(result());
@@ -401,15 +386,22 @@ async fn open_file_or_folder_picker(app: AppHandle, multiple: bool, _folders_onl
 
 #[tauri::command]
 async fn restart_atlas_daemon() -> Result<String, String> {
-    // Get the atlas binary path
-    let home = std::env::var("HOME")
-        .or_else(|_| std::env::var("USERPROFILE"))
-        .map_err(|_| "Could not determine home directory".to_string())?;
-
+    // Try to find atlas binary in multiple locations
     let atlas_bin = if cfg!(target_os = "windows") {
+        let home = std::env::var("USERPROFILE")
+            .map_err(|_| "Could not determine home directory".to_string())?;
         PathBuf::from(home).join(".atlas").join("bin").join("atlas.exe")
     } else {
-        PathBuf::from(home).join(".atlas").join("bin").join("atlas")
+        // Try system path first (for package installations)
+        let system_path = PathBuf::from("/usr/bin/atlas");
+        if system_path.exists() {
+            system_path
+        } else {
+            // Fall back to user installation
+            let home = std::env::var("HOME")
+                .map_err(|_| "Could not determine home directory".to_string())?;
+            PathBuf::from(home).join(".atlas").join("bin").join("atlas")
+        }
     };
 
     if !atlas_bin.exists() {
@@ -478,28 +470,42 @@ pub fn run() {
             let about_item = MenuItem::with_id(app, "about-custom", "About Atlas", true, None::<&str>)?;
 
             // Create app menu (macOS only)
-            let app_menu = Submenu::new(app, "Atlas Web Client", true)?;
-            app_menu.append(&about_item)?;
-            app_menu.append(&PredefinedMenuItem::separator(app)?)?;
-            app_menu.append(&settings_item)?;
-            app_menu.append(&PredefinedMenuItem::separator(app)?)?;
-            app_menu.append(&PredefinedMenuItem::services(app, None)?)?;
-            app_menu.append(&PredefinedMenuItem::separator(app)?)?;
-            app_menu.append(&PredefinedMenuItem::hide(app, None)?)?;
-            app_menu.append(&PredefinedMenuItem::hide_others(app, None)?)?;
-            app_menu.append(&PredefinedMenuItem::show_all(app, None)?)?;
-            app_menu.append(&PredefinedMenuItem::separator(app)?)?;
-            app_menu.append(&PredefinedMenuItem::quit(app, None)?)?;
+            #[cfg(target_os = "macos")]
+            let app_menu = {
+                let menu = Submenu::new(app, "Atlas Web Client", true)?;
+                menu.append(&about_item)?;
+                menu.append(&PredefinedMenuItem::separator(app)?)?;
+                menu.append(&settings_item)?;
+                menu.append(&PredefinedMenuItem::separator(app)?)?;
+                menu.append(&PredefinedMenuItem::services(app, None)?)?;
+                menu.append(&PredefinedMenuItem::separator(app)?)?;
+                menu.append(&PredefinedMenuItem::hide(app, None)?)?;
+                menu.append(&PredefinedMenuItem::hide_others(app, None)?)?;
+                menu.append(&PredefinedMenuItem::show_all(app, None)?)?;
+                menu.append(&PredefinedMenuItem::separator(app)?)?;
+                menu.append(&PredefinedMenuItem::quit(app, None)?)?;
+                menu
+            };
 
             // Create file menu
             let file_menu = Submenu::new(app, "File", true)?;
+            #[cfg(target_os = "macos")]
             file_menu.append(&PredefinedMenuItem::close_window(app, None)?)?;
+            #[cfg(not(target_os = "macos"))]
+            {
+                file_menu.append(&settings_item)?;
+                file_menu.append(&PredefinedMenuItem::separator(app)?)?;
+                file_menu.append(&PredefinedMenuItem::quit(app, None)?)?;
+            }
 
             // Create edit menu
             let edit_menu = Submenu::new(app, "Edit", true)?;
-            edit_menu.append(&PredefinedMenuItem::undo(app, None)?)?;
-            edit_menu.append(&PredefinedMenuItem::redo(app, None)?)?;
-            edit_menu.append(&PredefinedMenuItem::separator(app)?)?;
+            #[cfg(target_os = "macos")]
+            {
+                edit_menu.append(&PredefinedMenuItem::undo(app, None)?)?;
+                edit_menu.append(&PredefinedMenuItem::redo(app, None)?)?;
+                edit_menu.append(&PredefinedMenuItem::separator(app)?)?;
+            }
             edit_menu.append(&PredefinedMenuItem::cut(app, None)?)?;
             edit_menu.append(&PredefinedMenuItem::copy(app, None)?)?;
             edit_menu.append(&PredefinedMenuItem::paste(app, None)?)?;
@@ -507,24 +513,37 @@ pub fn run() {
 
             // Create view menu
             let view_menu = Submenu::new(app, "View", true)?;
+            #[cfg(target_os = "macos")]
             view_menu.append(&PredefinedMenuItem::fullscreen(app, None)?)?;
 
             // Create window menu
             let window_menu = Submenu::new(app, "Window", true)?;
             window_menu.append(&PredefinedMenuItem::minimize(app, None)?)?;
+            #[cfg(target_os = "macos")]
             window_menu.append(&PredefinedMenuItem::maximize(app, None)?)?;
 
             // Create help menu with Discord link and diagnostics
             let help_menu = Submenu::new(app, "Help", true)?;
+            #[cfg(not(target_os = "macos"))]
+            help_menu.append(&about_item)?;
+            #[cfg(not(target_os = "macos"))]
+            help_menu.append(&PredefinedMenuItem::separator(app)?)?;
             help_menu.append(&diagnostics_item)?;
             help_menu.append(&atlas_logs_item)?;
             help_menu.append(&PredefinedMenuItem::separator(app)?)?;
             help_menu.append(&discord_help)?;
 
-            // Build the menu
+            // Build the menu (platform-specific)
+            #[cfg(target_os = "macos")]
             let menu = Menu::with_items(
                 app,
                 &[&app_menu, &file_menu, &edit_menu, &view_menu, &window_menu, &help_menu],
+            )?;
+
+            #[cfg(not(target_os = "macos"))]
+            let menu = Menu::with_items(
+                app,
+                &[&file_menu, &edit_menu, &view_menu, &window_menu, &help_menu],
             )?;
 
             // Set the menu for the app

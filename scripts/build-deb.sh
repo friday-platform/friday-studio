@@ -46,7 +46,7 @@ mkdir -p "${PKG_DIR}/DEBIAN"
 mkdir -p "${PKG_DIR}/usr/bin"
 mkdir -p "${PKG_DIR}/usr/share/doc/atlas"
 
-# Copy binary
+# Copy CLI binary
 cp "build/atlas" "${PKG_DIR}/usr/bin/atlas"
 chmod 755 "${PKG_DIR}/usr/bin/atlas"
 
@@ -55,6 +55,16 @@ mkdir -p "${PKG_DIR}/usr/share/atlas/scripts"
 cp "scripts/fetch-credentials.sh" "${PKG_DIR}/usr/share/atlas/scripts/fetch-credentials.sh"
 chmod 755 "${PKG_DIR}/usr/share/atlas/scripts/fetch-credentials.sh"
 
+# Copy web-app files if they exist
+if [ -d "build/web-app-extract" ]; then
+    echo "Including Atlas Web Client in package..."
+    # Copy all extracted web-app files into the package
+    cp -r build/web-app-extract/* "${PKG_DIR}/"
+    echo "Web-app files included."
+else
+    echo "No web-app files found - building CLI-only package"
+fi
+
 
 # Create control file
 cat > "${PKG_DIR}/DEBIAN/control" << EOF
@@ -62,14 +72,16 @@ Package: atlas
 Version: ${DEB_VERSION}
 Architecture: ${DEB_ARCH}
 Maintainer: Tempest Labs, Inc. <support@tempestdx.com>
-Depends: libc6, debconf (>= 1.5.19), wget
+Depends: libc6, debconf (>= 1.5.19), wget, libgtk-3-0, libwebkit2gtk-4.1-0, libayatana-appindicator3-1
 Section: utils
 Priority: optional
 Homepage: https://atlas.tempestdx.com
-Description: Atlas AI Agent Orchestration Platform
+Description: Atlas AI Agent Orchestration Platform (CLI and GUI)
  Atlas creates intelligent systems from simple conversations. Simply tell Atlas
  what you want to achieve, and it creates intelligent operations that plan,
  execute, and adapt, all without brittle workflows or technical setup.
+ .
+ This package includes both the Atlas CLI and Atlas Web Client GUI.
 EOF
 
 # Format EULA text for debconf (add space and dot at beginning of each line)
@@ -82,15 +94,6 @@ Type: boolean
 Default: false
 Description: Do you accept the Atlas End User License Agreement?
 ${FORMATTED_EULA}
-
-Template: atlas/atlaskey
-Type: string
-Default:
-Description: Enter your Atlas Key:
- To use Atlas, you need an Atlas Key (JWT token).
- Get your Atlas Key from: https://atlas.tempestdx.com/
- .
- The Atlas Key will be used to automatically fetch your AI agent credentials.
 EOF
 
 # Create config script
@@ -113,12 +116,6 @@ if [ "$1" = "configure" ] && [ -z "$2" ]; then
         echo "You must accept the End User License Agreement to install Atlas."
         exit 1
     fi
-
-    # Ask for Atlas Key if not already configured
-    if [ ! -f /etc/atlas/env ] || ! grep -q "^ANTHROPIC_API_KEY=" /etc/atlas/env 2>/dev/null; then
-        db_input high atlas/atlaskey || true
-        db_go || true
-    fi
 fi
 
 exit 0
@@ -129,6 +126,11 @@ chmod 755 "${PKG_DIR}/DEBIAN/config"
 cat > "${PKG_DIR}/DEBIAN/preinst" << 'EOF'
 #!/bin/bash
 set -e
+
+# Backup /etc/atlas/env if it contains user configuration (not just placeholder)
+if [ -f /etc/atlas/env ] && grep -q "^ATLAS_KEY=" /etc/atlas/env 2>/dev/null; then
+    cp /etc/atlas/env /etc/atlas/env.backup-upgrade
+fi
 
 # Stop existing atlas daemon if running
 if systemctl is-active --quiet atlas.service 2>/dev/null; then
@@ -166,32 +168,23 @@ chown atlas:atlas /var/lib/atlas
 chown atlas:atlas /var/log/atlas
 chmod 755 /usr/bin/atlas
 
-# Handle Atlas Key from debconf
-if [ "$1" = "configure" ]; then
-    # Get Atlas Key from debconf
-    db_get atlas/atlaskey
-    if [ -n "$RET" ]; then
-        # Save the Atlas Key to environment file
-        echo "Atlas Key provided. Saving to configuration..."
-
-        # Create or update the environment file with ATLAS_KEY
-        if [ -f /etc/atlas/env ]; then
-            # Remove any existing ATLAS_KEY line
-            grep -v "^ATLAS_KEY=" /etc/atlas/env > /etc/atlas/env.tmp || true
-            mv /etc/atlas/env.tmp /etc/atlas/env
-        fi
-
-        # Add the new ATLAS_KEY
-        echo "ATLAS_KEY=$RET" >> /etc/atlas/env
-        chmod 644 /etc/atlas/env
-        chown root:root /etc/atlas/env
-
-        echo "Atlas Key saved successfully."
-        echo "Credentials will be fetched when the daemon starts."
-    else
-        echo "No Atlas Key provided. You can configure credentials manually in /etc/atlas/env"
-    fi
+# Restore backed up configuration if it exists
+if [ -f /etc/atlas/env.backup-upgrade ]; then
+    mv /etc/atlas/env.backup-upgrade /etc/atlas/env
+elif [ ! -f /etc/atlas/env ]; then
+    # Create default environment file with placeholder only if no backup and doesn't exist
+    cat > /etc/atlas/env << 'ENVFILE'
+# Atlas Configuration
+# Get your Atlas Key from: https://atlas.tempestdx.com/
+#
+# Uncomment and add your Atlas Key below:
+# ATLAS_KEY=your_atlas_key_here
+ENVFILE
 fi
+
+# Always ensure correct permissions (fix upgrades from older versions)
+chmod 640 /etc/atlas/env
+chown root:atlas /etc/atlas/env
 
 # Create systemd service file
 cat > /etc/systemd/system/atlas.service << 'EOSF'
@@ -200,11 +193,11 @@ Description=Atlas AI Agent Orchestration Daemon
 After=network.target
 # Ensure environment file exists before starting
 ConditionPathExists=/etc/atlas/env
-# Additional check that ANTHROPIC_API_KEY is configured
-ExecCondition=/bin/bash -c 'grep -q "^ATLAS_KEY=" /etc/atlas/env'
 
 [Service]
 Type=exec
+# Additional check that ATLAS_KEY is configured
+ExecCondition=/bin/bash -c 'grep -q "^ATLAS_KEY=" /etc/atlas/env'
 ExecStart=/usr/bin/atlas daemon start --port 8080
 ExecStop=/usr/bin/atlas daemon stop
 Restart=on-failure
@@ -244,9 +237,6 @@ systemctl enable atlas.service
 if [ -f /etc/atlas/env ] && grep -q "^ATLAS_KEY=" /etc/atlas/env 2>/dev/null; then
     echo "Starting Atlas daemon with configured credentials..."
     systemctl start atlas.service
-else
-    echo "Atlas daemon enabled but not started - no credentials configured."
-    echo "Configure credentials in /etc/atlas/env and run: systemctl start atlas.service"
 fi
 
 # Clean up debconf
@@ -256,15 +246,20 @@ echo ""
 echo "=== Atlas Installation Complete ==="
 echo ""
 if systemctl is-active --quiet atlas.service 2>/dev/null; then
-    echo "Atlas daemon has been installed and started as a systemd service."
+    echo "✓ Atlas daemon is running"
+    echo "  Status: systemctl status atlas.service"
+    echo "  Logs:   journalctl -u atlas.service -f"
 else
-    echo "Atlas daemon has been installed and enabled as a systemd service."
-    echo "Service will start automatically when credentials are properly configured."
+    echo "⚠ Atlas daemon is installed but not running"
+    echo ""
+    echo "To start Atlas:"
+    echo "  1. Get your Atlas Key from https://atlas.tempestdx.com/"
+    echo "  2. Edit /etc/atlas/env and add: ATLAS_KEY=your_key_here"
+    echo "  3. Start the daemon: sudo systemctl start atlas.service"
 fi
-echo "Service status: systemctl status atlas.service"
-echo "View logs: journalctl -u atlas.service -f"
 echo ""
-echo "Atlas CLI is available at: /usr/bin/atlas"
+echo "Atlas CLI: /usr/bin/atlas"
+echo "Atlas Web Client: atlas-web-client"
 echo ""
 
 exit 0
@@ -331,8 +326,9 @@ License: Proprietary
 ${FORMATTED_EULA_COPYRIGHT}
 EOF
 
-# Build the package
-dpkg-deb --build "${PKG_DIR}"
+# Build the package with root ownership
+# --root-owner-group forces all files to be owned by root:root in the package
+dpkg-deb --root-owner-group --build "${PKG_DIR}"
 
 # Move to dist directory
 mkdir -p dist

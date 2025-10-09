@@ -1,8 +1,8 @@
 [package]
-name = "tauri-app"
+name = "atlas-web-client"
 version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
+description = "Atlas Web Client"
+authors = ["Tempest Team"]
 edition = "2021"
 
 # Security Note: This project has a transitive dependency on glib 0.18.x through
@@ -42,4 +42,4 @@ objc2-foundation = { version = "0.3", features = ["NSArray", "NSString", "NSURL"
 windows = { version = "0.62", features = ["Win32_UI_Shell", "Win32_System_Com", "Win32_Foundation"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-gtk4 = { version = "0.10", features = ["v4_10"] }
+gtk = "0.18"

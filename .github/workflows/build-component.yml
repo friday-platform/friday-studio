@@ -64,6 +64,7 @@ jobs:
         run: |
           case "${{ inputs.platform }}-${{ inputs.arch }}" in
             linux-amd64)   echo "target=x86_64-unknown-linux-gnu" >> "$GITHUB_OUTPUT" ;;
+            linux-arm64)   echo "target=aarch64-unknown-linux-gnu" >> "$GITHUB_OUTPUT" ;;
             darwin-amd64)  echo "target=x86_64-apple-darwin" >> "$GITHUB_OUTPUT" ;;
             darwin-arm64)  echo "target=aarch64-apple-darwin" >> "$GITHUB_OUTPUT" ;;
             windows-amd64) echo "target=x86_64-pc-windows-msvc" >> "$GITHUB_OUTPUT" ;;

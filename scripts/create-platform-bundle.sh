@@ -40,23 +40,24 @@ Installation Steps:
     ;;
 
   linux)
-    # Copy CLI packages
+    # Copy packages (include both CLI and Web Client)
     cp dist/atlas_*.deb "$BUNDLE_NAME/" 2>/dev/null || true
     cp dist/atlas-*.rpm "$BUNDLE_NAME/" 2>/dev/null || true
 
-    # Verify at least one CLI installer exists
+    # Verify at least one installer exists
     if ! ls "$BUNDLE_NAME"/atlas_*.deb "$BUNDLE_NAME"/atlas-*.rpm 2>/dev/null | grep -q .; then
-      echo "Missing Atlas CLI installer (.deb or .rpm)"
+      echo "Missing Atlas installer (.deb or .rpm)"
       exit 1
     fi
 
     echo "Atlas Bundle - Linux
 
 Installation Steps:
-1. Install Atlas CLI:
+1. Install Atlas (includes CLI and Web Client):
    - Debian/Ubuntu: sudo dpkg -i atlas_*.deb
    - RHEL/Fedora: sudo rpm -i atlas-*.rpm
-2. Install GUI if available" > "$BUNDLE_NAME/README.txt"
+
+The package includes both the Atlas CLI and Atlas Web Client GUI." > "$BUNDLE_NAME/README.txt"
     ;;
 
   *)

@@ -33,7 +33,7 @@ jobs:
           echo "Version: $version"
 
   # ==================== BUILD JOBS ====================
-  build-binary-linux:
+  build-binary-linux-amd64:
     needs: version
     uses: ./.github/workflows/build-component.yml
     with:
@@ -41,6 +41,18 @@ jobs:
       version: ${{ needs.version.outputs.version }}
       platform: linux
       arch: amd64
+      runner: ubuntu-latest-8-cores
+      retention-days: 5
+    secrets: inherit
+
+  build-binary-linux-arm64:
+    needs: version
+    uses: ./.github/workflows/build-component.yml
+    with:
+      component: binary
+      version: ${{ needs.version.outputs.version }}
+      platform: linux
+      arch: arm64
       runner: ubuntu-latest-8-cores
       retention-days: 5
     secrets: inherit
@@ -117,9 +129,33 @@ jobs:
       retention-days: 5
     secrets: inherit
 
+  build-web-app-linux-amd64:
+    needs: version
+    uses: ./.github/workflows/build-component.yml
+    with:
+      component: web-app
+      version: ${{ needs.version.outputs.version }}
+      platform: linux
+      arch: amd64
+      runner: ubuntu-latest-8-cores
+      retention-days: 5
+    secrets: inherit
+
+  build-web-app-linux-arm64:
+    needs: version
+    uses: ./.github/workflows/build-component.yml
+    with:
+      component: web-app
+      version: ${{ needs.version.outputs.version }}
+      platform: linux
+      arch: arm64
+      runner: ubuntu-latest-8-cores
+      retention-days: 5
+    secrets: inherit
+
   # ==================== PACKAGING JOBS ====================
-  package-linux:
-    needs: [version, build-binary-linux]
+  package-linux-amd64:
+    needs: [version, build-binary-linux-amd64, build-web-app-linux-amd64]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -138,12 +174,30 @@ jobs:
 
       - name: Build Linux packages
         run: |
-
-          # Build AMD64 packages
+          # Prepare build directory
           mkdir -p build
+
+          # Copy CLI binary
           cp ./artifacts/binary-linux-amd64/atlas build/atlas
           chmod +x build/atlas
 
+          # Extract web-app from Tauri .deb
+          TAURI_DEB=$(find ./artifacts/web-app-linux-amd64 -name "*.deb" -type f | head -n1)
+          if [ -n "$TAURI_DEB" ]; then
+            echo "=== Extracting web-app from Tauri .deb ==="
+            echo "Found: $TAURI_DEB"
+            mkdir -p build/web-app-extract
+            dpkg-deb -x "${TAURI_DEB}" build/web-app-extract
+
+            echo "Extracted web-app contents:"
+            find build/web-app-extract -type f
+            echo "=================================="
+          else
+            echo "WARNING: No web-app .deb found in artifacts"
+            find ./artifacts/web-app-linux-amd64 -type f || true
+          fi
+
+          # Build combined packages (CLI + web-app)
           ARCH="amd64" VERSION="${{ needs.version.outputs.version }}" ./scripts/build-deb.sh
           ARCH="amd64" VERSION="${{ needs.version.outputs.version }}" ./scripts/build-rpm.sh
         shell: bash
@@ -158,13 +212,80 @@ jobs:
       - name: Upload final artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: linux-packages
+          name: linux-amd64-packages
           path: |
             ./dist/atlas_*.deb
             ./dist/atlas-*.rpm
             ./dist/atlas-bundle-*.tar.gz
             ./artifacts/binary-linux-amd64/atlas_*.tar.gz
             ./artifacts/binary-linux-amd64/atlas_*.sha256
+          retention-days: 5
+
+  package-linux-arm64:
+    needs: [version, build-binary-linux-arm64, build-web-app-linux-arm64]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v5
+        with:
+          path: ./artifacts/
+
+      - name: Cache apt packages
+        uses: awalsh128/cache-apt-pkgs-action@latest
+        with:
+          packages: rpm debhelper devscripts
+          version: 1.0
+
+      - name: Build Linux packages
+        run: |
+          # Prepare build directory
+          mkdir -p build
+
+          # Copy CLI binary
+          cp ./artifacts/binary-linux-arm64/atlas build/atlas
+          chmod +x build/atlas
+
+          # Extract web-app from Tauri .deb
+          TAURI_DEB=$(find ./artifacts/web-app-linux-arm64 -name "*.deb" -type f | head -n1)
+          if [ -n "$TAURI_DEB" ]; then
+            echo "=== Extracting web-app from Tauri .deb ==="
+            echo "Found: $TAURI_DEB"
+            mkdir -p build/web-app-extract
+            dpkg-deb -x "${TAURI_DEB}" build/web-app-extract
+
+            echo "Extracted web-app contents:"
+            find build/web-app-extract -type f
+            echo "=================================="
+          else
+            echo "WARNING: No web-app .deb found in artifacts"
+            find ./artifacts/web-app-linux-arm64 -type f || true
+          fi
+
+          # Build combined packages (CLI + web-app)
+          ARCH="arm64" VERSION="${{ needs.version.outputs.version }}" ./scripts/build-deb.sh
+          ARCH="arm64" VERSION="${{ needs.version.outputs.version }}" ./scripts/build-rpm.sh
+        shell: bash
+
+      - name: Create platform bundle
+        run: |
+          mkdir -p dist
+          cp ./artifacts/binary-linux-arm64/atlas dist/atlas
+          ./scripts/create-platform-bundle.sh "${{ needs.version.outputs.version }}" "linux" "arm64"
+        shell: bash
+
+      - name: Upload final artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-arm64-packages
+          path: |
+            ./dist/atlas_*.deb
+            ./dist/atlas-*.rpm
+            ./dist/atlas-bundle-*.tar.gz
+            ./artifacts/binary-linux-arm64/atlas_*.tar.gz
+            ./artifacts/binary-linux-arm64/atlas_*.sha256
           retention-days: 5
 
   package-darwin-amd64:
@@ -188,7 +309,7 @@ jobs:
           if ls ./artifacts/web-app-darwin-amd64/*.app 1>/dev/null 2>&1; then
             cp -r ./artifacts/web-app-darwin-amd64/*.app "dist/Atlas Web Client.app"
             # Fix executable permissions on Tauri binary inside the app
-            chmod +x "dist/Atlas Web Client.app/Contents/MacOS/tauri-app"
+            chmod +x "dist/Atlas Web Client.app/Contents/MacOS/atlas-web-client"
           fi
         shell: bash
 
@@ -249,7 +370,7 @@ jobs:
           if ls ./artifacts/web-app-darwin-arm64/*.app 1>/dev/null 2>&1; then
             cp -r ./artifacts/web-app-darwin-arm64/*.app "dist/Atlas Web Client.app"
             # Fix executable permissions on Tauri binary inside the app
-            chmod +x "dist/Atlas Web Client.app/Contents/MacOS/tauri-app"
+            chmod +x "dist/Atlas Web Client.app/Contents/MacOS/atlas-web-client"
           fi
         shell: bash
 
@@ -342,7 +463,7 @@ jobs:
 
   # ==================== RELEASE & UPLOAD JOBS ====================
   release:
-    needs: [version, package-linux, package-darwin-amd64, package-darwin-arm64, package-windows]
+    needs: [version, package-linux-amd64, package-linux-arm64, package-darwin-amd64, package-darwin-arm64, package-windows]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -407,7 +528,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   upload-sandbox:
-    needs: [version, package-linux, package-darwin-amd64, package-darwin-arm64, package-windows]
+    needs: [version, package-linux-amd64, package-linux-arm64, package-darwin-amd64, package-darwin-arm64, package-windows]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -420,7 +541,7 @@ jobs:
           version: ${{ needs.version.outputs.version }}
 
   upload-production:
-    needs: [version, package-linux, package-darwin-amd64, package-darwin-arm64, package-windows]
+    needs: [version, package-linux-amd64, package-linux-arm64, package-darwin-amd64, package-darwin-arm64, package-windows]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
