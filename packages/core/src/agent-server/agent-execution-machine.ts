@@ -174,7 +174,8 @@ export function createAgentExecutionMachine(
             {
               eventType: "agent_execution",
               agentId: input.agentId,
-              prompt: input.prompt,
+              prompt:
+                typeof input.prompt === "string" ? input.prompt : JSON.stringify(input.prompt),
               output: JSON.stringify(input.result),
               duration: input.duration.toString(),
               timestamp: Date.now().toString(),
