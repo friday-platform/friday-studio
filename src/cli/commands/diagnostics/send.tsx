@@ -1,6 +1,8 @@
 import { sendDiagnostics } from "@atlas/diagnostics";
+import { stringifyError } from "@atlas/utils";
 import { ServiceManager } from "../../../services/service-manager.ts";
 import { getVersionInfo } from "../../../utils/version.ts";
+import { errorOutput } from "../../utils/output.ts";
 
 export const command = "send";
 export const desc = "Send diagnostic information to Atlas developers";
@@ -22,7 +24,8 @@ export const handler = async (): Promise<void> => {
 
     Deno.exit(0);
   } catch (error) {
-    console.error("Failed to send diagnostics:", error);
+    // Extract clean error message for user-facing output
+    errorOutput(stringifyError(error));
     Deno.exit(1);
   }
 };

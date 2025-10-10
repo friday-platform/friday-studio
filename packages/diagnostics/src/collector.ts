@@ -89,7 +89,7 @@ export class DiagnosticsCollector {
     const memoryDir = join(getAtlasHome(), "memory");
     try {
       if (await exists(memoryDir)) {
-        await this.copyDirectory(memoryDir, join(this.tempDir, "memory"));
+        await this.copyDirectory(memoryDir, join(this.tempDir, "memory"), [".cache"]);
       }
     } catch (error) {
       log.warn("Failed to collect memory:", { error });
@@ -324,15 +324,24 @@ export class DiagnosticsCollector {
     }
   }
 
-  private async copyDirectory(source: string, dest: string): Promise<void> {
+  private async copyDirectory(
+    source: string,
+    dest: string,
+    excludeDirs: string[] = [],
+  ): Promise<void> {
     await ensureDir(dest);
 
     for await (const entry of Deno.readDir(source)) {
+      // Skip excluded directories
+      if (entry.isDirectory && excludeDirs.includes(entry.name)) {
+        continue;
+      }
+
       const sourcePath = join(source, entry.name);
       const destPath = join(dest, entry.name);
 
       if (entry.isDirectory) {
-        await this.copyDirectory(sourcePath, destPath);
+        await this.copyDirectory(sourcePath, destPath, excludeDirs);
       } else {
         try {
           await Deno.copyFile(sourcePath, destPath);

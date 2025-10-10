@@ -21,9 +21,11 @@ export async function sendDiagnostics(options: DiagnosticsCollectorOptions = {})
     const sizeMB = (fileInfo.size / 1024 / 1024).toFixed(2);
     log.info(`Archive size: ${sizeMB} MB`);
 
-    if (fileInfo.size > 100 * 1024 * 1024) {
-      // 100MB
-      throw new Error("Diagnostic archive too large (>100MB). Please contact support.");
+    if (fileInfo.size > 500 * 1024 * 1024) {
+      // 500MB
+      throw new Error(
+        "Diagnostic archive too large (>500MB). Please contact support@tempest.team.",
+      );
     }
 
     // Upload via client
@@ -34,8 +36,7 @@ export async function sendDiagnostics(options: DiagnosticsCollectorOptions = {})
     // Reset to idle after showing success for a moment
     log.info("✓ Diagnostics sent successfully!");
   } catch (error) {
-    // Reset to idle after showing error for a moment
-    log.error("✗ Failed to send diagnostics", { error });
+    // For user-facing errors, just throw without logging (CLI will handle)
     throw error;
   } finally {
     // Clean up temp file
