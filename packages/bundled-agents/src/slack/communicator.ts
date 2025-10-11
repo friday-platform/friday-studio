@@ -206,8 +206,7 @@ export const slackCommunicatorAgent = createAgent<string, Result>({
 
       return { response: result.text, artifactIds };
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      logger.error("slack-communicator failed", { error: message });
+      logger.error("slack-communicator failed", { error });
       throw error;
     }
   },

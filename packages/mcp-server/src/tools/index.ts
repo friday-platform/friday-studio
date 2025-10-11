@@ -28,8 +28,6 @@ import { registerLibraryListTool } from "./library/list.ts";
 import { registerLibraryStatsTool } from "./library/stats.ts";
 import { registerLibraryStoreTool } from "./library/store.ts";
 import { registerLibraryTemplatesTool } from "./library/templates.ts";
-// Import notification tools
-import { registerEmailNotificationTool } from "./notifications/email.ts";
 // Import platform tools
 import { registerVersionTool } from "./platform/version.ts";
 // Import session tools
@@ -96,9 +94,6 @@ export function registerTools(server: McpServer, context: ToolContext): void {
 
   // System tools
   registerBashTool(server, context);
-
-  // Notification tools
-  registerEmailNotificationTool(server, context);
 
   registerVersionTool(server);
 

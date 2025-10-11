@@ -1,11 +1,14 @@
 {
   "version": "5",
   "specifiers": {
+    "jsr:@std/async@1": "1.0.14",
     "jsr:@std/bytes@^1.0.5": "1.0.6",
+    "jsr:@std/encoding@1": "1.0.10",
     "jsr:@std/fs@*": "1.0.19",
     "jsr:@std/internal@^1.0.10": "1.0.10",
     "jsr:@std/internal@^1.0.9": "1.0.10",
     "jsr:@std/io@*": "0.225.2",
+    "jsr:@std/media-types@1": "1.1.0",
     "jsr:@std/path@*": "1.1.2",
     "jsr:@std/path@1": "1.1.2",
     "jsr:@std/path@^1.1.1": "1.1.2",
@@ -44,7 +47,7 @@
     "npm:@lezer/common@^1.2.3": "1.2.3",
     "npm:@lezer/markdown@^1.3.2": "1.4.3",
     "npm:@opentelemetry/api@^1.9.0": "1.9.0",
-    "npm:@sendgrid/mail@^8.1.5": "8.1.6",
+    "npm:@sendgrid/mail@^8.1.6": "8.1.6",
     "npm:@socotra/modelcontextprotocol-sdk@^1.18.0": "1.18.0_express@5.1.0",
     "npm:@sveltejs/adapter-static@^3.0.6": "3.0.10_@sveltejs+kit@2.46.2__@opentelemetry+api@1.9.0__@sveltejs+vite-plugin-svelte@6.2.1___svelte@5.39.10____acorn@8.15.0___vite@7.1.9____picomatch@4.0.3__svelte@5.39.10___acorn@8.15.0__vite@7.1.9___picomatch@4.0.3__acorn@8.15.0_@opentelemetry+api@1.9.0_@sveltejs+vite-plugin-svelte@6.2.1__svelte@5.39.10___acorn@8.15.0__vite@7.1.9___picomatch@4.0.3_svelte@5.39.10__acorn@8.15.0_vite@7.1.9__picomatch@4.0.3_@types+node@24.2.0",
     "npm:@sveltejs/kit@^2.22.0": "2.46.2_@opentelemetry+api@1.9.0_@sveltejs+vite-plugin-svelte@6.2.1__svelte@5.39.10___acorn@8.15.0__vite@7.1.9___picomatch@4.0.3_svelte@5.39.10__acorn@8.15.0_vite@7.1.9__picomatch@4.0.3_acorn@8.15.0_@types+node@24.2.0",
@@ -88,7 +91,6 @@
     "npm:svelte-eslint-parser@^1.3.1": "1.3.3_svelte@5.39.10__acorn@8.15.0_postcss@8.5.6",
     "npm:svelte@5": "5.39.10_acorn@8.15.0",
     "npm:typescript-eslint@^8.20.0": "8.46.0_eslint@9.37.0_typescript@5.9.3_@typescript-eslint+parser@8.46.0__eslint@9.37.0__typescript@5.9.3",
-    "npm:typescript@*": "5.9.3",
     "npm:typescript@5": "5.9.3",
     "npm:vite@^7.1.8": "7.1.9_picomatch@4.0.3_@types+node@24.2.0",
     "npm:xstate@^5.21.0": "5.22.1",
@@ -97,8 +99,14 @@
     "npm:zod@^4.1.11": "4.1.12"
   },
   "jsr": {
+    "@std/async@1.0.14": {
+      "integrity": "62e954a418652c704d37563a3e54a37d4cf0268a9dcaeac1660cc652880b5326"
+    },
     "@std/bytes@1.0.6": {
       "integrity": "f6ac6adbd8ccd99314045f5703e23af0a68d7f7e58364b47d2c7f408aeb5820a"
+    },
+    "@std/encoding@1.0.10": {
+      "integrity": "8783c6384a2d13abd5e9e87a7ae0520a30e9f56aeeaa3bdf910a3eaaf5c811a1"
     },
     "@std/fs@1.0.19": {
       "integrity": "051968c2b1eae4d2ea9f79a08a3845740ef6af10356aff43d3e2ef11ed09fb06",
@@ -115,6 +123,9 @@
       "dependencies": [
         "jsr:@std/bytes"
       ]
+    },
+    "@std/media-types@1.1.0": {
+      "integrity": "c9d093f0c05c3512932b330e3cc1fe1d627b301db33a4c2c2185c02471d6eaa4"
     },
     "@std/path@1.1.2": {
       "integrity": "c0b13b97dfe06546d5e16bf3966b1cadf92e1cc83e56ba5476ad8b498d9e3038",
@@ -3665,6 +3676,7 @@
       "packages/bundled-agents": {
         "packageJson": {
           "dependencies": [
+            "npm:@sendgrid/mail@^8.1.6",
             "npm:@tavily/core@~0.5.12",
             "npm:ai@^5.0.59",
             "npm:zod@^4.1.11"
@@ -3768,15 +3780,6 @@
             "npm:@jsr/std__path@^1.1.2",
             "npm:@jsr/std__testing@^1.0.15",
             "npm:onnxruntime-web@1.22.0",
-            "npm:zod@^4.1.11"
-          ]
-        }
-      },
-      "packages/notifications": {
-        "packageJson": {
-          "dependencies": [
-            "npm:@jsr/std__path@^1.1.2",
-            "npm:@sendgrid/mail@^8.1.5",
             "npm:zod@^4.1.11"
           ]
         }

@@ -6,7 +6,9 @@
   "exports": { ".": "./src/index.ts" },
   "dependencies": {
     "@atlas/agent-sdk": "workspace:*",
+    "@atlas/config": "workspace:*",
     "@atlas/logger": "workspace:*",
+    "@sendgrid/mail": "^8.1.6",
     "@tavily/core": "^0.5.12",
     "ai": "^5.0.59",
     "zod": "^4.1.11"

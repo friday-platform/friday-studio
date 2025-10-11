@@ -97,8 +97,7 @@ export const summaryAgent = createAgent({
 
       return { artifactIds };
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      logger.debug("summarizer tool failed", { error: message });
+      logger.debug("summarizer tool failed", { error });
 
       return { artifactIds: null };
     }

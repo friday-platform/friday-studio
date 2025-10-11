@@ -1031,8 +1031,9 @@ export class SessionSupervisorActor implements BaseActor {
       logger.info("Agent config", { agentConfig });
       // llm agents have ".config" when bundled agents have prompt directly in object
       const isSystemAgent = agentConfig?.type === "system";
-      // System agents are referenced by ID
-      const agentId = isSystemAgent ? agentConfig.agent : agentTask.agentId;
+      const isAtlasAgent = agentConfig?.type === "atlas";
+      // System and Atlas agents are referenced by bundled agent ID
+      const agentId = isSystemAgent || isAtlasAgent ? agentConfig.agent : agentTask.agentId;
 
       if (!isSystemAgent) {
         // For non-system agents, use the agent's configured prompt from workspace and append the input
