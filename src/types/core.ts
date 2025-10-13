@@ -4,6 +4,7 @@ import type { WorkspaceSignalConfig } from "@atlas/config";
 import type { AgentOrchestrator } from "@atlas/core";
 import type { CoALAMemoryEntry, CoALAMemoryType } from "@atlas/memory";
 import type { MaybePromise } from "@atlas/utils";
+import type { SessionSummary } from "../core/actors/session-supervisor-actor.ts";
 
 export interface IAtlasScope {
   id: string;
@@ -110,6 +111,7 @@ export interface IWorkspaceSession extends IAtlasScope {
   progress(): number;
   summarize(): string;
   getArtifacts(): IWorkspaceArtifact[];
+  waitForCompletion(): Promise<SessionSummary>;
 }
 
 export interface IWorkspaceSessionPlan extends IAtlasDecisionGraph {

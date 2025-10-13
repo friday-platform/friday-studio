@@ -70,3 +70,12 @@ export interface WorkspaceSignalRegistrar {
 export type WorkspaceSignalTriggerCallback<
   T extends Record<string, unknown> = Record<string, unknown>,
 > = (workspaceId: string, signalId: string, signalData: T) => Promise<void> | void;
+
+/**
+ * Callback interface for workspace lifecycle events
+ */
+export interface WorkspaceLifecycleObserver {
+  onWorkspaceRegistered?: (workspaceId: string, config: MergedConfig) => Promise<void> | void;
+  onWorkspaceUnregistered?: (workspaceId: string) => Promise<void> | void;
+  onWorkspaceConfigChanged?: (workspaceId: string, config: MergedConfig) => Promise<void> | void;
+}

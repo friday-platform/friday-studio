@@ -4,7 +4,7 @@
  */
 
 import type { AtlasAgent } from "@atlas/agent-sdk";
-import { ConfigLoader, type MergedConfig } from "@atlas/config";
+import { ConfigLoader, type JobSpecification, type MergedConfig } from "@atlas/config";
 import type { WorkspaceSupervisorConfig, WrappedAgentResult } from "@atlas/core";
 import {
   AgentOrchestrator,
@@ -36,6 +36,7 @@ import {
 } from "./actors/workspace-supervisor-actor.ts";
 import { Session } from "./session.ts";
 import type { LibraryStorageAdapter } from "./storage/library-storage-adapter.ts";
+import type { JobDirectParams } from "./types/job.ts";
 
 interface StreamSignalData {
   runtimeSignal: unknown; // Runtime signal instance
@@ -86,6 +87,13 @@ type WorkspaceRuntimeEvent =
       sessionId?: string;
       streamId?: string;
       traceHeaders?: Record<string, string>;
+    }
+  | {
+      type: "EXECUTE_JOB";
+      sessionId: string;
+      jobName: string;
+      jobSpec: JobSpecification;
+      params: JobDirectParams;
     }
   | { type: "SESSION_CREATED"; sessionId: string }
   | { type: "SESSION_COMPLETED"; sessionId: string; result?: Record<string, unknown> }
@@ -871,6 +879,190 @@ export function createWorkspaceRuntimeMachine(_input: WorkspaceRuntimeMachineInp
                     },
                     error: (error: unknown) => {
                       logger.error("Signal processing failed", { error: error });
+
+                      self.send({
+                        type: "ERROR",
+                        error: error instanceof Error ? error : new Error(String(error)),
+                      });
+                    },
+                  });
+
+                  // Return the sessions map (unchanged)
+                  return context.sessions;
+                },
+              }),
+            ],
+          },
+
+          EXECUTE_JOB: {
+            actions: [
+              // Update stats
+              "updateSignalStats",
+
+              // Process the job execution asynchronously
+              assign({
+                sessions: ({ context, event, spawn, self }) => {
+                  // Spawn the job execution as a child actor
+                  const actorRef = spawn(
+                    fromPromise(async () => {
+                      // Direct access to context and event from closure
+                      if (!context.supervisor) {
+                        logger.error("Supervisor not initialized when executing job", {
+                          workspaceId: context.workspace.id,
+                          jobName: event.jobName,
+                          sessionId: event.sessionId,
+                          currentState: self.getSnapshot().value,
+                        });
+                        throwWithCause(
+                          `Workspace supervisor is not available for job execution.`,
+                          new Error(
+                            `Supervisor not initialized for workspace ${context.workspace.id}. ` +
+                              `Current state: ${self.getSnapshot().value}`,
+                          ),
+                        );
+                      }
+
+                      const sessionId = event.sessionId;
+
+                      logger.info("Executing job directly", {
+                        jobName: event.jobName,
+                        sessionId,
+                        workspaceId: context.workspace.id,
+                      });
+
+                      // Create session - jobs don't have explicit signals, so create a synthetic one
+                      // @ts-expect-error - Signal configuration is being misused here as runtime signals.
+                      const syntheticSignal: IWorkspaceSignal = {
+                        id: `job-${event.jobName}`,
+                        provider: { id: "mcp-tool", name: "mcp-tool" },
+                      };
+
+                      const session = new Session(
+                        context.workspace.id,
+                        {
+                          triggers: [syntheticSignal],
+                          callback: {
+                            execute: () => {},
+                            validate: () => true,
+                            onSuccess: (result) => {
+                              logger.info("Job execution completed successfully", {
+                                workspaceId: context.workspace.id,
+                                sessionId,
+                                jobName: event.jobName,
+                                result,
+                              });
+                              self.send({ type: "SESSION_COMPLETED", sessionId, result });
+                            },
+                            onError: (error) => {
+                              const isCancellation =
+                                error.message &&
+                                (error.message.includes("Session cancelled") ||
+                                  error.message.includes("aborted"));
+
+                              if (isCancellation) {
+                                logger.info("Job execution cancelled", {
+                                  workspaceId: context.workspace.id,
+                                  sessionId,
+                                  jobName: event.jobName,
+                                });
+                              } else {
+                                logger.error("Job execution failed", {
+                                  workspaceId: context.workspace.id,
+                                  sessionId,
+                                  jobName: event.jobName,
+                                  error: error.message,
+                                });
+                              }
+                              self.send({
+                                type: "SESSION_FAILED",
+                                sessionId,
+                                error: error.message,
+                              });
+                            },
+                            onComplete: () => {
+                              logger.info("Job execution finalized", {
+                                workspaceId: context.workspace.id,
+                                sessionId,
+                                jobName: event.jobName,
+                              });
+                            },
+                          },
+                        },
+                        undefined, // agents
+                        undefined, // workflows
+                        undefined, // sources
+                        undefined, // intent
+                        undefined, // storageAdapter
+                        true, // enableCognitiveLoop
+                      );
+
+                      // Store session with proper ID
+                      Object.defineProperty(session, "id", {
+                        value: sessionId,
+                        writable: false,
+                        configurable: true,
+                      });
+
+                      // Store session
+                      context.sessions.set(sessionId, session);
+
+                      // Start the session
+                      try {
+                        session.start();
+                      } catch (error) {
+                        const errorCause = createErrorCause(error);
+                        logger.error("Job session start failed", {
+                          sessionId,
+                          jobName: event.jobName,
+                          error: error,
+                          errorCause,
+                        });
+                      }
+
+                      // Use the new processJobDirectly method that accepts StreamEmitter
+                      const result = await context.supervisor.processJobDirectly(
+                        event.jobName,
+                        event.jobSpec,
+                        event.params,
+                        sessionId,
+                      );
+
+                      // Attach SessionSupervisorActor to Session
+                      if (result.sessionActor) {
+                        session.attachSessionActor(result.sessionActor);
+
+                        logger.info("SessionSupervisorActor attached to job session", {
+                          sessionId: session.id,
+                          jobName: event.jobName,
+                          actorId: result.sessionActor.id,
+                          status: result.status,
+                        });
+                      } else {
+                        session.fail(new Error(result.error || "Failed to create session actor"));
+                      }
+
+                      return { sessionId, result };
+                    }),
+                  );
+
+                  // Subscribe to the actor's completion
+                  actorRef.subscribe({
+                    complete: () => {
+                      const snapshot = actorRef.getSnapshot();
+                      if (snapshot.status === "done" && snapshot.output) {
+                        const { sessionId, result } = snapshot.output;
+
+                        // Update stats
+                        self.send({ type: "SESSION_CREATED", sessionId });
+
+                        // Store result if available
+                        if (result) {
+                          self.send({ type: "STORE_SESSION_RESULT", sessionId, result });
+                        }
+                      }
+                    },
+                    error: (error: unknown) => {
+                      logger.error("Job execution failed", { error: error });
 
                       self.send({
                         type: "ERROR",

@@ -12,7 +12,7 @@
  */
 
 import type { AgentResult, StreamEmitter } from "@atlas/agent-sdk";
-import type { JobSpecification } from "@atlas/config";
+import type { JobSpecification, WorkspaceAgentConfig } from "@atlas/config";
 import type {
   ActorInitParams,
   AgentTask,
@@ -170,6 +170,18 @@ export class SessionSupervisorActor implements BaseActor {
   setAgentOrchestrator(orchestrator: IAgentOrchestrator): void {
     this.agentOrchestrator = orchestrator;
     this.logger.info("Agent orchestrator set", { sessionId: this.sessionId });
+  }
+
+  /**
+   * Set a custom StreamEmitter for this session (used by MCP tool execution)
+   * This overrides the default HTTPStreamEmitter that would be created for SSE
+   */
+  setStreamEmitter(emitter: StreamEmitter<SessionUIMessageChunk>): void {
+    this.baseStreamEmitter = emitter;
+    this.logger.info("Custom stream emitter set", {
+      sessionId: this.sessionId,
+      emitterType: emitter.constructor.name,
+    });
   }
 
   initialize(params?: ActorInitParams): void {
@@ -376,15 +388,18 @@ export class SessionSupervisorActor implements BaseActor {
       }
     }
 
-    // Initialize streaming if streamId provided
-    if (context.streamId) {
+    // Initialize streaming if streamId provided (SSE path)
+    // Note: For MCP path, streamEmitter is set via setStreamEmitter() before this call
+    if (context.streamId && !this.baseStreamEmitter) {
       this.baseStreamEmitter = new HTTPStreamEmitter<SessionUIMessageChunk>(
         context.streamId,
         this.sessionId,
         this.logger,
       );
+    }
 
-      // Emit session start event
+    // Emit session start event if we have an emitter
+    if (this.baseStreamEmitter) {
       this.baseStreamEmitter.emit({
         type: "data-session-start",
         data: {
@@ -934,7 +949,7 @@ export class SessionSupervisorActor implements BaseActor {
     agentTask: AgentTask,
     previousResults: AgentResult[],
     input: string,
-    agentConfig: { type?: string; config?: { prompt?: string }; prompt?: string } | undefined,
+    agentConfig: WorkspaceAgentConfig,
   ): string {
     // For non-system agents, use the agent's configured prompt from workspace and append the input
     // System agents (like conversation) manage their own system prompts internally
@@ -958,15 +973,20 @@ export class SessionSupervisorActor implements BaseActor {
       promptSections.push(inputLabel + sanitizedInput);
     }
 
-    // Add the agent's configured prompt instructions
-    const agentConfigPrompt = agentConfig?.config?.prompt || agentConfig?.prompt || "";
+    let agentConfigPrompt = "";
+    if (agentConfig.type === "llm") {
+      agentConfigPrompt = agentConfig.config.prompt;
+    } else if (agentConfig.type === "atlas") {
+      agentConfigPrompt = agentConfig.prompt;
+    }
+
     if (agentConfigPrompt) {
       promptSections.push(`## Prompt:\n${agentConfigPrompt}`);
     } else {
       // Warn for missing prompts (we're already in non-system agent block)
-      logger.warn(`${agentConfig?.type || "Unknown"} agent missing required prompt`, {
+      logger.warn(`${agentConfig.type || "Unknown"} agent missing required prompt`, {
         agentId: agentTask.agentId,
-        agentType: agentConfig?.type,
+        agentType: agentConfig.type,
       });
     }
 
@@ -992,6 +1012,36 @@ export class SessionSupervisorActor implements BaseActor {
     });
 
     return prompt;
+  }
+
+  /**
+   * Resolve the identifier that should be used to fetch/execute the underlying agent implementation.
+   *
+   * Why this exists:
+   * - Each workspace may define multiple entries that reference the same bundled/registry agent but with
+   *   different prompts or configuration. Those entries are keyed by a workspace-specific alias (the
+   *   `agentTask.agentId`). We want to preserve that alias for logging, streaming, and result attribution.
+   * - When actually executing the agent, registry-backed and system agents must be looked up by their
+   *   registry/bundled ID, which is provided as `config.agent` in the workspace configuration.
+   * - LLM agents wrapped in-process are registered under their workspace alias, so we should execute them
+   *   using the alias.
+   *
+   * Mapping rules:
+   * - type "llm"    → use the workspace alias (wrapped agent registered by alias)
+   * - type "atlas"  → use `config.agent` (registry/bundled ID)
+   * - type "system" → use `config.agent` (system bundled ID)
+   * - unknown/missing → fall back to workspace alias
+   */
+  private resolveRuntimeAgentId(
+    workspaceAgentId: string,
+    agentConfig: WorkspaceAgentConfig,
+  ): string {
+    const type = agentConfig.type;
+    if (type === "atlas" || type === "system") {
+      return agentConfig.agent ?? workspaceAgentId;
+    }
+    // For "llm" and any unknown/missing types, execute by the workspace alias
+    return workspaceAgentId;
   }
 
   private async executeAgent(
@@ -1027,13 +1077,15 @@ export class SessionSupervisorActor implements BaseActor {
 
     let prompt = "";
     try {
-      const agentConfig = this.config?.agents?.[agentTask.agentId];
+      const agentConfig = this.config.agents?.[agentTask.agentId];
+      if (!agentConfig) {
+        throw new Error(`Agent config not found for agent ${agentTask.agentId}`);
+      }
       logger.info("Agent config", { agentConfig });
       // llm agents have ".config" when bundled agents have prompt directly in object
-      const isSystemAgent = agentConfig?.type === "system";
-      const isAtlasAgent = agentConfig?.type === "atlas";
-      // System and Atlas agents are referenced by bundled agent ID
-      const agentId = isSystemAgent || isAtlasAgent ? agentConfig.agent : agentTask.agentId;
+      const isSystemAgent = agentConfig.type === "system";
+      const workspaceAgentId = agentTask.agentId;
+      const runtimeAgentId = this.resolveRuntimeAgentId(workspaceAgentId, agentConfig);
 
       if (!isSystemAgent) {
         // For non-system agents, use the agent's configured prompt from workspace and append the input
@@ -1047,7 +1099,7 @@ export class SessionSupervisorActor implements BaseActor {
       const agentAbort = new AbortController();
       this.activeAgentExecutions.set(agentTask.agentId, agentAbort);
 
-      const orchestratorResult = await this.agentOrchestrator.executeAgent(agentId, prompt, {
+      const orchestratorResult = await this.agentOrchestrator.executeAgent(runtimeAgentId, prompt, {
         sessionId: this.sessionId,
         workspaceId: this.workspaceId || "global",
         streamId: this.sessionContext?.streamId,

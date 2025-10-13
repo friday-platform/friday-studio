@@ -10,6 +10,8 @@ import { type ActorRefFrom, createActor } from "xstate";
 import type { IWorkspace, IWorkspaceSession } from "../types/core.ts";
 import { AtlasTelemetry } from "../utils/telemetry.ts";
 import type { LibraryStorageAdapter } from "./storage/library-storage-adapter.ts";
+// (no StreamEmitter needed here)
+import type { JobDirectParams } from "./types/job.ts";
 import {
   createWorkspaceRuntimeMachine,
   type WorkspaceRuntimeMachineInput,
@@ -101,6 +103,10 @@ export class WorkspaceRuntime {
 
   get workspaceId(): string {
     return this.workspace.id;
+  }
+
+  getConfig(): MergedConfig | undefined {
+    return this.config;
   }
 
   /**
@@ -391,6 +397,35 @@ export class WorkspaceRuntime {
     }
 
     throw new Error(`No signal found that triggers job '${jobName}'`);
+  }
+
+  /**
+   * Execute job directly without signal lookup (for MCP tool execution)
+   */
+  async executeJobDirectly(jobName: string, params: JobDirectParams): Promise<IWorkspaceSession> {
+    const jobSpec = this.config?.workspace?.jobs?.[jobName];
+    if (!jobSpec) {
+      throw new Error(`Job '${jobName}' not found in workspace`);
+    }
+
+    // Create session ID
+    const sessionId = crypto.randomUUID();
+
+    // Send EXECUTE_JOB event to state machine with execution path metadata
+    // State machine will create the session actor with stream emitter
+    this.stateMachine.send({ type: "EXECUTE_JOB", sessionId, jobName, jobSpec, params });
+
+    // Retrieve the session created by state machine
+    // Wait briefly for state machine to process event
+    // await this.waitForState(["SESSION_CREATED"]);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    const session = this.getSession(sessionId);
+    if (!session) {
+      throw new Error(`Failed to create session for job '${jobName}'`);
+    }
+
+    return session;
   }
 
   /**

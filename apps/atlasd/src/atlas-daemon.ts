@@ -83,7 +83,6 @@ export class AtlasDaemon {
   private supervisorDefaults: SupervisorDefaults | null = null;
   private libraryStorage: LibraryStorageAdapter | null = null;
   private cronManager: CronManager | null = null;
-  private mcpServer: PlatformMCPServer | null = null;
   private mcpServerPool: GlobalMCPServerPool | null = null;
   private workspaceManager: WorkspaceManager | null = null;
   private sseHealthCheckInterval: number | null = null;
@@ -105,6 +104,20 @@ export class AtlasDaemon {
   // Session limits
   private readonly MAX_AGENT_SESSIONS = 100;
   private readonly AGENT_SESSION_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
+  // Store per-session Platform MCP servers and transports
+  private platformMcpSessions = new Map<
+    string,
+    {
+      server: PlatformMCPServer;
+      transport: StreamableHTTPTransport;
+      createdAt: number;
+      lastUsed: number;
+    }
+  >();
+  private platformSessionCleanupInterval: number | null = null;
+  // Platform session limits
+  private readonly MAX_PLATFORM_SESSIONS = 100;
+  private readonly PLATFORM_SESSION_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
   // Store the actual port after server starts
   #port: number | undefined;
 
@@ -184,15 +197,6 @@ export class AtlasDaemon {
     const kvStorage = await createKVStorage(kvStorageConfig); // createKVStorage now calls initialize()
     this.cronManager = new CronManager(kvStorage, logger);
 
-    // Initialize Platform MCP Server
-    logger.info("Initializing Platform MCP server...");
-    const daemonUrl = getAtlasDaemonUrl();
-    this.mcpServer = new PlatformMCPServer({
-      daemonUrl,
-      logger: logger.child({ component: "platform-mcp-server" }),
-    });
-    logger.info("Platform MCP server initialized");
-
     // Initialize Global MCP Server Pool
     logger.info("Initializing Global MCP Server Pool...");
     this.mcpServerPool = new GlobalMCPServerPool(logger);
@@ -269,6 +273,9 @@ export class AtlasDaemon {
     // Start agent session cleanup interval
     this.startAgentSessionCleanup();
 
+    // Start platform session cleanup interval
+    this.startPlatformSessionCleanup();
+
     // Start embedding model download in background (non-blocking)
     // This prevents the first conversation from being blocked by model downloads
     logger.info("Starting background initialization of global embedding provider...");
@@ -299,16 +306,6 @@ export class AtlasDaemon {
       version: this.supervisorDefaults.version,
       hasSupervisors: !!this.supervisorDefaults?.supervisors,
     });
-  }
-
-  /**
-   * Get MCP server instance
-   */
-  private getMCPServer(): PlatformMCPServer {
-    if (!this.mcpServer) {
-      throw new Error("Platform MCP server not initialized. Call initialize() first.");
-    }
-    return this.mcpServer;
   }
 
   /**
@@ -386,6 +383,75 @@ export class AtlasDaemon {
       this.agentSessions.delete(sessionId);
       this.agentSSEConnections.delete(sessionId);
       logger.info("[Daemon] Agent session cleaned up", { sessionId });
+    }
+  }
+
+  /**
+   * Get or create per-session Platform MCP server
+   * Mirrors getOrCreateAgentSession pattern exactly
+   */
+  private async getOrCreatePlatformSession(
+    sessionId: string,
+  ): Promise<{ server: PlatformMCPServer; transport: StreamableHTTPTransport }> {
+    const existing = this.platformMcpSessions.get(sessionId);
+    if (existing) {
+      existing.lastUsed = Date.now();
+      return { server: existing.server, transport: existing.transport };
+    }
+
+    // Create new session
+    logger.info("[Daemon] Creating new Platform MCP session", { sessionId });
+
+    // Create transport
+    const transport = new StreamableHTTPTransport({
+      sessionIdGenerator: () => sessionId,
+      onsessioninitialized: (sid) => {
+        logger.info("[Daemon] Platform session initialized", { sessionId: sid });
+      },
+    });
+
+    // Create per-session Platform MCP server
+    const daemonUrl = getAtlasDaemonUrl();
+    const server = new PlatformMCPServer({
+      daemonUrl,
+      logger: logger.child({ component: "platform-mcp-server", sessionId }),
+      workspaceProvider: {
+        getOrCreateRuntime: (id: string) => this.getOrCreateWorkspaceRuntime(id),
+      },
+      workspaceConfigProvider: {
+        getWorkspaceConfig: (id: string) => this.getWorkspaceManager().getWorkspaceConfig(id),
+      },
+    });
+
+    // Connect to MCP server
+    await server.getServer().connect(transport);
+
+    // Store session
+    this.platformMcpSessions.set(sessionId, {
+      server,
+      transport,
+      createdAt: Date.now(),
+      lastUsed: Date.now(),
+    });
+
+    // Set up cleanup
+    transport.onclose = () => {
+      logger.info("[Daemon] Platform session closed", { sessionId });
+      this.cleanupPlatformSession(sessionId);
+    };
+
+    return { server, transport };
+  }
+
+  /**
+   * Clean up platform session
+   */
+  private cleanupPlatformSession(sessionId: string): void {
+    const session = this.platformMcpSessions.get(sessionId);
+    if (session) {
+      // Platform MCP Server doesn't have explicit stop() - just remove from map
+      this.platformMcpSessions.delete(sessionId);
+      logger.info("[Daemon] Platform session cleaned up", { sessionId });
     }
   }
 
@@ -473,22 +539,61 @@ export class AtlasDaemon {
       }),
       async (c) => {
         try {
-          // Get MCP server instance
-          const mcpServer = this.getMCPServer();
+          const sessionId = c.req.header("mcp-session-id");
 
-          // Create streaming transport
-          const transport = new StreamableHTTPTransport();
+          // For new sessions (no session ID on POST), generate one
+          if (!sessionId && c.req.method === "POST") {
+            const newSessionId = crypto.randomUUID();
+            logger.info("Creating new Platform MCP session", { sessionId: newSessionId });
 
-          // Connect MCP server to transport
-          await mcpServer.getServer().connect(transport);
+            // Create and store the session
+            const { transport } = await this.getOrCreatePlatformSession(newSessionId);
 
-          // Handle the request
-          return transport.handleRequest(c);
+            // Handle the request - this will set the Mcp-Session-Id header
+            const response = await transport.handleRequest(c);
+
+            // The transport now has the session ID set
+            if (transport.sessionId) {
+              logger.info("Session ID set on transport", {
+                sessionId: transport.sessionId,
+                originalId: newSessionId,
+              });
+            }
+
+            return response;
+          } else if (sessionId) {
+            // Existing session - get or create
+            const { transport } = await this.getOrCreatePlatformSession(sessionId);
+
+            // Handle DELETE specially - clean up after processing
+            if (c.req.method === "DELETE") {
+              logger.info("Terminating Platform MCP session", { sessionId });
+              const response = await transport.handleRequest(c);
+              this.cleanupPlatformSession(sessionId);
+              return response;
+            }
+
+            // Handle the request
+            return transport.handleRequest(c);
+          } else {
+            // No session ID and not a POST request - this is an error
+            logger.error("[Daemon] Invalid request - no session ID for non-POST", {
+              method: c.req.method,
+            });
+            return c.json(
+              {
+                jsonrpc: "2.0",
+                error: { code: -32000, message: "Session ID required for non-initialize requests" },
+                id: null,
+              },
+              400,
+            );
+          }
         } catch (error) {
-          logger.error("MCP endpoint error", { error });
+          logger.error("Platform MCP endpoint error", { error });
           return c.json(
             {
-              error: `MCP server error: ${error instanceof Error ? error.message : String(error)}`,
+              error: `Platform MCP server error: ${error instanceof Error ? error.message : String(error)}`,
             },
             500,
           );
@@ -1109,6 +1214,12 @@ export class AtlasDaemon {
       this.agentSessionCleanupInterval = null;
     }
 
+    // Stop platform session cleanup
+    if (this.platformSessionCleanupInterval) {
+      clearInterval(this.platformSessionCleanupInterval);
+      this.platformSessionCleanupInterval = null;
+    }
+
     // Close all SSE connections
     for (const [sessionId, clients] of this.sseClients.entries()) {
       for (const client of clients) {
@@ -1133,13 +1244,21 @@ export class AtlasDaemon {
     this.agentSessions.clear();
     this.agentSSEConnections.clear();
 
+    // Clean up platform sessions
+    for (const sessionId of this.platformMcpSessions.keys()) {
+      try {
+        this.cleanupPlatformSession(sessionId);
+      } catch (error) {
+        logger.debug("Error cleaning up platform session", { error, sessionId });
+      }
+    }
+    this.platformMcpSessions.clear();
+
     // Shutdown CronManager
     if (this.cronManager) {
       await this.cronManager.shutdown();
       this.cronManager = null;
     }
-
-    // Note: Per-session MCP servers are cleaned up above
 
     // Dispose MCP Server Pool
     if (this.mcpServerPool) {
@@ -1334,6 +1453,75 @@ export class AtlasDaemon {
 
       for (const [sessionId] of toEvict) {
         await this.cleanupAgentSession(sessionId);
+      }
+    }
+  }
+
+  /**
+   * Start platform session cleanup interval
+   */
+  private startPlatformSessionCleanup(): void {
+    if (this.platformSessionCleanupInterval) {
+      clearInterval(this.platformSessionCleanupInterval);
+    }
+
+    // Check every minute for stale sessions
+    this.platformSessionCleanupInterval = setInterval(() => {
+      this.performPlatformSessionCleanup();
+    }, 60000);
+
+    logger.info("Platform session cleanup started", {
+      intervalMs: 60000,
+      maxSessions: this.MAX_PLATFORM_SESSIONS,
+      timeoutMs: this.PLATFORM_SESSION_TIMEOUT_MS,
+    });
+  }
+
+  /**
+   * Clean up stale platform sessions
+   */
+  private performPlatformSessionCleanup(): void {
+    const now = Date.now();
+    const sessionsToCleanup: string[] = [];
+
+    // Find stale sessions
+    for (const [sessionId, session] of this.platformMcpSessions) {
+      if (now - session.lastUsed > this.PLATFORM_SESSION_TIMEOUT_MS) {
+        sessionsToCleanup.push(sessionId);
+      }
+    }
+
+    // Clean up stale sessions
+    if (sessionsToCleanup.length > 0) {
+      logger.info("Cleaning up stale platform sessions", {
+        count: sessionsToCleanup.length,
+        totalSessions: this.platformMcpSessions.size,
+      });
+
+      for (const sessionId of sessionsToCleanup) {
+        this.cleanupPlatformSession(sessionId);
+      }
+    }
+
+    // Enforce session limit (LRU eviction)
+    if (this.platformMcpSessions.size > this.MAX_PLATFORM_SESSIONS) {
+      const sortedSessions = Array.from(this.platformMcpSessions.entries()).sort(
+        (a, b) => a[1].lastUsed - b[1].lastUsed,
+      );
+
+      const toEvict = sortedSessions.slice(
+        0,
+        this.platformMcpSessions.size - this.MAX_PLATFORM_SESSIONS,
+      );
+
+      logger.warn("Evicting LRU platform sessions due to limit", {
+        evictionCount: toEvict.length,
+        totalSessions: this.platformMcpSessions.size,
+        maxSessions: this.MAX_PLATFORM_SESSIONS,
+      });
+
+      for (const [sessionId] of toEvict) {
+        this.cleanupPlatformSession(sessionId);
       }
     }
   }

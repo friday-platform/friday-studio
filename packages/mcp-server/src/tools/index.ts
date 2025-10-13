@@ -35,7 +35,6 @@ import { registerSessionCancelTool } from "./session/cancel.ts";
 import { registerSessionDescribeTool } from "./session/describe.ts";
 // Import signal tools
 import { registerSignalsListTool } from "./signals/list.ts";
-import { registerSignalsTriggerTool } from "./signals/trigger.ts";
 // Import system tools
 import { registerBashTool } from "./system/bash.ts";
 import type { ToolContext } from "./types.ts";
@@ -65,7 +64,6 @@ export function registerTools(server: McpServer, context: ToolContext): void {
 
   // Signal tools
   registerSignalsListTool(server, context);
-  registerSignalsTriggerTool(server, context);
 
   // Agent tools
   registerAgentsListTool(server, context);

@@ -6,7 +6,6 @@
 import { artifactsDeleteTool } from "./src/tools/artifacts/delete.ts";
 
 export {
-  type Logger,
   PlatformMCPServer,
   type PlatformMCPServerDependencies,
 } from "./src/platform-server.ts";

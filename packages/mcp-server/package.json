@@ -8,9 +8,12 @@
     "@atlas/atlasd": "workspace:*",
     "@atlas/client": "workspace:*",
     "@atlas/oapi-client": "workspace:*",
+    "@ai-sdk/anthropic": "^2.0.22",
     "@modelcontextprotocol/sdk": "npm:@socotra/modelcontextprotocol-sdk@^1.18.0",
     "@std/fs": "npm:@jsr/std__fs@^1.0.19",
     "@std/path": "npm:@jsr/std__path@^1.1.2",
+    "ai": "^5.0.59",
+    "zod-from-json-schema": "^0.5.0",
     "zod": "^4.1.11"
   }
 }

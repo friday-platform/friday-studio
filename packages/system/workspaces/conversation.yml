@@ -107,6 +107,7 @@ agents:
       tools:
         # advanced workspace creation
         - "atlas_update_workspace"
+        - "atlas_workspace_set_persistence"
         # workspace
         - "atlas_workspace_list"
         - "atlas_workspace_describe"

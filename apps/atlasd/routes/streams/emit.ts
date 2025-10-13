@@ -67,6 +67,21 @@ function emitToStream(
     else if (activeSession.get(streamId) === sessionId && !streamProcessing.get(streamId)) {
       processStreamQueue(ctx, streamId);
     }
+    // If this is the active session but processor is currently stopping (stall window), schedule a restart tick
+    else if (activeSession.get(streamId) === sessionId && streamProcessing.get(streamId)) {
+      // Only schedule if the queue transitioned from empty -> 1 (likely stall case)
+      if ((sessionQueue?.length ?? 0) === 1) {
+        setTimeout(() => {
+          if (!streamProcessing.get(streamId) && activeSession.get(streamId) === sessionId) {
+            logger.debug("Restarting stalled stream processor after enqueue", {
+              streamId,
+              sessionId,
+            });
+            processStreamQueue(ctx, streamId);
+          }
+        }, 0);
+      }
+    }
     // Otherwise, it's queued for later
     else if (activeSession.get(streamId) !== sessionId) {
       logger.debug("Session queued for later", {
@@ -74,6 +89,20 @@ function emitToStream(
         sessionId,
         activeSession: activeSession.get(streamId),
       });
+
+      // If the active session is idle (no pending items) and the processor is not running,
+      // rotate immediately to whichever session has work (soft-rotate on enqueue).
+      const currentActiveId = activeSession.get(streamId);
+      const activeQueueEmpty = currentActiveId
+        ? (streamSessionQueues?.get(currentActiveId)?.length ?? 0) === 0
+        : true;
+
+      if (activeQueueEmpty && !streamProcessing.get(streamId)) {
+        rotateSession(streamId);
+        if (activeSession.get(streamId)) {
+          processStreamQueue(ctx, streamId);
+        }
+      }
     }
   });
 }
@@ -303,6 +332,16 @@ function emitToClients(ctx: AppContext, streamId: string, event: unknown): Promi
  *
  * Internal endpoint used by HTTPStreamEmitter to push AI SDK formatted
  * events to connected clients. Events pass through without transformation.
+ *
+ * SSE stream emission endpoint
+ *
+ * Handles SSE streaming for signal-triggered sessions.
+ *
+ * Note: Job sessions triggered via MCP tools use MCP notifications
+ * instead of SSE streams, avoiding the stream contention issue.
+ * Both execution paths coexist:
+ * - Signal path: External triggers → signals → SSE streams
+ * - MCP path: Conversation agent → MCP tools → MCP notifications
  */
 emitEventRoute.post(
   "/",

@@ -1,7 +1,7 @@
 import { APICallError } from "@ai-sdk/provider";
 import type { AtlasAgent, ToolCall, ToolResult } from "@atlas/agent-sdk";
-import { type AtlasUIMessage, createAgent } from "@atlas/agent-sdk";
-import { collectToolUsageFromSteps, pipeUIMessageStream } from "@atlas/agent-sdk/vercel-helpers";
+import { createAgent } from "@atlas/agent-sdk";
+import { collectToolUsageFromSteps } from "@atlas/agent-sdk/vercel-helpers";
 import type { LLMAgentConfig } from "@atlas/config";
 import type { Logger } from "@atlas/logger";
 import { stepCountIs, streamText } from "ai";
@@ -47,6 +47,11 @@ export function convertLLMToAgent(
             "Do NOT include source tags inside tool arguments or user-facing content (e.g., emails, posts). Use tags in assistant responses only. Include plain URLs/paths in user-facing content when helpful.",
         );
 
+        stream?.emit({
+          type: "data-tool-progress",
+          data: { toolName: agentId, content: "Warming up..." },
+        });
+
         // Include current datetime for temporal grounding
         const nowUtcIso = new Date().toISOString();
         const datetimeHeader = `Current datetime (UTC): ${nowUtcIso}`;
@@ -65,7 +70,13 @@ export function convertLLMToAgent(
           ...(config.config.provider_options || {}),
         });
 
-        pipeUIMessageStream(result.toUIMessageStream<AtlasUIMessage>(), stream);
+        stream?.emit({
+          type: "data-tool-progress",
+          data: { toolName: agentId, content: "Creating results..." },
+        });
+
+        // NOTE: In current state its just printing whole output in the chat
+        // pipeUIMessageStream(result.toUIMessageStream<AtlasUIMessage>(), stream);
 
         const [text, reasoning, toolCalls, toolResults, steps] = await Promise.all([
           result.text,
@@ -80,6 +91,7 @@ export function convertLLMToAgent(
           toolCalls,
           toolResults,
         });
+
         return {
           reasoning,
           response: text,
@@ -90,6 +102,10 @@ export function convertLLMToAgent(
         // Simply check if we were aborted, don't try to detect from error
         if (abortSignal?.aborted) {
           logger.info("Wrapped agent execution cancelled", { agentId });
+          stream?.emit({
+            type: "data-tool-progress",
+            data: { toolName: agentId, content: "Cancelling..." },
+          });
           throw new DOMException("Agent execution cancelled", "AbortError");
         }
 

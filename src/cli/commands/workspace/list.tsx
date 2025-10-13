@@ -6,6 +6,19 @@ import type { YargsInstance } from "../../utils/yargs.ts";
 
 type WorkspaceResponse = InferResponseType<(typeof client.workspace)["index"]["$get"], 200>[number];
 
+// Helper type/function to determine workspace type without using 'any'
+type WorkspaceWithType = WorkspaceResponse & {
+  type?: "ephemeral" | "persistent";
+  metadata?: { ephemeral?: boolean };
+};
+
+function getWorkspaceType(workspace: WorkspaceWithType): "ephemeral" | "persistent" {
+  if (workspace.type === "ephemeral" || workspace.type === "persistent") {
+    return workspace.type;
+  }
+  return workspace.metadata?.ephemeral ? "ephemeral" : "persistent";
+}
+
 interface ListArgs {
   json?: boolean;
 }
@@ -129,11 +142,12 @@ function WorkspaceList({ registeredWorkspaces }: { registeredWorkspaces: Workspa
           {padRight("NAME", 50)}
           {padRight("STATUS", 10)}
           {padRight("RUNTIME", 10)}
+          {padRight("TYPE", 12)}
           {padRight("LAST SEEN", 18)}
         </Text>
       </Box>
       <Box>
-        <Text color="gray">{"─".repeat(114)}</Text>
+        <Text color="gray">{"─".repeat(126)}</Text>
       </Box>
 
       {/* Table Rows */}
@@ -163,6 +177,11 @@ function WorkspaceList({ registeredWorkspaces }: { registeredWorkspaces: Workspa
               <Text color="yellow">{padRight(workspace.name, 50)}</Text>
               <Text color={statusColor}>{padRight(statusStr, 10)}</Text>
               <Text color={runtimeColor}>{padRight(runtimeDisplay, 10)}</Text>
+              {(() => {
+                const typeValue = getWorkspaceType(workspace as WorkspaceWithType);
+                const typeColor = typeValue === "ephemeral" ? "magenta" : "white";
+                return <Text color={typeColor}>{padRight(typeValue, 12)}</Text>;
+              })()}
               <Text color="cyan">{padRight(lastSeenDisplay, 18)}</Text>
             </Text>
           </Box>

@@ -1,11 +1,11 @@
 /** Shared utilities for MCP tools */
 
+import type { Logger } from "@atlas/logger";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type {
   CallToolResult,
   LoggingMessageNotification,
 } from "@modelcontextprotocol/sdk/types.js";
-import type { Logger } from "../platform-server.ts";
 
 /** Create successful MCP response */
 export function createSuccessResponse(data: unknown): CallToolResult {

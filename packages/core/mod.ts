@@ -56,6 +56,7 @@ export {
 // Stream Emitters
 export {
   CallbackStreamEmitter,
+  CancellationNotificationSchema,
   HTTPStreamEmitter,
   MCPStreamEmitter,
 } from "./src/streaming/stream-emitters.ts";

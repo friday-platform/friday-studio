@@ -361,6 +361,33 @@ export class Session extends AtlasScope implements IWorkspaceSession {
   getCurrentState(): string {
     return this.status;
   }
+
+  /**
+   * Wait for session execution to complete
+   * Returns the full SessionSummary with status, results, and metadata
+   *
+   * @returns Promise that resolves with SessionSummary on completion
+   * @throws Error if session execution fails
+   */
+  waitForCompletion(): Promise<SessionSummary> {
+    if (!this.sessionActor) {
+      throw new Error("Session actor not attached - cannot wait for completion");
+    }
+
+    return new Promise((resolve, reject) => {
+      const checkPromise = () => {
+        const promise = this.sessionActor?.getExecutionPromise();
+        if (promise) {
+          // Found the execution promise, attach handlers
+          promise.then(resolve, reject);
+        } else {
+          // Promise not ready yet, check again in next microtask
+          queueMicrotask(checkPromise);
+        }
+      };
+      checkPromise();
+    });
+  }
 }
 
 // Backwards Compatibility Classes

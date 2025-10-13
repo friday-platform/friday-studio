@@ -44,7 +44,6 @@ type MessageHistory = { messages: Array<ChatMessage> };
  */
 function getSystemPrompt(
   historyMessages?: Array<{ role: string; content: string }>,
-  tools?: AtlasTools,
   streamId?: string,
 ): string {
   let prompt = SYSTEM_PROMPT;
@@ -52,7 +51,7 @@ function getSystemPrompt(
   // Add critical streamId instruction for signal triggers
   if (streamId) {
     prompt = `${prompt}
-      CRITICAL: Your current Stream ID is ${streamId}. Include this when calling the atlas_workspace_signals_trigger tool.
+      CRITICAL: Stream ID is ${streamId}. Include this parameter when streamId is available as a parameter in tools.
     `;
   }
 
@@ -66,23 +65,6 @@ function getSystemPrompt(
   } else {
     // Remove the placeholder if no history
     prompt = prompt.replace("{{CONVERSATION_HISTORY}}", "");
-  }
-
-  // Replace the available tools placeholder with actual tool descriptions
-  if (tools && Object.keys(tools).length > 0) {
-    const toolDescriptions = Object.entries(tools)
-      .map(([name, tool]) => {
-        if (tool.description) {
-          return `- ${name}: ${tool.description}`;
-        }
-        return `- ${name}`;
-      })
-      .join("\n");
-
-    prompt = prompt.replace("{{AVAILABLE_TOOLS}}", `Available tools:\n${toolDescriptions}`);
-  } else {
-    // Remove the placeholder if no tools
-    prompt = prompt.replace("{{AVAILABLE_TOOLS}}", "");
   }
 
   return prompt;
@@ -322,7 +304,7 @@ export const conversationAgent = createAgent({
 
     const systemPrompt = `Current datetime (UTC): ${new Date().toISOString()}
 
-    ${getSystemPrompt(history.messages, allTools, session.streamId)}
+    ${getSystemPrompt(history.messages, session.streamId)}
     `;
 
     // Store the original error if streamText fails
@@ -382,7 +364,7 @@ export const conversationAgent = createAgent({
           maxRetries: 3, // Enable retries for API resilience (e.g., 529 errors)
           abortSignal, // Pass the abort signal for cancellation
           providerOptions: { anthropic: { thinking: { type: "enabled", budgetTokens: 25000 } } },
-
+          experimental_context: { conversationSessionId: session.sessionId },
           // Pass telemetry config if provided in context
           experimental_telemetry: telemetry ? { isEnabled: true, ...telemetry } : undefined,
           onError: ({ error }) => {

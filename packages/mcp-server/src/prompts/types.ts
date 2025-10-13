@@ -2,7 +2,7 @@
  * Shared types for MCP resources
  */
 
-import type { Logger } from "../platform-server.ts";
+import type { Logger } from "@atlas/logger";
 
 /**
  * Context provided to all prompt handlers

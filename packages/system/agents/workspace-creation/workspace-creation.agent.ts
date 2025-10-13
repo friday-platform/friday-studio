@@ -22,6 +22,7 @@ type WorkspaceResult = Result<
 
 const WorkspaceCreationInputSchema = z.object({
   artifactId: z.string().describe("Workspace plan artifact ID to build from"),
+  ephemeral: z.boolean().optional().describe("When true, create an ephemeral instance for testing"),
 });
 
 type WorkspaceCreationInput = z.infer<typeof WorkspaceCreationInputSchema>;
@@ -137,7 +138,13 @@ export const workspaceCreationAgent = createAgent<WorkspaceCreationInput, Worksp
       });
 
       const createResponse = await parseResult(
-        client.workspace.create.$post({ json: { config, workspaceName: config.workspace.name } }),
+        client.workspace.create.$post({
+          json: {
+            config,
+            workspaceName: config.workspace.name,
+            ephemeral: input.ephemeral === true,
+          },
+        }),
       );
 
       if (!createResponse.ok) {

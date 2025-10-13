@@ -10,6 +10,8 @@ import { z } from "zod";
 import type { ToolContext } from "../types.ts";
 import { createErrorResponse, createSuccessResponse } from "../utils.ts";
 
+// Not registred for now, as we trigger workspaces via direct job execution
+// This tool still can be usful for asyc job execution.
 export function registerSignalsTriggerTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(
     "atlas_workspace_signals_trigger",
