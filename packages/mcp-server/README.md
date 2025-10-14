@@ -50,7 +50,7 @@ import { createSuccessResponse } from "../types.ts";
 
 export function registerLsTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(
-    "atlas_list",
+    "fs_list_files",
     {
       description:
         "Lists files and directories in a given path. The path parameter can be either absolute or relative. You can optionally provide an array of glob patterns to ignore with the ignore parameter. You should generally prefer the Glob and Grep tools, if you know which directories to search.",

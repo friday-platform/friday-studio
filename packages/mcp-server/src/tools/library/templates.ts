@@ -5,7 +5,7 @@ import { createErrorResponse, createSuccessResponse } from "../utils.ts";
 
 export function registerLibraryTemplatesTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(
-    "atlas_library_templates",
+    "library_templates",
     {
       description: "List available content generation templates through daemon API",
       inputSchema: {},

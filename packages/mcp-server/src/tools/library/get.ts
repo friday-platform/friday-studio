@@ -6,7 +6,7 @@ import { createErrorResponse, createSuccessResponse } from "../utils.ts";
 
 export function registerLibraryGetTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(
-    "atlas_library_get",
+    "library_get",
     {
       description:
         "Retrieve a specific library item including its metadata and optionally its full content. Use this to access stored reports, session archives, templates, or other resources by their unique identifier.",

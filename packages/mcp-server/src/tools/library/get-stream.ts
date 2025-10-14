@@ -6,7 +6,7 @@ import { createErrorResponse, createSendNotification, createSuccessResponse } fr
 
 export function registerLibraryGetStreamTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(
-    "atlas_library_get_stream",
+    "library_get_stream",
     {
       description:
         "Retrieve a library item with streaming content delivery. Large content is sent progressively via notifications, providing real-time updates as data is processed. Use this for better user experience with large library items.",

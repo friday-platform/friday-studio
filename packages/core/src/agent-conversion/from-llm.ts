@@ -8,6 +8,7 @@ import { stepCountIs, streamText } from "ai";
 import { registry, validateProviderConfig } from "../llm-provider-registry/index.ts";
 import { ensureSourceAttributionProtocol } from "../prompts/source-attribution.ts";
 import { throwWithCause } from "../utils/error-helpers.ts";
+import { filterWorkspaceAgentTools } from "./agent-tool-filters.ts";
 
 export type WrappedAgentResult = {
   response: string;
@@ -56,11 +57,13 @@ export function convertLLMToAgent(
         const nowUtcIso = new Date().toISOString();
         const datetimeHeader = `Current datetime (UTC): ${nowUtcIso}`;
 
+        const filteredTools = filterWorkspaceAgentTools(tools);
+
         const result = streamText({
           model,
           system: `${datetimeHeader}\n\n${systemPromptWithAttribution}`,
           messages: [{ role: "user" as const, content: prompt }],
-          tools,
+          tools: filteredTools,
           toolChoice: config.config.tool_choice || "auto",
           temperature: config.config.temperature,
           maxOutputTokens: config.config.max_tokens,

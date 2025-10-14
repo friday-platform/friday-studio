@@ -9,15 +9,15 @@ const MAX_TIMEOUT = 600000; // 10 minutes
 
 export function registerBashTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(
-    "atlas_bash",
+    "bash",
     {
-      description: `Executes a given bash command in a persistent shell session with optional timeout, ensuring proper handling and security measures.
+      description: `Executes a given bash command in a persistent shell session
 
 Before executing the command, please follow these steps:
 
 1. Directory Verification:
-   - If the command will create new directories or files, first use the atlas_list tool to verify the parent directory exists and is the correct location
-   - For example, before running "mkdir foo/bar", first use atlas_list to check that "foo" exists and is the intended parent directory
+   - If the command will create new directories or files, first use the fs_list_files tool to verify the parent directory exists and is the correct location
+   - For example, before running "mkdir foo/bar", first use fs_list_files to check that "foo" exists and is the intended parent directory
 
 2. Command Execution:
    - Always quote file paths that contain spaces with double quotes (e.g., cd "path with spaces/file.txt")
@@ -30,20 +30,10 @@ Before executing the command, please follow these steps:
    - Capture the output of the command.
 
 Usage notes:
-  - The command argument is required.
-  - You can specify an optional timeout in milliseconds (up to 600000ms / 10 minutes). If not specified, commands will timeout after 120000ms (2 minutes).
-  - It is very helpful if you write a clear, concise description of what this command does in 5-10 words.
   - If the output exceeds 30000 characters, output will be truncated before being returned to you.
-  - VERY IMPORTANT: You MUST avoid using search commands like \`find\` and \`grep\`. Instead use atlas_grep, atlas_glob, or other Atlas tools to search. You MUST avoid read tools like \`cat\`, \`head\`, \`tail\`, and \`ls\`, and use atlas_read and atlas_list to read files.
-   - If you _still_ need to run \`grep\`, STOP. ALWAYS USE ripgrep at \`rg\` first, which all Atlas users have pre-installed.
+  - VERY IMPORTANT: You MUST avoid using search commands like \`find\` and \`grep\`. Instead use fs_grep, fs_glob, or other Atlas tools to search. You MUST avoid read tools like \`cat\`, \`head\`, \`tail\`, and \`ls\`, and use fs_read_file and fs_list_files to read files.
   - When issuing multiple commands, use the ';' or '&&' operator to separate them. DO NOT use newlines (newlines are ok in quoted strings).
-  - Try to maintain your current working directory throughout the session by using absolute paths and avoiding usage of \`cd\`. You may use \`cd\` if the User explicitly requests it.
-    <good-example>
-    pytest /foo/bar/tests
-    </good-example>
-    <bad-example>
-    cd /foo/bar && pytest tests
-    </bad-example>`,
+  - Try to maintain your current working directory throughout the session by using absolute paths and avoiding usage of \`cd\`. You may use \`cd\` if the User explicitly requests it`,
       inputSchema: {
         command: z.string().describe("The command to execute"),
         timeout: z
@@ -51,24 +41,13 @@ Usage notes:
           .min(0)
           .max(MAX_TIMEOUT)
           .optional()
-          .describe(
-            "Optional timeout in milliseconds (up to 600000ms / 10 minutes). If not specified, commands will timeout after 120000ms (2 minutes).",
-          ),
-        description: z
-          .string()
-          .describe(
-            "Clear, concise description of what this command does in 5-10 words. Examples:\nInput: pwd\nOutput: Shows current working directory\n\nInput: git status\nOutput: Shows working tree status\n\nInput: npm install\nOutput: Installs package dependencies\n\nInput: mkdir foo\nOutput: Creates directory 'foo'",
-          ),
+          .describe("Optional timeout in milliseconds."),
       },
     },
     async (params) => {
       const timeout = Math.min(params.timeout ?? DEFAULT_TIMEOUT, MAX_TIMEOUT);
 
-      ctx.logger.info("Executing bash command", {
-        command: params.command,
-        description: params.description,
-        timeout,
-      });
+      ctx.logger.info("Executing bash command", { command: params.command, timeout });
 
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), timeout);
@@ -123,7 +102,6 @@ Usage notes:
           output,
           metadata: {
             exitCode: code,
-            description: params.description,
             stdout: truncatedStdout,
             stderr: truncatedStderr,
             truncated:

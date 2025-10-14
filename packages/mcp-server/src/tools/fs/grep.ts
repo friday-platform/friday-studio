@@ -61,17 +61,16 @@ async function runGrep(
 
 export function registerGrepTool(server: McpServer) {
   server.registerTool(
-    "atlas_grep",
+    "fs_grep",
     {
-      description: `- Fast content search tool that works with any codebase size
-- Searches file contents using regular expressions
-- Supports full regex syntax (eg. "log.*Error", "function\\s+\\w+", etc.)
-- Filter files by pattern with the include parameter (eg. "*.js", "*.{ts,tsx}")
-- Returns file paths with at least one match sorted by modification time
-- Use this tool when you need to find files containing specific patterns
-- Automatically uses ripgrep (rg) if available, otherwise falls back to system grep
-- If you need to identify/count the number of matches within files, use the Bash tool with \`rg\` (ripgrep) if available
-- When you are doing an open ended search that may require multiple rounds of globbing and grepping, use the Agent tool instead`,
+      description: `Use this tool when you need to find files containing specific patterns.
+      - Fast content search tool that works with any codebase size
+      - Searches file contents using regular expressions
+      - Supports full regex syntax (eg. "log.*Error", "function\\s+\\w+", etc.)
+      - Filter files by pattern with the include parameter (eg. "*.js", "*.{ts,tsx}")
+      - Returns file paths with at least one match sorted by modification time
+      - Automatically uses ripgrep (rg) if available, otherwise falls back to system grep
+      - If you need to identify/count the number of matches within files, use the Bash tool with \`rg\` (ripgrep) if available`,
       inputSchema: {
         pattern: z.string().describe("The regex pattern to search for in file contents"),
         path: z

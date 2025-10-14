@@ -5,7 +5,7 @@ import { createErrorResponse, createSuccessResponse } from "../utils.ts";
 
 export function registerLibraryStatsTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(
-    "atlas_library_stats",
+    "library_stats",
     {
       description: "Get library usage statistics and analytics through daemon API",
       inputSchema: {},
