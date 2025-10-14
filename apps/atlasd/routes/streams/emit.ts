@@ -25,8 +25,8 @@ interface EmissionResult {
 
 // Session-based queueing: streamId -> sessionId -> queues
 const streamQueues = new Map<string, Map<string, QueuedEmission[]>>();
-const activeSession = new Map<string, string | null>(); // streamId -> active sessionId
-const streamProcessing = new Map<string, boolean>();
+const activeSession = new Map<string, string>(); // streamId -> active sessionId
+const streamProcessing = new Set<string>(); // Set of streams currently processing
 const sessionTimeouts = new Map<string, ReturnType<typeof setTimeout>>(); // Dead session protection
 
 /**
@@ -57,22 +57,28 @@ function emitToStream(
     const queueItem = { event, resolve, reject, timestamp: Date.now(), metadata };
     sessionQueue?.push(queueItem);
 
+    // Cache Map lookups to avoid redundant operations
+    const currentActiveId = activeSession.get(streamId);
+    const isActiveSession = currentActiveId === sessionId;
+    const isProcessing = streamProcessing.has(streamId);
+
     // If no active session, make this one active
-    if (!activeSession.get(streamId) && !streamProcessing.get(streamId)) {
+    if (!currentActiveId && !isProcessing) {
       activeSession.set(streamId, sessionId);
       logger.debug("Session claimed stream", { streamId, sessionId });
       processStreamQueue(ctx, streamId);
     }
     // If this is the active session and processor isn't running, start it
-    else if (activeSession.get(streamId) === sessionId && !streamProcessing.get(streamId)) {
+    else if (isActiveSession && !isProcessing) {
       processStreamQueue(ctx, streamId);
     }
     // If this is the active session but processor is currently stopping (stall window), schedule a restart tick
-    else if (activeSession.get(streamId) === sessionId && streamProcessing.get(streamId)) {
+    else if (isActiveSession && isProcessing) {
       // Only schedule if the queue transitioned from empty -> 1 (likely stall case)
       if ((sessionQueue?.length ?? 0) === 1) {
         setTimeout(() => {
-          if (!streamProcessing.get(streamId) && activeSession.get(streamId) === sessionId) {
+          // Re-check conditions since this executes later
+          if (!streamProcessing.has(streamId) && activeSession.get(streamId) === sessionId) {
             logger.debug("Restarting stalled stream processor after enqueue", {
               streamId,
               sessionId,
@@ -83,21 +89,20 @@ function emitToStream(
       }
     }
     // Otherwise, it's queued for later
-    else if (activeSession.get(streamId) !== sessionId) {
+    else {
       logger.debug("Session queued for later", {
         streamId,
         sessionId,
-        activeSession: activeSession.get(streamId),
+        activeSession: currentActiveId,
       });
 
       // If the active session is idle (no pending items) and the processor is not running,
       // rotate immediately to whichever session has work (soft-rotate on enqueue).
-      const currentActiveId = activeSession.get(streamId);
       const activeQueueEmpty = currentActiveId
         ? (streamSessionQueues?.get(currentActiveId)?.length ?? 0) === 0
         : true;
 
-      if (activeQueueEmpty && !streamProcessing.get(streamId)) {
+      if (activeQueueEmpty && !isProcessing) {
         rotateSession(streamId);
         if (activeSession.get(streamId)) {
           processStreamQueue(ctx, streamId);
@@ -111,11 +116,11 @@ function emitToStream(
  * Process queued emissions with session-based ordering
  */
 async function processStreamQueue(ctx: AppContext, streamId: string): Promise<void> {
-  if (streamProcessing.get(streamId)) {
+  if (streamProcessing.has(streamId)) {
     logger.debug("Queue processor already running", { streamId });
     return;
   }
-  streamProcessing.set(streamId, true);
+  streamProcessing.add(streamId);
 
   try {
     while (activeSession.get(streamId)) {
@@ -189,8 +194,8 @@ async function processStreamQueue(ctx: AppContext, streamId: string): Promise<vo
           streamId,
           sessionId: currentSessionId,
         });
-        streamSessionQueues.delete(currentSessionId); // Clean up queue
-        rotateSession(streamId);
+        // Force-delete queue and reject pending items (same as timeout handling)
+        rotateSession(streamId, true);
       } else {
         // Set timeout for dead session (30s)
         const timeoutKey = `${streamId}:${currentSessionId}`;
@@ -201,10 +206,14 @@ async function processStreamQueue(ctx: AppContext, streamId: string): Promise<vo
               streamId,
               sessionId: currentSessionId,
             });
+
             if (activeSession.get(streamId) === currentSessionId) {
-              rotateSession(streamId);
+              // Force-delete the timed-out session's queue to prevent it from reclaiming the stream
+              // This is the fix for the production bug where session c327d791 timed out 3 times
+              rotateSession(streamId, true);
+
               // Restart processing if needed
-              if (!streamProcessing.get(streamId) && activeSession.get(streamId)) {
+              if (!streamProcessing.has(streamId) && activeSession.get(streamId)) {
                 processStreamQueue(ctx, streamId);
               }
             }
@@ -213,7 +222,7 @@ async function processStreamQueue(ctx: AppContext, streamId: string): Promise<vo
       }
     }
   } finally {
-    streamProcessing.set(streamId, false);
+    streamProcessing.delete(streamId);
   }
 }
 
@@ -229,7 +238,7 @@ function isSessionFinishEvent(event: SessionUIMessageChunk): boolean {
 /**
  * Rotate to the next session with queued items
  */
-function rotateSession(streamId: string): void {
+function rotateSession(streamId: string, forceDeleteCurrent = false): void {
   const streamSessionQueues = streamQueues.get(streamId);
   const currentSession = activeSession.get(streamId);
 
@@ -245,6 +254,23 @@ function rotateSession(streamId: string): void {
     if (sessionTimeouts.has(timeoutKey)) {
       clearTimeout(sessionTimeouts.get(timeoutKey));
       sessionTimeouts.delete(timeoutKey);
+    }
+  }
+
+  // Force-delete current session's queue if requested (session ended)
+  if (forceDeleteCurrent && currentSession) {
+    const queue = streamSessionQueues.get(currentSession);
+    if (queue) {
+      // Reject any pending items before deleting the queue
+      queue.forEach((item) => {
+        item.reject(new Error("Session ended"));
+      });
+      streamSessionQueues.delete(currentSession);
+      logger.debug("Force-deleted queue for ended session", {
+        streamId,
+        sessionId: currentSession,
+        rejectedItems: queue.length,
+      });
     }
   }
 
@@ -264,6 +290,16 @@ function rotateSession(streamId: string): void {
 
   // No more sessions with items
   activeSession.delete(streamId);
+
+  // Remove empty current session queue (normal rotation cleanup)
+  if (!forceDeleteCurrent && currentSession) {
+    const queue = streamSessionQueues.get(currentSession);
+    if (queue && queue.length === 0) {
+      logger.debug("Removing empty session queue", { streamId, sessionId: currentSession });
+      streamSessionQueues.delete(currentSession);
+    }
+  }
+
   logger.debug("No more sessions with queued items, stream idle", { streamId });
 }
 
