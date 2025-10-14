@@ -3,6 +3,7 @@ import {
   CalendarScheduleSchema,
   SlackSummaryDataSchema,
   SummaryDataSchema,
+  TableDataSchema,
   WorkspacePlanSchema,
 } from "./primitives.ts";
 
@@ -37,12 +38,20 @@ const SlackSummaryArtifactSchema = z.object({
   data: SlackSummaryDataSchema,
 });
 
+// Table artifact to store tabular transformation results
+const TableArtifactSchema = z.object({
+  type: z.literal("table"),
+  version: z.literal(1),
+  data: TableDataSchema,
+});
+
 /** Artifact data validation by type */
 export const ArtifactDataSchema = z.discriminatedUnion("type", [
   WorkspacePlanArtifactSchema,
   CalendarScheduleArtifactSchema,
   SummaryArtifactSchema,
   SlackSummaryArtifactSchema,
+  TableArtifactSchema,
   // Add future schemas here
 ]);
 
@@ -56,6 +65,7 @@ export const ArtifactTypeSchema = z.enum([
   "calendar-schedule",
   "summary",
   "slack-summary",
+  "table",
 ]);
 
 /** Shared request schemas for REST and MCP */

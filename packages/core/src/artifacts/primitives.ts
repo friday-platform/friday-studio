@@ -105,3 +105,12 @@ export type SummaryData = z.infer<typeof SummaryDataSchema>;
 /** Slack summary data schema */
 export const SlackSummaryDataSchema = z.string().describe("The content of the slack summary");
 export type SlackSummaryData = z.infer<typeof SlackSummaryDataSchema>;
+
+/** Table data schema */
+export const TableDataSchema = z.object({
+  columns: z.array(z.string()).describe("Column names in order"),
+  rows: z
+    .array(z.record(z.string(), z.unknown()))
+    .describe("Array of row objects keyed by column name"),
+});
+export type TableData = z.infer<typeof TableDataSchema>;

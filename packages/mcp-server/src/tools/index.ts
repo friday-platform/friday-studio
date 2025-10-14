@@ -11,7 +11,8 @@ import { registerArtifactsCreateTool } from "./artifacts/create.ts";
 import { registerArtifactsGetTool } from "./artifacts/get.ts";
 import { registerArtifactsGetByChatTool } from "./artifacts/get-by-chat.ts";
 import { registerArtifactsUpdateTool } from "./artifacts/update.ts";
-
+// Data processing tools
+import { registerCsvTool } from "./data-processing/csv/index.ts";
 // Import filesystem tools
 import { registerGlobTool } from "./fs/glob.ts";
 import { registerGrepTool } from "./fs/grep.ts";
@@ -83,6 +84,9 @@ export function registerTools(server: McpServer, context: ToolContext): void {
   registerLsTool(server);
   registerReadTool(server);
   registerWriteTool(server);
+
+  // Data processing tools
+  registerCsvTool(server, context);
 
   // Artifact tools
   registerArtifactsCreateTool(server, context);
