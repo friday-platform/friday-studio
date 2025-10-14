@@ -65,6 +65,7 @@ function updateDimensions(_value?: string | null | undefined) {
 		padding-block: var(--size-2-5) var(--size-1-5);
 		min-block-size: var(--size-10);
 		word-break: break-word;
+		transform: translate3d(0, 0, 0);
 	}
 
 	textarea {
@@ -76,7 +77,6 @@ function updateDimensions(_value?: string | null | undefined) {
 		inline-size: 100%;
 		resize: none;
 		scrollbar-width: thin;
-		transform: translate3d(0, 0, 0);
 
 		&:disabled {
 			opacity: 1;

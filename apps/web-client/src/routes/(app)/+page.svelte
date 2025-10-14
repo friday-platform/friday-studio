@@ -18,8 +18,9 @@ const appCtx = getAppContext();
 const clientCtx = getClientContext();
 
 let form = $state<HTMLFormElement | null>(null);
-let message = $state<string>("");
 let scrollContainer = $state<HTMLDivElement | null>(null);
+
+let message = $state<string>("");
 let userHasScrolled = $state(false);
 let animationFrameId = $state<number | null>(null);
 
@@ -72,10 +73,15 @@ const hasMessages = $derived(
 );
 </script>
 
-<div class="chat" class:has-messages={hasMessages}>
+<div class="chat">
 	<div class="main">
-		<div class="messages" class:has-messages={hasMessages}>
-			<div class="messages-inner" bind:this={scrollContainer} onscroll={handleScroll}>
+		<div
+			class="messages"
+			class:has-messages={hasMessages}
+			bind:this={scrollContainer}
+			onscroll={handleScroll}
+		>
+			<div class="messages-inner">
 				<div class="first-message">
 					<h2>Welcome</h2>
 					<p>
@@ -116,8 +122,11 @@ const hasMessages = $derived(
 					<Progress actions={actionsAfterLastUser} />
 				{/if}
 			</div>
+
+			<div class="spacer"></div>
+
 			<div class="interactive-container">
-				<div class="interactive-container-int" class:has-messages={hasMessages}>
+				<div class="interactive-container-int">
 					<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 					<form
 						bind:this={form}
@@ -154,8 +163,8 @@ const hasMessages = $derived(
 								}
 
 								if (
-									formMessage &&
-									typeof formMessage === 'string' &&
+									!formMessage ||
+									typeof formMessage !== 'string' ||
 									formMessage.trim().length === 0
 								) {
 									return;
@@ -330,9 +339,10 @@ const hasMessages = $derived(
 	}
 
 	.first-message {
+		inline-size: 100%;
 		margin-inline: auto;
 		max-inline-size: var(--size-150);
-		inline-size: 100%;
+		padding-inline: var(--size-1);
 
 		h2 {
 			font-size: var(--font-size-5);
@@ -349,42 +359,40 @@ const hasMessages = $derived(
 	}
 
 	.messages {
-		align-content: center;
-		display: grid;
 		block-size: 100%;
-		grid-template-rows: 6.25rem 4.625rem;
-		padding: var(--size-10);
-		padding-block-start: var(--size-10);
-		transition: grid-template-rows 150ms ease;
-
-		&.has-messages {
-			grid-template-rows:
-				calc(100% - 4.625rem)
-				4.625rem;
-		}
-
-		.messages-inner {
-			display: flex;
-			flex-direction: column;
-			gap: var(--size-4);
-			margin-inline: auto;
-			max-inline-size: var(--size-150);
-			padding-inline: var(--size-1);
-			padding-block-end: var(--size-4);
-			inline-size: 100%;
-			overflow-y: scroll;
-			scrollbar-width: none;
-		}
+		display: flex;
+		flex-direction: column;
+		overflow-y: scroll;
+		padding-block: var(--size-10) var(--size-16);
+		position: relative;
+		scrollbar-width: thin;
 
 		.background-blur {
 			background: var(--color-surface-1);
 			block-size: var(--size-28);
 			inset-block-end: 0;
 			inset-inline: 0;
-			position: absolute;
+			position: fixed;
 			opacity: 1;
 			pointer-events: none;
 		}
+	}
+
+	.spacer {
+		flex: 0 1;
+		transition: flex 450ms ease-in-out;
+
+		.has-messages & {
+			flex: 1;
+		}
+	}
+
+	.messages-inner {
+		display: flex;
+		flex-direction: column;
+		gap: var(--size-4);
+		margin-block-start: auto;
+		padding-block-end: var(--size-4);
 	}
 
 	footer {
@@ -400,23 +408,18 @@ const hasMessages = $derived(
 	}
 
 	.interactive-container {
-		block-size: 4.625rem;
-		position: relative;
-		margin-inline: auto;
-		max-inline-size: var(--size-150);
 		inline-size: 100%;
+		margin-inline: auto;
+		margin-block-end: auto;
+		max-inline-size: var(--size-150);
 		overflow: visible;
+		position: sticky;
+		inset-block-end: 0;
 		z-index: var(--layer-2);
 
-		.interactive-container-int {
-			position: absolute;
-			inset-block-start: 0;
-			inline-size: 100%;
-
-			&.has-messages {
-				inset-block-start: auto;
-				inset-block-end: 0;
-			}
+		.has-messages & {
+			transform: translateY(var(--size-4));
+			transition: transform 450ms ease-in-out;
 		}
 
 		form {

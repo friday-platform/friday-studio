@@ -1,6 +1,7 @@
 <script lang="ts">
 import { markdownToHTML } from "./markdown-utils";
 import type { OutputEntry } from "./types";
+import MessageWrapper from "./wrapper.svelte";
 
 const { message }: { message: OutputEntry } = $props();
 
@@ -8,9 +9,19 @@ const { message }: { message: OutputEntry } = $props();
 const htmlContent = $derived(message.content ? markdownToHTML(message.content) : "");
 </script>
 
-<article class="message" class:user={message.type === 'request'}>
-	{#if message.type === 'request'}
-		<div class="request">
+<MessageWrapper>
+	<article class="message" class:user={message.type === 'request'}>
+		{#if message.type === 'request'}
+			<div class="request">
+				<div class="content">
+					{#if htmlContent}
+						{@html htmlContent}
+					{:else if message.content}
+						{message.content}
+					{/if}
+				</div>
+			</div>
+		{:else}
 			<div class="content">
 				{#if htmlContent}
 					{@html htmlContent}
@@ -18,23 +29,14 @@ const htmlContent = $derived(message.content ? markdownToHTML(message.content) :
 					{message.content}
 				{/if}
 			</div>
-		</div>
-	{:else}
-		<div class="content">
-			{#if htmlContent}
-				{@html htmlContent}
-			{:else if message.content}
-				{message.content}
-			{/if}
-		</div>
-	{/if}
-</article>
+		{/if}
+	</article>
+</MessageWrapper>
 
 <style>
 	.message {
 		display: flex;
 		gap: var(--size-6);
-		max-inline-size: 100%;
 	}
 
 	.content {
@@ -91,6 +93,7 @@ const htmlContent = $derived(message.content ? markdownToHTML(message.content) :
 		padding-inline: var(--size-3);
 		inline-size: max-content;
 		margin-inline-start: auto;
+		margin-inline-end: unset;
 		max-inline-size: 90%;
 
 		.content {

@@ -1,23 +1,32 @@
 <script lang="ts">
 import type { OutputEntry } from "./types";
+import MessageWrapper from "./wrapper.svelte";
 
 const { message }: { message: OutputEntry } = $props();
 </script>
 
-<article class="message">
-	<div class="error-box">
-		<div class="icon">
-			<svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-				<path d="M12 9V13M12 17H12.01M12 3L2 20H22L12 3Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-			</svg>
+<MessageWrapper>
+	<article class="message">
+		<div class="error-box">
+			<div class="icon">
+				<svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+					<path
+						d="M12 9V13M12 17H12.01M12 3L2 20H22L12 3Z"
+						stroke="currentColor"
+						stroke-width="2"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+					/>
+				</svg>
+			</div>
+			<div class="content">
+				<p>
+					{message.content}
+				</p>
+			</div>
 		</div>
-		<div class="content">
-			<p>
-				{message.content}
-			</p>
-		</div>
-	</div>
-</article>
+	</article>
+</MessageWrapper>
 
 <style>
 	.message {

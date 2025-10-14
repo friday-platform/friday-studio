@@ -4,6 +4,7 @@ import { ArtifactDataSchema } from "@atlas/core/artifacts";
 import { z } from "zod";
 import Schedule from "$lib/components/primitives/schedule.svelte";
 import Summary from "$lib/components/primitives/summary.svelte";
+import MessageWrapper from "../messages/wrapper.svelte";
 import WorkspacePlan from "./workspace-plan.svelte";
 
 type Props = { artifactId: string };
@@ -33,18 +34,20 @@ $effect(() => {
 });
 </script>
 
-{#if artifact}
-	{#if artifact.type === 'calendar-schedule'}
-		<Schedule
-			events={artifact.data.events}
-			source={artifact.data.source}
-			sourceUrl={artifact.data.sourceUrl}
-		/>
-	{:else if artifact.type === 'summary'}
-		<Summary data={artifact.data} />
-	{:else if artifact.type === 'slack-summary'}
-		<Summary data={artifact.data} source="slack" />
-	{:else if artifact.type === 'workspace-plan'}
-		<WorkspacePlan workspacePlan={artifact.data} />
+<MessageWrapper>
+	{#if artifact}
+		{#if artifact.type === 'calendar-schedule'}
+			<Schedule
+				events={artifact.data.events}
+				source={artifact.data.source}
+				sourceUrl={artifact.data.sourceUrl}
+			/>
+		{:else if artifact.type === 'summary'}
+			<Summary data={artifact.data} />
+		{:else if artifact.type === 'slack-summary'}
+			<Summary data={artifact.data} source="slack" />
+		{:else if artifact.type === 'workspace-plan'}
+			<WorkspacePlan workspacePlan={artifact.data} />
+		{/if}
 	{/if}
-{/if}
+</MessageWrapper>

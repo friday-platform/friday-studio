@@ -1,6 +1,7 @@
 <script lang="ts">
 import type { UIDataTypes, UIMessagePart, UITools } from "ai";
 import { CustomIcons } from "$lib/components/icons/custom";
+import MessageWrapper from "./wrapper.svelte";
 
 let time = $state(0);
 
@@ -42,46 +43,48 @@ function getMessage() {
 }
 </script>
 
-<div class="container">
-	{#if progressActions.length > 0}
-		{#each progressActions as action}
-			{#if 'data' in action}
-				{#if typeof action.data === 'object' && action.data !== null && 'content' in action.data && 'toolName' in action.data}
-					<div class="in-progress-tools">
-						{#if action.data.toolName === 'Research'}
-							<CustomIcons.Globe />
-						{:else if action.data.toolName === 'Slack'}
-							<CustomIcons.Slack />
-						{:else if action.data.toolName === 'Workspace Creator'}
-							<CustomIcons.Workspace />
-						{:else if action.data.toolName === 'Google Calendar'}
-							<CustomIcons.Workspace />
-						{:else}
-							<CustomIcons.Workspace />
-						{/if}
-
-						<div class="details">
+<MessageWrapper>
+	<div class="container">
+		{#if progressActions.length > 0}
+			{#each progressActions as action}
+				{#if 'data' in action}
+					{#if typeof action.data === 'object' && action.data !== null && 'content' in action.data && 'toolName' in action.data}
+						<div class="in-progress-tools">
 							{#if action.data.toolName === 'Research'}
-								<h2>Searching the web</h2>
+								<CustomIcons.Globe />
 							{:else if action.data.toolName === 'Slack'}
-								<h2>Sending message to Slack</h2>
+								<CustomIcons.Slack />
 							{:else if action.data.toolName === 'Workspace Creator'}
-								<h2>Creating Workspace</h2>
+								<CustomIcons.Workspace />
 							{:else if action.data.toolName === 'Google Calendar'}
-								<h2>Checking calendar</h2>
+								<CustomIcons.Workspace />
 							{:else}
-								<h2>Working...</h2>
+								<CustomIcons.Workspace />
 							{/if}
-							<span>{action.data.content}</span>
+
+							<div class="details">
+								{#if action.data.toolName === 'Research'}
+									<h2>Searching the web</h2>
+								{:else if action.data.toolName === 'Slack'}
+									<h2>Sending message to Slack</h2>
+								{:else if action.data.toolName === 'Workspace Creator'}
+									<h2>Creating Workspace</h2>
+								{:else if action.data.toolName === 'Google Calendar'}
+									<h2>Checking calendar</h2>
+								{:else}
+									<h2>Working...</h2>
+								{/if}
+								<span>{action.data.content}</span>
+							</div>
 						</div>
-					</div>
+					{/if}
 				{/if}
-			{/if}
-		{/each}
-	{:else}
-		<div class="progress">{getMessage()} {time}s...</div>
-	{/if}
-</div>
+			{/each}
+		{:else}
+			<div class="progress">{getMessage()} {time}s...</div>
+		{/if}
+	</div>
+</MessageWrapper>
 
 <style>
 	.container {

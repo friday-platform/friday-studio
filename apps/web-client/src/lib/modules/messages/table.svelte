@@ -1,28 +1,32 @@
 <script lang="ts">
+import MessageWrapper from "./wrapper.svelte";
+
 const { data }: { data: { data: { headers: string[]; rows: Record<string, string | number>[] } } } =
   $props();
 </script>
 
-{#if data}
-	<table>
-		<thead>
-			<tr>
-				{#each data.data.headers as header}
-					<th>{header}</th>
-				{/each}
-			</tr>
-		</thead>
-		<tbody>
-			{#each data.data.rows as row}
+<MessageWrapper>
+	{#if data}
+		<table>
+			<thead>
 				<tr>
 					{#each data.data.headers as header}
-						<td>{row[header]}</td>
+						<th>{header}</th>
 					{/each}
 				</tr>
-			{/each}
-		</tbody>
-	</table>
-{/if}
+			</thead>
+			<tbody>
+				{#each data.data.rows as row}
+					<tr>
+						{#each data.data.headers as header}
+							<td>{row[header]}</td>
+						{/each}
+					</tr>
+				{/each}
+			</tbody>
+		</table>
+	{/if}
+</MessageWrapper>
 
 <style>
 	table {
