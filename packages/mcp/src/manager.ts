@@ -419,16 +419,6 @@ export class MCPManager {
         // Get tools directly from AI SDK MCP client
         const tools = await wrapper.client.tools();
 
-        // Debug log the first tool structure
-        const toolNames = Object.keys(tools);
-        if (toolNames.length > 0) {
-          logger.debug(`MCP tool structure for ${serverId}`, {
-            operation: "mcp_tool_structure_debug",
-            serverId,
-            toolNames,
-          });
-        }
-
         // Apply tool filtering and conversion
         const filteredTools = this.filterTools(tools, wrapper.config.tools);
 

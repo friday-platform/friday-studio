@@ -1,4 +1,5 @@
 import * as agentCmd from "./agent.ts";
+import * as artifactsCmd from "./artifacts/index.ts";
 import * as daemonCmd from "./daemon.ts";
 import * as diagnosticsCmd from "./diagnostics.ts";
 import * as libraryCmd from "./library/index.ts";
@@ -19,6 +20,7 @@ export const commands = [
   agentCmd,
   signalCmd,
   libraryCmd,
+  artifactsCmd,
   daemonCmd,
   serviceCmd,
   diagnosticsCmd,

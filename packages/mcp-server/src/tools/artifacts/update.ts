@@ -17,16 +17,23 @@ export function registerArtifactsUpdateTool(server: McpServer, ctx: ToolContext)
         type: ArtifactTypeSchema.describe("Artifact type is required but should not be changed"),
         artifactId: z.string().describe("Artifact ID"),
         data: ArtifactDataSchema.describe("New data"),
+        summary: z
+          .string()
+          .min(10)
+          .max(500)
+          .describe(
+            "1-2 sentence summary describing what this artifact contains and its purpose. This summary helps other agents understand the artifact without reading its full contents.",
+          ),
         revisionMessage: z.string().optional().describe("Change description"),
       },
     },
-    async ({ artifactId, type, data, revisionMessage }): Promise<CallToolResult> => {
+    async ({ artifactId, type, data, summary, revisionMessage }): Promise<CallToolResult> => {
       ctx.logger.info("MCP artifacts_update called", { artifactId });
 
       const response = await parseResult(
         client.artifactsStorage[":id"].$put({
           param: { id: artifactId },
-          json: { type, data, revisionMessage },
+          json: { type, data, summary, revisionMessage },
         }),
       );
 

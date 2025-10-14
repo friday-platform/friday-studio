@@ -27,6 +27,7 @@ const kvPath = join(getAtlasHome(), "storage.db");
 async function create(input: {
   type: ArtifactType;
   data: ArtifactData;
+  summary: string;
   workspaceId?: string;
   chatId?: string;
 }): Promise<Result<Artifact, string>> {
@@ -40,6 +41,7 @@ async function create(input: {
     type: input.type,
     revision,
     data: input.data,
+    summary: input.summary,
     workspaceId: input.workspaceId,
     chatId: input.chatId,
     createdAt: new Date().toISOString(),
@@ -70,6 +72,7 @@ async function create(input: {
 async function update(input: {
   id: string;
   data: ArtifactData;
+  summary: string;
   revisionMessage?: string;
 }): Promise<Result<Artifact, string>> {
   using db = await Deno.openKv(kvPath);
@@ -98,6 +101,7 @@ async function update(input: {
     type: currentArtifact.type,
     revision: currentRevision + 1,
     data: input.data,
+    summary: input.summary,
     workspaceId: currentArtifact.workspaceId,
     chatId: currentArtifact.chatId,
     createdAt: new Date().toISOString(),
@@ -247,10 +251,43 @@ async function deleteArtifact(input: { id: string }): Promise<Result<void, strin
   return success(undefined);
 }
 
+/**
+ * Batch get artifacts by IDs (latest revisions only).
+ * Missing or deleted artifacts are skipped.
+ */
+async function getManyLatest(input: { ids: string[] }): Promise<Result<Artifact[], string>> {
+  using db = await Deno.openKv(kvPath);
+
+  if (!input.ids || input.ids.length === 0) {
+    return success([]);
+  }
+
+  const artifacts: Artifact[] = [];
+
+  for (const id of input.ids) {
+    // Skip deleted
+    const deletedResult = await db.get<Date>(keys.deleted(id));
+    if (deletedResult.value) continue;
+
+    // Resolve latest revision
+    const latestRevisionResult = await db.get<number>(keys.latest(id));
+    const revision = latestRevisionResult.value;
+    if (!revision) continue;
+
+    const artifactResult = await db.get<Artifact>(keys.artifact(id, revision));
+    if (artifactResult.value) {
+      artifacts.push(artifactResult.value);
+    }
+  }
+
+  return success(artifacts);
+}
+
 export const ArtifactStorage = {
   create,
   update,
   get,
+  getManyLatest,
   listByWorkspace,
   listByChat,
   listRevisions,

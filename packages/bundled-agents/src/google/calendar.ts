@@ -3,7 +3,7 @@ import type { ToolCall, ToolResult } from "@atlas/agent-sdk";
 import { createAgent } from "@atlas/agent-sdk";
 import {
   collectToolUsageFromSteps,
-  extractArtifactIdsFromToolResults,
+  extractArtifactRefsFromToolResults,
 } from "@atlas/agent-sdk/vercel-helpers";
 import { anthropic } from "@atlas/core";
 import { generateText, stepCountIs } from "ai";
@@ -20,7 +20,7 @@ type GoogleCalendarAgentResult = {
   response: string;
   toolCalls?: ToolCall[];
   toolResults?: ToolResult[];
-  artifactIds?: string[];
+  artifactRefs?: Array<{ id: string; type: string; summary: string }>;
 };
 
 export const GoogleCalendarAgentResultSchema = z.object({
@@ -113,9 +113,9 @@ export const googleCalendarAgent = createAgent<string, GoogleCalendarAgentResult
 
       const { assembledToolResults } = collectToolUsageFromSteps({ steps, toolCalls, toolResults });
 
-      const artifactIds = extractArtifactIdsFromToolResults(assembledToolResults);
+      const artifactRefs = extractArtifactRefsFromToolResults(assembledToolResults);
 
-      return { response: text.trim(), artifactIds };
+      return { response: text.trim(), artifactRefs };
     } catch (error) {
       logger.error("google-calendar failed", { error });
       throw error;

@@ -34,8 +34,8 @@ import {
 } from "@atlas/core";
 import { type Logger, logger } from "@atlas/logger";
 import { initializeWorkspaceMemory, type MECMFMemoryManager } from "@atlas/memory";
+import { sessionSupervisorAgent } from "@atlas/system/agents";
 import { generateObject } from "ai";
-import { stripSourceAttributionTags } from "../../../packages/core/src/prompts/source-attribution.ts";
 import type { IWorkspaceArtifact, IWorkspaceSignal } from "../../types/core.ts";
 import {
   type HallucinationAnalysis,
@@ -52,6 +52,11 @@ export interface SessionContext {
   availableAgents: string[];
   constraints?: Record<string, unknown>;
   streamId?: string; // Optional streamId for streaming support
+}
+
+// Type alias for signal with description in config
+interface WorkspaceSignalWithDescription extends IWorkspaceSignal {
+  config?: { description?: string };
 }
 
 // NOTE: Use AgentResult from @atlas/agent-sdk
@@ -945,73 +950,107 @@ export class SessionSupervisorActor implements BaseActor {
     return false; // terminate phase
   }
 
-  private buildAgentPrompt(
+  private async buildAgentPrompt(
     agentTask: AgentTask,
     previousResults: AgentResult[],
     input: string,
     agentConfig: WorkspaceAgentConfig,
-  ): string {
-    // For non-system agents, use the agent's configured prompt from workspace and append the input
-    // System agents (like conversation) manage their own system prompts internally
-    let inputLabel = "";
+  ): Promise<string> {
+    // Build workflow intent from session state
+    const signalDescription = (this.sessionContext?.signal as WorkspaceSignalWithDescription)
+      ?.config?.description;
+    const jobDescription = this.sessionContext?.jobSpec?.description;
+    const workflowIntent =
+      [signalDescription, jobDescription].filter(Boolean).join(". ") || "Execute workflow task";
 
-    // Determine the input text and appropriate label based on source
-    if (agentTask.inputSource === "previous" && previousResults.length > 0) {
-      inputLabel = "## Previous Agent Output to Process:\n";
-    } else {
-      inputLabel = "## Input Data:\n";
-    }
-    // Build facts section with current context
-    const facts = this.buildFactsSection();
-    // Combine all sections: Facts + Input + Prompt (+ optional feedback)
-    // Structure: Facts -> Input -> Agent Instructions -> Retry Feedback (if present)
-    const promptSections: string[] = [];
-    promptSections.push(facts);
-    // Include input if available and remove source attribution tags
-    if (input) {
-      const sanitizedInput = stripSourceAttributionTags(input);
-      promptSections.push(inputLabel + sanitizedInput);
-    }
-
-    let agentConfigPrompt = "";
+    // Get agent's system prompt with proper type handling
+    let agentSystemPrompt = "";
     if (agentConfig.type === "llm") {
-      agentConfigPrompt = agentConfig.config.prompt;
+      agentSystemPrompt = agentConfig.config.prompt;
     } else if (agentConfig.type === "atlas") {
-      agentConfigPrompt = agentConfig.prompt;
+      agentSystemPrompt = agentConfig.prompt;
     }
 
-    if (agentConfigPrompt) {
-      promptSections.push(`## Prompt:\n${agentConfigPrompt}`);
-    } else {
-      // Warn for missing prompts (we're already in non-system agent block)
-      logger.warn(`${agentConfig.type || "Unknown"} agent missing required prompt`, {
-        agentId: agentTask.agentId,
-        agentType: agentConfig.type,
-      });
+    // Prepare input for smart supervisor agent
+    const supervisorInput = {
+      workflowIntent,
+      agentSystemPrompt,
+      agentInputSource: (agentTask.inputSource || "signal") as "signal" | "previous" | "combined",
+      signalPayload: this.sessionContext?.payload,
+      previousResults: previousResults.map((r) => ({
+        agentId: r.agentId,
+        task: r.task,
+        output: r.output,
+        artifactRefs: r.artifactRefs,
+      })),
+      tokenBudget: {
+        modelLimit: 200000, // Default model limit
+        defaultBudget: 8000,
+        currentUsage: this.estimateTokens(input),
+      },
+    };
+
+    // Invoke smart supervisor agent - call execute method directly
+    const result = await sessionSupervisorAgent.execute(supervisorInput, {
+      tools: {}, // Smart agent doesn't use tools
+      session: {
+        sessionId: this.sessionId,
+        workspaceId: this.workspaceId,
+        streamId: this.sessionContext?.streamId,
+      },
+      env: {}, // Smart agent doesn't need env vars
+      logger: this.logger,
+      stream: undefined, // Smart agent is internal, doesn't need streaming
+      abortSignal: this.abortController?.signal,
+    });
+
+    if (!result.ok) {
+      // Smart supervisor failure is a session failure - fail fast
+      throw new Error(`Smart supervisor failed to optimize context: ${result.error.reason}`);
+    }
+
+    // Build prompt from optimized context
+    const sections: string[] = [];
+
+    // Add facts section
+    sections.push(this.buildFactsSection());
+
+    // Add the optimized context from smart agent
+    sections.push(result.data.optimizedContext);
+
+    // Add agent's configured prompt instructions
+    if (agentSystemPrompt) {
+      sections.push("## Agent Instructions");
+      sections.push(agentSystemPrompt);
     }
 
     // Add task description
     if (agentTask.task && agentTask.task !== "Execute job task") {
-      promptSections.push(`## Task:\n${agentTask.task}`);
+      sections.push("## Task");
+      sections.push(agentTask.task);
     }
 
+    // Add validation feedback if this is a retry
     const validationFeedback = this.buildValidationFeedback(agentTask.agentId);
     if (validationFeedback) {
-      promptSections.push(validationFeedback);
+      sections.push(validationFeedback);
     }
 
-    // Join all sections with clear separation
-    const prompt = promptSections.join("\n\n");
-
-    this.logger.debug("Using agent configured prompt with facts and input", {
+    this.logger.info("Smart supervisor optimized context", {
       agentId: agentTask.agentId,
-      inputLength: prompt.length,
-      factsLength: facts.length,
-      combinedLength: prompt.length || 0,
-      inputSource: agentTask.inputSource,
+      tokenEstimate: result.data.metadata.tokenEstimate,
+      includedSignal: result.data.metadata.includedSignal,
+      includedPreviousCount: result.data.metadata.includedPreviousCount,
+      reasoning: result.data.reasoning,
     });
 
-    return prompt;
+    return sections.join("\n\n");
+  }
+
+  // Token estimation helper
+  private estimateTokens(text: string): number {
+    // Rough estimation: 1 token ≈ 4 characters
+    return Math.ceil(text.length / 4);
   }
 
   /**
@@ -1090,7 +1129,7 @@ export class SessionSupervisorActor implements BaseActor {
       if (!isSystemAgent) {
         // For non-system agents, use the agent's configured prompt from workspace and append the input
         // System agents (like conversation) manage their own system prompts internally
-        prompt = this.buildAgentPrompt(agentTask, previousResults, input, agentConfig);
+        prompt = await this.buildAgentPrompt(agentTask, previousResults, input, agentConfig);
       } else {
         prompt = input;
       }
@@ -1198,7 +1237,7 @@ export class SessionSupervisorActor implements BaseActor {
 
     const agentResult: AgentResult = {
       agentId: agentTask.agentId,
-      task: String(prompt), // Store the actual prompt sent to agent
+      task: agentTask.task, // Store the task description, not the full prompt
       input,
       output: result.output,
       duration,
@@ -1207,11 +1246,27 @@ export class SessionSupervisorActor implements BaseActor {
       toolResults: result.toolResults,
     };
 
+    // Validate output size
+    const outputSize = this.estimateTokens(JSON.stringify(result.output));
+    if (outputSize > 10000) {
+      this.logger.warn("Agent produced large output", {
+        agentId: agentTask.agentId,
+        tokens: outputSize,
+        hint: "Consider using artifacts for large data instead of raw output",
+      });
+    }
+    if (outputSize > 15000) {
+      throw new Error(
+        `Agent ${agentTask.agentId} produced excessive output (${outputSize} tokens). Use artifacts for large data.`,
+      );
+    }
+
     this.logger.info("Agent execution completed", {
       agentId: agentTask.agentId,
       duration,
       success: true,
       hasToolCalls: !!agentResult.toolCalls?.length,
+      outputTokens: outputSize,
     });
 
     // Clean up the abort controller for this agent

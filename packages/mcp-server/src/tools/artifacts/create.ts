@@ -16,16 +16,23 @@ export function registerArtifactsCreateTool(server: McpServer, ctx: ToolContext)
       inputSchema: {
         type: ArtifactTypeSchema.describe("Artifact type"),
         data: ArtifactDataSchema.describe("Type-specific data"),
+        summary: z
+          .string()
+          .min(10)
+          .max(500)
+          .describe(
+            "1-2 sentence summary describing what this artifact contains and its purpose. This summary helps other agents understand the artifact without reading its full contents.",
+          ),
         workspaceId: z.string().optional().describe("Workspace ID"),
         streamId: z.string().optional().describe("SSE stream ID"),
       },
     },
-    async ({ type, data, workspaceId, streamId }): Promise<CallToolResult> => {
+    async ({ type, data, summary, workspaceId, streamId }): Promise<CallToolResult> => {
       ctx.logger.info("MCP artifacts_create called", { type, workspaceId, streamId });
 
       const response = await parseResult(
         client.artifactsStorage.index.$post({
-          json: { type, data, workspaceId, chatId: streamId },
+          json: { type, data, summary, workspaceId, chatId: streamId },
         }),
       );
 

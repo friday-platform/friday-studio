@@ -479,6 +479,20 @@ export type AtlasAgentConfig = z.infer<typeof AtlasAgentConfigSchema>;
 // ==============================================================================
 
 /**
+ * Artifact reference with metadata
+ *
+ * Used when agents create or reference artifacts.
+ * Includes ID for lookup, type for categorization, and summary for context.
+ */
+export const ArtifactRefSchema = z.object({
+  id: z.string().describe("Artifact ID"),
+  type: z.string().describe("Artifact type (e.g., document, code, data)"),
+  summary: z.string().describe("Brief summary of artifact contents and purpose"),
+});
+
+export type ArtifactRef = z.infer<typeof ArtifactRefSchema>;
+
+/**
  * Result from agent execution - consolidated interface used across Atlas
  *
  * Contains execution metadata, timing, and tool usage information.
@@ -507,4 +521,6 @@ export interface AgentResult {
   toolResults?: ToolResult[];
   /** Memory context (optional, used by some services) */
   memory?: unknown[];
+  /** Artifact references with full metadata (id, type, summary) */
+  artifactRefs?: ArtifactRef[];
 }

@@ -1,6 +1,6 @@
 import { ArtifactSchema } from "@atlas/core/artifacts";
 import type { StepResult, TypedToolCall, TypedToolResult } from "ai";
-import type { AtlasTools, ToolCall, ToolResult } from "../types.ts";
+import type { ArtifactRef, AtlasTools, ToolCall, ToolResult } from "../types.ts";
 
 /**
  * Collect tool usage from AI SDK responses, preferring per-step data when available.
@@ -36,19 +36,25 @@ export function collectToolUsageFromSteps(res: {
 }
 
 /**
- * Extract artifact ids from tool results
+ * Extract artifact references with full metadata from tool results
  * @param toolResults - Tool results
- * @returns Artifact IDs
+ * @returns Artifact references with id, type, and summary
  */
-export function extractArtifactIdsFromToolResults(toolResults: ToolResult[]): string[] {
-  return toolResults
-    .filter((result) => result.toolName === "artifacts_create")
-    .map((result) => {
+export function extractArtifactRefsFromToolResults(toolResults: ToolResult[]): ArtifactRef[] {
+  const refs: ArtifactRef[] = [];
+
+  for (const result of toolResults) {
+    if (result.toolName === "artifacts_create") {
       const outputArtifact = ArtifactSchema.safeParse(JSON.parse(result.output.content[0].text));
-      if (outputArtifact.success) {
-        return outputArtifact.data?.id;
+      if (outputArtifact.success && outputArtifact.data) {
+        refs.push({
+          id: outputArtifact.data.id,
+          type: outputArtifact.data.type,
+          summary: outputArtifact.data.summary,
+        });
       }
-      return undefined;
-    })
-    .filter((id) => id !== undefined);
+    }
+  }
+
+  return refs;
 }

@@ -1,8 +1,8 @@
 import { env } from "node:process";
-import { createAgent } from "@atlas/agent-sdk";
+import { createAgent, type ArtifactRef } from "@atlas/agent-sdk";
 import {
   collectToolUsageFromSteps,
-  extractArtifactIdsFromToolResults,
+  extractArtifactRefsFromToolResults,
 } from "@atlas/agent-sdk/vercel-helpers";
 import { anthropic } from "@atlas/core";
 import { generateObject, generateText, stepCountIs } from "ai";
@@ -16,7 +16,7 @@ import { executorSystem, planSystem, translateSystem } from "./prompts.ts";
  * and invoked from Slack through slack-mcp-server. It takes a plain
  * text prompt and returns a concise helpful answer.
  */
-type Result = { response: string; artifactIds: string[] | null };
+type Result = { response: string; artifactRefs: ArtifactRef[] | null };
 
 export const slackCommunicatorAgent = createAgent<string, Result>({
   id: "slack",
@@ -59,7 +59,7 @@ export const slackCommunicatorAgent = createAgent<string, Result>({
       throw new Error("ANTHROPIC_API_KEY environment variable is required");
     }
 
-    let artifactIds: string[] | null = null;
+    let artifactRefs: ArtifactRef[] | null = null;
 
     // 1) Plan the execution and summarization
     const planSchema = z.object({
@@ -132,7 +132,7 @@ export const slackCommunicatorAgent = createAgent<string, Result>({
 
       const { assembledToolResults } = collectToolUsageFromSteps({ steps, toolCalls, toolResults });
 
-      artifactIds = extractArtifactIdsFromToolResults(assembledToolResults);
+      artifactRefs = extractArtifactRefsFromToolResults(assembledToolResults);
 
       logger.info("slack-summarizer summary", { text });
 
@@ -170,7 +170,7 @@ export const slackCommunicatorAgent = createAgent<string, Result>({
           </message>
 
           <artifactIds>
-            ${artifactIds ? artifactIds : "Not provided"}
+            ${artifactRefs ? artifactRefs.map((ref) => ref.id) : "Not provided"}
           </artifactIds>
         </content>
 
@@ -204,7 +204,7 @@ export const slackCommunicatorAgent = createAgent<string, Result>({
         providerOptions: { anthropic: { thinking: { type: "enabled", budgetTokens: 12000 } } },
       });
 
-      return { response: result.text, artifactIds };
+      return { response: result.text, artifactRefs };
     } catch (error) {
       logger.error("slack-communicator failed", { error });
       throw error;

@@ -1,7 +1,7 @@
-import { createAgent } from "@atlas/agent-sdk";
+import { createAgent, type ArtifactRef } from "@atlas/agent-sdk";
 import {
   collectToolUsageFromSteps,
-  extractArtifactIdsFromToolResults,
+  extractArtifactRefsFromToolResults,
 } from "@atlas/agent-sdk/vercel-helpers";
 import { anthropic } from "@atlas/core";
 import { generateText, stepCountIs } from "ai";
@@ -14,7 +14,7 @@ import { generateText, stepCountIs } from "ai";
  * tools and agents.
  */
 
-type Result = { artifactIds: string[] | null };
+type Result = { artifactRefs: ArtifactRef[] | null };
 
 export const summaryAgent = createAgent({
   id: "get-summary",
@@ -88,18 +88,18 @@ export const summaryAgent = createAgent({
 
       const { assembledToolResults } = collectToolUsageFromSteps({ steps, toolCalls, toolResults });
 
-      const artifactIds = extractArtifactIdsFromToolResults(assembledToolResults);
-      logger.debug("summarizer tool success", { artifactIds });
+      const artifactRefs = extractArtifactRefsFromToolResults(assembledToolResults);
+      logger.debug("summarizer tool success", { artifactRefs });
 
-      if (!artifactIds) {
+      if (!artifactRefs || artifactRefs.length === 0) {
         throw new Error("Failed to return an artifact id in the response");
       }
 
-      return { artifactIds };
+      return { artifactRefs };
     } catch (error) {
       logger.debug("summarizer tool failed", { error });
 
-      return { artifactIds: null };
+      return { artifactRefs: null };
     }
   },
 });

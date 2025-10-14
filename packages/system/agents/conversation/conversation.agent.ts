@@ -234,8 +234,6 @@ export const conversationAgent = createAgent({
     );
     if (res.ok) {
       // @ts-expect-error the AI sdk doesn't currently export Zod schemas for UIMessage and UIMessageChunk
-      // so right now we're accepting a z.record(z.string(), z.unknown());
-      // @see: https://github.com/vercel/ai/issues/8100
       messages.push(...res.data.messages.slice(-20));
     } else {
       logger.error("Failed to load chat history", { error: res.error });

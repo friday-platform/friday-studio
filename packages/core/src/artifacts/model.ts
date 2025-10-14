@@ -62,6 +62,7 @@ export const ArtifactTypeSchema = z.enum([
 export const CreateArtifactSchema = z.object({
   type: ArtifactTypeSchema,
   data: ArtifactDataSchema, // Validated separately by ArtifactDataSchema
+  summary: z.string().min(10).max(500),
   workspaceId: z.string().optional(),
   chatId: z.string().optional(),
 });
@@ -69,6 +70,7 @@ export const CreateArtifactSchema = z.object({
 export const UpdateArtifactSchema = z.object({
   type: ArtifactTypeSchema,
   data: ArtifactDataSchema,
+  summary: z.string().min(10).max(500),
   revisionMessage: z.string().optional(),
 });
 
@@ -78,6 +80,7 @@ export const ArtifactSchema = z.object({
   type: ArtifactTypeSchema,
   revision: z.number(),
   data: ArtifactDataSchema,
+  summary: z.string(),
   createdAt: z.iso.datetime(),
   workspaceId: z.string().optional(),
   chatId: z.string().optional(),
