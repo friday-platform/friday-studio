@@ -14,24 +14,30 @@ import { sendEmail } from "./sendgrid.ts";
 /**
  * Email Agent
  *
- * Sends email notifications via SendGrid.
- * Takes natural language prompts and extracts email parameters.
+ * Generates and sends email notifications via SendGrid.
+ * Takes natural language prompts with data/context and composes appropriate email content.
  */
-type Result = { response: string; message_id?: string; retry_count?: number };
+type Result = {
+  response: string;
+  message_id?: string;
+  retry_count?: number;
+  email?: { to: string | string[]; subject: string; content: string; from: string | undefined };
+};
 
 export const emailAgent = createAgent<string, Result>({
   id: "email",
   displayName: "Email",
   version: "1.0.0",
   description:
-    "Send email notifications via SendGrid with template support, file attachments, and automatic retry with exponential backoff",
+    "Compose and send email notifications via SendGrid. Generates email content from provided data/context, with template support, file attachments, and automatic retry with exponential backoff",
   expertise: {
     domains: ["email", "notifications", "sendgrid"],
     examples: [
-      "Send email to john@example.com with subject 'Test' and content 'Hello world'",
-      "Email sarah@company.com: subject 'Meeting reminder', message 'Don't forget our 2pm meeting'",
-      "Send notification to team@startup.io about deployment completion",
-      "Send email to lukasz@tempest.team with subject 'Report' and attach /path/to/report.pdf",
+      "Send email to john@example.com with subject 'Test' saying hello",
+      "Email sarah@company.com a meeting reminder for 2pm today",
+      "Send deployment completion notification to team@startup.io",
+      "Create professional pricing report email from this data and send to client@company.com",
+      "Compose weekly summary email from these metrics and send to stakeholders@corp.com",
     ],
   },
   environment: {
@@ -69,25 +75,19 @@ export const emailAgent = createAgent<string, Result>({
       );
     }
 
-    // Progress: planning
+    // Progress: composing
     stream?.emit({
       type: "data-tool-progress",
-      data: { toolName: "Email", content: `Analyzing email request...` },
+      data: { toolName: "Email", content: `Composing email...` },
     });
 
-    // Define schema for email parameter extraction
-    const emailParamsSchema = z.object({
+    // Define schema for email composition
+    const emailCompositionSchema = z.object({
       to: z.email().describe("Recipient email address"),
       subject: z.string().min(1).describe("Email subject line"),
-      content: z.string().min(1).describe("Email content (HTML or plain text)"),
+      content: z.string().min(1).describe("Generated email content (HTML or plain text)"),
       from: z.email().nullable().default(null).describe("Sender email address (optional)"),
       from_name: z.string().nullable().default(null).describe("Sender name (optional)"),
-      template_id: z.string().nullable().default(null).describe("SendGrid template ID (optional)"),
-      template_data: z
-        .record(z.string(), z.unknown())
-        .nullable()
-        .default(null)
-        .describe("Template variables (optional)"),
       attachment_paths: z
         .array(z.string())
         .nullable()
@@ -95,36 +95,52 @@ export const emailAgent = createAgent<string, Result>({
         .describe("File paths to attach to the email (optional)"),
     });
 
-    const extractionSystem = `
-You are an email parameter extraction expert. Your job is to extract email parameters from natural language prompts.
+    const compositionSystem = `
+You are an email composition expert. Your job is to generate professional email content from natural language prompts and data.
 
 Today's date: ${getTodaysDate()}
 
-Extract the following information:
-- to: The recipient email address
-- subject: The email subject line
-- content: The email content/message body
-- from: The sender email address (if specified, otherwise null)
-- from_name: The sender name (if specified, otherwise null)
-- template_id: SendGrid template ID (if specified, otherwise null)
-- template_data: Template variables (if specified, otherwise null)
-- attachment_paths: Array of file paths to attach (if specified, otherwise null)
+TASK:
+1. Analyze the prompt for data, context, and requirements
+2. Generate an appropriate email subject line
+3. Compose professional email body content
+4. Determine recipient email address
+5. Extract any sender details or attachment paths if specified
 
-Be precise and extract exactly what the user requests. If the user doesn't specify a field, use null.
+CONTENT GENERATION GUIDELINES:
+- Use HTML formatting for structured content (tables, lists, sections)
+- Keep tone professional but friendly
+- Include all relevant data points from the context
+- Use clear section headers for multi-part content
+- Make subject line descriptive and specific
+- Format numbers, prices, and data clearly
+- Preserve links and URLs from source data
+
+OUTPUT:
+- to: Recipient email address (required)
+- subject: Descriptive subject line (required)
+- content: Well-formatted email body - HTML or plain text (required)
+- from: Sender email if specified (optional, default null)
+- from_name: Sender name if specified (optional, default null)
+- attachment_paths: Array of file paths if specified (optional, default null)
     `;
 
-    const extractionResult = await generateObject({
+    const compositionResult = await generateObject({
       model: anthropic("claude-sonnet-4-20250514"),
       prompt,
       abortSignal,
-      system: extractionSystem,
-      schema: emailParamsSchema,
-      temperature: 0,
-      maxOutputTokens: 1000,
+      system: compositionSystem,
+      schema: emailCompositionSchema,
+      temperature: 0.3,
+      maxOutputTokens: 4000,
     });
 
-    const params = extractionResult.object;
-    logger.debug("email-communicator extracted params", { params });
+    const params = compositionResult.object;
+    logger.debug("email-communicator composed email", {
+      to: params.to,
+      subject: params.subject,
+      contentLength: params.content.length,
+    });
 
     // Process attachments if provided
     let attachments: EmailParams["attachments"];
@@ -208,8 +224,6 @@ Be precise and extract exactly what the user requests. If the user doesn't speci
       content: params.content,
       from: params.from || env.SENDGRID_FROM_EMAIL || "noreply@tempestdx.com",
       from_name: params.from_name || env.SENDGRID_FROM_NAME,
-      template_id: params.template_id || undefined,
-      template_data: params.template_data || undefined,
       attachments,
     };
 
@@ -230,6 +244,12 @@ Be precise and extract exactly what the user requests. If the user doesn't speci
       response: `Email sent successfully to ${params.to}`,
       message_id: result.message_id,
       retry_count: result.retry_count,
+      email: {
+        to: emailParams.to,
+        subject: emailParams.subject,
+        content: emailParams.content,
+        from: emailParams.from,
+      },
     };
   },
 });

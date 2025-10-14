@@ -46,7 +46,8 @@ const AgentSpecSchema = z.union([BundledAgentSpecSchema, GeneratedAgentSpecSchem
 
 const AgentEnricherSchema = z.object({ result: AgentSpecSchema });
 
-const systemPrompt = `<role>
+function getSystemPrompt(): string {
+  return `<role>
 You determine agent implementation strategy and generate configuration.
 </role>
 
@@ -111,6 +112,7 @@ Keep it direct and actionable.
 
 For Slack agents: ALWAYS include the channel name if provided (e.g., "Post to #team-updates")
 </prompt_guidelines>`;
+}
 
 async function enrichAgent(
   agent: {
@@ -125,7 +127,7 @@ async function enrichAgent(
   const { object } = await generateObject({
     model: anthropic("claude-sonnet-4-20250514"),
     schema: AgentEnricherSchema,
-    system: systemPrompt,
+    system: getSystemPrompt(),
     prompt: `Determine implementation for this agent:
 
 ID: ${agent.id}
