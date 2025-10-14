@@ -372,7 +372,7 @@ const hasMessages = $derived(
 			block-size: var(--size-28);
 			inset-block-end: 0;
 			inset-inline: 0;
-			position: fixed;
+			position: absolute;
 			opacity: 1;
 			pointer-events: none;
 		}

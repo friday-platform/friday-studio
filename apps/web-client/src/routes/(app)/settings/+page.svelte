@@ -1,6 +1,9 @@
 <script lang="ts">
+import { getVersion } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
 import { onMount } from "svelte";
+// @ts-expect-error - This file is generated
+import { BUILD_INFO } from "$lib/build-info";
 import { CustomIcons } from "$lib/components/icons/custom";
 
 let envVars = $state<{ key: string; value: string; id: number }[]>([]);
@@ -10,8 +13,22 @@ let isRestarting = $state(false);
 let message = $state("");
 let nextId = 1;
 
-onMount(() => {
+let version = $state(BUILD_INFO?.version || "0.1.0");
+let buildType = BUILD_INFO?.buildType || "development";
+let commitHash = BUILD_INFO?.commitHash || "unknown";
+
+onMount(async () => {
   loadEnvVars();
+
+  // Get version info from Tauri if available
+  try {
+    const tauriVersion = await getVersion();
+    if (tauriVersion) {
+      version = tauriVersion;
+    }
+  } catch {
+    // Not in Tauri context, use build info version
+  }
 });
 
 async function loadEnvVars() {
@@ -170,6 +187,16 @@ function showMessage(msg: string) {
 				</p>
 			{/if}
 		</div>
+
+		<div class="version-info">
+			<h2>App Details</h2>
+
+			<p>
+				Version {version} ({commitHash})
+				<br />
+				{buildType}
+			</p>
+		</div>
 	</div>
 </div>
 
@@ -196,7 +223,11 @@ function showMessage(msg: string) {
 		font-weight: var(--font-weight-6);
 		line-height: var(--font-lineheight-1);
 		font-weight: 600;
-		margin-block-end: var(--size-12);
+		margin-block-end: var(--size-4);
+	}
+
+	.version-info {
+		margin-block-start: var(--size-8);
 	}
 
 	h2 {
