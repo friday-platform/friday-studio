@@ -43,6 +43,7 @@ export async function sendEmail(
       attemptCount++;
       try {
         const message = buildEmailMessage(params, options?.sandboxMode);
+
         return await sgMail.send(message);
       } catch (error) {
         // Non-retryable errors should fail immediately
@@ -76,7 +77,7 @@ function buildEmailMessage(params: EmailParams, sandboxMode = false): sgMail.Mai
   };
 
   // Add content
-  if (params.content.includes("<html>") || params.content.includes("<body>")) {
+  if (params.content.includes("<!DOCTYPE html>")) {
     message.html = params.content;
   } else {
     message.text = params.content;

@@ -10,6 +10,7 @@ import { getTodaysDate } from "@atlas/utils";
 import { generateObject } from "ai";
 import { z } from "zod";
 import { sendEmail } from "./sendgrid.ts";
+import template from "./template.html" with { type: "text" };
 
 /**
  * Email Agent
@@ -85,7 +86,14 @@ export const emailAgent = createAgent<string, Result>({
     const emailCompositionSchema = z.object({
       to: z.email().describe("Recipient email address"),
       subject: z.string().min(1).describe("Email subject line"),
-      content: z.string().min(1).describe("Generated email content (HTML or plain text)"),
+      content: z.array(
+        z.object({
+          tag: z
+            .enum(["paragraph", "heading", "link"])
+            .describe("Preferred tag for part of the content"),
+          content: z.string().min(1).describe("Content to be wrapped in the tag"),
+        }),
+      ),
       from: z.email().nullable().default(null).describe("Sender email address (optional)"),
       from_name: z.string().nullable().default(null).describe("Sender name (optional)"),
       attachment_paths: z
@@ -179,7 +187,9 @@ OUTPUT:
             const maxSize = 30 * 1024 * 1024; // 30MB in bytes
             if (stat.size > maxSize) {
               throw new Error(
-                `File exceeds 30MB SendGrid limit: ${filePath} (${(stat.size / 1024 / 1024).toFixed(2)}MB)`,
+                `File exceeds 30MB SendGrid limit: ${filePath} (${(stat.size / 1024 / 1024).toFixed(
+                  2,
+                )}MB)`,
               );
             }
 
@@ -221,7 +231,21 @@ OUTPUT:
     const emailParams: EmailParams = {
       to: params.to,
       subject: params.subject,
-      content: params.content,
+      content: template.replace(
+        "{{ content }}",
+        params.content
+          .map((c) => {
+            if (c.tag === "paragraph") {
+              return `<p style="font-size: 15px; font-weight: 450; line-height: 155%; margin: 8px 0 12px 0;">${c.content}</p>`;
+            } else if (c.tag === "heading") {
+              return `<h2 style="font-size: 17px; font-weight: 650;  margin: 16px 0 0 0;">${c.content}</h2>`;
+            } else if (c.tag === "link") {
+              return `<a style="color: #2A54DF; text-decoration: underline;" href="${c.content}">${c.content}</a>`;
+            }
+            return c.content;
+          })
+          .join(""),
+      ),
       from: params.from || env.SENDGRID_FROM_EMAIL || "noreply@tempestdx.com",
       from_name: params.from_name || env.SENDGRID_FROM_NAME,
       attachments,
@@ -232,6 +256,7 @@ OUTPUT:
     logger.debug("Sending email via SendGrid", {
       to: emailParams.to,
       from: emailParams.from,
+      content: emailParams.content,
       sandboxMode,
     });
 
