@@ -12,7 +12,7 @@ WORKDIR /app
 RUN addgroup -g 1001 -S atlas && adduser -u 1001 -S -G atlas -h /home/atlas -s /bin/sh atlas
 
 # Copy package files first for better caching
-COPY deno.json deno.lock ./
+COPY deno.json deno.lock package.json ./
 COPY apps/atlasd/deno.json ./apps/atlasd/
 COPY packages/ ./packages/
 COPY tools/memory_manager/ ./tools/memory_manager/
@@ -20,8 +20,8 @@ COPY tools/memory_manager/ ./tools/memory_manager/
 # Copy source code
 COPY . .
 
-# Install dependencies (skip lockfile check since we have version mismatch)
-RUN deno cache --config=deno.json apps/atlasd/mod.ts src/cli.tsx
+# Install dependencies (populates node_modules for bare import resolution)
+RUN deno install
 
 # Compile the Atlas CLI to a single binary for optimal performance
 RUN deno compile \
@@ -37,10 +37,6 @@ RUN deno compile \
 
 # Stage 2: Runtime stage - use deno alpine image for compatibility
 FROM denoland/deno:alpine-2.5.4 AS runtime
-
-# Install additional runtime dependencies
-RUN apk add --no-cache \
-    tini
 
 # Create atlas user and group (if not already exists)
 RUN addgroup -g 1001 -S atlas 2>/dev/null || true && \
@@ -71,13 +67,6 @@ ENV DENO_NO_UPDATE_CHECK=1 \
 
 # Expose the daemon port
 EXPOSE 8080
-
-# Health check to verify daemon is responding
-HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-    CMD curl -f http://localhost:8080/health || exit 1
-
-# Use tini as PID 1 to handle signals properly
-ENTRYPOINT ["/sbin/tini", "--"]
 
 # Default command starts the daemon
 CMD ["atlas", "daemon", "start", "--hostname", "0.0.0.0", "--port", "8080"]

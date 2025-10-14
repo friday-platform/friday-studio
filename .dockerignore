@@ -55,7 +55,6 @@ atlas
 atlas.exe
 
 # Package manager files from other ecosystems
-package.json
 package-lock.json
 yarn.lock
 pnpm-lock.yaml

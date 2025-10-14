@@ -4,10 +4,9 @@ on:
   workflow_dispatch:
   release:
     types: [published]
-  # Temporarily disabled - docker build needs fixes
-  # push:
-  #   branches:
-  #     - main
+  push:
+    branches:
+      - main
 
 env:
   GAR_LOCATION: us-west2
