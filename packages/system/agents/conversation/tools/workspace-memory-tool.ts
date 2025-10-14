@@ -134,9 +134,6 @@ export const workspaceMemoryTool = tool({
                 typeof m.content === "object" &&
                 m.content.eventType === "agent_execution";
               logger.debug("Memory filter result:", { hasAgentExecution, memoryId: m.id });
-              logger.debug("Memory content structure:", {
-                content: JSON.stringify(m.content, null, 2),
-              });
               return hasAgentExecution;
             })
             .map((m) => {

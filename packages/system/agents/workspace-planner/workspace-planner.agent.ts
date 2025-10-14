@@ -294,27 +294,25 @@ Generate jobs that connect the available signals and agents to fulfill the works
       const { object: phase2Response } = await generateObject({
         model: anthropic("claude-sonnet-4-5-20250929"),
         schema: z.object({
-          result: z.object({
-            jobs: z.array(
-              z.object({
-                name: z
-                  .string()
-                  .describe(
-                    "Human-readable job name. Example: 'Monitor and Notify' or 'Process GitHub Events'",
-                  ),
-                triggerSignalId: z.enum(signalIds).describe("Signal ID that triggers this job"),
-                steps: z
-                  .array(
-                    z.object({
-                      agentId: z.enum(agentIds).describe("Agent ID to execute"),
-                      description: z.string().describe("What this step accomplishes"),
-                    }),
-                  )
-                  .describe("Execution steps in order"),
-                behavior: z.enum(["sequential", "parallel"]).describe("Execution pattern"),
-              }),
-            ),
-          }),
+          jobs: z.array(
+            z.object({
+              name: z
+                .string()
+                .describe(
+                  "Human-readable job name. Example: 'Monitor and Notify' or 'Process GitHub Events'",
+                ),
+              triggerSignalId: z.enum(signalIds).describe("Signal ID that triggers this job"),
+              steps: z
+                .array(
+                  z.object({
+                    agentId: z.enum(agentIds).describe("Agent ID to execute"),
+                    description: z.string().describe("What this step accomplishes"),
+                  }),
+                )
+                .describe("Execution steps in order"),
+              behavior: z.enum(["sequential", "parallel"]).describe("Execution pattern"),
+            }),
+          ),
         }),
         system: jobsPrompt,
         prompt: `Create jobs connecting these components:
@@ -330,7 +328,7 @@ Requirements: ${input.intent}`,
         abortSignal,
       });
 
-      const phase2 = phase2Response.result;
+      const phase2 = phase2Response;
 
       const jobsWithIds = phase2.jobs.map((j, idx, arr) => {
         const baseId = toKebabCase(j.name);
