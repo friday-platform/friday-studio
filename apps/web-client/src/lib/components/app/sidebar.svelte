@@ -70,14 +70,7 @@ function getActivePage(value: string | string[]) {
 		</nav>
 	{/if}
 
-	<a
-		href="https://discord.gg/VxzKrJHW"
-		target="_blank"
-		class="help"
-		aria-label="Get Help"
-	>
-		?
-	</a>
+	<a href="https://discord.gg/VxzKrJHW" target="_blank" class="help" aria-label="Get Help"> ? </a>
 </header>
 
 <style>
@@ -91,6 +84,7 @@ function getActivePage(value: string | string[]) {
 		padding-block: var(--size-13) var(--size-6);
 		padding-inline: var(--size-3);
 		position: relative;
+		z-index: var(--layer-2);
 	}
 
 	ul {
