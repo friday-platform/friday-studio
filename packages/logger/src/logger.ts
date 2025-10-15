@@ -234,7 +234,15 @@ class AtlasLoggerV2 implements Logger {
       : join(getAtlasLogsDir(), "global.log");
 
     await ensureDir(dirname(logPath));
-    await Deno.writeTextFile(logPath, `${jsonLine}\n`, { append: true });
+
+    // Use Deno.open with explicit close to prevent file descriptor leak
+    const file = await Deno.open(logPath, { write: true, create: true, append: true });
+    try {
+      const encoder = new TextEncoder();
+      await file.write(encoder.encode(`${jsonLine}\n`));
+    } finally {
+      file.close();
+    }
   }
 }
 
