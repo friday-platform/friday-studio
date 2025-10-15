@@ -188,7 +188,7 @@ export function registerCsvTool(server: McpServer, context: ToolContext): void {
     "csv",
     {
       description:
-        "Read CSV files. Perform the operations (filter, sort, join, aggregate) if requested in the task. Save the result as a artifact. Returns the artifact ID and a brief summary.",
+        "Use this tool to read CSV file data and perform operations such as filtering, sorting, joining, and aggregating. The result will be saved as an artifact.",
       inputSchema: {
         csvFiles: z.array(z.string()).describe("Absolute paths to CSV files"),
         task: z

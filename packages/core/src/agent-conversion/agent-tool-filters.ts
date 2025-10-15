@@ -14,6 +14,7 @@ const ALLOWED_TOOL_NAMES = new Set([
   "artifacts_update",
   "artifacts_get",
   "bash",
+  "csv",
 ]);
 
 /**

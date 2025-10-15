@@ -967,6 +967,10 @@ export class SessionSupervisorActor implements BaseActor {
     let agentSystemPrompt = "";
     if (agentConfig.type === "llm") {
       agentSystemPrompt = agentConfig.config.prompt;
+      agentSystemPrompt +=
+        "When choosing tools, always prefer specialized tools over generic tools. Don’t try to minimize the number of tools - use as many as needed to achieve the goal.";
+      agentSystemPrompt +=
+        "\n When working with artifacts, never include their content in the response - refer only to their artifact IDs.";
     } else if (agentConfig.type === "atlas") {
       agentSystemPrompt = agentConfig.prompt;
     }
