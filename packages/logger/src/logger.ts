@@ -3,6 +3,7 @@ import { dirname, join } from "@std/path";
 import { DetailedError } from "hono/client";
 import { getAtlasLogsDir } from "./paths.ts";
 import type { LogContext, LogEntry, Logger, LogLevel } from "./types.ts";
+import { FileWriteCoordinator } from "../../storage/src/memory/file-write-coordinator.ts";
 
 /**
  * Atlas logger that writes JSON to disk files and human-readable output to console
@@ -235,14 +236,11 @@ class AtlasLoggerV2 implements Logger {
 
     await ensureDir(dirname(logPath));
 
-    // Use Deno.open with explicit close to prevent file descriptor leak
-    const file = await Deno.open(logPath, { write: true, create: true, append: true });
-    try {
-      const encoder = new TextEncoder();
-      await file.write(encoder.encode(`${jsonLine}\n`));
-    } finally {
-      file.close();
-    }
+    // Use FileWriteCoordinator to prevent concurrent file access and FD leaks
+    const coordinator = FileWriteCoordinator.getInstance();
+    await coordinator.executeWrite(logPath, async () => {
+      await Deno.writeTextFile(logPath, `${jsonLine}\n`, { append: true });
+    });
   }
 }
 
