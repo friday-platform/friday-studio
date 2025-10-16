@@ -149,6 +149,7 @@ interface MCPSessionSetup {
   client: Client;
   transport: StreamableHTTPClientTransport;
   lastActivity: number;
+  workspaceId?: string;
 }
 
 /**
@@ -228,9 +229,9 @@ export class AgentOrchestrator implements IAgentOrchestrator {
    * Returns metadata about all registered agents.
    */
   async discoverAgents(): Promise<AgentMetadata[]> {
+    const discoverySessionId = `discovery-${Date.now()}`;
+
     try {
-      // Create a default session to query for agents
-      const discoverySessionId = `discovery-${Date.now()}`;
       const mcpSetup = await this.getOrCreateSessionClient(discoverySessionId);
 
       // Query MCP server for available resources (agents register as resources)
@@ -299,6 +300,21 @@ export class AgentOrchestrator implements IAgentOrchestrator {
 
       // Return empty array if no agents can be discovered
       return [];
+    } finally {
+      // Clean up discovery session immediately after use
+      const setup = this.mcpSessions.get(discoverySessionId);
+      if (setup) {
+        try {
+          await setup.transport.close();
+          this.mcpSessions.delete(discoverySessionId);
+          this.logger.debug("Cleaned up discovery session", { discoverySessionId });
+        } catch (closeError) {
+          this.logger.warn("Failed to close discovery session transport", {
+            discoverySessionId,
+            error: closeError,
+          });
+        }
+      }
     }
   }
 
@@ -313,6 +329,43 @@ export class AgentOrchestrator implements IAgentOrchestrator {
       agentName: agent.metadata.displayName,
       expertise: agent.metadata.expertise.domains,
     });
+  }
+
+  /**
+   * Extract tool metadata from agent output, removing it from the output object
+   * to prevent double-counting in token calculations.
+   */
+  private extractToolMetadata(output: unknown): {
+    toolCalls?: ToolCall[];
+    toolResults?: ToolResult[];
+    outputWithoutTools: unknown;
+  } {
+    let outputWithoutTools = output;
+    let toolCalls: ToolCall[] | undefined;
+    let toolResults: ToolResult[] | undefined;
+
+    if (
+      typeof output === "object" &&
+      output !== null &&
+      "toolCalls" in output &&
+      "toolResults" in output
+    ) {
+      const extracted = output as {
+        toolCalls: ToolCall[];
+        toolResults: ToolResult[];
+        [key: string]: unknown;
+      };
+      ({ toolCalls, toolResults, ...outputWithoutTools } = extracted);
+    }
+
+    return { toolCalls, toolResults, outputWithoutTools };
+  }
+
+  /**
+   * Truncate text to a maximum length with ellipsis
+   */
+  private truncateTask(text: string, maxLength = 100): string {
+    return text.length > maxLength ? `${text.substring(0, maxLength - 3)}...` : text;
   }
 
   /**
@@ -449,7 +502,7 @@ export class AgentOrchestrator implements IAgentOrchestrator {
           logger,
         );
       }
-      const mcpSetup = await this.getOrCreateSessionClient(context.sessionId);
+      const mcpSetup = await this.getOrCreateSessionClient(context.sessionId, context.workspaceId);
 
       logger.debug("Executing agent via MCP", {
         agentId,
@@ -530,42 +583,24 @@ export class AgentOrchestrator implements IAgentOrchestrator {
       const output =
         executionResult.type === "completed" ? executionResult.result : executionResult;
 
-      // Pass through tool metadata from the completed result payload
-      let mappedCalls: ToolCall[] | undefined;
-      let mappedResults: ToolResult[] | undefined;
-      if (
-        typeof output === "object" &&
-        output !== null &&
-        "toolCalls" in output &&
-        "toolResults" in output
-      ) {
-        // @FIXME: tool calls should be parsed.
-        // @ts-expect-error `agents-should-produce-structured-output`
-        mappedCalls = output.toolCalls;
-        // @FIXME: tool results should be parsed.
-        // @ts-expect-error `agents-should-produce-structured-output`
-        mappedResults = output.toolResults;
-      }
+      const { toolCalls, toolResults, outputWithoutTools } = this.extractToolMetadata(output);
 
       this.logger.info(`Agent ${agentId} execution completed with result:`, {
         executionResultType: executionResult.type,
-        output: JSON.stringify(output),
+        output: JSON.stringify(outputWithoutTools),
         duration: Date.now() - startTime,
       });
 
-      // Create a brief summary of the task instead of storing the entire prompt
-      const taskSummary = prompt.length > 100 ? `${prompt.substring(0, 97)}...` : prompt;
-
       return {
         agentId,
-        task: taskSummary,
+        task: this.truncateTask(prompt),
         input: context,
-        output,
+        output: outputWithoutTools,
         duration: Date.now() - startTime,
         timestamp: new Date().toISOString(),
         // @ts-expect-error `agents-should-produce-structured-output`
-        toolCalls: mappedCalls && mappedCalls.length > 0 ? mappedCalls : undefined,
-        toolResults: mappedResults && mappedResults.length > 0 ? mappedResults : undefined,
+        toolCalls: toolCalls && toolCalls.length > 0 ? toolCalls : undefined,
+        toolResults: toolResults && toolResults.length > 0 ? toolResults : undefined,
       };
     } catch (error) {
       if (error instanceof AwaitingSupervisorDecision) {
@@ -590,15 +625,12 @@ export class AgentOrchestrator implements IAgentOrchestrator {
         duration: Date.now() - startTime,
       });
 
-      // Create a brief summary of the task instead of storing the entire prompt
-      const taskSummary = prompt.length > 100 ? `${prompt.substring(0, 97)}...` : prompt;
-
       // Provide user-friendly error messages based on error type
       const userFriendlyError = getErrorDisplayMessage(errorCause) || errorMessage;
 
       return {
         agentId,
-        task: taskSummary,
+        task: this.truncateTask(prompt),
         input: context,
         output: null,
         error: userFriendlyError,
@@ -626,7 +658,10 @@ export class AgentOrchestrator implements IAgentOrchestrator {
     const startTime = Date.now();
 
     try {
-      const mcpSetup = await this.getOrCreateSessionClient(pending.sessionContext.sessionId);
+      const mcpSetup = await this.getOrCreateSessionClient(
+        pending.sessionContext.sessionId,
+        pending.sessionContext.workspaceId,
+      );
 
       const resumeArgs: Partial<AgentToolParams> = {
         _sessionContext: {
@@ -663,26 +698,18 @@ export class AgentOrchestrator implements IAgentOrchestrator {
       const output =
         executionResult.type === "completed" ? executionResult.result : executionResult;
 
-      let mappedCalls: ToolCall[] | undefined;
-      let mappedResults: ToolResult[] | undefined;
-      if (typeof output === "object" && output !== null) {
-        const rec = output;
-        // @ts-expect-error `agents-should-produce-structured-output`
-        mappedCalls = rec.toolCalls;
-        // @ts-expect-error `agents-should-produce-structured-output`
-        mappedResults = rec.toolResults;
-      }
+      const { toolCalls, toolResults, outputWithoutTools } = this.extractToolMetadata(output);
 
       return {
         agentId: pending.agentId,
         task: "Resume with approval",
         input: validatedDecision,
-        output,
+        output: outputWithoutTools,
         duration: Date.now() - startTime,
         timestamp: new Date().toISOString(),
         // @ts-expect-error `agents-should-produce-structured-output`
-        toolCalls: mappedCalls && mappedCalls.length > 0 ? mappedCalls : undefined,
-        toolResults: mappedResults && mappedResults.length > 0 ? mappedResults : undefined,
+        toolCalls: toolCalls && toolCalls.length > 0 ? toolCalls : undefined,
+        toolResults: toolResults && toolResults.length > 0 ? toolResults : undefined,
       };
     } catch (error) {
       if (error instanceof AwaitingSupervisorDecision) {
@@ -823,7 +850,7 @@ export class AgentOrchestrator implements IAgentOrchestrator {
           minTimeout: 1000,
           maxTimeout: 30000,
           multiplier: 2,
-          jitter: 0,
+          jitter: 1, // Full jitter to prevent thundering herd
         });
       } catch (error) {
         // Unwrap RetryError to get the original error
@@ -840,7 +867,7 @@ export class AgentOrchestrator implements IAgentOrchestrator {
           eventKey,
           {
             agentId,
-            task: prompt.length > 100 ? `${prompt.substring(0, 97)}...` : prompt,
+            task: this.truncateTask(prompt),
             output: JSON.stringify(result),
             duration: (Date.now() - startTime).toString(),
           },
@@ -857,28 +884,25 @@ export class AgentOrchestrator implements IAgentOrchestrator {
         });
       }
 
-      // Create a brief summary of the task instead of storing the entire prompt
-      const taskSummary = prompt.length > 100 ? `${prompt.substring(0, 97)}...` : prompt;
+      const { toolCalls, toolResults, outputWithoutTools } = this.extractToolMetadata(result);
 
       return {
         agentId,
-        task: taskSummary,
+        task: this.truncateTask(prompt),
         input: context,
-        output: result,
+        output: outputWithoutTools,
         duration: Date.now() - startTime,
         timestamp: new Date().toISOString(),
-        toolCalls: result.toolCalls,
-        toolResults: result.toolResults,
+        // @ts-expect-error `agents-should-produce-structured-output`
+        toolCalls,
+        toolResults,
       };
     } catch (error) {
       this.logger.error("Wrapped agent execution failed", { error });
 
-      // Create a brief summary of the task instead of storing the entire prompt
-      const taskSummary = prompt.length > 100 ? `${prompt.substring(0, 97)}...` : prompt;
-
       return {
         agentId,
-        task: taskSummary,
+        task: this.truncateTask(prompt),
         input: context,
         output: null,
         // @ts-expect-error `agents-should-produce-structured-output`
@@ -919,7 +943,10 @@ export class AgentOrchestrator implements IAgentOrchestrator {
    * Get or create an MCP client for a specific session.
    * Each session gets its own transport and SSE connection.
    */
-  private async getOrCreateSessionClient(sessionId: string): Promise<MCPSessionSetup> {
+  private async getOrCreateSessionClient(
+    sessionId: string,
+    workspaceId?: string,
+  ): Promise<MCPSessionSetup> {
     let setup = this.mcpSessions.get(sessionId);
 
     if (!setup) {
@@ -958,7 +985,7 @@ export class AgentOrchestrator implements IAgentOrchestrator {
 
       const mcpSessionId = transport.sessionId;
 
-      setup = { client, transport, lastActivity: Date.now() };
+      setup = { client, transport, lastActivity: Date.now(), workspaceId };
 
       this.mcpSessions.set(sessionId, setup);
 
@@ -1006,6 +1033,21 @@ export class AgentOrchestrator implements IAgentOrchestrator {
         }
 
         this.mcpSessions.delete(sessionId);
+
+        // Clean up session memory if workspaceId exists
+        if (setup.workspaceId) {
+          const memoryKey = `${setup.workspaceId}:${sessionId}`;
+          const memory = this.sessionMemories.get(memoryKey);
+          if (memory) {
+            try {
+              await memory.dispose();
+              this.sessionMemories.delete(memoryKey);
+              this.logger.debug("Cleaned up session memory", { memoryKey });
+            } catch (error) {
+              this.logger.error("Error disposing session memory", { memoryKey, error });
+            }
+          }
+        }
 
         // Clean up stream handlers for this session
         for (const key of this.activeStreamHandlers.keys()) {
