@@ -622,4 +622,77 @@ Deno.test("Workspace Planner Agent", async (t) => {
 
     return { result, planData, metrics, executionTimeMs };
   });
+
+  await step(
+    t,
+    "LinkedIn Outreach: Complex Daily Workflow with Persistence",
+    async ({ snapshot }) => {
+      adapter.reset();
+      const context = adapter.createContext({ telemetry: true });
+
+      const startTime = performance.now();
+      const input = {
+        intent:
+          "Create an automated email reminder system that:\n1. Loads LinkedIn connections from CSV file (/Users/odk/Downloads/Connections.csv)\n2. Research each company to filter for New York-based companies with 50+ employees\n3. Daily at 8 AM on weekdays, randomly select 3 people from the filtered list\n4. For each selected person, research both the individual and company to generate:\n   - Person's name, company, and title\n   - 4-sentence company summary\n   - 5 bullet points about the person\n   - 3 ideas for potential intro outreach messages\n5. Send structured email to michal@tempest.team with all this information\n\nThe system should maintain a database of researched companies to avoid re-researching, and track which people have been selected to ensure variety over time.",
+      };
+
+      const result = await workspacePlannerAgent.execute(input, context);
+      const executionTimeMs = performance.now() - startTime;
+
+      const metrics = adapter.getMetrics();
+      const streamEvents = adapter.getStreamEvents();
+
+      assert(result.ok, "Should execute successfully");
+      assert(result.data.artifactId, "Should return artifact ID");
+
+      const artifactResponse = await parseResult(
+        client.artifactsStorage[":id"].$get({ param: { id: result.data.artifactId } }),
+      );
+      assert(artifactResponse.ok, "Should fetch artifact successfully");
+      assert(
+        artifactResponse.data.artifact.data.type === "workspace-plan",
+        "Artifact should be a workspace plan",
+      );
+      const planData: WorkspacePlan = artifactResponse.data.artifact.data.data;
+
+      snapshot({ input, result, planData, metrics, streamEvents, timing: { executionTimeMs } });
+
+      // Structural assertions
+      assert(planData.signals.length >= 1, "Should have daily schedule signal");
+      assert(planData.agents.length > 0, "Should have agents");
+      assert(planData.jobs.length >= 1, "Should have job orchestrating the workflow");
+
+      // Check for email configuration
+      const hasEmailConfig = planData.agents.some(
+        (a) =>
+          a.configuration?.email === "michal@tempest.team" ||
+          (a.configuration && JSON.stringify(a.configuration).includes("michal@tempest.team")),
+      );
+      assert(hasEmailConfig, "Should capture email address in agent configuration");
+
+      // Check for file path configuration
+      const hasFilePathConfig =
+        JSON.stringify(planData).includes("/Users/odk/Downloads/Connections.csv") ||
+        JSON.stringify(planData).includes("Connections.csv");
+      assert(hasFilePathConfig, "Should reference the CSV file path");
+
+      const linkedinOutreachEval = await llmJudge({
+        criteria: `The workspace plan should:
+          1. Define a weekday schedule signal at 8 AM (Monday-Friday)
+          2. Show clear understanding of data persistence needs (tracking researched companies and previously selected people)
+          3. Include agents for distinct phases: CSV loading, company research/filtering (NY + 50+ employees), person selection (random 3), detailed research, email composition
+          4. Capture configuration: email address (michal@tempest.team), file path, company filters (NY location, 50+ employees), selection count (3 people), email content structure
+          5. Demonstrate understanding of stateful operations (maintaining database to avoid re-research and ensure variety)
+          6. Define sequential job flow with clear dependencies between phases
+          The plan must show it grasps the complexity: initial filtering phase → persistence layer → daily selection → research → structured output.`,
+        agentOutput: planData,
+      });
+      assert(
+        linkedinOutreachEval.pass,
+        `LinkedIn outreach validation failed: ${linkedinOutreachEval.justification}`,
+      );
+
+      return { result, planData, metrics, executionTimeMs };
+    },
+  );
 });
