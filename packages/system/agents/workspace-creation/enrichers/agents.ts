@@ -95,6 +95,14 @@ Research and web scraping tasks should be handled by the 'research' agent.
 4. If generated: Select archetype, generate prompt, identify MCP domains
 5. For generated agents ONLY: Identify MCP domains if the agent needs external tools
 
+CRITICAL ANTI-HALLUCINATION RULE:
+If the agent description mentions researching PEOPLE, COMPANIES, or PROFESSIONAL BACKGROUNDS, you MUST use the bundled 'research' agent, even if the description includes other tasks (like email, analysis, etc.). The research agent has built-in citation and verification to prevent hallucinating facts about people.
+
+Examples triggering research agent:
+- "researches each prospect and their company" → MUST use research agent
+- "research founding teams" → MUST use research agent
+- "gather company intelligence and founder backgrounds" → MUST use research agent
+
 CRITICAL MCP DOMAIN RULES:
 - DO NOT add MCP domains for file system operations (provided automatically)
 - DO NOT add MCP domains for email tasks (provided automatically)

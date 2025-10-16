@@ -55,23 +55,22 @@ Atlas workspaces automate tasks using:
 
 ## Defining agents
 
-Determine agent boundaries by affinity - group similar work together:
+Split agents by integration point and capability boundary:
 
-Combine into ONE agent when:
-- Same pattern, different targets (monitoring Nike vs Adidas = same monitoring work)
-- Related research topics with overlap (company info + founder backgrounds = related research)
-- Sequential steps in one coherent task (fetch data + parse + format = one transformation)
+Create SEPARATE agents for:
+- Each distinct external system (calendar, email, Slack, GitHub are separate agents)
+- Each distinct capability (research, analysis, notification, summarization are separate)
+- Each integration point (one agent per API or service)
 
-Split into SEPARATE agents when:
-- Fundamentally different external systems (reading calendar vs sending email)
-- Distinct integration points (web monitoring vs Discord notifications)
-- Truly independent capabilities that could be reused separately
+Combine into ONE agent only when:
+- Same external system with multiple similar operations (one Slack agent handles all Slack posting)
+- Parameterized targets for identical operations (monitoring multiple websites with same logic)
 
 Examples:
-- Good: ONE "Shoe Sale Monitor" handles Nike AND Adidas (same pattern, list targets in config)
-- Good: ONE "Company Researcher" handles company AND founder info (related research, natural overlap)
-- Bad: Separate "Nike Monitor" + "Adidas Monitor" (over-decomposition)
-- Bad: Separate "Company Researcher" + "Founder Researcher" (artificial split, too much overlap)
+- Good: Separate "Calendar Reader" + "Company Researcher" + "Email Sender" (distinct systems)
+- Good: ONE "Website Monitor" with targets: ["Nike.com", "Adidas.com"] (same operation, different targets)
+- Bad: ONE "Research + Email Agent" (mixes research capability with email integration)
+- Bad: ONE "Calendar + Research + Email Pipeline" (bundles unrelated systems)
 
 ### Agent configuration
 
@@ -105,7 +104,7 @@ DO NOT include:
 ## Planning guidelines
 
 - Identify what triggers the automation (time-based, event-based, manual)
-- Apply affinity principle to group agents
+- Split agents by external system and capability boundary
 - Capture user-specific details in configuration (sparingly)
 - Describe agents by WHAT they accomplish, not HOW (implementation)
 
@@ -185,7 +184,7 @@ export const workspacePlannerAgent = createAgent<WorkspacePlannerInput, Workspac
 
 ${input.intent}
 
-Apply affinity principle: consolidate agents with similar patterns or overlapping work.`;
+Split agents by external system and capability boundary. Each agent should handle one integration point or one distinct capability.`;
       }
 
       // Generate workspace, signals, agents with LLM-chosen names
