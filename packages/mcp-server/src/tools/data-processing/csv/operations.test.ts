@@ -587,3 +587,236 @@ Deno.test("getRowsCsv - invalid endRow", () => {
     getRowsCsv(map, { fileName: testFile1.fileName, startRow: 5, endRow: 2 });
   }).toThrow("must be >= startRow");
 });
+
+// Edge case tests for null value handling
+Deno.test("filterCsv - null values with eq operator", () => {
+  const map: ParsedCsvFilesMap = { [testFileWithNulls.fileName]: testFileWithNulls };
+  const result = filterCsv(map, {
+    fileName: testFileWithNulls.fileName,
+    column: "amount",
+    operator: "eq",
+    value: 100,
+  });
+
+  expect(result).toHaveLength(1);
+  const r0 = must(result[0]);
+  expect(r0.amount).toBe(100);
+});
+
+Deno.test("filterCsv - null values with ne operator", () => {
+  const map: ParsedCsvFilesMap = { [testFileWithNulls.fileName]: testFileWithNulls };
+  const result = filterCsv(map, {
+    fileName: testFileWithNulls.fileName,
+    column: "amount",
+    operator: "ne",
+    value: 100,
+  });
+
+  // All non-100 values, including nulls
+  expect(result).toHaveLength(4);
+});
+
+Deno.test("filterCsv - null values with gt operator", () => {
+  const map: ParsedCsvFilesMap = { [testFileWithNulls.fileName]: testFileWithNulls };
+  const result = filterCsv(map, {
+    fileName: testFileWithNulls.fileName,
+    column: "amount",
+    operator: "gt",
+    value: 50,
+  });
+
+  // Only 100 and 150
+  expect(result).toHaveLength(2);
+  const amounts = result.map((r) => r.amount);
+  expect(amounts).toContain(100);
+  expect(amounts).toContain(150);
+});
+
+Deno.test("filterCsv - null values with contains operator", () => {
+  const nullStringsCsv = `name,value\nAlice,100\n,200\nBob,300`;
+  const nullStrings = fromCsv(nullStringsCsv, "nullstrings.csv");
+  const map: ParsedCsvFilesMap = { [nullStrings.fileName]: nullStrings };
+
+  const result = filterCsv(map, {
+    fileName: nullStrings.fileName,
+    column: "name",
+    operator: "contains",
+    value: "A",
+  });
+
+  // Only Alice
+  expect(result).toHaveLength(1);
+  const r0 = must(result[0]);
+  expect(r0.name).toBe("Alice");
+});
+
+// Edge case tests for empty result sets
+Deno.test("filterCsv - filter resulting in 0 rows", () => {
+  const map: ParsedCsvFilesMap = { [testFile1.fileName]: testFile1 };
+  const result = filterCsv(map, {
+    fileName: testFile1.fileName,
+    column: "amount",
+    operator: "gt",
+    value: 1000,
+  });
+
+  expect(result).toHaveLength(0);
+});
+
+Deno.test("aggregateCsv - aggregate on empty result", () => {
+  const emptyFile = fromCsv(`id,amount\n`, "empty.csv");
+  const map: ParsedCsvFilesMap = { [emptyFile.fileName]: emptyFile };
+
+  const result = aggregateCsv(map, {
+    fileName: emptyFile.fileName,
+    aggregateColumn: "amount",
+    operation: "sum",
+  });
+
+  expect(result).toHaveLength(1);
+  const r0 = must(result[0]);
+  expect(r0.sum).toBe(0);
+});
+
+Deno.test("aggregateCsv - count on empty result", () => {
+  const emptyFile = fromCsv(`id,amount\n`, "empty.csv");
+  const map: ParsedCsvFilesMap = { [emptyFile.fileName]: emptyFile };
+
+  const result = aggregateCsv(map, {
+    fileName: emptyFile.fileName,
+    aggregateColumn: "amount",
+    operation: "count",
+  });
+
+  expect(result).toHaveLength(1);
+  const r0 = must(result[0]);
+  expect(r0.count).toBe(0);
+});
+
+// Edge case tests for join with duplicate keys
+Deno.test("joinCsv - handles duplicate keys in both files (cartesian product)", () => {
+  const file1Csv = `id,product,amount\n1,Apple,100\n2,Apple,200`;
+  const file2Csv = `product,category\nApple,Fruit\nApple,Dessert`;
+
+  const file1 = fromCsv(file1Csv, "sales.csv");
+  const file2 = fromCsv(file2Csv, "products.csv");
+  const map: ParsedCsvFilesMap = { [file1.fileName]: file1, [file2.fileName]: file2 };
+
+  const result = joinCsv(map, {
+    fileName1: file1.fileName,
+    fileName2: file2.fileName,
+    column1: "product",
+    column2: "product",
+    joinType: "inner",
+  });
+
+  // 2 sales × 2 categories = 4 rows
+  expect(result).toHaveLength(4);
+
+  const row1 = result.find((r) => r.id === 1 && r.category === "Fruit");
+  const row2 = result.find((r) => r.id === 1 && r.category === "Dessert");
+  const row3 = result.find((r) => r.id === 2 && r.category === "Fruit");
+  const row4 = result.find((r) => r.id === 2 && r.category === "Dessert");
+
+  expect(row1).toBeDefined();
+  expect(row2).toBeDefined();
+  expect(row3).toBeDefined();
+  expect(row4).toBeDefined();
+});
+
+Deno.test("joinCsv - join with empty file", () => {
+  const emptyFile = fromCsv(`product,category\n`, "empty.csv");
+  const map: ParsedCsvFilesMap = {
+    [testFile1.fileName]: testFile1,
+    [emptyFile.fileName]: emptyFile,
+  };
+
+  const result = joinCsv(map, {
+    fileName1: testFile1.fileName,
+    fileName2: emptyFile.fileName,
+    column1: "product",
+    column2: "product",
+    joinType: "inner",
+  });
+
+  // Inner join with empty file = 0 results
+  expect(result).toHaveLength(0);
+});
+
+Deno.test("joinCsv - left join with empty file", () => {
+  const emptyFile = fromCsv(`product,category\n`, "empty.csv");
+  const map: ParsedCsvFilesMap = {
+    [testFile1.fileName]: testFile1,
+    [emptyFile.fileName]: emptyFile,
+  };
+
+  const result = joinCsv(map, {
+    fileName1: testFile1.fileName,
+    fileName2: emptyFile.fileName,
+    column1: "product",
+    column2: "product",
+    joinType: "left",
+  });
+
+  // Left join preserves all rows from file1
+  expect(result).toHaveLength(4);
+});
+
+Deno.test("joinCsv - handles null join keys", () => {
+  const file1Csv = `id,category\n1,A\n2,`;
+  const file2Csv = `category,desc\nA,Alpha\n,Unknown`;
+
+  const file1 = fromCsv(file1Csv, "file1.csv");
+  const file2 = fromCsv(file2Csv, "file2.csv");
+  const map: ParsedCsvFilesMap = { [file1.fileName]: file1, [file2.fileName]: file2 };
+
+  const result = joinCsv(map, {
+    fileName1: file1.fileName,
+    fileName2: file2.fileName,
+    column1: "category",
+    column2: "category",
+    joinType: "inner",
+  });
+
+  // Should match on both "A" and null/undefined
+  expect(result.length).toBeGreaterThan(0);
+  const matchedA = result.find((r) => r.category === "A");
+  expect(matchedA).toBeDefined();
+});
+
+// Edge case tests for sortCsv with mixed types
+Deno.test("sortCsv - handles mixed string/numeric values", () => {
+  const mixedCsv = `id,value\n1,100\n2,abc\n3,50\n4,xyz`;
+  const mixedFile = fromCsv(mixedCsv, "mixed.csv");
+  const map: ParsedCsvFilesMap = { [mixedFile.fileName]: mixedFile };
+
+  const result = sortCsv(map, { fileName: mixedFile.fileName, column: "value", direction: "asc" });
+
+  expect(result).toHaveLength(4);
+  // Should not crash, but order may vary between numeric and string values
+  expect(result[0]).toBeDefined();
+});
+
+// Edge case tests for chained operations
+Deno.test("filterCsv - can chain with baseRows parameter", () => {
+  const map: ParsedCsvFilesMap = { [testFile1.fileName]: testFile1 };
+
+  // First filter
+  const filtered1 = filterCsv(map, {
+    fileName: testFile1.fileName,
+    column: "amount",
+    operator: "gt",
+    value: 50,
+  });
+
+  // Second filter on result of first
+  const filtered2 = filterCsv(
+    map,
+    { fileName: testFile1.fileName, column: "product", operator: "eq", value: "Apple" },
+    filtered1,
+  );
+
+  expect(filtered2).toHaveLength(2);
+  const products = filtered2.map((r) => r.product);
+  expect(products.every((p) => p === "Apple")).toBe(true);
+});

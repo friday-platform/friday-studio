@@ -7,6 +7,9 @@
 
 import { tool } from "ai";
 import { z } from "zod";
+import { client, parseResult } from "@atlas/client/v2";
+import { stringifyError } from "@atlas/utils";
+import type { ToolContext } from "../../types.ts";
 import type {
   AggregateParams,
   CsvCell,
@@ -16,12 +19,20 @@ import type {
   ParsedCsvFile,
   SortParams,
 } from "./schemas.ts";
+import {
+  AggregateParamsSchema,
+  FilterParamsSchema,
+  GetRowsParamsSchema,
+  JoinParamsSchema,
+  SortParamsSchema,
+} from "./schemas.ts";
 
 /**
  * Tracks the result of CSV operations
  */
 export interface OperationResult {
   dataByFile: Record<string, Record<string, CsvCell>[]>;
+  columnsByFile: Record<string, string[]>;
   operations: string[];
 }
 
@@ -40,50 +51,95 @@ function getRequiredFile(fileMap: ParsedCsvFilesMap, fileName: string): ParsedCs
 }
 
 /**
- * Validate column exists in file
+ * Get current column names from data, with fallback to metadata
+ *
+ * For untransformed data (from original file), use metadata columns since rows with null
+ * values might not have all properties. For transformed data (after joins/aggregates),
+ * inspect actual row keys since column structure may have changed.
+ *
+ * @param data - Array of CSV rows
+ * @param fallbackColumns - Column names from file metadata to use as fallback
+ * @returns Current column names
  */
-function validateColumn(file: ParsedCsvFile, column: string): void {
-  if (!file.columns.includes(column)) {
+function getCurrentColumns(data: Record<string, CsvCell>[], fallbackColumns: string[]): string[] {
+  if (data.length === 0 || !data[0]) return fallbackColumns;
+
+  const keys = Object.keys(data[0]);
+  return keys.length > 0 ? keys : fallbackColumns;
+}
+
+/**
+ * Validate column exists in current data or original file
+ *
+ * For operations on untransformed data, validates against file.columns (metadata).
+ * For operations on transformed data (after joins), validates against actual row keys.
+ *
+ * @param file - Parsed CSV file with original metadata
+ * @param column - Column name to validate
+ * @param currentData - Optional current transformed data (may have different columns than original)
+ * @throws Error if column doesn't exist in current or original columns
+ */
+function validateColumn(
+  file: ParsedCsvFile,
+  column: string,
+  currentData?: Record<string, CsvCell>[],
+): void {
+  // For transformed data (after joins), check actual row keys
+  // For untransformed data, use file.columns metadata (handles null values correctly)
+  const currentColumns = currentData ? getCurrentColumns(currentData, file.columns) : file.columns;
+
+  if (!currentColumns.includes(column)) {
     throw new Error(
-      `Column '${column}' does not exist in file ${file.fileName}. Available columns: ${file.columns.join(", ")}`,
+      `Column '${column}' does not exist in file ${file.fileName}. Available columns: ${currentColumns.join(", ")}`,
     );
   }
 }
 
 /**
  * Compare two values based on operator
+ *
+ * Null/undefined handling:
+ * - eq/ne: null only equals null
+ * - Numeric comparisons (gt, lt, gte, lte): null compares as NaN, always false
+ * - String operations (contains, startsWith, endsWith): null is treated as empty string
+ *
+ * @param rowValue - Value from CSV row (may be null/undefined)
+ * @param targetValue - Target value to compare against
+ * @param operator - Comparison operator
+ * @returns true if comparison passes, false otherwise
  */
 function compareValues(
   rowValue: CsvCell | undefined,
   targetValue: string | number | boolean,
   operator: FilterParams["operator"],
 ): boolean {
-  const a = rowValue ?? null;
-  const rowStr = String(a ?? "");
-  const targetStr = String(targetValue);
+  // Direct equality checks
+  if (operator === "eq") return rowValue === targetValue;
+  if (operator === "ne") return rowValue !== targetValue;
 
-  switch (operator) {
-    case "eq":
-      return a === targetValue;
-    case "ne":
-      return a !== targetValue;
-    case "gt":
-      return Number(a) > Number(targetValue);
-    case "lt":
-      return Number(a) < Number(targetValue);
-    case "gte":
-      return Number(a) >= Number(targetValue);
-    case "lte":
-      return Number(a) <= Number(targetValue);
-    case "contains":
-      return rowStr.toLowerCase().includes(targetStr.toLowerCase());
-    case "startsWith":
-      return rowStr.toLowerCase().startsWith(targetStr.toLowerCase());
-    case "endsWith":
-      return rowStr.toLowerCase().endsWith(targetStr.toLowerCase());
-    default:
-      throw new Error(`Unknown operator: ${operator}`);
+  // Numeric comparisons
+  if (operator === "gt" || operator === "lt" || operator === "gte" || operator === "lte") {
+    const a = Number(rowValue);
+    const b = Number(targetValue);
+    if (Number.isNaN(a) || Number.isNaN(b)) return false;
+
+    if (operator === "gt") return a > b;
+    if (operator === "lt") return a < b;
+    if (operator === "gte") return a >= b;
+    return a <= b; // lte
   }
+
+  // String operations
+  if (operator === "contains" || operator === "startsWith" || operator === "endsWith") {
+    const rowStr = String(rowValue ?? "").toLowerCase();
+    const targetStr = String(targetValue).toLowerCase();
+
+    if (operator === "contains") return rowStr.includes(targetStr);
+    if (operator === "startsWith") return rowStr.startsWith(targetStr);
+    return rowStr.endsWith(targetStr); // endsWith
+  }
+
+  throw new Error(`Unknown operator: ${operator}`);
 }
 
 /**
@@ -95,13 +151,49 @@ export function filterCsv(
   baseRows?: Record<string, CsvCell>[],
 ): Record<string, CsvCell>[] {
   const file = getRequiredFile(fileMap, params.fileName);
-  validateColumn(file, params.column);
   const source = baseRows ?? file.data;
+  validateColumn(file, params.column, baseRows);
   return source.filter((row) => compareValues(row[params.column], params.value, params.operator));
 }
 
 /**
+ * Compare two CSV cell values for sorting
+ *
+ * @param aVal - First value to compare
+ * @param bVal - Second value to compare
+ * @param direction - Sort direction (asc or desc)
+ * @returns Negative if a < b, positive if a > b, zero if equal
+ */
+function compareRowValues(
+  aVal: CsvCell | undefined,
+  bVal: CsvCell | undefined,
+  direction: "asc" | "desc",
+): number {
+  // Handle null/undefined
+  if (aVal == null && bVal == null) return 0;
+  if (aVal == null) return direction === "asc" ? -1 : 1;
+  if (bVal == null) return direction === "asc" ? 1 : -1;
+
+  // Try numeric comparison first
+  const aNum = Number(aVal);
+  const bNum = Number(bVal);
+
+  if (!Number.isNaN(aNum) && !Number.isNaN(bNum)) {
+    return direction === "asc" ? aNum - bNum : bNum - aNum;
+  }
+
+  // Fall back to string comparison
+  const result = String(aVal).localeCompare(String(bVal));
+  return direction === "asc" ? result : -result;
+}
+
+/**
  * Sort rows by column in specified direction
+ *
+ * @param fileMap - Map of file names to parsed CSV data
+ * @param params - Sort parameters (file, column, direction)
+ * @param baseRows - Optional transformed rows to sort
+ * @returns Sorted array of rows
  */
 export function sortCsv(
   fileMap: ParsedCsvFilesMap,
@@ -109,42 +201,22 @@ export function sortCsv(
   baseRows?: Record<string, CsvCell>[],
 ): Record<string, CsvCell>[] {
   const file = getRequiredFile(fileMap, params.fileName);
-  validateColumn(file, params.column);
+  const source = baseRows ?? file.data;
+  validateColumn(file, params.column, baseRows);
 
-  const sortedData = [...(baseRows ?? file.data)];
+  const sortedData = [...source];
 
-  sortedData.sort((a, b) => {
-    const aVal = a[params.column];
-    const bVal = b[params.column];
-
-    // Handle null/undefined
-    if (aVal == null && bVal == null) return 0;
-    if (aVal == null) return params.direction === "asc" ? -1 : 1;
-    if (bVal == null) return params.direction === "asc" ? 1 : -1;
-
-    // Try numeric comparison first
-    const aNum = Number(aVal);
-    const bNum = Number(bVal);
-
-    if (!Number.isNaN(aNum) && !Number.isNaN(bNum)) {
-      return params.direction === "asc" ? aNum - bNum : bNum - aNum;
-    }
-
-    // Fall back to string comparison
-    const aStr = String(aVal);
-    const bStr = String(bVal);
-
-    if (params.direction === "asc") {
-      return aStr.localeCompare(bStr);
-    }
-    return bStr.localeCompare(aStr);
-  });
+  sortedData.sort((a, b) => compareRowValues(a[params.column], b[params.column], params.direction));
 
   return sortedData;
 }
 
 /**
  * Generate a unique column name that doesn't collide with existing columns
+ *
+ * @param existingColumns - Set of column names already in use
+ * @param baseName - Base name to make unique
+ * @returns Unique column name (baseName or baseName_N)
  */
 function getUniqueColumnName(existingColumns: Set<string>, baseName: string): string {
   if (!existingColumns.has(baseName)) {
@@ -152,16 +224,43 @@ function getUniqueColumnName(existingColumns: Set<string>, baseName: string): st
   }
 
   let suffix = 1;
-  let candidate = `${baseName}_${suffix}`;
-  while (existingColumns.has(candidate)) {
+  while (existingColumns.has(`${baseName}_${suffix}`)) {
     suffix++;
-    candidate = `${baseName}_${suffix}`;
   }
-  return candidate;
+  return `${baseName}_${suffix}`;
+}
+
+/**
+ * Merge a source row into a base row using column mappings
+ *
+ * @param baseRow - Base row to merge into (will be cloned)
+ * @param sourceRow - Source row to merge from
+ * @param columnMappings - Map from source column names to target column names
+ * @returns New merged row
+ */
+function mergeRowWithMappings(
+  baseRow: Record<string, CsvCell>,
+  sourceRow: Record<string, CsvCell>,
+  columnMappings: Map<string, string>,
+): Record<string, CsvCell> {
+  const merged = { ...baseRow };
+  for (const [col, val] of Object.entries(sourceRow)) {
+    const targetCol = columnMappings.get(col) ?? col;
+    merged[targetCol] = val;
+  }
+  return merged;
 }
 
 /**
  * Join two CSV files on specified columns
+ *
+ * Performance: O(n + m) using hash map instead of nested loops
+ *
+ * @param fileMap - Map of file names to parsed CSV data
+ * @param params - Join parameters (files, columns, join type)
+ * @param baseRows1 - Optional transformed rows for first file
+ * @param baseRows2 - Optional transformed rows for second file
+ * @returns Joined rows with unique column names
  */
 export function joinCsv(
   fileMap: ParsedCsvFilesMap,
@@ -172,15 +271,11 @@ export function joinCsv(
   const file1 = getRequiredFile(fileMap, params.fileName1);
   const file2 = getRequiredFile(fileMap, params.fileName2);
 
-  validateColumn(file1, params.column1);
-  validateColumn(file2, params.column2);
-
-  const result: Record<string, CsvCell>[] = [];
-  const matched2Indices = new Set<number>();
-
-  // Inner and left join logic
   const rows1 = baseRows1 ?? file1.data;
   const rows2 = baseRows2 ?? file2.data;
+
+  validateColumn(file1, params.column1, baseRows1);
+  validateColumn(file2, params.column2, baseRows2);
 
   // Build set of existing columns from file1 (including any prior transformations)
   const existingColumns = new Set<string>(
@@ -197,47 +292,47 @@ export function joinCsv(
     existingColumns.add(targetCol);
   }
 
+  // Build hash map for rows2 by join key - O(m)
+  // Each key may have multiple rows (handles duplicates correctly)
+  const rows2ByKey = new Map<CsvCell | undefined, Record<string, CsvCell>[]>();
+  for (const row2 of rows2) {
+    const key2 = row2[params.column2];
+    const existing = rows2ByKey.get(key2);
+    if (existing) {
+      existing.push(row2);
+    } else {
+      rows2ByKey.set(key2, [row2]);
+    }
+  }
+
+  const result: Record<string, CsvCell>[] = [];
+  const matchedKeys2 = new Set<CsvCell | undefined>();
+
+  // Single pass through rows1 - O(n)
   for (const row1 of rows1) {
     const key1 = row1[params.column1];
-    let foundMatch = false;
+    const matches = rows2ByKey.get(key1);
 
-    for (const [i, row2] of rows2.entries()) {
-      const key2 = row2[params.column2];
-      // Strict equality is fine because PapaParse already typed values; differences like "1" vs 1 should not match
-      if (key1 === key2) {
-        foundMatch = true;
-        matched2Indices.add(i);
+    if (matches) {
+      matchedKeys2.add(key1);
 
-        // Merge rows using pre-computed column mappings
-        const mergedRow: Record<string, CsvCell> = { ...row1 };
-
-        for (const [col, val] of Object.entries(row2)) {
-          const targetCol = columnMappings.get(col) ?? col;
-          mergedRow[targetCol] = val;
-        }
-
-        result.push(mergedRow);
+      // Handle duplicate keys: create cartesian product
+      for (const row2 of matches) {
+        result.push(mergeRowWithMappings(row1, row2, columnMappings));
       }
-    }
-
-    // For left and outer joins, include unmatched rows from file1
-    if (!foundMatch && (params.joinType === "left" || params.joinType === "outer")) {
+    } else if (params.joinType === "left" || params.joinType === "outer") {
+      // Left/outer join: include unmatched rows from file1
       result.push({ ...row1 });
     }
   }
 
   // For right and outer joins, include unmatched rows from file2
   if (params.joinType === "right" || params.joinType === "outer") {
-    for (const [i, row2] of rows2.entries()) {
-      if (!matched2Indices.has(i)) {
-        const mergedRow: Record<string, CsvCell> = {};
-
-        for (const [col, val] of Object.entries(row2)) {
-          const targetCol = columnMappings.get(col) ?? col;
-          mergedRow[targetCol] = val;
+    for (const [key2, rows] of rows2ByKey.entries()) {
+      if (!matchedKeys2.has(key2)) {
+        for (const row2 of rows) {
+          result.push(mergeRowWithMappings({}, row2, columnMappings));
         }
-
-        result.push(mergedRow);
       }
     }
   }
@@ -247,25 +342,124 @@ export function joinCsv(
 
 /**
  * Compute aggregate for a list of numeric values (non-count operations)
+ *
+ * @param values - Array of numeric values to aggregate
+ * @param operation - Aggregation operation (sum, avg, min, max)
+ * @returns Computed aggregate value
  */
 function computeAggregate(
   values: number[],
   operation: Exclude<AggregateParams["operation"], "count">,
 ): number {
+  if (values.length === 0) return 0;
+
   switch (operation) {
     case "sum":
       return values.reduce((sum, val) => sum + val, 0);
     case "avg":
-      return values.length > 0 ? values.reduce((sum, val) => sum + val, 0) / values.length : 0;
+      return values.reduce((sum, val) => sum + val, 0) / values.length;
     case "min":
-      return values.length > 0 ? Math.min(...values) : 0;
+      return Math.min(...values);
     case "max":
-      return values.length > 0 ? Math.max(...values) : 0;
+      return Math.max(...values);
   }
 }
 
 /**
- * Aggregate data with optional grouping
+ * Aggregate entire dataset without grouping
+ *
+ * @param data - Array of CSV rows
+ * @param column - Column to aggregate
+ * @param operation - Aggregation operation
+ * @returns Single row with aggregate result
+ */
+function aggregateWithoutGrouping(
+  data: Record<string, CsvCell>[],
+  column: string,
+  operation: AggregateParams["operation"],
+): Record<string, CsvCell> {
+  if (operation === "count") {
+    return { count: data.length };
+  }
+
+  const values = data
+    .map((row) => row[column])
+    .filter((v) => v != null)
+    .map(Number)
+    .filter((n) => !Number.isNaN(n));
+
+  return { [operation]: computeAggregate(values, operation) };
+}
+
+/**
+ * Aggregate dataset with grouping by column
+ *
+ * @param data - Array of CSV rows
+ * @param groupByColumn - Column to group by
+ * @param aggregateColumn - Column to aggregate
+ * @param operation - Aggregation operation
+ * @returns Array of rows with group key and aggregate result
+ */
+function aggregateWithGrouping(
+  data: Record<string, CsvCell>[],
+  groupByColumn: string,
+  aggregateColumn: string,
+  operation: AggregateParams["operation"],
+): Record<string, CsvCell>[] {
+  const groups = new Map<string, number[]>();
+  const groupRowCounts = new Map<string, number>();
+
+  // Build groups
+  for (const row of data) {
+    const groupKey = String(row[groupByColumn] ?? "");
+
+    // Ensure group exists
+    if (!groups.has(groupKey)) {
+      groups.set(groupKey, []);
+    }
+
+    // Track row count for each group
+    groupRowCounts.set(groupKey, (groupRowCounts.get(groupKey) ?? 0) + 1);
+
+    // For non-count operations, collect numeric values
+    if (operation !== "count") {
+      const value = row[aggregateColumn];
+      if (value != null) {
+        const numValue = Number(value);
+        if (!Number.isNaN(numValue)) {
+          const groupValues = groups.get(groupKey);
+          if (groupValues) {
+            groupValues.push(numValue);
+          }
+        }
+      }
+    }
+  }
+
+  // Compute aggregates for each group
+  const result: Record<string, CsvCell>[] = [];
+  for (const groupKey of groups.keys()) {
+    const values = groups.get(groupKey);
+    if (!values) continue;
+
+    const aggregateResult =
+      operation === "count"
+        ? (groupRowCounts.get(groupKey) ?? 0)
+        : computeAggregate(values, operation);
+
+    result.push({ [groupByColumn]: groupKey, [operation]: aggregateResult });
+  }
+
+  return result;
+}
+
+/**
+ * Aggregate CSV data with optional grouping
+ *
+ * @param fileMap - Map of file names to parsed CSV data
+ * @param params - Aggregation parameters
+ * @param baseRows - Optional transformed rows
+ * @returns Array of rows with aggregate results
  */
 export function aggregateCsv(
   fileMap: ParsedCsvFilesMap,
@@ -273,92 +467,35 @@ export function aggregateCsv(
   baseRows?: Record<string, CsvCell>[],
 ): Record<string, CsvCell>[] {
   const file = getRequiredFile(fileMap, params.fileName);
-  validateColumn(file, params.aggregateColumn);
+  const data = baseRows ?? file.data;
+
+  validateColumn(file, params.aggregateColumn, baseRows);
 
   if (!params.groupByColumn) {
-    // No grouping - aggregate entire dataset
-    const source = baseRows ?? file.data;
-    const values = source
-      .map((row) => row[params.aggregateColumn])
-      .filter((v) => v != null)
-      .map(Number)
-      .filter((n) => !Number.isNaN(n));
-
-    let result: number;
-    if (params.operation === "count") {
-      result = source.length;
-    } else if (
-      params.operation === "sum" ||
-      params.operation === "avg" ||
-      params.operation === "min" ||
-      params.operation === "max"
-    ) {
-      result = computeAggregate(values, params.operation);
-    } else {
-      throw new Error(`Unknown operation: ${params.operation}`);
-    }
-
-    return [{ [params.operation]: result }];
-  } else {
-    // Grouping branch
-    validateColumn(file, params.groupByColumn);
-    const groupByColumn = params.groupByColumn;
-
-    const groups = new Map<string, number[]>();
-    const groupRowCounts = new Map<string, number>();
-
-    const source = baseRows ?? file.data;
-    for (const row of source) {
-      const groupKey = String(row[groupByColumn] ?? "");
-      const value = row[params.aggregateColumn];
-
-      if (!groups.has(groupKey)) {
-        groups.set(groupKey, []);
-      }
-
-      // Track total row count per group for correct 'count' behavior
-      groupRowCounts.set(groupKey, (groupRowCounts.get(groupKey) ?? 0) + 1);
-
-      if (params.operation !== "count" && value != null) {
-        const numValue = Number(value);
-        if (!Number.isNaN(numValue)) {
-          const arr = groups.get(groupKey);
-          if (arr) arr.push(numValue);
-        }
-      }
-    }
-
-    const result: Record<string, CsvCell>[] = [];
-
-    for (const [groupKey, values] of groups) {
-      let aggregateResult: number;
-      if (params.operation === "count") {
-        aggregateResult = groupRowCounts.get(groupKey) ?? 0;
-      } else if (
-        params.operation === "sum" ||
-        params.operation === "avg" ||
-        params.operation === "min" ||
-        params.operation === "max"
-      ) {
-        aggregateResult = computeAggregate(values, params.operation);
-      } else {
-        throw new Error(`Unknown operation: ${params.operation}`);
-      }
-
-      result.push({ [groupByColumn]: groupKey, [params.operation]: aggregateResult });
-    }
-
-    return result;
+    return [aggregateWithoutGrouping(data, params.aggregateColumn, params.operation)];
   }
+
+  validateColumn(file, params.groupByColumn, baseRows);
+  return aggregateWithGrouping(
+    data,
+    params.groupByColumn,
+    params.aggregateColumn,
+    params.operation,
+  );
 }
 
 /**
  * Get a slice of rows for inspection
+ *
+ * @param fileMap - Map of file names to parsed CSV data
+ * @param params - Parameters specifying which rows to retrieve
+ * @returns Array of rows within the specified range
+ * @throws Error if parameters are invalid
  */
 export function getRowsCsv(
   fileMap: ParsedCsvFilesMap,
   params: GetRowsParams,
-): Record<string, unknown>[] {
+): Record<string, CsvCell>[] {
   const file = getRequiredFile(fileMap, params.fileName);
   const start = params.startRow;
   const end = params.endRow ?? start + 10;
@@ -381,22 +518,7 @@ export function getOperationTools(fileMap: ParsedCsvFilesMap, operationResult: O
   return {
     csv_filter: tool({
       description: "Filter CSV rows based on a column value and comparison operator",
-      inputSchema: z.object({
-        fileName: z.string(),
-        column: z.string(),
-        operator: z.enum([
-          "eq",
-          "ne",
-          "gt",
-          "lt",
-          "gte",
-          "lte",
-          "contains",
-          "startsWith",
-          "endsWith",
-        ]),
-        value: z.union([z.string(), z.number(), z.boolean()]),
-      }),
+      inputSchema: FilterParamsSchema,
       execute: (params: FilterParams) => {
         const prior = operationResult.dataByFile[params.fileName];
         const result = filterCsv(fileMap, params, prior);
@@ -413,11 +535,7 @@ export function getOperationTools(fileMap: ParsedCsvFilesMap, operationResult: O
     }),
     csv_sort: tool({
       description: "Sort CSV rows by a column in ascending or descending order",
-      inputSchema: z.object({
-        fileName: z.string(),
-        column: z.string(),
-        direction: z.enum(["asc", "desc"]),
-      }),
+      inputSchema: SortParamsSchema,
       execute: (params: SortParams) => {
         const prior = operationResult.dataByFile[params.fileName];
         const result = sortCsv(fileMap, params, prior);
@@ -435,18 +553,19 @@ export function getOperationTools(fileMap: ParsedCsvFilesMap, operationResult: O
     csv_join: tool({
       description:
         "Join two CSV files on specified columns using inner, left, right, or outer join",
-      inputSchema: z.object({
-        fileName1: z.string(),
-        fileName2: z.string(),
-        column1: z.string(),
-        column2: z.string(),
-        joinType: z.enum(["inner", "left", "right", "outer"]),
-      }),
+      inputSchema: JoinParamsSchema,
       execute: (params: JoinParams) => {
         const prior1 = operationResult.dataByFile[params.fileName1];
         const prior2 = operationResult.dataByFile[params.fileName2];
         const result = joinCsv(fileMap, params, prior1, prior2);
         operationResult.dataByFile[params.fileName1] = result;
+
+        // Update columns - inspect result data to get actual column structure
+        const file1 = getRequiredFile(fileMap, params.fileName1);
+        const resultColumns =
+          result.length > 0 && result[0] ? Object.keys(result[0]) : file1.columns;
+        operationResult.columnsByFile[params.fileName1] = resultColumns;
+
         operationResult.operations.push(
           `join(file1=${params.fileName1}, file2=${params.fileName2}, on=${params.column1}=${params.column2}, type=${params.joinType})`,
         );
@@ -459,16 +578,19 @@ export function getOperationTools(fileMap: ParsedCsvFilesMap, operationResult: O
     }),
     csv_aggregate: tool({
       description: "Aggregate CSV data with optional grouping (sum, avg, min, max, count)",
-      inputSchema: z.object({
-        fileName: z.string(),
-        groupByColumn: z.string().optional(),
-        aggregateColumn: z.string(),
-        operation: z.enum(["sum", "avg", "min", "max", "count"]),
-      }),
+      inputSchema: AggregateParamsSchema,
       execute: (params: AggregateParams) => {
         const prior = operationResult.dataByFile[params.fileName];
         const result = aggregateCsv(fileMap, params, prior);
         operationResult.dataByFile[params.fileName] = result;
+
+        // Update columns - aggregate changes column structure
+        if (params.groupByColumn) {
+          operationResult.columnsByFile[params.fileName] = [params.groupByColumn, params.operation];
+        } else {
+          operationResult.columnsByFile[params.fileName] = [params.operation];
+        }
+
         const groupDesc = params.groupByColumn ? ` grouped by ${params.groupByColumn}` : "";
         operationResult.operations.push(
           `aggregate(file=${params.fileName}, op=${params.operation}, column=${params.aggregateColumn}${groupDesc})`,
@@ -482,11 +604,7 @@ export function getOperationTools(fileMap: ParsedCsvFilesMap, operationResult: O
     }),
     csv_get_rows: tool({
       description: "Get a slice of rows from a CSV file for inspection",
-      inputSchema: z.object({
-        fileName: z.string(),
-        startRow: z.number().default(0),
-        endRow: z.number().optional(),
-      }),
+      inputSchema: GetRowsParamsSchema,
       execute: (params: GetRowsParams) => {
         const result = getRowsCsv(fileMap, params);
         const file = getRequiredFile(fileMap, params.fileName);
@@ -510,8 +628,7 @@ export function getOperationTools(fileMap: ParsedCsvFilesMap, operationResult: O
         if (fileName) {
           const file = getRequiredFile(fileMap, fileName);
           const currentData = operationResult.dataByFile[fileName] ?? file.data;
-          const currentColumns =
-            currentData.length > 0 && currentData[0] ? Object.keys(currentData[0]) : file.columns;
+          const currentColumns = operationResult.columnsByFile[fileName] ?? file.columns;
           return {
             success: true,
             fileName,
@@ -524,8 +641,7 @@ export function getOperationTools(fileMap: ParsedCsvFilesMap, operationResult: O
 
         const files = Object.values(fileMap).map((f) => {
           const currentData = operationResult.dataByFile[f.fileName] ?? f.data;
-          const currentColumns =
-            currentData.length > 0 && currentData[0] ? Object.keys(currentData[0]) : f.columns;
+          const currentColumns = operationResult.columnsByFile[f.fileName] ?? f.columns;
           return {
             fileName: f.fileName,
             originalRows: f.rowCount,
@@ -546,4 +662,60 @@ export function getOperationTools(fileMap: ParsedCsvFilesMap, operationResult: O
       },
     }),
   } as const;
+}
+
+/**
+ * Save processed CSV files as table artifacts
+ *
+ * @param parsedFiles - Original parsed CSV files
+ * @param result - Operation result containing transformed data
+ * @param workspaceId - Workspace ID to save artifacts to
+ * @param context - Tool context for logging
+ * @param llmSummary - Summary from LLM to append mapping to
+ * @returns Artifact IDs and combined summary with file-to-artifact mapping
+ * @throws Error if artifact saving fails
+ */
+export async function saveFilesAsArtifacts(
+  parsedFiles: ParsedCsvFile[],
+  result: OperationResult,
+  workspaceId: string,
+  context: ToolContext,
+  llmSummary: string,
+): Promise<{ artifactIds: string[]; summaryWithMapping: string }> {
+  const artifactIds: string[] = [];
+  const nameToIdPairs: string[] = [];
+
+  // Save all files as artifacts
+  for (const f of parsedFiles) {
+    const rows = result.dataByFile[f.fileName] ?? f.data;
+    const columns = result.columnsByFile[f.fileName] ?? f.columns;
+    const tableData = { columns, rows };
+
+    const response = await parseResult(
+      client.artifactsStorage.index.$post({
+        json: {
+          type: "table",
+          data: { type: "table", version: 1, data: tableData },
+          summary: `Content of csv file ${f.fileName}`,
+          workspaceId,
+        },
+      }),
+    );
+
+    if (!response.ok) {
+      const err = stringifyError(response.error);
+      context.logger.error("Failed to save table artifact", { error: err, file: f.fileName });
+      throw new Error(`Failed to save artifact for ${f.fileName}: ${err}`);
+    }
+
+    const id = response.data.artifact.id;
+    artifactIds.push(id);
+    nameToIdPairs.push(`- ${f.fileName} -> ${id}`);
+  }
+
+  // Build final summary with mapping
+  const mappingText = nameToIdPairs.join("\n");
+  const summaryWithMapping = `${llmSummary}\n\ncsv_name->artifactId:\n${mappingText}`;
+
+  return { artifactIds, summaryWithMapping };
 }
