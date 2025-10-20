@@ -46,6 +46,7 @@ const htmlContent = $derived(message.content ? markdownToHTML(message.content) :
 			opacity: 0.8;
 			font-size: var(--font-size-3);
 			line-height: var(--font-lineheight-3);
+			word-break: break-word;
 		}
 
 		& :global(li li) {

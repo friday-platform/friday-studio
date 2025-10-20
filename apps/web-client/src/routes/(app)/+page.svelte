@@ -375,7 +375,7 @@ const hasMessages = $derived(
 			position: fixed;
 			opacity: 1;
 			pointer-events: none;
-			z-index: 0;
+			z-index: var(--layer-1);
 		}
 	}
 
