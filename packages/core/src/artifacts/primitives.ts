@@ -113,4 +113,3 @@ export const TableDataSchema = z.object({
     .array(z.record(z.string(), z.unknown()))
     .describe("Array of row objects keyed by column name"),
 });
-export type TableData = z.infer<typeof TableDataSchema>;

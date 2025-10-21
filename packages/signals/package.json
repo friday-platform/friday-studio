@@ -6,7 +6,6 @@
   "exports": { ".": "./mod.ts" },
   "dependencies": {
     "@atlas/fs-watch": "workspace:*",
-    "@atlas/logger": "workspace:*",
     "@std/path": "npm:@jsr/std__path@^1.1.2",
     "@std/yaml": "npm:@jsr/std__yaml@^1.0.9"
   }

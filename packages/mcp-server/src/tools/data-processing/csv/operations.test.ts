@@ -3,7 +3,7 @@
  */
 
 import { expect } from "jsr:@std/expect@^1.0.17";
-import Papa from "npm:papaparse@5.4.1";
+import Papa from "papaparse";
 import type { ParsedCsvFilesMap } from "./operations.ts";
 import { aggregateCsv, filterCsv, getRowsCsv, joinCsv, sortCsv } from "./operations.ts";
 import type { ParsedCsvFile } from "./schemas.ts";

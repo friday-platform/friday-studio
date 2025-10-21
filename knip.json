@@ -14,7 +14,10 @@
     "packages/fs-watch": { "project": ["**/*.{ts,tsx,js,jsx}!"] },
     "packages/logger": { "project": ["**/*.{ts,tsx,js,jsx}!"] },
     "packages/mcp": { "project": ["**/*.{ts,tsx,js,jsx}!"] },
-    "packages/mcp-server": { "project": ["src/**/*.{ts,tsx,js,jsx}!"] },
+    "packages/mcp-server": {
+      "entry": ["src/**/*.test.ts"],
+      "project": ["src/**/*.{ts,tsx,js,jsx}!"]
+    },
     "packages/memory": {
       "entry": ["tests/**/*.test.ts"],
       "project": ["src/**/*.{ts,tsx,js,jsx}!"]

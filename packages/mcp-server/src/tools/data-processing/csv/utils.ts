@@ -2,7 +2,7 @@
  * CSV Parsing and Prompt Utilities
  */
 
-import Papa from "npm:papaparse@5.4.1";
+import Papa from "papaparse";
 import { anthropic } from "@atlas/core";
 import { generateText } from "ai";
 import { getTodaysDate, stringifyError } from "@atlas/utils";
@@ -32,7 +32,7 @@ const MAX_HEADER_SCAN_LINES = 10;
  * @param content - Raw CSV file content
  * @returns CSV content starting from the valid header line
  */
-export function findHeaderLine(content: string): string {
+function findHeaderLine(content: string): string {
   const lines = content.split("\n");
 
   // Scan first N lines for valid header
@@ -61,7 +61,7 @@ export function findHeaderLine(content: string): string {
  * @returns Parsed CSV data with metadata
  * @throws Error if file exceeds size limit or has invalid format
  */
-export async function parseCsvFile(filePath: string): Promise<ParsedCsvFile> {
+async function parseCsvFile(filePath: string): Promise<ParsedCsvFile> {
   // Check file size before reading
   const fileInfo = await Deno.stat(filePath);
   const sizeMB = fileInfo.size / (1024 * 1024);
@@ -126,7 +126,7 @@ export async function parseCsvFiles(
  * Build system prompt for CSV operations
  * Only includes metadata - actual data access happens through tools
  */
-export function buildSystemPrompt(parsedFiles: ParsedCsvFile[]): string {
+function buildSystemPrompt(parsedFiles: ParsedCsvFile[]): string {
   const fileDescriptions = parsedFiles
     .map((file) => {
       return `
