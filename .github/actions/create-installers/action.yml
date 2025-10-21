@@ -107,7 +107,9 @@ runs:
 
     - name: Install Tauri CLI
       shell: bash
-      run: cargo install tauri-cli --version "^2.8" --locked
+      run: |
+        # 2.8.4 until https://github.com/tauri-apps/tauri/issues/14335 is resolved
+        cargo install tauri-cli --version "2.8.4" --locked
 
     - name: Setup Deno
       uses: denoland/setup-deno@v2
