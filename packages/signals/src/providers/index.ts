@@ -1,15 +1,10 @@
 /**
  * Signal Providers
- * Built-in signal providers for HTTP, webhooks, timers, streams, and Kubernetes events
+ * Built-in signal providers for HTTP, webhooks, file watching, and streams
  */
 
 export { type FileWatchSignalConfig, FileWatchSignalProvider } from "./fs-watch-signal.ts";
 export { type HTTPSignalConfig, type HTTPSignalData, HTTPSignalProvider } from "./http-signal.ts";
-export {
-  type TimerSignalConfig,
-  type TimerSignalData,
-  TimerSignalProvider,
-} from "./timer-signal.ts";
 
 // Export types (except enums which need to be value exports)
 export type {

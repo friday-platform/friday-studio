@@ -7,8 +7,8 @@
  * Downloads packages directly from npm registry and extracts them.
  */
 
-import { join } from "jsr:@std/path";
 import { ensureDir } from "jsr:@std/fs";
+import { join } from "jsr:@std/path";
 
 const TAURI_API_VERSION = "2.8.0";
 const TYPES_NODE_VERSION = "24.7.0";
@@ -26,7 +26,7 @@ function toUnixPath(path: string): string {
     let unixPath = path.replace(/\\/g, "/");
     // Convert drive letter (C: -> /c)
     if (unixPath.match(/^[A-Za-z]:/)) {
-      unixPath = "/" + unixPath[0].toLowerCase() + unixPath.slice(2);
+      unixPath = `/${unixPath[0].toLowerCase()}${unixPath.slice(2)}`;
     }
     return unixPath;
   }

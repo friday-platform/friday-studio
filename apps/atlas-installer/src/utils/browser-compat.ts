@@ -36,7 +36,10 @@ export const fs = {
 };
 
 // Process utilities using Tauri
-export async function safeExec(command: string, options: any = {}): Promise<string> {
+export async function safeExec(
+  command: string,
+  options: { hideWindow?: boolean } = {},
+): Promise<string> {
   // For service start/daemon commands, don't hide windows (allows child process spawning)
   const hideWindow = options.hideWindow !== false;
 

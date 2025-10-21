@@ -32,9 +32,7 @@ export interface ProviderState {
 
 export enum ProviderStatus {
   NOT_CONFIGURED = "not_configured",
-  CONFIGURING = "configuring",
   READY = "ready",
-  ERROR = "error",
   DISABLED = "disabled",
 }
 

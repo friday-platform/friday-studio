@@ -60,14 +60,6 @@ interface BinaryCheckResult {
 
 // Wrap execution code in IIFE to avoid CommonJS exports issue
 (() => {
-  // Define enums inline to avoid import issues in browser context
-  enum ServiceAction {
-    INSTALL = "install",
-    UNINSTALL = "uninstall",
-    START = "start",
-    STOP = "stop",
-  }
-
   interface InstallationStep {
     progress: number;
     message: string;
@@ -213,24 +205,6 @@ interface BinaryCheckResult {
       const apiKeyInput = document.getElementById("api-key") as HTMLInputElement | null;
       if (!apiKeyInput) return false;
       return this.validateAtlasKey(apiKeyInput.value);
-    }
-
-    private hasValidAtlasKey(): boolean {
-      const apiKeyInput = document.getElementById("api-key") as HTMLInputElement | null;
-      if (!apiKeyInput) return false;
-      const atlasKey = apiKeyInput.value;
-      return !!(atlasKey?.trim() && this.validateAtlasKey(atlasKey));
-    }
-
-    private async hasExistingCredentials(): Promise<boolean> {
-      try {
-        const result = await tauriAPI.checkExistingApiKey();
-        // Rust returns IPCResult with success and optional message
-        // Message will contain "Existing API key found" if key exists
-        return result.success && !!result.message;
-      } catch {
-        return false;
-      }
     }
 
     private toggleApiKeyVisibility(): void {
@@ -615,7 +589,7 @@ interface BinaryCheckResult {
       try {
         // Check if Atlas binary was successfully installed before trying to start service
         const binaryCheck: BinaryCheckResult = await tauriAPI.checkAtlasBinary();
-        if (!binaryCheck.exists) {
+        if (!binaryCheck.exists || !binaryCheck.path) {
           return {
             success: false,
             error: `Atlas binary not found at expected location. Binary installation may have failed: ${
@@ -627,8 +601,8 @@ interface BinaryCheckResult {
         // Install and start Atlas service using platform-specific logic
         const isWindows = navigator.userAgent.includes("Windows");
         const installResult = isWindows
-          ? await installWindowsService(binaryCheck.path!)
-          : await installMacOSService(binaryCheck.path!, {});
+          ? await installWindowsService(binaryCheck.path)
+          : await installMacOSService(binaryCheck.path);
         if (!installResult.success) {
           // Check if the error message already contains detailed instructions
           if (installResult.message) {

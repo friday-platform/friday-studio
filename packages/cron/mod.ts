@@ -6,12 +6,9 @@
  */
 
 export {
-  type CronLogger,
   CronManager,
-  type CronTimerConfig,
   type CronTimerSignalData,
   type CronTimerSignalPayload,
-  type PersistedTimerData,
+  type TimerConfig,
   type TimerInfo,
-  type WorkspaceWakeupCallback,
 } from "./src/cron-manager.ts";

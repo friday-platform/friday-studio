@@ -35,9 +35,6 @@ export async function sendDiagnostics(options: DiagnosticsCollectorOptions = {})
 
     // Reset to idle after showing success for a moment
     log.info("✓ Diagnostics sent successfully!");
-  } catch (error) {
-    // For user-facing errors, just throw without logging (CLI will handle)
-    throw error;
   } finally {
     // Clean up temp file
     if (gzipPath) {

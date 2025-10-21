@@ -1,8 +1,8 @@
 // Browser-compatible imports for Tauri
-import { path, os, fs, safeExec } from "../utils/browser-compat.js";
+
 import { invoke } from "@tauri-apps/api/core";
 import type { IPCResult } from "../types";
-import { CONFIG } from "../config/index.js";
+import { fs, os, path, safeExec } from "../utils/browser-compat.js";
 
 // Simple error message helper
 const getErrorMessage = (err: unknown): string => {
@@ -167,13 +167,13 @@ export async function uninstallWindowsService(binaryPath: string): Promise<IPCRe
 export async function stopWindowsService(binaryPath: string): Promise<IPCResult> {
   try {
     try {
-      await safeExec(`${binaryPath} service stop`, { timeout: CONFIG.process.stopTimeout });
+      await safeExec(`${binaryPath} service stop`);
     } catch {}
     try {
-      await safeExec(`schtasks /End /TN "${TASK_NAME}"`, { windowsHide: true });
+      await safeExec(`schtasks /End /TN "${TASK_NAME}"`, { hideWindow: true });
     } catch {}
     try {
-      await safeExec("taskkill /F /IM atlas.exe", { windowsHide: true });
+      await safeExec("taskkill /F /IM atlas.exe", { hideWindow: true });
     } catch {}
 
     return { success: true, message: "Atlas service stopped" };

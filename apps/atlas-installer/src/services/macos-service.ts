@@ -1,7 +1,8 @@
 // Browser-compatible imports for Tauri
-import { path, os, fs, safeExec } from "../utils/browser-compat.js";
-import type { IPCResult } from "../types";
+
 import { CONFIG } from "../config/index.js";
+import type { IPCResult } from "../types";
+import { fs, os, path, safeExec } from "../utils/browser-compat.js";
 
 // Simple error message helper
 const getErrorMessage = (err: unknown): string => {
@@ -28,10 +29,7 @@ async function runQuietly(cmd: string): Promise<void> {
 /**
  * Install macOS service - Direct operations, no abstractions
  */
-export async function installMacOSService(
-  binaryPath: string,
-  atlasEnv: Record<string, string>,
-): Promise<IPCResult> {
+export async function installMacOSService(binaryPath: string): Promise<IPCResult> {
   try {
     // Validate binary exists
     if (!(await fs.existsSync(binaryPath))) {
@@ -112,10 +110,7 @@ export async function installMacOSService(
 /**
  * Uninstall macOS service
  */
-export async function uninstallMacOSService(
-  binaryPath: string,
-  atlasEnv: Record<string, string>,
-): Promise<IPCResult> {
+export async function uninstallMacOSService(binaryPath: string): Promise<IPCResult> {
   try {
     const plistPath = await getPlistPath();
 
@@ -140,10 +135,7 @@ export async function uninstallMacOSService(
 /**
  * Stop macOS service
  */
-export async function stopMacOSService(
-  binaryPath: string,
-  atlasEnv: Record<string, string>,
-): Promise<IPCResult> {
+export async function stopMacOSService(binaryPath: string): Promise<IPCResult> {
   try {
     await runQuietly(`"${binaryPath}" service stop`);
 

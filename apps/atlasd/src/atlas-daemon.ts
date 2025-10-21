@@ -932,6 +932,19 @@ export class AtlasDaemon {
     streamId?: string,
   ): Promise<{ sessionId: string }> {
     const runtime = await this.getOrCreateWorkspaceRuntime(workspaceId);
+
+    // Check if there are already active sessions for this signal
+    // This prevents concurrent executions when cron timers fire while previous sessions are still running
+    if (runtime.hasActiveSessionsForSignal(signalId)) {
+      logger.warn(
+        "Skipping signal trigger - workspace already has active session for this signal",
+        { workspaceId, signalId },
+      );
+      throw new Error(
+        `Workspace ${workspaceId} already has an active session processing signal ${signalId}`,
+      );
+    }
+
     const session = await runtime.triggerSignalWithSession(signalId, payload || {}, streamId);
 
     try {
@@ -1321,7 +1334,7 @@ export class AtlasDaemon {
       activeWorkspaces: this.runtimes.size,
       uptime: Date.now() - this.startTime,
       cronManager: cronStats
-        ? { isActive: this.cronManager?.isActive() || false, ...cronStats }
+        ? { isActive: this.cronManager?.isRunning || false, ...cronStats }
         : null,
       configuration: {
         maxConcurrentWorkspaces: this.options.maxConcurrentWorkspaces,

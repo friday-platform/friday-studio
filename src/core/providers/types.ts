@@ -2,7 +2,6 @@
  * Provider system for loading and managing external integrations
  */
 
-import type { ProviderTypeKeys } from "@atlas/signals";
 import type { MaybePromise } from "@atlas/utils";
 
 export interface IProvider {
@@ -38,9 +37,7 @@ interface ProviderState {
 
 enum ProviderStatus {
   NOT_CONFIGURED = "not_configured",
-  CONFIGURING = "configuring",
   READY = "ready",
-  ERROR = "error",
   DISABLED = "disabled",
 }
 
@@ -69,6 +66,6 @@ export interface IProviderRegistry {
 export interface ProviderConfig {
   id: string;
   type: ProviderType;
-  provider: ProviderTypeKeys; // e.g., "github", "anthropic", "openai"
+  provider: string; // e.g., "http", "schedule", "cron", "fs-watch"
   config: Record<string, unknown>;
 }

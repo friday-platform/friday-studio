@@ -3,8 +3,6 @@ import {
   FileWatchSignalProvider,
   type HTTPSignalConfig,
   HTTPSignalProvider,
-  type TimerSignalConfig,
-  TimerSignalProvider,
 } from "@atlas/signals";
 import type { MaybePromise } from "@atlas/utils";
 import type { IProvider, IProviderRegistry, ProviderConfig, ProviderType } from "./types.ts";
@@ -74,17 +72,6 @@ export class ProviderRegistry implements IProviderRegistry {
       case "http": {
         const cfg: HTTPSignalConfig = config.config as HTTPSignalConfig;
         return new HTTPSignalProvider(cfg);
-      }
-
-      /**
-       * @FIXME why are there 4 aliases for the same signal provider?
-       */
-      case "timer":
-      case "schedule":
-      case "cron":
-      case "cron-scheduler": {
-        const cfg: TimerSignalConfig = config.config as TimerSignalConfig;
-        return new TimerSignalProvider(cfg);
       }
 
       case "fs-watch": {

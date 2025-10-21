@@ -45,7 +45,7 @@ export const handler = async (argv: RemoveArgs): Promise<void> => {
   try {
     // Check if daemon is running
     const health = await parseResult(v2Client.health.index.$get());
-    if (health.ok) {
+    if (!health.ok) {
       throw createAtlasNotRunningError();
     }
 

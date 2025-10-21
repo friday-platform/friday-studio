@@ -146,7 +146,6 @@ export interface IWorkspaceMember {
 
 export enum WorkspaceMemberRole {
   OWNER = "owner",
-  WATCHER = "watcher",
 }
 
 export interface IWorkspaceWorkflow {

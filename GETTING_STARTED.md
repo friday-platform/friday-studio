@@ -199,8 +199,9 @@ signals:
     description: "Handle incoming webhooks"
 
   schedule:
-    provider: "cron"
-    schedule: "0 9 * * MON"
+    provider: "schedule"
+    config:
+      schedule: "0 9 * * MON"
     description: "Weekly Monday report"
 
   manual:
@@ -355,8 +356,9 @@ jobs:
 ```yaml
 signals:
   daily-check:
-    provider: "cron"
-    schedule: "0 9 * * *" # 9 AM daily
+    provider: "schedule"
+    config:
+      schedule: "0 9 * * *" # 9 AM daily
 
 jobs:
   health-monitor:

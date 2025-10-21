@@ -5,7 +5,6 @@
 
 import { FileWatchSignalProvider } from "./fs-watch-signal.ts";
 import { HTTPSignalProvider } from "./http-signal.ts";
-import { TimerSignalProvider } from "./timer-signal.ts";
 
 /**
  * Map of provider type strings to their corresponding class constructors
@@ -13,10 +12,6 @@ import { TimerSignalProvider } from "./timer-signal.ts";
  */
 export const PROVIDER_CLASSES = {
   http: HTTPSignalProvider,
-  timer: TimerSignalProvider,
-  schedule: TimerSignalProvider,
-  cron: TimerSignalProvider,
-  "cron-scheduler": TimerSignalProvider,
   "fs-watch": FileWatchSignalProvider,
 } as const;
 

@@ -5,33 +5,6 @@ import { getSystemBinaryPath } from "../constants/paths";
 import { IS_WINDOWS } from "./platform";
 
 /**
- * Read Atlas environment variables from ~/.atlas/.env
- */
-export function getAtlasEnv(): Record<string, string> {
-  const atlasDir = path.join(os.homedir(), ".atlas");
-  const envFile = path.join(atlasDir, ".env");
-
-  const env: Record<string, string> = {};
-
-  if (fs.existsSync(envFile)) {
-    const envContent = fs.readFileSync(envFile, "utf8");
-    const lines = envContent.split("\n");
-
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (trimmed && !trimmed.startsWith("#")) {
-        const [key, ...valueParts] = trimmed.split("=");
-        if (key) {
-          env[key] = valueParts.join("=");
-        }
-      }
-    }
-  }
-
-  return env;
-}
-
-/**
  * Get the Atlas binary path for the current platform
  */
 export function getBinaryPath(): string {

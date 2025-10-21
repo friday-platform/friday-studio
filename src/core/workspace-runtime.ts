@@ -4,6 +4,7 @@
  */
 
 import type { MergedConfig, WorkspaceSignalConfig } from "@atlas/config";
+import { WorkspaceSessionStatus } from "@atlas/core";
 import type { AgentOrchestrator, GlobalMCPServerPool } from "@atlas/core";
 import { logger } from "@atlas/logger";
 import { type ActorRefFrom, createActor } from "xstate";
@@ -321,6 +322,24 @@ export class WorkspaceRuntime {
     // Get session from state machine context (source of truth)
     const state = this.stateMachine.getSnapshot();
     return state.context.sessions.get(sessionId);
+  }
+
+  /**
+   * Check if there are active sessions for a specific signal
+   * Active sessions are those with status 'pending' or 'executing'
+   */
+  hasActiveSessionsForSignal(signalId: string): boolean {
+    const state = this.stateMachine.getSnapshot();
+    for (const session of state.context.sessions.values()) {
+      const isActive =
+        session.status === WorkspaceSessionStatus.PENDING ||
+        session.status === WorkspaceSessionStatus.EXECUTING;
+      const hasSignal = session.signals?.triggers?.some((trigger) => trigger.id === signalId);
+      if (isActive && hasSignal) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /**

@@ -12,7 +12,7 @@ import {
   uninstallWindowsService,
 } from "../services/windows-service";
 import type { IPCResult } from "../types";
-import { getAtlasEnv, getBinaryPath } from "../utils/atlas-env";
+import { getBinaryPath } from "../utils/atlas-env";
 import { getErrorMessage } from "../utils/errors";
 import { createLogger } from "../utils/logger";
 import { isMac, isWindows } from "../utils/platform";
@@ -36,9 +36,6 @@ export async function manageAtlasServiceHandler(
     if (validationError) {
       return validationError;
     }
-
-    // Get Atlas environment variables
-    const atlasEnv = getAtlasEnv();
 
     // Platform-specific service management
     if (isWindows()) {
@@ -83,7 +80,7 @@ export async function manageAtlasServiceHandler(
       switch (action) {
         case ServiceAction.INSTALL: {
           // Install service and update PATH
-          const installResult = await installMacOSService(binaryPath, atlasEnv);
+          const installResult = await installMacOSService(binaryPath);
           if (!installResult.success) {
             return installResult;
           }
@@ -98,16 +95,16 @@ export async function manageAtlasServiceHandler(
         }
 
         case ServiceAction.STOP: {
-          return await stopMacOSService(binaryPath, atlasEnv);
+          return await stopMacOSService(binaryPath);
         }
 
         case ServiceAction.START: {
           // On macOS, install handles both install and start
-          return await installMacOSService(binaryPath, atlasEnv);
+          return await installMacOSService(binaryPath);
         }
 
         case ServiceAction.UNINSTALL: {
-          return await uninstallMacOSService(binaryPath, atlasEnv);
+          return await uninstallMacOSService(binaryPath);
         }
 
         default: {

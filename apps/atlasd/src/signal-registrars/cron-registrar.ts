@@ -1,5 +1,5 @@
 import type { MergedConfig } from "@atlas/config";
-import type { CronManager, CronTimerConfig } from "@atlas/cron";
+import type { CronManager, TimerConfig } from "@atlas/cron";
 import { logger } from "@atlas/logger";
 import type { WorkspaceSignalRegistrar } from "@atlas/workspace/types";
 
@@ -23,7 +23,7 @@ export class CronSignalRegistrar implements WorkspaceSignalRegistrar {
       const signals = config.workspace?.signals;
       if (!signals) return;
 
-      const timers: CronTimerConfig[] = [];
+      const timers: TimerConfig[] = [];
       for (const signalId of Object.keys(signals)) {
         const signalConfig = signals[signalId];
         if (signalConfig && signalConfig.provider === "schedule") {
@@ -33,13 +33,7 @@ export class CronSignalRegistrar implements WorkspaceSignalRegistrar {
             logger.warn("Skipping cron signal without schedule", { workspaceId, signalId });
             continue;
           }
-          timers.push({
-            workspaceId,
-            signalId,
-            schedule,
-            timezone,
-            description: signalConfig.description,
-          });
+          timers.push({ workspaceId, signalId, schedule, timezone });
         }
       }
 

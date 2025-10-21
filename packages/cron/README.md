@@ -74,27 +74,21 @@ await cronManager.registerTimer({
   signalId: "daily-report",
   schedule: "0 9 * * *", // Daily at 9 AM
   timezone: "America/New_York",
-  description: "Generate daily analytics report",
 });
 ```
 
 ### Runtime Operations
 
 ```typescript
-// List all active timers across workspaces
-const activeTimers = cronManager.listActiveTimers();
-// Returns sorted by next execution time
-
-// Get detailed timer information
-const timer = cronManager.getTimer("analytics-workspace", "daily-report");
-// Returns: { workspaceId, signalId, schedule, nextExecution, lastExecution, isActive }
-
 // Workspace cleanup - remove all timers
 await cronManager.unregisterWorkspaceTimers("analytics-workspace");
 
 // Get system statistics
 const stats = cronManager.getStats();
-// Returns: { totalTimers, activeTimers, scheduledIntervals, nextExecution }
+// Returns: { totalTimers, nextExecution }
+
+// Check if the cron manager is running
+const isRunning = cronManager.isRunning; // boolean
 ```
 
 ## Signal-Driven Timer Model
@@ -107,18 +101,16 @@ Timers are defined as signals in workspace configuration:
 # workspace.yml
 signals:
   daily-summary:
-    provider: "timer"
+    provider: "schedule"
     config:
       schedule: "0 9 * * *" # Daily at 9 AM
       timezone: "America/New_York"
-      description: "Generate daily summary report"
 
   hourly-sync:
-    provider: "timer"
+    provider: "schedule"
     config:
       schedule: "0 * * * *" # Every hour
       timezone: "UTC"
-      description: "Sync data from external sources"
 ```
 
 ### Signal Data Structure
@@ -126,15 +118,13 @@ signals:
 When timers fire, they generate signals with the following structure:
 
 ```typescript
-interface TimerSignalData {
+interface CronTimerSignalData {
   id: string; // Signal ID from configuration
-  type: "timer";
   timestamp: string; // ISO 8601 timestamp
   data: {
     scheduled: string; // Original cron expression
     timezone: string; // Configured timezone
     nextRun: string; // Next scheduled execution
-    source: "cron-manager";
   };
 }
 ```
@@ -182,16 +172,14 @@ CronManager uses standard cron expressions with optional seconds field:
 
 ```typescript
 // KV Storage key pattern: ["cron_timers", "{workspaceId}:{signalId}"]
-interface PersistedTimerData {
+// Stored data is TimerInfo serialized with ISO 8601 date strings
+interface StoredTimerData {
   workspaceId: string;
   signalId: string;
   schedule: string;
   timezone: string;
-  description?: string;
-  nextExecution?: string; // ISO 8601
+  nextExecution: string; // ISO 8601
   lastExecution?: string; // ISO 8601
-  isActive: boolean;
-  registeredAt: string; // ISO 8601
 }
 ```
 
@@ -253,7 +241,7 @@ CronManager tracks all pending operations and ensures clean shutdown:
 
 - **Metrics**: Export stats via `getStats()` for monitoring
 - **Logging**: Structured logs with timer context
-- **Health Checks**: `isActive()` for liveness probes
+- **Health Checks**: Check `isRunning` property for liveness probes
 
 ## API Reference
 
@@ -261,24 +249,23 @@ CronManager tracks all pending operations and ensures clean shutdown:
 
 ```typescript
 class CronManager {
-  constructor(storage: KVStorage, logger: CronLogger);
+  constructor(storage: KVStorage, logger: Logger);
+
+  // State
+  isRunning: boolean; // Public read-only property
 
   // Lifecycle
   start(): Promise<void>;
   shutdown(): Promise<void>;
-  isActive(): boolean;
 
   // Timer Management
-  registerTimer(config: CronTimerConfig): Promise<void>;
-  unregisterTimer(workspaceId: string, signalId: string): Promise<void>;
+  registerTimer(config: TimerConfig): Promise<void>;
   unregisterWorkspaceTimers(workspaceId: string): Promise<void>;
 
-  // Timer Information
-  getTimer(workspaceId: string, signalId: string): TimerInfo | undefined;
-  listActiveTimers(): TimerInfo[];
-  getStats(): CronStats;
+  // Statistics
+  getStats(): { totalTimers: number; nextExecution?: Date };
 
   // Configuration
-  setWakeupCallback(callback: WorkspaceWakeupCallback): void;
+  setWakeupCallback(callback: WorkspaceSignalTriggerCallback): void;
 }
 ```

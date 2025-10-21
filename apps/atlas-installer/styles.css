@@ -546,7 +546,7 @@ body {
 }
 
 .features ul {
-  list-style: "– ";
+  list-style: "– ";
   list-style-position: inside;
 }
 
@@ -784,7 +784,7 @@ body {
 }
 
 .hidden {
-  display: none !important;
+  display: none;
 }
 
 .form-label {

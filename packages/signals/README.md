@@ -67,7 +67,7 @@ await provider.setup();
 ### Using Individual Providers
 
 ```typescript
-import { HTTPSignalProvider, TimerSignalProvider } from "@atlas/signals";
+import { HTTPSignalProvider } from "@atlas/signals";
 
 // Create HTTP signal provider
 const httpProvider = new HTTPSignalProvider({
@@ -78,13 +78,8 @@ const httpProvider = new HTTPSignalProvider({
   method: "POST",
 });
 
-// Create timer signal provider
-const timerProvider = new TimerSignalProvider({
-  id: "daily-report",
-  description: "Daily report generator",
-  provider: "timer",
-  schedule: "0 9 * * *", // 9 AM daily
-});
+// Note: Timer signals are handled by CronManager at the daemon level
+// Configure them in workspace.yml using provider: "schedule"
 ```
 
 ## Provider Types
@@ -96,7 +91,7 @@ or instantiated directly.
 
 - `HTTPSignalProvider` - HTTP endpoint signals
 - `HttpWebhookProvider` - Webhook handlers
-- `TimerSignalProvider` - Scheduled signals
+- `FileWatchSignalProvider` - File system monitoring signals
 - `K8sEventsSignalProvider` - Kubernetes event signals
 - `K8sAuthManager` - Kubernetes authentication
 
@@ -112,5 +107,4 @@ deno test --allow-all
 
 - `zod` - Schema validation
 - `hono` - HTTP handling
-- `cron-parser` - Cron parsing
 - Atlas utilities (logger, telemetry)
