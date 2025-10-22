@@ -1,12 +1,12 @@
 <script lang="ts">
 import { invoke } from "@tauri-apps/api/core";
-import { onMount } from "svelte";
+import { z } from "zod";
 import { getAppContext, getFileType } from "$lib/app-context.svelte";
+import { getChatContext } from "$lib/chat-context.svelte";
 import { CustomIcons } from "$lib/components/icons/custom";
 import { IconSmall } from "$lib/components/icons/small";
 import Textarea from "$lib/components/textarea.svelte";
 import DisplayArtifact from "$lib/modules/artifacts/display.svelte";
-import { getClientContext } from "$lib/modules/client/context.svelte";
 import ErrorMessage from "$lib/modules/messages/error-message.svelte";
 import { formatMessage } from "$lib/modules/messages/format";
 import Message from "$lib/modules/messages/message.svelte";
@@ -14,21 +14,18 @@ import Progress from "$lib/modules/messages/progress.svelte";
 import Table from "$lib/modules/messages/table.svelte";
 
 const appCtx = getAppContext();
-
-const clientCtx = getClientContext();
+const chatContext = getChatContext();
 
 let form = $state<HTMLFormElement | null>(null);
-let scrollContainer = $state<HTMLDivElement | null>(null);
-
 let message = $state<string>("");
+
+const messages = $derived(chatContext.chat?.messages ?? []);
+const status = $derived(chatContext.chat?.status ?? "idle");
+
+// Follow scroll handling
+let scrollContainer = $state<HTMLDivElement | null>(null);
 let userHasScrolled = $state(false);
 let animationFrameId = $state<number | null>(null);
-
-onMount(() => {
-  if (!clientCtx.conversationSessionId) {
-    clientCtx.createSession();
-  }
-});
 
 // Handle Scrolling
 function handleScroll() {
@@ -67,10 +64,7 @@ $effect(() => {
   }
 });
 
-const hasMessages = $derived(
-  clientCtx.messages.filter((m) => m.type !== "data-connection" && m.type !== "data-heartbeat")
-    .length > 0,
-);
+const hasMessages = $derived(messages.length > 0);
 </script>
 
 <div class="chat">
@@ -90,33 +84,32 @@ const hasMessages = $derived(
 					</p>
 				</div>
 
-				{#each clientCtx.messages as message, index (message.id || index)}
-					{@const formattedMessage = formatMessage(message, clientCtx.user)}
+				{#each messages as messageContainer (messageContainer.id)}
+					{#each messageContainer.parts as message, index (index)}
+						{@const formattedMessage = formatMessage(messageContainer, message)}
 
-					{#if formattedMessage && (formattedMessage.type === 'request' || formattedMessage.type === 'text')}
-						<Message message={formattedMessage} />
-					{:else if formattedMessage && formattedMessage.type === 'tool_call' && formattedMessage.metadata?.toolName === 'table_output'}
-						<Table data={formattedMessage.metadata?.result} />
-					{:else if formattedMessage && formattedMessage.type === 'tool_call' && formattedMessage.metadata?.toolName === 'display_artifact'}
-						<!-- @ts-expect-error: this is accurate but poorly typed right now -->
-						<DisplayArtifact artifactId={formattedMessage.metadata?.artifactId} />
-					{:else if formattedMessage && formattedMessage.type === 'error'}
-						<ErrorMessage message={formattedMessage} />
-					{/if}
+						{#if formattedMessage && (formattedMessage.type === 'request' || formattedMessage.type === 'text')}
+							<Message message={formattedMessage} />
+						{:else if formattedMessage && formattedMessage.type === 'tool_call' && formattedMessage.metadata?.toolName === 'table_output'}
+							<Table data={formattedMessage.metadata?.result} />
+						{:else if formattedMessage && formattedMessage.type === 'tool_call' && formattedMessage.metadata?.toolName === 'display_artifact'}
+							<DisplayArtifact artifactId={formattedMessage.metadata?.artifactId} />
+						{:else if formattedMessage && formattedMessage.type === 'error'}
+							<ErrorMessage message={formattedMessage} />
+						{/if}
+					{/each}
 				{/each}
 
-				{#if clientCtx.typingState.isTyping}
+				{#if status === 'streaming' || status === 'submitted'}
 					{@const actionsAfterLastUser = (() => {
 						// Find the last data-user-message
-						const lastUserIndex = clientCtx.messages.findLastIndex(
-							(msg) => msg.type === 'data-user-message'
-						);
+						const lastAssistantMessage = messages.findLast((msg) => msg.role === 'assistant');
 
 						// If no user message found, return empty
-						if (lastUserIndex === -1) return [];
+						if (!lastAssistantMessage) return [];
 
 						// Return everything after the last user message
-						return clientCtx.messages.slice(lastUserIndex + 1);
+						return lastAssistantMessage.parts;
 					})()}
 
 					<Progress actions={actionsAfterLastUser} />
@@ -130,9 +123,6 @@ const hasMessages = $derived(
 					<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 					<form
 						bind:this={form}
-						title={clientCtx.typingState.isTyping
-							? 'Processing... (press escape to cancel the current request)'
-							: undefined}
 						onkeydown={(e) => {
 							if (e.key === 'Enter' && !e.shiftKey && !e.altKey) {
 								e.preventDefault();
@@ -142,12 +132,19 @@ const hasMessages = $derived(
 						onsubmit={async (e) => {
 							e.preventDefault();
 
-							if (
-								!clientCtx.conversationClient ||
-								!clientCtx.conversationSessionId ||
-								clientCtx.typingState.isTyping
-							) {
-								return;
+							if (message.trim() && chatContext.chat) {
+								let combinedMessage = message;
+								if (appCtx.stagedFiles.state.size > 0) {
+									combinedMessage = combinedMessage + `\n\nAttachments:`;
+
+									for (const id of appCtx.stagedFiles.state.keys()) {
+										combinedMessage = combinedMessage + `\n- ${id}`;
+									}
+								}
+
+								chatContext.chat.sendMessage({ text: message });
+								message = '';
+								appCtx.stagedFiles.clear();
 							}
 
 							try {
@@ -162,27 +159,12 @@ const hasMessages = $derived(
 									}
 								}
 
-								if (
-									!formMessage ||
-									typeof formMessage !== 'string' ||
-									formMessage.trim().length === 0
-								) {
-									return;
-								}
+								const { data: sanitizedMessage } = z.string().safeParse(formMessage);
+
+								if (!sanitizedMessage || sanitizedMessage.trim().length === 0) return;
 
 								userHasScrolled = false;
 								scrollToBottom();
-
-								// Just send the message - the persistent SSE listener will handle the response
-								await clientCtx.conversationClient.sendMessage(
-									clientCtx.conversationSessionId,
-									formMessage
-								);
-
-								message = '';
-								appCtx.stagedFiles.clear();
-
-								// The persistent SSE listener will handle the response
 							} catch (e) {
 								console.error(e);
 							}
@@ -198,16 +180,14 @@ const hasMessages = $derived(
 						/>
 
 						<div class="form-action">
-							{#if clientCtx.typingState.isTyping}
+							{#if status === 'streaming' || status === 'submitted'}
 								<button
 									class="stop-process"
 									type="button"
 									onclick={async (e) => {
 										e.preventDefault();
 
-										if (!clientCtx.atlasSessionId) return;
-
-										clientCtx.conversationClient?.cancelSession(clientCtx.atlasSessionId);
+										chatContext.chat.stop();
 									}}
 								>
 									<IconSmall.Stop />

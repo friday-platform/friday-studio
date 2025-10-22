@@ -87,6 +87,7 @@ type WorkspaceRuntimeEvent =
       sessionId?: string;
       streamId?: string;
       traceHeaders?: Record<string, string>;
+      onStreamEvent?: (event: any) => void;
     }
   | {
       type: "EXECUTE_JOB";
@@ -839,6 +840,7 @@ export function createWorkspaceRuntimeMachine(_input: WorkspaceRuntimeMachineInp
                         event.payload,
                         sessionId,
                         event.streamId,
+                        event.onStreamEvent,
                       );
 
                       // CRITICAL: Attach SessionSupervisorActor to Session

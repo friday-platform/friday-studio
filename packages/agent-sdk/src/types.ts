@@ -7,17 +7,12 @@
 
 import type { Logger } from "@atlas/logger";
 import type { Tracer } from "@opentelemetry/api";
-import type {
-  InferUITools,
-  Tool,
-  TypedToolCall,
-  TypedToolResult,
-  UIDataTypes,
-  UIMessage,
-  UIMessageChunk,
-  UIMessagePart,
-} from "ai";
+import type { Tool, TypedToolCall, TypedToolResult } from "ai";
 import { z } from "zod";
+import type { AtlasUIMessage, AtlasUIMessageChunk, AtlasUIMessagePart } from "./messages.ts";
+
+// Re-export message types for convenience
+export type { AtlasUIMessage, AtlasUIMessageChunk, AtlasUIMessagePart };
 
 // ==============================================================================
 // BASE UTILITY SCHEMAS
@@ -219,37 +214,6 @@ export interface ToolContext {
 /** Tool execution result from agent runs */
 export type ToolResult = TypedToolResult<AtlasTools>;
 export type ToolCall = TypedToolCall<AtlasTools>;
-
-export const MessageMetadataSchema = z.object({
-  agentId: z.string().optional(),
-  sessionId: z.string().optional(),
-});
-
-export type MessageMetadata = z.infer<typeof MessageMetadataSchema>;
-
-/**
- * @HACK: `data-user-message` this is a workaround since the AI SDK doesn't
- * give you a way to emit user messages back to the stream. It expects that
- * they will be just pushed to the array and persisted client-side.
- */
-type UserMessageEvent = {
-  "user-message": { content: string };
-  "tool-progress": { toolName: string; content: string };
-};
-
-export type AtlasUIMessage<T extends UIDataTypes = UIDataTypes> = UIMessage<
-  MessageMetadata,
-  T & UserMessageEvent
->;
-export type AtlasUIMessageChunk<T extends UIDataTypes = UIDataTypes> = UIMessageChunk<
-  MessageMetadata,
-  T & UserMessageEvent
->;
-
-export type AtlasUIMessagePart<T extends UIDataTypes = UIDataTypes> = UIMessagePart<
-  T & UserMessageEvent,
-  InferUITools<AtlasTools>
->;
 
 /** Stream emitter passed to agent handlers */
 export interface StreamEmitter<T extends AtlasUIMessageChunk = AtlasUIMessageChunk> {

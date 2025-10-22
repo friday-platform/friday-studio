@@ -1,23 +1,23 @@
-import type { SessionUIMessage } from "@atlas/core";
+import type { AtlasUIMessage } from "@atlas/agent-sdk";
 
 class ConversationStorage {
-  private conversations = new Map<string, SessionUIMessage[]>();
+  private conversations = new Map<string, AtlasUIMessage[]>();
 
   list(): string[] {
     return Array.from(this.conversations.keys());
   }
 
-  get(streamId: string): SessionUIMessage[] {
+  get(streamId: string): AtlasUIMessage[] {
     return this.conversations.get(streamId) || [];
   }
 
-  append(streamId: string, message: SessionUIMessage): void {
+  append(streamId: string, message: AtlasUIMessage): void {
     const messages = this.get(streamId);
     messages.push(message);
     this.conversations.set(streamId, messages);
   }
 
-  replace(streamId: string, messages: SessionUIMessage[]): void {
+  replace(streamId: string, messages: AtlasUIMessage[]): void {
     this.conversations.set(streamId, messages);
   }
 

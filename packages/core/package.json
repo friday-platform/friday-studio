@@ -8,7 +8,9 @@
     "./artifacts": "./src/artifacts/mod.ts",
     "./artifacts/server": "./src/artifacts/storage.ts",
     "./errors": "./src/errors.ts",
-    "./library": "./src/library/types.ts"
+    "./library": "./src/library/types.ts",
+    "./chat/storage": "./src/chat/storage.ts",
+    "./chat/sse-manager": "./src/chat/sse-manager.ts"
   },
   "main": "./mod.ts",
   "dependencies": {
@@ -29,6 +31,7 @@
     "@std/async": "npm:@jsr/std__async@^1.0.14",
     "@std/fs": "npm:@jsr/std__fs@^1.0.19",
     "@std/path": "npm:@jsr/std__path@^1.1.2",
+    "@std/testing": "npm:@jsr/std__testing@^1.0.16",
     "@std/yaml": "npm:@jsr/std__yaml@^1.0.9",
     "ai": "^5.0.59",
     "xstate": "^5.21.0",

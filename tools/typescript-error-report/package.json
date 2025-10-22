@@ -1,8 +1,0 @@
-{
-  "name": "@atlas/typescript-error-report",
-  "version": "1.0.0",
-  "type": "module",
-  "exports": { ".": "./src/main.ts" },
-  "main": "./src/main.ts",
-  "dependencies": { "@std/path": "npm:@jsr/std__path@^1.1.2", "zod": "^4.1.11" }
-}

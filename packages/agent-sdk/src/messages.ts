@@ -1,0 +1,97 @@
+/**
+ * Atlas Message Types and Validation
+ *
+ * Consolidated data event types and message validation for Atlas UI messages.
+ */
+
+import {
+  type InferUITools,
+  type UIMessage,
+  type UIMessageChunk,
+  type UIMessagePart,
+  validateUIMessages,
+} from "ai";
+import { z } from "zod";
+import type { AtlasTools } from "./types.ts";
+
+/**
+ * Atlas data events - consolidated session and user message events.
+ * Used to type UI messages streamed between agents and clients.
+ */
+export type AtlasDataEvents = {
+  "session-start": { sessionId: string; signalId: string; workspaceId: string };
+  "session-finish": {
+    sessionId: string;
+    workspaceId: string;
+    status?: string;
+    duration?: number;
+    source?: string;
+  };
+  "session-cancel": { sessionId: string; workspaceId: string; reason?: string };
+  "agent-start": { agentId: string; task: string };
+  "agent-finish": { agentId: string; duration: number };
+  "agent-error": { agentId: string; duration: number; error: string };
+  "agent-timeout": { agentId: string; task: string; duration: number; error: string };
+  error: { error: string; errorCause: unknown };
+  "user-message": { content: string };
+  "tool-progress": { toolName: string; content: string };
+};
+
+/**
+ * Zod schemas for Atlas data events.
+ * Used for runtime validation of data parts in UI messages.
+ */
+export const AtlasDataEventSchemas = {
+  "session-start": z.object({
+    sessionId: z.string(),
+    signalId: z.string(),
+    workspaceId: z.string(),
+  }),
+  "session-finish": z.object({
+    sessionId: z.string(),
+    workspaceId: z.string(),
+    status: z.string().optional(),
+    duration: z.number().optional(),
+    source: z.string().optional(),
+  }),
+  "session-cancel": z.object({
+    sessionId: z.string(),
+    workspaceId: z.string(),
+    reason: z.string().optional(),
+  }),
+  "agent-start": z.object({ agentId: z.string(), task: z.string() }),
+  "agent-finish": z.object({ agentId: z.string(), duration: z.number() }),
+  "agent-error": z.object({ agentId: z.string(), duration: z.number(), error: z.string() }),
+  "agent-timeout": z.object({
+    agentId: z.string(),
+    task: z.string(),
+    duration: z.number(),
+    error: z.string(),
+  }),
+  error: z.object({ error: z.string(), errorCause: z.unknown() }),
+  "user-message": z.object({ content: z.string() }),
+  "tool-progress": z.object({ toolName: z.string(), content: z.string() }),
+};
+
+/**
+ * Validates Atlas UI messages.
+ * Checks message structure, metadata, and data parts.
+ */
+export async function validateAtlasUIMessages(messages: unknown[]): Promise<AtlasUIMessage[]> {
+  return await validateUIMessages({
+    messages,
+    metadataSchema: MessageMetadataSchema.optional(),
+    dataSchemas: AtlasDataEventSchemas,
+  });
+}
+
+export const MessageMetadataSchema = z.object({
+  agentId: z.string().optional(),
+  sessionId: z.string().optional(),
+});
+
+export type MessageMetadata = z.infer<typeof MessageMetadataSchema>;
+
+export type AtlasUIMessage = UIMessage<MessageMetadata, AtlasDataEvents>;
+export type AtlasUIMessageChunk = UIMessageChunk<MessageMetadata, AtlasDataEvents>;
+export type AtlasUIMessagePart = UIMessagePart<AtlasDataEvents, InferUITools<AtlasTools>>;

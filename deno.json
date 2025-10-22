@@ -1,13 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/denoland/deno/main/cli/schemas/config-file.v1.json",
   "version": "1.0.0",
-  "workspace": [
-    "./apps/*",
-    "./packages/*",
-    "./tools/memory_manager",
-    "./tools/evals",
-    "./tools/typescript-error-report"
-  ],
+  "workspace": ["./apps/*", "./packages/*", "./tools/memory_manager", "./tools/evals"],
   "compilerOptions": {
     "lib": ["deno.window", "deno.worker", "deno.unstable", "dom", "dom.iterable"],
     "types": ["./reset.d.ts"],
@@ -47,9 +41,8 @@
     "mock-mcp-echo": "deno run --allow-all integration-tests/mocks/echo-mcp-server.ts",
     "clean": "deno run --allow-read --allow-write --allow-env scripts/clean.ts",
     "compile": "mkdir -p ./dist && deno compile --no-check --allow-read --allow-write --allow-net --allow-env --allow-run --allow-sys --allow-ffi --unstable-broadcast-channel --unstable-worker-options --include=src --include=examples --output ./dist/atlas ./src/cli.tsx",
-    "report": "deno task report:knip ; deno task report:typescript",
-    "report:knip": "npx knip --reporter markdown --max-issues 0 > reports/knip-report.md",
-    "report:typescript": "deno run --allow-all tools/typescript-error-report/src/main.ts"
+
+    "report:knip": "npx knip --reporter markdown --max-issues 0 > reports/knip-report.md"
   },
   "lint": { "rules": { "tags": ["recommended"] }, "exclude": ["packages/vendor/**"] }
 }

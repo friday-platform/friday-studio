@@ -37,6 +37,7 @@ const htmlContent = $derived(message.content ? markdownToHTML(message.content) :
 	.message {
 		display: flex;
 		gap: var(--size-6);
+		overflow: hidden;
 	}
 
 	.content {
@@ -96,6 +97,7 @@ const htmlContent = $derived(message.content ? markdownToHTML(message.content) :
 		margin-inline-start: auto;
 		margin-inline-end: unset;
 		max-inline-size: 90%;
+		overflow: hidden;
 
 		.content {
 			& :global(p),
@@ -104,6 +106,7 @@ const htmlContent = $derived(message.content ? markdownToHTML(message.content) :
 				line-height: var(--font-lineheight-2);
 				opacity: 1;
 				font-size: var(--font-size-2);
+				word-break: break-word;
 			}
 
 			& :global(p),

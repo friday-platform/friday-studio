@@ -7,6 +7,8 @@
     "./artifacts": "./src/artifacts/mod.ts",
     "./artifacts/server": "./src/artifacts/storage.ts",
     "./errors": "./src/errors.ts",
-    "./library": "./src/library/types.ts"
+    "./library": "./src/library/types.ts",
+    "./chat/storage": "./src/chat/storage.ts",
+    "./chat/sse-manager": "./src/chat/sse-manager.ts"
   }
 }

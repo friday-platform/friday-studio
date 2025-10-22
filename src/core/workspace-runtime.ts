@@ -210,6 +210,8 @@ export class WorkspaceRuntime {
           sessionId,
           streamId,
           traceHeaders,
+          // Pass callback if present
+          onStreamEvent: (signal as any).onStreamEvent,
         });
 
         // Wait for the session to be created by the state machine
@@ -508,6 +510,7 @@ export class WorkspaceRuntime {
     signalName: string,
     payload?: Record<string, unknown>,
     streamId?: string,
+    onStreamEvent?: (event: any) => void,
   ): Promise<IWorkspaceSession> {
     const signals = this.config?.workspace?.signals || {};
     const signalConfig = signals[signalName];
@@ -515,7 +518,11 @@ export class WorkspaceRuntime {
       throw new Error(`Signal '${signalName}' not found`);
     }
     const signal = { id: signalName, name: signalName, ...signalConfig };
-    return await this.processSignal(signal, payload || {}, undefined, streamId);
+
+    // Store the callback in the signal for the session supervisor to use
+    const enhancedSignal = { ...signal, onStreamEvent };
+
+    return await this.processSignal(enhancedSignal, payload || {}, undefined, streamId);
   }
 
   /**

@@ -15,14 +15,12 @@ import { displayArtifact } from "./display-artifact.ts";
 import { resourceReadTool } from "./resource-read.ts";
 import { recallNotesTool, takeNoteTool } from "./scratchpad-tools.ts";
 import { type Table, TableSchema, tableOutput } from "./table.ts";
-import { workspaceMemoryTool } from "./workspace-memory-tool.ts";
 
 /**
  * All conversation agent tools exported as AtlasTools.
  * These can be spread directly onto the tools object in the agent handler.
  */
 export const conversationTools: AtlasTools = {
-  atlas_workspace_memory: workspaceMemoryTool,
   take_note: takeNoteTool,
   recall_notes: recallNotesTool,
   read_atlas_resource: resourceReadTool,
@@ -30,4 +28,4 @@ export const conversationTools: AtlasTools = {
   display_artifact: displayArtifact,
 };
 
-export { workspaceMemoryTool, tableOutput, TableSchema, type Table };
+export { tableOutput, TableSchema, type Table };

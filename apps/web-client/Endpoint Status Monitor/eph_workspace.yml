@@ -1,0 +1,91 @@
+version: '1.0'
+workspace:
+  name: Endpoint Status Monitor
+  description: >-
+    Demonstrates persistence functionality by continuously monitoring a web endpoint's availability.
+    Tracks uptime and status over time, providing a simple test case for verifying data persistence
+    across monitoring cycles. Useful for validating that historical status data is correctly stored
+    and retrievable.
+tools:
+  mcp:
+    client_config:
+      timeout:
+        progressTimeout: 30s
+        maxTotalTimeout: 300s
+    servers:
+      google-genai-toolbox:
+        transport:
+          type: stdio
+          command: toolbox
+          args:
+            - '--stdio'
+            - '--tools-file'
+            - /path/to/tools.yaml
+        env:
+          TOOLBOX_CONFIG: /path/to/tools.yaml
+      google-analytics:
+        transport:
+          type: stdio
+          command: npx
+          args:
+            - '-y'
+            - mcp-server-google-analytics
+        env:
+          GOOGLE_CLIENT_EMAIL: service-account@project.iam.gserviceaccount.com
+          GOOGLE_PRIVATE_KEY: your-private-key
+          GA_PROPERTY_ID: your-ga4-property-id
+      rss:
+        transport:
+          type: stdio
+          command: npx
+          args:
+            - mcp_rss
+        env:
+          DB_HOST: localhost
+          DB_PORT: '3306'
+          DB_USERNAME: root
+          DB_PASSWORD: your-password
+          DB_DATABASE: mcp_rss
+          OPML_FILE_PATH: /path/to/your/feeds.opml
+          RSS_UPDATE_INTERVAL: '60'
+signals:
+  5-minute-check:
+    description: >-
+      Runs every 5 minutes to regularly poll the endpoint and build a history of status checks.
+      Frequent interval ensures quick detection of any status changes and generates sufficient data
+      points for persistence testing.
+    provider: schedule
+    config:
+      schedule: '*/5 * * * *'
+      timezone: UTC
+jobs:
+  monitor-and-log-endpoint-status:
+    name: monitor_and_log_endpoint_status
+    description: Monitor endpoint availability and maintain historical status data
+    triggers:
+      - signal: 5-minute-check
+    execution:
+      strategy: sequential
+      agents:
+        - id: endpoint-monitor
+          context:
+            signal: true
+agents:
+  endpoint-monitor:
+    description: >-
+      Checks web endpoint availability and logs the HTTP status code and response time. Maintains a
+      running history of checks to demonstrate data persistence across invocations.
+    type: llm
+    config:
+      provider: anthropic
+      model: claude-3-5-haiku-latest
+      prompt: >-
+        You are an endpoint monitoring specialist responsible for checking web endpoint availability
+        and performance. Monitor specified URLs by making HTTP requests and recording status codes,
+        response times, and timestamps. Maintain a persistent history of all checks to track uptime
+        patterns and performance trends over time. Output structured monitoring data with clear
+        status indicators.
+      temperature: 0.1
+      max_tokens: 4000
+      max_retries: 3
+      timeout: 5m

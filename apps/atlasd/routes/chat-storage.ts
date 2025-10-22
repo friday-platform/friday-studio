@@ -1,4 +1,5 @@
-import { conversationStorage, type SessionUIMessage } from "@atlas/core";
+import { validateAtlasUIMessages } from "@atlas/agent-sdk";
+import { conversationStorage } from "@atlas/core";
 import { stringifyError } from "@atlas/utils";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
@@ -42,16 +43,11 @@ const chatStorageRoutes = daemonFactory
     "/:streamId",
     zValidator("param", z.object({ streamId: z.string() })),
     zValidator("json", z.object({ messages: z.array(TEMP_UI_MESSAGE_SCHEMA) })),
-    (c) => {
+    async (c) => {
       try {
         const { streamId } = c.req.valid("param");
         const data = c.req.valid("json");
-
-        // @ts-expect-error AI SDK doesn't export Zod schemas for UIMessage/UIMessageChunk
-        // so we accept z.array(z.unknown()) and cast to AtlasUIMessage[]
-        // @see: https://github.com/vercel/ai/issues/8100
-        const messages: SessionUIMessage[] = data.messages;
-
+        const messages = await validateAtlasUIMessages(data.messages);
         conversationStorage.replace(streamId, messages);
         return c.json({ messages }, 200);
       } catch (error) {

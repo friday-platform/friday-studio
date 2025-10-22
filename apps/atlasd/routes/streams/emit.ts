@@ -1,4 +1,4 @@
-import type { SessionUIMessageChunk } from "@atlas/core";
+import type { AtlasUIMessageChunk } from "@atlas/agent-sdk";
 import { logger } from "@atlas/logger";
 import { describeRoute, resolver, validator } from "hono-openapi";
 import { z } from "zod";
@@ -9,7 +9,7 @@ const emitEventRoute = daemonFactory.createApp();
 
 // Queue structure types
 interface QueuedEmission {
-  event: SessionUIMessageChunk;
+  event: AtlasUIMessageChunk;
   resolve: (value: EmissionResult) => void;
   reject: (error: Error) => void;
   timestamp: number;
@@ -35,7 +35,7 @@ const sessionTimeouts = new Map<string, ReturnType<typeof setTimeout>>(); // Dea
 function emitToStream(
   ctx: AppContext,
   streamId: string,
-  event: SessionUIMessageChunk,
+  event: AtlasUIMessageChunk,
   metadata?: QueuedEmission["metadata"],
 ): Promise<EmissionResult> {
   return new Promise((resolve, reject) => {
@@ -230,7 +230,7 @@ async function processStreamQueue(ctx: AppContext, streamId: string): Promise<vo
  * Check if an event indicates session completion
  * IMPORTANT: Only detect actual session-finish events, not agent-level events
  */
-function isSessionFinishEvent(event: SessionUIMessageChunk): boolean {
+function isSessionFinishEvent(event: AtlasUIMessageChunk): boolean {
   // Only check for explicit session-finish event
   return event.type === "data-session-finish";
 }
@@ -424,7 +424,7 @@ emitEventRoute.post(
      * Explicit type assertion  - we're currently not validating UI Message chunks.
      * @todo https://ai-sdk.dev/docs/reference/ai-sdk-core/validate-ui-messages#validateuimessages
      */
-    const event = c.req.valid("json") as SessionUIMessageChunk;
+    const event = c.req.valid("json") as AtlasUIMessageChunk;
 
     // Extract metadata from headers if available
     const metadata = {

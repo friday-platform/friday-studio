@@ -1,6 +1,5 @@
 import type { AtlasUIMessageChunk, StreamEmitter } from "@atlas/agent-sdk";
 import type { Logger } from "@atlas/logger";
-import { createAtlasClient } from "@atlas/oapi-client";
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { NotificationSchema } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
@@ -19,77 +18,14 @@ export const StreamContentNotificationSchema = NotificationSchema.extend({
     toolName: z.string(),
     sessionId: z.string(),
     // Runtime validation: event must have a type property (AtlasUIMessageChunk)
-    event: z
-      .object({
-        type: z.string(),
-        id: z.string().optional(),
-        data: z.unknown().optional(),
-        transient: z.boolean().optional(),
-      })
-      .passthrough(),
+    event: z.looseObject({
+      type: z.string(),
+      id: z.string().optional(),
+      data: z.unknown().optional(),
+      transient: z.boolean().optional(),
+    }),
   }),
 });
-
-/**
- * Streams events to Atlas daemon over HTTP.
- * Events are batched and sent to daemon's streaming endpoint,
- * which then broadcasts them to connected SSE clients (web UI, etc).
- */
-export class HTTPStreamEmitter<T extends AtlasUIMessageChunk> implements StreamEmitter<T> {
-  private client = createAtlasClient();
-  private ended = false;
-  private logger: Logger;
-
-  /**
-   * @param streamId Unique identifier for this event stream
-   * @param sessionId Session this stream belongs to
-   * @param logger Logger instance for debugging
-   */
-  constructor(
-    private streamId: string,
-    private sessionId: string,
-    logger: Logger,
-  ) {
-    this.logger = logger.child({ component: "HTTPStreamEmitter", streamId, sessionId });
-  }
-
-  /**
-   * Buffers an event for transmission to daemon.
-   * Triggers immediate flush if buffer gets too large.
-   */
-  emit(event: AtlasUIMessageChunk): void {
-    if (this.ended) {
-      throw new Error("Cannot emit after stream has ended");
-    }
-
-    try {
-      this.client.POST("/api/sse/{streamId}/emit", {
-        params: { path: { streamId: this.streamId } },
-        headers: { "X-Session-Id": this.sessionId },
-        body: event,
-      });
-    } catch (error) {
-      const errorCause = createErrorCause(error);
-      this.logger.error("Failed to emit stream event", {
-        streamId: this.streamId,
-        sessionId: this.sessionId,
-        error: error,
-        errorCause,
-        eventType: event.type,
-      });
-      // Don't throw - streaming should continue even if one event fails
-    }
-  }
-
-  end(): void {
-    this.ended = true;
-  }
-
-  error(error: Error): void {
-    this.logger.error("Stream error", { error });
-    this.end();
-  }
-}
 
 /**
  * Delegates stream events to provided callback functions.

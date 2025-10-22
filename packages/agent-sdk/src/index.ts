@@ -15,6 +15,19 @@ export type {
 } from "./adapter.ts";
 // Core API
 export { createAgent } from "./create-agent.ts";
+export type {
+  AtlasDataEvents,
+  AtlasUIMessage,
+  AtlasUIMessageChunk,
+  AtlasUIMessagePart,
+  MessageMetadata,
+} from "./messages.ts";
+// Messages
+export {
+  AtlasDataEventSchemas,
+  MessageMetadataSchema,
+  validateAtlasUIMessages,
+} from "./messages.ts";
 // Types
 export type {
   AgentContext,
@@ -35,15 +48,11 @@ export type {
   AtlasAgentConfig,
   AtlasTool,
   AtlasTools,
-  AtlasUIMessage,
-  AtlasUIMessageChunk,
-  AtlasUIMessagePart,
   CreateAgentConfig,
   MCPAuthConfig,
   MCPServerConfig,
   MCPServerToolFilter,
   MCPTransportConfig,
-  MessageMetadata,
   StreamEmitter,
   ToolCall,
   ToolContext,
@@ -67,5 +76,4 @@ export {
   MCPServerConfigSchema,
   MCPServerToolFilterSchema,
   MCPTransportConfigSchema,
-  MessageMetadataSchema,
 } from "./types.ts";

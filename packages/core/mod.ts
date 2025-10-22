@@ -57,7 +57,6 @@ export {
 export {
   CallbackStreamEmitter,
   CancellationNotificationSchema,
-  HTTPStreamEmitter,
   MCPStreamEmitter,
 } from "./src/streaming/stream-emitters.ts";
 // Actor Types
@@ -72,5 +71,4 @@ export type {
   NetworkErrorCause,
   UnknownErrorCause,
 } from "./src/types/error-causes.ts";
-export * from "./src/types/session.ts";
 export { createErrorCause, throwWithCause } from "./src/utils/error-helpers.ts";

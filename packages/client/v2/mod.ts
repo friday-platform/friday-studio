@@ -1,5 +1,6 @@
 import type {
   ArtifactsRoutes,
+  ChatRoutes,
   ChatStorageRoutes,
   DaemonRoutes,
   HealthRoutes,
@@ -21,6 +22,7 @@ export { DetailedError } from "hono/client";
 export const client = {
   health: hc<HealthRoutes>("http://localhost:8080/health"),
   artifactsStorage: hc<ArtifactsRoutes>("http://localhost:8080/api/artifacts"),
+  chat: hc<ChatRoutes>("http://localhost:8080/api/chat"),
   chatStorage: hc<ChatStorageRoutes>("http://localhost:8080/api/chat-storage"),
   daemon: hc<DaemonRoutes>("http://localhost:8080/api/daemon"),
   sessions: hc<SessionsRoutes>("http://localhost:8080/api/sessions"),

@@ -11,7 +11,7 @@
  * - Handles memory operations for fact extraction and summaries
  */
 
-import type { AgentResult, StreamEmitter } from "@atlas/agent-sdk";
+import type { AgentResult, AtlasUIMessageChunk, StreamEmitter } from "@atlas/agent-sdk";
 import type { JobSpecification, WorkspaceAgentConfig } from "@atlas/config";
 import type {
   ActorInitParams,
@@ -22,11 +22,10 @@ import type {
   IAgentOrchestrator,
   SessionResult,
   SessionSupervisorConfig,
-  SessionUIMessageChunk,
 } from "@atlas/core";
 import {
   anthropic,
-  HTTPStreamEmitter,
+  CallbackStreamEmitter,
   ReasoningResultStatus,
   type ReasoningResultStatusType,
   SessionSupervisorStatus,
@@ -52,6 +51,7 @@ export interface SessionContext {
   availableAgents: string[];
   constraints?: Record<string, unknown>;
   streamId?: string; // Optional streamId for streaming support
+  onStreamEvent?: (event: AtlasUIMessageChunk) => void; // Optional callback for stream events
 }
 
 // Type alias for signal with description in config
@@ -140,7 +140,7 @@ export class SessionSupervisorActor implements BaseActor {
   private activeAgentExecutions = new Map<string, AbortController>();
 
   // Stream management
-  private baseStreamEmitter?: StreamEmitter<SessionUIMessageChunk>;
+  private baseStreamEmitter?: StreamEmitter<AtlasUIMessageChunk>;
   private sessionFinishEmitted = false; // Track if session-finish was already emitted
 
   // Memory managment
@@ -181,7 +181,7 @@ export class SessionSupervisorActor implements BaseActor {
    * Set a custom StreamEmitter for this session (used by MCP tool execution)
    * This overrides the default HTTPStreamEmitter that would be created for SSE
    */
-  setStreamEmitter(emitter: StreamEmitter<SessionUIMessageChunk>): void {
+  setStreamEmitter(emitter: StreamEmitter<AtlasUIMessageChunk>): void {
     this.baseStreamEmitter = emitter;
     this.logger.info("Custom stream emitter set", {
       sessionId: this.sessionId,
@@ -393,35 +393,36 @@ export class SessionSupervisorActor implements BaseActor {
       }
     }
 
-    // Initialize streaming if streamId provided (SSE path)
-    // Note: For MCP path, streamEmitter is set via setStreamEmitter() before this call
-    if (context.streamId && !this.baseStreamEmitter) {
-      this.baseStreamEmitter = new HTTPStreamEmitter<SessionUIMessageChunk>(
-        context.streamId,
-        this.sessionId,
-        this.logger,
+    // Initialize streaming if streamId provided
+    if (context.streamId && context.onStreamEvent) {
+      // Check if we have a stream callback (chat mode)
+      // Use callback emitter that routes to the SSE manager
+      this.baseStreamEmitter = new CallbackStreamEmitter(
+        context.onStreamEvent,
+        () => {},
+        (error) => this.logger.error("Stream error", { error }),
       );
-    }
 
-    // Emit session start event if we have an emitter
-    if (this.baseStreamEmitter) {
-      this.baseStreamEmitter.emit({
-        type: "data-session-start",
-        data: {
-          sessionId: this.sessionId,
-          signalId: context.signal.id,
-          workspaceId: this.workspaceId,
-        },
+      // Emit session start event if we have an emitter
+      if (this.baseStreamEmitter) {
+        this.baseStreamEmitter.emit({
+          type: "data-session-start",
+          data: {
+            sessionId: this.sessionId,
+            signalId: context.signal.id,
+            workspaceId: this.workspaceId,
+          },
+        });
+      }
+
+      this.logger.info("Session initialized", {
+        sessionId: this.sessionId,
+        workspaceId: this.workspaceId,
+        signalId: context.signal.id,
+        availableAgents: context.availableAgents.length,
+        hasStreaming: !!context.streamId,
       });
     }
-
-    this.logger.info("Session initialized", {
-      sessionId: this.sessionId,
-      workspaceId: this.workspaceId,
-      signalId: context.signal.id,
-      availableAgents: context.availableAgents.length,
-      hasStreaming: !!context.streamId,
-    });
   }
 
   async createExecutionPlan(): Promise<ExecutionPlan> {
@@ -1150,11 +1151,6 @@ export class SessionSupervisorActor implements BaseActor {
         abortSignal: agentAbort.signal,
         // Pass callback for stream events
         onStreamEvent: (event) => {
-          /**
-           * Explicit type assertion  - we're currently not validating UI Message chunks.
-           * @todo https://ai-sdk.dev/docs/reference/ai-sdk-core/validate-ui-messages#validateuimessages
-           */
-          // @ts-expect-error see above
           this.baseStreamEmitter?.emit(event);
         },
       });

@@ -29,6 +29,7 @@ import { WorkspaceRuntime } from "../../../src/core/workspace-runtime.ts";
 import { WorkspaceMemberRole } from "../../../src/types/core.ts";
 import { agents as agentsRoutes } from "../routes/agents/index.ts";
 import { artifactsApp } from "../routes/artifacts.ts";
+import chatRoutes from "../routes/chat.ts";
 import { chatStorageRoutes } from "../routes/chat-storage.ts";
 import { daemonApp } from "../routes/daemon.ts";
 import { healthRoutes } from "../routes/health.ts";
@@ -512,13 +513,10 @@ export class AtlasDaemon {
       }
     });
 
-    // Setup CORS if configured
-    if (this.options.cors) {
-      this.app.use("*", cors({ origin: this.options.cors, credentials: true }));
-    }
     this.app.route("/health", healthRoutes);
     this.app.route("/api/workspaces", workspacesRoutes);
     this.app.route("/api/artifacts", artifactsApp);
+    this.app.route("/api/chat", chatRoutes);
     this.app.route("/api/chat-storage", chatStorageRoutes);
     this.app.route("/api/user", userRoutes);
     this.app.route("/api/scratchpad", scratchpadApp);

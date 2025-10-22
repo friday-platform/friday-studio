@@ -10,9 +10,12 @@
   },
   "main": "./src/index.ts",
   "dependencies": {
+    "@atlas/client": "workspace:*",
     "@atlas/logger": "workspace:*",
+    "@atlas/utils": "workspace:*",
     "@opentelemetry/api": "^1.9.0",
     "ai": "^5.0.59",
+    "eventsource-client": "^1.1.4",
     "zod": "^4.1.11"
   }
 }

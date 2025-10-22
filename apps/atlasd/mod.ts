@@ -1,4 +1,5 @@
 export type { ArtifactsRoutes } from "./routes/artifacts.ts";
+export type { ChatRoutes } from "./routes/chat.ts";
 export type { ChatStorageRoutes } from "./routes/chat-storage.ts";
 export type { DaemonRoutes } from "./routes/daemon.ts";
 export type { HealthRoutes } from "./routes/health.ts";

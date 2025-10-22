@@ -1,11 +1,11 @@
 <script lang="ts">
-import type { UIDataTypes, UIMessagePart, UITools } from "ai";
+import type { AtlasUIMessagePart } from "@atlas/agent-sdk";
 import { CustomIcons } from "$lib/components/icons/custom";
 import MessageWrapper from "./wrapper.svelte";
 
 let time = $state(0);
 
-const { actions }: { actions: UIMessagePart<UIDataTypes, UITools>[] } = $props();
+const { actions }: { actions: AtlasUIMessagePart[] } = $props();
 
 const progressActions = $derived.by(() => {
   const lastIndex = actions.map((a) => a.type).lastIndexOf("data-tool-progress");

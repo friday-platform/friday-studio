@@ -10,6 +10,7 @@
  * - Resource allocation and cleanup
  */
 
+import type { AtlasUIMessageChunk } from "@atlas/agent-sdk";
 import type { JobSpecification, WorkspaceAgentConfig } from "@atlas/config";
 import type {
   ActorInitParams,
@@ -118,6 +119,7 @@ export class WorkspaceSupervisorActor implements BaseActor {
     payload: Record<string, unknown>,
     sessionId: string,
     streamId?: string,
+    onStreamEvent?: (event: AtlasUIMessageChunk) => void,
   ): Promise<ProcessSignalResult> {
     try {
       this.logger.info("Processing signal", {
@@ -201,6 +203,7 @@ export class WorkspaceSupervisorActor implements BaseActor {
             availableAgents,
             jobSpec,
             streamId: streamId, // Only use the streamId parameter - never fallback to payload
+            onStreamEvent, // Pass the callback if provided
           };
 
           this.logger.info("Session context created", {

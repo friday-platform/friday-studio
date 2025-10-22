@@ -21,6 +21,7 @@
   "dependencies": {
     "@atlas/core": "workspace:*",
     "@atlas/oapi-client": "workspace:*",
+    "@ai-sdk/svelte": "^3.0.64",
     "@lezer/common": "^1.2.3",
     "@lezer/markdown": "^1.3.2",
     "@sveltejs/kit": "^2.22.0",

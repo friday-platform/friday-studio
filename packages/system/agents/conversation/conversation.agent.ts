@@ -9,7 +9,7 @@
  */
 import process from "node:process";
 import type { AtlasTools, AtlasUIMessage } from "@atlas/agent-sdk";
-import { createAgent } from "@atlas/agent-sdk";
+import { createAgent, validateAtlasUIMessages } from "@atlas/agent-sdk";
 import { pipeUIMessageStream } from "@atlas/agent-sdk/vercel-helpers";
 import { client, parseResult } from "@atlas/client/v2";
 import { anthropic } from "@atlas/core";
@@ -21,7 +21,6 @@ import {
   convertToModelMessages,
   createIdGenerator,
   jsonSchema,
-  type ReasoningOutput,
   smoothStream,
   stepCountIs,
   streamText,
@@ -32,20 +31,13 @@ import {
   StreamContentNotificationSchema,
 } from "../../../core/src/streaming/stream-emitters.ts";
 import SYSTEM_PROMPT from "./prompt.txt" with { type: "text" };
-import { conversationTools, workspaceMemoryTool } from "./tools/mod.ts";
-
-type Role = "user" | "assistant";
-type ChatMessage = { role: Role; content: string };
-type MessageHistory = { messages: Array<ChatMessage> };
+import { conversationTools } from "./tools/mod.ts";
 
 /**
  * Get the system prompt with optional conversation history injection and available tools
  * Based on existing conversation-agent.ts buildSystemPrompt logic
  */
-function getSystemPrompt(
-  historyMessages?: Array<{ role: string; content: string }>,
-  streamId?: string,
-): string {
+function getSystemPrompt(streamId?: string): string {
   let prompt = SYSTEM_PROMPT;
 
   // Add critical streamId instruction for signal triggers
@@ -53,18 +45,6 @@ function getSystemPrompt(
     prompt = `${prompt}
       CRITICAL: Stream ID is ${streamId}. Include this parameter when streamId is available as a parameter in tools.
     `;
-  }
-
-  // Replace the conversation history placeholder if present
-  if (historyMessages && historyMessages.length > 0) {
-    const formattedHistory = historyMessages.map((m) => `${m.role}: ${m.content}`).join("\n");
-    prompt = prompt.replace(
-      "{{CONVERSATION_HISTORY}}",
-      `\nConversation History:\n${formattedHistory}\n`,
-    );
-  } else {
-    // Remove the placeholder if no history
-    prompt = prompt.replace("{{CONVERSATION_HISTORY}}", "");
   }
 
   return prompt;
@@ -103,11 +83,15 @@ export const conversationAgent = createAgent({
    * Main conversation handler that processes user prompts with streaming responses.
    * Manages conversation history persistence, tool execution, and real-time event streaming.
    *
-   * @param prompt - User's input message
+   * NOTE: The conversation agent works a bit differently than other agents. Rather than using
+   * the prompt that triggers the signal, the message history is loaded in its entirety from
+   * the chat history db, rather than using the signal input prompt.
+   *
+   * @param prompt - NOT USED - see the note above.
    * @param context - Execution context with session, logger, and available tools
    * @returns Conversation response with text, reasoning, execution flow, and tool calls
    */
-  handler: async (prompt, { session, logger, tools, stream, abortSignal, telemetry }) => {
+  handler: async (_, { session, logger, tools, stream, abortSignal, telemetry }) => {
     if (!session.streamId) {
       throw new Error("Stream ID is required");
     }
@@ -227,82 +211,26 @@ export const conversationAgent = createAgent({
       });
     }
 
-    // If chat history exists, load it.
-    const messages: AtlasUIMessage[] = [];
+    // Load and validate chat history
+    let messages: AtlasUIMessage[] = [];
     const res = await parseResult(
-      client.chatStorage[":streamId"].$get({ param: { streamId: session.streamId } }),
+      client.chat[":chatId"].$get({ param: { chatId: session.streamId } }),
     );
     if (res.ok) {
-      // @ts-expect-error the AI sdk doesn't currently export Zod schemas for UIMessage and UIMessageChunk
-      messages.push(...res.data.messages.slice(-20));
+      messages = await validateAtlasUIMessages(res.data.messages);
     } else {
       logger.error("Failed to load chat history", { error: res.error });
     }
-
-    // convert the prompt to an AtlasUIMessage
-    const userMessage: AtlasUIMessage = {
-      id: crypto.randomUUID(),
-      role: "user",
-      parts: [{ type: "text", text: prompt }],
-    };
-
-    // Push the message to the array which will be sent to the LLM.
-    messages.push(userMessage);
-
-    // Emit it using our custom message type
-    // @HACK: `data-user-message` this is a workaround since the AI SDK doesn't
-    // give you a way to emit user messages back to the stream. It expects that
-    // they will be just pushed to the array and persisted client-side.
-    stream?.emit({ id: crypto.randomUUID(), type: "data-user-message", data: prompt });
 
     const allTools = { ...tools, ...conversationTools, ...agents };
 
     /**
      * Load conversation context from workspace memory system instead of separate storage
      */
-    let history: MessageHistory = { messages: [] };
-
-    try {
-      // Use workspace memory tool from conversation tools
-
-      const memoryResult = await workspaceMemoryTool.execute?.(
-        { operation: "load_context", maxEntries: 10, sessionId: session.sessionId, prompt: prompt },
-        { messages: [], toolCallId: crypto.randomUUID() },
-      );
-
-      // @ts-expect-error will be addressed during Chat
-      if (memoryResult?.success && memoryResult.conversationHistory.length > 0) {
-        // @ts-expect-error will be addressed during Chat
-        const conversationHistory = memoryResult.conversationHistory;
-
-        // Convert workspace memory format to conversation format
-        const pastChatContext: Array<ChatMessage> = [];
-        for (const entry of conversationHistory) {
-          const userContent = entry?.user;
-          const assistantContent = entry?.assistant;
-          if (typeof userContent === "string" && userContent.trim().length > 0) {
-            pastChatContext.push({ role: "user", content: userContent });
-          }
-          if (typeof assistantContent === "string" && assistantContent.trim().length > 0) {
-            pastChatContext.push({ role: "assistant", content: assistantContent });
-          }
-        }
-
-        // Limit to recent messages
-        history = { messages: pastChatContext.slice(-20) };
-
-        logger.info("Loaded conversation context from workspace memory", {
-          entriesLoaded: conversationHistory.length,
-          messagesCount: messages.length,
-        });
-      }
-    } catch (error) {
-      logger.warn("Failed to load workspace memory context", { error });
-    }
 
     const systemPrompt = `Current datetime (UTC): ${new Date().toISOString()}
 
-    ${getSystemPrompt(history.messages, session.streamId)}
+    ${getSystemPrompt(session.streamId)}
     `;
 
     // Store the original error if streamText fails
@@ -435,40 +363,40 @@ export const conversationAgent = createAgent({
             if (!session.streamId) {
               throw new Error("Stream ID is missing");
             }
-            // Store the updated chat
-            const res = await parseResult(
-              client.chatStorage[":streamId"].$put({
-                param: { streamId: session.streamId },
-                json: { messages },
-              }),
-            );
-            if (!res.ok) {
-              logger.error("Failed to store chat", { error: res.error });
+
+            // Store the assistant message to chat storage
+            // Get the last message which should be the assistant's response
+            const lastMessage = messages[messages.length - 1];
+            if (lastMessage && lastMessage.role === "assistant") {
+              const appendResult = await parseResult(
+                client.chat[":chatId"].message.$post({
+                  param: { chatId: session.streamId },
+                  json: { message: lastMessage },
+                }),
+              );
+              if (!appendResult.ok) {
+                logger.error("Failed to append assistant message to chat storage", {
+                  streamId: session.streamId,
+                  error: appendResult.error,
+                });
+              } else {
+                logger.debug("Assistant message persisted to chat storage", {
+                  streamId: session.streamId,
+                  messageId: lastMessage.id,
+                });
+              }
             }
           },
         }),
         stream,
       );
 
-      const executionFlow = {
-        steps: [],
-        reasoning: [],
-        responseBuffer: "",
-        thinkingBuffer: "",
-        startTime: Date.now(), // Track start time for duration calculation
-      };
-
       // Wait for both the text/reasoning and the pipe to complete
       // This ensures all streaming events are emitted before we close MCP transport
       let finalText: string;
-      let finalReasoning: ReasoningOutput[];
 
       try {
-        const [textResult, reasoningResult, pipeResult] = await Promise.allSettled([
-          result.text,
-          result.reasoning,
-          pipePromise,
-        ]);
+        const [textResult, pipeResult] = await Promise.allSettled([result.text, pipePromise]);
 
         // Check for pipe errors first - they indicate streaming failures
         if (pipeResult.status === "rejected") {
@@ -489,7 +417,6 @@ export const conversationAgent = createAgent({
         }
 
         finalText = textResult.status === "fulfilled" ? textResult.value : "";
-        finalReasoning = reasoningResult.status === "fulfilled" ? reasoningResult.value : [];
       } catch (streamError) {
         // Handle error that occurs during stream consumption
         // Use the most specific error available
@@ -523,12 +450,6 @@ export const conversationAgent = createAgent({
         return { text: displayMessage, reasoning: "", executionFlow: [], toolCalls: [] };
       }
 
-      // Convert reasoning to proper format - prioritize collected reasoning if AI SDK reasoning is empty
-      const processedReasoning =
-        finalReasoning.length > 0
-          ? finalReasoning.map((item) => item.text).join("\n")
-          : executionFlow.reasoning.join("\n");
-
       // Successfully completed - close MCP transport now that streaming is done
       try {
         await agentServerTransport.close();
@@ -537,11 +458,7 @@ export const conversationAgent = createAgent({
         logger.error("Failed to close MCP transport", { error: closeError });
       }
 
-      return {
-        text: finalText || executionFlow.responseBuffer,
-        reasoning: processedReasoning,
-        executionFlow: executionFlow.steps,
-      };
+      return { text: finalText };
     } catch (error) {
       // Handle API errors with user-friendly messages
       // Use the intercepted API error first (actual auth error), then others

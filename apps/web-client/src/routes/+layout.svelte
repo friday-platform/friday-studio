@@ -5,10 +5,12 @@ import "../app.css";
 import { onMount } from "svelte";
 import { goto } from "$app/navigation";
 import { setAppContext } from "$lib/app-context.svelte";
+import { setChatContext } from "$lib/chat-context.svelte";
 import DiagnosticsDialog from "$lib/components/diagnostics-dialog.svelte";
 
 const { children } = $props();
 const ctx = setAppContext();
+setChatContext();
 
 let showDiagnosticsDialog = $state(false);
 

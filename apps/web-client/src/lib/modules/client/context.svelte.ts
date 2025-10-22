@@ -1,5 +1,5 @@
+import type { AtlasUIMessage, AtlasUIMessageChunk, AtlasUIMessagePart } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
-import type { SessionUIMessage, SessionUIMessageChunk, SessionUIMessagePart } from "@atlas/core";
 import {
   isPermissionGranted,
   requestPermission,
@@ -29,14 +29,13 @@ class ClientContext {
   private waitingForAtlasResponse = false;
   private notifiedSessions = new Set<string>();
   private currentSessionForNotification: string | null = null;
-  private currentConversationId: string | null = null;
 
   public conversationClient: ConversationClient | null = null;
-  sseStream: ReadableStream<SessionUIMessageChunk> | null = null;
+  sseStream: ReadableStream<AtlasUIMessageChunk> | null = null;
   // Svelte reactive values
   typingState = $state({ isTyping: false, elapsedSeconds: 0 });
-  messages = $state<SessionUIMessagePart[]>([]);
-  messageHistory = $state<SessionUIMessagePart[]>([]);
+  messages = $state<AtlasUIMessagePart[]>([]);
+  messageHistory = $state<AtlasUIMessagePart[]>([]);
   user = $state<string>("NA");
   atlasSessionId = $state<string | null>(null);
   daemonStatus = $state<"connected" | "error" | "idle">("idle");
@@ -180,7 +179,6 @@ class ClientContext {
         this.notifiedSessions.clear();
         this.waitingForAtlasResponse = false;
         this.currentSessionForNotification = null;
-        this.currentConversationId = null;
       }
 
       if (!session) return;
@@ -210,7 +208,7 @@ class ClientContext {
       // Start health check interval
       this.startHealthCheckInterval();
 
-      for await (const uiMessage of readUIMessageStream<SessionUIMessage>({ stream })) {
+      for await (const uiMessage of readUIMessageStream<AtlasUIMessage>({ stream })) {
         // Check if we should stop processing (e.g., if cleanup was called)
         if (!this.sseAbortController || this.sseAbortController.signal.aborted) {
           break;
@@ -412,30 +410,6 @@ class ClientContext {
     if (this.countdownInterval !== null) {
       clearInterval(this.countdownInterval);
       this.countdownInterval = null;
-    }
-  }
-
-  async getConversation(id: string) {
-    if (!this.conversationClient) {
-      this.connect();
-    }
-
-    // Clear notification tracking when switching conversations
-    if (this.currentConversationId !== id) {
-      this.notifiedSessions.clear();
-      this.waitingForAtlasResponse = false;
-      this.currentSessionForNotification = null;
-      this.currentConversationId = id;
-    }
-
-    const res = await parseResult(
-      client.chatStorage[":streamId"].$get({ param: { streamId: id } }),
-    );
-    if (res.ok) {
-      const history = res.data.messages.flatMap(
-        (message) => message.parts,
-      ) as SessionUIMessagePart[];
-      this.messageHistory = history;
     }
   }
 

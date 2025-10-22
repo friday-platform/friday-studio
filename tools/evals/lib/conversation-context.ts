@@ -1,6 +1,5 @@
 import type { AgentContext, AtlasUIMessageChunk, StreamEmitter } from "@atlas/agent-sdk";
 import { createAtlasClient } from "@atlas/oapi-client";
-import type { UIDataTypes } from "ai";
 import { AgentTelemetryCollector, type CollectedMetrics } from "./agent-telemetry-collector.ts";
 import { DaemonTestHarness } from "./daemon-harness.ts";
 
@@ -43,7 +42,7 @@ export class ConversationAgentContext {
     const session = this.harness.createSession();
 
     // Create a stream that captures events for verification
-    const capturedEvents: Array<AtlasUIMessageChunk<UIDataTypes>> = [];
+    const capturedEvents: Array<AtlasUIMessageChunk> = [];
     const stream: StreamEmitter = {
       emit: (event) => {
         capturedEvents.push(event);
