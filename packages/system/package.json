@@ -13,7 +13,6 @@
     "@atlas/config": "workspace:*",
     "@atlas/core": "workspace:*",
     "@atlas/logger": "workspace:*",
-    "@atlas/memory": "workspace:*",
     "@atlas/oapi-client": "workspace:*",
     "@atlas/utils": "workspace:*",
     "@modelcontextprotocol/sdk": "npm:@socotra/modelcontextprotocol-sdk@^1.18.0",

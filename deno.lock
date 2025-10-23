@@ -15,7 +15,7 @@
     "npm:@ai-sdk/openai@^2.0.42": "2.0.53_zod@4.1.12",
     "npm:@ai-sdk/provider@2": "2.0.0",
     "npm:@ai-sdk/svelte@^3.0.64": "3.0.76_svelte@5.41.1__acorn@8.15.0_zod@4.1.12",
-    "npm:@biomejs/biome@*": "2.2.6",
+    "npm:@biomejs/biome@*": "2.2.7",
     "npm:@eslint/compat@^1.2.5": "1.4.0_eslint@9.38.0",
     "npm:@eslint/js@^9.18.0": "9.38.0",
     "npm:@hono/standard-validator@~0.1.5": "0.1.5_@standard-schema+spec@1.0.0_hono@4.10.1",
@@ -45,7 +45,6 @@
     "npm:@sveltejs/vite-plugin-svelte@6": "6.2.1_svelte@5.41.1__acorn@8.15.0_vite@7.1.11__picomatch@4.0.3_@types+node@24.2.0",
     "npm:@tauri-apps/api@2.9.0": "2.9.0",
     "npm:@tauri-apps/cli@^2.9.0": "2.9.0",
-    "npm:@tauri-apps/plugin-dialog@^2.4.0": "2.4.0",
     "npm:@tauri-apps/plugin-notification@2": "2.3.1",
     "npm:@tauri-apps/plugin-opener@^2.5.0": "2.5.0",
     "npm:@tavily/core@~0.5.12": "0.5.12",
@@ -247,8 +246,8 @@
         "@babel/helper-validator-identifier"
       ]
     },
-    "@biomejs/biome@2.2.6": {
-      "integrity": "sha512-yKTCNGhek0rL5OEW1jbLeZX8LHaM8yk7+3JRGv08my+gkpmtb5dDE+54r2ZjZx0ediFEn1pYBOJSmOdDP9xtFw==",
+    "@biomejs/biome@2.2.7": {
+      "integrity": "sha512-1a8j0UP1vXVUf3UzMZEJ/zS2VgAG6wU6Cuh/I764sUGI+MCnJs/9WaojHYBDCxCMLTgU60/WqnYof85emXmSBA==",
       "optionalDependencies": [
         "@biomejs/cli-darwin-arm64",
         "@biomejs/cli-darwin-x64",
@@ -261,43 +260,43 @@
       ],
       "bin": true
     },
-    "@biomejs/cli-darwin-arm64@2.2.6": {
-      "integrity": "sha512-UZPmn3M45CjTYulgcrFJFZv7YmK3pTxTJDrFYlNElT2FNnkkX4fsxjExTSMeWKQYoZjvekpH5cvrYZZlWu3yfA==",
+    "@biomejs/cli-darwin-arm64@2.2.7": {
+      "integrity": "sha512-xBUUsebnO2/Qj1v7eZmKUy2ZcFkZ4/jLUkxN02Qup1RPoRaiW9AKXHrqS3L7iX6PzofHY2xuZ+Pb9kAcpoe0qA==",
       "os": ["darwin"],
       "cpu": ["arm64"]
     },
-    "@biomejs/cli-darwin-x64@2.2.6": {
-      "integrity": "sha512-HOUIquhHVgh/jvxyClpwlpl/oeMqntlteL89YqjuFDiZ091P0vhHccwz+8muu3nTyHWM5FQslt+4Jdcd67+xWQ==",
+    "@biomejs/cli-darwin-x64@2.2.7": {
+      "integrity": "sha512-vsY4NhmxqgfLJufr9XUnC+yGUPJiXAc1mz6FcjaAmuIuLwfghN4uQO7hnW2AneGyoi2mNe9Jbvf6Qtq4AjzrFg==",
       "os": ["darwin"],
       "cpu": ["x64"]
     },
-    "@biomejs/cli-linux-arm64-musl@2.2.6": {
-      "integrity": "sha512-TjCenQq3N6g1C+5UT3jE1bIiJb5MWQvulpUngTIpFsL4StVAUXucWD0SL9MCW89Tm6awWfeXBbZBAhJwjyFbRQ==",
+    "@biomejs/cli-linux-arm64-musl@2.2.7": {
+      "integrity": "sha512-FrTwvKO/7t5HbVTvhlMOTOVQLAcR7r4O4iFQhEpZXUtBfosHqrX/JJlX7daPawoe14MDcCu9CDg0zLVpTuDvuQ==",
       "os": ["linux"],
       "cpu": ["arm64"]
     },
-    "@biomejs/cli-linux-arm64@2.2.6": {
-      "integrity": "sha512-BpGtuMJGN+o8pQjvYsUKZ+4JEErxdSmcRD/JG3mXoWc6zrcA7OkuyGFN1mDggO0Q1n7qXxo/PcupHk8gzijt5g==",
+    "@biomejs/cli-linux-arm64@2.2.7": {
+      "integrity": "sha512-nUdco104rjV9dULi1VssQ5R/kX2jE/Z2sDjyqS+siV9sTQda0DwmEUixFNRCWvZJRRiZUWhgiDFJ4n7RowO8Mg==",
       "os": ["linux"],
       "cpu": ["arm64"]
     },
-    "@biomejs/cli-linux-x64-musl@2.2.6": {
-      "integrity": "sha512-1ZcBux8zVM3JhWN2ZCPaYf0+ogxXG316uaoXJdgoPZcdK/rmRcRY7PqHdAos2ExzvjIdvhQp72UcveI98hgOog==",
+    "@biomejs/cli-linux-x64-musl@2.2.7": {
+      "integrity": "sha512-MnsysF5s/iLC5wnYvuMseOy+m8Pd4bWG1uwlVyy2AUbfjAVUgtbYbboc5wMXljFrDY7e6rLjLTR4S2xqDpGlQg==",
       "os": ["linux"],
       "cpu": ["x64"]
     },
-    "@biomejs/cli-linux-x64@2.2.6": {
-      "integrity": "sha512-1HaM/dpI/1Z68zp8ZdT6EiBq+/O/z97a2AiHMl+VAdv5/ELckFt9EvRb8hDHpk8hUMoz03gXkC7VPXOVtU7faA==",
+    "@biomejs/cli-linux-x64@2.2.7": {
+      "integrity": "sha512-tPTcGAIEOOZrj2tQ7fdraWlaxNKApBw6l4In8wQQV1IyxnAexqi0hykHzKEX8hKKctf5gxGBfNCzyIvqpj4CFQ==",
       "os": ["linux"],
       "cpu": ["x64"]
     },
-    "@biomejs/cli-win32-arm64@2.2.6": {
-      "integrity": "sha512-h3A88G8PGM1ryTeZyLlSdfC/gz3e95EJw9BZmA6Po412DRqwqPBa2Y9U+4ZSGUAXCsnSQE00jLV8Pyrh0d+jQw==",
+    "@biomejs/cli-win32-arm64@2.2.7": {
+      "integrity": "sha512-h5D1jhwA2b7cFXerYiJfXHSzzAMFFoEDL5Mc2BgiaEw0iaSgSso/3Nc6FbOR55aTQISql+IpB4PS7JoV26Gdbw==",
       "os": ["win32"],
       "cpu": ["arm64"]
     },
-    "@biomejs/cli-win32-x64@2.2.6": {
-      "integrity": "sha512-yx0CqeOhPjYQ5ZXgPfu8QYkgBhVJyvWe36as7jRuPrKPO5ylVDfwVtPQ+K/mooNTADW0IhxOZm3aPu16dP8yNQ==",
+    "@biomejs/cli-win32-x64@2.2.7": {
+      "integrity": "sha512-URqAJi0kONyBKG4V9NVafHLDtm6IHmF4qPYi/b6x7MD6jxpWeJiTCO6R5+xDlWckX2T/OGv6Yq3nkz6s0M8Ykw==",
       "os": ["win32"],
       "cpu": ["x64"]
     },
@@ -1263,12 +1262,6 @@
         "@tauri-apps/cli-win32-x64-msvc"
       ],
       "bin": true
-    },
-    "@tauri-apps/plugin-dialog@2.4.0": {
-      "integrity": "sha512-OvXkrEBfWwtd8tzVCEXIvRfNEX87qs2jv6SqmVPiHcJjBhSF/GUvjqUNIDmKByb5N8nvDqVUM7+g1sXwdC/S9w==",
-      "dependencies": [
-        "@tauri-apps/api"
-      ]
     },
     "@tauri-apps/plugin-notification@2.3.1": {
       "integrity": "sha512-7gqgfANSREKhh35fY1L4j3TUjUdePmU735FYDqRGeIf8nMXWpcx6j4FhN9/4nYz+m0mv79DCTPLqIPTySggGgg==",
@@ -3404,7 +3397,6 @@
         "npm:@total-typescript/ts-reset@~0.6.1",
         "npm:@types/react@^19.1.13",
         "npm:ai@^5.0.59",
-        "npm:eventsource-client@^1.1.4",
         "npm:ink@^6.3.0",
         "npm:js-levenshtein@^1.1.6",
         "npm:knip@5.66.2",
@@ -3445,7 +3437,6 @@
             "npm:@sveltejs/vite-plugin-svelte@6",
             "npm:@tauri-apps/api@2.9.0",
             "npm:@tauri-apps/cli@^2.9.0",
-            "npm:@tauri-apps/plugin-dialog@^2.4.0",
             "npm:@tauri-apps/plugin-notification@2",
             "npm:@tauri-apps/plugin-opener@^2.5.0",
             "npm:ai@^5.0.59",
@@ -3471,7 +3462,6 @@
           "dependencies": [
             "npm:@opentelemetry/api@^1.9.0",
             "npm:ai@^5.0.59",
-            "npm:eventsource-client@^1.1.4",
             "npm:zod@^4.1.11"
           ]
         }

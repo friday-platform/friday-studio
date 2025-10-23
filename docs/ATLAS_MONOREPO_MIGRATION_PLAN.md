@@ -87,7 +87,6 @@ atlas-monorepo/
 - **Current Location**: `src/cli/`, `src/cli.tsx`
 - **Responsibilities**:
   - Command-line interface
-  - Interactive TUI
   - Command parsing and execution
   - User interaction
   - CLI-specific UI components

@@ -11,7 +11,6 @@ delivery through human/AI collaboration.
 - [Daemon Management](#daemon-management)
 - [Creating Your First Workspace](#creating-your-first-workspace)
 - [Understanding Jobs and Signals](#understanding-jobs-and-signals)
-- [Working with the TUI](#working-with-the-tui)
 - [Example Workflows](#example-workflows)
 - [Troubleshooting](#troubleshooting)
 
@@ -32,7 +31,6 @@ atlas daemon start
 
 # 4. Try an example workspace
 cd examples/workspaces/telephone
-atlas tui
 ```
 
 ## 📦 Prerequisites
@@ -241,52 +239,6 @@ atlas signal trigger webhook --data '{"type":"deployment","env":"prod"}'
 atlas signal trigger test --workspace my-workspace-id
 ```
 
-## 🖥️ Working with the TUI
-
-The Terminal User Interface (TUI) provides an interactive way to work with Atlas:
-
-```bash
-# Launch TUI
-atlas tui
-
-# Or launch interactive mode
-atlas
-```
-
-### TUI Features
-
-- **Workspace Detection**: Automatically finds and displays available workspaces
-- **Dual-Panel Layout**: Separate panels for conversation and server logs
-- **Vi-Style Navigation**: j/k for up/down, gg/G for top/bottom
-- **Slash Commands**: All Atlas commands available with `/` prefix
-- **Real-time Logs**: Live session and server output
-- **Copy Support**: Press `y` to copy selected lines
-
-### Key Navigation
-
-| Key        | Action                 |
-| ---------- | ---------------------- |
-| `j/k`      | Navigate up/down       |
-| `gg/G`     | Jump to top/bottom     |
-| `Ctrl+D/U` | Page up/down           |
-| `Tab`      | Switch panels          |
-| `/command` | Execute Atlas commands |
-| `y`        | Copy selected line     |
-| `Enter`    | Expand/copy content    |
-| `Esc`      | Close expanded view    |
-
-### TUI Commands
-
-```bash
-# In TUI, all commands use / prefix
-/signal list                    # List available signals
-/signal trigger test           # Trigger a signal
-/session list                  # List active sessions
-/ps                           # Shorthand for session list
-/logs <session-id>            # View session logs
-/help                         # Show command help
-```
-
 ## 📋 Example Workflows
 
 ### 1. Simple Chat Agent
@@ -448,7 +400,7 @@ atlas daemon restart
 
 ### Getting Help
 
-- **Built-in Help**: Use `atlas --help` or `help` in TUI
+- **Built-in Help**: Use `atlas --help`
 - **Examples**: Check `examples/workspaces/` for working configurations
 - **Documentation**: See `CLAUDE.md` for technical details
 - **Community**: Join discussions on GitHub Issues

@@ -11,6 +11,15 @@ export function builder(y: YargsInstance) {
   return y
     .command([list, get])
     .demandCommand(1, "You need to specify a library action")
+    .fail((msg: string, _: unknown, yargs: YargsInstance) => {
+      if (msg?.includes("Not enough non-option arguments")) {
+        yargs.showHelp();
+        Deno.exit(0);
+      }
+      yargs.showHelp();
+      console.error(`\n${msg}`);
+      Deno.exit(1);
+    })
     .example("$0 library list", "List all library items")
     .example("$0 lib get item_abc --content", "Get item with content")
     .epilogue(formatResourceHelp("library"))

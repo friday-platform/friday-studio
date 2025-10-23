@@ -1,10 +1,4 @@
-import {
-  COMMANDS,
-  findClosestCommand,
-  formatSuggestions,
-  isValidCommand,
-  SUBCOMMANDS,
-} from "./command-suggestions.ts";
+import { COMMANDS, findClosestCommand, formatSuggestions } from "./command-suggestions.ts";
 
 /**
  * Custom fail handler for Yargs to provide better error messages and suggestions
@@ -18,6 +12,13 @@ export function customFailHandler(msg: string, err: Error | null): void {
       // Get the command path for context
       const denoArgs = Deno.args.filter((arg) => !arg.startsWith("-"));
       const commandPath = denoArgs.join(" ");
+
+      // If no command provided at all, show help
+      if (!commandPath) {
+        console.error("Error: No command specified\n");
+        console.error("Run 'atlas --help' to see available commands.");
+        Deno.exit(1);
+      }
 
       console.error(`Error: Missing required argument for 'atlas ${commandPath}'`);
       console.error(`\nRun 'atlas ${commandPath} --help' for usage information.`);
@@ -43,44 +44,6 @@ export function customFailHandler(msg: string, err: Error | null): void {
     const firstNonFlag = Deno.args.find((arg) => !arg.startsWith("-"));
     if (firstNonFlag) {
       unknownCommand = firstNonFlag;
-    }
-  }
-
-  // Check if this is a case of unknown subcommand
-  // Only check this if it's not a "missing arguments" error
-  if (!msg.includes("Not enough non-option arguments")) {
-    try {
-      // Try to get args from Deno.args for subcommand detection
-      const denoArgs = Deno.args.filter((arg) => !arg.startsWith("-"));
-      if (denoArgs.length >= 2) {
-        const mainCommand = denoArgs[0];
-        const subCommand = denoArgs[1];
-
-        if (mainCommand && isValidCommand(mainCommand) && SUBCOMMANDS?.[mainCommand]) {
-          // Check if the subcommand exists
-          const validSubcommands = SUBCOMMANDS?.[mainCommand]?.map((sc) => sc.command);
-          if (subCommand && !validSubcommands?.includes(subCommand)) {
-            // This is an unknown subcommand
-            const suggestions = findClosestCommand(subCommand, SUBCOMMANDS[mainCommand]);
-
-            console.error(`Error: Unknown ${mainCommand} command: '${subCommand}'`);
-
-            if (suggestions.length > 0) {
-              console.error(formatSuggestions(suggestions));
-            } else {
-              console.error(`\nAvailable ${mainCommand} commands:`);
-              for (const sub of SUBCOMMANDS[mainCommand]) {
-                console.error(`  ${sub.command} - ${sub.description}`);
-              }
-              console.error(`\nRun 'atlas ${mainCommand} --help' for more information.`);
-            }
-
-            Deno.exit(1);
-          }
-        }
-      }
-    } catch {
-      // If we can't parse args, fall through to main command handling
     }
   }
 

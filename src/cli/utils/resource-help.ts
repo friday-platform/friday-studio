@@ -236,30 +236,6 @@ monitoring.`,
     seeAlso: ["session", "workspace"],
   },
 
-  interactive: {
-    overview: `
-Atlas provides rich interactive interfaces for managing workspaces, sessions,
-and agents. The interactive mode (default) and TUI provide visual dashboards
-for monitoring and control.`,
-    concepts: `
-Key Concepts:
-  • Default Interface: Running 'atlas' launches interactive mode
-  • Visual Dashboard: Real-time status of workspaces and sessions
-  • Keyboard Navigation: Arrow keys, Enter, and hotkeys for actions
-  • Multi-pane Layout: View logs, sessions, and details simultaneously`,
-    commonTasks: [
-      "Launch interactive mode: atlas or atlas interactive",
-      "Navigate with keyboard: Use arrow keys and Enter",
-      "Exit interface: Press 'q' or Ctrl+C",
-    ],
-    troubleshooting: [
-      "UI not rendering: Ensure terminal supports ANSI colors",
-      "Daemon connection failed: Start daemon with 'atlas daemon start'",
-      "Display issues: Try resizing terminal window",
-    ],
-    seeAlso: ["tui", "workspace", "session"],
-  },
-
   version: {
     overview: `
 Display Atlas version information and check for updates. Useful for ensuring

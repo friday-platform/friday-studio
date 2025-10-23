@@ -22,7 +22,7 @@ const cli = yargs(Deno.args)
   .help()
   .alias("help", "h")
   .version(false) // Disable default version handling since we handle it above
-  .demandCommand(0) // Allow no command to trigger the interactive mode
+  .demandCommand(1) // Require at least one command
   .recommendCommands()
   .strict()
   .fail(customFailHandler)

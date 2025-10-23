@@ -5,7 +5,10 @@
       "entry": ["mod.ts!", "src/cli.tsx!", "src/**/*.test.ts", "tests/**/*.test.ts"],
       "project": ["src/**/*.{ts,tsx,js,jsx}!", "*.ts!", "src/**/*.test.ts"]
     },
-    "packages/agent-sdk": { "project": ["src/**/*.{ts,tsx,js,jsx}!"] },
+    "packages/agent-sdk": {
+      "entry": ["src/**/*.test.ts"],
+      "project": ["src/**/*.{ts,tsx,js,jsx}!"]
+    },
     "packages/bundled-agents": { "project": ["src/**/*.{ts,tsx,js,jsx}!"] },
     "packages/client": { "project": ["**/*.{ts,tsx,js,jsx}!"] },
     "packages/config": { "project": ["**/*.{ts,tsx,js,jsx}!"] },

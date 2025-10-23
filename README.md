@@ -153,18 +153,7 @@ This launches an interactive terminal interface that:
 - ✅ **Help system** - type `help` to see available commands
 - ✅ **Copy to clipboard** - press `y` on any selected line
 
-**TUI Navigation:**
-
-- `Tab` / `Shift+Tab` - Switch between panels
-- `j/k` - Navigate up/down
-- `gg` / `G` - Jump to top/bottom
-- `Ctrl+D/U` - Page up/down
-- `/` - Start typing commands
-- `y` - Copy selected line to clipboard
-- `Enter` - Expand long content or copy command
-- `Esc` - Close expanded view
-
-**Try these commands in the TUI:**
+**Try these commands:**
 
 ```bash
 help                                    # Show all commands

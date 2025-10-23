@@ -355,7 +355,7 @@ const WorkspaceAddUI = ({ args, onComplete }: { args: AddArgs; onComplete: () =>
             </Box>
             <Box marginLeft={2}>
               <Text>
-                • Run <Text color="cyan">atlas</Text> to open the interactive interface
+                • Run <Text color="cyan">atlas --help</Text> to see available commands
               </Text>
             </Box>
           </Box>

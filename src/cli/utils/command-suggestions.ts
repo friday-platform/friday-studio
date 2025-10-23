@@ -13,47 +13,16 @@ export const COMMANDS: CommandInfo[] = [
   { command: "signal", aliases: ["sig"], description: "Manage workspace signals" },
   { command: "agent", aliases: ["ag"], description: "Manage workspace agents" },
   { command: "library", aliases: ["lib"], description: "Manage library items and templates" },
+  { command: "artifacts", aliases: ["artifact"], description: "Retrieve and manage artifacts" },
+  { command: "daemon", aliases: ["d"], description: "Manage Atlas daemon" },
+  { command: "service", aliases: ["svc"], description: "Manage Atlas service installation" },
+  { command: "diagnostics", aliases: ["diag"], description: "Diagnostic tools for Atlas" },
   { command: "logs", aliases: ["log"], description: "View session logs" },
   { command: "ps", description: "List active sessions (alias for 'session list')" },
+  { command: "update", description: "Update Atlas to the latest version" },
   { command: "version", aliases: ["v"], description: "Show Atlas version information" },
   { command: "help", aliases: ["h"], description: "Show help information" },
 ];
-
-// Subcommands for each main command
-export const SUBCOMMANDS: Record<string, CommandInfo[]> = {
-  workspace: [
-    { command: "init", description: "Initialize a new workspace" },
-    { command: "serve", description: "Start workspace server" },
-    { command: "status", description: "Show workspace status" },
-    { command: "list", description: "List all workspaces" },
-    { command: "stop", description: "Stop workspace server" },
-    { command: "restart", description: "Restart workspace server" },
-    { command: "remove", description: "Remove a workspace" },
-  ],
-  session: [
-    { command: "list", description: "List active sessions" },
-    { command: "get", description: "Get session details" },
-    { command: "cancel", description: "Cancel a running session" },
-  ],
-  signal: [
-    { command: "list", description: "List configured signals" },
-    { command: "trigger", description: "Trigger a signal manually" },
-    { command: "history", description: "Show signal history" },
-  ],
-  agent: [
-    { command: "list", description: "List workspace agents" },
-    { command: "describe", description: "Show agent details" },
-    { command: "test", description: "Test an agent" },
-  ],
-  library: [
-    { command: "list", description: "List library items" },
-    { command: "search", description: "Search library content" },
-    { command: "get", description: "Get library item details" },
-    { command: "templates", description: "List available templates" },
-    { command: "generate", description: "Generate content from template" },
-    { command: "stats", description: "Show library statistics" },
-  ],
-};
 
 /**
  * Find the closest matching command using Levenshtein distance
@@ -63,36 +32,29 @@ export function findClosestCommand(
   commands: CommandInfo[],
   threshold = 3,
 ): CommandInfo[] {
-  const suggestions: Array<{ command: CommandInfo; distance: number }> = [];
+  const distanceMap = new Map<string, { command: CommandInfo; distance: number }>();
+  const lowerInput = input.toLowerCase();
 
   for (const cmd of commands) {
-    // Check main command
-    const cmdDistance = levenshtein(input.toLowerCase(), cmd.command.toLowerCase());
-    if (cmdDistance <= threshold) {
-      suggestions.push({ command: cmd, distance: cmdDistance });
-    }
+    // Check main command and all aliases, keep the best match
+    let minDistance = levenshtein(lowerInput, cmd.command.toLowerCase());
 
-    // Check aliases
     if (cmd.aliases) {
       for (const alias of cmd.aliases) {
-        const aliasDistance = levenshtein(input.toLowerCase(), alias.toLowerCase());
-        if (aliasDistance <= threshold) {
-          suggestions.push({ command: cmd, distance: aliasDistance });
-        }
+        const aliasDistance = levenshtein(lowerInput, alias.toLowerCase());
+        minDistance = Math.min(minDistance, aliasDistance);
       }
+    }
+
+    if (minDistance <= threshold) {
+      distanceMap.set(cmd.command, { command: cmd, distance: minDistance });
     }
   }
 
-  // Sort by distance and remove duplicates
-  const seen = new Set<string>();
-  return suggestions
+  // Sort by distance and return top 3
+  return Array.from(distanceMap.values())
     .sort((a, b) => a.distance - b.distance)
-    .filter((item) => {
-      if (seen.has(item.command.command)) return false;
-      seen.add(item.command.command);
-      return true;
-    })
-    .slice(0, 3) // Return top 3 suggestions
+    .slice(0, 3)
     .map((item) => item.command);
 }
 
@@ -100,37 +62,21 @@ export function findClosestCommand(
  * Format command suggestions for display
  */
 export function formatSuggestions(suggestions: CommandInfo[]): string {
-  if (suggestions.length === 0) return "";
+  const lines = [""];
 
-  const lines = ["", "Did you mean?"];
-  for (const cmd of suggestions) {
-    let line = `  ${cmd.command}`;
-    if (cmd.aliases && cmd.aliases.length > 0) {
-      line += ` (aliases: ${cmd.aliases.join(", ")})`;
+  if (suggestions.length > 0) {
+    lines.push("Did you mean?");
+    for (const cmd of suggestions) {
+      let line = `  ${cmd.command}`;
+      if (cmd.aliases && cmd.aliases.length > 0) {
+        line += ` (aliases: ${cmd.aliases.join(", ")})`;
+      }
+      line += ` - ${cmd.description}`;
+      lines.push(line);
     }
-    line += ` - ${cmd.description}`;
-    lines.push(line);
+    lines.push("");
   }
-  lines.push("");
+
   lines.push("Run 'atlas --help' for available commands.");
-
   return lines.join("\n");
-}
-
-/**
- * Check if a command exists (including aliases)
- */
-export function isValidCommand(input: string): boolean {
-  if (!input) return false;
-
-  const lowerInput = input.toLowerCase();
-
-  for (const cmd of COMMANDS) {
-    if (cmd.command.toLowerCase() === lowerInput) return true;
-    if (cmd.aliases?.some((alias) => alias.toLowerCase() === lowerInput)) {
-      return true;
-    }
-  }
-
-  return false;
 }

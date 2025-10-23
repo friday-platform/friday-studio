@@ -6,7 +6,7 @@ import {
   sendNotification,
 } from "@tauri-apps/plugin-notification";
 import { readUIMessageStream } from "ai";
-import { getContext, setContext } from "svelte";
+import { setContext } from "svelte";
 import { getAtlasDaemonUrl } from "../../utils/daemon.ts";
 import { isTauriApp } from "../../utils/tauri.ts";
 import { ConversationClient, type ConversationSession } from "./conversation.ts";
@@ -422,8 +422,4 @@ class ClientContext {
 export function setClientContext(client: DaemonClient) {
   const ctx = new ClientContext(client);
   return setContext(KEY, ctx);
-}
-
-export function getClientContext() {
-  return getContext<ReturnType<typeof setClientContext>>(KEY);
 }
