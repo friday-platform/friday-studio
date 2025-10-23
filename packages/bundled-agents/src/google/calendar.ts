@@ -49,7 +49,7 @@ export const googleCalendarAgent = createAgent<string, GoogleCalendarAgentResult
       {
         name: "GOOGLE_OAUTH_CREDENTIALS",
         description:
-          "Google Calendar json config used by google-calendar-mcp to access Google Calendar APIs",
+          "Google OAuth credentials JSON for Google Calendar API access via Google Calendar MCP Server",
       },
     ],
   },

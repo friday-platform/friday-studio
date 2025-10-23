@@ -7,6 +7,7 @@
 
 import type { AtlasAgent } from "@atlas/agent-sdk";
 import { emailAgent } from "./email/communicator.ts";
+import { fathomGetTranscriptAgent } from "./fathom-ai/get-transcript.ts";
 import { GoogleCalendarAgentResultSchema, googleCalendarAgent } from "./google/calendar.ts";
 import { researchAgent } from "./research/mod.ts";
 import { slackCommunicatorAgent } from "./slack/communicator.ts";
@@ -19,6 +20,14 @@ export const bundledAgents: AtlasAgent[] = [
   researchAgent,
   summaryAgent,
   emailAgent,
+  fathomGetTranscriptAgent,
 ];
 
-export { emailAgent, slackCommunicatorAgent, GoogleCalendarAgentResultSchema, researchAgent };
+export {
+  emailAgent,
+  slackCommunicatorAgent,
+  GoogleCalendarAgentResultSchema,
+  researchAgent,
+  fathomGetTranscriptAgent,
+  googleCalendarAgent,
+};
