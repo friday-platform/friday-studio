@@ -18,8 +18,8 @@ const MODEL_CONFIGS_BY_ARCHETYPE: Record<
   AgentArchetype,
   { model: string; temperature: number; maxTokens: number }
 > = {
-  collector: { model: "claude-3-5-haiku-latest", temperature: 0.1, maxTokens: 4000 },
-  reader: { model: "claude-3-5-haiku-latest", temperature: 0.1, maxTokens: 8000 },
+  collector: { model: "claude-4-5-haiku-latest", temperature: 0.1, maxTokens: 4000 },
+  reader: { model: "claude-4-5-haiku-latest", temperature: 0.1, maxTokens: 8000 },
   analyzer: { model: "claude-3-7-sonnet-latest", temperature: 0.3, maxTokens: 8000 },
   evaluator: { model: "claude-3-7-sonnet-latest", temperature: 0.2, maxTokens: 6000 },
   reporter: { model: "claude-3-5-haiku-latest", temperature: 0.2, maxTokens: 6000 },
