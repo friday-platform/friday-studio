@@ -148,7 +148,7 @@ export interface paths {
     put?: never;
     /**
      * Create library item
-     * @description Create a new library item with content and metadata.
+     * @description Create a new library item with content and metadata. Accepts JSON or multipart/form-data.
      */
     post: operations["postApiLibrary"];
     delete?: never;
@@ -165,7 +165,11 @@ export interface paths {
      */
     get: operations["getApiLibrarySearch"];
     put?: never;
-    post?: never;
+    /**
+     * Create library item
+     * @description Create a new library item with content and metadata. Accepts JSON or multipart/form-data.
+     */
+    post: operations["postApiLibrarySearch"];
     delete?: never;
     options?: never;
     head?: never;
@@ -194,21 +198,6 @@ export interface paths {
      * @description Get usage statistics for the library including item counts, sizes, and recent activity.
      */
     get: operations["getApiLibraryStats"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/library/{itemId}/download": {
-    parameters: { query?: never; header?: never; path?: never; cookie?: never };
-    /**
-     * Download library item file
-     * @description Download the actual file content of a library item with proper headers.
-     */
-    get: operations["getApiLibrary:itemIdDownload"];
     put?: never;
     post?: never;
     delete?: never;
@@ -581,9 +570,8 @@ export interface operations {
               name: string;
               description?: string;
               content_path: string;
+              mime_type: string;
               metadata: {
-                /** @enum {string} */
-                format: "markdown" | "json" | "html" | "text" | "binary";
                 /** @enum {string} */
                 source: "agent" | "job" | "user" | "system";
                 session_id?: string;
@@ -601,7 +589,9 @@ export interface operations {
             total: number;
             query: {
               query?: string;
-              type?: string | string[];
+              type?:
+                | ("report" | "session_archive" | "template" | "artifact" | "user_upload")
+                | ("report" | "session_archive" | "template" | "artifact" | "user_upload")[];
               tags?: string[];
               workspace?: boolean;
               since?: string;
@@ -615,6 +605,11 @@ export interface operations {
           };
         };
       };
+      /** @description Invalid query parameters */
+      400: {
+        headers: { [name: string]: unknown };
+        content: { "application/json": { error: string } };
+      };
       /** @description Internal server error */
       500: {
         headers: { [name: string]: unknown };
@@ -624,7 +619,8 @@ export interface operations {
   };
   postApiLibrary: {
     parameters: { query?: never; header?: never; path?: never; cookie?: never };
-    requestBody: { content: { "application/json": unknown; "multipart/form-data": unknown } };
+    /** @description Library item data. Validated by createLibraryItemRequestSchema at runtime. */
+    requestBody?: { content: { "application/json": { [key: string]: unknown } } };
     responses: {
       /** @description Library item created successfully */
       201: {
@@ -639,21 +635,25 @@ export interface operations {
               /** @enum {string} */
               type: "report" | "session_archive" | "template" | "artifact" | "user_upload";
               name: string;
-              description: string;
-              content: string;
+              description?: string;
+              content_path: string;
+              mime_type: string;
               metadata: {
-                /** @enum {string} */
-                format: "markdown" | "json" | "html" | "text" | "binary";
                 /** @enum {string} */
                 source: "agent" | "job" | "user" | "system";
                 session_id?: string;
-                agent_ids: string[];
-              } & { [key: string]: unknown };
+                agent_ids?: string[];
+                template_id?: string;
+                generated_by?: string;
+                custom_fields?: { [key: string]: unknown };
+              };
               created_at: string;
               updated_at: string;
               tags: string[];
+              size_bytes: number;
               workspace_id?: string;
             };
+            path: string;
           };
         };
       };
@@ -699,9 +699,8 @@ export interface operations {
               name: string;
               description?: string;
               content_path: string;
+              mime_type: string;
               metadata: {
-                /** @enum {string} */
-                format: "markdown" | "json" | "html" | "text" | "binary";
                 /** @enum {string} */
                 source: "agent" | "job" | "user" | "system";
                 session_id?: string;
@@ -719,7 +718,9 @@ export interface operations {
             total: number;
             query: {
               query?: string;
-              type?: string | string[];
+              type?:
+                | ("report" | "session_archive" | "template" | "artifact" | "user_upload")
+                | ("report" | "session_archive" | "template" | "artifact" | "user_upload")[];
               tags?: string[];
               workspace?: boolean;
               since?: string;
@@ -732,6 +733,63 @@ export interface operations {
             took_ms: number;
           };
         };
+      };
+      /** @description Invalid query parameters */
+      400: {
+        headers: { [name: string]: unknown };
+        content: { "application/json": { error: string } };
+      };
+      /** @description Internal server error */
+      500: {
+        headers: { [name: string]: unknown };
+        content: { "application/json": { error: string } };
+      };
+    };
+  };
+  postApiLibrarySearch: {
+    parameters: { query?: never; header?: never; path?: never; cookie?: never };
+    /** @description Library item data. Validated by createLibraryItemRequestSchema at runtime. */
+    requestBody?: { content: { "application/json": { [key: string]: unknown } } };
+    responses: {
+      /** @description Library item created successfully */
+      201: {
+        headers: { [name: string]: unknown };
+        content: {
+          "application/json": {
+            success: boolean;
+            itemId: string;
+            message: string;
+            item: {
+              id: string;
+              /** @enum {string} */
+              type: "report" | "session_archive" | "template" | "artifact" | "user_upload";
+              name: string;
+              description?: string;
+              content_path: string;
+              mime_type: string;
+              metadata: {
+                /** @enum {string} */
+                source: "agent" | "job" | "user" | "system";
+                session_id?: string;
+                agent_ids?: string[];
+                template_id?: string;
+                generated_by?: string;
+                custom_fields?: { [key: string]: unknown };
+              };
+              created_at: string;
+              updated_at: string;
+              tags: string[];
+              size_bytes: number;
+              workspace_id?: string;
+            };
+            path: string;
+          };
+        };
+      };
+      /** @description Invalid request */
+      400: {
+        headers: { [name: string]: unknown };
+        content: { "application/json": { error: string } };
       };
       /** @description Internal server error */
       500: {
@@ -752,8 +810,7 @@ export interface operations {
             id: string;
             name: string;
             description?: string;
-            /** @enum {string} */
-            format: "markdown" | "json" | "html" | "text";
+            mime_type: string;
             engine: string;
             config: { [key: string]: unknown };
             schema?: { [key: string]: unknown };
@@ -798,35 +855,6 @@ export interface operations {
       };
     };
   };
-  "getApiLibrary:itemIdDownload": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description ID of the library item to download */
-        itemId: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description File content */
-      200: {
-        headers: { [name: string]: unknown };
-        content: { "application/octet-stream": string };
-      };
-      /** @description Item not found */
-      404: {
-        headers: { [name: string]: unknown };
-        content: { "application/json": { error: string } };
-      };
-      /** @description Internal server error */
-      500: {
-        headers: { [name: string]: unknown };
-        content: { "application/json": { error: string } };
-      };
-    };
-  };
   "getApiLibrary:itemId": {
     parameters: {
       query?: { content?: "true" };
@@ -848,9 +876,8 @@ export interface operations {
               name: string;
               description?: string;
               content_path: string;
+              mime_type: string;
               metadata: {
-                /** @enum {string} */
-                format: "markdown" | "json" | "html" | "text" | "binary";
                 /** @enum {string} */
                 source: "agent" | "job" | "user" | "system";
                 session_id?: string;

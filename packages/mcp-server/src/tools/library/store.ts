@@ -34,10 +34,10 @@ export function registerLibraryStoreTool(server: McpServer, ctx: ToolContext) {
           .string()
           .min(1)
           .describe("The main content/data to be stored in the library item"),
-        format: z
-          .enum(["markdown", "json", "html", "text", "binary"])
-          .default("markdown")
-          .describe("Format of the content being stored - affects rendering and processing"),
+        mime_type: z
+          .string()
+          .default("text/markdown")
+          .describe("MIME type of the content (e.g., text/markdown, application/json, text/plain)"),
         tags: z
           .array(z.string())
           .max(50)
@@ -66,7 +66,7 @@ export function registerLibraryStoreTool(server: McpServer, ctx: ToolContext) {
       name,
       description,
       content,
-      format = "markdown",
+      mime_type = "text/markdown",
       tags = [],
       workspace_id,
       session_id,
@@ -77,31 +77,29 @@ export function registerLibraryStoreTool(server: McpServer, ctx: ToolContext) {
       ctx.logger.info("MCP library_store called", {
         type,
         name,
-        format,
+        mime_type,
         contentLength: content.length,
         tagCount: tags.length,
         workspace_id,
         session_id,
       });
 
-      // Note: In the modular pattern, we don't have access to workspaceContext
-      // The workspace_id, session_id, and agent_ids should be passed explicitly
-      const contextualPayload = {
-        type,
-        name,
-        description,
-        content,
-        format,
-        tags,
-        workspace_id,
-        session_id,
-        agent_ids,
-        source,
-        metadata,
-      };
-
       const client = createAtlasClient();
-      const response = await client.POST("/api/library", { body: contextualPayload });
+      const response = await client.POST("/api/library", {
+        body: {
+          type,
+          name,
+          description,
+          content,
+          mime_type,
+          tags,
+          workspace_id,
+          session_id,
+          agent_ids,
+          source,
+          metadata,
+        },
+      });
       if (response.error) {
         ctx.logger.error("Failed to store library item", { error: response.error });
         return createErrorResponse(
@@ -113,7 +111,7 @@ export function registerLibraryStoreTool(server: McpServer, ctx: ToolContext) {
       ctx.logger.info("MCP library_store response", {
         success: storeResult.success,
         itemId: storeResult.itemId,
-        name: storeResult.item?.name,
+        name,
       });
 
       return createSuccessResponse({

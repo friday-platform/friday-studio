@@ -236,6 +236,7 @@ export class AtlasClient {
   async listLibraryItems(query?: Partial<LibrarySearchQuery>): Promise<LibrarySearchResult> {
     const q = {
       query: query?.query,
+      type: Array.isArray(query?.type) ? query.type.join(",") : query?.type,
       tags: Array.isArray(query?.tags) ? query.tags.join(",") : query?.tags,
       since: query?.since,
       until: query?.until,
@@ -248,10 +249,6 @@ export class AtlasClient {
     if (response.error) {
       throw new Error(stringifyError(response.error));
     }
-    /**
-     * @FIXME library item metadata is missing property types.
-     */
-    // @ts-expect-error see above.
     return response.data;
   }
 
@@ -269,10 +266,6 @@ export class AtlasClient {
     if (response.error) {
       throw new Error(stringifyError(response.error));
     }
-    /**
-     * @FIXME library item metadata is missing property types.
-     */
-    // @ts-expect-error see above.
     return response.data;
   }
 

@@ -25,6 +25,7 @@
     "@atlas/mcp": "workspace:*",
     "@atlas/memory": "workspace:*",
     "@atlas/oapi-client": "workspace:*",
+    "@atlas/schemas": "workspace:*",
     "@atlas/workspace": "workspace:*",
     "@modelcontextprotocol/sdk": "npm:@socotra/modelcontextprotocol-sdk@^1.18.0",
     "@std/assert": "npm:@jsr/std__assert@^1.0.14",

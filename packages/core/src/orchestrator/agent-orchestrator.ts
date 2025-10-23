@@ -896,6 +896,7 @@ export class AgentOrchestrator implements IAgentOrchestrator {
         // @ts-expect-error `agents-should-produce-structured-output`
         toolCalls,
         toolResults,
+        artifactRefs: result.artifactRefs,
       };
     } catch (error) {
       this.logger.error("Wrapped agent execution failed", { error });

@@ -32,8 +32,9 @@ interface LibraryItem {
   type: string;
   name: string;
   description?: string;
+  content_path: string;
+  mime_type: string;
   metadata: {
-    format: string;
     source: string;
     session_id?: string;
     agent_ids?: string[];

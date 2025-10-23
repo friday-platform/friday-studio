@@ -247,8 +247,14 @@ export class MCPManager {
             }
           }
 
+          // Merge processed env vars with parent process env
+          // Deno.Command replaces the environment if you pass the env option
+          // We need to merge with parent to preserve PATH and other critical vars
+          const parentEnv = Deno.env.toObject();
+          const mergedEnv = { ...parentEnv, ...processedEnv };
+
           mcpClient = await createMCPClient({
-            transport: new StdioMCPTransport({ command, args: args || [], env: processedEnv }),
+            transport: new StdioMCPTransport({ command, args: args || [], env: mergedEnv }),
           });
           break;
         }

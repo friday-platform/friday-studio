@@ -7,6 +7,7 @@
   "dependencies": {
     "@atlas/atlasd": "workspace:*",
     "@atlas/core": "workspace:*",
+    "@atlas/schemas": "workspace:*",
     "@atlas/utils": "workspace:*",
     "@std/path": "npm:@jsr/std__path@^1.1.2",
     "@std/fs": "npm:@jsr/std__fs@^1.0.19",

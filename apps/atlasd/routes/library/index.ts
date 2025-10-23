@@ -1,8 +1,7 @@
 import { daemonFactory } from "../../src/factory.ts";
-import { createLibraryItem } from "./create.ts";
 import { deleteLibraryItem } from "./delete.ts";
 import { getLibraryItem } from "./get.ts";
-import { listLibrary } from "./list.ts";
+import { libraryItems } from "./items.ts";
 import { getLibraryStats } from "./stats.ts";
 import { listTemplates } from "./templates.ts";
 
@@ -16,11 +15,11 @@ export * from "./schemas.ts";
  */
 const libraryRoutes = daemonFactory.createApp();
 
-// Mount list/search route at base path
-libraryRoutes.route("/", listLibrary);
+// Mount library items route at base path (GET list, POST create)
+libraryRoutes.route("/", libraryItems);
 
 // Mount search route (same functionality as list)
-libraryRoutes.route("/search", listLibrary);
+libraryRoutes.route("/search", libraryItems);
 
 // Mount specific routes before parameterized routes
 libraryRoutes.route("/templates", listTemplates);
@@ -29,8 +28,5 @@ libraryRoutes.route("/stats", getLibraryStats);
 // Mount parameterized routes last
 libraryRoutes.route("/:itemId", getLibraryItem);
 libraryRoutes.route("/:itemId", deleteLibraryItem);
-
-// Mount POST route for creating items
-libraryRoutes.route("/", createLibraryItem);
 
 export { libraryRoutes };

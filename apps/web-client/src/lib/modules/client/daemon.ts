@@ -48,10 +48,6 @@ export class DaemonClient {
     if (response.error) {
       throw new Error(stringifyError(response.error));
     }
-    /**
-     * @FIXME library item metadata is missing property types.
-     */
-    // @ts-expect-error see above.
     return response.data;
   }
 }

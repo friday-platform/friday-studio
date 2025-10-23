@@ -8,7 +8,6 @@ import { spinner } from "../../utils/prompts.tsx";
 import type { YargsInstance } from "../../utils/yargs.ts";
 
 interface ListArgs {
-  source?: string;
   tags?: string;
   since?: string;
   limit: number;
@@ -22,7 +21,6 @@ export const desc = "List library items";
 
 export function builder(y: YargsInstance) {
   return y
-    .option("source", { alias: "s", type: "string", description: "Filter by item source" })
     .option("tags", { type: "string", description: "Filter by tags (comma-separated)" })
     .option("since", {
       type: "string",
@@ -53,12 +51,10 @@ export async function handler(argv: ListArgs) {
     s.start("Fetching library items...");
 
     const client = getDaemonClient();
-    const query: LibrarySearchQuery = {};
+    const query: LibrarySearchQuery = { limit: argv.limit || 50, offset: 0 };
 
-    if (argv.source) query.source = argv.source;
     if (argv.tags) query.tags = argv.tags.split(",").map((tag) => tag.trim());
     if (argv.since) query.since = argv.since;
-    if (argv.limit) query.limit = argv.limit;
 
     const result = await client.listLibraryItems(query);
     const items = result.items;

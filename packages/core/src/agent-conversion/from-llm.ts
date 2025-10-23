@@ -1,7 +1,10 @@
 import { APICallError } from "@ai-sdk/provider";
-import type { AtlasAgent, ToolCall, ToolResult } from "@atlas/agent-sdk";
+import type { ArtifactRef, AtlasAgent, ToolCall, ToolResult } from "@atlas/agent-sdk";
 import { createAgent } from "@atlas/agent-sdk";
-import { collectToolUsageFromSteps } from "@atlas/agent-sdk/vercel-helpers";
+import {
+  collectToolUsageFromSteps,
+  extractArtifactRefsFromToolResults,
+} from "@atlas/agent-sdk/vercel-helpers";
 import type { LLMAgentConfig } from "@atlas/config";
 import type { Logger } from "@atlas/logger";
 import { stepCountIs, streamText } from "ai";
@@ -15,6 +18,7 @@ export type WrappedAgentResult = {
   reasoning?: string;
   toolCalls?: ToolCall[];
   toolResults?: ToolResult[];
+  artifactRefs?: ArtifactRef[];
 };
 type WrappedAgent = AtlasAgent<string, WrappedAgentResult>;
 
@@ -34,6 +38,9 @@ export function convertLLMToAgent(
 
   validateProviderConfig(config.config.provider);
   const model = registry.languageModel(`${config.config.provider}:${config.config.model}`);
+
+  // Store tools restriction for buildAgentContext to filter
+  const allowedToolNames = config.config.tools;
 
   const agent = createAgent<string, WrappedAgentResult>({
     id: agentId,
@@ -57,7 +64,26 @@ export function convertLLMToAgent(
         const nowUtcIso = new Date().toISOString();
         const datetimeHeader = `Current datetime (UTC): ${nowUtcIso}`;
 
-        const filteredTools = filterWorkspaceAgentTools(tools);
+        // Filter tools based on agent config or workspace defaults
+        // If agent specifies explicit tools, use those directly without workspace-level filtering
+        // This allows agents to access MCP server tools not in the default whitelist
+        let filteredTools: typeof tools;
+
+        if (allowedToolNames && allowedToolNames.length > 0) {
+          // Agent has explicit tool list - filter directly from all available tools
+          const allowedSet = new Set(allowedToolNames);
+          filteredTools = Object.fromEntries(
+            Object.entries(tools).filter(([toolName]) => allowedSet.has(toolName)),
+          );
+
+          logger.debug("Applied agent-specific tool filtering", {
+            agentId,
+            toolCount: `${Object.keys(filteredTools).length}/${allowedToolNames.length}`,
+          });
+        } else {
+          // No explicit tool list - apply workspace-level filtering for safety
+          filteredTools = filterWorkspaceAgentTools(tools);
+        }
 
         const result = streamText({
           model,
@@ -95,11 +121,14 @@ export function convertLLMToAgent(
           toolResults,
         });
 
+        const artifactRefs = extractArtifactRefsFromToolResults(assembledToolResults);
+
         return {
           reasoning,
           response: text,
           toolCalls: assembledToolCalls,
           toolResults: assembledToolResults,
+          artifactRefs,
         };
       } catch (error) {
         // Simply check if we were aborted, don't try to detect from error

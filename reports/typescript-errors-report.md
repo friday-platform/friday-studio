@@ -1,6 +1,6 @@
 # TypeScript & Lint Analysis Report
 
-**Generated:** 2025-10-21T19:14:13.967Z
+**Generated:** 2025-10-23T04:08:07.720Z
 
 **Total Issues:** 1 (0 type errors, 0 deno lint violations, 1 biome violations)
 
@@ -81,6 +81,7 @@ No lint violations found.
 | memory_manager          | memory, workspace                                                                             | none                                                                                                                      | 2                |
 | openapi-client          | atlasd                                                                                        | none                                                                                                                      | 1                |
 | atlas-installer         | none                                                                                          | none                                                                                                                      | 0                |
+| schemas                 | none                                                                                          | none                                                                                                                      | 0                |
 | typescript-error-report | none                                                                                          | none                                                                                                                      | 0                |
 | src                     | none                                                                                          | none                                                                                                                      | 0                |
 

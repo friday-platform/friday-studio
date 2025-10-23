@@ -255,6 +255,15 @@ export class LLMProvider {
           inputType: typeof tc.input,
           input: tc.input,
         })),
+        toolResultsCount: result.toolResults?.length || 0,
+        toolResults: result.toolResults?.map((tr) => ({
+          toolCallId: tr.toolCallId,
+          toolName: tr.toolName,
+          // toolResult can be DynamicToolResult or StaticToolResult
+          // DynamicToolResult has 'output', StaticToolResult has 'result'
+          output: "output" in tr ? tr.output : undefined,
+          result: "result" in tr ? tr.result : undefined,
+        })),
         steps: result.steps?.length || 0,
       });
 

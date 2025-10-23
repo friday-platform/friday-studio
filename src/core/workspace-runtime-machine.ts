@@ -168,10 +168,18 @@ const workspaceRuntimeMachineSetup = setup({
         try {
           const envFilePath = join(context.options.workspacePath, ".env");
           if (await exists(envFilePath)) {
-            await load({ export: true, envPath: envFilePath });
+            const envVars = await load({ export: true, envPath: envFilePath });
+
+            // CRITICAL FIX: @std/dotenv with export:true does NOT override existing env vars
+            // We need to explicitly set them to override parent process values
+            for (const [key, value] of Object.entries(envVars)) {
+              Deno.env.set(key, value);
+            }
+
             logger.debug("Loaded workspace .env file", {
               workspaceId: context.workspace.id,
               envPath: envFilePath,
+              envVarsCount: Object.keys(envVars).length,
             });
           }
         } catch (error) {
@@ -1140,6 +1148,7 @@ export function createWorkspaceRuntimeMachine(_input: WorkspaceRuntimeMachineInp
                 context.options.libraryStorage
                   .storeItem({
                     id: crypto.randomUUID(),
+                    type: "session_archive",
                     source: "system",
                     name: `Session Archive - ${event.sessionId.slice(0, 8)}`,
                     description: `Complete session data and results from session ${event.sessionId}`,

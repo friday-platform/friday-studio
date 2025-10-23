@@ -8,6 +8,7 @@
     "jsr:@std/expect@^1.0.17": "1.0.17",
     "jsr:@std/internal@^1.0.10": "1.0.10",
     "jsr:@std/media-types@1": "1.1.0",
+    "jsr:@std/media-types@^1.1.0": "1.1.0",
     "jsr:@std/path@1": "1.1.2",
     "npm:@ai-sdk/anthropic@^2.0.22": "2.0.35_zod@4.1.12",
     "npm:@ai-sdk/google@^2.0.17": "2.0.23_zod@4.1.12",
@@ -3328,6 +3329,9 @@
     }
   },
   "workspace": {
+    "dependencies": [
+      "jsr:@std/media-types@^1.1.0"
+    ],
     "packageJson": {
       "dependencies": [
         "npm:@inkjs/ui@2",
@@ -3537,6 +3541,13 @@
             "npm:hono-openapi@^1.0.6",
             "npm:openapi-fetch@0.14",
             "npm:openapi-typescript@^7.9.1"
+          ]
+        }
+      },
+      "packages/schemas": {
+        "packageJson": {
+          "dependencies": [
+            "npm:zod@^4.1.11"
           ]
         }
       },
