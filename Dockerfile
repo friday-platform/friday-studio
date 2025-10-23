@@ -38,6 +38,9 @@ RUN deno compile \
 # Stage 2: Runtime stage - use deno alpine image for compatibility
 FROM denoland/deno:alpine-2.5.4 AS runtime
 
+# Install Node.js and npm for npx support (required for MCP servers)
+RUN apk add --no-cache nodejs npm
+
 # Create atlas user and group (if not already exists)
 RUN addgroup -g 1001 -S atlas 2>/dev/null || true && \
     adduser -u 1001 -S -G atlas -h /home/atlas -s /bin/sh atlas 2>/dev/null || true
@@ -59,11 +62,14 @@ USER atlas
 WORKDIR /home/atlas
 
 # Set environment variables for optimal operation
+# Prepend system lib path to LD_LIBRARY_PATH so Node.js uses system libgcc
 ENV DENO_NO_UPDATE_CHECK=1 \
     ATLAS_HOME=/home/atlas/.atlas \
     ATLAS_LOG_LEVEL=info \
     ATLAS_DAEMON_HOST=0.0.0.0 \
-    ATLAS_DAEMON_PORT=8080
+    ATLAS_DAEMON_PORT=8080 \
+    ATLAS_NPX_PATH=/usr/bin/npx \
+    LD_LIBRARY_PATH=/usr/lib:/usr/local/lib
 
 # Expose the daemon port
 EXPOSE 8080
