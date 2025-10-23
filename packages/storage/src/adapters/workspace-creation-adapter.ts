@@ -83,9 +83,6 @@ export class FilesystemWorkspaceCreationAdapter implements WorkspaceCreationAdap
 
     // Create .env file with placeholder
     const envPath = join(workspacePath, ".env");
-    await Deno.writeTextFile(
-      envPath,
-      "# Add your environment variables here\nANTHROPIC_API_KEY=\n",
-    );
+    await Deno.writeTextFile(envPath, "# Add your environment variables here\n");
   }
 }
