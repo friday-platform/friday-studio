@@ -96,8 +96,6 @@ function hasConflictingEvents(id: string, start: number, end: number) {
       (event.hourStart < end && event.hourStart >= start),
   );
 }
-
-$inspect({ events, parsedEvents });
 </script>
 
 {#snippet hour(time: number)}

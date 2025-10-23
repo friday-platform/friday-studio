@@ -21,6 +21,7 @@
         "dragDropEnabled": true,
         "width": 1156,
         "height": 768,
+        "minHeight": 568,
         "zoomHotkeysEnabled": true
       }
     ],

@@ -1,5 +1,7 @@
 <script lang="ts">
 import { invoke } from "@tauri-apps/api/core";
+import { circOut } from "svelte/easing";
+import { slide } from "svelte/transition";
 import { z } from "zod";
 import { getAppContext, getFileType } from "$lib/app-context.svelte";
 import { getChatContext } from "$lib/chat-context.svelte";
@@ -12,15 +14,26 @@ import { formatMessage } from "$lib/modules/messages/format";
 import Message from "$lib/modules/messages/message.svelte";
 import Progress from "$lib/modules/messages/progress.svelte";
 import Table from "$lib/modules/messages/table.svelte";
+import { formatChatDate } from "$lib/utils/date";
 
 const appCtx = getAppContext();
 const chatContext = getChatContext();
 
 let form = $state<HTMLFormElement | null>(null);
 let message = $state<string>("");
+let showChats = $state(false);
 
 const messages = $derived(chatContext.chat?.messages ?? []);
 const status = $derived(chatContext.chat?.status ?? "idle");
+
+// Fetch recent chats on mount
+$effect(() => {
+  if (messages.length === 0) {
+    chatContext.loadRecentChats().catch((err) => {
+      console.error("Failed to load recent chats:", err);
+    });
+  }
+});
 
 // Follow scroll handling
 let scrollContainer = $state<HTMLDivElement | null>(null);
@@ -284,9 +297,39 @@ const hasMessages = $derived(messages.length > 0);
 						</div>
 					{/if}
 				</div>
+
+				{#if !hasMessages && chatContext.recentChats.length > 0}
+					<div class="recent-conversations" class:open={showChats}>
+						<button
+							class="toggle-chats"
+							onclick={() => {
+								showChats = !showChats;
+							}}>Recent Conversations <IconSmall.CaretRight /></button
+						>
+						{#if showChats}
+							<div class="chat-list" transition:slide={{ duration: 200, easing: circOut }}>
+								{#each chatContext.recentChats as chat (chat.id)}
+									<button
+										class="chat-item"
+										onclick={() => {
+											chatContext.loadChat(chat.id);
+										}}
+									>
+										<span class="chat--title">{chat.title || '(Untitled)'}</span>
+										<span class="chat--date" title={new Date(chat.updatedAt).toLocaleString()}
+											>{formatChatDate(chat.updatedAt)}</span
+										>
+									</button>
+								{/each}
+							</div>
+						{/if}
+					</div>
+				{/if}
 			</div>
 
-			<div class="background-blur"></div>
+			{#if hasMessages}
+				<div class="background-blur"></div>
+			{/if}
 		</div>
 
 		{#if !hasMessages}
@@ -322,7 +365,7 @@ const hasMessages = $derived(messages.length > 0);
 		inline-size: 100%;
 		margin-inline: auto;
 		max-inline-size: var(--size-150);
-		padding-inline: var(--size-1);
+		padding-inline: var(--size-2);
 
 		h2 {
 			font-size: var(--font-size-5);
@@ -346,17 +389,17 @@ const hasMessages = $derived(messages.length > 0);
 		padding-block: var(--size-10) var(--size-16);
 		position: relative;
 		scrollbar-width: thin;
+	}
 
-		.background-blur {
-			background: var(--color-surface-1);
-			block-size: var(--size-28);
-			inset-block-end: 0;
-			inset-inline: 0;
-			position: fixed;
-			opacity: 1;
-			pointer-events: none;
-			z-index: var(--layer-1);
-		}
+	.background-blur {
+		background: var(--color-surface-1);
+		block-size: var(--size-28);
+		inset-block-end: 0;
+		inset-inline: 0;
+		position: fixed;
+		opacity: 1;
+		pointer-events: none;
+		z-index: var(--layer-1);
 	}
 
 	.spacer {
@@ -373,7 +416,7 @@ const hasMessages = $derived(messages.length > 0);
 		flex-direction: column;
 		gap: var(--size-4);
 		margin-block-start: auto;
-		padding-block-end: var(--size-4);
+		padding-block-end: var(--size-6);
 	}
 
 	footer {
@@ -534,6 +577,47 @@ const hasMessages = $derived(messages.length > 0);
 			&:hover .close-button {
 				background-color: var(--highlight-3);
 			}
+		}
+	}
+
+	.recent-conversations {
+		padding-inline: var(--size-4);
+		padding-block-start: var(--size-6);
+
+		.toggle-chats {
+			align-items: center;
+			display: flex;
+			gap: var(--size-1);
+			font-size: var(--font-size-2);
+			font-weight: var(--font-weight-5);
+			opacity: 0.5;
+			padding-block-end: var(--size-3);
+
+			.open & :global(svg) {
+				transform: rotate(90deg);
+			}
+		}
+
+		.chat-list {
+			button {
+				border-block-start: 1px solid color-mix(in srgb, var(--color-border-1) 50%, transparent);
+				display: flex;
+				justify-content: space-between;
+				inline-size: 100%;
+				padding-block: var(--size-3);
+			}
+		}
+
+		.chat--title {
+			font-size: var(--font-size-2);
+			font-weight: var(--font-weight-5);
+			opacity: 0.7;
+		}
+
+		.chat--date {
+			font-size: var(--font-size-1);
+			font-weight: var(--font-weight-5);
+			opacity: 0.5;
 		}
 	}
 </style>

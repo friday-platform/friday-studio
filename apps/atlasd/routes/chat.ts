@@ -10,6 +10,7 @@ import { daemonFactory } from "../src/factory.ts";
 
 const chatRequestSchema = z.object({ id: z.string(), message: z.unknown() });
 const appendMessageSchema = z.object({ message: z.unknown() });
+const updateTitleSchema = z.object({ title: z.string() });
 
 /**
  * Extract text content from user message.
@@ -30,6 +31,19 @@ function extractTextContent(message: AtlasUIMessage): string {
 
 const chatRoutes = daemonFactory
   .createApp()
+  /**
+   * GET /api/chat
+   * List recent chats.
+   */
+  .get("/", async (c) => {
+    const result = await ChatStorage.listChats();
+    if (!result.ok) {
+      return c.json({ error: result.error }, 500);
+    }
+
+    return c.json({ chats: result.data }, 200);
+  })
+
   /**
    * POST /api/chat
    * Create chat, store message, stream events in response body.
@@ -155,6 +169,22 @@ const chatRoutes = daemonFactory
     }
 
     return c.json({ success: true }, 200);
+  })
+
+  /**
+   * PATCH /api/chat/:chatId/title
+   * Update chat title.
+   */
+  .patch("/:chatId/title", zValidator("json", updateTitleSchema), async (c) => {
+    const chatId = c.req.param("chatId");
+    const { title } = c.req.valid("json");
+
+    const result = await ChatStorage.updateChatTitle(chatId, title);
+    if (!result.ok) {
+      return c.json({ error: result.error }, result.error === "Chat not found" ? 404 : 500);
+    }
+
+    return c.json({ chat: result.data }, 200);
   });
 
 export default chatRoutes;

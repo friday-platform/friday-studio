@@ -44,6 +44,7 @@
     "npm:@sveltejs/kit@^2.22.0": "2.47.2_@opentelemetry+api@1.9.0_@sveltejs+vite-plugin-svelte@6.2.1__svelte@5.41.1___acorn@8.15.0__vite@7.1.11___picomatch@4.0.3_svelte@5.41.1__acorn@8.15.0_vite@7.1.11__picomatch@4.0.3_acorn@8.15.0_@types+node@24.2.0",
     "npm:@sveltejs/vite-plugin-svelte@6": "6.2.1_svelte@5.41.1__acorn@8.15.0_vite@7.1.11__picomatch@4.0.3_@types+node@24.2.0",
     "npm:@tauri-apps/api@2.9.0": "2.9.0",
+    "npm:@tauri-apps/cli@2.9.0": "2.9.0",
     "npm:@tauri-apps/cli@^2.9.0": "2.9.0",
     "npm:@tauri-apps/plugin-notification@2": "2.3.1",
     "npm:@tauri-apps/plugin-opener@^2.5.0": "2.5.0",

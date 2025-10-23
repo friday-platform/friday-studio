@@ -7,6 +7,7 @@ interface Chat {
   id: string; // Same as streamId
   userId: string;
   workspaceId: string;
+  title?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -117,4 +118,63 @@ async function getMessages(
   }
 }
 
-export const ChatStorage = { createChat, getChat, appendMessage, getMessages };
+/** List recent chats */
+async function listChats(kv?: Deno.Kv, limit = 5): Promise<Result<Chat[], string>> {
+  const shouldClose = !kv;
+  const db = kv ?? (await Deno.openKv(kvPath));
+
+  try {
+    const chats: Chat[] = [];
+    const entries = db.list<Chat>({ prefix: ["chat"] });
+
+    for await (const entry of entries) {
+      if (entry.value) {
+        chats.push(entry.value);
+      }
+    }
+
+    // Sort by updatedAt descending (most recent first)
+    chats.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+
+    return success(chats.slice(0, limit));
+  } finally {
+    if (shouldClose) db.close();
+  }
+}
+
+/** Update chat title */
+async function updateChatTitle(
+  chatId: string,
+  title: string,
+  kv?: Deno.Kv,
+): Promise<Result<Chat, string>> {
+  const shouldClose = !kv;
+  const db = kv ?? (await Deno.openKv(kvPath));
+
+  try {
+    const result = await db.get<Chat>(keys.chat(chatId));
+    if (!result.value) {
+      return fail("Chat not found");
+    }
+
+    const updatedChat: Chat = { ...result.value, title, updatedAt: new Date().toISOString() };
+
+    const setResult = await db.set(keys.chat(chatId), updatedChat);
+    if (!setResult.ok) {
+      return fail("Failed to update chat title");
+    }
+
+    return success(updatedChat);
+  } finally {
+    if (shouldClose) db.close();
+  }
+}
+
+export const ChatStorage = {
+  createChat,
+  getChat,
+  appendMessage,
+  getMessages,
+  listChats,
+  updateChatTitle,
+};

@@ -20,6 +20,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import {
   convertToModelMessages,
   createIdGenerator,
+  generateText,
   jsonSchema,
   smoothStream,
   stepCountIs,
@@ -48,6 +49,26 @@ function getSystemPrompt(streamId?: string): string {
   }
 
   return prompt;
+}
+
+/**
+ * Generates a concise 3-5 word title for a conversation based on its messages.
+ */
+async function generateChatTitle(messages: AtlasUIMessage[], logger: Logger): Promise<string> {
+  try {
+    const titlePrompt = `Generate a concise 3-5 word title for this conversation. Only output the title, nothing else.
+      Conversation:
+      ${messages.map((m) => `${m.role}: ${JSON.stringify(m.parts.filter((p) => p.type === "text"))}`).join("\n")}`;
+    const { text } = await generateText({
+      model: anthropic("claude-haiku-4-5"),
+      prompt: titlePrompt,
+      maxOutputTokens: 50,
+    });
+    return text;
+  } catch (error) {
+    logger.error("Failed to generate chat title", { error });
+    return "Saved Chat";
+  }
 }
 
 async function getAgentServerClient(streamId: string, logger: Logger) {
@@ -362,6 +383,25 @@ export const conversationAgent = createAgent({
           onFinish: async ({ messages }) => {
             if (!session.streamId) {
               throw new Error("Stream ID is missing");
+            }
+
+            /**
+             * On the first two turns of the conversation, generate a title for the chat.
+             * This should give a title if the user starts with a filler message like "Hey" but
+             * also then further refine it based on the next turn, which should be more meaningful.
+             */
+            if (messages.length === 2 || messages.length === 4) {
+              const title = await generateChatTitle(messages, logger);
+              const titleResult = await parseResult(
+                client.chat[":chatId"].title.$patch({
+                  param: { chatId: session.streamId },
+                  json: { title },
+                }),
+              );
+
+              if (!titleResult.ok) {
+                logger.error("Failed to update chat title", { streamId: session.streamId, title });
+              }
             }
 
             // Store the assistant message to chat storage
