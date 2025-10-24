@@ -526,6 +526,12 @@ export class AtlasDaemon {
     this.app.route("/api/library", libraryRoutes);
     this.app.route("/api/daemon", daemonApp);
 
+    // Global error handler - catches all uncaught errors from all routes
+    this.app.onError((err, c) => {
+      logger.error("API error", { error: err, path: c.req.path, method: c.req.method });
+      return c.json({ error: "Internal server error" }, 500);
+    });
+
     // Proxy to platform MCP server with specific CORS for MCP
     this.app.all(
       "/mcp",
