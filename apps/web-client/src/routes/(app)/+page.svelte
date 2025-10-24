@@ -155,7 +155,7 @@ const hasMessages = $derived(messages.length > 0);
 									}
 								}
 
-								chatContext.chat.sendMessage({ text: message });
+								chatContext.chat.sendMessage({ text: combinedMessage });
 								message = '';
 								appCtx.stagedFiles.clear();
 							}
