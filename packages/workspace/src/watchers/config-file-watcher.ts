@@ -311,7 +311,57 @@ export class WorkspaceConfigWatcher {
     oldPath: string,
     newPath?: string,
   ): Promise<void> {
-    // Stop both watchers immediately; manager will adopt or delete and reattach as needed
+    // CRITICAL: Atomic save detection
+    //
+    // ROOT CAUSE CONTEXT:
+    // Modern editors (vim, VS Code, etc.) use atomic renames for safe file saves:
+    //   1. Write content to workspace.yml.tmp
+    //   2. rename(workspace.yml.tmp, workspace.yml) - atomically replaces original
+    //
+    // On macOS, Deno.watchFs emits a SINGLE-PATH rename event for these atomic saves:
+    //   { kind: "rename", paths: ["/path/to/workspace.yml"] }  // Only 1 path!
+    //
+    // This is different from true renames which provide both old and new paths:
+    //   { kind: "rename", paths: ["/old/path", "/new/path"] }  // 2 paths
+    //
+    // THE BUG CHAIN (before this fix):
+    //   1. Watcher receives single-path rename event
+    //   2. getRenamedPath() returns undefined (expects 2 paths)
+    //   3. handleRename() called with newPath=undefined
+    //   4. Watcher calls stopWatchers() - kills all file monitoring
+    //   5. Manager treats as deletion via handleWatcherChange()
+    //   6. unregisterWorkspaceStates() deletes cron timers from persistent storage
+    //   7. Result: zombie workspace (registered but no timers, no watchers)
+    //
+    // THE FIX:
+    // Detect atomic saves by checking newPath === undefined. When detected:
+    //   - Treat as file modification (config reload)
+    //   - Keep watchers ACTIVE (don't stop them)
+    //   - Cron timers get restarted via restartSignalsForWorkspace()
+    //   - File watching continues normally
+    //
+    // WHY NO exists() CHECK:
+    // Earlier versions checked `await exists(oldPath)` before treating as atomic save.
+    // This was removed because:
+    //   1. File deletions emit "remove" events, not "rename" events
+    //   2. Manager already handles deletion detection via determineChangeType()
+    //   3. Unnecessary I/O on every file save
+    //   4. Violates separation of concerns:
+    //      - Watcher: Detects filesystem event types (rename vs remove vs modify)
+    //      - Manager: Determines actual state (exists vs deleted vs invalid)
+    //
+    // If the file truly doesn't exist, the manager will detect it and handle cleanup.
+    if (!newPath) {
+      // Atomic save - treat as modification, keep watchers active
+      logger.debug("atomic save detected, treating as modification", {
+        workspaceId,
+        path: oldPath,
+      });
+      await this.options.onConfigChange(workspaceId, { filePath: oldPath });
+      return;
+    }
+
+    // True rename - stop watchers, manager will handle re-attachment
     this.stopWatchers(workspaceId);
     await this.options.onConfigChange(workspaceId, { oldPath, newPath });
   }
