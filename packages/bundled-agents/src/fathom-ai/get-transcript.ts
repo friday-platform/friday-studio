@@ -51,8 +51,6 @@ type FathomGetTranscriptResult = {
   artifactRefs?: Array<{ id: string; type: string; summary: string }>;
 };
 
-export const FathomGetTranscriptResultSchema = z.object({ response: z.string() });
-
 export const fathomGetTranscriptAgent = createAgent<string, FathomGetTranscriptResult>({
   id: "fathom-get-transcript",
   displayName: "Fathom Get Transcript",

@@ -1,8 +1,20 @@
 # Multi-stage Dockerfile for Atlas AI Agent Platform
 # Optimized for production deployment in Kubernetes
+#
+# Build targets:
+#   - daemon (default): Atlas daemon binary
+#   - web-client: Static web UI served via HTTP
+#
+# Build commands:
+#   docker build --target daemon -t atlas-daemon .
+#   docker build --target web-client -t atlas-web-client .
 
-# Stage 1: Build stage
-FROM denoland/deno:alpine-2.5.4 AS builder
+# ============================================================================
+# DAEMON BUILD STAGES
+# ============================================================================
+
+# Stage 1: Build daemon binary
+FROM denoland/deno:alpine-2.5.4 AS daemon-builder
 
 # Set working directory
 WORKDIR /app
@@ -35,8 +47,8 @@ RUN deno compile \
     --unstable-raw-imports \
     src/cli.tsx
 
-# Stage 2: Runtime stage - use deno alpine image for compatibility
-FROM denoland/deno:alpine-2.5.4 AS runtime
+# Stage 2: Daemon runtime
+FROM denoland/deno:alpine-2.5.4 AS daemon
 
 # Install Node.js and npm for npx support (required for MCP servers)
 RUN apk add --no-cache nodejs npm
@@ -51,8 +63,8 @@ RUN mkdir -p /home/atlas/.atlas/logs \
     /home/atlas/.atlas/data \
     && chown -R atlas:atlas /home/atlas
 
-# Copy the compiled Atlas binary from builder stage
-COPY --from=builder --chown=atlas:atlas /app/atlas /usr/local/bin/atlas
+# Copy the compiled Atlas binary from daemon-builder stage
+COPY --from=daemon-builder --chown=atlas:atlas /app/atlas /usr/local/bin/atlas
 
 # Make the binary executable
 RUN chmod +x /usr/local/bin/atlas
@@ -76,3 +88,53 @@ EXPOSE 8080
 
 # Default command starts the daemon
 CMD ["atlas", "daemon", "start", "--hostname", "0.0.0.0", "--port", "8080"]
+
+# ============================================================================
+# WEB CLIENT BUILD STAGES
+# ============================================================================
+
+# Stage 3: Build web client static assets
+FROM denoland/deno:alpine-2.5.4 AS web-client-builder
+
+WORKDIR /app
+
+# Copy all files (simpler approach for first working version)
+COPY . .
+
+# Install dependencies (populates node_modules for vite/svelte)
+RUN deno install
+
+# Build static assets using Deno task
+WORKDIR /app/apps/web-client
+RUN deno task build
+
+# Stage 4: Web client runtime
+FROM denoland/deno:alpine-2.5.4 AS web-client
+
+# Create atlas user and group
+RUN addgroup -g 1001 -S atlas 2>/dev/null || true && \
+    adduser -u 1001 -S -G atlas -h /home/atlas -s /bin/sh atlas 2>/dev/null || true
+
+# Create web directory
+RUN mkdir -p /home/atlas/web && chown -R atlas:atlas /home/atlas
+
+# Copy built static assets from web-client-builder
+COPY --from=web-client-builder --chown=atlas:atlas /app/apps/web-client/build /home/atlas/web
+
+# Copy static file server
+COPY --chown=atlas:atlas apps/web-client/server.ts /home/atlas/server.ts
+
+# Switch to atlas user
+USER atlas
+WORKDIR /home/atlas
+
+# Set environment variables
+ENV DENO_NO_UPDATE_CHECK=1 \
+    WEB_CLIENT_HOST=0.0.0.0 \
+    WEB_CLIENT_PORT=3000
+
+# Expose web client port
+EXPOSE 3000
+
+# Start web client (frontend defaults to localhost:8080 for daemon)
+CMD ["deno", "run", "--allow-net", "--allow-read", "--allow-env", "/home/atlas/server.ts"]

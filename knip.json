@@ -44,7 +44,7 @@
     "apps/atlasd": { "entry": ["tests/**/*.test.ts"], "project": ["**/*.{ts,tsx,js,jsx}!"] },
     "apps/diagnostics": { "project": ["src/**/*.{ts,tsx,js,jsx}!"] },
     "apps/web-client": {
-      "entry": ["src/app.html!", "src/routes/**/*.svelte!", "src/**/*.test.ts"],
+      "entry": ["src/app.html!", "src/routes/**/*.svelte!", "src/**/*.test.ts", "server.ts!"],
       "project": ["src/**/*.{ts,tsx,js,jsx,svelte}!", "*.js!", "*.ts!"],
       "paths": {
         "$lib": ["./src/lib"],
