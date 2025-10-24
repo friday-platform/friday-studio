@@ -44,5 +44,5 @@
     "report:knip": "npx knip --reporter markdown --max-issues 0 > reports/knip-report.md"
   },
   "lint": { "rules": { "tags": ["recommended"] }, "exclude": ["packages/vendor/**"] },
-  "imports": { "@std/media-types": "jsr:@std/media-types@^1.1.0" }
+  "imports": { "@std/media-types": "jsr:@std/media-types@^1.1.0", "cookie": "npm:cookie@^1.0.2" }
 }

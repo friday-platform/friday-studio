@@ -4,7 +4,7 @@
   "exports": "./mod.ts",
   "tasks": {
     "dev": "vite dev",
-    "build": "vite build",
+    "build": "deno run --allow-read --allow-write --allow-env scripts/generate-build-info.ts && vite build",
     "preview": "vite preview",
     "prepare": "svelte-kit sync || echo ''",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
