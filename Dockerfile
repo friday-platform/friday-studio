@@ -108,6 +108,9 @@ RUN deno install
 WORKDIR /app/apps/web-client
 RUN deno task build
 
+# Cache server.ts dependencies for runtime
+RUN deno cache server.ts
+
 # Stage 4: Web client runtime
 FROM denoland/deno:alpine-2.5.4 AS web-client
 
@@ -115,14 +118,18 @@ FROM denoland/deno:alpine-2.5.4 AS web-client
 RUN addgroup -g 1001 -S atlas 2>/dev/null || true && \
     adduser -u 1001 -S -G atlas -h /home/atlas -s /bin/sh atlas 2>/dev/null || true
 
-# Create web directory
-RUN mkdir -p /home/atlas/web && chown -R atlas:atlas /home/atlas
+# Create web and cache directories
+RUN mkdir -p /home/atlas/web /home/atlas/.cache && chown -R atlas:atlas /home/atlas
 
 # Copy built static assets from web-client-builder
 COPY --from=web-client-builder --chown=atlas:atlas /app/apps/web-client/build /home/atlas/web
 
-# Copy static file server
+# Copy static file server and deno.lock for consistent dependency versions
 COPY --chown=atlas:atlas apps/web-client/server.ts /home/atlas/server.ts
+COPY --from=web-client-builder --chown=atlas:atlas /app/deno.lock /home/atlas/deno.lock
+
+# Copy Deno cache with server.ts dependencies
+COPY --from=web-client-builder --chown=atlas:atlas /deno-dir /home/atlas/.cache/deno
 
 # Switch to atlas user
 USER atlas
@@ -130,6 +137,7 @@ WORKDIR /home/atlas
 
 # Set environment variables
 ENV DENO_NO_UPDATE_CHECK=1 \
+    DENO_DIR=/home/atlas/.cache/deno \
     WEB_CLIENT_HOST=0.0.0.0 \
     WEB_CLIENT_PORT=3000
 
@@ -137,4 +145,5 @@ ENV DENO_NO_UPDATE_CHECK=1 \
 EXPOSE 3000
 
 # Start web client (frontend defaults to localhost:8080 for daemon)
-CMD ["deno", "run", "--allow-net", "--allow-read", "--allow-env", "/home/atlas/server.ts"]
+# Use lock file to ensure consistent dependency versions
+CMD ["deno", "run", "--allow-net", "--allow-read", "--allow-env", "--lock", "/home/atlas/deno.lock", "/home/atlas/server.ts"]
