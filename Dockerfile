@@ -108,8 +108,16 @@ RUN deno install
 WORKDIR /app/apps/web-client
 RUN deno task build
 
-# Cache server.ts dependencies for runtime
-RUN deno cache server.ts
+# Compile server.ts to a self-contained binary
+# This approach avoids JSR transitive dependency caching issues entirely
+# by embedding all dependencies directly in the executable
+WORKDIR /app
+RUN deno compile \
+    --allow-net \
+    --allow-read \
+    --allow-env \
+    --output=/app/server \
+    apps/web-client/server.ts
 
 # Stage 4: Web client runtime
 FROM denoland/deno:alpine-2.5.4 AS web-client
@@ -124,12 +132,9 @@ RUN mkdir -p /home/atlas/web /home/atlas/.cache && chown -R atlas:atlas /home/at
 # Copy built static assets from web-client-builder
 COPY --from=web-client-builder --chown=atlas:atlas /app/apps/web-client/build /home/atlas/web
 
-# Copy static file server and deno.lock for consistent dependency versions
-COPY --chown=atlas:atlas apps/web-client/server.ts /home/atlas/server.ts
-COPY --from=web-client-builder --chown=atlas:atlas /app/deno.lock /home/atlas/deno.lock
-
-# Copy Deno cache with server.ts dependencies
-COPY --from=web-client-builder --chown=atlas:atlas /deno-dir /home/atlas/.cache/deno
+# Copy compiled server binary
+# All dependencies are embedded in the binary, no runtime resolution needed
+COPY --from=web-client-builder --chown=atlas:atlas /app/server /home/atlas/server
 
 # Switch to atlas user
 USER atlas
@@ -137,13 +142,11 @@ WORKDIR /home/atlas
 
 # Set environment variables
 ENV DENO_NO_UPDATE_CHECK=1 \
-    DENO_DIR=/home/atlas/.cache/deno \
     WEB_CLIENT_HOST=0.0.0.0 \
     WEB_CLIENT_PORT=3000
 
 # Expose web client port
 EXPOSE 3000
 
-# Start web client (frontend defaults to localhost:8080 for daemon)
-# Use lock file to ensure consistent dependency versions
-CMD ["deno", "run", "--allow-net", "--allow-read", "--allow-env", "--lock", "/home/atlas/deno.lock", "/home/atlas/server.ts"]
+# Start compiled server binary
+CMD ["/home/atlas/server"]
