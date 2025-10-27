@@ -143,7 +143,8 @@ WORKDIR /home/atlas
 # Set environment variables
 ENV DENO_NO_UPDATE_CHECK=1 \
     WEB_CLIENT_HOST=0.0.0.0 \
-    WEB_CLIENT_PORT=3000
+    WEB_CLIENT_PORT=3000 \
+    ATLAS_LOG_FORMAT=json
 
 # Expose web client port
 EXPOSE 3000
