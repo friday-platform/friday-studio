@@ -64,7 +64,7 @@
     "npm:@types/react@^19.1.13": "19.2.2",
     "npm:ai@^5.0.81": "5.0.81_zod@4.1.12",
     "npm:cookie@^1.0.2": "1.0.2",
-    "npm:cron-parser@^5.3.1": "5.4.0",
+    "npm:cron-parser@^5.4.0": "5.4.0",
     "npm:eslint-config-prettier@^10.0.1": "10.1.8_eslint@9.38.0",
     "npm:eslint-plugin-svelte@3": "3.12.5_eslint@9.38.0_svelte@5.42.2__acorn@8.15.0_postcss@8.5.6",
     "npm:eslint@^9.18.0": "9.38.0",
@@ -3548,6 +3548,7 @@
         "packageJson": {
           "dependencies": [
             "npm:@jsr/std__yaml@^1.0.9",
+            "npm:cron-parser@^5.4.0",
             "npm:zod-from-json-schema@0.5",
             "npm:zod@^4.1.11"
           ]
@@ -3579,7 +3580,7 @@
             "npm:@jsr/std__assert@^1.0.14",
             "npm:@jsr/std__expect@^1.0.17",
             "npm:@jsr/std__testing@^1.0.15",
-            "npm:cron-parser@^5.3.1"
+            "npm:cron-parser@^5.4.0"
           ]
         }
       },

@@ -2,6 +2,7 @@
  * Signal configuration schemas with tagged unions
  */
 
+import { CronExpressionParser } from "cron-parser";
 import { z } from "zod";
 import { DurationSchema, SchemaObjectSchema } from "./base.ts";
 
@@ -35,7 +36,20 @@ export const HTTPSignalConfigSchema = BaseSignalConfigSchema.extend({
 export const ScheduleSignalConfigSchema = BaseSignalConfigSchema.extend({
   provider: z.literal("schedule"),
   config: z.strictObject({
-    schedule: z.string().describe("Cron expression (e.g., '0 9 * * *' for daily at 9 AM)"),
+    schedule: z
+      .string()
+      .describe("Cron expression (e.g., '0 9 * * *' for daily at 9 AM)")
+      .refine(
+        (schedule) => {
+          try {
+            CronExpressionParser.parse(schedule);
+            return true;
+          } catch {
+            return false;
+          }
+        },
+        { message: "Invalid cron expression. Must be a valid cron format." },
+      ),
     timezone: z.string().optional().default("UTC").describe("Timezone for the schedule"),
   }),
 });
