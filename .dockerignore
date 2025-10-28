@@ -37,6 +37,7 @@ temp/
 *.log
 atlas-daemon.log
 atlas-test.log
+.svelte-kit/
 
 # OS files
 .DS_Store

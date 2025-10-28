@@ -7,7 +7,10 @@ const config = {
   // for more information about preprocessors
   preprocess: vitePreprocess(),
 
-  kit: { adapter: adapter({ fallback: "index.html" }) },
+  kit: {
+    adapter: adapter({ fallback: "index.html" }),
+    paths: { base: process.env.SVELTEKIT_BASE_PATH || "" },
+  },
 };
 
 export default config;
