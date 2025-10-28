@@ -12,13 +12,9 @@ import {
 import { logger } from "@atlas/logger";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Span } from "@opentelemetry/api";
-import {
-  experimental_createMCPClient as createMCPClient,
-  type JSONValue,
-  type Schema,
-  type Tool,
-} from "ai";
-import { Experimental_StdioMCPTransport as StdioMCPTransport } from "ai/mcp-stdio";
+import { experimental_createMCPClient as createMCPClient } from "@ai-sdk/mcp";
+import { Experimental_StdioMCPTransport as StdioMCPTransport } from "@ai-sdk/mcp/mcp-stdio";
+import type { JSONValue, Schema, Tool } from "ai";
 import { z } from "zod";
 import { AtlasTelemetry } from "../../../src/utils/telemetry.ts";
 

@@ -6,12 +6,13 @@
   "exports": { ".": "./mod.ts" },
   "scripts": { "test": "deno test --allow-all" },
   "dependencies": {
+    "@ai-sdk/mcp": "^0.0.3",
     "@atlas/atlasd": "workspace:*",
     "@atlas/config": "workspace:*",
     "@atlas/logger": "workspace:*",
     "@modelcontextprotocol/sdk": "npm:@socotra/modelcontextprotocol-sdk@^1.18.0",
     "@opentelemetry/api": "^1.9.0",
-    "ai": "^5.0.59",
+    "ai": "^5.0.81",
     "zod": "^4.1.11"
   }
 }

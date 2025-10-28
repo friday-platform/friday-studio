@@ -14,7 +14,7 @@
   },
   "main": "./mod.ts",
   "dependencies": {
-    "@ai-sdk/anthropic": "^2.0.22",
+    "@ai-sdk/anthropic": "^2.0.38",
     "@ai-sdk/google": "^2.0.17",
     "@ai-sdk/openai": "^2.0.42",
     "@ai-sdk/provider": "^2.0.0",
@@ -33,7 +33,7 @@
     "@std/path": "npm:@jsr/std__path@^1.1.2",
     "@std/testing": "npm:@jsr/std__testing@^1.0.16",
     "@std/yaml": "npm:@jsr/std__yaml@^1.0.9",
-    "ai": "^5.0.59",
+    "ai": "^5.0.81",
     "xstate": "^5.21.0",
     "zod": "^4.1.11"
   }
