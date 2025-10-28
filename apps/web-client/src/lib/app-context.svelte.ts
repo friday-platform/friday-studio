@@ -1,5 +1,6 @@
 import { getContext, setContext } from "svelte";
 import { SvelteMap } from "svelte/reactivity";
+import { base } from "$app/paths";
 import { DaemonClient } from "./modules/client/daemon.ts";
 
 const KEY = Symbol();
@@ -45,10 +46,10 @@ export function getFileType(path: string) {
 
 function getRouteConfig() {
   return {
-    main: "/",
-    library: { list: "/library", item: (id: string) => `/library/${id}` },
-    chat: { item: (id: string) => `/chat/${id}` },
-    settings: "/settings",
+    main: `${base}/`,
+    library: { list: `${base}/library`, item: (id: string) => `${base}/library/${id}` },
+    chat: { item: (id: string) => `${base}/chat/${id}` },
+    settings: `${base}/settings`,
   } as const;
 }
 

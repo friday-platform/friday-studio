@@ -27,7 +27,7 @@ async function openSubWindow() {
   appWindow.once("tauri://created", async () => {
     const webview = new Webview(appWindow, "theUniqueLabel", {
       // Unique label
-      url: "/about", // Path to your HTML file
+      url: `${ctx.routes.main}about`, // Path to your HTML file
       x: 0,
       y: 0,
       width: 300,
