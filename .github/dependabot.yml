@@ -73,6 +73,10 @@ updates:
       - "rust"
       - "tauri"
     rebase-strategy: "auto"
+    groups:
+      tauri-plugins:
+        patterns:
+          - "tauri-plugin-*"
     # Known transitive dependency issue - glib vulnerability in webkit2gtk (Linux only)
     # Waiting for upstream fix in https://github.com/tauri-apps/webkit2gtk-rs
     ignore:
@@ -96,6 +100,10 @@ updates:
       - "rust"
       - "tauri"
     rebase-strategy: "auto"
+    groups:
+      tauri-plugins:
+        patterns:
+          - "tauri-plugin-*"
     # Known transitive dependency issue - glib vulnerability in webkit2gtk (Linux only)
     # Waiting for upstream fix in https://github.com/tauri-apps/webkit2gtk-rs
     ignore:
