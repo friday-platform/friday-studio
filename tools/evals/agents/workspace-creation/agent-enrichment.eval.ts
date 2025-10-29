@@ -73,7 +73,7 @@ Deno.test("Agent Enrichment - People Research Anti-Hallucination", async (t) => 
       {
         "type": "llm",
         "config": {
-          "model": "claude-3-5-haiku-latest",
+          "model": "claude-haiku-4-5",
           "prompt": "You are a prospect research and email generation specialist..."
         }
       }

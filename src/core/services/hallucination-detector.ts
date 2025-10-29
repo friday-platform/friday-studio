@@ -349,7 +349,7 @@ export class HallucinationDetector {
 
     try {
       const { object } = await generateObject({
-        model: this.llmProvider("claude-3-5-haiku-latest"),
+        model: this.llmProvider("claude-haiku-4-5"),
         system: this.buildValidationPrompt(),
         messages: [{ role: "user", content: this.buildValidationInput(result) }],
         schema: ValidationSchema,

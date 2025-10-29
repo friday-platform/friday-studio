@@ -28,7 +28,7 @@ async function summarize(params: {
   abortSignal?: AbortSignal;
 }): Promise<string> {
   const { text } = await generateText({
-    model: anthropic("claude-3-5-haiku-latest"),
+    model: anthropic("claude-haiku-4-5"),
     system:
       "You generate concise, accurate summaries. No fluff, no marketing speak. Direct and informative.",
     prompt: `

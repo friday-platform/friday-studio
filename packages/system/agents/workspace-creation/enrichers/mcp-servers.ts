@@ -48,7 +48,7 @@ export async function generateMCPServers(
   }
 
   const { object } = await generateObject({
-    model: anthropic("claude-3-5-haiku-latest"),
+    model: anthropic("claude-haiku-4-5"),
     schema: z.object({
       serverIds: z.string().array().describe("IDs of MCP servers to include in the workspace"),
       missingDomains: z.string().array().describe("Domains that there was no matching server for"),

@@ -72,7 +72,7 @@ Create 200-400 word summary and up to 5 key excerpts.`;
 
   try {
     const { object } = await generateObject({
-      model: anthropic("claude-3-5-haiku-latest"),
+      model: anthropic("claude-haiku-4-5"),
       prompt: summarizationPrompt,
       schema: SummarizedResultSchema,
       temperature: 0.3,

@@ -13,7 +13,7 @@ type LLMJudgeInput = { criteria: string; agentOutput: unknown };
 
 export async function llmJudge(input: LLMJudgeInput): Promise<Evaluation> {
   const { object } = await generateObject({
-    model: anthropic("claude-3-5-haiku-latest"),
+    model: anthropic("claude-haiku-4-5"),
     schema: evaluationSchema,
     prompt: `
     <identity>

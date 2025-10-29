@@ -60,7 +60,7 @@ Examples:
     const guidance = stageGuidance[stage] || "Generate a status update for this research operation";
 
     const { text } = await generateText({
-      model: anthropic("claude-3-5-haiku-latest"),
+      model: anthropic("claude-haiku-4-5"),
       abortSignal,
       system: `Generate a research progress update.
 

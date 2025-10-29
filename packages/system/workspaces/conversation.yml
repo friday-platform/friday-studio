@@ -142,7 +142,7 @@ agents:
     agent: "conversation-query"
     description: "Query conversation history based on scope"
     config:
-      model: "claude-3-5-haiku-latest"
+      model: "claude-haiku-4-5"
       temperature: 0.3
       max_tokens: 2000
       prompt: |
@@ -154,7 +154,7 @@ agents:
     agent: "conversation-loader"
     description: "Load conversation history for resumption"
     config:
-      model: "claude-3-5-haiku-latest"
+      model: "claude-haiku-4-5"
       temperature: 0.3
       max_tokens: 2000
       prompt: |

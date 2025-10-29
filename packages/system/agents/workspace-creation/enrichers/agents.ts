@@ -18,13 +18,13 @@ const MODEL_CONFIGS_BY_ARCHETYPE: Record<
   AgentArchetype,
   { model: string; temperature: number; maxTokens: number }
 > = {
-  collector: { model: "claude-4-5-haiku", temperature: 0.1, maxTokens: 4000 },
-  reader: { model: "claude-4-5-haiku", temperature: 0.1, maxTokens: 8000 },
-  analyzer: { model: "claude-3-7-sonnet-latest", temperature: 0.3, maxTokens: 8000 },
-  evaluator: { model: "claude-3-7-sonnet-latest", temperature: 0.2, maxTokens: 6000 },
-  reporter: { model: "claude-3-5-haiku-latest", temperature: 0.2, maxTokens: 6000 },
-  notifier: { model: "claude-3-5-haiku-latest", temperature: 0.1, maxTokens: 3000 },
-  executor: { model: "claude-3-7-sonnet-latest", temperature: 0.1, maxTokens: 8000 },
+  collector: { model: "claude-haiku-4-5", temperature: 0.1, maxTokens: 4000 },
+  reader: { model: "claude-haiku-4-5", temperature: 0.1, maxTokens: 8000 },
+  analyzer: { model: "claude-sonnet-4-5", temperature: 0.3, maxTokens: 8000 },
+  evaluator: { model: "claude-sonnet-4-5", temperature: 0.2, maxTokens: 6000 },
+  reporter: { model: "claude-haiku-4-5", temperature: 0.2, maxTokens: 6000 },
+  notifier: { model: "claude-haiku-4-5", temperature: 0.1, maxTokens: 3000 },
+  executor: { model: "claude-sonnet-4-5", temperature: 0.1, maxTokens: 8000 },
 };
 
 const BundledAgentSpecSchema = z.object({
@@ -215,7 +215,7 @@ export async function enrichAgentsWithDomains(
 
     if (enrichedAgent?.config.type === "llm") {
       const { object } = await generateObject({
-        model: anthropic("claude-3-5-haiku-latest"),
+        model: anthropic("claude-haiku-4-5"),
         schema: z.object({
           result: z.object({
             mcpDomains: z.array(z.string()).describe("MCP server domains needed for this agent"),
