@@ -79,6 +79,7 @@ Your summary:
 - Use markdown for readability`,
         abortSignal,
         prompt,
+        maxOutputTokens: 30000,
         onChunk: async ({ chunk }) => {
           switch (chunk.type) {
             case "tool-call": {
