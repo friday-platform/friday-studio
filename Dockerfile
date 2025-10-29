@@ -14,7 +14,7 @@
 # ============================================================================
 
 # Stage 1: Build daemon binary
-FROM denoland/deno:alpine-2.5.4 AS daemon-builder
+FROM denoland/deno:alpine-2.5.5 AS daemon-builder
 
 # Set working directory
 WORKDIR /app
@@ -48,7 +48,7 @@ RUN deno compile \
     src/cli.tsx
 
 # Stage 2: Daemon runtime
-FROM denoland/deno:alpine-2.5.4 AS daemon
+FROM denoland/deno:alpine-2.5.5 AS daemon
 
 # Install Node.js and npm for npx support (required for MCP servers)
 RUN apk add --no-cache nodejs npm
@@ -94,7 +94,7 @@ CMD ["atlas", "daemon", "start", "--hostname", "0.0.0.0", "--port", "8080"]
 # ============================================================================
 
 # Stage 3: Build web client static assets
-FROM denoland/deno:alpine-2.5.4 AS web-client-builder
+FROM denoland/deno:alpine-2.5.5 AS web-client-builder
 
 WORKDIR /app
 
@@ -125,7 +125,7 @@ RUN deno compile \
     apps/web-client/server.ts
 
 # Stage 4: Web client runtime
-FROM denoland/deno:alpine-2.5.4 AS web-client
+FROM denoland/deno:alpine-2.5.5 AS web-client
 
 # Create atlas user and group
 RUN addgroup -g 1001 -S atlas 2>/dev/null || true && \
