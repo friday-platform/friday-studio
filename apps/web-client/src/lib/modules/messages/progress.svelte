@@ -1,7 +1,7 @@
 <script lang="ts">
+import type { AtlasUIMessagePart } from "@atlas/agent-sdk";
 import { CustomIcons } from "$lib/components/icons/custom";
 import MessageWrapper from "./wrapper.svelte";
-import type { AtlasUIMessagePart } from "@atlas/agent-sdk";
 
 let time = $state(0);
 

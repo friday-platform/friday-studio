@@ -1,7 +1,6 @@
 // Core types for the Atlas Library system
 // Re-exported from @atlas/schemas for single source of truth
 
-import type { z } from "zod";
 import type {
   libraryItemSchema,
   librarySearchQuerySchema,
@@ -9,6 +8,7 @@ import type {
   libraryStatsSchema,
   templateConfigSchema,
 } from "@atlas/schemas/library";
+import type { z } from "zod";
 
 // Base LibraryItem from API schema
 type BaseLibraryItem = z.infer<typeof libraryItemSchema>;

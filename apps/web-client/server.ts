@@ -6,7 +6,7 @@
 import { serveDir } from "jsr:@std/http/file-server";
 import { logger } from "@atlas/logger";
 
-const port = parseInt(Deno.env.get("WEB_CLIENT_PORT") || "3000");
+const port = parseInt(Deno.env.get("WEB_CLIENT_PORT") || "3000", 10);
 const hostname = Deno.env.get("WEB_CLIENT_HOST") || "0.0.0.0";
 const fsRoot = Deno.env.get("WEB_CLIENT_ROOT") || "/home/atlas/web";
 

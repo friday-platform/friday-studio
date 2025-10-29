@@ -1,9 +1,9 @@
 import { ensureDir } from "@std/fs";
 import { dirname, join } from "@std/path";
 import { DetailedError } from "hono/client";
+import { FileWriteCoordinator } from "../../storage/src/memory/file-write-coordinator.ts";
 import { getAtlasLogsDir } from "./paths.ts";
 import type { LogContext, LogEntry, Logger, LogLevel } from "./types.ts";
-import { FileWriteCoordinator } from "../../storage/src/memory/file-write-coordinator.ts";
 
 /**
  * Atlas logger that writes JSON to disk files and human-readable output to console

@@ -3,7 +3,6 @@
  * Re-exported from @atlas/schemas for convenience
  */
 
-import type { z } from "zod";
 import type {
   libraryItemSchema,
   librarySearchQuerySchema,
@@ -11,6 +10,7 @@ import type {
   libraryStatsSchema,
   templateConfigSchema,
 } from "@atlas/schemas/library";
+import type { z } from "zod";
 
 export type LibrarySearchQuery = z.infer<typeof librarySearchQuerySchema>;
 export type LibraryItem = z.infer<typeof libraryItemSchema>;

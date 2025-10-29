@@ -87,7 +87,7 @@ If any provision of this Agreement is held to be invalid or unenforceable, the r
 If you have questions about this Agreement, please contact us at:
 
 Tempest Technologies, Inc.
-Email: legal@tempestdx.com
+Email: support@tempestdx.com
 Website: https://atlas.tempestdx.com
 
 By clicking "I Agree" or using the Software, you acknowledge that you have read, understood, and agree to be bound by all terms of this Agreement.

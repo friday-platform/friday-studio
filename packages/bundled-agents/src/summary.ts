@@ -1,4 +1,4 @@
-import { createAgent, type ArtifactRef } from "@atlas/agent-sdk";
+import { type ArtifactRef, createAgent } from "@atlas/agent-sdk";
 import {
   collectToolUsageFromSteps,
   extractArtifactRefsFromToolResults,

@@ -33,11 +33,12 @@ esac
 echo "Building Atlas .deb package version ${DEB_VERSION} for ${DEB_ARCH} (from ${VERSION})"
 
 # Read EULA.txt content for injection
-if [[ ! -f "EULA.txt" ]]; then
-    echo "ERROR: EULA.txt file not found!"
+EULA_PATH="apps/atlas-installer/eula.txt"
+if [[ ! -f "${EULA_PATH}" ]]; then
+    echo "ERROR: ${EULA_PATH} file not found!"
     exit 1
 fi
-EULA_CONTENT=$(cat EULA.txt)
+EULA_CONTENT=$(cat "${EULA_PATH}")
 
 # Create package structure
 PKG_DIR="atlas_${DEB_VERSION}_${DEB_ARCH}"

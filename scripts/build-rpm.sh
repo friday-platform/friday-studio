@@ -45,11 +45,12 @@ esac
 echo "Building Atlas .rpm package version ${RPM_VERSION}-${RPM_RELEASE} for ${RPM_ARCH} (from ${VERSION})"
 
 # Read EULA.txt content for injection
-if [[ ! -f "EULA.txt" ]]; then
-    echo "ERROR: EULA.txt file not found!"
+EULA_PATH="apps/atlas-installer/eula.txt"
+if [[ ! -f "${EULA_PATH}" ]]; then
+    echo "ERROR: ${EULA_PATH} file not found!"
     exit 1
 fi
-EULA_CONTENT=$(cat EULA.txt)
+EULA_CONTENT=$(cat "${EULA_PATH}")
 
 # Check if we're trying to build ARM64 on x86_64
 if [ "${RPM_ARCH}" = "aarch64" ] && [ "$(uname -m)" = "x86_64" ]; then

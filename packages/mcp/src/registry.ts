@@ -4,10 +4,10 @@
  * Mirrors the pattern established in LLMProviderManager
  */
 
+import { experimental_createMCPClient as createMCPClient } from "@ai-sdk/mcp";
 import { getAtlasDaemonUrl } from "@atlas/atlasd";
 import { logger } from "@atlas/logger";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { experimental_createMCPClient as createMCPClient } from "@ai-sdk/mcp";
 import type { MCPServerConfig } from "./manager.ts";
 
 // Type definitions for configuration sources

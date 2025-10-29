@@ -4,8 +4,8 @@
  */
 
 import type { MergedConfig, WorkspaceSignalConfig } from "@atlas/config";
-import { WorkspaceSessionStatus } from "@atlas/core";
 import type { AgentOrchestrator, GlobalMCPServerPool } from "@atlas/core";
+import { WorkspaceSessionStatus } from "@atlas/core";
 import { logger } from "@atlas/logger";
 import { type ActorRefFrom, createActor } from "xstate";
 import type { IWorkspace, IWorkspaceSession } from "../types/core.ts";

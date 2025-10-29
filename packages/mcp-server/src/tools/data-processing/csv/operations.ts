@@ -5,10 +5,10 @@
  * These functions operate on in-memory parsed CSV data.
  */
 
-import { tool } from "ai";
-import { z } from "zod";
 import { client, parseResult } from "@atlas/client/v2";
 import { stringifyError } from "@atlas/utils";
+import { tool } from "ai";
+import { z } from "zod";
 import type { ToolContext } from "../../types.ts";
 import type {
   AggregateParams,

@@ -152,8 +152,11 @@ libraryItems.get(
       return c.json(result);
     } catch (error) {
       if (error instanceof z.ZodError) {
-        const issue = error.issues[0]!;
-        return c.json({ error: `${issue.path.join(".")}: ${issue.message}` }, 400);
+        const issue = error.issues[0];
+        if (issue) {
+          return c.json({ error: `${issue.path.join(".")}: ${issue.message}` }, 400);
+        }
+        return c.json({ error: "Validation error" }, 400);
       }
 
       logger.error("Failed to list library items", { error });
@@ -216,8 +219,11 @@ libraryItems.post(
       );
     } catch (error) {
       if (error instanceof z.ZodError) {
-        const issue = error.issues[0]!;
-        return c.json({ error: `${issue.path.join(".")}: ${issue.message}` }, 400);
+        const issue = error.issues[0];
+        if (issue) {
+          return c.json({ error: `${issue.path.join(".")}: ${issue.message}` }, 400);
+        }
+        return c.json({ error: "Validation error" }, 400);
       }
 
       if (error instanceof Error && error.message.includes("required")) {

@@ -2,11 +2,11 @@
  * CSV Parsing and Prompt Utilities
  */
 
-import Papa from "papaparse";
-import { anthropic } from "@atlas/core";
-import { generateText } from "ai";
-import { getTodaysDate, stringifyError } from "@atlas/utils";
 import { basename } from "jsr:@std/path@1";
+import { anthropic } from "@atlas/core";
+import { getTodaysDate, stringifyError } from "@atlas/utils";
+import { generateText } from "ai";
+import Papa from "papaparse";
 import type { ToolContext } from "../../types.ts";
 import type { OperationResult, ParsedCsvFilesMap } from "./operations.ts";
 import { getOperationTools } from "./operations.ts";

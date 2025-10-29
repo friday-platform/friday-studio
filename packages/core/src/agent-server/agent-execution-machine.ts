@@ -366,12 +366,23 @@ export function createAgentExecutionMachine(
         invoke: {
           id: "prepareContext",
           src: "prepareContext",
-          input: ({ context }) => ({
-            agent: context.agent!,
-            prompt: context.currentPrompt!,
-            sessionData: context.sessionData!,
-            abortSignal: context.abortSignal,
-          }),
+          input: ({ context }) => {
+            if (!context.agent) {
+              throw new Error("Agent not loaded");
+            }
+            if (!context.currentPrompt) {
+              throw new Error("No prompt provided");
+            }
+            if (!context.sessionData) {
+              throw new Error("No session data provided");
+            }
+            return {
+              agent: context.agent,
+              prompt: context.currentPrompt,
+              sessionData: context.sessionData,
+              abortSignal: context.abortSignal,
+            };
+          },
           onDone: { target: "executing", actions: "assignPreparedContext" },
           onError: { target: "failed", actions: ["assignError", "logError"] },
         },
@@ -385,11 +396,22 @@ export function createAgentExecutionMachine(
         invoke: {
           id: "executeAgent",
           src: "executeAgent",
-          input: ({ context }) => ({
-            agent: context.agent!,
-            prompt: context.enrichedPrompt || context.currentPrompt!,
-            context: context.preparedContext!,
-          }),
+          input: ({ context }) => {
+            if (!context.agent) {
+              throw new Error("Agent not loaded");
+            }
+            if (!context.currentPrompt) {
+              throw new Error("No prompt provided");
+            }
+            if (!context.preparedContext) {
+              throw new Error("Context not prepared");
+            }
+            return {
+              agent: context.agent,
+              prompt: context.enrichedPrompt || context.currentPrompt,
+              context: context.preparedContext,
+            };
+          },
           onDone: { target: "persisting", actions: ["assignExecutionResult"] },
           onError: [
             {
@@ -441,12 +463,23 @@ export function createAgentExecutionMachine(
         invoke: {
           id: "persistResults",
           src: "persistResults",
-          input: ({ context }) => ({
-            agentId: context.agentId,
-            prompt: context.currentPrompt!,
-            result: context.result!,
-            duration: context.endTime! - context.startTime!,
-          }),
+          input: ({ context }) => {
+            if (!context.currentPrompt) {
+              throw new Error("No prompt to persist");
+            }
+            if (context.result === undefined) {
+              throw new Error("No result to persist");
+            }
+            if (context.endTime === undefined || context.startTime === undefined) {
+              throw new Error("Invalid execution time");
+            }
+            return {
+              agentId: context.agentId,
+              prompt: context.currentPrompt,
+              result: context.result,
+              duration: context.endTime - context.startTime,
+            };
+          },
           onDone: { target: "completed", actions: "logCompleted" },
           onError: {
             // Don't fail the whole execution if persistence fails
