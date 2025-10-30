@@ -10,3 +10,4 @@ export {
   collectToolUsageFromSteps,
   extractArtifactRefsFromToolResults,
 } from "./tool-usage.ts";
+export { repairJson } from "./json-repair.ts";

@@ -15,7 +15,7 @@ import {
 import { logger } from "@atlas/logger";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Span } from "@opentelemetry/api";
-import type { JSONValue, Schema, Tool } from "ai";
+import type { Tool } from "ai";
 import { z } from "zod";
 import { AtlasTelemetry } from "../../../src/utils/telemetry.ts";
 
@@ -473,7 +473,7 @@ export class MCPManager {
    * @returns Filtered and converted tools object
    */
   private filterTools(
-    tools: Record<string, Tool>,
+    tools: Awaited<ReturnType<MCPClient["tools"]>>,
     filterConfig?: MCPServerToolFilter,
   ): Record<string, Tool> {
     const filtered: Record<string, Tool> = {};
@@ -494,11 +494,12 @@ export class MCPManager {
       if (tool && typeof tool === "object" && "parameters" in tool && !("inputSchema" in tool)) {
         // Create a new tool object with inputSchema instead of parameters
         // We destructure to exclude 'parameters' and rebuild with 'inputSchema'
-        const { parameters, ...restTool } = tool as Tool & { parameters?: Schema<JSONValue> };
-        // @ts-expect-error the JSON Schema output by the MCP SDK tool definition doesn't align with the AI SDK.
+        // @ts-expect-error TypeScript doesn't narrow the type properly after the type guard
+        const { parameters, ...restTool } = tool;
         const convertedTool: Tool = { ...restTool, inputSchema: parameters };
         filtered[toolName] = convertedTool;
       } else {
+        // @ts-expect-error AI SDK type definitions use FlexibleSchema<unknown> but Tool expects FlexibleSchema<any>
         filtered[toolName] = tool;
       }
     }

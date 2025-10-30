@@ -15,6 +15,8 @@ export type {
 } from "./adapter.ts";
 // Core API
 export { createAgent } from "./create-agent.ts";
+// Vercel AI SDK helpers
+export { repairJson } from "./vercel-helpers/json-repair.ts";
 export type {
   AtlasDataEvents,
   AtlasUIMessage,

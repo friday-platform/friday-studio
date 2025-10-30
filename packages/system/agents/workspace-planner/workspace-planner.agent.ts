@@ -1,4 +1,4 @@
-import { createAgent } from "@atlas/agent-sdk";
+import { createAgent, repairJson } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
 import { anthropic } from "@atlas/core";
 import type { WorkspacePlan } from "@atlas/core/artifacts";
@@ -190,6 +190,7 @@ Split agents by external system and capability boundary. Each agent should handl
       // Generate workspace, signals, agents with LLM-chosen names
       const { object: phase1Response } = await generateObject({
         model: anthropic("claude-sonnet-4-5-20250929"),
+        experimental_repairText: repairJson,
         schema: z.object({
           plan: z.object({
             workspace: z.object({
@@ -292,6 +293,7 @@ Generate jobs that connect the available signals and agents to fulfill the works
 
       const { object: phase2Response } = await generateObject({
         model: anthropic("claude-sonnet-4-5-20250929"),
+        experimental_repairText: repairJson,
         schema: z.object({
           jobs: z.array(
             z.object({
