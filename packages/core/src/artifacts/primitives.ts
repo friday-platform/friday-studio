@@ -106,10 +106,15 @@ export type SummaryData = z.infer<typeof SummaryDataSchema>;
 export const SlackSummaryDataSchema = z.string().describe("The content of the slack summary");
 export type SlackSummaryData = z.infer<typeof SlackSummaryDataSchema>;
 
-/** Table data schema */
-export const TableDataSchema = z.object({
-  columns: z.array(z.string()).describe("Column names in order"),
-  rows: z
-    .array(z.record(z.string(), z.unknown()))
-    .describe("Array of row objects keyed by column name"),
+/** File artifact data (output) */
+export const FileDataSchema = z.object({
+  path: z.string().describe("Absolute path to the stored file"),
+  mimeType: z
+    .string()
+    .describe("MIME type (e.g., text/csv, application/json). Always populated by storage layer."),
 });
+export type FileData = z.infer<typeof FileDataSchema>;
+
+/** File artifact data (input) - omits fields populated by storage layer */
+export const FileDataInputSchema = FileDataSchema.omit({ mimeType: true });
+export type FileDataInput = z.infer<typeof FileDataInputSchema>;

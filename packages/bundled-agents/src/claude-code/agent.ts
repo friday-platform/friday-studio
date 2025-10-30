@@ -102,7 +102,6 @@ Your summary:
       const artifactResponse = await parseResult(
         client.artifactsStorage.index.$post({
           json: {
-            type: "summary" as const,
             data: { type: "summary" as const, version: 1 as const, data: responseText },
             summary: `Claude Code: ${prompt.slice(0, 100)}${prompt.length > 100 ? "..." : ""}`,
           },

@@ -12,8 +12,6 @@ import {
   stepCountIs,
   streamText,
   type Tool,
-  type TypedToolCall,
-  type TypedToolResult,
 } from "ai";
 import { z } from "zod";
 import { createErrorCause, throwWithCause } from "./errors.ts";
@@ -66,13 +64,13 @@ export interface LLMOptions {
 
 /**
  * Always returns the same shape whether tools are used or not
+ * Using Pick to extract only the fields we need from AI SDK's return type,
+ * avoiding deep type instantiation from generic parameters
  */
-export interface LLMResponse {
-  text: string;
-  toolCalls: TypedToolCall<Record<string, Tool>>[];
-  toolResults: TypedToolResult<Record<string, Tool>>[];
-  steps: unknown[];
-}
+export type LLMResponse = Pick<
+  Awaited<ReturnType<typeof generateText<Record<string, Tool>, never>>>,
+  "text" | "toolCalls" | "toolResults" | "steps"
+>;
 
 const PROVIDER_ENV_VARS = {
   anthropic: "ANTHROPIC_API_KEY",

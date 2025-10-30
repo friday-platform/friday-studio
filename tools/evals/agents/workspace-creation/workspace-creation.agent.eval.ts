@@ -27,7 +27,6 @@ async function createPlanArtifact(
     client.artifactsStorage.index.$post({
       json: {
         summary: "Test workspace plan",
-        type: "workspace-plan",
         data: { type: "workspace-plan", version: 1, data: plan },
         workspaceId,
         chatId,

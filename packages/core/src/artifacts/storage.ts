@@ -1,7 +1,14 @@
-import { fail, type Result, success } from "@atlas/utils";
+import { fail, type Result, stringifyError, success } from "@atlas/utils";
 import { getAtlasHome } from "@atlas/utils/paths.server";
-import { join } from "@std/path";
-import type { Artifact, ArtifactData, ArtifactRevisionSummary, ArtifactType } from "./model.ts";
+import { typeByExtension } from "@std/media-types";
+import { extname, join } from "@std/path";
+import type {
+  Artifact,
+  ArtifactData,
+  ArtifactDataInput,
+  ArtifactRevisionSummary,
+  CreateArtifactInput,
+} from "./model.ts";
 
 type ArtifactKey = ["artifact", string, number];
 type LatestKey = ["artifact_latest", string];
@@ -23,24 +30,45 @@ const keys = {
 
 const kvPath = join(getAtlasHome(), "storage.db");
 
+/**
+ * Detect MIME type from file path
+ */
+function detectMimeType(filePath: string): string {
+  const ext = extname(filePath);
+  const detected = typeByExtension(ext);
+  return detected || "application/octet-stream";
+}
+
 /** Create artifact with initial revision 1 */
-async function create(input: {
-  type: ArtifactType;
-  data: ArtifactData;
-  summary: string;
-  workspaceId?: string;
-  chatId?: string;
-}): Promise<Result<Artifact, string>> {
+async function create(input: CreateArtifactInput): Promise<Result<Artifact, string>> {
   using db = await Deno.openKv(kvPath);
+
+  // Transform input to output by enriching file artifacts
+  let artifactData: ArtifactData;
+
+  if (input.data.type === "file") {
+    const fileInput = input.data.data;
+
+    try {
+      await Deno.stat(fileInput.path);
+    } catch (error) {
+      return fail(`File not found: ${fileInput.path} (${stringifyError(error)})`);
+    }
+
+    const mimeType = detectMimeType(fileInput.path);
+    artifactData = { type: "file", version: 1, data: { path: fileInput.path, mimeType } };
+  } else {
+    artifactData = input.data;
+  }
 
   const id = crypto.randomUUID();
   const revision = 1;
 
   const artifact: Artifact = {
     id,
-    type: input.type,
+    type: artifactData.type,
     revision,
-    data: input.data,
+    data: artifactData,
     summary: input.summary,
     workspaceId: input.workspaceId,
     chatId: input.chatId,
@@ -71,7 +99,7 @@ async function create(input: {
 /** Create new revision (preserves history) */
 async function update(input: {
   id: string;
-  data: ArtifactData;
+  data: ArtifactDataInput;
   summary: string;
   revisionMessage?: string;
 }): Promise<Result<Artifact, string>> {
@@ -96,11 +124,29 @@ async function update(input: {
 
   const currentArtifact = currentArtifactResult.value;
 
+  // Transform input to output by enriching file artifacts
+  let artifactData: ArtifactData;
+
+  if (input.data.type === "file") {
+    const fileInput = input.data.data;
+
+    try {
+      await Deno.stat(fileInput.path);
+    } catch (error) {
+      return fail(`File not found: ${fileInput.path} (${stringifyError(error)})`);
+    }
+
+    const mimeType = detectMimeType(fileInput.path);
+    artifactData = { type: "file", version: 1, data: { path: fileInput.path, mimeType } };
+  } else {
+    artifactData = input.data;
+  }
+
   const newArtifact: Artifact = {
     id: input.id,
     type: currentArtifact.type,
     revision: currentRevision + 1,
-    data: input.data,
+    data: artifactData,
     summary: input.summary,
     workspaceId: currentArtifact.workspaceId,
     chatId: currentArtifact.chatId,

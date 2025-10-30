@@ -96,3 +96,11 @@ export function getAtlasMemoryDir(): string {
 export function getMECMFCacheDir(): string {
   return join(getAtlasMemoryDir(), ".cache");
 }
+
+/**
+ * Get workspace files directory for a specific workspace
+ * Used for storing generated/transformed files that need to persist
+ */
+export function getWorkspaceFilesDir(workspaceId: string): string {
+  return join(getAtlasHome(), workspaceId, "files");
+}

@@ -1,9 +1,10 @@
 import { z } from "zod";
 import {
   CalendarScheduleSchema,
+  FileDataInputSchema,
+  FileDataSchema,
   SlackSummaryDataSchema,
   SummaryDataSchema,
-  TableDataSchema,
   WorkspacePlanSchema,
 } from "./primitives.ts";
 
@@ -38,26 +39,45 @@ const SlackSummaryArtifactSchema = z.object({
   data: SlackSummaryDataSchema,
 });
 
-// Table artifact to store tabular transformation results
-const TableArtifactSchema = z.object({
-  type: z.literal("table"),
+const FileArtifactSchema = z.object({
+  type: z.literal("file"),
   version: z.literal(1),
-  data: TableDataSchema,
+  data: FileDataSchema,
 });
 
-/** Artifact data validation by type */
+/** Artifact data schemas for storage (output) */
 export const ArtifactDataSchema = z.discriminatedUnion("type", [
   WorkspacePlanArtifactSchema,
   CalendarScheduleArtifactSchema,
   SummaryArtifactSchema,
   SlackSummaryArtifactSchema,
-  TableArtifactSchema,
+  FileArtifactSchema,
   // Add future schemas here
 ]);
 
-/** Extract the artifact type union */
 export type ArtifactType = z.infer<typeof ArtifactDataSchema>["type"];
 export type ArtifactData = z.infer<typeof ArtifactDataSchema>;
+
+/** Artifact data schemas for creation (input) */
+const WorkspacePlanInputSchema = WorkspacePlanArtifactSchema;
+const CalendarScheduleInputSchema = CalendarScheduleArtifactSchema;
+const SummaryInputSchema = SummaryArtifactSchema;
+const SlackSummaryInputSchema = SlackSummaryArtifactSchema;
+const FileArtifactInputSchema = z.object({
+  type: z.literal("file"),
+  version: z.literal(1),
+  data: FileDataInputSchema,
+});
+
+export const ArtifactDataInputSchema = z.discriminatedUnion("type", [
+  WorkspacePlanInputSchema,
+  CalendarScheduleInputSchema,
+  SummaryInputSchema,
+  SlackSummaryInputSchema,
+  FileArtifactInputSchema,
+]);
+
+export type ArtifactDataInput = z.infer<typeof ArtifactDataInputSchema>;
 
 /** Schema for valid artifact types - using enum for single type support */
 export const ArtifactTypeSchema = z.enum([
@@ -65,24 +85,30 @@ export const ArtifactTypeSchema = z.enum([
   "calendar-schedule",
   "summary",
   "slack-summary",
-  "table",
+  "file",
 ]);
 
 /** Shared request schemas for REST and MCP */
+
+// Single unified schema for all artifact types (uses input schemas)
+// For file artifacts, mimeType will be auto-detected by storage layer
 export const CreateArtifactSchema = z.object({
-  type: ArtifactTypeSchema,
-  data: ArtifactDataSchema, // Validated separately by ArtifactDataSchema
+  data: ArtifactDataInputSchema,
   summary: z.string().min(1).max(1000),
   workspaceId: z.string().optional(),
   chatId: z.string().optional(),
 });
 
+export type CreateArtifactInput = z.infer<typeof CreateArtifactSchema>;
+
 export const UpdateArtifactSchema = z.object({
   type: ArtifactTypeSchema,
-  data: ArtifactDataSchema,
+  data: ArtifactDataInputSchema,
   summary: z.string().min(1).max(1000),
   revisionMessage: z.string().optional(),
 });
+
+export type UpdateArtifactInput = z.infer<typeof UpdateArtifactSchema>;
 
 /** Artifact entity (immutable - updates create revisions) */
 export const ArtifactSchema = z.object({

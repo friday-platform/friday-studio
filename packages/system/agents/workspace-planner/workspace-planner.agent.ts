@@ -402,7 +402,6 @@ Requirements: ${input.intent}`,
         const response = await parseResult(
           client.artifactsStorage.index.$post({
             json: {
-              type: "workspace-plan",
               data: { type: "workspace-plan", version: 1, data: planData },
               summary: artifactSummary,
               workspaceId: session.workspaceId,

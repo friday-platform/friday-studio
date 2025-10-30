@@ -90,7 +90,6 @@ Deno.test("Smart Session Supervisor Agent", async (t) => {
     const calendarCreate = await parseResult(
       client.artifactsStorage.index.$post({
         json: {
-          type: "calendar-schedule",
           data: calendarData,
           summary:
             "Today's calendar schedule containing 1 investor meeting with a company executive",
@@ -106,7 +105,6 @@ Deno.test("Smart Session Supervisor Agent", async (t) => {
     const summaryCreate = await parseResult(
       client.artifactsStorage.index.$post({
         json: {
-          type: "summary",
           data: { type: "summary", version: 1, data: summaryContent },
           summary: "Summary of Acme Robotics funding and hiring",
           workspaceId: context.session.workspaceId,

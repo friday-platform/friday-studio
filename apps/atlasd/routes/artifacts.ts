@@ -19,13 +19,7 @@ const artifactsApp = daemonFactory
   /** Create new artifact */
   .post("/", zValidator("json", CreateArtifactSchema), async (c) => {
     const data = c.req.valid("json");
-    const result = await ArtifactStorage.create({
-      type: data.type,
-      data: data.data,
-      summary: data.summary,
-      workspaceId: data.workspaceId,
-      chatId: data.chatId,
-    });
+    const result = await ArtifactStorage.create(data);
 
     if (!result.ok) {
       return c.json({ error: result.error }, 400);

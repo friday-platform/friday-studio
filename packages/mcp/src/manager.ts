@@ -420,7 +420,8 @@ export class MCPManager {
 
       try {
         // Get tools directly from AI SDK MCP client
-        const tools = await wrapper.client.tools();
+        // @ts-expect-error AI SDK returns FlexibleSchema<unknown> but Tool type expects FlexibleSchema<any>
+        const tools: Record<string, Tool> = await wrapper.client.tools();
 
         // Apply tool filtering and conversion
         const filteredTools = this.filterTools(tools, wrapper.config.tools);
@@ -473,7 +474,7 @@ export class MCPManager {
    * @returns Filtered and converted tools object
    */
   private filterTools(
-    tools: Awaited<ReturnType<MCPClient["tools"]>>,
+    tools: Record<string, Tool>,
     filterConfig?: MCPServerToolFilter,
   ): Record<string, Tool> {
     const filtered: Record<string, Tool> = {};
@@ -499,7 +500,6 @@ export class MCPManager {
         const convertedTool: Tool = { ...restTool, inputSchema: parameters };
         filtered[toolName] = convertedTool;
       } else {
-        // @ts-expect-error AI SDK type definitions use FlexibleSchema<unknown> but Tool expects FlexibleSchema<any>
         filtered[toolName] = tool;
       }
     }

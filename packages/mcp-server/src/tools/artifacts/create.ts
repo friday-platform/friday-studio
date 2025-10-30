@@ -1,5 +1,5 @@
 import { client, parseResult } from "@atlas/client/v2";
-import { ArtifactDataSchema, ArtifactTypeSchema } from "@atlas/core/artifacts";
+import { ArtifactDataInputSchema } from "@atlas/core/artifacts";
 import { stringifyError } from "@atlas/utils";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
@@ -12,10 +12,10 @@ export function registerArtifactsCreateTool(server: McpServer, ctx: ToolContext)
   server.registerTool(
     "artifacts_create",
     {
-      description: "Create a new artifact",
+      description:
+        "Create a new artifact (summary, workspace-plan, calendar-schedule, slack-summary, file)",
       inputSchema: {
-        type: ArtifactTypeSchema.describe("Artifact type"),
-        data: ArtifactDataSchema.describe("Type-specific data"),
+        data: ArtifactDataInputSchema.describe("Type-specific artifact data"),
         summary: z
           .string()
           .min(10)
@@ -27,14 +27,12 @@ export function registerArtifactsCreateTool(server: McpServer, ctx: ToolContext)
         streamId: z.string().optional().describe("SSE stream ID"),
       },
     },
-    async ({ type, data, summary, workspaceId, streamId }): Promise<CallToolResult> => {
-      ctx.logger.info("MCP artifacts_create called", { type, workspaceId, streamId });
+    async ({ data, summary, workspaceId, streamId }): Promise<CallToolResult> => {
+      ctx.logger.info("MCP artifacts_create called", { type: data.type, workspaceId, streamId });
 
-      const response = await parseResult(
-        client.artifactsStorage.index.$post({
-          json: { type, data, summary, workspaceId, chatId: streamId },
-        }),
-      );
+      const payload = { data, summary, workspaceId, chatId: streamId };
+
+      const response = await parseResult(client.artifactsStorage.index.$post({ json: payload }));
 
       if (!response.ok) {
         return createErrorResponse("Failed to create artifact", stringifyError(response.error));

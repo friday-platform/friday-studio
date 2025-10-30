@@ -1,5 +1,5 @@
 import { client, parseResult } from "@atlas/client/v2";
-import { ArtifactDataSchema, ArtifactTypeSchema } from "@atlas/core/artifacts";
+import { ArtifactDataInputSchema, ArtifactTypeSchema } from "@atlas/core/artifacts";
 import { stringifyError } from "@atlas/utils";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
@@ -16,7 +16,7 @@ export function registerArtifactsUpdateTool(server: McpServer, ctx: ToolContext)
       inputSchema: {
         type: ArtifactTypeSchema.describe("Artifact type is required but should not be changed"),
         artifactId: z.string().describe("Artifact ID"),
-        data: ArtifactDataSchema.describe("New data"),
+        data: ArtifactDataInputSchema.describe("New data"),
         summary: z
           .string()
           .min(10)

@@ -5,11 +5,8 @@
  * These functions operate on in-memory parsed CSV data.
  */
 
-import { client, parseResult } from "@atlas/client/v2";
-import { stringifyError } from "@atlas/utils";
 import { tool } from "ai";
 import { z } from "zod";
-import type { ToolContext } from "../../types.ts";
 import type {
   AggregateParams,
   CsvCell,
@@ -661,61 +658,5 @@ export function getOperationTools(fileMap: ParsedCsvFilesMap, operationResult: O
         };
       },
     }),
-  } as const;
-}
-
-/**
- * Save processed CSV files as table artifacts
- *
- * @param parsedFiles - Original parsed CSV files
- * @param result - Operation result containing transformed data
- * @param workspaceId - Workspace ID to save artifacts to
- * @param context - Tool context for logging
- * @param llmSummary - Summary from LLM to append mapping to
- * @returns Artifact IDs and combined summary with file-to-artifact mapping
- * @throws Error if artifact saving fails
- */
-export async function saveFilesAsArtifacts(
-  parsedFiles: ParsedCsvFile[],
-  result: OperationResult,
-  workspaceId: string,
-  context: ToolContext,
-  llmSummary: string,
-): Promise<{ artifactIds: string[]; summaryWithMapping: string }> {
-  const artifactIds: string[] = [];
-  const nameToIdPairs: string[] = [];
-
-  // Save all files as artifacts
-  for (const f of parsedFiles) {
-    const rows = result.dataByFile[f.fileName] ?? f.data;
-    const columns = result.columnsByFile[f.fileName] ?? f.columns;
-    const tableData = { columns, rows };
-
-    const response = await parseResult(
-      client.artifactsStorage.index.$post({
-        json: {
-          type: "table",
-          data: { type: "table", version: 1, data: tableData },
-          summary: `Content of csv file ${f.fileName}`,
-          workspaceId,
-        },
-      }),
-    );
-
-    if (!response.ok) {
-      const err = stringifyError(response.error);
-      context.logger.error("Failed to save table artifact", { error: err, file: f.fileName });
-      throw new Error(`Failed to save artifact for ${f.fileName}: ${err}`);
-    }
-
-    const id = response.data.artifact.id;
-    artifactIds.push(id);
-    nameToIdPairs.push(`- ${f.fileName} -> ${id}`);
-  }
-
-  // Build final summary with mapping
-  const mappingText = nameToIdPairs.join("\n");
-  const summaryWithMapping = `${llmSummary}\n\ncsv_name->artifactId:\n${mappingText}`;
-
-  return { artifactIds, summaryWithMapping };
+  };
 }
