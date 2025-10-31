@@ -104,11 +104,6 @@ COPY . .
 # Install dependencies (populates node_modules for vite/svelte)
 RUN deno install
 
-# Configure SvelteKit base path
-# TODO: Move this to build pipeline configuration
-ARG SVELTEKIT_BASE_PATH=/app
-ENV SVELTEKIT_BASE_PATH=${SVELTEKIT_BASE_PATH}
-
 # Build static assets using Deno task
 WORKDIR /app/apps/web-client
 RUN deno task build
