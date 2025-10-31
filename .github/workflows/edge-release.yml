@@ -259,8 +259,9 @@ jobs:
           cp ./artifacts/binary-linux-arm64/atlas build/atlas
           chmod +x build/atlas
 
-          # Extract web-app from Tauri .deb
-          TAURI_DEB=$(find ./artifacts/web-app-linux-arm64 -name "*.deb" -type f | head -n1)
+          # Extract web-app from Tauri .deb (if available)
+          # Note: Linux ARM64 web-app builds are currently disabled
+          TAURI_DEB=$(find ./artifacts/web-app-linux-arm64 -name "*.deb" -type f 2>/dev/null | head -n1 || true)
           if [ -n "$TAURI_DEB" ]; then
             echo "=== Extracting web-app from Tauri .deb ==="
             echo "Found: $TAURI_DEB"
@@ -271,8 +272,7 @@ jobs:
             find build/web-app-extract -type f
             echo "=================================="
           else
-            echo "WARNING: No web-app .deb found in artifacts"
-            find ./artifacts/web-app-linux-arm64 -type f || true
+            echo "INFO: No web-app .deb found (Linux ARM64 web-app builds are disabled)"
           fi
 
           # Build combined packages (CLI + web-app)
