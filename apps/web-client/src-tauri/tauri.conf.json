@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "deno task dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "TAURI_BUILD=true deno task build",
+    "beforeBuildCommand": "deno run --allow-env --allow-run scripts/build-tauri.ts",
     "frontendDist": "../build"
   },
   "app": {

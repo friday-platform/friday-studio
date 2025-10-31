@@ -15,7 +15,7 @@ export default defineConfig({
     "process.env": "{}",
     // Only use build-time detection for production builds
     // In dev mode, this will be false, but we'll detect at runtime using window.__TAURI__
-    __TAURI_BUILD__: isTauriBuild,
+    __TAURI_BUILD__: JSON.stringify(isTauriBuild),
   },
   server: {
     port: 1420,

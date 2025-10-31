@@ -1,6 +1,7 @@
 import { Chat } from "@ai-sdk/svelte";
 import { type AtlasUIMessage, validateAtlasUIMessages } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
+import { getAtlasDaemonUrl } from "@atlas/oapi-client";
 import { DefaultChatTransport } from "ai";
 import { getContext, setContext } from "svelte";
 
@@ -25,7 +26,7 @@ class ChatContext {
       id: this.id,
       messages: this.previousMessages,
       transport: new DefaultChatTransport({
-        api: "http://localhost:8080/api/chat",
+        api: `${getAtlasDaemonUrl()}/api/chat`,
         prepareSendMessagesRequest({ messages, id }) {
           return { body: { message: messages.at(-1), id } };
         },
