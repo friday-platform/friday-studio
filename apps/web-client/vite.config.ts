@@ -5,9 +5,8 @@ import { defineConfig } from "vite";
 const host = process.env.TAURI_DEV_HOST;
 
 // Detect if this is a Tauri desktop build at compile time
-// TAURI_FAMILY is only set during `tauri build`, not `tauri dev`
-// For dev mode, we'll use runtime detection instead
-const isTauriBuild = !!process.env.TAURI_FAMILY;
+// We set TAURI_BUILD=true in tauri.conf.json's beforeBuildCommand
+const isTauriBuild = process.env.TAURI_BUILD === "true";
 
 export default defineConfig({
   plugins: [sveltekit()],

@@ -32,8 +32,12 @@ export function getAtlasDaemonUrl(): string {
   if (typeof Deno !== "undefined" && Deno.env) {
     daemonUrl = Deno.env.get("ATLAS_DAEMON_URL");
   }
-  // Check Node.js environment
-  else if (process?.env) {
+  // Check Node.js environment (but not Vite's stub process.env = {})
+  else if (
+    typeof process !== "undefined" &&
+    process?.env &&
+    typeof process.env.NODE_ENV !== "undefined"
+  ) {
     daemonUrl = process.env.ATLAS_DAEMON_URL;
   }
   // Check globalThis (set by Tauri)
