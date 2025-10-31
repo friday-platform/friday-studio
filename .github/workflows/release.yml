@@ -139,16 +139,17 @@ jobs:
       runner: ubuntu-latest-8-cores
     secrets: inherit
 
-  build-web-app-linux-arm64:
-    needs: version
-    uses: ./.github/workflows/build-component.yml
-    with:
-      component: web-app
-      version: ${{ needs.version.outputs.version }}
-      platform: linux
-      arch: arm64
-      runner: ubuntu-latest-8-cores
-    secrets: inherit
+  # ARM64 web-app builds disabled due to cross-compilation package conflicts on GitHub runners
+  # build-web-app-linux-arm64:
+  #   needs: version
+  #   uses: ./.github/workflows/build-component.yml
+  #   with:
+  #     component: web-app
+  #     version: ${{ needs.version.outputs.version }}
+  #     platform: linux
+  #     arch: arm64
+  #     runner: ubuntu-22.04-8-cores
+  #   secrets: inherit
 
   # ==================== PACKAGING JOBS ====================
   package-linux-amd64:
@@ -218,7 +219,7 @@ jobs:
             ./artifacts/binary-linux-amd64/atlas_*.sha256
 
   package-linux-arm64:
-    needs: [version, build-binary-linux-arm64, build-web-app-linux-arm64]
+    needs: [version, build-binary-linux-arm64]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

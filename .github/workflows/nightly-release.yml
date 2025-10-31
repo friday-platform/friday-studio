@@ -141,17 +141,18 @@ jobs:
       retention-days: 5
     secrets: inherit
 
-  build-web-app-linux-arm64:
-    needs: version
-    uses: ./.github/workflows/build-component.yml
-    with:
-      component: web-app
-      version: ${{ needs.version.outputs.version }}
-      platform: linux
-      arch: arm64
-      runner: ubuntu-latest-8-cores
-      retention-days: 5
-    secrets: inherit
+  # ARM64 web-app builds disabled due to cross-compilation package conflicts on GitHub runners
+  # build-web-app-linux-arm64:
+  #   needs: version
+  #   uses: ./.github/workflows/build-component.yml
+  #   with:
+  #     component: web-app
+  #     version: ${{ needs.version.outputs.version }}
+  #     platform: linux
+  #     arch: arm64
+  #     runner: ubuntu-22.04-8-cores
+  #     retention-days: 5
+  #   secrets: inherit
 
   # ==================== PACKAGING JOBS ====================
   package-linux-amd64:
@@ -222,7 +223,7 @@ jobs:
           retention-days: 5
 
   package-linux-arm64:
-    needs: [version, build-binary-linux-arm64, build-web-app-linux-arm64]
+    needs: [version, build-binary-linux-arm64]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
