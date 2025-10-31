@@ -1,14 +1,13 @@
 import type { AtlasUIMessage, AtlasUIMessageChunk, AtlasUIMessagePart } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
+import { getAtlasDaemonUrl } from "@atlas/oapi-client";
+import { readUIMessageStream } from "ai";
+import { setContext } from "svelte";
 import {
   isPermissionGranted,
   requestPermission,
   sendNotification,
-} from "@tauri-apps/plugin-notification";
-import { readUIMessageStream } from "ai";
-import { setContext } from "svelte";
-import { getAtlasDaemonUrl } from "../../utils/daemon.ts";
-import { isTauriApp } from "../../utils/tauri.ts";
+} from "../../utils/tauri-loader.ts";
 import { ConversationClient, type ConversationSession } from "./conversation.ts";
 import type { DaemonClient } from "./daemon.ts";
 
@@ -21,8 +20,8 @@ class ClientContext {
   client: DaemonClient;
 
   private isSetupComplete = false;
-  private healthCheckInterval: number | null = null;
-  private countdownInterval: number | null = null;
+  private healthCheckInterval: ReturnType<typeof setInterval> | null = null;
+  private countdownInterval: ReturnType<typeof setInterval> | null = null;
   private readonly HEALTH_CHECK_INTERVAL_MS = 5000;
   private windowFocused = true;
   private notificationPermissionGranted = false;
@@ -54,17 +53,18 @@ class ClientContext {
   }
 
   private async initializeNotifications() {
+    // Use __TAURI_BUILD__ for tree-shaking - this check is eliminated in web builds
+    if (!isPermissionGranted || !requestPermission) return;
+
     try {
-      if (isTauriApp()) {
-        let permissionGranted = await isPermissionGranted();
+      let permissionGranted = await isPermissionGranted();
 
-        if (!permissionGranted) {
-          const permission = await requestPermission();
-          permissionGranted = permission === "granted";
-        }
-
-        this.notificationPermissionGranted = permissionGranted;
+      if (!permissionGranted) {
+        const permission = await requestPermission();
+        permissionGranted = permission === "granted";
       }
+
+      this.notificationPermissionGranted = permissionGranted;
     } catch (error) {
       console.error("Failed to initialize notifications:", error);
     }
@@ -88,6 +88,8 @@ class ClientContext {
   }
 
   private sendResponseNotification() {
+    if (!sendNotification) return;
+
     const now = Date.now();
 
     // ABSOLUTE BLOCK - no notifications allowed until cooldown expires

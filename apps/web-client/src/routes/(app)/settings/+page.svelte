@@ -1,80 +1,61 @@
 <script lang="ts">
-import { getVersion } from "@tauri-apps/api/app";
-import { invoke } from "@tauri-apps/api/core";
 import { onMount } from "svelte";
-// @ts-expect-error - This file is generated
+import { getAppContext } from "$lib/app-context.svelte";
 import { BUILD_INFO } from "$lib/build-info";
 import { CustomIcons } from "$lib/components/icons/custom";
+import { getVersion, invoke } from "$lib/utils/tauri-loader";
+
+const ctx = getAppContext();
 
 let envVars = $state<{ key: string; value: string; id: number }[]>([]);
-let hasChanges = $state(false);
 let isSaving = $state(false);
 let isRestarting = $state(false);
 let message = $state("");
 let nextId = 1;
 
-let version = $state(BUILD_INFO?.version || "0.1.0");
+let version = $state<string>(BUILD_INFO?.version || "0.1.0");
 let buildType = BUILD_INFO?.buildType || "development";
 let commitHash = BUILD_INFO?.commitHash || "unknown";
 
 onMount(async () => {
+  // Load env vars from daemon API (works in both web and desktop)
   loadEnvVars();
 
   // Get version info from Tauri if available
-  try {
-    const tauriVersion = await getVersion();
-    if (tauriVersion) {
-      version = tauriVersion;
+  if (getVersion) {
+    try {
+      const tauriVersion = await getVersion();
+      if (tauriVersion) {
+        version = tauriVersion;
+      }
+    } catch {
+      // Failed to get Tauri version, use build info version
     }
-  } catch {
-    // Not in Tauri context, use build info version
   }
 });
 
 async function loadEnvVars() {
   try {
-    const result = await invoke<Record<string, string>>("read_env_file");
+    const result = await ctx.daemonClient.getEnvVars();
     // Sort entries by key alphabetically
     envVars = Object.entries(result)
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([key, value]) => ({ key, value, id: nextId++ }));
-    hasChanges = false;
   } catch (err) {
     console.error("Failed to load env vars:", err);
-    // showMessage('Failed to load environment variables', 'error');
   }
 }
 
 function addEntry() {
   envVars = [...envVars, { key: "", value: "", id: nextId++ }];
-  hasChanges = true;
 }
 
-function removeEntry(id: number) {
+async function removeEntry(id: number) {
   envVars = envVars.filter((v) => v.id !== id);
-  hasChanges = true;
-}
-
-function updateEntry(id: number, field: "key" | "value", value: string) {
-  // Prevent leading spaces - trim them immediately
-  const trimmedValue = value.startsWith(" ") ? value.trimStart() : value;
-  envVars = envVars.map((v) => (v.id === id ? { ...v, [field]: trimmedValue } : v));
-  hasChanges = true;
+  await saveChanges();
 }
 
 async function saveChanges() {
-  // Double-check validation before saving - all entries must have both key and value
-  const invalidEntries = envVars.filter(
-    (v) =>
-      (v.key.trim() !== "" && v.value.trim() === "") ||
-      (v.key.trim() === "" && v.value.trim() !== ""),
-  );
-
-  if (invalidEntries.length > 0) {
-    // showMessage('All entries must have both key and value', 'error');
-    return;
-  }
-
   isSaving = true;
 
   try {
@@ -86,11 +67,7 @@ async function saveChanges() {
       envObject[entry.key.trim()] = entry.value;
     }
 
-    await invoke("write_env_file", { envVars: envObject });
-    hasChanges = false;
-
-    // Reload the env vars to show the saved state (sorted)
-    // await loadEnvVars();
+    await ctx.daemonClient.setEnvVars(envObject);
   } catch (err) {
     console.error("Failed to save env vars:", err);
     alert("Failed to save environment variables");
@@ -100,11 +77,12 @@ async function saveChanges() {
 }
 
 async function restartDaemon() {
+  if (!invoke) return;
+
   isRestarting = true;
   try {
-    const result = await invoke<string>("restart_atlas_daemon");
+    const result = (await invoke("restart_atlas_daemon")) as string;
     showMessage(result);
-    // Dialog stays open after restart, same as with save
   } catch (err) {
     console.error("Failed to restart daemon:", err);
     alert("Failed to restart Atlas daemon");
@@ -128,65 +106,67 @@ function showMessage(msg: string) {
 
 		<h2>Environment Variables</h2>
 
-		<div class="list" role="table">
-			<div class="list-header">
-				<span class="list-heading">Key</span>
-				<span class="list-heading">Value</span>
-				<span class="list-heading">&nbsp;</span>
-			</div>
-
-			{#each envVars as entry (entry.id)}
-				<div class="list-row">
-					<div class="list-cell">
-						<input type="text" placeholder="KEY" bind:value={entry.key} class="key-input" />
-					</div>
-
-					<div class="list-cell">
-						<input
-							type="text"
-							placeholder="value"
-							bind:value={entry.value}
-							onblur={() => {
-								saveChanges();
-							}}
-							class="value-input"
-						/>
-					</div>
-
-					<div class="list-cell">
-						<button
-							type="button"
-							class="remove-button"
-							onclick={() => removeEntry(entry.id)}
-							aria-label="Remove entry"
-						>
-							<CustomIcons.Trash />
-						</button>
-					</div>
+			<div class="list" role="table">
+				<div class="list-header">
+					<span class="list-heading">Key</span>
+					<span class="list-heading">Value</span>
+					<span class="list-heading">&nbsp;</span>
 				</div>
-			{/each}
-		</div>
+
+				{#each envVars as entry (entry.id)}
+					<div class="list-row">
+						<div class="list-cell">
+							<input type="text" placeholder="KEY" bind:value={entry.key} class="key-input" />
+						</div>
+
+						<div class="list-cell">
+							<input
+								type="text"
+								placeholder="value"
+								bind:value={entry.value}
+								onblur={() => {
+									saveChanges();
+								}}
+								class="value-input"
+							/>
+						</div>
+
+						<div class="list-cell">
+							<button
+								type="button"
+								class="remove-button"
+								onclick={() => removeEntry(entry.id)}
+								aria-label="Remove entry"
+							>
+								<CustomIcons.Trash />
+							</button>
+						</div>
+					</div>
+				{/each}
+			</div>
 
 		<button class="add-button" onclick={addEntry}>
 			<CustomIcons.Plus />
 			Add Variable
 		</button>
 
-		<div class="daemon-section">
-			<h2>Daemon</h2>
+		{#if __TAURI_BUILD__}
+			<div class="daemon-section">
+				<h2>Daemon</h2>
 
-			<p>This operation may take a second.</p>
+				<p>This operation may take a second.</p>
 
-			<button class="restart-daemon-button" onclick={restartDaemon} disabled={isRestarting}>
-				{isRestarting ? 'Restarting...' : 'Restart Daemon'}
-			</button>
+				<button class="restart-daemon-button" onclick={restartDaemon} disabled={isRestarting}>
+					{isRestarting ? 'Restarting...' : 'Restart Daemon'}
+				</button>
 
-			{#if message}
-				<p class="daemon-message">
-					{message}
-				</p>
-			{/if}
-		</div>
+				{#if message}
+					<p class="daemon-message">
+						{message}
+					</p>
+				{/if}
+			</div>
+		{/if}
 
 		<div class="version-info">
 			<h2>App Details</h2>

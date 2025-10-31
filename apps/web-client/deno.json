@@ -2,6 +2,19 @@
   "name": "@atlas/web-client",
   "version": "0.0.1",
   "exports": "./mod.ts",
+  "exclude": [
+    ".svelte-kit/**",
+    "build/**",
+    "dist/**",
+    "node_modules/**",
+    "src/lib/**/*.svelte.ts",
+    "src/routes/**/*.svelte",
+    "src/routes/**/+server.ts",
+    "src/routes/**/+page.ts",
+    "src/routes/**/+layout.ts",
+    "src/routes/**/+page.server.ts",
+    "src/routes/**/+layout.server.ts"
+  ],
   "tasks": {
     "dev": "vite dev",
     "build": "deno run --allow-read --allow-write --allow-env scripts/generate-build-info.ts && vite build",

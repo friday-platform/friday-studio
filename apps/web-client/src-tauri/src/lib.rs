@@ -553,7 +553,7 @@ pub fn run() {
             app.on_menu_event(move |app, event| {
                 if event.id() == &MenuId("discord_help".to_string()) {
                     // Use invite link - redirects members to channel, shows invite for non-members
-                    let _ = app.opener().open_url("https://discord.gg/HsPTpdv8", None::<String>);
+                    let _ = app.opener().open_url("https://discord.gg/Mx5YFWmDuJ", None::<String>);
                 } else if event.id() == &MenuId("settings".to_string()) {
                     // Emit event to show settings dialog
                     let _ = app.emit("show-settings-dialog", ());

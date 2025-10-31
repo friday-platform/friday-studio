@@ -10,11 +10,17 @@
     "sourceMap": true,
     "strict": true,
     "moduleResolution": "bundler",
-    "allowImportingTsExtensions": true
-  }
+    "allowImportingTsExtensions": true,
+    "types": ["svelte", "vite/client"]
+  },
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.js",
+    "src/**/*.svelte",
+    ".svelte-kit/ambient.d.ts",
+    "vite.config.ts"
+  ],
+  "exclude": ["node_modules", "build", "dist", ".svelte-kit/types"]
   // Path aliases are handled by https://svelte.dev/docs/kit/configuration#alias
   // except $lib which is handled by https://svelte.dev/docs/kit/configuration#files
-  //
-  // If you want to overwrite includes/excludes, make sure to copy over the relevant includes/excludes
-  // from the referenced tsconfig.json - TypeScript does not merge them in
 }

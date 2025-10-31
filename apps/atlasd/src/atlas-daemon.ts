@@ -1,5 +1,4 @@
 import type { AgentRegistry as AgentRegistryType } from "@atlas/agent-sdk";
-import { getAtlasDaemonUrl } from "@atlas/atlasd";
 import { type SupervisorDefaults, supervisorDefaultsWrapped } from "@atlas/config";
 import {
   AtlasAgentsMCPServer,
@@ -31,6 +30,7 @@ import { agents as agentsRoutes } from "../routes/agents/index.ts";
 import { artifactsApp } from "../routes/artifacts.ts";
 import chatRoutes from "../routes/chat.ts";
 import { chatStorageRoutes } from "../routes/chat-storage.ts";
+import { configRoutes } from "../routes/config.ts";
 import { daemonApp } from "../routes/daemon.ts";
 import { healthRoutes } from "../routes/health.ts";
 import { libraryRoutes } from "../routes/library/index.ts";
@@ -42,6 +42,7 @@ import { workspacesRoutes } from "../routes/workspaces/index.ts";
 import { createApp } from "./factory.ts";
 import { CronSignalRegistrar } from "./signal-registrars/cron-registrar.ts";
 import { FsWatchSignalRegistrar } from "./signal-registrars/fs-watch-registrar.ts";
+import { getAtlasDaemonUrl } from "./utils.ts";
 
 export interface AtlasDaemonOptions {
   port?: number;
@@ -518,6 +519,7 @@ export class AtlasDaemon {
     this.app.route("/api/artifacts", artifactsApp);
     this.app.route("/api/chat", chatRoutes);
     this.app.route("/api/chat-storage", chatStorageRoutes);
+    this.app.route("/api/config", configRoutes);
     this.app.route("/api/user", userRoutes);
     this.app.route("/api/scratchpad", scratchpadApp);
     this.app.route("/api/sessions", sessionsRoutes);

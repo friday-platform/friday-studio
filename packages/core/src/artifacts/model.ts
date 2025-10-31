@@ -108,8 +108,6 @@ export const UpdateArtifactSchema = z.object({
   revisionMessage: z.string().optional(),
 });
 
-export type UpdateArtifactInput = z.infer<typeof UpdateArtifactSchema>;
-
 /** Artifact entity (immutable - updates create revisions) */
 export const ArtifactSchema = z.object({
   id: z.string(),

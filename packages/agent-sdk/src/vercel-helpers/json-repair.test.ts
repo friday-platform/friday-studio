@@ -1,4 +1,4 @@
-import { assertEquals } from "jsr:@std/assert@^1";
+import { assert, assertEquals } from "jsr:@std/assert@^1";
 import { JSONParseError } from "ai";
 import { z } from "zod";
 import { repairJson } from "./json-repair.ts";
@@ -30,10 +30,10 @@ Deno.test("repairJson - repairs stringified JSON in object fields", async () => 
     error: new JSONParseError({ text: malformedJson, cause: new Error("Invalid type") }),
   });
 
-  assertEquals(result !== null, true);
+  assert(result !== null);
 
   // Validate with Zod schema
-  const parsed = WorkspacePlanResponseSchema.parse(JSON.parse(result!));
+  const parsed = WorkspacePlanResponseSchema.parse(JSON.parse(result));
   assertEquals(parsed.plan.workspace.name, "LinkedIn Connection Outreach Automation");
   assertEquals(parsed.plan.signals.length, 1);
   assertEquals(parsed.plan.agents.length, 6);
@@ -51,9 +51,9 @@ Deno.test("repairJson - handles nested stringified JSON", async () => {
     error: new JSONParseError({ text: nested, cause: new Error("test") }),
   });
 
-  assertEquals(result !== null, true);
+  assert(result !== null);
 
-  const parsed = NestedSchema.parse(JSON.parse(result!));
+  const parsed = NestedSchema.parse(JSON.parse(result));
   assertEquals(parsed.outer.inner.deep, "value");
 });
 
@@ -80,9 +80,9 @@ Deno.test("repairJson - handles arrays with stringified JSON elements", async ()
     error: new JSONParseError({ text: arrayCase, cause: new Error("test") }),
   });
 
-  assertEquals(result !== null, true);
+  assert(result !== null);
 
-  const parsed = ArrayCaseSchema.parse(JSON.parse(result!));
+  const parsed = ArrayCaseSchema.parse(JSON.parse(result));
   assertEquals(parsed.items.length, 2);
   const firstItem = parsed.items.at(0);
   const secondItem = parsed.items.at(1);
@@ -108,8 +108,8 @@ Deno.test("repairJson - leaves valid JSON unchanged", async () => {
     error: new JSONParseError({ text: validJson, cause: new Error("test") }),
   });
 
-  assertEquals(result !== null, true);
+  assert(result !== null);
 
-  const parsed = ValidJsonSchema.parse(JSON.parse(result!));
+  const parsed = ValidJsonSchema.parse(JSON.parse(result));
   assertEquals(parsed.plan.workspace.name, "Test Workspace");
 });

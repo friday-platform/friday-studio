@@ -65,3 +65,7 @@ vite.config.ts.timestamp-*
 .vite/
 dist/
 .playwright-mcp/
+
+# Slack cache files
+.channels_cache_v2.json
+.users_cache.json

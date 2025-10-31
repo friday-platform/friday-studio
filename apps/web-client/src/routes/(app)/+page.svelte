@@ -1,5 +1,4 @@
 <script lang="ts">
-import { invoke } from "@tauri-apps/api/core";
 import { circOut } from "svelte/easing";
 import { slide } from "svelte/transition";
 import { z } from "zod";
@@ -15,6 +14,7 @@ import Message from "$lib/modules/messages/message.svelte";
 import Progress from "$lib/modules/messages/progress.svelte";
 import Table from "$lib/modules/messages/table.svelte";
 import { formatChatDate } from "$lib/utils/date";
+import { invoke } from "$lib/utils/tauri-loader";
 
 const appCtx = getAppContext();
 const chatContext = getChatContext();
@@ -103,10 +103,10 @@ const hasMessages = $derived(messages.length > 0);
 
 						{#if formattedMessage && (formattedMessage.type === 'request' || formattedMessage.type === 'text')}
 							<Message message={formattedMessage} />
-						{:else if formattedMessage && formattedMessage.type === 'tool_call' && formattedMessage.metadata?.toolName === 'table_output'}
-							<Table data={formattedMessage.metadata?.result} />
-						{:else if formattedMessage && formattedMessage.type === 'tool_call' && formattedMessage.metadata?.toolName === 'display_artifact'}
-							<DisplayArtifact artifactId={formattedMessage.metadata?.artifactId} />
+						{:else if formattedMessage && formattedMessage.type === 'tool_call' && formattedMessage.metadata?.toolName === 'table_output' && formattedMessage.metadata?.result}
+							<Table data={formattedMessage.metadata.result as { data: { headers: string[]; rows: Record<string, string | number>[] } }} />
+						{:else if formattedMessage && formattedMessage.type === 'tool_call' && formattedMessage.metadata?.toolName === 'display_artifact' && formattedMessage.metadata?.artifactId}
+							<DisplayArtifact artifactId={formattedMessage.metadata.artifactId as string} />
 						{:else if formattedMessage && formattedMessage.type === 'error'}
 							<ErrorMessage message={formattedMessage} />
 						{/if}
@@ -214,31 +214,39 @@ const hasMessages = $derived(messages.length > 0);
 					</form>
 
 					<div class="actions">
-						<button
-							class="file-drop"
-							type="button"
-							onclick={async (e) => {
-								e.preventDefault();
+						{#if __TAURI_BUILD__}
+							<button
+								class="file-drop"
+								type="button"
+								onclick={async (e) => {
+									e.preventDefault();
 
-								const paths = await invoke<string[]>('open_file_or_folder_picker', {
-									multiple: true,
-									foldersOnly: false
-								});
+									if (invoke) {
+										try {
+											const paths = (await invoke('open_file_or_folder_picker', {
+												multiple: true,
+												foldersOnly: false
+											})) as string[];
 
-								if (paths && paths.length > 0) {
-									for (const path of paths) {
-										appCtx.stagedFiles.add(path, {
-											path,
-											type: getFileType(path)
-										});
+											if (paths && paths.length > 0) {
+												for (const path of paths) {
+													appCtx.stagedFiles.add(path, {
+														path,
+														type: getFileType(path)
+													});
+												}
+											}
+										} catch (error) {
+											console.error('Failed to open file picker:', error);
+										}
 									}
-								}
-							}}
-						>
-							<CustomIcons.Paperclip />
+								}}
+							>
+								<CustomIcons.Paperclip />
 
-							Add Files
-						</button>
+								Add Files
+							</button>
+						{/if}
 
 						<!-- <button
 						class="file-drop"

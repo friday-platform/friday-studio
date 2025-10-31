@@ -1,16 +1,16 @@
 <script lang="ts">
 import type { LibraryItem } from "@atlas/core/library";
-import { openPath } from "@tauri-apps/plugin-opener";
 import { onMount } from "svelte";
 import { getAppContext } from "$lib/app-context.svelte";
+import { openPath } from "$lib/utils/tauri-loader";
 
 const appCtx = getAppContext();
 
 let libraryItems = $state<LibraryItem[]>([]);
 
 onMount(async () => {
+  // Load library items
   const items = await appCtx.daemonClient.listLibraryItems({ limit: 50 });
-
   libraryItems = items.items;
 });
 </script>
@@ -27,27 +27,52 @@ onMount(async () => {
 			</div>
 
 			{#each libraryItems as item}
-				<button
-					class="row"
-					onclick={async () => {
-						await openPath(item.full_path);
-					}}
-				>
-					<div class="cell">
-						{item.name}
-					</div>
+				{#if __TAURI_BUILD__}
+					<button
+						class="row"
+						onclick={async () => {
+							if (!openPath || !item.full_path) return;
+							try {
+								await openPath(item.full_path);
+							} catch (error) {
+								console.error("Failed to open path:", error);
+								alert("Failed to open file");
+							}
+						}}
+					>
+						<div class="cell">
+							{item.name}
+						</div>
 
-					<div class="cell">
-						{item.mime_type || 'unknown'}
-					</div>
+						<div class="cell">
+							{item.mime_type || 'unknown'}
+						</div>
 
-					<div class="cell created">
-						{new Date(item.created_at).toLocaleString('en-US', {
-							dateStyle: 'long',
-							timeStyle: 'short'
-						})}
+						<div class="cell created">
+							{new Date(item.created_at).toLocaleString('en-US', {
+								dateStyle: 'long',
+								timeStyle: 'short'
+							})}
+						</div>
+					</button>
+				{:else}
+					<div class="row">
+						<div class="cell">
+							{item.name}
+						</div>
+
+						<div class="cell">
+							{item.mime_type || 'unknown'}
+						</div>
+
+						<div class="cell created">
+							{new Date(item.created_at).toLocaleString('en-US', {
+								dateStyle: 'long',
+								timeStyle: 'short'
+							})}
+						</div>
 					</div>
-				</button>
+				{/if}
 			{/each}
 		</div>
 	</div>

@@ -70,7 +70,7 @@ function getActivePage(value: string | string[]) {
 		</nav>
 	{/if}
 
-	<a href="https://discord.gg/HsPTpdv8" target="_blank" class="help" aria-label="Get Help"> ? </a>
+	<a href="https://discord.gg/Mx5YFWmDuJ" target="_blank" class="help" aria-label="Get Help"> ? </a>
 </header>
 
 <style>

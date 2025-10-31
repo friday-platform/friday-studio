@@ -1,24 +1,25 @@
 <script lang="ts">
-import { getVersion } from "@tauri-apps/api/app";
 import { onMount } from "svelte";
 import logo from "$lib/assets/logo.png";
 // Import build info if it exists (will be generated at build time)
-// @ts-expect-error - This file is generated
 import { BUILD_INFO } from "$lib/build-info";
+import { getVersion } from "$lib/utils/tauri-loader";
 
-let version = $state(BUILD_INFO?.version || "0.1.0");
+let version = $state<string>(BUILD_INFO?.version || "0.1.0");
 let buildType = BUILD_INFO?.buildType || "development";
 let commitHash = BUILD_INFO?.commitHash || "unknown";
 
 onMount(async () => {
   // Get version info from Tauri if available
-  try {
-    const tauriVersion = await getVersion();
-    if (tauriVersion) {
-      version = tauriVersion;
+  if (getVersion) {
+    try {
+      const tauriVersion = await getVersion();
+      if (tauriVersion) {
+        version = tauriVersion;
+      }
+    } catch {
+      // Failed to get Tauri version, use build info version
     }
-  } catch {
-    // Not in Tauri context, use build info version
   }
 });
 </script>

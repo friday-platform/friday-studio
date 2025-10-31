@@ -1,5 +1,4 @@
 <script lang="ts">
-import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { onDestroy, onMount } from "svelte";
 import { getAppContext, getFileType } from "$lib/app-context.svelte";
 import favicon from "$lib/assets/favicon.svg";
@@ -7,7 +6,7 @@ import AppContainer from "$lib/components/app/container.svelte";
 import AppSidebar from "$lib/components/app/sidebar.svelte";
 import KeyboardListener from "$lib/components/keyboard-listener.svelte";
 import { setClientContext } from "$lib/modules/client/context.svelte";
-import { isTauriApp } from "$lib/utils/tauri";
+import { getCurrentWebview } from "$lib/utils/tauri-loader";
 
 const { children } = $props();
 
@@ -23,7 +22,7 @@ $effect(() => {
 
 let unlisten: (() => void) | undefined;
 
-onMount(() => {
+onMount(async () => {
   if (!ctx.conversationClient) {
     ctx.connect();
   }
@@ -34,20 +33,23 @@ onMount(() => {
   // Ensure periodic health checks are running for auto-reconnect
   ctx.startHealthCheckInterval();
 
-  // Drag and drop support
-  async function setupDragDrop() {
-    if (isTauriApp()) {
-      unlisten = await getCurrentWebview().onDragDropEvent((event) => {
-        if (event.payload.type === "drop") {
-          for (const path of event.payload.paths) {
-            appCtx.stagedFiles.add(path, { path, type: getFileType(path) });
+  // Setup drag and drop for desktop builds
+  if (getCurrentWebview) {
+    try {
+      const webview = getCurrentWebview();
+      if (webview) {
+        unlisten = await webview.onDragDropEvent((event) => {
+          if (event.payload.type === "drop") {
+            for (const path of event.payload.paths) {
+              appCtx.stagedFiles.add(path, { path, type: getFileType(path) });
+            }
           }
-        }
-      });
+        });
+      }
+    } catch (error) {
+      console.error("Failed to setup drag and drop:", error);
     }
   }
-
-  setupDragDrop();
 });
 
 onDestroy(() => {

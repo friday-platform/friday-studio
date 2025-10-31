@@ -4,7 +4,7 @@
  */
 
 import type { LibraryItem } from "@atlas/core/library";
-import { createAtlasClient } from "@atlas/oapi-client";
+import { createAtlasClient, getAtlasDaemonUrl } from "@atlas/oapi-client";
 import { stringifyError } from "@atlas/utils";
 
 interface LibrarySearchQuery {
@@ -49,5 +49,49 @@ export class DaemonClient {
       throw new Error(stringifyError(response.error));
     }
     return response.data;
+  }
+
+  // =================================================================
+  // CONFIG OPERATIONS
+  // =================================================================
+
+  /**
+   * Get environment variables from ~/.atlas/.env
+   */
+  async getEnvVars(): Promise<Record<string, string>> {
+    const response = await fetch(`${getAtlasDaemonUrl()}/api/config/env`);
+    if (!response.ok) {
+      throw new Error(`Failed to get env vars: ${response.statusText}`);
+    }
+    const json = (await response.json()) as {
+      success: boolean;
+      envVars?: Record<string, string>;
+      error?: string;
+    };
+
+    if (json.success) {
+      return json.envVars || {};
+    }
+
+    throw new Error(json.error || "Failed to get env vars");
+  }
+
+  /**
+   * Write environment variables to ~/.atlas/.env
+   */
+  async setEnvVars(envVars: Record<string, string>): Promise<void> {
+    const response = await fetch(`${getAtlasDaemonUrl()}/api/config/env`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ envVars }),
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to set env vars: ${response.statusText}`);
+    }
+    const json = (await response.json()) as { success: boolean; error?: string };
+
+    if (!json.success) {
+      throw new Error(json.error || "Failed to set env vars");
+    }
   }
 }

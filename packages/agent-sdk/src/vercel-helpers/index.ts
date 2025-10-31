@@ -5,9 +5,9 @@
  * with Atlas agents.
  */
 
+export { repairJson } from "./json-repair.ts";
 export { pipeUIMessageStream } from "./stream-mapper.ts";
 export {
   collectToolUsageFromSteps,
   extractArtifactRefsFromToolResults,
 } from "./tool-usage.ts";
-export { repairJson } from "./json-repair.ts";
