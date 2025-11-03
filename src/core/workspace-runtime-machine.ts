@@ -248,7 +248,6 @@ const workspaceRuntimeMachineSetup = setup({
         {
           agentsServerUrl: `http://localhost:8080/agents`,
           headers: { "X-Atlas-Workspace-ID": context.workspace.id },
-          approvalTimeout: 300000,
           mcpServerPool: context.options.mcpServerPool,
           daemonUrl: context.options.daemonUrl,
         },

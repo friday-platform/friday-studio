@@ -27,15 +27,6 @@ export class SDKAgentAdapter implements AgentAdapter {
     }
   }
 
-  /** Unregister an agent */
-  unregisterAgent(id: string): boolean {
-    const removed = this.agents.delete(id);
-    if (removed) {
-      this.logger.debug("Unregistered SDK agent", { id });
-    }
-    return removed;
-  }
-
   /** Clear all registered agents */
   clear(): void {
     const count = this.agents.size;

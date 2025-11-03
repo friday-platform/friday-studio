@@ -11,21 +11,12 @@
  *   Agent Execution Manager
  *       ↓ (creates/manages)
  *   Agent Execution Machines (XState actors) <- YOU ARE HERE
- *       ↓ (when approval needed)
- *   Approval Queue Manager (stores suspended states)
  *
  * State Flow:
  *   idle → loading → ready → preparing → executing → persisting → completed
- *                                  ↓           ↓
- *                              awaiting ← (approval needed)
  */
 
-import {
-  type AgentContext,
-  type AgentSessionData,
-  type AtlasAgent,
-  AwaitingSupervisorDecision,
-} from "@atlas/agent-sdk";
+import type { AgentContext, AgentSessionData, AtlasAgent } from "@atlas/agent-sdk";
 import type { Logger } from "@atlas/logger";
 import type { CoALAMemoryManager } from "@atlas/memory";
 import { type ActorRefFrom, assign, fromPromise, setup } from "xstate";
@@ -62,14 +53,6 @@ type BuildAgentContext = (
   overrides?: Partial<AgentContext>,
 ) => Promise<PrepareContextOutput>;
 
-/** Approval decision from supervisor */
-export interface ApprovalDecision {
-  approved: boolean;
-  reason?: string;
-  modifiedAction?: string;
-  conditions?: string[];
-}
-
 /** Execution context tracked by the state machine */
 interface AgentExecutionContext {
   agentId: string;
@@ -84,7 +67,6 @@ interface AgentExecutionContext {
   startTime?: number;
   endTime?: number;
   timeout: number;
-  approvalDecision?: ApprovalDecision;
 }
 
 /** Events that drive state transitions */
@@ -94,7 +76,6 @@ type AgentExecutionEvents =
   | { type: "CANCEL" }
   | { type: "TIMEOUT" }
   | { type: "UNLOAD" }
-  | { type: "RESUME_WITH_APPROVAL"; approvalId: string; decision: ApprovalDecision }
   | { type: "xstate.done.actor.loadAgent"; output: LoadAgentOutput }
   | { type: "xstate.done.actor.prepareContext"; output: PrepareContextOutput }
   | { type: "xstate.done.actor.executeAgent"; output: unknown }
@@ -413,48 +394,9 @@ export function createAgentExecutionMachine(
             };
           },
           onDone: { target: "persisting", actions: ["assignExecutionResult"] },
-          onError: [
-            {
-              // Check if it's an approval request
-              target: "awaiting",
-              guard: ({ event }) => {
-                return event.error instanceof AwaitingSupervisorDecision;
-              },
-              actions: ["assignError"],
-            },
-            {
-              // All other errors
-              target: "failed",
-              actions: ["assignError", "logError"],
-            },
-          ],
+          onError: { target: "failed", actions: ["assignError", "logError"] },
         },
-
-        // TODO: Re-enable timeout once we figure out how to apply it only to execution
-        // after: {
-        //   [({ context }) => context.timeout]: {
-        //     target: "failed",
-        //     actions: assign({
-        //       error: () => new Error("Agent execution timeout"),
-        //     }),
-        //   },
-        // },
-
-        on: { CANCEL: { target: "ready" }, AWAIT_INPUT: { target: "awaiting" } },
-      },
-
-      awaiting: {
-        // Paused for supervisor approval
-        on: {
-          RESUME_WITH_APPROVAL: {
-            target: "executing",
-            actions: assign({ approvalDecision: ({ event }) => event.decision }),
-          },
-          CANCEL: {
-            target: "failed",
-            actions: assign({ error: () => new Error("Approval cancelled") }),
-          },
-        },
+        on: { CANCEL: { target: "ready" } },
       },
 
       persisting: {

@@ -92,11 +92,6 @@ class AtlasAgentImpl<TInput = string, TOutput = unknown> implements AtlasAgent<T
       // Execute the handler with the input and context
       return await this.handler(input, context);
     } catch (error) {
-      // Re-throw AwaitingSupervisorDecision exceptions
-      if (error instanceof Error && error.name === "AwaitingSupervisorDecision") {
-        throw error;
-      }
-
       // Re-throw AbortError exceptions for proper cancellation handling
       if (error instanceof DOMException && error.name === "AbortError") {
         throw error;

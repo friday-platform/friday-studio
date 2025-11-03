@@ -6,22 +6,12 @@
  * the SDK knowing about server-specific details.
  */
 
-import type {
-  AgentContext,
-  AgentMetadata,
-  AgentSessionData,
-  ApprovalRequest,
-  AtlasAgent,
-} from "./types.ts";
+import type { AgentContext, AgentMetadata, AgentSessionData, AtlasAgent } from "./types.ts";
 
 /**
  * Agent execution result types
- *
- * Agents can return either a completed result or a request for approval.
- * This structured approach allows approval requests to cross the MCP boundary
- * as successful responses with special structure.
  */
-export type AgentExecutionResult = CompletedAgentResult | AwaitingApprovalResult;
+export type AgentExecutionResult = CompletedAgentResult;
 
 /**
  * Standard completed agent result
@@ -29,20 +19,6 @@ export type AgentExecutionResult = CompletedAgentResult | AwaitingApprovalResult
 export interface CompletedAgentResult {
   type: "completed";
   result: unknown;
-}
-
-/**
- * Agent requesting supervisor approval
- *
- * This is returned as a successful MCP response (not an error)
- * to properly cross the network boundary.
- */
-export interface AwaitingApprovalResult {
-  type: "awaiting_approval";
-  approvalId: string;
-  agentId: string;
-  sessionId: string;
-  request: ApprovalRequest;
 }
 
 /**
@@ -55,12 +31,6 @@ export interface AgentServerAdapter {
    * @param agent The agent to register
    */
   registerAgent(agent: AtlasAgent): Promise<void> | void;
-
-  /**
-   * Unregister an agent from the server
-   * @param agentId The ID of the agent to unregister
-   */
-  unregisterAgent(agentId: string): Promise<void> | void;
 
   /**
    * List all registered agents

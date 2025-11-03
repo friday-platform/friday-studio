@@ -4,26 +4,22 @@
  * In Atlas architecture:
  * - Agents are distributed services that perform specific tasks
  * - This orchestrator connects to them via MCP (Model Context Protocol)
- * - Handles approval flows when agents need human intervention
  * - Supports both MCP-based agents and wrapped LLM agents
  */
 
-import type { ToolResult } from "@atlas/agent-sdk";
-import {
-  type AgentContext,
-  type AgentMetadata,
-  type AgentResult,
-  ApprovalRequestSchema,
-  type AtlasAgent,
-  type AtlasUIMessageChunk,
-  AwaitingSupervisorDecision,
-  type StreamEmitter,
+import type {
+  AgentContext,
+  AgentMetadata,
+  AgentResult,
+  AtlasAgent,
+  AtlasUIMessageChunk,
+  StreamEmitter,
+  ToolResult,
 } from "@atlas/agent-sdk";
 import type { Logger } from "@atlas/logger";
 import { CoALAMemoryManager, type IMemoryScope } from "@atlas/memory";
 import { Client } from "@modelcontextprotocol/sdk/client";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js";
 import { retry } from "@std/async";
 import { z } from "zod";
 import type { ToolCall } from "../../../../src/core/services/hallucination-detector.ts";
@@ -64,20 +60,6 @@ export interface AgentExecutionContext {
   abortSignal?: AbortSignal;
 }
 
-export interface ApprovalDecision {
-  approved: boolean;
-  reason: string;
-  modifiedRequest?: unknown;
-}
-
-interface PendingApproval {
-  approvalId: string;
-  agentId: string;
-  originalRequest: unknown;
-  sessionContext: AgentExecutionContext;
-  timestamp: number;
-}
-
 export interface AgentOrchestratorConfig {
   /** URL of the atlas-agents MCP server */
   agentsServerUrl: string;
@@ -85,37 +67,15 @@ export interface AgentOrchestratorConfig {
   headers?: Record<string, string>;
   /** Timeout for MCP requests in milliseconds */
   requestTimeoutMs?: number;
-  /** Approval timeout in milliseconds */
-  approvalTimeout: number;
   /** Optional pre-provisioned MCP client pool */
   mcpServerPool?: GlobalMCPServerPool;
   /** Optional daemon URL for MCP agents */
   daemonUrl?: string;
 }
 
-const CompletedAgentResultSchema = z.object({
+const AgentExecutionResultSchema = z.object({
   type: z.literal("completed"),
   result: z.unknown(), // Agent-specific result
-});
-
-const AwaitingApprovalResultSchema = z.object({
-  type: z.literal("awaiting_approval"),
-  approvalId: z.string(),
-  agentId: z.string(),
-  sessionId: z.string(),
-  request: z.unknown(),
-});
-
-const AgentExecutionResultSchema = z.discriminatedUnion("type", [
-  CompletedAgentResultSchema,
-  AwaitingApprovalResultSchema,
-]);
-
-const ApprovalDecisionSchema = z.object({
-  approved: z.boolean(),
-  reason: z.string().optional(),
-  modifiedRequest: z.unknown().optional(),
-  conditions: z.array(z.string()).optional(),
 });
 
 type AgentExecutionResult = z.infer<typeof AgentExecutionResultSchema>;
@@ -138,9 +98,6 @@ export interface IAgentOrchestrator {
     context: AgentExecutionContext,
   ): Promise<AgentResult>;
 
-  /** Continue suspended agent after approval */
-  resumeWithApproval(approvalId: string, decision: ApprovalDecision): Promise<AgentResult>;
-
   /** Clean up connections */
   shutdown(): Promise<void>;
 }
@@ -159,15 +116,12 @@ interface MCPSessionSetup {
  * - MCP agents: Run as separate services, communicate via Model Context Protocol
  * - Wrapped agents: Run in-process for lightweight tasks
  * - Session-based: Each user session gets isolated MCP connection
- * - Approval flow: Agents can request human approval before dangerous actions
  */
 export class AgentOrchestrator implements IAgentOrchestrator {
   private mcpSessions = new Map<string, MCPSessionSetup>(); // Per-session MCP clients
-  private pendingApprovals = new Map<string, PendingApproval>();
   private config: Required<Omit<AgentOrchestratorConfig, "mcpServerPool" | "daemonUrl">> &
     Pick<AgentOrchestratorConfig, "mcpServerPool" | "daemonUrl">;
   private logger: Logger;
-  private approvalCleanupInterval?: number;
   private sessionCleanupInterval?: number;
   private wrappedAgents = new Map<string, AtlasAgent<string, WrappedAgentResult>>(); // LLM agents that bypass MCP
   // Track active stream handlers by sessionId:agentId to handle multi-workspace scenarios
@@ -190,7 +144,6 @@ export class AgentOrchestrator implements IAgentOrchestrator {
       agentsServerUrl: config.agentsServerUrl,
       headers: config.headers || {},
       requestTimeoutMs: config.requestTimeoutMs || 300000,
-      approvalTimeout: config.approvalTimeout || 300000, // 5 minutes
       // Store new config fields
       mcpServerPool: config.mcpServerPool,
       daemonUrl: config.daemonUrl,
@@ -422,7 +375,7 @@ export class AgentOrchestrator implements IAgentOrchestrator {
   }
 
   /**
-   * Starts cleanup intervals for session and approval management.
+   * Starts cleanup intervals for session management.
    * MCP connections are created per-session on demand.
    */
   initialize(): void {
@@ -430,8 +383,6 @@ export class AgentOrchestrator implements IAgentOrchestrator {
       this.logger.info("Initializing agent orchestrator", {
         serverUrl: this.config.agentsServerUrl,
       });
-
-      this.startApprovalCleanup();
 
       // Start session cleanup interval
       this.sessionCleanupInterval = setInterval(() => {
@@ -563,23 +514,6 @@ export class AgentOrchestrator implements IAgentOrchestrator {
 
       const executionResult = this.parseAgentResponse(toolResult);
 
-      if (executionResult.type === "awaiting_approval") {
-        this.pendingApprovals.set(executionResult.approvalId, {
-          approvalId: executionResult.approvalId,
-          agentId,
-          originalRequest: { prompt, context },
-          sessionContext: context,
-          timestamp: Date.now(),
-        });
-
-        throw new AwaitingSupervisorDecision(
-          executionResult.approvalId,
-          ApprovalRequestSchema.parse(executionResult.request),
-          executionResult.sessionId,
-          executionResult.agentId,
-        );
-      }
-
       const output =
         executionResult.type === "completed" ? executionResult.result : executionResult;
 
@@ -603,18 +537,6 @@ export class AgentOrchestrator implements IAgentOrchestrator {
         toolResults: toolResults && toolResults.length > 0 ? toolResults : undefined,
       };
     } catch (error) {
-      if (error instanceof AwaitingSupervisorDecision) {
-        this.pendingApprovals.set(error.approvalId, {
-          approvalId: error.approvalId,
-          agentId,
-          originalRequest: { prompt, context },
-          sessionContext: context,
-          timestamp: Date.now(),
-        });
-
-        throw error;
-      }
-
       const errorCause = createErrorCause(error);
       const errorMessage = error instanceof Error ? error.message : String(error);
 
@@ -638,99 +560,6 @@ export class AgentOrchestrator implements IAgentOrchestrator {
         timestamp: new Date().toISOString(),
         toolCalls: undefined,
         toolResults: undefined,
-      };
-    }
-  }
-
-  /**
-   * Continue a suspended agent after supervisor approval.
-   * Part of Atlas's human-in-the-loop safety system.
-   */
-  async resumeWithApproval(approvalId: string, decision: ApprovalDecision): Promise<AgentResult> {
-    const validatedDecision = ApprovalDecisionSchema.parse(decision);
-    const pending = this.pendingApprovals.get(approvalId);
-    if (!pending) {
-      throw new Error(`No pending approval found for ID: ${approvalId}`);
-    }
-
-    this.pendingApprovals.delete(approvalId);
-
-    const startTime = Date.now();
-
-    try {
-      const mcpSetup = await this.getOrCreateSessionClient(
-        pending.sessionContext.sessionId,
-        pending.sessionContext.workspaceId,
-      );
-
-      const resumeArgs: Partial<AgentToolParams> = {
-        _sessionContext: {
-          sessionId: pending.sessionContext.sessionId,
-          workspaceId: pending.sessionContext.workspaceId,
-          userId: pending.sessionContext.userId,
-        },
-      };
-
-      const toolResult = await mcpSetup.client.callTool(
-        { name: pending.agentId, arguments: resumeArgs },
-        CallToolResultSchema,
-      );
-
-      const executionResult = this.parseAgentResponse(toolResult);
-
-      if (executionResult.type === "awaiting_approval") {
-        this.pendingApprovals.set(executionResult.approvalId, {
-          approvalId: executionResult.approvalId,
-          agentId: executionResult.agentId,
-          originalRequest: { prompt: "Resume with approval", context: validatedDecision },
-          sessionContext: pending.sessionContext,
-          timestamp: Date.now(),
-        });
-
-        throw new AwaitingSupervisorDecision(
-          executionResult.approvalId,
-          ApprovalRequestSchema.parse(executionResult.request),
-          executionResult.sessionId,
-          executionResult.agentId,
-        );
-      }
-
-      const output =
-        executionResult.type === "completed" ? executionResult.result : executionResult;
-
-      const { toolCalls, toolResults, outputWithoutTools } = this.extractToolMetadata(output);
-
-      return {
-        agentId: pending.agentId,
-        task: "Resume with approval",
-        input: validatedDecision,
-        output: outputWithoutTools,
-        duration: Date.now() - startTime,
-        timestamp: new Date().toISOString(),
-        // @ts-expect-error `agents-should-produce-structured-output`
-        toolCalls: toolCalls && toolCalls.length > 0 ? toolCalls : undefined,
-        toolResults: toolResults && toolResults.length > 0 ? toolResults : undefined,
-      };
-    } catch (error) {
-      if (error instanceof AwaitingSupervisorDecision) {
-        throw error;
-      }
-
-      this.logger.error("Failed to resume with approval", {
-        approvalId,
-        agentId: pending.agentId,
-        error,
-      });
-
-      return {
-        agentId: pending.agentId,
-        task: "Resume with approval",
-        input: decision,
-        output: null,
-        // @ts-expect-error `agents-should-produce-structured-output`
-        error: error,
-        duration: Date.now() - startTime,
-        timestamp: new Date().toISOString(),
       };
     }
   }
@@ -917,30 +746,6 @@ export class AgentOrchestrator implements IAgentOrchestrator {
   }
 
   /**
-   * Remove expired pending approvals.
-   */
-  private startApprovalCleanup(): void {
-    this.approvalCleanupInterval = setInterval(
-      () => {
-        const now = Date.now();
-        const timeout = this.config.approvalTimeout;
-
-        for (const [approvalId, pending] of this.pendingApprovals.entries()) {
-          if (now - pending.timestamp > timeout) {
-            this.logger.warn("Approval timed out", {
-              approvalId,
-              agentId: pending.agentId,
-              age: now - pending.timestamp,
-            });
-            this.pendingApprovals.delete(approvalId);
-          }
-        }
-      },
-      Deno.env.get("DENO_ENV") === "test" ? 5000 : 60000,
-    ); // 5s for tests, 1min for prod
-  }
-
-  /**
    * Get or create an MCP client for a specific session.
    * Each session gets its own transport and SSE connection.
    */
@@ -1066,17 +871,10 @@ export class AgentOrchestrator implements IAgentOrchestrator {
   async shutdown(): Promise<void> {
     this.logger.info("Shutting down agent orchestrator");
 
-    if (this.approvalCleanupInterval) {
-      clearInterval(this.approvalCleanupInterval);
-      this.approvalCleanupInterval = undefined;
-    }
-
     if (this.sessionCleanupInterval) {
       clearInterval(this.sessionCleanupInterval);
       this.sessionCleanupInterval = undefined;
     }
-
-    this.pendingApprovals.clear();
 
     // Dispose session memories
     for (const memory of this.sessionMemories.values()) {

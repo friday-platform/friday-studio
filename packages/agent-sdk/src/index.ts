@@ -10,7 +10,6 @@ export type {
   AgentExecutionResult,
   AgentServerAdapter,
   AgentSessionManager,
-  AwaitingApprovalResult,
   CompletedAgentResult,
 } from "./adapter.ts";
 // Core API
@@ -42,7 +41,6 @@ export type {
   AgentSessionData,
   AgentSessionState,
   AgentTelemetryConfig,
-  ApprovalRequest,
   ArtifactRef,
   AtlasAgent,
   AtlasAgentConfig,
@@ -67,10 +65,8 @@ export {
   AgentMetadataSchema,
   AgentSessionDataSchema,
   AgentSessionStateSchema,
-  ApprovalRequestSchema,
   ArtifactRefSchema,
   AtlasAgentConfigSchema,
-  AwaitingSupervisorDecision,
   CreateAgentConfigValidationSchema,
   MCPAuthConfigSchema,
   MCPServerConfigSchema,

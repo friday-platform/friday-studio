@@ -200,24 +200,6 @@ interface AgentServerAdapter {
 This allows different server types (MCP, HTTP, etc.) to host agents without the SDK knowing
 server-specific details.
 
-### Approval Flow
-
-Agents can request supervisor approval for high-risk operations:
-
-```typescript
-// Agent calls approval tool (provided by atlas-platform MCP server)
-const result = await tools.request_supervisor_approval({
-  action: "Delete repository",
-  risk_level: "critical",
-  rationale: "User requested repository deletion",
-});
-
-// This throws AwaitingSupervisorDecision exception
-// Server catches it and returns structured response
-// Supervisor handles approval/denial
-// Agent resumes with decision
-```
-
 ### Session Management
 
 Agents maintain state across executions through session management:

@@ -354,39 +354,6 @@ export const AgentSessionStateSchema = z.object({
 
 export type AgentSessionState = z.infer<typeof AgentSessionStateSchema>;
 
-/** Approval request for supervisor decision */
-export const ApprovalRequestSchema = z.object({
-  action: z.string(),
-  risk_level: z.enum(["low", "medium", "high", "critical"]),
-  context: z.object({
-    resource: z.string().optional(),
-    environment: z.string().optional(),
-    impact: z.string().optional(),
-    reversible: z.boolean().optional(),
-  }),
-  rationale: z.string(),
-});
-
-export type ApprovalRequest = z.infer<typeof ApprovalRequestSchema>;
-
-/**
- * Exception thrown by request_supervisor_approval tool
- *
- * Suspends agent execution until supervisor makes decision.
- * Caught by AtlasAgentsMCPServer and forwarded to session supervisor.
- */
-export class AwaitingSupervisorDecision extends Error {
-  constructor(
-    public readonly approvalId: string,
-    public readonly request: ApprovalRequest,
-    public readonly sessionId: string,
-    public readonly agentId: string,
-  ) {
-    super("Awaiting supervisor decision");
-    this.name = "AwaitingSupervisorDecision";
-  }
-}
-
 /** Agent registry - used by AtlasAgentsMCPServer for agent management */
 export interface AgentRegistry {
   listAgents(filters?: { domains?: string[]; tags?: string[] }): Promise<AgentMetadata[]>;

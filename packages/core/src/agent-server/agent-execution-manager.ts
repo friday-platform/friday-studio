@@ -3,7 +3,7 @@
  *
  * Orchestrates agent execution lifecycle using XState actors.
  * Creates and manages state machine instances for each agent,
- * handling execution requests and approval flows.
+ * handling execution requests.
  *
  * Architecture:
  *   Session Supervisor
@@ -11,22 +11,17 @@
  *   Agent Execution Manager <- YOU ARE HERE
  *       ↓ (creates/manages)
  *   Agent Execution Machines (XState actors)
- *       ↓ (when approval needed)
- *   Approval Queue Manager (stores suspended states)
  */
 
 import type { AgentContext, AgentSessionData, AtlasAgent } from "@atlas/agent-sdk";
-import { AwaitingSupervisorDecision } from "@atlas/agent-sdk";
 import type { Logger } from "@atlas/logger";
 import type { CoALAMemoryManager } from "@atlas/memory";
 import { createActor } from "xstate";
 import {
   type AgentExecutionMachineActor,
-  type ApprovalDecision,
   createAgentExecutionMachine,
   type PrepareContextOutput,
 } from "./agent-execution-machine.ts";
-import type { ApprovalQueueManager } from "./approval-queue-manager.ts";
 
 type BuildAgentContext = (
   agent: AtlasAgent,
@@ -42,7 +37,6 @@ type BuildAgentContext = (
  * Responsibilities:
  * - Creates and manages XState actors for agent execution
  * - Handles lazy loading of agent code
- * - Coordinates with approval queue for human-in-the-loop flows
  * - Tracks active agent executions
  */
 export class AgentExecutionManager {
@@ -51,20 +45,17 @@ export class AgentExecutionManager {
   private loadAgentFn: (agentId: string) => Promise<AtlasAgent>;
   private contextBuilder: BuildAgentContext;
   private sessionMemory: CoALAMemoryManager | null;
-  private approvalQueue?: ApprovalQueueManager;
   private logger: Logger;
 
   constructor(
     loadAgentFn: (agentId: string) => Promise<AtlasAgent>,
     contextBuilder: BuildAgentContext,
     sessionMemory: CoALAMemoryManager | null = null,
-    approvalQueue: ApprovalQueueManager,
     logger: Logger,
   ) {
     this.loadAgentFn = loadAgentFn;
     this.contextBuilder = contextBuilder;
     this.sessionMemory = sessionMemory;
-    this.approvalQueue = approvalQueue;
     this.logger = logger.child({ component: "AgentExecutionManager" });
   }
 
@@ -118,7 +109,6 @@ export class AgentExecutionManager {
    * Execute an agent with the given prompt and session data.
    * Returns a promise that resolves with the execution result.
    *
-   * @throws {AwaitingSupervisorDecision} When agent requests approval
    * @throws {Error} When execution fails
    */
   executeAgent(
@@ -157,80 +147,11 @@ export class AgentExecutionManager {
           // Remove failed actor so it can be recreated for next execution
           this.activeAgents.delete(agentId);
           reject(snapshot.context.error);
-        } else if (state === "awaiting") {
-          // Agent is requesting supervisor approval
-          const error = snapshot.context.error;
-          if (error instanceof AwaitingSupervisorDecision && this.approvalQueue) {
-            // Suspend the agent execution and add to approval queue
-            this.approvalQueue.suspendExecution(actor, error);
-
-            // Remove from active agents as it's now suspended
-            this.activeAgents.delete(agentId);
-
-            subscription.unsubscribe();
-            if (requestId) {
-              this.activeExecutions.delete(requestId);
-            }
-            reject(error); // Propagate to supervisor
-          }
         }
       });
 
       // Start execution - pass the abort signal separately
       actor.send({ type: "EXECUTE", prompt, sessionData, abortSignal: abortController?.signal });
-    });
-  }
-
-  /**
-   * Resume a suspended agent execution with an approval decision.
-   * Used when supervisor approves/denies an agent's request.
-   */
-  async resumeAgentWithApproval(approvalId: string, decision: ApprovalDecision): Promise<unknown> {
-    if (!this.approvalQueue) {
-      this.logger.error("No approval queue configured");
-      return null;
-    }
-
-    // Restore the suspended actor from approval queue
-    const actor = await this.approvalQueue.restoreAndResume(approvalId, decision, {
-      loadAgentFn: this.loadAgentFn,
-      contextBuilder: this.contextBuilder,
-      sessionMemory: this.sessionMemory,
-    });
-
-    if (!actor) {
-      return null;
-    }
-
-    const agentId = actor.getSnapshot().context.agentId;
-
-    // Add back to active agents
-    this.activeAgents.set(agentId, actor);
-
-    // Wait for completion
-    return new Promise((resolve, reject) => {
-      const subscription = actor.subscribe((snapshot) => {
-        const state = snapshot.value;
-
-        if (state === "completed" && snapshot.context.result) {
-          subscription.unsubscribe();
-          this.activeAgents.delete(agentId);
-          resolve(snapshot.context.result);
-        } else if (state === "failed" && snapshot.context.error) {
-          subscription.unsubscribe();
-          this.activeAgents.delete(agentId);
-          reject(snapshot.context.error);
-        } else if (state === "awaiting") {
-          // Another approval request - suspend again
-          const error = snapshot.context.error;
-          if (error instanceof AwaitingSupervisorDecision && this.approvalQueue) {
-            this.approvalQueue.suspendExecution(actor, error);
-            this.activeAgents.delete(agentId);
-            subscription.unsubscribe();
-            reject(error);
-          }
-        }
-      });
     });
   }
 

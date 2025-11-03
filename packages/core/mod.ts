@@ -42,7 +42,6 @@ export { GlobalMCPServerPool } from "./src/mcp-server-pool.ts";
 export type {
   AgentExecutionContext,
   AgentOrchestratorConfig,
-  ApprovalDecision,
   IAgentOrchestrator,
 } from "./src/orchestrator/agent-orchestrator.ts";
 // Agent Orchestrator
