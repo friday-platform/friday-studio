@@ -8,8 +8,10 @@ import { z } from "zod";
 
 const logger = createLogger({ component: "chat-storage" });
 
-// Zod schema for validating stored chat data
-// Messages are validated at API boundary before storage, so we trust the stored format
+/**
+ * Chat structure on disk.
+ * Messages validated separately via validateAtlasUIMessages (allows partial reads).
+ */
 const StoredChatSchema = z.object({
   id: z.uuid(),
   userId: z.string().min(1),
@@ -17,24 +19,30 @@ const StoredChatSchema = z.object({
   title: z.string().optional(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
-  messages: z.array(z.unknown()), // Validated before storage, trust stored data
+  messages: z.array(z.unknown()),
 });
 
-// Override messages type to AtlasUIMessage[] since we validate at API boundary
 type Chat = Omit<z.infer<typeof StoredChatSchema>, "messages"> & { messages: AtlasUIMessage[] };
 
+/** Chats directory path */
 function getChatDir(): string {
   return join(getAtlasHome(), "chats");
 }
 
+/** Chat file path for given ID */
 function getChatFile(chatId: string): string {
   return join(getChatDir(), `${chatId}.json`);
 }
 
+/** Create chats directory if missing */
 async function ensureChatDir(): Promise<void> {
   await Deno.mkdir(getChatDir(), { recursive: true });
 }
 
+/**
+ * Read + validate chat from disk.
+ * Throws: file not found, JSON parse error, schema validation error, message validation error
+ */
 async function readAndValidateChat(filePath: string): Promise<Chat> {
   const content = await Deno.readTextFile(filePath);
   const json = JSON.parse(content);
@@ -43,7 +51,12 @@ async function readAndValidateChat(filePath: string): Promise<Chat> {
   return { ...parsedChat, messages };
 }
 
-/** Create chat */
+/**
+ * Create chat if not exists, else return existing (idempotent).
+ *
+ * Safe for client reconnection pattern (multiple calls with same ID).
+ * If existing chat corrupted: logs warning, overwrites with fresh chat.
+ */
 async function createChat(input: {
   chatId: string;
   userId: string;
@@ -51,6 +64,23 @@ async function createChat(input: {
 }): Promise<Result<Chat, string>> {
   try {
     await ensureChatDir();
+    const chatFile = getChatFile(input.chatId);
+
+    try {
+      const existing = await readAndValidateChat(chatFile);
+      logger.debug("Chat already exists, returning existing", {
+        chatId: input.chatId,
+        messageCount: existing.messages.length,
+      });
+      return success(existing);
+    } catch (error) {
+      if (!(error instanceof Deno.errors.NotFound)) {
+        logger.warn("Error reading existing chat, creating new", {
+          chatId: input.chatId,
+          error: stringifyError(error),
+        });
+      }
+    }
 
     const chat: Chat = {
       id: input.chatId,
@@ -61,8 +91,8 @@ async function createChat(input: {
       messages: [],
     };
 
-    const chatFile = getChatFile(input.chatId);
     await Deno.writeTextFile(chatFile, JSON.stringify(chat, null, 2));
+    logger.debug("Created new chat", { chatId: input.chatId });
 
     return success(chat);
   } catch (error) {
@@ -70,7 +100,12 @@ async function createChat(input: {
   }
 }
 
-/** Get chat by ID */
+/**
+ * Get chat by ID.
+ *
+ * Returns null if not found.
+ * Returns error if corrupted (parse/validation fails).
+ */
 async function getChat(chatId: string): Promise<Result<Chat | null, string>> {
   try {
     const chat = await readAndValidateChat(getChatFile(chatId));
@@ -86,7 +121,13 @@ async function getChat(chatId: string): Promise<Result<Chat | null, string>> {
   }
 }
 
-/** Append message to chat (with file locking to prevent race conditions) */
+/**
+ * Append message to chat.
+ *
+ * Uses exclusive lock: only one writer at a time.
+ * Lock sequence: read full chat → validate → append → write atomically.
+ * Prevents lost writes on concurrent appends.
+ */
 async function appendMessage(
   chatId: string,
   message: AtlasUIMessage,
@@ -95,14 +136,10 @@ async function appendMessage(
     await ensureChatDir();
     const chatFile = getChatFile(chatId);
 
-    // Lock the actual chat file, auto-releases with 'using'
     using file = await Deno.open(chatFile, { read: true, write: true });
     await file.lock(true);
 
-    // Read current content
     const chat = await readAndValidateChat(chatFile);
-
-    // Append and write back
     chat.messages.push(message);
     chat.updatedAt = new Date().toISOString();
 
@@ -121,15 +158,16 @@ async function appendMessage(
 }
 
 /**
- * List recent chats, sorted by most recently updated.
- * Optimized to only read metadata from top N files by mtime.
+ * List N most recently updated chats.
+ *
+ * Reads mtime for all files, sorts by mtime descending, fully reads only top N.
+ * Gracefully skips corrupted chats (logs warning).
  */
 async function listChats(limit = 5): Promise<Result<Chat[], string>> {
   try {
     await ensureChatDir();
     const chatDir = getChatDir();
 
-    // Collect file paths with their modification times
     const fileInfos: Array<{ path: string; mtime: number }> = [];
 
     for await (const entry of Deno.readDir(chatDir)) {
@@ -149,10 +187,8 @@ async function listChats(limit = 5): Promise<Result<Chat[], string>> {
       }
     }
 
-    // Sort by mtime descending (newest first)
     fileInfos.sort((a, b) => b.mtime - a.mtime);
 
-    // Read only top N files
     const chats: Chat[] = [];
     for (const { path } of fileInfos.slice(0, limit)) {
       try {
@@ -168,20 +204,21 @@ async function listChats(limit = 5): Promise<Result<Chat[], string>> {
   }
 }
 
-/** Update chat title (with file locking to prevent race conditions) */
+/**
+ * Update chat title.
+ *
+ * Uses exclusive lock (same pattern as appendMessage).
+ * Returns updated chat.
+ */
 async function updateChatTitle(chatId: string, title: string): Promise<Result<Chat, string>> {
   try {
     await ensureChatDir();
     const chatFile = getChatFile(chatId);
 
-    // Lock the actual chat file, auto-releases with 'using'
     using file = await Deno.open(chatFile, { read: true, write: true });
     await file.lock(true);
 
-    // Read current content
     const chat = await readAndValidateChat(chatFile);
-
-    // Update and write back
     chat.title = title;
     chat.updatedAt = new Date().toISOString();
 

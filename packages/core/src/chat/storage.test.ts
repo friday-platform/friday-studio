@@ -27,7 +27,6 @@ afterEach(async () => {
   }
 });
 
-// Test helpers
 const createTestChat = (chatId: string) =>
   ChatStorage.createChat({ chatId, userId: "test-user", workspaceId: "test-ws" });
 
@@ -123,9 +122,9 @@ describe("ChatStorage", () => {
       const result = await ChatStorage.getChat(chatId);
       assert(result.ok);
       assertEquals(result.data?.messages.length, 3);
-      assertEquals(result.data?.messages[0]?.id, ids[0]); // First
+      assertEquals(result.data?.messages[0]?.id, ids[0]);
       assertEquals(result.data?.messages[1]?.id, ids[1]);
-      assertEquals(result.data?.messages[2]?.id, ids[2]); // Last
+      assertEquals(result.data?.messages[2]?.id, ids[2]);
     });
 
     it("stores all messages without limit", async () => {
@@ -275,6 +274,110 @@ describe("ChatStorage", () => {
         updatedAt: new Date().toISOString(),
         messages: [],
       });
+    });
+  });
+
+  describe("Idempotency", () => {
+    it("createChat is idempotent - returns existing chat without overwriting", async () => {
+      const chatId = crypto.randomUUID();
+      const result1 = await createTestChat(chatId);
+      assert(result1.ok);
+
+      const message = createMessage("Important message");
+      const appendResult = await ChatStorage.appendMessage(chatId, message);
+      assert(appendResult.ok);
+
+      const titleResult = await ChatStorage.updateChatTitle(chatId, "Important Chat");
+      assert(titleResult.ok);
+
+      const result2 = await createTestChat(chatId);
+      assert(result2.ok, "Second createChat should succeed");
+
+      const finalChat = await ChatStorage.getChat(chatId);
+      assert(finalChat.ok);
+      assertEquals(finalChat.data?.messages.length, 1, "Message should be preserved");
+      assertEquals(finalChat.data?.messages[0]?.id, message.id, "Message ID should match");
+      assertEquals(finalChat.data?.title, "Important Chat", "Title should be preserved");
+      assertEquals(
+        finalChat.data?.createdAt,
+        result1.data.createdAt,
+        "Created timestamp should not change",
+      );
+    });
+
+    it("preserves messages across multiple createChat calls", async () => {
+      const chatId = crypto.randomUUID();
+      await createTestChat(chatId);
+
+      const msg1 = createMessage("First message");
+      await ChatStorage.appendMessage(chatId, msg1);
+      await createTestChat(chatId);
+
+      const msg2 = createMessage("Second message");
+      await ChatStorage.appendMessage(chatId, msg2);
+      await createTestChat(chatId);
+
+      const chat = await ChatStorage.getChat(chatId);
+      assert(chat.ok);
+      assertEquals(chat.data?.messages.length, 2, "Both messages should exist");
+      assertEquals(chat.data?.messages[0]?.id, msg1.id, "First message preserved");
+      assertEquals(chat.data?.messages[1]?.id, msg2.id, "Second message preserved");
+    });
+
+    it("maintains chat continuity in conversation flow", async () => {
+      // Regression test: createChat called again on reconnect must not lose chat
+      const chatId = crypto.randomUUID();
+
+      // 1. Start conversation
+      await createTestChat(chatId);
+      const userMsg1 = createMessage("My secret number is 4123");
+      await ChatStorage.appendMessage(chatId, userMsg1);
+
+      // 2. Assistant responds
+      const assistantMsg1: AtlasUIMessage = {
+        id: crypto.randomUUID(),
+        role: "assistant",
+        parts: [{ type: "text", text: "I've noted your secret number is 4123." }],
+      };
+      await ChatStorage.appendMessage(chatId, assistantMsg1);
+
+      // 3. Reconnect (bug trigger: createChat called again)
+      const reconnectResult = await createTestChat(chatId);
+      assert(reconnectResult.ok, "Reconnection should succeed");
+
+      // 4. Continue conversation
+      const userMsg2 = createMessage("What is my secret number again?");
+      await ChatStorage.appendMessage(chatId, userMsg2);
+
+      // 5. Verify full history preserved
+      const finalChat = await ChatStorage.getChat(chatId);
+      assert(finalChat.ok);
+      assertEquals(finalChat.data?.messages.length, 3, "All 3 messages should exist");
+      const hasSecretNumber = finalChat.data?.messages.some((msg) =>
+        msg.parts?.some((part) => part.type === "text" && part.text?.includes("4123")),
+      );
+      assert(hasSecretNumber, "Historical context preserved");
+    });
+
+    it("handles rapid successive createChat calls", async () => {
+      const chatId = crypto.randomUUID();
+      const promises = Array(5)
+        .fill(0)
+        .map(() => createTestChat(chatId));
+      const results = await Promise.all(promises);
+
+      for (const result of results) {
+        assert(result.ok, "All createChat calls should succeed");
+      }
+
+      const message = createMessage("Test message");
+      await ChatStorage.appendMessage(chatId, message);
+
+      const chat = await ChatStorage.getChat(chatId);
+      assert(chat.ok);
+      assertEquals(chat.data?.messages.length, 1, "Should have exactly one message");
+      assertEquals(chat.data?.userId, "test-user", "User ID should be consistent");
+      assertEquals(chat.data?.workspaceId, "test-ws", "Workspace ID should be consistent");
     });
   });
 
