@@ -37,9 +37,11 @@ import { sessionSupervisorAgent } from "@atlas/system/agents";
 import { generateObject } from "ai";
 import type { IWorkspaceArtifact, IWorkspaceSignal } from "../../types/core.ts";
 import {
+  analyzeResults as analyzeHallucinations,
+  containsSeverePatterns,
+  getSevereIssues,
   type HallucinationAnalysis,
-  HallucinationDetector,
-  HallucinationPatternDetector,
+  type HallucinationDetectorConfig,
 } from "../services/hallucination-detector.ts";
 import { getSupervisionConfig, SupervisionLevel } from "../supervision-levels.ts";
 import { ExecutionPlanSchema } from "./session-supervisor-planner-schemas.ts";
@@ -122,7 +124,7 @@ export class SessionSupervisorActor implements BaseActor {
   private llmProvider = anthropic;
 
   // Session evaluation services
-  private hallucinationDetector: HallucinationDetector;
+  private hallucinationDetectorConfig: HallucinationDetectorConfig;
   private validationMap = new Map<string, { confidence: number; issues: string[] }>();
   private hallucinationTermination?: { agentId: string; confidence: number; issues: string[] };
   // Track single retry attempts per agent to avoid loops
@@ -164,10 +166,10 @@ export class SessionSupervisorActor implements BaseActor {
       workspaceId: this.workspaceId,
     });
 
-    // Initialize hallucination detection system
-    this.hallucinationDetector = new HallucinationDetector({
+    // Initialize hallucination detection config
+    this.hallucinationDetectorConfig = {
       logger: this.logger.child({ component: "hallucination-detector" }),
-    });
+    };
 
     this.logger.info("Session supervisor actor initialized");
   }
@@ -1369,9 +1371,10 @@ export class SessionSupervisorActor implements BaseActor {
     const singleAgentResults: AgentResult[] = [result];
 
     try {
-      const analysis: HallucinationAnalysis = await this.hallucinationDetector.analyzeResults(
+      const analysis: HallucinationAnalysis = await analyzeHallucinations(
         singleAgentResults,
         this.getSupervisionLevel(),
+        this.hallucinationDetectorConfig,
       );
 
       this.logger.info("Single agent confidence validation", {
@@ -1387,12 +1390,10 @@ export class SessionSupervisorActor implements BaseActor {
       });
 
       // Check for immediate severe hallucinations
-      const isSevere =
-        analysis.averageConfidence < 0.3 ||
-        HallucinationPatternDetector.containsSeverePatterns(analysis.issues);
+      const isSevere = analysis.averageConfidence < 0.3 || containsSeverePatterns(analysis.issues);
 
       if (isSevere) {
-        const severeIssues = HallucinationPatternDetector.getSevereIssues(analysis.issues);
+        const severeIssues = getSevereIssues(analysis.issues);
         const retryCount = this.retryAttempts.get(result.agentId) ?? 0;
 
         this.logger.error("SEVERE HALLUCINATION DETECTED", {

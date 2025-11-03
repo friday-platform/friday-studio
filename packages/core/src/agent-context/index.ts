@@ -13,7 +13,6 @@ import { type CoALAMemoryManager, MEMORY_TYPES, MemorySource } from "@atlas/memo
 import { stringifyError } from "@atlas/utils";
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import type { GlobalMCPServerPool } from "../mcp-server-pool.ts";
-import { stripSourceAttributionTags } from "../prompts/source-attribution.ts";
 import { MCPStreamEmitter } from "../streaming/stream-emitters.ts";
 import { createEnvironmentContext } from "./environment-context.ts";
 
@@ -280,22 +279,18 @@ async function _enrichPromptWithMemories(
     );
 
     // Compose prompt: Original Request + Recent Context + Relevant Memories
-    // Sanitize any prior content to avoid leaking/replicating source tags
-    const sanitizedRecent = recentWorkingMemory
-      ? {
-          content: stripSourceAttributionTags(recentWorkingMemory.content),
-          timestamp: recentWorkingMemory.timestamp,
-        }
+    const recentContext = recentWorkingMemory
+      ? { content: recentWorkingMemory.content, timestamp: recentWorkingMemory.timestamp }
       : null;
-    const sanitizedMemories = memoryResults.memories.map((m) => ({
+    const formattedMemories = memoryResults.memories.map((m) => ({
       ...m,
-      content: stripSourceAttributionTags(JSON.stringify(m.content)),
+      content: JSON.stringify(m.content),
     }));
 
     const enrichedPrompt = buildMemoryEnhancedPrompt(
       originalPrompt,
-      sanitizedRecent,
-      sanitizedMemories,
+      recentContext,
+      formattedMemories,
       maxTokens,
       logger,
     );

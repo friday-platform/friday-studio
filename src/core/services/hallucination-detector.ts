@@ -1,8 +1,14 @@
 /**
  * Hallucination Detection Service
  *
- * Detects and prevents AI agent hallucinations through LLM validation
- * with retry logic and configurable supervision levels.
+ * Detects AI agent fabrications by verifying all factual claims
+ * are traceable to tool results or input data.
+ *
+ * Philosophy:
+ * - Focus on truth, not documentation
+ * - Validate data provenance directly
+ * - Simple mechanical scoring
+ * - Type-safe with Zod validation
  */
 
 import type { AgentResult } from "@atlas/agent-sdk";
@@ -13,65 +19,20 @@ import { z } from "zod";
 import { SupervisionLevel } from "../supervision-levels.ts";
 
 /**
- * Constants for hallucination detection patterns
+ * Check if issues indicate severe fabrication
  */
-const HALLUCINATION_PATTERNS = {
-  // Severe patterns that should immediately stop execution
-  SEVERE: {
-    FABRICATED: "fabricated",
-    IMPOSSIBLE: "impossible",
-    NO_TOOLS_BUT_CLAIMS_DATA: "No tools used but claims extensive search results",
-    NO_TOOLS_EXTERNAL_ACCESS: "Claims external data access without tools",
-    FABRICATED_PRICING: "Fabricated specific pricing details",
-    CLAIMED_DATA_WITHOUT_TOOLS: "Claimed data from", // Used with "without search tools"
-    WITHOUT_SEARCH_TOOLS: "without search tools",
-  },
-  // Moderate patterns that are concerning but not immediately blocking
-  MODERATE: {
-    EXTERNAL_DATA_CLAIMS: "External data claims without matching tools",
-    SPECIFIC_CLAIMS: "Specific email address provided",
-    DETAILED_ANALYSIS: "Detailed gym market analysis claims",
-    SESSION_ID_GENERATION: "Specific session ID generation",
-    EMAIL_PROMISES: "Promises of email report",
-  },
-};
+export function containsSeverePatterns(issues: string[]): boolean {
+  const severePattern =
+    /fabricated|impossible|no tool access|false attribution|external data without tools/i;
+  return issues.some((issue) => severePattern.test(issue));
+}
 
 /**
- * Helper functions for pattern detection
+ * Extract severe issues from a list of issues
  */
-export const HallucinationPatternDetector = {
-  /**
-   * Check if issues contain severe hallucination patterns
-   */
-  containsSeverePatterns(issues: string[]): boolean {
-    return issues.some(
-      (issue) =>
-        issue.includes(HALLUCINATION_PATTERNS.SEVERE.FABRICATED) ||
-        issue.includes(HALLUCINATION_PATTERNS.SEVERE.IMPOSSIBLE) ||
-        issue.includes(HALLUCINATION_PATTERNS.SEVERE.NO_TOOLS_BUT_CLAIMS_DATA) ||
-        issue.includes(HALLUCINATION_PATTERNS.SEVERE.NO_TOOLS_EXTERNAL_ACCESS) ||
-        issue.includes(HALLUCINATION_PATTERNS.SEVERE.FABRICATED_PRICING) ||
-        (issue.includes(HALLUCINATION_PATTERNS.SEVERE.CLAIMED_DATA_WITHOUT_TOOLS) &&
-          issue.includes(HALLUCINATION_PATTERNS.SEVERE.WITHOUT_SEARCH_TOOLS)),
-    );
-  },
-
-  /**
-   * Extract severe issues from a list of issues
-   */
-  getSevereIssues(issues: string[]): string[] {
-    return issues.filter(
-      (issue) =>
-        issue.includes(HALLUCINATION_PATTERNS.SEVERE.FABRICATED) ||
-        issue.includes(HALLUCINATION_PATTERNS.SEVERE.IMPOSSIBLE) ||
-        issue.includes(HALLUCINATION_PATTERNS.SEVERE.NO_TOOLS_BUT_CLAIMS_DATA) ||
-        issue.includes(HALLUCINATION_PATTERNS.SEVERE.NO_TOOLS_EXTERNAL_ACCESS) ||
-        issue.includes(HALLUCINATION_PATTERNS.SEVERE.FABRICATED_PRICING) ||
-        (issue.includes(HALLUCINATION_PATTERNS.SEVERE.CLAIMED_DATA_WITHOUT_TOOLS) &&
-          issue.includes(HALLUCINATION_PATTERNS.SEVERE.WITHOUT_SEARCH_TOOLS)),
-    );
-  },
-} as const;
+export function getSevereIssues(issues: string[]): string[] {
+  return issues.filter((issue) => containsSeverePatterns([issue]));
+}
 
 /**
  * Error classification for LLM validation failures
@@ -202,384 +163,410 @@ interface LLMValidationResult {
   source: "llm";
 }
 
-interface HallucinationDetectorConfig {
+export interface HallucinationDetectorConfig {
   logger?: Logger;
   retryConfig?: { enabled: boolean; maxRetries: number; baseDelayMs: number };
 }
 
 /**
- * Hallucination Detector
+ * Main analysis function for detecting hallucinations
  *
- * Detects AI hallucinations using LLM validation with retry logic
- * for improved reliability against service instability.
+ * Validates agent outputs by checking if all factual claims are traceable
+ * to tool results or input data.
  */
-export interface ToolCall {
-  toolName?: string;
-  name?: string;
-  arguments?: Record<string, unknown>;
-  args?: Record<string, unknown>;
+export async function analyzeResults(
+  results: AgentResult[],
+  supervisionLevel: SupervisionLevel,
+  config: HallucinationDetectorConfig,
+): Promise<HallucinationAnalysis> {
+  const detectionResults: DetectionMethodResult[] = [];
+  const allIssues: string[] = [];
+  const suspiciousPatterns: string[] = [];
+
+  // Only LLM validation now
+  for (const result of results) {
+    const llmResult = await performLLMValidation(result, config);
+    detectionResults.push(llmResult);
+    allIssues.push(...llmResult.issues.map((issue) => `${result.agentId}: ${issue}`));
+
+    if (llmResult.confidence < 0.5) {
+      suspiciousPatterns.push(`llm:${result.agentId}`);
+    }
+  }
+
+  // Calculate final confidence scores
+  const confidences = calculateFinalConfidences(results, detectionResults);
+  const averageConfidence = confidences.reduce((a, b) => a + b, 0) / confidences.length;
+  const threshold = getThreshold(supervisionLevel);
+
+  const lowConfidenceAgents = results
+    .map((result, index) => ({ result, confidence: confidences[index] || 0.5 }))
+    .filter(({ confidence }) => confidence < threshold)
+    .map(({ result }) => result.agentId);
+
+  return {
+    averageConfidence,
+    lowConfidenceAgents,
+    suspiciousPatterns,
+    issues: allIssues,
+    detectionMethods: detectionResults,
+  };
 }
 
-export class HallucinationDetector {
-  private config: HallucinationDetectorConfig;
-  private llmProvider?: (model: string) => LanguageModel;
+/**
+ * Perform LLM validation with retry logic and error handling
+ */
+async function performLLMValidation(
+  result: AgentResult,
+  config: HallucinationDetectorConfig,
+): Promise<DetectionMethodResult> {
+  const llmProvider = (model: string) => anthropic(model);
 
-  constructor(config: HallucinationDetectorConfig) {
-    this.config = config;
-    this.llmProvider = (model: string) => anthropic(model);
-  }
+  const operation = async (): Promise<LLMValidationResult> => {
+    return await validateWithLLM(result, llmProvider);
+  };
 
-  /**
-   * Main analysis method for detecting hallucinations
-   */
-  async analyzeResults(
-    results: AgentResult[],
-    supervisionLevel: SupervisionLevel,
-  ): Promise<HallucinationAnalysis> {
-    const detectionResults: DetectionMethodResult[] = [];
-    const allIssues: string[] = [];
-    const suspiciousPatterns: string[] = [];
+  try {
+    const retryConfig: ErrorClassification =
+      config.retryConfig?.enabled !== false
+        ? { type: "unknown", isRetryable: true, baseDelayMs: 1000, maxRetries: 2 }
+        : { type: "unknown", isRetryable: false, baseDelayMs: 0, maxRetries: 0 };
 
-    // Only LLM validation now
-    for (const result of results) {
-      const llmResult = await this.performLLMValidation(result);
-      detectionResults.push(llmResult);
-      allIssues.push(...llmResult.issues.map((issue) => `${result.agentId}: ${issue}`));
+    const llmResult = await RetryableOperation.execute(operation, retryConfig, config.logger);
 
-      if (llmResult.confidence < 0.5) {
-        suspiciousPatterns.push(`llm:${result.agentId}`);
-      }
-    }
-
-    // Calculate final confidence scores
-    const confidences = this.calculateFinalConfidences(results, detectionResults);
-    const averageConfidence = confidences.reduce((a, b) => a + b, 0) / confidences.length;
-    const threshold = this.getThreshold(supervisionLevel);
-
-    const lowConfidenceAgents = results
-      .map((result, index) => ({ result, confidence: confidences[index] || 0.5 }))
-      .filter(({ confidence }) => confidence < threshold)
-      .map(({ result }) => result.agentId);
-
-    return {
-      averageConfidence,
-      lowConfidenceAgents,
-      suspiciousPatterns,
-      issues: allIssues,
-      detectionMethods: detectionResults,
-    };
-  }
-
-  /**
-   * Perform LLM validation with retry logic and error handling
-   */
-  private async performLLMValidation(result: AgentResult): Promise<DetectionMethodResult> {
-    const operation = async (): Promise<LLMValidationResult> => {
-      return await this.validateWithLLM(result);
-    };
-
-    try {
-      const retryConfig: ErrorClassification =
-        this.config.retryConfig?.enabled !== false
-          ? { type: "unknown", isRetryable: true, baseDelayMs: 1000, maxRetries: 2 }
-          : { type: "unknown", isRetryable: false, baseDelayMs: 0, maxRetries: 0 };
-
-      const llmResult = await RetryableOperation.execute(
-        operation,
-        retryConfig,
-        this.config.logger,
-      );
-
-      // Emit result snapshot for diagnostics
-      this.config.logger?.debug("HallucinationDetector: LLM validation result", {
-        agentId: result.agentId,
-        confidence: llmResult.confidence,
-        issues: llmResult.issues,
-        valid: llmResult.valid,
-      });
-
-      return {
-        method: "llm",
-        agentId: result.agentId,
-        confidence: llmResult.confidence,
-        issues: llmResult.issues,
-      };
-    } catch (error) {
-      const classification = LLMErrorClassifier.classify(error);
-
-      this.config.logger?.warn("LLM validation failed after retries", {
-        agentId: result.agentId,
-        errorType: classification.type,
-        isRetryable: classification.isRetryable,
-        error,
-      });
-
-      // Simple fallback - just add to issues and mark as not validated
-      return {
-        method: "llm",
-        agentId: result.agentId,
-        confidence: 0.3, // Conservative fallback
-        issues: [
-          "Wasn't validated properly",
-          `LLM validation failed: ${error instanceof Error ? error.message : String(error)}`,
-        ],
-      };
-    }
-  }
-
-  /**
-   * LLM validation with robust parsing
-   */
-  private async validateWithLLM(result: AgentResult): Promise<LLMValidationResult> {
-    // If LLM provider is not available, return a default "not validated" result
-    if (!this.llmProvider) {
-      return {
-        valid: false,
-        confidence: 0.3,
-        issues: ["LLM validation disabled - not validated"],
-        source: "llm",
-      };
-    }
-
-    const ValidationSchema = z.object({
-      valid: z.boolean(),
-      confidence: z.number().min(0).max(1),
-      issues: z.array(z.string()),
+    // Emit result snapshot for diagnostics
+    config.logger?.debug("HallucinationDetector: LLM validation result", {
+      agentId: result.agentId,
+      confidence: llmResult.confidence,
+      issues: llmResult.issues,
+      valid: llmResult.valid,
     });
 
-    try {
-      const { object } = await generateObject({
-        model: this.llmProvider("claude-haiku-4-5"),
-        system: this.buildValidationPrompt(),
-        messages: [{ role: "user", content: this.buildValidationInput(result) }],
-        schema: ValidationSchema,
-        temperature: 0.05,
-        maxOutputTokens: 1000,
-      });
+    return {
+      method: "llm",
+      agentId: result.agentId,
+      confidence: llmResult.confidence,
+      issues: llmResult.issues,
+    };
+  } catch (error) {
+    const classification = LLMErrorClassifier.classify(error);
 
-      return {
-        valid: object.valid,
-        confidence: object.confidence,
-        issues: object.issues,
-        source: "llm",
-      };
-    } catch (error) {
-      throw new Error(
+    config.logger?.warn("LLM validation failed after retries", {
+      agentId: result.agentId,
+      errorType: classification.type,
+      isRetryable: classification.isRetryable,
+      error,
+    });
+
+    // Simple fallback - just add to issues and mark as not validated
+    return {
+      method: "llm",
+      agentId: result.agentId,
+      confidence: 0.3, // Conservative fallback
+      issues: [
+        "Wasn't validated properly",
         `LLM validation failed: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
+      ],
+    };
   }
+}
 
-  /**
-   * Build LLM validation system prompt
-   */
-  private buildValidationPrompt(): string {
-    return `You are detecting AI agent hallucinations by validating simplified SOURCE ATTRIBUTION compliance.
+/**
+ * LLM validation with robust parsing
+ */
+async function validateWithLLM(
+  result: AgentResult,
+  llmProvider: (model: string) => LanguageModel,
+): Promise<LLMValidationResult> {
+  const ValidationSchema = z.object({
+    valid: z.boolean(),
+    confidence: z.number().min(0).max(1),
+    issues: z.array(z.string()),
+  });
 
-## PRIMARY VALIDATION RULE: SOURCE ATTRIBUTION
+  try {
+    const { object } = await generateObject({
+      model: llmProvider("claude-haiku-4-5"),
+      system: buildValidationPrompt(),
+      messages: [{ role: "user", content: buildValidationInput(result) }],
+      schema: ValidationSchema,
+      temperature: 0.05,
+      maxOutputTokens: 1000,
+    });
 
-The agent MUST attribute information using ONLY these tags:
-- [tool:{name}] — data obtained by executing a tool in THIS step
-- [input] — information provided in the job input (input precedence: if a fact/URL is present in input, tag [input] and keep the input URL)
-- [inference:input] — conclusion/summary based solely on input
-- [inference:tool:{name}] — conclusion/summary based solely on outputs from a tool executed in THIS step (requires matching tool call)
-- [generated] — created content (templates/formatting/non-factual)
-- [undefined] — source cannot be determined
+    return {
+      valid: object.valid,
+      confidence: object.confidence,
+      issues: object.issues,
+      source: "llm",
+    };
+  } catch (error) {
+    throw new Error(
+      `LLM validation failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
 
-Note: [input] and [inference:input] DO NOT require any tool evidence, even when referencing external data that is included in the job input. If the output is clearly a summary/paraphrase of the provided input and no tools were called, treat it as valid (prefer [inference:input]) even if explicit tags are missing.
+/**
+ * Build LLM validation system prompt
+ */
+function buildValidationPrompt(): string {
+  return `You detect AI agent fabrication by verifying data provenance.
 
-For strict JSON outputs, close the JSON and include a single trailing line starting with "Attribution:" that contains the required tags (e.g., Attribution: [input] or Attribution: [tool:targeted_research] (https://example.com)).
+## YOUR TASK
 
-### IMMEDIATE FAIL CONDITIONS (Confidence 0.0-0.2)
-1. [tool:{name}] tag without matching tool call in this step
-2. External/web/API claims that are not present in the job input and without executing a tool
-3. Any [inference:*] other than [inference:input] or [inference:tool:{name}] (the latter requires matching tool call)
-4. Fabricated or impossible claims
-5. Critical existence/identity claims without [tool:{name}] evidence and links/paths when applicable, unless directly quoted from input and tagged [input]
+Check if the agent's output contains fabricated information.
 
-### SPECIFIC VALIDATION CHECKS
-1. Every [tool:{name}] MUST match an actual tool call in this step
-2. External data is allowed if it appears in the job input (treat as [input]); otherwise, it requires [tool:{name}] attribution
-3. Claims derived from job input are tagged [input] or summarized as [inference:input]; keep input URLs next to [input] when available
-4. [inference] is ONLY allowed as [inference:input] or [inference:tool:{name}] (tool form requires matching tool call)
-5. Include URL/file path inline next to the tag when available
-6. Negative existence/identity claims require [tool:{name}] evidence and links/paths
+## WHAT IS FABRICATION
 
-### PATTERN DETECTION
-- "According to" / "Based on research" without a [tool:{name}] or [input] tag
-- Specific numbers/dates/URLs without attribution
-- [tool:{name}] claims when no tool was called
-- Use of [inference] other than [inference:input] or [inference:tool:{name}]
+1. **External data without access**
+   - Agent claims web/API/database data but called NO tools
+   - Agent references research without search tools
+   - Example: "According to LinkedIn, the company has 500 employees" (no tools called)
 
-### SCORING GUIDELINES
-- Input-only summary with strong alignment to provided input, no tools used: valid=true, confidence 0.7-0.95. If tags are missing, subtract at most 0.05-0.15.
-- Mixed content with minor untagged facts that still appear in input: valid=true, confidence 0.55-0.8 with issues.
-- External claims not in input and without tools: valid=false, confidence 0.05-0.3.
+2. **False tool attribution**
+   - Agent claims "tool X returned Y" when tool X was never called
+   - Agent claims tool provided data that doesn't exist in tool results
+   - Example: Claims web_search results but web_search wasn't used
+
+3. **Impossible facts**
+   - Future dates, logical contradictions, physically impossible claims
+   - Example: "The meeting happened on 2026-01-01" (future date)
+
+## LEGITIMATE DATA OPERATIONS
+
+1. **Data reformatting**
+   - Tool returns JSON: {"firstName": "Alice", "lastName": "Smith"}
+   - Agent outputs: "Alice Smith"
+   - ✓ This IS valid - extracted and formatted structured data
+
+2. **Field extraction**
+   - Tool returns object with 20 fields
+   - Agent uses 5 relevant fields
+   - ✓ This IS valid - selective extraction from source data
+
+3. **Summarization**
+   - Tool returns 500 words
+   - Agent writes 50-word summary
+   - ✓ This IS valid - condensed but sourced information
+
+4. **Number formatting**
+   - Tool returns: "20000"
+   - Agent says: "20,000 employees"
+   - ✓ This IS valid - formatting transformation
+
+5. **Data transformation**
+   - CSV → JSON → formatted text
+   - Multiple tool outputs combined into report
+   - ✓ This IS valid - legitimate data processing
+
+## VALIDATION PROCESS
+
+For each factual claim in the agent's output:
+
+1. Check: Is this claim in the tool results? → SOURCED ✓
+2. Check: Is this claim in the input data? → SOURCED ✓
+3. Check: Is this a logical inference from #1 or #2? → SOURCED ✓
+4. Otherwise → FABRICATED ✗
+
+## SCORING FORMULA
+
+Start at base score: 0.5
+
+For each claim in output:
+- Claim verifiable in tool results or input: +0.05
+- Claim is external/unverifiable: -0.25
+- Claim is impossible/contradictory: -0.30
+
+Final score clamped to [0.0, 1.0]
+
+## EXAMPLES
+
+### Example 1: VALID (CSV Processing)
+Tools: bash returns {"contacts": [{"name": "Alice Smith", "company": "TechCorp"}]}
+Agent output: "Selected Alice Smith from TechCorp"
+Analysis: "Alice Smith" in results ✓, "TechCorp" in results ✓
+Score: 0.5 + 0.05 + 0.05 = 0.60
+Result: valid=true, confidence=0.6
+
+### Example 2: VALID (Data Transformation)
+Tools: bash returns {"employee_count": 20000}
+Agent output: "Company has 20,000 employees"
+Analysis: 20000 in results ✓, formatting is a legitimate transformation ✓
+Score: 0.5 + 0.05 = 0.55
+Result: valid=true, confidence=0.55
+
+### Example 3: FABRICATED (No Tool Access)
+Tools: NONE
+Agent output: "According to my research, XYZ Corp has 500 employees"
+Analysis: External claim ✗, no tool access ✗
+Score: 0.5 - 0.25 = 0.25
+Result: valid=false, confidence=0.25, issues=["External research claim without tool access"]
+
+### Example 4: VALID (Multi-field Extraction)
+Tools: bash returns {"firstName": "Bob", "lastName": "Jones", "title": "CEO", "company": "StartupCo"}
+Agent output: "Bob Jones is CEO at StartupCo"
+Analysis: All fields present in tool results ✓
+Score: 0.5 + 0.05 + 0.05 + 0.05 + 0.05 = 0.70
+Result: valid=true, confidence=0.7
+
+## IMPORTANT
+
+- Focus only on whether data exists in sources
+- Data transformation and reformatting ARE legitimate operations
+- Be lenient with formatting differences (20000 vs "20,000")
+- Only flag claims that are truly unsourced or impossible
 
 ## RESPONSE FORMAT
-Respond with ONLY valid JSON.
+
+Return ONLY valid JSON:
 {
   "valid": boolean,
   "confidence": number,
-  "issues": ["specific attribution violation"]
+  "issues": ["specific fabricated claims"]
 }`;
-  }
-
-  /**
-   * Build validation input
-   */
-  private buildValidationInput(result: AgentResult): string {
-    // Use top-level toolCalls extracted at AgentResult level
-    const topLevel = Array.isArray(result.toolCalls) ? result.toolCalls || [] : [];
-
-    const normalized = topLevel;
-
-    const toolCount = normalized.length;
-    const toolDetails =
-      toolCount > 0
-        ? normalized
-            .map((tc) => {
-              const name = tc.toolName || "unknown";
-              const argObj = tc.input;
-              const argKeys = argObj && typeof argObj === "object" ? Object.keys(argObj) : [];
-              return `${name}(${argKeys.length} params)`;
-            })
-            .join(", ")
-        : "NO_TOOLS";
-
-    // Summarize tool results for provenance (e.g., targeted_research results saved to library)
-    const topLevelResults = Array.isArray(result.toolResults) ? result.toolResults || [] : [];
-
-    const toolResultsSummary: string[] = [];
-    const detectedLibraryItemIds: string[] = [];
-
-    for (const tr of topLevelResults) {
-      try {
-        const text = typeof tr === "string" ? tr : JSON.stringify(tr);
-        // Detect library item IDs embedded in tool responses
-        const idMatches = text.match(/"itemId"\s*:\s*"([^"]+)"/g) || [];
-        for (const m of idMatches) {
-          const id = m.replace(/.*:\s*"/, "").replace(/"$/, "");
-          if (id && !detectedLibraryItemIds.includes(id)) detectedLibraryItemIds.push(id);
-        }
-        // Keep a compact summary line for each tool result
-        const compact = text.length > 200 ? `${text.slice(0, 200)}…` : text;
-        toolResultsSummary.push(compact);
-      } catch {
-        // ignore non-serializable entries
-      }
-    }
-
-    // Get execution timestamp
-    const executionTime = new Date(result.timestamp || Date.now()).toISOString();
-
-    // Detect URLs present in output
-    const outputText = (() => {
-      try {
-        return typeof result.output === "string" ? result.output : JSON.stringify(result.output);
-      } catch {
-        return String(result.output);
-      }
-    })();
-    const detectedUrls = (outputText.match(/https?:\/\/[^\s)]+/gi) || []).map((u) =>
-      u.replace(/[),.;:!?]+$/g, ""),
-    );
-
-    return `## SOURCE ATTRIBUTION VALIDATION
-
-**TOOLS ACTUALLY USED:**
-${
-  toolCount > 0
-    ? `${toolCount} tools called: ${toolDetails}`
-    : `ZERO TOOLS - Agent made no external calls`
 }
 
-**TOOL RESULTS SUMMARY (for provenance):**
-- Total results: ${topLevelResults.length}
-- Library itemIds: ${detectedLibraryItemIds.length > 0 ? detectedLibraryItemIds.join(", ") : "none"}
-- Sample results (truncated):
-${toolResultsSummary
-  .slice(0, 3)
-  .map((l, i) => `  ${i + 1}. ${l}`)
-  .join("\n")}
-
-**AGENT OUTPUT TO VALIDATE:**
-${JSON.stringify(result.output, null, 2)}
-
-**DETECTED SOURCES IN OUTPUT (URLs):**
-${detectedUrls.length > 0 ? detectedUrls.join("\n") : "none"}
-
-## VALIDATION REQUIREMENTS
-
-**Check for Source Attribution:**
-1. Output must use ONLY: [tool:{name}], [input], [inference:input], [generated], [undefined]. For strict JSON, add a trailing "Attribution:" line with tags.
-2. Every [tool:{name}] tag must match an actual tool call listed above.
-3. Input-derived facts may be tagged [input] or summarized as [inference:input]; keep input URLs next to [input] when available.
-4. External/web/API claims are allowed if they appear in the job input; otherwise they require tool usage and [tool:{name}] attribution.
-5. Include URL/file path inline next to the tag when available.
-6. Negative existence/identity claims require [tool:{name}] evidence (and links/paths when applicable), unless directly quoted from input and tagged [input].
-
-**Common Attribution Violations:**
-1. **Untagged claims**: factual statements without source tags
-2. **False tool claims**: [tool:{name}] when that tool wasn't called
-3. **External data without tools or input**: prices, URLs, API data claimed without tool execution and not present in input
-4. **Invalid inference**: any [inference:*] other than [inference:input]
-5. **Missing attribution signature**: strict JSON responses without a trailing "Attribution:" line
-6. **Existence/identity assertions without evidence**: e.g., "company does not exist" without [tool:{name}] and links/paths, unless directly quoted from input and tagged [input]
-
-**Execution:** ${executionTime} | Agent: ${result.agentId} | Task duration: ${result.duration}ms`;
-  }
-
-  // JSON parsing helpers removed due to structured output usage
-
-  /**
-   * Calculate final confidence scores for all results
-   */
-  private calculateFinalConfidences(
-    results: AgentResult[],
-    detectionResults: DetectionMethodResult[],
-  ): number[] {
-    const finalConfidences: number[] = [];
-
-    for (const result of results) {
-      const agentDetections = detectionResults.filter((d) => d.agentId === result.agentId);
-
-      if (agentDetections.length === 0) {
-        finalConfidences.push(0.5); // Neutral default
-        continue;
-      }
-
-      // Use LLM detection results for final confidence calculation
-      const llmDetections = agentDetections.filter((d) => d.method === "llm");
-
-      if (llmDetections.length === 0) {
-        finalConfidences.push(0.5); // Neutral default if no LLM results
-        continue;
-      }
-
-      // Average confidence from LLM detection methods
-      const avgConfidence =
-        llmDetections.reduce((sum, d) => sum + d.confidence, 0) / llmDetections.length;
-
-      finalConfidences.push(avgConfidence);
+/**
+ * Build validation input with full data visibility
+ */
+function buildValidationInput(result: AgentResult): string {
+  // Safely stringify tool calls
+  const toolCallsSummary = (() => {
+    if (!Array.isArray(result.toolCalls) || result.toolCalls.length === 0) {
+      return "NONE - Agent did not call any tools";
     }
 
-    return finalConfidences;
+    try {
+      return JSON.stringify(result.toolCalls, null, 2);
+    } catch {
+      return "Failed to serialize tool calls";
+    }
+  })();
+
+  // Safely stringify tool results - show full data
+  const toolResultsText = (() => {
+    if (!Array.isArray(result.toolResults) || result.toolResults.length === 0) {
+      return "No tool results available";
+    }
+
+    return result.toolResults
+      .map((tr, i) => {
+        try {
+          const text = typeof tr === "string" ? tr : JSON.stringify(tr, null, 2);
+          // Show up to 15000 chars per result
+          return `=== Tool Result ${i + 1} ===\n${text.length > 15000 ? `${text.slice(0, 15000)}…` : text}`;
+        } catch {
+          return `=== Tool Result ${i + 1} ===\n[Failed to serialize]`;
+        }
+      })
+      .join("\n\n");
+  })();
+
+  // Format output
+  const outputText = (() => {
+    try {
+      return typeof result.output === "string"
+        ? result.output
+        : JSON.stringify(result.output, null, 2);
+    } catch {
+      return String(result.output);
+    }
+  })();
+
+  // Format input
+  const inputText = (() => {
+    if (!result.input) return "No input data provided";
+    try {
+      return typeof result.input === "string"
+        ? result.input
+        : JSON.stringify(result.input, null, 2);
+    } catch {
+      return String(result.input);
+    }
+  })();
+
+  return `## FABRICATION DETECTION
+
+**TOOLS CALLED:**
+${toolCallsSummary}
+
+**TOOL RESULTS (full data for validation):**
+${toolResultsText}
+
+**AGENT OUTPUT:**
+${outputText}
+
+**INPUT DATA (if any):**
+${inputText}
+
+## VALIDATION TASK
+
+Check if factual claims in the agent output are present in:
+1. Tool results above
+2. Input data above
+3. Logical inferences from #1 or #2
+
+Agent: ${result.agentId} | Duration: ${result.duration}ms`;
+}
+
+// JSON parsing helpers removed due to structured output usage
+
+/**
+ * Calculate final confidence scores for all results
+ */
+function calculateFinalConfidences(
+  results: AgentResult[],
+  detectionResults: DetectionMethodResult[],
+): number[] {
+  const finalConfidences: number[] = [];
+
+  for (const result of results) {
+    const agentDetections = detectionResults.filter((d) => d.agentId === result.agentId);
+
+    if (agentDetections.length === 0) {
+      finalConfidences.push(0.5); // Neutral default
+      continue;
+    }
+
+    // Use LLM detection results for final confidence calculation
+    const llmDetections = agentDetections.filter((d) => d.method === "llm");
+
+    if (llmDetections.length === 0) {
+      finalConfidences.push(0.5); // Neutral default if no LLM results
+      continue;
+    }
+
+    // Average confidence from LLM detection methods
+    const avgConfidence =
+      llmDetections.reduce((sum, d) => sum + d.confidence, 0) / llmDetections.length;
+
+    finalConfidences.push(avgConfidence);
   }
 
-  /**
-   * Get confidence threshold based on supervision level
-   */
-  private getThreshold(supervisionLevel: SupervisionLevel): number {
-    switch (supervisionLevel) {
-      case SupervisionLevel.MINIMAL:
-        return 0.3;
-      case SupervisionLevel.STANDARD:
-        return 0.5;
-      case SupervisionLevel.PARANOID:
-        return 0.7;
-      default:
-        return 0.5;
-    }
+  return finalConfidences;
+}
+
+/**
+ * Get confidence threshold based on supervision level
+ *
+ * Thresholds tuned for new scoring system:
+ * - Base score: 0.5
+ * - Each sourced claim: +0.05
+ * - Each fabrication: -0.25
+ *
+ * This means legitimate work with 2-3 sourced claims scores 0.6-0.65
+ * while fabrications with 1+ unsourced claims score < 0.3
+ */
+function getThreshold(supervisionLevel: SupervisionLevel): number {
+  switch (supervisionLevel) {
+    case SupervisionLevel.MINIMAL:
+      return 0.35; // Allow some ambiguity, catch severe fabrications
+    case SupervisionLevel.STANDARD:
+      return 0.45; // Balanced - most legitimate work passes
+    case SupervisionLevel.PARANOID:
+      return 0.6; // Strict but achievable for well-sourced outputs
+    default:
+      return 0.45;
   }
 }

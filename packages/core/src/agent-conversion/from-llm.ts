@@ -9,7 +9,6 @@ import type { LLMAgentConfig } from "@atlas/config";
 import type { Logger } from "@atlas/logger";
 import { stepCountIs, streamText } from "ai";
 import { registry, validateProviderConfig } from "../llm-provider-registry/index.ts";
-import { ensureSourceAttributionProtocol } from "../prompts/source-attribution.ts";
 import { throwWithCause } from "../utils/error-helpers.ts";
 import { filterWorkspaceAgentTools } from "./agent-tool-filters.ts";
 
@@ -49,11 +48,8 @@ export function convertLLMToAgent(
     expertise: { domains: ["general"], examples: [] },
     handler: async (prompt, { tools, stream, abortSignal }) => {
       try {
-        // Enforce source attribution protocol in system prompt (idempotent)
-        const systemPromptWithAttribution = ensureSourceAttributionProtocol(
-          `${config.config.prompt || ""}\n\n` +
-            "Do NOT include source tags inside tool arguments or user-facing content (e.g., emails, posts). Use tags in assistant responses only. Include plain URLs/paths in user-facing content when helpful.",
-        );
+        // Use agent's system prompt directly - no attribution protocol injection
+        const systemPrompt = config.config.prompt || "";
 
         stream?.emit({
           type: "data-tool-progress",
@@ -87,7 +83,7 @@ export function convertLLMToAgent(
 
         const result = streamText({
           model,
-          system: `${datetimeHeader}\n\n${systemPromptWithAttribution}`,
+          system: `${datetimeHeader}\n\n${systemPrompt}`,
           messages: [{ role: "user" as const, content: prompt }],
           tools: filteredTools,
           toolChoice: config.config.tool_choice || "auto",

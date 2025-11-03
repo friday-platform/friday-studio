@@ -14,6 +14,7 @@ import type {
   AtlasAgent,
   AtlasUIMessageChunk,
   StreamEmitter,
+  ToolCall,
   ToolResult,
 } from "@atlas/agent-sdk";
 import type { Logger } from "@atlas/logger";
@@ -22,7 +23,6 @@ import { Client } from "@modelcontextprotocol/sdk/client";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { retry } from "@std/async";
 import { z } from "zod";
-import type { ToolCall } from "../../../../src/core/services/hallucination-detector.ts";
 import { createAgentContextBuilder } from "../agent-context/index.ts";
 import type { WrappedAgentResult } from "../agent-conversion/from-llm.ts";
 import type { AgentToolParams } from "../agent-server/types.ts";
@@ -532,7 +532,6 @@ export class AgentOrchestrator implements IAgentOrchestrator {
         output: outputWithoutTools,
         duration: Date.now() - startTime,
         timestamp: new Date().toISOString(),
-        // @ts-expect-error `agents-should-produce-structured-output`
         toolCalls: toolCalls && toolCalls.length > 0 ? toolCalls : undefined,
         toolResults: toolResults && toolResults.length > 0 ? toolResults : undefined,
       };
@@ -722,7 +721,6 @@ export class AgentOrchestrator implements IAgentOrchestrator {
         output: outputWithoutTools,
         duration: Date.now() - startTime,
         timestamp: new Date().toISOString(),
-        // @ts-expect-error `agents-should-produce-structured-output`
         toolCalls,
         toolResults,
         artifactRefs: result.artifactRefs,

@@ -46,12 +46,6 @@ export type {
 } from "./src/orchestrator/agent-orchestrator.ts";
 // Agent Orchestrator
 export { AgentOrchestrator } from "./src/orchestrator/agent-orchestrator.ts";
-// Source Attribution helpers
-export {
-  ensureSourceAttributionProtocol,
-  SOURCE_ATTRIBUTION_PROTOCOL_HEADER,
-  stripSourceAttributionTags,
-} from "./src/prompts/source-attribution.ts";
 // Stream Emitters
 export {
   CallbackStreamEmitter,
