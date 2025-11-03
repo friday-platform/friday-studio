@@ -2,7 +2,6 @@
   "name": "@atlas/schemas",
   "version": "1.0.0",
   "type": "module",
-  "exports": { ".": "./mod.ts", "./library": "./src/library.ts" },
-  "main": "./mod.ts",
+  "exports": { "./library": "./src/library.ts" },
   "dependencies": { "zod": "^4.1.11" }
 }

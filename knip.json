@@ -2,8 +2,8 @@
   "$schema": "https://unpkg.com/knip@latest/schema.json",
   "workspaces": {
     ".": {
-      "entry": ["mod.ts!", "src/cli.tsx!", "src/**/*.test.ts", "tests/**/*.test.ts"],
-      "project": ["src/**/*.{ts,tsx,js,jsx}!", "*.ts!", "src/**/*.test.ts"]
+      "entry": ["mod.ts!", "src/cli.tsx!"],
+      "project": ["src/**/*.{ts,tsx,js,jsx}!", "*.ts!"]
     },
     "packages/agent-sdk": {
       "entry": ["src/**/*.test.ts"],
@@ -13,7 +13,7 @@
     "packages/client": { "project": ["**/*.{ts,tsx,js,jsx}!"] },
     "packages/config": { "project": ["**/*.{ts,tsx,js,jsx}!"] },
     "packages/core": { "entry": ["src/**/*.test.ts"], "project": ["src/**/*.{ts,tsx,js,jsx}!"] },
-    "packages/cron": { "entry": ["tests/**/*.test.ts"], "project": ["src/**/*.{ts,tsx,js,jsx}!"] },
+    "packages/cron": { "project": ["src/**/*.{ts,tsx,js,jsx}!"] },
     "packages/fs-watch": { "project": ["**/*.{ts,tsx,js,jsx}!"] },
     "packages/logger": { "project": ["**/*.{ts,tsx,js,jsx}!"] },
     "packages/mcp": { "project": ["**/*.{ts,tsx,js,jsx}!"] },
@@ -23,7 +23,7 @@
     },
     "packages/memory": {
       "entry": ["tests/**/*.test.ts"],
-      "project": ["src/**/*.{ts,tsx,js,jsx}!"]
+      "project": ["src/**/*.{ts,tsx,js,jsx}!", "tests/**/*.{ts,tsx,js,jsx}!"]
     },
     "packages/notifications": { "project": ["src/**/*.{ts,tsx,js,jsx}!"] },
     "packages/openapi-client": {
@@ -31,17 +31,14 @@
       "entry": ["scripts/build.ts!"]
     },
     "packages/signals": { "project": ["src/**/*.{ts,tsx,js,jsx}!"] },
-    "packages/storage": {
-      "entry": ["tests/**/*.test.ts"],
-      "project": ["src/**/*.{ts,tsx,js,jsx}!"]
-    },
+    "packages/storage": { "project": ["src/**/*.{ts,tsx,js,jsx}!"] },
     "packages/system": { "project": ["agents/**/*.ts!", "workspaces/**/*.ts!"] },
     "packages/utils": {
       "entry": ["src/telemetry.ts", "src/paths.ts"],
       "project": ["**/*.{ts,tsx,js,jsx}!"]
     },
     "packages/workspace": { "project": ["src/**/*.{ts,tsx,js,jsx}!"] },
-    "apps/atlasd": { "entry": ["tests/**/*.test.ts"], "project": ["**/*.{ts,tsx,js,jsx}!"] },
+    "apps/atlasd": { "project": ["**/*.{ts,tsx,js,jsx}!"] },
     "apps/diagnostics": { "project": ["src/**/*.{ts,tsx,js,jsx}!"] },
     "apps/web-client": {
       "entry": ["src/app.html!", "src/routes/**/*.svelte!", "src/**/*.test.ts", "server.ts!"],
@@ -70,7 +67,7 @@
     "apps/atlas-installer/**"
   ],
   "ignoreDependencies": ["@std/*"],
-  "ignoreBinaries": ["tauri"],
+  "ignoreBinaries": [],
   "ignoreExportsUsedInFile": { "interface": true, "type": true },
   "rules": {
     "files": "error",

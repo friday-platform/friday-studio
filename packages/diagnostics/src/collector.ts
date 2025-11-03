@@ -47,6 +47,7 @@ export class DiagnosticsCollector {
     await ensureDir(join(this.tempDir, "logs"));
     await ensureDir(join(this.tempDir, "memory"));
     await ensureDir(join(this.tempDir, "storage"));
+    await ensureDir(join(this.tempDir, "chats"));
     await ensureDir(join(this.tempDir, "workspaces"));
 
     // Collect data
@@ -58,6 +59,9 @@ export class DiagnosticsCollector {
 
     log.info("Collecting storage data...");
     await this.collectStorage();
+
+    log.info("Collecting chat data...");
+    await this.collectChats();
 
     log.info("Collecting workspace configurations...");
     await this.collectWorkspaces();
@@ -111,6 +115,17 @@ export class DiagnosticsCollector {
       } catch (error) {
         log.warn(`Failed to collect ${file}:`, { error });
       }
+    }
+  }
+
+  private async collectChats(): Promise<void> {
+    const chatsDir = join(getAtlasHome(), "chats");
+    try {
+      if (await exists(chatsDir)) {
+        await this.copyDirectory(chatsDir, join(this.tempDir, "chats"));
+      }
+    } catch (error) {
+      log.warn("Failed to collect chats:", { error });
     }
   }
 

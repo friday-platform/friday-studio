@@ -273,7 +273,7 @@ const app = new Hono();
 
 // Schema validation for chat requests
 const chatRequestSchema = z.object({
-  id: z.string().uuid().optional(),
+  id: z.uuid().optional(),
   message: z.string().min(1).max(10000),
 });
 

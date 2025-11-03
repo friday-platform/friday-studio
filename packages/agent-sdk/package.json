@@ -5,8 +5,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./types": "./src/types.ts",
-    "./vercel-helpers": "./src/vercel-helpers/index.ts",
-    "./telemetry": "./src/telemetry/index.ts"
+    "./vercel-helpers": "./src/vercel-helpers/index.ts"
   },
   "main": "./src/index.ts",
   "dependencies": {

@@ -8,7 +8,7 @@ import { stream } from "hono/streaming";
 import { z } from "zod";
 import { daemonFactory } from "../src/factory.ts";
 
-const chatRequestSchema = z.object({ id: z.string(), message: z.unknown() });
+const chatRequestSchema = z.object({ id: z.uuid(), message: z.unknown() });
 const appendMessageSchema = z.object({ message: z.unknown() });
 const updateTitleSchema = z.object({ title: z.string() });
 
@@ -132,12 +132,11 @@ const chatRoutes = daemonFactory
       return c.json({ error: "Chat not found" }, 404);
     }
 
-    const messagesResult = await ChatStorage.getMessages(chatId);
-    if (!messagesResult.ok) {
-      return c.json({ error: messagesResult.error }, 500);
-    }
+    const { messages, ...chat } = chatResult.data;
+    // Return newest messages first (most recent at index 0)
+    const limitedMessages = messages.slice(-100).reverse();
 
-    return c.json({ chat: chatResult.data, messages: messagesResult.data }, 200);
+    return c.json({ chat, messages: limitedMessages }, 200);
   })
 
   /**

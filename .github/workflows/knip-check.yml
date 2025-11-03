@@ -1,4 +1,4 @@
-name: Type check
+name: Knip Check
 
 on:
   pull_request:
@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 jobs:
-  type-check:
+  knip-check:
     runs-on: ubuntu-latest
 
     steps:
@@ -24,5 +24,8 @@ jobs:
       - name: Install dependencies
         run: deno install --frozen
 
-      - name: Run type check
-        run: deno check
+      - name: Generate build info
+        run: deno run --allow-read --allow-write --allow-env apps/web-client/scripts/generate-build-info.ts
+
+      - name: Run knip
+        run: npx knip

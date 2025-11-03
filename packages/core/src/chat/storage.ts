@@ -1,180 +1,202 @@
 import type { AtlasUIMessage } from "@atlas/agent-sdk";
-import { fail, type Result, success } from "@atlas/utils";
+import { validateAtlasUIMessages } from "@atlas/agent-sdk";
+import { createLogger } from "@atlas/logger";
+import { fail, type Result, stringifyError, success } from "@atlas/utils";
 import { getAtlasHome } from "@atlas/utils/paths.server";
 import { join } from "@std/path";
+import { z } from "zod";
 
-interface Chat {
-  id: string; // Same as streamId
-  userId: string;
-  workspaceId: string;
-  title?: string;
-  createdAt: string;
-  updatedAt: string;
+const logger = createLogger({ component: "chat-storage" });
+
+// Zod schema for validating stored chat data
+// Messages are validated at API boundary before storage, so we trust the stored format
+const StoredChatSchema = z.object({
+  id: z.uuid(),
+  userId: z.string().min(1),
+  workspaceId: z.string().min(1),
+  title: z.string().optional(),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
+  messages: z.array(z.unknown()), // Validated before storage, trust stored data
+});
+
+// Override messages type to AtlasUIMessage[] since we validate at API boundary
+type Chat = Omit<z.infer<typeof StoredChatSchema>, "messages"> & { messages: AtlasUIMessage[] };
+
+function getChatDir(): string {
+  return join(getAtlasHome(), "chats");
 }
 
-// Key types for type safety
-type ChatKey = ["chat", string];
-type MessageKey = ["chat_message", string, string]; // [prefix, chatId, timestamp-messageId]
+function getChatFile(chatId: string): string {
+  return join(getChatDir(), `${chatId}.json`);
+}
 
-const keys = {
-  chat: (id: string): ChatKey => ["chat", id],
-  message: (chatId: string, timestamp: string, messageId: string): MessageKey => [
-    "chat_message",
-    chatId,
-    `${timestamp}-${messageId}`,
-  ],
-};
+async function ensureChatDir(): Promise<void> {
+  await Deno.mkdir(getChatDir(), { recursive: true });
+}
 
-const kvPath = join(getAtlasHome(), "storage.db");
+async function readAndValidateChat(filePath: string): Promise<Chat> {
+  const content = await Deno.readTextFile(filePath);
+  const json = JSON.parse(content);
+  const parsedChat = StoredChatSchema.parse(json);
+  const messages = await validateAtlasUIMessages(parsedChat.messages);
+  return { ...parsedChat, messages };
+}
 
 /** Create chat */
-async function createChat(
-  input: { chatId: string; userId: string; workspaceId: string },
-  kv?: Deno.Kv,
-): Promise<Result<Chat, string>> {
-  const shouldClose = !kv;
-  const db = kv ?? (await Deno.openKv(kvPath));
-
+async function createChat(input: {
+  chatId: string;
+  userId: string;
+  workspaceId: string;
+}): Promise<Result<Chat, string>> {
   try {
+    await ensureChatDir();
+
     const chat: Chat = {
       id: input.chatId,
       userId: input.userId,
       workspaceId: input.workspaceId,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
+      messages: [],
     };
 
-    const result = await db.set(keys.chat(input.chatId), chat);
-    if (!result.ok) {
-      return fail("Failed to create chat");
-    }
+    const chatFile = getChatFile(input.chatId);
+    await Deno.writeTextFile(chatFile, JSON.stringify(chat, null, 2));
 
     return success(chat);
-  } finally {
-    if (shouldClose) db.close();
-  }
-}
-
-/** Append message to chat */
-async function appendMessage(
-  chatId: string,
-  message: AtlasUIMessage,
-  kv?: Deno.Kv,
-): Promise<Result<void, string>> {
-  const shouldClose = !kv;
-  const db = kv ?? (await Deno.openKv(kvPath));
-
-  try {
-    const timestamp = new Date().toISOString();
-    const messageKey = keys.message(chatId, timestamp, message.id);
-
-    const result = await db.set(messageKey, message);
-    if (!result.ok) {
-      return fail("Failed to append message");
-    }
-
-    return success(undefined);
-  } finally {
-    if (shouldClose) db.close();
+  } catch (error) {
+    return fail(stringifyError(error));
   }
 }
 
 /** Get chat by ID */
-async function getChat(chatId: string, kv?: Deno.Kv): Promise<Result<Chat | null, string>> {
-  const shouldClose = !kv;
-  const db = kv ?? (await Deno.openKv(kvPath));
-
+async function getChat(chatId: string): Promise<Result<Chat | null, string>> {
   try {
-    const result = await db.get<Chat>(keys.chat(chatId));
-    return success(result.value || null);
-  } finally {
-    if (shouldClose) db.close();
-  }
-}
-
-/** Get chat messages */
-async function getMessages(
-  chatId: string,
-  kv?: Deno.Kv,
-  limit = 100,
-): Promise<Result<AtlasUIMessage[], string>> {
-  const shouldClose = !kv;
-  const db = kv ?? (await Deno.openKv(kvPath));
-
-  try {
-    const messages: AtlasUIMessage[] = [];
-    const entries = db.list<AtlasUIMessage>({ prefix: ["chat_message", chatId] });
-
-    for await (const entry of entries) {
-      if (messages.length >= limit) break;
-      if (entry.value) {
-        messages.push(entry.value);
-      }
+    const chat = await readAndValidateChat(getChatFile(chatId));
+    return success(chat);
+  } catch (error) {
+    if (error instanceof Deno.errors.NotFound) {
+      return success(null);
     }
-
-    return success(messages);
-  } finally {
-    if (shouldClose) db.close();
-  }
-}
-
-/** List recent chats */
-async function listChats(kv?: Deno.Kv, limit = 5): Promise<Result<Chat[], string>> {
-  const shouldClose = !kv;
-  const db = kv ?? (await Deno.openKv(kvPath));
-
-  try {
-    const chats: Chat[] = [];
-    const entries = db.list<Chat>({ prefix: ["chat"] });
-
-    for await (const entry of entries) {
-      if (entry.value) {
-        chats.push(entry.value);
-      }
+    if (error instanceof z.ZodError) {
+      return fail(`Invalid chat data format: ${error.message}`);
     }
-
-    // Sort by updatedAt descending (most recent first)
-    chats.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
-
-    return success(chats.slice(0, limit));
-  } finally {
-    if (shouldClose) db.close();
+    return fail(stringifyError(error));
   }
 }
 
-/** Update chat title */
-async function updateChatTitle(
+/** Append message to chat (with file locking to prevent race conditions) */
+async function appendMessage(
   chatId: string,
-  title: string,
-  kv?: Deno.Kv,
-): Promise<Result<Chat, string>> {
-  const shouldClose = !kv;
-  const db = kv ?? (await Deno.openKv(kvPath));
-
+  message: AtlasUIMessage,
+): Promise<Result<void, string>> {
   try {
-    const result = await db.get<Chat>(keys.chat(chatId));
-    if (!result.value) {
+    await ensureChatDir();
+    const chatFile = getChatFile(chatId);
+
+    // Lock the actual chat file, auto-releases with 'using'
+    using file = await Deno.open(chatFile, { read: true, write: true });
+    await file.lock(true);
+
+    // Read current content
+    const chat = await readAndValidateChat(chatFile);
+
+    // Append and write back
+    chat.messages.push(message);
+    chat.updatedAt = new Date().toISOString();
+
+    await Deno.writeTextFile(chatFile, JSON.stringify(chat, null, 2));
+
+    return success(undefined);
+  } catch (error) {
+    if (error instanceof Deno.errors.NotFound) {
       return fail("Chat not found");
     }
-
-    const updatedChat: Chat = { ...result.value, title, updatedAt: new Date().toISOString() };
-
-    const setResult = await db.set(keys.chat(chatId), updatedChat);
-    if (!setResult.ok) {
-      return fail("Failed to update chat title");
+    if (error instanceof z.ZodError) {
+      return fail(`Invalid chat data format: ${error.message}`);
     }
-
-    return success(updatedChat);
-  } finally {
-    if (shouldClose) db.close();
+    return fail(stringifyError(error));
   }
 }
 
-export const ChatStorage = {
-  createChat,
-  getChat,
-  appendMessage,
-  getMessages,
-  listChats,
-  updateChatTitle,
-};
+/**
+ * List recent chats, sorted by most recently updated.
+ * Optimized to only read metadata from top N files by mtime.
+ */
+async function listChats(limit = 5): Promise<Result<Chat[], string>> {
+  try {
+    await ensureChatDir();
+    const chatDir = getChatDir();
+
+    // Collect file paths with their modification times
+    const fileInfos: Array<{ path: string; mtime: number }> = [];
+
+    for await (const entry of Deno.readDir(chatDir)) {
+      if (entry.isFile && entry.name.endsWith(".json")) {
+        const filePath = join(chatDir, entry.name);
+        try {
+          const stat = await Deno.stat(filePath);
+          if (stat.mtime) {
+            fileInfos.push({ path: filePath, mtime: stat.mtime.getTime() });
+          }
+        } catch (error) {
+          logger.warn("Failed to stat chat file, skipping", {
+            file: entry.name,
+            error: stringifyError(error),
+          });
+        }
+      }
+    }
+
+    // Sort by mtime descending (newest first)
+    fileInfos.sort((a, b) => b.mtime - a.mtime);
+
+    // Read only top N files
+    const chats: Chat[] = [];
+    for (const { path } of fileInfos.slice(0, limit)) {
+      try {
+        chats.push(await readAndValidateChat(path));
+      } catch (error) {
+        logger.warn("Failed to read chat file, skipping", { path, error: stringifyError(error) });
+      }
+    }
+
+    return success(chats);
+  } catch (error) {
+    return fail(stringifyError(error));
+  }
+}
+
+/** Update chat title (with file locking to prevent race conditions) */
+async function updateChatTitle(chatId: string, title: string): Promise<Result<Chat, string>> {
+  try {
+    await ensureChatDir();
+    const chatFile = getChatFile(chatId);
+
+    // Lock the actual chat file, auto-releases with 'using'
+    using file = await Deno.open(chatFile, { read: true, write: true });
+    await file.lock(true);
+
+    // Read current content
+    const chat = await readAndValidateChat(chatFile);
+
+    // Update and write back
+    chat.title = title;
+    chat.updatedAt = new Date().toISOString();
+
+    await Deno.writeTextFile(chatFile, JSON.stringify(chat, null, 2));
+
+    return success(chat);
+  } catch (error) {
+    if (error instanceof Deno.errors.NotFound) {
+      return fail("Chat not found");
+    }
+    if (error instanceof z.ZodError) {
+      return fail(`Invalid chat data format: ${error.message}`);
+    }
+    return fail(stringifyError(error));
+  }
+}
+
+export const ChatStorage = { createChat, getChat, appendMessage, listChats, updateChatTitle };

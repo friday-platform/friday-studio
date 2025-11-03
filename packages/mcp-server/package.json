@@ -12,7 +12,7 @@
     "@std/fs": "npm:@jsr/std__fs@^1.0.19",
     "@std/path": "npm:@jsr/std__path@^1.1.2",
     "ai": "^5.0.81",
-    "papaparse": "^5.4.1",
+    "papaparse": "^5.5.3",
     "zod": "^4.1.11"
   }
 }
