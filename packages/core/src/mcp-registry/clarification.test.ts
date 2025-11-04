@@ -36,19 +36,13 @@ describe("formatClarificationReport", () => {
     const clarification = createMCPMissingFieldsClarification(
       "GitHub Monitor",
       ["github"],
-      {
-        serverId: "github-repos-manager",
-        name: "GitHub Repos Manager",
-        matchedDomains: ["github"],
-        requiredConfig: [],
-      },
+      { serverId: "github", name: "GitHub", matchedDomains: ["github"], requiredConfig: [] },
       [{ field: "GITHUB_TOKEN", reason: "Token not provided" }],
     );
 
     const formatted = formatClarificationReport([clarification]);
 
-    assertEquals(formatted.includes("GitHub Monitor"), true);
-    assertEquals(formatted.includes("GitHub Repos Manager"), true);
+    assertEquals(formatted.includes("GitHub"), true);
     assertEquals(formatted.includes("GITHUB_TOKEN"), true);
   });
 

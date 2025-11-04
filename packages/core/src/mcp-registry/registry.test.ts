@@ -53,11 +53,6 @@ describe("mcpServersRegistry", () => {
     assertExists(mcpServersRegistry.metadata);
     assertExists(mcpServersRegistry.metadata.version);
     assertExists(mcpServersRegistry.metadata.lastUpdated);
-    assertEquals(
-      mcpServersRegistry.metadata.totalServers,
-      Object.keys(mcpServersRegistry.servers).length,
-      "Metadata totalServers doesn't match actual server count",
-    );
   });
 
   it("categories include all server categories", () => {
@@ -103,7 +98,7 @@ describe("mcpServersRegistry", () => {
 
   it("has Record structure for O(1) lookup", () => {
     // Test that we can directly access servers by ID
-    assertEquals(mcpServersRegistry.servers["github-repos-manager"]?.id, "github-repos-manager");
+    assertEquals(mcpServersRegistry.servers.github?.id, "github");
     assertEquals(mcpServersRegistry.servers.stripe?.id, "stripe");
     assertEquals(mcpServersRegistry.servers.azure?.id, "azure");
   });

@@ -71,11 +71,7 @@ export type MCPServerMetadata = {
 /**
  * Registry metadata
  */
-const RegistryMetadataSchema = z.object({
-  version: z.string(),
-  lastUpdated: z.string(),
-  totalServers: z.number().int().nonnegative(),
-});
+const RegistryMetadataSchema = z.object({ version: z.string(), lastUpdated: z.string() });
 
 export type RegistryMetadata = z.infer<typeof RegistryMetadataSchema>;
 

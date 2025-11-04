@@ -8,37 +8,20 @@ import type { MCPCategory, MCPServersRegistry } from "./schemas.ts";
  */
 export const mcpServersRegistry: MCPServersRegistry = {
   servers: {
-    "github-repos-manager": {
-      id: "github-repos-manager",
-      name: "GitHub Integration",
+    github: {
+      id: "github",
+      name: "GitHub",
       category: "development",
       domains: ["github"],
       source: "static",
       securityRating: "high",
       configTemplate: {
-        transport: { type: "stdio", command: "npx", args: ["-y", "github-repos-manager-mcp"] },
-        auth: { type: "bearer", token_env: "GITHUB_TOKEN" },
-        tools: {
-          allow: [
-            "list_repositories",
-            "get_repository_info",
-            "get_file_contents",
-            "create_issue",
-            "list_issues",
-            "set_default_repository",
-          ],
+        transport: {
+          type: "stdio",
+          command: "npx",
+          args: ["-y", "mcp-remote", "https://api.githubcopilot.com/mcp"],
         },
-        env: { GITHUB_TOKEN: "your-github-pat" },
-        client_config: { timeout: { progressTimeout: "60s", maxTotalTimeout: "30m" } },
       },
-      requiredConfig: [
-        {
-          key: "GITHUB_TOKEN",
-          description: "GitHub Personal Access Token with appropriate permissions",
-          type: "string",
-          examples: ["ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"],
-        },
-      ],
     },
     azure: {
       id: "azure",
@@ -142,23 +125,6 @@ export const mcpServersRegistry: MCPServersRegistry = {
       configTemplate: {
         transport: { type: "stdio", command: "uvx", args: ["mcp-server-time", "--local-timezone"] },
         tools: { allow: ["convert_time", "get_current_time"] },
-      },
-    },
-    git: {
-      id: "git",
-      name: "Git Operations",
-      category: "development",
-      domains: ["git"],
-      source: "static",
-      securityRating: "high",
-      configTemplate: {
-        transport: {
-          type: "stdio",
-          command: "uvx",
-          args: ["mcp-server-git", "--repository", "/workspace"],
-        },
-        tools: { allow: ["git_status", "git_diff", "git_commit", "git_log"] },
-        client_config: { timeout: { progressTimeout: "60s", maxTotalTimeout: "30m" } },
       },
     },
     weather: {
@@ -444,5 +410,5 @@ export const mcpServersRegistry: MCPServersRegistry = {
     "project-management",
     "monitoring",
   ] as MCPCategory[],
-  metadata: { version: "2.0.0", lastUpdated: "2025-01-27", totalServers: 17 },
+  metadata: { version: "2.0.0", lastUpdated: "2025-01-27" },
 };
