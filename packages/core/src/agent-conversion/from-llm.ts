@@ -1,5 +1,5 @@
 import { APICallError } from "@ai-sdk/provider";
-import type { ArtifactRef, AtlasAgent, ToolCall, ToolResult } from "@atlas/agent-sdk";
+import type { ArtifactRef, AtlasAgent, AtlasTools, ToolCall, ToolResult } from "@atlas/agent-sdk";
 import { createAgent } from "@atlas/agent-sdk";
 import {
   collectToolUsageFromSteps,
@@ -7,6 +7,7 @@ import {
 } from "@atlas/agent-sdk/vercel-helpers";
 import type { LLMAgentConfig } from "@atlas/config";
 import type { Logger } from "@atlas/logger";
+import { getTodaysDate } from "@atlas/utils";
 import { stepCountIs, streamText } from "ai";
 import { registry, validateProviderConfig } from "../llm-provider-registry/index.ts";
 import { throwWithCause } from "../utils/error-helpers.ts";
@@ -56,14 +57,11 @@ export function convertLLMToAgent(
           data: { toolName: agentId, content: "Warming up..." },
         });
 
-        // Include current datetime for temporal grounding
-        const nowUtcIso = new Date().toISOString();
-        const datetimeHeader = `Current datetime (UTC): ${nowUtcIso}`;
-
         // Filter tools based on agent config or workspace defaults
         // If agent specifies explicit tools, use those directly without workspace-level filtering
-        // This allows agents to access MCP server tools not in the default whitelist
-        let filteredTools: typeof tools;
+        // Otherwise, apply deny list to remove platform management tools while allowing MCP server tools
+        // @FIXME: this should get rolled into the agent context builder.
+        let filteredTools: AtlasTools;
 
         if (allowedToolNames && allowedToolNames.length > 0) {
           // Agent has explicit tool list - filter directly from all available tools
@@ -77,13 +75,16 @@ export function convertLLMToAgent(
             toolCount: `${Object.keys(filteredTools).length}/${allowedToolNames.length}`,
           });
         } else {
-          // No explicit tool list - apply workspace-level filtering for safety
-          filteredTools = filterWorkspaceAgentTools(tools);
+          // No explicit tool list - apply deny list filtering to remove platform management tools
+          // This preserves MCP server tools while blocking workspace/session/job/signal/agent management
+          filteredTools = filterWorkspaceAgentTools(tools, logger);
         }
 
         const result = streamText({
           model,
-          system: `${datetimeHeader}\n\n${systemPrompt}`,
+          system: `
+          Today's date: ${getTodaysDate()}
+          ${systemPrompt}`,
           messages: [{ role: "user" as const, content: prompt }],
           tools: filteredTools,
           toolChoice: config.config.tool_choice || "auto",

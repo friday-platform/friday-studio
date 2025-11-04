@@ -2,7 +2,7 @@ import { type ArtifactRef, createAgent } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
 import { anthropic } from "@atlas/core";
 import { fail, type Result, stringifyError, success } from "@atlas/utils";
-import { generateText, streamText } from "ai";
+import { generateText, stepCountIs, streamText } from "ai";
 import { claudeCode } from "ai-sdk-provider-claude-code";
 
 type CCAgentResult = Result<
@@ -72,13 +72,15 @@ export const claudeCodeAgent = createAgent<string, CCAgentResult>({
           systemPrompt: { type: "preset", preset: "claude_code" },
         }),
         system: `Return summary of actions taken. Output only the summary—no preamble or explanation.
+          DO NOT explain what you are going to do. Just do it.
 
-Your summary:
-- Direct, factual
-- Concise. Sacrifice grammar for concision, but keep clarity
-- Use markdown for readability`,
+          Your summary:
+            - Direct, factual
+            - Concise. Sacrifice grammar for concision, but keep clarity
+            - Use markdown`,
         abortSignal,
         prompt,
+        stopWhen: stepCountIs(25),
         maxOutputTokens: 30000,
         onChunk: async ({ chunk }) => {
           switch (chunk.type) {

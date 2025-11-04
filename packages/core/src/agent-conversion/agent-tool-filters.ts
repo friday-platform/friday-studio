@@ -1,32 +1,46 @@
 import type { AtlasTools } from "@atlas/agent-sdk";
+import type { Logger } from "@atlas/logger";
 
-const ALLOWED_TOOL_NAMES = new Set([
-  "library_list",
-  "library_get",
-  "library_get_stream",
-  "library_store",
-  "fs_glob",
-  "fs_grep",
-  "fs_list_files",
-  "fs_read_file",
-  "fs_write_file",
-  "artifacts_create",
-  "artifacts_update",
-  "artifacts_get",
-  "bash",
-  "csv",
+const DENIED_TOOL_NAMES = new Set([
+  // Workspace management tools
+  "atlas_workspace_list",
+  "atlas_workspace_delete",
+  "atlas_workspace_describe",
+  "atlas_workspace_set_persistence",
+  // Session management tools
+  "atlas_session_describe",
+  "atlas_session_cancel",
+  // Job management tools
+  "atlas_workspace_jobs_list",
+  "atlas_workspace_jobs_describe",
+  "atlas_workspace_job_execute",
+  // Signal management tools
+  "atlas_workspace_signals_list",
+  // Agent management tools
+  "atlas_workspace_agents_list",
+  "atlas_workspace_agents_describe",
+  // Platform metadata
+  "system_version",
 ]);
 
 /**
- * Refines the list of all tools exposed on the Atlas Platform MCP Server to those relevant for use
- * by agents within a workspace. This means dropping a lot of the 'interact with the platform' tools,
- * such as workspace management and job execution.
+ * Filters out Atlas platform management tools from the available tool set.
+ * This prevents agents from accessing workspace/session/job/signal/agent management
+ * and other platform control operations.
  *
- * Generally, agents should only be able to read/write data to Artifact/Library storage plus
- * a carefully selected list of interactivity tools, such as filesystem operations.
+ * Agents retain access to:
+ * - Library storage (read/write)
+ * - Filesystem operations
+ * - Artifacts
+ * - System tools (bash, csv)
+ * - All MCP server tools from external servers
  *
  * @see packages/mcp-server/src/tools/index.ts
  */
-export function filterWorkspaceAgentTools(tools: AtlasTools): AtlasTools {
-  return Object.fromEntries(Object.entries(tools).filter(([key]) => ALLOWED_TOOL_NAMES.has(key)));
+export function filterWorkspaceAgentTools(tools: AtlasTools, logger: Logger): AtlasTools {
+  const filtered = Object.fromEntries(
+    Object.entries(tools).filter(([key]) => !DENIED_TOOL_NAMES.has(key)),
+  );
+  logger.debug("Filtered tool names for LLM agent", { toolNames: Object.keys(filtered) });
+  return filtered;
 }
