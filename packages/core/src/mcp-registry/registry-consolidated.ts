@@ -1,3 +1,4 @@
+/** biome-ignore-all lint/suspicious/noTemplateCurlyInString: mcp-remote requires ${} interpolation */
 import type { MCPCategory, MCPServersRegistry } from "./schemas.ts";
 
 /**
@@ -13,7 +14,6 @@ export const mcpServersRegistry: MCPServersRegistry = {
       category: "development",
       domains: ["github"],
       source: "static",
-      transportTypes: ["stdio"],
       securityRating: "high",
       configTemplate: {
         transport: { type: "stdio", command: "npx", args: ["-y", "github-repos-manager-mcp"] },
@@ -46,7 +46,6 @@ export const mcpServersRegistry: MCPServersRegistry = {
       category: "cloud",
       domains: ["azure"],
       source: "static",
-      transportTypes: ["stdio"],
       securityRating: "high",
       configTemplate: {
         transport: {
@@ -90,7 +89,6 @@ export const mcpServersRegistry: MCPServersRegistry = {
       category: "finance",
       domains: ["stripe"],
       source: "static",
-      transportTypes: ["stdio"],
       securityRating: "high",
       configTemplate: {
         transport: { type: "stdio", command: "npx", args: ["-y", "@stripe/mcp", "--tools=all"] },
@@ -123,7 +121,6 @@ export const mcpServersRegistry: MCPServersRegistry = {
       category: "testing",
       domains: ["automated testing", "ui automation", "screenshot generation"],
       source: "static",
-      transportTypes: ["stdio"],
       securityRating: "medium",
       configTemplate: {
         transport: {
@@ -141,7 +138,6 @@ export const mcpServersRegistry: MCPServersRegistry = {
       category: "utility",
       domains: ["timekeeping", "timezone conversion"],
       source: "static",
-      transportTypes: ["stdio"],
       securityRating: "high",
       configTemplate: {
         transport: { type: "stdio", command: "uvx", args: ["mcp-server-time", "--local-timezone"] },
@@ -154,7 +150,6 @@ export const mcpServersRegistry: MCPServersRegistry = {
       category: "development",
       domains: ["git"],
       source: "static",
-      transportTypes: ["stdio"],
       securityRating: "high",
       configTemplate: {
         transport: {
@@ -172,7 +167,6 @@ export const mcpServersRegistry: MCPServersRegistry = {
       category: "utility",
       domains: ["weather"],
       source: "static",
-      transportTypes: ["stdio"],
       securityRating: "medium",
       configTemplate: {
         transport: { type: "stdio", command: "npx", args: ["-y", "@timlukahorstmann/mcp-weather"] },
@@ -191,7 +185,6 @@ export const mcpServersRegistry: MCPServersRegistry = {
       category: "development",
       domains: ["google genai"],
       source: "static",
-      transportTypes: ["stdio"],
       securityRating: "medium",
       configTemplate: {
         transport: {
@@ -217,7 +210,6 @@ export const mcpServersRegistry: MCPServersRegistry = {
       category: "analytics",
       domains: ["google-analytics"],
       source: "static",
-      transportTypes: ["stdio"],
       securityRating: "medium",
       configTemplate: {
         transport: { type: "stdio", command: "npx", args: ["-y", "mcp-server-google-analytics"] },
@@ -254,7 +246,6 @@ export const mcpServersRegistry: MCPServersRegistry = {
       category: "security",
       domains: ["auth0"],
       source: "static",
-      transportTypes: ["stdio"],
       securityRating: "high",
       configTemplate: {
         transport: {
@@ -275,15 +266,14 @@ export const mcpServersRegistry: MCPServersRegistry = {
       category: "project-management",
       domains: ["linear"],
       source: "static",
-      transportTypes: ["sse"],
       securityRating: "high",
       configTemplate: {
-        transport: { type: "sse", url: "https://mcp.linear.app/sse" },
-        auth: { type: "bearer", token_env: "LINEAR_API_KEY" },
-        tools: { allow: ["create_issue", "update_issue", "list_issues"] },
-        client_config: { timeout: { progressTimeout: "120s", maxTotalTimeout: "30m" } },
+        transport: {
+          type: "stdio",
+          command: "npx",
+          args: ["-y", "mcp-remote", "https://mcp.linear.app/mcp"],
+        },
       },
-      requiredConfig: [{ key: "LINEAR_API_KEY", description: "Linear API key", type: "string" }],
     },
     trello: {
       id: "trello",
@@ -291,10 +281,9 @@ export const mcpServersRegistry: MCPServersRegistry = {
       category: "project-management",
       domains: ["trello"],
       source: "static",
-      transportTypes: ["stdio"],
       securityRating: "medium",
       configTemplate: {
-        transport: { type: "stdio", command: "pnpx", args: ["@delorenj/mcp-server-trello"] },
+        transport: { type: "stdio", command: "npx", args: ["@delorenj/mcp-server-trello"] },
         auth: { type: "api_key", token_env: "TRELLO_API_KEY" },
         tools: {
           allow: [
@@ -319,12 +308,13 @@ export const mcpServersRegistry: MCPServersRegistry = {
       category: "content",
       domains: ["notion"],
       source: "static",
-      transportTypes: ["sse"],
       securityRating: "high",
       configTemplate: {
-        transport: { type: "sse", url: "https://mcp.notion.com/sse" },
-        tools: { allow: ["search", "fetch", "create-pages", "update-page", "get-comments"] },
-        client_config: { timeout: { progressTimeout: "90s", maxTotalTimeout: "30m" } },
+        transport: {
+          type: "stdio",
+          command: "npx",
+          args: ["-y", "mcp-remote", "https://mcp.notion.com/mcp"],
+        },
       },
     },
     rss: {
@@ -333,7 +323,6 @@ export const mcpServersRegistry: MCPServersRegistry = {
       category: "content",
       domains: ["rss"],
       source: "static",
-      transportTypes: ["stdio"],
       securityRating: "medium",
       configTemplate: {
         transport: { type: "stdio", command: "npx", args: ["mcp_rss"] },
@@ -375,13 +364,20 @@ export const mcpServersRegistry: MCPServersRegistry = {
       category: "analytics",
       domains: ["posthog"],
       source: "static",
-      transportTypes: ["sse"],
       securityRating: "high",
       configTemplate: {
-        transport: { type: "sse", url: "https://mcp.posthog.com/sse" },
-        auth: { type: "bearer", token_env: "POSTHOG_API_KEY" },
-        tools: { allow: ["query_events", "create_feature_flag", "get_insights"] },
-        client_config: { timeout: { progressTimeout: "90s", maxTotalTimeout: "30m" } },
+        transport: {
+          type: "stdio",
+          command: "npx",
+          args: [
+            "-y",
+            "mcp-remote",
+            "https://mcp.posthog.com/sse",
+            "--header",
+            "Authorization: Bearer ${POSTHOG_API_KEY}",
+          ],
+        },
+        env: { POSTHOG_API_KEY: "your-posthog-api-key" },
       },
       requiredConfig: [{ key: "POSTHOG_API_KEY", description: "PostHog API key", type: "string" }],
     },
@@ -391,12 +387,13 @@ export const mcpServersRegistry: MCPServersRegistry = {
       category: "development",
       domains: ["sentry"],
       source: "static",
-      transportTypes: ["sse"],
       securityRating: "high",
       configTemplate: {
-        transport: { type: "sse", url: "https://mcp.sentry.dev/mcp" },
-        tools: { allow: ["list_issues", "get_project_info", "create_release"] },
-        client_config: { timeout: { progressTimeout: "60s", maxTotalTimeout: "30m" } },
+        transport: {
+          type: "stdio",
+          command: "npx",
+          args: ["-y", "mcp-remote", "https://mcp.sentry.dev/mcp"],
+        },
       },
     },
     discord: {
@@ -405,7 +402,6 @@ export const mcpServersRegistry: MCPServersRegistry = {
       category: "communication",
       domains: ["discord", "chat", "messaging", "community"],
       source: "static",
-      transportTypes: ["stdio"],
       securityRating: "medium",
       configTemplate: {
         transport: { type: "stdio", command: "npx", args: ["-y", "mcp-discord"] },

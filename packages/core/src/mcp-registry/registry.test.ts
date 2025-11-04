@@ -15,18 +15,9 @@ describe("mcpServersRegistry", () => {
       assertExists(server.domains, `Server ${id} missing domains`);
       assertEquals(server.domains.length > 0, true, `Server ${id} has empty domains array`);
 
-      // Technical
-      assertExists(server.transportTypes, `Server ${id} missing transportTypes`);
-      assertEquals(
-        server.transportTypes.length > 0,
-        true,
-        `Server ${id} has empty transportTypes array`,
-      );
-
       // Config
       assertExists(server.configTemplate, `Server ${id} missing configTemplate`);
       assertExists(server.configTemplate.transport, `Server ${id} missing transport config`);
-      assertExists(server.configTemplate.tools, `Server ${id} missing tools config`);
 
       // Security
       assertExists(server.securityRating, `Server ${id} missing securityRating`);

@@ -29,12 +29,6 @@ const SecurityRatingSchema = z.enum(["high", "medium", "low", "unverified"]);
 export type SecurityRating = z.infer<typeof SecurityRatingSchema>;
 
 /**
- * Transport types supported by MCP servers
- */
-const TransportTypeSchema = z.enum(["stdio", "sse"]);
-export type TransportType = z.infer<typeof TransportTypeSchema>;
-
-/**
  * Required configuration field descriptor
  * Describes what users must provide for this server to work
  */
@@ -64,9 +58,6 @@ export type MCPServerMetadata = {
   // Classification (enhanced with domains for semantic matching)
   category: MCPCategory;
   domains: string[];
-
-  // Technical
-  transportTypes: TransportType[];
 
   // Security & Quality
   securityRating: SecurityRating;
