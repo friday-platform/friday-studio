@@ -133,8 +133,8 @@ const chatRoutes = daemonFactory
     }
 
     const { messages, ...chat } = chatResult.data;
-    // Return newest messages first (most recent at index 0)
-    const limitedMessages = messages.slice(-100).reverse();
+    // Return last 100 messages in chronological order (oldest first)
+    const limitedMessages = messages.slice(-100);
 
     return c.json({ chat, messages: limitedMessages }, 200);
   })
