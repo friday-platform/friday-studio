@@ -55,13 +55,12 @@ table artifacts, hitting this limit consistently.
 File artifacts are **references only** - no copying or moving files.
 
 - User files: remain at their original location (e.g., `/tmp/sales.csv`, `/home/user/data.csv`)
-- Generated files: stored in `~/.atlas/{workspaceId}/files/` for persistence
+- Generated files: stored in `~/.atlas/artifacts/{workspaceId}/` for persistence
 
 ```
-~/.atlas/{workspaceId}/
-  └── files/
-      ├── {uuid}.csv    # Generated/transformed files
-      └── {uuid}.json
+~/.atlas/artifacts/{workspaceId}/
+  ├── {uuid}.csv    # Generated/transformed files
+  └── {uuid}.json
 ```
 
 **File artifacts do NOT copy files** - they only store the path reference.
@@ -75,7 +74,7 @@ File artifacts are **references only** - no copying or moving files.
   type: "file",
   revision: number,
   data: {
-    path: "/home/.atlas/abc-123/files/uuid-v4.csv",
+    path: "/home/.atlas/artifacts/abc-123/uuid-v4.csv",
     mimeType: "text/csv",
   },
   summary: string,
@@ -306,7 +305,7 @@ import { getAtlasHome } from "@atlas/utils/paths.server";
 ```typescript
 // In @atlas/utils/paths.ts
 export function getWorkspaceFilesDir(workspaceId: string): string {
-  return join(getAtlasHome(), workspaceId, "files");
+  return join(getAtlasHome(), "artifacts", workspaceId);
 }
 
 // In storage.ts
@@ -545,8 +544,8 @@ for (const f of parsed) {
    - More standardized than file extensions
    - Better for identifying file types unambiguously
 
-8. **Directory structure:** `~/.atlas/{workspaceId}/files/`
-   - Groups all workspace data together
+8. **Directory structure:** `~/.atlas/artifacts/{workspaceId}/`
+   - Groups all workspace artifacts together
    - Easier backup/restore operations
    - Simpler workspace deletion
 
@@ -583,7 +582,7 @@ const csvResult = CsvParseResultSchema.parse(result.data);
 1. **Path traversal:** Validate artifact paths are within storage directory
 2. **File permissions:** All workspace files created with `0o600` (owner read/write only)
    - No need to make Atlas files globally readable
-   - Applies to all files in `~/.atlas/{workspaceId}/files/`
+   - Applies to all files in `~/.atlas/artifacts/{workspaceId}/`
 3. **Permissions:** Ensure artifacts can't access arbitrary filesystem paths
 4. **Storage cleanup:** Not implemented - will add later to remove orphaned files
 

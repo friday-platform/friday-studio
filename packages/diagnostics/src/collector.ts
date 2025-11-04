@@ -49,6 +49,7 @@ export class DiagnosticsCollector {
     await ensureDir(join(this.tempDir, "storage"));
     await ensureDir(join(this.tempDir, "chats"));
     await ensureDir(join(this.tempDir, "workspaces"));
+    await ensureDir(join(this.tempDir, "artifacts"));
 
     // Collect data
     log.info("Collecting logs...");
@@ -66,6 +67,9 @@ export class DiagnosticsCollector {
     log.info("Collecting workspace configurations...");
     await this.collectWorkspaces();
     await this.collectSystemWorkspaces();
+
+    log.info("Collecting artifacts...");
+    await this.collectArtifacts();
 
     log.info("Collecting open file handles...");
     await this.collectOpenFiles();
@@ -126,6 +130,17 @@ export class DiagnosticsCollector {
       }
     } catch (error) {
       log.warn("Failed to collect chats:", { error });
+    }
+  }
+
+  private async collectArtifacts(): Promise<void> {
+    const artifactsDir = join(getAtlasHome(), "artifacts");
+    try {
+      if (await exists(artifactsDir)) {
+        await this.copyDirectory(artifactsDir, join(this.tempDir, "artifacts"));
+      }
+    } catch (error) {
+      log.warn("Failed to collect artifacts:", { error });
     }
   }
 

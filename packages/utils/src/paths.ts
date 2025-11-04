@@ -102,5 +102,5 @@ export function getMECMFCacheDir(): string {
  * Used for storing generated/transformed files that need to persist
  */
 export function getWorkspaceFilesDir(workspaceId: string): string {
-  return join(getAtlasHome(), workspaceId, "files");
+  return join(getAtlasHome(), "artifacts", workspaceId);
 }
