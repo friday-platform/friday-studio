@@ -13,6 +13,7 @@ import type {
   FilterParams,
   GetRowsParams,
   JoinParams,
+  LimitParams,
   ParsedCsvFile,
   SortParams,
 } from "./schemas.ts";
@@ -21,6 +22,7 @@ import {
   FilterParamsSchema,
   GetRowsParamsSchema,
   JoinParamsSchema,
+  LimitParamsSchema,
   SortParamsSchema,
 } from "./schemas.ts";
 
@@ -509,6 +511,44 @@ export function getRowsCsv(
 }
 
 /**
+ * Limit the number of rows in a CSV file
+ *
+ * @param fileMap - Map of file names to parsed CSV data
+ * @param params - Limit parameters (file, maxRows, random)
+ * @param baseRows - Optional transformed rows to limit
+ * @returns Array of rows limited to maxRows, optionally randomly sampled
+ */
+export function limitCsv(
+  fileMap: ParsedCsvFilesMap,
+  params: LimitParams,
+  baseRows?: Record<string, CsvCell>[],
+): Record<string, CsvCell>[] {
+  const file = getRequiredFile(fileMap, params.fileName);
+  const source = baseRows ?? file.data;
+
+  if (source.length <= params.maxRows) {
+    return source;
+  }
+
+  if (params.random) {
+    // Partial Fisher-Yates shuffle: only shuffle first maxRows positions
+    const shuffled = [...source];
+    for (let i = 0; i < params.maxRows; i++) {
+      const j = i + Math.floor(Math.random() * (shuffled.length - i));
+      const temp = shuffled[i];
+      const swap = shuffled[j];
+      if (temp !== undefined && swap !== undefined) {
+        shuffled[i] = swap;
+        shuffled[j] = temp;
+      }
+    }
+    return shuffled.slice(0, params.maxRows);
+  }
+
+  return source.slice(0, params.maxRows);
+}
+
+/**
  * Build LLM tools that operate on parsed CSV files and update the operation result tracker
  */
 export function getOperationTools(fileMap: ParsedCsvFilesMap, operationResult: OperationResult) {
@@ -614,6 +654,25 @@ export function getOperationTools(fileMap: ParsedCsvFilesMap, operationResult: O
           columns: file.columns,
           sampleRow: result[0],
           message: `Retrieved ${result.length} rows from ${file.fileName} (rows ${params.startRow} to ${params.endRow ?? params.startRow + 10})`,
+        };
+      },
+    }),
+    csv_limit: tool({
+      description:
+        "Limit the number of rows in a CSV file. Can either take the first N rows or randomly sample N rows.",
+      inputSchema: LimitParamsSchema,
+      execute: (params: LimitParams) => {
+        const prior = operationResult.dataByFile[params.fileName];
+        const result = limitCsv(fileMap, params, prior);
+        operationResult.dataByFile[params.fileName] = result;
+        const samplingMethod = params.random ? "randomly sampled" : "first";
+        operationResult.operations.push(
+          `limit(file=${params.fileName}, maxRows=${params.maxRows}, random=${params.random})`,
+        );
+        return {
+          success: true,
+          rowCount: result.length,
+          message: `Limited ${params.fileName} to ${result.length} ${samplingMethod} rows`,
         };
       },
     }),

@@ -5,7 +5,7 @@
 import { expect } from "jsr:@std/expect@^1.0.17";
 import Papa from "papaparse";
 import type { ParsedCsvFilesMap } from "./operations.ts";
-import { aggregateCsv, filterCsv, getRowsCsv, joinCsv, sortCsv } from "./operations.ts";
+import { aggregateCsv, filterCsv, getRowsCsv, joinCsv, limitCsv, sortCsv } from "./operations.ts";
 import type { ParsedCsvFile } from "./schemas.ts";
 
 // Helper to narrow possibly undefined values in tests
@@ -819,4 +819,61 @@ Deno.test("filterCsv - can chain with baseRows parameter", () => {
   expect(filtered2).toHaveLength(2);
   const products = filtered2.map((r) => r.product);
   expect(products.every((p) => p === "Apple")).toBe(true);
+});
+
+// Tests for limitCsv
+Deno.test("limitCsv - returns all rows when maxRows >= total", () => {
+  const map: ParsedCsvFilesMap = { [testFile1.fileName]: testFile1 };
+  const result = limitCsv(map, { fileName: testFile1.fileName, maxRows: 10, random: false });
+
+  expect(result).toHaveLength(4);
+});
+
+Deno.test("limitCsv - limits to first N rows when random=false", () => {
+  const map: ParsedCsvFilesMap = { [testFile1.fileName]: testFile1 };
+  const result = limitCsv(map, { fileName: testFile1.fileName, maxRows: 2, random: false });
+
+  expect(result).toHaveLength(2);
+  const r0 = must(result[0]);
+  const r1 = must(result[1]);
+  expect(r0.id).toBe(1);
+  expect(r1.id).toBe(2);
+});
+
+Deno.test("limitCsv - randomly samples N rows when random=true", () => {
+  const map: ParsedCsvFilesMap = { [testFile1.fileName]: testFile1 };
+  const result = limitCsv(map, { fileName: testFile1.fileName, maxRows: 2, random: true });
+
+  expect(result).toHaveLength(2);
+  // Should be valid rows from the original data
+  const ids = result.map((r) => r.id);
+  for (const id of ids) {
+    expect([1, 2, 3, 4]).toContain(id);
+  }
+});
+
+Deno.test("limitCsv - works with baseRows (chained)", () => {
+  const map: ParsedCsvFilesMap = { [testFile1.fileName]: testFile1 };
+
+  // First filter to get rows with amount > 50
+  const filtered = filterCsv(map, {
+    fileName: testFile1.fileName,
+    column: "amount",
+    operator: "gt",
+    value: 50,
+  });
+
+  expect(filtered).toHaveLength(3);
+
+  // Then limit to 2 rows
+  const limited = limitCsv(
+    map,
+    { fileName: testFile1.fileName, maxRows: 2, random: false },
+    filtered,
+  );
+
+  expect(limited).toHaveLength(2);
+  // Should be first 2 rows from filtered result
+  const l0 = must(limited[0]);
+  expect(l0.amount).toBeGreaterThan(50);
 });

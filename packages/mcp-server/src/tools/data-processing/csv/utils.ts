@@ -42,7 +42,19 @@ Tools return metadata only (row counts, success messages) - not actual data. Use
 
 For read-only requests ("read", "describe", "preview"), use csv_get_rows to sample data, then describe what you see. Don't transform.
 
-For transformation requests, chain tools as needed (filter, sort, join, aggregate).
+For transformation requests, chain tools sequentially:
+- csv_filter: Filter rows by column values
+- csv_sort: Sort rows by column
+- csv_join: Join two files
+- csv_aggregate: Aggregate data (sum/avg/count/min/max)
+- csv_limit: Limit row count (use for sampling or taking first N rows)
+
+CRITICAL: Multi-step operations require MULTIPLE tool calls:
+- "Filter then limit to N rows" → Call csv_filter, THEN call csv_limit(maxRows=N)
+- "Filter then randomly sample N" → Call csv_filter, THEN call csv_limit(maxRows=N, random=true)
+- "Sort then take top N" → Call csv_sort, THEN call csv_limit(maxRows=N)
+
+csv_limit operates on the CURRENT state after previous operations. Always call csv_limit as a SEPARATE tool call after filtering/sorting.
 
 Provide a concise summary:
 1. What you did (1-2 sentences)
@@ -86,7 +98,7 @@ export async function executeCsvOperation(
   const tools = getOperationTools(fileMap, operationResult);
 
   const result = await generateText({
-    model: anthropic("claude-sonnet-4-20250514"),
+    model: anthropic("claude-sonnet-4-5"),
     system: systemPrompt,
     prompt: task,
     tools,

@@ -1,4 +1,4 @@
-import { createAgent } from "@atlas/agent-sdk";
+import { createAgent, repairJson } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
 import { anthropic } from "@atlas/core";
 import { fail, type Result, stringifyError, success } from "@atlas/utils";
@@ -116,7 +116,8 @@ export const sessionSupervisorAgent = createAgent<
       }
 
       const { object } = await generateObject({
-        model: anthropic("claude-3-7-sonnet-latest"),
+        model: anthropic("claude-sonnet-4-5"),
+        experimental_repairText: repairJson,
         schema: SupervisorOutputSchema,
         system: SUPERVISOR_SYSTEM_PROMPT,
         maxOutputTokens: 16384,

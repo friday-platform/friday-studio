@@ -87,3 +87,18 @@ export const GetRowsParamsSchema = z.object({
 });
 
 export type GetRowsParams = z.infer<typeof GetRowsParamsSchema>;
+
+/**
+ * Limit rows operation schema
+ */
+export const LimitParamsSchema = z.object({
+  fileName: z.string().describe("File name to limit (e.g., sales.csv)"),
+  maxRows: z.number().min(1).describe("Maximum number of rows to keep"),
+  random: z
+    .boolean()
+    .optional()
+    .default(false)
+    .describe("If true, randomly sample rows; if false, take first N rows"),
+});
+
+export type LimitParams = z.infer<typeof LimitParamsSchema>;

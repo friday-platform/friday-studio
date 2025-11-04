@@ -91,9 +91,12 @@ pitch, rewrite it. </communication_style>
      - Look for existing interfaces and type definitions
      - Check imported packages for exported types
      - Reuse types from `@atlas/config`, `@atlas/storage`, etc.
-- Use `deno check` to run the TypeScript compiler and check your code for errors before running it
-- Use `deno lint` to check your code for style and best practices violations before considering it
-  done
+- **CRITICAL: After EVERY code change, run these commands in order:**
+  1. `deno task fmt` - Format code
+  2. `deno task biome` - Run Biome linter
+  3. `deno lint` - Run Deno linter
+  4. `deno check` - Type check entire project
+  5. `npx knip` - Check for unused exports and dependencies
 
 </development>
 
