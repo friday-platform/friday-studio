@@ -19,6 +19,7 @@ import type {
 } from "@atlas/agent-sdk";
 import type { Logger } from "@atlas/logger";
 import { CoALAMemoryManager, type IMemoryScope } from "@atlas/memory";
+import { stringifyError } from "@atlas/utils";
 import { Client } from "@modelcontextprotocol/sdk/client";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { retry } from "@std/async";
@@ -537,7 +538,7 @@ export class AgentOrchestrator implements IAgentOrchestrator {
       };
     } catch (error) {
       const errorCause = createErrorCause(error);
-      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage = stringifyError(error);
 
       this.logger.error("Agent execution failed", {
         agentId,
@@ -733,8 +734,7 @@ export class AgentOrchestrator implements IAgentOrchestrator {
         task: this.truncateTask(prompt),
         input: context,
         output: null,
-        // @ts-expect-error `agents-should-produce-structured-output`
-        error: error,
+        error: stringifyError(error),
         duration: Date.now() - startTime,
         timestamp: new Date().toISOString(),
         toolCalls: undefined,
