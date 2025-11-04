@@ -632,10 +632,16 @@ export function getOperationTools(fileMap: ParsedCsvFilesMap, operationResult: O
         operationResult.operations.push(
           `aggregate(file=${params.fileName}, op=${params.operation}, column=${params.aggregateColumn}${groupDesc})`,
         );
+
+        // Include actual aggregate values in response for LLM to use
+        const dataPreview = result.length <= 10 ? result : result.slice(0, 10);
+        const valueStr = result.length === 1 ? JSON.stringify(result[0]) : `${result.length} rows`;
+
         return {
           success: true,
           rowCount: result.length,
-          message: `Aggregation (${params.operation}) on ${params.aggregateColumn}${groupDesc} produced ${result.length} result rows`,
+          data: dataPreview,
+          message: `Aggregation (${params.operation}) on ${params.aggregateColumn}${groupDesc} = ${valueStr}`,
         };
       },
     }),
