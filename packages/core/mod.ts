@@ -31,12 +31,14 @@ export * from "./src/credential-fetcher.ts";
 // Export all LLM provider types and interfaces
 export type { LLMOptions, LLMResponse } from "./src/llm-provider.ts";
 export { anthropic, createAnthropicWithOptions, LLMProvider } from "./src/llm-provider.ts";
-export type {
-  MCPDiscoveryRequest,
-  MCPServerMetadata,
-} from "./src/mcp-registry/index.ts";
 // MCP Registry
-export { MCPRegistry } from "./src/mcp-registry/index.ts";
+export { mcpServersRegistry } from "./src/mcp-registry/registry-consolidated.ts";
+export type {
+  MCPCategory,
+  MCPServerMetadata,
+  MCPServersRegistry,
+  RequiredConfigField,
+} from "./src/mcp-registry/schemas.ts";
 // MCP Server Pool
 export { GlobalMCPServerPool } from "./src/mcp-server-pool.ts";
 export type {

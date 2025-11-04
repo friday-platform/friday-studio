@@ -2,6 +2,22 @@ import { createAgent, repairJson } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
 import { anthropic } from "@atlas/core";
 import type { WorkspacePlan } from "@atlas/core/artifacts";
+import {
+  type ClarificationItem,
+  createAmbiguousBundledClarification,
+  createAmbiguousMCPClarification,
+  createBundledMissingFieldsClarification,
+  createMCPMissingFieldsClarification,
+  createNoMatchClarification,
+  formatClarificationReport,
+} from "@atlas/core/mcp-registry/clarification";
+import {
+  findUnmatchedNeeds,
+  type MCPServerMatch,
+  mapNeedToMCPServers,
+  matchBundledAgents,
+} from "@atlas/core/mcp-registry/deterministic-matching";
+import { validateRequiredFields } from "@atlas/core/mcp-registry/requirement-validator";
 import { fail, getTodaysDate, type Result, stringifyError, success } from "@atlas/utils";
 import { toKebabCase } from "@std/text";
 import { generateObject, generateText } from "ai";
@@ -230,7 +246,7 @@ Split agents by external system and capability boundary. Each agent should handl
                 needs: z
                   .array(z.string())
                   .describe(
-                    "High-level capabilities this agent requires. Use generic categories ('web-access', 'notifications', 'data-storage', 'email') unless referring to specific brands/services ('google-calendar', 'slack', 'discord', 'github').",
+                    "External integrations requiring API keys or configuration. Use empty array [] for agents that only use built-in capabilities. Built-in capabilities (file operations, library storage, artifacts, bash, csv) are ALWAYS available to all agents - DO NOT list them here. Only list external services: 'slack', 'github', 'google-calendar', 'email', 'stripe', 'linear', etc.",
                   ),
                 configuration: z
                   .record(z.string(), z.unknown())
@@ -266,6 +282,97 @@ Split agents by external system and capability boundary. Each agent should handl
           .filter((other) => toKebabCase(other.name) === baseId).length;
         return { ...a, id: duplicateCount > 0 ? `${baseId}-${duplicateCount + 1}` : baseId };
       });
+
+      stream?.emit({
+        type: "data-tool-progress",
+        data: { toolName: "Workspace Planner", content: "Validating agent integrations..." },
+      });
+
+      // Validate agent integrations (deterministic matching + LLM field validation)
+      const clarifications: ClarificationItem[] = [];
+
+      for (const agent of agentsWithIds) {
+        // STEP 1: Try bundled agents (deterministic keyword matching)
+        const bundledMatches = matchBundledAgents(agent.needs);
+
+        if (bundledMatches.length === 1) {
+          // Single bundled match - validate required fields
+          const bundledMatch = bundledMatches.at(0);
+          if (bundledMatch) {
+            const missingFields = validateRequiredFields(bundledMatch.requiredConfig);
+
+            if (missingFields.length > 0) {
+              clarifications.push(
+                createBundledMissingFieldsClarification(
+                  agent.name,
+                  agent.needs,
+                  bundledMatch,
+                  missingFields,
+                ),
+              );
+            }
+
+            // Mark agent as using bundled (don't process MCP for this agent)
+            continue;
+          }
+        } else if (bundledMatches.length > 1) {
+          // Ambiguous bundled matches - user must choose
+          clarifications.push(
+            createAmbiguousBundledClarification(agent.name, agent.needs, bundledMatches),
+          );
+          continue;
+        }
+
+        // STEP 2: No bundled match - try MCP servers (deterministic keyword mapping)
+        const mcpMatchesByNeed = new Map<string, MCPServerMatch[]>();
+
+        for (const need of agent.needs) {
+          const mcpMatches = mapNeedToMCPServers(need);
+          mcpMatchesByNeed.set(need, mcpMatches);
+
+          if (mcpMatches.length === 1) {
+            // Single MCP match - validate required fields
+            const mcpMatch = mcpMatches.at(0);
+            if (mcpMatch) {
+              const missingFields = validateRequiredFields(mcpMatch.requiredConfig);
+
+              if (missingFields.length > 0) {
+                clarifications.push(
+                  createMCPMissingFieldsClarification(
+                    agent.name,
+                    agent.needs,
+                    mcpMatch,
+                    missingFields,
+                  ),
+                );
+              }
+            }
+          } else if (mcpMatches.length > 1) {
+            // Ambiguous MCP matches - user must choose
+            clarifications.push(createAmbiguousMCPClarification(agent.name, need, mcpMatches));
+          }
+        }
+
+        // STEP 3: Check for unmatched needs (no bundled or MCP found)
+        const unmatchedNeeds = findUnmatchedNeeds(agent.needs, bundledMatches, mcpMatchesByNeed);
+
+        for (const need of unmatchedNeeds) {
+          clarifications.push(createNoMatchClarification(agent.name, need));
+        }
+      }
+
+      // If any clarifications needed, return error and DON'T save artifact
+      if (clarifications.length > 0) {
+        const clarificationMessage = formatClarificationReport(clarifications);
+
+        logger.warn("Workspace planning blocked by missing information", {
+          clarificationCount: clarifications.length,
+        });
+
+        return fail({
+          reason: `Cannot create workspace plan - missing required information:\n\n${clarificationMessage}`,
+        });
+      }
 
       const signalIds = signalsWithIds.map((s) => s.id);
       const agentIds = agentsWithIds.map((a) => a.id);

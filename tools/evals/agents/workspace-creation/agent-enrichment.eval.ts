@@ -25,9 +25,7 @@ Deno.test("Agent Enrichment - People Research Anti-Hallucination", async (t) => 
     const plan = linkedinProspectResearchPlan;
 
     // Extract the agent that does people research
-    const prospectResearcherAgent = plan.agents.find(
-      (a) => a.id === "prospect-research-email-generator",
-    );
+    const prospectResearcherAgent = plan.agents.find((a) => a.id === "prospect-researcher");
 
     assert(prospectResearcherAgent, "Plan should have prospect research agent");
 
@@ -36,9 +34,7 @@ Deno.test("Agent Enrichment - People Research Anti-Hallucination", async (t) => 
     // Run enrichment (this is what workspace-creation does)
     const { enrichedAgents, mcpDomains } = await enrichAgentsWithDomains(plan.agents);
 
-    const enrichedResearchAgent = enrichedAgents.find(
-      (a) => a.id === "prospect-research-email-generator",
-    );
+    const enrichedResearchAgent = enrichedAgents.find((a) => a.id === "prospect-researcher");
 
     assert(enrichedResearchAgent, "Should have enriched research agent");
 

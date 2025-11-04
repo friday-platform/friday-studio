@@ -19,18 +19,14 @@ export const customerSupportTriagePlan: WorkspacePlan = {
       name: "ticket-analyzer",
       description:
         "Analyzes ticket content and categorizes into billing, technical, feature request, or other. For technical issues, searches documentation for known solutions. For billing issues, marks as urgent. Returns structured categorization and solution suggestions.",
-      needs: [
-        "Zendesk API access to read ticket details",
-        "Documentation search capability",
-        "Zendesk API access to update tickets with tags",
-      ],
+      needs: ["zendesk"],
       configuration: {},
     },
     {
       id: "support-notifier",
       name: "support-notifier",
       description: "Sends formatted summary of ticket categorization and actions to Slack channel",
-      needs: ["Slack API access to post messages"],
+      needs: ["slack"],
       configuration: { channel: "#support-triage" },
     },
   ],

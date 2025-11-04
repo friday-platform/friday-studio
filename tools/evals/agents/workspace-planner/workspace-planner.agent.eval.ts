@@ -5,6 +5,7 @@ import { assert } from "@std/assert";
 import { AgentContextAdapter } from "../../lib/context.ts";
 import { llmJudge } from "../../lib/llm-judge.ts";
 import { loadCredentials } from "../../lib/load-credentials.ts";
+import { setupFakeCredentials } from "../../lib/setup-fake-credentials.ts";
 import { setupTest } from "../../lib/utils.ts";
 
 const { step } = setupTest({ testFileUrl: new URL(import.meta.url) });
@@ -19,6 +20,8 @@ const { step } = setupTest({ testFileUrl: new URL(import.meta.url) });
  */
 Deno.test("Workspace Planner Agent", async (t) => {
   await loadCredentials();
+  // Set up fake credentials for all common integrations to bypass validation
+  setupFakeCredentials("all");
   const adapter = new AgentContextAdapter();
   adapter.enableTelemetry();
 
@@ -561,67 +564,43 @@ Deno.test("Workspace Planner Agent", async (t) => {
     return { result, planData, metrics, executionTimeMs };
   });
 
-  await step(t, "Customer Support Triage: Conditional Branching Logic", async ({ snapshot }) => {
-    adapter.reset();
-    const context = adapter.createContext({ telemetry: true });
+  await step(
+    t,
+    "Customer Support Triage: Validation Blocks Missing Zendesk",
+    async ({ snapshot }) => {
+      adapter.reset();
+      const context = adapter.createContext({ telemetry: true });
 
-    const startTime = performance.now();
-    const input = {
-      intent:
-        "When a new support ticket arrives in Zendesk, analyze the ticket content and automatically categorize it (billing, technical, feature request, other). For technical issues, check if there's a known solution in our documentation and suggest it. For billing issues, flag for urgent review. Update the ticket with the category tag and any suggested solutions. Send a summary to Slack #support-triage.",
-    };
+      const startTime = performance.now();
+      const input = {
+        intent:
+          "When a new support ticket arrives in Zendesk, analyze the ticket content and automatically categorize it (billing, technical, feature request, other). For technical issues, check if there's a known solution in our documentation and suggest it. For billing issues, flag for urgent review. Update the ticket with the category tag and any suggested solutions. Send a summary to Slack #support-triage.",
+      };
 
-    const result = await workspacePlannerAgent.execute(input, context);
-    const executionTimeMs = performance.now() - startTime;
+      const result = await workspacePlannerAgent.execute(input, context);
+      const executionTimeMs = performance.now() - startTime;
 
-    const metrics = adapter.getMetrics();
-    const streamEvents = adapter.getStreamEvents();
+      const metrics = adapter.getMetrics();
+      const streamEvents = adapter.getStreamEvents();
 
-    assert(result.ok, "Should execute successfully");
-    assert(result.data.artifactId, "Should return artifact ID");
+      // Should fail because Zendesk integration doesn't exist
+      assert(!result.ok, "Should fail - Zendesk integration not available");
+      assert(result.error, "Should return error with clarification");
 
-    const artifactResponse = await parseResult(
-      client.artifactsStorage[":id"].$get({ param: { id: result.data.artifactId } }),
-    );
-    assert(artifactResponse.ok, "Should fetch artifact successfully");
-    assert(
-      artifactResponse.data.artifact.data.type === "workspace-plan",
-      "Artifact should be a workspace plan",
-    );
-    const planData: WorkspacePlan = artifactResponse.data.artifact.data.data;
+      // Check clarification message mentions Zendesk not found
+      const errorMessage = result.error.reason.toLowerCase();
+      assert(errorMessage.includes("zendesk"), "Clarification should mention Zendesk");
+      assert(
+        errorMessage.includes("no integration found") ||
+          errorMessage.includes("integration not found"),
+        "Clarification should indicate integration not found",
+      );
 
-    snapshot({ input, result, planData, metrics, streamEvents, timing: { executionTimeMs } });
+      snapshot({ input, result, metrics, streamEvents, timing: { executionTimeMs } });
 
-    // Structural assertions
-    assert(planData.signals.length >= 1, "Should have webhook signal for Zendesk");
-    assert(planData.agents.length > 0, "Should have agents");
-
-    // Check for Slack channel configuration
-    const hasSlackConfig = planData.agents.some(
-      (a) =>
-        a.configuration?.channel === "#support-triage" ||
-        (a.configuration && JSON.stringify(a.configuration).includes("#support-triage")),
-    );
-    assert(hasSlackConfig, "Should capture Slack channel in agent configuration");
-
-    const supportTriageEval = await llmJudge({
-      criteria: `The workspace plan should:
-        1. Define a webhook signal for Zendesk ticket creation events
-        2. Include agents for: ticket analyzer/categorizer, documentation searcher, ticket updater, Slack notifier
-        3. Capture configuration: Slack channel (#support-triage), Zendesk integration, categorization taxonomy (billing, technical, feature request, other)
-        4. Describe conditional/branching logic (technical issues → search docs, billing issues → urgent flag)
-        5. Explain category-specific handling in prose (different actions for different ticket types)
-        6. Address the workflow: analyze → categorize → conditional action → update ticket → notify
-        The plan should demonstrate understanding of conditional workflows where different paths are taken based on classification.`,
-      agentOutput: planData,
-    });
-    assert(
-      supportTriageEval.pass,
-      `Support triage validation failed: ${supportTriageEval.justification}`,
-    );
-
-    return { result, planData, metrics, executionTimeMs };
-  });
+      return { result, metrics, executionTimeMs };
+    },
+  );
 
   await step(
     t,

@@ -24,17 +24,24 @@ export const linkedinProspectResearchPlan: WorkspacePlan = {
   ],
   agents: [
     {
-      id: "prospect-research-email-generator",
-      name: "Prospect Research & Email Generator",
+      id: "prospect-researcher",
+      name: "Prospect Researcher",
       description:
-        "Reads CSV file of contacts, filters for companies with 50+ employees, randomly selects 3 people, researches each prospect and their company, generates company summaries and person insights, creates relationship-nurturing message ideas focused on future partnerships, and sends detailed briefing emails with all information formatted.",
-      needs: ["web-access", "data-storage", "email"],
+        "Reads CSV file of contacts, filters for companies with 50+ employees, randomly selects 3 people, researches each prospect and their company, generates company summaries and person insights, creates relationship-nurturing message ideas focused on future partnerships.",
+      needs: ["research"],
       configuration: {
         csvPath: "/Users/yenaoh/Downloads/Connections.csv",
         companySize: "50+",
         dailyProspects: 3,
-        emailRecipient: "yena@tempest.team",
       },
+    },
+    {
+      id: "briefing-emailer",
+      name: "Briefing Emailer",
+      description:
+        "Sends detailed briefing emails with prospect research, company summaries, insights, and message ideas formatted for the recipient.",
+      needs: ["email"],
+      configuration: { emailRecipient: "yena@tempest.team" },
     },
   ],
   jobs: [
@@ -44,9 +51,14 @@ export const linkedinProspectResearchPlan: WorkspacePlan = {
       triggerSignalId: "weekday-morning-trigger",
       steps: [
         {
-          agentId: "prospect-research-email-generator",
+          agentId: "prospect-researcher",
           description:
-            "Filter CSV for 50+ employee companies, randomly select 3 prospects, research each person and company, generate insights and nurturing message ideas, then send comprehensive briefing email to yena@tempest.team",
+            "Filter CSV for 50+ employee companies, randomly select 3 prospects, research each person and company, generate insights and nurturing message ideas",
+        },
+        {
+          agentId: "briefing-emailer",
+          description:
+            "Send comprehensive briefing email with all research findings to yena@tempest.team",
         },
       ],
       behavior: "sequential",

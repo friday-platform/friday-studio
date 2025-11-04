@@ -18,10 +18,7 @@ export const githubPRWebhookPlan: WorkspacePlan = {
       name: "PR Code Reviewer",
       description:
         "Fetches PR diff from GitHub, analyzes code for quality issues (style violations, potential bugs, performance concerns, best practice violations), and posts structured review comment with findings",
-      needs: [
-        "GitHub API access to fetch PR details and diffs",
-        "GitHub API access to post review comments",
-      ],
+      needs: ["github"],
       configuration: {},
     },
   ],

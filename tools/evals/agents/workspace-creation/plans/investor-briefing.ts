@@ -20,7 +20,7 @@ export const investorBriefingPlan: WorkspacePlan = {
       name: "Calendar Reader",
       description:
         "Connects to Google Calendar and extracts today's meeting events, identifying companies to research",
-      needs: ["Google Calendar API access", "OAuth credentials for calendar read permissions"],
+      needs: ["google-calendar"],
       configuration: {},
     },
     {
@@ -28,11 +28,7 @@ export const investorBriefingPlan: WorkspacePlan = {
       name: "Company Intelligence Researcher",
       description:
         "For each company, researches business model, funding stage, key metrics, and founding team backgrounds. Handles all research work as a cohesive task since company data and founder information are naturally related and overlap in sources",
-      needs: [
-        "Web search capabilities",
-        "Access to business databases (Crunchbase, PitchBook, or similar)",
-        "LinkedIn access for founder backgrounds",
-      ],
+      needs: ["research"],
       configuration: {},
     },
     {
@@ -40,7 +36,7 @@ export const investorBriefingPlan: WorkspacePlan = {
       name: "Briefing Composer",
       description:
         "Compiles calendar events and research findings into a structured email briefing and sends to recipient",
-      needs: ["Email sending capabilities (SMTP or email API)", "Template formatting"],
+      needs: ["email"],
       configuration: { recipient: "vc@example.com" },
     },
   ],

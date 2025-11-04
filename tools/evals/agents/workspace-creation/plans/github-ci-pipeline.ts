@@ -20,12 +20,7 @@ export const githubCIPipelinePlan: WorkspacePlan = {
       name: "Parallel Quality Checker",
       description:
         "Runs three quality checks in parallel: executes test suite with coverage metrics, scans for security vulnerabilities, and verifies dependency freshness. Returns structured results for all checks.",
-      needs: [
-        "GitHub API access to clone repository and read commit details",
-        "Test framework execution environment",
-        "Security scanning tool access",
-        "Dependency checker access",
-      ],
+      needs: ["github"],
       configuration: { repository: "github.com/myorg/myrepo" },
     },
     {
@@ -33,7 +28,7 @@ export const githubCIPipelinePlan: WorkspacePlan = {
       name: "Results Notifier",
       description:
         "Posts check results to Slack channel and adds summary comment to the triggering commit on GitHub. Formats results into clear pass/fail status with key metrics.",
-      needs: ["Slack API access to post messages", "GitHub API access to create commit comments"],
+      needs: ["slack", "github"],
       configuration: { slack_channel: "#ci-alerts", repository: "github.com/myorg/myrepo" },
     },
   ],

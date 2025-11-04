@@ -4,9 +4,9 @@
  * Mirrors the pattern established in LLMProviderManager
  */
 
-import { experimental_createMCPClient as createMCPClient } from "@ai-sdk/mcp";
 import { getAtlasDaemonUrl } from "@atlas/atlasd";
 import { logger } from "@atlas/logger";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { MCPServerConfig } from "./manager.ts";
 
@@ -469,25 +469,29 @@ export class MCPServerRegistry {
         },
       });
 
-      // Wrap client creation with timeout
-      const mcpClient = await Promise.race([
-        createMCPClient({ transport }),
+      // Initialize client and connect with timeout
+      const mcpClient = new Client(
+        { name: "atlas-platform-tools", version: "1.0.0" },
+        { capabilities: {} },
+      );
+      await Promise.race([
+        mcpClient.connect(transport),
         new Promise<never>((_, reject) =>
           setTimeout(
-            () => reject(new Error("Platform tools MCP client creation timeout")),
+            () => reject(new Error("Platform tools MCP client connection timeout")),
             timeoutMs,
           ),
         ),
       ]);
 
       // Get tools from the MCP client with timeout
-      const tools = await Promise.race([
-        mcpClient.tools(),
+      const result = await Promise.race([
+        mcpClient.listTools(),
         new Promise<never>((_, reject) =>
           setTimeout(() => reject(new Error("Platform tools fetch timeout")), timeoutMs),
         ),
       ]);
-      const toolNames = Object.keys(tools);
+      const toolNames = result.tools.map((tool) => tool.name);
 
       if (toolNames.length === 0) {
         throw new Error("No tools returned from MCP server");

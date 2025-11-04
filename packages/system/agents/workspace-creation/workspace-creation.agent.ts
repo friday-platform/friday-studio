@@ -86,9 +86,10 @@ export const workspaceCreationAgent = createAgent<WorkspaceCreationInput, Worksp
         data: { toolName: "Workspace Creator", content: "Enriching components" },
       });
 
-      const [enrichedSignals, { enrichedAgents, mcpDomains }, enrichedJobs] = await Promise.all([
+      // Enrich components in parallel (all async)
+      const [{ enrichedAgents, mcpDomains }, enrichedSignals, enrichedJobs] = await Promise.all([
+        enrichAgentsWithDomains(plan.agents),
         Promise.all(plan.signals.map((s) => enrichSignal(s, abortSignal))),
-        enrichAgentsWithDomains(plan.agents, abortSignal),
         Promise.all(plan.jobs.map((j) => enrichJob(j, abortSignal))),
       ]);
 
@@ -104,7 +105,7 @@ export const workspaceCreationAgent = createAgent<WorkspaceCreationInput, Worksp
         data: { toolName: "Workspace Creator", content: "Adding MCP servers" },
       });
 
-      const mcpServers = await generateMCPServers(mcpDomains, abortSignal);
+      const mcpServers = generateMCPServers(mcpDomains);
 
       logger.info("MCP server generation complete", { count: mcpServers.length });
 
