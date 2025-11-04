@@ -1,4 +1,5 @@
 import { createAtlasClient } from "@atlas/oapi-client";
+import { stringifyError } from "@atlas/utils";
 import { tool } from "ai";
 import { z } from "zod";
 
@@ -18,7 +19,7 @@ export const takeNoteTool = tool({
     });
 
     if (response.error) {
-      throw new Error(`Failed to store note: ${response.error.error}`);
+      throw new Error(`Failed to store note: ${stringifyError(response.error)}`);
     }
 
     return { stored: true };
@@ -39,7 +40,7 @@ export const recallNotesTool = tool({
     });
 
     if (response.error) {
-      throw new Error(`Failed to retrieve notes: ${response.error.error}`);
+      throw new Error(`Failed to retrieve notes: ${stringifyError(response.error)}`);
     }
 
     return { notes: response.data.notes, count: response.data.count };

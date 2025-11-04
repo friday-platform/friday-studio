@@ -1,4 +1,5 @@
 import { createAtlasClient } from "@atlas/oapi-client";
+import { stringifyError } from "@atlas/utils";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { ToolContext } from "../types.ts";
@@ -103,7 +104,7 @@ export function registerLibraryStoreTool(server: McpServer, ctx: ToolContext) {
       if (response.error) {
         ctx.logger.error("Failed to store library item", { error: response.error });
         return createErrorResponse(
-          `Failed to store library item: ${response.error.error || response.response.statusText}`,
+          `Failed to store library item: ${stringifyError(response.error)}`,
         );
       }
       const storeResult = response.data;

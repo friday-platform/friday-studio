@@ -1,4 +1,5 @@
 import { createAtlasClient } from "@atlas/oapi-client";
+import { stringifyError } from "@atlas/utils";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { ToolContext } from "../types.ts";
@@ -37,7 +38,7 @@ export function registerLibraryGetTool(server: McpServer, ctx: ToolContext) {
       if (response.error) {
         ctx.logger.error("Failed to get library item", { itemId, error: response.error });
         return createErrorResponse(
-          `Failed to get library item '${itemId}': ${response.error.error || response.response.statusText}`,
+          `Failed to get library item '${itemId}': ${stringifyError(response.error)}`,
         );
       }
       const libraryItem = response.data;

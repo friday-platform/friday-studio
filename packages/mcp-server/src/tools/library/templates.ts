@@ -1,4 +1,5 @@
 import { createAtlasClient } from "@atlas/oapi-client";
+import { stringifyError } from "@atlas/utils";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { ToolContext } from "../types.ts";
 import { createErrorResponse, createSuccessResponse } from "../utils.ts";
@@ -18,7 +19,7 @@ export function registerLibraryTemplatesTool(server: McpServer, ctx: ToolContext
       if (response.error) {
         ctx.logger.error("Failed to list templates", { error: response.error });
         return createErrorResponse(
-          `Failed to list library templates: ${response.error.error || response.response.statusText}`,
+          `Failed to list library templates: ${stringifyError(response.error)}`,
         );
       }
       const templates = response.data;

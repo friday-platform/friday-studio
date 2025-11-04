@@ -1,4 +1,5 @@
 import { createAtlasClient } from "@atlas/oapi-client";
+import { stringifyError } from "@atlas/utils";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { ToolContext } from "../types.ts";
 import { createErrorResponse, createSuccessResponse } from "../utils.ts";
@@ -18,7 +19,7 @@ export function registerLibraryStatsTool(server: McpServer, ctx: ToolContext) {
       if (response.error) {
         ctx.logger.error("Failed to get library stats", { error: response.error });
         return createErrorResponse(
-          `Failed to get library statistics: ${response.error.error || response.response.statusText}`,
+          `Failed to get library statistics: ${stringifyError(response.error)}`,
         );
       }
       const stats = response.data;

@@ -1,4 +1,5 @@
 import { createAtlasClient } from "@atlas/oapi-client";
+import { stringifyError } from "@atlas/utils";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { ToolContext } from "../types.ts";
@@ -24,9 +25,7 @@ export function registerLibraryListTool(server: McpServer, ctx: ToolContext) {
       const response = await client.GET("/api/library", { params: { query: { query } } });
       if (response.error) {
         ctx.logger.error("Failed to search library", { query, error: response.error });
-        return createErrorResponse(
-          `Failed to search library: ${response.error.error || response.response.statusText}`,
-        );
+        return createErrorResponse(`Failed to search library: ${stringifyError(response.error)}`);
       }
       const searchResult = response.data;
 
