@@ -101,7 +101,7 @@ export const googleCalendarAgent = createAgent<string, GoogleCalendarAgentResult
       }
 
       const { steps, toolCalls, toolResults, text } = await generateText({
-        model: anthropic("claude-sonnet-4-20250514"),
+        model: anthropic("claude-haiku-4-5"),
         abortSignal,
         system,
         prompt,

@@ -96,7 +96,7 @@ export const slackCommunicatorAgent = createAgent<string, Result>({
     });
 
     const planResult = await generateObject({
-      model: anthropic("claude-sonnet-4-20250514"),
+      model: anthropic("claude-haiku-4-5"),
       prompt,
       abortSignal,
       system: planSystem,
@@ -120,7 +120,7 @@ export const slackCommunicatorAgent = createAgent<string, Result>({
       const translatePrompt = `Read the provided artifact ids and create a Slack mrkdwn compatible artifact, then return the new artifact id. Use the following ids: ${JSON.stringify(plan.artifactIds)}`;
 
       const { steps, toolCalls, toolResults, text, finishReason } = await generateText({
-        model: anthropic("claude-sonnet-4-20250514"),
+        model: anthropic("claude-haiku-4-5"),
         abortSignal,
         system: translateSystem,
         prompt: translatePrompt,
@@ -193,7 +193,7 @@ export const slackCommunicatorAgent = createAgent<string, Result>({
       }
 
       const result = await generateText({
-        model: anthropic("claude-sonnet-4-20250514"),
+        model: anthropic("claude-haiku-4-5"),
         abortSignal,
         system: executorSystem,
         prompt: executorInstructions,

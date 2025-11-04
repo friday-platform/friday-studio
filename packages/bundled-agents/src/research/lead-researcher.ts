@@ -271,7 +271,7 @@ export const researchAgent = createAgent<string, ResearchAgentResult>({
       });
 
       const { object: researchTask } = await generateObject({
-        model: anthropic("claude-3-7-sonnet-latest"),
+        model: anthropic("claude-sonnet-4-5"),
         system: RESEARCH_TOPIC_WRITER_PROMPT,
         prompt: prompt,
         schema: ResearchTaskSchema,
@@ -288,7 +288,7 @@ export const researchAgent = createAgent<string, ResearchAgentResult>({
 
       /** Execute research with supervisor */
       const result = streamText({
-        model: anthropic("claude-sonnet-4-20250514"),
+        model: anthropic("claude-sonnet-4-5"),
         system: createSupervisorPrompt(researchTask.depth),
         prompt: researchTask.researchQuestion,
         tools: {

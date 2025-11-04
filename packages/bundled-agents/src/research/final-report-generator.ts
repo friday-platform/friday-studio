@@ -82,7 +82,7 @@ export function getFinalReportGeneratorSubAgent({ logger, abortSignal }: Params)
 Generate report answering the request.`;
 
       const { text } = await generateText({
-        model: anthropic("claude-3-7-sonnet-latest"),
+        model: anthropic("claude-sonnet-4-5"),
         system: FINAL_REPORT_GENERATOR_PROMPT,
         prompt: reportPrompt,
         tools,

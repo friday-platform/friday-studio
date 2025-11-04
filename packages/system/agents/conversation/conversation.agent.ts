@@ -300,7 +300,7 @@ export const conversationAgent = createAgent({
     try {
       try {
         result = streamText({
-          model: anthropic("claude-sonnet-4-20250514"),
+          model: anthropic("claude-sonnet-4-5"),
           system: systemPrompt,
           messages: convertToModelMessages(messages),
           tools: allTools,

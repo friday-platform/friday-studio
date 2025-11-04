@@ -559,7 +559,7 @@ export class AtlasMECMFMemoryManager implements MECMFMemoryManager {
       const extractor = new SemanticFactExtractor({
         logger: logger.child({ component: "semantic-fact-extractor" }),
         enabled: true,
-        model: "claude-3-7-sonnet-latest",
+        model: "claude-haiku-4-5",
         confidenceThreshold: 0.6,
         // Use extractor's default model provider
         temperature: 0.1,

@@ -75,7 +75,7 @@ export async function enrichJob(
   abortSignal?: AbortSignal,
 ): Promise<{ id: string; spec: JobSpecification }> {
   const { object } = await generateObject({
-    model: anthropic("claude-sonnet-4-20250514"),
+    model: anthropic("claude-sonnet-4-5"),
     schema: JobEnricherSchema,
     system: systemPrompt,
     prompt: `Generate job specification:

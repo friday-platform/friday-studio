@@ -470,7 +470,7 @@ export class SessionSupervisorActor implements BaseActor {
       );
 
     const { object: rawPlan } = await generateObject({
-      model: this.llmProvider("claude-3-7-sonnet-latest"),
+      model: this.llmProvider("claude-sonnet-4-5"),
       system: planningContext,
       messages: [
         {

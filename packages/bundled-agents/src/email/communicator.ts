@@ -134,7 +134,7 @@ OUTPUT:
     `;
 
     const compositionResult = await generateObject({
-      model: anthropic("claude-sonnet-4-20250514"),
+      model: anthropic("claude-haiku-4-5"),
       prompt,
       abortSignal,
       system: compositionSystem,
