@@ -5,10 +5,13 @@
     "jsr:@std/assert@^1.0.15": "1.0.15",
     "jsr:@std/async@^1.0.15": "1.0.15",
     "jsr:@std/data-structures@^1.0.9": "1.0.9",
+    "jsr:@std/fs@*": "1.0.19",
     "jsr:@std/fs@^1.0.19": "1.0.19",
     "jsr:@std/internal@^1.0.10": "1.0.12",
     "jsr:@std/internal@^1.0.12": "1.0.12",
+    "jsr:@std/internal@^1.0.9": "1.0.12",
     "jsr:@std/media-types@^1.1.0": "1.1.0",
+    "jsr:@std/path@*": "1.1.2",
     "jsr:@std/path@^1.1.1": "1.1.2",
     "jsr:@std/path@^1.1.2": "1.1.2",
     "jsr:@std/testing@1": "1.0.16",
@@ -81,6 +84,7 @@
     "npm:svelte-eslint-parser@^1.3.1": "1.4.0_svelte@5.43.3__acorn@8.15.0_postcss@8.5.6",
     "npm:svelte@5": "5.43.3_acorn@8.15.0",
     "npm:typescript-eslint@^8.20.0": "8.46.3_eslint@9.39.1_typescript@5.9.3_@typescript-eslint+parser@8.46.3__eslint@9.39.1__typescript@5.9.3",
+    "npm:typescript@*": "5.9.3",
     "npm:typescript@5": "5.9.3",
     "npm:vite@^7.1.8": "7.1.12_picomatch@4.0.3",
     "npm:xstate@^5.21.0": "5.24.0",
@@ -104,6 +108,7 @@
     "@std/fs@1.0.19": {
       "integrity": "051968c2b1eae4d2ea9f79a08a3845740ef6af10356aff43d3e2ef11ed09fb06",
       "dependencies": [
+        "jsr:@std/internal@^1.0.9",
         "jsr:@std/path@^1.1.1"
       ]
     },
@@ -125,7 +130,7 @@
         "jsr:@std/assert@^1.0.15",
         "jsr:@std/async",
         "jsr:@std/data-structures",
-        "jsr:@std/fs",
+        "jsr:@std/fs@^1.0.19",
         "jsr:@std/internal@^1.0.12",
         "jsr:@std/path@^1.1.2"
       ]

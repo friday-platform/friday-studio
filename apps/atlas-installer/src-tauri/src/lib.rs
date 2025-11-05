@@ -192,78 +192,116 @@ fn write_env_file(env_vars: HashMap<String, String>) -> Result<(), String> {
     Ok(())
 }
 
+// Helper function to find binary path using shell
+fn find_binary_path(binary_name: &str) -> Option<String> {
+    let binary_name_with_ext = if cfg!(target_os = "windows") {
+        format!("{}.cmd", binary_name)
+    } else {
+        binary_name.to_string()
+    };
+
+    // Execute the command to find binary
+    let output = if cfg!(target_os = "windows") {
+        create_hidden_command("cmd")
+            .args(["/C", &format!("where {}", binary_name_with_ext)])
+            .output()
+    } else {
+        // On Unix systems, use login shell to get full PATH
+        // Get user's actual shell, fallback to zsh on macOS (default since Catalina), bash elsewhere
+        let user_shell = std::env::var("SHELL").unwrap_or_else(|_| {
+            if cfg!(target_os = "macos") {
+                "/bin/zsh".to_string()
+            } else {
+                "/bin/bash".to_string()
+            }
+        });
+
+        create_hidden_command(&user_shell)
+            .args(["-l", "-c", &format!("which {}", binary_name_with_ext)])
+            .output()
+    };
+
+    // Extract path or return None on any failure
+    match output {
+        Ok(result) if result.status.success() => {
+            let path = String::from_utf8_lossy(&result.stdout)
+                .lines()
+                .next()
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            if path.is_empty() {
+                None
+            } else {
+                Some(path)
+            }
+        }
+        _ => None,
+    }
+}
+
 // Save Atlas NPX path - finds the actual full path to npx
 #[tauri::command]
 async fn save_atlas_npx_path() -> IPCResult {
     tokio::task::spawn_blocking(|| {
-        // Find npx using which/where command to get full path
-        let npx_name = if cfg!(target_os = "windows") {
-            "npx.cmd"
-        } else {
-            "npx"
-        };
-
-        let find_cmd = if cfg!(target_os = "windows") {
-            format!("where {}", npx_name)
-        } else if cfg!(target_os = "macos") {
-            // On macOS, use login shell to get full PATH
-            format!("/bin/bash -l -c \"which {}\"", npx_name)
-        } else {
-            format!("which {}", npx_name)
-        };
-
-        // Execute the command to find npx
-        let shell = if cfg!(target_os = "windows") {
-            "cmd"
-        } else {
-            "sh"
-        };
-
-        let shell_flag = if cfg!(target_os = "windows") {
-            "/C"
-        } else {
-            "-c"
-        };
-
-        let output = create_hidden_command(shell)
-            .args([shell_flag, &find_cmd])
-            .output();
-
-        let npx_path = match output {
-            Ok(result) if result.status.success() => {
-                let path_str = String::from_utf8_lossy(&result.stdout).trim().to_string();
-                // On Windows, 'where' might return multiple paths, take the first one
-                path_str.lines().next().unwrap_or("").trim().to_string()
-            }
-            _ => {
-                // NPX not found, skip configuration
-                return IPCResult {
-                    success: true,
-                    message: Some("NPX not found, skipping NPX path configuration".to_string()),
-                    error: None,
+        match find_binary_path("npx") {
+            Some(npx_path) => {
+                // Save to .env with full path
+                let mut env_vars = match read_env_file() {
+                    Ok(vars) => vars,
+                    Err(e) => return IPCResult::error(e),
                 };
+
+                env_vars.insert("ATLAS_NPX_PATH".to_string(), npx_path.clone());
+
+                match write_env_file(env_vars) {
+                    Ok(_) => IPCResult::success(format!("NPX path saved: {}", npx_path)),
+                    Err(e) => IPCResult::error(e),
+                }
             }
-        };
-
-        if npx_path.is_empty() {
-            return IPCResult {
+            None => IPCResult {
                 success: true,
-                message: Some("NPX not found, skipping NPX path configuration".to_string()),
+                message: Some(
+                    "NPX not found. MCP servers will not work.\n\
+                     Install Node.js from https://nodejs.org"
+                        .to_string(),
+                ),
                 error: None,
-            };
+            },
         }
+    })
+    .await
+    .unwrap_or_else(|e| IPCResult::error(format!("Task failed: {}", e)))
+}
 
-        // Save to .env with full path
-        let mut env_vars = match read_env_file() {
-            Ok(vars) => vars,
-            Err(e) => return IPCResult::error(e),
-        };
+// Save Atlas UV path - finds the actual full path to uv
+#[tauri::command]
+async fn save_atlas_uv_path() -> IPCResult {
+    tokio::task::spawn_blocking(|| {
+        match find_binary_path("uv") {
+            Some(uv_path) => {
+                // Save to .env with full path
+                let mut env_vars = match read_env_file() {
+                    Ok(vars) => vars,
+                    Err(e) => return IPCResult::error(e),
+                };
 
-        env_vars.insert("ATLAS_NPX_PATH".to_string(), npx_path.clone());
+                env_vars.insert("ATLAS_UV_PATH".to_string(), uv_path.clone());
 
-        match write_env_file(env_vars) {
-            Ok(_) => IPCResult::success(format!("NPX path saved: {}", npx_path)),
-            Err(e) => IPCResult::error(e),
+                match write_env_file(env_vars) {
+                    Ok(_) => IPCResult::success(format!("UV path saved: {}", uv_path)),
+                    Err(e) => IPCResult::error(e),
+                }
+            }
+            None => IPCResult {
+                success: true,
+                message: Some(
+                    "UV not found. Python agents may not work optimally.\n\
+                     Install UV from https://docs.astral.sh/uv/"
+                        .to_string(),
+                ),
+                error: None,
+            },
         }
     })
     .await
@@ -1215,6 +1253,7 @@ pub fn run() {
             create_atlas_dir,
             check_existing_api_key,
             save_atlas_npx_path,
+            save_atlas_uv_path,
             save_atlas_key,
             install_atlas_binary,
             check_atlas_binary,

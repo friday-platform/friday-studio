@@ -19,6 +19,9 @@ const tauriAPI = {
   saveAtlasNpxPath: async (): Promise<IPCResult> => {
     return await invoke("save_atlas_npx_path");
   },
+  saveAtlasUvPath: async (): Promise<IPCResult> => {
+    return await invoke("save_atlas_uv_path");
+  },
   saveAtlasKey: async (apiKey: string): Promise<IPCResult> => {
     return await invoke("save_atlas_key", { apiKey });
   },
@@ -427,26 +430,31 @@ interface BinaryCheckResult {
 
       const steps: InstallationStep[] = [
         {
-          progress: 14,
+          progress: 12,
           message: "Creating Atlas directory...",
           action: () => tauriAPI.createAtlasDir(),
         },
         {
-          progress: 28,
+          progress: 24,
           message: "Configuring NPX path for MCP servers...",
           action: () => tauriAPI.saveAtlasNpxPath(),
         },
         {
-          progress: 42,
+          progress: 36,
+          message: "Configuring UV path for Python agents...",
+          action: () => tauriAPI.saveAtlasUvPath(),
+        },
+        {
+          progress: 48,
           message: "Installing Atlas binary...",
           action: () => tauriAPI.installAtlasBinary(),
         },
         {
-          progress: 56,
+          progress: 60,
           message: "Saving Atlas Access Key configuration...",
           action: () => this.configureCredentials(),
         },
-        { progress: 70, message: "Setting up PATH...", action: () => tauriAPI.setupPath() },
+        { progress: 72, message: "Setting up PATH...", action: () => tauriAPI.setupPath() },
         {
           progress: 84,
           message: "Installing and starting Atlas service...",
