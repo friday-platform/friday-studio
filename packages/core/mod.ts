@@ -34,7 +34,6 @@ export { anthropic, createAnthropicWithOptions, LLMProvider } from "./src/llm-pr
 // MCP Registry
 export { mcpServersRegistry } from "./src/mcp-registry/registry-consolidated.ts";
 export type {
-  MCPCategory,
   MCPServerMetadata,
   MCPServersRegistry,
   RequiredConfigField,

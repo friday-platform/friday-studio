@@ -1,5 +1,5 @@
 /** biome-ignore-all lint/suspicious/noTemplateCurlyInString: mcp-remote requires ${} interpolation */
-import type { MCPCategory, MCPServersRegistry } from "./schemas.ts";
+import type { MCPServersRegistry } from "./schemas.ts";
 
 /**
  * Consolidated MCP servers registry
@@ -11,7 +11,6 @@ export const mcpServersRegistry: MCPServersRegistry = {
     github: {
       id: "github",
       name: "GitHub",
-      category: "development",
       domains: ["github"],
       source: "static",
       securityRating: "high",
@@ -19,14 +18,52 @@ export const mcpServersRegistry: MCPServersRegistry = {
         transport: {
           type: "stdio",
           command: "npx",
-          args: ["-y", "mcp-remote", "https://api.githubcopilot.com/mcp"],
+          args: [
+            "-y",
+            "mcp-remote",
+            "https://api.githubcopilot.com/mcp",
+            "--header",
+            "Authorization: Bearer ${GH_CLASSIC_PAT}",
+          ],
         },
+        env: { GH_CLASSIC_PAT: "your-github-classic-personal-access-token" },
       },
+      requiredConfig: [
+        {
+          key: "GH_CLASSIC_PAT",
+          description: "GitHub Classic Personal Access Token.",
+          type: "string",
+          examples: ["ghp_XXXXXXXXX"],
+        },
+      ],
+    },
+    hubspot: {
+      id: "hubspot",
+      name: "HubSpot",
+      domains: ["hubspot"],
+      source: "static",
+      securityRating: "high",
+      configTemplate: {
+        transport: {
+          type: "stdio",
+          command: "npx",
+          args: [
+            "-y",
+            "mcp-remote",
+            "https://mcp.hubspot.com",
+            "--header",
+            "Authorization: Bearer ${HUBSPOT_ACCESS_TOKEN}",
+          ],
+        },
+        env: { HUBSPOT_ACCESS_TOKEN: "your-hubspot-access-token" },
+      },
+      requiredConfig: [
+        { key: "HUBSPOT_ACCESS_TOKEN", description: "HubSpot App Access Token.", type: "string" },
+      ],
     },
     azure: {
       id: "azure",
       name: "Azure Services",
-      category: "cloud",
       domains: ["azure"],
       source: "static",
       securityRating: "high",
@@ -69,7 +106,6 @@ export const mcpServersRegistry: MCPServersRegistry = {
     stripe: {
       id: "stripe",
       name: "Stripe Payments",
-      category: "finance",
       domains: ["stripe"],
       source: "static",
       securityRating: "high",
@@ -101,7 +137,6 @@ export const mcpServersRegistry: MCPServersRegistry = {
     playwright: {
       id: "playwright",
       name: "Playwright Browser Automation",
-      category: "testing",
       domains: ["automated testing", "ui automation", "screenshot generation"],
       source: "static",
       securityRating: "medium",
@@ -118,7 +153,6 @@ export const mcpServersRegistry: MCPServersRegistry = {
     time: {
       id: "time",
       name: "Time & Timezone",
-      category: "utility",
       domains: ["timekeeping", "timezone conversion"],
       source: "static",
       securityRating: "high",
@@ -130,7 +164,6 @@ export const mcpServersRegistry: MCPServersRegistry = {
     weather: {
       id: "weather",
       name: "Weather Data Service",
-      category: "utility",
       domains: ["weather"],
       source: "static",
       securityRating: "medium",
@@ -148,7 +181,6 @@ export const mcpServersRegistry: MCPServersRegistry = {
     "google-genai-toolbox": {
       id: "google-genai-toolbox",
       name: "Google GenAI Toolbox",
-      category: "development",
       domains: ["google genai"],
       source: "static",
       securityRating: "medium",
@@ -173,7 +205,6 @@ export const mcpServersRegistry: MCPServersRegistry = {
     "google-analytics": {
       id: "google-analytics",
       name: "Google Analytics 4",
-      category: "analytics",
       domains: ["google-analytics"],
       source: "static",
       securityRating: "medium",
@@ -209,7 +240,6 @@ export const mcpServersRegistry: MCPServersRegistry = {
     auth0: {
       id: "auth0",
       name: "Auth0 Identity Management",
-      category: "security",
       domains: ["auth0"],
       source: "static",
       securityRating: "high",
@@ -229,7 +259,6 @@ export const mcpServersRegistry: MCPServersRegistry = {
     linear: {
       id: "linear",
       name: "Linear Project Management",
-      category: "project-management",
       domains: ["linear"],
       source: "static",
       securityRating: "high",
@@ -244,7 +273,6 @@ export const mcpServersRegistry: MCPServersRegistry = {
     trello: {
       id: "trello",
       name: "Trello Board Management",
-      category: "project-management",
       domains: ["trello"],
       source: "static",
       securityRating: "medium",
@@ -271,7 +299,6 @@ export const mcpServersRegistry: MCPServersRegistry = {
     notion: {
       id: "notion",
       name: "Notion Workspace",
-      category: "content",
       domains: ["notion"],
       source: "static",
       securityRating: "high",
@@ -286,7 +313,6 @@ export const mcpServersRegistry: MCPServersRegistry = {
     rss: {
       id: "rss",
       name: "RSS Feed Management",
-      category: "content",
       domains: ["rss"],
       source: "static",
       securityRating: "medium",
@@ -327,7 +353,6 @@ export const mcpServersRegistry: MCPServersRegistry = {
     posthog: {
       id: "posthog",
       name: "PostHog Analytics & Feature Flags",
-      category: "analytics",
       domains: ["posthog"],
       source: "static",
       securityRating: "high",
@@ -350,7 +375,6 @@ export const mcpServersRegistry: MCPServersRegistry = {
     sentry: {
       id: "sentry",
       name: "Sentry Error Tracking",
-      category: "development",
       domains: ["sentry"],
       source: "static",
       securityRating: "high",
@@ -365,7 +389,6 @@ export const mcpServersRegistry: MCPServersRegistry = {
     discord: {
       id: "discord",
       name: "Discord Bot Integration",
-      category: "communication",
       domains: ["discord", "chat", "messaging", "community"],
       source: "static",
       securityRating: "medium",
@@ -395,20 +418,5 @@ export const mcpServersRegistry: MCPServersRegistry = {
       ],
     },
   },
-  categories: [
-    "development",
-    "cloud",
-    "analytics",
-    "automation",
-    "communication",
-    "testing",
-    "security",
-    "content",
-    "finance",
-    "utility",
-    "database",
-    "project-management",
-    "monitoring",
-  ] as MCPCategory[],
   metadata: { version: "2.0.0", lastUpdated: "2025-01-27" },
 };

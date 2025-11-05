@@ -11,7 +11,6 @@ describe("mcpServersRegistry", () => {
       assertExists(server.name, `Server ${id} missing name`);
 
       // Classification
-      assertExists(server.category, `Server ${id} missing category`);
       assertExists(server.domains, `Server ${id} missing domains`);
       assertEquals(server.domains.length > 0, true, `Server ${id} has empty domains array`);
 
@@ -53,20 +52,6 @@ describe("mcpServersRegistry", () => {
     assertExists(mcpServersRegistry.metadata);
     assertExists(mcpServersRegistry.metadata.version);
     assertExists(mcpServersRegistry.metadata.lastUpdated);
-  });
-
-  it("categories include all server categories", () => {
-    const serverCategories = new Set(
-      Object.values(mcpServersRegistry.servers).map((s) => s.category),
-    );
-
-    for (const category of serverCategories) {
-      assertEquals(
-        mcpServersRegistry.categories.includes(category),
-        true,
-        `Category ${category} used by servers but not in categories list`,
-      );
-    }
   });
 
   it("has requiredConfig for servers with env variables", () => {

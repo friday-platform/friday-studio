@@ -2,27 +2,6 @@ import type { MCPServerConfig } from "@atlas/config";
 import { z } from "zod";
 
 /**
- * MCP server categories for classification
- */
-const MCPCategorySchema = z.enum([
-  "development",
-  "cloud",
-  "analytics",
-  "automation",
-  "communication",
-  "testing",
-  "security",
-  "content",
-  "finance",
-  "utility",
-  "database",
-  "project-management",
-  "monitoring",
-]);
-
-export type MCPCategory = z.infer<typeof MCPCategorySchema>;
-
-/**
  * Security rating for MCP servers
  */
 const SecurityRatingSchema = z.enum(["high", "medium", "low", "unverified"]);
@@ -54,9 +33,6 @@ export type MCPServerMetadata = {
   // Identity
   id: string;
   name: string;
-
-  // Classification (enhanced with domains for semantic matching)
-  category: MCPCategory;
   domains: string[];
 
   // Security & Quality
@@ -81,6 +57,5 @@ export type RegistryMetadata = z.infer<typeof RegistryMetadataSchema>;
  */
 export type MCPServersRegistry = {
   servers: Record<string, MCPServerMetadata>;
-  categories: MCPCategory[];
   metadata: RegistryMetadata;
 };
