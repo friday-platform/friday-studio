@@ -100,6 +100,14 @@ pitch, rewrite it. </communication_style>
 
 </development>
 
+<git_workflow>
+
+- The `main` branch is protected and requires all changes to go through pull requests
+- Never attempt to push directly to `main` - create a feature branch and open a PR instead
+- All PRs must pass required status checks before merging
+
+</git_workflow>
+
 <testing>
 
 - Run tests using `deno task test $file`
