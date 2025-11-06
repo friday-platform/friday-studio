@@ -2,7 +2,7 @@
  * Tests for CSV operations
  */
 
-import { expect } from "jsr:@std/expect@^1.0.17";
+import { expect } from "@std/expect";
 import Papa from "papaparse";
 import type { ParsedCsvFilesMap } from "./operations.ts";
 import { aggregateCsv, filterCsv, getRowsCsv, joinCsv, limitCsv, sortCsv } from "./operations.ts";

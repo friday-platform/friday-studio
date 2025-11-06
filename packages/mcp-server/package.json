@@ -14,5 +14,6 @@
     "ai": "^5.0.81",
     "papaparse": "^5.5.3",
     "zod": "^4.1.11"
-  }
+  },
+  "devDependencies": { "@std/expect": "npm:@jsr/std__expect@^1.0.17" }
 }

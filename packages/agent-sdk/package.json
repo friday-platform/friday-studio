@@ -14,5 +14,6 @@
     "ai": "^5.0.81",
     "jsonrepair": "^3.13.1",
     "zod": "^4.1.11"
-  }
+  },
+  "devDependencies": { "@std/assert": "npm:@jsr/std__assert@^1.0.14" }
 }

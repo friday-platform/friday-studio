@@ -7,7 +7,6 @@
   "dependencies": {
     "@atlas/agent-sdk": "workspace:*",
     "@atlas/storage": "workspace:*",
-    "@std/yaml": "npm:@jsr/std__yaml@^1.0.9",
     "cron-parser": "^5.4.0",
     "zod": "^4.1.11",
     "zod-from-json-schema": "^0.5.0"

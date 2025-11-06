@@ -10,13 +10,11 @@
     "@atlas/utils": "workspace:*",
     "@std/crypto": "npm:@jsr/std__crypto@^1.0.5",
     "@std/fs": "npm:@jsr/std__fs@^1.0.19",
-    "@std/path": "npm:@jsr/std__path@^1.1.2",
     "onnxruntime-web": "1.22.0",
     "zod": "^4.1.11"
   },
   "devDependencies": {
     "@std/assert": "npm:@jsr/std__assert@^1.0.14",
-    "@std/expect": "npm:@jsr/std__expect@^1.0.17",
-    "@std/testing": "npm:@jsr/std__testing@^1.0.15"
+    "@std/expect": "npm:@jsr/std__expect@^1.0.17"
   }
 }

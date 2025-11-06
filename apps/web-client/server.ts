@@ -3,8 +3,8 @@
  * Serves static assets and proxies API/streams requests to daemon
  */
 
-import { serveDir } from "jsr:@std/http@1/file-server";
 import { logger } from "@atlas/logger";
+import { serveDir } from "@std/http/file-server";
 import { proxyToDaemon, shouldProxyToDaemon } from "./src/lib/server/proxy-util.ts";
 
 const port = parseInt(Deno.env.get("WEB_CLIENT_PORT") || "3000", 10);

@@ -1,4 +1,4 @@
-import { assertEquals, assertRejects } from "jsr:@std/assert@^1";
+import { assertEquals, assertRejects } from "@std/assert";
 import { validateAtlasUIMessages } from "./messages.ts";
 
 Deno.test("validateAtlasUIMessages - validates basic text message", async () => {

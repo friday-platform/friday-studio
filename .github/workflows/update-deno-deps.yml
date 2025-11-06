@@ -1,0 +1,101 @@
+name: Update Deno Dependencies
+
+on:
+  schedule:
+    # Run daily at 9:00 AM UTC
+    - cron: '0 9 * * *'
+  workflow_dispatch: # Allow manual triggers
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update-deps:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Check for outdated dependencies
+        id: check
+        run: |
+          echo "Checking for outdated Deno/JSR dependencies..."
+          if deno outdated --json > outdated.json 2>&1; then
+            if [ -s outdated.json ] && [ "$(jq 'length' outdated.json)" -gt 0 ]; then
+              echo "has_updates=true" >> "$GITHUB_OUTPUT"
+              echo "Found outdated dependencies:"
+              jq -r '.[] | "\(.name): \(.current) -> \(.latest)"' outdated.json
+            else
+              echo "has_updates=false" >> "$GITHUB_OUTPUT"
+              echo "No outdated dependencies found"
+            fi
+          else
+            echo "has_updates=false" >> "$GITHUB_OUTPUT"
+            echo "Error checking dependencies or no updates available"
+          fi
+
+      - name: Update dependencies
+        if: steps.check.outputs.has_updates == 'true'
+        run: |
+          echo "Updating Deno dependencies..."
+          deno outdated --update --latest
+
+      - name: Install dependencies
+        if: steps.check.outputs.has_updates == 'true'
+        run: deno install
+
+      - name: Run tests
+        if: steps.check.outputs.has_updates == 'true'
+        run: deno task test || echo "Tests failed - PR will require manual review"
+        continue-on-error: true
+
+      - name: Create Pull Request
+        if: steps.check.outputs.has_updates == 'true'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          # Use PAT to trigger CI workflows on created PR
+          # Falls back to GITHUB_TOKEN if PAT not available (but won't trigger CI)
+          token: ${{ secrets.PAT || secrets.GITHUB_TOKEN }}
+          commit-message: 'deps(deno): update JSR dependencies'
+          committer: GitHub <noreply@github.com>
+          author: github-actions[bot] <github-actions[bot]@users.noreply.github.com>
+          branch: deps/deno-updates
+          delete-branch: true
+          title: 'deps(deno): Update JSR dependencies'
+          body: |
+            ## Automated Deno/JSR Dependency Updates
+
+            This PR updates JSR dependencies in `deno.json` using `deno outdated --update`.
+
+            ### Changes
+            Updates were found for the following packages:
+            ```
+            ${{ steps.check.outputs.updates }}
+            ```
+
+            ### Testing
+            - Automated tests were run after updates
+            - Please review test results in CI
+
+            ### Verification Steps
+            ```bash
+            deno install
+            deno task test
+            deno task fmt
+            deno check src/main.ts
+            npx knip
+            ```
+
+            ---
+            *This PR was automatically created by the [update-deno-deps workflow](.github/workflows/update-deno-deps.yml)*
+          labels: |
+            dependencies
+            deno
+            jsr
+          assignees: ljagiello

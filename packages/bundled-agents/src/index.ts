@@ -7,6 +7,7 @@
 
 import type { AtlasAgent } from "@atlas/agent-sdk";
 import { claudeCodeAgent } from "./claude-code/agent.ts";
+import { csvFilterSamplerAgent } from "./csv/filter.ts";
 import { emailAgent } from "./email/communicator.ts";
 import { fathomGetTranscriptAgent } from "./fathom-ai/get-transcript.ts";
 import { GoogleCalendarAgentResultSchema, googleCalendarAgent } from "./google/calendar.ts";
@@ -23,10 +24,12 @@ export const bundledAgents: AtlasAgent[] = [
   emailAgent,
   fathomGetTranscriptAgent,
   claudeCodeAgent,
+  csvFilterSamplerAgent,
 ];
 
 export {
   claudeCodeAgent,
+  csvFilterSamplerAgent,
   emailAgent,
   fathomGetTranscriptAgent,
   googleCalendarAgent,

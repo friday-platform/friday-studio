@@ -5,9 +5,9 @@
  * with only the functionality needed for the email agent.
  */
 
-import { retry } from "jsr:@std/async@1/retry";
 import type { EmailParams } from "@atlas/config";
 import sgMail from "@sendgrid/mail";
+import { retry } from "@std/async/retry";
 import { z } from "zod";
 
 /**
