@@ -100,7 +100,7 @@
     "npm:knip@5.66.2": "5.66.2_@types+node@24.2.0_typescript@5.9.3",
     "npm:lint-staged@^16.1.6": "16.2.6",
     "npm:onnxruntime-web@1.22.0": "1.22.0",
-    "npm:openapi-fetch@0.14": "0.14.1",
+    "npm:openapi-fetch@0.15": "0.15.0",
     "npm:openapi-typescript@^7.9.1": "7.10.1_typescript@5.9.3",
     "npm:papaparse@^5.5.3": "5.5.3",
     "npm:prettier-plugin-svelte@^3.3.3": "3.4.0_prettier@3.6.2_svelte@5.43.3__acorn@8.15.0",
@@ -2890,8 +2890,8 @@
         "protobufjs"
       ]
     },
-    "openapi-fetch@0.14.1": {
-      "integrity": "sha512-l7RarRHxlEZYjMLd/PR0slfMVse2/vvIAGm75/F7J6MlQ8/b9uUQmUF2kCPrQhJqMXSxmYWObVgeYXbFYzZR+A==",
+    "openapi-fetch@0.15.0": {
+      "integrity": "sha512-OjQUdi61WO4HYhr9+byCPMj0+bgste/LtSBEcV6FzDdONTs7x0fWn8/ndoYwzqCsKWIxEZwo4FN/TG1c1rI8IQ==",
       "dependencies": [
         "openapi-typescript-helpers"
       ]
@@ -3855,7 +3855,7 @@
         "packageJson": {
           "dependencies": [
             "npm:hono-openapi@^1.0.6",
-            "npm:openapi-fetch@0.14",
+            "npm:openapi-fetch@0.15",
             "npm:openapi-typescript@^7.9.1"
           ]
         }
