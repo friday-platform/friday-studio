@@ -21,7 +21,6 @@ import template from "./template.html" with { type: "text" };
 type Result = {
   response: string;
   message_id?: string;
-  retry_count?: number;
   email?: { to: string | string[]; subject: string; content: string; from: string | undefined };
 };
 
@@ -262,13 +261,13 @@ OUTPUT:
 
     // Send email via SendGrid
     const result = await sendEmail(sendGridApiKey, emailParams, { sandboxMode });
+    const message_id = result[0]?.headers?.["x-message-id"];
 
-    logger.info("Email sent successfully", { to: emailParams.to, message_id: result.message_id });
+    logger.info("Email sent successfully", { to: emailParams.to, message_id });
 
     return {
       response: `Email sent successfully to ${params.to}`,
-      message_id: result.message_id,
-      retry_count: result.retry_count,
+      message_id,
       email: {
         to: emailParams.to,
         subject: emailParams.subject,

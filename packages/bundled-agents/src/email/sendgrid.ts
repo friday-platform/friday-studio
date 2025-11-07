@@ -6,14 +6,14 @@
  */
 
 import type { EmailParams } from "@atlas/config";
+import { logger } from "@atlas/logger";
+import { stringifyError } from "@atlas/utils";
+import { classes } from "@sendgrid/helpers";
 import sgMail from "@sendgrid/mail";
-import { retry } from "@std/async/retry";
+import { RetryError, retry } from "@std/async/retry";
 import { z } from "zod";
 
-/**
- * SendGrid send result
- */
-export type SendResult = { message_id?: string; retry_count: number };
+const { ResponseError } = classes;
 
 /**
  * Atlas JWT payload schema for extracting user email
@@ -26,6 +26,8 @@ const AtlasJWTPayloadSchema = z.object({
   iat: z.number(),
 });
 
+const MAX_ATTEMPTS = 10;
+
 /**
  * Send email via SendGrid with retry logic
  */
@@ -33,37 +35,63 @@ export async function sendEmail(
   apiKey: string,
   params: EmailParams,
   options?: { sandboxMode?: boolean },
-): Promise<SendResult> {
+) {
   sgMail.setApiKey(apiKey);
 
   let attemptCount = 0;
 
-  const response = await retry(
-    async () => {
-      attemptCount++;
-      try {
-        const message = buildEmailMessage(params, options?.sandboxMode);
-
-        return await sgMail.send(message);
-      } catch (error) {
-        // Non-retryable errors should fail immediately
-        if (!isRetryableError(error)) {
-          throw new Error(
-            `Non-retryable error: ${error instanceof Error ? error.message : String(error)}`,
-          );
+  try {
+    const response = await retry(
+      async () => {
+        attemptCount++;
+        try {
+          return await sgMail.send(buildEmailMessage(params, options?.sandboxMode));
+        } catch (error) {
+          // Log each retry attempt
+          if (error instanceof ResponseError) {
+            logger.error(`SendGrid attempt ${attemptCount}/${MAX_ATTEMPTS} failed`, {
+              code: error.code,
+              body: error.response.body,
+              headers: error.response.headers,
+              attempt: attemptCount,
+            });
+          } else {
+            logger.error(`SendGrid attempt ${attemptCount}/${MAX_ATTEMPTS} failed`, {
+              error,
+              attempt: attemptCount,
+            });
+          }
+          throw error;
         }
-        throw error;
-      }
-    },
-    {
-      maxAttempts: 3,
-      minTimeout: 5000,
-      maxTimeout: 20000, // 5s * 2^2
-      multiplier: 2,
-    },
-  );
+      },
+      { maxAttempts: MAX_ATTEMPTS, minTimeout: 5000, maxTimeout: 20000, multiplier: 2 },
+    );
 
-  return { message_id: response[0]?.headers?.["x-message-id"], retry_count: attemptCount - 1 };
+    return response;
+  } catch (error) {
+    let message: string;
+    // Retry attempts exhausted
+    if (error instanceof RetryError) {
+      // Error from SendGrid API
+      if (error.cause instanceof ResponseError) {
+        logger.error("SendGrid API Error - retry attempts exhausted", {
+          code: error.cause.code,
+          body: error.cause.response.body,
+          headers: error.cause.response.headers,
+        });
+        message = error.cause.message;
+      } else {
+        // Something else failed inside the retry
+        logger.error("SendGrid retry attempts exhausted", { error: error.cause });
+        message = error.message;
+      }
+    } else {
+      // Something else failed inside sendEmail outside the retry
+      logger.error("Failed to send email", { error });
+      message = stringifyError(error);
+    }
+    throw new Error(`Failed to send email after ${MAX_ATTEMPTS} attempts: ${message}`);
+  }
 }
 
 /**
@@ -153,26 +181,4 @@ function extractUserFromJWT(token: string): string | null {
   } catch {
     return null;
   }
-}
-
-/**
- * Check if error is retryable
- */
-function isRetryableError(error: unknown): boolean {
-  if (!(error instanceof Error)) return false;
-
-  const message = error.message;
-
-  // Retryable: rate limits, server errors, network issues
-  return (
-    message.includes("429") ||
-    message.includes("500") ||
-    message.includes("502") ||
-    message.includes("503") ||
-    error.name === "NetworkError" ||
-    error.name === "TimeoutError" ||
-    message.includes("ECONNRESET") ||
-    message.includes("ENOTFOUND") ||
-    message.includes("ETIMEDOUT")
-  );
 }

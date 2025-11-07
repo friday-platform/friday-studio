@@ -47,6 +47,7 @@
   "imports": {
     "@std/media-types": "jsr:@std/media-types@^1.1.0",
     "@std/tar": "jsr:@std/tar@^0.1.9",
-    "cookie": "npm:cookie@^1.0.2"
+    "cookie": "npm:cookie@^1.0.2",
+    "@sendgrid/helpers": "npm:@sendgrid/helpers@^8.0.0"
   }
 }
