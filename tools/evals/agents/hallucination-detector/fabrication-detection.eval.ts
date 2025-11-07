@@ -152,4 +152,80 @@ Deno.test("Hallucination Detector: Fabrication detection", async (t) => {
       `Confidence should be >= 0.5 for valid transformation, got ${agentDetection?.confidence}`,
     );
   });
+
+  // Test 4: Fabrication - agent creates placeholder data when tools unavailable
+  await step(
+    t,
+    "Fabrication: Creates placeholder data acknowledging missing access",
+    async ({ snapshot }) => {
+      const result: AgentResult = {
+        agentId: "test-agent",
+        task: "Query user metrics",
+        input: { userId: "user_123" },
+        output:
+          "Unable to query the analytics database. Here are placeholder metrics:\nPage views: 1,250\nSession duration: 3m 45s\nBounce rate: 42%",
+        duration: 1000,
+        timestamp: new Date().toISOString(),
+        toolCalls: [],
+        toolResults: [],
+      };
+
+      const analysis = await analyzeResults([result], SupervisionLevel.STANDARD, config);
+      const agentDetection = analysis.detectionMethods[0];
+
+      snapshot({
+        result,
+        analysis,
+        agentConfidence: agentDetection?.confidence,
+        agentIssues: agentDetection?.issues,
+      });
+
+      assert(
+        analysis.lowConfidenceAgents.length > 0,
+        "Should detect fabrication when agent creates placeholder data",
+      );
+      assert(
+        agentDetection && agentDetection.confidence < 0.45,
+        `Confidence should be < 0.45 for placeholder data fabrication, got ${agentDetection?.confidence}`,
+      );
+      assert(
+        (agentDetection?.issues?.length || 0) > 0,
+        "Should report issues about fabricated placeholder data",
+      );
+    },
+  );
+
+  // Test 5: Valid - agent explicitly asked to generate example data
+  await step(t, "Valid: Task explicitly requests example data generation", async ({ snapshot }) => {
+    const result: AgentResult = {
+      agentId: "test-agent",
+      task: "Generate example user profiles for testing",
+      input: { count: 3 },
+      output:
+        "Generated 3 example profiles:\n1. Sarah Johnson (sarah@example.com) - Product Manager\n2. Mike Chen (mike@example.com) - Engineer\n3. Lisa Martinez (lisa@example.com) - Designer",
+      duration: 1000,
+      timestamp: new Date().toISOString(),
+      toolCalls: [],
+      toolResults: [],
+    };
+
+    const analysis = await analyzeResults([result], SupervisionLevel.STANDARD, config);
+    const agentDetection = analysis.detectionMethods[0];
+
+    snapshot({
+      result,
+      analysis,
+      agentConfidence: agentDetection?.confidence,
+      agentIssues: agentDetection?.issues,
+    });
+
+    assert(
+      analysis.lowConfidenceAgents.length === 0,
+      `Should NOT flag as fabrication when task explicitly requests example data. Low confidence agents: ${analysis.lowConfidenceAgents.join(", ")}. Confidence: ${agentDetection?.confidence}. Issues: ${agentDetection?.issues?.join("; ")}`,
+    );
+    assert(
+      agentDetection && agentDetection.confidence >= 0.5,
+      `Confidence should be >= 0.5 when generating requested examples, got ${agentDetection?.confidence}`,
+    );
+  });
 });

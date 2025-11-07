@@ -329,9 +329,9 @@ Check if the agent's output contains fabricated information.
    - Agent claims tool provided data that doesn't exist in tool results
    - Example: Claims web_search results but web_search wasn't used
 
-3. **Impossible facts**
-   - Future dates, logical contradictions, physically impossible claims
-   - Example: "The meeting happened on 2026-01-01" (future date)
+3. **Fabricated examples due to missing tools**
+   - Agent acknowledges lack of tool access and generates sample/example data
+   - Example: "I don't have access to the CRM, so here's example customer data: ..."
 
 ## LEGITIMATE DATA OPERATIONS
 
@@ -360,6 +360,11 @@ Check if the agent's output contains fabricated information.
    - Multiple tool outputs combined into report
    - ✓ This IS valid - legitimate data processing
 
+6. **Requested example data generation**
+   - Task: "Generate example user profiles for testing"
+   - Agent outputs: Sample profiles with made-up names/emails
+   - ✓ This IS valid - task explicitly requests synthetic data creation
+
 ## VALIDATION PROCESS
 
 For each factual claim in the agent's output:
@@ -367,7 +372,8 @@ For each factual claim in the agent's output:
 1. Check: Is this claim in the tool results? → SOURCED ✓
 2. Check: Is this claim in the input data? → SOURCED ✓
 3. Check: Is this a logical inference from #1 or #2? → SOURCED ✓
-4. Otherwise → FABRICATED ✗
+4. Check: Does the task explicitly request example/sample/mock data generation? → LEGITIMATE GENERATION ✓
+5. Otherwise → FABRICATED ✗
 
 ## SCORING FORMULA
 
@@ -376,7 +382,7 @@ Start at base score: 0.5
 For each claim in output:
 - Claim verifiable in tool results or input: +0.05
 - Claim is external/unverifiable: -0.25
-- Claim is impossible/contradictory: -0.30
+- Claim is fabricated example data: -0.30
 
 Final score clamped to [0.0, 1.0]
 
@@ -415,7 +421,7 @@ Result: valid=true, confidence=0.7
 - Focus only on whether data exists in sources
 - Data transformation and reformatting ARE legitimate operations
 - Be lenient with formatting differences (20000 vs "20,000")
-- Only flag claims that are truly unsourced or impossible
+- Only flag claims that are truly unsourced or explicitly fabricated examples
 
 ## RESPONSE FORMAT
 
