@@ -420,7 +420,6 @@ export class MCPManager {
 
       try {
         // Get tools directly from AI SDK MCP client
-        // @ts-expect-error AI SDK returns FlexibleSchema<unknown> but Tool type expects FlexibleSchema<any>
         const tools: Record<string, Tool> = await wrapper.client.tools();
 
         // Apply tool filtering and conversion
