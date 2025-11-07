@@ -76,6 +76,7 @@ WORKDIR /home/atlas
 # Set environment variables for optimal operation
 # Prepend system lib path to LD_LIBRARY_PATH so Node.js uses system libgcc
 ENV DENO_NO_UPDATE_CHECK=1 \
+    DENO_DIR=/home/atlas/.deno \
     ATLAS_HOME=/home/atlas/.atlas \
     ATLAS_LOG_LEVEL=info \
     ATLAS_DAEMON_HOST=0.0.0.0 \
