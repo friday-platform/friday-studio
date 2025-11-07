@@ -10,7 +10,7 @@
     "@atlas/utils": "workspace:*",
     "@std/crypto": "npm:@jsr/std__crypto@^1.0.5",
     "@std/fs": "npm:@jsr/std__fs@^1.0.19",
-    "onnxruntime-web": "1.22.0",
+    "onnxruntime-web": "1.23.2",
     "zod": "^4.1.11"
   },
   "devDependencies": {
