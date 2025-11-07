@@ -3,7 +3,7 @@
  * Replaces worker-based supervisor management with direct actor orchestration
  */
 
-import type { AtlasAgent } from "@atlas/agent-sdk";
+import type { AtlasAgent, AtlasUIMessageChunk } from "@atlas/agent-sdk";
 import { ConfigLoader, type JobSpecification, type MergedConfig } from "@atlas/config";
 import type { WorkspaceSupervisorConfig, WrappedAgentResult } from "@atlas/core";
 import {
@@ -87,7 +87,7 @@ type WorkspaceRuntimeEvent =
       sessionId?: string;
       streamId?: string;
       traceHeaders?: Record<string, string>;
-      onStreamEvent?: (event: any) => void;
+      onStreamEvent?: (event: AtlasUIMessageChunk) => void;
     }
   | {
       type: "EXECUTE_JOB";

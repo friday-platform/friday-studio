@@ -7,6 +7,7 @@ import type {
   SessionsRoutes,
   WorkspaceRoutes,
 } from "@atlas/atlasd";
+import { getAtlasDaemonUrl } from "@atlas/oapi-client";
 import { fail, type Result, success } from "@atlas/utils";
 import {
   type ClientResponse,
@@ -19,14 +20,16 @@ import {
 
 export { DetailedError } from "hono/client";
 
+const baseUrl = getAtlasDaemonUrl();
+
 export const client = {
-  health: hc<HealthRoutes>("http://localhost:8080/health"),
-  artifactsStorage: hc<ArtifactsRoutes>("http://localhost:8080/api/artifacts"),
-  chat: hc<ChatRoutes>("http://localhost:8080/api/chat"),
-  chatStorage: hc<ChatStorageRoutes>("http://localhost:8080/api/chat-storage"),
-  daemon: hc<DaemonRoutes>("http://localhost:8080/api/daemon"),
-  sessions: hc<SessionsRoutes>("http://localhost:8080/api/sessions"),
-  workspace: hc<WorkspaceRoutes>("http://localhost:8080/api/workspaces"),
+  health: hc<HealthRoutes>(`${baseUrl}/health`),
+  artifactsStorage: hc<ArtifactsRoutes>(`${baseUrl}/api/artifacts`),
+  chat: hc<ChatRoutes>(`${baseUrl}/api/chat`),
+  chatStorage: hc<ChatStorageRoutes>(`${baseUrl}/api/chat-storage`),
+  daemon: hc<DaemonRoutes>(`${baseUrl}/api/daemon`),
+  sessions: hc<SessionsRoutes>(`${baseUrl}/api/sessions`),
+  workspace: hc<WorkspaceRoutes>(`${baseUrl}/api/workspaces`),
 };
 
 /**

@@ -8,7 +8,7 @@ const host = process.env.TAURI_DEV_HOST;
 // We set TAURI_BUILD=true in tauri.conf.json's beforeBuildCommand
 const isTauriBuild = process.env.TAURI_BUILD === "true";
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [sveltekit()],
   clearScreen: false,
   define: {
@@ -16,6 +16,9 @@ export default defineConfig({
     // Only use build-time detection for production builds
     // In dev mode, this will be false, but we'll detect at runtime using window.__TAURI__
     __TAURI_BUILD__: JSON.stringify(isTauriBuild),
+    // In dev mode, client connects directly to daemon at localhost:8080
+    // In production, client uses relative URLs (routed by Traefik)
+    __DEV_MODE__: JSON.stringify(mode === "development"),
   },
   server: {
     port: 1420,
@@ -37,4 +40,4 @@ export default defineConfig({
       ],
     },
   },
-});
+}));

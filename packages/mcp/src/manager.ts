@@ -420,7 +420,7 @@ export class MCPManager {
 
       try {
         // Get tools directly from AI SDK MCP client
-        const tools: Record<string, Tool> = await wrapper.client.tools();
+        const tools = (await wrapper.client.tools()) as Record<string, Tool>;
 
         // Apply tool filtering and conversion
         const filteredTools = this.filterTools(tools, wrapper.config.tools);

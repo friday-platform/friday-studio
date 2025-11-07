@@ -3,6 +3,7 @@
  * Replaces worker-based orchestration with direct actor management
  */
 
+import type { AtlasUIMessageChunk } from "@atlas/agent-sdk";
 import type { MergedConfig, WorkspaceSignalConfig } from "@atlas/config";
 import type { AgentOrchestrator, GlobalMCPServerPool } from "@atlas/core";
 import { WorkspaceSessionStatus } from "@atlas/core";
@@ -211,7 +212,8 @@ export class WorkspaceRuntime {
           streamId,
           traceHeaders,
           // Pass callback if present
-          onStreamEvent: (signal as any).onStreamEvent,
+          onStreamEvent: (signal as { onStreamEvent?: (event: AtlasUIMessageChunk) => void })
+            .onStreamEvent,
         });
 
         // Wait for the session to be created by the state machine
@@ -510,7 +512,7 @@ export class WorkspaceRuntime {
     signalName: string,
     payload?: Record<string, unknown>,
     streamId?: string,
-    onStreamEvent?: (event: any) => void,
+    onStreamEvent?: (event: AtlasUIMessageChunk) => void,
   ): Promise<IWorkspaceSession> {
     const signals = this.config?.workspace?.signals || {};
     const signalConfig = signals[signalName];
