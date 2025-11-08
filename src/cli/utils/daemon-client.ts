@@ -213,8 +213,8 @@ export class DaemonClient {
       tags: Array.isArray(query?.tags) ? query.tags.join(",") : query?.tags,
       since: query?.since,
       until: query?.until,
-      limit: query?.limit?.toString(),
-      offset: query?.offset?.toString(),
+      limit: query?.limit,
+      offset: query?.offset,
     };
 
     const client = createAtlasClient();

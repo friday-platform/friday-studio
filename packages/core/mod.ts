@@ -47,6 +47,8 @@ export type {
 } from "./src/orchestrator/agent-orchestrator.ts";
 // Agent Orchestrator
 export { AgentOrchestrator } from "./src/orchestrator/agent-orchestrator.ts";
+// Session History Storage
+export * from "./src/session/history-storage.ts";
 // Stream Emitters
 export {
   CallbackStreamEmitter,

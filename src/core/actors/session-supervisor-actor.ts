@@ -24,12 +24,24 @@ import type {
   SessionSupervisorConfig,
 } from "@atlas/core";
 import {
+  type AppendSessionEventInput,
   anthropic,
+  appendSessionEvent,
   CallbackStreamEmitter,
+  type CreateSessionMetadataInput,
+  createSessionRecord,
+  loadSessionTimeline,
+  markSessionComplete,
   ReasoningResultStatus,
   type ReasoningResultStatusType,
+  type SessionHistoryEvent,
+  type SessionHistoryEventContext,
+  type SessionHistoryTimeline,
   SessionSupervisorStatus,
   type SessionSupervisorStatusType,
+  toAgentSnapshot,
+  toToolCallEvent,
+  toToolResultEvent,
 } from "@atlas/core";
 import { type Logger, logger } from "@atlas/logger";
 import { initializeWorkspaceMemory, type MECMFMemoryManager } from "@atlas/memory";
@@ -101,6 +113,26 @@ export interface ConfidenceAnalysis {
   issues: string[];
 }
 
+interface SessionHistoryStorageAdapter {
+  createSessionRecord: typeof createSessionRecord;
+  appendSessionEvent: typeof appendSessionEvent;
+  markSessionComplete: typeof markSessionComplete;
+  loadSessionTimeline: typeof loadSessionTimeline;
+}
+
+interface SessionSupervisorActorOptions {
+  historyStorage?: SessionHistoryStorageAdapter;
+}
+
+const DefaultHistoryStorageAdapter: SessionHistoryStorageAdapter = {
+  createSessionRecord,
+  appendSessionEvent,
+  markSessionComplete,
+  loadSessionTimeline,
+};
+
+type AgentExecutionRecord = AgentResult & { executionId: string; phaseId: string };
+
 // Custom error class to indicate we've already emitted the appropriate event
 class OrchestratorHandledError extends Error {
   constructor(message: string) {
@@ -122,6 +154,8 @@ export class SessionSupervisorActor implements BaseActor {
   private agentOrchestrator?: IAgentOrchestrator; // Agent orchestrator for MCP-based execution
   private artifacts: IWorkspaceArtifact[] = []; // Store session artifacts
   private llmProvider = anthropic;
+  private historyStorage: SessionHistoryStorageAdapter;
+  private persistedArtifacts: IWorkspaceArtifact[] = [];
 
   // Session evaluation services
   private hallucinationDetectorConfig: HallucinationDetectorConfig;
@@ -153,11 +187,13 @@ export class SessionSupervisorActor implements BaseActor {
     workspaceId: string,
     config: SessionSupervisorConfig,
     id?: string,
+    options?: SessionSupervisorActorOptions,
   ) {
     this.id = id || crypto.randomUUID();
     this.config = config;
     this.sessionId = sessionId;
     this.workspaceId = workspaceId;
+    this.historyStorage = options?.historyStorage ?? DefaultHistoryStorageAdapter;
 
     this.logger = logger.child({
       actorId: this.id,
@@ -294,6 +330,175 @@ export class SessionSupervisorActor implements BaseActor {
     }
   }
 
+  private async persistSessionMetadata(context: SessionContext): Promise<void> {
+    const metadataInput: CreateSessionMetadataInput = {
+      sessionId: this.sessionId,
+      workspaceId: this.workspaceId,
+      status: ReasoningResultStatus.PARTIAL,
+      signal: context.signal,
+      signalPayload: context.payload,
+      jobSpecificationId: context.jobSpec?.name,
+      availableAgents: context.availableAgents,
+      streamId: context.streamId,
+      artifactIds: this.artifacts.map((artifact) => artifact.id),
+    };
+
+    try {
+      const result = await this.historyStorage.createSessionRecord(metadataInput);
+      if (!result.ok) {
+        this.logger.error("Failed to create session history record", {
+          sessionId: this.sessionId,
+          error: result.error,
+        });
+        return;
+      }
+
+      void this.persistEvent({
+        type: "session-start",
+        data: {
+          status: result.data.status,
+          message: `Session initialized for signal ${context.signal.id}`,
+        },
+      });
+    } catch (error) {
+      this.logger.error("Unexpected error persisting session metadata", {
+        sessionId: this.sessionId,
+        error,
+      });
+    }
+  }
+
+  private async persistEvent(
+    event: AppendSessionEventInput["event"],
+  ): Promise<SessionHistoryEvent | null> {
+    try {
+      const result = await this.historyStorage.appendSessionEvent({
+        sessionId: this.sessionId,
+        emittedBy: this.id,
+        event,
+      });
+
+      if (!result.ok) {
+        this.logger.error("Failed to append session history event", {
+          sessionId: this.sessionId,
+          eventType: event?.type,
+          error: result.error,
+        });
+        return null;
+      }
+
+      return result.data;
+    } catch (error) {
+      this.logger.error("Unexpected error appending session history event", {
+        sessionId: this.sessionId,
+        eventType: event?.type,
+        error,
+      });
+      return null;
+    }
+  }
+
+  private recordSupervisorAction(
+    action: string,
+    details?: Record<string, unknown>,
+    context?: SessionHistoryEventContext,
+  ): void {
+    void this.persistEvent({ type: "supervisor-action", context, data: { action, details } });
+  }
+
+  private transitionStatus(
+    newStatus: SessionSupervisorStatusType,
+    reason: string,
+    details?: Record<string, unknown>,
+  ): void {
+    const previous = this.status;
+    if (previous === newStatus) return;
+
+    this.status = newStatus;
+    this.recordSupervisorAction("status-transition", {
+      ...details,
+      reason,
+      from: previous,
+      to: newStatus,
+    });
+  }
+
+  private buildPersistedArtifacts(timeline: SessionHistoryTimeline | null): void {
+    if (!timeline) {
+      this.persistedArtifacts = [];
+      return;
+    }
+
+    const createdAt = new Date(timeline.metadata.updatedAt || timeline.metadata.createdAt);
+    this.persistedArtifacts = [
+      {
+        id: `session-history-${this.sessionId}`,
+        type: "session_history",
+        data: timeline,
+        createdAt: Number.isNaN(createdAt.getTime()) ? new Date() : createdAt,
+        createdBy: "session-history-storage",
+      },
+    ];
+  }
+
+  private async finalizeSessionHistory(
+    summary: SessionSummary | undefined,
+    status: ReasoningResultStatusType,
+    durationMs: number,
+  ): Promise<void> {
+    void this.persistEvent({
+      type: "session-finish",
+      data: {
+        status,
+        durationMs,
+        failureReason: summary?.failureReason,
+        summary: summary?.reasoning,
+      },
+    });
+
+    try {
+      const metadataResult = await this.historyStorage.markSessionComplete(
+        this.sessionId,
+        status,
+        new Date().toISOString(),
+        { durationMs, failureReason: summary?.failureReason, summary: summary?.reasoning },
+      );
+
+      if (!metadataResult.ok) {
+        this.logger.error("Failed to mark session as complete in history storage", {
+          sessionId: this.sessionId,
+          error: metadataResult.error,
+        });
+      }
+    } catch (error) {
+      this.logger.error("Unexpected error marking session complete in history storage", {
+        sessionId: this.sessionId,
+        error,
+      });
+    }
+
+    try {
+      const timelineResult = await this.historyStorage.loadSessionTimeline(this.sessionId);
+
+      if (!timelineResult.ok) {
+        this.logger.error("Failed to load session timeline after completion", {
+          sessionId: this.sessionId,
+          error: timelineResult.error,
+        });
+        this.buildPersistedArtifacts(null);
+        return;
+      }
+
+      this.buildPersistedArtifacts(timelineResult.data ?? null);
+    } catch (error) {
+      this.logger.error("Unexpected error loading session timeline", {
+        sessionId: this.sessionId,
+        error,
+      });
+      this.buildPersistedArtifacts(null);
+    }
+  }
+
   /**
    * Emit a unified session-finish event exactly once, with proper metadata
    */
@@ -368,31 +573,35 @@ export class SessionSupervisorActor implements BaseActor {
     // Clear cached plan when context changes
     this.cachedPlan = undefined;
 
-    // Initialize MECMF manager for prompt enhancement
+    await this.persistSessionMetadata(context);
+
+    // Initialize MECMF manager for prompt enhancement (fire-and-forget to avoid blocking)
     if (this.workspaceId) {
-      try {
-        this.mecmfManager = await initializeWorkspaceMemory(this.workspaceId, {
-          enableVectorSearch: true,
-          tokenBudgets: {
-            defaultBudget: 8000,
-            modelLimits: {
-              "claude-3.5-sonnet": 200000,
-              "claude-3-sonnet": 200000,
-              "claude-3-haiku": 200000,
-              "gpt-4": 128000,
-            },
+      void initializeWorkspaceMemory(this.workspaceId, {
+        enableVectorSearch: true,
+        tokenBudgets: {
+          defaultBudget: 8000,
+          modelLimits: {
+            "claude-3.5-sonnet": 200000,
+            "claude-3-sonnet": 200000,
+            "claude-3-haiku": 200000,
+            "gpt-4": 128000,
           },
+        },
+      })
+        .then((manager) => {
+          this.mecmfManager = manager;
+          this.logger.info("MECMF memory manager initialized for prompt enhancement", {
+            workspaceId: this.workspaceId,
+            sessionId: this.sessionId,
+          });
+        })
+        .catch((error) => {
+          this.logger.warn(
+            "Failed to initialize MECMF manager, continuing without prompt enhancement",
+            { error, workspaceId: this.workspaceId },
+          );
         });
-        this.logger.info("MECMF memory manager initialized for prompt enhancement", {
-          workspaceId: this.workspaceId,
-          sessionId: this.sessionId,
-        });
-      } catch (error) {
-        this.logger.warn(
-          "Failed to initialize MECMF manager, continuing without prompt enhancement",
-          { error, workspaceId: this.workspaceId },
-        );
-      }
     }
 
     // Initialize streaming if streamId provided
@@ -452,6 +661,14 @@ export class SessionSupervisorActor implements BaseActor {
       });
       // Cache the job spec plan too
       this.cachedPlan = jobSpecPlan;
+      void this.persistEvent({
+        type: "plan-created",
+        data: {
+          plan: jobSpecPlan,
+          reasoning: jobSpecPlan.reasoning,
+          strategy: jobSpecPlan.strategy,
+        },
+      });
       return jobSpecPlan;
     }
 
@@ -519,6 +736,10 @@ export class SessionSupervisorActor implements BaseActor {
 
     // Cache the plan for subsequent calls
     this.cachedPlan = plan;
+    void this.persistEvent({
+      type: "plan-created",
+      data: { plan, reasoning: plan.reasoning, strategy: plan.strategy },
+    });
     return plan;
   }
 
@@ -565,7 +786,7 @@ export class SessionSupervisorActor implements BaseActor {
    * Get all execution artifacts including agent results
    */
   getExecutionArtifacts(): IWorkspaceArtifact[] {
-    const artifacts: IWorkspaceArtifact[] = [];
+    const artifacts: IWorkspaceArtifact[] = [...this.persistedArtifacts];
 
     // Add session summary artifact
     if (this.lastSessionSummary) {
@@ -643,6 +864,7 @@ export class SessionSupervisorActor implements BaseActor {
     this.isExecuting = true;
     // Create abort controller for this session
     this.abortController = new AbortController();
+    this.transitionStatus(SessionSupervisorStatus.PLANNING, "create-execution-plan");
 
     const sessionStartTime = Date.now();
     let summary: SessionSummary | undefined;
@@ -650,8 +872,12 @@ export class SessionSupervisorActor implements BaseActor {
     try {
       // Create execution plan
       const plan = await this.createExecutionPlan();
+      this.transitionStatus(SessionSupervisorStatus.EXECUTING, "execution-plan-ready", {
+        planId: plan.id,
+        phaseCount: plan.phases.length,
+      });
 
-      const allResults: AgentResult[] = [];
+      const allResults: AgentExecutionRecord[] = [];
 
       // Execute each phase
       for (const [phaseIndex, phase] of plan.phases.entries()) {
@@ -685,10 +911,13 @@ export class SessionSupervisorActor implements BaseActor {
 
       // Store agent results as artifact
       if (allResults.length > 0) {
+        const sanitizedResults = allResults.map(
+          ({ executionId: _executionId, phaseId: _phaseId, ...rest }) => rest,
+        );
         const agentResultsArtifact: IWorkspaceArtifact = {
           id: crypto.randomUUID(),
           type: "agent_results",
-          data: allResults,
+          data: sanitizedResults,
           createdAt: new Date(),
           createdBy: this.sessionId,
         };
@@ -730,11 +959,35 @@ export class SessionSupervisorActor implements BaseActor {
 
       // Update execution tracking
       this.lastSessionSummary = summary;
-      this.agentResults = allResults;
+      this.agentResults = allResults.map(
+        ({ executionId: _executionId, phaseId: _phaseId, ...rest }) => rest,
+      );
       this.isExecuting = false;
 
       if (this.mecmfManager && summary) {
-        this.mecmfManager.extractAndStoreSemanticFacts(summary, this.logger);
+        const capturedSummary = summary;
+        void this.mecmfManager
+          .extractAndStoreSemanticFacts(capturedSummary, this.logger)
+          .then(() => {
+            if (!capturedSummary) return;
+            void this.persistEvent({
+              type: "memory-update",
+              data: {
+                memoryType: "semantic",
+                entries: [{ sessionId: capturedSummary.sessionId, status: capturedSummary.status }],
+                summary: capturedSummary.reasoning,
+              },
+            });
+          })
+          .catch((error) => {
+            this.logger.warn("Failed to extract and store semantic facts", {
+              sessionId: this.sessionId,
+              error,
+            });
+            this.recordSupervisorAction("memory-update-failed", {
+              error: error instanceof Error ? error.message : String(error),
+            });
+          });
       }
 
       this.logger.info("Session execution completed", {
@@ -742,6 +995,10 @@ export class SessionSupervisorActor implements BaseActor {
         status: summary.status,
         phases: summary.totalPhases,
         agents: summary.totalAgents,
+        duration,
+      });
+      this.transitionStatus(SessionSupervisorStatus.COMPLETED, "session-execution-complete", {
+        finalStatus: summary.status,
         duration,
       });
 
@@ -772,17 +1029,45 @@ export class SessionSupervisorActor implements BaseActor {
 
       if (this.status === SessionSupervisorStatus.CANCELLED) {
         this.logger.info("Session execution cancelled", { sessionId: this.sessionId, duration });
+        this.transitionStatus(SessionSupervisorStatus.CANCELLED, "session-cancelled", { duration });
       } else {
+        const errorMessage = error instanceof Error ? error.message : String(error);
         this.logger.error("Session execution failed", {
           sessionId: this.sessionId,
           error,
           duration,
         });
+        this.transitionStatus(SessionSupervisorStatus.FAILED, "session-execution-failed", {
+          duration,
+          error: errorMessage,
+        });
       }
 
       // Schedule memory operations for failed session too (if summary exists)
       if (summary && this.mecmfManager) {
-        this.mecmfManager.extractAndStoreSemanticFacts(summary, this.logger);
+        const capturedSummary = summary;
+        void this.mecmfManager
+          .extractAndStoreSemanticFacts(capturedSummary, this.logger)
+          .then(() => {
+            if (!capturedSummary) return;
+            void this.persistEvent({
+              type: "memory-update",
+              data: {
+                memoryType: "semantic",
+                entries: [{ sessionId: capturedSummary.sessionId, status: capturedSummary.status }],
+                summary: capturedSummary.reasoning,
+              },
+            });
+          })
+          .catch((memoryError) => {
+            this.logger.warn("Failed to extract and store semantic facts after failure", {
+              sessionId: this.sessionId,
+              error: memoryError,
+            });
+            this.recordSupervisorAction("memory-update-failed", {
+              error: memoryError instanceof Error ? memoryError.message : String(memoryError),
+            });
+          });
       }
 
       throw error;
@@ -796,20 +1081,42 @@ export class SessionSupervisorActor implements BaseActor {
           : ReasoningResultStatus.FAILED);
       const finalDuration = Date.now() - sessionStartTime;
       this.emitSessionFinish({ source: "execution", status: finalStatus, duration: finalDuration });
+      await this.finalizeSessionHistory(summary, finalStatus, finalDuration);
     }
   }
 
   private async executePhase(
     phase: ExecutionPhase,
-    previousResults: AgentResult[],
-  ): Promise<AgentResult[]> {
-    const phaseResults: AgentResult[] = [];
+    previousResults: AgentExecutionRecord[],
+  ): Promise<AgentExecutionRecord[]> {
+    const phaseResults: AgentExecutionRecord[] = [];
+    const phaseStart = Date.now();
+    let phaseStatus: ReasoningResultStatusType = ReasoningResultStatus.COMPLETED;
+    let phaseIssues: string[] | undefined;
+    let terminatePhase = false;
+
+    void this.persistEvent({
+      type: "phase-start",
+      context: { phaseId: phase.id },
+      data: {
+        phaseId: phase.id,
+        name: phase.name,
+        executionStrategy: phase.executionStrategy,
+        agents: phase.agents.map((agent) => agent.agentId),
+        reasoning: phase.reasoning,
+      },
+    });
 
     if (phase.executionStrategy === "sequential") {
       for (const agentTask of phase.agents) {
-        // Combine results from previous phases + current phase agents
+        if (terminatePhase) break;
         const allPreviousResults = [...previousResults, ...phaseResults];
-        const result = await this.executeAgent(agentTask, allPreviousResults, phaseResults);
+        const result = await this.executeAgent(
+          agentTask,
+          allPreviousResults,
+          phaseResults,
+          phase.id,
+        );
         phaseResults.push(result);
         this.logger.debug("Agent result", {
           agentId: agentTask.agentId,
@@ -828,24 +1135,33 @@ export class SessionSupervisorActor implements BaseActor {
             phaseResults.push(updated);
           },
         );
-        if (!continuePhase) return phaseResults;
+        if (!continuePhase) {
+          terminatePhase = true;
+          phaseStatus = this.hallucinationTermination
+            ? ReasoningResultStatus.FAILED
+            : ReasoningResultStatus.PARTIAL;
+          phaseIssues = this.hallucinationTermination?.issues;
+        }
       }
     } else {
       const promises = phase.agents.map((agentTask) =>
-        this.executeAgent(agentTask, previousResults, phaseResults),
+        this.executeAgent(agentTask, previousResults, phaseResults, phase.id),
       );
       const parallelResults = await Promise.all(promises);
       phaseResults.push(...parallelResults);
-      // Validate all parallel results immediately after execution
       const tasksById = new Map(phase.agents.map((a) => [a.agentId, a] as const));
       const baseIndex = phaseResults.length - parallelResults.length;
       for (let i = 0; i < parallelResults.length; i++) {
+        if (terminatePhase) break;
         const result = parallelResults[i];
         if (!result) {
           this.logger.error("Parallel agent result is undefined - terminating session", {
             phaseIndex: phase.id,
           });
-          return phaseResults; // Terminate phase due to inconsistency
+          terminatePhase = true;
+          phaseStatus = ReasoningResultStatus.FAILED;
+          phaseIssues = ["Parallel agent result missing"];
+          break;
         }
         const agentTask = tasksById.get(result.agentId);
         if (!agentTask) {
@@ -853,7 +1169,10 @@ export class SessionSupervisorActor implements BaseActor {
             agentId: result.agentId,
             phaseIndex: phase.id,
           });
-          return phaseResults; // Terminate phase due to inconsistency
+          terminatePhase = true;
+          phaseStatus = ReasoningResultStatus.FAILED;
+          phaseIssues = [`Task not found for agent ${result.agentId}`];
+          break;
         }
         const continuePhase = await this.handlePostExecutionValidation(
           agentTask,
@@ -867,23 +1186,35 @@ export class SessionSupervisorActor implements BaseActor {
             phaseResults[baseIndex + i] = updated;
           },
         );
-        if (!continuePhase) return phaseResults;
+        if (!continuePhase) {
+          terminatePhase = true;
+          phaseStatus = this.hallucinationTermination
+            ? ReasoningResultStatus.FAILED
+            : ReasoningResultStatus.PARTIAL;
+          phaseIssues = this.hallucinationTermination?.issues;
+        }
       }
     }
+
+    const durationMs = Date.now() - phaseStart;
+    void this.persistEvent({
+      type: "phase-complete",
+      context: { phaseId: phase.id },
+      data: { phaseId: phase.id, status: phaseStatus, durationMs, issues: phaseIssues },
+    });
 
     return phaseResults;
   }
 
   private async handlePostExecutionValidation(
     agentTask: AgentTask,
-    currentResult: AgentResult,
-    previousResults: AgentResult[],
-    phaseResults: AgentResult[],
+    currentResult: AgentExecutionRecord,
+    previousResults: AgentExecutionRecord[],
+    phaseResults: AgentExecutionRecord[],
     phase: ExecutionPhase,
     context: "sequential" | "parallel",
-    replaceResult: (updated: AgentResult) => void,
+    replaceResult: (updated: AgentExecutionRecord) => void,
   ): Promise<boolean> {
-    // Initial validation on current result
     const shouldContinueAfterAgent = await this.validateAgentResult(currentResult, [
       ...previousResults,
       ...phaseResults,
@@ -901,15 +1232,34 @@ export class SessionSupervisorActor implements BaseActor {
         { agentId: currentResult.agentId, phaseIndex: phase.id },
       );
       this.retryAttempts.set(currentResult.agentId, 1);
+      this.recordSupervisorAction("schedule-agent-retry", {
+        agentId: currentResult.agentId,
+        phaseId: phase.id,
+        context,
+      });
 
-      // Retry once with feedback
       const retryResult = await this.executeAgent(
         { ...agentTask },
         [...previousResults, ...phaseResults],
         phaseResults,
+        phase.id,
       );
 
-      // Replace the corresponding stored result(s)
+      void this.persistEvent({
+        type: "agent-retry",
+        context: {
+          agentId: retryResult.agentId,
+          executionId: retryResult.executionId,
+          phaseId: phase.id,
+        },
+        data: {
+          agentId: retryResult.agentId,
+          executionId: retryResult.executionId,
+          attempt: retryCount + 1,
+          reason: "Validation requested retry after low confidence",
+        },
+      });
+
       replaceResult(retryResult);
 
       const shouldContinueAfterRetry = await this.validateAgentResult(retryResult, [
@@ -930,13 +1280,22 @@ export class SessionSupervisorActor implements BaseActor {
                 : "Repeated hallucination detected in parallel agent output",
           },
         );
-        return false; // terminate phase
+        this.recordSupervisorAction("terminate-after-retry-failure", {
+          agentId: currentResult.agentId,
+          phaseId: phase.id,
+          context,
+        });
+        return false;
       }
 
-      return true; // continue on successful retry
+      this.recordSupervisorAction("agent-retry-success", {
+        agentId: retryResult.agentId,
+        phaseId: phase.id,
+        attempt: retryCount + 1,
+      });
+      return true;
     }
 
-    // Already retried before → terminate
     this.logger.error(
       context === "sequential"
         ? "Agent validation failed with prior retry - terminating session immediately"
@@ -950,7 +1309,13 @@ export class SessionSupervisorActor implements BaseActor {
             : "Hallucination detected in parallel agent output",
       },
     );
-    return false; // terminate phase
+    this.recordSupervisorAction("terminate-after-validation-failure", {
+      agentId: currentResult.agentId,
+      phaseId: phase.id,
+      context,
+      retries: retryCount,
+    });
+    return false;
   }
 
   private async buildAgentPrompt(
@@ -1092,10 +1457,17 @@ export class SessionSupervisorActor implements BaseActor {
 
   private async executeAgent(
     agentTask: AgentTask,
-    previousResults: AgentResult[],
-    _phaseResults: AgentResult[],
-  ): Promise<AgentResult> {
+    previousResults: AgentExecutionRecord[],
+    _phaseResults: AgentExecutionRecord[],
+    phaseId: string,
+  ): Promise<AgentExecutionRecord> {
     const startTime = Date.now();
+    const executionId = crypto.randomUUID();
+    const eventContext: SessionHistoryEventContext = {
+      phaseId,
+      agentId: agentTask.agentId,
+      executionId,
+    };
 
     // the signal that triggers the session - payload is whatever json is in -d
     logger.info("Executing agent", {
@@ -1105,6 +1477,12 @@ export class SessionSupervisorActor implements BaseActor {
     });
 
     const input = this.getAgentInput(agentTask, previousResults);
+    let normalizedInput: unknown = input;
+    try {
+      normalizedInput = JSON.parse(input);
+    } catch {
+      normalizedInput = input;
+    }
 
     // Stream agent start
     this.baseStreamEmitter?.emit({
@@ -1112,7 +1490,18 @@ export class SessionSupervisorActor implements BaseActor {
       data: { agentId: agentTask.agentId, task: agentTask.task },
     });
 
-    let result: AgentResult;
+    void this.persistEvent({
+      type: "agent-start",
+      context: eventContext,
+      data: {
+        agentId: agentTask.agentId,
+        executionId,
+        promptSummary: agentTask.task,
+        input: normalizedInput,
+      },
+    });
+
+    let intermediateResult: AgentResult;
 
     if (!this.agentOrchestrator) {
       throw new Error("Agent orchestrator is not available");
@@ -1157,7 +1546,6 @@ export class SessionSupervisorActor implements BaseActor {
         },
       });
 
-      // Check if orchestrator returned an error
       if (orchestratorResult.error) {
         const errorMessage = orchestratorResult.error;
         // MCP timeout error code
@@ -1178,21 +1566,35 @@ export class SessionSupervisorActor implements BaseActor {
             errorMessage,
           );
         }
+        void this.persistEvent({
+          type: "agent-error",
+          context: eventContext,
+          data: {
+            agentId: agentTask.agentId,
+            executionId,
+            error: errorMessage,
+            retryable: isTimeout,
+          },
+        });
+        this.recordSupervisorAction("agent-error", {
+          agentId: agentTask.agentId,
+          executionId,
+          phaseId,
+          error: errorMessage,
+          timeout: isTimeout,
+        });
         // Clean up abort controller before throwing
         this.activeAgentExecutions.delete(agentTask.agentId);
         // Throw custom error to trigger session failure (and indicate we've already emitted events)
         throw new OrchestratorHandledError(`Agent ${agentTask.agentId} failed: ${errorMessage}`);
       }
 
-      result = {
+      intermediateResult = {
+        ...orchestratorResult,
         agentId: agentTask.agentId,
         task: agentTask.task,
-        input,
-        timestamp: new Date().toISOString(),
-        output: orchestratorResult.output,
-        duration: orchestratorResult.duration,
-        toolCalls: orchestratorResult.toolCalls,
-        toolResults: orchestratorResult.toolResults,
+        input: normalizedInput,
+        timestamp: orchestratorResult.timestamp ?? new Date().toISOString(),
       };
 
       this.baseStreamEmitter?.emit({
@@ -1211,6 +1613,11 @@ export class SessionSupervisorActor implements BaseActor {
           agentId: agentTask.agentId,
           duration: Date.now() - startTime,
         });
+        this.recordSupervisorAction("agent-cancelled", {
+          agentId: agentTask.agentId,
+          executionId,
+          phaseId,
+        });
       } else if (!(error instanceof OrchestratorHandledError)) {
         // Only emit agent-error if we haven't already handled this error
         this.emitAgentError(
@@ -1218,7 +1625,22 @@ export class SessionSupervisorActor implements BaseActor {
           Date.now() - startTime,
           error instanceof Error ? error.message : String(error),
         );
-
+        void this.persistEvent({
+          type: "agent-error",
+          context: eventContext,
+          data: {
+            agentId: agentTask.agentId,
+            executionId,
+            error: error instanceof Error ? error.message : String(error),
+            retryable: false,
+          },
+        });
+        this.recordSupervisorAction("agent-error", {
+          agentId: agentTask.agentId,
+          executionId,
+          phaseId,
+          error: error instanceof Error ? error.message : String(error),
+        });
         this.logger.error("Agent orchestrator execution failed", {
           agentId: agentTask.agentId,
           error: error instanceof Error ? error.message : String(error),
@@ -1237,19 +1659,23 @@ export class SessionSupervisorActor implements BaseActor {
 
     const duration = Date.now() - startTime;
 
-    const agentResult: AgentResult = {
+    const agentResult: AgentExecutionRecord = {
       agentId: agentTask.agentId,
       task: agentTask.task, // Store the task description, not the full prompt
-      input,
-      output: result.output,
+      input: normalizedInput,
+      output: intermediateResult.output,
+      reasoning: intermediateResult.reasoning,
       duration,
-      timestamp: new Date().toISOString(),
-      toolCalls: result.toolCalls,
-      toolResults: result.toolResults,
+      timestamp: intermediateResult.timestamp ?? new Date().toISOString(),
+      toolCalls: intermediateResult.toolCalls,
+      toolResults: intermediateResult.toolResults,
+      artifactRefs: intermediateResult.artifactRefs,
+      executionId,
+      phaseId,
     };
 
     // Validate output size
-    const outputSize = this.estimateTokens(JSON.stringify(result.output));
+    const outputSize = this.estimateTokens(JSON.stringify(intermediateResult.output));
     if (outputSize > 10000) {
       this.logger.warn("Agent produced large output", {
         agentId: agentTask.agentId,
@@ -1267,12 +1693,42 @@ export class SessionSupervisorActor implements BaseActor {
       agentId: agentTask.agentId,
       duration,
       success: true,
-      hasToolCalls: !!agentResult.toolCalls?.length,
+      hasToolCalls: !!intermediateResult.toolCalls?.length,
       outputTokens: outputSize,
     });
 
     // Clean up the abort controller for this agent
     this.activeAgentExecutions.delete(agentTask.agentId);
+
+    const snapshot = toAgentSnapshot({
+      ...agentResult,
+      promptSummary: agentTask.task,
+      outputText:
+        typeof agentResult.output === "string" ? (agentResult.output as string) : undefined,
+      structuredOutput: typeof agentResult.output === "string" ? undefined : agentResult.output,
+    });
+
+    await this.persistEvent({
+      type: "agent-output",
+      context: eventContext,
+      data: { agentId: agentTask.agentId, executionId, snapshot },
+    });
+
+    if (agentResult.toolCalls) {
+      for (const toolCall of agentResult.toolCalls) {
+        void this.persistEvent(
+          toToolCallEvent(agentTask.agentId, executionId, toolCall, eventContext),
+        );
+      }
+    }
+
+    if (agentResult.toolResults) {
+      for (const toolResult of agentResult.toolResults) {
+        void this.persistEvent(
+          toToolResultEvent(agentTask.agentId, executionId, toolResult, eventContext),
+        );
+      }
+    }
 
     return agentResult;
   }
@@ -1341,8 +1797,8 @@ export class SessionSupervisorActor implements BaseActor {
    * This prevents dangerous actions from proceeding if hallucination is detected
    */
   private async validateAgentResult(
-    result: AgentResult,
-    _allResults: AgentResult[],
+    result: AgentExecutionRecord,
+    _allResults: AgentExecutionRecord[],
   ): Promise<boolean> {
     // For now, only validate if we have at least one result to analyze
     if (!result.output) {
@@ -1389,6 +1845,29 @@ export class SessionSupervisorActor implements BaseActor {
         issues: analysis.issues,
       });
 
+      const retryCount = this.retryAttempts.get(result.agentId) ?? 0;
+      const verdict: "pass" | "retry" | "fail" = (() => {
+        const severe = analysis.averageConfidence < 0.3 || containsSeverePatterns(analysis.issues);
+        if (!severe) return "pass";
+        return retryCount > 0 ? "fail" : "retry";
+      })();
+
+      void this.persistEvent({
+        type: "validation-result",
+        context: {
+          agentId: result.agentId,
+          executionId: result.executionId,
+          phaseId: result.phaseId,
+        },
+        data: {
+          agentId: result.agentId,
+          executionId: result.executionId,
+          score: analysis.averageConfidence,
+          verdict,
+          analysis: { issues: analysis.issues },
+        },
+      });
+
       // Check for immediate severe hallucinations
       const isSevere = analysis.averageConfidence < 0.3 || containsSeverePatterns(analysis.issues);
 
@@ -1420,6 +1899,10 @@ export class SessionSupervisorActor implements BaseActor {
       return true; // Continue execution
     } catch (error) {
       this.logger.error("Failed to validate agent result", {
+        agentId: result.agentId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      this.recordSupervisorAction("validation-error", {
         agentId: result.agentId,
         error: error instanceof Error ? error.message : String(error),
       });
@@ -1619,7 +2102,7 @@ Return a well-structured plan with phases and per-agent tasks. Each phase must i
 
   async execute(): Promise<SessionResult> {
     const startTime = Date.now();
-    this.status = SessionSupervisorStatus.EXECUTING;
+    this.transitionStatus(SessionSupervisorStatus.EXECUTING, "execute-wrapper-start");
 
     try {
       const summary = await this.executeSession();
@@ -1627,11 +2110,17 @@ Return a well-structured plan with phases and per-agent tasks. Each phase must i
 
       // Set session supervisor status based on execution outcome
       if (summary.status === ReasoningResultStatus.COMPLETED) {
-        this.status = SessionSupervisorStatus.COMPLETED;
+        this.transitionStatus(SessionSupervisorStatus.COMPLETED, "execute-wrapper-complete", {
+          summaryStatus: summary.status,
+        });
       } else if (summary.status === ReasoningResultStatus.FAILED) {
-        this.status = SessionSupervisorStatus.FAILED;
+        this.transitionStatus(SessionSupervisorStatus.FAILED, "execute-wrapper-failed", {
+          summaryStatus: summary.status,
+        });
       } else {
-        this.status = SessionSupervisorStatus.COMPLETED; // Partial completion still counts as completed supervisor
+        this.transitionStatus(SessionSupervisorStatus.COMPLETED, "execute-wrapper-partial", {
+          summaryStatus: summary.status,
+        }); // Partial completion still counts as completed supervisor
       }
 
       return {
@@ -1647,7 +2136,9 @@ Return a well-structured plan with phases and per-agent tasks. Each phase must i
         duration,
       };
     } catch (error) {
-      this.status = SessionSupervisorStatus.FAILED;
+      this.transitionStatus(SessionSupervisorStatus.FAILED, "execute-wrapper-error", {
+        error: error instanceof Error ? error.message : String(error),
+      });
       return {
         sessionId: this.sessionId,
         status: "error",
@@ -1659,7 +2150,7 @@ Return a well-structured plan with phases and per-agent tasks. Each phase must i
 
   cancel(): void {
     this.logger.info("Cancelling session", { sessionId: this.sessionId });
-    this.status = SessionSupervisorStatus.CANCELLED;
+    this.transitionStatus(SessionSupervisorStatus.CANCELLED, "session-cancel-request");
 
     // Emit session-cancel event
     if (this.baseStreamEmitter && !this.sessionFinishEmitted) {

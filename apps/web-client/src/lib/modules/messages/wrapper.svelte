@@ -14,5 +14,7 @@ const { children }: { children: Snippet } = $props();
 		max-inline-size: var(--size-150);
 		inline-size: 100%;
 		padding-inline: var(--size-1);
+		position: relative;
+		z-index: var(--layer-1);
 	}
 </style>

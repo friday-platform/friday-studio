@@ -1,22 +1,52 @@
 <script lang="ts">
-import { page } from "$app/state";
+import { client, type InferResponseType, parseResult } from "@atlas/client/v2";
+import { onMount } from "svelte";
 import { getAppContext } from "$lib/app-context.svelte";
 import logo from "$lib/assets/logo.png";
-import { CustomIcons } from "$lib/components/icons/custom";
+import { Icons } from "$lib/components/icons";
 import { IconSmall } from "$lib/components/icons/small";
+import { getActivePage } from "$lib/utils/active-page.svelte";
 import ExpandDecal from "./expand-decal.svelte";
+import NavigationControls from "./navigation-controls.svelte";
+
+type WorkspacesListResponse = InferResponseType<typeof client.workspace.index.$get, 200>;
 
 const ctx = getAppContext();
+let spaces = $state<WorkspacesListResponse>([]);
 
-function getActivePage(value: string | string[]) {
-  if (Array.isArray(value)) {
-    return value.some((v) => String(page.route.id).endsWith(v));
+let mounted = $state(false);
+
+async function loadSpaces() {
+  try {
+    const res = await parseResult(client.workspace.index.$get());
+    if (!res.ok) {
+      console.error("Failed to load spaces:", res.error);
+      spaces = [];
+      return;
+    }
+    const allSpaces = res.data;
+    spaces = allSpaces.filter(
+      // (w) => w.name !== 'atlas-conversation' && !w.path.includes('/examples/')
+      (w) => !w.path.includes("/examples/"),
+    );
+  } catch (error) {
+    console.error("Failed to load spaces:", error);
+    spaces = [];
   }
-  return String(page.route.id).endsWith(value);
 }
+
+onMount(() => {
+  mounted = true;
+  loadSpaces();
+  ctx.setWorkspacesRefreshCallback(loadSpaces);
+});
 </script>
 
-<header class:expanded={ctx.sidebarExpanded}>
+{#if __TAURI_BUILD__ && ctx.sidebarExpanded}
+	<NavigationControls />
+{/if}
+
+<header class:expanded={ctx.sidebarExpanded} class:mounted>
 	{#if !ctx.sidebarExpanded}
 		<a href={ctx.routes.main} class="logo" aria-label="Altas">
 			<img src={logo} alt="Altas" />
@@ -37,9 +67,8 @@ function getActivePage(value: string | string[]) {
 			<ul>
 				<li>
 					<a href={ctx.routes.main} class:active={getActivePage('/(app)')}>
-						<span style:color="var(--color-blue)">
-							<CustomIcons.Dashboard />
-						</span>
+						<Icons.Dashboard />
+
 						<span class="text">Dashboard</span>
 					</a>
 				</li>
@@ -49,9 +78,7 @@ function getActivePage(value: string | string[]) {
 						href={ctx.routes.library.list}
 						class:active={getActivePage(['library', 'library/[id]'])}
 					>
-						<span style:color="var(--color-purple)">
-							<CustomIcons.Folder />
-						</span>
+						<Icons.Folder />
 
 						<span class="text">Library</span>
 					</a>
@@ -59,14 +86,33 @@ function getActivePage(value: string | string[]) {
 
 				<li>
 					<a href={ctx.routes.settings} class:active={getActivePage(['settings'])}>
-						<span style:color="var(--color-yellow)">
-							<CustomIcons.Settings />
-						</span>
+						<Icons.Settings />
 
 						<span class="text">Settings</span>
 					</a>
 				</li>
 			</ul>
+
+			{#if spaces.length > 0}
+				<div class="spaces-section">
+					<span class="spaces-header">Spaces</span>
+					<ul class="spaces-list">
+						{#each spaces as space}
+							<li>
+								<a
+									href={ctx.routes.spaces.item(space.id)}
+									class:active={getActivePage([
+										`spaces/${space.id}`,
+										`spaces/${space.id}/sessions`
+									])}
+								>
+									<span class="text">{space.name}</span>
+								</a>
+							</li>
+						{/each}
+					</ul>
+				</div>
+			{/if}
 		</nav>
 	{/if}
 
@@ -84,13 +130,16 @@ function getActivePage(value: string | string[]) {
 		padding-block: var(--size-13) var(--size-6);
 		padding-inline: var(--size-3);
 		position: relative;
-		z-index: var(--layer-2);
+		z-index: var(--layer-1);
+
+		-webkit-user-select: none;
+		-moz-user-select: none;
+		user-select: none;
 	}
 
 	ul {
 		display: flex;
 		flex-direction: column;
-		gap: var(--size-1);
 
 		li {
 			inline-size: 100%;
@@ -102,22 +151,24 @@ function getActivePage(value: string | string[]) {
 			border-radius: var(--radius-2);
 			color: var(--color-text);
 			display: flex;
-			font-size: var(--font-size-2);
+			font-size: var(--font-size-3);
 			font-weight: var(--font-weight-4-5);
 			gap: var(--size-2);
-
 			padding-inline: var(--size-2);
+			outline: none;
 
 			& :global(svg) {
 				color: var(--accent-1);
 				flex: none;
+				opacity: 0.5;
 			}
 
 			.text {
 				opacity: 0.8;
 			}
 
-			&.active {
+			&.active,
+			&:focus-visible {
 				background-color: color-mix(in srgb, var(--color-border-1) 80%, transparent);
 			}
 		}
@@ -149,7 +200,7 @@ function getActivePage(value: string | string[]) {
 		box-shadow: var(--shadow-1);
 		color: var(--text-1);
 		display: flex;
-		font-size: var(--font-size-1);
+		font-size: var(--font-size-2);
 		font-weight: var(--font-weight-7);
 		justify-content: center;
 		inline-size: var(--size-7);
@@ -203,6 +254,27 @@ function getActivePage(value: string | string[]) {
 			.label {
 				clip-path: circle(40px at 0 20px);
 				transform: scale(1) translateY(-50%);
+			}
+		}
+	}
+
+	.spaces-header {
+		display: block;
+		font-size: var(--font-size-2);
+		font-weight: var(--font-weight-4-5);
+		opacity: 0.6;
+		padding-block: var(--size-3) var(--size-1-5);
+		padding-inline: var(--size-2-5) var(--size-2);
+	}
+
+	.spaces-list {
+		a {
+			padding-inline: var(--size-2-5) var(--size-2);
+
+			span {
+				white-space: nowrap;
+				overflow: hidden;
+				text-overflow: ellipsis;
 			}
 		}
 	}

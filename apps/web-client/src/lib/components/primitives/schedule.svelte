@@ -204,7 +204,7 @@ function hasConflictingEvents(id: string, start: number, end: number) {
 		h2 {
 			grid-row: 1;
 			grid-column: 1 / -1;
-			font-size: var(--font-size-4);
+			font-size: var(--font-size-6);
 			font-weight: var(--font-weight-6);
 			line-height: var(--font-lineheight-0);
 		}
@@ -212,14 +212,14 @@ function hasConflictingEvents(id: string, start: number, end: number) {
 		time {
 			grid-column: 1;
 			grid-row: 2;
-			font-size: var(--font-size-2);
+			font-size: var(--font-size-3);
 			font-weight: var(--font-weight-4-5);
 			opacity: 0.5;
 		}
 
 		a,
 		span {
-			font-size: var(--font-size-0);
+			font-size: var(--font-size-1);
 			font-weight: var(--font-weight-4-5);
 			grid-row: 2;
 			grid-column: 2;
@@ -269,7 +269,7 @@ function hasConflictingEvents(id: string, start: number, end: number) {
 				position: absolute;
 				inset-block-start: 0;
 				inset-inline-start: 100%;
-				font-size: var(--font-size-00);
+				font-size: var(--font-size-10);
 				font-weight: var(--font-weight-5);
 				inline-size: max-content;
 				white-space: nowrap;
@@ -305,12 +305,12 @@ function hasConflictingEvents(id: string, start: number, end: number) {
 		position: relative;
 
 		.time {
-			font-size: var(--font-size-2);
+			font-size: var(--font-size-3);
 			font-weight: var(--font-weight-5);
 			line-height: var(--font-lineheight-0);
 
 			.meridiem {
-				font-size: var(--font-size-0);
+				font-size: var(--font-size-1);
 				font-weight: var(--font-weight-4-5);
 				opacity: 0.8;
 			}
@@ -352,7 +352,7 @@ function hasConflictingEvents(id: string, start: number, end: number) {
 
 		h2 {
 			color: var(--color-purple);
-			font-size: var(--font-size-0);
+			font-size: var(--font-size-1);
 			font-weight: var(--font-weight-5);
 			line-height: var(--font-lineheight-0);
 			text-overflow: ellipsis;
@@ -364,7 +364,7 @@ function hasConflictingEvents(id: string, start: number, end: number) {
 		}
 
 		time {
-			font-size: var(--font-size-0);
+			font-size: var(--font-size-1);
 			font-weight: var(--font-weight-4-5);
 			line-height: var(--font-lineheight-0);
 			opacity: 0.5;

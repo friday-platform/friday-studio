@@ -4,7 +4,7 @@ import { slide } from "svelte/transition";
 import { z } from "zod";
 import { getAppContext, getFileType } from "$lib/app-context.svelte";
 import { getChatContext } from "$lib/chat-context.svelte";
-import { CustomIcons } from "$lib/components/icons/custom";
+import { Icons } from "$lib/components/icons";
 import { IconSmall } from "$lib/components/icons/small";
 import Textarea from "$lib/components/textarea.svelte";
 import DisplayArtifact from "$lib/modules/artifacts/display.svelte";
@@ -104,7 +104,11 @@ const hasMessages = $derived(messages.length > 0);
 						{#if formattedMessage && (formattedMessage.type === 'request' || formattedMessage.type === 'text')}
 							<Message message={formattedMessage} />
 						{:else if formattedMessage && formattedMessage.type === 'tool_call' && formattedMessage.metadata?.toolName === 'table_output' && formattedMessage.metadata?.result}
-							<Table data={formattedMessage.metadata.result as { data: { headers: string[]; rows: Record<string, string | number>[] } }} />
+							<Table
+								data={formattedMessage.metadata.result as {
+									data: { headers: string[]; rows: Record<string, string | number>[] };
+								}}
+							/>
 						{:else if formattedMessage && formattedMessage.type === 'tool_call' && formattedMessage.metadata?.toolName === 'display_artifact' && formattedMessage.metadata?.artifactId}
 							<DisplayArtifact artifactId={formattedMessage.metadata.artifactId as string} />
 						{:else if formattedMessage && formattedMessage.type === 'error'}
@@ -207,7 +211,7 @@ const hasMessages = $derived(messages.length > 0);
 								</button>
 							{:else}
 								<button type="submit" aria-label="Send message">
-									<CustomIcons.ArrowUp />
+									<Icons.ArrowUp />
 								</button>
 							{/if}
 						</div>
@@ -242,7 +246,7 @@ const hasMessages = $derived(messages.length > 0);
 									}
 								}}
 							>
-								<CustomIcons.Paperclip />
+								<Icons.Paperclip />
 
 								Add Files
 							</button>
@@ -257,7 +261,7 @@ const hasMessages = $derived(messages.length > 0);
 							// @TODO implement some search examples
 						}}
 					>
-						<CustomIcons.Globe />
+						<Icons.Globe />
 
 						Search Sites
 					</button>
@@ -357,7 +361,7 @@ const hasMessages = $derived(messages.length > 0);
 		overflow: hidden;
 		position: relative;
 		transition: all 150ms ease;
-		z-index: var(--layer-1);
+		z-index: var(--layer-0);
 	}
 
 	.main {
@@ -376,14 +380,14 @@ const hasMessages = $derived(messages.length > 0);
 		padding-inline: var(--size-2);
 
 		h2 {
-			font-size: var(--font-size-5);
+			font-size: var(--font-size-7);
 			font-weight: var(--font-weight-6);
 			line-height: var(--font-lineheight-1);
 			margin-block-end: var(--size-2);
 		}
 
 		p {
-			font-size: var(--font-size-3);
+			font-size: var(--font-size-5);
 			font-weight: var(--font-weight-4);
 			opacity: 0.8;
 		}
@@ -428,7 +432,7 @@ const hasMessages = $derived(messages.length > 0);
 	}
 
 	footer {
-		font-size: var(--font-size-1);
+		font-size: var(--font-size-2);
 		font-weight: var(--font-weight-5);
 		opacity: 0.5;
 		margin-block-start: auto;
@@ -437,6 +441,7 @@ const hasMessages = $derived(messages.length > 0);
 		position: absolute;
 		inset-block-end: 0;
 		inset-inline: 0;
+		z-index: var(--layer-1);
 	}
 
 	.interactive-container {
@@ -498,7 +503,7 @@ const hasMessages = $derived(messages.length > 0);
 				border-radius: var(--radius-3);
 				color: var(--accent-1);
 				display: flex;
-				font-size: var(--font-size-1);
+				font-size: var(--font-size-2);
 				font-weight: var(--font-weight-5);
 				gap: var(--size-1);
 				justify-content: center;
@@ -532,7 +537,7 @@ const hasMessages = $derived(messages.length > 0);
 			color: var(--color-text);
 			cursor: pointer;
 			display: flex;
-			font-size: var(--font-size-1);
+			font-size: var(--font-size-2);
 			gap: var(--size-1-5);
 			max-inline-size: var(--size-56);
 			opacity: 0.7;
@@ -564,7 +569,7 @@ const hasMessages = $derived(messages.length > 0);
 
 				span:last-child {
 					color: var(--text-3);
-					font-size: var(--font-size-1);
+					font-size: var(--font-size-2);
 					font-weight: var(--font-weight-4);
 					opacity: 0.8;
 				}
@@ -596,7 +601,7 @@ const hasMessages = $derived(messages.length > 0);
 			align-items: center;
 			display: flex;
 			gap: var(--size-1);
-			font-size: var(--font-size-2);
+			font-size: var(--font-size-3);
 			font-weight: var(--font-weight-5);
 			opacity: 0.5;
 			padding-block-end: var(--size-3);
@@ -617,13 +622,13 @@ const hasMessages = $derived(messages.length > 0);
 		}
 
 		.chat--title {
-			font-size: var(--font-size-2);
+			font-size: var(--font-size-3);
 			font-weight: var(--font-weight-5);
 			opacity: 0.7;
 		}
 
 		.chat--date {
-			font-size: var(--font-size-1);
+			font-size: var(--font-size-2);
 			font-weight: var(--font-weight-5);
 			opacity: 0.5;
 		}

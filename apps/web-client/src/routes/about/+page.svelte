@@ -67,13 +67,13 @@ onMount(async () => {
 	}
 
 	.app-name {
-		font-size: var(--font-size-3);
+		font-size: var(--font-size-4);
 		font-weight: var(--font-weight-7);
 		margin: 0;
 	}
 
 	p {
-		font-size: var(--font-size-1);
+		font-size: var(--font-size-2);
 		margin: 0;
 	}
 </style>

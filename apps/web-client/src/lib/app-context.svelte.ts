@@ -49,8 +49,24 @@ function getRouteConfig() {
     main: `${base}/`,
     library: { list: `${base}/library`, item: (id: string) => `${base}/library/${id}` },
     chat: { item: (id: string) => `${base}/chat/${id}` },
+    spaces: {
+      item: (id: string, view?: string) =>
+        view ? `${base}/spaces/${id}/${view}` : `${base}/spaces/${id}`,
+    },
     settings: `${base}/settings`,
   } as const;
+}
+
+function getInitialSidebarState(): boolean {
+  if (typeof window === "undefined") return false;
+  const stored = localStorage.getItem("atlas:sidebarExpanded");
+  if (stored !== null) {
+    const parsed = JSON.parse(stored);
+    if (typeof parsed === "boolean") {
+      return parsed;
+    }
+  }
+  return false;
 }
 
 class AppContext {
@@ -59,7 +75,29 @@ class AppContext {
   daemonClient = new DaemonClient();
   stagedFiles = createStagedFiles();
 
-  sidebarExpanded = $state(false);
+  #sidebarExpanded = $state(getInitialSidebarState());
+  #workspacesRefreshCallback: (() => void) | null = null;
+
+  get sidebarExpanded() {
+    return this.#sidebarExpanded;
+  }
+
+  set sidebarExpanded(value: boolean) {
+    this.#sidebarExpanded = value;
+    if (typeof window !== "undefined") {
+      localStorage.setItem("atlas:sidebarExpanded", JSON.stringify(value));
+    }
+  }
+
+  setWorkspacesRefreshCallback(callback: () => void) {
+    this.#workspacesRefreshCallback = callback;
+  }
+
+  refreshWorkspaces() {
+    if (this.#workspacesRefreshCallback) {
+      this.#workspacesRefreshCallback();
+    }
+  }
 }
 
 export function setAppContext() {

@@ -5,7 +5,7 @@
  * while delegating all state management to the actor.
  */
 
-import { WorkspaceSessionStatus } from "@atlas/core";
+import { WorkspaceSessionStatus, loadSessionTimeline } from "@atlas/core";
 import { type Logger, logger } from "@atlas/logger";
 import type { SessionSummary } from "../../mod.ts";
 import type {
@@ -52,6 +52,9 @@ export class Session extends AtlasScope implements IWorkspaceSession {
   private sessionActor?: SessionSupervisorActor;
   private _status: string = WorkspaceSessionStatus.PENDING;
   private _error?: Error;
+  private historyArtifacts: IWorkspaceArtifact[] = [];
+  private historyLoaded = false;
+  private historyLoadPromise?: Promise<void>;
 
   // Execution state
   protected logger: Logger;
@@ -166,7 +169,8 @@ export class Session extends AtlasScope implements IWorkspaceSession {
     if (this.sessionActor) {
       return this.sessionActor.getExecutionArtifacts();
     }
-    return [];
+    this.ensureHistoryLoaded();
+    return [...this.historyArtifacts];
   }
 
   // Session Lifecycle Management
@@ -354,6 +358,44 @@ export class Session extends AtlasScope implements IWorkspaceSession {
     } catch (error) {
       this.logger.warn("Failed to clear working memory for session", { error });
     }
+  }
+
+  private ensureHistoryLoaded(): void {
+    if (this.historyLoaded || this.historyLoadPromise) return;
+
+    this.historyLoadPromise = loadSessionTimeline(this.id)
+      .then((result) => {
+        if (!result.ok) {
+          this.logger.warn("Failed to load session history from storage", {
+            sessionId: this.id,
+            error: result.error,
+          });
+          return;
+        }
+
+        const timeline = result.data;
+        if (!timeline) {
+          return;
+        }
+
+        const createdAt = new Date(timeline.metadata.updatedAt || timeline.metadata.createdAt);
+        this.historyArtifacts = [
+          {
+            id: `session-history-${timeline.metadata.sessionId}`,
+            type: "session_history",
+            data: timeline,
+            createdAt: Number.isNaN(createdAt.getTime()) ? new Date() : createdAt,
+            createdBy: "history-storage",
+          },
+        ];
+      })
+      .catch((error) => {
+        this.logger.warn("Unexpected error loading session history", { sessionId: this.id, error });
+      })
+      .finally(() => {
+        this.historyLoaded = true;
+        this.historyLoadPromise = undefined;
+      });
   }
 
   // Debugging and Monitoring

@@ -4,6 +4,7 @@ export type { ChatStorageRoutes } from "./routes/chat-storage.ts";
 export type { ConfigRoutes } from "./routes/config.ts";
 export type { DaemonRoutes } from "./routes/daemon.ts";
 export type { HealthRoutes } from "./routes/health.ts";
+export type { SessionHistoryRoutes } from "./routes/sessions/history.ts";
 export type { SessionsRoutes } from "./routes/sessions/index.ts";
 export type { WorkspaceRoutes } from "./routes/workspaces/index.ts";
 export * from "./src/atlas-daemon.ts";

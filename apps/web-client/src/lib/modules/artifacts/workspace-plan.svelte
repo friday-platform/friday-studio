@@ -50,7 +50,7 @@ let isExpanded = $state(false);
 		header {
 			align-items: center;
 			display: flex;
-			font-size: var(--font-size-1);
+			font-size: var(--font-size-2);
 			justify-content: space-between;
 			padding-block-start: var(--size-5);
 			padding-inline: var(--size-5);
@@ -105,14 +105,14 @@ let isExpanded = $state(false);
 		}
 
 		& :global(h1) {
-			font-size: var(--font-size-4);
+			font-size: var(--font-size-6);
 			font-weight: var(--font-weight-6);
 			line-height: var(--font-lineheight-0);
 			margin-block-end: var(--size-1-5);
 		}
 
 		& :global(h2) {
-			font-size: var(--font-size-3);
+			font-size: var(--font-size-4);
 			font-weight: var(--font-weight-6);
 			line-height: var(--font-lineheight-0);
 			margin-block: var(--size-3) var(--size-0-5);
@@ -134,7 +134,7 @@ let isExpanded = $state(false);
 		& :global(li) {
 			color: var(--text-1);
 
-			font-size: var(--font-size-2);
+			font-size: var(--font-size-3);
 			line-height: var(--font-lineheight-3);
 		}
 

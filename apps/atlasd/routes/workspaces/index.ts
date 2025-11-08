@@ -205,8 +205,16 @@ const workspacesRoutes = daemonFactory
       if (!workspace) {
         return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
       }
+
+      // Load workspace configuration
+      const config = await manager.getWorkspaceConfig(workspace.id);
+
       return c.json(
-        { ...workspace, type: workspace.metadata?.ephemeral ? "ephemeral" : "persistent" },
+        {
+          ...workspace,
+          type: workspace.metadata?.ephemeral ? "ephemeral" : "persistent",
+          config: config?.workspace || null,
+        },
         200,
       );
     } catch (error) {

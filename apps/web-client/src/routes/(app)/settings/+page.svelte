@@ -2,7 +2,7 @@
 import { onMount } from "svelte";
 import { getAppContext } from "$lib/app-context.svelte";
 import { BUILD_INFO } from "$lib/build-info";
-import { CustomIcons } from "$lib/components/icons/custom";
+import { Icons } from "$lib/components/icons";
 import { getVersion, invoke } from "$lib/utils/tauri-loader";
 
 const ctx = getAppContext();
@@ -106,11 +106,41 @@ function showMessage(msg: string) {
 
 		<h2>Environment Variables</h2>
 
-			<div class="list" role="table">
-				<div class="list-header">
-					<span class="list-heading">Key</span>
-					<span class="list-heading">Value</span>
-					<span class="list-heading">&nbsp;</span>
+		<div class="list" role="table">
+			<div class="list-header">
+				<span class="list-heading">Key</span>
+				<span class="list-heading">Value</span>
+				<span class="list-heading">&nbsp;</span>
+			</div>
+
+			{#each envVars as entry (entry.id)}
+				<div class="list-row">
+					<div class="list-cell">
+						<input type="text" placeholder="KEY" bind:value={entry.key} class="key-input" />
+					</div>
+
+					<div class="list-cell">
+						<input
+							type="text"
+							placeholder="value"
+							bind:value={entry.value}
+							onblur={() => {
+								saveChanges();
+							}}
+							class="value-input"
+						/>
+					</div>
+
+					<div class="list-cell">
+						<button
+							type="button"
+							class="remove-button"
+							onclick={() => removeEntry(entry.id)}
+							aria-label="Remove entry"
+						>
+							<Icons.Trash />
+						</button>
+					</div>
 				</div>
 
 				{#each envVars as entry (entry.id)}
@@ -138,15 +168,16 @@ function showMessage(msg: string) {
 								onclick={() => removeEntry(entry.id)}
 								aria-label="Remove entry"
 							>
-								<CustomIcons.Trash />
+								<Icons.Trash />
 							</button>
 						</div>
 					</div>
 				{/each}
-			</div>
+			{/each}
+		</div>
 
 		<button class="add-button" onclick={addEntry}>
-			<CustomIcons.Plus />
+			<Icons.Plus />
 			Add Variable
 		</button>
 
@@ -199,7 +230,7 @@ function showMessage(msg: string) {
 
 	h1 {
 		color: var(--color-text);
-		font-size: var(--font-size-5);
+		font-size: var(--font-size-7);
 		font-weight: var(--font-weight-6);
 		line-height: var(--font-lineheight-1);
 		font-weight: 600;
@@ -220,7 +251,7 @@ function showMessage(msg: string) {
 	}
 
 	p {
-		font-size: var(--font-size-3);
+		font-size: var(--font-size-4);
 		font-weight: var(--font-weight-4);
 		line-height: var(--font-lineheight-1);
 		margin-block: var(--size-1-5) var(--size-4);
@@ -233,7 +264,7 @@ function showMessage(msg: string) {
 		border-radius: var(--radius-3);
 		box-shadow: var(--shadow-1);
 		display: flex;
-		font-size: var(--font-size-2);
+		font-size: var(--font-size-3);
 		font-weight: var(--font-weight-5);
 		gap: var(--size-1-5);
 		padding-inline: var(--size-2-5) var(--size-3);
@@ -266,7 +297,7 @@ function showMessage(msg: string) {
 		.list-heading,
 		.list-cell {
 			border-bottom: 1px solid var(--color-border-1);
-			font-size: var(--font-size-3);
+			font-size: var(--font-size-4);
 
 			text-align: left;
 			padding-block: var(--size-2);
@@ -290,12 +321,12 @@ function showMessage(msg: string) {
 		}
 
 		.key-input {
-			font-size: var(--font-size-1);
+			font-size: var(--font-size-2);
 			font-weight: var(--font-weight-6);
 		}
 
 		.value-input {
-			font-size: var(--font-size-2);
+			font-size: var(--font-size-3);
 		}
 
 		.key-input:focus,
@@ -345,7 +376,7 @@ function showMessage(msg: string) {
 		}
 
 		.daemon-message {
-			font-size: var(--font-size-1);
+			font-size: var(--font-size-2);
 			font-weight: var(--font-weight-5);
 			opacity: 0.5;
 		}

@@ -114,7 +114,7 @@ export class WorkspaceSupervisorActor implements BaseActor {
     });
   }
 
-  processSignal(
+  async processSignal(
     signal: IWorkspaceSignal,
     payload: Record<string, unknown>,
     sessionId: string,
@@ -161,120 +161,109 @@ export class WorkspaceSupervisorActor implements BaseActor {
       sessionActor.initialize();
       sessionInfo.status = WorkspaceSessionStatus.EXECUTING;
 
-      // Use queueMicrotask to defer the heavy processing until after this function returns.
-      // queueMicrotask() schedules a function to run asynchronously in the next microtask,
-      // allowing us to return immediately with a "session_created" status while the actual
-      // signal processing happens in the background. This is similar to Promise.resolve().then()
-      // but more explicit about the intent to defer work.
-      queueMicrotask(() => {
-        try {
-          this.logger.info("Analyzing signal", { sessionId, signalId: signal.id });
+      this.logger.info("Analyzing signal", { sessionId, signalId: signal.id });
 
-          // Match signal to job configuration
-          let jobSpec: JobSpecification | undefined;
-          if (this.config.jobs) {
-            for (const [jobId, job] of Object.entries(this.config.jobs)) {
-              if (job.triggers?.some((trigger) => trigger.signal === signal.id)) {
-                jobSpec = job;
-                this.logger.info("Found matching job for signal", {
-                  signalId: signal.id,
-                  jobId,
-                  jobName: job.name,
-                });
-                break;
-              }
-            }
+      // Match signal to job configuration
+      let jobSpec: JobSpecification | undefined;
+      if (this.config.jobs) {
+        for (const [jobId, job] of Object.entries(this.config.jobs)) {
+          if (job.triggers?.some((trigger) => trigger.signal === signal.id)) {
+            jobSpec = job;
+            this.logger.info("Found matching job for signal", {
+              signalId: signal.id,
+              jobId,
+              jobName: job.name,
+            });
+            break;
           }
-
-          if (!jobSpec) {
-            this.logger.warn("No job found for signal", { signalId: signal.id, sessionId });
-            sessionInfo.status = WorkspaceSessionStatus.FAILED;
-            return;
-          }
-
-          // Extract agent IDs from job specification
-          const availableAgents: string[] = jobSpec.execution.agents.map((agent) =>
-            typeof agent === "string" ? agent : agent.id,
-          );
-
-          const sessionContext: SessionContext = {
-            signal,
-            payload,
-            availableAgents,
-            jobSpec,
-            streamId: streamId, // Only use the streamId parameter - never fallback to payload
-            onStreamEvent, // Pass the callback if provided
-          };
-
-          this.logger.info("Session context created", {
-            sessionId,
-            availableAgents: sessionContext.availableAgents?.length || 0,
-            hasJobSpec: !!jobSpec,
-          });
-
-          sessionActor.initializeSession(sessionContext);
-
-          // Start execution (this creates the execution promise)
-          // We don't await here - just start it
-          sessionActor.executeSession().then(
-            (sessionSummary) => {
-              this.logger.info("Session execution completed", {
-                sessionId,
-                status: sessionSummary.status,
-                failureReason: sessionSummary.failureReason,
-                totalPhases: sessionSummary.totalPhases,
-                totalAgents: sessionSummary.totalAgents,
-                duration: sessionSummary.duration,
-              });
-
-              sessionInfo.status =
-                sessionSummary.status === ReasoningResultStatus.COMPLETED
-                  ? WorkspaceSessionStatus.COMPLETED
-                  : sessionSummary.status === ReasoningResultStatus.CANCELLED
-                    ? WorkspaceSessionStatus.CANCELLED
-                    : WorkspaceSessionStatus.FAILED;
-
-              // Clean up session after completion
-              this.cleanupSession(sessionId);
-            },
-            (error) => {
-              const isCancellation =
-                error instanceof Error &&
-                (error.message.includes("Session cancelled") || error.message.includes("aborted"));
-
-              if (isCancellation) {
-                this.logger.info("Session execution cancelled", { sessionId, signalId: signal.id });
-                sessionInfo.status = WorkspaceSessionStatus.CANCELLED;
-              } else {
-                this.logger.error("Session execution failed", {
-                  sessionId,
-                  signalId: signal.id,
-                  error,
-                });
-                sessionInfo.status = WorkspaceSessionStatus.FAILED;
-              }
-
-              // Clean up session after failure
-              this.cleanupSession(sessionId);
-            },
-          );
-        } catch (error) {
-          this.logger.error("Signal processing setup failed", {
-            sessionId,
-            signalId: signal.id,
-            error,
-          });
-          sessionInfo.status = WorkspaceSessionStatus.FAILED;
         }
+      }
+
+      if (!jobSpec) {
+        this.logger.warn("No job found for signal", { signalId: signal.id, sessionId });
+        sessionInfo.status = WorkspaceSessionStatus.FAILED;
+        return {
+          sessionId,
+          status: "session_failed" as const,
+          sessionActorCreated: false,
+          error: "No job found for signal",
+        };
+      }
+
+      // Extract agent IDs from job specification
+      const availableAgents: string[] = jobSpec.execution.agents.map((agent) =>
+        typeof agent === "string" ? agent : agent.id,
+      );
+
+      const sessionContext: SessionContext = {
+        signal,
+        payload,
+        availableAgents,
+        jobSpec,
+        streamId: streamId, // Only use the streamId parameter - never fallback to payload
+        onStreamEvent, // Pass the callback if provided
+      };
+
+      this.logger.info("Session context created", {
+        sessionId,
+        availableAgents: sessionContext.availableAgents?.length || 0,
+        hasJobSpec: !!jobSpec,
       });
 
-      // Return immediately with success and include sessionActor reference
-      return Promise.resolve({
+      // CRITICAL: Await initialization to ensure session metadata is persisted before execution
+      await sessionActor.initializeSession(sessionContext);
+
+      // Start execution (don't await - let it run async while we return)
+      sessionActor.executeSession().then(
+        (sessionSummary) => {
+          this.logger.info("Session execution completed", {
+            sessionId,
+            status: sessionSummary.status,
+            failureReason: sessionSummary.failureReason,
+            totalPhases: sessionSummary.totalPhases,
+            totalAgents: sessionSummary.totalAgents,
+            duration: sessionSummary.duration,
+          });
+
+          sessionInfo.status =
+            sessionSummary.status === ReasoningResultStatus.COMPLETED
+              ? WorkspaceSessionStatus.COMPLETED
+              : sessionSummary.status === ReasoningResultStatus.CANCELLED
+                ? WorkspaceSessionStatus.CANCELLED
+                : WorkspaceSessionStatus.FAILED;
+
+          // Clean up session after completion
+          this.cleanupSession(sessionId);
+        },
+        (error) => {
+          const isCancellation =
+            error instanceof Error &&
+            (error.message.includes("Session cancelled") || error.message.includes("aborted"));
+
+          if (isCancellation) {
+            this.logger.info("Session execution cancelled", { sessionId, signalId: signal.id });
+            sessionInfo.status = WorkspaceSessionStatus.CANCELLED;
+          } else {
+            this.logger.error("Session execution failed", {
+              sessionId,
+              signalId: signal.id,
+              error,
+            });
+            sessionInfo.status = WorkspaceSessionStatus.FAILED;
+          }
+
+          // Clean up session after failure
+          this.cleanupSession(sessionId);
+        },
+      );
+
+      // Return with fully initialized session actor
+      return {
         sessionId,
         status: "session_created" as const,
         sessionActorCreated: true,
-        sessionActor, // Provide direct access to SessionSupervisorActor
-      });
+        sessionActor,
+      };
     } catch (error) {
       this.logger.error("Failed to process signal", { signalId: signal.id, sessionId, error });
 
@@ -291,7 +280,7 @@ export class WorkspaceSupervisorActor implements BaseActor {
    * Process a job execution directly with a custom StreamEmitter (for MCP tool execution)
    * This bypasses signal lookup and uses the provided emitter for notifications
    */
-  processJobDirectly(
+  async processJobDirectly(
     jobName: string,
     jobSpec: JobSpecification,
     params: { payload: Record<string, unknown>; streamId?: string },
@@ -336,93 +325,86 @@ export class WorkspaceSupervisorActor implements BaseActor {
       sessionActor.initialize();
       sessionInfo.status = WorkspaceSessionStatus.EXECUTING;
 
-      // Process the job execution asynchronously
-      queueMicrotask(() => {
-        try {
-          this.logger.info("Executing job directly", { sessionId, jobName });
+      this.logger.info("Executing job directly", { sessionId, jobName });
 
-          // Extract agent IDs from job specification
-          const availableAgents: string[] = jobSpec.execution.agents.map((agent) =>
-            typeof agent === "string" ? agent : agent.id,
-          );
+      // Extract agent IDs from job specification
+      const availableAgents: string[] = jobSpec.execution.agents.map((agent) =>
+        typeof agent === "string" ? agent : agent.id,
+      );
 
-          // Create synthetic signal for session context (maintains compatibility)
-          // @ts-expect-error - Signal configuration is being misused here as runtime signals.
-          const syntheticSignal: IWorkspaceSignal = {
-            id: `job-${jobName}`,
-            provider: { id: "mcp-tool", name: "mcp-tool" },
-          };
+      // Create synthetic signal for session context (maintains compatibility)
+      // @ts-expect-error - Signal configuration is being misused here as runtime signals.
+      const syntheticSignal: IWorkspaceSignal = {
+        id: `job-${jobName}`,
+        provider: { id: "mcp-tool", name: "mcp-tool" },
+      };
 
-          const sessionContext: SessionContext = {
-            signal: syntheticSignal,
-            payload: params.payload,
-            availableAgents,
-            jobSpec,
-            streamId: params.streamId,
-          };
+      const sessionContext: SessionContext = {
+        signal: syntheticSignal,
+        payload: params.payload,
+        availableAgents,
+        jobSpec,
+        streamId: params.streamId,
+      };
 
-          this.logger.info("Session context created for direct job", {
-            sessionId,
-            jobName,
-            availableAgents: sessionContext.availableAgents?.length || 0,
-            hasJobSpec: true,
-          });
-
-          sessionActor.initializeSession(sessionContext);
-
-          // Start execution
-          sessionActor.executeSession().then(
-            (sessionSummary) => {
-              this.logger.info("Direct job execution completed", {
-                sessionId,
-                jobName,
-                status: sessionSummary.status,
-                failureReason: sessionSummary.failureReason,
-                totalPhases: sessionSummary.totalPhases,
-                totalAgents: sessionSummary.totalAgents,
-                duration: sessionSummary.duration,
-              });
-
-              sessionInfo.status =
-                sessionSummary.status === ReasoningResultStatus.COMPLETED
-                  ? WorkspaceSessionStatus.COMPLETED
-                  : sessionSummary.status === ReasoningResultStatus.CANCELLED
-                    ? WorkspaceSessionStatus.CANCELLED
-                    : WorkspaceSessionStatus.FAILED;
-
-              // Clean up session after completion
-              this.cleanupSession(sessionId);
-            },
-            (error) => {
-              const isCancellation =
-                error instanceof Error &&
-                (error.message.includes("Session cancelled") || error.message.includes("aborted"));
-
-              if (isCancellation) {
-                this.logger.info("Direct job execution cancelled", { sessionId, jobName });
-                sessionInfo.status = WorkspaceSessionStatus.CANCELLED;
-              } else {
-                this.logger.error("Direct job execution failed", { sessionId, jobName, error });
-                sessionInfo.status = WorkspaceSessionStatus.FAILED;
-              }
-
-              // Clean up session after failure
-              this.cleanupSession(sessionId);
-            },
-          );
-        } catch (error) {
-          this.logger.error("Direct job processing setup failed", { sessionId, jobName, error });
-          sessionInfo.status = WorkspaceSessionStatus.FAILED;
-        }
+      this.logger.info("Session context created for direct job", {
+        sessionId,
+        jobName,
+        availableAgents: sessionContext.availableAgents?.length || 0,
+        hasJobSpec: true,
       });
 
-      // Return immediately with success and include sessionActor reference
-      return Promise.resolve({
+      // CRITICAL: Await initialization to ensure session metadata is persisted before execution
+      await sessionActor.initializeSession(sessionContext);
+
+      // Start execution (don't await - let it run async while we return)
+      sessionActor.executeSession().then(
+        (sessionSummary) => {
+          this.logger.info("Direct job execution completed", {
+            sessionId,
+            jobName,
+            status: sessionSummary.status,
+            failureReason: sessionSummary.failureReason,
+            totalPhases: sessionSummary.totalPhases,
+            totalAgents: sessionSummary.totalAgents,
+            duration: sessionSummary.duration,
+          });
+
+          sessionInfo.status =
+            sessionSummary.status === ReasoningResultStatus.COMPLETED
+              ? WorkspaceSessionStatus.COMPLETED
+              : sessionSummary.status === ReasoningResultStatus.CANCELLED
+                ? WorkspaceSessionStatus.CANCELLED
+                : WorkspaceSessionStatus.FAILED;
+
+          // Clean up session after completion
+          this.cleanupSession(sessionId);
+        },
+        (error) => {
+          const isCancellation =
+            error instanceof Error &&
+            (error.message.includes("Session cancelled") || error.message.includes("aborted"));
+
+          if (isCancellation) {
+            this.logger.info("Direct job execution cancelled", { sessionId, jobName });
+            sessionInfo.status = WorkspaceSessionStatus.CANCELLED;
+          } else {
+            this.logger.error("Direct job execution failed", { sessionId, jobName, error });
+            sessionInfo.status = WorkspaceSessionStatus.FAILED;
+          }
+
+          // Clean up session after failure
+          this.cleanupSession(sessionId);
+        },
+      );
+
+      // Return with fully initialized session actor
+      return {
         sessionId,
         status: "session_created" as const,
         sessionActorCreated: true,
-        sessionActor, // Provide direct access to SessionSupervisorActor
-      });
+        sessionActor,
+      };
     } catch (error) {
       this.logger.error("Failed to process job directly", { jobName, sessionId, error });
 

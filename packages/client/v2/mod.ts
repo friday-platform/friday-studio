@@ -4,6 +4,7 @@ import type {
   ChatStorageRoutes,
   DaemonRoutes,
   HealthRoutes,
+  SessionHistoryRoutes,
   SessionsRoutes,
   WorkspaceRoutes,
 } from "@atlas/atlasd";
@@ -23,11 +24,12 @@ export { DetailedError } from "hono/client";
 const baseUrl = getAtlasDaemonUrl();
 
 export const client = {
-  health: hc<HealthRoutes>(`${baseUrl}/health`),
   artifactsStorage: hc<ArtifactsRoutes>(`${baseUrl}/api/artifacts`),
   chat: hc<ChatRoutes>(`${baseUrl}/api/chat`),
   chatStorage: hc<ChatStorageRoutes>(`${baseUrl}/api/chat-storage`),
   daemon: hc<DaemonRoutes>(`${baseUrl}/api/daemon`),
+  health: hc<HealthRoutes>(`${baseUrl}/health`),
+  sessionHistory: hc<SessionHistoryRoutes>(`${baseUrl}/api/sessions-history`),
   sessions: hc<SessionsRoutes>(`${baseUrl}/api/sessions`),
   workspace: hc<WorkspaceRoutes>(`${baseUrl}/api/workspaces`),
 };

@@ -1,10 +1,10 @@
-use tauri::menu::{Menu, MenuItem, MenuId, PredefinedMenuItem, Submenu};
-use tauri_plugin_opener::OpenerExt;
-use tauri::{AppHandle, Emitter};
-use std::process::Command;
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
+use std::process::Command;
+use tauri::menu::{Menu, MenuId, MenuItem, PredefinedMenuItem, Submenu};
+use tauri::{AppHandle, Emitter};
+use tauri_plugin_opener::OpenerExt;
 
 #[cfg(target_os = "macos")]
 use objc2_app_kit::NSOpenPanel;
@@ -14,15 +14,19 @@ use objc2_foundation::MainThreadMarker;
 #[cfg(target_os = "windows")]
 use windows::{
     Win32::Foundation::HWND,
-    Win32::System::Com::{CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED},
-    Win32::UI::Shell::{FileOpenDialog, IFileOpenDialog, FOS_ALLOWMULTISELECT, FOS_PICKFOLDERS, SIGDN_FILESYSPATH},
+    Win32::System::Com::{
+        CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_INPROC_SERVER,
+        COINIT_APARTMENTTHREADED,
+    },
+    Win32::UI::Shell::{
+        FileOpenDialog, IFileOpenDialog, FOS_ALLOWMULTISELECT, FOS_PICKFOLDERS, SIGDN_FILESYSPATH,
+    },
 };
 
 #[cfg(target_os = "linux")]
 use gtk::prelude::*;
 #[cfg(target_os = "linux")]
 use gtk::{FileChooserAction, FileChooserNative, ResponseType};
-
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
@@ -59,7 +63,8 @@ async fn run_diagnostics(app: AppHandle) -> Result<String, String> {
     };
 
     // Emit initial progress update
-    app.emit("diagnostics-progress", "Starting diagnostics collection...").unwrap();
+    app.emit("diagnostics-progress", "Starting diagnostics collection...")
+        .unwrap();
 
     // Run atlas diagnostics send and capture stdout in real-time
     #[cfg(target_os = "windows")]
@@ -72,7 +77,12 @@ async fn run_diagnostics(app: AppHandle) -> Result<String, String> {
             .stderr(Stdio::piped())
             .creation_flags(CREATE_NO_WINDOW)
             .spawn()
-            .map_err(|e| format!("Failed to run atlas diagnostics send at {}: {}", atlas_path, e))?
+            .map_err(|e| {
+                format!(
+                    "Failed to run atlas diagnostics send at {}: {}",
+                    atlas_path, e
+                )
+            })?
     };
 
     #[cfg(not(target_os = "windows"))]
@@ -81,7 +91,12 @@ async fn run_diagnostics(app: AppHandle) -> Result<String, String> {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|e| format!("Failed to run atlas diagnostics send at {}: {}", atlas_path, e))?;
+        .map_err(|e| {
+            format!(
+                "Failed to run atlas diagnostics send at {}: {}",
+                atlas_path, e
+            )
+        })?;
 
     // Read stdout line by line and emit progress updates
     if let Some(stdout) = child.stdout.take() {
@@ -106,7 +121,8 @@ async fn run_diagnostics(app: AppHandle) -> Result<String, String> {
     }
 
     // Wait for the process to complete
-    let output = child.wait_with_output()
+    let output = child
+        .wait_with_output()
         .map_err(|e| format!("Failed to wait for diagnostics: {}", e))?;
 
     if output.status.success() {
@@ -129,8 +145,8 @@ fn read_env_file() -> Result<HashMap<String, String>, String> {
         return Ok(HashMap::new());
     }
 
-    let content = fs::read_to_string(&env_path)
-        .map_err(|e| format!("Failed to read .env file: {}", e))?;
+    let content =
+        fs::read_to_string(&env_path).map_err(|e| format!("Failed to read .env file: {}", e))?;
 
     let mut env_vars = HashMap::new();
 
@@ -149,7 +165,8 @@ fn read_env_file() -> Result<HashMap<String, String>, String> {
 
             // Remove quotes if present
             let value = if (value.starts_with('"') && value.ends_with('"'))
-                || (value.starts_with('\'') && value.ends_with('\'')) {
+                || (value.starts_with('\'') && value.ends_with('\''))
+            {
                 value[1..value.len() - 1].to_string()
             } else {
                 value
@@ -187,7 +204,8 @@ fn write_env_file(env_vars: HashMap<String, String>) -> Result<(), String> {
         let value = env_vars.get(&key).unwrap();
 
         // Add quotes if the value contains spaces or special characters
-        let formatted_value = if value.contains(' ') || value.contains('\n') || value.contains('\t') {
+        let formatted_value = if value.contains(' ') || value.contains('\n') || value.contains('\t')
+        {
             format!("\"{}\"", value)
         } else {
             value.clone()
@@ -197,14 +215,17 @@ fn write_env_file(env_vars: HashMap<String, String>) -> Result<(), String> {
     }
 
     // Write the file
-    fs::write(&env_path, content)
-        .map_err(|e| format!("Failed to write .env file: {}", e))?;
+    fs::write(&env_path, content).map_err(|e| format!("Failed to write .env file: {}", e))?;
 
     Ok(())
 }
 
 #[tauri::command]
-async fn open_file_or_folder_picker(app: AppHandle, multiple: bool, _folders_only: bool) -> Result<Vec<String>, String> {
+async fn open_file_or_folder_picker(
+    app: AppHandle,
+    multiple: bool,
+    _folders_only: bool,
+) -> Result<Vec<String>, String> {
     #[cfg(target_os = "windows")]
     let folders_only = _folders_only;
     #[cfg(target_os = "macos")]
@@ -224,7 +245,8 @@ async fn open_file_or_folder_picker(app: AppHandle, multiple: bool, _folders_onl
 
                 let response = panel.runModal();
 
-                let result = if response == 1 {  // NSModalResponseOK = 1
+                let result = if response == 1 {
+                    // NSModalResponseOK = 1
                     let urls = panel.URLs();
                     let mut paths = Vec::new();
 
@@ -241,9 +263,11 @@ async fn open_file_or_folder_picker(app: AppHandle, multiple: bool, _folders_onl
 
                 let _ = tx.send(result);
             }
-        }).map_err(|e| format!("Failed to run on main thread: {}", e))?;
+        })
+        .map_err(|e| format!("Failed to run on main thread: {}", e))?;
 
-        rx.recv().map_err(|e| format!("Failed to receive result: {}", e))?
+        rx.recv()
+            .map_err(|e| format!("Failed to receive result: {}", e))?
     }
 
     #[cfg(target_os = "windows")]
@@ -258,62 +282,75 @@ async fn open_file_or_folder_picker(app: AppHandle, multiple: bool, _folders_onl
                 // Initialize COM
                 let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
 
-                let dialog_result = (|| -> Result<Vec<String>, String> {
-                    // Create FileOpenDialog
-                    let dialog: IFileOpenDialog = CoCreateInstance(&FileOpenDialog, None, CLSCTX_INPROC_SERVER)
-                        .map_err(|e| format!("Failed to create dialog: {}", e))?;
+                let dialog_result =
+                    (|| -> Result<Vec<String>, String> {
+                        // Create FileOpenDialog
+                        let dialog: IFileOpenDialog =
+                            CoCreateInstance(&FileOpenDialog, None, CLSCTX_INPROC_SERVER)
+                                .map_err(|e| format!("Failed to create dialog: {}", e))?;
 
-                    // Set options for multiple selection and file/folder mode
-                    let mut options = dialog.GetOptions()
-                        .map_err(|e| format!("Failed to get options: {}", e))?;
+                        // Set options for multiple selection and file/folder mode
+                        let mut options = dialog
+                            .GetOptions()
+                            .map_err(|e| format!("Failed to get options: {}", e))?;
 
-                    if multiple {
-                        options |= FOS_ALLOWMULTISELECT;
-                    }
-
-                    if folders_only {
-                        options |= FOS_PICKFOLDERS;
-                    }
-
-                    dialog.SetOptions(options)
-                        .map_err(|e| format!("Failed to set options: {}", e))?;
-
-                    // Show the dialog
-                    dialog.Show(Some(HWND(std::ptr::null_mut())))
-                        .map_err(|e| format!("Dialog cancelled or failed: {}", e))?;
-
-                    // Get results
-                    if multiple {
-                        let results = dialog.GetResults()
-                            .map_err(|e| format!("Failed to get results: {}", e))?;
-
-                        let count = results.GetCount()
-                            .map_err(|e| format!("Failed to get count: {}", e))?;
-
-                        let mut paths = Vec::new();
-                        for i in 0..count {
-                            let item = results.GetItemAt(i)
-                                .map_err(|e| format!("Failed to get item {}: {}", i, e))?;
-
-                            let path = item.GetDisplayName(SIGDN_FILESYSPATH)
-                                .map_err(|e| format!("Failed to get path: {}", e))?;
-
-                            paths.push(path.to_string()
-                                .map_err(|e| format!("Failed to convert path to string: {}", e))?);
+                        if multiple {
+                            options |= FOS_ALLOWMULTISELECT;
                         }
 
-                        Ok(paths)
-                    } else {
-                        let item = dialog.GetResult()
-                            .map_err(|e| format!("Failed to get result: {}", e))?;
+                        if folders_only {
+                            options |= FOS_PICKFOLDERS;
+                        }
 
-                        let path = item.GetDisplayName(SIGDN_FILESYSPATH)
-                            .map_err(|e| format!("Failed to get path: {}", e))?;
+                        dialog
+                            .SetOptions(options)
+                            .map_err(|e| format!("Failed to set options: {}", e))?;
 
-                        Ok(vec![path.to_string()
-                            .map_err(|e| format!("Failed to convert path to string: {}", e))?])
-                    }
-                })();
+                        // Show the dialog
+                        dialog
+                            .Show(Some(HWND(std::ptr::null_mut())))
+                            .map_err(|e| format!("Dialog cancelled or failed: {}", e))?;
+
+                        // Get results
+                        if multiple {
+                            let results = dialog
+                                .GetResults()
+                                .map_err(|e| format!("Failed to get results: {}", e))?;
+
+                            let count = results
+                                .GetCount()
+                                .map_err(|e| format!("Failed to get count: {}", e))?;
+
+                            let mut paths = Vec::new();
+                            for i in 0..count {
+                                let item = results
+                                    .GetItemAt(i)
+                                    .map_err(|e| format!("Failed to get item {}: {}", i, e))?;
+
+                                let path = item
+                                    .GetDisplayName(SIGDN_FILESYSPATH)
+                                    .map_err(|e| format!("Failed to get path: {}", e))?;
+
+                                paths.push(path.to_string().map_err(|e| {
+                                    format!("Failed to convert path to string: {}", e)
+                                })?);
+                            }
+
+                            Ok(paths)
+                        } else {
+                            let item = dialog
+                                .GetResult()
+                                .map_err(|e| format!("Failed to get result: {}", e))?;
+
+                            let path = item
+                                .GetDisplayName(SIGDN_FILESYSPATH)
+                                .map_err(|e| format!("Failed to get path: {}", e))?;
+
+                            Ok(vec![path.to_string().map_err(|e| {
+                                format!("Failed to convert path to string: {}", e)
+                            })?])
+                        }
+                    })();
 
                 // Uninitialize COM
                 CoUninitialize();
@@ -322,9 +359,11 @@ async fn open_file_or_folder_picker(app: AppHandle, multiple: bool, _folders_onl
             };
 
             let _ = tx.send(result);
-        }).map_err(|e| format!("Failed to run on main thread: {}", e))?;
+        })
+        .map_err(|e| format!("Failed to run on main thread: {}", e))?;
 
-        rx.recv().map_err(|e| format!("Failed to receive result: {}", e))?
+        rx.recv()
+            .map_err(|e| format!("Failed to receive result: {}", e))?
     }
 
     #[cfg(target_os = "linux")]
@@ -373,9 +412,11 @@ async fn open_file_or_folder_picker(app: AppHandle, multiple: bool, _folders_onl
             };
 
             let _ = tx.send(result());
-        }).map_err(|e| format!("Failed to run on main thread: {}", e))?;
+        })
+        .map_err(|e| format!("Failed to run on main thread: {}", e))?;
 
-        rx.recv().map_err(|e| format!("Failed to receive result: {}", e))?
+        rx.recv()
+            .map_err(|e| format!("Failed to receive result: {}", e))?
     }
 
     #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
@@ -390,7 +431,10 @@ async fn restart_atlas_daemon() -> Result<String, String> {
     let atlas_bin = if cfg!(target_os = "windows") {
         let home = std::env::var("USERPROFILE")
             .map_err(|_| "Could not determine home directory".to_string())?;
-        PathBuf::from(home).join(".atlas").join("bin").join("atlas.exe")
+        PathBuf::from(home)
+            .join(".atlas")
+            .join("bin")
+            .join("atlas.exe")
     } else {
         // Try system path first (for package installations)
         let system_path = PathBuf::from("/usr/bin/atlas");
@@ -437,6 +481,7 @@ async fn restart_atlas_daemon() -> Result<String, String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
@@ -453,21 +498,36 @@ pub fn run() {
         ])
         .setup(|app| {
             // Create Settings menu item with keyboard shortcut
-            let settings_item = MenuItem::with_id(app, "settings", "Settings...", true, Some("CmdOrCtrl+,"))?;
+            let settings_item =
+                MenuItem::with_id(app, "settings", "Settings...", true, Some("CmdOrCtrl+,"))?;
 
             // Note: Using system Services menu to get native double gear icon
 
             // Create the Discord help menu item
-            let discord_help = MenuItem::with_id(app, "discord_help", "Get Help on Discord", true, None::<&str>)?;
+            let discord_help = MenuItem::with_id(
+                app,
+                "discord_help",
+                "Get Help on Discord",
+                true,
+                None::<&str>,
+            )?;
 
             // Create diagnostics menu item
-            let diagnostics_item = MenuItem::with_id(app, "run_diagnostics", "Run Diagnostics", true, None::<&str>)?;
+            let diagnostics_item = MenuItem::with_id(
+                app,
+                "run_diagnostics",
+                "Run Diagnostics",
+                true,
+                None::<&str>,
+            )?;
 
             // Create atlas logs menu item
-            let atlas_logs_item = MenuItem::with_id(app, "atlas_logs", "Atlas Logs", true, None::<&str>)?;
+            let atlas_logs_item =
+                MenuItem::with_id(app, "atlas_logs", "Atlas Logs", true, None::<&str>)?;
 
             // Create custom About menu item with specific ID and icon
-            let about_item = MenuItem::with_id(app, "about-custom", "About Atlas", true, None::<&str>)?;
+            let about_item =
+                MenuItem::with_id(app, "about-custom", "About Atlas", true, None::<&str>)?;
 
             // Create app menu (macOS only)
             #[cfg(target_os = "macos")]
@@ -537,7 +597,14 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             let menu = Menu::with_items(
                 app,
-                &[&app_menu, &file_menu, &edit_menu, &view_menu, &window_menu, &help_menu],
+                &[
+                    &app_menu,
+                    &file_menu,
+                    &edit_menu,
+                    &view_menu,
+                    &window_menu,
+                    &help_menu,
+                ],
             )?;
 
             #[cfg(not(target_os = "macos"))]
@@ -553,7 +620,9 @@ pub fn run() {
             app.on_menu_event(move |app, event| {
                 if event.id() == &MenuId("discord_help".to_string()) {
                     // Use invite link - redirects members to channel, shows invite for non-members
-                    let _ = app.opener().open_url("https://discord.gg/Mx5YFWmDuJ", None::<String>);
+                    let _ = app
+                        .opener()
+                        .open_url("https://discord.gg/Mx5YFWmDuJ", None::<String>);
                 } else if event.id() == &MenuId("settings".to_string()) {
                     // Emit event to show settings dialog
                     let _ = app.emit("show-settings-dialog", ());
@@ -565,13 +634,21 @@ pub fn run() {
                     let _ = app.emit("show-diagnostics-dialog", ());
                 } else if event.id() == &MenuId("atlas_logs".to_string()) {
                     // Open Atlas logs file with default system editor
-                    if let Ok(home) = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")) {
-                        let log_path = PathBuf::from(home).join(".atlas").join("logs").join("global.log");
+                    if let Ok(home) =
+                        std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE"))
+                    {
+                        let log_path = PathBuf::from(home)
+                            .join(".atlas")
+                            .join("logs")
+                            .join("global.log");
                         if log_path.exists() {
-                            let _ = app.opener().open_path(log_path.to_string_lossy().to_string(), None::<String>);
+                            let _ = app
+                                .opener()
+                                .open_path(log_path.to_string_lossy().to_string(), None::<String>);
                         } else {
                             use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
-                            let _ = app.dialog()
+                            let _ = app
+                                .dialog()
                                 .message("Log file does not exist")
                                 .kind(MessageDialogKind::Info)
                                 .title("Atlas Logs")

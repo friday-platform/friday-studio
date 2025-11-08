@@ -6,6 +6,7 @@ import AppContainer from "$lib/components/app/container.svelte";
 import AppSidebar from "$lib/components/app/sidebar.svelte";
 import KeyboardListener from "$lib/components/keyboard-listener.svelte";
 import { setClientContext } from "$lib/modules/client/context.svelte";
+import WorkspaceDropHandler from "$lib/modules/spaces/workspace-drop-handler.svelte";
 import { getCurrentWebview } from "$lib/utils/tauri-loader";
 
 const { children } = $props();
@@ -53,9 +54,6 @@ onMount(async () => {
 });
 
 onDestroy(() => {
-  if (unlisten) {
-    unlisten();
-  }
   ctx.destroy();
 });
 </script>
@@ -90,6 +88,7 @@ onDestroy(() => {
 </div>
 
 <KeyboardListener />
+<WorkspaceDropHandler />
 
 <style>
 	.titlebar {
@@ -112,7 +111,7 @@ onDestroy(() => {
 		background-color: color-mix(in srgb, #c5634d, transparent 90%);
 		block-size: var(--size-13);
 		display: flex;
-		font-size: var(--font-size-1);
+		font-size: var(--font-size-2);
 		font-weight: var(--font-weight-5);
 		padding-inline: var(--size-5);
 		justify-content: space-between;

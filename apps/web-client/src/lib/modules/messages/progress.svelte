@@ -1,6 +1,6 @@
 <script lang="ts">
 import type { AtlasUIMessagePart } from "@atlas/agent-sdk";
-import { CustomIcons } from "$lib/components/icons/custom";
+import { Icons } from "$lib/components/icons";
 import MessageWrapper from "./wrapper.svelte";
 
 let time = $state(0);
@@ -51,15 +51,15 @@ function getMessage() {
 					{#if typeof action.data === 'object' && action.data !== null && 'content' in action.data && 'toolName' in action.data}
 						<div class="in-progress-tools">
 							{#if action.data.toolName === 'Research'}
-								<CustomIcons.Globe />
+								<Icons.Globe />
 							{:else if action.data.toolName === 'Slack'}
-								<CustomIcons.Slack />
+								<Icons.Slack />
 							{:else if action.data.toolName === 'Workspace Creator'}
-								<CustomIcons.Workspace />
+								<Icons.Workspace />
 							{:else if action.data.toolName === 'Google Calendar'}
-								<CustomIcons.Workspace />
+								<Icons.Workspace />
 							{:else}
-								<CustomIcons.Workspace />
+								<Icons.Workspace />
 							{/if}
 
 							<div class="details">
@@ -100,7 +100,7 @@ function getMessage() {
 		block-size: var(--size-8);
 		border-radius: var(--radius-round);
 		display: flex;
-		font-size: var(--font-size-3);
+		font-size: var(--font-size-4);
 		font-weight: var(--font-weight-5);
 		inline-size: max-content;
 		justify-content: center;
@@ -129,14 +129,14 @@ function getMessage() {
 			overflow: hidden;
 
 			h2 {
-				font-size: var(--font-size-1);
+				font-size: var(--font-size-2);
 				font-weight: var(--font-weight-5);
 				line-height: var(--font-lineheight-1);
 			}
 
 			span {
 				color: var(--text-3);
-				font-size: var(--font-size-1);
+				font-size: var(--font-size-2);
 				font-weight: var(--font-weight-4-5);
 				max-inline-size: 100%;
 				overflow: hidden;

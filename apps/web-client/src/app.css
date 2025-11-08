@@ -93,13 +93,14 @@ svg {
     monospace;
 
   /* Font sizes */
-  --font-size-00: calc(0.625rem * var(--text-scale));
-  --font-size-0: calc(0.6875rem * var(--text-scale));
-  --font-size-1: calc(0.75rem * var(--text-scale));
-  --font-size-2: calc(0.8125rem * var(--text-scale));
-  --font-size-3: calc(0.9375rem * var(--text-scale));
-  --font-size-4: calc(1.125rem * var(--text-scale));
-  --font-size-5: calc(1.625rem * var(--text-scale));
+  --font-size-0: calc(0.625rem * var(--text-scale));
+  --font-size-1: calc(0.6875rem * var(--text-scale));
+  --font-size-2: calc(0.75rem * var(--text-scale));
+  --font-size-3: calc(0.8125rem * var(--text-scale));
+  --font-size-4: calc(0.875rem * var(--text-scale));
+  --font-size-5: calc(0.9375rem * var(--text-scale));
+  --font-size-6: calc(1.125rem * var(--text-scale));
+  --font-size-7: calc(1.625rem * var(--text-scale));
 
   /* Font weight */
   --font-weight-4: 400;
@@ -137,18 +138,22 @@ svg {
 
   /* Surfaces */
   --color-surface-1: hsl(0 0% 100% / 1);
-  --color-surface-2: hsl(40 12% 95% / 1);
+  --color-surface-2: hsl(41 3% 95% / 1);
 
   /* Borders */
   --color-border-1: hsl(300 1% 87% / 1);
+  --color-border-2: hsl(240 3 94% / 1);
 
   /* Text */
   --color-text: hsl(230 32% 14% / 1);
   --color-blue: hsl(226 74% 52% / 1);
-  --color-green: hsl(92 98% 21% / 1);
+  --color-green: hsl(109 77% 24% / 1);
+  --color-green-2: hsl(109 47% 44% / 1);
   --color-purple: hsl(244 37% 49% / 1);
-  --color-red: hsl(357 66% 51% / 1);
+  --color-red: hsl(5 60% 53% / 1);
+
   --color-yellow: hsl(41 75% 55% / 1);
+  --color-yellow-2: hsl(33 74% 49% / 1);
   --color-white: hsl(0 0% 100% / 1);
 
   /* Shadows */
@@ -165,15 +170,17 @@ svg {
     -8px rgba(26, 83, 204, 0.1), 0px 24px 48px -12px rgba(26, 83, 204, 0.08);
 
   @media (color-gamut: p3) {
-    --color-surface-2: color(display-p3 0.9569 0.9529 0.9451);
+    --color-surface-2: color(display-p3 0.9515 0.9505 0.9485);
     --color-border-1: color(display-p3 0.8706 0.8667 0.8706);
 
     --color-text: color(display-p3 0.0941 0.1098 0.1843);
     --color-blue: color(display-p3 0.1648 0.3306 0.8752);
-    --color-green: color(display-p3 0.1995 0.4238 0.0032);
+    --color-green: color(display-p3 0.1249 0.4248 0.0552);
+    --color-green-2: color(display-p3 0.3098 0.6471 0.2314);
     --color-purple: color(display-p3 0.3292 0.3076 0.6689);
-    --color-red: color(display-p3 0.8334 0.1866 0.2171);
+    --color-red: color(display-p3 0.8118 0.298 0.2549);
     --color-yellow: color(display-p3 0.8902 0.6745 0.2196);
+    --color-yellow-2: color(display-p3 0.8546 0.5265 0.1255);
   }
 
   @media (prefers-color-scheme: dark) {
@@ -225,7 +232,7 @@ body {
   cursor: default;
   block-size: 100dvh;
   font-family: var(--font-family-sans);
-  font-size: var(--font-size-2);
+  font-size: var(--font-size-3);
 
   -webkit-font-smoothing: antialiased;
 }

@@ -1,13 +1,22 @@
 <script lang="ts">
 import type { Snippet } from "svelte";
+import { onMount } from "svelte";
 import { getAppContext } from "$lib/app-context.svelte";
 
 let { children }: { children: Snippet } = $props();
 
 const appCtx = getAppContext();
+let mounted = $state(false);
+
+onMount(() => {
+  // avoids the sidebar animating open if its open by default via localStorage
+  setTimeout(() => {
+    mounted = true;
+  }, 100);
+});
 </script>
 
-<div class:expanded={appCtx.sidebarExpanded}>
+<div class:expanded={appCtx.sidebarExpanded} class:mounted>
 	{@render children()}
 </div>
 
@@ -17,7 +26,10 @@ const appCtx = getAppContext();
 		display: grid;
 		grid-template-columns: calc(var(--size-23) + var(--size-px)) 1fr;
 		flex-direction: column;
-		transition: all 0.2s ease-in-out;
+
+		&.mounted {
+			transition: all 0.2s ease-in-out;
+		}
 
 		&.expanded {
 			grid-template-columns: var(--size-56) 1fr;

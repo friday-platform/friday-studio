@@ -1,4 +1,23 @@
 export interface paths {
+  "/api/config/env": {
+    parameters: { query?: never; header?: never; path?: never; cookie?: never };
+    /**
+     * Get environment variables
+     * @description Read environment variables from ~/.atlas/.env file
+     */
+    get: operations["getApiConfigEnv"];
+    /**
+     * Update environment variables
+     * @description Write environment variables to ~/.atlas/.env file
+     */
+    put: operations["putApiConfigEnv"];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/user": {
     parameters: { query?: never; header?: never; path?: never; cookie?: never };
     /**
@@ -237,6 +256,49 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+  getApiConfigEnv: {
+    parameters: { query?: never; header?: never; path?: never; cookie?: never };
+    requestBody?: never;
+    responses: {
+      /** @description Environment variables retrieved successfully */
+      200: {
+        headers: { [name: string]: unknown };
+        content: {
+          "application/json": {
+            success: boolean;
+            envVars?: { [key: string]: string };
+            error?: string;
+          };
+        };
+      };
+      /** @description Internal server error */
+      500: {
+        headers: { [name: string]: unknown };
+        content: { "application/json": { success: boolean; error: string } };
+      };
+    };
+  };
+  putApiConfigEnv: {
+    parameters: { query?: never; header?: never; path?: never; cookie?: never };
+    requestBody?: { content: { "application/json": { envVars: { [key: string]: string } } } };
+    responses: {
+      /** @description Environment variables updated successfully */
+      200: {
+        headers: { [name: string]: unknown };
+        content: { "application/json": { success: boolean; error?: string } };
+      };
+      /** @description Bad request */
+      400: {
+        headers: { [name: string]: unknown };
+        content: { "application/json": { success: boolean; error: string } };
+      };
+      /** @description Internal server error */
+      500: {
+        headers: { [name: string]: unknown };
+        content: { "application/json": { success: boolean; error: string } };
+      };
+    };
+  };
   getApiUser: {
     parameters: { query?: never; header?: never; path?: never; cookie?: never };
     requestBody?: never;
@@ -549,8 +611,8 @@ export interface operations {
         tags?: string;
         since?: string;
         until?: string;
-        limit?: string;
-        offset?: string;
+        limit?: number;
+        offset?: number;
       };
       header?: never;
       path?: never;
@@ -619,8 +681,7 @@ export interface operations {
   };
   postApiLibrary: {
     parameters: { query?: never; header?: never; path?: never; cookie?: never };
-    /** @description Library item data. Validated by createLibraryItemRequestSchema at runtime. */
-    requestBody?: { content: { "application/json": { [key: string]: unknown } } };
+    requestBody?: never;
     responses: {
       /** @description Library item created successfully */
       201: {
@@ -678,8 +739,8 @@ export interface operations {
         tags?: string;
         since?: string;
         until?: string;
-        limit?: string;
-        offset?: string;
+        limit?: number;
+        offset?: number;
       };
       header?: never;
       path?: never;
@@ -748,8 +809,7 @@ export interface operations {
   };
   postApiLibrarySearch: {
     parameters: { query?: never; header?: never; path?: never; cookie?: never };
-    /** @description Library item data. Validated by createLibraryItemRequestSchema at runtime. */
-    requestBody?: { content: { "application/json": { [key: string]: unknown } } };
+    requestBody?: never;
     responses: {
       /** @description Library item created successfully */
       201: {

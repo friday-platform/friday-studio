@@ -1,6 +1,6 @@
 <script lang="ts">
 import type { SlackSummaryData, SummaryData } from "@atlas/core/artifacts";
-import { CustomIcons } from "$lib/components/icons/custom";
+import { Icons } from "$lib/components/icons";
 import { markdownToHTML } from "$lib/modules/messages/markdown-utils";
 
 type Props = { data: SummaryData | SlackSummaryData; source?: "slack" };
@@ -15,7 +15,7 @@ let isExpanded = $state(false);
 	<header>
 		<h2>
 			{#if source === 'slack'}
-				<CustomIcons.Slack />
+				<Icons.Slack />
 			{/if}
 
 			<span> Summary </span>
@@ -40,7 +40,7 @@ let isExpanded = $state(false);
 		header {
 			align-items: center;
 			display: flex;
-			font-size: var(--font-size-1);
+			font-size: var(--font-size-2);
 			justify-content: space-between;
 			padding-block-start: var(--size-5);
 			padding-inline: var(--size-5);
@@ -101,7 +101,7 @@ let isExpanded = $state(false);
 		}
 
 		& :global(h1) {
-			font-size: var(--font-size-4);
+			font-size: var(--font-size-6);
 			font-weight: var(--font-weight-6);
 			line-height: var(--font-lineheight-0);
 		}
@@ -110,7 +110,7 @@ let isExpanded = $state(false);
 		& :global(li) {
 			color: var(--text-1);
 			opacity: 0.8;
-			font-size: var(--font-size-3);
+			font-size: var(--font-size-4);
 			line-height: var(--font-lineheight-3);
 		}
 

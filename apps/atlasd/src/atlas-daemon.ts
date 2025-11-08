@@ -35,7 +35,7 @@ import { daemonApp } from "../routes/daemon.ts";
 import { healthRoutes } from "../routes/health.ts";
 import { libraryRoutes } from "../routes/library/index.ts";
 import { scratchpadApp } from "../routes/scratchpad/index.ts";
-import { sessionsRoutes } from "../routes/sessions/index.ts";
+import { sessionHistoryRoutes, sessionsRoutes } from "../routes/sessions/index.ts";
 import { streamsRoutes } from "../routes/streams/index.ts";
 import { userRoutes } from "../routes/user/index.ts";
 import { workspacesRoutes } from "../routes/workspaces/index.ts";
@@ -523,6 +523,7 @@ export class AtlasDaemon {
     this.app.route("/api/user", userRoutes);
     this.app.route("/api/scratchpad", scratchpadApp);
     this.app.route("/api/sessions", sessionsRoutes);
+    this.app.route("/api/sessions-history", sessionHistoryRoutes);
     this.app.route("/api/agents", agentsRoutes);
     this.app.route("/api/sse", streamsRoutes);
     this.app.route("/api/library", libraryRoutes);

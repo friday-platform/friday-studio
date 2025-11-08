@@ -27,5 +27,9 @@ jobs:
       - name: Generate build info
         run: deno run --allow-read --allow-write --allow-env apps/web-client/scripts/generate-build-info.ts
 
+      - name: Sync SvelteKit types
+        run: npm run sync
+        working-directory: apps/web-client
+
       - name: Run knip
         run: npx knip

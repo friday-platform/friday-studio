@@ -87,6 +87,7 @@ export function registerLibraryStoreTool(server: McpServer, ctx: ToolContext) {
 
       const client = createAtlasClient();
       const response = await client.POST("/api/library", {
+        // @ts-expect-error the library endpoint doesn't currently validate the input.
         body: {
           type,
           name,

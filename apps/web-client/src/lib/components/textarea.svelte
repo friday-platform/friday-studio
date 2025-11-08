@@ -58,7 +58,7 @@ function updateDimensions(_value?: string | null | undefined) {
 
 	p,
 	textarea {
-		font-size: var(--font-size-3);
+		font-size: var(--font-size-4);
 		font-weight: var(--font-weight-4-5);
 		line-height: var(--font-lineheight-3);
 		padding-inline: var(--size-4) var(--size-7);

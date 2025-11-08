@@ -1,3 +1,6 @@
+import "@tanstack/svelte-table";
+import type { RowData } from "@tanstack/svelte-table";
+
 // See https://svelte.dev/docs/kit/types#app.d.ts
 // for information about these interfaces
 declare global {
@@ -20,4 +23,19 @@ declare global {
   const __TAURI_BUILD__: boolean;
 }
 
+declare module "@tanstack/svelte-table" {
+  // biome-ignore lint/correctness/noUnusedVariables: required by svelte table
+  interface ColumnMeta<TData extends RowData, TValue> {
+    bold?: boolean;
+    faded?: boolean;
+    align?: "left" | "center" | "right" | "full";
+    minWidth?: string;
+    maxWidth?: string;
+    width?: string;
+    shrink?: boolean;
+    size?: "small" | "regular";
+  }
+}
+
+// biome-ignore lint/complexity/noUselessEmptyExport: <necessary?>
 export {};

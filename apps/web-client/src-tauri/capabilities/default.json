@@ -18,6 +18,9 @@
     "core:event:default",
     "opener:default",
     "shell:default",
+    "fs:default",
+    { "identifier": "fs:allow-read-text-file", "allow": [{ "path": "**/*" }] },
+    { "identifier": "fs:allow-exists", "allow": [{ "path": "**/*" }] },
     { "identifier": "opener:allow-open-path", "allow": [{ "path": "**/*" }] },
     {
       "identifier": "shell:allow-execute",

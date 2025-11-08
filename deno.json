@@ -16,8 +16,10 @@
   "exclude": [
     "!integration-tests/**/*.test.ts",
     "apps/web-client/.svelte-kit",
+    "apps/web-client/vite.config.ts",
     "apps/atlas-installer",
-    "packages/vendor/**"
+    "packages/vendor/**",
+    "apps/web-client/src-tauri/**"
   ],
   "unstable": ["broadcast-channel", "worker-options", "otel", "kv", "raw-imports"],
   "nodeModulesDir": "auto",

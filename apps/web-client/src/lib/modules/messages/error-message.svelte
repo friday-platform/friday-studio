@@ -60,7 +60,7 @@ const { message }: { message: OutputEntry } = $props();
 
 		p {
 			color: var(--color-text-1);
-			font-size: var(--font-size-2);
+			font-size: var(--font-size-3);
 			line-height: var(--font-lineheight-3);
 			margin: 0;
 			word-break: break-word;
