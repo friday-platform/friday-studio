@@ -232,7 +232,8 @@ jobs:
       - name: Download artifacts
         uses: actions/download-artifact@v6
         with:
-          path: ./artifacts/
+          name: binary-linux-arm64
+          path: ./artifacts/binary-linux-arm64
 
       - name: Cache apt packages
         uses: awalsh128/cache-apt-pkgs-action@latest
