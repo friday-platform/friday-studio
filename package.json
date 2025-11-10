@@ -41,7 +41,7 @@
     "@std/media-types": "npm:@jsr/std__media-types@^1.1.0",
     "@std/path": "npm:@jsr/std__path@^1.1.2",
     "@std/yaml": "npm:@jsr/std__yaml@^1.0.9",
-    "@types/react": "^19.1.13",
+    "@types/react": "^19.2.2",
     "ai": "^5.0.90",
     "ink": "^6.3.0",
     "js-levenshtein": "^1.1.6",
