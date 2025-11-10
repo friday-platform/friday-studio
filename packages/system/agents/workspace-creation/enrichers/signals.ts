@@ -4,8 +4,9 @@ import {
   ScheduleSignalConfigSchema,
   type WorkspaceSignalConfig,
 } from "@atlas/config";
-import { anthropic } from "@atlas/core";
+import { ANTHROPIC_CACHE_BREAKPOINT, anthropic } from "@atlas/core";
 import type { WorkspacePlan } from "@atlas/core/artifacts";
+import { logger } from "@atlas/logger";
 import { generateObject } from "ai";
 import { z } from "zod";
 
@@ -66,21 +67,32 @@ export async function enrichSignal(
   signal: WorkspacePlan["signals"][number],
   abortSignal?: AbortSignal,
 ): Promise<{ id: string; config: WorkspaceSignalConfig }> {
-  const { object } = await generateObject({
+  const result = await generateObject({
     model: anthropic("claude-haiku-4-5"),
     schema: SignalEnricherSchema,
-    system: systemPrompt,
-    prompt: `Classify this signal and generate its configuration:
+    messages: [
+      { role: "system", content: systemPrompt, providerOptions: ANTHROPIC_CACHE_BREAKPOINT },
+      {
+        role: "user",
+        content: `Classify this signal and generate its configuration:
 
 ID: ${signal.id}
 Name: ${signal.name}
 Description: ${signal.description}
 
 Return a signal configuration object with provider, description, and config fields.`,
+      },
+    ],
     temperature: 0.2,
     maxRetries: 3,
     abortSignal,
   });
 
-  return { id: signal.id, config: object.result };
+  logger.debug("AI SDK generateObject completed", {
+    agent: "signal-enricher",
+    step: "enrich-signal-configuration",
+    usage: result.usage,
+  });
+
+  return { id: signal.id, config: result.object.result };
 }

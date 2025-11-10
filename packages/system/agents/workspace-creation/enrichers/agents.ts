@@ -1,12 +1,13 @@
 import type { AtlasAgentConfig } from "@atlas/agent-sdk";
 import { bundledAgents } from "@atlas/bundled-agents";
 import type { LLMAgentConfig } from "@atlas/config";
-import { anthropic } from "@atlas/core";
+import { ANTHROPIC_CACHE_BREAKPOINT, anthropic } from "@atlas/core";
 import {
   extractKeywordsFromNeed,
   mapNeedToMCPServers,
   matchBundledAgents,
 } from "@atlas/core/mcp-registry/deterministic-matching";
+import { logger } from "@atlas/logger";
 import { generateObject } from "ai";
 import { z } from "zod";
 
@@ -37,8 +38,34 @@ const MODEL_CONFIGS_BY_ARCHETYPE: Record<
  * Maps agent intent to appropriate model configurations.
  */
 async function determineArchetype(needs: string[], description: string): Promise<AgentArchetype> {
-  const { object } = await generateObject({
+  const result = await generateObject({
     model: anthropic("claude-haiku-4-5"),
+    messages: [
+      {
+        role: "system",
+        content: `You determine the appropriate agent archetype based on needs and description.
+
+Archetypes:
+- collector: Retrieves data from external APIs (Slack, GitHub, web scraping)
+- reader: Extracts content from files (PDFs, docs, CSVs, parsing structured data)
+- analyzer: Performs analysis and reasoning on data (trends, patterns, insights)
+- evaluator: Makes decisions and recommendations (scoring, ranking, approval)
+- reporter: Generates structured reports and summaries (documentation, formatting)
+- notifier: Sends output to external services (email, Slack, webhooks)
+- executor: Performs system operations (file cleanup, command execution, maintenance)
+
+Select the archetype that best matches the agent's PRIMARY function.`,
+        providerOptions: ANTHROPIC_CACHE_BREAKPOINT,
+      },
+      {
+        role: "user",
+        content: `Agent description: ${description}
+
+Capabilities needed: ${needs.join(", ")}
+
+What archetype best fits this agent?`,
+      },
+    ],
     schema: z.object({
       archetype: z.enum([
         "collector",
@@ -51,28 +78,17 @@ async function determineArchetype(needs: string[], description: string): Promise
       ]),
       reasoning: z.string().describe("Brief explanation of archetype choice"),
     }),
-    system: `You determine the appropriate agent archetype based on needs and description.
-
-Archetypes:
-- collector: Retrieves data from external APIs (Slack, GitHub, web scraping)
-- reader: Extracts content from files (PDFs, docs, CSVs, parsing structured data)
-- analyzer: Performs analysis and reasoning on data (trends, patterns, insights)
-- evaluator: Makes decisions and recommendations (scoring, ranking, approval)
-- reporter: Generates structured reports and summaries (documentation, formatting)
-- notifier: Sends output to external services (email, Slack, webhooks)
-- executor: Performs system operations (file cleanup, command execution, maintenance)
-
-Select the archetype that best matches the agent's PRIMARY function.`,
-    prompt: `Agent description: ${description}
-
-Capabilities needed: ${needs.join(", ")}
-
-What archetype best fits this agent?`,
     temperature: 0.2,
     maxRetries: 3,
   });
 
-  return object.archetype;
+  logger.debug("AI SDK generateObject completed", {
+    agent: "agent-enricher",
+    step: "determine-archetype",
+    usage: result.usage,
+  });
+
+  return result.object.archetype;
 }
 
 /**

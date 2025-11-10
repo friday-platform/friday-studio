@@ -3,7 +3,7 @@ import {
   collectToolUsageFromSteps,
   extractArtifactRefsFromToolResults,
 } from "@atlas/agent-sdk/vercel-helpers";
-import { anthropic } from "@atlas/core";
+import { ANTHROPIC_CACHE_BREAKPOINT, anthropic } from "@atlas/core";
 import { generateText, stepCountIs } from "ai";
 
 /**
@@ -75,17 +75,26 @@ export const summaryAgent = createAgent({
         data: { toolName: "Atlas", content: `Summarizing...` },
       });
 
-      const { steps, toolCalls, toolResults } = await generateText({
+      const result = await generateText({
         model: anthropic("claude-haiku-4-5"),
         abortSignal,
-        system,
+        messages: [
+          { role: "system", content: system, providerOptions: ANTHROPIC_CACHE_BREAKPOINT },
+          { role: "user", content: prompt },
+        ],
         tools,
-        prompt,
         maxOutputTokens: 2000,
         providerOptions: { anthropic: { thinking: { type: "enabled", budgetTokens: 12000 } } },
         stopWhen: stepCountIs(10),
       });
 
+      logger.debug("AI SDK generateText completed", {
+        agent: "summary",
+        step: "summarize-content",
+        usage: result.usage,
+      });
+
+      const { steps, toolCalls, toolResults } = result;
       const { assembledToolResults } = collectToolUsageFromSteps({ steps, toolCalls, toolResults });
 
       const artifactRefs = extractArtifactRefsFromToolResults(assembledToolResults);

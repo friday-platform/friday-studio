@@ -1,6 +1,6 @@
 import { createAgent, repairJson } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
-import { anthropic } from "@atlas/core";
+import { ANTHROPIC_CACHE_BREAKPOINT, anthropic } from "@atlas/core";
 import type { WorkspacePlan } from "@atlas/core/artifacts";
 import {
   type ClarificationItem,
@@ -18,8 +18,10 @@ import {
   matchBundledAgents,
 } from "@atlas/core/mcp-registry/deterministic-matching";
 import { validateRequiredFields } from "@atlas/core/mcp-registry/requirement-validator";
+import type { Logger } from "@atlas/logger";
 import { fail, getTodaysDate, type Result, stringifyError, success } from "@atlas/utils";
 import { toKebabCase } from "@std/text";
+import type { CoreMessage } from "ai";
 import { generateObject, generateText } from "ai";
 import { z } from "zod";
 
@@ -41,9 +43,10 @@ type WorkspacePlannerInput = z.infer<typeof WorkspacePlannerInputSchema>;
 async function summarize(params: {
   content: string;
   instruction: string;
+  logger: Logger;
   abortSignal?: AbortSignal;
 }): Promise<string> {
-  const { text } = await generateText({
+  const result = await generateText({
     model: anthropic("claude-haiku-4-5"),
     system:
       "You generate concise, accurate summaries. No fluff, no marketing speak. Direct and informative.",
@@ -56,7 +59,13 @@ async function summarize(params: {
     abortSignal: params.abortSignal,
   });
 
-  return text.trim();
+  params.logger.debug("AI SDK generateText completed", {
+    agent: "workspace-planner",
+    step: "summarize",
+    usage: result.usage,
+  });
+
+  return result.text.trim();
 }
 
 const SYSTEM_PROMPT = `
@@ -139,9 +148,7 @@ Focus on user intent and deliver maximum clarity in minimum words.
 - Use imperatives: "Returns X" not "This function returns X"
 - No qualifiers: "might", "should", "basically", "essentially"
 - No enterprise speak: "robust", "comprehensive", "leverage", "facilitate"
-- Precision > politeness
-
-Current date: ${getTodaysDate()}`;
+- Precision > politeness`;
 
 export const workspacePlannerAgent = createAgent<WorkspacePlannerInput, WorkspacePlannerResult>({
   id: "workspace-planner",
@@ -204,7 +211,7 @@ Split agents by external system and capability boundary. Each agent should handl
       }
 
       // Generate workspace, signals, agents with LLM-chosen names
-      const { object: phase1Response } = await generateObject({
+      const phase1Result = await generateObject({
         model: anthropic("claude-sonnet-4-5-20250929"),
         experimental_repairText: repairJson,
         schema: z.object({
@@ -258,13 +265,22 @@ Split agents by external system and capability boundary. Each agent should handl
             ),
           }),
         }),
-        system: SYSTEM_PROMPT,
-        prompt: signalsAndAgentsPrompt,
+        messages: [
+          { role: "system", content: SYSTEM_PROMPT, providerOptions: ANTHROPIC_CACHE_BREAKPOINT },
+          { role: "system", content: `Current date: ${getTodaysDate()}` },
+          { role: "user", content: signalsAndAgentsPrompt },
+        ] as CoreMessage[],
         maxOutputTokens: 10_240,
         abortSignal,
       });
 
-      const phase1 = phase1Response.plan;
+      logger.debug("AI SDK generateObject completed", {
+        agent: "workspace-planner",
+        step: "phase1-signals-agents",
+        usage: phase1Result.usage,
+      });
+
+      const phase1 = phase1Result.object.plan;
 
       // Convert names to kebab-case IDs, dedup with numeric suffixes
       const signalsWithIds = phase1.signals.map((s, idx, arr) => {
@@ -398,7 +414,7 @@ Split agents by external system and capability boundary. Each agent should handl
 
 Generate jobs that connect the available signals and agents to fulfill the workspace requirements.`;
 
-      const { object: phase2Response } = await generateObject({
+      const phase2Result = await generateObject({
         model: anthropic("claude-sonnet-4-5-20250929"),
         experimental_repairText: repairJson,
         schema: z.object({
@@ -422,8 +438,11 @@ Generate jobs that connect the available signals and agents to fulfill the works
             }),
           ),
         }),
-        system: jobsPrompt,
-        prompt: `Create jobs connecting these components:
+        messages: [
+          { role: "system", content: jobsPrompt, providerOptions: ANTHROPIC_CACHE_BREAKPOINT },
+          {
+            role: "user",
+            content: `Create jobs connecting these components:
 
 Signals:
 ${signalsWithIds.map((s) => `- ${s.id} (${s.name}): ${s.description}`).join("\n")}
@@ -432,11 +451,19 @@ Agents:
 ${agentsWithIds.map((a) => `- ${a.id} (${a.name}): ${a.description}`).join("\n")}
 
 Requirements: ${input.intent}`,
+          },
+        ] as CoreMessage[],
         maxOutputTokens: 10_240,
         abortSignal,
       });
 
-      const phase2 = phase2Response;
+      logger.debug("AI SDK generateObject completed", {
+        agent: "workspace-planner",
+        step: "phase2-jobs",
+        usage: phase2Result.usage,
+      });
+
+      const phase2 = phase2Result.object;
 
       const jobsWithIds = phase2.jobs.map((j, idx, arr) => {
         const baseId = toKebabCase(j.name);
@@ -467,6 +494,7 @@ Requirements: ${input.intent}`,
         ${JSON.stringify(planData)}`,
           instruction:
             "Summarize what changed between these two workspace plans in 1-2 sentences. Focus on what was added, removed, or modified.",
+          logger,
           abortSignal,
         });
 
@@ -474,6 +502,7 @@ Requirements: ${input.intent}`,
           content: JSON.stringify(planData),
           instruction:
             "Summarize this workspace plan in 1-2 sentences. Describe what the workspace does and what agents/signals are involved.",
+          logger,
           abortSignal,
         });
 
@@ -503,6 +532,7 @@ Requirements: ${input.intent}`,
           content: JSON.stringify(planData),
           instruction:
             "Summarize this workspace plan in 1-2 sentences. Describe what the workspace does and what agents/signals are involved.",
+          logger,
           abortSignal,
         });
 

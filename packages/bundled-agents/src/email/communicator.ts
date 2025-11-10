@@ -2,7 +2,7 @@ import { homedir } from "node:os";
 import { env } from "node:process";
 import { createAgent } from "@atlas/agent-sdk";
 import type { EmailParams } from "@atlas/config";
-import { anthropic } from "@atlas/core";
+import { ANTHROPIC_CACHE_BREAKPOINT, anthropic } from "@atlas/core";
 import { getTodaysDate } from "@atlas/utils";
 import { encodeBase64 } from "@std/encoding/base64";
 import { contentType } from "@std/media-types";
@@ -105,8 +105,6 @@ export const emailAgent = createAgent<string, Result>({
     const compositionSystem = `
 You are an email composition expert. Your job is to generate professional email content from natural language prompts and data.
 
-Today's date: ${getTodaysDate()}
-
 TASK:
 1. Analyze the prompt for data, context, and requirements
 2. Generate an appropriate email subject line
@@ -134,12 +132,21 @@ OUTPUT:
 
     const compositionResult = await generateObject({
       model: anthropic("claude-haiku-4-5"),
-      prompt,
+      messages: [
+        { role: "system", content: compositionSystem, providerOptions: ANTHROPIC_CACHE_BREAKPOINT },
+        { role: "system", content: `Today's date: ${getTodaysDate()}` },
+        { role: "user", content: prompt },
+      ],
       abortSignal,
-      system: compositionSystem,
       schema: emailCompositionSchema,
       temperature: 0.3,
       maxOutputTokens: 4000,
+    });
+
+    // Log token usage including cache statistics
+    logger.debug("AI SDK generateObject completed", {
+      agent: "email",
+      usage: compositionResult.usage,
     });
 
     const params = compositionResult.object;

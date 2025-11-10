@@ -1,6 +1,7 @@
 import { type ArtifactRef, createAgent } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
-import { anthropic } from "@atlas/core";
+import { ANTHROPIC_CACHE_BREAKPOINT, anthropic } from "@atlas/core";
+import type { Logger } from "@atlas/logger";
 import { fail, type Result, stringifyError, success } from "@atlas/utils";
 import { generateText, stepCountIs, streamText } from "ai";
 import { claudeCode } from "ai-sdk-provider-claude-code";
@@ -16,12 +17,20 @@ type CCAgentResult = Result<
  * Format tool invocation as concise single-line status message (≤50 chars).
  * Used to stream progress updates during code execution.
  */
-async function generateProgress(context: unknown, abortSignal?: AbortSignal): Promise<string> {
+async function generateProgress(
+  context: unknown,
+  abortSignal?: AbortSignal,
+  logger?: Logger,
+): Promise<string> {
   const contextStr = typeof context === "string" ? context : JSON.stringify(context, null, 2);
-  const { text } = await generateText({
+
+  const result = await generateText({
     model: anthropic("claude-haiku-4-5"),
     abortSignal,
-    system: `Format tool invocation as single-line status. Output only the status line, no explanations.
+    messages: [
+      {
+        role: "system",
+        content: `Format tool invocation as single-line status. Output only the status line, no explanations.
 
 <rules>
 - Single line, ≤50 chars
@@ -35,11 +44,21 @@ async function generateProgress(context: unknown, abortSignal?: AbortSignal): Pr
 Write to /tmp/agent-output.txt → "Writing agent-output.txt"
 Read package.json → "Reading package.json"
 </examples>`,
-    prompt: contextStr,
+        providerOptions: ANTHROPIC_CACHE_BREAKPOINT,
+      },
+      { role: "user", content: contextStr },
+    ],
     temperature: 0.4,
     maxOutputTokens: 50,
   });
-  return text;
+
+  logger?.info("AI SDK generateText completed", {
+    agent: "claude-code",
+    step: "generate-progress",
+    usage: result.usage,
+  });
+
+  return result.text;
 }
 
 export const claudeCodeAgent = createAgent<string, CCAgentResult>({
@@ -62,7 +81,7 @@ export const claudeCodeAgent = createAgent<string, CCAgentResult>({
     try {
       logger.debug("Starting Claude Code agent execution", { prompt });
 
-      const { text } = streamText({
+      const result = streamText({
         model: claudeCode("sonnet", {
           disallowedTools: ["Bash(rm:*)"],
           maxTurns: 25,
@@ -71,24 +90,31 @@ export const claudeCodeAgent = createAgent<string, CCAgentResult>({
           streamingInput: "always",
           systemPrompt: { type: "preset", preset: "claude_code" },
         }),
-        system: `Return summary of actions taken. Output only the summary—no preamble or explanation.
+        messages: [
+          {
+            role: "system",
+            content: `Return summary of actions taken. Output only the summary—no preamble or explanation.
           DO NOT explain what you are going to do. Just do it.
 
           Your summary:
             - Direct, factual
             - Concise. Sacrifice grammar for concision, but keep clarity
             - Use markdown`,
+            providerOptions: ANTHROPIC_CACHE_BREAKPOINT,
+          },
+          { role: "user", content: prompt },
+        ],
         abortSignal,
-        prompt,
         stopWhen: stepCountIs(25),
         maxOutputTokens: 30000,
         onChunk: async ({ chunk }) => {
           switch (chunk.type) {
             case "tool-call": {
-              const message = await generateProgress({
-                toolName: chunk.toolName,
-                input: chunk.input,
-              });
+              const message = await generateProgress(
+                { toolName: chunk.toolName, input: chunk.input },
+                abortSignal,
+                logger,
+              );
               stream?.emit({
                 type: "data-tool-progress",
                 data: { toolName: "Claude Code", content: message },
@@ -98,7 +124,15 @@ export const claudeCodeAgent = createAgent<string, CCAgentResult>({
         },
       });
 
-      const responseText = await text;
+      const responseText = await result.text;
+      const usage = await result.usage;
+
+      logger.debug("AI SDK streamText completed", {
+        agent: "claude-code",
+        step: "main-execution",
+        usage,
+      });
+
       logger.debug("Claude Code execution completed", { responseLength: responseText.length });
 
       const artifactResponse = await parseResult(

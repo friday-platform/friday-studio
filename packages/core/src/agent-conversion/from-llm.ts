@@ -8,7 +8,9 @@ import {
 import type { LLMAgentConfig } from "@atlas/config";
 import type { Logger } from "@atlas/logger";
 import { getTodaysDate } from "@atlas/utils";
+import type { CoreSystemMessage, CoreUserMessage } from "ai";
 import { stepCountIs, streamText } from "ai";
+import { ANTHROPIC_CACHE_BREAKPOINT } from "../llm-provider.ts";
 import { registry, validateProviderConfig } from "../llm-provider-registry/index.ts";
 import { throwWithCause } from "../utils/error-helpers.ts";
 import { filterWorkspaceAgentTools } from "./agent-tool-filters.ts";
@@ -80,12 +82,21 @@ export function convertLLMToAgent(
           filteredTools = filterWorkspaceAgentTools(tools, logger);
         }
 
+        // Build messages: static system prompt (cached for Anthropic), then variable content
+        const isAnthropic = config.config.provider === "anthropic";
+        const messages: Array<CoreSystemMessage | CoreUserMessage> = [
+          {
+            role: "system",
+            content: systemPrompt,
+            ...(isAnthropic ? { providerOptions: ANTHROPIC_CACHE_BREAKPOINT } : {}),
+          },
+          { role: "system", content: `Today's date: ${getTodaysDate()}` },
+          { role: "user", content: prompt },
+        ];
+
         const result = streamText({
           model,
-          system: `
-          Today's date: ${getTodaysDate()}
-          ${systemPrompt}`,
-          messages: [{ role: "user" as const, content: prompt }],
+          messages,
           tools: filteredTools,
           toolChoice: config.config.tool_choice || "auto",
           temperature: config.config.temperature,
@@ -104,13 +115,20 @@ export function convertLLMToAgent(
         // NOTE: In current state its just printing whole output in the chat
         // pipeUIMessageStream(result.toUIMessageStream<AtlasUIMessage>(), stream);
 
-        const [text, reasoning, toolCalls, toolResults, steps] = await Promise.all([
+        const [text, reasoning, toolCalls, toolResults, steps, usage] = await Promise.all([
           result.text,
           result.reasoningText,
           result.toolCalls,
           result.toolResults,
           result.steps,
+          result.usage,
         ]);
+
+        logger.debug("AI SDK generateObject completed", {
+          agent: "from-llm-converter",
+          step: "llm-agent-execution",
+          usage,
+        });
 
         const { assembledToolCalls, assembledToolResults } = collectToolUsageFromSteps({
           steps,

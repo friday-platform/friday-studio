@@ -24,6 +24,7 @@ import type {
   SessionSupervisorConfig,
 } from "@atlas/core";
 import {
+  ANTHROPIC_CACHE_BREAKPOINT,
   type AppendSessionEventInput,
   anthropic,
   appendSessionEvent,
@@ -679,17 +680,36 @@ export class SessionSupervisorActor implements BaseActor {
 
     // Define schemas matching the expected ExecutionPlan shape
 
-    const planningContext = this.buildExecutionPlanningPrompt(this.sessionContext)
-      // Remove tool-specific instruction since we're using structured output
-      .replace(
-        /IMPORTANT:[\s\S]*?Create a comprehensive execution plan that:/,
-        "Create a comprehensive execution plan that:",
-      );
+    // Split planning prompt into static (cacheable) and variable parts
+    const staticPlanningPrompt = `You are an execution planning supervisor for Atlas workspace sessions.
 
-    const { object: rawPlan } = await generateObject({
+Your role is to analyze the incoming signal and create a clear execution plan using available agents.
+
+Create a comprehensive execution plan that:
+1. Identifies which agents need to be called
+2. Determines the order of execution (sequential or parallel)
+3. Specifies what task each agent should perform
+4. Considers dependencies between agents
+
+Return a well-structured plan with phases and per-agent tasks. Each phase must include a name, an executionStrategy (sequential or parallel), and a list of agents with fields: agentId, task, inputSource (signal | previous | combined), optional dependencies, and optional reasoning.`;
+
+    const variablePlanningContext = `Signal Information:
+- Signal ID: ${this.sessionContext.signal.id}
+- Signal Provider: ${this.sessionContext.signal.provider?.name || "unknown"}
+- Payload: ${JSON.stringify(this.sessionContext.payload)}
+
+Available Agents:
+${this.sessionContext.availableAgents.join(", ")}`;
+
+    const planResult = await generateObject({
       model: this.llmProvider("claude-sonnet-4-5"),
-      system: planningContext,
       messages: [
+        {
+          role: "system",
+          content: staticPlanningPrompt,
+          providerOptions: ANTHROPIC_CACHE_BREAKPOINT,
+        },
+        { role: "system", content: variablePlanningContext },
         {
           role: "user",
           content: `Analyze this signal and return a structured execution plan. Signal: ${JSON.stringify(
@@ -703,6 +723,14 @@ export class SessionSupervisorActor implements BaseActor {
       maxRetries: 3,
       providerOptions: { anthropic: { thinking: { type: "enabled", budgetTokens: 15000 } } },
     });
+
+    this.logger.debug("AI SDK generateObject completed", {
+      agent: "session-supervisor",
+      step: "execution-plan-generation",
+      usage: planResult.usage,
+    });
+
+    const rawPlan = planResult.object;
 
     // Post-process to ensure IDs and defaults
     const plan: ExecutionPlan = {
@@ -1967,28 +1995,6 @@ export class SessionSupervisorActor implements BaseActor {
   }
 
   // Jeopardy validation removed
-
-  private buildExecutionPlanningPrompt(context: SessionContext): string {
-    return `You are an execution planning supervisor for Atlas workspace sessions.
-
-Your role is to analyze the incoming signal and create a clear execution plan using available agents.
-
-Signal Information:
-- Signal ID: ${context.signal.id}
-- Signal Provider: ${context.signal.provider?.name || "unknown"}
-- Payload: ${JSON.stringify(context.payload)}
-
-Available Agents:
-${context.availableAgents.join(", ")}
-
-Create a comprehensive execution plan that:
-1. Identifies which agents need to be called
-2. Determines the order of execution (sequential or parallel)
-3. Specifies what task each agent should perform
-4. Considers dependencies between agents
-
-Return a well-structured plan with phases and per-agent tasks. Each phase must include a name, an executionStrategy (sequential or parallel), and a list of agents with fields: agentId, task, inputSource (signal | previous | combined), optional dependencies, and optional reasoning.`;
-  }
 
   private getPlanFromJobDefinition(): ExecutionPlan | null {
     if (!this.sessionContext?.jobSpec) {

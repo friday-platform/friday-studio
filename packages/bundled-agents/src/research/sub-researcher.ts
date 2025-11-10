@@ -3,7 +3,7 @@
  */
 
 import type { AgentTelemetryConfig, AtlasTool } from "@atlas/agent-sdk";
-import { anthropic } from "@atlas/core";
+import { ANTHROPIC_CACHE_BREAKPOINT, anthropic } from "@atlas/core";
 import type { Logger } from "@atlas/logger";
 import { getTodaysDate } from "@atlas/utils";
 import { withSpan } from "@atlas/utils/telemetry.server";
@@ -37,8 +37,6 @@ function createSubAgentPrompt(depth: ResearchDepth): string {
   const config = depthConfig[depth];
 
   return `Research sub-agent conducting ${depth} research.
-
-Today's date: ${getTodaysDate()}
 
 ${depth.toUpperCase()} MODE:
 - Max ${config.maxSearches} search(es)
@@ -111,8 +109,15 @@ export function getResearcherSubAgent({
 
           const result = streamText({
             model: anthropic("claude-haiku-4-5"),
-            system: createSubAgentPrompt(depth),
-            prompt: `Research task: ${topic}`,
+            messages: [
+              {
+                role: "system",
+                content: createSubAgentPrompt(depth),
+                providerOptions: ANTHROPIC_CACHE_BREAKPOINT,
+              },
+              { role: "system", content: `Today's date: ${getTodaysDate()}` },
+              { role: "user", content: `Research task: ${topic}` },
+            ],
             tools: subAgentTools,
             maxRetries: 2,
             stopWhen: stepCountIs(maxSteps),

@@ -2,10 +2,12 @@
  * Create Tavily search and extract tools that auto-store results.
  */
 
-import { anthropic } from "@atlas/core";
+import { repairJson } from "@atlas/agent-sdk";
+import { ANTHROPIC_CACHE_BREAKPOINT, anthropic } from "@atlas/core";
 import type { Logger } from "@atlas/logger";
 import { getTodaysDate } from "@atlas/utils";
 import type { TavilyClient, TavilyExtractResponse, TavilySearchResponse } from "@tavily/core";
+import type { CoreSystemMessage, CoreUserMessage } from "ai";
 import { generateObject, tool } from "ai";
 import { z } from "zod";
 import { memoryStore } from "../memory-store.ts";
@@ -47,14 +49,11 @@ async function summarizeResults(
   logger: Logger,
   abortSignal?: AbortSignal,
 ): Promise<SummarizedResult> {
-  const summarizationPrompt = `Summarize search results preserving key information.
-
-Today's date: ${getTodaysDate()}
-
-Content:
-${resultString}
-
-Query: "${query}"
+  try {
+    const messages: Array<CoreSystemMessage | CoreUserMessage> = [
+      {
+        role: "system",
+        content: `Summarize search results preserving key information.
 
 Guidelines:
 - Main findings relevant to query
@@ -68,25 +67,42 @@ Content types:
 - Opinion: main arguments and support
 - Product/company: features, specs, metrics
 
-Create 200-400 word summary and up to 5 key excerpts.`;
+Create 200-400 word summary and up to 5 key excerpts.`,
+        providerOptions: ANTHROPIC_CACHE_BREAKPOINT,
+      },
+      { role: "system", content: `Today's date: ${getTodaysDate()}` },
+      {
+        role: "user",
+        content: `Content:
+${resultString}
 
-  try {
-    const { object } = await generateObject({
+Query: "${query}"`,
+      },
+    ];
+
+    const result = await generateObject({
       model: anthropic("claude-haiku-4-5"),
-      prompt: summarizationPrompt,
+      messages,
       schema: SummarizedResultSchema,
       temperature: 0.3,
       maxOutputTokens: 1000,
       abortSignal,
+      experimental_repairText: repairJson,
+    });
+
+    logger.debug("AI SDK generateObject completed", {
+      agent: "research-search-tools",
+      step: "summarize-results",
+      usage: result.usage,
     });
 
     logger.debug("Search results summarized", {
       query,
-      summaryLength: object.summary.length,
-      excerptsCount: object.key_excerpts.length,
+      summaryLength: result.object.summary.length,
+      excerptsCount: result.object.key_excerpts.length,
     });
 
-    return object;
+    return result.object;
   } catch (error) {
     logger.error("Failed to summarize search results", { error, query });
     throw new Error("Failed to summarize search results");

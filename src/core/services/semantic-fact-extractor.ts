@@ -1,5 +1,6 @@
-import { anthropic } from "@atlas/core";
+import { ANTHROPIC_CACHE_BREAKPOINT, anthropic } from "@atlas/core";
 import type { Logger } from "@atlas/logger";
+import type { CoreMessage } from "ai";
 import { generateObject, type LanguageModel } from "ai";
 import { z } from "zod";
 
@@ -67,7 +68,7 @@ export class SemanticFactExtractor {
   constructor(config: SemanticFactExtractorConfig = {}) {
     this.logger = config.logger;
     this.enabled = config.enabled ?? true;
-    this.model = config.model || "claude-3-haiku-20240307";
+    this.model = config.model || "claude-haiku-4-5";
     this.temperature = config.temperature ?? 0.1;
     this.maxOutputTokens = config.maxOutputTokens ?? 1200;
     this.timeoutMs = config.timeoutMs;
@@ -97,18 +98,28 @@ export class SemanticFactExtractor {
     const userPrompt = this.buildUserPrompt(batch);
 
     try {
+      const messages: CoreMessage[] = [
+        { role: "system", content: systemPrompt, providerOptions: ANTHROPIC_CACHE_BREAKPOINT },
+        { role: "user", content: userPrompt },
+      ];
+
       const options = {
         model: this.llmProvider(this.model),
-        system: systemPrompt,
-        messages: [{ role: "user" as const, content: userPrompt }],
+        messages,
         schema: FactExtractionResultSchema,
         temperature: this.temperature,
         maxOutputTokens: this.maxOutputTokens,
         ...(this.timeoutMs ? { abortSignal: AbortSignal.timeout(this.timeoutMs) } : {}),
       };
 
-      const { object } = await generateObject(options);
-      const parsed = FactExtractionResultSchema.parse(object);
+      const result = await generateObject(options);
+      const parsed = FactExtractionResultSchema.parse(result.object);
+
+      this.logger?.debug("AI SDK generateObject completed", {
+        agent: "semantic-fact-extractor",
+        step: "extract-facts",
+        usage: result.usage,
+      });
 
       // Post-filter: low-confidence and cleanup
       const filtered = this.filterFacts(parsed.facts);

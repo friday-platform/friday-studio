@@ -1,7 +1,8 @@
 import { createAgent, repairJson } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
-import { anthropic } from "@atlas/core";
+import { ANTHROPIC_CACHE_BREAKPOINT, anthropic } from "@atlas/core";
 import { fail, type Result, stringifyError, success } from "@atlas/utils";
+import type { CoreSystemMessage, CoreUserMessage } from "ai";
 import { generateObject } from "ai";
 import { z } from "zod";
 import {
@@ -115,24 +116,37 @@ export const sessionSupervisorAgent = createAgent<
         }
       }
 
-      const { object } = await generateObject({
+      const messages: Array<CoreSystemMessage | CoreUserMessage> = [
+        {
+          role: "system",
+          content: SUPERVISOR_SYSTEM_PROMPT,
+          providerOptions: ANTHROPIC_CACHE_BREAKPOINT,
+        },
+        { role: "user", content: buildOptimizationPrompt(input, { expandedArtifacts }) },
+      ];
+
+      const result = await generateObject({
         model: anthropic("claude-sonnet-4-5"),
         experimental_repairText: repairJson,
         schema: SupervisorOutputSchema,
-        system: SUPERVISOR_SYSTEM_PROMPT,
+        messages,
         maxOutputTokens: 16384,
-        // Include expanded artifacts in the prompt; instruct model not to modify them
-        prompt: buildOptimizationPrompt(input, { expandedArtifacts }),
         abortSignal,
       });
 
-      logger.info(" supervisor optimized context", {
-        tokenEstimate: object.metadata.tokenEstimate,
-        includedSignal: object.metadata.includedSignal,
-        includedPreviousCount: object.metadata.includedPreviousCount,
+      logger.debug("AI SDK generateObject completed", {
+        agent: "session-supervisor",
+        step: "context-optimization",
+        usage: result.usage,
       });
 
-      return success(object);
+      logger.info(" supervisor optimized context", {
+        tokenEstimate: result.object.metadata.tokenEstimate,
+        includedSignal: result.object.metadata.includedSignal,
+        includedPreviousCount: result.object.metadata.includedPreviousCount,
+      });
+
+      return success(result.object);
     } catch (error) {
       logger.error(" supervisor failed to optimize context", { error });
       return fail({ reason: stringifyError(error) });

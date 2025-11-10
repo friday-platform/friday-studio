@@ -1,10 +1,11 @@
 import { type ArtifactRef, createAgent } from "@atlas/agent-sdk";
-import { anthropic } from "@atlas/core";
+import { ANTHROPIC_CACHE_BREAKPOINT, anthropic } from "@atlas/core";
 import { parseCsv } from "@atlas/core/artifacts";
 import { ArtifactStorage } from "@atlas/core/artifacts/server";
 import { getWorkspaceFilesDir } from "@atlas/utils/paths.server";
 import { Database } from "@db/sqlite";
 import { basename, join } from "@std/path";
+import type { CoreSystemMessage, CoreUserMessage } from "ai";
 import { generateObject, generateText, tool } from "ai";
 import { z } from "zod";
 
@@ -48,18 +49,33 @@ export const csvFilterSamplerAgent = createAgent<string, CsvFilterSamplerResult>
     try {
       logger.info("Parsing prompt to extract CSV path and filter criteria");
 
-      const { object: parsedPrompt } = await generateObject({
-        model: anthropic("claude-haiku-4-5"),
-        abortSignal,
-        schema: PromptParseSchema,
-        system: `Extract the CSV file path, filter criteria, and sample count from the user's prompt.
+      const parseMessages: Array<CoreSystemMessage | CoreUserMessage> = [
+        {
+          role: "system",
+          content: `Extract the CSV file path, filter criteria, and sample count from the user's prompt.
 The CSV path should be an absolute path.
 The filter criteria should be the natural language description of what to filter for.
 The sample count is how many random records to select (look for numbers like "3 contacts", "5 samples", etc.). Default to 3 if not specified.`,
-        prompt,
+          providerOptions: ANTHROPIC_CACHE_BREAKPOINT,
+        },
+        { role: "user", content: prompt },
+      ];
+
+      const parseResult = await generateObject({
+        model: anthropic("claude-haiku-4-5"),
+        abortSignal,
+        schema: PromptParseSchema,
+        messages: parseMessages,
       });
 
-      const { csvPath, filterCriteria, sampleCount } = parsedPrompt;
+      // Log token usage including cache statistics
+      logger.debug("AI SDK generateObject completed", {
+        agent: "csv-filter-sampler",
+        step: "parse-prompt",
+        usage: parseResult.usage,
+      });
+
+      const { csvPath, filterCriteria, sampleCount } = parseResult.object;
       logger.info("Extracted from prompt", { csvPath, filterCriteria, sampleCount });
 
       // Check if file exists before parsing
@@ -149,10 +165,10 @@ The sample count is how many random records to select (look for numbers like "3 
         },
       });
 
-      await generateText({
-        model: anthropic("claude-sonnet-4-5"),
-        abortSignal,
-        system: `You are generating a SQL WHERE clause to filter CSV data loaded into SQLite.
+      const sqlMessages: Array<CoreSystemMessage | CoreUserMessage> = [
+        {
+          role: "system",
+          content: `You are generating a SQL WHERE clause to filter CSV data loaded into SQLite.
 
 Table: data
 Columns: ${parsedCsv.columns.map((c) => `"${c}"`).join(", ")}
@@ -190,8 +206,23 @@ User: "Antarctica contacts" (impossible - no Antarctica in data)
 WHERE: 1=0
 
 Call buildSqlWhere tool with your WHERE clause (WITHOUT the 'WHERE' keyword).`,
-        prompt: filterCriteria,
+          providerOptions: ANTHROPIC_CACHE_BREAKPOINT,
+        },
+        { role: "user", content: filterCriteria },
+      ];
+
+      const sqlResult = await generateText({
+        model: anthropic("claude-sonnet-4-5"),
+        abortSignal,
+        messages: sqlMessages,
         tools: { buildSqlWhere: buildSqlWhereTool },
+      });
+
+      // Log token usage including cache statistics
+      logger.debug("AI SDK generateText completed", {
+        agent: "csv-filter-sampler",
+        step: "build-sql-where",
+        usage: sqlResult.usage,
       });
 
       logger.info("Executing SQL query", { sampleCount });

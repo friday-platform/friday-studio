@@ -1,14 +1,13 @@
 import type { AtlasTools } from "@atlas/agent-sdk";
-import { anthropic } from "@atlas/core";
+import { ANTHROPIC_CACHE_BREAKPOINT, anthropic } from "@atlas/core";
 import type { Logger } from "@atlas/logger";
 import { getTodaysDate } from "@atlas/utils";
+import type { CoreSystemMessage, CoreUserMessage } from "ai";
 import { generateText, stepCountIs, tool } from "ai";
 import { z } from "zod";
 import { memoryStore } from "./memory-store.ts";
 
 const FINAL_REPORT_GENERATOR_PROMPT = `Generate research report from completed searches.
-
-Today's date: ${getTodaysDate()}
 
 WORKFLOW:
 1. Get all summaries via listResearchSummaries
@@ -77,14 +76,24 @@ export function getFinalReportGeneratorSubAgent({ logger, abortSignal }: Params)
   return {
     /** Generate final report from research summaries */
     async generate(userPrompt: string): Promise<string> {
-      const reportPrompt = `Original request: ${userPrompt}
+      const messages: Array<CoreSystemMessage | CoreUserMessage> = [
+        {
+          role: "system",
+          content: FINAL_REPORT_GENERATOR_PROMPT,
+          providerOptions: ANTHROPIC_CACHE_BREAKPOINT,
+        },
+        { role: "system", content: `Today's date: ${getTodaysDate()}` },
+        {
+          role: "user",
+          content: `Original request: ${userPrompt}
 
-Generate report answering the request.`;
+Generate report answering the request.`,
+        },
+      ];
 
-      const { text } = await generateText({
+      const result = await generateText({
         model: anthropic("claude-sonnet-4-5"),
-        system: FINAL_REPORT_GENERATOR_PROMPT,
-        prompt: reportPrompt,
+        messages,
         tools,
         maxOutputTokens: 8192,
         stopWhen: stepCountIs(5),
@@ -92,12 +101,18 @@ Generate report answering the request.`;
         abortSignal,
       });
 
+      logger.debug("AI SDK generateText completed", {
+        agent: "final-report-generator",
+        step: "generate-report",
+        usage: result.usage,
+      });
+
       logger.debug(`Report generated`, {
-        reportLength: text.length,
+        reportLength: result.text.length,
         summariesUsed: memoryStore.getAllSummaries().length,
       });
 
-      return text;
+      return result.text;
     },
   };
 }

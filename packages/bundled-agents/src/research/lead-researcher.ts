@@ -4,10 +4,11 @@
  */
 
 import { createAgent } from "@atlas/agent-sdk";
-import { anthropic } from "@atlas/core";
+import { ANTHROPIC_CACHE_BREAKPOINT, anthropic } from "@atlas/core";
 import type { Logger } from "@atlas/logger";
 import { fail, getTodaysDate, type Result, success } from "@atlas/utils";
 import { tavily as createTavily } from "@tavily/core";
+import type { CoreSystemMessage, CoreUserMessage } from "ai";
 import { generateObject, generateText, hasToolCall, stepCountIs, streamText, tool } from "ai";
 import { z } from "zod";
 import { getFinalReportGeneratorSubAgent } from "./final-report-generator.ts";
@@ -59,10 +60,10 @@ Examples:
 
     const guidance = stageGuidance[stage] || "Generate a status update for this research operation";
 
-    const { text } = await generateText({
-      model: anthropic("claude-haiku-4-5"),
-      abortSignal,
-      system: `Generate a research progress update.
+    const messages: Array<CoreSystemMessage | CoreUserMessage> = [
+      {
+        role: "system",
+        content: `Generate a research progress update.
 
 <constraints>
 - Maximum 4 words
@@ -76,7 +77,11 @@ Examples:
 <stage_guidance>
 ${guidance}
 </stage_guidance>`,
-      prompt: `<stage>${stage}</stage>
+        providerOptions: ANTHROPIC_CACHE_BREAKPOINT,
+      },
+      {
+        role: "user",
+        content: `<stage>${stage}</stage>
 
 <context>
 ${contextStr.slice(0, 500)}
@@ -91,10 +96,24 @@ Generate a UNIQUE progress update about this research activity.
 Must be different from recent messages - vary the verb and phrasing.
 Return ONLY the progress text, no explanations.
 </task>`,
+      },
+    ];
+
+    const result = await generateText({
+      model: anthropic("claude-haiku-4-5"),
+      abortSignal,
+      messages,
       temperature: 0.5,
       maxOutputTokens: 50,
     });
-    const message = text.trim();
+
+    logger.debug("AI SDK generateText completed", {
+      agent: "lead-researcher",
+      step: "generate-progress-message",
+      usage: result.usage,
+    });
+
+    const message = result.text.trim();
     previousMessages.add(message);
     return message;
   } catch (error) {
@@ -182,8 +201,6 @@ function createSupervisorPrompt(depth: ResearchDepth): string {
 
   return `Research supervisor coordinating parallel research tasks.
 
-Today's date: ${getTodaysDate()}
-
 ${depthGuidance[depth]}
 
 WORKFLOW:
@@ -270,27 +287,48 @@ export const researchAgent = createAgent<string, ResearchAgentResult>({
         data: { toolName: "Research", content: analyzingMessage },
       });
 
-      const { object: researchTask } = await generateObject({
+      const researchTaskMessages: Array<CoreSystemMessage | CoreUserMessage> = [
+        {
+          role: "system",
+          content: RESEARCH_TOPIC_WRITER_PROMPT,
+          providerOptions: ANTHROPIC_CACHE_BREAKPOINT,
+        },
+        { role: "user", content: prompt },
+      ];
+
+      const researchTaskResult = await generateObject({
         model: anthropic("claude-sonnet-4-5"),
-        system: RESEARCH_TOPIC_WRITER_PROMPT,
-        prompt: prompt,
+        messages: researchTaskMessages,
         schema: ResearchTaskSchema,
         temperature: 0.3,
         maxOutputTokens: 500,
         abortSignal,
       });
 
+      logger.debug("AI SDK generateObject completed", {
+        agent: "lead-researcher",
+        step: "analyze-research-task",
+        usage: researchTaskResult.usage,
+      });
+
       logger.info(`Research task analyzed`, {
-        depth: researchTask.depth,
+        depth: researchTaskResult.object.depth,
         original: prompt,
-        processed: researchTask.researchQuestion,
+        processed: researchTaskResult.object.researchQuestion,
       });
 
       /** Execute research with supervisor */
       const result = streamText({
         model: anthropic("claude-sonnet-4-5"),
-        system: createSupervisorPrompt(researchTask.depth),
-        prompt: researchTask.researchQuestion,
+        messages: [
+          {
+            role: "system",
+            content: createSupervisorPrompt(researchTaskResult.object.depth),
+            providerOptions: ANTHROPIC_CACHE_BREAKPOINT,
+          },
+          { role: "system", content: `Today's date: ${getTodaysDate()}` },
+          { role: "user", content: researchTaskResult.object.researchQuestion },
+        ],
         tools: {
           conductResearch: researcherAgent,
           researchComplete: tool({
@@ -368,7 +406,7 @@ export const researchAgent = createAgent<string, ResearchAgentResult>({
 
       const reportingMessage = await generateResearchProgress(
         "reporting",
-        researchTask.researchQuestion,
+        researchTaskResult.object.researchQuestion,
         "Generating report...",
         logger,
         abortSignal,

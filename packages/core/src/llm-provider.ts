@@ -17,6 +17,15 @@ import { z } from "zod";
 import { createErrorCause, throwWithCause } from "./errors.ts";
 import { WatchdogTimer } from "./watchdog-timer.ts";
 
+/**
+ * Anthropic prompt caching configuration
+ * System prompts marked with this will be cached by Anthropic (if >1024 tokens)
+ * Cache hits significantly reduce latency by skipping prompt processing
+ */
+export const ANTHROPIC_CACHE_BREAKPOINT = {
+  anthropic: { cacheControl: { type: "ephemeral", ttl: "1h" } },
+};
+
 // Runtime validation schemas
 const LLMProviderSchema = z.enum(["anthropic", "openai", "google"]);
 
@@ -202,7 +211,10 @@ export class LLMProvider {
     try {
       const model = LLMProvider.getModel(providerConfig);
 
-      const messages = LLMProvider.buildMessages(userPrompt, runtimeContext);
+      const messages = LLMProvider.buildMessages(userPrompt, {
+        ...runtimeContext,
+        provider: providerConfig.provider,
+      });
 
       const hasTools = !!(runtimeContext.tools && Object.keys(runtimeContext.tools).length > 0);
       const hasMcpServers = !!(runtimeContext.mcpServers && runtimeContext.mcpServers.length > 0);
@@ -242,8 +254,11 @@ export class LLMProvider {
       // Report progress after LLM generation completes
       watchdog.reportProgress();
 
-      // Log the raw result from AI SDK
-      logger.info("AI SDK generateText result", {
+      // Log usage including cache statistics
+      logger.debug("LLM generation completed", {
+        provider: providerConfig.provider,
+        model: providerConfig.model,
+        usage: result.usage,
         hasText: !!result.text,
         textLength: result.text?.length || 0,
         toolCallsCount: result.toolCalls?.length || 0,
@@ -338,7 +353,7 @@ export class LLMProvider {
       // Always clean up watchdog timer
       watchdog.abort("Operation finished");
 
-      logger.info("LLM generation completed", { duration: Date.now() - startTime });
+      logger.debug("LLM generation completed", { duration: Date.now() - startTime });
     }
   }
 
@@ -389,7 +404,7 @@ export class LLMProvider {
         'I got 42 from addition. Task complete:\nACTION: complete\nPARAMETERS: {"answer": 42}';
     }
 
-    logger.info("LLM generation completed", { duration: 100, mock: true });
+    logger.debug("LLM generation completed", { duration: 100, mock: true });
 
     return Promise.resolve({ text: mockText, toolCalls: [], toolResults: [], steps: [] });
   }
@@ -426,7 +441,10 @@ export class LLMProvider {
 
     try {
       const model = LLMProvider.getModel(providerConfig);
-      const messages = LLMProvider.buildMessages(validatedPrompt, runtimeContext);
+      const messages = LLMProvider.buildMessages(validatedPrompt, {
+        ...runtimeContext,
+        provider: providerConfig.provider,
+      });
 
       const stream = streamText({
         model,
@@ -442,6 +460,15 @@ export class LLMProvider {
         watchdog.reportProgress();
         yield chunk;
       }
+
+      // Log usage after stream completes
+      const finalResult = await stream;
+      logger.debug("LLM stream completed", {
+        provider: providerConfig.provider,
+        model: providerConfig.model,
+        usage: finalResult.usage,
+        textLength: (await finalResult.text).length,
+      });
     } catch (error) {
       logger.error("LLM stream generation failed", {
         error: stringifyError(error),
@@ -501,6 +528,7 @@ export class LLMProvider {
 
   /**
    * Constructs the conversation with system prompts, memory, and user input
+   * Optimized for Anthropic prompt caching: static content first with cache breakpoints
    */
   private static buildMessages(
     userPrompt: string,
@@ -508,22 +536,39 @@ export class LLMProvider {
       systemPrompt?: string;
       memoryContext?: string;
       operationContext?: Record<string, unknown>;
+      provider?: string; // Optional provider hint for caching
     },
   ): ModelMessage[] {
     const messages: ModelMessage[] = [];
 
-    // Always provide current datetime to the model for time awareness
+    // Reordered for optimal Anthropic prompt caching:
+    // Static content first (cached), variable content after (not cached)
+    // Only apply caching for Anthropic to avoid provider-specific options on other providers
+    const isAnthropic = context.provider === "anthropic";
+
+    // System prompt (static per agent/session)
+    if (context.systemPrompt) {
+      messages.push({
+        role: "system",
+        content: context.systemPrompt,
+        ...(isAnthropic ? { providerOptions: ANTHROPIC_CACHE_BREAKPOINT } : {}),
+      });
+    }
+
+    // Memory context (semi-static, changes slowly)
+    if (context.memoryContext) {
+      messages.push({
+        role: "system",
+        content: `Memory Context:\n${context.memoryContext}`,
+        ...(isAnthropic ? { providerOptions: ANTHROPIC_CACHE_BREAKPOINT } : {}),
+      });
+    }
+
+    // Datetime (variable, changes every call) - moved after cached content
     const nowUtcIso = new Date().toISOString();
     messages.push({ role: "system", content: `Current datetime (UTC): ${nowUtcIso}` });
 
-    if (context.systemPrompt) {
-      messages.push({ role: "system", content: context.systemPrompt });
-    }
-
-    if (context.memoryContext) {
-      messages.push({ role: "system", content: `Memory Context:\n${context.memoryContext}` });
-    }
-
+    // Operation context (variable per agent call)
     if (context.operationContext && Object.keys(context.operationContext).length > 0) {
       messages.push({
         role: "system",
@@ -531,6 +576,7 @@ export class LLMProvider {
       });
     }
 
+    // User prompt (always variable)
     if (userPrompt.length > 0) {
       messages.push({ role: "user", content: userPrompt });
     }

@@ -12,11 +12,12 @@ import type { AtlasTools, AtlasUIMessage } from "@atlas/agent-sdk";
 import { createAgent, validateAtlasUIMessages } from "@atlas/agent-sdk";
 import { pipeUIMessageStream } from "@atlas/agent-sdk/vercel-helpers";
 import { client, parseResult } from "@atlas/client/v2";
-import { anthropic } from "@atlas/core";
+import { ANTHROPIC_CACHE_BREAKPOINT, anthropic } from "@atlas/core";
 import { createErrorCause, getErrorDisplayMessage, parseAPICallError } from "@atlas/core/errors";
 import type { Logger } from "@atlas/logger";
 import { Client } from "@modelcontextprotocol/sdk/client";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import type { CoreMessage, CoreSystemMessage, CoreUserMessage } from "ai";
 import {
   convertToModelMessages,
   createIdGenerator,
@@ -56,15 +57,31 @@ function getSystemPrompt(streamId?: string): string {
  */
 async function generateChatTitle(messages: AtlasUIMessage[], logger: Logger): Promise<string> {
   try {
-    const titlePrompt = `Generate a concise 3-5 word title for this conversation. Only output the title, nothing else.
-      Conversation:
-      ${messages.map((m) => `${m.role}: ${JSON.stringify(m.parts.filter((p) => p.type === "text"))}`).join("\n")}`;
-    const { text } = await generateText({
+    const chatMessages: Array<CoreSystemMessage | CoreUserMessage> = [
+      {
+        role: "system",
+        content:
+          "You generate concise 3-5 word titles for conversations. Only output the title, nothing else.",
+        providerOptions: ANTHROPIC_CACHE_BREAKPOINT,
+      },
+      {
+        role: "user",
+        content: `Generate a title for this conversation:
+${messages.map((m) => `${m.role}: ${JSON.stringify(m.parts.filter((p) => p.type === "text"))}`).join("\n")}`,
+      },
+    ];
+
+    const result = await generateText({
       model: anthropic("claude-haiku-4-5"),
-      prompt: titlePrompt,
+      messages: chatMessages,
       maxOutputTokens: 50,
     });
-    return text;
+    logger.debug("AI SDK generateText completed", {
+      agent: "conversation",
+      step: "generate-chat-title",
+      usage: result.usage,
+    });
+    return result.text;
   } catch (error) {
     logger.error("Failed to generate chat title", { error });
     return "Saved Chat";
@@ -249,11 +266,6 @@ export const conversationAgent = createAgent({
      * Load conversation context from workspace memory system instead of separate storage
      */
 
-    const systemPrompt = `Current datetime (UTC): ${new Date().toISOString()}
-
-    ${getSystemPrompt(session.streamId)}
-    `;
-
     // Store the original error if streamText fails
     let originalStreamError: unknown = null;
     let interceptedApiError: unknown = null;
@@ -299,10 +311,19 @@ export const conversationAgent = createAgent({
 
     try {
       try {
+        const modelMessages: CoreMessage[] = [
+          {
+            role: "system",
+            content: getSystemPrompt(session.streamId),
+            providerOptions: ANTHROPIC_CACHE_BREAKPOINT,
+          },
+          { role: "system", content: `Current datetime (UTC): ${new Date().toISOString()}` },
+          ...convertToModelMessages(messages),
+        ];
+
         result = streamText({
           model: anthropic("claude-sonnet-4-5"),
-          system: systemPrompt,
-          messages: convertToModelMessages(messages),
+          messages: modelMessages,
           tools: allTools,
           toolChoice: "auto",
           stopWhen: stepCountIs(40),

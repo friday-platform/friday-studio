@@ -12,8 +12,9 @@
  */
 
 import type { AgentResult } from "@atlas/agent-sdk";
-import { anthropic } from "@atlas/core";
+import { ANTHROPIC_CACHE_BREAKPOINT, anthropic } from "@atlas/core";
 import type { Logger } from "@atlas/logger";
+import type { CoreMessage } from "ai";
 import { generateObject, type LanguageModel } from "ai";
 import { z } from "zod";
 import { SupervisionLevel } from "../supervision-levels.ts";
@@ -223,7 +224,7 @@ async function performLLMValidation(
   const llmProvider = (model: string) => anthropic(model);
 
   const operation = async (): Promise<LLMValidationResult> => {
-    return await validateWithLLM(result, llmProvider);
+    return await validateWithLLM(result, llmProvider, config.logger);
   };
 
   try {
@@ -277,6 +278,7 @@ async function performLLMValidation(
 async function validateWithLLM(
   result: AgentResult,
   llmProvider: (model: string) => LanguageModel,
+  logger?: Logger,
 ): Promise<LLMValidationResult> {
   const ValidationSchema = z.object({
     valid: z.boolean(),
@@ -285,19 +287,33 @@ async function validateWithLLM(
   });
 
   try {
-    const { object } = await generateObject({
+    const messages: CoreMessage[] = [
+      {
+        role: "system",
+        content: buildValidationPrompt(),
+        providerOptions: ANTHROPIC_CACHE_BREAKPOINT,
+      },
+      { role: "user", content: buildValidationInput(result) },
+    ];
+
+    const llmResult = await generateObject({
       model: llmProvider("claude-haiku-4-5"),
-      system: buildValidationPrompt(),
-      messages: [{ role: "user", content: buildValidationInput(result) }],
+      messages,
       schema: ValidationSchema,
       temperature: 0.05,
       maxOutputTokens: 1000,
     });
 
+    logger?.debug("AI SDK generateObject completed", {
+      agent: "hallucination-detector",
+      step: "validate-with-llm",
+      usage: llmResult.usage,
+    });
+
     return {
-      valid: object.valid,
-      confidence: object.confidence,
-      issues: object.issues,
+      valid: llmResult.object.valid,
+      confidence: llmResult.object.confidence,
+      issues: llmResult.object.issues,
       source: "llm",
     };
   } catch (error) {

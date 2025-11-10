@@ -1,6 +1,7 @@
 import { type JobSpecification, JobSpecificationSchema } from "@atlas/config";
-import { anthropic } from "@atlas/core";
+import { ANTHROPIC_CACHE_BREAKPOINT, anthropic } from "@atlas/core";
 import type { WorkspacePlan } from "@atlas/core/artifacts";
+import { logger } from "@atlas/logger";
 import { generateObject } from "ai";
 import { z } from "zod";
 
@@ -74,11 +75,14 @@ export async function enrichJob(
   job: WorkspacePlan["jobs"][number],
   abortSignal?: AbortSignal,
 ): Promise<{ id: string; spec: JobSpecification }> {
-  const { object } = await generateObject({
+  const result = await generateObject({
     model: anthropic("claude-sonnet-4-5"),
     schema: JobEnricherSchema,
-    system: systemPrompt,
-    prompt: `Generate job specification:
+    messages: [
+      { role: "system", content: systemPrompt, providerOptions: ANTHROPIC_CACHE_BREAKPOINT },
+      {
+        role: "user",
+        content: `Generate job specification:
 
 Job ID: ${job.id}
 Name: ${job.name}
@@ -93,11 +97,19 @@ Generate a complete JobSpecification with:
 - description: What this job accomplishes
 - triggers: [{ signal: "${job.triggerSignalId}" }]
 - execution: Strategy (sequential/parallel) and agents array with context flow`,
+      },
+    ],
     temperature: 0.3,
     maxRetries: 3,
     maxOutputTokens: 4000,
     abortSignal,
   });
 
-  return { id: job.id, spec: object.job };
+  logger.debug("AI SDK generateObject completed", {
+    agent: "job-enricher",
+    step: "enrich-job-specification",
+    usage: result.usage,
+  });
+
+  return { id: job.id, spec: result.object.job };
 }
