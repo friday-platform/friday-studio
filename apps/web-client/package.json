@@ -31,7 +31,7 @@
     "@tanstack/svelte-table": "9.0.0-alpha.10",
     "@tauri-apps/api": "2.9.0",
     "@tauri-apps/plugin-fs": "~2.4.4",
-    "@tauri-apps/plugin-notification": "^2.0.0",
+    "@tauri-apps/plugin-notification": "^2.3.3",
     "@tauri-apps/plugin-opener": "^2.5.0",
     "ai": "^5.0.90",
     "eventsource-client": "^1.1.4",
