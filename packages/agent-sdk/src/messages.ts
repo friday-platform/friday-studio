@@ -78,6 +78,14 @@ export const AtlasDataEventSchemas = {
  * Checks message structure, metadata, and data parts.
  */
 export async function validateAtlasUIMessages(messages: unknown[]): Promise<AtlasUIMessage[]> {
+  /**
+   * Return early if there are no messages.
+   * validateUIMessages now fails if the messages array is empty.
+   * @see https://github.com/vercel/ai/commit/818b144eafffaa89329e9aa5d76f40fe9b1b7bd1
+   */
+  if (messages.length === 0) {
+    return [];
+  }
   return await validateUIMessages({
     messages,
     metadataSchema: MessageMetadataSchema.optional(),

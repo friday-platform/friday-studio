@@ -30,6 +30,7 @@
     "npm:@ai-sdk/openai@^2.0.42": "2.0.64_zod@4.1.12",
     "npm:@ai-sdk/provider@2": "2.0.0",
     "npm:@ai-sdk/svelte@^3.0.64": "3.0.89_svelte@5.43.5__acorn@8.15.0_zod@4.1.12",
+    "npm:@biomejs/biome@*": "2.3.4",
     "npm:@eslint/compat@^1.2.5": "1.4.1_eslint@9.39.1",
     "npm:@eslint/js@^9.18.0": "9.39.1",
     "npm:@faker-js/faker@^10.1.0": "10.1.0",
@@ -73,7 +74,7 @@
     "npm:@total-typescript/ts-reset@~0.6.1": "0.6.1",
     "npm:@types/react@^19.1.13": "19.2.2",
     "npm:ai-sdk-provider-claude-code@^2.1.0": "2.1.0_zod@4.1.12",
-    "npm:ai@^5.0.81": "5.0.89_zod@4.1.12",
+    "npm:ai@^5.0.90": "5.0.90_zod@4.1.12",
     "npm:cookie@^1.0.2": "1.0.2",
     "npm:cron-parser@^5.4.0": "5.4.0",
     "npm:eslint-config-prettier@^10.0.1": "10.1.8_eslint@9.39.1",
@@ -262,7 +263,7 @@
       "integrity": "sha512-boPFKvoNeDHyRzXu6nErHUVtvu6zr6RTKRvrkbkTgTxldVK9QVS6fl91/T+VKqHsWV5zYbB5DCBrb40U3QGE0g==",
       "dependencies": [
         "@ai-sdk/provider-utils@3.0.16_zod@4.1.12",
-        "ai",
+        "ai@5.0.89_zod@4.1.12",
         "svelte",
         "zod"
       ],
@@ -351,6 +352,60 @@
         "@babel/helper-string-parser",
         "@babel/helper-validator-identifier"
       ]
+    },
+    "@biomejs/biome@2.3.4": {
+      "integrity": "sha512-TU08LXjBHdy0mEY9APtEtZdNQQijXUDSXR7IK1i45wgoPD5R0muK7s61QcFir6FpOj/RP1+YkPx5QJlycXUU3w==",
+      "optionalDependencies": [
+        "@biomejs/cli-darwin-arm64",
+        "@biomejs/cli-darwin-x64",
+        "@biomejs/cli-linux-arm64",
+        "@biomejs/cli-linux-arm64-musl",
+        "@biomejs/cli-linux-x64",
+        "@biomejs/cli-linux-x64-musl",
+        "@biomejs/cli-win32-arm64",
+        "@biomejs/cli-win32-x64"
+      ],
+      "bin": true
+    },
+    "@biomejs/cli-darwin-arm64@2.3.4": {
+      "integrity": "sha512-w40GvlNzLaqmuWYiDU6Ys9FNhJiclngKqcGld3iJIiy2bpJ0Q+8n3haiaC81uTPY/NA0d8Q/I3Z9+ajc14102Q==",
+      "os": ["darwin"],
+      "cpu": ["arm64"]
+    },
+    "@biomejs/cli-darwin-x64@2.3.4": {
+      "integrity": "sha512-3s7TLVtjJ7ni1xADXsS7x7GMUrLBZXg8SemXc3T0XLslzvqKj/dq1xGeBQ+pOWQzng9MaozfacIHdK2UlJ3jGA==",
+      "os": ["darwin"],
+      "cpu": ["x64"]
+    },
+    "@biomejs/cli-linux-arm64-musl@2.3.4": {
+      "integrity": "sha512-IruVGQRwMURivWazchiq7gKAqZSFs5so6gi0hJyxk7x6HR+iwZbO2IxNOqyLURBvL06qkIHs7Wffl6Bw30vCbQ==",
+      "os": ["linux"],
+      "cpu": ["arm64"]
+    },
+    "@biomejs/cli-linux-arm64@2.3.4": {
+      "integrity": "sha512-y7efHyyM2gYmHy/AdWEip+VgTMe9973aP7XYKPzu/j8JxnPHuSUXftzmPhkVw0lfm4ECGbdBdGD6+rLmTgNZaA==",
+      "os": ["linux"],
+      "cpu": ["arm64"]
+    },
+    "@biomejs/cli-linux-x64-musl@2.3.4": {
+      "integrity": "sha512-mzKFFv/w66e4/jCobFmD3kymCqG+FuWE7sVa4Yjqd9v7qt2UhXo67MSZKY9Ih18V2IwPzRKQPCw6KwdZs6AXSA==",
+      "os": ["linux"],
+      "cpu": ["x64"]
+    },
+    "@biomejs/cli-linux-x64@2.3.4": {
+      "integrity": "sha512-gKfjWR/6/dfIxPJCw8REdEowiXCkIpl9jycpNVHux8aX2yhWPLjydOshkDL6Y/82PcQJHn95VCj7J+BRcE5o1Q==",
+      "os": ["linux"],
+      "cpu": ["x64"]
+    },
+    "@biomejs/cli-win32-arm64@2.3.4": {
+      "integrity": "sha512-5TJ6JfVez+yyupJ/iGUici2wzKf0RrSAxJhghQXtAEsc67OIpdwSKAQboemILrwKfHDi5s6mu7mX+VTCTUydkw==",
+      "os": ["win32"],
+      "cpu": ["arm64"]
+    },
+    "@biomejs/cli-win32-x64@2.3.4": {
+      "integrity": "sha512-FGCijXecmC4IedQ0esdYNlMpx0Jxgf4zceCaMu6fkjWyjgn50ZQtMiqZZQ0Q/77yqPxvtkgZAvt5uGw0gAAjig==",
+      "os": ["win32"],
+      "cpu": ["x64"]
     },
     "@emnapi/core@1.7.0": {
       "integrity": "sha512-pJdKGq/1iquWYtv1RRSljZklxHCOCAJFJrImO5ZLKPJVJlVUcs8yFwNQlqS0Lo8xT1VAXXTCZocF9n26FWEKsw==",
@@ -1641,6 +1696,16 @@
     },
     "ai@5.0.89_zod@4.1.12": {
       "integrity": "sha512-8Nq+ZojGacQrupoJEQLrTDzT5VtR3gyp5AaqFSV3tzsAXlYQ9Igb7QE3yeoEdzOk5IRfDwWL7mDCUD+oBg1hDA==",
+      "dependencies": [
+        "@ai-sdk/gateway",
+        "@ai-sdk/provider",
+        "@ai-sdk/provider-utils@3.0.16_zod@4.1.12",
+        "@opentelemetry/api",
+        "zod"
+      ]
+    },
+    "ai@5.0.90_zod@4.1.12": {
+      "integrity": "sha512-bawNN10N2cXzFedbDdNUZo8KkcGp12VX1b+mCL5dfllh6WmLsIYYME7GVxsRJvHvPP7xRhuds5fn0jtLyxGnZw==",
       "dependencies": [
         "@ai-sdk/gateway",
         "@ai-sdk/provider",
@@ -3605,7 +3670,7 @@
         "npm:@sendgrid/helpers@8",
         "npm:@total-typescript/ts-reset@~0.6.1",
         "npm:@types/react@^19.1.13",
-        "npm:ai@^5.0.81",
+        "npm:ai@^5.0.90",
         "npm:ink@^6.3.0",
         "npm:js-levenshtein@^1.1.6",
         "npm:knip@5.68.0",
@@ -3652,7 +3717,7 @@
             "npm:@tauri-apps/plugin-fs@~2.4.4",
             "npm:@tauri-apps/plugin-notification@2",
             "npm:@tauri-apps/plugin-opener@^2.5.0",
-            "npm:ai@^5.0.81",
+            "npm:ai@^5.0.90",
             "npm:eslint-config-prettier@^10.0.1",
             "npm:eslint-plugin-svelte@3",
             "npm:eslint@^9.18.0",
@@ -3675,7 +3740,7 @@
           "dependencies": [
             "npm:@jsr/std__assert@^1.0.14",
             "npm:@opentelemetry/api@^1.9.0",
-            "npm:ai@^5.0.81",
+            "npm:ai@^5.0.90",
             "npm:jsonrepair@^3.13.1",
             "npm:zod@^4.1.11"
           ]
@@ -3699,7 +3764,7 @@
             "npm:@sendgrid/mail@^8.1.6",
             "npm:@tavily/core@~0.5.12",
             "npm:ai-sdk-provider-claude-code@^2.1.0",
-            "npm:ai@^5.0.81",
+            "npm:ai@^5.0.90",
             "npm:zod@^4.1.11"
           ]
         }
@@ -3737,7 +3802,7 @@
             "npm:@jsr/std__path@^1.1.2",
             "npm:@jsr/std__testing@^1.0.16",
             "npm:@socotra/modelcontextprotocol-sdk@^1.18.0",
-            "npm:ai@^5.0.81",
+            "npm:ai@^5.0.90",
             "npm:papaparse@^5.5.3",
             "npm:xstate@^5.21.0",
             "npm:zod@^4.1.11"
@@ -3784,7 +3849,7 @@
             "npm:@ai-sdk/mcp@^0.0.7",
             "npm:@opentelemetry/api@^1.9.0",
             "npm:@socotra/modelcontextprotocol-sdk@^1.18.0",
-            "npm:ai@^5.0.81",
+            "npm:ai@^5.0.90",
             "npm:zod@^4.1.11"
           ]
         }
@@ -3796,7 +3861,7 @@
             "npm:@jsr/std__fs@^1.0.19",
             "npm:@jsr/std__path@^1.1.2",
             "npm:@socotra/modelcontextprotocol-sdk@^1.18.0",
-            "npm:ai@^5.0.81",
+            "npm:ai@^5.0.90",
             "npm:papaparse@^5.5.3",
             "npm:zod@^4.1.11"
           ]
@@ -3857,7 +3922,7 @@
             "npm:@jsr/std__text@^1.0.16",
             "npm:@jsr/std__yaml@^1.0.9",
             "npm:@socotra/modelcontextprotocol-sdk@^1.18.0",
-            "npm:ai@^5.0.81",
+            "npm:ai@^5.0.90",
             "npm:zod@^4.1.11"
           ]
         }
@@ -3903,7 +3968,7 @@
             "npm:@jsr/std__path@^1.1.2",
             "npm:@jsr/std__text@^1.0.16",
             "npm:@opentelemetry/api@^1.9.0",
-            "npm:ai@^5.0.81",
+            "npm:ai@^5.0.90",
             "npm:papaparse@^5.5.3",
             "npm:zod@^4.1.11"
           ]
