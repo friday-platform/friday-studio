@@ -95,7 +95,7 @@
     "npm:papaparse@^5.5.3": "5.5.3",
     "npm:prettier-plugin-svelte@^3.3.3": "3.4.0_prettier@3.6.2_svelte@5.43.5__acorn@8.15.0",
     "npm:prettier@^3.4.2": "3.6.2",
-    "npm:react@^19.1.1": "19.2.0",
+    "npm:react@^19.2.0": "19.2.0",
     "npm:svelte-check@4": "4.3.3_svelte@5.43.5__acorn@8.15.0_typescript@5.9.3",
     "npm:svelte-eslint-parser@^1.4.0": "1.4.0_svelte@5.43.5__acorn@8.15.0_postcss@8.5.6",
     "npm:svelte@5": "5.43.5_acorn@8.15.0",
@@ -3673,7 +3673,7 @@
         "npm:js-levenshtein@^1.1.6",
         "npm:knip@5.68.0",
         "npm:lint-staged@^16.1.6",
-        "npm:react@^19.1.1",
+        "npm:react@^19.2.0",
         "npm:xstate@^5.24.0",
         "npm:yargs@18",
         "npm:zod@^4.1.11"
