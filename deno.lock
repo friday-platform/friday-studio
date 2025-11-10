@@ -35,7 +35,7 @@
     "npm:@eslint/js@^9.18.0": "9.39.1",
     "npm:@faker-js/faker@^10.1.0": "10.1.0",
     "npm:@hono/standard-validator@~0.1.5": "0.1.5_@standard-schema+spec@1.0.0_hono@4.10.4",
-    "npm:@hono/zod-validator@~0.7.3": "0.7.4_hono@4.10.4_zod@4.1.12",
+    "npm:@hono/zod-validator@~0.7.4": "0.7.4_hono@4.10.4_zod@4.1.12",
     "npm:@ianvs/prettier-plugin-sort-imports@^4.4.1": "4.7.0_prettier@3.6.2",
     "npm:@inkjs/ui@2": "2.0.0_ink@6.4.0__@types+react@19.2.2__react@19.2.0_@types+react@19.2.2_react@19.2.0",
     "npm:@jsr/db__sqlite@0.12": "0.12.0",
@@ -3686,7 +3686,7 @@
         "packageJson": {
           "dependencies": [
             "npm:@hono/standard-validator@~0.1.5",
-            "npm:@hono/zod-validator@~0.7.3",
+            "npm:@hono/zod-validator@~0.7.4",
             "npm:@jsr/std__fs@^1.0.19",
             "npm:@jsr/std__path@^1.1.2",
             "npm:@jsr/std__yaml@^1.0.9",
