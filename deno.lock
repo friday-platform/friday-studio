@@ -74,7 +74,7 @@
     "npm:@total-typescript/ts-reset@~0.6.1": "0.6.1",
     "npm:@types/react@^19.2.2": "19.2.2",
     "npm:ai-sdk-provider-claude-code@^2.1.0": "2.1.0_zod@4.1.12",
-    "npm:ai@^5.0.90": "5.0.91_zod@4.1.12",
+    "npm:ai@^5.0.91": "5.0.91_zod@4.1.12",
     "npm:cookie@^1.0.2": "1.0.2",
     "npm:cron-parser@^5.4.0": "5.4.0",
     "npm:eslint-config-prettier@^10.1.8": "10.1.8_eslint@9.39.1",
@@ -3668,7 +3668,7 @@
         "npm:@sendgrid/helpers@8",
         "npm:@total-typescript/ts-reset@~0.6.1",
         "npm:@types/react@^19.2.2",
-        "npm:ai@^5.0.90",
+        "npm:ai@^5.0.91",
         "npm:ink@^6.3.0",
         "npm:js-levenshtein@^1.1.6",
         "npm:knip@5.68.0",
@@ -3715,7 +3715,7 @@
             "npm:@tauri-apps/plugin-fs@~2.4.4",
             "npm:@tauri-apps/plugin-notification@^2.3.3",
             "npm:@tauri-apps/plugin-opener@^2.5.2",
-            "npm:ai@^5.0.90",
+            "npm:ai@^5.0.91",
             "npm:eslint-config-prettier@^10.1.8",
             "npm:eslint-plugin-svelte@3",
             "npm:eslint@^9.18.0",
@@ -3738,7 +3738,7 @@
           "dependencies": [
             "npm:@jsr/std__assert@^1.0.14",
             "npm:@opentelemetry/api@^1.9.0",
-            "npm:ai@^5.0.90",
+            "npm:ai@^5.0.91",
             "npm:jsonrepair@^3.13.1",
             "npm:zod@^4.1.11"
           ]
@@ -3762,7 +3762,7 @@
             "npm:@sendgrid/mail@^8.1.6",
             "npm:@tavily/core@~0.5.12",
             "npm:ai-sdk-provider-claude-code@^2.1.0",
-            "npm:ai@^5.0.90",
+            "npm:ai@^5.0.91",
             "npm:zod@^4.1.11"
           ]
         }
@@ -3800,7 +3800,7 @@
             "npm:@jsr/std__path@^1.1.2",
             "npm:@jsr/std__testing@^1.0.16",
             "npm:@socotra/modelcontextprotocol-sdk@^1.18.0",
-            "npm:ai@^5.0.90",
+            "npm:ai@^5.0.91",
             "npm:papaparse@^5.5.3",
             "npm:xstate@^5.24.0",
             "npm:zod@^4.1.11"
@@ -3847,7 +3847,7 @@
             "npm:@ai-sdk/mcp@^0.0.7",
             "npm:@opentelemetry/api@^1.9.0",
             "npm:@socotra/modelcontextprotocol-sdk@^1.18.0",
-            "npm:ai@^5.0.90",
+            "npm:ai@^5.0.91",
             "npm:zod@^4.1.11"
           ]
         }
@@ -3859,7 +3859,7 @@
             "npm:@jsr/std__fs@^1.0.19",
             "npm:@jsr/std__path@^1.1.2",
             "npm:@socotra/modelcontextprotocol-sdk@^1.18.0",
-            "npm:ai@^5.0.90",
+            "npm:ai@^5.0.91",
             "npm:papaparse@^5.5.3",
             "npm:zod@^4.1.11"
           ]
@@ -3920,7 +3920,7 @@
             "npm:@jsr/std__text@^1.0.16",
             "npm:@jsr/std__yaml@^1.0.9",
             "npm:@socotra/modelcontextprotocol-sdk@^1.18.0",
-            "npm:ai@^5.0.90",
+            "npm:ai@^5.0.91",
             "npm:zod@^4.1.11"
           ]
         }
@@ -3966,7 +3966,7 @@
             "npm:@jsr/std__path@^1.1.2",
             "npm:@jsr/std__text@^1.0.16",
             "npm:@opentelemetry/api@^1.9.0",
-            "npm:ai@^5.0.90",
+            "npm:ai@^5.0.91",
             "npm:papaparse@^5.5.3",
             "npm:zod@^4.1.11"
           ]

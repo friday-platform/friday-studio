@@ -33,7 +33,7 @@
     "@tauri-apps/plugin-fs": "~2.4.4",
     "@tauri-apps/plugin-notification": "^2.3.3",
     "@tauri-apps/plugin-opener": "^2.5.2",
-    "ai": "^5.0.90",
+    "ai": "^5.0.91",
     "eventsource-client": "^1.1.4",
     "svelte": "^5.43.5",
     "zod": "^4.1.11"

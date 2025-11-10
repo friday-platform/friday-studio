@@ -42,7 +42,7 @@
     "@std/path": "npm:@jsr/std__path@^1.1.2",
     "@std/yaml": "npm:@jsr/std__yaml@^1.0.9",
     "@types/react": "^19.2.2",
-    "ai": "^5.0.90",
+    "ai": "^5.0.91",
     "ink": "^6.3.0",
     "js-levenshtein": "^1.1.6",
     "lint-staged": "^16.1.6",
