@@ -3,12 +3,12 @@ import { createCollapsible } from "@melt-ui/svelte";
 import { slide } from "svelte/transition";
 import { Icons } from "$lib/components/icons";
 import { IconSmall } from "$lib/components/icons/small";
+import { formatDuration } from "$lib/utils/date";
 import type { AgentGroup } from "$lib/utils/session-timeline";
 import EventIcon from "./event-icon.svelte";
 import EventItem from "./event-item.svelte";
 import EventTimestamp from "./event-timestamp.svelte";
 import ToolCallSection from "./tool-call-section.svelte";
-import { formatDuration } from "$lib/utils/date";
 
 interface Props {
   group: AgentGroup;

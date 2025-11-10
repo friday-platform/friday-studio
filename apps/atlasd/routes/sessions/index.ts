@@ -96,5 +96,5 @@ const sessionsRoutes = daemonFactory
 
 export { sessionsRoutes };
 export type SessionsRoutes = typeof sessionsRoutes;
-export { sessionHistoryRoutes } from "./history.ts";
 export type { SessionHistoryRoutes } from "./history.ts";
+export { sessionHistoryRoutes } from "./history.ts";

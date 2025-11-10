@@ -5,7 +5,7 @@
  * while delegating all state management to the actor.
  */
 
-import { WorkspaceSessionStatus, loadSessionTimeline } from "@atlas/core";
+import { loadSessionTimeline, WorkspaceSessionStatus } from "@atlas/core";
 import { type Logger, logger } from "@atlas/logger";
 import type { SessionSummary } from "../../mod.ts";
 import type {
