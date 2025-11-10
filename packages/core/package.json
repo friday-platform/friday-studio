@@ -19,7 +19,7 @@
   "main": "./mod.ts",
   "dependencies": {
     "@ai-sdk/anthropic": "^2.0.44",
-    "@ai-sdk/google": "^2.0.17",
+    "@ai-sdk/google": "^2.0.31",
     "@ai-sdk/openai": "^2.0.65",
     "@ai-sdk/provider": "^2.0.0",
     "@atlas/agent-sdk": "workspace:*",
