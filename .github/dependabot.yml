@@ -27,6 +27,7 @@ updates:
     schedule:
       interval: "daily"
       time: "09:00"
+    versioning-strategy: "increase"
     open-pull-requests-limit: 10
     assignees:
       - "ljagiello"
@@ -51,6 +52,7 @@ updates:
     schedule:
       interval: "daily"
       time: "09:00"
+    versioning-strategy: "increase"
     open-pull-requests-limit: 5
     assignees:
       - "ljagiello"
