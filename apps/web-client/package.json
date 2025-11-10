@@ -25,7 +25,7 @@
     "@ai-sdk/svelte": "^3.0.64",
     "@melt-ui/svelte": "^0.86.6",
     "@std/http": "npm:@jsr/std__http@^1.0.15",
-    "@lezer/common": "^1.2.3",
+    "@lezer/common": "^1.3.0",
     "@lezer/markdown": "^1.3.2",
     "@sveltejs/kit": "^2.48.4",
     "@tanstack/svelte-table": "9.0.0-alpha.10",
