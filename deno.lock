@@ -32,7 +32,7 @@
     "npm:@ai-sdk/svelte@^3.0.91": "3.0.91_svelte@5.43.5__acorn@8.15.0_zod@4.1.12",
     "npm:@biomejs/biome@*": "2.3.4",
     "npm:@eslint/compat@^1.2.5": "1.4.1_eslint@9.39.1",
-    "npm:@eslint/js@^9.18.0": "9.39.1",
+    "npm:@eslint/js@^9.39.1": "9.39.1",
     "npm:@faker-js/faker@^10.1.0": "10.1.0",
     "npm:@hono/standard-validator@~0.1.5": "0.1.5_@standard-schema+spec@1.0.0_hono@4.10.4",
     "npm:@hono/zod-validator@~0.7.4": "0.7.4_hono@4.10.4_zod@4.1.12",
@@ -3699,7 +3699,7 @@
           "dependencies": [
             "npm:@ai-sdk/svelte@^3.0.91",
             "npm:@eslint/compat@^1.2.5",
-            "npm:@eslint/js@^9.18.0",
+            "npm:@eslint/js@^9.39.1",
             "npm:@ianvs/prettier-plugin-sort-imports@^4.7.0",
             "npm:@jsr/std__assert@^1.0.14",
             "npm:@jsr/std__http@^1.0.15",
