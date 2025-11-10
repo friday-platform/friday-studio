@@ -17,6 +17,6 @@
     "@tavily/core": "^0.5.12",
     "ai": "^5.0.91",
     "ai-sdk-provider-claude-code": "^2.1.0",
-    "zod": "^4.1.11"
+    "zod": "^4.1.12"
   }
 }

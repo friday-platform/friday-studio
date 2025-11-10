@@ -8,7 +8,7 @@
     "@atlas/agent-sdk": "workspace:*",
     "@atlas/storage": "workspace:*",
     "cron-parser": "^5.4.0",
-    "zod": "^4.1.11",
+    "zod": "^4.1.12",
     "zod-from-json-schema": "^0.5.0"
   }
 }

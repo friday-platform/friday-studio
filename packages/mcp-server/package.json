@@ -13,7 +13,7 @@
     "@std/path": "npm:@jsr/std__path@^1.1.2",
     "ai": "^5.0.91",
     "papaparse": "^5.5.3",
-    "zod": "^4.1.11"
+    "zod": "^4.1.12"
   },
   "devDependencies": { "@std/expect": "npm:@jsr/std__expect@^1.0.17" }
 }

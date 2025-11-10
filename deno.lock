@@ -106,7 +106,7 @@
     "npm:xstate@^5.24.0": "5.24.0",
     "npm:yargs@18": "18.0.0",
     "npm:zod-from-json-schema@0.5": "0.5.1",
-    "npm:zod@^4.1.11": "4.1.12"
+    "npm:zod@^4.1.12": "4.1.12"
   },
   "jsr": {
     "@db/sqlite@0.12.0": {
@@ -3683,7 +3683,7 @@
         "npm:react@^19.2.0",
         "npm:xstate@^5.24.0",
         "npm:yargs@18",
-        "npm:zod@^4.1.11"
+        "npm:zod@^4.1.12"
       ]
     },
     "members": {
@@ -3697,7 +3697,7 @@
             "npm:@jsr/std__yaml@^1.0.9",
             "npm:hono-openapi@^1.0.6",
             "npm:hono@^4.10.4",
-            "npm:zod@^4.1.11"
+            "npm:zod@^4.1.12"
           ]
         }
       },
@@ -3736,7 +3736,7 @@
             "npm:typescript-eslint@^8.20.0",
             "npm:typescript@5",
             "npm:vite@^7.1.8",
-            "npm:zod@^4.1.11"
+            "npm:zod@^4.1.12"
           ]
         }
       },
@@ -3747,7 +3747,7 @@
             "npm:@opentelemetry/api@^1.9.0",
             "npm:ai@^5.0.91",
             "npm:jsonrepair@^3.13.1",
-            "npm:zod@^4.1.11"
+            "npm:zod@^4.1.12"
           ]
         }
       },
@@ -3770,7 +3770,7 @@
             "npm:@tavily/core@~0.5.12",
             "npm:ai-sdk-provider-claude-code@^2.1.0",
             "npm:ai@^5.0.91",
-            "npm:zod@^4.1.11"
+            "npm:zod@^4.1.12"
           ]
         }
       },
@@ -3781,7 +3781,7 @@
             "npm:@jsr/std__fs@^1.0.19",
             "npm:@jsr/std__path@^1.1.2",
             "npm:hono@^4.10.4",
-            "npm:zod@^4.1.11"
+            "npm:zod@^4.1.12"
           ]
         }
       },
@@ -3790,7 +3790,7 @@
           "dependencies": [
             "npm:cron-parser@^5.4.0",
             "npm:zod-from-json-schema@0.5",
-            "npm:zod@^4.1.11"
+            "npm:zod@^4.1.12"
           ]
         }
       },
@@ -3810,7 +3810,7 @@
             "npm:ai@^5.0.91",
             "npm:papaparse@^5.5.3",
             "npm:xstate@^5.24.0",
-            "npm:zod@^4.1.11"
+            "npm:zod@^4.1.12"
           ]
         }
       },
@@ -3827,7 +3827,7 @@
             "npm:@jsr/std__fs@^1.0.19",
             "npm:@jsr/std__path@^1.1.2",
             "npm:@jsr/std__yaml@^1.0.9",
-            "npm:zod@^4.1.11"
+            "npm:zod@^4.1.12"
           ]
         }
       },
@@ -3855,7 +3855,7 @@
             "npm:@opentelemetry/api@^1.9.0",
             "npm:@socotra/modelcontextprotocol-sdk@^1.18.0",
             "npm:ai@^5.0.91",
-            "npm:zod@^4.1.11"
+            "npm:zod@^4.1.12"
           ]
         }
       },
@@ -3868,7 +3868,7 @@
             "npm:@socotra/modelcontextprotocol-sdk@^1.18.0",
             "npm:ai@^5.0.91",
             "npm:papaparse@^5.5.3",
-            "npm:zod@^4.1.11"
+            "npm:zod@^4.1.12"
           ]
         }
       },
@@ -3880,7 +3880,7 @@
             "npm:@jsr/std__expect@^1.0.17",
             "npm:@jsr/std__fs@^1.0.19",
             "npm:onnxruntime-web@1.23.2",
-            "npm:zod@^4.1.11"
+            "npm:zod@^4.1.12"
           ]
         }
       },
@@ -3896,7 +3896,7 @@
       "packages/schemas": {
         "packageJson": {
           "dependencies": [
-            "npm:zod@^4.1.11"
+            "npm:zod@^4.1.12"
           ]
         }
       },
@@ -3913,7 +3913,7 @@
             "npm:@jsr/std__fs@^1.0.19",
             "npm:@jsr/std__path@^1.1.2",
             "npm:@jsr/std__yaml@^1.0.9",
-            "npm:zod@^4.1.11"
+            "npm:zod@^4.1.12"
           ]
         }
       },
@@ -3928,7 +3928,7 @@
             "npm:@jsr/std__yaml@^1.0.9",
             "npm:@socotra/modelcontextprotocol-sdk@^1.18.0",
             "npm:ai@^5.0.91",
-            "npm:zod@^4.1.11"
+            "npm:zod@^4.1.12"
           ]
         }
       },
@@ -3937,7 +3937,7 @@
           "dependencies": [
             "npm:@jsr/std__path@^1.1.2",
             "npm:@opentelemetry/api@^1.9.0",
-            "npm:zod@^4.1.11"
+            "npm:zod@^4.1.12"
           ]
         }
       },
@@ -3955,7 +3955,7 @@
             "npm:@jsr/std__fs@^1.0.19",
             "npm:@jsr/std__path@^1.1.2",
             "npm:@jsr/std__yaml@^1.0.9",
-            "npm:zod@^4.1.11"
+            "npm:zod@^4.1.12"
           ]
         }
       },
@@ -3975,7 +3975,7 @@
             "npm:@opentelemetry/api@^1.9.0",
             "npm:ai@^5.0.91",
             "npm:papaparse@^5.5.3",
-            "npm:zod@^4.1.11"
+            "npm:zod@^4.1.12"
           ]
         }
       },

@@ -25,6 +25,6 @@
     "@std/yaml": "npm:@jsr/std__yaml@^1.0.9",
     "hono": "^4.10.4",
     "hono-openapi": "^1.0.6",
-    "zod": "^4.1.11"
+    "zod": "^4.1.12"
   }
 }
