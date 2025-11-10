@@ -30,7 +30,7 @@ scratchpadApp.get(
     },
   }),
   validator("param", z.object({ streamId: z.string() })),
-  validator("query", z.object({ limit: z.number().optional().default(100) })),
+  validator("query", z.object({ limit: z.coerce.number().optional().default(100) })),
   async (c) => {
     try {
       const { streamId } = c.req.valid("param");

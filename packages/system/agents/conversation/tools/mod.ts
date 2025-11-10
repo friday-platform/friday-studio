@@ -13,7 +13,7 @@
 import type { AtlasTools } from "@atlas/agent-sdk";
 import { displayArtifact } from "./display-artifact.ts";
 import { resourceReadTool } from "./resource-read.ts";
-import { recallNotesTool, takeNoteTool } from "./scratchpad-tools.ts";
+import { takeNoteTool } from "./scratchpad-tools.ts";
 import { type Table, TableSchema, tableOutput } from "./table.ts";
 
 /**
@@ -22,7 +22,6 @@ import { type Table, TableSchema, tableOutput } from "./table.ts";
  */
 export const conversationTools: AtlasTools = {
   take_note: takeNoteTool,
-  recall_notes: recallNotesTool,
   read_atlas_resource: resourceReadTool,
   table_output: tableOutput,
   display_artifact: displayArtifact,

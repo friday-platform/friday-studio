@@ -34,6 +34,9 @@ import {
 } from "../../../core/src/streaming/stream-emitters.ts";
 import SYSTEM_PROMPT from "./prompt.txt" with { type: "text" };
 import { conversationTools } from "./tools/mod.ts";
+import { fetchScratchpadContext } from "./tools/scratchpad-tools.ts";
+
+const ROLE_SYSTEM = "system" as const;
 
 /**
  * Get the system prompt with optional conversation history injection and available tools
@@ -59,7 +62,7 @@ async function generateChatTitle(messages: AtlasUIMessage[], logger: Logger): Pr
   try {
     const chatMessages: Array<CoreSystemMessage | CoreUserMessage> = [
       {
-        role: "system",
+        role: ROLE_SYSTEM,
         content:
           "You generate concise 3-5 word titles for conversations. Only output the title, nothing else.",
         providerOptions: ANTHROPIC_CACHE_BREAKPOINT,
@@ -262,9 +265,12 @@ export const conversationAgent = createAgent({
 
     const allTools = { ...tools, ...conversationTools, ...agents };
 
-    /**
-     * Load conversation context from workspace memory system instead of separate storage
-     */
+    // Load scratchpad context for automatic injection
+    const scratchpadContext = await fetchScratchpadContext(
+      session.streamId,
+      logger,
+      100, // Use full default limit for complete context
+    );
 
     // Store the original error if streamText fails
     let originalStreamError: unknown = null;
@@ -313,11 +319,13 @@ export const conversationAgent = createAgent({
       try {
         const modelMessages: CoreMessage[] = [
           {
-            role: "system",
+            role: ROLE_SYSTEM,
             content: getSystemPrompt(session.streamId),
             providerOptions: ANTHROPIC_CACHE_BREAKPOINT,
           },
-          { role: "system", content: `Current datetime (UTC): ${new Date().toISOString()}` },
+          { role: ROLE_SYSTEM, content: `Current datetime (UTC): ${new Date().toISOString()}` },
+          // Add scratchpad context as third system message if it exists
+          ...(scratchpadContext ? [{ role: ROLE_SYSTEM, content: scratchpadContext }] : []),
           ...convertToModelMessages(messages),
         ];
 
