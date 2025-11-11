@@ -76,7 +76,7 @@ export const fathomGetTranscriptAgent = createAgent<string, FathomGetTranscriptR
     try {
       stream?.emit({
         type: "data-tool-progress",
-        data: { toolName: "Fathom List Meetings", content: `Fetching meetings...` },
+        data: { toolName: "Fathom List Meetings", content: `Fetching meetings` },
       });
 
       const meetingsResponse = await fetch("https://api.fathom.ai/external/v1/meetings", {
@@ -110,7 +110,7 @@ export const fathomGetTranscriptAgent = createAgent<string, FathomGetTranscriptR
         type: "data-tool-progress",
         data: {
           toolName: "Fathom List Meetings",
-          content: `Fetching transcript for "${latestMeeting.title}"...`,
+          content: `Fetching transcript for "${latestMeeting.title}"`,
         },
       });
 

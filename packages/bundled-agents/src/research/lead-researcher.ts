@@ -277,7 +277,7 @@ export const researchAgent = createAgent<string, ResearchAgentResult>({
       const analyzingMessage = await generateResearchProgress(
         "analyzing",
         prompt,
-        "Analyzing requirements...",
+        "Analyzing requirements",
         logger,
         abortSignal,
       );
@@ -407,7 +407,7 @@ export const researchAgent = createAgent<string, ResearchAgentResult>({
       const reportingMessage = await generateResearchProgress(
         "reporting",
         researchTaskResult.object.researchQuestion,
-        "Generating report...",
+        "Generating report",
         logger,
         abortSignal,
       );

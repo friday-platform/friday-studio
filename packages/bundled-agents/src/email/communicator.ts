@@ -78,7 +78,7 @@ export const emailAgent = createAgent<string, Result>({
     // Progress: composing
     stream?.emit({
       type: "data-tool-progress",
-      data: { toolName: "Email", content: `Composing email...` },
+      data: { toolName: "Email", content: `Composing email` },
     });
 
     // Define schema for email composition
@@ -163,7 +163,7 @@ OUTPUT:
         type: "data-tool-progress",
         data: {
           toolName: "Email",
-          content: `Processing ${params.attachment_paths.length} attachment(s)...`,
+          content: `Processing ${params.attachment_paths.length} attachment(s)`,
         },
       });
 
@@ -230,7 +230,7 @@ OUTPUT:
     // Progress: sending
     stream?.emit({
       type: "data-tool-progress",
-      data: { toolName: "Email", content: `Sending email to ${params.to}...` },
+      data: { toolName: "Email", content: `Sending email to ${params.to}` },
     });
 
     // Build email parameters with defaults from environment variables

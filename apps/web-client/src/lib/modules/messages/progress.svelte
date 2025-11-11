@@ -1,24 +1,20 @@
 <script lang="ts">
 import type { AtlasUIMessagePart } from "@atlas/agent-sdk";
-import { Icons } from "$lib/components/icons";
+import { IconSmall } from "$lib/components/icons/small";
+import { formatDuration } from "$lib/utils/date";
 import MessageWrapper from "./wrapper.svelte";
 
-let time = $state(0);
+const startTime = Date.now();
+let endTime = $state(Date.now());
+let open = $state(false);
 
 const { actions }: { actions: AtlasUIMessagePart[] } = $props();
-
-const progressActions = $derived.by(() => {
-  const lastIndex = actions.map((a) => a.type).lastIndexOf("data-tool-progress");
-  return lastIndex !== -1 ? actions.slice(lastIndex, lastIndex + 1) : [];
-});
-
-const staticActions = $derived(actions.filter((action) => action.type !== "data-tool-progress"));
 
 $effect(() => {
   let interval: ReturnType<typeof setInterval> | null = null;
 
   interval = setInterval(() => {
-    time += 1;
+    endTime = Date.now();
   }, 1000);
 
   return () => {
@@ -28,15 +24,42 @@ $effect(() => {
   };
 });
 
-function getMessage() {
-  const lastItem = staticActions.at(-1);
-
-  if (lastItem?.type === "text") {
+function getMessage(
+  type:
+    | "text"
+    | "reasoning"
+    | "dynamic-tool"
+    | "source-url"
+    | "source-document"
+    | "file"
+    | "step-start"
+    | `tool-${string}`
+    | "data-session-start"
+    | "data-session-finish"
+    | "data-session-cancel"
+    | "data-agent-start"
+    | "data-agent-finish"
+    | "data-agent-error"
+    | "data-agent-timeout"
+    | "data-error"
+    | "data-user-message"
+    | "data-tool-progress",
+  content?: string,
+) {
+  if (type === "data-session-start") {
+    return "Working";
+  } else if (type === "data-session-finish") {
+    return "Finishing";
+  } else if (type === "data-session-cancel") {
+    return "Cancelling";
+  } else if (type === "text") {
     return "Typing";
-  } else if (lastItem?.type === "step-start") {
+  } else if (type === "step-start") {
     return "Processing";
-  } else if (lastItem?.type.startsWith("tool-")) {
+  } else if (type.startsWith("tool-")) {
     return "Calling Tools";
+  } else if (type === "data-tool-progress" && content) {
+    return content;
   } else {
     return "Thinking";
   }
@@ -45,44 +68,39 @@ function getMessage() {
 
 <MessageWrapper>
 	<div class="container">
-		{#if progressActions.length > 0}
-			{#each progressActions as action}
-				{#if 'data' in action}
-					{#if typeof action.data === 'object' && action.data !== null && 'content' in action.data && 'toolName' in action.data}
-						<div class="in-progress-tools">
-							{#if action.data.toolName === 'Research'}
-								<Icons.Globe />
-							{:else if action.data.toolName === 'Slack'}
-								<Icons.Slack />
-							{:else if action.data.toolName === 'Workspace Creator'}
-								<Icons.Workspace />
-							{:else if action.data.toolName === 'Google Calendar'}
-								<Icons.Workspace />
-							{:else}
-								<Icons.Workspace />
-							{/if}
+		<button onclick={() => (open = !open)} class:open>
+			<span class="thinking">Thinking... <IconSmall.CaretRight /></span>
 
-							<div class="details">
-								{#if action.data.toolName === 'Research'}
-									<h2>Searching the web</h2>
-								{:else if action.data.toolName === 'Slack'}
-									<h2>Sending message to Slack</h2>
-								{:else if action.data.toolName === 'Workspace Creator'}
-									<h2>Creating Workspace</h2>
-								{:else if action.data.toolName === 'Google Calendar'}
-									<h2>Checking calendar</h2>
-								{:else}
-									<h2>Working...</h2>
-								{/if}
-								<span>{action.data.content}</span>
-							</div>
-						</div>
-					{/if}
-				{/if}
-			{/each}
-		{:else}
-			<div class="progress">{getMessage()} {time}s...</div>
-		{/if}
+			{#if open}
+				<footer>
+					<time>{formatDuration(startTime, endTime)}</time>
+				</footer>
+
+				<ul class="steps">
+					{#each actions as action, index (index)}
+						<li>
+							{/* @ts-expect-error action is poorly typed */
+							getMessage(action.type, action.data?.content)}
+						</li>
+					{/each}
+				</ul>
+			{:else}
+				<footer>
+					<time>{formatDuration(startTime, endTime)}</time>
+
+					{#if actions.length > 0}•{/if}
+
+					<div class="actions">
+						{#each actions as action, index (index)}
+							<span class:inactive={index !== actions.length - 1}>
+								{/* @ts-expect-error action is poorly typed */
+								getMessage(action.type, action.data?.content)}
+							</span>
+						{/each}
+					</div>
+				</footer>
+			{/if}
+		</button>
 	</div>
 </MessageWrapper>
 
@@ -95,54 +113,92 @@ function getMessage() {
 		margin-block-start: var(--size-2);
 	}
 
-	.progress {
-		align-items: center;
-		block-size: var(--size-8);
+	button {
 		border-radius: var(--radius-round);
 		display: flex;
+		flex-direction: column;
 		font-size: var(--font-size-4);
 		font-weight: var(--font-weight-5);
 		inline-size: max-content;
-		justify-content: center;
-	}
+		text-align: left;
 
-	.in-progress-tools {
-		background-color: var(--color-surface-1);
-		border: var(--size-px) solid var(--color-border-1);
-		border-radius: var(--radius-4);
-		padding: var(--size-3);
-		padding-inline-end: var(--size-3-5);
-		display: flex;
-		align-items: center;
-		gap: var(--size-3);
-		max-inline-size: var(--size-88);
-		inline-size: max-content;
-
-		& :global(svg) {
-			flex: none;
+		.thinking {
+			align-items: center;
+			display: flex;
+			gap: var(--size-1-5);
 		}
 
-		.details {
-			display: flex;
-			flex-direction: column;
-			inline-size: 100%;
-			overflow: hidden;
+		& :global(svg) {
+			transition: transform 150ms ease-in-out;
+		}
 
-			h2 {
-				font-size: var(--font-size-2);
-				font-weight: var(--font-weight-5);
-				line-height: var(--font-lineheight-1);
-			}
+		&.open :global(svg) {
+			transform: rotate(90deg);
+		}
+	}
 
-			span {
-				color: var(--text-3);
-				font-size: var(--font-size-2);
-				font-weight: var(--font-weight-4-5);
-				max-inline-size: 100%;
-				overflow: hidden;
-				text-overflow: ellipsis;
-				white-space: nowrap;
+	footer {
+		align-items: center;
+		display: flex;
+		gap: var(--size-1);
+		font-size: var(--font-size-1);
+		opacity: 0.5;
+	}
+
+	.actions {
+		display: grid;
+		grid-template-columns: 1fr;
+		grid-template-rows: 1fr;
+		inline-size: max-content;
+
+		span {
+			animation-name: fadeIn;
+			animation-duration: 250ms;
+			animation-timing-function: ease-in-out;
+			animation-fill-mode: forwards;
+			grid-column: 1 / -1;
+			grid-row: 1 / -1;
+
+			&.inactive {
+				animation-name: fadeOut;
 			}
+		}
+	}
+
+	.steps {
+		border-inline-start: var(--size-px) solid var(--color-border-1);
+		margin-inline-start: var(--size-1-5);
+		margin-block-start: var(--size-1);
+		padding-inline-start: var(--size-3);
+
+		li {
+			font-size: var(--font-size-2);
+			font-weight: var(--font-weight-4-5);
+			opacity: 0.8;
+		}
+	}
+
+	@keyframes fadeIn {
+		from {
+			opacity: 0;
+			transform: translateY(var(--size-1));
+		}
+
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
+	}
+
+	@keyframes fadeOut {
+		from {
+			opacity: 1;
+			transform: translateY(0);
+		}
+
+		to {
+			opacity: 0;
+			transform: translateY(calc(var(--size-1) * -1));
 		}
 	}
 </style>

@@ -72,7 +72,7 @@ export const summaryAgent = createAgent({
       // Progress: planning
       stream?.emit({
         type: "data-tool-progress",
-        data: { toolName: "Atlas", content: `Summarizing...` },
+        data: { toolName: "Atlas", content: `Summarizing` },
       });
 
       const result = await generateText({

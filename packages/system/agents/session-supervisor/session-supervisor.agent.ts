@@ -79,7 +79,7 @@ export const sessionSupervisorAgent = createAgent<
     try {
       stream?.emit({
         type: "data-tool-progress",
-        data: { toolName: " Supervisor", content: "Analyzing agent requirements..." },
+        data: { toolName: " Supervisor", content: "Analyzing agent requirements" },
       });
 
       /**

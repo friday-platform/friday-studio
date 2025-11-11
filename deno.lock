@@ -5,7 +5,8 @@
     "jsr:@denosaurs/plug@1": "1.1.0",
     "jsr:@std/assert@0.217": "0.217.0",
     "jsr:@std/assert@1": "1.0.15",
-    "jsr:@std/assert@^1.0.15": "1.0.15",
+    "jsr:@std/assert@^1.0.13": "1.0.15",
+    "jsr:@std/async@^1.0.13": "1.0.15",
     "jsr:@std/async@^1.0.15": "1.0.15",
     "jsr:@std/cli@^1.0.23": "1.0.23",
     "jsr:@std/data-structures@^1.0.9": "1.0.9",
@@ -28,7 +29,7 @@
     "jsr:@std/path@^1.1.2": "1.1.2",
     "jsr:@std/streams@^1.0.13": "1.0.13",
     "jsr:@std/tar@~0.1.9": "0.1.9",
-    "jsr:@std/testing@1": "1.0.16",
+    "jsr:@std/testing@1": "1.0.15",
     "npm:@ai-sdk/anthropic@^2.0.44": "2.0.44_zod@4.1.12",
     "npm:@ai-sdk/google@^2.0.31": "2.0.31_zod@4.1.12",
     "npm:@ai-sdk/mcp@^0.0.8": "0.0.8_zod@4.1.12",
@@ -217,15 +218,15 @@
         "jsr:@std/streams"
       ]
     },
-    "@std/testing@1.0.16": {
-      "integrity": "a917ffdeb5924c9be436dc78bc32e511760e14d3a96e49c607fc5ecca86d0092",
+    "@std/testing@1.0.15": {
+      "integrity": "a490169f5ccb0f3ae9c94fbc69d2cd43603f2cffb41713a85f99bbb0e3087cbc",
       "dependencies": [
-        "jsr:@std/assert@^1.0.15",
-        "jsr:@std/async",
+        "jsr:@std/assert@^1.0.13",
+        "jsr:@std/async@^1.0.13",
         "jsr:@std/data-structures",
         "jsr:@std/fs@^1.0.19",
-        "jsr:@std/internal@^1.0.12",
-        "jsr:@std/path@^1.1.2"
+        "jsr:@std/internal@^1.0.10",
+        "jsr:@std/path@^1.1.1"
       ]
     }
   },

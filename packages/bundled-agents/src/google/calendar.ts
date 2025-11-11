@@ -87,7 +87,7 @@ export const googleCalendarAgent = createAgent<string, GoogleCalendarAgentResult
       // Progress: starting execution
       stream?.emit({
         type: "data-tool-progress",
-        data: { toolName: "Google Calendar", content: `Fetching...` },
+        data: { toolName: "Google Calendar", content: `Fetching Calendar` },
       });
 
       // If no tools are available, do not attempt execution; return a clear message.

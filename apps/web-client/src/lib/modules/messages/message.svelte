@@ -43,8 +43,7 @@ const htmlContent = $derived(message.content ? markdownToHTML(message.content) :
 	.content {
 		& :global(p),
 		& :global(li) {
-			color: var(--text-1);
-			opacity: 0.8;
+			color: color-mix(in srgb, var(--color-text) 80%, transparent 20%);
 			font-size: var(--font-size-5);
 			line-height: var(--font-lineheight-3);
 			word-break: break-word;
@@ -69,7 +68,7 @@ const htmlContent = $derived(message.content ? markdownToHTML(message.content) :
 
 		& :global(ol) {
 			list-style-type: decimal;
-			margin-inline-start: var(--size-5);
+			margin-inline-start: var(--size-6);
 		}
 
 		& :global(strong) {
@@ -86,6 +85,32 @@ const htmlContent = $derived(message.content ? markdownToHTML(message.content) :
 				color: var(--text-3);
 			}
 		}
+
+		& :global(code),
+		& :global(pre) {
+			background-color: var(--color-surface-2);
+			color: var(--color-red);
+			font-family: var(--font-family-monospace);
+			font-size: var(--font-size-4);
+			font-weight: var(--font-weight-5);
+		}
+
+		& :global(p code) {
+			border-radius: var(--radius-1);
+			display: inline block;
+			line-height: var(--font-lineheight-4);
+			padding-block: var(--size-0-5);
+			padding-inline: var(--size-1);
+		}
+
+		& :global(pre) {
+			border-radius: var(--radius-2);
+			margin-block: var(--size-2);
+			inline-size: max-content;
+			max-inline-size: 100%;
+			padding-block: var(--size-2);
+			padding-inline: var(--size-3);
+		}
 	}
 
 	.request {
@@ -93,7 +118,7 @@ const htmlContent = $derived(message.content ? markdownToHTML(message.content) :
 		border-radius: var(--radius-3);
 		padding-block: var(--size-2);
 		padding-inline: var(--size-3);
-		inline-size: max-content;
+		inline-size: fit-content;
 		margin-inline-start: auto;
 		margin-inline-end: unset;
 		max-inline-size: 90%;
@@ -102,27 +127,11 @@ const htmlContent = $derived(message.content ? markdownToHTML(message.content) :
 		.content {
 			& :global(p),
 			& :global(li) {
-				font-weight: var(--font-weight-4-5);
+				font-weight: var(--font-weight-4);
 				line-height: var(--font-lineheight-2);
 				opacity: 1;
-				font-size: var(--font-size-3);
+				font-size: var(--font-size-4);
 				word-break: break-word;
-			}
-
-			& :global(p),
-			& :global(ul),
-			& :global(ol) {
-				&:global(:has(+ ul, + ol, + p)) {
-					margin-block-end: 0;
-				}
-			}
-
-			& :global(ul) {
-				margin-inline-start: var(--size-3);
-			}
-
-			& :global(ol) {
-				margin-inline-start: var(--size-5);
 			}
 		}
 	}

@@ -56,7 +56,7 @@ export function convertLLMToAgent(
 
         stream?.emit({
           type: "data-tool-progress",
-          data: { toolName: agentId, content: "Warming up..." },
+          data: { toolName: agentId, content: "Warming up" },
         });
 
         // Filter tools based on agent config or workspace defaults
@@ -109,7 +109,7 @@ export function convertLLMToAgent(
 
         stream?.emit({
           type: "data-tool-progress",
-          data: { toolName: agentId, content: "Creating results..." },
+          data: { toolName: agentId, content: "Creating results" },
         });
 
         // NOTE: In current state its just printing whole output in the chat
@@ -151,7 +151,7 @@ export function convertLLMToAgent(
           logger.info("Wrapped agent execution cancelled", { agentId });
           stream?.emit({
             type: "data-tool-progress",
-            data: { toolName: agentId, content: "Cancelling..." },
+            data: { toolName: agentId, content: "Cancelling" },
           });
           throw new DOMException("Agent execution cancelled", "AbortError");
         }

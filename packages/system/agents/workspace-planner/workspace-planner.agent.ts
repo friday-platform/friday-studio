@@ -185,7 +185,7 @@ export const workspacePlannerAgent = createAgent<WorkspacePlannerInput, Workspac
       }
       stream?.emit({
         type: "data-tool-progress",
-        data: { toolName: "Workspace Planner", content: "Analyzing requirements..." },
+        data: { toolName: "Workspace Planner", content: "Analyzing requirements" },
       });
       let signalsAndAgentsPrompt: string;
       if (existingPlan) {
@@ -288,7 +288,7 @@ export const workspacePlannerAgent = createAgent<WorkspacePlannerInput, Workspac
       });
       stream?.emit({
         type: "data-tool-progress",
-        data: { toolName: "Workspace Planner", content: "Validating agent integrations..." },
+        data: { toolName: "Workspace Planner", content: "Validating agent integrations" },
       });
       // Validate agent integrations (deterministic matching + LLM field validation)
       const clarifications: ClarificationItem[] = [];
@@ -366,7 +366,7 @@ export const workspacePlannerAgent = createAgent<WorkspacePlannerInput, Workspac
       const agentIds = agentsWithIds.map((a) => a.id);
       stream?.emit({
         type: "data-tool-progress",
-        data: { toolName: "Workspace Planner", content: "Planning jobs..." },
+        data: { toolName: "Workspace Planner", content: "Planning jobs" },
       });
       // Generate jobs with enum-constrained signal/agent references
       const jobsPrompt = `You create job orchestrations by connecting signals to agent execution flows.

@@ -1,4 +1,5 @@
 <script lang="ts">
+import type { AtlasUIMessagePart } from "@atlas/agent-sdk";
 import { circOut } from "svelte/easing";
 import { slide } from "svelte/transition";
 import { z } from "zod";
@@ -23,12 +24,12 @@ let form = $state<HTMLFormElement | null>(null);
 let message = $state<string>("");
 let showChats = $state(false);
 
-const messages = $derived(chatContext.chat?.messages ?? []);
-const status = $derived(chatContext.chat?.status ?? "idle");
+// const messages = $derived(chatContext.chat?.messages ?? []);
+// const status = $derived(chatContext.chat?.status ?? 'idle');
 
 // Fetch recent chats on mount
 $effect(() => {
-  if (messages.length === 0) {
+  if (chatContext.chat?.messages.length === 0) {
     chatContext.loadRecentChats().catch((err) => {
       console.error("Failed to load recent chats:", err);
     });
@@ -77,7 +78,23 @@ $effect(() => {
   }
 });
 
-const hasMessages = $derived(messages.length > 0);
+const hasMessages = $derived(chatContext.chat?.messages.length > 0);
+let actionsAfterLastUser = $state<AtlasUIMessagePart[]>([]);
+
+$effect(() => {
+  const lastAssistantMessage = (chatContext.chat?.messages ?? []).findLast(
+    (msg) => msg.role === "assistant",
+  );
+
+  // If no user message found, return empty
+  if (!lastAssistantMessage) {
+    actionsAfterLastUser = [];
+    return;
+  }
+
+  // Return everything after the last user message
+  actionsAfterLastUser = lastAssistantMessage.parts;
+});
 </script>
 
 <div class="chat">
@@ -97,7 +114,7 @@ const hasMessages = $derived(messages.length > 0);
 					</p>
 				</div>
 
-				{#each messages as messageContainer (messageContainer.id)}
+				{#each chatContext.chat?.messages as messageContainer (messageContainer.id)}
 					{#each messageContainer.parts as message, index (index)}
 						{@const formattedMessage = formatMessage(messageContainer, message)}
 
@@ -117,18 +134,7 @@ const hasMessages = $derived(messages.length > 0);
 					{/each}
 				{/each}
 
-				{#if status === 'streaming' || status === 'submitted'}
-					{@const actionsAfterLastUser = (() => {
-						// Find the last data-user-message
-						const lastAssistantMessage = messages.findLast((msg) => msg.role === 'assistant');
-
-						// If no user message found, return empty
-						if (!lastAssistantMessage) return [];
-
-						// Return everything after the last user message
-						return lastAssistantMessage.parts;
-					})()}
-
+				{#if chatContext.chat?.status === 'streaming' || chatContext.chat?.status === 'submitted'}
 					<Progress actions={actionsAfterLastUser} />
 				{/if}
 			</div>
@@ -197,7 +203,7 @@ const hasMessages = $derived(messages.length > 0);
 						/>
 
 						<div class="form-action">
-							{#if status === 'streaming' || status === 'submitted'}
+							{#if chatContext.chat?.status === 'streaming' || chatContext.chat?.status === 'submitted'}
 								<button
 									class="stop-process"
 									type="button"

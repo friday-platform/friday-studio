@@ -90,10 +90,7 @@ export const slackCommunicatorAgent = createAgent<string, Result>({
     });
 
     // Progress: planning
-    stream?.emit({
-      type: "data-tool-progress",
-      data: { toolName: "Slack", content: `Thinking...` },
-    });
+    stream?.emit({ type: "data-tool-progress", data: { toolName: "Slack", content: `Planning` } });
 
     const planResult = await generateObject({
       model: anthropic("claude-haiku-4-5"),
@@ -121,7 +118,7 @@ export const slackCommunicatorAgent = createAgent<string, Result>({
       // Summarizing
       stream?.emit({
         type: "data-tool-progress",
-        data: { toolName: "Slack", content: "Formatting summary..." },
+        data: { toolName: "Slack", content: "Formatting summary" },
       });
 
       // Summarization: stringify the first-pass result and refine into a final Slack-ready summary
@@ -168,7 +165,7 @@ export const slackCommunicatorAgent = createAgent<string, Result>({
     // Progress: connecting to Slack
     stream?.emit({
       type: "data-tool-progress",
-      data: { toolName: "Slack", content: `Connecting...` },
+      data: { toolName: "Slack", content: `Connecting` },
     });
 
     try {
