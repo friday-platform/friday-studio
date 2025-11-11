@@ -6,12 +6,6 @@ on:
       - opened
       - synchronize
       - reopened
-  pull_request_review:
-    types:
-      - submitted
-  check_suite:
-    types:
-      - completed
 
 permissions:
   contents: write
