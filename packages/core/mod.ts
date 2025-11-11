@@ -33,7 +33,6 @@ export type { LLMOptions, LLMResponse } from "./src/llm-provider.ts";
 export {
   ANTHROPIC_CACHE_BREAKPOINT,
   anthropic,
-  createAnthropicWithOptions,
   LLMProvider,
 } from "./src/llm-provider.ts";
 // MCP Registry

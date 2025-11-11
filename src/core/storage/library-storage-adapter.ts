@@ -10,6 +10,8 @@
  * while maintaining complete storage backend independence.
  */
 
+import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import process from "node:process";
 import type {
   LibraryItem,
   LibrarySearchQuery,
@@ -20,7 +22,6 @@ import type {
 } from "@atlas/core/library";
 import { logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
-import { ensureDir } from "@std/fs";
 import { typeByExtension } from "@std/media-types";
 import { dirname, join } from "@std/path";
 import { throwWithCause } from "../../../packages/core/src/utils/error-helpers.ts";
@@ -55,36 +56,36 @@ export interface LibraryStorageConfig {
  */
 function getDefaultLibraryDir(): string {
   // Implement XDG Base Directory specification manually
-  if (Deno.build.os === "windows") {
+  if (process.platform === "win32") {
     // Windows: Use LOCALAPPDATA or APPDATA
-    const localAppData = Deno.env.get("LOCALAPPDATA");
+    const localAppData = process.env.LOCALAPPDATA;
     if (localAppData) {
       return join(localAppData, "Atlas", "library");
     }
-    const appData = Deno.env.get("APPDATA");
+    const appData = process.env.APPDATA;
     if (appData) {
       return join(appData, "Atlas", "library");
     }
-  } else if (Deno.build.os === "darwin") {
+  } else if (process.platform === "darwin") {
     // macOS: Use ~/Library/Application Support
-    const homeDir = Deno.env.get("HOME");
+    const homeDir = process.env.HOME;
     if (homeDir) {
       return join(homeDir, "Library", "Application Support", "Atlas", "library");
     }
   } else {
     // Linux/Unix: Use XDG_DATA_HOME or ~/.local/share
-    const xdgDataHome = Deno.env.get("XDG_DATA_HOME");
+    const xdgDataHome = process.env.XDG_DATA_HOME;
     if (xdgDataHome) {
       return join(xdgDataHome, "atlas", "library");
     }
-    const homeDir = Deno.env.get("HOME");
+    const homeDir = process.env.HOME;
     if (homeDir) {
       return join(homeDir, ".local", "share", "atlas", "library");
     }
   }
 
   // Fallback to current directory
-  return join(Deno.cwd(), ".atlas", "library");
+  return join(process.cwd(), ".atlas", "library");
 }
 
 /**
@@ -177,13 +178,13 @@ export class LibraryStorageAdapter {
     await this.storage.initialize();
 
     // Ensure content directory exists
-    await ensureDir(this.contentDir);
+    await mkdir(this.contentDir, { recursive: true });
 
     // Create organized subdirectories if configured
     if (this.config.organizeBySource) {
       const sourceNames = ["agent", "job", "user", "system"];
       for (const sourceName of sourceNames) {
-        await ensureDir(join(this.contentDir, sourceName));
+        await mkdir(join(this.contentDir, sourceName), { recursive: true });
       }
     }
 
@@ -247,14 +248,10 @@ export class LibraryStorageAdapter {
     const fullContentPath = join(this.contentDir, contentPath);
 
     // Ensure content directory exists
-    await ensureDir(dirname(fullContentPath));
+    await mkdir(dirname(fullContentPath), { recursive: true });
 
     // Write content to disk
-    if (typeof item.content === "string") {
-      await Deno.writeTextFile(fullContentPath, item.content);
-    } else {
-      await Deno.writeFile(fullContentPath, item.content);
-    }
+    await writeFile(fullContentPath, item.content);
 
     // Create metadata record for KV storage
     const metadata: LibraryMetadata = {
@@ -294,7 +291,7 @@ export class LibraryStorageAdapter {
     if (!success) {
       // Clean up content file if KV operation failed
       try {
-        await Deno.remove(fullContentPath);
+        await rm(fullContentPath);
       } catch {
         // Ignore cleanup errors
       }
@@ -349,9 +346,9 @@ export class LibraryStorageAdapter {
         mimeType === "application/yaml";
 
       if (isText) {
-        content = await Deno.readTextFile(fullContentPath);
+        content = await readFile(fullContentPath, "utf-8");
       } else {
-        content = await Deno.readFile(fullContentPath);
+        content = await readFile(fullContentPath);
       }
     } catch (error) {
       throwWithCause(
@@ -378,7 +375,7 @@ export class LibraryStorageAdapter {
     // Delete content file
     const fullContentPath = join(this.contentDir, metadata.content_path);
     try {
-      await Deno.remove(fullContentPath);
+      await rm(fullContentPath);
     } catch (error) {
       // Log warning but continue with metadata deletion
       logger.warn(`Failed to delete content file ${fullContentPath}: ${stringifyError(error)}`);
@@ -776,8 +773,8 @@ export class LibraryStorageAdapter {
       // If we can't read from storage, try scanning disk
       for await (const entry of this.walkContentDirectory(this.contentDir)) {
         if (entry.isFile) {
-          const stat = await Deno.stat(entry.path);
-          totalSize += stat.size;
+          const stats = await stat(entry.path);
+          totalSize += stats.size;
           itemCount++;
         }
       }
@@ -793,9 +790,10 @@ export class LibraryStorageAdapter {
     dir: string,
   ): AsyncGenerator<{ path: string; isFile: boolean }> {
     try {
-      for await (const entry of Deno.readDir(dir)) {
+      const entries = await readdir(dir, { withFileTypes: true });
+      for (const entry of entries) {
         const path = join(dir, entry.name);
-        if (entry.isDirectory) {
+        if (entry.isDirectory()) {
           yield* this.walkContentDirectory(path);
         } else {
           yield { path, isFile: true };

@@ -7,9 +7,10 @@
  * Based on MECMF Section 3.5.1 specifications and existing /embeddings/main.ts implementation.
  */
 
+import crypto from "node:crypto";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { logger } from "@atlas/logger";
-import { crypto } from "@std/crypto";
-import { ensureDir } from "@std/fs";
+import { isErrnoException } from "@atlas/utils";
 import ort from "onnxruntime-web";
 import { z } from "zod";
 import { getMECMFCacheDir } from "../../../src/utils/paths.ts";
@@ -280,14 +281,12 @@ export class WebEmbeddingProvider implements MECMFEmbeddingProvider {
   private async getCachedFilePath(url: string, extension: string = ".onnx"): Promise<string> {
     // Create cache directory if it doesn't exist
     const cacheDir = this.config.cacheDirectory;
-    await ensureDir(cacheDir);
+    await mkdir(cacheDir, { recursive: true });
 
     // Create filename from URL hash
-    const urlHash = Array.from(
-      new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(url))),
-    )
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join("");
+    const hash = crypto.createHash("sha256");
+    hash.update(url);
+    const urlHash = hash.digest("hex");
 
     return `${cacheDir}/${urlHash.slice(0, 16)}${extension}`;
   }
@@ -303,8 +302,8 @@ export class WebEmbeddingProvider implements MECMFEmbeddingProvider {
     }
 
     // Write to file
-    using file = await Deno.open(filepath, { write: true, create: true });
-    await response.body?.pipeTo(file.writable);
+    const buffer = await response.arrayBuffer();
+    await writeFile(filepath, new Uint8Array(buffer));
   }
 
   private async loadTokenizer(url: string): Promise<BERTTokenizer> {
@@ -312,9 +311,9 @@ export class WebEmbeddingProvider implements MECMFEmbeddingProvider {
 
     // Check if cached file exists
     try {
-      await Deno.stat(cachedPath);
+      await stat(cachedPath);
     } catch (error) {
-      if (error instanceof Deno.errors.NotFound) {
+      if (isErrnoException(error) && error.code === "ENOENT") {
         // Download and cache the tokenizer
         await this.downloadFile(url, cachedPath, "tokenizer");
       } else {
@@ -323,7 +322,7 @@ export class WebEmbeddingProvider implements MECMFEmbeddingProvider {
     }
 
     // Load tokenizer config
-    const tokenizerData = await Deno.readTextFile(cachedPath);
+    const tokenizerData = await readFile(cachedPath, "utf-8");
     const rawTokenizerJson = JSON.parse(tokenizerData);
     const tokenizerJson = HuggingFaceTokenizerSchema.parse(rawTokenizerJson);
 
@@ -422,22 +421,22 @@ export class WebEmbeddingProvider implements MECMFEmbeddingProvider {
 
     // Check if cached file exists
     try {
-      const stat = await Deno.stat(cachedPath);
-      logger.debug("Using cached ONNX model", { path: cachedPath, size: stat.size });
+      const fileStats = await stat(cachedPath);
+      logger.debug("Using cached ONNX model", { path: cachedPath, size: fileStats.size });
     } catch (error) {
-      if (error instanceof Deno.errors.NotFound) {
+      if (isErrnoException(error) && error.code === "ENOENT") {
         // Download and cache the model
         logger.info("Downloading ONNX model", { url, cachedPath });
         await this.downloadFile(url, cachedPath, "model");
-        const stat = await Deno.stat(cachedPath);
-        logger.info("ONNX model downloaded", { path: cachedPath, size: stat.size });
+        const fileStats = await stat(cachedPath);
+        logger.info("ONNX model downloaded", { path: cachedPath, size: fileStats.size });
       } else {
         throw error;
       }
     }
 
     // Read the model file as binary data for better compatibility with compiled binaries
-    const modelData = await Deno.readFile(cachedPath);
+    const modelData = await readFile(cachedPath);
     logger.debug("Model data loaded", { path: cachedPath, byteLength: modelData.byteLength });
 
     // Minimal session options - most settings are controlled by global config

@@ -1,6 +1,8 @@
+import * as path from "node:path";
+import process from "node:process";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { expandGlob } from "@std/fs";
-import * as path from "@std/path";
+import fg from "fast-glob";
+import { minimatch } from "minimatch";
 import { z } from "zod";
 import { createSuccessResponse } from "../utils.ts";
 
@@ -23,29 +25,23 @@ export function registerLsTool(server: McpServer) {
       },
     },
     async (params) => {
-      const searchPath = path.resolve(Deno.cwd(), params.path || ".");
+      const searchPath = path.resolve(process.cwd(), params.path || ".");
 
       const files = [];
 
       // Directory scanning with glob pattern
-      for await (const entry of expandGlob("**/*", {
-        root: searchPath,
-        includeDirs: true,
-        globstar: true,
-      })) {
-        // Get relative path from search path
-        const file = path.relative(searchPath, entry.path);
+      const matches = await fg("**/*", {
+        cwd: searchPath,
+        onlyFiles: false,
+        absolute: false,
+        dot: true,
+      });
 
+      for (const file of matches) {
         if (IGNORE_PATTERNS.some((p) => file.includes(p))) continue;
 
-        // Check against ignore patterns using globToRegExp
-        if (
-          params.ignore?.some((pattern) => {
-            const regexp = path.globToRegExp(pattern);
-            return regexp.test(file);
-          })
-        )
-          continue;
+        // Check against ignore patterns using minimatch
+        if (params.ignore?.some((pattern) => minimatch(file, pattern))) continue;
 
         files.push(file);
         if (files.length >= LIMIT) break;
@@ -100,7 +96,7 @@ export function registerLsTool(server: McpServer) {
       const output = `${searchPath}/\n${renderDir(".", 0)}`;
 
       return createSuccessResponse({
-        title: path.relative(Deno.cwd(), searchPath),
+        title: path.relative(process.cwd(), searchPath),
         metadata: { count: files.length, truncated: files.length >= LIMIT },
         output,
       });

@@ -1,16 +1,17 @@
+import { join } from "node:path";
+import process from "node:process";
 import { getAtlasHome, isSystemService } from "@atlas/utils/paths.server";
-import { join } from "@std/path";
 
 /**
  * Returns Atlas logs directory: /var/log/atlas (system) or ~/.atlas/logs (user)
  */
 export function getAtlasLogsDir(): string {
-  const logsDir = Deno.env.get("ATLAS_LOGS_DIR");
+  const logsDir = process.env.ATLAS_LOGS_DIR;
   if (logsDir) {
     return logsDir;
   }
 
-  if (isSystemService() && Deno.build.os !== "windows") {
+  if (isSystemService() && process.platform !== "win32") {
     return "/var/log/atlas";
   }
 

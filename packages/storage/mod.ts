@@ -66,7 +66,6 @@ export class MemoryStorage implements StorageAdapter {
 export { FilesystemConfigAdapter } from "./src/adapters/config/fs.ts";
 // Export configuration adapters
 export type { ConfigurationAdapter } from "./src/adapters/config/mod.ts";
-export { FilesystemTemplateAdapter } from "./src/adapters/filesystem-template-adapter.ts";
 // Export template adapters
 export type {
   Template,

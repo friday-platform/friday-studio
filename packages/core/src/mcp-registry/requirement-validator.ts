@@ -1,3 +1,4 @@
+import process from "node:process";
 import { z } from "zod";
 import type { BundledAgentConfigField } from "../bundled-agents/registry.ts";
 import type { RequiredConfigField } from "./schemas.ts";
@@ -36,7 +37,7 @@ export function validateRequiredFields(requiredConfig: ConfigField[]): MissingFi
 
   // Check all required fields in system environment
   for (const field of requiredConfig) {
-    const envValue = Deno.env.get(field.key);
+    const envValue = process.env[field.key];
     if (!envValue) {
       missingFields.push({
         field: field.key,

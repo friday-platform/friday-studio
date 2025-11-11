@@ -1,3 +1,5 @@
+import process from "node:process";
+
 /**
  * Centralized Atlas configuration utilities
  */
@@ -9,7 +11,7 @@ const DEFAULT_ATLAS_URL = "https://atlas.tempestdx.com";
  * Supports both http (local testing) and https (production)
  */
 export function getAtlasBaseUrl(): string {
-  return Deno.env.get("ATLAS_URL") || DEFAULT_ATLAS_URL;
+  return process.env.ATLAS_URL || DEFAULT_ATLAS_URL;
 }
 
 /**

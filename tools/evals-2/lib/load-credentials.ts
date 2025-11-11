@@ -1,23 +1,24 @@
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+import process from "node:process";
 import { fetchCredentials, setToEnv } from "@atlas/core/credentials";
 import { getAtlasHome } from "@atlas/utils/paths.server";
-import { load } from "@std/dotenv";
-import { exists } from "@std/fs";
-import { join } from "@std/path";
+import dotenv from "dotenv";
 
 /**
- * Fetches bundled API credentials and sets them as Deno environment variables.
+ * Fetches bundled API credentials and sets them as Node environment variables.
  */
 export async function loadCredentials() {
-  await load({ export: true });
+  dotenv.config();
 
   // Load global Atlas configuration as fallback
   // Note: getAtlasHome() will return the appropriate path based on system/user mode
   const globalAtlasEnv = join(getAtlasHome(), ".env");
-  if (await exists(globalAtlasEnv)) {
-    await load({ export: true, envPath: globalAtlasEnv });
+  if (existsSync(globalAtlasEnv)) {
+    dotenv.config({ path: globalAtlasEnv, override: true });
   }
 
-  const atlasKey = Deno.env.get("ATLAS_KEY");
+  const atlasKey = process.env.ATLAS_KEY;
   if (!atlasKey) {
     throw new Error("ATLAS_KEY environment variable is not set");
   }

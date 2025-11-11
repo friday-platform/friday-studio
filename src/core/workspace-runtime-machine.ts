@@ -3,6 +3,8 @@
  * Replaces worker-based supervisor management with direct actor orchestration
  */
 
+import { existsSync } from "node:fs";
+import process from "node:process";
 import type { AtlasAgent, AtlasUIMessageChunk } from "@atlas/agent-sdk";
 import { ConfigLoader, type JobSpecification, type MergedConfig } from "@atlas/config";
 import type { WorkspaceSupervisorConfig, WrappedAgentResult } from "@atlas/core";
@@ -26,7 +28,6 @@ import { ProviderRegistry, ProviderType } from "@atlas/signals";
 import { FilesystemConfigAdapter } from "@atlas/storage";
 import { getAtlasHome } from "@atlas/utils/paths.server";
 import { load } from "@std/dotenv";
-import { exists } from "@std/fs";
 import { join } from "@std/path";
 import { assign, fromPromise, setup } from "xstate";
 import type { IWorkspace, IWorkspaceSession, IWorkspaceSignal } from "../types/core.ts";
@@ -167,13 +168,13 @@ const workspaceRuntimeMachineSetup = setup({
       if (context.options.workspacePath) {
         try {
           const envFilePath = join(context.options.workspacePath, ".env");
-          if (await exists(envFilePath)) {
+          if (existsSync(envFilePath)) {
             const envVars = await load({ export: true, envPath: envFilePath });
 
             // CRITICAL FIX: @std/dotenv with export:true does NOT override existing env vars
             // We need to explicitly set them to override parent process values
             for (const [key, value] of Object.entries(envVars)) {
-              Deno.env.set(key, value);
+              process.env[key] = value;
             }
 
             logger.debug("Loaded workspace .env file", {

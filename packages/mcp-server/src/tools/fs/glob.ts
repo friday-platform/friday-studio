@@ -1,6 +1,8 @@
+import { stat } from "node:fs/promises";
+import * as path from "node:path";
+import process from "node:process";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { expandGlob } from "@std/fs";
-import * as path from "@std/path";
+import fg from "fast-glob";
 import { z } from "zod";
 import { createSuccessResponse } from "../utils.ts";
 
@@ -22,19 +24,24 @@ export function registerGlobTool(server: McpServer) {
       },
     },
     async (params) => {
-      let searchPath = params.path ?? Deno.cwd();
-      searchPath = path.isAbsolute(searchPath) ? searchPath : path.resolve(Deno.cwd(), searchPath);
+      let searchPath = params.path ?? process.cwd();
+      searchPath = path.isAbsolute(searchPath)
+        ? searchPath
+        : path.resolve(process.cwd(), searchPath);
 
       const limit = 100;
       const files = [];
       let truncated = false;
 
-      // Use expandGlob from @std/fs
-      for await (const walkEntry of expandGlob(params.pattern, {
-        root: searchPath,
-        includeDirs: false, // Only files, not directories
-        globstar: true,
-      })) {
+      // Use fast-glob
+      const matches = await fg(params.pattern, {
+        cwd: searchPath,
+        onlyFiles: true,
+        absolute: true,
+        dot: true,
+      });
+
+      for (const filePath of matches) {
         if (files.length >= limit) {
           truncated = true;
           break;
@@ -42,13 +49,13 @@ export function registerGlobTool(server: McpServer) {
 
         let mtime = 0;
         try {
-          const stats = await Deno.stat(walkEntry.path);
+          const stats = await stat(filePath);
           mtime = stats.mtime?.getTime() ?? 0;
         } catch {
           mtime = 0;
         }
 
-        files.push({ path: walkEntry.path, mtime: mtime });
+        files.push({ path: filePath, mtime: mtime });
       }
 
       // Sort by modification time, newest first
@@ -66,7 +73,7 @@ export function registerGlobTool(server: McpServer) {
       }
 
       return createSuccessResponse({
-        title: path.relative(Deno.cwd(), searchPath),
+        title: path.relative(process.cwd(), searchPath),
         metadata: { count: files.length, truncated },
         output: output.join("\n"),
       });

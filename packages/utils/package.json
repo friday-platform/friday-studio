@@ -3,9 +3,10 @@
   "version": "1.0.0",
   "type": "module",
   "main": "./mod.ts",
-  "dependencies": {
-    "@opentelemetry/api": "^1.9.0",
-    "@std/path": "npm:@jsr/std__path@^1.1.2",
-    "zod": "^4.1.12"
-  }
+  "exports": {
+    ".": "./mod.ts",
+    "./paths.server": "./src/paths.ts",
+    "./telemetry.server": "./src/telemetry.ts"
+  },
+  "dependencies": { "@opentelemetry/api": "^1.9.0", "zod": "^4.1.12" }
 }

@@ -1,6 +1,6 @@
 import { AtlasDaemon } from "@atlas/atlasd";
 import { client, parseResult } from "@atlas/client/v2";
-import { fetchCredentials, setToDenoEnv } from "@atlas/core";
+import { fetchCredentials, setToEnv } from "@atlas/core/credentials";
 import { logger } from "@atlas/logger";
 import { getAtlasHome } from "@atlas/utils/paths.server";
 import { load } from "@std/dotenv";
@@ -207,7 +207,7 @@ export const handler = async (argv: StartArgs): Promise<void> => {
 
       try {
         const credentials = await fetchCredentials({ atlasKey, retries: 3, retryDelay: 2000 });
-        const { setCount, skippedCount } = setToDenoEnv(credentials);
+        const { setCount, skippedCount } = setToEnv(credentials);
 
         logger.info(
           `Credentials fetched successfully: ${setCount} set, ${skippedCount} skipped (already configured)`,

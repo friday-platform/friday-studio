@@ -203,3 +203,10 @@ export function sleep(ms: number): Promise<void> {
  * For types that may or may not return a Promise.
  */
 export type MaybePromise<T> = Promise<T> | T;
+
+/**
+ * Returns whether `error` is a NodeJS-style exception with an error code.
+ */
+export function isErrnoException(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && ("errno" in error || "code" in error);
+}

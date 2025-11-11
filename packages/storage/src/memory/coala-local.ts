@@ -11,7 +11,7 @@
 
 import type { CoALAMemoryEntry } from "@atlas/memory";
 import { CoALAMemoryEntrySchema, type CoALAMemoryType } from "@atlas/memory";
-import { objectKeys } from "@atlas/utils";
+import { isErrnoException, objectKeys } from "@atlas/utils";
 import { z } from "zod";
 
 // Zod schema for memory statistics/index structure
@@ -27,9 +27,9 @@ const MemoryStatisticsSchema = z.object({
   memoryTypes: z.record(z.string(), MemoryTypeStatSchema),
 });
 
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { getAtlasHome } from "@atlas/utils/paths.server";
-import { ensureDir } from "@std/fs";
-import { join } from "@std/path";
 import type { ICoALAMemoryStorageAdapter } from "../types/core.ts";
 import { FileWriteCoordinator } from "./file-write-coordinator.ts";
 
@@ -54,14 +54,14 @@ export class CoALALocalFileStorageAdapter implements ICoALAMemoryStorageAdapter 
 
   // Enhanced CoALA-specific methods
   async commitByType(memoryType: CoALAMemoryType, data: CoALAMemoryEntry[]): Promise<void> {
-    await ensureDir(this.storagePath);
+    await mkdir(this.storagePath, { recursive: true });
     const fileName = this.memoryTypeFiles[memoryType] || `${memoryType}.json`;
     const filePath = join(this.storagePath, fileName);
 
     // Use the file write coordinator to prevent concurrent writes
     const coordinator = FileWriteCoordinator.getInstance();
     await coordinator.executeWrite(filePath, async () => {
-      await Deno.writeTextFile(filePath, JSON.stringify(data, null, 2));
+      await writeFile(filePath, JSON.stringify(data, null, 2), "utf-8");
     });
   }
 
@@ -70,7 +70,7 @@ export class CoALALocalFileStorageAdapter implements ICoALAMemoryStorageAdapter 
     const filePath = join(this.storagePath, fileName);
 
     try {
-      const content = await Deno.readTextFile(filePath);
+      const content = await readFile(filePath, "utf-8");
 
       // Handle empty or whitespace-only files
       if (!content.trim()) {
@@ -83,8 +83,8 @@ export class CoALALocalFileStorageAdapter implements ICoALAMemoryStorageAdapter 
       const validatedData = MemoryArraySchema.parse(rawData);
 
       return validatedData;
-    } catch (error: unknown) {
-      if (error instanceof Deno.errors.NotFound) {
+    } catch (error) {
+      if (isErrnoException(error) && error.code === "ENOENT") {
         return [];
       }
 
@@ -109,7 +109,7 @@ export class CoALALocalFileStorageAdapter implements ICoALAMemoryStorageAdapter 
   }
 
   async commitAll(dataByType: Record<CoALAMemoryType, CoALAMemoryEntry[]>): Promise<void> {
-    await ensureDir(this.storagePath);
+    await mkdir(this.storagePath, { recursive: true });
 
     // Write each memory type to its own file sequentially to avoid file descriptor exhaustion
     for (const memoryType of objectKeys(dataByType)) {
@@ -179,7 +179,7 @@ export class CoALALocalFileStorageAdapter implements ICoALAMemoryStorageAdapter 
     // Use the file write coordinator to prevent concurrent writes to index.json
     const coordinator = FileWriteCoordinator.getInstance();
     await coordinator.executeWrite(indexPath, async () => {
-      await Deno.writeTextFile(indexPath, JSON.stringify(index, null, 2));
+      await writeFile(indexPath, JSON.stringify(index, null, 2), "utf-8");
     });
   }
 
@@ -212,14 +212,14 @@ export class CoALALocalFileStorageAdapter implements ICoALAMemoryStorageAdapter 
   async getMemoryStatistics(): Promise<Record<string, unknown>> {
     try {
       const indexPath = join(this.storagePath, "index.json");
-      const content = await Deno.readTextFile(indexPath);
+      const content = await readFile(indexPath, "utf-8");
 
       // Parse and validate using Zod schema
       const rawData = JSON.parse(content);
       const validatedData = MemoryStatisticsSchema.parse(rawData);
 
       return validatedData;
-    } catch (error: unknown) {
+    } catch (error) {
       // Handle Zod validation errors
       if (error instanceof z.ZodError) {
         console.warn(

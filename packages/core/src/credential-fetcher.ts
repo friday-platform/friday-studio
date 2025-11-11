@@ -1,3 +1,4 @@
+import process from "node:process";
 import { logger } from "@atlas/logger";
 import { formatDate } from "@atlas/utils";
 import { type RetryOptions, retry } from "@std/async/retry";
@@ -125,12 +126,12 @@ export async function fetchCredentials(options: FetchCredentialsOptions): Promis
 /**
  * Sets credentials to Deno environment variables.
  */
-export function setToDenoEnv(creds: Credentials): { setCount: number; skippedCount: number } {
+export function setToEnv(creds: Credentials): { setCount: number; skippedCount: number } {
   let setCount = 0;
   let skippedCount = 0;
   for (const [key, value] of Object.entries(creds)) {
-    if (!Deno.env.get(key)) {
-      Deno.env.set(key, value);
+    if (!process.env[key]) {
+      process.env[key] = value;
       setCount++;
     } else {
       skippedCount++;

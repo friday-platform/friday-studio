@@ -6,11 +6,11 @@
  * - Separation of system vs user workspaces is explicit
  */
 
+import { existsSync } from "node:fs";
 import { ConfigLoader, type MergedConfig } from "@atlas/config";
 import { logger } from "@atlas/logger";
 import { FilesystemConfigAdapter } from "@atlas/storage";
 import { SYSTEM_WORKSPACES } from "@atlas/system/workspaces";
-import { exists } from "@std/fs";
 import { basename, dirname, join } from "@std/path";
 import {
   createRegistryStorage,
@@ -127,8 +127,8 @@ export class WorkspaceManager {
     // Determine config filename and ephemeral status
     const persistentPath = join(absolutePath, "workspace.yml");
     const ephemeralPath = join(absolutePath, "eph_workspace.yml");
-    const hasPersistent = await exists(persistentPath);
-    const hasEphemeral = await exists(ephemeralPath);
+    const hasPersistent = existsSync(persistentPath);
+    const hasEphemeral = existsSync(ephemeralPath);
     const isEphemeral = !hasPersistent && hasEphemeral;
     const configPath = hasPersistent
       ? persistentPath
@@ -394,7 +394,7 @@ export class WorkspaceManager {
     ];
 
     for (const basePath of commonPaths) {
-      if (await exists(basePath)) {
+      if (existsSync(basePath)) {
         await this.scanDirectory(basePath, workspaces, 3);
       }
     }
@@ -438,7 +438,7 @@ export class WorkspaceManager {
    */
   private async cleanupExpiredEphemeralConfig(workspacePath: string): Promise<boolean> {
     const ephPath = join(workspacePath, "eph_workspace.yml");
-    if (!(await exists(ephPath))) return false;
+    if (!existsSync(ephPath)) return false;
     try {
       const info = await Deno.stat(ephPath);
       const mtime = info.mtime ?? new Date();
@@ -486,11 +486,11 @@ export class WorkspaceManager {
       // Check if this directory has workspace.yml or eph_workspace.yml
       const workspaceYmlPath = join(path, "workspace.yml");
       const ephWorkspaceYmlPath = join(path, "eph_workspace.yml");
-      if (await exists(workspaceYmlPath)) {
+      if (existsSync(workspaceYmlPath)) {
         results.push(path);
         return; // Don't scan subdirectories of a workspace
       }
-      if (await exists(ephWorkspaceYmlPath)) {
+      if (existsSync(ephWorkspaceYmlPath)) {
         results.push(path);
         return; // Treat as workspace root as well
       }
@@ -668,7 +668,7 @@ export class WorkspaceManager {
     logger.debug("processing rename change", { workspaceId, oldPath, newPath });
 
     // If no newPath or the newPath doesn't exist, treat as missing config
-    if (!newPath || !(await exists(newPath))) {
+    if (!newPath || !existsSync(newPath)) {
       logger.debug("rename with missing or nonexistent newPath; handling as missing config", {
         workspaceId,
         oldPath,
@@ -766,8 +766,8 @@ export class WorkspaceManager {
   }
 
   private async determineChangeType(workspace: WorkspaceEntry): Promise<"deleted" | "updated"> {
-    const dirExists = await exists(workspace.path);
-    const cfgExists = await exists(workspace.configPath);
+    const dirExists = existsSync(workspace.path);
+    const cfgExists = existsSync(workspace.configPath);
     return !dirExists || !cfgExists ? "deleted" : "updated";
   }
 
@@ -885,9 +885,9 @@ export class WorkspaceManager {
 
     try {
       // Rename config file if source exists; otherwise, if target exists, use it
-      if (await exists(fromPath)) {
+      if (existsSync(fromPath)) {
         await Deno.rename(fromPath, toPath);
-      } else if (!(await exists(toPath))) {
+      } else if (!existsSync(toPath)) {
         // If neither exists, throw
         throw new Error(`Neither ${fromName} nor ${toName} exists in ${workspace.path}`);
       }

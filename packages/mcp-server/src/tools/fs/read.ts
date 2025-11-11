@@ -1,5 +1,9 @@
+import type { Stats } from "node:fs";
+import { readdir, readFile, stat } from "node:fs/promises";
+import * as path from "node:path";
+import process from "node:process";
+import { isErrnoException } from "@atlas/utils";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import * as path from "@std/path";
 import { z } from "zod";
 import { createSuccessResponse } from "../utils.ts";
 
@@ -33,23 +37,20 @@ Usage:
     async (params) => {
       let filePath = params.filePath;
       if (!path.isAbsolute(filePath)) {
-        filePath = path.join(Deno.cwd(), filePath);
+        filePath = path.join(process.cwd(), filePath);
       }
 
       // Check file existence and get stats
-      let stats: Deno.FileInfo;
+      let stats: Stats;
       try {
-        stats = await Deno.stat(filePath);
+        stats = await stat(filePath);
       } catch (error) {
-        if (error instanceof Deno.errors.NotFound) {
+        if (isErrnoException(error) && error.code === "ENOENT") {
           const dir = path.dirname(filePath);
           const base = path.basename(filePath);
 
           try {
-            const dirEntries: string[] = [];
-            for await (const entry of Deno.readDir(dir)) {
-              dirEntries.push(entry.name);
-            }
+            const dirEntries = await readdir(dir);
 
             const suggestions = dirEntries
               .filter(
@@ -89,7 +90,8 @@ Usage:
           `This is an image file of type: ${isImage}\nUse a different tool to process images`,
         );
       }
-      const lines = await Deno.readTextFile(filePath).then((text) => text.split("\n"));
+      const text = await readFile(filePath, "utf-8");
+      const lines = text.split("\n");
       const raw = lines.slice(offset, offset + limit).map((line) => {
         return line.length > MAX_LINE_LENGTH ? `${line.substring(0, MAX_LINE_LENGTH)}...` : line;
       });
@@ -109,7 +111,7 @@ Usage:
       output += "\n</file>";
 
       return createSuccessResponse({
-        title: path.relative(Deno.cwd(), filePath),
+        title: path.relative(process.cwd(), filePath),
         output,
         metadata: { preview },
       });

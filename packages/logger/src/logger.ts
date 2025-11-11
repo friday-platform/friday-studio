@@ -1,5 +1,6 @@
-import { ensureDir } from "@std/fs";
-import { dirname, join } from "@std/path";
+import fs from "node:fs";
+import { dirname, join } from "node:path";
+import process from "node:process";
 import { DetailedError } from "hono/client";
 import { FileWriteCoordinator } from "../../storage/src/memory/file-write-coordinator.ts";
 import { getAtlasLogsDir } from "./paths.ts";
@@ -44,7 +45,7 @@ class AtlasLoggerV2 implements Logger {
   }
 
   private async log(level: LogLevel, message: string, context?: LogContext): Promise<void> {
-    if (Deno.env.get("DENO_TESTING") === "true") {
+    if (process.env.DENO_TESTING === "true") {
       return;
     }
 
@@ -55,9 +56,8 @@ class AtlasLoggerV2 implements Logger {
 
     // Determine output format based on TTY status and environment variable
     // ATLAS_LOG_FORMAT can be "json" (force JSON) or "pretty" (force human-readable)
-    const forceFormat = Deno.env.get("ATLAS_LOG_FORMAT");
-    const isJson =
-      forceFormat === "json" || (forceFormat !== "pretty" && !Deno.stdout.isTerminal());
+    const forceFormat = process.env.ATLAS_LOG_FORMAT;
+    const isJson = forceFormat === "json" || (forceFormat !== "pretty" && !process.stdout.isTTY);
 
     const consoleOutput = isJson
       ? JSON.stringify(entry)
@@ -204,22 +204,22 @@ class AtlasLoggerV2 implements Logger {
 
   private shouldColorizeOutput(): boolean {
     // Force colors if FORCE_COLOR is set
-    if (Deno.env.get("FORCE_COLOR")) {
+    if (process.env.FORCE_COLOR) {
       return true;
     }
 
     // Don't colorize if NO_COLOR environment variable is set
-    if (Deno.env.get("NO_COLOR")) {
+    if (process.env.NO_COLOR) {
       return false;
     }
 
     // Don't colorize if DENO_TESTING is true
-    if (Deno.env.get("DENO_TESTING") === "true") {
+    if (process.env.DENO_TESTING === "true") {
       return false;
     }
 
-    // Check if we're in a TTY (only available in some Deno versions)
-    return Deno.stdout.isTerminal();
+    // Check if we're in a TTY
+    return process.stdout.isTTY ?? false;
   }
 
   private getComponentName(context: LogContext): string {
@@ -234,12 +234,12 @@ class AtlasLoggerV2 implements Logger {
       ? join(getAtlasLogsDir(), "workspaces", `${workspaceId}.log`)
       : join(getAtlasLogsDir(), "global.log");
 
-    await ensureDir(dirname(logPath));
+    await fs.promises.mkdir(dirname(logPath), { recursive: true });
 
     // Use FileWriteCoordinator to prevent concurrent file access and FD leaks
     const coordinator = FileWriteCoordinator.getInstance();
     await coordinator.executeWrite(logPath, async () => {
-      await Deno.writeTextFile(logPath, `${jsonLine}\n`, { append: true });
+      await fs.promises.appendFile(logPath, `${jsonLine}\n`);
     });
   }
 }

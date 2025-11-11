@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "exports": {
     ".": "./mod.ts",
+    "./credentials": "./src/credential-fetcher.ts",
     "./types": "./src/types/workspace.ts",
     "./artifacts": "./src/artifacts/mod.ts",
     "./artifacts/server": "./src/artifacts/storage.ts",

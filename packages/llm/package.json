@@ -1,0 +1,8 @@
+{
+  "name": "@atlas/llm",
+  "version": "1.0.0",
+  "type": "module",
+  "exports": { ".": "./mod.ts" },
+  "main": "./mod.ts",
+  "dependencies": { "@atlas/logger": "workspace:*", "@ai-sdk/anthropic": "^2.0.44" }
+}

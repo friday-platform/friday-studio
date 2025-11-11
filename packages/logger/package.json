@@ -4,10 +4,5 @@
   "type": "module",
   "exports": { ".": "./mod.ts" },
   "main": "./mod.ts",
-  "dependencies": {
-    "@atlas/utils": "workspace:*",
-    "@std/fs": "npm:@jsr/std__fs@^1.0.19",
-    "@std/path": "npm:@jsr/std__path@^1.1.2",
-    "hono": "^4.10.4"
-  }
+  "dependencies": { "@atlas/utils": "workspace:*", "hono": "^4.10.4" }
 }

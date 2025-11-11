@@ -1,6 +1,5 @@
 import { createAgent, repairJson } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
-import { ANTHROPIC_CACHE_BREAKPOINT, anthropic } from "@atlas/core";
 import type { WorkspacePlan } from "@atlas/core/artifacts";
 import {
   type ClarificationItem,
@@ -18,11 +17,12 @@ import {
   matchBundledAgents,
 } from "@atlas/core/mcp-registry/deterministic-matching";
 import { validateRequiredFields } from "@atlas/core/mcp-registry/requirement-validator";
+import { ANTHROPIC_CACHE_BREAKPOINT, anthropic } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
 import { fail, getTodaysDate, type Result, stringifyError, success } from "@atlas/utils";
 import { toKebabCase } from "@std/text";
-import type { CoreMessage } from "ai";
 import { generateObject, generateText } from "ai";
+import { traceAISDKModel } from "evalite/ai-sdk";
 import { z } from "zod";
 
 type WorkspacePlannerResult = Result<
@@ -47,7 +47,7 @@ async function summarize(params: {
   abortSignal?: AbortSignal;
 }): Promise<string> {
   const result = await generateText({
-    model: anthropic("claude-haiku-4-5"),
+    model: traceAISDKModel(anthropic("claude-haiku-4-5")),
     system:
       "You generate concise, accurate summaries. No fluff, no marketing speak. Direct and informative.",
     prompt: `
@@ -166,19 +166,15 @@ export const workspacePlannerAgent = createAgent<WorkspacePlannerInput, Workspac
    */
   handler: async (input, { logger, stream, session, abortSignal }) => {
     logger.info("Starting workspace planning", { artifactId: input.artifactId });
-
     let existingPlan: WorkspacePlan | null = null;
-
     try {
       // Load existing plan if this is a revision
       if (input.artifactId) {
         logger.info("Loading existing plan for revision", { artifactId: input.artifactId });
-
         try {
           const response = await parseResult(
             client.artifactsStorage[":id"].$get({ param: { id: input.artifactId } }),
           );
-
           if (response.ok && response.data.artifact.data.type === "workspace-plan") {
             existingPlan = response.data.artifact.data.data;
             logger.info("Loaded existing plan for revision");
@@ -187,32 +183,25 @@ export const workspacePlannerAgent = createAgent<WorkspacePlannerInput, Workspac
           logger.warn("Failed to load existing plan for revision", { error });
         }
       }
-
       stream?.emit({
         type: "data-tool-progress",
         data: { toolName: "Workspace Planner", content: "Analyzing requirements..." },
       });
-
       let signalsAndAgentsPrompt: string;
       if (existingPlan) {
         signalsAndAgentsPrompt = `
-      Update this workspace plan based on new requirements. Make only the minimal changes necessary to meet the new requirements.
-
-      Existing plan:
-      ${JSON.stringify(existingPlan)}
-
-      New requirements: ${input.intent}`;
+          Update this workspace plan based on new requirements. Make only the minimal changes necessary to meet the new requirements.
+          Existing plan:
+          ${JSON.stringify(existingPlan)}
+          New requirements: ${input.intent}`;
       } else {
         signalsAndAgentsPrompt = `Create a workspace plan for these requirements:
-
-${input.intent}
-
-Split agents by external system and capability boundary. Each agent should handle one integration point or one distinct capability.`;
+    ${input.intent}
+    Split agents by external system and capability boundary. Each agent should handle one integration point or one distinct capability.`;
       }
-
       // Generate workspace, signals, agents with LLM-chosen names
       const phase1Result = await generateObject({
-        model: anthropic("claude-sonnet-4-5-20250929"),
+        model: traceAISDKModel(anthropic("claude-sonnet-4-5-20250929")),
         experimental_repairText: repairJson,
         schema: z.object({
           plan: z.object({
@@ -269,7 +258,7 @@ Split agents by external system and capability boundary. Each agent should handl
           { role: "system", content: SYSTEM_PROMPT, providerOptions: ANTHROPIC_CACHE_BREAKPOINT },
           { role: "system", content: `Current date: ${getTodaysDate()}` },
           { role: "user", content: signalsAndAgentsPrompt },
-        ] as CoreMessage[],
+        ],
         maxOutputTokens: 10_240,
         abortSignal,
       });
@@ -290,7 +279,6 @@ Split agents by external system and capability boundary. Each agent should handl
           .filter((other) => toKebabCase(other.name) === baseId).length;
         return { ...s, id: duplicateCount > 0 ? `${baseId}-${duplicateCount + 1}` : baseId };
       });
-
       const agentsWithIds = phase1.agents.map((a, idx, arr) => {
         const baseId = toKebabCase(a.name);
         const duplicateCount = arr
@@ -298,25 +286,20 @@ Split agents by external system and capability boundary. Each agent should handl
           .filter((other) => toKebabCase(other.name) === baseId).length;
         return { ...a, id: duplicateCount > 0 ? `${baseId}-${duplicateCount + 1}` : baseId };
       });
-
       stream?.emit({
         type: "data-tool-progress",
         data: { toolName: "Workspace Planner", content: "Validating agent integrations..." },
       });
-
       // Validate agent integrations (deterministic matching + LLM field validation)
       const clarifications: ClarificationItem[] = [];
-
       for (const agent of agentsWithIds) {
         // STEP 1: Try bundled agents (deterministic keyword matching)
         const bundledMatches = matchBundledAgents(agent.needs);
-
         if (bundledMatches.length === 1) {
           // Single bundled match - validate required fields
           const bundledMatch = bundledMatches.at(0);
           if (bundledMatch) {
             const missingFields = validateRequiredFields(bundledMatch.requiredConfig);
-
             if (missingFields.length > 0) {
               clarifications.push(
                 createBundledMissingFieldsClarification(
@@ -327,7 +310,6 @@ Split agents by external system and capability boundary. Each agent should handl
                 ),
               );
             }
-
             // Mark agent as using bundled (don't process MCP for this agent)
             continue;
           }
@@ -338,20 +320,16 @@ Split agents by external system and capability boundary. Each agent should handl
           );
           continue;
         }
-
         // STEP 2: No bundled match - try MCP servers (deterministic keyword mapping)
         const mcpMatchesByNeed = new Map<string, MCPServerMatch[]>();
-
         for (const need of agent.needs) {
           const mcpMatches = mapNeedToMCPServers(need);
           mcpMatchesByNeed.set(need, mcpMatches);
-
           if (mcpMatches.length === 1) {
             // Single MCP match - validate required fields
             const mcpMatch = mcpMatches.at(0);
             if (mcpMatch) {
               const missingFields = validateRequiredFields(mcpMatch.requiredConfig);
-
               if (missingFields.length > 0) {
                 clarifications.push(
                   createMCPMissingFieldsClarification(
@@ -368,36 +346,28 @@ Split agents by external system and capability boundary. Each agent should handl
             clarifications.push(createAmbiguousMCPClarification(agent.name, need, mcpMatches));
           }
         }
-
         // STEP 3: Check for unmatched needs (no bundled or MCP found)
         const unmatchedNeeds = findUnmatchedNeeds(agent.needs, bundledMatches, mcpMatchesByNeed);
-
         for (const need of unmatchedNeeds) {
           clarifications.push(createNoMatchClarification(agent.name, need));
         }
       }
-
       // If any clarifications needed, return error and DON'T save artifact
       if (clarifications.length > 0) {
         const clarificationMessage = formatClarificationReport(clarifications);
-
         logger.warn("Workspace planning blocked by missing information", {
           clarificationCount: clarifications.length,
         });
-
         return fail({
           reason: `Cannot create workspace plan - missing required information:\n\n${clarificationMessage}`,
         });
       }
-
       const signalIds = signalsWithIds.map((s) => s.id);
       const agentIds = agentsWithIds.map((a) => a.id);
-
       stream?.emit({
         type: "data-tool-progress",
         data: { toolName: "Workspace Planner", content: "Planning jobs..." },
       });
-
       // Generate jobs with enum-constrained signal/agent references
       const jobsPrompt = `You create job orchestrations by connecting signals to agent execution flows.
 
@@ -415,7 +385,7 @@ Split agents by external system and capability boundary. Each agent should handl
 Generate jobs that connect the available signals and agents to fulfill the workspace requirements.`;
 
       const phase2Result = await generateObject({
-        model: anthropic("claude-sonnet-4-5-20250929"),
+        model: traceAISDKModel(anthropic("claude-sonnet-4-5-20250929")),
         experimental_repairText: repairJson,
         schema: z.object({
           jobs: z.array(
@@ -452,7 +422,7 @@ ${agentsWithIds.map((a) => `- ${a.id} (${a.name}): ${a.description}`).join("\n")
 
 Requirements: ${input.intent}`,
           },
-        ] as CoreMessage[],
+        ],
         maxOutputTokens: 10_240,
         abortSignal,
       });
@@ -472,32 +442,27 @@ Requirements: ${input.intent}`,
           .filter((other) => toKebabCase(other.name) === baseId).length;
         return { ...j, id: duplicateCount > 0 ? `${baseId}-${duplicateCount + 1}` : baseId };
       });
-
       const planData: WorkspacePlan = {
         workspace: phase1.workspace,
         signals: signalsWithIds,
         agents: agentsWithIds,
         jobs: jobsWithIds,
       };
-
       stream?.emit({
         type: "data-tool-progress",
         data: { toolName: "Workspace Planner", content: "Saving workspace plan artifact" },
       });
-
       if (existingPlan && input.artifactId) {
         const revisionMessage = await summarize({
           content: `Old plan:
-        ${JSON.stringify(existingPlan)}
-
-        New plan:
-        ${JSON.stringify(planData)}`,
+            ${JSON.stringify(existingPlan)}
+            New plan:
+            ${JSON.stringify(planData)}`,
           instruction:
             "Summarize what changed between these two workspace plans in 1-2 sentences. Focus on what was added, removed, or modified.",
           logger,
           abortSignal,
         });
-
         const artifactSummary = await summarize({
           content: JSON.stringify(planData),
           instruction:
@@ -505,7 +470,6 @@ Requirements: ${input.intent}`,
           logger,
           abortSignal,
         });
-
         const response = await parseResult(
           client.artifactsStorage[":id"].$put({
             param: { id: input.artifactId },
@@ -517,11 +481,9 @@ Requirements: ${input.intent}`,
             },
           }),
         );
-
         if (!response.ok) {
           throw new Error(`Failed to update artifact: ${JSON.stringify(response.error)}`);
         }
-
         return success({
           planSummary: planData.workspace.purpose,
           artifactId: response.data.artifact.id,
@@ -535,7 +497,6 @@ Requirements: ${input.intent}`,
           logger,
           abortSignal,
         });
-
         const response = await parseResult(
           client.artifactsStorage.index.$post({
             json: {
@@ -546,11 +507,9 @@ Requirements: ${input.intent}`,
             },
           }),
         );
-
         if (!response.ok) {
           throw new Error(`Failed to create artifact: ${JSON.stringify(response.error)}`);
         }
-
         return success({
           planSummary: planData.workspace.purpose,
           artifactId: response.data.artifact.id,

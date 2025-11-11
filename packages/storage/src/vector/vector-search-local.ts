@@ -5,9 +5,10 @@
  * Uses cosine similarity for vector comparison.
  */
 
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { isErrnoException } from "@atlas/utils";
 import { getAtlasHome } from "@atlas/utils/paths.server";
-import { ensureDir } from "@std/fs";
-import { join } from "@std/path";
 import { z } from "zod";
 import type {
   IVectorSearchStorageAdapter,
@@ -200,7 +201,7 @@ export class VectorSearchLocalStorageAdapter implements IVectorSearchStorageAdap
 
   private async loadFromStorage(): Promise<void> {
     try {
-      const content = await Deno.readTextFile(this.indexFile);
+      const content = await readFile(this.indexFile, "utf-8");
       if (content.trim()) {
         const vectorArraySchema = z.array(VectorEmbeddingSchema);
         const data = vectorArraySchema.parse(JSON.parse(content));
@@ -223,7 +224,7 @@ export class VectorSearchLocalStorageAdapter implements IVectorSearchStorageAdap
         }
       }
     } catch (error) {
-      if (!(error instanceof Deno.errors.NotFound)) {
+      if (isErrnoException(error) && error.code === "ENOENT") {
         console.warn(
           `Failed to load vector index: ${error instanceof Error ? error.message : String(error)}`,
         );
@@ -233,14 +234,14 @@ export class VectorSearchLocalStorageAdapter implements IVectorSearchStorageAdap
   }
 
   private async saveToStorage(): Promise<void> {
-    await ensureDir(this.storagePath);
+    await mkdir(this.storagePath, { recursive: true });
 
     // Save embeddings
     const embeddingsArray = Array.from(this.embeddings.values());
-    await Deno.writeTextFile(this.indexFile, JSON.stringify(embeddingsArray, null, 2));
+    await writeFile(this.indexFile, JSON.stringify(embeddingsArray, null, 2), "utf-8");
 
     // Save stats
     const stats = await this.getStats();
-    await Deno.writeTextFile(this.statsFile, JSON.stringify(stats, null, 2));
+    await writeFile(this.statsFile, JSON.stringify(stats, null, 2), "utf-8");
   }
 }

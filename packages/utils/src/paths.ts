@@ -1,13 +1,15 @@
-import { join } from "@std/path";
+import os from "node:os";
+import { join } from "node:path";
+import process from "node:process";
 
 /**
  * This module should only be loaded in server code because it relies
- * on the Deno namespace to be available - this will crash in browsers!
+ * on the Node.js process namespace to be available - this will crash in browsers!
  */
 // Cache the working directory at startup since it never changes
-// This prevents EMFILE errors from concurrent Deno.cwd() calls
+// This prevents EMFILE errors from concurrent process.cwd() calls
 // and improves performance by avoiding unnecessary syscalls
-const CACHED_CWD = Deno.cwd();
+const CACHED_CWD = process.cwd();
 
 /**
  * Check if Atlas is running as a system service
@@ -17,23 +19,22 @@ export function isSystemService(): boolean {
   // 1. Running as root (uid 0)
   // 2. Or ATLAS_SYSTEM_MODE env var is set
   // 3. Or running as 'atlas' user
-  if (Deno.build.os === "windows") {
+  if (process.platform === "win32") {
     return false; // Windows doesn't use this pattern
   }
 
-  const uid = Deno.uid();
+  const uid = process.getuid?.();
   if (uid === 0) {
     return true; // Running as root
   }
 
-  if (Deno.env.get("ATLAS_SYSTEM_MODE") === "true") {
+  if (process.env.ATLAS_SYSTEM_MODE === "true") {
     return true; // Explicitly set to system mode
   }
 
   // Check if running as 'atlas' user
   try {
-    // @ts-expect-error - userInfo is available in some Deno versions
-    const userInfo = Deno.userInfo?.();
+    const userInfo = os.userInfo();
     if (userInfo?.username === "atlas") {
       return true;
     }
@@ -50,20 +51,20 @@ export function isSystemService(): boolean {
  * - User mode: ~/.atlas
  */
 export function getAtlasHome(): string {
-  const atlasHome = Deno.env.get("ATLAS_HOME");
+  const atlasHome = process.env.ATLAS_HOME;
   if (atlasHome) {
     return atlasHome;
   }
 
   // Check if running as system service
-  if (isSystemService() && Deno.build.os !== "windows") {
+  if (isSystemService() && process.platform !== "win32") {
     return "/var/lib/atlas";
   }
 
   // Check if we're already running from within .atlas directory
   // This handles the case where the compiled atlas binary runs from ~/.atlas/
   const cwd = CACHED_CWD;
-  const sep = Deno.build.os === "windows" ? "\\" : "/";
+  const sep = process.platform === "win32" ? "\\" : "/";
   if (cwd.endsWith(".atlas") || cwd.includes(`.atlas${sep}`)) {
     // We're in .atlas directory, return the parent .atlas directory
     const parts = cwd.split(sep);
@@ -74,7 +75,7 @@ export function getAtlasHome(): string {
   }
 
   // User mode: use home directory
-  const homeDir = Deno.env.get("HOME") || Deno.env.get("USERPROFILE");
+  const homeDir = process.env.HOME || process.env.USERPROFILE;
   if (!homeDir) {
     throw new Error("Unable to determine home directory");
   }

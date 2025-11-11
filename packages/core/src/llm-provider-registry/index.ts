@@ -7,8 +7,8 @@
 
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
+import { createAnthropicWithOptions } from "@atlas/llm";
 import { createProviderRegistry, type ProviderRegistryProvider } from "ai";
-import { createAnthropicWithOptions } from "../llm-provider.ts";
 
 /**
  * Create the AI SDK provider registry with all supported providers

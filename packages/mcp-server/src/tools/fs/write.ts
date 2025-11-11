@@ -1,7 +1,8 @@
+import { mkdir, stat, writeFile } from "node:fs/promises";
+import * as path from "node:path";
+import process from "node:process";
+import { isErrnoException } from "@atlas/utils";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { ensureDir } from "@std/fs";
-import * as path from "@std/path";
-import { dirname } from "@std/path";
 import { z } from "zod";
 import { createSuccessResponse } from "../utils.ts";
 
@@ -31,31 +32,31 @@ Usage:
       // Resolve file path
       const filepath = path.isAbsolute(params.filePath)
         ? params.filePath
-        : path.join(Deno.cwd(), params.filePath);
+        : path.join(process.cwd(), params.filePath);
 
       // Check if file exists
       let exists = false;
       try {
-        await Deno.stat(filepath);
+        await stat(filepath);
         exists = true;
       } catch (error) {
-        if (!(error instanceof Deno.errors.NotFound)) {
+        if (isErrnoException(error) && error.code === "ENOENT") {
           throw error;
         }
       }
 
       // Ensure parent directory exists
-      const parentDir = dirname(filepath);
-      await ensureDir(parentDir);
+      const parentDir = path.dirname(filepath);
+      await mkdir(parentDir, { recursive: true });
 
       // Write the file
-      await Deno.writeTextFile(filepath, params.content);
+      await writeFile(filepath, params.content, "utf-8");
 
       // Calculate file size
       const contentSize = new TextEncoder().encode(params.content).length;
 
       return createSuccessResponse({
-        title: path.relative(Deno.cwd(), filepath),
+        title: path.relative(process.cwd(), filepath),
         metadata: {
           filepath,
           exists,

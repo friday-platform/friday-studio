@@ -3,5 +3,6 @@
   "[javascript]": { "editor.defaultFormatter": "biomejs.biome" },
   "[typescript]": { "editor.defaultFormatter": "biomejs.biome" },
   "[json]": { "editor.defaultFormatter": "biomejs.biome" },
-  "[markdown]": { "editor.defaultFormatter": "denoland.vscode-deno" }
+  "[markdown]": { "editor.defaultFormatter": "denoland.vscode-deno" },
+  "editor.codeActionsOnSave": { "source.organizeImports.biome": "explicit" }
 }
