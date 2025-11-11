@@ -104,7 +104,7 @@
     "npm:vite@^7.1.8": "7.2.2_picomatch@4.0.3",
     "npm:xstate@^5.24.0": "5.24.0",
     "npm:yargs@18": "18.0.0",
-    "npm:zod-from-json-schema@0.5": "0.5.1",
+    "npm:zod-from-json-schema@~0.5.1": "0.5.1",
     "npm:zod@^4.1.12": "4.1.12"
   },
   "jsr": {
@@ -2271,7 +2271,7 @@
         "router",
         "send",
         "serve-static",
-        "statuses@2.0.2",
+        "statuses",
         "type-is",
         "vary"
       ]
@@ -2345,7 +2345,7 @@
         "escape-html",
         "on-finished",
         "parseurl",
-        "statuses@2.0.2"
+        "statuses"
       ]
     },
     "find-up@5.0.0": {
@@ -2505,7 +2505,7 @@
         "depd",
         "inherits",
         "setprototypeof",
-        "statuses@2.0.1",
+        "statuses",
         "toidentifier"
       ]
     },
@@ -3264,7 +3264,7 @@
         "ms",
         "on-finished",
         "range-parser",
-        "statuses@2.0.2"
+        "statuses"
       ]
     },
     "serve-static@2.2.0": {
@@ -3369,9 +3369,6 @@
     },
     "statuses@2.0.1": {
       "integrity": "sha512-RwNA9Z/7PrK06rYLIzFMlaF+l73iwpzsqRIFgbMLbTcLD6cOao82TaWefPXQvB2fOC4AjuYSEndS7N/mTCbkdQ=="
-    },
-    "statuses@2.0.2": {
-      "integrity": "sha512-DvEy55V3DB7uknRo+4iOGT5fP1slR8wQohVdknigZPMpMstaKJQWhwiYBACJE3Ul2pTnATihhBYnRhZQHGBiRw=="
     },
     "string-argv@0.3.2": {
       "integrity": "sha512-aqD2Q0144Z+/RqG52NeHEkZauTAUWJO8c6yTftGJKO3Tja5tUgIfmIl6kExvhtxSDP7fXB6DvzkfMpCd/F3G+Q=="
@@ -3787,7 +3784,7 @@
         "packageJson": {
           "dependencies": [
             "npm:cron-parser@^5.4.0",
-            "npm:zod-from-json-schema@0.5",
+            "npm:zod-from-json-schema@~0.5.1",
             "npm:zod@^4.1.12"
           ]
         }
