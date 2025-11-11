@@ -1,1 +1,5 @@
-{ "name": "@atlas/logger", "version": "1.0.0", "exports": { ".": "./mod.ts" } }
+{
+  "name": "@atlas/logger",
+  "version": "1.0.0",
+  "exports": { ".": "./mod.ts", "./console": "./src/console-only.ts" }
+}

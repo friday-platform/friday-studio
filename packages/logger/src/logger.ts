@@ -3,48 +3,19 @@ import { dirname, join } from "node:path";
 import process from "node:process";
 import { DetailedError } from "hono/client";
 import { FileWriteCoordinator } from "../../storage/src/memory/file-write-coordinator.ts";
+import { BaseLogger } from "./base-logger.ts";
 import { getAtlasLogsDir } from "./paths.ts";
 import type { LogContext, LogEntry, Logger, LogLevel } from "./types.ts";
 
 /**
  * Atlas logger that writes JSON to disk files and human-readable output to console
  */
-class AtlasLoggerV2 implements Logger {
-  private baseContext: LogContext;
-
-  constructor(context: LogContext = {}) {
-    this.baseContext = context;
-  }
-
-  trace(message: string, context?: LogContext): void {
-    this.log("trace", message, context);
-  }
-
-  debug(message: string, context?: LogContext): void {
-    this.log("debug", message, context);
-  }
-
-  info(message: string, context?: LogContext): void {
-    this.log("info", message, context);
-  }
-
-  warn(message: string, context?: LogContext): void {
-    this.log("warn", message, context);
-  }
-
-  error(message: string, context?: LogContext): void {
-    this.log("error", message, context);
-  }
-
-  fatal(message: string, context?: LogContext): void {
-    this.log("fatal", message, context);
-  }
-
+class AtlasLoggerV2 extends BaseLogger {
   child(context: LogContext): Logger {
     return new AtlasLoggerV2({ ...this.baseContext, ...context });
   }
 
-  private async log(level: LogLevel, message: string, context?: LogContext): Promise<void> {
+  protected async log(level: LogLevel, message: string, context?: LogContext): Promise<void> {
     if (process.env.DENO_TESTING === "true") {
       return;
     }
@@ -54,31 +25,11 @@ class AtlasLoggerV2 implements Logger {
     // Create log entry once for potential reuse
     const entry = this.formatLogEntry(level, message, finalContext);
 
-    // Determine output format based on TTY status and environment variable
-    // ATLAS_LOG_FORMAT can be "json" (force JSON) or "pretty" (force human-readable)
-    const forceFormat = process.env.ATLAS_LOG_FORMAT;
-    const isJson = forceFormat === "json" || (forceFormat !== "pretty" && !process.stdout.isTTY);
-
-    const consoleOutput = isJson
+    const consoleOutput = this.shouldUseJsonFormat()
       ? JSON.stringify(entry)
       : this.formatConsoleOutput(level, message, finalContext);
 
-    switch (level) {
-      case "error":
-      case "fatal":
-        console.error(consoleOutput);
-        break;
-      case "warn":
-        console.warn(consoleOutput);
-        break;
-      case "info":
-        console.info(consoleOutput);
-        break;
-      case "debug":
-      case "trace":
-        console.debug(consoleOutput);
-        break;
-    }
+    this.outputToConsole(level, consoleOutput);
 
     // Write to file (ignore failures)
     try {

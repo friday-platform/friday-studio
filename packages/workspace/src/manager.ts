@@ -765,7 +765,7 @@ export class WorkspaceManager {
     }
   }
 
-  private async determineChangeType(workspace: WorkspaceEntry): Promise<"deleted" | "updated"> {
+  private determineChangeType(workspace: WorkspaceEntry): "deleted" | "updated" {
     const dirExists = existsSync(workspace.path);
     const cfgExists = existsSync(workspace.configPath);
     return !dirExists || !cfgExists ? "deleted" : "updated";

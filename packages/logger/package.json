@@ -2,7 +2,7 @@
   "name": "@atlas/logger",
   "version": "1.0.0",
   "type": "module",
-  "exports": { ".": "./mod.ts" },
+  "exports": { ".": "./mod.ts", "./console": "./src/console-only.ts" },
   "main": "./mod.ts",
   "dependencies": { "@atlas/utils": "workspace:*", "hono": "^4.10.4" }
 }

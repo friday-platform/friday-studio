@@ -1,9 +1,12 @@
 /**
  * Static file server for Atlas Web Client (Production)
  * Serves static assets only - API routing handled at ingress level
+ *
+ * IMPORTANT: Uses @atlas/logger console-only export to avoid pulling in
+ * storage dependencies that would bloat the compiled binary from 74MB to 702MB.
  */
 
-import { logger } from "@atlas/logger";
+import { logger } from "@atlas/logger/console";
 import { serveDir } from "@std/http/file-server";
 
 const port = parseInt(Deno.env.get("WEB_CLIENT_PORT") || "3000", 10);
