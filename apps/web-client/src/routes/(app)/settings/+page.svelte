@@ -116,14 +116,19 @@ function showMessage(msg: string) {
 			{#each envVars as entry (entry.id)}
 				<div class="list-row">
 					<div class="list-cell">
-						<input type="text" placeholder="KEY" bind:value={entry.key} class="key-input" />
+						<input
+							type="text"
+							placeholder="KEY"
+							bind:value={() => entry.key, (v) => (entry.key = v)}
+							class="key-input"
+						/>
 					</div>
 
 					<div class="list-cell">
 						<input
 							type="text"
 							placeholder="value"
-							bind:value={entry.value}
+							bind:value={() => entry.value, (v) => (entry.value = v)}
 							onblur={() => {
 								saveChanges();
 							}}
@@ -142,37 +147,6 @@ function showMessage(msg: string) {
 						</button>
 					</div>
 				</div>
-
-				{#each envVars as entry (entry.id)}
-					<div class="list-row">
-						<div class="list-cell">
-							<input type="text" placeholder="KEY" bind:value={entry.key} class="key-input" />
-						</div>
-
-						<div class="list-cell">
-							<input
-								type="text"
-								placeholder="value"
-								bind:value={entry.value}
-								onblur={() => {
-									saveChanges();
-								}}
-								class="value-input"
-							/>
-						</div>
-
-						<div class="list-cell">
-							<button
-								type="button"
-								class="remove-button"
-								onclick={() => removeEntry(entry.id)}
-								aria-label="Remove entry"
-							>
-								<Icons.Trash />
-							</button>
-						</div>
-					</div>
-				{/each}
 			{/each}
 		</div>
 

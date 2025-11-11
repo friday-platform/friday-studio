@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "identifier": "com.tempest.atlas",
   "build": {
-    "beforeDevCommand": "deno task dev",
+    "beforeDevCommand": "deno run --allow-env --allow-run scripts/dev-tauri.ts",
     "devUrl": "http://localhost:1420",
     "beforeBuildCommand": "deno run --allow-env --allow-run scripts/build-tauri.ts",
     "frontendDist": "../build"
