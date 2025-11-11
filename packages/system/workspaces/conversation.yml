@@ -109,7 +109,6 @@ agents:
         - "atlas_update_workspace"
         - "atlas_workspace_set_persistence"
         # workspace
-        - "atlas_workspace_list"
         - "atlas_workspace_describe"
         - "atlas_workspace_delete"
         # library

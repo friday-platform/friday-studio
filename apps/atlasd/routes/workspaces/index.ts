@@ -23,6 +23,7 @@ const workspacesRoutes = daemonFactory
       const workspaces = await manager.list({ includeSystem: true });
       const response = workspaces.map((w) => ({
         ...w,
+        description: w.metadata?.description,
         type: w.metadata?.ephemeral ? "ephemeral" : "persistent",
       }));
       return c.json(response);
@@ -212,6 +213,7 @@ const workspacesRoutes = daemonFactory
       return c.json(
         {
           ...workspace,
+          description: workspace.metadata?.description,
           type: workspace.metadata?.ephemeral ? "ephemeral" : "persistent",
           config: config?.workspace || null,
         },
@@ -360,6 +362,7 @@ const workspacesRoutes = daemonFactory
         }
         return c.json({
           ...workspace,
+          description: workspace.metadata?.description,
           type: workspace.metadata?.ephemeral ? "ephemeral" : "persistent",
         });
       } catch (error) {

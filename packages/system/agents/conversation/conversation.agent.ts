@@ -39,10 +39,108 @@ import { fetchScratchpadContext } from "./tools/scratchpad-tools.ts";
 const ROLE_SYSTEM = "system" as const;
 
 /**
+ * Fetch all workspaces and their jobs from the daemon
+ */
+async function fetchWorkspacesAndJobs(
+  logger: Logger,
+): Promise<{
+  workspaces: Array<{ id: string; name: string; description?: string }>;
+  jobsByWorkspace: Map<string, string[]>;
+}> {
+  const workspaces: Array<{ id: string; name: string; description?: string }> = [];
+  const jobsByWorkspace = new Map<string, string[]>();
+
+  // Fetch workspaces
+  const workspacesResult = await parseResult(client.workspace.index.$get());
+  if (!workspacesResult.ok) {
+    logger.error("Failed to fetch workspaces for prompt injection", {
+      error: workspacesResult.error,
+    });
+    return { workspaces, jobsByWorkspace };
+  }
+
+  // For each workspace, fetch its jobs
+  for (const ws of workspacesResult.data) {
+    workspaces.push({ id: ws.id, name: ws.name, description: ws.description });
+
+    const jobsResult = await parseResult(
+      client.workspace[":workspaceId"].jobs.$get({ param: { workspaceId: ws.id } }),
+    );
+    if (jobsResult.ok) {
+      jobsByWorkspace.set(
+        ws.id,
+        jobsResult.data.map((j) => j.name),
+      );
+    } else {
+      logger.warn("Failed to fetch jobs for workspace", {
+        workspaceId: ws.id,
+        error: jobsResult.error,
+      });
+      jobsByWorkspace.set(ws.id, []);
+    }
+  }
+
+  return { workspaces, jobsByWorkspace };
+}
+
+/**
+ * Format workspaces and jobs as structured prompt section
+ */
+function formatWorkspacesAndJobsSection(
+  workspaces: Array<{ id: string; name: string; description?: string }>,
+  jobsByWorkspace: Map<string, string[]>,
+): string {
+  if (workspaces.length === 0) {
+    return `<available_workspaces>
+No workspaces currently available.
+</available_workspaces>`;
+  }
+
+  let section = `<available_workspaces>
+`;
+
+  for (const ws of workspaces) {
+    section += `## ${ws.name} (${ws.id})\n`;
+    if (ws.description) {
+      section += `${ws.description}\n`;
+    }
+
+    const jobs = jobsByWorkspace.get(ws.id) || [];
+    if (jobs.length > 0) {
+      section += `Jobs: ${jobs.join(", ")}\n`;
+    }
+    section += "\n";
+  }
+
+  section += `Use atlas_workspace_describe and atlas_workspace_jobs_describe for detailed information.
+</available_workspaces>`;
+  return section;
+}
+
+/**
+ * Format available agents as structured prompt section
+ */
+function formatAgentsSection(agents: string[]): string {
+  if (agents.length === 0) {
+    return `<available_agents>
+No agents currently available.
+</available_agents>`;
+  }
+
+  return `<available_agents>
+${agents.join(", ")}
+</available_agents>`;
+}
+
+/**
  * Get the system prompt with optional conversation history injection and available tools
  * Based on existing conversation-agent.ts buildSystemPrompt logic
  */
-function getSystemPrompt(streamId?: string): string {
+function getSystemPrompt(
+  streamId?: string,
+  workspacesSection?: string,
+  agentsSection?: string,
+): string {
   let prompt = SYSTEM_PROMPT;
 
   // Add critical streamId instruction for signal triggers
@@ -50,6 +148,16 @@ function getSystemPrompt(streamId?: string): string {
     prompt = `${prompt}
       CRITICAL: Stream ID is ${streamId}. Include this parameter when streamId is available as a parameter in tools.
     `;
+  }
+
+  // Inject workspaces and jobs section at the end
+  if (workspacesSection) {
+    prompt = `${prompt}\n\n${workspacesSection}`;
+  }
+
+  // Inject agents section at the end
+  if (agentsSection) {
+    prompt = `${prompt}\n\n${agentsSection}`;
   }
 
   return prompt;
@@ -191,9 +299,12 @@ export const conversationAgent = createAgent({
      */
     const { tools: agentTools } = await agentServer.listTools();
     const agents: AtlasTools = {};
+    const agentNames: string[] = [];
     for (const agent of agentTools) {
       // Skip the conversation agent. The universe might implode.
       if (agent.name === "conversation") continue;
+
+      agentNames.push(agent.name);
 
       /**
        * @hack
@@ -251,6 +362,16 @@ export const conversationAgent = createAgent({
         },
       });
     }
+
+    // Fetch workspaces and jobs for prompt injection
+    logger.info("Fetching workspaces and jobs for prompt injection");
+    const { workspaces, jobsByWorkspace } = await fetchWorkspacesAndJobs(logger);
+    const workspacesSection = formatWorkspacesAndJobsSection(workspaces, jobsByWorkspace);
+    const agentsSection = formatAgentsSection(agentNames);
+    logger.debug("Workspaces and agents sections prepared", {
+      workspaceCount: workspaces.length,
+      agentCount: agentNames.length,
+    });
 
     // Load and validate chat history
     let messages: AtlasUIMessage[] = [];
@@ -320,7 +441,7 @@ export const conversationAgent = createAgent({
         const modelMessages: CoreMessage[] = [
           {
             role: ROLE_SYSTEM,
-            content: getSystemPrompt(session.streamId),
+            content: getSystemPrompt(session.streamId, workspacesSection, agentsSection),
             providerOptions: ANTHROPIC_CACHE_BREAKPOINT,
           },
           { role: ROLE_SYSTEM, content: `Current datetime (UTC): ${new Date().toISOString()}` },
