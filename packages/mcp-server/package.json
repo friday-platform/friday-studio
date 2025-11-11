@@ -11,7 +11,7 @@
     "@modelcontextprotocol/sdk": "npm:@socotra/modelcontextprotocol-sdk@^1.18.0",
     "@std/fs": "npm:@jsr/std__fs@^1.0.19",
     "@std/path": "npm:@jsr/std__path@^1.1.2",
-    "ai": "^5.0.91",
+    "ai": "^5.0.92",
     "papaparse": "^5.5.3",
     "zod": "^4.1.12"
   },
