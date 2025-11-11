@@ -30,13 +30,19 @@ Deno.serve(
     const response = await serveDir(req, { fsRoot, quiet: true });
 
     const duration = performance.now() - start;
-    const logLevel = response.status >= 400 ? "warn" : "info";
-    log[logLevel]("Request completed", {
+    const message = "Request completed";
+    const context = {
       method: req.method,
       path: url.pathname,
       status: response.status,
       duration: `${duration.toFixed(2)}ms`,
-    });
+    };
+
+    if (response.status >= 400) {
+      log.warn(message, context);
+    } else {
+      log.info(message, context);
+    }
 
     return response;
   },

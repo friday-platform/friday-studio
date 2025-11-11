@@ -502,15 +502,13 @@ export class AtlasDaemon {
       const duration = Date.now() - start;
       const status = c.res.status;
 
+      const message = `HTTP ${method} ${path}`;
+      const context = { method, path, status, duration: `${duration}ms`, component: "http" };
+
       if (status >= 400) {
-        logger.error(`HTTP ${method} ${path}`, {
-          method,
-          path,
-          status,
-          duration: `${duration}ms`,
-          // Add component to match other logs
-          component: "http",
-        });
+        logger.error(message, context);
+      } else {
+        logger.info(message, context);
       }
     });
 
