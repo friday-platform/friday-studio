@@ -92,7 +92,7 @@
     "npm:lint-staged@^16.2.6": "16.2.6",
     "npm:onnxruntime-web@1.23.2": "1.23.2",
     "npm:openapi-fetch@0.15": "0.15.0",
-    "npm:openapi-typescript@^7.9.1": "7.10.1_typescript@5.9.3",
+    "npm:openapi-typescript@^7.10.1": "7.10.1_typescript@5.9.3",
     "npm:papaparse@^5.5.3": "5.5.3",
     "npm:prettier-plugin-svelte@^3.3.3": "3.4.0_prettier@3.6.2_svelte@5.43.5__acorn@8.15.0",
     "npm:prettier@^3.6.2": "3.6.2",
@@ -3885,7 +3885,7 @@
           "dependencies": [
             "npm:hono-openapi@^1.1.1",
             "npm:openapi-fetch@0.15",
-            "npm:openapi-typescript@^7.9.1"
+            "npm:openapi-typescript@^7.10.1"
           ]
         }
       },
