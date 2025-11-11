@@ -6,7 +6,8 @@ import { getWorkspaceFilesDir } from "@atlas/utils/paths.server";
 import { Database } from "@db/sqlite";
 import { basename, join } from "@std/path";
 import type { CoreSystemMessage, CoreUserMessage } from "ai";
-import { generateObject, generateText, tool } from "ai";
+import { generateText, tool } from "ai";
+import { stat } from "node:fs/promises";
 import { z } from "zod";
 
 /**
@@ -16,17 +17,6 @@ import { z } from "zod";
  * N random samples in a structured JSON artifact for downstream agent consumption.
  * Designed for CSV filtering and sampling workflows.
  */
-
-const PromptParseSchema = z.object({
-  csvPath: z.string().describe("Absolute path to the CSV file"),
-  filterCriteria: z.string().describe("Natural language filter criteria extracted from the prompt"),
-  sampleCount: z
-    .number()
-    .int()
-    .positive()
-    .default(3)
-    .describe("Number of random samples to select (extract from prompt, default 3)"),
-});
 
 type CsvFilterSamplerResult = { summary: string; artifactRef: ArtifactRef };
 
@@ -49,43 +39,81 @@ export const csvFilterSamplerAgent = createAgent<string, CsvFilterSamplerResult>
     try {
       logger.info("Parsing prompt to extract CSV path and filter criteria");
 
+      let csvPath = "";
+      let filterCriteria = "";
+      let sampleCount = 3;
+
+      const PathExtractionSchema = z.object({
+        csvPath: z.string().describe("Absolute path to the CSV file"),
+        filterCriteria: z
+          .string()
+          .describe("Natural language filter criteria extracted from the prompt"),
+        sampleCount: z
+          .number()
+          .int()
+          .positive()
+          .default(3)
+          .describe("Number of random samples to select (extract from prompt, default 3)"),
+      });
+
+      const validatePathTool = tool({
+        description: "Validate extracted CSV path exists on filesystem",
+        inputSchema: PathExtractionSchema,
+        execute: async (params: z.infer<typeof PathExtractionSchema>) => {
+          try {
+            const stats = await stat(params.csvPath);
+            if (!stats.isFile()) {
+              throw new Error(`Path exists but is not a file: ${params.csvPath}`);
+            }
+
+            csvPath = params.csvPath;
+            filterCriteria = params.filterCriteria;
+            sampleCount = params.sampleCount;
+
+            logger.info("CSV path validated", { csvPath, filterCriteria, sampleCount });
+
+            return { success: true, message: `Valid CSV file path: ${params.csvPath}` };
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+              throw new Error(`CSV file not found: ${params.csvPath}`);
+            }
+            throw error;
+          }
+        },
+      });
+
       const parseMessages: Array<CoreSystemMessage | CoreUserMessage> = [
         {
           role: "system",
           content: `Extract the CSV file path, filter criteria, and sample count from the user's prompt.
-The CSV path should be an absolute path.
-The filter criteria should be the natural language description of what to filter for.
-The sample count is how many random records to select (look for numbers like "3 contacts", "5 samples", etc.). Default to 3 if not specified.`,
+
+IMPORTANT:
+- The CSV path MUST be an absolute path to an existing file
+- The filter criteria should be the natural language description of what to filter for
+- The sample count is how many random records to select (look for numbers like "3 contacts", "5 samples", etc.). Default to 3 if not specified.
+
+Call validatePath tool with the extracted information to verify the path exists.`,
           providerOptions: ANTHROPIC_CACHE_BREAKPOINT,
         },
         { role: "user", content: prompt },
       ];
 
-      const parseResult = await generateObject({
+      const parseResult = await generateText({
         model: anthropic("claude-haiku-4-5"),
         abortSignal,
-        schema: PromptParseSchema,
         messages: parseMessages,
+        tools: { validatePath: validatePathTool },
       });
 
       // Log token usage including cache statistics
-      logger.debug("AI SDK generateObject completed", {
+      logger.debug("AI SDK generateText completed", {
         agent: "csv-filter-sampler",
         step: "parse-prompt",
         usage: parseResult.usage,
       });
 
-      const { csvPath, filterCriteria, sampleCount } = parseResult.object;
-      logger.info("Extracted from prompt", { csvPath, filterCriteria, sampleCount });
-
-      // Check if file exists before parsing
-      try {
-        await Deno.stat(csvPath);
-      } catch (error) {
-        if (error instanceof Deno.errors.NotFound) {
-          throw new Error(`CSV file not found: ${csvPath}`);
-        }
-        throw error;
+      if (!csvPath) {
+        throw new Error("Failed to extract valid CSV path from prompt");
       }
 
       logger.info("Parsing CSV file", { csvPath });
