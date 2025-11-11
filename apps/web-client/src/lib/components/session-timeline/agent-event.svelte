@@ -28,7 +28,7 @@ const outputContent = $derived.by(() => {
     return {
       type: "text" as const,
       full: text,
-      truncated: text.slice(0, TRUNCATE_LENGTH) + "...",
+      truncated: `${text.slice(0, TRUNCATE_LENGTH)}...`,
       shouldTruncate: text.length > TRUNCATE_LENGTH,
     };
   }
@@ -38,7 +38,7 @@ const outputContent = $derived.by(() => {
     return {
       type: "structured" as const,
       full: formatted,
-      truncated: formatted.slice(0, TRUNCATE_LENGTH) + "\n...",
+      truncated: `${formatted.slice(0, TRUNCATE_LENGTH)}\n...`,
       shouldTruncate: formatted.length > TRUNCATE_LENGTH,
     };
   }
@@ -53,7 +53,7 @@ const inputSummary = $derived.by(() => {
 
   const input = event.data.input;
   if (typeof input === "string" && input.length > 100) {
-    return input.slice(0, 100) + "...";
+    return `${input.slice(0, 100)}...`;
   }
   if (typeof input === "string") {
     return input;

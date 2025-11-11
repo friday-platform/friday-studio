@@ -46,25 +46,6 @@ updates:
         patterns:
           - "@atlas/*"
 
-  # Keep npm dependencies up to date (for atlas-installer)
-  - package-ecosystem: "npm"
-    directory: "/apps/atlas-installer"
-    schedule:
-      interval: "daily"
-      time: "09:00"
-    versioning-strategy: "increase"
-    open-pull-requests-limit: 5
-    assignees:
-      - "ljagiello"
-    commit-message:
-      prefix: "deps"
-      include: "scope"
-    labels:
-      - "dependencies"
-      - "npm"
-      - "tauri"
-    rebase-strategy: "auto"
-
   # Keep Docker dependencies up to date
   - package-ecosystem: "docker"
     directory: "/"

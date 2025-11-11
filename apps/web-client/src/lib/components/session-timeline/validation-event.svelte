@@ -21,7 +21,7 @@ const analysisContent = $derived.by(() => {
 
   return {
     full: formatted,
-    truncated: formatted.slice(0, TRUNCATE_LENGTH) + "\n...",
+    truncated: `${formatted.slice(0, TRUNCATE_LENGTH)}\n...`,
     shouldTruncate: formatted.length > TRUNCATE_LENGTH,
   };
 });

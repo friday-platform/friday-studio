@@ -1,3 +1,4 @@
+import { stat } from "node:fs/promises";
 import { type ArtifactRef, createAgent } from "@atlas/agent-sdk";
 import { ANTHROPIC_CACHE_BREAKPOINT, anthropic } from "@atlas/core";
 import { parseCsv } from "@atlas/core/artifacts";
@@ -7,7 +8,6 @@ import { Database } from "@db/sqlite";
 import { basename, join } from "@std/path";
 import type { CoreSystemMessage, CoreUserMessage } from "ai";
 import { generateText, tool } from "ai";
-import { stat } from "node:fs/promises";
 import { z } from "zod";
 
 /**
