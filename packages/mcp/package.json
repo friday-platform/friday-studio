@@ -6,7 +6,7 @@
   "exports": { ".": "./mod.ts" },
   "scripts": { "test": "deno test --allow-all" },
   "dependencies": {
-    "@ai-sdk/mcp": "^0.0.7",
+    "@ai-sdk/mcp": "^0.0.8",
     "@atlas/atlasd": "workspace:*",
     "@atlas/config": "workspace:*",
     "@atlas/logger": "workspace:*",
