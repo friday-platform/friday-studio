@@ -3939,7 +3939,7 @@
       "packages/vendor/hono-mcp": {
         "packageJson": {
           "dependencies": [
-            "npm:@socotra/modelcontextprotocol-sdk@^1.18.0",
+            "npm:@socotra/modelcontextprotocol-sdk@^1.21.0",
             "npm:hono@^4.10.4"
           ]
         }
