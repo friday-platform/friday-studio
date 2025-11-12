@@ -167,7 +167,16 @@ async function enrichAgent(agent: {
     return { id: agent.id, config };
   }
 
-  // No single bundled match - use LLM agent
+  // Multiple bundled matches - plan validation error
+  if (bundledMatches.length > 1) {
+    const matchedNames = bundledMatches.map((m) => m.name).join(", ");
+    throw new Error(
+      `Invalid plan: Agent "${agent.name}" has ambiguous needs [${agent.needs.join(", ")}] that match multiple bundled agents: ${matchedNames}. ` +
+        `The workspace planner must generate more specific needs or split this into separate agents.`,
+    );
+  }
+
+  // No bundled matches - use LLM agent
   const archetype = await determineArchetype(agent.needs, agent.description);
   const archetypeConfig = MODEL_CONFIGS_BY_ARCHETYPE[archetype];
 

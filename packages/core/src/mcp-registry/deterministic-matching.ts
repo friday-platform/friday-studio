@@ -5,13 +5,16 @@ import type { RequiredConfigField } from "./schemas.ts";
 
 /**
  * Normalizes a need string for consistent matching.
- * Converts to lowercase, trims whitespace, and replaces underscores with hyphens.
+ * Converts to lowercase, trims whitespace, and replaces spaces/underscores with hyphens.
  *
  * @param need - Raw need string from user input
  * @returns Normalized need string
  */
 function normalizeNeed(need: string): string {
-  return need.toLowerCase().trim().replace(/_/g, "-");
+  return need
+    .toLowerCase()
+    .trim()
+    .replace(/[\s_]+/g, "-");
 }
 
 /**

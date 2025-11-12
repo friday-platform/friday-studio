@@ -242,7 +242,7 @@ export const workspacePlannerAgent = createAgent<WorkspacePlannerInput, Workspac
                 needs: z
                   .array(z.string())
                   .describe(
-                    "External integrations requiring API keys or configuration. Use empty array [] for agents that only use built-in capabilities. Built-in capabilities (file operations, library storage, artifacts, bash, csv) are ALWAYS available to all agents - DO NOT list them here. Only list external services: 'slack', 'github', 'google-calendar', 'email', 'stripe', 'linear', etc.",
+                    "What this agent needs beyond built-in capabilities (files, bash, csv, artifacts). Use [] if built-in capabilities are enough. Otherwise list service integrations (e.g., slack, github, email) or specialized capabilities (e.g., web, coding, image-generation).",
                   ),
                 configuration: z
                   .record(z.string(), z.unknown())

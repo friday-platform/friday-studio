@@ -157,7 +157,7 @@ export const bundledAgentsRegistry: Record<string, BundledAgentRegistryItem> = {
     version: "1.0.0",
     description:
       "Multi-agent research system with parallel sub-agents for comprehensive web research and report generation",
-    capabilities: ["research", "web-search", "analysis", "reporting"],
+    capabilities: ["research", "web-search", "web-research", "web"],
     examples: [
       "Research Parker Conrad and provide a comprehensive report",
       "Find information about quantum computing trends",
@@ -172,6 +172,21 @@ export const bundledAgentsRegistry: Record<string, BundledAgentRegistryItem> = {
       },
     ],
     packagePath: "@atlas/bundled-agents/research",
+  },
+
+  "claude-code": {
+    id: "claude-code",
+    name: "Claude Code",
+    version: "1.0.0",
+    description: "Execute coding tasks with local filesystem access and tool integration",
+    capabilities: ["code-generation", "coding", "file-operations", "development", "programming"],
+    examples: [
+      "Write a TypeScript function to parse JSON",
+      "Read and analyze the package.json file",
+      "Generate a React component",
+    ],
+    requiredConfig: [],
+    packagePath: "@atlas/bundled-agents/claude-code",
   },
 
   "fathom-get-transcript": {
