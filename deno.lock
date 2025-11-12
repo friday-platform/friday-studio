@@ -43,7 +43,7 @@
     "npm:@hono/standard-validator@~0.1.5": "0.1.5_@standard-schema+spec@1.0.0_hono@4.10.4",
     "npm:@hono/zod-validator@~0.7.4": "0.7.4_hono@4.10.4_zod@4.1.12",
     "npm:@ianvs/prettier-plugin-sort-imports@^4.7.0": "4.7.0_prettier@3.6.2",
-    "npm:@inkjs/ui@2": "2.0.0_ink@6.5.0__@types+react@19.2.2__react@19.2.0_@types+react@19.2.2_react@19.2.0",
+    "npm:@inkjs/ui@2": "2.0.0_ink@6.5.0__@types+react@19.2.3__react@19.2.0_@types+react@19.2.3_react@19.2.0",
     "npm:@jsr/db__sqlite@0.12": "0.12.0",
     "npm:@jsr/std__assert@^1.0.14": "1.0.15",
     "npm:@jsr/std__async@^1.0.14": "1.0.15",
@@ -78,7 +78,7 @@
     "npm:@tavily/core@~0.5.12": "0.5.12",
     "npm:@total-typescript/ts-reset@~0.6.1": "0.6.1",
     "npm:@types/node@*": "24.2.0",
-    "npm:@types/react@^19.2.2": "19.2.2",
+    "npm:@types/react@^19.2.3": "19.2.3",
     "npm:ai-sdk-provider-claude-code@^2.1.0": "2.1.0_zod@4.1.12",
     "npm:ai@^5.0.81": "5.0.92_zod@4.1.12",
     "npm:ai@^5.0.92": "5.0.92_zod@4.1.12",
@@ -96,7 +96,7 @@
     "npm:globals@^16.5.0": "16.5.0",
     "npm:hono-openapi@^1.1.1": "1.1.1_@hono+standard-validator@0.1.5__@standard-schema+spec@1.0.0__hono@4.10.4_@standard-community+standard-json@0.3.5__@standard-schema+spec@1.0.0__@types+json-schema@7.0.15__quansync@0.2.11__zod@4.1.12_@standard-community+standard-openapi@0.2.8__@standard-community+standard-json@0.3.5___@standard-schema+spec@1.0.0___@types+json-schema@7.0.15___quansync@0.2.11___zod@4.1.12__@standard-schema+spec@1.0.0__openapi-types@12.1.3__zod@4.1.12__@types+json-schema@7.0.15_@types+json-schema@7.0.15_hono@4.10.4_openapi-types@12.1.3_zod@4.1.12",
     "npm:hono@^4.10.4": "4.10.4",
-    "npm:ink@^6.5.0": "6.5.0_@types+react@19.2.2_react@19.2.0",
+    "npm:ink@^6.5.0": "6.5.0_@types+react@19.2.3_react@19.2.0",
     "npm:js-levenshtein@^1.1.6": "1.1.6",
     "npm:jsonrepair@^3.13.1": "3.13.1",
     "npm:knip@5.69.0": "5.69.0_@types+node@24.2.0_typescript@5.9.3",
@@ -858,7 +858,7 @@
       "os": ["win32"],
       "cpu": ["x64"]
     },
-    "@inkjs/ui@2.0.0_ink@6.5.0__@types+react@19.2.2__react@19.2.0_@types+react@19.2.2_react@19.2.0": {
+    "@inkjs/ui@2.0.0_ink@6.5.0__@types+react@19.2.3__react@19.2.0_@types+react@19.2.3_react@19.2.0": {
       "integrity": "sha512-5+8fJmwtF9UvikzLfph9sA+LS+l37Ij/szQltkuXLOAXwNkBX9innfzh4pLGXIB59vKEQUtc6D4qGvhD7h3pAg==",
       "dependencies": [
         "chalk@5.6.2",
@@ -1693,8 +1693,8 @@
         "undici-types@7.10.0"
       ]
     },
-    "@types/react@19.2.2": {
-      "integrity": "sha512-6mDvHUFSjyT2B2yeNx2nUgMxh9LtOWvkhIU3uePn2I2oyNymUAX1NIsdgviM4CH+JSrp2D2hsMvJOkxY+0wNRA==",
+    "@types/react@19.2.3": {
+      "integrity": "sha512-k5dJVszUiNr1DSe8Cs+knKR6IrqhqdhpUwzqhkS8ecQTSf3THNtbfIp/umqHMpX2bv+9dkx3fwDv/86LcSfvSg==",
       "dependencies": [
         "csstype"
       ]
@@ -2988,7 +2988,7 @@
     "inherits@2.0.4": {
       "integrity": "sha512-k/vGaX4/Yla3WzyMCvTQOXYeIHvqOKtnqBduzTHpzpQZzAskKMhZ2K+EnBiSM9zGSoIFeMpXKxa4dYeZIQqewQ=="
     },
-    "ink@6.5.0_@types+react@19.2.2_react@19.2.0": {
+    "ink@6.5.0_@types+react@19.2.3_react@19.2.0": {
       "integrity": "sha512-abn3rYIxepGKD/h4ZH6sQHgJxBi/EISY/1fIxHODlF5LPvw0wKv2S2uOMIMTfJdBwy9DsWndCfKDCcWSRclp/w==",
       "dependencies": [
         "@alcalzone/ansi-tokenize",
@@ -4503,7 +4503,7 @@
         "npm:@opentelemetry/api@^1.9.0",
         "npm:@sendgrid/helpers@8",
         "npm:@total-typescript/ts-reset@~0.6.1",
-        "npm:@types/react@^19.2.2",
+        "npm:@types/react@^19.2.3",
         "npm:ai@^5.0.92",
         "npm:ink@^6.5.0",
         "npm:js-levenshtein@^1.1.6",
