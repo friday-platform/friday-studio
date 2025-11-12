@@ -89,8 +89,8 @@
     "npm:eslint-config-prettier@^10.1.8": "10.1.8_eslint@9.39.1",
     "npm:eslint-plugin-svelte@^3.13.0": "3.13.0_eslint@9.39.1_svelte@5.43.6__acorn@8.15.0_postcss@8.5.6",
     "npm:eslint@^9.39.1": "9.39.1",
-    "npm:evalite@^1.0.0-beta.1": "1.0.0-beta.2",
-    "npm:evalite@^1.0.0-beta.2": "1.0.0-beta.2",
+    "npm:evalite@^1.0.0-beta.1": "1.0.0-beta.3",
+    "npm:evalite@^1.0.0-beta.3": "1.0.0-beta.3",
     "npm:eventsource-client@^1.2.0": "1.2.0",
     "npm:fast-glob@^3.3.3": "3.3.3",
     "npm:globals@^16.5.0": "16.5.0",
@@ -2522,8 +2522,8 @@
     "etag@1.8.1": {
       "integrity": "sha512-aIL5Fx7mawVa300al2BnEE4iNvo1qETxLrPI/o05L7z6go7fCw1J6EQmbK4FmJ2AS7kgVF/KEZWufBfdClMcPg=="
     },
-    "evalite@1.0.0-beta.2": {
-      "integrity": "sha512-P6QyBfY2+fKM55rsowtAArusMb0jXkrqJJnMhl20cnjLxzMGY2UZdrVHicUfXIemIlxATQV5px2g7cN/6DLDoQ==",
+    "evalite@1.0.0-beta.3": {
+      "integrity": "sha512-8Fa3LZi4QIgkNnRExl4nVAKFwlUTkT9TvJNS2EJm7a3b4VxM+szF0VNwJwHrEBnr5DV4h/3NKBBNuEkjL3Ifiw==",
       "dependencies": [
         "@fastify/static",
         "@fastify/websocket",
@@ -4761,7 +4761,7 @@
             "npm:@jsr/std__yaml@^1.0.9",
             "npm:@socotra/modelcontextprotocol-sdk@^1.18.0",
             "npm:ai@^5.0.92",
-            "npm:evalite@^1.0.0-beta.2",
+            "npm:evalite@^1.0.0-beta.3",
             "npm:zod@^4.1.12"
           ]
         }
