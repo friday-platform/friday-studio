@@ -38,7 +38,7 @@
     "packages/workspace": { "project": ["src/**/*.{ts,tsx,js,jsx}!"] },
     "apps/atlasd": { "project": ["**/*.{ts,tsx,js,jsx}!"] },
     "apps/web-client": {
-      "entry": ["src/app.html!", "src/routes/**/*.svelte!", "src/**/*.test.ts", "server.ts!"],
+      "entry": ["src/app.html!", "src/routes/**/*.svelte!", "src/**/*.test.ts"],
       "project": ["src/**/*.{ts,tsx,js,jsx,svelte}!", "*.js!", "*.ts!"],
       "paths": {
         "$lib": ["./src/lib"],

@@ -109,46 +109,17 @@ RUN deno install
 WORKDIR /app/apps/web-client
 RUN deno task build
 
-# Compile server.ts to a self-contained binary
-# This approach avoids JSR transitive dependency caching issues entirely
-# by embedding all dependencies directly in the executable
-WORKDIR /app
-RUN deno compile \
-    --allow-net \
-    --allow-read \
-    --allow-env \
-    --output=/app/server \
-    apps/web-client/server.ts
-
 # Stage 4: Web client runtime
-FROM denoland/deno:alpine-2.5.6 AS web-client
-
-# Create atlas user and group
-RUN addgroup -g 1001 -S atlas 2>/dev/null || true && \
-    adduser -u 1001 -S -G atlas -h /home/atlas -s /bin/sh atlas 2>/dev/null || true
-
-# Create web and cache directories
-RUN mkdir -p /home/atlas/web /home/atlas/.cache && chown -R atlas:atlas /home/atlas
+FROM nginxinc/nginx-unprivileged:1.29.2-alpine3.22 AS web-client
 
 # Copy built static assets from web-client-builder
-COPY --from=web-client-builder --chown=atlas:atlas /app/apps/web-client/build /home/atlas/web
+COPY --from=web-client-builder /app/apps/web-client/build /usr/share/nginx/html
 
-# Copy compiled server binary
-# All dependencies are embedded in the binary, no runtime resolution needed
-COPY --from=web-client-builder --chown=atlas:atlas /app/server /home/atlas/server
-
-# Switch to atlas user
-USER atlas
-WORKDIR /home/atlas
-
-# Set environment variables
-ENV DENO_NO_UPDATE_CHECK=1 \
-    WEB_CLIENT_HOST=0.0.0.0 \
-    WEB_CLIENT_PORT=3000 \
-    ATLAS_LOG_FORMAT=json
+# Copy nginx configuration
+COPY --from=web-client-builder /app/apps/web-client/nginx.conf /etc/nginx/conf.d/default.conf
 
 # Expose web client port
 EXPOSE 3000
 
-# Start compiled server binary
-CMD ["/home/atlas/server"]
+# Run as non-root user (nginx:nginx, uid=101)
+CMD ["nginx", "-g", "daemon off;"]
