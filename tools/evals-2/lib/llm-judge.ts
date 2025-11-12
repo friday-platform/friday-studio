@@ -1,4 +1,4 @@
-import { anthropic } from "@atlas/llm";
+import { registry } from "@atlas/llm";
 import { generateObject } from "ai";
 import { createScorer } from "evalite";
 import { z } from "zod";
@@ -26,7 +26,7 @@ export const LLMJudge = createScorer<unknown, unknown, string>({
   name: "LLMJudge",
   scorer: async ({ expected, output }) => {
     const { object } = await generateObject({
-      model: anthropic("claude-haiku-4-5"),
+      model: registry.languageModel("anthropic:claude-haiku-4-5"),
       schema: evaluationSchema,
       prompt: `
     <identity>

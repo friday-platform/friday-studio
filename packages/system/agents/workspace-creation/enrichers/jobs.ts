@@ -1,6 +1,6 @@
 import { type JobSpecification, JobSpecificationSchema } from "@atlas/config";
-import { ANTHROPIC_CACHE_BREAKPOINT, anthropic } from "@atlas/core";
 import type { WorkspacePlan } from "@atlas/core/artifacts";
+import { getDefaultProviderOpts, registry } from "@atlas/llm";
 import { logger } from "@atlas/logger";
 import { generateObject } from "ai";
 import { z } from "zod";
@@ -76,10 +76,14 @@ export async function enrichJob(
   abortSignal?: AbortSignal,
 ): Promise<{ id: string; spec: JobSpecification }> {
   const result = await generateObject({
-    model: anthropic("claude-sonnet-4-5"),
+    model: registry.languageModel("anthropic:claude-sonnet-4-5"),
     schema: JobEnricherSchema,
     messages: [
-      { role: "system", content: systemPrompt, providerOptions: ANTHROPIC_CACHE_BREAKPOINT },
+      {
+        role: "system",
+        content: systemPrompt,
+        providerOptions: getDefaultProviderOpts("anthropic"),
+      },
       {
         role: "user",
         content: `Generate job specification:

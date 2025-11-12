@@ -12,10 +12,10 @@
  */
 
 import type { AgentResult } from "@atlas/agent-sdk";
-import { ANTHROPIC_CACHE_BREAKPOINT, anthropic } from "@atlas/core";
+import { getDefaultProviderOpts, registry } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
 import type { CoreMessage } from "ai";
-import { generateObject, type LanguageModel } from "ai";
+import { generateObject } from "ai";
 import { z } from "zod";
 import { SupervisionLevel } from "../supervision-levels.ts";
 
@@ -221,10 +221,8 @@ async function performLLMValidation(
   result: AgentResult,
   config: HallucinationDetectorConfig,
 ): Promise<DetectionMethodResult> {
-  const llmProvider = (model: string) => anthropic(model);
-
   const operation = async (): Promise<LLMValidationResult> => {
-    return await validateWithLLM(result, llmProvider, config.logger);
+    return await validateWithLLM(result, config.logger);
   };
 
   try {
@@ -275,11 +273,7 @@ async function performLLMValidation(
 /**
  * LLM validation with robust parsing
  */
-async function validateWithLLM(
-  result: AgentResult,
-  llmProvider: (model: string) => LanguageModel,
-  logger?: Logger,
-): Promise<LLMValidationResult> {
+async function validateWithLLM(result: AgentResult, logger?: Logger): Promise<LLMValidationResult> {
   const ValidationSchema = z.object({
     valid: z.boolean(),
     confidence: z.number().min(0).max(1),
@@ -291,13 +285,13 @@ async function validateWithLLM(
       {
         role: "system",
         content: buildValidationPrompt(),
-        providerOptions: ANTHROPIC_CACHE_BREAKPOINT,
+        providerOptions: getDefaultProviderOpts("anthropic"),
       },
       { role: "user", content: buildValidationInput(result) },
     ];
 
     const llmResult = await generateObject({
-      model: llmProvider("claude-haiku-4-5"),
+      model: registry.languageModel("anthropic:claude-haiku-4-5"),
       messages,
       schema: ValidationSchema,
       temperature: 0.05,

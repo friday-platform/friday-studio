@@ -1,6 +1,6 @@
 import { createAgent, repairJson } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
-import { ANTHROPIC_CACHE_BREAKPOINT, anthropic } from "@atlas/core";
+import { getDefaultProviderOpts, registry } from "@atlas/llm";
 import { fail, type Result, stringifyError, success } from "@atlas/utils";
 import type { CoreSystemMessage, CoreUserMessage } from "ai";
 import { generateObject } from "ai";
@@ -120,13 +120,13 @@ export const sessionSupervisorAgent = createAgent<
         {
           role: "system",
           content: SUPERVISOR_SYSTEM_PROMPT,
-          providerOptions: ANTHROPIC_CACHE_BREAKPOINT,
+          providerOptions: getDefaultProviderOpts("anthropic"),
         },
         { role: "user", content: buildOptimizationPrompt(input, { expandedArtifacts }) },
       ];
 
       const result = await generateObject({
-        model: anthropic("claude-sonnet-4-5"),
+        model: registry.languageModel("anthropic:claude-sonnet-4-5"),
         experimental_repairText: repairJson,
         schema: SupervisorOutputSchema,
         messages,

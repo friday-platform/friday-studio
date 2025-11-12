@@ -17,7 +17,7 @@ import {
   matchBundledAgents,
 } from "@atlas/core/mcp-registry/deterministic-matching";
 import { validateRequiredFields } from "@atlas/core/mcp-registry/requirement-validator";
-import { ANTHROPIC_CACHE_BREAKPOINT, anthropic } from "@atlas/llm";
+import { getDefaultProviderOpts, registry } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
 import { fail, getTodaysDate, type Result, stringifyError, success } from "@atlas/utils";
 import { toKebabCase } from "@std/text";
@@ -47,7 +47,7 @@ async function summarize(params: {
   abortSignal?: AbortSignal;
 }): Promise<string> {
   const result = await generateText({
-    model: traceAISDKModel(anthropic("claude-haiku-4-5")),
+    model: traceAISDKModel(registry.languageModel("anthropic:claude-haiku-4-5")),
     system:
       "You generate concise, accurate summaries. No fluff, no marketing speak. Direct and informative.",
     prompt: `
@@ -201,7 +201,7 @@ export const workspacePlannerAgent = createAgent<WorkspacePlannerInput, Workspac
       }
       // Generate workspace, signals, agents with LLM-chosen names
       const phase1Result = await generateObject({
-        model: traceAISDKModel(anthropic("claude-sonnet-4-5-20250929")),
+        model: traceAISDKModel(registry.languageModel("anthropic:claude-sonnet-4-5-20250929")),
         experimental_repairText: repairJson,
         schema: z.object({
           plan: z.object({
@@ -255,7 +255,11 @@ export const workspacePlannerAgent = createAgent<WorkspacePlannerInput, Workspac
           }),
         }),
         messages: [
-          { role: "system", content: SYSTEM_PROMPT, providerOptions: ANTHROPIC_CACHE_BREAKPOINT },
+          {
+            role: "system",
+            content: SYSTEM_PROMPT,
+            providerOptions: getDefaultProviderOpts("anthropic"),
+          },
           { role: "system", content: `Current date: ${getTodaysDate()}` },
           { role: "user", content: signalsAndAgentsPrompt },
         ],
@@ -385,7 +389,7 @@ export const workspacePlannerAgent = createAgent<WorkspacePlannerInput, Workspac
 Generate jobs that connect the available signals and agents to fulfill the workspace requirements.`;
 
       const phase2Result = await generateObject({
-        model: traceAISDKModel(anthropic("claude-sonnet-4-5-20250929")),
+        model: traceAISDKModel(registry.languageModel("anthropic:claude-sonnet-4-5-20250929")),
         experimental_repairText: repairJson,
         schema: z.object({
           jobs: z.array(
@@ -409,7 +413,11 @@ Generate jobs that connect the available signals and agents to fulfill the works
           ),
         }),
         messages: [
-          { role: "system", content: jobsPrompt, providerOptions: ANTHROPIC_CACHE_BREAKPOINT },
+          {
+            role: "system",
+            content: jobsPrompt,
+            providerOptions: getDefaultProviderOpts("anthropic"),
+          },
           {
             role: "user",
             content: `Create jobs connecting these components:

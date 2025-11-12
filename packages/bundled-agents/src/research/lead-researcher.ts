@@ -4,7 +4,7 @@
  */
 
 import { createAgent } from "@atlas/agent-sdk";
-import { ANTHROPIC_CACHE_BREAKPOINT, anthropic } from "@atlas/core";
+import { getDefaultProviderOpts, registry } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
 import { fail, getTodaysDate, type Result, success } from "@atlas/utils";
 import { tavily as createTavily } from "@tavily/core";
@@ -77,7 +77,7 @@ Examples:
 <stage_guidance>
 ${guidance}
 </stage_guidance>`,
-        providerOptions: ANTHROPIC_CACHE_BREAKPOINT,
+        providerOptions: getDefaultProviderOpts("anthropic"),
       },
       {
         role: "user",
@@ -100,7 +100,7 @@ Return ONLY the progress text, no explanations.
     ];
 
     const result = await generateText({
-      model: anthropic("claude-haiku-4-5"),
+      model: registry.languageModel("anthropic:claude-haiku-4-5"),
       abortSignal,
       messages,
       temperature: 0.5,
@@ -291,13 +291,13 @@ export const researchAgent = createAgent<string, ResearchAgentResult>({
         {
           role: "system",
           content: RESEARCH_TOPIC_WRITER_PROMPT,
-          providerOptions: ANTHROPIC_CACHE_BREAKPOINT,
+          providerOptions: getDefaultProviderOpts("anthropic"),
         },
         { role: "user", content: prompt },
       ];
 
       const researchTaskResult = await generateObject({
-        model: anthropic("claude-sonnet-4-5"),
+        model: registry.languageModel("anthropic:claude-sonnet-4-5"),
         messages: researchTaskMessages,
         schema: ResearchTaskSchema,
         temperature: 0.3,
@@ -319,12 +319,12 @@ export const researchAgent = createAgent<string, ResearchAgentResult>({
 
       /** Execute research with supervisor */
       const result = streamText({
-        model: anthropic("claude-sonnet-4-5"),
+        model: registry.languageModel("anthropic:claude-sonnet-4-5"),
         messages: [
           {
             role: "system",
             content: createSupervisorPrompt(researchTaskResult.object.depth),
-            providerOptions: ANTHROPIC_CACHE_BREAKPOINT,
+            providerOptions: getDefaultProviderOpts("anthropic"),
           },
           { role: "system", content: `Today's date: ${getTodaysDate()}` },
           { role: "user", content: researchTaskResult.object.researchQuestion },

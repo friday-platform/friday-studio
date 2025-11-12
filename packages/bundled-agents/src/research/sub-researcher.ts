@@ -3,7 +3,7 @@
  */
 
 import type { AgentTelemetryConfig, AtlasTool } from "@atlas/agent-sdk";
-import { ANTHROPIC_CACHE_BREAKPOINT, anthropic } from "@atlas/core";
+import { getDefaultProviderOpts, registry } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
 import { getTodaysDate } from "@atlas/utils";
 import { withSpan } from "@atlas/utils/telemetry.server";
@@ -108,12 +108,12 @@ export function getResearcherSubAgent({
           }[depth];
 
           const result = streamText({
-            model: anthropic("claude-haiku-4-5"),
+            model: registry.languageModel("anthropic:claude-haiku-4-5"),
             messages: [
               {
                 role: "system",
                 content: createSubAgentPrompt(depth),
-                providerOptions: ANTHROPIC_CACHE_BREAKPOINT,
+                providerOptions: getDefaultProviderOpts("anthropic"),
               },
               { role: "system", content: `Today's date: ${getTodaysDate()}` },
               { role: "user", content: `Research task: ${topic}` },

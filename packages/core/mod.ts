@@ -28,13 +28,6 @@ export { conversationStorage } from "./src/chat-storage.ts";
 export * from "./src/constants/supervisor-status.ts";
 // Credential Fetcher
 export * from "./src/credential-fetcher.ts";
-// Export all LLM provider types and interfaces
-export type { LLMOptions, LLMResponse } from "./src/llm-provider.ts";
-export {
-  ANTHROPIC_CACHE_BREAKPOINT,
-  anthropic,
-  LLMProvider,
-} from "./src/llm-provider.ts";
 // MCP Registry
 export { mcpServersRegistry } from "./src/mcp-registry/registry-consolidated.ts";
 export type {

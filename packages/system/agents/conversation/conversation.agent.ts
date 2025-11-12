@@ -12,17 +12,17 @@ import type { AtlasTools, AtlasUIMessage } from "@atlas/agent-sdk";
 import { createAgent, validateAtlasUIMessages } from "@atlas/agent-sdk";
 import { pipeUIMessageStream } from "@atlas/agent-sdk/vercel-helpers";
 import { client, parseResult } from "@atlas/client/v2";
-import { ANTHROPIC_CACHE_BREAKPOINT, anthropic } from "@atlas/core";
 import { createErrorCause, getErrorDisplayMessage, parseAPICallError } from "@atlas/core/errors";
+import { getDefaultProviderOpts, registry } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
 import { Client } from "@modelcontextprotocol/sdk/client";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import type { CoreMessage, CoreSystemMessage, CoreUserMessage } from "ai";
 import {
   convertToModelMessages,
   createIdGenerator,
   generateText,
   jsonSchema,
+  type ModelMessage,
   smoothStream,
   stepCountIs,
   streamText,
@@ -168,12 +168,12 @@ function getSystemPrompt(
  */
 async function generateChatTitle(messages: AtlasUIMessage[], logger: Logger): Promise<string> {
   try {
-    const chatMessages: Array<CoreSystemMessage | CoreUserMessage> = [
+    const chatMessages: Array<ModelMessage> = [
       {
         role: ROLE_SYSTEM,
         content:
           "You generate concise 3-5 word titles for conversations. Only output the title, nothing else.",
-        providerOptions: ANTHROPIC_CACHE_BREAKPOINT,
+        providerOptions: getDefaultProviderOpts("anthropic"),
       },
       {
         role: "user",
@@ -183,7 +183,7 @@ ${messages.map((m) => `${m.role}: ${JSON.stringify(m.parts.filter((p) => p.type 
     ];
 
     const result = await generateText({
-      model: anthropic("claude-haiku-4-5"),
+      model: registry.languageModel("anthropic:claude-haiku-4-5"),
       messages: chatMessages,
       maxOutputTokens: 50,
     });
@@ -438,21 +438,19 @@ export const conversationAgent = createAgent({
 
     try {
       try {
-        const modelMessages: CoreMessage[] = [
-          {
-            role: ROLE_SYSTEM,
-            content: getSystemPrompt(session.streamId, workspacesSection, agentsSection),
-            providerOptions: ANTHROPIC_CACHE_BREAKPOINT,
-          },
-          { role: ROLE_SYSTEM, content: `Current datetime (UTC): ${new Date().toISOString()}` },
-          // Add scratchpad context as third system message if it exists
-          ...(scratchpadContext ? [{ role: ROLE_SYSTEM, content: scratchpadContext }] : []),
-          ...convertToModelMessages(messages),
-        ];
-
         result = streamText({
-          model: anthropic("claude-sonnet-4-5"),
-          messages: modelMessages,
+          model: registry.languageModel("anthropic:claude-sonnet-4-5"),
+          messages: [
+            {
+              role: ROLE_SYSTEM,
+              content: getSystemPrompt(session.streamId, workspacesSection, agentsSection),
+              providerOptions: getDefaultProviderOpts("anthropic"),
+            },
+            { role: ROLE_SYSTEM, content: `Current datetime (UTC): ${new Date().toISOString()}` },
+            // Add scratchpad context as third system message if it exists
+            ...(scratchpadContext ? [{ role: ROLE_SYSTEM, content: scratchpadContext }] : []),
+            ...convertToModelMessages(messages),
+          ],
           tools: allTools,
           toolChoice: "auto",
           stopWhen: stepCountIs(40),

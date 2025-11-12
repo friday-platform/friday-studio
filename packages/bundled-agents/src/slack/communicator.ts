@@ -4,7 +4,7 @@ import {
   collectToolUsageFromSteps,
   extractArtifactRefsFromToolResults,
 } from "@atlas/agent-sdk/vercel-helpers";
-import { ANTHROPIC_CACHE_BREAKPOINT, anthropic } from "@atlas/core";
+import { getDefaultProviderOpts, registry } from "@atlas/llm";
 import { generateObject, generateText, stepCountIs } from "ai";
 import { z } from "zod";
 import { executorSystem, planSystem, translateSystem } from "./prompts.ts";
@@ -93,9 +93,13 @@ export const slackCommunicatorAgent = createAgent<string, Result>({
     stream?.emit({ type: "data-tool-progress", data: { toolName: "Slack", content: `Planning` } });
 
     const planResult = await generateObject({
-      model: anthropic("claude-haiku-4-5"),
+      model: registry.languageModel("anthropic:claude-haiku-4-5"),
       messages: [
-        { role: "system", content: planSystem, providerOptions: ANTHROPIC_CACHE_BREAKPOINT },
+        {
+          role: "system",
+          content: planSystem,
+          providerOptions: getDefaultProviderOpts("anthropic"),
+        },
         { role: "user", content: prompt },
       ],
       abortSignal,
@@ -125,10 +129,14 @@ export const slackCommunicatorAgent = createAgent<string, Result>({
       const translatePrompt = `Read the provided artifact ids and create a Slack mrkdwn compatible artifact, then return the new artifact id. Use the following ids: ${JSON.stringify(plan.artifactIds)}`;
 
       const translateResult = await generateText({
-        model: anthropic("claude-haiku-4-5"),
+        model: registry.languageModel("anthropic:claude-haiku-4-5"),
         abortSignal,
         messages: [
-          { role: "system", content: translateSystem, providerOptions: ANTHROPIC_CACHE_BREAKPOINT },
+          {
+            role: "system",
+            content: translateSystem,
+            providerOptions: getDefaultProviderOpts("anthropic"),
+          },
           { role: "user", content: translatePrompt },
         ],
         tools,
@@ -208,10 +216,14 @@ export const slackCommunicatorAgent = createAgent<string, Result>({
       }
 
       const executionResult = await generateText({
-        model: anthropic("claude-haiku-4-5"),
+        model: registry.languageModel("anthropic:claude-haiku-4-5"),
         abortSignal,
         messages: [
-          { role: "system", content: executorSystem, providerOptions: ANTHROPIC_CACHE_BREAKPOINT },
+          {
+            role: "system",
+            content: executorSystem,
+            providerOptions: getDefaultProviderOpts("anthropic"),
+          },
           { role: "user", content: executorInstructions },
         ],
         tools,

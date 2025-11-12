@@ -1,5 +1,5 @@
 import type { AtlasTools } from "@atlas/agent-sdk";
-import { ANTHROPIC_CACHE_BREAKPOINT, anthropic } from "@atlas/core";
+import { getDefaultProviderOpts, registry } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
 import { getTodaysDate } from "@atlas/utils";
 import type { CoreSystemMessage, CoreUserMessage } from "ai";
@@ -80,7 +80,7 @@ export function getFinalReportGeneratorSubAgent({ logger, abortSignal }: Params)
         {
           role: "system",
           content: FINAL_REPORT_GENERATOR_PROMPT,
-          providerOptions: ANTHROPIC_CACHE_BREAKPOINT,
+          providerOptions: getDefaultProviderOpts("anthropic"),
         },
         { role: "system", content: `Today's date: ${getTodaysDate()}` },
         {
@@ -92,7 +92,7 @@ Generate report answering the request.`,
       ];
 
       const result = await generateText({
-        model: anthropic("claude-sonnet-4-5"),
+        model: registry.languageModel("anthropic:claude-sonnet-4-5"),
         messages,
         tools,
         maxOutputTokens: 8192,

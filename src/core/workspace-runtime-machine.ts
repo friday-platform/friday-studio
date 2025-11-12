@@ -13,12 +13,11 @@ import {
   convertLLMToAgent,
   createErrorCause,
   type GlobalMCPServerPool,
-  LLMProvider,
   throwWithCause,
   WorkspaceSessionStatus,
 } from "@atlas/core";
 import { logger } from "@atlas/logger";
-import { MCPServerRegistry } from "@atlas/mcp";
+import { MCPManager, MCPServerRegistry } from "@atlas/mcp";
 import {
   createSessionMemoryHooks,
   type SessionMemoryHooks,
@@ -1293,8 +1292,8 @@ async function registerMCPServers(config: MergedConfig, workspaceId: string): Pr
     // Get server configurations from registry (now includes atlas-platform)
     const serverConfigs = MCPServerRegistry.getServerConfigs(allServerIds);
 
-    // Get MCPManager instance from LLMProvider
-    const mcpManager = LLMProvider.getMCPManager();
+    // Get MCPManager singleton instance
+    const mcpManager = MCPManager.getInstance();
 
     // Register each server (manager handles timeouts internally)
     const registrationPromises = serverConfigs.map(async (serverConfig) => {

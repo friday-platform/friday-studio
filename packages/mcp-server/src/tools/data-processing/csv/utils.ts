@@ -2,7 +2,7 @@
  * CSV Parsing and Prompt Utilities
  */
 
-import { anthropic } from "@atlas/core";
+import { registry } from "@atlas/llm";
 import { getTodaysDate } from "@atlas/utils";
 import { generateText } from "ai";
 import type { ToolContext } from "../../types.ts";
@@ -98,7 +98,7 @@ export async function executeCsvOperation(
   const tools = getOperationTools(fileMap, operationResult);
 
   const result = await generateText({
-    model: anthropic("claude-sonnet-4-5"),
+    model: registry.languageModel("anthropic:claude-sonnet-4-5"),
     system: systemPrompt,
     prompt: task,
     tools,

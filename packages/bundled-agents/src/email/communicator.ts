@@ -2,7 +2,7 @@ import { homedir } from "node:os";
 import { env } from "node:process";
 import { createAgent } from "@atlas/agent-sdk";
 import type { EmailParams } from "@atlas/config";
-import { ANTHROPIC_CACHE_BREAKPOINT, anthropic } from "@atlas/core";
+import { getDefaultProviderOpts, registry } from "@atlas/llm";
 import { getTodaysDate } from "@atlas/utils";
 import { encodeBase64 } from "@std/encoding/base64";
 import { contentType } from "@std/media-types";
@@ -131,9 +131,13 @@ OUTPUT:
     `;
 
     const compositionResult = await generateObject({
-      model: anthropic("claude-haiku-4-5"),
+      model: registry.languageModel("anthropic:claude-haiku-4-5"),
       messages: [
-        { role: "system", content: compositionSystem, providerOptions: ANTHROPIC_CACHE_BREAKPOINT },
+        {
+          role: "system",
+          content: compositionSystem,
+          providerOptions: getDefaultProviderOpts("anthropic"),
+        },
         { role: "system", content: `Today's date: ${getTodaysDate()}` },
         { role: "user", content: prompt },
       ],

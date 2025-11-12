@@ -24,9 +24,7 @@ import type {
   SessionSupervisorConfig,
 } from "@atlas/core";
 import {
-  ANTHROPIC_CACHE_BREAKPOINT,
   type AppendSessionEventInput,
-  anthropic,
   appendSessionEvent,
   CallbackStreamEmitter,
   type CreateSessionMetadataInput,
@@ -44,6 +42,7 @@ import {
   toToolCallEvent,
   toToolResultEvent,
 } from "@atlas/core";
+import { getDefaultProviderOpts, registry } from "@atlas/llm";
 import { type Logger, logger } from "@atlas/logger";
 import { initializeWorkspaceMemory, type MECMFMemoryManager } from "@atlas/memory";
 import { sessionSupervisorAgent } from "@atlas/system/agents";
@@ -154,7 +153,6 @@ export class SessionSupervisorActor implements BaseActor {
   private cachedPlan?: ExecutionPlan;
   private agentOrchestrator?: IAgentOrchestrator; // Agent orchestrator for MCP-based execution
   private artifacts: IWorkspaceArtifact[] = []; // Store session artifacts
-  private llmProvider = anthropic;
   private historyStorage: SessionHistoryStorageAdapter;
   private persistedArtifacts: IWorkspaceArtifact[] = [];
 
@@ -702,12 +700,12 @@ Available Agents:
 ${this.sessionContext.availableAgents.join(", ")}`;
 
     const planResult = await generateObject({
-      model: this.llmProvider("claude-sonnet-4-5"),
+      model: registry.languageModel("anthropic:claude-sonnet-4-5"),
       messages: [
         {
           role: "system",
           content: staticPlanningPrompt,
-          providerOptions: ANTHROPIC_CACHE_BREAKPOINT,
+          providerOptions: getDefaultProviderOpts("anthropic"),
         },
         { role: "system", content: variablePlanningContext },
         {

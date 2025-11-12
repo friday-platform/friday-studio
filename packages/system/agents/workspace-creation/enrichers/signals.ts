@@ -4,8 +4,8 @@ import {
   ScheduleSignalConfigSchema,
   type WorkspaceSignalConfig,
 } from "@atlas/config";
-import { ANTHROPIC_CACHE_BREAKPOINT, anthropic } from "@atlas/core";
 import type { WorkspacePlan } from "@atlas/core/artifacts";
+import { getDefaultProviderOpts, registry } from "@atlas/llm";
 import { logger } from "@atlas/logger";
 import { generateObject } from "ai";
 import { z } from "zod";
@@ -68,10 +68,14 @@ export async function enrichSignal(
   abortSignal?: AbortSignal,
 ): Promise<{ id: string; config: WorkspaceSignalConfig }> {
   const result = await generateObject({
-    model: anthropic("claude-haiku-4-5"),
+    model: registry.languageModel("anthropic:claude-haiku-4-5"),
     schema: SignalEnricherSchema,
     messages: [
-      { role: "system", content: systemPrompt, providerOptions: ANTHROPIC_CACHE_BREAKPOINT },
+      {
+        role: "system",
+        content: systemPrompt,
+        providerOptions: getDefaultProviderOpts("anthropic"),
+      },
       {
         role: "user",
         content: `Classify this signal and generate its configuration:

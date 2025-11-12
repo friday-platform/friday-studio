@@ -47,7 +47,15 @@ interface MCPClientWrapper {
  * Handles connection management, tool filtering, and lifecycle management
  */
 export class MCPManager {
+  private static instance: MCPManager = new MCPManager();
   private clients: Map<string, MCPClientWrapper> = new Map();
+
+  /**
+   * Get the singleton instance of MCPManager
+   */
+  static getInstance(): MCPManager {
+    return MCPManager.instance;
+  }
 
   /**
    * Registers an MCP server using AI SDK's MCP client
@@ -785,3 +793,5 @@ export class MCPManager {
     }
   }
 }
+
+export const mcpManager = new MCPManager();

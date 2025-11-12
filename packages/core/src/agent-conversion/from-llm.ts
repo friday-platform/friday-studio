@@ -6,12 +6,10 @@ import {
   extractArtifactRefsFromToolResults,
 } from "@atlas/agent-sdk/vercel-helpers";
 import type { LLMAgentConfig } from "@atlas/config";
+import { getDefaultProviderOpts, registry, validateProvider } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
 import { getTodaysDate } from "@atlas/utils";
-import type { CoreSystemMessage, CoreUserMessage } from "ai";
 import { stepCountIs, streamText } from "ai";
-import { ANTHROPIC_CACHE_BREAKPOINT } from "../llm-provider.ts";
-import { registry, validateProviderConfig } from "../llm-provider-registry/index.ts";
 import { throwWithCause } from "../utils/error-helpers.ts";
 import { filterWorkspaceAgentTools } from "./agent-tool-filters.ts";
 
@@ -38,8 +36,8 @@ export function convertLLMToAgent(
   // Use configured retries or default to 3 for better resilience against 529 errors
   const maxRetries = config.config.max_retries ?? 3;
 
-  validateProviderConfig(config.config.provider);
-  const model = registry.languageModel(`${config.config.provider}:${config.config.model}`);
+  const provider = validateProvider(config.config.provider);
+  const model = registry.languageModel(`${provider}:${config.config.model}`);
 
   // Store tools restriction for buildAgentContext to filter
   const allowedToolNames = config.config.tools;
@@ -82,21 +80,17 @@ export function convertLLMToAgent(
           filteredTools = filterWorkspaceAgentTools(tools, logger);
         }
 
-        // Build messages: static system prompt (cached for Anthropic), then variable content
-        const isAnthropic = config.config.provider === "anthropic";
-        const messages: Array<CoreSystemMessage | CoreUserMessage> = [
-          {
-            role: "system",
-            content: systemPrompt,
-            ...(isAnthropic ? { providerOptions: ANTHROPIC_CACHE_BREAKPOINT } : {}),
-          },
-          { role: "system", content: `Today's date: ${getTodaysDate()}` },
-          { role: "user", content: prompt },
-        ];
-
         const result = streamText({
           model,
-          messages,
+          messages: [
+            {
+              role: "system",
+              content: systemPrompt,
+              providerOptions: getDefaultProviderOpts("anthropic"),
+            },
+            { role: "system", content: `Today's date: ${getTodaysDate()}` },
+            { role: "user", content: prompt },
+          ],
           tools: filteredTools,
           toolChoice: config.config.tool_choice || "auto",
           temperature: config.config.temperature,

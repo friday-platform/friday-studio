@@ -5,7 +5,7 @@ import {
   collectToolUsageFromSteps,
   extractArtifactRefsFromToolResults,
 } from "@atlas/agent-sdk/vercel-helpers";
-import { ANTHROPIC_CACHE_BREAKPOINT, anthropic } from "@atlas/core";
+import { getDefaultProviderOpts, registry } from "@atlas/llm";
 import { generateText, stepCountIs } from "ai";
 import { z } from "zod";
 
@@ -101,10 +101,10 @@ export const googleCalendarAgent = createAgent<string, GoogleCalendarAgentResult
       }
 
       const result = await generateText({
-        model: anthropic("claude-haiku-4-5"),
+        model: registry.languageModel("anthropic:claude-haiku-4-5"),
         abortSignal,
         messages: [
-          { role: "system", content: system, providerOptions: ANTHROPIC_CACHE_BREAKPOINT },
+          { role: "system", content: system, providerOptions: getDefaultProviderOpts("anthropic") },
           { role: "user", content: prompt },
         ],
         tools,

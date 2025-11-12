@@ -24,6 +24,7 @@
     "@atlas/config": "workspace:*",
     "@atlas/core": "workspace:*",
     "@atlas/diagnostics": "workspace:*",
+    "@atlas/llm": "workspace:*",
     "@atlas/logger": "workspace:*",
     "@atlas/mcp": "workspace:*",
     "@atlas/memory": "workspace:*",

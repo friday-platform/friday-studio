@@ -24,7 +24,7 @@ export const LLMAgentConfigSchema = BaseAgentConfigSchema.extend({
   type: z.literal("llm"),
   config: z.strictObject({
     // Provider and model
-    provider: z.enum(["anthropic", "openai", "google"]),
+    provider: z.string().describe("Inference provider (e.g., 'anthropic')"),
     model: z.string().describe("Model identifier (e.g., 'claude-sonnet-4-5')"),
 
     // Single prompt string

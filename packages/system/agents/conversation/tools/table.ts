@@ -4,7 +4,7 @@
  * Create an object with table headers and rows from a prompt using the Vercel `tool` function
  */
 
-import { ANTHROPIC_CACHE_BREAKPOINT, anthropic } from "@atlas/core";
+import { getDefaultProviderOpts, registry } from "@atlas/llm";
 import { logger } from "@atlas/logger";
 import { generateObject, tool } from "ai";
 import { z } from "zod";
@@ -23,13 +23,13 @@ export const tableOutput = tool({
   }),
   execute: async ({ prompt }) => {
     const result = await generateObject({
-      model: anthropic("claude-haiku-4-5"),
+      model: registry.languageModel("anthropic:claude-haiku-4-5"),
       schema: TableSchema,
       messages: [
         {
           role: "system",
           content: "You generate table data with headers and rows based on the user's request.",
-          providerOptions: ANTHROPIC_CACHE_BREAKPOINT,
+          providerOptions: getDefaultProviderOpts("anthropic"),
         },
         { role: "user", content: prompt },
       ],

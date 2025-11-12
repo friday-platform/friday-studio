@@ -1,6 +1,6 @@
 import { type ArtifactRef, createAgent } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
-import { ANTHROPIC_CACHE_BREAKPOINT, anthropic } from "@atlas/core";
+import { getDefaultProviderOpts, registry } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
 import { fail, type Result, stringifyError, success } from "@atlas/utils";
 import { generateText, stepCountIs, streamText } from "ai";
@@ -25,7 +25,7 @@ async function generateProgress(
   const contextStr = typeof context === "string" ? context : JSON.stringify(context, null, 2);
 
   const result = await generateText({
-    model: anthropic("claude-haiku-4-5"),
+    model: registry.languageModel("anthropic:claude-haiku-4-5"),
     abortSignal,
     messages: [
       {
@@ -44,7 +44,7 @@ async function generateProgress(
 Write to /tmp/agent-output.txt → "Writing agent-output.txt"
 Read package.json → "Reading package.json"
 </examples>`,
-        providerOptions: ANTHROPIC_CACHE_BREAKPOINT,
+        providerOptions: getDefaultProviderOpts("anthropic"),
       },
       { role: "user", content: contextStr },
     ],
@@ -100,7 +100,7 @@ export const claudeCodeAgent = createAgent<string, CCAgentResult>({
             - Direct, factual
             - Concise. Sacrifice grammar for concision, but keep clarity
             - Use markdown`,
-            providerOptions: ANTHROPIC_CACHE_BREAKPOINT,
+            providerOptions: getDefaultProviderOpts("anthropic"),
           },
           { role: "user", content: prompt },
         ],

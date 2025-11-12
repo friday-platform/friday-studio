@@ -1,8 +1,8 @@
 import { stat } from "node:fs/promises";
 import { type ArtifactRef, createAgent } from "@atlas/agent-sdk";
-import { ANTHROPIC_CACHE_BREAKPOINT, anthropic } from "@atlas/core";
 import { parseCsv } from "@atlas/core/artifacts";
 import { ArtifactStorage } from "@atlas/core/artifacts/server";
+import { getDefaultProviderOpts, registry } from "@atlas/llm";
 import { getWorkspaceFilesDir } from "@atlas/utils/paths.server";
 import { Database } from "@db/sqlite";
 import { basename, join } from "@std/path";
@@ -93,13 +93,13 @@ IMPORTANT:
 - The sample count is how many random records to select (look for numbers like "3 contacts", "5 samples", etc.). Default to 3 if not specified.
 
 Call validatePath tool with the extracted information to verify the path exists.`,
-          providerOptions: ANTHROPIC_CACHE_BREAKPOINT,
+          providerOptions: getDefaultProviderOpts("anthropic"),
         },
         { role: "user", content: prompt },
       ];
 
       const parseResult = await generateText({
-        model: anthropic("claude-haiku-4-5"),
+        model: registry.languageModel("anthropic:claude-haiku-4-5"),
         abortSignal,
         messages: parseMessages,
         tools: { validatePath: validatePathTool },
@@ -234,13 +234,13 @@ User: "Antarctica contacts" (impossible - no Antarctica in data)
 WHERE: 1=0
 
 Call buildSqlWhere tool with your WHERE clause (WITHOUT the 'WHERE' keyword).`,
-          providerOptions: ANTHROPIC_CACHE_BREAKPOINT,
+          providerOptions: getDefaultProviderOpts("anthropic"),
         },
         { role: "user", content: filterCriteria },
       ];
 
       const sqlResult = await generateText({
-        model: anthropic("claude-sonnet-4-5"),
+        model: registry.languageModel("anthropic:claude-sonnet-4-5"),
         abortSignal,
         messages: sqlMessages,
         tools: { buildSqlWhere: buildSqlWhereTool },

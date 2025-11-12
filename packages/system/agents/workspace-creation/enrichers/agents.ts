@@ -1,12 +1,12 @@
 import type { AtlasAgentConfig } from "@atlas/agent-sdk";
 import { bundledAgents } from "@atlas/bundled-agents";
 import type { LLMAgentConfig } from "@atlas/config";
-import { ANTHROPIC_CACHE_BREAKPOINT, anthropic } from "@atlas/core";
 import {
   extractKeywordsFromNeed,
   mapNeedToMCPServers,
   matchBundledAgents,
 } from "@atlas/core/mcp-registry/deterministic-matching";
+import { getDefaultProviderOpts, registry } from "@atlas/llm";
 import { logger } from "@atlas/logger";
 import { generateObject } from "ai";
 import { z } from "zod";
@@ -39,7 +39,7 @@ const MODEL_CONFIGS_BY_ARCHETYPE: Record<
  */
 async function determineArchetype(needs: string[], description: string): Promise<AgentArchetype> {
   const result = await generateObject({
-    model: anthropic("claude-haiku-4-5"),
+    model: registry.languageModel("anthropic:claude-haiku-4-5"),
     messages: [
       {
         role: "system",
@@ -55,7 +55,7 @@ Archetypes:
 - executor: Performs system operations (file cleanup, command execution, maintenance)
 
 Select the archetype that best matches the agent's PRIMARY function.`,
-        providerOptions: ANTHROPIC_CACHE_BREAKPOINT,
+        providerOptions: getDefaultProviderOpts("anthropic"),
       },
       {
         role: "user",

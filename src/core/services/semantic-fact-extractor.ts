@@ -1,4 +1,4 @@
-import { ANTHROPIC_CACHE_BREAKPOINT, anthropic } from "@atlas/core";
+import { getDefaultProviderOpts, registry } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
 import type { CoreMessage } from "ai";
 import { generateObject, type LanguageModel } from "ai";
@@ -77,7 +77,7 @@ export class SemanticFactExtractor {
     if (config.llmProvider) {
       this.llmProvider = config.llmProvider;
     } else {
-      this.llmProvider = (model: string) => anthropic(model);
+      this.llmProvider = (model: string) => registry.languageModel(`anthropic:${model}`);
     }
   }
 
@@ -99,7 +99,11 @@ export class SemanticFactExtractor {
 
     try {
       const messages: CoreMessage[] = [
-        { role: "system", content: systemPrompt, providerOptions: ANTHROPIC_CACHE_BREAKPOINT },
+        {
+          role: "system",
+          content: systemPrompt,
+          providerOptions: getDefaultProviderOpts("anthropic"),
+        },
         { role: "user", content: userPrompt },
       ];
 

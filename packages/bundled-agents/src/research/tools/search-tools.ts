@@ -3,7 +3,7 @@
  */
 
 import { repairJson } from "@atlas/agent-sdk";
-import { ANTHROPIC_CACHE_BREAKPOINT, anthropic } from "@atlas/core";
+import { getDefaultProviderOpts, registry } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
 import { getTodaysDate } from "@atlas/utils";
 import type { TavilyClient, TavilyExtractResponse, TavilySearchResponse } from "@tavily/core";
@@ -68,7 +68,7 @@ Content types:
 - Product/company: features, specs, metrics
 
 Create 200-400 word summary and up to 5 key excerpts.`,
-        providerOptions: ANTHROPIC_CACHE_BREAKPOINT,
+        providerOptions: getDefaultProviderOpts("anthropic"),
       },
       { role: "system", content: `Today's date: ${getTodaysDate()}` },
       {
@@ -81,7 +81,7 @@ Query: "${query}"`,
     ];
 
     const result = await generateObject({
-      model: anthropic("claude-haiku-4-5"),
+      model: registry.languageModel("anthropic:claude-haiku-4-5"),
       messages,
       schema: SummarizedResultSchema,
       temperature: 0.3,
