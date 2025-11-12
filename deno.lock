@@ -43,7 +43,7 @@
     "npm:@hono/standard-validator@~0.1.5": "0.1.5_@standard-schema+spec@1.0.0_hono@4.10.4",
     "npm:@hono/zod-validator@~0.7.4": "0.7.4_hono@4.10.4_zod@4.1.12",
     "npm:@ianvs/prettier-plugin-sort-imports@^4.7.0": "4.7.0_prettier@3.6.2",
-    "npm:@inkjs/ui@2": "2.0.0_ink@6.4.0__@types+react@19.2.2__react@19.2.0_@types+react@19.2.2_react@19.2.0",
+    "npm:@inkjs/ui@2": "2.0.0_ink@6.5.0__@types+react@19.2.2__react@19.2.0_@types+react@19.2.2_react@19.2.0",
     "npm:@jsr/db__sqlite@0.12": "0.12.0",
     "npm:@jsr/std__assert@^1.0.14": "1.0.15",
     "npm:@jsr/std__async@^1.0.14": "1.0.15",
@@ -96,7 +96,7 @@
     "npm:globals@^16.5.0": "16.5.0",
     "npm:hono-openapi@^1.1.1": "1.1.1_@hono+standard-validator@0.1.5__@standard-schema+spec@1.0.0__hono@4.10.4_@standard-community+standard-json@0.3.5__@standard-schema+spec@1.0.0__@types+json-schema@7.0.15__quansync@0.2.11__zod@4.1.12_@standard-community+standard-openapi@0.2.8__@standard-community+standard-json@0.3.5___@standard-schema+spec@1.0.0___@types+json-schema@7.0.15___quansync@0.2.11___zod@4.1.12__@standard-schema+spec@1.0.0__openapi-types@12.1.3__zod@4.1.12__@types+json-schema@7.0.15_@types+json-schema@7.0.15_hono@4.10.4_openapi-types@12.1.3_zod@4.1.12",
     "npm:hono@^4.10.4": "4.10.4",
-    "npm:ink@^6.4.0": "6.4.0_@types+react@19.2.2_react@19.2.0",
+    "npm:ink@^6.5.0": "6.5.0_@types+react@19.2.2_react@19.2.0",
     "npm:js-levenshtein@^1.1.6": "1.1.6",
     "npm:jsonrepair@^3.13.1": "3.13.1",
     "npm:knip@5.69.0": "5.69.0_@types+node@24.2.0_typescript@5.9.3",
@@ -858,7 +858,7 @@
       "os": ["win32"],
       "cpu": ["x64"]
     },
-    "@inkjs/ui@2.0.0_ink@6.4.0__@types+react@19.2.2__react@19.2.0_@types+react@19.2.2_react@19.2.0": {
+    "@inkjs/ui@2.0.0_ink@6.5.0__@types+react@19.2.2__react@19.2.0_@types+react@19.2.2_react@19.2.0": {
       "integrity": "sha512-5+8fJmwtF9UvikzLfph9sA+LS+l37Ij/szQltkuXLOAXwNkBX9innfzh4pLGXIB59vKEQUtc6D4qGvhD7h3pAg==",
       "dependencies": [
         "chalk@5.6.2",
@@ -2120,13 +2120,6 @@
     "cli-spinners@3.3.0": {
       "integrity": "sha512-/+40ljC3ONVnYIttjMWrlL51nItDAbBrq2upN8BPyvGU/2n5Oxw3tbNwORCaNuNqLJnxGqOfjUuhsv7l5Q4IsQ=="
     },
-    "cli-truncate@4.0.0": {
-      "integrity": "sha512-nPdaFdQ0h/GEigbPClz11D0v/ZJEwxmeVZGeMo3Z5StPtUTkA9o1lD6QwoirYiSDzbcwn2XcjwmCp68W1IS4TA==",
-      "dependencies": [
-        "slice-ansi@5.0.0",
-        "string-width@7.2.0"
-      ]
-    },
     "cli-truncate@5.1.1": {
       "integrity": "sha512-SroPvNHxUnk+vIW/dOSfNqdy1sPEFkrTk6TUtqLCnBlo3N7TNYYkzzN7uSD6+jVjrdO4+p8nH7JzH6cIvUem6A==",
       "dependencies": [
@@ -2995,8 +2988,8 @@
     "inherits@2.0.4": {
       "integrity": "sha512-k/vGaX4/Yla3WzyMCvTQOXYeIHvqOKtnqBduzTHpzpQZzAskKMhZ2K+EnBiSM9zGSoIFeMpXKxa4dYeZIQqewQ=="
     },
-    "ink@6.4.0_@types+react@19.2.2_react@19.2.0": {
-      "integrity": "sha512-v43isNGrHeFfipbQbwz7/Eg0+aWz3ASEdT/s1Ty2JtyBzR3maE0P77FwkMET+Nzh5KbRL3efLgkT/ZzPFzW3BA==",
+    "ink@6.5.0_@types+react@19.2.2_react@19.2.0": {
+      "integrity": "sha512-abn3rYIxepGKD/h4ZH6sQHgJxBi/EISY/1fIxHODlF5LPvw0wKv2S2uOMIMTfJdBwy9DsWndCfKDCcWSRclp/w==",
       "dependencies": [
         "@alcalzone/ansi-tokenize",
         "@types/react",
@@ -3006,7 +2999,7 @@
         "chalk@5.6.2",
         "cli-boxes",
         "cli-cursor@4.0.0",
-        "cli-truncate@4.0.0",
+        "cli-truncate",
         "code-excerpt",
         "es-toolkit",
         "indent-string",
@@ -3017,7 +3010,7 @@
         "signal-exit@3.0.7",
         "slice-ansi@7.1.2",
         "stack-utils",
-        "string-width@7.2.0",
+        "string-width@8.1.0",
         "type-fest",
         "widest-line",
         "wrap-ansi@9.0.2",
@@ -3042,9 +3035,6 @@
     },
     "is-fullwidth-code-point@3.0.0": {
       "integrity": "sha512-zymm5+u+sCsSWyD9qNaejV3DFvhCKclKdizYaJUuHA83RLjb7nSuGnddCHGv0hk+KY7BMAlsWeK4Ueg6EV6XQg=="
-    },
-    "is-fullwidth-code-point@4.0.0": {
-      "integrity": "sha512-O4L094N2/dZ7xqVdrXhh9r1KODPJpFms8B5sGdJLPy664AgvXsreZUyCQQNItZRDlYug4xStLjNp/sz3HvBowQ=="
     },
     "is-fullwidth-code-point@5.1.0": {
       "integrity": "sha512-5XHYaSyiqADb4RnZ1Bdad6cPp8Toise4TzEjcOYDHZkTCbKgiUl7WTUCpNWHuxmDt91wnsZBc9xinNzopv3JMQ==",
@@ -3218,7 +3208,7 @@
     "listr2@9.0.5": {
       "integrity": "sha512-ME4Fb83LgEgwNw96RKNvKV4VTLuXfoKudAmm2lP8Kk87KaMK0/Xrx/aAkMWmT8mDb+3MlFDspfbCs7adjRxA2g==",
       "dependencies": [
-        "cli-truncate@5.1.1",
+        "cli-truncate",
         "colorette@2.0.20",
         "eventemitter3",
         "log-update",
@@ -3772,8 +3762,8 @@
         "unpipe"
       ]
     },
-    "react-reconciler@0.32.0_react@19.2.0": {
-      "integrity": "sha512-2NPMOzgTlG0ZWdIf3qG+dcbLSoAc/uLfOwckc3ofy5sSK0pLJqnQLpUFxvGcN2rlXSjnVtGeeFLNimCQEj5gOQ==",
+    "react-reconciler@0.33.0_react@19.2.0": {
+      "integrity": "sha512-KetWRytFv1epdpJc3J4G75I4WrplZE5jOL7Yq0p34+OVOKF4Se7WrdIdVC45XsSSmUTlht2FM/fM1FZb1mfQeA==",
       "dependencies": [
         "react",
         "scheduler"
@@ -3894,8 +3884,8 @@
     "safer-buffer@2.1.2": {
       "integrity": "sha512-YZo3K82SD7Riyi0E1EQPojLz7kpepnSQI9IyPbHHg1XXXevb5dJI7tpyN2ADxGcQbHG7vcyRHk0cbwqcQriUtg=="
     },
-    "scheduler@0.26.0": {
-      "integrity": "sha512-NlHwttCI/l5gCPR3D1nNXtWABUmBwvZpEQiD4IXSbIDq8BzLIK/7Ir5gTFSGZDUu37K5cMNp0hFtzO38sC7gWA=="
+    "scheduler@0.27.0": {
+      "integrity": "sha512-eNv+WrVbKu1f3vbYJT/xtiF5syA5HPIMtf9IgY/nKg0sWqzAUEvqY/xm7OcZc/qafLx/iO9FgOmeSAp4v5ti/Q=="
     },
     "secure-json-parse@4.1.0": {
       "integrity": "sha512-l4KnYfEyqYJxDwlNVyRfO2E4NTHfMKAWdUuA8J0yve2Dz/E/PdBepY03RvyJpssIpRFwJoCD55wA+mEDs6ByWA=="
@@ -4003,13 +3993,6 @@
         "ansi-styles@4.3.0",
         "astral-regex",
         "is-fullwidth-code-point@3.0.0"
-      ]
-    },
-    "slice-ansi@5.0.0": {
-      "integrity": "sha512-FC+lgizVPfie0kkhqUScwRu1O/lF6NOgJmlCgK+/LYxDCTk8sGelYaHDhFcDN+Sn3Cv+3VSa4Byeo+IMCzpMgQ==",
-      "dependencies": [
-        "ansi-styles@6.2.3",
-        "is-fullwidth-code-point@4.0.0"
       ]
     },
     "slice-ansi@7.1.2": {
@@ -4522,7 +4505,7 @@
         "npm:@total-typescript/ts-reset@~0.6.1",
         "npm:@types/react@^19.2.2",
         "npm:ai@^5.0.92",
-        "npm:ink@^6.4.0",
+        "npm:ink@^6.5.0",
         "npm:js-levenshtein@^1.1.6",
         "npm:knip@5.69.0",
         "npm:lint-staged@^16.2.6",
