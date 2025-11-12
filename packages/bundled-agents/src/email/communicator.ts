@@ -21,7 +21,7 @@ import template from "./template.html" with { type: "text" };
 type Result = {
   response: string;
   message_id?: string;
-  email?: { to: string | string[]; subject: string; content: string; from: string | undefined };
+  email?: { to: string | string[]; subject: string; content: string; from: string };
 };
 
 export const emailAgent = createAgent<string, Result>({
@@ -125,9 +125,9 @@ OUTPUT:
 - to: Recipient email address (required)
 - subject: Descriptive subject line (required)
 - content: Well-formatted email body - HTML or plain text (required)
-- from: Sender email if specified (optional, default null)
-- from_name: Sender name if specified (optional, default null)
-- attachment_paths: Array of file paths if specified (optional, default null)
+- from: Sender email ONLY if explicitly specified in the prompt (e.g. "send from alice@company.com"). NEVER infer or guess the sender. Return null if not explicitly specified. (optional, default null)
+- from_name: Sender name ONLY if explicitly specified in the prompt (optional, default null)
+- attachment_paths: Array of file paths ONLY if explicitly specified in the prompt (optional, default null)
     `;
 
     const compositionResult = await generateObject({
@@ -150,6 +150,22 @@ OUTPUT:
     });
 
     const params = compositionResult.object;
+
+    // Security validation: Verify recipient email is in prompt
+    if (!prompt.toLowerCase().includes(params.to.toLowerCase())) {
+      throw new Error(
+        `Security: Recipient email "${params.to}" not found in prompt. The agent may be hallucinating email addresses.`,
+      );
+    }
+
+    // Security validation: Verify sender email (if provided) is in prompt, otherwise use default
+    if (params.from && !prompt.toLowerCase().includes(params.from.toLowerCase())) {
+      logger.warn("Security: Sender email not in prompt, using default", {
+        hallucinated: params.from,
+      });
+      params.from = null; // Fall back to default
+    }
+
     logger.debug("email-communicator composed email", {
       to: params.to,
       subject: params.subject,
@@ -234,6 +250,8 @@ OUTPUT:
     });
 
     // Build email parameters with defaults from environment variables
+    const fromEmail = params.from || env.SENDGRID_FROM_EMAIL || "noreply@tempestdx.com";
+
     const emailParams: EmailParams = {
       to: params.to,
       subject: params.subject,
@@ -252,7 +270,7 @@ OUTPUT:
           })
           .join(""),
       ),
-      from: params.from || env.SENDGRID_FROM_EMAIL || "noreply@tempestdx.com",
+      from: fromEmail,
       from_name: params.from_name || env.SENDGRID_FROM_NAME,
       attachments,
     };
@@ -279,7 +297,7 @@ OUTPUT:
         to: emailParams.to,
         subject: emailParams.subject,
         content: emailParams.content,
-        from: emailParams.from,
+        from: fromEmail,
       },
     };
   },

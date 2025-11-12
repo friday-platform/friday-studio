@@ -412,4 +412,206 @@ Create an email with subject "Weekly Pricing Analysis" and include:
 
     return { result, metrics, executionTimeMs };
   });
+
+  await step(t, "Should NOT infer sender from recipient domain", async ({ snapshot }) => {
+    adapter.reset();
+    const context = adapter.createContext({ telemetry: true });
+
+    // Test case for the bug: recipient has different domain than default sender
+    // The LLM should NOT infer sender from recipient domain
+    const prompt = `
+Send an email to user@differentdomain.com with subject "Test Email".
+
+Say hello and confirm the sender address was not inferred from the recipient domain.
+    `;
+
+    const startTime = performance.now();
+    const result = await emailAgent.execute(prompt, context);
+    const executionTimeMs = performance.now() - startTime;
+
+    const metrics = adapter.getMetrics();
+    const streamEvents = adapter.getStreamEvents();
+
+    snapshot({
+      result,
+      metrics: { ...metrics, timing: { executionTimeMs } },
+      streamEvents,
+      executionSummary: {
+        toolsExecuted: metrics?.tools.length || 0,
+        totalTokens: metrics?.tokens.total || 0,
+        promptTokens: metrics?.tokens.prompt || 0,
+        completionTokens: metrics?.tokens.completion || 0,
+      },
+    });
+
+    assert(result.response, "Should return success response");
+    assertStringIncludes(result.response, "user@differentdomain.com");
+
+    // Critical: verify the sender is the default noreply@tempestdx.com, NOT noreply@differentdomain.com
+    assert(result.email?.from, "Should have from address");
+    assert(
+      result.email.from === "noreply@tempestdx.com",
+      `Sender should be default noreply@tempestdx.com, got: ${result.email.from}`,
+    );
+
+    return { result, metrics, executionTimeMs };
+  });
+
+  await step(t, "Should reject hallucinated recipient email (security)", async () => {
+    adapter.reset();
+    const context = adapter.createContext({ telemetry: true });
+
+    // This prompt has no email address
+    // If the LLM hallucinates one, it should be caught by validation
+    const prompt = `
+Send a test email with subject "Hello".
+
+Say hello to the user.
+    `;
+
+    // This should fail if LLM hallucinates a recipient
+    try {
+      await emailAgent.execute(prompt, context);
+      throw new Error("Should have thrown security error for hallucinated email");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      assert(
+        message.includes("Security: Recipient email") && message.includes("not found in prompt"),
+        `Expected security validation error, got: ${message}`,
+      );
+    }
+  });
+
+  await step(t, "Sender validation: No from specified (use default)", async ({ snapshot }) => {
+    adapter.reset();
+    const context = adapter.createContext({ telemetry: true });
+
+    // Normal case: no sender specified, should use default
+    const prompt = `
+Send email to test@example.com with subject "Test Message".
+
+This is a test message without specifying a sender.
+    `;
+
+    const startTime = performance.now();
+    const result = await emailAgent.execute(prompt, context);
+    const executionTimeMs = performance.now() - startTime;
+
+    const metrics = adapter.getMetrics();
+    const streamEvents = adapter.getStreamEvents();
+
+    snapshot({
+      result,
+      metrics: { ...metrics, timing: { executionTimeMs } },
+      streamEvents,
+      executionSummary: {
+        toolsExecuted: metrics?.tools.length || 0,
+        totalTokens: metrics?.tokens.total || 0,
+        promptTokens: metrics?.tokens.prompt || 0,
+        completionTokens: metrics?.tokens.completion || 0,
+      },
+    });
+
+    assert(result.response, "Should return success response");
+    assertStringIncludes(result.response, "test@example.com");
+
+    // Verify default sender is used
+    assert(result.email?.from, "Should have from address");
+    assert(
+      result.email.from === "noreply@tempestdx.com" ||
+        result.email.from === Deno.env.get("SENDGRID_FROM_EMAIL"),
+      `Sender should be default, got: ${result.email.from}`,
+    );
+
+    return { result, metrics, executionTimeMs };
+  });
+
+  await step(t, "Sender validation: Invalid from (fallback to default)", async ({ snapshot }) => {
+    adapter.reset();
+    const context = adapter.createContext({ telemetry: true });
+
+    // Edge case: LLM might hallucinate a sender not in prompt
+    // The validation should catch this and fall back to default
+    const prompt = `
+Send email to test@example.com with subject "Test Message".
+
+This is a test message. We're testing sender validation.
+    `;
+
+    const startTime = performance.now();
+    const result = await emailAgent.execute(prompt, context);
+    const executionTimeMs = performance.now() - startTime;
+
+    const metrics = adapter.getMetrics();
+    const streamEvents = adapter.getStreamEvents();
+
+    snapshot({
+      result,
+      metrics: { ...metrics, timing: { executionTimeMs } },
+      streamEvents,
+      executionSummary: {
+        toolsExecuted: metrics?.tools.length || 0,
+        totalTokens: metrics?.tokens.total || 0,
+        promptTokens: metrics?.tokens.prompt || 0,
+        completionTokens: metrics?.tokens.completion || 0,
+      },
+    });
+
+    assert(result.response, "Should return success response");
+    assertStringIncludes(result.response, "test@example.com");
+
+    // Even if LLM tries to set a sender, it should be validated
+    // and fall back to default if not in prompt
+    assert(result.email?.from, "Should have from address");
+    assert(
+      result.email.from === "noreply@tempestdx.com" ||
+        result.email.from === Deno.env.get("SENDGRID_FROM_EMAIL"),
+      `Sender should be default after validation, got: ${result.email.from}`,
+    );
+
+    return { result, metrics, executionTimeMs };
+  });
+
+  await step(t, "Sender validation: Correct from specified", async ({ snapshot }) => {
+    adapter.reset();
+    const context = adapter.createContext({ telemetry: true });
+
+    // Explicit sender specified in prompt
+    const prompt = `
+Send email from verified@tempestdx.com to test@example.com with subject "Test Message".
+
+This is a test message with an explicitly specified sender.
+    `;
+
+    const startTime = performance.now();
+    const result = await emailAgent.execute(prompt, context);
+    const executionTimeMs = performance.now() - startTime;
+
+    const metrics = adapter.getMetrics();
+    const streamEvents = adapter.getStreamEvents();
+
+    snapshot({
+      result,
+      metrics: { ...metrics, timing: { executionTimeMs } },
+      streamEvents,
+      executionSummary: {
+        toolsExecuted: metrics?.tools.length || 0,
+        totalTokens: metrics?.tokens.total || 0,
+        promptTokens: metrics?.tokens.prompt || 0,
+        completionTokens: metrics?.tokens.completion || 0,
+      },
+    });
+
+    assert(result.response, "Should return success response");
+    assertStringIncludes(result.response, "test@example.com");
+
+    // Verify the explicitly specified sender is used
+    assert(result.email?.from, "Should have from address");
+    assert(
+      result.email.from === "verified@tempestdx.com",
+      `Sender should be verified@tempestdx.com, got: ${result.email.from}`,
+    );
+
+    return { result, metrics, executionTimeMs };
+  });
 });
