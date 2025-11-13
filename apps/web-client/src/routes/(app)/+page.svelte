@@ -5,6 +5,7 @@ import { slide } from "svelte/transition";
 import { z } from "zod";
 import { getAppContext, getFileType } from "$lib/app-context.svelte";
 import { getChatContext } from "$lib/chat-context.svelte";
+import { DropdownMenu } from "$lib/components/dropdown-menu";
 import { Icons } from "$lib/components/icons";
 import { IconSmall } from "$lib/components/icons/small";
 import Textarea from "$lib/components/textarea.svelte";
@@ -23,9 +24,6 @@ const chatContext = getChatContext();
 let form = $state<HTMLFormElement | null>(null);
 let message = $state<string>("");
 let showChats = $state(false);
-
-// const messages = $derived(chatContext.chat?.messages ?? []);
-// const status = $derived(chatContext.chat?.status ?? 'idle');
 
 // Fetch recent chats on mount
 $effect(() => {
@@ -193,127 +191,143 @@ $effect(() => {
 							}
 						}}
 					>
-						<Textarea
-							name="message"
-							placeholder="Type here..."
-							value={message}
-							onTextChange={(value) => {
-								message = value;
-							}}
-						/>
+						{#if appCtx.stagedFiles.state.size > 0}
+							<div class="staged-files">
+								{#each appCtx.stagedFiles.state.entries() as [itemId, file]}
+									<button
+										title={file.path}
+										onclick={async () => {
+											appCtx.stagedFiles.remove(itemId);
+										}}
+									>
+										{#if file.type === 'file'}
+											<IconSmall.File />
+										{:else}
+											<IconSmall.Folder />
+										{/if}
 
-						<div class="form-action">
-							{#if chatContext.chat?.status === 'streaming' || chatContext.chat?.status === 'submitted'}
-								<button
-									class="stop-process"
-									type="button"
-									onclick={async (e) => {
-										e.preventDefault();
+										<span class="file-path">{file.name}</span>
 
-										chatContext.chat.stop();
-									}}
-								>
-									<IconSmall.Stop />
-								</button>
-							{:else}
-								<button type="submit" aria-label="Send message">
-									<Icons.ArrowUp />
-								</button>
-							{/if}
-						</div>
-					</form>
-
-					<div class="actions">
-						{#if __TAURI_BUILD__}
-							<button
-								class="file-drop"
-								type="button"
-								onclick={async (e) => {
-									e.preventDefault();
-
-									if (invoke) {
-										try {
-											const paths = (await invoke('open_file_or_folder_picker', {
-												multiple: true,
-												foldersOnly: false
-											})) as string[];
-
-											if (paths && paths.length > 0) {
-												for (const path of paths) {
-													appCtx.stagedFiles.add(path, {
-														path,
-														type: getFileType(path)
-													});
-												}
-											}
-										} catch (error) {
-											console.error('Failed to open file picker:', error);
-										}
-									}
-								}}
-							>
-								<Icons.Paperclip />
-
-								Add Files
-							</button>
+										<span class="close-button">
+											<IconSmall.Close />
+										</span>
+									</button>
+								{/each}
+							</div>
 						{/if}
 
-						<!-- <button
-						class="file-drop"
-						type="button"
-						onclick={async (e) => {
-							e.preventDefault();
+						<div class="textarea-container">
+							{#if __TAURI_BUILD__}
+								<div class="actions">
+									<DropdownMenu.Root
+										positioning={{
+											placement: 'bottom-start',
+											gutter: 0,
+											offset: { crossAxis: -6, mainAxis: 12 }
+										}}
+									>
+										<DropdownMenu.Trigger>
+											<div class="action-trigger">
+												<Icons.Plus />
+											</div>
+										</DropdownMenu.Trigger>
+										<DropdownMenu.Content size="regular">
+											<DropdownMenu.Item
+												onclick={async (e) => {
+													e.preventDefault();
 
-							// @TODO implement some search examples
-						}}
-					>
-						<Icons.Globe />
+													if (invoke) {
+														try {
+															const paths = (await invoke('open_file_or_folder_picker', {
+																multiple: true,
+																foldersOnly: false
+															})) as string[];
 
-						Search Sites
-					</button>
+															if (paths && paths.length > 0) {
+																for (const path of paths) {
+																	appCtx.stagedFiles.add(path, {
+																		path,
+																		type: getFileType(path)
+																	});
+																}
+															}
+														} catch (error) {
+															console.error('Failed to open file picker:', error);
+														}
+													}
+												}}
+											>
+												<Icons.Paperclip />
 
-					<button
-						class="file-drop"
-						type="button"
-						onclick={async (e) => {
-							e.preventDefault();
+												Add Files
+											</DropdownMenu.Item>
+											<DropdownMenu.Item
+												onclick={() => {
+													chatContext.newChat();
+												}}
+											>
+												<Icons.Chat />
+												New Chat</DropdownMenu.Item
+											>
 
-							// @TODO implement some event examples
-						}}
-					>
-						<div class="date">
-							{new Date().getDate()}
+											{#if chatContext.recentChats.length > 0}
+												<DropdownMenu.Separator />
+
+												<DropdownMenu.Label>Past Conversations</DropdownMenu.Label>
+
+												<DropdownMenu.List>
+													{#each chatContext.recentChats as chat (chat.id)}
+														<DropdownMenu.Item
+															onclick={() => {
+																chatContext.loadChat(chat.id);
+															}}
+														>
+															<span class="action-recent-chat-label">
+																{chat.title || '(Untitled)'}
+															</span>
+
+															{#snippet description()}
+																{formatChatDate(chat.updatedAt)}
+															{/snippet}
+														</DropdownMenu.Item>
+													{/each}
+												</DropdownMenu.List>
+											{/if}
+										</DropdownMenu.Content>
+									</DropdownMenu.Root>
+								</div>
+							{/if}
+
+							<Textarea
+								name="message"
+								placeholder="Type here..."
+								value={message}
+								onTextChange={(value) => {
+									message = value;
+								}}
+							/>
+
+							<div class="form-action">
+								{#if chatContext.chat?.status === 'streaming' || chatContext.chat?.status === 'submitted'}
+									<button
+										class="stop-process"
+										type="button"
+										onclick={async (e) => {
+											e.preventDefault();
+
+											chatContext.chat.stop();
+										}}
+									>
+										<IconSmall.Stop />
+									</button>
+								{:else}
+									<button type="submit" aria-label="Send message">
+										<Icons.ArrowUp />
+									</button>
+								{/if}
+							</div>
 						</div>
-
-						Manage Events
-					</button> -->
-					</div>
-					{#if appCtx.stagedFiles.state.size > 0}
-						<div class="staged-files">
-							{#each appCtx.stagedFiles.state.entries() as [itemId, file]}
-								<button
-									onclick={async () => {
-										appCtx.stagedFiles.remove(itemId);
-									}}
-								>
-									{#if file.type === 'file'}
-										<IconSmall.File />
-									{:else}
-										<IconSmall.Folder />
-									{/if}
-
-									<div class="file-details">
-										<span>{file.path}</span>
-										<span>{file.type === 'file' ? 'File' : 'Folder'}</span>
-									</div>
-
-									<span class="close-button">
-										<IconSmall.Close />
-									</span>
-								</button>
-							{/each}
-						</div>
-					{/if}
+					</form>
 				</div>
 
 				{#if !hasMessages && chatContext.recentChats.length > 0}
@@ -326,7 +340,7 @@ $effect(() => {
 						>
 						{#if showChats}
 							<div class="chat-list" transition:slide={{ duration: 200, easing: circOut }}>
-								{#each chatContext.recentChats as chat (chat.id)}
+								{#each chatContext.recentChats.slice(0, 5) as chat (chat.id)}
 									<button
 										class="chat-item"
 										onclick={() => {
@@ -466,14 +480,17 @@ $effect(() => {
 		}
 
 		form {
+			background-color: var(--color-surface-1);
+			border-radius: var(--radius-5);
+			box-shadow: var(--shadow-1);
 			display: flex;
+			flex-direction: column;
 			position: relative;
+			padding-inline: var(--size-3) var(--size-1-5);
 
 			.form-action {
 				display: flex;
-				inset-inline-end: var(--size-1-5);
-				inset-block-end: var(--size-1-5);
-				position: absolute;
+				margin-block-end: var(--size-1-5);
 			}
 
 			button[type='submit'],
@@ -495,113 +512,96 @@ $effect(() => {
 					}
 				}
 			}
-		}
 
-		.actions {
-			align-items: center;
-			display: flex;
-			gap: var(--size-2);
-			padding-block-start: var(--size-3);
-			padding-inline: var(--size-3);
-
-			button {
-				align-items: center;
-				border-radius: var(--radius-3);
-				color: var(--accent-1);
+			.textarea-container {
+				align-items: end;
 				display: flex;
-				font-size: var(--font-size-2);
-				font-weight: var(--font-weight-5);
 				gap: var(--size-1);
+			}
+
+			.actions {
+				display: flex;
+				margin-block-end: var(--size-1-5);
+			}
+
+			.action-trigger {
+				align-items: center;
+				block-size: var(--size-7);
+				border-radius: var(--radius-4);
+				color: color-mix(in srgb, var(--color-text), transparent 30%);
+				display: flex;
 				justify-content: center;
-				padding: var(--size-1);
-				opacity: 0.7;
-				transition: all 150ms ease;
+				inline-size: var(--size-7);
+				transition: all 200ms ease;
 
-				&:hover {
+				&:hover,
+				:global(:focus-visible) & {
 					background-color: var(--color-surface-2);
-					opacity: 1;
-				}
-
-				& :global(svg) {
-					flex: none;
-					opacity: 0.7;
 				}
 			}
 		}
 	}
 
+	.action-recent-chat-label {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		max-inline-size: 100%;
+	}
+
 	.staged-files {
 		display: flex;
-		gap: var(--size-4);
+		flex-wrap: wrap;
+		gap: var(--size-1);
 		inline-size: 100%;
-		margin-block-start: var(--size-2);
-		padding-inline: var(--size-4);
+		padding-block-start: var(--size-2);
+		margin-inline-start: calc(-1 * var(--size-0-5));
 
 		button {
-			align-items: start;
-			border: none;
-			color: var(--color-text);
+			align-items: center;
+			block-size: var(--size-5-5);
+			border-radius: var(--radius-2-5);
+			border: var(--size-px) solid var(--color-border-1);
 			cursor: pointer;
 			display: flex;
-			font-size: var(--font-size-2);
-			gap: var(--size-1-5);
-			max-inline-size: var(--size-56);
-			opacity: 0.7;
+			font-size: var(--font-size-1);
+			font-weight: var(--font-weight-5);
+			gap: var(--size-0-5);
 			justify-content: center;
+			max-inline-size: var(--size-56);
+			padding-inline: var(--size-1);
 			overflow: hidden;
 			text-align: left;
 
 			& :global(svg) {
-				color: var(--text-3);
+				opacity: 0.5;
 				flex: none;
 			}
 
-			.file-details {
-				align-items: start;
-				display: flex;
-				flex-direction: column;
-				font-weight: var(--font-weight-4-5);
-				gap: var(--size-0-5);
-				line-height: var(--font-lineheight-1);
+			.file-path {
+				text-overflow: ellipsis;
 				overflow: hidden;
-				inline-size: 100%;
-
-				span:first-child {
-					overflow: hidden;
-					text-overflow: ellipsis;
-					white-space: nowrap;
-					max-inline-size: 100%;
-				}
-
-				span:last-child {
-					color: var(--text-3);
-					font-size: var(--font-size-2);
-					font-weight: var(--font-weight-4);
-					opacity: 0.8;
-				}
+				white-space: nowrap;
+				flex: 1;
+				opacity: 0.7;
 			}
 
 			.close-button {
-				background-color: var(--highlight-1);
 				border-radius: var(--radius-2);
 				block-size: var(--size-4);
 				flex: none;
 				inline-size: var(--size-4);
 				transition: all 150ms ease;
-
-				& :global(svg) {
-					color: var(--accent-1);
-				}
 			}
+
 			&:hover .close-button {
-				background-color: var(--highlight-3);
+				background-color: var(--color-surface-2);
 			}
 		}
 	}
 
 	.recent-conversations {
 		padding-inline: var(--size-4);
-		padding-block-start: var(--size-6);
+		padding-block-start: var(--size-3-5);
 
 		.toggle-chats {
 			align-items: center;

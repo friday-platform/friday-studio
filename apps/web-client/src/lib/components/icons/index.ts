@@ -1,6 +1,7 @@
 import ArrowLeft from "./arrow-left.svelte";
 import ArrowRight from "./arrow-right.svelte";
 import ArrowUp from "./arrow-up.svelte";
+import Chat from "./chat.svelte";
 import Dashboard from "./dashboard.svelte";
 import DeleteSpace from "./delete-space.svelte";
 import DotFilled from "./dot-filled.svelte";
@@ -18,10 +19,12 @@ import Slack from "./slack.svelte";
 import Trash from "./trash.svelte";
 import TriangleRight from "./triangle-right.svelte";
 import Workspace from "./workspace.svelte";
+
 export const Icons = {
   ArrowLeft,
   ArrowRight,
   ArrowUp,
+  Chat,
   Dashboard,
   DeleteSpace,
   DotFilled,

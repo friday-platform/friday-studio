@@ -54,6 +54,11 @@ class ChatContext {
     this.id = chatId;
     this.previousMessages = await validateAtlasUIMessages(res.data.messages);
   }
+
+  newChat(): void {
+    this.id = crypto.randomUUID();
+    this.previousMessages = [];
+  }
 }
 
 export function setChatContext() {

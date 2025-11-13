@@ -21,14 +21,15 @@ function createKeyboard() {
 }
 
 function createStagedFiles() {
-  const state = new SvelteMap<string, { path: string; type: "file" | "folder" }>();
+  const state = new SvelteMap<string, { path: string; name: string; type: "file" | "folder" }>();
 
   return {
     get state() {
       return state;
     },
     add: (itemId: string, { path, type }: { path: string; type: "file" | "folder" }) => {
-      state.set(itemId, { path, type });
+      const name = path.split(/[/\\]/).pop() || path;
+      state.set(itemId, { path, name, type });
     },
     remove: (itemId: string) => {
       state.delete(itemId);

@@ -44,18 +44,6 @@ function getElementType() {
 }
 </script>
 
-{#snippet contents()}
-	<span class="label">
-		{@render children()}
-	</span>
-
-	{#if description}
-		<div class="item-description">
-			{@render description()}
-		</div>
-	{/if}
-{/snippet}
-
 <!-- svelte-ignore event_directive_deprecated -->
 <svelte:element
 	this={getElementType()}
@@ -72,7 +60,15 @@ function getElementType() {
 		}
 	}}
 >
-	{@render contents()}
+	<span class="label">
+		{@render children()}
+	</span>
+
+	{#if description}
+		<div class="item-description">
+			{@render description()}
+		</div>
+	{/if}
 </svelte:element>
 
 <style>
@@ -82,7 +78,6 @@ function getElementType() {
 		display: flex;
 		flex: 1 0 auto;
 		flex-direction: column;
-		gap: var(--size-1);
 		justify-content: center;
 		padding-inline: var(--size-3);
 		position: relative;
@@ -97,17 +92,12 @@ function getElementType() {
 		}
 
 		&.description {
-			block-size: auto;
-			min-block-size: var(--size-9);
-			padding-block: var(--size-2);
-			text-wrap: balance;
-			white-space: normal;
+			block-size: var(--size-10);
 		}
 
 		.item-description {
 			opacity: 0.5;
-			font-size: var(--font-size-2);
-			line-height: var(--font-lineheight-2);
+			font-size: var(--font-size-1);
 		}
 
 		&.faded,
@@ -151,6 +141,7 @@ function getElementType() {
 
 	.accent--none :global(svg) {
 		color: var(--color-text);
+		opacity: 0.7;
 	}
 
 	.accent--primary :global(svg) {

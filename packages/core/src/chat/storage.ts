@@ -163,7 +163,7 @@ async function appendMessage(
  * Reads mtime for all files, sorts by mtime descending, fully reads only top N.
  * Gracefully skips corrupted chats (logs warning).
  */
-async function listChats(limit = 5): Promise<Result<Chat[], string>> {
+async function listChats(limit = 25): Promise<Result<Chat[], string>> {
   try {
     await ensureChatDir();
     const chatDir = getChatDir();

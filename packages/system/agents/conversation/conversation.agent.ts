@@ -172,7 +172,7 @@ async function generateChatTitle(messages: AtlasUIMessage[], logger: Logger): Pr
       {
         role: ROLE_SYSTEM,
         content:
-          "You generate concise 3-5 word titles for conversations. Only output the title, nothing else.",
+          "You generate concise 2-3 word titles for conversations. Only output the title, nothing else.",
         providerOptions: getDefaultProviderOpts("anthropic"),
       },
       {
