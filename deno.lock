@@ -35,7 +35,7 @@
     "npm:@ai-sdk/mcp@^0.0.8": "0.0.8_zod@4.1.12",
     "npm:@ai-sdk/openai@^2.0.65": "2.0.65_zod@4.1.12",
     "npm:@ai-sdk/provider@2": "2.0.0",
-    "npm:@ai-sdk/svelte@^3.0.92": "3.0.92_svelte@5.43.6__acorn@8.15.0_zod@4.1.12",
+    "npm:@ai-sdk/svelte@^3.0.93": "3.0.93_svelte@5.43.6__acorn@8.15.0_zod@4.1.12",
     "npm:@biomejs/biome@*": "2.3.4",
     "npm:@eslint/compat@^1.4.1": "1.4.1_eslint@9.39.1",
     "npm:@eslint/js@^9.39.1": "9.39.1",
@@ -81,8 +81,8 @@
     "npm:@types/node@*": "24.2.0",
     "npm:@types/react@^19.2.3": "19.2.3",
     "npm:ai-sdk-provider-claude-code@^2.1.0": "2.1.0_zod@4.1.12",
-    "npm:ai@^5.0.81": "5.0.92_zod@4.1.12",
-    "npm:ai@^5.0.92": "5.0.92_zod@4.1.12",
+    "npm:ai@^5.0.81": "5.0.93_zod@4.1.12",
+    "npm:ai@^5.0.92": "5.0.93_zod@4.1.12",
     "npm:autoevals@^0.0.131": "0.0.131_zod@3.25.76",
     "npm:cookie@^1.0.2": "1.0.2",
     "npm:cron-parser@^5.4.0": "5.4.0",
@@ -240,8 +240,8 @@
         "zod@4.1.12"
       ]
     },
-    "@ai-sdk/gateway@2.0.8_zod@4.1.12": {
-      "integrity": "sha512-cA5Sh5pjmsMOlzCxsX9B4bGB9qOn9/HRxKb8ry1OYmrXP3i1t34eZMHA7EVFoB09I41p0LPwkRBACYXm15xokw==",
+    "@ai-sdk/gateway@2.0.9_zod@4.1.12": {
+      "integrity": "sha512-E6x4h5CPPPJ0za1r5HsLtHbeI+Tp3H+YFtcH8G3dSSPFE6w+PZINzB4NxLZmg1QqSeA5HTP3ZEzzsohp0o2GEw==",
       "dependencies": [
         "@ai-sdk/provider",
         "@ai-sdk/provider-utils@3.0.17_zod@4.1.12",
@@ -298,8 +298,8 @@
         "json-schema"
       ]
     },
-    "@ai-sdk/svelte@3.0.92_svelte@5.43.6__acorn@8.15.0_zod@4.1.12": {
-      "integrity": "sha512-geaJmKXbLjSEEp0mULJaqaArJ1UORCwYi/L2NxnlhxiPg7UfE6mvQEyOQXuGgbfxIDubHaCBIWh7BPdXYs10GQ==",
+    "@ai-sdk/svelte@3.0.93_svelte@5.43.6__acorn@8.15.0_zod@4.1.12": {
+      "integrity": "sha512-qzwMNkCWhL1BQsre6UIZsjoE7CfmswQ4F46pJDfdx2yhqsI+KD1nCruK32e1nB6xEle0BNwx5E3k7p2dFlXLPw==",
       "dependencies": [
         "@ai-sdk/provider-utils@3.0.17_zod@4.1.12",
         "ai",
@@ -1907,8 +1907,8 @@
         "zod@4.1.12"
       ]
     },
-    "ai@5.0.92_zod@4.1.12": {
-      "integrity": "sha512-EnPe3QXiD06Tg7iAt/oU3JSwedI1nuhEBnTjyfn1qTXaqmJ6qI4YG8wn/eBHRVXnmljDFDNYvGBC5pALYV1rAA==",
+    "ai@5.0.93_zod@4.1.12": {
+      "integrity": "sha512-9eGcu+1PJgPg4pRNV4L7tLjRR3wdJC9CXQoNMvtqvYNOLZHFCzjHtVIOr2SIkoJJeu2+sOy3hyiSuTmy2MA40g==",
       "dependencies": [
         "@ai-sdk/gateway",
         "@ai-sdk/provider",
@@ -4542,7 +4542,7 @@
         ],
         "packageJson": {
           "dependencies": [
-            "npm:@ai-sdk/svelte@^3.0.92",
+            "npm:@ai-sdk/svelte@^3.0.93",
             "npm:@eslint/compat@^1.4.1",
             "npm:@eslint/js@^9.39.1",
             "npm:@ianvs/prettier-plugin-sort-imports@^4.7.0",
