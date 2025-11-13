@@ -34,7 +34,7 @@
     "@std/media-types": "npm:@jsr/std__media-types@^1.1.0",
     "@std/path": "npm:@jsr/std__path@^1.1.2",
     "@std/testing": "npm:@jsr/std__testing@^1.0.16",
-    "ai": "^5.0.92",
+    "ai": "^5.0.93",
     "papaparse": "^5.5.3",
     "xstate": "^5.24.0",
     "zod": "^4.1.12"

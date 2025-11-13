@@ -11,7 +11,7 @@
     "@atlas/oapi-client": "workspace:*",
     "@modelcontextprotocol/sdk": "npm:@socotra/modelcontextprotocol-sdk@^1.18.0",
     "@std/path": "npm:@jsr/std__path@^1.1.2",
-    "ai": "^5.0.92",
+    "ai": "^5.0.93",
     "fast-glob": "^3.3.3",
     "minimatch": "^10.1.1",
     "papaparse": "^5.5.3",
