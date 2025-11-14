@@ -76,7 +76,7 @@
     "npm:@tauri-apps/plugin-fs@~2.4.4": "2.4.4",
     "npm:@tauri-apps/plugin-notification@^2.3.3": "2.3.3",
     "npm:@tauri-apps/plugin-opener@^2.5.2": "2.5.2",
-    "npm:@tavily/core@~0.5.12": "0.5.12",
+    "npm:@tavily/core@~0.5.13": "0.5.13",
     "npm:@total-typescript/ts-reset@~0.6.1": "0.6.1",
     "npm:@types/node@*": "24.2.0",
     "npm:@types/react@^19.2.4": "19.2.4",
@@ -1635,8 +1635,8 @@
         "@tauri-apps/api"
       ]
     },
-    "@tavily/core@0.5.12": {
-      "integrity": "sha512-QLX4zNqBn7WVXS6uPX8jphXqhnLZOh3GjrDq0Ux6m0L7BtJuMvm56rKnbzAqEkYpg+YmbE/dEfKJLXQrBKSXOg==",
+    "@tavily/core@0.5.13": {
+      "integrity": "sha512-H7QzDDQews4r7HCrCnbAM8RyqlQt148G0UnjfCHMcOOrsP+8EwDqeOP4G47RrFGXEiS/jbTftGrDRAQnHUGnqA==",
       "dependencies": [
         "axios",
         "https-proxy-agent",
@@ -4604,7 +4604,7 @@
             "npm:@jsr/std__media-types@^1.1.0",
             "npm:@jsr/std__path@^1.1.2",
             "npm:@sendgrid/mail@^8.1.6",
-            "npm:@tavily/core@~0.5.12",
+            "npm:@tavily/core@~0.5.13",
             "npm:ai-sdk-provider-claude-code@^2.1.0",
             "npm:ai@^5.0.93",
             "npm:zod@^4.1.12"
