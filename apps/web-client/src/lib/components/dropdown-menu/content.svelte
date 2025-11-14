@@ -5,11 +5,16 @@ import type { HTMLAttributes } from "svelte/elements";
 import { scale } from "svelte/transition";
 import { getContext } from "./context";
 
-type Props = { children: Snippet; size?: "regular" | "large" | "auto" };
+type Props = { children: Snippet; size?: "regular" | "large" | "auto"; visible?: boolean };
 
 let node = $state<HTMLDivElement>();
 
-let { children, size = "auto", ...rest }: Props & HTMLAttributes<HTMLDivElement> = $props();
+let {
+  children,
+  size = "auto",
+  visible = true,
+  ...rest
+}: Props & HTMLAttributes<HTMLDivElement> = $props();
 
 const { open, menu, positioning, overlay } = getContext();
 </script>
@@ -21,6 +26,7 @@ const { open, menu, positioning, overlay } = getContext();
 	<div
 		{...$menu}
 		class="content size--{size} placement--{$positioning?.placement ?? 'bottom'}"
+		class:visible
 		use:menu
 		bind:this={node}
 		in:scale={{ duration: 150, start: 0.96, easing: expoOut }}
@@ -36,6 +42,16 @@ const { open, menu, positioning, overlay } = getContext();
 		display: flex;
 		flex-direction: column;
 		outline: none;
+		opacity: 0;
+		overflow: hidden;
+		transform: translate3d(0, 0, 0);
+		visibility: hidden;
+
+		&.visible {
+			opacity: 1;
+			overflow: auto;
+			visibility: visible;
+		}
 
 		&.placement--top {
 			transform-origin: 50% 100%;
@@ -104,6 +120,6 @@ const { open, menu, positioning, overlay } = getContext();
 	.overlay {
 		inset: 0;
 		position: fixed;
-		z-index: var(--layer-4);
+		z-index: var(--layer-2);
 	}
 </style>

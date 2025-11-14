@@ -2,7 +2,6 @@
   "name": "@atlas/web-client",
   "version": "0.0.1",
   "exports": "./mod.ts",
-  "imports": { "@std/http/file-server": "jsr:@std/http@^1.0.21/file-server" },
   "exclude": [
     ".svelte-kit/**",
     "build/**",

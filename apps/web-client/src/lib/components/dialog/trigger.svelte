@@ -15,15 +15,8 @@ let { children }: Props = $props();
 
 <style>
 	button {
-		display: contents;
-
 		&:focus {
 			outline: none;
-		}
-
-		&:focus-visible {
-			border-radius: var(--radius-2);
-			outline: 1px solid var(--color-text);
 		}
 	}
 </style>

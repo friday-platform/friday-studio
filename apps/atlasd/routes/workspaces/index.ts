@@ -2,6 +2,7 @@ import { WorkspaceConfigSchema } from "@atlas/config";
 import { logger } from "@atlas/logger";
 import { FilesystemWorkspaceCreationAdapter } from "@atlas/storage";
 import { stringifyError } from "@atlas/utils";
+import { getAtlasHome } from "@atlas/utils/paths.server";
 import { zValidator } from "@hono/zod-validator";
 import { join } from "@std/path";
 import { stringify } from "@std/yaml";
@@ -58,7 +59,7 @@ const workspacesRoutes = daemonFactory
       // Create workspace files
       const workspaceAdapter = new FilesystemWorkspaceCreationAdapter();
       const finalWorkspaceName = workspaceName || validatedConfig.workspace.name;
-      const basePath = Deno.cwd();
+      const basePath = join(getAtlasHome(), "workspaces");
 
       try {
         const workspacePath = await workspaceAdapter.createWorkspaceDirectory(
@@ -507,6 +508,67 @@ const workspacesRoutes = daemonFactory
 
       try {
         const manager = ctx.daemon.getWorkspaceManager();
+        const workspace = await manager.find({ id: workspaceId });
+
+        if (!workspace) {
+          return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
+        }
+
+        // Check if workspace is in .atlas directory
+        const atlasDir = getAtlasHome();
+        const workspacePath = workspace.path;
+
+        if (workspacePath.startsWith(atlasDir)) {
+          // Create unregistered directory if it doesn't exist
+          const unregisteredDir = join(atlasDir, "unregistered");
+          try {
+            await Deno.mkdir(unregisteredDir, { recursive: true });
+          } catch (error) {
+            // Directory might already exist, that's fine
+            if (!(error instanceof Deno.errors.AlreadyExists)) {
+              throw error;
+            }
+          }
+
+          // Move workspace to unregistered folder with collision handling
+          const workspaceName = workspacePath.split("/").pop() || workspaceId;
+          let targetPath = join(unregisteredDir, workspaceName);
+          let counter = 1;
+
+          // Find an available name if there's a collision
+          while (true) {
+            try {
+              await Deno.stat(targetPath);
+              // Path exists, try next number
+              counter++;
+              targetPath = join(unregisteredDir, `${workspaceName}-${counter}`);
+            } catch (error) {
+              // Path doesn't exist (NotFound error), we can use it
+              if (error instanceof Deno.errors.NotFound) {
+                break;
+              }
+              // Some other error, throw it
+              throw error;
+            }
+          }
+
+          try {
+            await Deno.rename(workspacePath, targetPath);
+            logger.info("Moved workspace to unregistered", {
+              workspaceId,
+              oldPath: workspacePath,
+              newPath: targetPath,
+            });
+          } catch (error) {
+            logger.warn("Failed to move workspace to unregistered", {
+              error,
+              workspaceId,
+              workspacePath,
+            });
+            // Continue with deletion even if move fails
+          }
+        }
+
         await manager.deleteWorkspace(workspaceId, { force });
         return c.json({ message: `Workspace ${workspaceId} deleted` });
       } catch (error) {

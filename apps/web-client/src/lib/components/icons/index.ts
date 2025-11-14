@@ -1,7 +1,9 @@
+import AddSpace from "./add-space.svelte";
 import ArrowLeft from "./arrow-left.svelte";
 import ArrowRight from "./arrow-right.svelte";
 import ArrowUp from "./arrow-up.svelte";
 import Chat from "./chat.svelte";
+import Close from "./close.svelte";
 import Dashboard from "./dashboard.svelte";
 import DeleteSpace from "./delete-space.svelte";
 import DotFilled from "./dot-filled.svelte";
@@ -21,10 +23,12 @@ import TriangleRight from "./triangle-right.svelte";
 import Workspace from "./workspace.svelte";
 
 export const Icons = {
+  AddSpace,
   ArrowLeft,
   ArrowRight,
   ArrowUp,
   Chat,
+  Close,
   Dashboard,
   DeleteSpace,
   DotFilled,

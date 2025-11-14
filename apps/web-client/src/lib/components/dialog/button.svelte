@@ -4,15 +4,24 @@ import type { HTMLAnchorAttributes, HTMLButtonAttributes } from "svelte/elements
 import { getContext } from "./context";
 
 const { close } = getContext();
+type Props = { children: Snippet; closeOnClick?: boolean };
 
-type Props = { children: Snippet };
-
-let { children, ...rest }: Props & HTMLButtonAttributes & HTMLAnchorAttributes = $props();
+let {
+  children,
+  closeOnClick = true,
+  ...rest
+}: Props & HTMLButtonAttributes & HTMLAnchorAttributes = $props();
 </script>
 
-<button {...rest} {...$close} use:close>
-	{@render children()}
-</button>
+{#if closeOnClick}
+	<button {...rest} {...$close} use:close>
+		{@render children()}
+	</button>
+{:else}
+	<button {...rest}>
+		{@render children()}
+	</button>
+{/if}
 
 <style>
 	button {

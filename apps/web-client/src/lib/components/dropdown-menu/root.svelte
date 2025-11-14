@@ -25,6 +25,6 @@ const { open } = createContext({ ...args, forceVisible: true, closeOnOutsideClic
 		min-inline-size: var(--size-40);
 		padding-block: var(--size-1);
 		position: relative;
-		z-index: var(--layer-4);
+		z-index: var(--layer-3);
 	}
 </style>

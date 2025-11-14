@@ -11,6 +11,7 @@ import { ConfigLoader, type MergedConfig } from "@atlas/config";
 import { logger } from "@atlas/logger";
 import { FilesystemConfigAdapter } from "@atlas/storage";
 import { SYSTEM_WORKSPACES } from "@atlas/system/workspaces";
+import { getAtlasHome } from "@atlas/utils/paths.server";
 import { basename, dirname, join } from "@std/path";
 import {
   createRegistryStorage,
@@ -379,19 +380,15 @@ export class WorkspaceManager {
   }
 
   /**
-   * Auto-import user workspaces from common roots.
+   * Auto-import user workspaces from ~/.atlas/workspaces.
    *
    * Searches a small depth for directories containing workspace.yml, de-dupes, validates
    * configs, logs and skips invalid ones. Never throws; returns import count.
    */
   private async importExistingWorkspaces(): Promise<number> {
     const workspaces: string[] = [];
-    const rootPath = Deno.cwd();
-    const commonPaths = [
-      join(rootPath, "examples", "workspaces"),
-      join(rootPath, "workspaces"),
-      rootPath,
-    ];
+    const atlasWorkspacesDir = join(getAtlasHome(), "workspaces");
+    const commonPaths = [atlasWorkspacesDir];
 
     for (const basePath of commonPaths) {
       if (existsSync(basePath)) {

@@ -4,9 +4,9 @@ import { quadInOut } from "svelte/easing";
 import { fade, scale } from "svelte/transition";
 import { getContext } from "./context";
 
-type Props = { children: Snippet };
+type Props = { children: Snippet; icon?: Snippet; header: Snippet; footer: Snippet };
 
-let { children }: Props = $props();
+let { children, icon, header, footer }: Props = $props();
 
 const { content, portalled, overlay, open } = getContext();
 </script>
@@ -27,6 +27,20 @@ const { content, portalled, overlay, open } = getContext();
 			transition:scale={{ duration: 150, start: 0.98, easing: quadInOut, opacity: 0 }}
 		>
 			{@render children()}
+
+			<header>
+				{#if icon}
+					<div class="icon">
+						{@render icon()}
+					</div>
+				{/if}
+
+				{@render header()}
+			</header>
+
+			<footer>
+				{@render footer()}
+			</footer>
 		</div>
 	</div>
 {/if}
@@ -44,13 +58,12 @@ const { content, portalled, overlay, open } = getContext();
 
 	.overlay {
 		background: radial-gradient(
-			ellipse closest-side at 50% 50%,
+			circle farthest-side at 50% 50%,
 			var(--color-surface-2) 0%,
 			transparent 100%
 		);
 		inset: 0;
 		inset-inline-start: var(--size-56);
-		opacity: 0.5;
 		position: absolute;
 		z-index: -1;
 	}
@@ -67,11 +80,40 @@ const { content, portalled, overlay, open } = getContext();
 		flex-direction: column;
 		align-items: center;
 		gap: var(--size-6);
-		inline-size: 100%;
-		max-inline-size: var(--size-80);
-		padding: var(--size-12);
-		padding-block-end: var(--size-8);
+		inline-size: fit-content;
+		max-inline-size: var(--size-72);
+		padding-block: var(--size-12) var(--size-8);
+		padding-inline: var(--size-6);
 		position: relative;
 		text-align: center;
+	}
+
+	header {
+		align-items: center;
+		display: flex;
+		flex-direction: column;
+		justify-content: center;
+
+		& :global(p) {
+			text-wrap-style: balance;
+		}
+	}
+
+	.icon {
+		margin-block-end: var(--size-4);
+
+		& :global(svg) {
+			margin-block-end: var(--size-4);
+			transform: scale(2);
+		}
+	}
+
+	footer {
+		align-items: center;
+		display: flex;
+		flex-direction: column;
+		gap: var(--size-1-5);
+		max-inline-size: var(--size-56);
+		inline-size: 100%;
 	}
 </style>

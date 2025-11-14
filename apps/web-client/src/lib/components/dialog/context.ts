@@ -1,7 +1,7 @@
 import { type CreateDialogProps, createDialog } from "@melt-ui/svelte";
 import { getContext as _getContext, setContext } from "svelte";
 
-const KEY = Symbol();
+export const KEY = Symbol();
 
 export function createContext(args: CreateDialogProps = { forceVisible: true }) {
   const { elements, states } = createDialog({ ...args, portal: "body" });

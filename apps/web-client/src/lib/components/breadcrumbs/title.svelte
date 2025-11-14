@@ -1,11 +1,17 @@
 <script lang="ts">
 import type { Snippet } from "svelte";
+import type { Writable } from "svelte/store";
 import { DropdownMenu } from "$lib/components/dropdown-menu";
 import { IconSmall } from "$lib/components/icons/small";
 
-type Props = { children: Snippet; prepend?: Snippet; actions?: Snippet };
+type Props = {
+  children: Snippet;
+  prepend?: Snippet;
+  actions?: Snippet<[Writable<boolean>]>;
+  menuVisible?: boolean;
+};
 
-let { children, prepend, actions }: Props = $props();
+let { children, prepend, actions, menuVisible = true }: Props = $props();
 </script>
 
 {#snippet trigger()}
@@ -29,16 +35,20 @@ let { children, prepend, actions }: Props = $props();
 {#if actions}
 	<DropdownMenu.Root
 		positioning={{
-			placement: 'bottom-start'
+			placement: 'bottom-start',
+			gutter: 0,
+			offset: { crossAxis: -6, mainAxis: 8 }
 		}}
 	>
-		<DropdownMenu.Trigger>
-			{@render trigger()}
-		</DropdownMenu.Trigger>
+		{#snippet children(open)}
+			<DropdownMenu.Trigger>
+				{@render trigger()}
+			</DropdownMenu.Trigger>
 
-		<DropdownMenu.Content>
-			{@render actions()}
-		</DropdownMenu.Content>
+			<DropdownMenu.Content visible={menuVisible}>
+				{@render actions(open)}
+			</DropdownMenu.Content>
+		{/snippet}
 	</DropdownMenu.Root>
 {:else}
 	{@render trigger()}

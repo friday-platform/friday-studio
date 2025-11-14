@@ -5,6 +5,7 @@ import { getAppContext } from "$lib/app-context.svelte";
 import logo from "$lib/assets/logo.png";
 import { Icons } from "$lib/components/icons";
 import { IconSmall } from "$lib/components/icons/small";
+import AddWorkspaceDialog from "$lib/modules/spaces/add-workspace.svelte";
 import { getActivePage } from "$lib/utils/active-page.svelte";
 import ExpandDecal from "./expand-decal.svelte";
 import NavigationControls from "./navigation-controls.svelte";
@@ -26,8 +27,7 @@ async function loadSpaces() {
     }
     const allSpaces = res.data;
     spaces = allSpaces.filter(
-      // (w) => w.name !== 'atlas-conversation' && !w.path.includes('/examples/')
-      (w) => !w.path.includes("/examples/"),
+      (w) => w.name !== "atlas-conversation" && !w.path.includes("/examples/"),
     );
   } catch (error) {
     console.error("Failed to load spaces:", error);
@@ -66,10 +66,10 @@ onMount(() => {
 		<nav>
 			<ul>
 				<li>
-					<a href={ctx.routes.main} class:active={getActivePage('/(app)')}>
-						<Icons.Dashboard />
+					<a href={ctx.routes.main} class:active={getActivePage('/')} class="sidebar-item">
+						<Icons.Chat />
 
-						<span class="text">Dashboard</span>
+						<span class="text">Chat</span>
 					</a>
 				</li>
 
@@ -77,6 +77,7 @@ onMount(() => {
 					<a
 						href={ctx.routes.library.list}
 						class:active={getActivePage(['library', 'library/[id]'])}
+						class="sidebar-item"
 					>
 						<Icons.Folder />
 
@@ -85,7 +86,11 @@ onMount(() => {
 				</li>
 
 				<li>
-					<a href={ctx.routes.settings} class:active={getActivePage(['settings'])}>
+					<a
+						href={ctx.routes.settings}
+						class:active={getActivePage(['settings'])}
+						class="sidebar-item"
+					>
 						<Icons.Settings />
 
 						<span class="text">Settings</span>
@@ -93,26 +98,33 @@ onMount(() => {
 				</li>
 			</ul>
 
-			{#if spaces.length > 0}
-				<div class="spaces-section">
-					<span class="spaces-header">Spaces</span>
-					<ul class="spaces-list">
-						{#each spaces as space}
-							<li>
-								<a
-									href={ctx.routes.spaces.item(space.id)}
-									class:active={getActivePage([
-										`spaces/${space.id}`,
-										`spaces/${space.id}/sessions`
-									])}
-								>
-									<span class="text">{space.name}</span>
-								</a>
-							</li>
-						{/each}
-					</ul>
-				</div>
-			{/if}
+			<span class="spaces-header">
+				Spaces
+
+				<AddWorkspaceDialog>
+					{#snippet triggerContents()}
+						<span class="new-space">
+							<IconSmall.Plus />
+							Add New
+						</span>
+					{/snippet}
+				</AddWorkspaceDialog>
+			</span>
+			<ul class="spaces-list">
+				{#each spaces as space}
+					<li>
+						<a
+							href={ctx.routes.spaces.item(space.id)}
+							class="sidebar-item"
+							class:active={getActivePage([`spaces/${space.id}`, `spaces/${space.id}/sessions`])}
+						>
+							<span class="text">{space.name}</span>
+						</a>
+					</li>
+				{:else}
+					<li class="sidebar-item no-spaces">No spaces found</li>
+				{/each}
+			</ul>
 		</nav>
 	{/if}
 
@@ -127,7 +139,7 @@ onMount(() => {
 		flex-direction: column;
 		justify-content: space-between;
 		gap: var(--size-4);
-		padding-block: var(--size-13) var(--size-6);
+		padding-block: var(--size-13) var(--size-5);
 		padding-inline: var(--size-3);
 		position: relative;
 		z-index: var(--layer-1);
@@ -144,33 +156,33 @@ onMount(() => {
 		li {
 			inline-size: 100%;
 		}
+	}
 
-		a {
-			align-items: center;
-			block-size: var(--size-7);
-			border-radius: var(--radius-2);
-			color: var(--color-text);
-			display: flex;
-			font-size: var(--font-size-3);
-			font-weight: var(--font-weight-4-5);
-			gap: var(--size-2);
-			padding-inline: var(--size-2);
-			outline: none;
+	.sidebar-item {
+		align-items: center;
+		block-size: var(--size-7);
+		border-radius: var(--radius-2);
+		color: var(--color-text);
+		display: flex;
+		font-size: var(--font-size-3);
+		font-weight: var(--font-weight-4-5);
+		gap: var(--size-2);
+		padding-inline: var(--size-2);
+		outline: none;
 
-			& :global(svg) {
-				color: var(--accent-1);
-				flex: none;
-				opacity: 0.5;
-			}
+		& :global(svg) {
+			color: var(--accent-1);
+			flex: none;
+			opacity: 0.5;
+		}
 
-			.text {
-				opacity: 0.8;
-			}
+		.text {
+			opacity: 0.8;
+		}
 
-			&.active,
-			&:focus-visible {
-				background-color: color-mix(in srgb, var(--color-border-1) 80%, transparent);
-			}
+		&.active,
+		&:focus-visible {
+			background-color: color-mix(in srgb, var(--color-border-1) 80%, transparent);
 		}
 	}
 
@@ -204,12 +216,14 @@ onMount(() => {
 		font-weight: var(--font-weight-7);
 		justify-content: center;
 		inline-size: var(--size-7);
-		margin-block-start: auto;
-		margin-inline: auto;
+		margin-block: auto var(--size-1);
+		margin-inline: var(--size-5) 0;
+		transition: all 150ms ease;
 	}
 
 	.expanded .help {
-		margin-inline: var(--size-5) auto;
+		margin-block-end: 0;
+		margin-inline: var(--size-2) 0;
 	}
 
 	.expand-sidebar {
@@ -259,12 +273,34 @@ onMount(() => {
 	}
 
 	.spaces-header {
-		display: block;
+		block-size: var(--size-9);
+		display: flex;
+		color: color-mix(in srgb, var(--color-text), transparent 40%);
 		font-size: var(--font-size-2);
 		font-weight: var(--font-weight-4-5);
-		opacity: 0.6;
+		justify-content: space-between;
+
 		padding-block: var(--size-3) var(--size-1-5);
 		padding-inline: var(--size-2-5) var(--size-2);
+
+		.new-space {
+			align-items: center;
+			border-radius: var(--radius-2);
+			display: flex;
+			font-size: var(--font-size-1);
+			font-weight: var(--font-weight-5);
+			margin-inline-end: calc(-1 * var(--size-1));
+			padding-block: var(--size-0-5);
+			padding-inline: var(--size-1);
+
+			&:hover {
+				background-color: color-mix(in srgb, var(--color-border-1) 80%, transparent);
+			}
+		}
+	}
+
+	:global(:focus-visible) .new-space {
+		background-color: color-mix(in srgb, var(--color-border-1) 80%, transparent);
 	}
 
 	.spaces-list {
@@ -276,6 +312,12 @@ onMount(() => {
 				overflow: hidden;
 				text-overflow: ellipsis;
 			}
+		}
+
+		.no-spaces {
+			opacity: 0.5;
+			font-size: var(--font-size-2);
+			padding-inline: var(--size-2-5) var(--size-2);
 		}
 	}
 </style>

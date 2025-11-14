@@ -1,12 +1,12 @@
 <script>
-import { IconSmall } from "$lib/components/icons/small";
+import { Icons } from "$lib/components/icons";
 import { getContext } from "./context";
 
 const { close } = getContext();
 </script>
 
 <button {...$close} use:close>
-	<IconSmall.Close />
+	<Icons.Close />
 </button>
 
 <style>

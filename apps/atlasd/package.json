@@ -22,7 +22,7 @@
     "@hono/zod-validator": "^0.7.4",
     "@std/fs": "npm:@jsr/std__fs@^1.0.19",
     "@std/path": "npm:@jsr/std__path@^1.1.2",
-    "@std/yaml": "npm:@jsr/std__yaml@^1.0.9",
+    "@std/yaml": "npm:@jsr/std__yaml@^1.0.10",
     "hono": "^4.10.5",
     "hono-openapi": "^1.1.1",
     "zod": "^4.1.12"

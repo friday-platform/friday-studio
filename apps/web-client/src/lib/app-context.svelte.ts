@@ -77,6 +77,7 @@ class AppContext {
   stagedFiles = createStagedFiles();
 
   #sidebarExpanded = $state(getInitialSidebarState());
+  addWorkspaceDialogOpen = $state(false);
   #workspacesRefreshCallback: (() => void) | null = null;
 
   get sidebarExpanded() {

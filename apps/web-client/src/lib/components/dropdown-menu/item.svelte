@@ -1,10 +1,13 @@
 <script lang="ts">
-import type { Snippet } from "svelte";
+import { hasContext, type Snippet } from "svelte";
 import type { HTMLAttributes } from "svelte/elements";
+import { get } from "svelte/store";
+import { KEY as DIALOG_KEY, getContext as getDialogContext } from "$lib/components/dialog/context";
 
 import { getContext } from "./context";
 
 const { item } = getContext();
+const dialogContext = getDialogContext();
 
 type Props = {
   children: Snippet;
@@ -44,22 +47,7 @@ function getElementType() {
 }
 </script>
 
-<!-- svelte-ignore event_directive_deprecated -->
-<svelte:element
-	this={getElementType()}
-	{disabled}
-	use:item
-	{...$item}
-	{...rest}
-	class:description={description !== undefined}
-	class="item accent--{accent} size--{size}"
-	class:faded
-	on:m-click={(e) => {
-		if (!closeOnClick) {
-			e.preventDefault();
-		}
-	}}
->
+{#snippet contents()}
 	<span class="label">
 		{@render children()}
 	</span>
@@ -69,7 +57,47 @@ function getElementType() {
 			{@render description()}
 		</div>
 	{/if}
-</svelte:element>
+{/snippet}
+
+{#if hasContext(DIALOG_KEY)}
+	{@const trigger = dialogContext.trigger}
+	<!-- svelte-ignore event_directive_deprecated -->
+	<button
+		{...rest}
+		{disabled}
+		use:item
+		use:trigger
+		{...$item}
+		{...get(trigger)}
+		class:description={description !== undefined}
+		class="item accent--{accent} size--{size}"
+		class:faded
+		on:m-click={(e) => {
+			e.preventDefault();
+		}}
+	>
+		{@render contents()}
+	</button>
+{:else}
+	<!-- svelte-ignore event_directive_deprecated -->
+	<svelte:element
+		this={getElementType()}
+		{disabled}
+		use:item
+		{...$item}
+		{...rest}
+		class:description={description !== undefined}
+		class="item accent--{accent} size--{size}"
+		class:faded
+		on:m-click={(e) => {
+			if (!closeOnClick) {
+				e.preventDefault();
+			}
+		}}
+	>
+		{@render contents()}
+	</svelte:element>
+{/if}
 
 <style>
 	.item {
