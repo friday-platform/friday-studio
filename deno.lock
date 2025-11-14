@@ -120,7 +120,7 @@
     "npm:vitest@^4.0.7": "4.0.8_@types+node@24.2.0_vite@7.2.2__@types+node@24.2.0__picomatch@4.0.3",
     "npm:xstate@^5.24.0": "5.24.0",
     "npm:yargs@18": "18.0.0",
-    "npm:zod-from-json-schema@~0.5.1": "0.5.1",
+    "npm:zod-from-json-schema@~0.5.2": "0.5.2",
     "npm:zod@^4.1.11": "4.1.12",
     "npm:zod@^4.1.12": "4.1.12"
   },
@@ -4470,8 +4470,8 @@
     "zimmerframe@1.1.4": {
       "integrity": "sha512-B58NGBEoc8Y9MWWCQGl/gq9xBCe4IiKM0a2x7GZdQKOW5Exr8S1W24J6OgM1njK8xCRGvAJIL/MxXHf6SkmQKQ=="
     },
-    "zod-from-json-schema@0.5.1": {
-      "integrity": "sha512-HZH5mnA6oasGU2mYknkhfZ2LbP2UaRk5cXmgDyc5AZdKvwq/4RY5P/yexPq8vl9rw/3OYvpwMXcDwLag3Tb6DQ==",
+    "zod-from-json-schema@0.5.2": {
+      "integrity": "sha512-/dNaicfdhJTOuUd4RImbLUE2g5yrSzzDjI/S6C2vO2ecAGZzn9UcRVgtyLSnENSmAOBRiSpUdzDS6fDWX3Z35g==",
       "dependencies": [
         "zod@4.1.12"
       ]
@@ -4626,7 +4626,7 @@
         "packageJson": {
           "dependencies": [
             "npm:cron-parser@^5.4.0",
-            "npm:zod-from-json-schema@~0.5.1",
+            "npm:zod-from-json-schema@~0.5.2",
             "npm:zod@^4.1.12"
           ]
         }

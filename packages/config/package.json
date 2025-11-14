@@ -9,6 +9,6 @@
     "@atlas/storage": "workspace:*",
     "cron-parser": "^5.4.0",
     "zod": "^4.1.12",
-    "zod-from-json-schema": "^0.5.1"
+    "zod-from-json-schema": "^0.5.2"
   }
 }
