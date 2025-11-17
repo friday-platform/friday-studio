@@ -84,8 +84,8 @@
     "npm:eslint-config-prettier@^10.1.8": "10.1.8_eslint@9.39.1",
     "npm:eslint-plugin-svelte@^3.13.0": "3.13.0_eslint@9.39.1_svelte@5.43.6__acorn@8.15.0_postcss@8.5.6",
     "npm:eslint@^9.39.1": "9.39.1",
-    "npm:evalite@^1.0.0-beta.1": "1.0.0-beta.4",
-    "npm:evalite@^1.0.0-beta.4": "1.0.0-beta.4",
+    "npm:evalite@^1.0.0-beta.1": "1.0.0-beta.14_ai@5.0.93__zod@4.1.12_zod@4.1.12",
+    "npm:evalite@^1.0.0-beta.14": "1.0.0-beta.14_ai@5.0.93__zod@4.1.12_zod@4.1.12",
     "npm:eventsource-client@^1.2.0": "1.2.0",
     "npm:fast-glob@^3.3.3": "3.3.3",
     "npm:globals@^16.5.0": "16.5.0",
@@ -2505,8 +2505,8 @@
     "etag@1.8.1": {
       "integrity": "sha512-aIL5Fx7mawVa300al2BnEE4iNvo1qETxLrPI/o05L7z6go7fCw1J6EQmbK4FmJ2AS7kgVF/KEZWufBfdClMcPg=="
     },
-    "evalite@1.0.0-beta.4": {
-      "integrity": "sha512-yxo2jEyDb5rWyXK4iQNEFzJ2Hoi2FRT+8i2WjdSyY/kxX6j0DsoSQh+dDdJVZjVbN3fu7Dytj89GocyP2Zeafw==",
+    "evalite@1.0.0-beta.14_ai@5.0.93__zod@4.1.12_zod@4.1.12": {
+      "integrity": "sha512-YUuJTStQJUIuXN0+TcvsbtNdCB03osheqTKGCgJKEX3mThgeVgL/6Paa5eMM+0shXLhO/QEb9iEpWSETu4E3VA==",
       "dependencies": [
         "@fastify/static",
         "@fastify/websocket",
@@ -2514,13 +2514,18 @@
         "@stricli/core",
         "@vitest/runner",
         "@vitest/utils",
+        "ai",
         "dotenv@16.6.1",
         "fastify",
         "file-type",
+        "get-port",
         "jiti",
         "js-levenshtein",
         "table",
         "tinyrainbow"
+      ],
+      "optionalPeers": [
+        "ai"
       ],
       "bin": true
     },
@@ -2818,6 +2823,9 @@
         "hasown",
         "math-intrinsics"
       ]
+    },
+    "get-port@7.1.0": {
+      "integrity": "sha512-QB9NKEeDg3xxVwCCwJQ9+xycaz6pBB6iQ76wiWMl1927n0Kir6alPiP+yuiICLLU4jpMe08dXfpebuQppFA2zw=="
     },
     "get-proto@1.0.1": {
       "integrity": "sha512-sTSfBjoXBp89JvIKIefqw7U2CCebsc74kiY6awiGogKtoSGbgjYE/G/+l9sF3MWFPNc9IcoOC4ODfKHfxFmp0g==",
@@ -4747,7 +4755,7 @@
             "npm:@jsr/std__yaml@^1.0.10",
             "npm:@socotra/modelcontextprotocol-sdk@^1.18.0",
             "npm:ai@^5.0.93",
-            "npm:evalite@^1.0.0-beta.4",
+            "npm:evalite@^1.0.0-beta.14",
             "npm:zod@^4.1.12"
           ]
         }
