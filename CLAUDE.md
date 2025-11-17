@@ -91,12 +91,17 @@ pitch, rewrite it. </communication_style>
      - Look for existing interfaces and type definitions
      - Check imported packages for exported types
      - Reuse types from `@atlas/config`, `@atlas/storage`, etc.
-- **CRITICAL: After EVERY code change, run these commands in order:**
+- **CRITICAL: After EVERY TypeScript/Deno code change, run these commands in order:**
   1. `deno task fmt` - Format code
   2. `deno task biome` - Run Biome linter
   3. `deno lint` - Run Deno linter
   4. `deno check` - Type check entire project
   5. `npx knip` - Check for unused exports and dependencies
+- **CRITICAL: After EVERY Go code change, run these commands in order:**
+  1. `go fmt ./...` - Format code
+  2. `golangci-lint run` - Run linter
+  3. `go test -race ./...` - Run tests with race detector
+  4. `go build` - Verify build
 
 </development>
 

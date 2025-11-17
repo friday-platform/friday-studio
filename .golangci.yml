@@ -1,0 +1,37 @@
+version: "2"
+linters:
+  enable:
+    - asciicheck
+    - depguard
+    - errorlint
+    - gocritic
+    - godot
+    - gosec
+    - misspell
+    - nolintlint
+    - predeclared
+    - revive
+    - spancheck
+    - unconvert
+    - unparam
+    - whitespace
+  settings:
+    depguard:
+      rules:
+        main:
+          deny:
+            - pkg: io/ioutil
+              desc: Use corresponding 'os' or 'io' functions instead.
+    revive:
+      rules:
+        - name: unused-parameter
+          severity: warning
+          disabled: true
+issues:
+  max-same-issues: 0
+formatters:
+  enable:
+    - gofumpt
+  settings:
+    gofumpt:
+      extra-rules: true

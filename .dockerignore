@@ -62,7 +62,6 @@ composer.json
 requirements.txt
 Pipfile
 Cargo.toml
-go.mod
 
 # IDE and editor files
 *.sublime-*
