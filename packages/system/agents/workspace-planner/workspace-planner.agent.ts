@@ -22,7 +22,7 @@ import type { Logger } from "@atlas/logger";
 import { fail, getTodaysDate, type Result, stringifyError, success } from "@atlas/utils";
 import { toKebabCase } from "@std/text";
 import { generateObject, generateText } from "ai";
-import { traceAISDKModel } from "evalite/ai-sdk";
+import { wrapAISDKModel } from "evalite/ai-sdk";
 import { z } from "zod";
 
 type WorkspacePlannerResult = Result<
@@ -47,7 +47,7 @@ async function summarize(params: {
   abortSignal?: AbortSignal;
 }): Promise<string> {
   const result = await generateText({
-    model: traceAISDKModel(registry.languageModel("anthropic:claude-haiku-4-5")),
+    model: wrapAISDKModel(registry.languageModel("anthropic:claude-haiku-4-5")),
     system:
       "You generate concise, accurate summaries. No fluff, no marketing speak. Direct and informative.",
     prompt: `
@@ -201,7 +201,7 @@ export const workspacePlannerAgent = createAgent<WorkspacePlannerInput, Workspac
       }
       // Generate workspace, signals, agents with LLM-chosen names
       const phase1Result = await generateObject({
-        model: traceAISDKModel(registry.languageModel("anthropic:claude-sonnet-4-5-20250929")),
+        model: wrapAISDKModel(registry.languageModel("anthropic:claude-sonnet-4-5-20250929")),
         experimental_repairText: repairJson,
         schema: z.object({
           plan: z.object({
@@ -389,7 +389,7 @@ export const workspacePlannerAgent = createAgent<WorkspacePlannerInput, Workspac
 Generate jobs that connect the available signals and agents to fulfill the workspace requirements.`;
 
       const phase2Result = await generateObject({
-        model: traceAISDKModel(registry.languageModel("anthropic:claude-sonnet-4-5-20250929")),
+        model: wrapAISDKModel(registry.languageModel("anthropic:claude-sonnet-4-5-20250929")),
         experimental_repairText: repairJson,
         schema: z.object({
           jobs: z.array(

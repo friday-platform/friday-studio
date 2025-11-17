@@ -52,6 +52,10 @@
     "tools/evals": {
       "entry": ["agents/**/*.eval.ts!", "lib/*.ts!"],
       "project": ["agents/**/*.{ts,tsx,js,jsx}!", "lib/**/*.{ts,tsx,js,jsx}!"]
+    },
+    "tools/evals-2": {
+      "entry": ["agents/**/*.eval.ts!", "lib/*.ts!", "evalite.config.ts!"],
+      "project": ["agents/**/*.{ts,tsx,js,jsx}!", "lib/**/*.{ts,tsx,js,jsx}!", "*.ts!"]
     }
   },
   "ignore": [

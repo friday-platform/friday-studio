@@ -7,7 +7,8 @@
     "./packages/*",
     "./packages/vendor/*",
     "./tools/memory_manager",
-    "./tools/evals"
+    "./tools/evals",
+    "./tools/evals-2"
   ],
   "scripts": {
     "lint": "deno lint",
