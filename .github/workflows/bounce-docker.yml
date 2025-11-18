@@ -57,3 +57,49 @@ jobs:
       - name: Push image
         run: |-
           docker push -a "$GAR_LOCATION-docker.pkg.dev/$PROJECT_NAME/$REPOSITORY/$IMAGE_NAME"
+
+      - name: Fetch tempest-kustomize repository
+        uses: actions/checkout@v5
+        with:
+          repository: tempestteam/tempest-kustomize
+          token: ${{ secrets.PAT }}
+          path: tempest-kustomize-repository
+          fetch-depth: 1
+
+      - name: Update manifest file image tag for atlas-bounce sandbox
+        uses: mikefarah/yq@master
+        with:
+          cmd: yq e -i '.spec.template.spec.containers[0].image |= "${{ steps.build-image.outputs.image }}"' 'tempest-kustomize-repository/atlas-bounce/overlays/sandbox/deployment.yaml'
+
+      - name: Update manifest file image tag for atlas-bounce production
+        uses: mikefarah/yq@master
+        with:
+          cmd: yq e -i '.spec.template.spec.containers[0].image |= "${{ steps.build-image.outputs.image }}"' 'tempest-kustomize-repository/atlas-bounce/overlays/production/deployment.yaml'
+
+      - name: Setup tempest-kustomize Repository
+        working-directory: tempest-kustomize-repository
+        run: |
+          git fetch origin main
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git remote set-url --push origin https://github.com/tempestteam/tempest-kustomize.git
+          git checkout -b release-atlas-bounce-${{ github.sha }}
+
+      - name: Commit
+        working-directory: tempest-kustomize-repository
+        run: |
+          git add .
+          git commit -m "Release atlas-bounce-${{ github.sha }}"
+          git push origin HEAD
+
+      - name: Create PR && merge
+        working-directory: tempest-kustomize-repository
+        env:
+          GITHUB_TOKEN: ${{ secrets.PAT }}
+        run: |
+          gh pr create -B main -H release-atlas-bounce-${{ github.sha }} -t "deploy-atlas-bounce-${{ github.sha }}" -b ""
+          command="gh pr merge release-atlas-bounce-${{ github.sha }} --squash --admin"
+          max_retries=30
+          delay=2
+          retry_count=0
+          until $command; do ((retry_count++)); [ "$retry_count" -ge "$max_retries" ] && echo "Failed after $max_retries attempts." && break; echo "Retrying in $delay seconds..."; sleep $delay; done; [ "$retry_count" -lt "$max_retries" ] && echo "Command succeeded." || echo "Command failed after maximum retries."
