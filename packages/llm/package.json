@@ -6,7 +6,7 @@
   "main": "./mod.ts",
   "dependencies": {
     "@atlas/logger": "workspace:*",
-    "@ai-sdk/anthropic": "^2.0.44",
+    "@ai-sdk/anthropic": "^2.0.45",
     "@ai-sdk/google": "^2.0.33",
     "@ai-sdk/openai": "^2.0.68",
     "@ai-sdk/provider": "^2.0.0",

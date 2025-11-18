@@ -24,7 +24,7 @@
     "jsr:@std/streams@^1.0.13": "1.0.13",
     "jsr:@std/tar@~0.1.9": "0.1.9",
     "jsr:@std/testing@1": "1.0.16",
-    "npm:@ai-sdk/anthropic@^2.0.44": "2.0.44_zod@4.1.12",
+    "npm:@ai-sdk/anthropic@^2.0.45": "2.0.45_zod@4.1.12",
     "npm:@ai-sdk/google@^2.0.33": "2.0.33_zod@4.1.12",
     "npm:@ai-sdk/mcp@^0.0.8": "0.0.8_zod@4.1.12",
     "npm:@ai-sdk/openai@^2.0.68": "2.0.68_zod@4.1.12",
@@ -200,8 +200,8 @@
     }
   },
   "npm": {
-    "@ai-sdk/anthropic@2.0.44_zod@4.1.12": {
-      "integrity": "sha512-o8TfNXRzO/KZkBrcx+CL9LQsPhx7PHyqzUGjza3TJaF9WxfH1S5UQLAmEw8F7lQoHNLU0IX03WT8o8R/4JbUxQ==",
+    "@ai-sdk/anthropic@2.0.45_zod@4.1.12": {
+      "integrity": "sha512-Ipv62vavDCmrV/oE/lXehL9FzwQuZOnnlhPEftWizx464Wb6lvnBTJx8uhmEYruFSzOWTI95Z33ncZ4tA8E6RQ==",
       "dependencies": [
         "@ai-sdk/provider",
         "@ai-sdk/provider-utils@3.0.17_zod@4.1.12",
@@ -1638,16 +1638,10 @@
     "@types/json-schema@7.0.15": {
       "integrity": "sha512-5+fP8P8MFNC+AyZCDxrB2pkZFPGzqQWUzpSeuuVLvm8VMcorNYavBqoFcxK8bQz4Qsbn4oUEEem4wDLfcysGHA=="
     },
-    "@types/node@24.10.0": {
-      "integrity": "sha512-qzQZRBqkFsYyaSWXuEHc2WR9c0a0CXwiE5FWUvn7ZM+vdy1uZLfCunD38UzhuB7YN/J11ndbDBcTmOdxJo9Q7A==",
-      "dependencies": [
-        "undici-types@7.16.0"
-      ]
-    },
     "@types/node@24.2.0": {
       "integrity": "sha512-3xyG3pMCq3oYCNg7/ZP+E1ooTaGB4cG8JWRsqqOYQdbWNY4zbaV0Ennrd7stjiJEFZCaybcIgpTjJWHRfBSIDw==",
       "dependencies": [
-        "undici-types@7.10.0"
+        "undici-types"
       ]
     },
     "@types/react@19.2.5": {
@@ -2980,7 +2974,7 @@
       "integrity": "sha512-duK61dmrk9O3RiPQtDrsWGzxGyNoyf9gQyjXPcvmcecZypdv9x0ixzPdBU4YTPRbwvUaRtNGulHYUyixz2fbKg==",
       "dependencies": [
         "@nodelib/fs.walk",
-        "@types/node@24.2.0",
+        "@types/node",
         "fast-glob",
         "formatly",
         "jiti",
@@ -3470,7 +3464,7 @@
         "@protobufjs/path",
         "@protobufjs/pool",
         "@protobufjs/utf8",
-        "@types/node@24.10.0",
+        "@types/node",
         "long"
       ],
       "scripts": true
@@ -3999,9 +3993,6 @@
     "undici-types@7.10.0": {
       "integrity": "sha512-t5Fy/nfn+14LuOc2KNYg75vZqClpAiqscVvMygNnlsHBFpSXdJaYtXMcdNLpl/Qvc3P2cB3s6lOV51nqsFq4ag=="
     },
-    "undici-types@7.16.0": {
-      "integrity": "sha512-Zz+aZWSj8LE6zoxD+xrjh4VfkIG8Ya6LvYkZqtUQGJPZjYl53ypCaUwWqo7eI0x66KBGeRo+mlBEkMSeSZ38Nw=="
-    },
     "unpipe@1.0.0": {
       "integrity": "sha512-pjy2bYhSsufwWlKwPc+l3cN7+wuJlK6uz0YdJEOlQDbl6jo/YlPi4mb8agUkVC8BF7V8NuzeyPNqRksA3hztKQ=="
     },
@@ -4023,7 +4014,7 @@
     "vite@7.2.2_@types+node@24.2.0_picomatch@4.0.3": {
       "integrity": "sha512-BxAKBWmIbrDgrokdGZH1IgkIk/5mMHDreLDmCJ0qpyJaAteP8NvMhkwr/ZCQNqNH97bw/dANTE9PDzqwJghfMQ==",
       "dependencies": [
-        "@types/node@24.2.0",
+        "@types/node",
         "esbuild",
         "fdir",
         "picomatch@4.0.3",
@@ -4035,7 +4026,7 @@
         "fsevents"
       ],
       "optionalPeers": [
-        "@types/node@24.2.0"
+        "@types/node"
       ],
       "bin": true
     },
@@ -4334,7 +4325,7 @@
       "packages/llm": {
         "packageJson": {
           "dependencies": [
-            "npm:@ai-sdk/anthropic@^2.0.44",
+            "npm:@ai-sdk/anthropic@^2.0.45",
             "npm:@ai-sdk/google@^2.0.33",
             "npm:@ai-sdk/openai@^2.0.68",
             "npm:@ai-sdk/provider@2",
