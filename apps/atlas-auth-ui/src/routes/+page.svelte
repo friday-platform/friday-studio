@@ -12,7 +12,7 @@ let magiclinkSent = $state(false);
 let isSubmitting = $state(false);
 
 function handleGoogleAuth() {
-  window.location.href = "/oauth/google/authorize";
+  window.location.href = "/auth/google";
 }
 
 async function handleMagicLink(event: Event) {

@@ -13,7 +13,14 @@
     "format": "prettier --write .",
     "lint": "prettier --check . && eslint ."
   },
-  "dependencies": { "@sveltejs/kit": "^2.48.5", "svelte": "^5.43.12" },
+  "dependencies": {
+    "@melt-ui/svelte": "^0.86.6",
+    "@sveltejs/kit": "^2.48.5",
+    "nanoid": "^5.1.6",
+    "svelte": "^5.43.12",
+    "zod": "^4.1.12",
+    "zod-form-data": "^3.0.1"
+  },
   "devDependencies": {
     "@eslint/compat": "^2.0.0",
     "@eslint/js": "^9.39.1",

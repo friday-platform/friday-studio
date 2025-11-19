@@ -70,13 +70,15 @@ let submitted = $state(false);
         </Button>
 
         <h2>Additional Options</h2>
-        <Button href="/oauth/google/authorize" disabled={submitted}>
-          {#snippet prepend()}
-            <GoogleLogo />
-          {/snippet}
+        <a href="/oauth/google/authorize">
+          <Button disabled={submitted}>
+            {#snippet prepend()}
+              <GoogleLogo />
+            {/snippet}
 
-          Sign up with Google Workspace
-        </Button>
+            Sign up with Google Workspace
+          </Button>
+        </a>
       </form>
     </div>
 

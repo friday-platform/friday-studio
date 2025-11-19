@@ -39,13 +39,14 @@
     "packages/workspace": { "project": ["src/**/*.{ts,tsx,js,jsx}!"] },
     "apps/atlasd": { "project": ["**/*.{ts,tsx,js,jsx}!"] },
     "apps/atlas-auth-ui": {
-      "entry": ["src/app.html!", "src/routes/**/*.svelte!", "src/**/*.test.ts"],
-      "project": ["src/**/*.{ts,tsx,js,jsx,svelte}!", "*.js!", "*.ts!"],
+      "entry": ["src/app.html!", "src/routes/**/*.svelte!"],
+      "project": ["src/**/*.{ts,tsx,js,jsx,svelte}!", "*.js!"],
       "paths": {
         "$lib": ["./src/lib"],
         "$lib/*": ["./src/lib/*"],
         "$app": ["../../node_modules/@sveltejs/kit/src/runtime/app"],
-        "$app/*": ["../../node_modules/@sveltejs/kit/src/runtime/app/*"]
+        "$app/*": ["../../node_modules/@sveltejs/kit/src/runtime/app/*"],
+        "$env/*": ["../../node_modules/@sveltejs/kit/src/runtime/env/*"]
       }
     },
     "apps/web-client": {
