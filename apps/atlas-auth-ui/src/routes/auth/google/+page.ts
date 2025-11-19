@@ -1,6 +1,8 @@
-import { type RequestEvent, redirect } from "@sveltejs/kit";
+import { type LoadEvent, redirect } from "@sveltejs/kit";
 
-export function GET({ url }: RequestEvent): Response {
+export const prerender = false;
+
+export function load({ url }: LoadEvent): void {
   const authUrl = new URL("/oauth/google/authorize", url.origin);
   const isSignup = url.searchParams.get("signup") === "true";
 
@@ -11,5 +13,5 @@ export function GET({ url }: RequestEvent): Response {
     authUrl.searchParams.set("redirect_to", "/");
   }
 
-  return redirect(302, authUrl);
+  redirect(302, authUrl.toString());
 }

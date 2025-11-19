@@ -255,23 +255,6 @@ onMount(() => {
     transform: translateY(var(--size-1, .25rem));
   }
 
-  .details form a,
-  .details form button {
-    inline-size: 100% !important;
-  }
-
-  .details form button {
-    animation: fadeIn 325ms .45s ease-out 1 forwards;
-    opacity: 0;
-    transform: scale(.92);
-  }
-
-  .details form a {
-    animation: fadeIn 475ms .6s ease-out 1 forwards;
-    opacity: 0;
-    transform: scale(.92);
-  }
-
   .login-reset {
     animation: fadeIn .5s .75s ease-out 1 forwards;
     color: var(--text-3, #666);
