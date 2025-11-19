@@ -7,12 +7,17 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/tempestteam/atlas/pkg/x/middleware"
 )
 
 var ErrNotFound = errors.New("pgxdb: nil value in context")
 
-type contextKey struct {
-	name string
+type ErrKeyNotFound struct {
+	Key string
+}
+
+func (e *ErrKeyNotFound) Error() string {
+	return "pgxdb: key not found: " + e.Key
 }
 
 type dbType interface {
@@ -36,11 +41,15 @@ func ConnFromContext(ctx context.Context, name string) (*pgx.Conn, error) {
 }
 
 func withDB[T dbType](db T, name, panicMsg string) func(http.Handler) http.Handler {
-	if name == "" || db == nil {
+	if name == "" {
 		panic(panicMsg)
 	}
 
-	ctxKey := &contextKey{name}
+	if db == nil {
+		panic(panicMsg)
+	}
+
+	ctxKey := middleware.AddContextKey(name)
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -51,7 +60,11 @@ func withDB[T dbType](db T, name, panicMsg string) func(http.Handler) http.Handl
 }
 
 func dbFromContext[T dbType](ctx context.Context, name string) (T, error) {
-	key := &contextKey{name}
+	key := middleware.GetContextKey(name)
+	if key == nil {
+		return nil, &ErrKeyNotFound{name}
+	}
+
 	v := ctx.Value(key)
 	if v == nil {
 		return nil, ErrNotFound
