@@ -82,7 +82,7 @@
     "npm:eslint-config-prettier@^10.1.8": "10.1.8_eslint@9.39.1",
     "npm:eslint-plugin-svelte@^3.13.0": "3.13.0_eslint@9.39.1_svelte@5.43.12__acorn@8.15.0_postcss@8.5.6",
     "npm:eslint@^9.39.1": "9.39.1",
-    "npm:evalite@^1.0.0-beta.14": "1.0.0-beta.14_ai@5.0.95__zod@4.1.12_zod@4.1.12",
+    "npm:evalite@^1.0.0-beta.15": "1.0.0-beta.15_ai@5.0.95__zod@4.1.12_zod@4.1.12",
     "npm:eventsource-client@^1.2.0": "1.2.0",
     "npm:fast-glob@^3.3.3": "3.3.3",
     "npm:globals@^16.5.0": "16.5.0",
@@ -1770,21 +1770,21 @@
     "@vercel/oidc@3.0.3": {
       "integrity": "sha512-yNEQvPcVrK9sIe637+I0jD6leluPxzwJKx/Haw6F4H77CdDsszUn5V3o96LPziXkSNE2B83+Z3mjqGKBK/R6Gg=="
     },
-    "@vitest/pretty-format@4.0.8": {
-      "integrity": "sha512-qRrjdRkINi9DaZHAimV+8ia9Gq6LeGz2CgIEmMLz3sBDYV53EsnLZbJMR1q84z1HZCMsf7s0orDgZn7ScXsZKg==",
+    "@vitest/pretty-format@4.0.10": {
+      "integrity": "sha512-99EQbpa/zuDnvVjthwz5bH9o8iPefoQZ63WV8+bsRJZNw3qQSvSltfut8yu1Jc9mqOYi7pEbsKxYTi/rjaq6PA==",
       "dependencies": [
         "tinyrainbow"
       ]
     },
-    "@vitest/runner@4.0.8": {
-      "integrity": "sha512-mdY8Sf1gsM8hKJUQfiPT3pn1n8RF4QBcJYFslgWh41JTfrK1cbqY8whpGCFzBl45LN028g0njLCYm0d7XxSaQQ==",
+    "@vitest/runner@4.0.10": {
+      "integrity": "sha512-EXU2iSkKvNwtlL8L8doCpkyclw0mc/t4t9SeOnfOFPyqLmQwuceMPA4zJBa6jw0MKsZYbw7kAn+gl7HxrlB8UQ==",
       "dependencies": [
         "@vitest/utils",
         "pathe"
       ]
     },
-    "@vitest/utils@4.0.8": {
-      "integrity": "sha512-pdk2phO5NDvEFfUTxcTP8RFYjVj/kfLSPIN5ebP2Mu9kcIMeAQTbknqcFEyBcC4z2pJlJI9aS5UQjcYfhmKAow==",
+    "@vitest/utils@4.0.10": {
+      "integrity": "sha512-kOuqWnEwZNtQxMKg3WmPK1vmhZu9WcoX69iwWjVz+jvKTsF1emzsv3eoPcDr6ykA3qP2bsCQE7CwqfNtAVzsmg==",
       "dependencies": [
         "@vitest/pretty-format",
         "tinyrainbow"
@@ -2396,8 +2396,8 @@
     "etag@1.8.1": {
       "integrity": "sha512-aIL5Fx7mawVa300al2BnEE4iNvo1qETxLrPI/o05L7z6go7fCw1J6EQmbK4FmJ2AS7kgVF/KEZWufBfdClMcPg=="
     },
-    "evalite@1.0.0-beta.14_ai@5.0.95__zod@4.1.12_zod@4.1.12": {
-      "integrity": "sha512-YUuJTStQJUIuXN0+TcvsbtNdCB03osheqTKGCgJKEX3mThgeVgL/6Paa5eMM+0shXLhO/QEb9iEpWSETu4E3VA==",
+    "evalite@1.0.0-beta.15_ai@5.0.95__zod@4.1.12_zod@4.1.12": {
+      "integrity": "sha512-/4D4Iap7/FTrzUYf4fZpkaGaycRnKt8gDgMDJ/fRAr5YdfUBJuwJVPQFRSPNvtkg5AVSDI7+kgivJnfP69kFEA==",
       "dependencies": [
         "@fastify/static",
         "@fastify/websocket",
@@ -4486,7 +4486,7 @@
             "npm:@jsr/std__yaml@^1.0.10",
             "npm:@socotra/modelcontextprotocol-sdk@^1.18.0",
             "npm:ai@^5.0.95",
-            "npm:evalite@^1.0.0-beta.14",
+            "npm:evalite@^1.0.0-beta.15",
             "npm:zod@^4.1.12"
           ]
         }
@@ -4542,7 +4542,7 @@
             "npm:@jsr/std__assert@^1.0.14",
             "npm:ai@^5.0.95",
             "npm:dotenv@17.2.3",
-            "npm:evalite@^1.0.0-beta.14",
+            "npm:evalite@^1.0.0-beta.15",
             "npm:zod@^4.1.11"
           ]
         }
