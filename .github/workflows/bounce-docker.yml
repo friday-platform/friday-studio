@@ -7,11 +7,6 @@ on:
   push:
     branches:
       - main
-    paths:
-      - 'apps/bounce/**'
-      - 'pkg/**'
-      - 'go.mod'
-      - 'go.sum'
 
 env:
   GAR_LOCATION: us-west2
