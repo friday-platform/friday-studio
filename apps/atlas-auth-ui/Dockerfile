@@ -16,12 +16,19 @@ COPY . .
 RUN deno task build
 
 # Production stage
-FROM nginxinc/nginx-unprivileged:1.29.2-alpine3.22
+FROM denoland/deno:alpine-2.5.6
 
-# Copy built static files from builder
-COPY --from=builder /app/build /usr/share/nginx/html
+WORKDIR /app
 
-# Copy nginx config
-COPY nginx.conf /etc/nginx/nginx.conf
+# Copy package.json and install production dependencies
+COPY package.json ./
+RUN deno install --production
 
-CMD ["nginx", "-g", "daemon off;"]
+# Copy built app from builder
+COPY --from=builder /app/build ./build
+
+# Expose port
+EXPOSE 3000
+
+# Start the Node.js server
+CMD ["deno", "run", "--allow-net", "--allow-env", "--allow-read", "build/index.js"]

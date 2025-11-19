@@ -23,6 +23,9 @@
     "!integration-tests/**/*.test.ts",
     "apps/web-client/.svelte-kit",
     "apps/web-client/vite.config.ts",
+    "apps/atlas-auth-ui/.svelte-kit",
+    "apps/atlas-auth-ui/build",
+    "apps/atlas-auth-ui/src/**",
     "apps/atlas-installer",
     "packages/vendor/**",
     "apps/web-client/src-tauri/**"
