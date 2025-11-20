@@ -1,4 +1,5 @@
 <script lang="ts">
+import FlexibleContainer from "$lib/modules/messages/flexible-container.svelte";
 import MessageWrapper from "./wrapper.svelte";
 
 const { data }: { data: { data: { headers: string[]; rows: Record<string, string | number>[] } } } =
@@ -6,39 +7,47 @@ const { data }: { data: { data: { headers: string[]; rows: Record<string, string
 </script>
 
 <MessageWrapper>
-	{#if data}
-		<table>
-			<thead>
-				<tr>
-					{#each data.data.headers as header}
-						<th>{header}</th>
-					{/each}
-				</tr>
-			</thead>
-			<tbody>
-				{#each data.data.rows as row}
-					<tr>
-						{#each data.data.headers as header}
-							<td>{row[header]}</td>
+	<div class="table-container">
+		<FlexibleContainer>
+			{#if data}
+				<table>
+					<thead>
+						<tr>
+							{#each data.data.headers as header}
+								<th>{header}</th>
+							{/each}
+						</tr>
+					</thead>
+					<tbody>
+						{#each data.data.rows as row}
+							<tr>
+								{#each data.data.headers as header}
+									<td>{row[header]}</td>
+								{/each}
+							</tr>
 						{/each}
-					</tr>
-				{/each}
-			</tbody>
-		</table>
-	{/if}
+					</tbody>
+				</table>
+			{/if}
+		</FlexibleContainer>
+	</div>
 </MessageWrapper>
 
 <style>
+	.table-container {
+		margin-block-start: var(--size-2);
+		max-inline-size: 100%;
+		overflow-x: auto;
+		scrollbar-width: thin;
+	}
+
 	table {
 		border: var(--size-px) solid var(--color-border-1);
 		border-collapse: separate;
 		border-spacing: 0;
 		border-radius: var(--radius-3);
-		overflow: hidden;
 		font-size: var(--font-size-3);
-		margin-block-start: var(--size-2);
-		max-inline-size: 100%;
-		width: max-content;
+		inline-size: max-content;
 	}
 
 	th,

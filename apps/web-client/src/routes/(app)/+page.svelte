@@ -11,6 +11,7 @@ import { IconSmall } from "$lib/components/icons/small";
 import Textarea from "$lib/components/textarea.svelte";
 import DisplayArtifact from "$lib/modules/artifacts/display.svelte";
 import ErrorMessage from "$lib/modules/messages/error-message.svelte";
+import FlexibleContainer from "$lib/modules/messages/flexible-container.svelte";
 import { formatMessage } from "$lib/modules/messages/format";
 import Message from "$lib/modules/messages/message.svelte";
 import Progress from "$lib/modules/messages/progress.svelte";
@@ -77,7 +78,9 @@ $effect(() => {
 });
 
 const hasMessages = $derived(chatContext.chat?.messages.length > 0);
-let actionsAfterLastUser = $state<AtlasUIMessagePart[]>([]);
+let actionsAfterLastUser = $state<{ parts: AtlasUIMessagePart[]; timestamp?: string }>({
+  parts: [],
+});
 
 $effect(() => {
   const lastAssistantMessage = (chatContext.chat?.messages ?? []).findLast(
@@ -86,12 +89,15 @@ $effect(() => {
 
   // If no user message found, return empty
   if (!lastAssistantMessage) {
-    actionsAfterLastUser = [];
+    actionsAfterLastUser = { parts: [] };
     return;
   }
 
   // Return everything after the last user message
-  actionsAfterLastUser = lastAssistantMessage.parts;
+  actionsAfterLastUser = {
+    parts: lastAssistantMessage.parts,
+    timestamp: lastAssistantMessage.metadata?.startTimestamp,
+  };
 });
 </script>
 
@@ -104,13 +110,15 @@ $effect(() => {
 			onscroll={handleScroll}
 		>
 			<div class="messages-inner">
-				<div class="first-message">
-					<h2>Welcome</h2>
-					<p>
-						Welcome to Atlas. I can help turn your ideas into action. <br />What would you like to
-						work on today?
-					</p>
-				</div>
+				<FlexibleContainer>
+					<div class="first-message">
+						<h2>Welcome</h2>
+						<p>
+							Welcome to Atlas. I can help turn your ideas into action. <br />What would you like to
+							work on today?
+						</p>
+					</div>
+				</FlexibleContainer>
 
 				{#each chatContext.chat?.messages as messageContainer (messageContainer.id)}
 					{#each messageContainer.parts as message, index (index)}
@@ -133,7 +141,10 @@ $effect(() => {
 				{/each}
 
 				{#if chatContext.chat?.status === 'streaming' || chatContext.chat?.status === 'submitted'}
-					<Progress actions={actionsAfterLastUser} />
+					<Progress
+						actions={actionsAfterLastUser.parts}
+						timestamp={actionsAfterLastUser.timestamp}
+					/>
 				{/if}
 			</div>
 
@@ -394,11 +405,6 @@ $effect(() => {
 	}
 
 	.first-message {
-		inline-size: 100%;
-		margin-inline: auto;
-		max-inline-size: var(--size-150);
-		padding-inline: var(--size-2);
-
 		h2 {
 			font-size: var(--font-size-7);
 			font-weight: var(--font-weight-6);
@@ -424,8 +430,8 @@ $effect(() => {
 	}
 
 	.background-blur {
-		background: var(--color-surface-1);
-		block-size: var(--size-28);
+		background: linear-gradient(to top, var(--color-surface-1) 75%, transparent);
+		block-size: 5.5625rem;
 		inset-block-end: 0;
 		inset-inline: 0;
 		position: fixed;
@@ -468,8 +474,9 @@ $effect(() => {
 		inline-size: 100%;
 		margin-inline: auto;
 		margin-block-end: auto;
-		max-inline-size: var(--size-150);
+		max-inline-size: var(--size-160);
 		overflow: visible;
+		padding-inline: var(--size-8);
 		position: sticky;
 		inset-block-end: 0;
 		z-index: var(--layer-2);

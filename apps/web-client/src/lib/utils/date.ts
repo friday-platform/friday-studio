@@ -73,7 +73,7 @@ export function formatSessionDate(dateString: string): string {
 }
 
 export function formatDuration(startMs: number, endMs: number): string {
-  const totalSeconds = Math.round((endMs - startMs) / 1000);
+  const totalSeconds = endMs <= startMs ? 0 : Math.round((endMs - startMs) / 1000);
 
   // If under 60 seconds, just show seconds
   if (totalSeconds < 60) {

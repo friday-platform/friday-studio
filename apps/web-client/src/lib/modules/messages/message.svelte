@@ -36,11 +36,21 @@ const htmlContent = $derived(message.content ? markdownToHTML(message.content) :
 <style>
 	.message {
 		display: flex;
+		justify-content: center;
 		gap: var(--size-6);
-		overflow: hidden;
 	}
 
 	.content {
+		max-inline-size: 100%;
+
+		& :global(ol),
+		& :global(ul),
+		& :global(p) {
+			inline-size: var(--size-160);
+			margin-inline: auto;
+			padding-inline: var(--size-8);
+		}
+
 		& :global(p),
 		& :global(li) {
 			color: color-mix(in srgb, var(--color-text) 80%, transparent 20%);
@@ -63,12 +73,12 @@ const htmlContent = $derived(message.content ? markdownToHTML(message.content) :
 
 		& :global(ul) {
 			list-style-type: '⋅ ';
-			margin-inline-start: var(--size-4);
+			list-style-position: inside;
 		}
 
 		& :global(ol) {
 			list-style-type: decimal;
-			margin-inline-start: var(--size-6);
+			list-style-position: inside;
 		}
 
 		& :global(strong) {
@@ -104,13 +114,21 @@ const htmlContent = $derived(message.content ? markdownToHTML(message.content) :
 		}
 
 		& :global(pre) {
-			border-radius: var(--radius-2);
-			margin-block: var(--size-2);
+			border-radius: var(--radius-3);
+			margin-block: var(--size-4);
 			inline-size: max-content;
-			max-inline-size: 100%;
-			padding-block: var(--size-2);
-			padding-inline: var(--size-3);
+			max-inline-size: calc(100% - var(--size-16));
+			margin-inline: var(--size-8);
+			padding-block: var(--size-4);
+			padding-inline: var(--size-6);
+			overflow-x: auto;
 		}
+	}
+
+	.message.user {
+		margin-inline: auto;
+		max-inline-size: var(--size-160);
+		padding-inline: var(--size-8);
 	}
 
 	.request {
@@ -125,6 +143,15 @@ const htmlContent = $derived(message.content ? markdownToHTML(message.content) :
 		overflow: hidden;
 
 		.content {
+			& :global(ol),
+			& :global(ul),
+			& :global(p) {
+				max-inline-size: unset;
+				margin-inline: unset;
+				padding-inline: unset;
+				inline-size: unset;
+			}
+
 			& :global(p),
 			& :global(li) {
 				font-weight: var(--font-weight-4);

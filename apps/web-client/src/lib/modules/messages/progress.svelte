@@ -1,14 +1,15 @@
 <script lang="ts">
 import type { AtlasUIMessagePart } from "@atlas/agent-sdk";
 import { IconSmall } from "$lib/components/icons/small";
+import FlexibleContainer from "$lib/modules/messages/flexible-container.svelte";
 import { formatDuration } from "$lib/utils/date";
 import MessageWrapper from "./wrapper.svelte";
 
-const startTime = Date.now();
+const { actions, timestamp }: { actions: AtlasUIMessagePart[]; timestamp?: string } = $props();
+
+const startTime = $derived(timestamp ? new Date(timestamp).getTime() : undefined);
 let endTime = $state(Date.now());
 let open = $state(false);
-
-const { actions }: { actions: AtlasUIMessagePart[] } = $props();
 
 $effect(() => {
   let interval: ReturnType<typeof setInterval> | null = null;
@@ -67,41 +68,46 @@ function getMessage(
 </script>
 
 <MessageWrapper>
-	<div class="container">
-		<button onclick={() => (open = !open)} class:open>
-			<span class="thinking">Thinking... <IconSmall.CaretRight /></span>
+	<FlexibleContainer>
+		<div class="container">
+			<button onclick={() => (open = !open)} class:open>
+				<span class="thinking">Thinking... <IconSmall.CaretRight /></span>
 
-			{#if open}
-				<footer>
-					<time>{formatDuration(startTime, endTime)}</time>
-				</footer>
+				{#if open}
+					<footer>
+						{#if startTime}
+							<time>{formatDuration(startTime, endTime)}</time>
+						{/if}
+					</footer>
 
-				<ul class="steps">
-					{#each actions as action, index (index)}
-						<li>
-							{/* @ts-expect-error action is poorly typed */
-							getMessage(action.type, action.data?.content)}
-						</li>
-					{/each}
-				</ul>
-			{:else}
-				<footer>
-					<time>{formatDuration(startTime, endTime)}</time>
-
-					{#if actions.length > 0}•{/if}
-
-					<div class="actions">
+					<ul class="steps">
 						{#each actions as action, index (index)}
-							<span class:inactive={index !== actions.length - 1}>
+							<li>
 								{/* @ts-expect-error action is poorly typed */
 								getMessage(action.type, action.data?.content)}
-							</span>
+							</li>
 						{/each}
-					</div>
-				</footer>
-			{/if}
-		</button>
-	</div>
+					</ul>
+				{:else}
+					<footer>
+						{#if startTime}
+							<time>{formatDuration(startTime, endTime)}</time>
+							{#if actions.length > 0}•{/if}
+						{/if}
+
+						<div class="actions">
+							{#each actions as action, index (index)}
+								<span class:inactive={index !== actions.length - 1}>
+									{/* @ts-expect-error action is poorly typed */
+									getMessage(action.type, action.data?.content)}
+								</span>
+							{/each}
+						</div>
+					</footer>
+				{/if}
+			</button>
+		</div>
+	</FlexibleContainer>
 </MessageWrapper>
 
 <style>
@@ -114,7 +120,6 @@ function getMessage(
 	}
 
 	button {
-		border-radius: var(--radius-round);
 		display: flex;
 		flex-direction: column;
 		font-size: var(--font-size-4);

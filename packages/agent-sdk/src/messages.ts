@@ -96,6 +96,9 @@ export async function validateAtlasUIMessages(messages: unknown[]): Promise<Atla
 export const MessageMetadataSchema = z.object({
   agentId: z.string().optional(),
   sessionId: z.string().optional(),
+  timestamp: z.iso.datetime().optional(),
+  startTimestamp: z.iso.datetime().optional(),
+  endTimestamp: z.iso.datetime().optional(),
 });
 
 export type MessageMetadata = z.infer<typeof MessageMetadataSchema>;

@@ -522,6 +522,10 @@ export const conversationAgent = createAgent({
         throw streamTextError;
       }
 
+      // Track start timestamp for this agent invocation (only one assistant message per call)
+      let startTimestamp: string | undefined;
+      let endTimestamp: string | undefined;
+
       // Start piping the UI message stream immediately
       // DO NOT consume the stream elsewhere - it's single-consumer only
       const pipePromise = pipeUIMessageStream(
@@ -574,6 +578,18 @@ export const conversationAgent = createAgent({
                 });
               }
             }
+          },
+          messageMetadata: (metadata) => {
+            // Set startTimestamp once on first chunk, then preserve it
+            if (!startTimestamp) {
+              startTimestamp = new Date().toISOString();
+            }
+
+            if (metadata.part.type === "finish") {
+              endTimestamp = new Date().toISOString();
+            }
+
+            return { ...metadata, startTimestamp, endTimestamp };
           },
         }),
         stream,
