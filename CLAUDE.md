@@ -107,9 +107,23 @@ pitch, rewrite it. </communication_style>
 
 <git_workflow>
 
-- The `main` branch is protected and requires all changes to go through pull requests
-- Never attempt to push directly to `main` - create a feature branch and open a PR instead
-- All PRs must pass required status checks before merging
+**CRITICAL: NEVER PUSH DIRECTLY TO MAIN BRANCH**
+
+The `main` branch is protected. You MUST follow this workflow for ALL changes:
+
+1. Create a feature branch: `git checkout -b feature/your-feature-name`
+2. Make your changes and commit to the feature branch
+3. Push the feature branch: `git push -u origin feature/your-feature-name`
+4. Create a Pull Request using `gh pr create`
+5. Wait for required status checks to pass
+6. Only then merge the PR
+
+**NEVER use `git push` when on the main branch. ALWAYS create a PR first.**
+
+If you accidentally commit to main locally, do NOT push. Instead:
+- Create a new branch from your current position
+- Reset main to origin/main
+- Push your branch and create a PR
 
 </git_workflow>
 
