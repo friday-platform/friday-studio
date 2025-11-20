@@ -20,9 +20,9 @@ FROM denoland/deno:alpine-2.5.6
 
 WORKDIR /app
 
-# Copy package.json and install production dependencies
+# Copy package.json and install dependencies
 COPY package.json ./
-RUN deno install --production
+RUN deno install
 
 # Copy built app from builder
 COPY --from=builder /app/build ./build
