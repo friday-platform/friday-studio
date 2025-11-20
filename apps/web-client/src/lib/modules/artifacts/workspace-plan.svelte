@@ -7,43 +7,52 @@ let { workspacePlan }: Props = $props();
 let isExpanded = $state(false);
 </script>
 
-<div class="component">
-	<header>
-		<span>Plan</span>
+<div class="wrapper">
+	<div class="component">
+		<header>
+			<span>Plan</span>
 
-		<button onclick={() => (isExpanded = !isExpanded)}>{isExpanded ? 'Collapse' : 'Expand'}</button>
-	</header>
+			<button onclick={() => (isExpanded = !isExpanded)}
+				>{isExpanded ? 'Collapse' : 'Expand'}</button
+			>
+		</header>
 
-	<div class="summary" class:expanded={isExpanded}>
-		<h1>{workspacePlan.workspace.name}</h1>
-		<p>{workspacePlan.workspace.purpose}</p>
+		<div class="summary" class:expanded={isExpanded}>
+			<h1>{workspacePlan.workspace.name}</h1>
+			<p>{workspacePlan.workspace.purpose}</p>
 
-		{#each workspacePlan.jobs as job}
-			{@const signal = workspacePlan.signals.find((s) => s.id === job.triggerSignalId)}
+			{#each workspacePlan.jobs as job}
+				{@const signal = workspacePlan.signals.find((s) => s.id === job.triggerSignalId)}
 
-			<h2>{job.name}</h2>
-			<p>{signal?.description}</p>
+				<h2>{job.name}</h2>
+				<p>{signal?.description}</p>
 
-			<ul>
-				{#each job.steps as step}
-					{@const agent = workspacePlan.agents.find((a) => a.id === step.agentId)}
-					<li>
-						<strong>{agent?.name}</strong>
+				<ul>
+					{#each job.steps as step}
+						{@const agent = workspacePlan.agents.find((a) => a.id === step.agentId)}
+						<li>
+							<strong>{agent?.name}</strong>
 
-						<p>{agent?.description}</p>
-					</li>
-				{/each}
-			</ul>
-		{/each}
+							<p>{agent?.description}</p>
+						</li>
+					{/each}
+				</ul>
+			{/each}
+		</div>
 	</div>
 </div>
 
 <style>
+	.wrapper {
+		inline-size: var(--size-160);
+		margin-inline: auto;
+		padding-inline: var(--size-8);
+	}
+
 	.component {
 		border: var(--size-px) solid color-mix(in oklch, var(--color-border-1), transparent 50%);
 		border-radius: var(--radius-4);
 		flex: none;
-		max-inline-size: 80%;
 		overflow: hidden;
 		position: relative;
 
