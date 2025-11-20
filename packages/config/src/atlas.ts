@@ -111,6 +111,20 @@ export const RuntimeConfigSchema = z.strictObject({
     .optional(),
 
   security: z.strictObject({ cors: z.string() }).optional(),
+
+  sessions: z
+    .strictObject({
+      timeout: z
+        .number()
+        .int()
+        .min(60000) // Min 1 minute
+        .max(86400000) // Max 24 hours
+        .default(3600000) // Default 60 minutes
+        .describe(
+          "Maximum session execution time in milliseconds. Sessions exceeding this timeout will be automatically cancelled. Default: 3600000 (60 minutes)",
+        ),
+    })
+    .optional(),
 });
 export type RuntimeConfig = z.infer<typeof RuntimeConfigSchema>;
 

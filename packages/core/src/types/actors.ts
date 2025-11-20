@@ -9,6 +9,7 @@ import type { AgentResult } from "@atlas/agent-sdk";
 import type {
   AtlasMemoryConfig,
   JobSpecification,
+  RuntimeConfig,
   SupervisorsConfig,
   ToolsConfig,
   WorkspaceAgentConfig,
@@ -40,6 +41,7 @@ export interface WorkspaceSupervisorConfig {
   memory?: MemoryConfig;
   tools?: ToolsConfig;
   supervisorDefaults?: SupervisorsConfig;
+  runtime?: RuntimeConfig;
 }
 
 /**

@@ -218,6 +218,7 @@ const workspaceRuntimeMachineSetup = setup({
         memory: mergedConfig.atlas?.memory,
         tools: mergedConfig.workspace.tools,
         supervisorDefaults: mergedConfig.atlas?.supervisors,
+        runtime: mergedConfig.atlas?.runtime,
       };
 
       // Register MCP servers from workspace configuration

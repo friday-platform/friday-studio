@@ -52,24 +52,22 @@ export class WorkspaceSupervisorActor implements BaseActor {
   private logger: Logger;
   id: string;
   private sessions: Map<string, SessionInfo> = new Map();
+  private sessionTimeouts: Map<string, number> = new Map(); // Timer IDs for session timeouts
   private config: WorkspaceSupervisorConfig;
   private agents: Record<string, WorkspaceAgentConfig> = {};
   private agentOrchestrator?: AgentOrchestrator; // Will be set by workspace runtime
+  private sessionTimeout: number;
 
   constructor(workspaceId: string, config: WorkspaceSupervisorConfig, id?: string) {
     this.id = id || crypto.randomUUID();
     this.workspaceId = workspaceId;
     this.config = config;
+    this.sessionTimeout = config.runtime?.sessions?.timeout ?? 3600000;
 
     this.logger = logger.child({
       actorId: this.id,
       actorType: "workspace-supervisor",
       workspaceId: this.workspaceId,
-    });
-
-    this.logger.info("Workspace supervisor actor created", {
-      workspaceId: this.workspaceId,
-      actorId: this.id,
     });
   }
 
@@ -160,6 +158,9 @@ export class WorkspaceSupervisorActor implements BaseActor {
 
       sessionActor.initialize();
       sessionInfo.status = WorkspaceSessionStatus.EXECUTING;
+
+      // Start session timeout watchdog
+      this.startSessionTimeout(sessionId);
 
       this.logger.info("Analyzing signal", { sessionId, signalId: signal.id });
 
@@ -325,6 +326,9 @@ export class WorkspaceSupervisorActor implements BaseActor {
       sessionActor.initialize();
       sessionInfo.status = WorkspaceSessionStatus.EXECUTING;
 
+      // Start session timeout watchdog
+      this.startSessionTimeout(sessionId);
+
       this.logger.info("Executing job directly", { sessionId, jobName });
 
       // Extract agent IDs from job specification
@@ -473,6 +477,9 @@ export class WorkspaceSupervisorActor implements BaseActor {
       hasActor: !!sessionInfo.actor,
     });
 
+    // Clear timeout timers
+    this.clearSessionTimeout(sessionId);
+
     // Clean up heavy memory objects via the session actor, but keep the session entry for history
     if (sessionInfo.actor) {
       try {
@@ -481,6 +488,53 @@ export class WorkspaceSupervisorActor implements BaseActor {
       } catch (error) {
         this.logger.warn("Error during session actor shutdown", { sessionId, error: error });
       }
+    }
+  }
+
+  /**
+   * Start timeout watchdog for a session.
+   * If the session exceeds the configured timeout, it will be automatically cancelled.
+   */
+  private startSessionTimeout(sessionId: string): void {
+    const timer = setTimeout(() => {
+      const session = this.sessions.get(sessionId);
+      if (!session) return;
+
+      // Only cancel if session is still executing (avoid race with normal completion)
+      if (session.status !== WorkspaceSessionStatus.EXECUTING) return;
+
+      const elapsed = Date.now() - session.createdAt;
+      this.logger.error("Session exceeded timeout - forcing cancellation", {
+        sessionId,
+        timeoutMs: this.sessionTimeout,
+        elapsedMs: elapsed,
+        timeoutMinutes: Math.floor(this.sessionTimeout / 60000),
+      });
+
+      try {
+        session.actor.cancel();
+      } catch (error) {
+        this.logger.error("Failed to cancel timed-out session", { sessionId, error });
+      }
+
+      // Set status directly since promise handlers may never execute if session is truly hung
+      session.status = WorkspaceSessionStatus.CANCELLED;
+
+      // Clean up resources and clear timers
+      this.cleanupSession(sessionId);
+    }, this.sessionTimeout);
+
+    this.sessionTimeouts.set(sessionId, timer);
+  }
+
+  /**
+   * Clear timeout timer for a session
+   */
+  private clearSessionTimeout(sessionId: string): void {
+    const timer = this.sessionTimeouts.get(sessionId);
+    if (timer !== undefined) {
+      clearTimeout(timer);
+      this.sessionTimeouts.delete(sessionId);
     }
   }
 
