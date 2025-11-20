@@ -47,7 +47,7 @@
     "ai": "^5.0.95",
     "ink": "^6.5.1",
     "js-levenshtein": "^1.1.6",
-    "lint-staged": "^16.2.6",
+    "lint-staged": "^16.2.7",
     "react": "^19.2.0",
     "xstate": "^5.24.0",
     "yargs": "^18.0.0",

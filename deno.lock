@@ -94,7 +94,7 @@
     "npm:js-levenshtein@^1.1.6": "1.1.6",
     "npm:jsonrepair@^3.13.1": "3.13.1",
     "npm:knip@5.70.0": "5.70.0_@types+node@24.2.0_typescript@5.9.3",
-    "npm:lint-staged@^16.2.6": "16.2.6",
+    "npm:lint-staged@^16.2.7": "16.2.7",
     "npm:minimatch@^10.1.1": "10.1.1",
     "npm:nanoid@^5.1.6": "5.1.6",
     "npm:onnxruntime-web@1.23.2": "1.23.2",
@@ -3106,8 +3106,8 @@
     "lilconfig@2.1.0": {
       "integrity": "sha512-utWOt/GHzuUxnLKxB6dk81RoOeoNeHgbrXiuGk4yyF5qlRz+iIVWu56E2fqGHFrXz0QNUhLB/8nKqvRH66JKGQ=="
     },
-    "lint-staged@16.2.6": {
-      "integrity": "sha512-s1gphtDbV4bmW1eylXpVMk2u7is7YsrLl8hzrtvC70h4ByhcMLZFY01Fx05ZUDNuv1H8HO4E+e2zgejV1jVwNw==",
+    "lint-staged@16.2.7": {
+      "integrity": "sha512-lDIj4RnYmK7/kXMya+qJsmkRFkGolciXjrsZ6PC25GdTfWOAWetR0ZbsNXRAj1EHHImRSalc+whZFg56F5DVow==",
       "dependencies": [
         "commander",
         "listr2",
@@ -4285,7 +4285,7 @@
         "npm:ink@^6.5.1",
         "npm:js-levenshtein@^1.1.6",
         "npm:knip@5.70.0",
-        "npm:lint-staged@^16.2.6",
+        "npm:lint-staged@^16.2.7",
         "npm:react@^19.2.0",
         "npm:xstate@^5.24.0",
         "npm:yargs@18",
