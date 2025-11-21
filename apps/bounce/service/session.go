@@ -134,6 +134,10 @@ func (c *TempestClaims) SetTempestUserID(id string) {
 	c.claims.UserMetadata["tempest_user_id"] = id
 }
 
+func (c *TempestClaims) SetTempestAuthUserId(id string) {
+	c.claims.UserMetadata["tempest_auth_user_id"] = id
+}
+
 func ParseTempestClaimsFromJWT(secret, accessToken string) (*TempestClaims, error) {
 	claims := newEmptyTempestClaims()
 
@@ -216,6 +220,7 @@ func SetNewSessionCookie(ctx context.Context, w http.ResponseWriter, cfg Config,
 	}
 
 	tc.SetTempestUserID(tu.ID)
+	tc.SetTempestAuthUserId(sessionConfig.AuthUser.ID)
 
 	var amrErrs []error
 	for _, amr := range sessionConfig.AMREntries {

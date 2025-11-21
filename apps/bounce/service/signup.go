@@ -367,3 +367,92 @@ func decodeAndValidateFromRequest[T any](ctx context.Context, w http.ResponseWri
 
 	return decoded, nil
 }
+
+type completeSignupRequest struct {
+	Payload struct {
+		UserFullName string `json:"userFullName" validate:"required,min=3"`
+	} `in:"body=json"`
+}
+
+func completeSignup(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	log := httplog.LogEntry(ctx)
+
+	req, err := decodeAndValidateFromRequest[completeSignupRequest](ctx, w, r)
+	if err != nil {
+		log.Error("Invalid request", "error", err)
+		return
+	}
+
+	cfg, err := ConfigFromContext(ctx)
+	if err != nil {
+		log.Error("Could not retrieve config", "error", err)
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+
+	jwt, err := TempestTokenFromCookies(&cfg, r)
+	if err != nil {
+		if errors.Is(err, http.ErrNoCookie) {
+			log.Error("No JWT in cookies", "error", err)
+			http.Error(w, "", http.StatusUnauthorized)
+			return
+		}
+		log.Error("Could not retrieve JWT from cookies", "error", err)
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+
+	tc, err := ParseTempestClaimsFromJWT(cfg.JWTPublicKey, jwt)
+	if err != nil {
+		log.Error("Could not parse JWT into TempestClaims", "error", err)
+		http.Error(w, "", http.StatusUnauthorized)
+		return
+	}
+
+	userID := tc.claims.Subject
+	if userID == "" {
+		log.Error("Could not retrieve user ID from JWT")
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
+	}
+
+	expect := pgxerr.NewExpectation(
+		pgxerr.WithLog(log),
+		pgxerr.WithContext(ctx),
+	)
+
+	tx, queries, conn, err := queriesWithTx(ctx)
+	defer expect.DeferRollbackRelease(tx, conn)
+	if err != nil {
+		log.Error("Could not begin transaction", "error", err)
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+
+	user, err := queries.SaveTempestUser(ctx, &bouncerepo.SaveTempestUserParams{
+		ID:           userID,
+		FullName:     req.Payload.UserFullName,
+		DisplayName:  req.Payload.UserFullName,
+		ProfilePhoto: "",
+	})
+	if err != nil {
+		log.Error("Could not save user", "error", err)
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		log.Error("Could not commit transaction", "error", err)
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
+	}
+
+	conn.Release()
+
+	log.Info("User completed signup", "userID", userID, "fullName", user.FullName)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = fmt.Fprintf(w, `{"success": true}`)
+}

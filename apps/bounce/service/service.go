@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/cors"
 	"github.com/go-chi/httplog/v2"
 	"github.com/go-chi/jwtauth/v5"
 	"github.com/golang-jwt/jwt/v5"
@@ -112,12 +113,31 @@ func (s *service) routes(r *chi.Mux) *chi.Mux {
 		Config:   gCfg,
 	}
 
+	// Define CORS options once
+	corsOptions := cors.Options{
+		AllowedOrigins:   []string{s.cfg.CORSAllowedOrigins},
+		AllowedMethods:   []string{"POST", "OPTIONS"},
+		AllowedHeaders:   []string{"Authorization", "Content-Type", "Accept"},
+		AllowCredentials: true,
+		MaxAge:           600,
+	}
+
 	r.Group(func(r chi.Router) {
 		r.Use(pgxdb.WithPool(s.signupDB, "signup"))
 
 		r.Route("/signup", func(r chi.Router) {
 			r.Get("/email/verify", verifyEmailSignup)
 			r.Post("/email", newEmailSignup)
+
+			// This is a public route that doesn't go through
+			// forwardauth. We manually check the JWT token
+			r.Route("/complete", func(r chi.Router) {
+				// CORS options needs to be before authentication check
+				r.Use(cors.Handler(corsOptions))
+				r.Use(sessionVerifier)
+				r.Use(jwtauth.Authenticator(sessionJWTOpts))
+				r.Post("/", completeSignup)
+			})
 		})
 		r.Route("/oauth", func(r chi.Router) {
 			r.Get("/google/authorize", oaGoogle.authRedirect)
