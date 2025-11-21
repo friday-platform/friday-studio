@@ -1,3 +1,4 @@
+import { repairJson } from "@atlas/agent-sdk";
 import {
   FileWatchSignalConfigSchema,
   HTTPSignalConfigSchema,
@@ -89,6 +90,7 @@ Return a signal configuration object with provider, description, and config fiel
     ],
     temperature: 0.2,
     maxRetries: 3,
+    experimental_repairText: repairJson,
     abortSignal,
   });
 

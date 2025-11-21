@@ -1,5 +1,5 @@
 import { env } from "node:process";
-import { type ArtifactRef, createAgent } from "@atlas/agent-sdk";
+import { type ArtifactRef, createAgent, repairJson } from "@atlas/agent-sdk";
 import {
   collectToolUsageFromSteps,
   extractArtifactRefsFromToolResults,
@@ -106,6 +106,7 @@ export const slackCommunicatorAgent = createAgent<string, Result>({
       schema: planSchema,
       temperature: 0,
       maxOutputTokens: 2000,
+      experimental_repairText: repairJson,
     });
 
     logger.debug("AI SDK generateObject completed", {

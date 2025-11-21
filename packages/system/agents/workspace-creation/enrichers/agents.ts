@@ -1,4 +1,5 @@
 import type { AtlasAgentConfig } from "@atlas/agent-sdk";
+import { repairJson } from "@atlas/agent-sdk";
 import { bundledAgents } from "@atlas/bundled-agents";
 import type { LLMAgentConfig } from "@atlas/config";
 import {
@@ -80,6 +81,7 @@ What archetype best fits this agent?`,
     }),
     temperature: 0.2,
     maxRetries: 3,
+    experimental_repairText: repairJson,
   });
 
   logger.debug("AI SDK generateObject completed", {

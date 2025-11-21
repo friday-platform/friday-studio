@@ -12,6 +12,7 @@
  */
 
 import type { AgentResult } from "@atlas/agent-sdk";
+import { repairJson } from "@atlas/agent-sdk";
 import { getDefaultProviderOpts, registry } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
 import type { CoreMessage } from "ai";
@@ -296,6 +297,7 @@ async function validateWithLLM(result: AgentResult, logger?: Logger): Promise<LL
       schema: ValidationSchema,
       temperature: 0.05,
       maxOutputTokens: 1000,
+      experimental_repairText: repairJson,
     });
 
     logger?.debug("AI SDK generateObject completed", {

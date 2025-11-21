@@ -4,6 +4,7 @@
  * Create an object with table headers and rows from a prompt using the Vercel `tool` function
  */
 
+import { repairJson } from "@atlas/agent-sdk";
 import { getDefaultProviderOpts, registry } from "@atlas/llm";
 import { logger } from "@atlas/logger";
 import { generateObject, tool } from "ai";
@@ -25,6 +26,7 @@ export const tableOutput = tool({
     const result = await generateObject({
       model: registry.languageModel("anthropic:claude-haiku-4-5"),
       schema: TableSchema,
+      experimental_repairText: repairJson,
       messages: [
         {
           role: "system",

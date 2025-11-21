@@ -1,6 +1,6 @@
 import { homedir } from "node:os";
 import { env } from "node:process";
-import { createAgent } from "@atlas/agent-sdk";
+import { createAgent, repairJson } from "@atlas/agent-sdk";
 import type { EmailParams } from "@atlas/config";
 import { getDefaultProviderOpts, registry } from "@atlas/llm";
 import { getTodaysDate } from "@atlas/utils";
@@ -145,6 +145,7 @@ OUTPUT:
       schema: emailCompositionSchema,
       temperature: 0.3,
       maxOutputTokens: 4000,
+      experimental_repairText: repairJson,
     });
 
     // Log token usage including cache statistics

@@ -3,7 +3,7 @@
  * Each sub-agent searches independently, results are stored for final report.
  */
 
-import { createAgent } from "@atlas/agent-sdk";
+import { createAgent, repairJson } from "@atlas/agent-sdk";
 import { getDefaultProviderOpts, registry } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
 import { fail, getTodaysDate, type Result, success } from "@atlas/utils";
@@ -302,6 +302,7 @@ export const researchAgent = createAgent<string, ResearchAgentResult>({
         schema: ResearchTaskSchema,
         temperature: 0.3,
         maxOutputTokens: 500,
+        experimental_repairText: repairJson,
         abortSignal,
       });
 

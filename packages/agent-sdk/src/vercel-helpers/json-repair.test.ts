@@ -113,3 +113,30 @@ Deno.test("repairJson - leaves valid JSON unchanged", async () => {
   const parsed = ValidJsonSchema.parse(JSON.parse(result));
   assertEquals(parsed.plan.workspace.name, "Test Workspace");
 });
+
+Deno.test("repairJson - repairs stringified array in object field (search-tools case)", async () => {
+  // Actual error case from search-tools.ts - SummarizedResultSchema
+  const SummarizedResultSchema = z.object({
+    summary: z.string(),
+    key_excerpts: z.array(z.string()),
+  });
+
+  // The JSON that caused the error - key_excerpts is a stringified array with malformed JSON
+  // Note: The unquoted text "in the band Example" breaks JSON syntax
+  const malformedJson = `{"summary":"Test summary about a fictional person with multiple roles in the music industry. This person works in music distribution and is also a performing artist.","key_excerpts":"[\\"Person A - Digital Coordinator at Music Company, a global distribution company\\", \\"Born January 1, 1990, a singer and songwriter\\", \\"One of the brightest young stars in the industry\\", \\"Member of Band X\\" in the band Example, \\"Presents opportunities to collaborate\\"]"}`;
+
+  const result = await repairJson({
+    text: malformedJson,
+    error: new JSONParseError({ text: malformedJson, cause: new Error("Invalid type") }),
+  });
+
+  assert(result !== null);
+
+  // This should pass after repair - key_excerpts should be an actual array
+  const parsed = SummarizedResultSchema.parse(JSON.parse(result));
+  assertEquals(parsed.key_excerpts.length, 5);
+  assertEquals(
+    parsed.key_excerpts[0],
+    "Person A - Digital Coordinator at Music Company, a global distribution company",
+  );
+});

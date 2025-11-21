@@ -12,6 +12,7 @@
  */
 
 import type { AgentResult, AtlasUIMessageChunk, StreamEmitter } from "@atlas/agent-sdk";
+import { repairJson } from "@atlas/agent-sdk";
 import type { JobSpecification, WorkspaceAgentConfig } from "@atlas/config";
 import type {
   ActorInitParams,
@@ -719,6 +720,7 @@ ${this.sessionContext.availableAgents.join(", ")}`;
       temperature: 0,
       maxOutputTokens: 4000,
       maxRetries: 3,
+      experimental_repairText: repairJson,
       providerOptions: { anthropic: { thinking: { type: "enabled", budgetTokens: 15000 } } },
     });
 

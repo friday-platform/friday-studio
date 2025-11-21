@@ -1,3 +1,4 @@
+import { repairJson } from "@atlas/agent-sdk";
 import { getDefaultProviderOpts, registry } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
 import type { CoreMessage } from "ai";
@@ -113,6 +114,7 @@ export class SemanticFactExtractor {
         schema: FactExtractionResultSchema,
         temperature: this.temperature,
         maxOutputTokens: this.maxOutputTokens,
+        experimental_repairText: repairJson,
         ...(this.timeoutMs ? { abortSignal: AbortSignal.timeout(this.timeoutMs) } : {}),
       };
 

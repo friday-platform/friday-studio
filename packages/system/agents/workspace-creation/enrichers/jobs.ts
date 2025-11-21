@@ -1,3 +1,4 @@
+import { repairJson } from "@atlas/agent-sdk";
 import { type JobSpecification, JobSpecificationSchema } from "@atlas/config";
 import type { WorkspacePlan } from "@atlas/core/artifacts";
 import { getDefaultProviderOpts, registry } from "@atlas/llm";
@@ -78,6 +79,7 @@ export async function enrichJob(
   const result = await generateObject({
     model: registry.languageModel("anthropic:claude-sonnet-4-5"),
     schema: JobEnricherSchema,
+    experimental_repairText: repairJson,
     messages: [
       {
         role: "system",

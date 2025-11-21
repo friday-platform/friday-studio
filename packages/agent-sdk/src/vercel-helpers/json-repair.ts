@@ -30,7 +30,12 @@ function unstringifyNestedJson(value: unknown): unknown {
       try {
         return unstringifyNestedJson(JSON.parse(trimmed));
       } catch {
-        return value;
+        try {
+          const repaired = jsonrepair(trimmed);
+          return unstringifyNestedJson(JSON.parse(repaired));
+        } catch {
+          return value;
+        }
       }
     }
   }

@@ -1,3 +1,4 @@
+import { repairJson } from "@atlas/agent-sdk";
 import { registry } from "@atlas/llm";
 import { generateObject } from "ai";
 import { z } from "zod";
@@ -15,6 +16,7 @@ export async function llmJudge(input: LLMJudgeInput): Promise<Evaluation> {
   const { object } = await generateObject({
     model: registry.languageModel("anthropic:claude-haiku-4-5"),
     schema: evaluationSchema,
+    experimental_repairText: repairJson,
     prompt: `
     <identity>
     You are an expert AI agent evaluator. Evaluate the following output from an AI agent its effectiveness at meeting the following criteria:
