@@ -32,7 +32,7 @@
     "npm:@ai-sdk/mcp@^0.0.8": "0.0.8_zod@4.1.12",
     "npm:@ai-sdk/openai@^2.0.71": "2.0.71_zod@4.1.12",
     "npm:@ai-sdk/provider@2": "2.0.0",
-    "npm:@ai-sdk/svelte@^3.0.97": "3.0.97_svelte@5.43.14__acorn@8.15.0_zod@4.1.12",
+    "npm:@ai-sdk/svelte@^3.0.98": "3.0.98_svelte@5.43.14__acorn@8.15.0_zod@4.1.12",
     "npm:@biomejs/biome@*": "2.3.6",
     "npm:@eslint/compat@2": "2.0.0_eslint@9.39.1",
     "npm:@eslint/js@^9.39.1": "9.39.1",
@@ -82,15 +82,15 @@
     "npm:@types/node@*": "24.2.0",
     "npm:@types/react@^19.2.6": "19.2.6",
     "npm:ai-sdk-provider-claude-code@^2.1.0": "2.1.0_zod@4.1.12",
-    "npm:ai@^5.0.93": "5.0.97_zod@4.1.12",
-    "npm:ai@^5.0.97": "5.0.97_zod@4.1.12",
+    "npm:ai@^5.0.93": "5.0.98_zod@4.1.12",
+    "npm:ai@^5.0.97": "5.0.98_zod@4.1.12",
     "npm:cookie@^1.0.2": "1.0.2",
     "npm:cron-parser@^5.4.0": "5.4.0",
     "npm:dotenv@17.2.3": "17.2.3",
     "npm:eslint-config-prettier@^10.1.8": "10.1.8_eslint@9.39.1",
     "npm:eslint-plugin-svelte@^3.13.0": "3.13.0_eslint@9.39.1_svelte@5.43.14__acorn@8.15.0_postcss@8.5.6",
     "npm:eslint@^9.39.1": "9.39.1",
-    "npm:evalite@^1.0.0-beta.15": "1.0.0-beta.15_ai@5.0.97__zod@4.1.12_zod@4.1.12",
+    "npm:evalite@^1.0.0-beta.15": "1.0.0-beta.15_ai@5.0.98__zod@4.1.12_zod@4.1.12",
     "npm:eventsource-client@^1.2.0": "1.2.0",
     "npm:fast-glob@^3.3.3": "3.3.3",
     "npm:globals@^16.5.0": "16.5.0",
@@ -221,8 +221,8 @@
         "zod"
       ]
     },
-    "@ai-sdk/gateway@2.0.12_zod@4.1.12": {
-      "integrity": "sha512-W+cB1sOWvPcz9qiIsNtD+HxUrBUva2vWv2K1EFukuImX+HA0uZx3EyyOjhYQ9gtf/teqEG80M6OvJ7xx/VLV2A==",
+    "@ai-sdk/gateway@2.0.13_zod@4.1.12": {
+      "integrity": "sha512-q8M+7+VEKp91I295cjNDgQ4LyGImKj5cDLVARDay7nBTXGjIRZOlthYE7K6Rbz2yHKFyTmKH7MMkYavAM7L/UQ==",
       "dependencies": [
         "@ai-sdk/provider",
         "@ai-sdk/provider-utils@3.0.17_zod@4.1.12",
@@ -279,8 +279,8 @@
         "json-schema"
       ]
     },
-    "@ai-sdk/svelte@3.0.97_svelte@5.43.14__acorn@8.15.0_zod@4.1.12": {
-      "integrity": "sha512-N6/Y5NUrUnT8GDFtl867M9/fUdW50t7OslZEOyVG8fkR6CBac8GOUlqbYtG17KLR6yyHS5b/ivb3qLqzBuQqlQ==",
+    "@ai-sdk/svelte@3.0.98_svelte@5.43.14__acorn@8.15.0_zod@4.1.12": {
+      "integrity": "sha512-2H4Pb9QEFi6CKSonE8seKkpNuNrz8hAFfgQU7dIF9j05nn2SKvu9nTkCOLDx34PKwJ/XKOTL3C7gLK0o9OeTmw==",
       "dependencies": [
         "@ai-sdk/provider-utils@3.0.17_zod@4.1.12",
         "ai",
@@ -1887,8 +1887,8 @@
         "zod"
       ]
     },
-    "ai@5.0.97_zod@4.1.12": {
-      "integrity": "sha512-8zBx0b/owis4eJI2tAlV8a1Rv0BANmLxontcAelkLNwEHhgfgXeKpDkhNB6OgV+BJSwboIUDkgd9312DdJnCOQ==",
+    "ai@5.0.98_zod@4.1.12": {
+      "integrity": "sha512-RpMnwnml68Swblobvk6IdF7HLZrog72Ve6H5J3aN+A/JPg4y5CjCXeQyK1N4wJStyuTa6AoKYfJR5F4e/aVpHQ==",
       "dependencies": [
         "@ai-sdk/gateway",
         "@ai-sdk/provider",
@@ -2453,7 +2453,7 @@
     "etag@1.8.1": {
       "integrity": "sha512-aIL5Fx7mawVa300al2BnEE4iNvo1qETxLrPI/o05L7z6go7fCw1J6EQmbK4FmJ2AS7kgVF/KEZWufBfdClMcPg=="
     },
-    "evalite@1.0.0-beta.15_ai@5.0.97__zod@4.1.12_zod@4.1.12": {
+    "evalite@1.0.0-beta.15_ai@5.0.98__zod@4.1.12_zod@4.1.12": {
       "integrity": "sha512-/4D4Iap7/FTrzUYf4fZpkaGaycRnKt8gDgMDJ/fRAr5YdfUBJuwJVPQFRSPNvtkg5AVSDI7+kgivJnfP69kFEA==",
       "dependencies": [
         "@fastify/static",
@@ -4339,7 +4339,7 @@
       "apps/web-client": {
         "packageJson": {
           "dependencies": [
-            "npm:@ai-sdk/svelte@^3.0.97",
+            "npm:@ai-sdk/svelte@^3.0.98",
             "npm:@eslint/compat@2",
             "npm:@eslint/js@^9.39.1",
             "npm:@ianvs/prettier-plugin-sort-imports@^4.7.0",
