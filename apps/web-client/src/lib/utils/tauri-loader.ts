@@ -67,9 +67,6 @@ export const invoke = __TAURI_BUILD__
 export const getVersion = __TAURI_BUILD__ ? () => _tauriApp?.getVersion() : undefined;
 
 // Webview API
-export const getCurrentWebview = __TAURI_BUILD__
-  ? () => _tauriWebview?.getCurrentWebview()
-  : undefined;
 export const Webview = __TAURI_BUILD__ ? _tauriWebview?.Webview : undefined;
 
 // Window API

@@ -14,20 +14,20 @@ async function parseWorkspaceConfig(filePath: string): Promise<WorkspaceConfig |
     const parsed = WorkspaceConfigSchema.parse(parse(content));
     return parsed;
   } catch (error) {
-    console.error("Failed to parse workspace.yml:", error);
+    console.warn("Yaml file configuration is not a workspace:", error);
     return null;
   }
 }
 
 /**
- * Handle workspace.yml drop - focuses window and parses workspace info
+ * Handle .yml/.yaml file drop - focuses window and parses workspace info
  */
 export async function handleWorkspaceFileDrop(
   filePath: string,
 ): Promise<{ path: string; config: WorkspaceConfig } | null> {
   const fileName = filePath.split("/").pop() || "";
 
-  if (fileName !== "workspace.yml") {
+  if (!fileName.endsWith(".yml") && !fileName.endsWith(".yaml")) {
     return null;
   }
 

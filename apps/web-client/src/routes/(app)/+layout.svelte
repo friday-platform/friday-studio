@@ -1,4 +1,5 @@
 <script lang="ts">
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { onDestroy, onMount } from "svelte";
 import { getAppContext, getFileType } from "$lib/app-context.svelte";
 import favicon from "$lib/assets/favicon.svg";
@@ -6,8 +7,8 @@ import AppContainer from "$lib/components/app/container.svelte";
 import AppSidebar from "$lib/components/app/sidebar.svelte";
 import KeyboardListener from "$lib/components/keyboard-listener.svelte";
 import { setClientContext } from "$lib/modules/client/context.svelte";
+import { handleWorkspaceFileDrop } from "$lib/modules/spaces/utils.svelte";
 import WorkspaceDropHandler from "$lib/modules/spaces/workspace-drop-handler.svelte";
-import { getCurrentWebview } from "$lib/utils/tauri-loader";
 
 const { children } = $props();
 
@@ -35,13 +36,24 @@ onMount(async () => {
   ctx.startHealthCheckInterval();
 
   // Setup drag and drop for desktop builds
-  if (getCurrentWebview) {
+  if (__TAURI_BUILD__) {
     try {
       const webview = getCurrentWebview();
       if (webview) {
-        unlisten = await webview.onDragDropEvent((event) => {
+        unlisten = await webview.onDragDropEvent(async (event) => {
           if (event.payload.type === "drop") {
+            // console.log('payload', event.payload);
             for (const path of event.payload.paths) {
+              // console.log('path', path);
+              // Check if it's a valid workspace config file
+              if (path.endsWith(".yml") || path.endsWith(".yaml")) {
+                const result = await handleWorkspaceFileDrop(path);
+                if (result) {
+                  // Valid workspace file - skip it, let WorkspaceDropHandler handle it
+                  continue;
+                }
+              }
+
               appCtx.stagedFiles.add(path, { path, type: getFileType(path) });
             }
           }

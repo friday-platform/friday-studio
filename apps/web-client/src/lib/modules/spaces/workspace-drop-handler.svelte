@@ -3,7 +3,7 @@ import type { WorkspaceConfig } from "@atlas/config";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { onDestroy, onMount } from "svelte";
 import { toStore, writable } from "svelte/store";
-import { getAppContext, getFileType } from "$lib/app-context.svelte";
+import { getAppContext } from "$lib/app-context.svelte";
 import { Dialog } from "$lib/components/dialog";
 import { Icons } from "$lib/components/icons";
 import { addWorkspace, handleWorkspaceFileDrop } from "./utils.svelte";
