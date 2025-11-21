@@ -45,11 +45,12 @@ type Config struct {
 }
 
 type service struct {
-	Logger    *httplog.Logger
-	cfg       Config
-	mux       *chi.Mux
-	tlsConfig *server.TLSConfig
-	signupDB  *pgxpool.Pool
+	Logger     *httplog.Logger
+	cfg        Config
+	mux        *chi.Mux
+	tlsConfig  *server.TLSConfig
+	signupDB   *pgxpool.Pool
+	shutdownFn func(context.Context) error
 }
 
 func New(cfg Config) *service {
@@ -188,7 +189,7 @@ func (s *service) Init() error {
 	return nil
 }
 
-func (s *service) Serve() error {
+func (s *service) Serve() (*server.Config, <-chan error) {
 	s.Logger.Info("Starting service", "port", s.cfg.Port)
 	srv := &server.Config{
 		Handler:   s.routes(s.mux),
@@ -198,8 +199,23 @@ func (s *service) Serve() error {
 
 	if err := s.tlsConfig.SetupTLS(); err != nil {
 		s.Logger.Error("error setting up server TLS", "error", err)
-		return err
+		errChan := make(chan error, 1)
+		errChan <- err
+		return nil, errChan
 	}
 
-	return srv.Listen(context.Background())
+	// Start listening in a goroutine so we can capture the server config
+	// The ShutdownFn will be set by Listen() before it blocks
+	errChan := make(chan error, 1)
+	go func() {
+		errChan <- srv.Listen(context.Background())
+	}()
+
+	// Give Listen() a moment to set up and populate ShutdownFn
+	time.Sleep(50 * time.Millisecond)
+
+	// Store shutdown function for cleanup
+	s.shutdownFn = srv.ShutdownFn
+
+	return srv, errChan
 }
