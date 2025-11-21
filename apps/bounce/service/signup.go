@@ -309,7 +309,7 @@ func verifyEmailSignup(w http.ResponseWriter, r *http.Request) {
 
 	amr := &AMREntry{
 		Method:    "email",
-		Provider:  "tempest",
+		Provider:  "atlas",
 		Timestamp: time.Now().Unix(),
 	}
 
@@ -323,7 +323,7 @@ func verifyEmailSignup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// This route is hosted in the SvelteKit app at app.tempestdx.*/setup
+	// This route is hosted in the SvelteKit app at app.tempestdx.*/complete-setup
 	http.Redirect(w, r, cfg.RedirectURI+"/complete-setup", http.StatusTemporaryRedirect)
 }
 
