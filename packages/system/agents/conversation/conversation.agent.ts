@@ -18,7 +18,6 @@ import type { Logger } from "@atlas/logger";
 import { Client } from "@modelcontextprotocol/sdk/client";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import {
-  convertToModelMessages,
   createIdGenerator,
   generateText,
   jsonSchema,
@@ -32,6 +31,7 @@ import {
   type CancellationNotification,
   StreamContentNotificationSchema,
 } from "../../../core/src/streaming/stream-emitters.ts";
+import { estimateTokens, processMessageHistory } from "./message-windowing.ts";
 import SYSTEM_PROMPT from "./prompt.txt" with { type: "text" };
 import { conversationTools } from "./tools/mod.ts";
 import { fetchScratchpadContext } from "./tools/scratchpad-tools.ts";
@@ -393,6 +393,44 @@ export const conversationAgent = createAgent({
       100, // Use full default limit for complete context
     );
 
+    // Estimate system prompt tokens to determine message history budget
+    const systemPrompt = getSystemPrompt(session.streamId, workspacesSection, agentsSection);
+    const datetimeMessage = `Current datetime (UTC): ${new Date().toISOString()}`;
+    const systemTokens =
+      estimateTokens(systemPrompt) + // Already includes workspacesSection + agentsSection
+      estimateTokens(scratchpadContext) +
+      estimateTokens(datetimeMessage);
+
+    // Calculate dynamic message budget based on actual system context
+    const MODEL_CONTEXT_LIMIT = 200_000;
+    const OUTPUT_RESERVE = 20_000; // Reserve for assistant response with extended thinking
+    const SAFETY_BUFFER = 10_000; // Margin for token estimation error
+
+    const dynamicMessageBudget =
+      MODEL_CONTEXT_LIMIT - systemTokens - OUTPUT_RESERVE - SAFETY_BUFFER;
+
+    logger.debug("Dynamic token budget allocation", {
+      modelLimit: MODEL_CONTEXT_LIMIT,
+      systemTokens,
+      outputReserve: OUTPUT_RESERVE,
+      safetyBuffer: SAFETY_BUFFER,
+      messagesBudget: dynamicMessageBudget,
+      budgetPercentage: ((dynamicMessageBudget / MODEL_CONTEXT_LIMIT) * 100).toFixed(1),
+    });
+
+    // Truncate message history to fit within dynamically calculated budget
+    const prunedModelMessages = processMessageHistory(
+      messages,
+      { maxTokens: dynamicMessageBudget },
+      logger,
+    );
+
+    logger.debug("Processed message history", {
+      originalCount: messages.length,
+      finalCount: prunedModelMessages.length,
+      removedMessages: messages.length - prunedModelMessages.length,
+    });
+
     // Store the original error if streamText fails
     let originalStreamError: unknown = null;
     let interceptedApiError: unknown = null;
@@ -443,13 +481,13 @@ export const conversationAgent = createAgent({
           messages: [
             {
               role: ROLE_SYSTEM,
-              content: getSystemPrompt(session.streamId, workspacesSection, agentsSection),
+              content: systemPrompt,
               providerOptions: getDefaultProviderOpts("anthropic"),
             },
-            { role: ROLE_SYSTEM, content: `Current datetime (UTC): ${new Date().toISOString()}` },
+            { role: ROLE_SYSTEM, content: datetimeMessage },
             // Add scratchpad context as third system message if it exists
             ...(scratchpadContext ? [{ role: ROLE_SYSTEM, content: scratchpadContext }] : []),
-            ...convertToModelMessages(messages),
+            ...prunedModelMessages,
           ],
           tools: allTools,
           toolChoice: "auto",

@@ -38,7 +38,7 @@
     },
     "packages/signals": { "project": ["src/**/*.{ts,tsx,js,jsx}!"] },
     "packages/storage": { "project": ["src/**/*.{ts,tsx,js,jsx}!"] },
-    "packages/system": { "project": ["agents/**/*.ts!", "workspaces/**/*.ts!"] },
+    "packages/system": { "entry": ["**/*.test.ts"], "project": ["**/*.{ts,tsx,js,jsx}!"] },
     "packages/utils": { "project": ["**/*.{ts,tsx,js,jsx}!"] },
     "packages/workspace": { "project": ["src/**/*.{ts,tsx,js,jsx}!"] },
     "apps/atlasd": { "project": ["**/*.{ts,tsx,js,jsx}!"] },

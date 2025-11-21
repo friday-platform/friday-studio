@@ -9,6 +9,7 @@ import type { ValidProvider } from "./src/util.ts";
 export { createAnthropicWithOptions } from "./src/anthropic.ts";
 export { createGoogleWithOptions } from "./src/google.ts";
 export { createOpenAIWithOptions } from "./src/openai.ts";
+export { pruneMessages } from "./src/prune-messages.ts";
 export { validateProvider } from "./src/util.ts";
 
 /**

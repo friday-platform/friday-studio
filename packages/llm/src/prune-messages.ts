@@ -1,0 +1,143 @@
+import type { AssistantModelMessage, ModelMessage, ToolModelMessage } from "ai";
+
+/**
+ * Prunes model messages from a list of model messages.
+ * NOTE: This was vendored from the AI SDK to fix a bug. Specifically,
+ * the original implementation had an incorrect condition in the message mapping loop
+ * that determines which messages to skip pruning.
+ *
+ * In the original code, the condition to preserve messages in the "kept" window
+ * was effectively inverted or incorrect, causing it to prune messages that should
+ * have been preserved (or vice versa) when using `before-last-message` or
+ * `before-last-n-messages` options.
+ *
+ * Our fix ensures that:
+ * 1. Messages within the `keepLastMessagesCount` window are strictly returned as-is.
+ * 2. Only messages *before* that window are subjected to tool call pruning.
+ *
+ * @see https://github.com/vercel/ai/blob/release-v5.0/packages/ai/src/generate-text/prune-messages.ts
+ *
+ * @param messages - The list of model messages to prune.
+ * @param reasoning - How to remove reasoning content from assistant messages. Default is `'none'`.
+ * @param toolCalls - How to prune tool call/results/approval content. Default is `[]`.
+ * @param emptyMessages - Whether to keep or remove messages whose content is empty after pruning. Default is `'remove'`.
+ *
+ * @returns The pruned list of model messages.
+ */
+export function pruneMessages({
+  messages,
+  reasoning = "none",
+  toolCalls = [],
+  emptyMessages = "remove",
+}: {
+  messages: ModelMessage[];
+  reasoning?: "all" | "before-last-message" | "none";
+  toolCalls?:
+    | "all"
+    | "before-last-message"
+    | `before-last-${number}-messages`
+    | "none"
+    | Array<{
+        type: "all" | "before-last-message" | `before-last-${number}-messages`;
+        tools?: string[];
+      }>;
+  emptyMessages?: "keep" | "remove";
+}): ModelMessage[] {
+  // filter reasoning parts:
+  if (reasoning === "all" || reasoning === "before-last-message") {
+    messages = messages.map((message, messageIndex) => {
+      if (
+        message.role !== "assistant" ||
+        typeof message.content === "string" ||
+        (reasoning === "before-last-message" && messageIndex === messages.length - 1)
+      ) {
+        return message;
+      }
+
+      return { ...message, content: message.content.filter((part) => part.type !== "reasoning") };
+    });
+  }
+
+  // filter tool calls, results, errors, and approvals:
+  if (toolCalls === "none") {
+    toolCalls = [];
+  } else if (toolCalls === "all") {
+    toolCalls = [{ type: "all" }];
+  } else if (toolCalls === "before-last-message") {
+    toolCalls = [{ type: "before-last-message" }];
+  } else if (typeof toolCalls === "string") {
+    toolCalls = [{ type: toolCalls }];
+  }
+
+  for (const toolCall of toolCalls) {
+    // determine how many trailing messages to keep:
+    const keepLastMessagesCount =
+      toolCall.type === "all"
+        ? undefined
+        : toolCall.type === "before-last-message"
+          ? 1
+          : Number(toolCall.type.slice("before-last-".length).slice(0, -"-messages".length));
+
+    // scan kept messages to identify tool calls and approvals that need to be kept:
+    const keptToolCallIds: Set<string> = new Set();
+
+    if (keepLastMessagesCount != null) {
+      for (const message of messages.slice(Math.max(0, messages.length - keepLastMessagesCount))) {
+        if (
+          (message.role === "assistant" || message.role === "tool") &&
+          typeof message.content !== "string"
+        ) {
+          for (const part of message.content) {
+            if (part.type === "tool-call" || part.type === "tool-result") {
+              keptToolCallIds.add(part.toolCallId);
+            }
+          }
+        }
+      }
+    }
+
+    messages = messages.map((message, messageIndex) => {
+      if (
+        (message.role !== "assistant" && message.role !== "tool") ||
+        typeof message.content === "string" ||
+        (keepLastMessagesCount && messageIndex >= messages.length - keepLastMessagesCount)
+      ) {
+        return message;
+      }
+
+      const toolCallIdToToolName: Record<string, string> = {};
+
+      return {
+        ...message,
+        content: message.content.filter((part) => {
+          // keep non-tool parts:
+          if (part.type !== "tool-call" && part.type !== "tool-result") {
+            return true;
+          }
+
+          // track tool calls and approvals:
+          if (part.type === "tool-call") {
+            toolCallIdToToolName[part.toolCallId] = part.toolName;
+          }
+
+          // keep parts that are associated with a tool call or approval that needs to be kept:
+          if (
+            (part.type === "tool-call" || part.type === "tool-result") &&
+            keptToolCallIds.has(part.toolCallId)
+          ) {
+            return true;
+          }
+
+          // keep parts that are not associated with a tool that should be removed:
+          return toolCall.tools != null && !toolCall.tools.includes(part.toolName);
+        }),
+      } as AssistantModelMessage | ToolModelMessage;
+    });
+  }
+
+  if (emptyMessages === "remove") {
+    messages = messages.filter((message) => message.content.length > 0);
+  }
+
+  return messages;
+}
