@@ -518,7 +518,7 @@ func (p oauthProvider) authCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if isSignup {
-		http.Redirect(w, r, cfg.RedirectURI+"/complete-setup", http.StatusFound)
+		http.Redirect(w, r, cfg.AuthUIURL+"/complete-setup", http.StatusFound)
 		return
 	}
 

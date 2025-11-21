@@ -1285,8 +1285,7 @@ func (o *OTP) Verify(token string) (bool, error) {
 ```go
 // services/bounce/handlers/signup.go (from tempest-core/applications/bounce/service/signup.go)
 
-// TODO: Replace with Atlas-specific SendGrid template ID once created
-const SIGNUP_CONFIRMATION_SENDGRID_TEMPLATE_ID = "d-5e52d757929b4b94afae4c725e210672" // Currently using Tempest's template
+const SIGNUP_CONFIRMATION_SENDGRID_TEMPLATE_ID = "d-fe853da3d694420d82c4f12fb6f9bc4b" // Atlas SendGrid template
 
 // POST /signup/email - Send confirmation email
 func handleSignupEmail(w http.ResponseWriter, r *http.Request) {
@@ -4690,10 +4689,9 @@ apps/atlas-auth-ui/
 
 ### SendGrid Email Templates
 
-**Note**: SendGrid template creation is handled outside this design.
-Template IDs referenced in code:
-- `SIGNUP_CONFIRMATION_SENDGRID_TEMPLATE_ID = "d-5e52d757929b4b94afae4c725e210672"`
-- `MAGIC_LINK_SENDGRID_TEMPLATE_ID` (needs to be created)
+**Note**: SendGrid template IDs used in code:
+- `SIGNUP_CONFIRMATION_SENDGRID_TEMPLATE_ID = "d-fe853da3d694420d82c4f12fb6f9bc4b"`
+- `MAGIC_LINK_SENDGRID_TEMPLATE_ID = "d-fe853da3d694420d82c4f12fb6f9bc4b"`
 
 ## 18. Production Secrets Management
 

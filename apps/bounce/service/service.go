@@ -23,6 +23,7 @@ import (
 )
 
 type Config struct {
+	AuthUIURL                 string `env:"AUTH_UI_URL" envDefault:"http://localhost:8080"`
 	BounceServiceURL          string `env:"BOUNCE_SERVICE_URL" envDefault:"http://localhost:8083"`
 	CookieDomain              string `env:"COOKIE_DOMAIN" envDefault:"localhost"`
 	CookieName                string `env:"COOKIE_NAME" envDefault:"atlas_token"`

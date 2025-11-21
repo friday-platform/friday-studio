@@ -255,7 +255,7 @@ func verifyEmailSignup(w http.ResponseWriter, r *http.Request) {
 		log.Info("Token has expired", "error", errors.New("token has expired"))
 
 		// Redirect to retry page--for controlled retries to prevent brute force attacks
-		http.Redirect(w, r, cfg.RedirectURI+"/signup-retry", http.StatusTemporaryRedirect)
+		http.Redirect(w, r, cfg.AuthUIURL+"/signup-retry", http.StatusTemporaryRedirect)
 		return
 	}
 
@@ -275,7 +275,7 @@ func verifyEmailSignup(w http.ResponseWriter, r *http.Request) {
 
 	if !verified {
 		log.Info("Token did not verify contents", "token", req.Token, "email", au.Email)
-		http.Redirect(w, r, cfg.RedirectURI+"/signup-retry", http.StatusTemporaryRedirect)
+		http.Redirect(w, r, cfg.AuthUIURL+"/signup-retry", http.StatusTemporaryRedirect)
 	}
 
 	authUser, err := queries.ConfirmAuthUser(ctx, &bouncerepo.ConfirmAuthUserParams{
@@ -323,8 +323,8 @@ func verifyEmailSignup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// This route is hosted in the SvelteKit app at app.tempestdx.*/complete-setup
-	http.Redirect(w, r, cfg.RedirectURI+"/complete-setup", http.StatusTemporaryRedirect)
+	// This route is hosted in the SvelteKit app at auth.atlas.tempestdx.dev/complete-setup
+	http.Redirect(w, r, cfg.AuthUIURL+"/complete-setup", http.StatusTemporaryRedirect)
 }
 
 func queriesWithTx(ctx context.Context) (pgx.Tx, *bouncerepo.Queries, *pgxpool.Conn, error) {

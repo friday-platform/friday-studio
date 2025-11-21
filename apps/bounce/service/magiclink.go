@@ -12,7 +12,7 @@ import (
 	pgxerr "github.com/tempestteam/atlas/pkg/x/pgxhelper"
 )
 
-const MAGIC_LINK_SENDGRID_TEMPLATE_ID = "d-1cb3e6807f7b47369c1c7e0bee4fec2e"
+const MAGIC_LINK_SENDGRID_TEMPLATE_ID = "d-fe853da3d694420d82c4f12fb6f9bc4b"
 
 type magicLinkRequest struct {
 	Payload struct {
@@ -174,7 +174,7 @@ func verifyMagicLink(w http.ResponseWriter, r *http.Request) {
 
 		msg := url.QueryEscape("magic link expired")
 
-		http.Redirect(w, r, cfg.RedirectURI+"/error?msg="+msg, http.StatusFound)
+		http.Redirect(w, r, cfg.AuthUIURL+"/error?msg="+msg, http.StatusFound)
 		return
 	}
 
