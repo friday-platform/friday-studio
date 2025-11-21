@@ -100,19 +100,30 @@ export const sessionSupervisorAgent = createAgent<
       let expandedArtifacts: unknown[] | undefined;
       if (artifactIds.length > 0) {
         logger.info("Expanding artifact refs for smart supervisor", { count: artifactIds.length });
-        const response = await parseResult(
-          client.artifactsStorage["batch-get"].$post({ json: { ids: artifactIds } }),
-        );
-        if (response.ok) {
+
+        try {
+          const timeout = AbortSignal.timeout(5000);
+          const signal = abortSignal ? AbortSignal.any([abortSignal, timeout]) : timeout;
+          const response = await parseResult(
+            client.artifactsStorage["batch-get"].$post(
+              { json: { ids: artifactIds } },
+              { init: { signal } },
+            ),
+          );
+          if (!response.ok) {
+            throw new Error(`Failed to fetch artifacts: ${stringifyError(response.error)}`);
+          }
           // Inject only the typed artifact payload to avoid metadata bloat
           // Example injected object:
           // { type: "calendar-schedule", version: 1, data: { events: [...], source: "..." } }
           expandedArtifacts = response.data.artifacts.map((a) => a.data);
           logger.info("Expanded artifacts loaded", { count: expandedArtifacts.length });
-        } else {
-          logger.info("Failed to expand artifacts; proceeding without expansions", {
-            error: response.error,
+        } catch (error) {
+          logger.warn("Failed to expand artifacts; proceeding without expansions", {
+            error: stringifyError(error),
+            artifactCount: artifactIds.length,
           });
+          expandedArtifacts = undefined;
         }
       }
 

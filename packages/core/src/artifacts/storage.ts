@@ -1,5 +1,7 @@
+import { createLogger } from "@atlas/logger";
 import { fail, type Result, stringifyError, success } from "@atlas/utils";
 import { getAtlasHome } from "@atlas/utils/paths.server";
+import { deadline } from "@std/async";
 import { typeByExtension } from "@std/media-types";
 import { extname, join } from "@std/path";
 import type {
@@ -9,6 +11,8 @@ import type {
   ArtifactRevisionSummary,
   CreateArtifactInput,
 } from "./model.ts";
+
+const logger = createLogger({ name: "artifact-storage" });
 
 type ArtifactKey = ["artifact", string, number];
 type LatestKey = ["artifact_latest", string];
@@ -300,14 +304,35 @@ async function deleteArtifact(input: { id: string }): Promise<Result<void, strin
 /**
  * Batch get artifacts by IDs (latest revisions only).
  * Missing or deleted artifacts are skipped.
+ *
+ * Uses a total timeout to prevent cascading delays - if the entire operation
+ * takes longer than the timeout, it returns empty results with graceful degradation.
  */
 async function getManyLatest(input: { ids: string[] }): Promise<Result<Artifact[], string>> {
-  using db = await Deno.openKv(kvPath);
-
   if (!input.ids || input.ids.length === 0) {
     return success([]);
   }
 
+  const TOTAL_TIMEOUT = 5000; // Match HTTP client timeout
+
+  try {
+    const result = await deadline(doGetManyLatest(input), TOTAL_TIMEOUT);
+    return result;
+  } catch (error) {
+    logger.warn("Artifact batch fetch timed out", {
+      requestedCount: input.ids.length,
+      error: stringifyError(error),
+    });
+    return fail(`Artifact batch fetch timed out: ${stringifyError(error)}`);
+  }
+}
+
+/**
+ * Internal implementation of getManyLatest without timeout wrapper.
+ * Separated to allow clean timeout handling at the function level.
+ */
+async function doGetManyLatest(input: { ids: string[] }): Promise<Result<Artifact[], string>> {
+  using db = await Deno.openKv(kvPath);
   const artifacts: Artifact[] = [];
 
   for (const id of input.ids) {
