@@ -24,7 +24,7 @@ jobs:
       id-token: "write"
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Build Docker Images
         id: build-image
@@ -63,7 +63,7 @@ jobs:
           docker push -a "$GAR_LOCATION-docker.pkg.dev/$PROJECT_NAME/$REPOSITORY/$REPOSITORY-web-client"
 
       - name: Fetch tempest-kustomize repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           repository: tempestteam/tempest-kustomize
           token: ${{ secrets.PAT }}

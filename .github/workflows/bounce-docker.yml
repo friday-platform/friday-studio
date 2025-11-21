@@ -24,7 +24,7 @@ jobs:
     name: Build and Publish Bounce
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Build Docker Image
         id: build-image
@@ -54,7 +54,7 @@ jobs:
           docker push -a "$GAR_LOCATION-docker.pkg.dev/$PROJECT_NAME/$REPOSITORY/$IMAGE_NAME"
 
       - name: Fetch tempest-kustomize repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           repository: tempestteam/tempest-kustomize
           token: ${{ secrets.PAT }}
