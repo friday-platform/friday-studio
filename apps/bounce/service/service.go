@@ -52,7 +52,7 @@ type service struct {
 
 func New(cfg Config) *service {
 	logger := Logger(cfg)
-	logger.Debug("Creating service", "config", cfg)
+	logger.Debug("Creating service")
 
 	return &service{
 		cfg:       cfg,
