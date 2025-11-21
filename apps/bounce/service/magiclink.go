@@ -12,7 +12,7 @@ import (
 	pgxerr "github.com/tempestteam/atlas/pkg/x/pgxhelper"
 )
 
-const MAGIC_LINK_SENDGRID_TEMPLATE_ID = "d-fe853da3d694420d82c4f12fb6f9bc4b"
+const MAGIC_LINK_SENDGRID_TEMPLATE_ID = "d-2dfcc0e1598c4bdabc5254649f2a7153"
 
 type magicLinkRequest struct {
 	Payload struct {
