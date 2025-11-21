@@ -149,6 +149,8 @@ let submitted = $state(false);
   }
 
   aside {
+    display: none;
+
     align-items: center;
     border-inline-end: var(--size-px) solid var(--border-1);
     background: linear-gradient(180deg, #e3e7f1 0%, #faf4ed 54.93%, #fbfbf6 106.67%);
@@ -158,7 +160,6 @@ let submitted = $state(false);
       color(display-p3 0.9765 0.9569 0.9333) 54.93%,
       color(display-p3 0.9843 0.9843 0.9647) 106.67%
     );
-    display: flex;
     flex-direction: column;
     gap: var(--size-12);
     justify-content: center;
@@ -166,6 +167,7 @@ let submitted = $state(false);
     padding-inline: var(--size-8);
 
     @media (min-width: 1024px) {
+      display: flex;
       grid-column: 1;
       grid-row: 1;
     }
@@ -208,8 +210,7 @@ let submitted = $state(false);
   }
 
   section {
-    block-size: calc(100dvh - var(--size-32));
-    min-block-size: fit-content;
+    min-block-size: 100dvh;
     display: grid;
     grid-template-rows: 1fr auto;
     padding: var(--size-8);

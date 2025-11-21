@@ -20,17 +20,13 @@ export const actions: Actions = {
         body: JSON.stringify({ email: input.data.email }),
       });
 
-      if (!response.ok) {
-        throw new Error(`Bounce API returned ${response.status}`);
+      if (!response.ok && response.status !== 409 && response.status !== 425) {
+        console.error(`Bounce API returned ${response.status}`);
       }
-
-      redirect(303, `/signup-confirmation?email=${encodeURIComponent(input.data.email)}`);
     } catch (error) {
-      if (error instanceof Response && error.status >= 300 && error.status < 400) {
-        throw error;
-      }
       console.error("Signup error:", error);
-      return fail(500, { message: "Failed to complete signup" });
     }
+
+    redirect(303, `/signup-confirmation?email=${encodeURIComponent(input.data.email)}`);
   },
 };
