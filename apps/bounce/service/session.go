@@ -71,7 +71,7 @@ func NewTempestClaims(userID, email string) (*TempestClaims, error) {
 	return &TempestClaims{
 		claims: &Claims{
 			RegisteredClaims: jwt.RegisteredClaims{
-				Audience:  jwt.ClaimStrings{"tempest"},
+				Audience:  jwt.ClaimStrings{"atlas"},
 				Subject:   userID,
 				NotBefore: jwt.NewNumericDate(time.Now()),
 				IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -132,10 +132,6 @@ func (c *TempestClaims) SignedString(keyContent string) (string, error) {
 // useful while we transition from supabase/auth to our own auth system.
 func (c *TempestClaims) SetTempestUserID(id string) {
 	c.claims.UserMetadata["tempest_user_id"] = id
-}
-
-func (c *TempestClaims) SetTempestAuthUserId(id string) {
-	c.claims.UserMetadata["tempest_auth_user_id"] = id
 }
 
 func ParseTempestClaimsFromJWT(secret, accessToken string) (*TempestClaims, error) {
@@ -208,7 +204,6 @@ type SessionConfig struct {
 func SetNewSessionCookie(ctx context.Context, w http.ResponseWriter, cfg Config, sessionConfig *SessionConfig) error {
 	log := httplog.LogEntry(ctx)
 	tu := sessionConfig.User
-	au := sessionConfig.AuthUser
 
 	tc, err := NewTempestClaims(
 		tu.ID,
@@ -221,7 +216,6 @@ func SetNewSessionCookie(ctx context.Context, w http.ResponseWriter, cfg Config,
 	}
 
 	tc.SetTempestUserID(tu.ID)
-	tc.SetTempestAuthUserId(au.ID)
 
 	var amrErrs []error
 	for _, amr := range sessionConfig.AMREntries {

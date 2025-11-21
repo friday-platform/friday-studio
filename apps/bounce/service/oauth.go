@@ -484,7 +484,6 @@ func (p oauthProvider) authCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	tc.SetTempestUserID(tempestUser.ID)
-	tc.SetTempestAuthUserId(authUser.ID)
 	amrErr := tc.SetAMR(&AMREntry{
 		Method:    "oauth2",
 		Provider:  "google",
