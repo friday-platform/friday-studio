@@ -16,6 +16,7 @@ const ctx = getAppContext();
 let spaces = $state<WorkspacesListResponse>([]);
 
 let mounted = $state(false);
+let isDesktop = $state(__TAURI_BUILD__);
 
 async function loadSpaces() {
   try {
@@ -37,6 +38,9 @@ async function loadSpaces() {
 
 onMount(() => {
   mounted = true;
+  if (typeof window !== "undefined" && "__TAURI__" in window) {
+    isDesktop = true;
+  }
   loadSpaces();
   ctx.setWorkspacesRefreshCallback(loadSpaces);
 });
@@ -96,6 +100,16 @@ onMount(() => {
 						<span class="text">Settings</span>
 					</a>
 				</li>
+
+				{#if !isDesktop}
+					<li>
+						<a href="/logout" class="sidebar-item">
+							<Icons.LogOut />
+
+							<span class="text">Logout</span>
+						</a>
+					</li>
+				{/if}
 			</ul>
 
 			<span class="spaces-header">

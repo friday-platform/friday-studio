@@ -12,6 +12,7 @@ import EyeClosed from "./eye-closed.svelte";
 import Folder from "./folder.svelte";
 import Globe from "./globe.svelte";
 import Image from "./image.svelte";
+import LogOut from "./log-out.svelte";
 import Paperclip from "./paperclip.svelte";
 import Pause from "./pause.svelte";
 import Pencil from "./pencil.svelte";
@@ -37,6 +38,7 @@ export const Icons = {
   Folder,
   Globe,
   Image,
+  LogOut,
   Paperclip,
   Pause,
   Pencil,

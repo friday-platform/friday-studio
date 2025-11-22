@@ -149,9 +149,7 @@ func (s *service) routes(r *chi.Mux) *chi.Mux {
 			r.Post("/", sendMagicLink)
 			r.Get("/verify", verifyMagicLink)
 		})
-		r.Route("/logout", func(r chi.Router) {
-			r.Get("/", logout)
-		})
+		r.Get("/logout", logout)
 	})
 
 	return r

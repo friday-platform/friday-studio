@@ -2,6 +2,7 @@ package service
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/httplog/v2"
 )
@@ -18,5 +19,8 @@ func logout(w http.ResponseWriter, r *http.Request) {
 	}
 
 	DeleteTempestTokenCookie(&cfg, w)
-	http.Redirect(w, r, "/login", http.StatusSeeOther)
+
+	// Redirect to the login page
+	redirectURL := strings.TrimRight(cfg.AuthUIURL, "/") + "/login"
+	http.Redirect(w, r, redirectURL, http.StatusSeeOther)
 }
