@@ -695,7 +695,11 @@ export const conversationAgent = createAgent({
       },
     });
 
-    pipeUIMessageStream(persistStreamMessage, stream).catch((pipeError) => {
+    /**
+     * Even though this doesn't return a value, it *must* be awaited otherwise
+     * the pipe will break before the LLM has a chance to respond.
+     */
+    await pipeUIMessageStream(persistStreamMessage, stream).catch((pipeError) => {
       logger.error("pipeUIMessageStream failed", { error: pipeError });
 
       const apiError = parseAPICallError(pipeError);
