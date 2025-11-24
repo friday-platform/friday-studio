@@ -13,6 +13,6 @@
     "@std/testing": "npm:@jsr/std__testing@^1.0.0",
     "@std/yaml": "npm:@jsr/std__yaml@^1.0.9",
     "ai": "npm:ai@^5.0.93",
-    "zod": "^4.1.11"
+    "zod": "^4.1.13"
   }
 }

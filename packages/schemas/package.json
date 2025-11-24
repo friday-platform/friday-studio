@@ -3,5 +3,5 @@
   "version": "1.0.0",
   "type": "module",
   "exports": { "./library": "./src/library.ts" },
-  "dependencies": { "zod": "^4.1.12" }
+  "dependencies": { "zod": "^4.1.13" }
 }

@@ -9,7 +9,7 @@
     "@atlas/utils": "workspace:*",
     "@std/path": "npm:@jsr/std__path@^1.1.2",
     "@std/yaml": "npm:@jsr/std__yaml@^1.0.10",
-    "zod": "^4.1.12"
+    "zod": "^4.1.13"
   },
   "devDependencies": {}
 }
