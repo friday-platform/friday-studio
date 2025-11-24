@@ -198,6 +198,14 @@ export const handler = async (argv: StartArgs): Promise<void> => {
       logger.debug("No ATLAS_NPX_PATH configured, MCP servers using npx may not work");
     }
 
+    // Check for ATLAS_NODE_PATH and augment PATH if needed (for bundled claude-code agent)
+    const nodePath = Deno.env.get("ATLAS_NODE_PATH");
+    if (nodePath) {
+      await augmentPathWithTool(nodePath, "node");
+    } else {
+      logger.debug("No ATLAS_NODE_PATH configured, bundled claude-code agent may not work");
+    }
+
     // Check for ATLAS_KEY and fetch credentials if present
     const atlasKey = Deno.env.get("ATLAS_KEY");
     const localOnlyMode = isLocalOnlyMode(Deno.env.get("ATLAS_LOCAL_ONLY"));

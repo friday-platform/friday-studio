@@ -274,6 +274,40 @@ async fn save_atlas_npx_path() -> IPCResult {
     .unwrap_or_else(|e| IPCResult::error(format!("Task failed: {}", e)))
 }
 
+// Save Atlas Node path - finds the actual full path to node (for bundled claude-code agent)
+#[tauri::command]
+async fn save_atlas_node_path() -> IPCResult {
+    tokio::task::spawn_blocking(|| {
+        match find_binary_path("node") {
+            Some(node_path) => {
+                // Save to .env with full path
+                let mut env_vars = match read_env_file() {
+                    Ok(vars) => vars,
+                    Err(e) => return IPCResult::error(e),
+                };
+
+                env_vars.insert("ATLAS_NODE_PATH".to_string(), node_path.clone());
+
+                match write_env_file(env_vars) {
+                    Ok(_) => IPCResult::success(format!("Node path saved: {}", node_path)),
+                    Err(e) => IPCResult::error(e),
+                }
+            }
+            None => IPCResult {
+                success: true,
+                message: Some(
+                    "Node not found. Bundled claude-code agent will not work.\n\
+                     Install Node.js from https://nodejs.org"
+                        .to_string(),
+                ),
+                error: None,
+            },
+        }
+    })
+    .await
+    .unwrap_or_else(|e| IPCResult::error(format!("Task failed: {}", e)))
+}
+
 // Save Atlas UV path - finds the actual full path to uv
 #[tauri::command]
 async fn save_atlas_uv_path() -> IPCResult {
@@ -1253,6 +1287,7 @@ pub fn run() {
             create_atlas_dir,
             check_existing_api_key,
             save_atlas_npx_path,
+            save_atlas_node_path,
             save_atlas_uv_path,
             save_atlas_key,
             install_atlas_binary,

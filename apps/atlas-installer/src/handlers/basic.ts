@@ -6,10 +6,12 @@ import type {
   DirectoryResult,
   IPCHandler,
   IPCResult,
+  NodePathResult,
   NpxPathResult,
   PlatformInfo,
 } from "../types";
 import { createLogger } from "../utils/logger";
+import { findNodePath } from "../utils/node-detector";
 import { findNpxPath } from "../utils/npx-detector";
 
 const logger = createLogger("BasicHandlers");
@@ -119,6 +121,59 @@ export const saveAtlasNpxPathHandler: IPCHandler<
   } catch (err) {
     logger.error("Failed to save NPX path", err);
     return { ...handleError(err), npxPath: undefined };
+  }
+};
+
+/**
+ * Save Node path to .env file (for bundled claude-code agent)
+ */
+export const saveAtlasNodePathHandler: IPCHandler<
+  [],
+  NodePathResult
+> = async (): Promise<NodePathResult> => {
+  try {
+    const atlasDir = path.join(os.homedir(), ".atlas");
+    const envFile = path.join(atlasDir, ".env");
+
+    // Ensure directory exists
+    if (!fs.existsSync(atlasDir)) {
+      fs.mkdirSync(atlasDir, { recursive: true });
+    }
+
+    // Find Node path
+    const nodePath = findNodePath();
+    if (!nodePath) {
+      logger.warn("Node not found on system");
+      return {
+        success: true,
+        message: "Node not found, skipping Node path configuration",
+      } as NodePathResult;
+    }
+
+    logger.info(`Found Node at: ${nodePath}`);
+
+    // Read existing .env content or create new
+    let envContent = "";
+    if (fs.existsSync(envFile)) {
+      envContent = fs.readFileSync(envFile, "utf8");
+    }
+
+    // Update or add ATLAS_NODE_PATH
+    const nodePathLine = `ATLAS_NODE_PATH=${nodePath}`;
+    if (envContent.includes("ATLAS_NODE_PATH=")) {
+      envContent = envContent.replace(/ATLAS_NODE_PATH=.*$/m, nodePathLine);
+    } else {
+      envContent = `${envContent.trim() + (envContent ? "\n" : "") + nodePathLine}\n`;
+    }
+
+    // Write back to file
+    fs.writeFileSync(envFile, envContent, "utf8");
+    logger.info(`Saved Node path to ${envFile}`);
+
+    return { success: true, nodePath, message: `Node path saved: ${nodePath}` };
+  } catch (err) {
+    logger.error("Failed to save Node path", err);
+    return { ...handleError(err), nodePath: undefined };
   }
 };
 
