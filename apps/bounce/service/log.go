@@ -16,8 +16,6 @@ func Logger(cfg Config) *httplog.Logger {
 		JSON:            true,
 		LevelFieldName:  "severity",
 		TimeFieldFormat: time.RFC3339,
-		QuietDownRoutes: []string{"/healthz"},
-		QuietDownPeriod: 30 * time.Second,
 		SourceFieldName: "sloc",
 	}
 

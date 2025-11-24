@@ -68,7 +68,7 @@ func New(cfg Config) *service {
 func (s *service) routes(r *chi.Mux) *chi.Mux {
 	r.Use(ConfigCtxMiddleware(s.cfg))
 	r.Use(middleware.RealIP)
-	r.Use(httplog.RequestLogger(s.Logger))
+	r.Use(httplog.RequestLogger(s.Logger, []string{"/healthz"}))
 	r.Use(middleware.Heartbeat("/healthz"))
 	r.Use(secure.NoSniff)
 	r.Use(secure.PermissionsPolicy)
