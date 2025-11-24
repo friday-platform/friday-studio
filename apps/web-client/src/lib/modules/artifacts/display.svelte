@@ -36,18 +36,20 @@ $effect(() => {
 
 <MessageWrapper>
 	{#if artifact}
-		{#if artifact.type === 'calendar-schedule'}
-			<Schedule
-				events={artifact.data.events}
-				source={artifact.data.source}
-				sourceUrl={artifact.data.sourceUrl}
-			/>
-		{:else if artifact.type === 'summary'}
-			<Summary data={artifact.data} />
-		{:else if artifact.type === 'slack-summary'}
-			<Summary data={artifact.data} source="slack" />
-		{:else if artifact.type === 'workspace-plan'}
-			<WorkspacePlan workspacePlan={artifact.data} />
-		{/if}
+		<div id={`artifact-${artifactId}`}>
+			{#if artifact.type === 'calendar-schedule'}
+				<Schedule
+					events={artifact.data.events}
+					source={artifact.data.source}
+					sourceUrl={artifact.data.sourceUrl}
+				/>
+			{:else if artifact.type === 'summary'}
+				<Summary data={artifact.data} />
+			{:else if artifact.type === 'slack-summary'}
+				<Summary data={artifact.data} source="slack" />
+			{:else if artifact.type === 'workspace-plan'}
+				<WorkspacePlan workspacePlan={artifact.data} />
+			{/if}
+		</div>
 	{/if}
 </MessageWrapper>

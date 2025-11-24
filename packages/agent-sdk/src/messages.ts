@@ -15,29 +15,6 @@ import { z } from "zod";
 import type { AtlasTools } from "./types.ts";
 
 /**
- * Atlas data events - consolidated session and user message events.
- * Used to type UI messages streamed between agents and clients.
- */
-export type AtlasDataEvents = {
-  "session-start": { sessionId: string; signalId: string; workspaceId: string };
-  "session-finish": {
-    sessionId: string;
-    workspaceId: string;
-    status?: string;
-    duration?: number;
-    source?: string;
-  };
-  "session-cancel": { sessionId: string; workspaceId: string; reason?: string };
-  "agent-start": { agentId: string; task: string };
-  "agent-finish": { agentId: string; duration: number };
-  "agent-error": { agentId: string; duration: number; error: string };
-  "agent-timeout": { agentId: string; task: string; duration: number; error: string };
-  error: { error: string; errorCause: unknown };
-  "user-message": { content: string };
-  "tool-progress": { toolName: string; content: string };
-};
-
-/**
  * Zod schemas for Atlas data events.
  * Used for runtime validation of data parts in UI messages.
  */
@@ -71,6 +48,33 @@ export const AtlasDataEventSchemas = {
   error: z.object({ error: z.string(), errorCause: z.unknown() }),
   "user-message": z.object({ content: z.string() }),
   "tool-progress": z.object({ toolName: z.string(), content: z.string() }),
+  "outline-update": z.object({
+    id: z.string(),
+    title: z.string(),
+    icon: z.string().optional(),
+    content: z.string().optional(),
+    artifactId: z.string().optional(),
+    artifactLabel: z.string().optional(),
+    timestamp: z.number().optional(),
+  }),
+};
+
+/**
+ * Atlas data events - consolidated session and user message events.
+ * Used to type UI messages streamed between agents and clients.
+ */
+export type AtlasDataEvents = {
+  "session-start": z.infer<(typeof AtlasDataEventSchemas)["session-start"]>;
+  "session-finish": z.infer<(typeof AtlasDataEventSchemas)["session-finish"]>;
+  "session-cancel": z.infer<(typeof AtlasDataEventSchemas)["session-cancel"]>;
+  "agent-start": z.infer<(typeof AtlasDataEventSchemas)["agent-start"]>;
+  "agent-finish": z.infer<(typeof AtlasDataEventSchemas)["agent-finish"]>;
+  "agent-error": z.infer<(typeof AtlasDataEventSchemas)["agent-error"]>;
+  "agent-timeout": z.infer<(typeof AtlasDataEventSchemas)["agent-timeout"]>;
+  error: z.infer<(typeof AtlasDataEventSchemas)["error"]>;
+  "user-message": z.infer<(typeof AtlasDataEventSchemas)["user-message"]>;
+  "tool-progress": z.infer<(typeof AtlasDataEventSchemas)["tool-progress"]>;
+  "outline-update": z.infer<(typeof AtlasDataEventSchemas)["outline-update"]>;
 };
 
 /**

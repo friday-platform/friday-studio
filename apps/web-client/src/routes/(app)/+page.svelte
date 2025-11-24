@@ -10,6 +10,7 @@ import { Icons } from "$lib/components/icons";
 import { IconSmall } from "$lib/components/icons/small";
 import Textarea from "$lib/components/textarea.svelte";
 import DisplayArtifact from "$lib/modules/artifacts/display.svelte";
+import Outline from "$lib/modules/conversation/outline.svelte";
 import ErrorMessage from "$lib/modules/messages/error-message.svelte";
 import FlexibleContainer from "$lib/modules/messages/flexible-container.svelte";
 import { formatMessage } from "$lib/modules/messages/format";
@@ -109,48 +110,66 @@ $effect(() => {
 			bind:this={scrollContainer}
 			onscroll={handleScroll}
 		>
-			<div class="messages-inner">
-				<FlexibleContainer>
-					<div class="first-message">
-						<h2>Welcome</h2>
-						<p>
-							Welcome to Atlas. I can help turn your ideas into action. <br />What would you like to
-							work on today?
-						</p>
-					</div>
-				</FlexibleContainer>
+			<div
+				class="messages-container"
+				class:has-outline={chatContext.chat?.messages.some((msg) =>
+					msg.parts.some((part) => part.type === 'data-outline-update')
+				)}
+			>
+				<div class="messages-inner">
+					<FlexibleContainer>
+						<div class="first-message">
+							<h2>Welcome</h2>
+							<p>
+								Welcome to Atlas. I can help turn your ideas into action. <br />What would you like
+								to work on today?
+							</p>
+						</div>
+					</FlexibleContainer>
 
-				{#each chatContext.chat?.messages as messageContainer (messageContainer.id)}
-					{#each messageContainer.parts as message, index (index)}
-						{@const formattedMessage = formatMessage(messageContainer, message)}
+					{#each chatContext.chat?.messages as messageContainer (messageContainer.id)}
+						{#each messageContainer.parts as message, index (index)}
+							{@const formattedMessage = formatMessage(messageContainer, message)}
 
-						{#if formattedMessage && (formattedMessage.type === 'request' || formattedMessage.type === 'text')}
-							<Message message={formattedMessage} />
-						{:else if formattedMessage && formattedMessage.type === 'tool_call' && formattedMessage.metadata?.toolName === 'table_output' && formattedMessage.metadata?.result}
-							<Table
-								data={formattedMessage.metadata.result as {
-									data: { headers: string[]; rows: Record<string, string | number>[] };
-								}}
-							/>
-						{:else if formattedMessage && formattedMessage.type === 'tool_call' && formattedMessage.metadata?.toolName === 'display_artifact' && formattedMessage.metadata?.artifactId}
-							<DisplayArtifact artifactId={formattedMessage.metadata.artifactId as string} />
-						{:else if formattedMessage && formattedMessage.type === 'error'}
-							<ErrorMessage message={formattedMessage} />
-						{/if}
+							{#if formattedMessage && (formattedMessage.type === 'request' || formattedMessage.type === 'text')}
+								<Message message={formattedMessage} />
+							{:else if formattedMessage && formattedMessage.type === 'tool_call' && formattedMessage.metadata?.toolName === 'table_output' && formattedMessage.metadata?.result}
+								<Table
+									data={formattedMessage.metadata.result as {
+										data: { headers: string[]; rows: Record<string, string | number>[] };
+									}}
+								/>
+							{:else if formattedMessage && formattedMessage.type === 'tool_call' && formattedMessage.metadata?.toolName === 'display_artifact' && formattedMessage.metadata?.artifactId}
+								<DisplayArtifact artifactId={formattedMessage.metadata.artifactId as string} />
+							{:else if formattedMessage && formattedMessage.type === 'error'}
+								<ErrorMessage message={formattedMessage} />
+							{/if}
+						{/each}
 					{/each}
-				{/each}
 
-				{#if chatContext.chat?.status === 'streaming' || chatContext.chat?.status === 'submitted'}
-					<Progress
-						actions={actionsAfterLastUser.parts}
-						timestamp={actionsAfterLastUser.timestamp}
-					/>
-				{/if}
+					{#if chatContext.chat?.status === 'streaming' || chatContext.chat?.status === 'submitted'}
+						<Progress
+							actions={actionsAfterLastUser.parts}
+							timestamp={actionsAfterLastUser.timestamp}
+						/>
+					{/if}
+				</div>
+
+				<Outline
+					messages={(chatContext.chat?.messages ?? [])
+						.filter((msg) => msg.role === 'assistant')
+						.filter((msg) => msg.parts.some((part) => part.type === 'data-outline-update'))}
+				/>
 			</div>
 
 			<div class="spacer"></div>
 
-			<div class="interactive-container">
+			<div
+				class="interactive-container"
+				class:has-outline={chatContext.chat?.messages.some((msg) =>
+					msg.parts.some((part) => part.type === 'data-outline-update')
+				)}
+			>
 				<div class="interactive-container-int">
 					<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 					<form
@@ -427,6 +446,7 @@ $effect(() => {
 		padding-block: var(--size-10) var(--size-16);
 		position: relative;
 		scrollbar-width: thin;
+		scroll-behavior: smooth;
 	}
 
 	.background-blur {
@@ -449,12 +469,27 @@ $effect(() => {
 		}
 	}
 
+	.messages-container {
+		display: grid;
+		grid-template-columns: 1fr 0;
+		gap: 0;
+		margin-block-start: auto;
+		padding-block-end: var(--size-6);
+		transition:
+			grid-template-columns 450ms ease-in-out,
+			gap 450ms ease-in-out;
+
+		&.has-outline {
+			grid-template-columns: 1fr var(--size-56);
+			gap: var(--size-12);
+		}
+	}
+
 	.messages-inner {
 		display: flex;
 		flex-direction: column;
 		gap: var(--size-4);
-		margin-block-start: auto;
-		padding-block-end: var(--size-6);
+		overflow: hidden;
 	}
 
 	footer {
@@ -471,6 +506,8 @@ $effect(() => {
 	}
 
 	.interactive-container {
+		--local__translate-y: 0;
+		--local__translate-x: 0;
 		inline-size: 100%;
 		margin-inline: auto;
 		margin-block-end: auto;
@@ -480,9 +517,15 @@ $effect(() => {
 		position: sticky;
 		inset-block-end: 0;
 		z-index: var(--layer-2);
+		transform: translateY(var(--local__translate-y)) translateX(var(--local__translate-x));
 
 		.has-messages & {
-			transform: translateY(var(--size-4));
+			--local__translate-y: var(--size-4);
+			transition: transform 450ms ease-in-out;
+		}
+
+		&.has-outline {
+			--local__translate-x: calc(-1 * calc(var(--size-28) + var(--size-6)));
 			transition: transform 450ms ease-in-out;
 		}
 

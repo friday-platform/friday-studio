@@ -19,6 +19,7 @@ import { Client } from "@modelcontextprotocol/sdk/client";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import {
   createIdGenerator,
+  createUIMessageStream,
   generateText,
   jsonSchema,
   type ModelMessage,
@@ -244,135 +245,6 @@ export const conversationAgent = createAgent({
     if (!session.streamId) {
       throw new Error("Stream ID is required");
     }
-
-    /**
-     * Connect directly to the Atlas Agent server so that we can invoke agents and
-     * intercept streamed notifications to show their progress and status updates.
-     */
-    const { agentServer, agentServerTransport } = await getAgentServerClient(
-      session.streamId,
-      logger,
-    );
-    agentServer.setNotificationHandler(StreamContentNotificationSchema, (notification) => {
-      const { event } = notification.params;
-      // Event is validated by schema to have required structure
-      if (stream) {
-        // @ts-expect-error will be addressed during Chat
-        stream.emit(event);
-      }
-    });
-
-    // Track active agent invocations for cancellation
-    const activeMCPRequests = new Map<string, string>(); // agentName:invocationId -> requestId
-
-    // Handle cancellation - send notifications for all active agent invocations
-    if (abortSignal) {
-      abortSignal.addEventListener("abort", async () => {
-        logger.info("Conversation cancelled, notifying active agents", {
-          activeAgents: Array.from(activeMCPRequests.keys()),
-        });
-
-        for (const [key, requestId] of activeMCPRequests) {
-          const agentName = key.split(":")[0];
-          try {
-            const notification: CancellationNotification = {
-              method: "notifications/cancelled",
-              params: { requestId, reason: "Conversation cancelled by user" },
-            };
-            await agentServer.notification(notification);
-            logger.debug("Sent cancellation notification", { agentName, requestId });
-          } catch (error) {
-            logger.warn("Failed to send cancellation notification", {
-              error,
-              requestId,
-              agentName,
-            });
-          }
-        }
-        activeMCPRequests.clear();
-      });
-    }
-
-    /**
-     * Register and transform all agents from the Agent Server for use
-     * by the conversation agent.
-     */
-    const { tools: agentTools } = await agentServer.listTools();
-    const agents: AtlasTools = {};
-    const agentNames: string[] = [];
-    for (const agent of agentTools) {
-      // Skip the conversation agent. The universe might implode.
-      if (agent.name === "conversation") continue;
-
-      agentNames.push(agent.name);
-
-      /**
-       * @hack
-       * Right now, we're stuffing session context into the input schema for the agent.
-       * This is because when I originally wrote it, I was unaware of the _meta property.
-       * Subsequently, I figured it out (see the requestId) but didn't yet move over
-       * the session context.
-       *
-       * The structured cloning and deletion of params is to trim those from the input schema
-       * that the conversation agent will have to generate since they're injected programatically.
-       */
-      const paramsSchema = structuredClone(agent.inputSchema);
-      delete paramsSchema.properties?._sessionContext;
-      paramsSchema.required = paramsSchema.required?.filter((r) => r !== "_sessionContext");
-
-      agents[agent.name] = tool({
-        name: agent.name,
-        description: agent.description,
-        // @ts-expect-error the JSON Schema output by the MCP SDK tool definition doesn't align with the AI SDK.
-        inputSchema: jsonSchema(paramsSchema),
-        execute: async (input) => {
-          const requestId = crypto.randomUUID();
-          const invocationId = crypto.randomUUID(); // Unique ID for this specific invocation
-          const trackingKey = `${agent.name}:${invocationId}`;
-
-          // Track this invocation for cancellation
-          activeMCPRequests.set(trackingKey, requestId);
-
-          try {
-            const result = await agentServer.callTool(
-              {
-                name: agent.name,
-                arguments: {
-                  ...input,
-                  _sessionContext: {
-                    sessionId: session.sessionId,
-                    workspaceId: session.workspaceId,
-                    userId: session.userId,
-                    streamId: session.streamId,
-                  },
-                },
-                _meta: { requestId }, // Pass requestId for cancellation correlation
-              },
-              undefined,
-              { timeout: 1_200_000 },
-            );
-            return { result };
-          } catch (error) {
-            logger.error("Agent invocation failed", { error, agentName: agent.name, requestId });
-            throw error; // Re-throw to maintain error propagation
-          } finally {
-            // Clean up tracking regardless of success/failure
-            activeMCPRequests.delete(trackingKey);
-          }
-        },
-      });
-    }
-
-    // Fetch workspaces and jobs for prompt injection
-    logger.info("Fetching workspaces and jobs for prompt injection");
-    const { workspaces, jobsByWorkspace } = await fetchWorkspacesAndJobs(logger);
-    const workspacesSection = formatWorkspacesAndJobsSection(workspaces, jobsByWorkspace);
-    const agentsSection = formatAgentsSection(agentNames);
-    logger.debug("Workspaces and agents sections prepared", {
-      workspaceCount: workspaces.length,
-      agentCount: agentNames.length,
-    });
-
     // Load and validate chat history
     let messages: AtlasUIMessage[] = [];
     const res = await parseResult(
@@ -384,166 +256,417 @@ export const conversationAgent = createAgent({
       logger.error("Failed to load chat history", { error: res.error });
     }
 
-    const allTools = { ...tools, ...conversationTools, ...agents };
-
-    // Load scratchpad context for automatic injection
-    const scratchpadContext = await fetchScratchpadContext(
+    /**
+     * Connect directly to the Atlas Agent server so that we can invoke agents and
+     * intercept streamed notifications to show their progress and status updates.
+     */
+    const { agentServer, agentServerTransport } = await getAgentServerClient(
       session.streamId,
       logger,
-      100, // Use full default limit for complete context
     );
-
-    // Estimate system prompt tokens to determine message history budget
-    const systemPrompt = getSystemPrompt(session.streamId, workspacesSection, agentsSection);
-    const datetimeMessage = `Current datetime (UTC): ${new Date().toISOString()}`;
-    const systemTokens =
-      estimateTokens(systemPrompt) + // Already includes workspacesSection + agentsSection
-      estimateTokens(scratchpadContext) +
-      estimateTokens(datetimeMessage);
-
-    // Calculate dynamic message budget based on actual system context
-    const MODEL_CONTEXT_LIMIT = 200_000;
-    const OUTPUT_RESERVE = 20_000; // Reserve for assistant response with extended thinking
-    const SAFETY_BUFFER = 10_000; // Margin for token estimation error
-
-    const dynamicMessageBudget =
-      MODEL_CONTEXT_LIMIT - systemTokens - OUTPUT_RESERVE - SAFETY_BUFFER;
-
-    logger.debug("Dynamic token budget allocation", {
-      modelLimit: MODEL_CONTEXT_LIMIT,
-      systemTokens,
-      outputReserve: OUTPUT_RESERVE,
-      safetyBuffer: SAFETY_BUFFER,
-      messagesBudget: dynamicMessageBudget,
-      budgetPercentage: ((dynamicMessageBudget / MODEL_CONTEXT_LIMIT) * 100).toFixed(1),
-    });
-
-    // Truncate message history to fit within dynamically calculated budget
-    const prunedModelMessages = processMessageHistory(
-      messages,
-      { maxTokens: dynamicMessageBudget },
-      logger,
-    );
-
-    logger.debug("Processed message history", {
-      originalCount: messages.length,
-      finalCount: prunedModelMessages.length,
-      removedMessages: messages.length - prunedModelMessages.length,
-    });
 
     // Store the original error if streamText fails
     let originalStreamError: unknown = null;
     let interceptedApiError: unknown = null;
-    let result: Awaited<ReturnType<typeof streamText>>;
-    let errorEmitted = false;
+    let finalText: string | undefined;
 
-    // Set up unhandled rejection interceptor to catch API errors that escape the SDK
-    // This is necessary because Vercel AI SDK doesn't properly propagate auth errors in streaming mode
-    const unhandledRejectionHandler = (event: PromiseRejectionEvent) => {
-      const error = event.reason;
-      // Check if this is an API error from the AI SDK
-      const apiError = parseAPICallError(error);
-      if (apiError) {
-        logger.error("Intercepted AI SDK API error", {
-          error: apiError,
-          statusCode: apiError.statusCode,
-          name: apiError.constructor?.name,
+    const persistStreamMessage = createUIMessageStream<AtlasUIMessage>({
+      originalMessages: messages,
+      onFinish: async ({ messages }) => {
+        if (!session.streamId) {
+          throw new Error("Stream ID is missing");
+        }
+        /**
+         * On the first two turns of the conversation, generate a title for the chat.
+         * This should give a title if the user starts with a filler message like "Hey" but
+         * also then further refine it based on the next turn, which should be more meaningful.
+         */
+        if (messages.length === 2 || messages.length === 4) {
+          const title = await generateChatTitle(messages, logger);
+          const titleResult = await parseResult(
+            client.chat[":chatId"].title.$patch({
+              param: { chatId: session.streamId },
+              json: { title },
+            }),
+          );
+
+          if (!titleResult.ok) {
+            logger.error("Failed to update chat title", { streamId: session.streamId, title });
+          }
+        }
+
+        // Store the assistant message to chat storage
+        // Get the last message which should be the assistant's response
+        const lastMessage = messages[messages.length - 1];
+        if (lastMessage && lastMessage.role === "assistant") {
+          const appendResult = await parseResult(
+            client.chat[":chatId"].message.$post({
+              param: { chatId: session.streamId },
+              json: { message: lastMessage },
+            }),
+          );
+          if (!appendResult.ok) {
+            logger.error("Failed to append assistant message to chat storage", {
+              streamId: session.streamId,
+              error: appendResult.error,
+            });
+          } else {
+            logger.debug("Assistant message persisted to chat storage", {
+              streamId: session.streamId,
+              messageId: lastMessage.id,
+            });
+          }
+        }
+      },
+      execute: async ({ writer }) => {
+        if (!session.streamId) {
+          throw new Error("Stream ID is required");
+        }
+
+        agentServer.setNotificationHandler(StreamContentNotificationSchema, (notification) => {
+          const { event } = notification.params;
+          // Event is validated by schema to have required structure
+          // @ts-expect-error will be addressed during Chat
+          writer.write(event);
         });
-        interceptedApiError = apiError;
-        // Prevent default logging to console
-        event.preventDefault();
-      }
-    };
 
-    // Add the handler before starting the stream
-    globalThis.addEventListener("unhandledrejection", unhandledRejectionHandler);
+        // Track active agent invocations for cancellation
+        const activeMCPRequests = new Map<string, string>(); // agentName:invocationId -> requestId
 
-    // Also try to catch process-level unhandled rejections (Node.js style)
-    const processHandler = (reason: unknown) => {
-      const apiError = parseAPICallError(reason);
-      if (apiError) {
-        logger.error("Process caught AI SDK API error", {
-          error: apiError,
-          statusCode: apiError.statusCode,
-        });
-        interceptedApiError = apiError;
-      }
-    };
+        // Handle cancellation - send notifications for all active agent invocations
+        if (abortSignal) {
+          abortSignal.addEventListener("abort", async () => {
+            logger.info("Conversation cancelled, notifying active agents", {
+              activeAgents: Array.from(activeMCPRequests.keys()),
+            });
 
-    if (process?.on) {
-      process.on("unhandledRejection", processHandler);
-    }
-
-    try {
-      try {
-        result = streamText({
-          model: registry.languageModel("anthropic:claude-sonnet-4-5"),
-          messages: [
-            {
-              role: ROLE_SYSTEM,
-              content: systemPrompt,
-              providerOptions: getDefaultProviderOpts("anthropic"),
-            },
-            { role: ROLE_SYSTEM, content: datetimeMessage },
-            // Add scratchpad context as third system message if it exists
-            ...(scratchpadContext ? [{ role: ROLE_SYSTEM, content: scratchpadContext }] : []),
-            ...prunedModelMessages,
-          ],
-          tools: allTools,
-          toolChoice: "auto",
-          stopWhen: stepCountIs(40),
-          maxOutputTokens: 20000,
-          experimental_transform: smoothStream({ chunking: "word" }),
-          maxRetries: 3, // Enable retries for API resilience (e.g., 529 errors)
-          abortSignal, // Pass the abort signal for cancellation
-          providerOptions: { anthropic: { thinking: { type: "enabled", budgetTokens: 25000 } } },
-          experimental_context: { conversationSessionId: session.sessionId },
-          // Pass telemetry config if provided in context
-          experimental_telemetry: telemetry ? { isEnabled: true, ...telemetry } : undefined,
-          onError: ({ error }) => {
-            if (!error) {
-              return;
+            for (const [key, requestId] of activeMCPRequests) {
+              const agentName = key.split(":")[0];
+              try {
+                const notification: CancellationNotification = {
+                  method: "notifications/cancelled",
+                  params: { requestId, reason: "Conversation cancelled by user" },
+                };
+                await agentServer.notification(notification);
+                logger.debug("Sent cancellation notification", { agentName, requestId });
+              } catch (error) {
+                logger.warn("Failed to send cancellation notification", {
+                  error,
+                  requestId,
+                  agentName,
+                });
+              }
             }
+            activeMCPRequests.clear();
+          });
+        }
 
-            logger.error("Stream chunk error in conversation agent", { error });
-            originalStreamError = originalStreamError ?? error;
+        /**
+         * Register and transform all agents from the Agent Server for use
+         * by the conversation agent.
+         */
+        const { tools: agentTools } = await agentServer.listTools();
+        const agents: AtlasTools = {};
+        const agentNames: string[] = [];
+        for (const agent of agentTools) {
+          // Skip the conversation agent. The universe might implode.
+          if (agent.name === "conversation") continue;
 
-            const apiError = parseAPICallError(error);
+          agentNames.push(agent.name);
+
+          /**
+           * @hack
+           * Right now, we're stuffing session context into the input schema for the agent.
+           * This is because when I originally wrote it, I was unaware of the _meta property.
+           * Subsequently, I figured it out (see the requestId) but didn't yet move over
+           * the session context.
+           *
+           * The structured cloning and deletion of params is to trim those from the input schema
+           * that the conversation agent will have to generate since they're injected programatically.
+           */
+          const paramsSchema = structuredClone(agent.inputSchema);
+          delete paramsSchema.properties?._sessionContext;
+          paramsSchema.required = paramsSchema.required?.filter((r) => r !== "_sessionContext");
+
+          agents[agent.name] = tool({
+            name: agent.name,
+            description: agent.description,
+            // @ts-expect-error the JSON Schema output by the MCP SDK tool definition doesn't align with the AI SDK.
+            inputSchema: jsonSchema(paramsSchema),
+            execute: async (input) => {
+              const requestId = crypto.randomUUID();
+              const invocationId = crypto.randomUUID(); // Unique ID for this specific invocation
+              const trackingKey = `${agent.name}:${invocationId}`;
+
+              // Track this invocation for cancellation
+              activeMCPRequests.set(trackingKey, requestId);
+
+              try {
+                const result = await agentServer.callTool(
+                  {
+                    name: agent.name,
+                    arguments: {
+                      ...input,
+                      _sessionContext: {
+                        sessionId: session.sessionId,
+                        workspaceId: session.workspaceId,
+                        userId: session.userId,
+                        streamId: session.streamId,
+                      },
+                    },
+                    _meta: { requestId }, // Pass requestId for cancellation correlation
+                  },
+                  undefined,
+                  { timeout: 1_200_000 },
+                );
+                return { result };
+              } catch (error) {
+                logger.error("Agent invocation failed", {
+                  error,
+                  agentName: agent.name,
+                  requestId,
+                });
+                throw error; // Re-throw to maintain error propagation
+              } finally {
+                // Clean up tracking regardless of success/failure
+                activeMCPRequests.delete(trackingKey);
+              }
+            },
+          });
+        }
+
+        // Fetch workspaces and jobs for prompt injection
+        logger.info("Fetching workspaces and jobs for prompt injection");
+        const { workspaces, jobsByWorkspace } = await fetchWorkspacesAndJobs(logger);
+        const workspacesSection = formatWorkspacesAndJobsSection(workspaces, jobsByWorkspace);
+        const agentsSection = formatAgentsSection(agentNames);
+        logger.debug("Workspaces and agents sections prepared", {
+          workspaceCount: workspaces.length,
+          agentCount: agentNames.length,
+        });
+
+        const allTools = { ...tools, ...conversationTools, ...agents };
+
+        // Load scratchpad context for automatic injection
+        const scratchpadContext = await fetchScratchpadContext(
+          session.streamId,
+          logger,
+          100, // Use full default limit for complete context
+        );
+
+        // Estimate system prompt tokens to determine message history budget
+        const systemPrompt = getSystemPrompt(session.streamId, workspacesSection, agentsSection);
+        const datetimeMessage = `Current datetime (UTC): ${new Date().toISOString()}`;
+        const systemTokens =
+          estimateTokens(systemPrompt) + // Already includes workspacesSection + agentsSection
+          estimateTokens(scratchpadContext) +
+          estimateTokens(datetimeMessage);
+
+        // Calculate dynamic message budget based on actual system context
+        const MODEL_CONTEXT_LIMIT = 200_000;
+        const OUTPUT_RESERVE = 20_000; // Reserve for assistant response with extended thinking
+        const SAFETY_BUFFER = 10_000; // Margin for token estimation error
+
+        const dynamicMessageBudget =
+          MODEL_CONTEXT_LIMIT - systemTokens - OUTPUT_RESERVE - SAFETY_BUFFER;
+
+        logger.debug("Dynamic token budget allocation", {
+          modelLimit: MODEL_CONTEXT_LIMIT,
+          systemTokens,
+          outputReserve: OUTPUT_RESERVE,
+          safetyBuffer: SAFETY_BUFFER,
+          messagesBudget: dynamicMessageBudget,
+          budgetPercentage: ((dynamicMessageBudget / MODEL_CONTEXT_LIMIT) * 100).toFixed(1),
+        });
+
+        // Truncate message history to fit within dynamically calculated budget
+        const prunedModelMessages = processMessageHistory(
+          messages,
+          { maxTokens: dynamicMessageBudget },
+          logger,
+        );
+
+        logger.debug("Processed message history", {
+          originalCount: messages.length,
+          finalCount: prunedModelMessages.length,
+          removedMessages: messages.length - prunedModelMessages.length,
+        });
+
+        let result: Awaited<ReturnType<typeof streamText>>;
+        let errorEmitted = false;
+
+        // Set up unhandled rejection interceptor to catch API errors that escape the SDK
+        // This is necessary because Vercel AI SDK doesn't properly propagate auth errors in streaming mode
+        const unhandledRejectionHandler = (event: PromiseRejectionEvent) => {
+          const error = event.reason;
+          // Check if this is an API error from the AI SDK
+          const apiError = parseAPICallError(error);
+          if (apiError) {
+            logger.error("Intercepted AI SDK API error", {
+              error: apiError,
+              statusCode: apiError.statusCode,
+              name: apiError.constructor?.name,
+            });
+            interceptedApiError = apiError;
+            // Prevent default logging to console
+            event.preventDefault();
+          }
+        };
+
+        // Add the handler before starting the stream
+        globalThis.addEventListener("unhandledrejection", unhandledRejectionHandler);
+
+        // Also try to catch process-level unhandled rejections (Node.js style)
+        const processHandler = (reason: unknown) => {
+          const apiError = parseAPICallError(reason);
+          if (apiError) {
+            logger.error("Process caught AI SDK API error", {
+              error: apiError,
+              statusCode: apiError.statusCode,
+            });
+            interceptedApiError = apiError;
+          }
+        };
+
+        if (process?.on) {
+          process.on("unhandledRejection", processHandler);
+        }
+
+        try {
+          try {
+            result = streamText({
+              model: registry.languageModel("anthropic:claude-sonnet-4-5"),
+              messages: [
+                {
+                  role: ROLE_SYSTEM,
+                  content: getSystemPrompt(session.streamId, workspacesSection, agentsSection),
+                  providerOptions: getDefaultProviderOpts("anthropic"),
+                },
+                {
+                  role: ROLE_SYSTEM,
+                  content: `Current datetime (UTC): ${new Date().toISOString()}`,
+                },
+                // Add scratchpad context as third system message if it exists
+                ...(scratchpadContext ? [{ role: ROLE_SYSTEM, content: scratchpadContext }] : []),
+                ...prunedModelMessages,
+              ],
+              tools: allTools,
+              toolChoice: "auto",
+              stopWhen: stepCountIs(40),
+              maxOutputTokens: 20000,
+              experimental_transform: smoothStream({ chunking: "word" }),
+              maxRetries: 3, // Enable retries for API resilience (e.g., 529 errors)
+              abortSignal, // Pass the abort signal for cancellation
+              providerOptions: {
+                anthropic: { thinking: { type: "enabled", budgetTokens: 25000 } },
+              },
+              experimental_context: { conversationSessionId: session.sessionId },
+              // Pass telemetry config if provided in context
+              experimental_telemetry: telemetry ? { isEnabled: true, ...telemetry } : undefined,
+              onFinish: ({ text }) => {
+                finalText = text;
+              },
+              onError: ({ error }) => {
+                if (!error) {
+                  return;
+                }
+
+                logger.error("Stream chunk error in conversation agent", { error });
+                originalStreamError = originalStreamError ?? error;
+
+                const apiError = parseAPICallError(error);
+                if (apiError) {
+                  interceptedApiError = apiError;
+                }
+
+                const errorCause = createErrorCause(error);
+                const displayMessage = getErrorDisplayMessage(errorCause);
+
+                if (stream && !errorEmitted) {
+                  writer.write({
+                    id: crypto.randomUUID(),
+                    type: "data-error",
+                    data: { error: displayMessage, errorCause },
+                  });
+                  errorEmitted = true;
+                }
+              },
+            });
+          } catch (streamTextError) {
+            // Catch synchronous errors from streamText (e.g., immediate API errors)
+            const apiError = parseAPICallError(streamTextError);
+            logger.error("Caught synchronous error from streamText", {
+              error: streamTextError,
+              statusCode: apiError?.statusCode,
+            });
+
+            // Check if it's an API error
             if (apiError) {
               interceptedApiError = apiError;
+
+              // Immediately handle the error
+              const errorCause = createErrorCause(apiError);
+              const displayMessage = getErrorDisplayMessage(errorCause);
+
+              if (stream && !errorEmitted) {
+                writer.write({
+                  id: crypto.randomUUID(),
+                  type: "data-error",
+                  data: { error: displayMessage, errorCause },
+                });
+                errorEmitted = true;
+              }
+
+              // Clean up and return
+              globalThis.removeEventListener("unhandledrejection", unhandledRejectionHandler);
             }
 
-            const errorCause = createErrorCause(error);
-            const displayMessage = getErrorDisplayMessage(errorCause);
+            // Re-throw if not an API error
+            throw streamTextError;
+          }
 
-            if (stream && !errorEmitted) {
-              stream.emit({
-                id: crypto.randomUUID(),
-                type: "data-error",
-                data: { error: displayMessage, errorCause },
-              });
-              errorEmitted = true;
-            }
-          },
-        });
-      } catch (streamTextError) {
-        // Catch synchronous errors from streamText (e.g., immediate API errors)
-        const apiError = parseAPICallError(streamTextError);
-        logger.error("Caught synchronous error from streamText", {
-          error: streamTextError,
-          statusCode: apiError?.statusCode,
-        });
+          // Track start timestamp for this agent invocation (only one assistant message per call)
+          let startTimestamp: string | undefined;
+          let endTimestamp: string | undefined;
 
-        // Check if it's an API error
-        if (apiError) {
-          interceptedApiError = apiError;
+          // Start piping the UI message stream immediately
+          // DO NOT consume the stream elsewhere - it's single-consumer only
+          writer.merge(
+            result.toUIMessageStream({
+              originalMessages: messages,
+              generateMessageId: createIdGenerator({ prefix: "msg", size: 8 }),
+              messageMetadata: (metadata) => {
+                // Set startTimestamp once on first chunk, then preserve it
+                if (!startTimestamp) {
+                  startTimestamp = new Date().toISOString();
+                }
 
-          // Immediately handle the error
-          const errorCause = createErrorCause(apiError);
+                if (metadata.part.type === "finish") {
+                  endTimestamp = new Date().toISOString();
+                }
+
+                return { ...metadata, startTimestamp, endTimestamp };
+              },
+            }),
+          );
+        } catch (error) {
+          // Handle API errors with user-friendly messages
+          // Use the intercepted API error first (actual auth error), then others
+          const actualError = interceptedApiError || originalStreamError || error;
+          const errorCause = createErrorCause(actualError);
           const displayMessage = getErrorDisplayMessage(errorCause);
 
+          logger.error("Conversation agent failed", {
+            error,
+            originalError: originalStreamError,
+            interceptedApiError: interceptedApiError,
+            errorCause,
+            displayMessage,
+          });
+
+          // Emit error message to stream so user can see it
           if (stream && !errorEmitted) {
-            stream.emit({
+            writer.write({
               id: crypto.randomUUID(),
               type: "data-error",
               data: { error: displayMessage, errorCause },
@@ -551,200 +674,47 @@ export const conversationAgent = createAgent({
             errorEmitted = true;
           }
 
-          // Clean up and return
-          globalThis.removeEventListener("unhandledrejection", unhandledRejectionHandler);
-          return { text: displayMessage, reasoning: "", executionFlow: [], toolCalls: [] };
-        }
-
-        // Re-throw if not an API error
-        throw streamTextError;
-      }
-
-      // Track start timestamp for this agent invocation (only one assistant message per call)
-      let startTimestamp: string | undefined;
-      let endTimestamp: string | undefined;
-
-      // Start piping the UI message stream immediately
-      // DO NOT consume the stream elsewhere - it's single-consumer only
-      const pipePromise = pipeUIMessageStream(
-        result.toUIMessageStream({
-          originalMessages: messages,
-          generateMessageId: createIdGenerator({ prefix: "msg", size: 8 }),
-          onFinish: async ({ messages }) => {
-            if (!session.streamId) {
-              throw new Error("Stream ID is missing");
-            }
-
-            /**
-             * On the first two turns of the conversation, generate a title for the chat.
-             * This should give a title if the user starts with a filler message like "Hey" but
-             * also then further refine it based on the next turn, which should be more meaningful.
-             */
-            if (messages.length === 2 || messages.length === 4) {
-              const title = await generateChatTitle(messages, logger);
-              const titleResult = await parseResult(
-                client.chat[":chatId"].title.$patch({
-                  param: { chatId: session.streamId },
-                  json: { title },
-                }),
-              );
-
-              if (!titleResult.ok) {
-                logger.error("Failed to update chat title", { streamId: session.streamId, title });
-              }
-            }
-
-            // Store the assistant message to chat storage
-            // Get the last message which should be the assistant's response
-            const lastMessage = messages[messages.length - 1];
-            if (lastMessage && lastMessage.role === "assistant") {
-              const appendResult = await parseResult(
-                client.chat[":chatId"].message.$post({
-                  param: { chatId: session.streamId },
-                  json: { message: lastMessage },
-                }),
-              );
-              if (!appendResult.ok) {
-                logger.error("Failed to append assistant message to chat storage", {
-                  streamId: session.streamId,
-                  error: appendResult.error,
-                });
-              } else {
-                logger.debug("Assistant message persisted to chat storage", {
-                  streamId: session.streamId,
-                  messageId: lastMessage.id,
-                });
-              }
-            }
-          },
-          messageMetadata: (metadata) => {
-            // Set startTimestamp once on first chunk, then preserve it
-            if (!startTimestamp) {
-              startTimestamp = new Date().toISOString();
-            }
-
-            if (metadata.part.type === "finish") {
-              endTimestamp = new Date().toISOString();
-            }
-
-            return { ...metadata, startTimestamp, endTimestamp };
-          },
-        }),
-        stream,
-      );
-
-      // Wait for both the text/reasoning and the pipe to complete
-      // This ensures all streaming events are emitted before we close MCP transport
-      let finalText: string;
-
-      try {
-        const [textResult, pipeResult] = await Promise.allSettled([result.text, pipePromise]);
-
-        // Check for pipe errors first - they indicate streaming failures
-        if (pipeResult.status === "rejected") {
-          const pipeError = pipeResult.reason;
-          logger.error("pipeUIMessageStream failed", { error: pipeError });
-
-          const apiError = parseAPICallError(pipeError);
-          if (apiError) {
-            interceptedApiError = apiError;
+          // Clean up MCP transport before returning error
+          try {
+            await agentServerTransport.close();
+            logger.info("Closed MCP transport after outer error");
+          } catch (closeError) {
+            logger.error("Failed to close MCP transport after outer error", { error: closeError });
           }
 
-          throw pipeError;
+          // Return error response instead of throwing
+        } finally {
+          // Remove the unhandled rejection handler to prevent memory leaks
+          globalThis.removeEventListener("unhandledrejection", unhandledRejectionHandler);
+
+          // Clean up process handler if it was added
+          if (process?.off) {
+            process.off("unhandledRejection", processHandler);
+          }
         }
+      },
+    });
 
-        // Check for text errors
-        if (textResult.status === "rejected") {
-          throw textResult.reason;
-        }
+    pipeUIMessageStream(persistStreamMessage, stream).catch((pipeError) => {
+      logger.error("pipeUIMessageStream failed", { error: pipeError });
 
-        finalText = textResult.status === "fulfilled" ? textResult.value : "";
-      } catch (streamError) {
-        // Handle error that occurs during stream consumption
-        // Use the most specific error available
-        const actualError = interceptedApiError || originalStreamError || streamError;
-
-        logger.error("Error consuming stream", {
-          error: streamError,
-          originalError: originalStreamError,
-          interceptedApiError: interceptedApiError,
-        });
-        const errorCause = createErrorCause(actualError);
-        const displayMessage = getErrorDisplayMessage(errorCause);
-
-        if (stream && !errorEmitted) {
-          stream.emit({
-            id: crypto.randomUUID(),
-            type: "data-error",
-            data: { error: displayMessage, errorCause },
-          });
-          errorEmitted = true;
-        }
-
-        // Clean up MCP before returning
-        try {
-          await agentServerTransport.close();
-          logger.info("Closed MCP transport after stream error");
-        } catch (closeError) {
-          logger.error("Failed to close MCP transport after error", { error: closeError });
-        }
-
-        return { text: displayMessage, reasoning: "", executionFlow: [], toolCalls: [] };
+      const apiError = parseAPICallError(pipeError);
+      if (apiError) {
+        interceptedApiError = apiError;
       }
 
-      // Successfully completed - close MCP transport now that streaming is done
-      try {
-        await agentServerTransport.close();
-        logger.info("Closed MCP transport after successful completion");
-      } catch (closeError) {
-        logger.error("Failed to close MCP transport", { error: closeError });
-      }
+      throw pipeError;
+    });
 
-      return { text: finalText };
-    } catch (error) {
-      // Handle API errors with user-friendly messages
-      // Use the intercepted API error first (actual auth error), then others
-      const actualError = interceptedApiError || originalStreamError || error;
-      const errorCause = createErrorCause(actualError);
-      const displayMessage = getErrorDisplayMessage(errorCause);
-
-      logger.error("Conversation agent failed", {
-        error,
-        originalError: originalStreamError,
-        interceptedApiError: interceptedApiError,
-        errorCause,
-        displayMessage,
-      });
-
-      // Emit error message to stream so user can see it
-      if (stream && !errorEmitted) {
-        stream.emit({
-          id: crypto.randomUUID(),
-          type: "data-error",
-          data: { error: displayMessage, errorCause },
-        });
-        errorEmitted = true;
-      }
-
-      // Clean up MCP transport before returning error
-      try {
-        await agentServerTransport.close();
-        logger.info("Closed MCP transport after outer error");
-      } catch (closeError) {
-        logger.error("Failed to close MCP transport after outer error", { error: closeError });
-      }
-
-      // Return error response instead of throwing
-      return { text: displayMessage, reasoning: "", executionFlow: [], toolCalls: [] };
-    } finally {
-      // Remove the unhandled rejection handler to prevent memory leaks
-      globalThis.removeEventListener("unhandledrejection", unhandledRejectionHandler);
-
-      // Clean up process handler if it was added
-      if (process?.off) {
-        process.off("unhandledRejection", processHandler);
-      }
+    // Successfully completed - close MCP transport now that streaming is done
+    try {
+      await agentServerTransport.close();
+      logger.info("Closed MCP transport after successful completion");
+    } catch (closeError) {
+      logger.error("Failed to close MCP transport", { error: closeError });
     }
+
+    return { text: finalText };
   },
   environment: {
     required: [{ name: "ANTHROPIC_API_KEY", description: "Claude API key" }],

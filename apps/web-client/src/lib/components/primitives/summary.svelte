@@ -11,24 +11,34 @@ const htmlContent = $derived(markdownToHTML(data));
 let isExpanded = $state(false);
 </script>
 
-<div class="component">
-	<header>
-		<h2>
-			{#if source === 'slack'}
-				<Icons.Slack />
-			{/if}
+<div class="wrapper">
+	<div class="component">
+		<header>
+			<h2>
+				{#if source === 'slack'}
+					<Icons.Slack />
+				{/if}
 
-			<span> Summary </span>
-		</h2>
+				<span> Summary </span>
+			</h2>
 
-		<button onclick={() => (isExpanded = !isExpanded)}>{isExpanded ? 'Collapse' : 'Expand'}</button>
-	</header>
-	<div class="summary" class:expanded={isExpanded}>
-		{@html htmlContent}
+			<button onclick={() => (isExpanded = !isExpanded)}
+				>{isExpanded ? 'Collapse' : 'Expand'}</button
+			>
+		</header>
+		<div class="summary" class:expanded={isExpanded}>
+			{@html htmlContent}
+		</div>
 	</div>
 </div>
 
 <style>
+	.wrapper {
+		inline-size: var(--size-160);
+		margin-inline: auto;
+		padding-inline: var(--size-8);
+	}
+
 	.component {
 		border: var(--size-px) solid color-mix(in oklch, var(--color-border-1), transparent 50%);
 		border-radius: var(--radius-4);

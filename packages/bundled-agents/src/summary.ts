@@ -16,6 +16,9 @@ import { generateText, stepCountIs } from "ai";
 
 type Result = { artifactRefs: ArtifactRef[] | null };
 
+const icon =
+  "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTYiIGhlaWdodD0iMTYiIHZpZXdCb3g9IjAgMCAxNiAxNiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGcgb3BhY2l0eT0iMC41Ij4KPHJlY3Qgd2lkdGg9IjE2IiBoZWlnaHQ9IjE2IiBmaWxsPSJ3aGl0ZSIgc3R5bGU9ImZpbGw6d2hpdGU7ZmlsbC1vcGFjaXR5OjE7Ii8+CjxwYXRoIGQ9Ik0xMS40MDA0IDIuMjYzNjdDMTIuNjkxMiAyLjI2Mzg4IDEzLjczODMgMy4zMTA3MyAxMy43MzgzIDQuNjAxNTZWMTEuNDAxNEMxMy43MzgxIDEyLjY5MiAxMi42OTEgMTMuNzM5IDExLjQwMDQgMTMuNzM5M0g0LjYwMDU5QzMuMzA5NzUgMTMuNzM5MyAyLjI2MjkxIDEyLjY5MjIgMi4yNjI3IDExLjQwMTRWNC42MDE1NkMyLjI2MjcgMy4zMTA2IDMuMzA5NjIgMi4yNjM2NyA0LjYwMDU5IDIuMjYzNjdIMTEuNDAwNFpNNC42MDA1OSAzLjUzOTA2QzQuMDEzNzggMy41MzkwNiAzLjUzODA5IDQuMDE0NzYgMy41MzgwOSA0LjYwMTU2VjExLjQwMTRDMy41MzgzIDExLjk4OCA0LjAxMzkxIDEyLjQ2MzkgNC42MDA1OSAxMi40NjM5SDExLjQwMDRDMTEuOTg2OSAxMi40NjM3IDEyLjQ2MjcgMTEuOTg3OSAxMi40NjI5IDExLjQwMTRWNC42MDE1NkMxMi40NjI5IDQuMDE0ODkgMTEuOTg3IDMuNTM5MjcgMTEuNDAwNCAzLjUzOTA2SDQuNjAwNTlaTTguODQ5NjEgOS45MTMwOUM5LjIwMTYzIDkuOTEzMDkgOS40ODcyIDEwLjE5ODggOS40ODczIDEwLjU1MDhDOS40ODczIDEwLjkwMjkgOS4yMDE2OSAxMS4xODg1IDguODQ5NjEgMTEuMTg4NUg1LjQ0OTIyQzUuMDk3NSAxMS4xODgxIDQuODEyNSAxMC45MDI2IDQuODEyNSAxMC41NTA4QzQuODEyNjEgMTAuMTk5IDUuMDk3NTYgOS45MTM1MSA1LjQ0OTIyIDkuOTEzMDlIOC44NDk2MVpNMTAuNTQ5OCA3LjM2MzI4QzEwLjkwMTkgNy4zNjMyOCAxMS4xODc1IDcuNjQ4ODkgMTEuMTg3NSA4LjAwMDk4QzExLjE4NzUgOC4zNTMwNiAxMC45MDE5IDguNjM4NjcgMTAuNTQ5OCA4LjYzODY3SDUuNDUwMkM1LjA5ODIgOC42Mzg1NyA0LjgxMjUgOC4zNTI5OSA0LjgxMjUgOC4wMDA5OEM0LjgxMjUgNy42NDg5NiA1LjA5ODIgNy4zNjMzOSA1LjQ1MDIgNy4zNjMyOEgxMC41NDk4Wk01Ljg3NSA0LjYwMDU5QzYuMzQ0NDQgNC42MDA1OSA2LjcyNDYxIDQuOTgxNzMgNi43MjQ2MSA1LjQ1MTE3QzYuNzI0NSA1LjkyMDUyIDYuMzQ0MzggNi4zMDA3OCA1Ljg3NSA2LjMwMDc4QzUuNDA1NjIgNi4zMDA3OCA1LjAyNTUgNS45MjA1MiA1LjAyNTM5IDUuNDUxMTdDNS4wMjUzOSA0Ljk4MTczIDUuNDA1NTYgNC42MDA1OSA1Ljg3NSA0LjYwMDU5WiIgZmlsbD0iIzE4MUMyRiIgc3R5bGU9ImZpbGw6IzE4MUMyRjtmaWxsOmNvbG9yKGRpc3BsYXktcDMgMC4wOTQxIDAuMTA5OCAwLjE4NDMpO2ZpbGwtb3BhY2l0eToxOyIvPgo8L2c+Cjwvc3ZnPgo=";
+
 export const summaryAgent = createAgent({
   id: "get-summary",
   displayName: "Summarizer",
@@ -103,6 +106,18 @@ export const summaryAgent = createAgent({
       if (!artifactRefs || artifactRefs.length === 0) {
         throw new Error("Failed to return an artifact id in the response");
       }
+
+      stream?.emit({
+        type: "data-outline-update",
+        data: {
+          id: "workspace-summary",
+          title: "Plan Summary",
+          icon,
+          timestamp: Date.now(),
+          artifactId: artifactRefs?.[0]?.id,
+          artifactLabel: "View Plan",
+        },
+      });
 
       return { artifactRefs };
     } catch (error) {
