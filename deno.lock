@@ -81,7 +81,7 @@
     "npm:@total-typescript/ts-reset@~0.6.1": "0.6.1",
     "npm:@types/node@*": "24.2.0",
     "npm:@types/react@^19.2.6": "19.2.6",
-    "npm:ai-sdk-provider-claude-code@^2.1.0": "2.1.0_zod@4.1.12",
+    "npm:ai-sdk-provider-claude-code@^2.2.0": "2.2.0_zod@4.1.12",
     "npm:ai@^5.0.101": "5.0.101_zod@4.1.12",
     "npm:ai@^5.0.93": "5.0.101_zod@4.1.12",
     "npm:cookie@^1.0.2": "1.0.2",
@@ -307,8 +307,8 @@
         "is-fullwidth-code-point@5.1.0"
       ]
     },
-    "@anthropic-ai/claude-agent-sdk@0.1.47_zod@4.1.12": {
-      "integrity": "sha512-0LAXuqp2AsvJcvrpVrJKANbmkqp3ZMpEfm03vRL6DrLc8JIQ5n25aCagIBDMwIVJscDwjd9cn4uAHvdI2PMLvw==",
+    "@anthropic-ai/claude-agent-sdk@0.1.50_zod@4.1.12": {
+      "integrity": "sha512-vHOLohUeiVadWl4eTAbw12ACIG1wZ/NN4ScLe8P/yrsldT1QkYwn6ndkoilaFBB2gIHECEx7wRAtSfCLefge4Q==",
       "dependencies": [
         "zod"
       ],
@@ -1886,13 +1886,12 @@
     "agent-base@7.1.4": {
       "integrity": "sha512-MnA+YT8fwfJPgBx3m60MNqakm30XOkyIoH1y6huTQvC0PwZG7ki8NacLBcrPbNoo8vEZy7Jpuk7+jMO+CUovTQ=="
     },
-    "ai-sdk-provider-claude-code@2.1.0_zod@4.1.12": {
-      "integrity": "sha512-g+Nb+TKQs7RMP8PEn7NBjEHwVyIqHthXKSUqADO37oGPwOeMATuWCcuYAFmbeSdpIirV6iKRXRhdFipv2yTzqQ==",
+    "ai-sdk-provider-claude-code@2.2.0_zod@4.1.12": {
+      "integrity": "sha512-MN/l+GZ76tICIN+92Mhdi/XMiimPqcnx8HBARxfph2nnvt630ZPEBHAnqfa/BKGYbGtfxfnoiLLahfKfaYdiEg==",
       "dependencies": [
         "@ai-sdk/provider",
         "@ai-sdk/provider-utils@3.0.9_zod@4.1.12",
         "@anthropic-ai/claude-agent-sdk",
-        "jsonc-parser",
         "zod"
       ]
     },
@@ -3071,9 +3070,6 @@
     },
     "json-stable-stringify-without-jsonify@1.0.1": {
       "integrity": "sha512-Bdboy+l7tA3OGW6FjyFHWkP5LuByj1Tk33Ljyq0axyzdk9//JSi2u3fP1QSmd1KNwq6VOKYGlAu87CisVir6Pw=="
-    },
-    "jsonc-parser@3.3.1": {
-      "integrity": "sha512-HUgH65KyejrUFPvHFPbqOY0rsFip3Bo5wb4ngvdi1EpCYWUQDC5V+Y7mZws+DLkr4M//zQJoanu1SP+87Dv1oQ=="
     },
     "jsonrepair@3.13.1": {
       "integrity": "sha512-WJeiE0jGfxYmtLwBTEk8+y/mYcaleyLXWaqp5bJu0/ZTSeG0KQq/wWQ8pmnkKenEdN6pdnn6QtcoSUkbqDHWNw==",
@@ -4422,7 +4418,7 @@
             "npm:@jsr/std__path@^1.1.2",
             "npm:@sendgrid/mail@^8.1.6",
             "npm:@tavily/core@~0.5.13",
-            "npm:ai-sdk-provider-claude-code@^2.1.0",
+            "npm:ai-sdk-provider-claude-code@^2.2.0",
             "npm:ai@^5.0.101",
             "npm:zod@^4.1.12"
           ]
