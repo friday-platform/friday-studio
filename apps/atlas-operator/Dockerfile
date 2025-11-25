@@ -11,21 +11,21 @@ RUN apk add --no-cache git
 # Set working directory
 WORKDIR /workspace
 
-# Copy go mod and sum files
+# Copy go mod and sum files from monorepo root
 COPY go.mod go.sum ./
 
 # Download dependencies
 RUN go mod download
 
-# Copy source code
-COPY cmd/ cmd/
-COPY internal/ internal/
-COPY pkg/ pkg/
+# Copy atlas-operator source code
+COPY apps/atlas-operator/cmd/ apps/atlas-operator/cmd/
+COPY apps/atlas-operator/internal/ apps/atlas-operator/internal/
+COPY apps/atlas-operator/pkg/ apps/atlas-operator/pkg/
 
 # Build the operator with version information
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
     -ldflags="-w -s -X main.GitCommit=${GITHUB_SHA} -X main.GitRef=${GITHUB_REF}" \
-    -a -o atlas-manager cmd/manager/main.go
+    -a -o atlas-manager ./apps/atlas-operator/cmd/manager
 
 # Runtime stage
 FROM alpine:3.22.2

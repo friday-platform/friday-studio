@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - "apps/atlas-operator/**"
+      - "go.mod"
+      - "go.sum"
   merge_group:
 
 permissions:
@@ -13,14 +15,11 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: apps/atlas-operator
     steps:
       - uses: actions/checkout@v6
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version-file: "apps/atlas-operator/go.mod"
+          go-version-file: "go.mod"
       - name: Test
-        run: go test -v -race ./...
+        run: go test -v -race ./apps/atlas-operator/...

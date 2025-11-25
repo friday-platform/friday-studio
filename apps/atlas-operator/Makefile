@@ -9,6 +9,9 @@ endif
 SHELL = /usr/bin/env bash -o pipefail
 .SHELLFLAGS = -ec
 
+# Path to atlas-operator within the monorepo
+OPERATOR_PATH = apps/atlas-operator
+
 .PHONY: all
 all: build
 
@@ -22,38 +25,38 @@ help: ## Display this help.
 
 .PHONY: fmt
 fmt: ## Run go fmt against code.
-	go fmt ./...
+	cd ../.. && go fmt ./$(OPERATOR_PATH)/...
 
 .PHONY: vet
 vet: ## Run go vet against code.
-	go vet ./...
+	cd ../.. && go vet ./$(OPERATOR_PATH)/...
 
 .PHONY: test
 test: fmt vet ## Run tests.
-	go test ./... -race -coverprofile cover.out
+	cd ../.. && go test ./$(OPERATOR_PATH)/... -race -coverprofile cover.out
 
 .PHONY: lint
-lint: ## Run golangci-lint
-	golangci-lint run ./...
+lint: ## Run golangci-lint.
+	cd ../.. && golangci-lint run ./$(OPERATOR_PATH)/...
 
 ##@ Build
 
 .PHONY: build
 build: fmt vet ## Build atlas-manager binary.
-	go build -o bin/atlas-manager cmd/manager/main.go
+	cd ../.. && go build -o $(OPERATOR_PATH)/bin/atlas-manager ./$(OPERATOR_PATH)/cmd/manager
 
 .PHONY: run
 run: fmt vet ## Run a controller from your host.
-	go run ./cmd/manager
+	cd ../.. && go run ./$(OPERATOR_PATH)/cmd/manager
 
 .PHONY: docker-build
 docker-build: ## Build docker image for local testing.
-	docker build -t atlas-operator:local .
+	cd ../.. && docker build -t atlas-operator:local -f $(OPERATOR_PATH)/Dockerfile .
 
 ##@ Local Development
 
 .PHONY: local-env
-local-env: ## Create local .env file for development
+local-env: ## Create local .env file for development.
 	@echo "Creating local .env file for development..."
 	@cat > .env <<EOF
 	DATABASE_URL=postgresql://postgres:password@localhost:5432/postgres
@@ -74,6 +77,6 @@ local-env: ## Create local .env file for development
 	@echo "Created .env file. Please update with your actual values."
 
 .PHONY: clean
-clean: ## Clean build artifacts
+clean: ## Clean build artifacts.
 	rm -rf bin/
 	rm -f cover.out

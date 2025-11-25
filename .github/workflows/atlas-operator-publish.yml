@@ -6,6 +6,8 @@ on:
       - main
     paths:
       - "apps/atlas-operator/**"
+      - "go.mod"
+      - "go.sum"
 
 env:
   GAR_LOCATION: us-west2
@@ -31,7 +33,8 @@ jobs:
             --tag "$GAR_LOCATION-docker.pkg.dev/$PROJECT_NAME/$REPOSITORY/$REPOSITORY:latest" \
             --build-arg GITHUB_SHA="$GITHUB_SHA" \
             --build-arg GITHUB_REF="$GITHUB_REF" \
-            ./apps/atlas-operator
+            -f apps/atlas-operator/Dockerfile \
+            .
           echo "image=$GAR_LOCATION-docker.pkg.dev/$PROJECT_NAME/$REPOSITORY/$REPOSITORY:$GITHUB_SHA" >> "$GITHUB_OUTPUT"
 
       - id: "auth"

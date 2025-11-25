@@ -134,9 +134,9 @@ updates:
       - "docker"
     rebase-strategy: "auto"
 
-  # Keep Go dependencies up to date (for atlas-operator)
+  # Keep Go dependencies up to date (root go.mod)
   - package-ecosystem: "gomod"
-    directory: "/apps/atlas-operator"
+    directory: "/"
     schedule:
       interval: "daily"
       time: "09:00"

@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - "apps/atlas-operator/**"
+      - "go.mod"
+      - "go.sum"
 
 env:
   REPOSITORY: atlas-operator
@@ -24,7 +26,8 @@ jobs:
         run: |
           docker build \
             --tag "$REPOSITORY:test" \
-            ./apps/atlas-operator
+            -f apps/atlas-operator/Dockerfile \
+            .
 
       - name: Test Docker image
         run: |

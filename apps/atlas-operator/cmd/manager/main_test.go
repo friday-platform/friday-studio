@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tempestteam/atlas-operator/internal/controller"
-	"github.com/tempestteam/atlas-operator/pkg/config"
+	"github.com/tempestteam/atlas/apps/atlas-operator/internal/controller"
+	"github.com/tempestteam/atlas/apps/atlas-operator/pkg/config"
 )
 
 func TestGetKubeConfig_Fallback(t *testing.T) {

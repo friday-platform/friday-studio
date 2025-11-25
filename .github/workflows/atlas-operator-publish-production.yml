@@ -37,7 +37,8 @@ jobs:
             --tag "$GAR_LOCATION-docker.pkg.dev/$PROJECT_NAME/$REPOSITORY/$REPOSITORY:latest" \
             --build-arg GITHUB_SHA="$GITHUB_SHA" \
             --build-arg GITHUB_REF="$GITHUB_REF" \
-            ./apps/atlas-operator
+            -f apps/atlas-operator/Dockerfile \
+            .
           echo "image=$GAR_LOCATION-docker.pkg.dev/$PROJECT_NAME/$REPOSITORY/$REPOSITORY:$GITHUB_SHA" >> "$GITHUB_OUTPUT"
           echo "tag=${{ steps.version.outputs.version }}" >> "$GITHUB_OUTPUT"
 

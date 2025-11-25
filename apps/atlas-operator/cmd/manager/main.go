@@ -13,11 +13,11 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/tempestteam/atlas-operator/internal/controller"
-	"github.com/tempestteam/atlas-operator/pkg/argocd"
-	"github.com/tempestteam/atlas-operator/pkg/config"
-	"github.com/tempestteam/atlas-operator/pkg/database"
-	"github.com/tempestteam/atlas-operator/pkg/webhook"
+	"github.com/tempestteam/atlas/apps/atlas-operator/internal/controller"
+	"github.com/tempestteam/atlas/apps/atlas-operator/pkg/argocd"
+	"github.com/tempestteam/atlas/apps/atlas-operator/pkg/config"
+	"github.com/tempestteam/atlas/apps/atlas-operator/pkg/database"
+	"github.com/tempestteam/atlas/apps/atlas-operator/pkg/webhook"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 )

@@ -6,9 +6,9 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/tempestteam/atlas-operator/pkg/argocd"
-	"github.com/tempestteam/atlas-operator/pkg/config"
-	"github.com/tempestteam/atlas-operator/pkg/database"
+	"github.com/tempestteam/atlas/apps/atlas-operator/pkg/argocd"
+	"github.com/tempestteam/atlas/apps/atlas-operator/pkg/config"
+	"github.com/tempestteam/atlas/apps/atlas-operator/pkg/database"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
