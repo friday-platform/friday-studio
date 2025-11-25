@@ -116,3 +116,41 @@ updates:
     ignore:
       - dependency-name: "glib"
         # Will be resolved when webkit2gtk updates to use glib 0.20.0+
+
+  # Keep Docker dependencies up to date (for atlas-operator)
+  - package-ecosystem: "docker"
+    directory: "/apps/atlas-operator"
+    schedule:
+      interval: "daily"
+      time: "09:00"
+    open-pull-requests-limit: 5
+    assignees:
+      - "ljagiello"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "docker"
+    rebase-strategy: "auto"
+
+  # Keep Go dependencies up to date (for atlas-operator)
+  - package-ecosystem: "gomod"
+    directory: "/apps/atlas-operator"
+    schedule:
+      interval: "daily"
+      time: "09:00"
+    open-pull-requests-limit: 10
+    assignees:
+      - "ljagiello"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "go"
+    rebase-strategy: "auto"
+    groups:
+      k8s:
+        patterns:
+          - "k8s.io/*"

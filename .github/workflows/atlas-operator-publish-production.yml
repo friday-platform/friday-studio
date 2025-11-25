@@ -1,0 +1,102 @@
+name: "atlas-operator: Publish Docker Image to Production"
+
+on:
+  push:
+    tags:
+      - "atlas-operator-v*"
+
+env:
+  GAR_LOCATION: us-west2
+  PROJECT_NAME: tempest-production
+  REPOSITORY: atlas-operator
+  ENVIRONMENT: production
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          # Extract version from tag like atlas-operator-v1.2.3 -> v1.2.3
+          VERSION="${GITHUB_REF#refs/tags/atlas-operator-}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Build Docker image
+        id: build-image
+        run: |
+          docker build \
+            --tag "$GAR_LOCATION-docker.pkg.dev/$PROJECT_NAME/$REPOSITORY/$REPOSITORY:$GITHUB_SHA" \
+            --tag "$GAR_LOCATION-docker.pkg.dev/$PROJECT_NAME/$REPOSITORY/$REPOSITORY:${{ steps.version.outputs.version }}" \
+            --tag "$GAR_LOCATION-docker.pkg.dev/$PROJECT_NAME/$REPOSITORY/$REPOSITORY:latest" \
+            --build-arg GITHUB_SHA="$GITHUB_SHA" \
+            --build-arg GITHUB_REF="$GITHUB_REF" \
+            ./apps/atlas-operator
+          echo "image=$GAR_LOCATION-docker.pkg.dev/$PROJECT_NAME/$REPOSITORY/$REPOSITORY:$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+          echo "tag=${{ steps.version.outputs.version }}" >> "$GITHUB_OUTPUT"
+
+      - id: "auth"
+        name: "Authenticate to Google Cloud"
+        uses: "google-github-actions/auth@v3"
+        with:
+          project_id: ${{ env.PROJECT_NAME }}
+          workload_identity_provider: "projects/180211378242/locations/global/workloadIdentityPools/github-actions/providers/atlas-operator"
+          service_account: "github-atlas-operator-ci@tempest-production.iam.gserviceaccount.com"
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v3
+
+      - name: Docker configuration
+        run: |
+          gcloud auth configure-docker ${{ env.GAR_LOCATION }}-docker.pkg.dev --quiet
+
+      - name: Push image
+        run: |
+          docker push -a "$GAR_LOCATION-docker.pkg.dev/$PROJECT_NAME/$REPOSITORY/$REPOSITORY"
+
+      - name: Fetch tempest-kustomize repository
+        uses: actions/checkout@v6
+        with:
+          repository: tempestteam/tempest-kustomize
+          token: ${{ secrets.PAT }}
+          path: tempest-kustomize-repository
+          fetch-depth: 1
+
+      - name: Update manifest file image tag
+        uses: mikefarah/yq@master
+        with:
+          cmd: yq e -i '(.spec.template.spec.containers[] | select(.name == "manager").image) = "us-west2-docker.pkg.dev/${{ env.PROJECT_NAME }}/atlas-operator/atlas-operator:${{ steps.build-image.outputs.tag }}"' 'tempest-kustomize-repository/atlas-operator/overlays/${{ env.ENVIRONMENT }}/deployment.yaml'
+
+      - name: Setup tempest-kustomize Repository
+        working-directory: tempest-kustomize-repository
+        run: |
+          git fetch origin main
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git remote set-url --push origin https://github.com/tempestteam/tempest-kustomize.git
+          git checkout -b release-atlas-operator-${{ steps.build-image.outputs.tag }}
+
+      - name: Commit
+        working-directory: tempest-kustomize-repository
+        run: |
+          git add .
+          git commit -m "Release atlas-operator-${{ steps.build-image.outputs.tag }}"
+          git push origin HEAD
+
+      - name: Create PR && merge
+        working-directory: tempest-kustomize-repository
+        env:
+          GITHUB_TOKEN: ${{ secrets.PAT }}
+        run: |
+          gh pr create -B main -H release-atlas-operator-${{ steps.build-image.outputs.tag }} -t "deploy-atlas-operator-${{ steps.build-image.outputs.tag }}" -b ""
+          command="gh pr merge release-atlas-operator-${{ steps.build-image.outputs.tag }} --squash --admin"
+          max_retries=30
+          delay=2
+          retry_count=0
+          until $command; do ((retry_count++)); [ "$retry_count" -ge "$max_retries" ] && echo "Failed after $max_retries attempts." && break; echo "Retrying in $delay seconds..."; sleep $delay; done; [ "$retry_count" -lt "$max_retries" ] && echo "Command succeeded." || echo "Command failed after maximum retries."

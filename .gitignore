@@ -35,6 +35,8 @@ build/
 
 # Go binaries
 apps/bounce/bounce
+apps/atlas-operator/bin/
+apps/atlas-operator/atlas-manager
 
 # Atlas installer build artifacts
 tools/atlas-installer/dist/

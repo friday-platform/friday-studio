@@ -1,0 +1,123 @@
+package config
+
+import (
+	"fmt"
+	"log/slog"
+	"os"
+	"time"
+
+	"github.com/caarlos0/env/v11"
+	"github.com/joho/godotenv"
+)
+
+// Config holds the operator configuration.
+type Config struct {
+	// Database Configuration
+	DatabaseURL string `env:"DATABASE_URL,required"`
+
+	// Operator Configuration
+	ReconciliationInterval time.Duration `env:"RECONCILIATION_INTERVAL" envDefault:"30s"`
+	Namespace              string        `env:"NAMESPACE" envDefault:"atlas"`
+	ArgoCDNamespace        string        `env:"ARGOCD_NAMESPACE" envDefault:"argocd"`
+	Environment            string        `env:"ENVIRONMENT" envDefault:"sandbox"`
+
+	// ArgoCD Repository Configuration
+	GitRepoURL        string `env:"GIT_REPO_URL,required"`
+	GitTargetRevision string `env:"GIT_TARGET_REVISION" envDefault:"HEAD"`
+
+	// Logging
+	LogLevel string `env:"LOG_LEVEL" envDefault:"info"`
+
+	// Health Check
+	HealthCheckPort int `env:"HEALTH_CHECK_PORT" envDefault:"8080"`
+	MetricsPort     int `env:"METRICS_PORT" envDefault:"8081"`
+
+	// Webhook Configuration
+	WebhookEnabled bool   `env:"WEBHOOK_ENABLED" envDefault:"true"`
+	WebhookPort    int    `env:"WEBHOOK_PORT" envDefault:"8082"`
+	WebhookToken   string `env:"WEBHOOK_TOKEN"` // Optional: Bearer token for authentication
+}
+
+// Load loads configuration from environment variables.
+func Load(logger *slog.Logger) (*Config, error) {
+	// Check if DOT_ENV is set (following tempest-core pattern)
+	if dotenv := os.Getenv("DOT_ENV"); dotenv != "" {
+		logger.Info("Loading environment from file", "path", dotenv)
+		err := godotenv.Load(dotenv)
+		if err != nil {
+			// Not finding the file is not fatal, just log
+			logger.Info("No .env file found", "requested", dotenv, "error", err)
+		}
+	}
+
+	// Parse environment variables into Config struct
+	cfg := &Config{}
+	if err := env.ParseWithOptions(cfg, env.Options{
+		RequiredIfNoDef: true,
+	}); err != nil {
+		return nil, fmt.Errorf("failed to parse environment: %w", err)
+	}
+
+	// Log configuration (without sensitive values)
+	logger.Info("Configuration loaded",
+		"reconciliation_interval", cfg.ReconciliationInterval,
+		"namespace", cfg.Namespace,
+		"argocd_namespace", cfg.ArgoCDNamespace,
+		"environment", cfg.Environment,
+		"git_repo_url", cfg.GitRepoURL,
+		"git_target_revision", cfg.GitTargetRevision,
+		"log_level", cfg.LogLevel,
+		"health_check_port", cfg.HealthCheckPort,
+		"metrics_port", cfg.MetricsPort,
+		"webhook_enabled", cfg.WebhookEnabled,
+		"webhook_port", cfg.WebhookPort,
+		"webhook_auth", cfg.WebhookToken != "",
+	)
+
+	return cfg, nil
+}
+
+// Validate performs additional validation on the configuration.
+func (c *Config) Validate() error {
+	// Validate environment is either sandbox or production
+	if c.Environment != "sandbox" && c.Environment != "production" {
+		return fmt.Errorf("invalid environment: %s (must be 'sandbox' or 'production')", c.Environment)
+	}
+
+	// Validate reconciliation interval is reasonable
+	if c.ReconciliationInterval < 10*time.Second {
+		return fmt.Errorf("reconciliation interval too short: %v (minimum 10s)", c.ReconciliationInterval)
+	}
+	if c.ReconciliationInterval > 5*time.Minute {
+		return fmt.Errorf("reconciliation interval too long: %v (maximum 5m)", c.ReconciliationInterval)
+	}
+
+	// Validate ports
+	if c.HealthCheckPort <= 0 || c.HealthCheckPort > 65535 {
+		return fmt.Errorf("invalid health check port: %d", c.HealthCheckPort)
+	}
+	if c.MetricsPort <= 0 || c.MetricsPort > 65535 {
+		return fmt.Errorf("invalid metrics port: %d", c.MetricsPort)
+	}
+	if c.WebhookEnabled && (c.WebhookPort <= 0 || c.WebhookPort > 65535) {
+		return fmt.Errorf("invalid webhook port: %d", c.WebhookPort)
+	}
+
+	return nil
+}
+
+// GetLogLevel returns the slog.Level based on the configured log level.
+func (c *Config) GetLogLevel() slog.Level {
+	switch c.LogLevel {
+	case "debug":
+		return slog.LevelDebug
+	case "info":
+		return slog.LevelInfo
+	case "warn", "warning":
+		return slog.LevelWarn
+	case "error":
+		return slog.LevelError
+	default:
+		return slog.LevelInfo
+	}
+}

@@ -1,0 +1,32 @@
+name: "atlas-operator: Test Docker Build"
+
+on:
+  pull_request:
+    paths:
+      - "apps/atlas-operator/**"
+
+env:
+  REPOSITORY: atlas-operator
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        run: |
+          docker build \
+            --tag "$REPOSITORY:test" \
+            ./apps/atlas-operator
+
+      - name: Test Docker image
+        run: |
+          # Just verify the binary exists and is executable
+          docker run --rm --entrypoint=/bin/sh "$REPOSITORY:test" -c "test -x /atlas-manager && echo 'Binary is executable'"
