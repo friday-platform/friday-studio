@@ -9,6 +9,7 @@
     "@atlas/config": "workspace:*",
     "@atlas/core": "workspace:*",
     "@atlas/cron": "workspace:*",
+    "@atlas/discord": "workspace:*",
     "@atlas/logger": "workspace:*",
     "@atlas/mcp-server": "workspace:*",
     "@atlas/memory": "workspace:*",

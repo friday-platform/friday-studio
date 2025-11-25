@@ -237,16 +237,24 @@ export class WorkspaceManager {
     await this.registry.registerWorkspace(entry);
     logger.info(`Workspace registered: ${entry.name}`, { id: entry.id });
 
-    // Attach file watcher for this workspace (non-system only)
+    // Register signals for persistent workspaces (including system workspaces)
+    if (!entry.metadata?.ephemeral) {
+      try {
+        await this.registerWithRegistrars(entry.id, entry.path, config);
+      } catch (error) {
+        logger.warn("Failed to register workspace signals", {
+          workspaceId: entry.id,
+          error: error,
+        });
+      }
+    }
+
+    // Attach file watcher for non-system workspaces only
     if (this.fileWatcher && !entry.metadata?.system) {
       try {
         await this.fileWatcher.watchWorkspace(entry);
-        // Only register signals for persistent workspaces
-        if (!entry.metadata?.ephemeral) {
-          await this.registerWithRegistrars(entry.id, entry.path, config);
-        }
       } catch (error) {
-        logger.warn("Failed to register workspace", { workspaceId: entry.id, error: error });
+        logger.warn("Failed to watch workspace", { workspaceId: entry.id, error: error });
       }
     }
 
@@ -274,6 +282,16 @@ export class WorkspaceManager {
       if (!existing) {
         await this.registry.registerWorkspace(entry);
         logger.info(`System workspace registered: ${entry.name}`);
+      }
+
+      // Register with signal registrars (system workspaces can have signals!)
+      try {
+        const mergedConfig = await this.getWorkspaceConfig(id);
+        if (mergedConfig) {
+          await this.registerWithRegistrars(id, entry.path, mergedConfig);
+        }
+      } catch (error) {
+        logger.warn("Failed to register system workspace signals", { workspaceId: id, error });
       }
     }
   }

@@ -1,0 +1,18 @@
+{
+  "name": "@atlas/discord",
+  "version": "0.1.0",
+  "type": "module",
+  "dependencies": {
+    "@atlas/agent-sdk": "workspace:*",
+    "@atlas/config": "workspace:*",
+    "@atlas/core": "workspace:*",
+    "@atlas/logger": "workspace:*",
+    "@atlas/workspace": "workspace:*",
+    "@discordjs/core": "2.0.0",
+    "@discordjs/rest": "2.6.0",
+    "@discordjs/ws": "2.0.0",
+    "discord-interactions": "^4.2.0",
+    "hono": "^4.10.6",
+    "zod": "^4.1.12"
+  }
+}

@@ -1,4 +1,4 @@
-import type { AgentRegistry as AgentRegistryType } from "@atlas/agent-sdk";
+import type { AgentRegistry as AgentRegistryType, AtlasUIMessageChunk } from "@atlas/agent-sdk";
 import { type SupervisorDefaults, supervisorDefaultsWrapped } from "@atlas/config";
 import {
   AtlasAgentsMCPServer,
@@ -7,6 +7,7 @@ import {
   WorkspaceSessionStatus,
 } from "@atlas/core";
 import { CronManager } from "@atlas/cron";
+import { DiscordIntegration, DiscordSignalRegistrar } from "@atlas/discord";
 import { logger } from "@atlas/logger";
 import { PlatformMCPServer } from "@atlas/mcp-server";
 import { embeddingProviderForceDispose, embeddingProviderGetInstance } from "@atlas/memory";
@@ -87,6 +88,7 @@ export class AtlasDaemon {
   private cronManager: CronManager | null = null;
   private mcpServerPool: GlobalMCPServerPool | null = null;
   private workspaceManager: WorkspaceManager | null = null;
+  private discordIntegration: DiscordIntegration = new DiscordIntegration();
   private sseHealthCheckInterval: number | null = null;
   private agentSessionCleanupInterval: number | null = null;
   // Store per-session MCP servers and transports
@@ -261,10 +263,29 @@ export class AtlasDaemon {
     // Create signal registrars and pass them to WorkspaceManager.initialize
     const fsRegistrar = new FsWatchSignalRegistrar(wakeupCallback);
     const cronRegistrar = new CronSignalRegistrar(this.cronManager);
+    const discordRegistrar = new DiscordSignalRegistrar();
+
+    // Initialize Discord integration (before workspace loading so it can mount HTTP handler)
+    await this.discordIntegration.initialize(
+      discordRegistrar,
+      this.workspaceManager,
+      wakeupCallback,
+      this,
+    );
+
+    // Mount Discord HTTP handler after initialization
+    const discordHandler = this.discordIntegration.getHttpHandler();
+    if (discordHandler) {
+      this.app.route("/signal/discord", discordHandler);
+      logger.info("Discord webhook endpoint mounted at /signal/discord/interactions");
+    }
 
     // Initialize WorkspaceManager with registrars and watcher (manager owns lifecycle)
-    const signalRegistrars = [fsRegistrar, cronRegistrar];
+    const signalRegistrars = [fsRegistrar, cronRegistrar, discordRegistrar];
     await this.workspaceManager.initialize(signalRegistrars);
+
+    // Register Discord commands now that workspaces are loaded
+    await this.discordIntegration.registerCommands();
 
     // Start CronManager
     await this.cronManager.start();
@@ -526,6 +547,8 @@ export class AtlasDaemon {
     this.app.route("/api/sse", streamsRoutes);
     this.app.route("/api/library", libraryRoutes);
     this.app.route("/api/daemon", daemonApp);
+
+    // Discord signal route will be mounted at /signal/discord after initialization in initialize() method
 
     // Global error handler - catches all uncaught errors from all routes
     this.app.onError((err, c) => {
@@ -929,12 +952,20 @@ export class AtlasDaemon {
 
   /**
    * Trigger a workspace signal and handle lifecycle updates (lastSeen, idle timeout)
+   *
+   * @param workspaceId - Workspace ID to trigger signal in
+   * @param signalId - Signal ID to trigger
+   * @param payload - Signal payload data
+   * @param streamId - Optional stream ID for conversation context
+   * @param onStreamEvent - Optional callback for streaming responses (used by Discord, web chat, etc)
+   * @returns Session ID for tracking the triggered signal
    */
   public async triggerWorkspaceSignal(
     workspaceId: string,
     signalId: string,
     payload?: Record<string, unknown>,
     streamId?: string,
+    onStreamEvent?: (chunk: AtlasUIMessageChunk) => void,
   ): Promise<{ sessionId: string }> {
     const runtime = await this.getOrCreateWorkspaceRuntime(workspaceId);
 
@@ -950,7 +981,12 @@ export class AtlasDaemon {
       );
     }
 
-    const session = await runtime.triggerSignalWithSession(signalId, payload || {}, streamId);
+    const session = await runtime.triggerSignalWithSession(
+      signalId,
+      payload || {},
+      streamId,
+      onStreamEvent,
+    );
 
     try {
       const manager = this.getWorkspaceManager();
@@ -963,7 +999,29 @@ export class AtlasDaemon {
     }
 
     this.resetIdleTimeout(runtime.workspaceId);
+
     return { sessionId: session.id };
+  }
+
+  /**
+   * Wait for a signal session to complete
+   *
+   * @param workspaceId - Workspace ID where signal was triggered
+   * @param sessionId - Session ID returned from triggerWorkspaceSignal
+   * @throws Error if workspace runtime or session not found
+   */
+  public async waitForSignalCompletion(workspaceId: string, sessionId: string): Promise<void> {
+    const runtime = this.runtimes.get(workspaceId);
+    if (!runtime) {
+      throw new Error(`Workspace runtime not found: ${workspaceId}`);
+    }
+
+    const session = runtime.getSession(sessionId);
+    if (!session) {
+      throw new Error(`Session not found: ${sessionId} in workspace ${workspaceId}`);
+    }
+
+    await session.waitForCompletion();
   }
 
   /**
@@ -1277,6 +1335,9 @@ export class AtlasDaemon {
       await this.cronManager.shutdown();
       this.cronManager = null;
     }
+
+    // Shutdown Discord integration
+    await this.discordIntegration.shutdown();
 
     // Dispose MCP Server Pool
     if (this.mcpServerPool) {

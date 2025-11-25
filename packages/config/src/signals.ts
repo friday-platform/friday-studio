@@ -77,6 +77,42 @@ export const FileWatchSignalConfigSchema = BaseSignalConfigSchema.extend({
   }),
 });
 
+/**
+ * Discord Signal - Discord message events
+ * Triggered via Gateway WebSocket (MESSAGE_CREATE, MESSAGE_UPDATE)
+ */
+export const DiscordSignalConfigSchema = BaseSignalConfigSchema.extend({
+  provider: z.literal("discord"),
+  config: z.strictObject({
+    /**
+     * Events to listen for
+     * - message_create: New messages
+     * - message_update: Edited messages
+     */
+    events: z
+      .array(z.enum(["message_create", "message_update"]))
+      .min(1, "At least one event type required")
+      .default(["message_create"]),
+
+    /**
+     * Channel filters
+     * - dm: Direct messages only
+     * - mention: @mentions only
+     * - guild: Server messages (non-DM)
+     * - all: All channels
+     */
+    channels: z
+      .array(z.enum(["dm", "mention", "guild", "all"]))
+      .min(1, "At least one channel type required")
+      .default(["all"]),
+
+    /**
+     * Optional: Restrict to specific guilds (server IDs)
+     */
+    allowedGuilds: z.array(z.string()).optional(),
+  }),
+});
+
 // ==============================================================================
 // DISCRIMINATED UNION
 // ==============================================================================
@@ -90,6 +126,7 @@ export const WorkspaceSignalConfigSchema = z.discriminatedUnion("provider", [
   ScheduleSignalConfigSchema,
   SystemSignalConfigSchema,
   FileWatchSignalConfigSchema,
+  DiscordSignalConfigSchema,
 ]);
 
 export type WorkspaceSignalConfig = z.infer<typeof WorkspaceSignalConfigSchema>;
@@ -98,6 +135,7 @@ export type WorkspaceSignalConfig = z.infer<typeof WorkspaceSignalConfigSchema>;
 export type HTTPSignalConfig = z.infer<typeof HTTPSignalConfigSchema>;
 export type ScheduleSignalConfig = z.infer<typeof ScheduleSignalConfigSchema>;
 export type SystemSignalConfig = z.infer<typeof SystemSignalConfigSchema>;
+export type DiscordSignalConfig = z.infer<typeof DiscordSignalConfigSchema>;
 
 // ==============================================================================
 // SIGNAL TRIGGER SCHEMAS

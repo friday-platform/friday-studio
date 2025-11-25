@@ -44,6 +44,12 @@ signals:
       required:
         - "message"
         - "userId"
+  discord-natural:
+    description: "Handle natural Discord messages (DMs and @mentions)"
+    provider: "discord"
+    config:
+      events: [message_create]
+      channels: [dm, mention]
   conversation-list:
     description: "List conversations for user and scope"
     provider: "system"
@@ -75,6 +81,7 @@ jobs:
     description: "Process conversation messages with context awareness"
     triggers:
       - signal: "conversation-stream"
+      - signal: "discord-natural"
     execution:
       strategy: "sequential"
       agents:
