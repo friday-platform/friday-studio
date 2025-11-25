@@ -20,7 +20,7 @@ require (
 	github.com/prometheus/client_golang v1.23.2
 	github.com/sendgrid/sendgrid-go v3.16.1+incompatible
 	github.com/stretchr/testify v1.11.1
-	go.opentelemetry.io/collector/config/configtls v1.45.0
+	go.opentelemetry.io/collector/config/configtls v1.46.0
 	golang.org/x/oauth2 v0.33.0
 	google.golang.org/api v0.256.0
 	k8s.io/apimachinery v0.34.2
@@ -89,10 +89,10 @@ require (
 	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
-	go.opentelemetry.io/collector/config/configopaque v1.45.0 // indirect
-	go.opentelemetry.io/collector/confmap v1.45.0 // indirect
-	go.opentelemetry.io/collector/confmap/xconfmap v0.139.0 // indirect
-	go.opentelemetry.io/collector/featuregate v1.45.0 // indirect
+	go.opentelemetry.io/collector/config/configopaque v1.46.0 // indirect
+	go.opentelemetry.io/collector/confmap v1.46.0 // indirect
+	go.opentelemetry.io/collector/confmap/xconfmap v0.140.0 // indirect
+	go.opentelemetry.io/collector/featuregate v1.46.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.63.0 // indirect
 	go.opentelemetry.io/otel v1.38.0 // indirect
 	go.opentelemetry.io/otel/metric v1.38.0 // indirect
