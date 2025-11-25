@@ -4,6 +4,7 @@ import * as daemonCmd from "./daemon.ts";
 import * as diagnosticsCmd from "./diagnostics.ts";
 import * as libraryCmd from "./library/index.ts";
 import * as psCmd from "./ps.ts";
+import * as resetCmd from "./reset.ts";
 import * as serviceCmd from "./service.ts";
 import * as sessionCmd from "./session.ts";
 import * as signalCmd from "./signal.ts";
@@ -24,4 +25,5 @@ export const commands = [
   daemonCmd,
   serviceCmd,
   diagnosticsCmd,
+  resetCmd,
 ];

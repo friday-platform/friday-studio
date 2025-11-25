@@ -1,53 +1,39 @@
 #!/usr/bin/env -S deno run --allow-read --allow-write --allow-env
 
+import { getAtlasHome } from "@atlas/utils";
 import { join } from "@std/path";
 
 /**
- * Clean script to remove the Atlas data directory
- * This removes all Atlas data including logs, cache, and configuration
- * but preserves the .env file if it exists
+ * Clean script to remove Atlas data directory contents
+ * Preserves .env (API keys) and bin/ (atlas binary)
  */
 
+const PRESERVED_ENTRIES = new Set([".env", "bin"]);
+
 async function clean() {
-  // Determine the Atlas home directory
-  const atlasHome =
-    Deno.env.get("ATLAS_HOME") ||
-    join(Deno.env.get("HOME") || Deno.env.get("USERPROFILE") || "", ".atlas");
+  const atlasHome = getAtlasHome();
 
   try {
-    // Check if directory exists
-    await Deno.stat(atlasHome);
-
-    // Path to the .env file we want to preserve
-    const envFilePath = join(atlasHome, ".env");
-    let envFileContent: string | null = null;
-
-    // Try to backup the .env file if it exists
-    try {
-      envFileContent = await Deno.readTextFile(envFilePath);
-      console.log(`Backed up .env file`);
-    } catch {
-      // .env file doesn't exist, which is fine
+    let didDelete = false;
+    for await (const entry of Deno.readDir(atlasHome)) {
+      if (PRESERVED_ENTRIES.has(entry.name)) {
+        continue;
+      }
+      await Deno.remove(join(atlasHome, entry.name), { recursive: true });
+      didDelete = true;
     }
 
-    // Remove the directory
-    await Deno.remove(atlasHome, { recursive: true });
-    console.log(`Removed Atlas directory: ${atlasHome}`);
-
-    // Restore the .env file if we backed it up
-    if (envFileContent !== null) {
-      // Recreate the .atlas directory
-      await Deno.mkdir(atlasHome, { recursive: true });
-      // Restore the .env file
-      await Deno.writeTextFile(envFilePath, envFileContent);
-      console.log(`Restored .env file`);
+    if (didDelete) {
+      console.log("Clean complete.");
+    } else {
+      console.log("Nothing to clean.");
     }
   } catch (error) {
     if (error instanceof Deno.errors.NotFound) {
       console.log(`Atlas directory does not exist: ${atlasHome}`);
     } else {
       console.error(
-        `Error removing Atlas directory: ${error instanceof Error ? error.message : String(error)}`,
+        `Error cleaning Atlas directory: ${error instanceof Error ? error.message : String(error)}`,
       );
       Deno.exit(1);
     }
