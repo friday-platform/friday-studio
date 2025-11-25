@@ -5,7 +5,7 @@
  * with Atlas agents.
  */
 
-export { repairJson } from "./json-repair.ts";
+export { repairJson, unstringifyNestedJson } from "./json-repair.ts";
 export { pipeUIMessageStream } from "./stream-mapper.ts";
 export {
   collectToolUsageFromSteps,

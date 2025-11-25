@@ -7,7 +7,7 @@ import { jsonrepair } from "jsonrepair";
  * Handles LLM responses where objects are serialized as strings:
  * {"plan": "{\"workspace\": {...}}"} → {"plan": {"workspace": {...}}}
  */
-function unstringifyNestedJson(value: unknown): unknown {
+export function unstringifyNestedJson(value: unknown): unknown {
   if (value === null || value === undefined) {
     return value;
   }

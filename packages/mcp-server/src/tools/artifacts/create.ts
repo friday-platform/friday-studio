@@ -1,3 +1,4 @@
+import { unstringifyNestedJson } from "@atlas/agent-sdk/vercel-helpers";
 import { client, parseResult } from "@atlas/client/v2";
 import { ArtifactDataInputSchema } from "@atlas/core/artifacts";
 import { stringifyError } from "@atlas/utils";
@@ -15,7 +16,9 @@ export function registerArtifactsCreateTool(server: McpServer, ctx: ToolContext)
       description:
         "Create a new artifact (summary, workspace-plan, calendar-schedule, slack-summary, file)",
       inputSchema: {
-        data: ArtifactDataInputSchema.describe("Type-specific artifact data"),
+        data: z
+          .preprocess(unstringifyNestedJson, ArtifactDataInputSchema)
+          .describe("Type-specific artifact data"),
         summary: z
           .string()
           .min(10)

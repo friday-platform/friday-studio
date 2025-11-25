@@ -84,8 +84,8 @@ export const CalendarScheduleSchema = z.object({
         .string()
         .describe("Unique identifier for the event. Look for an ID key or something similar."),
       eventName: z.string().describe("Name of the event"),
-      startDate: z.iso.datetime().describe("Start date of the event (ISO 8601 accepted)"),
-      endDate: z.iso.datetime().describe("End date of the event (ISO 8601 accepted)"),
+      startDate: z.iso.datetime({ offset: true }).describe("Start date of the event (ISO 8601)"),
+      endDate: z.iso.datetime({ offset: true }).describe("End date of the event (ISO 8601)"),
       link: z.string().optional().describe("Direct url to the event, if available"),
     }),
   ),

@@ -1,3 +1,4 @@
+import { unstringifyNestedJson } from "@atlas/agent-sdk/vercel-helpers";
 import { client, parseResult } from "@atlas/client/v2";
 import { ArtifactDataInputSchema, ArtifactTypeSchema } from "@atlas/core/artifacts";
 import { stringifyError } from "@atlas/utils";
@@ -16,7 +17,7 @@ export function registerArtifactsUpdateTool(server: McpServer, ctx: ToolContext)
       inputSchema: {
         type: ArtifactTypeSchema.describe("Artifact type is required but should not be changed"),
         artifactId: z.string().describe("Artifact ID"),
-        data: ArtifactDataInputSchema.describe("New data"),
+        data: z.preprocess(unstringifyNestedJson, ArtifactDataInputSchema).describe("New data"),
         summary: z
           .string()
           .min(10)
