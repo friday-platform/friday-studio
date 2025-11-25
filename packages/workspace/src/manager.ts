@@ -6,12 +6,14 @@
  * - Separation of system vs user workspaces is explicit
  */
 
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { env } from "node:process";
 import { ConfigLoader, type MergedConfig } from "@atlas/config";
 import { logger } from "@atlas/logger";
 import { FilesystemConfigAdapter } from "@atlas/storage";
 import { SYSTEM_WORKSPACES } from "@atlas/system/workspaces";
 import { getAtlasHome } from "@atlas/utils/paths.server";
+import { parse as parseDotenv } from "@std/dotenv";
 import { basename, dirname, join } from "@std/path";
 import {
   createRegistryStorage,
@@ -22,6 +24,77 @@ import { generateUniqueWorkspaceName } from "../../../src/core/utils/id-generato
 import type { WorkspaceRuntime } from "../../../src/core/workspace-runtime.ts";
 import type { WorkspaceEntry, WorkspaceSignalRegistrar, WorkspaceStatus } from "./types.ts";
 import { WorkspaceConfigWatcher } from "./watchers/index.ts";
+
+/**
+ * Validates that all "auto" environment variables required by MCP servers are available.
+ * Checks both system environment and workspace .env file.
+ * Throws if any required env vars are missing.
+ */
+function validateMCPEnvironmentForWorkspace(config: MergedConfig, workspacePath: string): void {
+  const mcpServers = config.workspace.tools?.mcp?.servers;
+  if (!mcpServers) return;
+
+  // Load workspace .env file if it exists
+  const workspaceEnvPath = join(workspacePath, ".env");
+  let workspaceEnv: Record<string, string> = {};
+  if (existsSync(workspaceEnvPath)) {
+    try {
+      const envContent = readFileSync(workspaceEnvPath, "utf-8");
+      workspaceEnv = parseDotenv(envContent);
+    } catch (error) {
+      logger.debug("Could not parse workspace .env file", { workspacePath, error });
+    }
+  }
+
+  // Collect all missing "auto" env vars
+  const missingVars: Array<{ serverId: string; varName: string }> = [];
+
+  for (const [serverId, serverConfig] of Object.entries(mcpServers)) {
+    if (!serverConfig.env) continue;
+
+    for (const [key, value] of Object.entries(serverConfig.env)) {
+      if (value === "auto" || value === "from_environment") {
+        // Check system env (includes ~/.atlas/.env loaded by daemon)
+        const systemValue = env[key];
+        // Check workspace .env
+        const workspaceValue = workspaceEnv[key];
+
+        if (!systemValue && !workspaceValue) {
+          missingVars.push({ serverId, varName: key });
+        }
+      }
+    }
+
+    // Also check auth config
+    if (serverConfig.auth?.token_env) {
+      const tokenEnv = serverConfig.auth.token_env;
+      const systemValue = env[tokenEnv];
+      const workspaceValue = workspaceEnv[tokenEnv];
+
+      if (!systemValue && !workspaceValue) {
+        missingVars.push({ serverId, varName: tokenEnv });
+      }
+    }
+  }
+
+  if (missingVars.length > 0) {
+    const formatted = missingVars
+      .map((m) => `  - ${m.varName} (required by MCP server '${m.serverId}')`)
+      .join("\n");
+
+    const workspaceEnvHint = existsSync(workspaceEnvPath)
+      ? `workspace .env (${workspaceEnvPath})`
+      : `workspace .env (create ${workspaceEnvPath})`;
+
+    throw new Error(
+      `Cannot add workspace: missing required environment variables:\n${formatted}\n\n` +
+        `Set these in:\n` +
+        `  - ${workspaceEnvHint}\n` +
+        `  - ~/.atlas/.env\n` +
+        `  - System environment`,
+    );
+  }
+}
 
 export class WorkspaceManager {
   private registry: RegistryStorageAdapter;
@@ -124,6 +197,9 @@ export class WorkspaceManager {
       logger.error("Invalid workspace configuration", { path: absolutePath, error });
       throw error;
     }
+
+    // Validate that all "auto" env vars are available before allowing registration
+    validateMCPEnvironmentForWorkspace(config, absolutePath);
 
     // Determine config filename and ephemeral status
     const persistentPath = join(absolutePath, "workspace.yml");

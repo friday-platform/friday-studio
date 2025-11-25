@@ -240,11 +240,11 @@ export class MCPManager {
                     envVar: key,
                   });
                 } else {
-                  logger.warn(`Environment variable not found: ${key}`, {
-                    operation: "mcp_env_setup",
-                    serverId: config.id,
-                    envVar: key,
-                  });
+                  throw new Error(
+                    `Required environment variable '${key}' not found. ` +
+                      `MCP server '${config.id}' requires this variable when env is set to "auto". ` +
+                      `Set it in your workspace .env file or system environment.`,
+                  );
                 }
               } else {
                 processedEnv[key] = String(value);
@@ -543,11 +543,10 @@ export class MCPManager {
           tokenEnv: auth.token_env,
         });
       } else {
-        logger.warn(`Bearer token environment variable not found: ${auth.token_env}`, {
-          operation: "mcp_auth_headers",
-          authType: "bearer",
-          tokenEnv: auth.token_env,
-        });
+        throw new Error(
+          `Required bearer token environment variable '${auth.token_env}' not found. ` +
+            `Set it in your workspace .env file or system environment.`,
+        );
       }
     }
 
@@ -562,11 +561,10 @@ export class MCPManager {
           header: auth.header || "X-API-Key",
         });
       } else {
-        logger.warn(`API key environment variable not found: ${auth.token_env}`, {
-          operation: "mcp_auth_headers",
-          authType: "api_key",
-          tokenEnv: auth.token_env,
-        });
+        throw new Error(
+          `Required API key environment variable '${auth.token_env}' not found. ` +
+            `Set it in your workspace .env file or system environment.`,
+        );
       }
     }
 
