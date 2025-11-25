@@ -1,3 +1,4 @@
+import { homedir } from "node:os";
 import { type ArtifactRef, createAgent } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
 import { getDefaultProviderOpts, registry } from "@atlas/llm";
@@ -83,10 +84,12 @@ export const claudeCodeAgent = createAgent<string, CCAgentResult>({
 
       const result = streamText({
         model: claudeCode("sonnet", {
+          cwd: homedir(),
           disallowedTools: ["Bash(rm:*)"],
           maxTurns: 25,
           permissionMode: "bypassPermissions",
           settingSources: ["user", "project", "local"],
+          stderr: (data: string) => logger.warn("Claude Code stderr", { stderr: data }),
           streamingInput: "always",
           systemPrompt: { type: "preset", preset: "claude_code" },
         }),
