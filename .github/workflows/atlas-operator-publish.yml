@@ -4,10 +4,6 @@ on:
   push:
     branches:
       - main
-    paths:
-      - "apps/atlas-operator/**"
-      - "go.mod"
-      - "go.sum"
 
 env:
   GAR_LOCATION: us-west2
