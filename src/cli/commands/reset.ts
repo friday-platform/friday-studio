@@ -1,5 +1,6 @@
 import { client, parseResult } from "@atlas/client/v2";
-import { getAtlasHome, sleep } from "@atlas/utils";
+import { sleep } from "@atlas/utils";
+import { getAtlasHome } from "@atlas/utils/paths.server";
 import { join } from "@std/path";
 import { ServiceManager } from "../../services/service-manager.ts";
 import { confirmAction } from "../utils/confirm.tsx";

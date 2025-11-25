@@ -1,7 +1,5 @@
 import { z } from "zod";
 
-export { getAtlasHome } from "./src/paths.ts";
-
 const formatter = new Intl.DateTimeFormat("en-US", { dateStyle: "full" });
 
 /**

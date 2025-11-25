@@ -1,0 +1,27 @@
+name: Web Client Build Check
+
+on:
+  pull_request:
+    paths:
+      - "packages/**"
+      - "apps/web-client/**"
+
+jobs:
+  build-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.5.6
+
+      - name: Install dependencies
+        run: deno install
+
+      - name: Build web-client
+        working-directory: apps/web-client
+        run: deno task build
