@@ -26,7 +26,7 @@
     "jsr:@std/testing@1": "1.0.16",
     "npm:@ai-sdk/anthropic@^2.0.45": "2.0.45_zod@4.1.13",
     "npm:@ai-sdk/google@^2.0.42": "2.0.42_zod@4.1.13",
-    "npm:@ai-sdk/mcp@^0.0.8": "0.0.8_zod@4.1.13",
+    "npm:@ai-sdk/mcp@^0.0.10": "0.0.10_zod@4.1.13",
     "npm:@ai-sdk/openai@^2.0.71": "2.0.71_zod@4.1.13",
     "npm:@ai-sdk/provider@2": "2.0.0",
     "npm:@ai-sdk/svelte@^3.0.101": "3.0.101_svelte@5.44.0__acorn@8.15.0_zod@4.1.13",
@@ -235,8 +235,8 @@
         "zod"
       ]
     },
-    "@ai-sdk/mcp@0.0.8_zod@4.1.13": {
-      "integrity": "sha512-9y9GuGcZ9/+pMIHfpOCJgZVp+AZMv6TkjX2NVT17SQZvTF2N8LXuCXyoUPyi1PxIxzxl0n463LxxaB2O6olC+Q==",
+    "@ai-sdk/mcp@0.0.10_zod@4.1.13": {
+      "integrity": "sha512-BZ7DQkFFg+oTrLkoAHyd7E8tKbPCR2flVo75ruxjQejPt5gXIVcEXhgC1aE8yvuL9O/rGQ+pzYVRAsU0gX2FmA==",
       "dependencies": [
         "@ai-sdk/provider",
         "@ai-sdk/provider-utils@3.0.17_zod@4.1.13",
@@ -4501,7 +4501,7 @@
       "packages/mcp": {
         "packageJson": {
           "dependencies": [
-            "npm:@ai-sdk/mcp@^0.0.8",
+            "npm:@ai-sdk/mcp@^0.0.10",
             "npm:@opentelemetry/api@^1.9.0",
             "npm:@socotra/modelcontextprotocol-sdk@^1.18.0",
             "npm:ai@^5.0.101",
