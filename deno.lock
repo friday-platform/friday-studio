@@ -31,7 +31,7 @@
     "npm:@ai-sdk/provider@2": "2.0.0",
     "npm:@ai-sdk/svelte@^3.0.102": "3.0.102_svelte@5.44.0__acorn@8.15.0_zod@4.1.13",
     "npm:@biomejs/biome@*": "2.3.7",
-    "npm:@discordjs/core@2.0.0": "2.0.0",
+    "npm:@discordjs/core@2.4.0": "2.4.0",
     "npm:@discordjs/rest@2.6.0": "2.6.0",
     "npm:@discordjs/ws@2.0.4": "2.0.4",
     "npm:@eslint/compat@2": "2.0.0_eslint@9.39.1",
@@ -436,15 +436,15 @@
     "@discordjs/collection@2.1.1": {
       "integrity": "sha512-LiSusze9Tc7qF03sLCujF5iZp7K+vRNEDBZ86FT9aQAv3vxMLihUvKvpsCWiQ2DJq1tVckopKm1rxomgNUc9hg=="
     },
-    "@discordjs/core@2.0.0": {
-      "integrity": "sha512-N5PaTaEsEJyX9/KpcRN4+Jzc2qWvi55DVD2U6PXlbK1+C1du+B7yC4ey5yNeI2lG8k4vha3iGPR0LPemUkvIZA==",
+    "@discordjs/core@2.4.0": {
+      "integrity": "sha512-+y9kvW94Zc/3IVZVBktSnC2tK45LTonfmhZh+ExUUsBlfgorMY/A+11jAcCbtzz15NtNrtUOJiMA1MGGJkv0/A==",
       "dependencies": [
         "@discordjs/rest",
         "@discordjs/util",
-        "@discordjs/ws",
+        "@discordjs/ws@2.0.4",
         "@sapphire/snowflake",
         "@vladfrangu/async_event_emitter",
-        "discord-api-types@0.37.97"
+        "discord-api-types@0.38.34"
       ]
     },
     "@discordjs/rest@2.6.0": {
@@ -465,6 +465,20 @@
       "integrity": "sha512-3LKP7F2+atl9vJFhaBjn4nOaSWahZ/yWjOvA4e5pnXkt2qyXRCHLxoBQy81GFtLGCq7K9lPm9R517M1U+/90Qg==",
       "dependencies": [
         "discord-api-types@0.38.34"
+      ]
+    },
+    "@discordjs/ws@2.0.4": {
+      "integrity": "sha512-ARXnE+qi+D7Y4trd1bKA9uhiUxQvLbOKcdehDa6NLd7FiqmDvvk8N5RGk6Ho9gdT/Wap09dz/IuLv7hNpUzt6g==",
+      "dependencies": [
+        "@discordjs/collection",
+        "@discordjs/rest",
+        "@discordjs/util",
+        "@sapphire/async-queue",
+        "@types/ws",
+        "@vladfrangu/async_event_emitter",
+        "discord-api-types@0.38.34",
+        "tslib",
+        "ws"
       ]
     },
     "@discordjs/ws@2.0.4": {
@@ -4564,7 +4578,7 @@
       "packages/discord": {
         "packageJson": {
           "dependencies": [
-            "npm:@discordjs/core@2.0.0",
+            "npm:@discordjs/core@2.4.0",
             "npm:@discordjs/rest@2.6.0",
             "npm:@discordjs/ws@2.0.4",
             "npm:discord-interactions@^4.2.0",
