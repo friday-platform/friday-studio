@@ -29,7 +29,7 @@
     "npm:@ai-sdk/mcp@^0.0.10": "0.0.10_zod@4.1.13",
     "npm:@ai-sdk/openai@^2.0.72": "2.0.72_zod@4.1.13",
     "npm:@ai-sdk/provider@2": "2.0.0",
-    "npm:@ai-sdk/svelte@^3.0.101": "3.0.101_svelte@5.44.0__acorn@8.15.0_zod@4.1.13",
+    "npm:@ai-sdk/svelte@^3.0.102": "3.0.102_svelte@5.44.0__acorn@8.15.0_zod@4.1.13",
     "npm:@biomejs/biome@*": "2.3.7",
     "npm:@discordjs/core@2.0.0": "2.0.0",
     "npm:@discordjs/rest@2.6.0": "2.6.0",
@@ -82,8 +82,8 @@
     "npm:@types/node@*": "24.2.0",
     "npm:@types/react@^19.2.7": "19.2.7",
     "npm:ai-sdk-provider-claude-code@^2.2.1": "2.2.1_zod@4.1.13",
-    "npm:ai@^5.0.101": "5.0.101_zod@4.1.13",
-    "npm:ai@^5.0.93": "5.0.101_zod@4.1.13",
+    "npm:ai@^5.0.101": "5.0.102_zod@4.1.13",
+    "npm:ai@^5.0.93": "5.0.102_zod@4.1.13",
     "npm:cookie@^1.0.2": "1.0.2",
     "npm:cron-parser@^5.4.0": "5.4.0",
     "npm:discord-interactions@^4.2.0": "4.4.0",
@@ -91,7 +91,7 @@
     "npm:eslint-config-prettier@^10.1.8": "10.1.8_eslint@9.39.1",
     "npm:eslint-plugin-svelte@^3.13.0": "3.13.0_eslint@9.39.1_svelte@5.44.0__acorn@8.15.0_postcss@8.5.6",
     "npm:eslint@^9.39.1": "9.39.1",
-    "npm:evalite@^1.0.0-beta.15": "1.0.0-beta.15_ai@5.0.101__zod@4.1.13_zod@4.1.13",
+    "npm:evalite@^1.0.0-beta.15": "1.0.0-beta.15_ai@5.0.102__zod@4.1.13_zod@4.1.13",
     "npm:eventsource-client@^1.2.0": "1.2.0",
     "npm:fast-glob@^3.3.3": "3.3.3",
     "npm:globals@^16.5.0": "16.5.0",
@@ -280,8 +280,8 @@
         "json-schema"
       ]
     },
-    "@ai-sdk/svelte@3.0.101_svelte@5.44.0__acorn@8.15.0_zod@4.1.13": {
-      "integrity": "sha512-d3GSTp0PmoNNnqCWxchMCquHXwIwcB5NuLzaoa83+gIRT+LFKB9Grzobm4DKQBd09Knwb/Z5ClT7ucw/dJjwiA==",
+    "@ai-sdk/svelte@3.0.102_svelte@5.44.0__acorn@8.15.0_zod@4.1.13": {
+      "integrity": "sha512-C8uyVjFL2FUfZQv7Z9Hceo5OnLLfgjYl5K3/l/rTnNrBXvA5GJUv4ZuNm4/nmdgvzjRV2uJKqoMoK+893oUsRQ==",
       "dependencies": [
         "@ai-sdk/provider-utils@3.0.17_zod@4.1.13",
         "ai",
@@ -1978,8 +1978,8 @@
         "zod"
       ]
     },
-    "ai@5.0.101_zod@4.1.13": {
-      "integrity": "sha512-/P4fgs2PGYTBaZi192YkPikOudsl9vccA65F7J7LvoNTOoP5kh1yAsJPsKAy6FXU32bAngai7ft1UDyC3u7z5g==",
+    "ai@5.0.102_zod@4.1.13": {
+      "integrity": "sha512-snRK3nS5DESOjjpq7S74g8YszWVMzjagfHqlJWZsbtl9PyOS+2XUd8dt2wWg/jdaq/jh0aU66W1mx5qFjUQyEg==",
       "dependencies": [
         "@ai-sdk/gateway",
         "@ai-sdk/provider",
@@ -2553,7 +2553,7 @@
     "etag@1.8.1": {
       "integrity": "sha512-aIL5Fx7mawVa300al2BnEE4iNvo1qETxLrPI/o05L7z6go7fCw1J6EQmbK4FmJ2AS7kgVF/KEZWufBfdClMcPg=="
     },
-    "evalite@1.0.0-beta.15_ai@5.0.101__zod@4.1.13_zod@4.1.13": {
+    "evalite@1.0.0-beta.15_ai@5.0.102__zod@4.1.13_zod@4.1.13": {
       "integrity": "sha512-/4D4Iap7/FTrzUYf4fZpkaGaycRnKt8gDgMDJ/fRAr5YdfUBJuwJVPQFRSPNvtkg5AVSDI7+kgivJnfP69kFEA==",
       "dependencies": [
         "@fastify/static",
@@ -4437,7 +4437,7 @@
       "apps/web-client": {
         "packageJson": {
           "dependencies": [
-            "npm:@ai-sdk/svelte@^3.0.101",
+            "npm:@ai-sdk/svelte@^3.0.102",
             "npm:@eslint/compat@2",
             "npm:@eslint/js@^9.39.1",
             "npm:@ianvs/prettier-plugin-sort-imports@^4.7.0",
