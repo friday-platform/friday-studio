@@ -36,6 +36,10 @@ type Config struct {
 	WebhookEnabled bool   `env:"WEBHOOK_ENABLED" envDefault:"true"`
 	WebhookPort    int    `env:"WEBHOOK_PORT" envDefault:"8082"`
 	WebhookToken   string `env:"WEBHOOK_TOKEN"` // Optional: Bearer token for authentication
+
+	// Pool Configuration
+	PoolEnabled    bool `env:"POOL_ENABLED" envDefault:"true"`
+	PoolTargetSize int  `env:"POOL_TARGET_SIZE" envDefault:"5"`
 }
 
 // Load loads configuration from environment variables.

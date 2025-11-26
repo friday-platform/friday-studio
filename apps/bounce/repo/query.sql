@@ -99,3 +99,23 @@ WHERE auth_user_id = $1
     AND not_valid_after > now()
 ORDER BY created_at DESC
 LIMIT 1;
+
+-- name: ClaimPoolUser :one
+-- Claims an available pool user by updating it with real user data.
+-- Uses FOR UPDATE SKIP LOCKED to prevent race conditions on concurrent signups.
+-- Returns no rows if pool is empty.
+UPDATE public."user"
+SET email = $1,
+    full_name = $2,
+    bounce_auth_user_id = $3,
+    display_name = $4,
+    profile_photo = $5,
+    pool_available = false
+WHERE id = (
+    SELECT id FROM public."user"
+    WHERE pool_available = true
+    ORDER BY created_at ASC
+    LIMIT 1
+    FOR UPDATE SKIP LOCKED
+)
+RETURNING *;

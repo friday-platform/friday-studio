@@ -9,7 +9,9 @@ import (
 
 // DatabaseClient defines the interface for database operations.
 type DatabaseClient interface {
-	GetUsers() ([]database.User, error)
+	GetUsers(ctx context.Context, limit int, afterID string) ([]database.User, error)
+	CountPoolUsers(ctx context.Context) (int, error)
+	CreatePoolUser(ctx context.Context) (string, error)
 	Health() error
 	Close() error
 }
@@ -20,4 +22,9 @@ type ArgoCDManager interface {
 	DeleteApplication(ctx context.Context, userID string) error
 	GetApplication(ctx context.Context, name string) (*unstructured.Unstructured, error)
 	ListApplications(ctx context.Context) ([]*unstructured.Unstructured, error)
+}
+
+// PoolManager defines the interface for pool operations.
+type PoolManager interface {
+	Replenish(ctx context.Context) (int, error)
 }

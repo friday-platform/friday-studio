@@ -130,7 +130,7 @@ func TestBuildApplication(t *testing.T) {
 	if !ok {
 		t.Fatal("spec.source.kustomize not found or not a map")
 	}
-	expectedSuffix := "-757365722d313233" // hex encoding of "user-123"
+	expectedSuffix := "-user-123" // user ID used directly (lowercase alphanumeric)
 	if kustomize["nameSuffix"] != expectedSuffix {
 		t.Errorf("expected kustomize.nameSuffix '%s', got %s", expectedSuffix, kustomize["nameSuffix"])
 	}
@@ -166,8 +166,8 @@ func TestBuildApplication(t *testing.T) {
 		}
 		// Verify the patch contains the DNS names (JSON6902 format)
 		if patchContent, ok := patch["patch"].(string); ok {
-			expectedServiceName := "atlas-757365722d313233"
-			expectedNameSuffix := "-757365722d313233"
+			expectedServiceName := "atlas-user-123"
+			expectedNameSuffix := "-user-123"
 			// Verify it's a JSON6902 patch with add operations
 			if !strings.Contains(patchContent, "op: add") {
 				t.Error("patch should contain 'op: add' for JSON6902 format")
@@ -219,7 +219,7 @@ func TestBuildApplication(t *testing.T) {
 		}
 		// Verify the deployment patch updates the volume secret reference AND selector/labels
 		if patchContent, ok := patch["patch"].(string); ok {
-			expectedNameSuffix := "-757365722d313233"
+			expectedNameSuffix := "-user-123"
 			expectedAppLabel := "atlas" + expectedNameSuffix
 			// Verify it's a JSON6902 patch with replace operations
 			if !strings.Contains(patchContent, "op: replace") {
@@ -266,7 +266,7 @@ func TestBuildApplication(t *testing.T) {
 		}
 		// Verify the Service patch updates the selector to be user-specific
 		if patchContent, ok := patch["patch"].(string); ok {
-			expectedNameSuffix := "-757365722d313233"
+			expectedNameSuffix := "-user-123"
 			expectedAppLabel := "atlas" + expectedNameSuffix
 			// Verify it's a JSON6902 patch with replace operation
 			if !strings.Contains(patchContent, "op: replace") {
@@ -301,8 +301,8 @@ func TestBuildApplication(t *testing.T) {
 		}
 		// Verify the IngressRoute patch updates the header match and service name
 		if patchContent, ok := patch["patch"].(string); ok {
-			expectedHexID := "757365722d313233" // hex encoding of "user-123"
-			expectedServiceName := "atlas-757365722d313233"
+			expectedUserID := "user-123" // user ID used directly (lowercase alphanumeric)
+			expectedServiceName := "atlas-user-123"
 			// Verify it's a JSON6902 patch with replace operations
 			if !strings.Contains(patchContent, "op: replace") {
 				t.Error("IngressRoute patch should contain 'op: replace' for JSON6902 format")
@@ -310,8 +310,8 @@ func TestBuildApplication(t *testing.T) {
 			if !strings.Contains(patchContent, "/spec/routes/0/match") {
 				t.Error("IngressRoute patch should contain routes match path")
 			}
-			if !strings.Contains(patchContent, expectedHexID) {
-				t.Errorf("IngressRoute patch should contain hex ID '%s'", expectedHexID)
+			if !strings.Contains(patchContent, expectedUserID) {
+				t.Errorf("IngressRoute patch should contain user ID '%s'", expectedUserID)
 			}
 			if !strings.Contains(patchContent, "/spec/routes/0/services/0/name") {
 				t.Error("IngressRoute patch should contain service name path")
@@ -630,6 +630,8 @@ func TestGetUserIDFromApplication(t *testing.T) {
 }
 
 func TestUserIDToAppName(t *testing.T) {
+	// User IDs from the database are now guaranteed to be lowercase alphanumeric
+	// (from _tempest.shortid() with lowercase alphabet). We use them directly.
 	tests := []struct {
 		name     string
 		userID   string
@@ -638,22 +640,17 @@ func TestUserIDToAppName(t *testing.T) {
 		{
 			name:     "simple lowercase user ID",
 			userID:   "user123",
-			expected: "atlas-user-75736572313233",
+			expected: "atlas-user-user123",
 		},
 		{
-			name:     "user ID with uppercase letters (like from PostgreSQL)",
-			userID:   "6bd8e78LgpQzW",
-			expected: "atlas-user-366264386537384c6770517a57",
+			name:     "typical shortid format",
+			userID:   "abc123def456",
+			expected: "atlas-user-abc123def456",
 		},
 		{
-			name:     "another user ID with uppercase",
-			userID:   "xL4gEWMNg9Pve",
-			expected: "atlas-user-784c346745574d4e6739507665",
-		},
-		{
-			name:     "user ID with mixed case",
-			userID:   "User123",
-			expected: "atlas-user-55736572313233",
+			name:     "another shortid",
+			userID:   "2z36dgjkqp61nrd",
+			expected: "atlas-user-2z36dgjkqp61nrd",
 		},
 	}
 
@@ -675,10 +672,11 @@ func TestUserIDToAppName(t *testing.T) {
 }
 
 func TestUserIDToAppNameUniqueness(t *testing.T) {
-	// Test that user IDs that differ only in case produce different app names
-	userID1 := "User123"
-	userID2 := "user123"
-	userID3 := "USER123"
+	// User IDs from the database are guaranteed to be lowercase alphanumeric.
+	// This test verifies that different lowercase IDs produce different app names.
+	userID1 := "abc123"
+	userID2 := "def456"
+	userID3 := "ghi789"
 
 	appName1 := UserIDToAppName(userID1)
 	appName2 := UserIDToAppName(userID2)
@@ -686,16 +684,23 @@ func TestUserIDToAppNameUniqueness(t *testing.T) {
 
 	// All three should be different
 	if appName1 == appName2 {
-		t.Errorf("User123 and user123 produced the same app name: %s", appName1)
+		t.Errorf("abc123 and def456 produced the same app name: %s", appName1)
 	}
 	if appName1 == appName3 {
-		t.Errorf("User123 and USER123 produced the same app name: %s", appName1)
+		t.Errorf("abc123 and ghi789 produced the same app name: %s", appName1)
 	}
 	if appName2 == appName3 {
-		t.Errorf("user123 and USER123 produced the same app name: %s", appName2)
+		t.Errorf("def456 and ghi789 produced the same app name: %s", appName2)
 	}
 
-	t.Logf("User123 -> %s", appName1)
-	t.Logf("user123 -> %s", appName2)
-	t.Logf("USER123 -> %s", appName3)
+	// Verify the expected format
+	if appName1 != "atlas-user-abc123" {
+		t.Errorf("expected 'atlas-user-abc123', got '%s'", appName1)
+	}
+	if appName2 != "atlas-user-def456" {
+		t.Errorf("expected 'atlas-user-def456', got '%s'", appName2)
+	}
+	if appName3 != "atlas-user-ghi789" {
+		t.Errorf("expected 'atlas-user-ghi789', got '%s'", appName3)
+	}
 }

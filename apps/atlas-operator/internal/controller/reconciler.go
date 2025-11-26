@@ -12,10 +12,16 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
+const (
+	// usersPageSize is the number of users to fetch per database query.
+	usersPageSize = 100
+)
+
 // Reconciler handles the main reconciliation loop.
 type Reconciler struct {
 	dbClient      DatabaseClient
 	argoCDManager ArgoCDManager
+	poolManager   PoolManager
 	config        *config.Config
 	logger        *slog.Logger
 	stopCh        chan struct{}
@@ -25,12 +31,14 @@ type Reconciler struct {
 func NewReconciler(
 	dbClient DatabaseClient,
 	argoCDManager ArgoCDManager,
+	poolManager PoolManager,
 	config *config.Config,
 	logger *slog.Logger,
 ) *Reconciler {
 	return &Reconciler{
 		dbClient:      dbClient,
 		argoCDManager: argoCDManager,
+		poolManager:   poolManager,
 		config:        config,
 		logger:        logger,
 		stopCh:        make(chan struct{}),
@@ -85,10 +93,19 @@ func (r *Reconciler) Stop() {
 func (r *Reconciler) Reconcile(ctx context.Context) error {
 	r.logger.Debug("Starting reconciliation")
 
-	// Get current users from database
-	dbUsers, err := r.dbClient.GetUsers()
-	if err != nil {
-		return fmt.Errorf("failed to get users from database: %w", err)
+	// Get current users from database using cursor-based pagination
+	var dbUsers []database.User
+	afterID := ""
+	for {
+		page, err := r.dbClient.GetUsers(ctx, usersPageSize, afterID)
+		if err != nil {
+			return fmt.Errorf("failed to get users from database: %w", err)
+		}
+		dbUsers = append(dbUsers, page...)
+		if len(page) < usersPageSize {
+			break
+		}
+		afterID = page[len(page)-1].ID
 	}
 
 	// Get existing ArgoCD Applications
@@ -160,6 +177,14 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 		"created", created,
 		"deleted", deleted,
 	)
+
+	// Replenish pool if enabled
+	if r.poolManager != nil {
+		if _, err := r.poolManager.Replenish(ctx); err != nil {
+			r.logger.Error("Failed to replenish pool", "error", err)
+			// Don't fail reconciliation for pool errors
+		}
+	}
 
 	return nil
 }

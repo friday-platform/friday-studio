@@ -38,6 +38,9 @@ apps/bounce/bounce
 apps/atlas-operator/bin/
 apps/atlas-operator/atlas-manager
 
+# Go coverage
+cover.out
+
 # Atlas installer build artifacts
 tools/atlas-installer/dist/
 tools/atlas-installer/atlas-binary/

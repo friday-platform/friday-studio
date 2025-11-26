@@ -1,6 +1,7 @@
 package database
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"log/slog"
@@ -52,11 +53,12 @@ func TestGetUsers_Success(t *testing.T) {
 		AddRow("user-1", "auth-1", "User One", "user1@example.com", now, now, "U1", "").
 		AddRow("user-2", "auth-2", "User Two", "user2@example.com", now, now, "U2", "")
 
-	mock.ExpectQuery("SELECT (.+) FROM \"user\" ORDER BY created_at DESC").
+	mock.ExpectQuery("SELECT (.+) FROM \"user\"").
+		WithArgs("", 100).
 		WillReturnRows(rows)
 
 	// Execute
-	users, err := client.GetUsers()
+	users, err := client.GetUsers(context.Background(), 100, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -100,11 +102,12 @@ func TestGetUsers_EmptyResult(t *testing.T) {
 		"created_at", "updated_at", "display_name", "profile_photo",
 	})
 
-	mock.ExpectQuery("SELECT (.+) FROM \"user\" ORDER BY created_at DESC").
+	mock.ExpectQuery("SELECT (.+) FROM \"user\"").
+		WithArgs("", 100).
 		WillReturnRows(rows)
 
 	// Execute
-	users, err := client.GetUsers()
+	users, err := client.GetUsers(context.Background(), 100, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -134,11 +137,12 @@ func TestGetUsers_QueryError(t *testing.T) {
 	}
 
 	// Setup expectations for error
-	mock.ExpectQuery("SELECT (.+) FROM \"user\" ORDER BY created_at DESC").
+	mock.ExpectQuery("SELECT (.+) FROM \"user\"").
+		WithArgs("", 100).
 		WillReturnError(fmt.Errorf("database connection lost"))
 
 	// Execute
-	_, err = client.GetUsers()
+	_, err = client.GetUsers(context.Background(), 100, "")
 	if err == nil {
 		t.Error("expected error, got nil")
 	}
@@ -171,11 +175,12 @@ func TestGetUsers_WithNullValues(t *testing.T) {
 		AddRow("user-1", nil, "User One", "user1@example.com", now, now, "U1", "").
 		AddRow("user-2", "auth-2", nil, nil, now, now, nil, nil)
 
-	mock.ExpectQuery("SELECT (.+) FROM \"user\" ORDER BY created_at DESC").
+	mock.ExpectQuery("SELECT (.+) FROM \"user\"").
+		WithArgs("", 100).
 		WillReturnRows(rows)
 
 	// Execute
-	users, err := client.GetUsers()
+	users, err := client.GetUsers(context.Background(), 100, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -475,5 +480,70 @@ func TestUser_Struct(t *testing.T) {
 
 	if user.ProfilePhoto == nil || *user.ProfilePhoto != "photo.jpg" {
 		t.Errorf("expected ProfilePhoto 'photo.jpg', got %v", user.ProfilePhoto)
+	}
+}
+
+func TestGetUsers_Pagination(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+
+	mockDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("failed to create mock: %v", err)
+	}
+	defer func() { _ = mockDB.Close() }()
+
+	client := &Client{
+		db:     sqlx.NewDb(mockDB, "sqlmock"),
+		logger: logger,
+	}
+
+	now := time.Now()
+
+	// First page
+	rows1 := sqlmock.NewRows([]string{
+		"id", "bounce_auth_user_id", "full_name", "email",
+		"created_at", "updated_at", "display_name", "profile_photo",
+	}).
+		AddRow("user-1", "auth-1", "User One", "user1@example.com", now, now, "U1", "").
+		AddRow("user-2", "auth-2", "User Two", "user2@example.com", now, now, "U2", "")
+
+	mock.ExpectQuery("SELECT (.+) FROM \"user\"").
+		WithArgs("", 2).
+		WillReturnRows(rows1)
+
+	// Second page (after user-2)
+	rows2 := sqlmock.NewRows([]string{
+		"id", "bounce_auth_user_id", "full_name", "email",
+		"created_at", "updated_at", "display_name", "profile_photo",
+	}).
+		AddRow("user-3", "auth-3", "User Three", "user3@example.com", now, now, "U3", "")
+
+	mock.ExpectQuery("SELECT (.+) FROM \"user\"").
+		WithArgs("user-2", 2).
+		WillReturnRows(rows2)
+
+	// Execute first page
+	users1, err := client.GetUsers(context.Background(), 2, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(users1) != 2 {
+		t.Errorf("expected 2 users on first page, got %d", len(users1))
+	}
+
+	// Execute second page
+	users2, err := client.GetUsers(context.Background(), 2, "user-2")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(users2) != 1 {
+		t.Errorf("expected 1 user on second page, got %d", len(users2))
+	}
+	if users2[0].ID != "user-3" {
+		t.Errorf("expected user-3, got %s", users2[0].ID)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %v", err)
 	}
 }

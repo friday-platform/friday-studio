@@ -17,6 +17,7 @@ import (
 	"github.com/tempestteam/atlas/apps/atlas-operator/pkg/argocd"
 	"github.com/tempestteam/atlas/apps/atlas-operator/pkg/config"
 	"github.com/tempestteam/atlas/apps/atlas-operator/pkg/database"
+	"github.com/tempestteam/atlas/apps/atlas-operator/pkg/pool"
 	"github.com/tempestteam/atlas/apps/atlas-operator/pkg/webhook"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -160,8 +161,14 @@ func run() error {
 		return fmt.Errorf("failed to create ArgoCD manager: %w", err)
 	}
 
+	// Create pool manager if enabled
+	var poolManager *pool.Manager
+	if cfg.PoolEnabled {
+		poolManager = pool.NewManager(dbClient, cfg.PoolTargetSize, logger)
+	}
+
 	// Create reconciler
-	reconciler := controller.NewReconciler(dbClient, argoCDManager, cfg, logger)
+	reconciler := controller.NewReconciler(dbClient, argoCDManager, poolManager, cfg, logger)
 
 	// Start health check server
 	healthServer := startHealthServer(cfg.HealthCheckPort, reconciler, logger)

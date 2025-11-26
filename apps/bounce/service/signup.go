@@ -288,13 +288,7 @@ func verifyEmailSignup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tu, err := queries.CreateTempestUser(ctx, &bouncerepo.CreateTempestUserParams{
-		BounceAuthUserID: pgtype.Text{String: authUser.ID, Valid: true},
-		Email:            authUser.Email,
-		// We haven't asked for a full name yet, so we'll use the email for now
-		// To get past the NOT NULL constraint
-		FullName: authUser.Email,
-	})
+	tu, err := claimOrCreateUser(ctx, queries, authUser.ID, authUser.Email, authUser.Email, "", "")
 	if err != nil {
 		log.Error("Could not create tempest user", "error", err)
 		_ = expect.ExactlyOneRow(err)
@@ -455,4 +449,38 @@ func completeSignup(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_, _ = fmt.Fprintf(w, `{"success": true}`)
+}
+
+// claimOrCreateUser tries to claim a pre-provisioned pool user first, falling back to direct creation.
+func claimOrCreateUser(
+	ctx context.Context,
+	queries *bouncerepo.Queries,
+	authUserID, email, fullName, displayName, profilePhoto string,
+) (*bouncerepo.User, error) {
+	log := httplog.LogEntry(ctx)
+
+	user, err := queries.ClaimPoolUser(ctx, &bouncerepo.ClaimPoolUserParams{
+		Email:            email,
+		FullName:         fullName,
+		BounceAuthUserID: pgtype.Text{String: authUserID, Valid: true},
+		DisplayName:      displayName,
+		ProfilePhoto:     profilePhoto,
+	})
+	if err == nil {
+		log.Info("Claimed pool user", "user_id", user.ID)
+		return user, nil
+	}
+
+	if errors.Is(err, pgx.ErrNoRows) {
+		log.Info("Pool empty, creating user directly")
+	} else {
+		log.Warn("Pool claim failed, creating user directly", "error", err)
+	}
+
+	return queries.CreateTempestUser(ctx, &bouncerepo.CreateTempestUserParams{
+		BounceAuthUserID: pgtype.Text{String: authUserID, Valid: true},
+		Email:            email,
+		FullName:         fullName,
+		DisplayName:      displayName,
+	})
 }

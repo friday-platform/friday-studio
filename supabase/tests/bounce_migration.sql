@@ -9,8 +9,8 @@ SELECT has_schema('_tempest', '_tempest schema should exist');
 SELECT has_function('_tempest', 'shortid', ARRAY[]::text[], 'shortid function should exist');
 SELECT matches(
   _tempest.shortid(),
-  '^[a-zA-Z0-9]+$',
-  'shortid should return alphanumeric string'
+  '^[a-z0-9]+$',
+  'shortid should return lowercase alphanumeric string'
 );
 
 -- Test _tempest.updated_at() function exists

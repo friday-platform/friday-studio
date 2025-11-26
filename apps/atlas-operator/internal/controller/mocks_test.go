@@ -11,16 +11,54 @@ import (
 
 // MockDatabaseClient is a mock implementation of database.Client for testing.
 type MockDatabaseClient struct {
-	Users       []database.User
-	HealthErr   error
-	GetUsersErr error
+	Users            []database.User
+	HealthErr        error
+	GetUsersErr      error
+	PoolUserCount    int
+	CountPoolErr     error
+	CreatePoolErr    error
+	CreatedPoolUsers []string
 }
 
-func (m *MockDatabaseClient) GetUsers() ([]database.User, error) {
+func (m *MockDatabaseClient) GetUsers(ctx context.Context, limit int, afterID string) ([]database.User, error) {
 	if m.GetUsersErr != nil {
 		return nil, m.GetUsersErr
 	}
-	return m.Users, nil
+	// Simulate cursor-based pagination
+	startIdx := 0
+	if afterID != "" {
+		for i, u := range m.Users {
+			if u.ID == afterID {
+				startIdx = i + 1
+				break
+			}
+		}
+	}
+	if startIdx >= len(m.Users) {
+		return []database.User{}, nil
+	}
+	endIdx := startIdx + limit
+	if endIdx > len(m.Users) {
+		endIdx = len(m.Users)
+	}
+	return m.Users[startIdx:endIdx], nil
+}
+
+func (m *MockDatabaseClient) CountPoolUsers(ctx context.Context) (int, error) {
+	if m.CountPoolErr != nil {
+		return 0, m.CountPoolErr
+	}
+	return m.PoolUserCount, nil
+}
+
+func (m *MockDatabaseClient) CreatePoolUser(ctx context.Context) (string, error) {
+	if m.CreatePoolErr != nil {
+		return "", m.CreatePoolErr
+	}
+	userID := "pool-user-" + string(rune('a'+len(m.CreatedPoolUsers)))
+	m.CreatedPoolUsers = append(m.CreatedPoolUsers, userID)
+	m.PoolUserCount++
+	return userID, nil
 }
 
 func (m *MockDatabaseClient) Health() error {

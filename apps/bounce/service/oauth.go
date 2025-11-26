@@ -326,15 +326,9 @@ func (p oauthProvider) authCallback(w http.ResponseWriter, r *http.Request) {
 
 				authUser = au
 
-				// We'll need to create a new Tempest user for them.
-				tu, err := queries.CreateTempestUser(ctx, &bouncerepo.CreateTempestUserParams{
-					BounceAuthUserID: pgtype.Text{String: au.ID, Valid: true},
-					Email:            user.Email,
-					FullName:         user.Name,
-					DisplayName:      user.Name,
-				})
+				tu, err := claimOrCreateUser(ctx, queries, au.ID, user.Email, user.Name, user.Name, user.Picture)
 				if err != nil {
-					log.Error("Expected to create a Tempest user here as auth user exists, but email is unconfirmed", "error", err)
+					log.Error("Failed to create tempest user", "error", err)
 					http.Error(w, "Failed to create tempest user", http.StatusInternalServerError)
 					return
 				}
@@ -383,13 +377,7 @@ func (p oauthProvider) authCallback(w http.ResponseWriter, r *http.Request) {
 
 		authUser = au
 
-		// Now to create a Tempest user
-		tu, err := queries.CreateTempestUser(ctx, &bouncerepo.CreateTempestUserParams{
-			BounceAuthUserID: pgtype.Text{String: au.ID, Valid: true},
-			Email:            user.Email,
-			FullName:         user.Name,
-			DisplayName:      user.Name,
-		})
+		tu, err := claimOrCreateUser(ctx, queries, au.ID, user.Email, user.Name, user.Name, user.Picture)
 		if err != nil {
 			log.Error("Failed to create tempest user", "error", err)
 			http.Error(w, "Failed to create tempest user", http.StatusInternalServerError)

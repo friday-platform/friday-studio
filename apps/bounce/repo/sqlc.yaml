@@ -1,8 +1,6 @@
 version: 2
 sql:
   - engine: postgresql
-    database:
-      uri: "postgres://postgres:postgres@localhost:54322/postgres"
     queries: query.sql
     schema:
       - ../../../supabase/migrations/20251114020000_create_bounce_tables.sql

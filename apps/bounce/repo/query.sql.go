@@ -143,6 +143,75 @@ func (q *Queries) AuthUserByID(ctx context.Context, id string) (*BounceAuthUser,
 	return &i, err
 }
 
+const claimPoolUser = `-- name: ClaimPoolUser :one
+UPDATE public."user"
+SET email = $1,
+    full_name = $2,
+    bounce_auth_user_id = $3,
+    display_name = $4,
+    profile_photo = $5,
+    pool_available = false
+WHERE id = (
+    SELECT id FROM public."user"
+    WHERE pool_available = true
+    ORDER BY created_at ASC
+    LIMIT 1
+    FOR UPDATE SKIP LOCKED
+)
+RETURNING id, bounce_auth_user_id, full_name, email, created_at, updated_at, display_name, profile_photo, pool_available, name
+`
+
+type ClaimPoolUserParams struct {
+	Email            string      `db:"email" json:"email"`
+	FullName         string      `db:"full_name" json:"fullName"`
+	BounceAuthUserID pgtype.Text `db:"bounce_auth_user_id" json:"bounceAuthUserId"`
+	DisplayName      string      `db:"display_name" json:"displayName"`
+	ProfilePhoto     string      `db:"profile_photo" json:"profilePhoto"`
+}
+
+// Claims an available pool user by updating it with real user data.
+// Uses FOR UPDATE SKIP LOCKED to prevent race conditions on concurrent signups.
+// Returns no rows if pool is empty.
+//
+//	UPDATE public."user"
+//	SET email = $1,
+//	    full_name = $2,
+//	    bounce_auth_user_id = $3,
+//	    display_name = $4,
+//	    profile_photo = $5,
+//	    pool_available = false
+//	WHERE id = (
+//	    SELECT id FROM public."user"
+//	    WHERE pool_available = true
+//	    ORDER BY created_at ASC
+//	    LIMIT 1
+//	    FOR UPDATE SKIP LOCKED
+//	)
+//	RETURNING id, bounce_auth_user_id, full_name, email, created_at, updated_at, display_name, profile_photo, pool_available, name
+func (q *Queries) ClaimPoolUser(ctx context.Context, arg *ClaimPoolUserParams) (*User, error) {
+	row := q.db.QueryRow(ctx, claimPoolUser,
+		arg.Email,
+		arg.FullName,
+		arg.BounceAuthUserID,
+		arg.DisplayName,
+		arg.ProfilePhoto,
+	)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.BounceAuthUserID,
+		&i.FullName,
+		&i.Email,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DisplayName,
+		&i.ProfilePhoto,
+		&i.PoolAvailable,
+		&i.Name,
+	)
+	return &i, err
+}
+
 const confirmAuthUser = `-- name: ConfirmAuthUser :one
 UPDATE bounce.auth_user
 SET
@@ -192,7 +261,7 @@ func (q *Queries) ConfirmAuthUser(ctx context.Context, arg *ConfirmAuthUserParam
 
 const createTempestUser = `-- name: CreateTempestUser :one
 INSERT INTO public."user" (bounce_auth_user_id, email, full_name, display_name, profile_photo)
-VALUES ($1, $2, $3, $4, $5) RETURNING id, bounce_auth_user_id, full_name, email, created_at, updated_at, display_name, profile_photo, name
+VALUES ($1, $2, $3, $4, $5) RETURNING id, bounce_auth_user_id, full_name, email, created_at, updated_at, display_name, profile_photo, pool_available, name
 `
 
 type CreateTempestUserParams struct {
@@ -206,7 +275,7 @@ type CreateTempestUserParams struct {
 // CreateTempestUser
 //
 //	INSERT INTO public."user" (bounce_auth_user_id, email, full_name, display_name, profile_photo)
-//	VALUES ($1, $2, $3, $4, $5) RETURNING id, bounce_auth_user_id, full_name, email, created_at, updated_at, display_name, profile_photo, name
+//	VALUES ($1, $2, $3, $4, $5) RETURNING id, bounce_auth_user_id, full_name, email, created_at, updated_at, display_name, profile_photo, pool_available, name
 func (q *Queries) CreateTempestUser(ctx context.Context, arg *CreateTempestUserParams) (*User, error) {
 	row := q.db.QueryRow(ctx, createTempestUser,
 		arg.BounceAuthUserID,
@@ -225,6 +294,7 @@ func (q *Queries) CreateTempestUser(ctx context.Context, arg *CreateTempestUserP
 		&i.UpdatedAt,
 		&i.DisplayName,
 		&i.ProfilePhoto,
+		&i.PoolAvailable,
 		&i.Name,
 	)
 	return &i, err
@@ -363,7 +433,7 @@ SET
     profile_photo = $4
 WHERE
     id = $1
-RETURNING id, bounce_auth_user_id, full_name, email, created_at, updated_at, display_name, profile_photo, name
+RETURNING id, bounce_auth_user_id, full_name, email, created_at, updated_at, display_name, profile_photo, pool_available, name
 `
 
 type SaveTempestUserParams struct {
@@ -382,7 +452,7 @@ type SaveTempestUserParams struct {
 //	    profile_photo = $4
 //	WHERE
 //	    id = $1
-//	RETURNING id, bounce_auth_user_id, full_name, email, created_at, updated_at, display_name, profile_photo, name
+//	RETURNING id, bounce_auth_user_id, full_name, email, created_at, updated_at, display_name, profile_photo, pool_available, name
 func (q *Queries) SaveTempestUser(ctx context.Context, arg *SaveTempestUserParams) (*User, error) {
 	row := q.db.QueryRow(ctx, saveTempestUser,
 		arg.ID,
@@ -400,6 +470,7 @@ func (q *Queries) SaveTempestUser(ctx context.Context, arg *SaveTempestUserParam
 		&i.UpdatedAt,
 		&i.DisplayName,
 		&i.ProfilePhoto,
+		&i.PoolAvailable,
 		&i.Name,
 	)
 	return &i, err
@@ -478,12 +549,12 @@ func (q *Queries) SetIdentityLastSignin(ctx context.Context, id string) error {
 }
 
 const tempestUserByAuthUserID = `-- name: TempestUserByAuthUserID :one
-SELECT id, bounce_auth_user_id, full_name, email, created_at, updated_at, display_name, profile_photo, name FROM public."user" WHERE bounce_auth_user_id = $1
+SELECT id, bounce_auth_user_id, full_name, email, created_at, updated_at, display_name, profile_photo, pool_available, name FROM public."user" WHERE bounce_auth_user_id = $1
 `
 
 // TempestUserByAuthUserID
 //
-//	SELECT id, bounce_auth_user_id, full_name, email, created_at, updated_at, display_name, profile_photo, name FROM public."user" WHERE bounce_auth_user_id = $1
+//	SELECT id, bounce_auth_user_id, full_name, email, created_at, updated_at, display_name, profile_photo, pool_available, name FROM public."user" WHERE bounce_auth_user_id = $1
 func (q *Queries) TempestUserByAuthUserID(ctx context.Context, bounceAuthUserID pgtype.Text) (*User, error) {
 	row := q.db.QueryRow(ctx, tempestUserByAuthUserID, bounceAuthUserID)
 	var i User
@@ -496,18 +567,19 @@ func (q *Queries) TempestUserByAuthUserID(ctx context.Context, bounceAuthUserID 
 		&i.UpdatedAt,
 		&i.DisplayName,
 		&i.ProfilePhoto,
+		&i.PoolAvailable,
 		&i.Name,
 	)
 	return &i, err
 }
 
 const tempestUserByID = `-- name: TempestUserByID :one
-SELECT id, bounce_auth_user_id, full_name, email, created_at, updated_at, display_name, profile_photo, name FROM public."user" WHERE id = $1
+SELECT id, bounce_auth_user_id, full_name, email, created_at, updated_at, display_name, profile_photo, pool_available, name FROM public."user" WHERE id = $1
 `
 
 // TempestUserByID
 //
-//	SELECT id, bounce_auth_user_id, full_name, email, created_at, updated_at, display_name, profile_photo, name FROM public."user" WHERE id = $1
+//	SELECT id, bounce_auth_user_id, full_name, email, created_at, updated_at, display_name, profile_photo, pool_available, name FROM public."user" WHERE id = $1
 func (q *Queries) TempestUserByID(ctx context.Context, id string) (*User, error) {
 	row := q.db.QueryRow(ctx, tempestUserByID, id)
 	var i User
@@ -520,6 +592,7 @@ func (q *Queries) TempestUserByID(ctx context.Context, id string) (*User, error)
 		&i.UpdatedAt,
 		&i.DisplayName,
 		&i.ProfilePhoto,
+		&i.PoolAvailable,
 		&i.Name,
 	)
 	return &i, err

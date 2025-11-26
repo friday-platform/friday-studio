@@ -155,5 +155,6 @@ type User struct {
 	UpdatedAt        pgtype.Timestamptz `db:"updated_at" json:"updatedAt"`
 	DisplayName      string             `db:"display_name" json:"displayName"`
 	ProfilePhoto     string             `db:"profile_photo" json:"profilePhoto"`
+	PoolAvailable    bool               `db:"pool_available" json:"poolAvailable"`
 	Name             pgtype.Text        `db:"name" json:"name"`
 }

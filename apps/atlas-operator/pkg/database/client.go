@@ -1,6 +1,7 @@
 package database
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -58,8 +59,9 @@ func NewClient(databaseURL string, logger *slog.Logger) (*Client, error) {
 	}, nil
 }
 
-// GetUsers retrieves all users from the database.
-func (c *Client) GetUsers() ([]User, error) {
+// GetUsers retrieves users from the database with cursor-based pagination.
+// Use afterID="" for the first page. Returns up to limit users ordered by id.
+func (c *Client) GetUsers(ctx context.Context, limit int, afterID string) ([]User, error) {
 	query := `
 		SELECT
 			id,
@@ -71,21 +73,19 @@ func (c *Client) GetUsers() ([]User, error) {
 			display_name,
 			profile_photo
 		FROM "user"
-		ORDER BY created_at DESC
+		WHERE ($1 = '' OR id > $1)
+		ORDER BY id
+		LIMIT $2
 	`
 
 	var users []User
-	err := c.db.Select(&users, query)
+	err := c.db.SelectContext(ctx, &users, query, afterID, limit)
 	if err != nil {
 		c.logger.Error("Failed to query users",
 			"error", err,
 		)
 		return nil, fmt.Errorf("failed to query users: %w", err)
 	}
-
-	c.logger.Debug("Retrieved users from database",
-		"count", len(users),
-	)
 
 	return users, nil
 }
@@ -137,4 +137,35 @@ func (c *Client) Health() error {
 		return fmt.Errorf("database connection not initialized")
 	}
 	return c.db.Ping()
+}
+
+// CountPoolUsers counts available pool users that are unclaimed.
+func (c *Client) CountPoolUsers(ctx context.Context) (int, error) {
+	query := `SELECT COUNT(*) FROM "user" WHERE pool_available = true`
+
+	var count int
+	err := c.db.GetContext(ctx, &count, query)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count pool users: %w", err)
+	}
+
+	return count, nil
+}
+
+// CreatePoolUser creates a new pool user with placeholder data.
+// Returns the user ID of the created pool user.
+func (c *Client) CreatePoolUser(ctx context.Context) (string, error) {
+	query := `
+		INSERT INTO "user" (email, full_name, pool_available)
+		VALUES (gen_random_uuid()::text || '@pool.internal', '', true)
+		RETURNING id
+	`
+
+	var userID string
+	err := c.db.GetContext(ctx, &userID, query)
+	if err != nil {
+		return "", fmt.Errorf("failed to create pool user: %w", err)
+	}
+
+	return userID, nil
 }

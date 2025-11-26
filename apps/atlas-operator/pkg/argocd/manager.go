@@ -2,7 +2,6 @@ package argocd
 
 import (
 	"context"
-	"encoding/hex"
 	"fmt"
 	"log/slog"
 
@@ -59,12 +58,10 @@ func NewManager(config *rest.Config, namespace, targetNamespace, environment, gi
 }
 
 // UserIDToAppName converts a user ID to a Kubernetes-compliant application name.
-// Uses hex encoding to ensure RFC 1123 compliance while maintaining uniqueness.
-// This function is exported so it can be used by Traefik routing and other components.
+// User IDs are already lowercase alphanumeric (from _tempest.shortid()), so they
+// are RFC 1123 compliant and can be used directly without encoding.
 func UserIDToAppName(userID string) string {
-	// Hex encode the user ID to ensure it's lowercase and RFC 1123 compliant
-	encoded := hex.EncodeToString([]byte(userID))
-	return fmt.Sprintf("atlas-user-%s", encoded)
+	return fmt.Sprintf("atlas-user-%s", userID)
 }
 
 // CreateApplication creates an ArgoCD Application for a user.
@@ -187,10 +184,8 @@ func createPatchEntry(patch, kind, name string) map[string]interface{} {
 // buildApplication creates an unstructured Application object.
 func (m *Manager) buildApplication(name, userID string) *unstructured.Unstructured {
 	path := fmt.Sprintf("atlas/overlays/%s", m.environment)
-	// Hex encode the user ID once for routing and naming
-	hexID := hex.EncodeToString([]byte(userID))
-	// Use hex encoding for the suffix to ensure RFC 1123 compliance
-	nameSuffix := fmt.Sprintf("-%s", hexID)
+	// User IDs are already lowercase alphanumeric (RFC 1123 compliant)
+	nameSuffix := fmt.Sprintf("-%s", userID)
 	// Service name after nameSuffix is applied
 	serviceName := fmt.Sprintf("atlas%s", nameSuffix)
 
@@ -223,7 +218,7 @@ func (m *Manager) buildApplication(name, userID string) *unstructured.Unstructur
 	// IMPORTANT: Add Replace=true,Force=true to handle immutable spec.selector field.
 	// Replace=true alone uses `kubectl replace` which CANNOT modify immutable fields.
 	// Force=true triggers `kubectl delete/create` which can handle immutable changes.
-	// When changing from "app: atlas" to "app: atlas-<hexID>", this combination allows
+	// When changing from "app: atlas" to "app: atlas-<userID>", this combination allows
 	// the deployment to be deleted and recreated with the new selector.
 	deploymentPatch := fmt.Sprintf(`
 - op: add
@@ -254,10 +249,10 @@ func (m *Manager) buildApplication(name, userID string) *unstructured.Unstructur
 	// The parent IngressRoute applies the extractuserid middleware before child routing.
 
 	// API route match (route 0) - includes path prefix for API endpoints
-	apiMatchRule := fmt.Sprintf("Header(`X-Atlas-User-ID`, `%s`) && (PathPrefix(`/api/`) || Path(`/health`) || PathPrefix(`/streams/`))", hexID)
+	apiMatchRule := fmt.Sprintf("Header(`X-Atlas-User-ID`, `%s`) && (PathPrefix(`/api/`) || Path(`/health`) || PathPrefix(`/streams/`))", userID)
 
 	// Default route match (route 1) for non-API traffic - header matching only
-	defaultMatchRule := fmt.Sprintf("Header(`X-Atlas-User-ID`, `%s`)", hexID)
+	defaultMatchRule := fmt.Sprintf("Header(`X-Atlas-User-ID`, `%s`)", userID)
 
 	ingressRoutePatch := fmt.Sprintf(`
 - op: replace

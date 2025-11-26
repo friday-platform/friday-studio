@@ -23,7 +23,7 @@ func TestNewReconciler(t *testing.T) {
 	mockDB := &MockDatabaseClient{}
 	mockArgoCD := &MockArgoCDManager{}
 
-	r := NewReconciler(mockDB, mockArgoCD, cfg, logger)
+	r := NewReconciler(mockDB, mockArgoCD, nil, cfg, logger)
 
 	if r == nil {
 		t.Fatal("expected non-nil reconciler")
@@ -45,7 +45,7 @@ func TestStop(t *testing.T) {
 		ReconciliationInterval: 100 * time.Millisecond,
 	}
 
-	r := NewReconciler(nil, nil, cfg, logger)
+	r := NewReconciler(nil, nil, nil, cfg, logger)
 
 	// Verify stopCh is open initially
 	select {
@@ -84,7 +84,7 @@ func TestReconcile_CreateNewApplications(t *testing.T) {
 		Applications: []*unstructured.Unstructured{},
 	}
 
-	r := NewReconciler(mockDB, mockArgoCD, cfg, logger)
+	r := NewReconciler(mockDB, mockArgoCD, nil, cfg, logger)
 
 	ctx := context.Background()
 	err := r.Reconcile(ctx)
@@ -153,7 +153,7 @@ func TestReconcile_DeleteRemovedApplications(t *testing.T) {
 		},
 	}
 
-	r := NewReconciler(mockDB, mockArgoCD, cfg, logger)
+	r := NewReconciler(mockDB, mockArgoCD, nil, cfg, logger)
 
 	ctx := context.Background()
 	err := r.Reconcile(ctx)
@@ -225,7 +225,7 @@ func TestReconcile_MixedOperations(t *testing.T) {
 		},
 	}
 
-	r := NewReconciler(mockDB, mockArgoCD, cfg, logger)
+	r := NewReconciler(mockDB, mockArgoCD, nil, cfg, logger)
 
 	ctx := context.Background()
 	err := r.Reconcile(ctx)
@@ -261,7 +261,7 @@ func TestReconcile_DatabaseError(t *testing.T) {
 	}
 	mockArgoCD := &MockArgoCDManager{}
 
-	r := NewReconciler(mockDB, mockArgoCD, cfg, logger)
+	r := NewReconciler(mockDB, mockArgoCD, nil, cfg, logger)
 
 	ctx := context.Background()
 	err := r.Reconcile(ctx)
@@ -288,7 +288,7 @@ func TestReconcile_ArgoCDListError(t *testing.T) {
 		ListErr: fmt.Errorf("kubernetes API error"),
 	}
 
-	r := NewReconciler(mockDB, mockArgoCD, cfg, logger)
+	r := NewReconciler(mockDB, mockArgoCD, nil, cfg, logger)
 
 	ctx := context.Background()
 	err := r.Reconcile(ctx)
@@ -315,7 +315,7 @@ func TestReconcile_ContinuesOnPartialFailure(t *testing.T) {
 		CreateErr:    fmt.Errorf("creation failed"),
 	}
 
-	r := NewReconciler(mockDB, mockArgoCD, cfg, logger)
+	r := NewReconciler(mockDB, mockArgoCD, nil, cfg, logger)
 
 	ctx := context.Background()
 	err := r.Reconcile(ctx)
@@ -353,7 +353,7 @@ func TestReconcile_AppWithoutUserIDLabel(t *testing.T) {
 		},
 	}
 
-	r := NewReconciler(mockDB, mockArgoCD, cfg, logger)
+	r := NewReconciler(mockDB, mockArgoCD, nil, cfg, logger)
 
 	ctx := context.Background()
 	err := r.Reconcile(ctx)
@@ -379,7 +379,7 @@ func TestHealth_AllHealthy(t *testing.T) {
 		Applications: []*unstructured.Unstructured{},
 	}
 
-	r := NewReconciler(mockDB, mockArgoCD, cfg, logger)
+	r := NewReconciler(mockDB, mockArgoCD, nil, cfg, logger)
 
 	err := r.Health()
 	if err != nil {
@@ -396,7 +396,7 @@ func TestHealth_DatabaseUnhealthy(t *testing.T) {
 	}
 	mockArgoCD := &MockArgoCDManager{}
 
-	r := NewReconciler(mockDB, mockArgoCD, cfg, logger)
+	r := NewReconciler(mockDB, mockArgoCD, nil, cfg, logger)
 
 	err := r.Health()
 	if err == nil {
@@ -415,7 +415,7 @@ func TestHealth_ArgoCDUnhealthy(t *testing.T) {
 		ListErr: fmt.Errorf("kubernetes API unavailable"),
 	}
 
-	r := NewReconciler(mockDB, mockArgoCD, cfg, logger)
+	r := NewReconciler(mockDB, mockArgoCD, nil, cfg, logger)
 
 	err := r.Health()
 	if err == nil {
@@ -427,7 +427,7 @@ func TestHealth_NilDependencies(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
 	cfg := &config.Config{}
 
-	r := NewReconciler(nil, nil, cfg, logger)
+	r := NewReconciler(nil, nil, nil, cfg, logger)
 
 	err := r.Health()
 	if err == nil {
@@ -448,7 +448,7 @@ func TestStart_ContextCancellation(t *testing.T) {
 		Applications: []*unstructured.Unstructured{},
 	}
 
-	r := NewReconciler(mockDB, mockArgoCD, cfg, logger)
+	r := NewReconciler(mockDB, mockArgoCD, nil, cfg, logger)
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -489,7 +489,7 @@ func TestStart_StopChannel(t *testing.T) {
 		Applications: []*unstructured.Unstructured{},
 	}
 
-	r := NewReconciler(mockDB, mockArgoCD, cfg, logger)
+	r := NewReconciler(mockDB, mockArgoCD, nil, cfg, logger)
 
 	ctx := context.Background()
 
@@ -532,7 +532,7 @@ func TestStart_PeriodicReconciliation(t *testing.T) {
 		Applications: []*unstructured.Unstructured{},
 	}
 
-	r := NewReconciler(mockDB, mockArgoCD, cfg, logger)
+	r := NewReconciler(mockDB, mockArgoCD, nil, cfg, logger)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
