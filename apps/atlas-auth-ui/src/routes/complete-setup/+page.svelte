@@ -1,12 +1,12 @@
 <script lang="ts">
-import { z } from "zod";
 import { zfd } from "zod-form-data";
-import { goto } from "$app/navigation";
 import Button from "$lib/components/button.svelte";
 import Decal from "$lib/components/decal.svelte";
 import { Form } from "$lib/components/form";
 import Wordmark from "$lib/components/logos/atlas-wordmark.svelte";
 import { toast } from "$lib/components/notifications/notifications.svelte";
+
+const { data } = $props();
 
 let submitted = $state(false);
 
@@ -52,7 +52,7 @@ const signupSchema = zfd.formData({ user_full_name: zfd.text() });
             });
 
             if (response.ok) {
-              goto(`/`);
+              window.location.href = data.appUrl;
             } else {
               submitted = false;
 
