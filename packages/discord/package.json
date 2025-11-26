@@ -11,7 +11,7 @@
     "@discordjs/core": "2.4.0",
     "@discordjs/rest": "2.6.0",
     "@discordjs/ws": "2.0.4",
-    "discord-interactions": "^4.2.0",
+    "discord-interactions": "^4.4.0",
     "hono": "^4.10.6",
     "zod": "^4.1.12"
   }

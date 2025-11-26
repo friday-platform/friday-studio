@@ -86,7 +86,7 @@
     "npm:ai@^5.0.93": "5.0.102_zod@4.1.13",
     "npm:cookie@^1.0.2": "1.0.2",
     "npm:cron-parser@^5.4.0": "5.4.0",
-    "npm:discord-interactions@^4.2.0": "4.4.0",
+    "npm:discord-interactions@^4.4.0": "4.4.0",
     "npm:dotenv@17.2.3": "17.2.3",
     "npm:eslint-config-prettier@^10.1.8": "10.1.8_eslint@9.39.1",
     "npm:eslint-plugin-svelte@^3.13.0": "3.13.0_eslint@9.39.1_svelte@5.44.0__acorn@8.15.0_postcss@8.5.6",
@@ -441,10 +441,10 @@
       "dependencies": [
         "@discordjs/rest",
         "@discordjs/util",
-        "@discordjs/ws@2.0.4",
+        "@discordjs/ws",
         "@sapphire/snowflake",
         "@vladfrangu/async_event_emitter",
-        "discord-api-types@0.38.34"
+        "discord-api-types"
       ]
     },
     "@discordjs/rest@2.6.0": {
@@ -455,7 +455,7 @@
         "@sapphire/async-queue",
         "@sapphire/snowflake",
         "@vladfrangu/async_event_emitter",
-        "discord-api-types@0.38.34",
+        "discord-api-types",
         "magic-bytes.js",
         "tslib",
         "undici"
@@ -464,7 +464,7 @@
     "@discordjs/util@1.2.0": {
       "integrity": "sha512-3LKP7F2+atl9vJFhaBjn4nOaSWahZ/yWjOvA4e5pnXkt2qyXRCHLxoBQy81GFtLGCq7K9lPm9R517M1U+/90Qg==",
       "dependencies": [
-        "discord-api-types@0.38.34"
+        "discord-api-types"
       ]
     },
     "@discordjs/ws@2.0.4": {
@@ -476,21 +476,7 @@
         "@sapphire/async-queue",
         "@types/ws",
         "@vladfrangu/async_event_emitter",
-        "discord-api-types@0.38.34",
-        "tslib",
-        "ws"
-      ]
-    },
-    "@discordjs/ws@2.0.4": {
-      "integrity": "sha512-ARXnE+qi+D7Y4trd1bKA9uhiUxQvLbOKcdehDa6NLd7FiqmDvvk8N5RGk6Ho9gdT/Wap09dz/IuLv7hNpUzt6g==",
-      "dependencies": [
-        "@discordjs/collection",
-        "@discordjs/rest",
-        "@discordjs/util",
-        "@sapphire/async-queue",
-        "@types/ws",
-        "@vladfrangu/async_event_emitter",
-        "discord-api-types@0.38.34",
+        "discord-api-types",
         "tslib",
         "ws"
       ]
@@ -2317,9 +2303,6 @@
     },
     "devalue@5.5.0": {
       "integrity": "sha512-69sM5yrHfFLJt0AZ9QqZXGCPfJ7fQjvpln3Rq5+PS03LD32Ost1Q9N+eEnaQwGRIriKkMImXD56ocjQmfjbV3w=="
-    },
-    "discord-api-types@0.37.97": {
-      "integrity": "sha512-No1BXPcVkyVD4ZVmbNgDKaBoqgeQ+FJpzZ8wqHkfmBnTZig1FcH3iPPersiK1TUIAzgClh2IvOuVUYfcWLQAOA=="
     },
     "discord-api-types@0.38.34": {
       "integrity": "sha512-muq7xKGznj5MSFCzuIm/2TO7DpttuomUTemVM82fRqgnMl70YRzEyY24jlbiV6R9tzOTq6A6UnZ0bsfZeKD38Q=="
@@ -4581,7 +4564,7 @@
             "npm:@discordjs/core@2.4.0",
             "npm:@discordjs/rest@2.6.0",
             "npm:@discordjs/ws@2.0.4",
-            "npm:discord-interactions@^4.2.0",
+            "npm:discord-interactions@^4.4.0",
             "npm:hono@^4.10.6",
             "npm:zod@^4.1.12"
           ]
