@@ -17,7 +17,7 @@
     "@melt-ui/svelte": "^0.86.6",
     "@sveltejs/kit": "^2.49.0",
     "nanoid": "^5.1.6",
-    "svelte": "^5.44.0",
+    "svelte": "^5.44.1",
     "zod": "^4.1.13",
     "zod-form-data": "^3.0.1"
   },
