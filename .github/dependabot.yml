@@ -117,6 +117,24 @@ updates:
       - dependency-name: "glib"
         # Will be resolved when webkit2gtk updates to use glib 0.20.0+
 
+  # Keep Docker image npm dependencies up to date (Claude Code CLI)
+  - package-ecosystem: "npm"
+    directory: "/docker"
+    schedule:
+      interval: "daily"
+      time: "09:00"
+    open-pull-requests-limit: 5
+    assignees:
+      - "ljagiello"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "docker"
+      - "claude-code"
+    rebase-strategy: "auto"
+
   # Keep Docker dependencies up to date (for atlas-operator)
   - package-ecosystem: "docker"
     directory: "/apps/atlas-operator"

@@ -50,8 +50,16 @@ RUN deno compile \
 # Stage 2: Daemon runtime
 FROM denoland/deno:alpine-2.5.6 AS daemon
 
-# Install Node.js and npm for npx support (required for MCP servers)
-RUN apk add --no-cache nodejs npm
+# Install Node.js, npm, and Claude Code CLI
+# Version is managed in docker/package.json (updated by Dependabot)
+# Note: LD_LIBRARY_PATH is set to use system libgcc instead of Deno's bundled one
+COPY docker/package.json /tmp/docker-deps/package.json
+RUN apk add --no-cache nodejs npm && \
+    cd /tmp/docker-deps && LD_LIBRARY_PATH=/usr/lib:/usr/local/lib npm install && \
+    cp -r node_modules/@anthropic-ai/claude-code /usr/local/lib/claude-code && \
+    ln -s /usr/local/lib/claude-code/cli.js /usr/local/bin/claude && \
+    chmod +x /usr/local/bin/claude && \
+    rm -rf /tmp/docker-deps
 
 # Create atlas user and group (if not already exists)
 RUN addgroup -g 1001 -S atlas 2>/dev/null || true && \
@@ -74,7 +82,6 @@ USER atlas
 WORKDIR /home/atlas
 
 # Set environment variables for optimal operation
-# Prepend system lib path to LD_LIBRARY_PATH so Node.js uses system libgcc
 ENV DENO_NO_UPDATE_CHECK=1 \
     DENO_DIR=/home/atlas/.deno \
     ATLAS_HOME=/home/atlas/.atlas \
@@ -82,6 +89,7 @@ ENV DENO_NO_UPDATE_CHECK=1 \
     ATLAS_DAEMON_HOST=0.0.0.0 \
     ATLAS_DAEMON_PORT=8080 \
     ATLAS_NPX_PATH=/usr/bin/npx \
+    ATLAS_CLAUDE_PATH=/usr/local/bin/claude \
     LD_LIBRARY_PATH=/usr/lib:/usr/local/lib
 
 # Expose the daemon port

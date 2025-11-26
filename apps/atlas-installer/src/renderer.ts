@@ -25,6 +25,9 @@ const tauriAPI = {
   saveAtlasUvPath: async (): Promise<IPCResult> => {
     return await invoke("save_atlas_uv_path");
   },
+  saveAtlasClaudePath: async (): Promise<IPCResult> => {
+    return await invoke("save_atlas_claude_path");
+  },
   saveAtlasKey: async (apiKey: string): Promise<IPCResult> => {
     return await invoke("save_atlas_key", { apiKey });
   },
@@ -448,12 +451,17 @@ interface BinaryCheckResult {
           action: () => tauriAPI.saveAtlasNodePath(),
         },
         {
-          progress: 40,
+          progress: 35,
           message: "Configuring UV path for Python agents...",
           action: () => tauriAPI.saveAtlasUvPath(),
         },
         {
-          progress: 50,
+          progress: 45,
+          message: "Configuring Claude CLI path for claude-code agent...",
+          action: () => tauriAPI.saveAtlasClaudePath(),
+        },
+        {
+          progress: 55,
           message: "Installing Atlas binary...",
           action: () => tauriAPI.installAtlasBinary(),
         },

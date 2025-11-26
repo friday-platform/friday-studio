@@ -50,7 +50,7 @@
     "mock-mcp-file-tools": "deno run --allow-all integration-tests/mocks/file-tools-mcp-server.ts",
     "mock-mcp-echo": "deno run --allow-all integration-tests/mocks/echo-mcp-server.ts",
     "clean": "deno run --allow-read --allow-write --allow-env scripts/clean.ts",
-    "compile": "mkdir -p ./dist && deno compile --no-check --allow-read --allow-write --allow-net --allow-env --allow-run --allow-sys --allow-ffi --unstable-broadcast-channel --unstable-worker-options --include=src --include=examples --output ./dist/atlas ./src/cli.tsx",
+    "compile": "./scripts/compile.sh",
 
     "report:knip": "npx knip --reporter markdown --max-issues 0 > reports/knip-report.md"
   },

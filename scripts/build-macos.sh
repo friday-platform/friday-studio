@@ -37,25 +37,7 @@ sed -i "" "s|__ATLAS_GIT_SHA__|$GIT_SHA|g" "$VERSION_FILE"
 
 # 2. Build binary
 echo "Compiling binary..."
-mkdir -p "$DIST_DIR"
-
-# This command is adapted from the "native compilation for ARM64 macOS" step
-deno compile \
-  --no-check \
-  --allow-read \
-  --allow-write \
-  --allow-net \
-  --allow-env \
-  --allow-run \
-  --allow-sys \
-  --allow-ffi \
-  --unstable-broadcast-channel \
-  --unstable-worker-options \
-  --include=src \
-  --include=examples \
-  --include=packages \
-  --output "${DIST_DIR}/${BINARY_NAME}" \
-  ./src/cli.tsx
+./scripts/compile.sh "${DIST_DIR}/${BINARY_NAME}"
 
 echo "Compilation complete."
 

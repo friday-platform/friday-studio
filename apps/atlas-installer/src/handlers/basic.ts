@@ -3,6 +3,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type {
   ApiKeyCheckResult,
+  ClaudePathResult,
   DirectoryResult,
   IPCHandler,
   IPCResult,
@@ -10,6 +11,7 @@ import type {
   NpxPathResult,
   PlatformInfo,
 } from "../types";
+import { findClaudePath } from "../utils/claude-detector";
 import { createLogger } from "../utils/logger";
 import { findNodePath } from "../utils/node-detector";
 import { findNpxPath } from "../utils/npx-detector";
@@ -174,6 +176,60 @@ export const saveAtlasNodePathHandler: IPCHandler<
   } catch (err) {
     logger.error("Failed to save Node path", err);
     return { ...handleError(err), nodePath: undefined };
+  }
+};
+
+/**
+ * Save Claude CLI path to .env file (for claude-code bundled agent)
+ */
+export const saveAtlasClaudePathHandler: IPCHandler<
+  [],
+  ClaudePathResult
+> = async (): Promise<ClaudePathResult> => {
+  try {
+    const atlasDir = path.join(os.homedir(), ".atlas");
+    const envFile = path.join(atlasDir, ".env");
+
+    // Ensure directory exists
+    if (!fs.existsSync(atlasDir)) {
+      fs.mkdirSync(atlasDir, { recursive: true });
+    }
+
+    // Find Claude CLI path
+    const claudePath = findClaudePath();
+    if (!claudePath) {
+      logger.warn("Claude CLI not found on system");
+      return {
+        success: true,
+        message:
+          "Claude CLI not found, skipping Claude path configuration. Install Claude Code CLI for the claude-code agent to work.",
+      } as ClaudePathResult;
+    }
+
+    logger.info(`Found Claude CLI at: ${claudePath}`);
+
+    // Read existing .env content or create new
+    let envContent = "";
+    if (fs.existsSync(envFile)) {
+      envContent = fs.readFileSync(envFile, "utf8");
+    }
+
+    // Update or add ATLAS_CLAUDE_PATH
+    const claudePathLine = `ATLAS_CLAUDE_PATH=${claudePath}`;
+    if (envContent.includes("ATLAS_CLAUDE_PATH=")) {
+      envContent = envContent.replace(/ATLAS_CLAUDE_PATH=.*$/m, claudePathLine);
+    } else {
+      envContent = `${envContent.trim() + (envContent ? "\n" : "") + claudePathLine}\n`;
+    }
+
+    // Write back to file
+    fs.writeFileSync(envFile, envContent, "utf8");
+    logger.info(`Saved Claude CLI path to ${envFile}`);
+
+    return { success: true, claudePath, message: `Claude CLI path saved: ${claudePath}` };
+  } catch (err) {
+    logger.error("Failed to save Claude CLI path", err);
+    return { ...handleError(err), claudePath: undefined };
   }
 };
 

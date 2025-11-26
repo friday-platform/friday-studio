@@ -7,6 +7,21 @@ import { fail, type Result, stringifyError, success } from "@atlas/utils";
 import { generateText, stepCountIs, streamText } from "ai";
 import { claudeCode } from "ai-sdk-provider-claude-code";
 
+/**
+ * Get the absolute path to the Claude Code CLI executable.
+ * ATLAS_CLAUDE_PATH is set by the installer and loaded from ~/.atlas/.env at daemon startup.
+ * The SDK requires an absolute path because it uses fs.existsSync(), not a PATH lookup.
+ */
+function getClaudeCodePath(): string {
+  const claudePath = Deno.env.get("ATLAS_CLAUDE_PATH");
+  if (!claudePath) {
+    throw new Error(
+      "ATLAS_CLAUDE_PATH not set. Re-run the Atlas installer to detect Claude Code CLI path.",
+    );
+  }
+  return claudePath;
+}
+
 type CCAgentResult = Result<
   // Summary of the research findings
   { response: string; artifactRef: ArtifactRef },
@@ -82,11 +97,20 @@ export const claudeCodeAgent = createAgent<string, CCAgentResult>({
     try {
       logger.debug("Starting Claude Code agent execution", { prompt });
 
+      const claudeCodePath = getClaudeCodePath();
+      logger.debug("Using Claude Code CLI", { path: claudeCodePath });
+
       const result = streamText({
         model: claudeCode("sonnet", {
           cwd: homedir(),
           disallowedTools: ["Bash(rm:*)"],
           maxTurns: 25,
+          // Use globally installed Claude CLI instead of bundled cli.js
+          // The bundled cli.js doesn't work with Deno compiled binaries because
+          // Deno only extracts files on-demand for Deno code, not for external
+          // Node.js child processes that the SDK spawns.
+          // Note: The SDK uses fs.existsSync() so an absolute path is required.
+          pathToClaudeCodeExecutable: claudeCodePath,
           permissionMode: "bypassPermissions",
           settingSources: ["user", "project", "local"],
           stderr: (data: string) => logger.warn("Claude Code stderr", { stderr: data }),

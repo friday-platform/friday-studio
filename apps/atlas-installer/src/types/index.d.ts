@@ -32,6 +32,10 @@ export interface NodePathResult extends IPCResult {
   nodePath?: string;
 }
 
+export interface ClaudePathResult extends IPCResult {
+  claudePath?: string;
+}
+
 export interface BinaryCheckResult {
   exists: boolean;
   path?: string;
@@ -102,6 +106,7 @@ export interface ProcessEnv {
   ATLAS_KEY?: string;
   ATLAS_NPX_PATH?: string;
   ATLAS_NODE_PATH?: string;
+  ATLAS_CLAUDE_PATH?: string;
 }
 
 // Service Management Types
@@ -129,6 +134,7 @@ export type IPCChannel =
   | "save-atlas-key"
   | "save-atlas-npx-path"
   | "save-atlas-node-path"
+  | "save-atlas-claude-path"
   | "install-atlas-binary"
   | "setup-path"
   | "check-atlas-binary"

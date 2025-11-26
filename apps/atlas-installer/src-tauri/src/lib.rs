@@ -342,6 +342,40 @@ async fn save_atlas_uv_path() -> IPCResult {
     .unwrap_or_else(|e| IPCResult::error(format!("Task failed: {}", e)))
 }
 
+// Save Atlas Claude path - finds the actual full path to claude CLI (for claude-code bundled agent)
+#[tauri::command]
+async fn save_atlas_claude_path() -> IPCResult {
+    tokio::task::spawn_blocking(|| {
+        match find_binary_path("claude") {
+            Some(claude_path) => {
+                // Save to .env with full path
+                let mut env_vars = match read_env_file() {
+                    Ok(vars) => vars,
+                    Err(e) => return IPCResult::error(e),
+                };
+
+                env_vars.insert("ATLAS_CLAUDE_PATH".to_string(), claude_path.clone());
+
+                match write_env_file(env_vars) {
+                    Ok(_) => IPCResult::success(format!("Claude CLI path saved: {}", claude_path)),
+                    Err(e) => IPCResult::error(e),
+                }
+            }
+            None => IPCResult {
+                success: true,
+                message: Some(
+                    "Claude CLI not found. The claude-code agent will not work.\n\
+                     Install Claude Code CLI from https://docs.anthropic.com/claude-code"
+                        .to_string(),
+                ),
+                error: None,
+            },
+        }
+    })
+    .await
+    .unwrap_or_else(|e| IPCResult::error(format!("Task failed: {}", e)))
+}
+
 // Save Atlas API key
 #[tauri::command]
 fn save_atlas_key(api_key: String) -> IPCResult {
@@ -1289,6 +1323,7 @@ pub fn run() {
             save_atlas_npx_path,
             save_atlas_node_path,
             save_atlas_uv_path,
+            save_atlas_claude_path,
             save_atlas_key,
             install_atlas_binary,
             check_atlas_binary,
