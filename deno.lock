@@ -81,7 +81,7 @@
     "npm:@total-typescript/ts-reset@~0.6.1": "0.6.1",
     "npm:@types/node@*": "24.2.0",
     "npm:@types/react@^19.2.7": "19.2.7",
-    "npm:ai-sdk-provider-claude-code@^2.2.1": "2.2.1_zod@4.1.13",
+    "npm:ai-sdk-provider-claude-code@^2.2.3": "2.2.3_zod@4.1.13",
     "npm:ai@^5.0.102": "5.0.102_zod@4.1.13",
     "npm:ai@^5.0.93": "5.0.102_zod@4.1.13",
     "npm:cookie@^1.0.2": "1.0.2",
@@ -299,8 +299,8 @@
         "is-fullwidth-code-point@5.1.0"
       ]
     },
-    "@anthropic-ai/claude-agent-sdk@0.1.53_zod@4.1.13": {
-      "integrity": "sha512-k8qsWx2Ey3Y1qNdarS9VFFaJk+H+lEmH6AWtBbDRwQkYcdlltjZPZ8IJ71Eo683oNbwQMeepmJ4AAYMmK8EH0g==",
+    "@anthropic-ai/claude-agent-sdk@0.1.55_zod@4.1.13": {
+      "integrity": "sha512-nwlxPjn/gc7I+iOGYY7AGtM2xcjzJFCxF9Bnr0xH1JNaNx+QXLM3h/wmzSvuEOKeJgPymf1GMBs4DZ3jyd/Z7Q==",
       "dependencies": [
         "zod"
       ],
@@ -1969,8 +1969,8 @@
     "agent-base@7.1.4": {
       "integrity": "sha512-MnA+YT8fwfJPgBx3m60MNqakm30XOkyIoH1y6huTQvC0PwZG7ki8NacLBcrPbNoo8vEZy7Jpuk7+jMO+CUovTQ=="
     },
-    "ai-sdk-provider-claude-code@2.2.1_zod@4.1.13": {
-      "integrity": "sha512-mAGIG0uCAw4l3cAn9f5Fm0QmXxN5LjJU39G4nOumYyfrXmVS1VCzpBlpaNrhl5r/VTozeE2gQIowW2IZIoy0xA==",
+    "ai-sdk-provider-claude-code@2.2.3_zod@4.1.13": {
+      "integrity": "sha512-gen0yh0/1mzNV783MIKdVV1DzKOeehqPrxGD4goQeMH/0mQfw1WL4s4Mufg4UZx36FmLic1dKIp2mRj15nMAow==",
       "dependencies": [
         "@ai-sdk/provider",
         "@ai-sdk/provider-utils@3.0.9_zod@4.1.13",
@@ -4498,7 +4498,7 @@
             "npm:@jsr/std__path@^1.1.2",
             "npm:@sendgrid/mail@^8.1.6",
             "npm:@tavily/core@~0.5.13",
-            "npm:ai-sdk-provider-claude-code@^2.2.1",
+            "npm:ai-sdk-provider-claude-code@^2.2.3",
             "npm:ai@^5.0.102",
             "npm:zod@^4.1.13"
           ]
