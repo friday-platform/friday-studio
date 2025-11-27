@@ -12,7 +12,7 @@
     "@std/path": "npm:@jsr/std__path@^1.1.2",
     "@std/fs": "npm:@jsr/std__fs@^1.0.19",
     "@std/dotenv": "npm:@jsr/std__dotenv@^0.225.5",
-    "hono": "^4.10.6",
+    "hono": "^4.10.7",
     "zod": "^4.1.13"
   }
 }
