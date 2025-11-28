@@ -27,7 +27,7 @@
     "npm:@ai-sdk/anthropic@^2.0.50": "2.0.50_zod@4.1.13",
     "npm:@ai-sdk/google@^2.0.44": "2.0.44_zod@4.1.13",
     "npm:@ai-sdk/mcp@^0.0.11": "0.0.11_zod@4.1.13",
-    "npm:@ai-sdk/openai@^2.0.73": "2.0.73_zod@4.1.13",
+    "npm:@ai-sdk/openai@^2.0.74": "2.0.74_zod@4.1.13",
     "npm:@ai-sdk/provider@2": "2.0.0",
     "npm:@ai-sdk/svelte@^3.0.104": "3.0.104_svelte@5.45.2__acorn@8.15.0_zod@4.1.13",
     "npm:@biomejs/biome@*": "2.3.7",
@@ -248,20 +248,11 @@
         "zod"
       ]
     },
-    "@ai-sdk/openai@2.0.73_zod@4.1.13": {
-      "integrity": "sha512-TOGoxkeJMgcxq80ZfyCAqKcfvGPgFsEQEK8SgI/w3He0fqi16KlnZVMexOlg8HOLumF6szweg/YrOmQixsPVGw==",
+    "@ai-sdk/openai@2.0.74_zod@4.1.13": {
+      "integrity": "sha512-vvsL7rGoBEyQIePs630p31ebLeF+xxwLOrRKeIArHko8w7Wh9Kj3wL4Ns+PCzrEpAij31OKKDcxLQ1dSIg/qMw==",
       "dependencies": [
         "@ai-sdk/provider",
-        "@ai-sdk/provider-utils@3.0.17_zod@4.1.13",
-        "zod"
-      ]
-    },
-    "@ai-sdk/provider-utils@3.0.17_zod@4.1.13": {
-      "integrity": "sha512-TR3Gs4I3Tym4Ll+EPdzRdvo/rc8Js6c4nVhFLuvGLX/Y4V9ZcQMa/HTiYsHEgmYrf1zVi6Q145UEZUfleOwOjw==",
-      "dependencies": [
-        "@ai-sdk/provider",
-        "@standard-schema/spec",
-        "eventsource-parser",
+        "@ai-sdk/provider-utils@3.0.18_zod@4.1.13",
         "zod"
       ]
     },
@@ -4604,7 +4595,7 @@
           "dependencies": [
             "npm:@ai-sdk/anthropic@^2.0.50",
             "npm:@ai-sdk/google@^2.0.44",
-            "npm:@ai-sdk/openai@^2.0.73",
+            "npm:@ai-sdk/openai@^2.0.74",
             "npm:@ai-sdk/provider@2",
             "npm:@jsr/std__assert@^1.0.14",
             "npm:@jsr/std__collections@^1.1.3",
