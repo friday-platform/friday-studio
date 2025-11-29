@@ -70,15 +70,25 @@ jobs:
           path: tempest-kustomize-repository
           fetch-depth: 1
 
-      - name: Update manifest file image tags for atlas
+      - name: Update manifest file image tags for atlas sandbox
         uses: mikefarah/yq@master
         with:
           cmd: yq e -i '.spec.template.spec.containers[0].image |= "${{ steps.build-image.outputs.image }}"' 'tempest-kustomize-repository/atlas/overlays/sandbox/deployment.yaml'
 
-      - name: Update manifest file image tag for atlas web-client
+      - name: Update manifest file image tags for atlas production
         uses: mikefarah/yq@master
         with:
-          cmd: yq e -i '.spec.template.spec.containers[1].image |= "${{ steps.build-image.outputs.web_client_image }}"' 'tempest-kustomize-repository/atlas/overlays/sandbox/deployment.yaml'
+          cmd: yq e -i '.spec.template.spec.containers[0].image |= "${{ steps.build-image.outputs.image }}"' 'tempest-kustomize-repository/atlas/overlays/production/deployment.yaml'
+
+      - name: Update manifest file image tag for shared atlas-web-client sandbox
+        uses: mikefarah/yq@master
+        with:
+          cmd: yq e -i '.spec.template.spec.containers[0].image |= "${{ steps.build-image.outputs.web_client_image }}"' 'tempest-kustomize-repository/atlas-web-client/overlays/sandbox/deployment.yaml'
+
+      - name: Update manifest file image tag for shared atlas-web-client production
+        uses: mikefarah/yq@master
+        with:
+          cmd: yq e -i '.spec.template.spec.containers[0].image |= "${{ steps.build-image.outputs.web_client_image }}"' 'tempest-kustomize-repository/atlas-web-client/overlays/production/deployment.yaml'
 
       - name: Setup tempest-kustomize Repository
         working-directory: tempest-kustomize-repository

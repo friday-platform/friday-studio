@@ -247,12 +247,10 @@ func (m *Manager) buildApplication(name, userID string) *unstructured.Unstructur
 	// Set IngressRoute match rules with user-specific header matching.
 	// Note: Host() matching is in the parent IngressRoute, child routes only match on header.
 	// The parent IngressRoute applies the extractuserid middleware before child routing.
+	// Web client (route 1) is now served by a shared atlas-web-client deployment.
 
 	// API route match (route 0) - includes path prefix for API endpoints
 	apiMatchRule := fmt.Sprintf("Header(`X-Atlas-User-ID`, `%s`) && (PathPrefix(`/api/`) || Path(`/health`) || PathPrefix(`/streams/`))", userID)
-
-	// Default route match (route 1) for non-API traffic - header matching only
-	defaultMatchRule := fmt.Sprintf("Header(`X-Atlas-User-ID`, `%s`)", userID)
 
 	ingressRoutePatch := fmt.Sprintf(`
 - op: replace
@@ -261,13 +259,7 @@ func (m *Manager) buildApplication(name, userID string) *unstructured.Unstructur
 - op: replace
   path: /spec/routes/0/services/0/name
   value: %s
-- op: replace
-  path: /spec/routes/1/match
-  value: %s
-- op: replace
-  path: /spec/routes/1/services/0/name
-  value: %s
-`, apiMatchRule, serviceName, defaultMatchRule, serviceName)
+`, apiMatchRule, serviceName)
 
 	// CRITICAL: PDB selector must match deployment's pod labels.
 	// Without this patch, PDB uses old selector (app: atlas) which tries to protect
