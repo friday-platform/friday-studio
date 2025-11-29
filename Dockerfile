@@ -124,6 +124,7 @@ FROM nginxinc/nginx-unprivileged:1.29.2-alpine3.22 AS web-client
 COPY --from=web-client-builder /app/apps/web-client/build /usr/share/nginx/html
 
 # Copy nginx configuration
+COPY --from=web-client-builder /app/apps/web-client/nginx-http.conf /etc/nginx/conf.d/00-http.conf
 COPY --from=web-client-builder /app/apps/web-client/nginx.conf /etc/nginx/conf.d/default.conf
 
 # Expose web client port
