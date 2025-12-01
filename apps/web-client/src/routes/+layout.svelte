@@ -5,6 +5,7 @@ import { goto } from "$app/navigation";
 import { setAppContext } from "$lib/app-context.svelte";
 import { setChatContext } from "$lib/chat-context.svelte";
 import DiagnosticsDialog from "$lib/components/diagnostics-dialog.svelte";
+import FindBar from "$lib/components/find-bar.svelte";
 import { initTauri, listen, Webview, Window } from "$lib/utils/tauri-loader";
 
 const { children } = $props();
@@ -12,6 +13,7 @@ const ctx = setAppContext();
 setChatContext();
 
 let showDiagnosticsDialog = $state(false);
+let showFindBar = $state(false);
 
 async function openSubWindow() {
   if (!Window || !Webview) return;
@@ -57,6 +59,7 @@ onMount(() => {
   let unlistenAbout: (() => void) | undefined;
   let unlistenDiagnostics: (() => void) | undefined;
   let unlistenSettings: (() => void) | undefined;
+  let unlistenFind: (() => void) | undefined;
 
   // Initialize Tauri APIs and setup listeners
   (async () => {
@@ -75,6 +78,9 @@ onMount(() => {
           ctx.sidebarExpanded = true;
           goto(ctx.routes.settings);
         });
+        unlistenFind = await listen("show-find", () => {
+          showFindBar = true;
+        });
       } catch {
         // Failed to setup listeners
       }
@@ -85,6 +91,7 @@ onMount(() => {
     unlistenAbout?.();
     unlistenDiagnostics?.();
     unlistenSettings?.();
+    unlistenFind?.();
   };
 });
 </script>
@@ -92,3 +99,4 @@ onMount(() => {
 {@render children?.()}
 
 <DiagnosticsDialog bind:open={showDiagnosticsDialog} />
+<FindBar bind:open={showFindBar} onClose={() => (showFindBar = false)} />

@@ -570,6 +570,11 @@ pub fn run() {
             edit_menu.append(&PredefinedMenuItem::copy(app, None)?)?;
             edit_menu.append(&PredefinedMenuItem::paste(app, None)?)?;
             edit_menu.append(&PredefinedMenuItem::select_all(app, None)?)?;
+            edit_menu.append(&PredefinedMenuItem::separator(app)?)?;
+
+            // Create Find menu item
+            let find_item = MenuItem::with_id(app, "find", "Find...", true, Some("CmdOrCtrl+F"))?;
+            edit_menu.append(&find_item)?;
 
             // Create view menu
             let view_menu = Submenu::new(app, "View", true)?;
@@ -632,6 +637,18 @@ pub fn run() {
                 } else if event.id() == &MenuId("run_diagnostics".to_string()) {
                     // Emit event to show diagnostics dialog
                     let _ = app.emit("show-diagnostics-dialog", ());
+                } else if event.id() == &MenuId("find".to_string()) {
+                    // Trigger native macOS find panel via JavaScript
+                    #[cfg(target_os = "macos")]
+                    {
+                        // The native find panel in WKWebView requires special handling.
+                        // For now, emit an event and handle it in the frontend.
+                        let _ = app.emit("show-find", ());
+                    }
+                    #[cfg(not(target_os = "macos"))]
+                    {
+                        let _ = app.emit("show-find", ());
+                    }
                 } else if event.id() == &MenuId("atlas_logs".to_string()) {
                     // Open Atlas logs file with default system editor
                     if let Ok(home) =
