@@ -141,12 +141,15 @@ func (p *AtlasKey) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	// Extract email claim
+	// Extract email from "email" claim, falling back to "sub" claim
 	email, ok := claims["email"].(string)
 	if !ok || email == "" {
-		logError(req, "missing email claim").print()
-		http.Error(rw, "Unauthorized: Invalid token claims", http.StatusUnauthorized)
-		return
+		email, ok = claims["sub"].(string)
+		if !ok || email == "" {
+			logError(req, "missing email/sub claim").print()
+			http.Error(rw, "Unauthorized: Invalid token claims", http.StatusUnauthorized)
+			return
+		}
 	}
 
 	// Set the header with user email
