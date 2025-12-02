@@ -4,13 +4,27 @@
 
 import { logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
+import { getAtlasHome } from "@atlas/utils/paths.server";
+import { parse } from "@std/dotenv";
+import { join } from "@std/path";
 import { describeRoute, resolver } from "hono-openapi";
 import z from "zod";
 import { daemonFactory } from "../src/factory.ts";
 
 const GIST_SERVICE_URL = Deno.env.get("GIST_SERVICE_URL") || "https://share.atlas.tempestdx.com";
-const ATLAS_KEY = Deno.env.get("ATLAS_KEY");
 const GIST_SERVICE_TIMEOUT_MS = 10_000;
+
+/** Get ATLAS_KEY from process env or ~/.atlas/.env file */
+async function getAtlasKey(): Promise<string | undefined> {
+  const envKey = Deno.env.get("ATLAS_KEY");
+  if (envKey) return envKey;
+  try {
+    const content = await Deno.readTextFile(join(getAtlasHome(), ".env"));
+    return parse(content).ATLAS_KEY;
+  } catch {
+    return undefined;
+  }
+}
 
 const shareResponseSchema = z.object({ id: z.string(), url: z.string() });
 const errorResponseSchema = z.object({ error: z.string() });
@@ -43,8 +57,9 @@ shareRoutes.post(
       const headers: Record<string, string> = {
         "Content-Type": c.req.header("Content-Type") || "text/html",
       };
-      if (ATLAS_KEY) {
-        headers.Authorization = `Bearer ${ATLAS_KEY}`;
+      const atlasKey = await getAtlasKey();
+      if (atlasKey) {
+        headers.Authorization = `Bearer ${atlasKey}`;
       }
 
       const response = await fetch(`${GIST_SERVICE_URL}/space`, {
