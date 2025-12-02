@@ -7,10 +7,14 @@ import (
 
 	"cloud.google.com/go/storage"
 	"github.com/google/uuid"
+	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
 )
 
-var ErrObjectNotExist = errors.New("object does not exist")
+var (
+	ErrObjectNotExist      = errors.New("object does not exist")
+	ErrObjectAlreadyExists = errors.New("object already exists")
+)
 
 type StorageClient struct {
 	client *storage.Client
@@ -37,20 +41,31 @@ func NewStorageClient(ctx context.Context, bucket, serviceAccountKeyFile string)
 	}, nil
 }
 
-func (s *StorageClient) Upload(ctx context.Context, id uuid.UUID, content []byte) (err error) {
+func (s *StorageClient) Upload(ctx context.Context, id uuid.UUID, content []byte) error {
 	objectPath := ObjectPath(id)
 	obj := s.client.Bucket(s.bucket).Object(objectPath)
 
+	// Use DoesNotExist precondition to prevent overwriting existing objects
+	obj = obj.If(storage.Conditions{DoesNotExist: true})
+
 	writer := obj.NewWriter(ctx)
 	writer.ContentType = "text/html; charset=utf-8"
-	defer func() {
-		if closeErr := writer.Close(); closeErr != nil && err == nil {
-			err = closeErr
-		}
-	}()
 
-	_, err = writer.Write(content)
-	return err
+	if _, err := writer.Write(content); err != nil {
+		_ = writer.Close()
+		return err
+	}
+
+	// GCS validates preconditions on Close (412 = object already exists)
+	if err := writer.Close(); err != nil {
+		var gErr *googleapi.Error
+		if errors.As(err, &gErr) && gErr.Code == 412 {
+			return ErrObjectAlreadyExists
+		}
+		return err
+	}
+
+	return nil
 }
 
 func (s *StorageClient) Download(ctx context.Context, id uuid.UUID) ([]byte, error) {

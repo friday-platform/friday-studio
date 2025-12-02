@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -12,6 +13,8 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 )
+
+const maxUploadRetries = 3
 
 func uploadHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
@@ -37,8 +40,6 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id := uuid.New()
-
 	storage, err := StorageClientFromContext(ctx)
 	if err != nil {
 		log.Error("storage client not in context", "error", err)
@@ -46,7 +47,19 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := storage.Upload(ctx, id, body); err != nil {
+	// Retry with new UUID if collision occurs (extremely unlikely with UUIDv4)
+	var id uuid.UUID
+	for i := 0; i < maxUploadRetries; i++ {
+		id = uuid.New()
+		if err = storage.Upload(ctx, id, body); err == nil {
+			break
+		}
+		if !errors.Is(err, ErrObjectAlreadyExists) {
+			break
+		}
+		log.Warn("UUID collision, retrying", "id", id.String(), "attempt", i+1)
+	}
+	if err != nil {
 		log.Error("failed to upload to GCS", "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
