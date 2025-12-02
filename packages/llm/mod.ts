@@ -3,13 +3,16 @@ import { deepMerge } from "@std/collections/deep-merge";
 import { createProviderRegistry } from "ai";
 import { anthropicProviderOptions, createAnthropicWithOptions } from "./src/anthropic.ts";
 import { createGoogleWithOptions } from "./src/google.ts";
+import { createGroqWithOptions } from "./src/groq.ts";
 import { createOpenAIWithOptions } from "./src/openai.ts";
 import type { ValidProvider } from "./src/util.ts";
 
 export { createAnthropicWithOptions } from "./src/anthropic.ts";
 export { createGoogleWithOptions } from "./src/google.ts";
+export { createGroqWithOptions } from "./src/groq.ts";
 export { createOpenAIWithOptions } from "./src/openai.ts";
 export { pruneMessages } from "./src/prune-messages.ts";
+export { smallLLM } from "./src/small.ts";
 export { validateProvider } from "./src/util.ts";
 
 /**
@@ -19,11 +22,13 @@ export { validateProvider } from "./src/util.ts";
  *   - registry.languageModel('anthropic:claude-3-5-sonnet-20241022')
  *   - registry.languageModel('openai:gpt-4')
  *   - registry.languageModel('google:gemini-pro')
+ *   - registry.languageModel('groq:llama-3.3-70b-versatile')
  */
 export const registry = createProviderRegistry({
   anthropic: createAnthropicWithOptions(),
-  openai: createOpenAIWithOptions(),
   google: createGoogleWithOptions(),
+  groq: createGroqWithOptions(),
+  openai: createOpenAIWithOptions(),
 });
 
 /**

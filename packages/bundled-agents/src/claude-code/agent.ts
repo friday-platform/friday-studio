@@ -1,10 +1,9 @@
 import { homedir } from "node:os";
 import { type ArtifactRef, createAgent } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
-import { getDefaultProviderOpts, registry } from "@atlas/llm";
-import type { Logger } from "@atlas/logger";
+import { getDefaultProviderOpts, smallLLM } from "@atlas/llm";
 import { fail, type Result, stringifyError, success } from "@atlas/utils";
-import { generateText, stepCountIs, streamText } from "ai";
+import { stepCountIs, streamText } from "ai";
 import { claudeCode } from "ai-sdk-provider-claude-code";
 
 /**
@@ -33,20 +32,11 @@ type CCAgentResult = Result<
  * Format tool invocation as concise single-line status message (≤50 chars).
  * Used to stream progress updates during code execution.
  */
-async function generateProgress(
-  context: unknown,
-  abortSignal?: AbortSignal,
-  logger?: Logger,
-): Promise<string> {
+async function generateProgress(context: unknown, abortSignal?: AbortSignal): Promise<string> {
   const contextStr = typeof context === "string" ? context : JSON.stringify(context, null, 2);
 
-  const result = await generateText({
-    model: registry.languageModel("anthropic:claude-haiku-4-5"),
-    abortSignal,
-    messages: [
-      {
-        role: "system",
-        content: `Format tool invocation as single-line status. Output only the status line, no explanations.
+  return await smallLLM({
+    system: `Format tool invocation as single-line status. Output only the status line, no explanations.
 
 <rules>
 - Single line, ≤50 chars
@@ -60,21 +50,10 @@ async function generateProgress(
 Write to /tmp/agent-output.txt → "Writing agent-output.txt"
 Read package.json → "Reading package.json"
 </examples>`,
-        providerOptions: getDefaultProviderOpts("anthropic"),
-      },
-      { role: "user", content: contextStr },
-    ],
-    temperature: 0.4,
+    prompt: contextStr,
+    abortSignal,
     maxOutputTokens: 50,
   });
-
-  logger?.info("AI SDK generateText completed", {
-    agent: "claude-code",
-    step: "generate-progress",
-    usage: result.usage,
-  });
-
-  return result.text;
 }
 
 export const claudeCodeAgent = createAgent<string, CCAgentResult>({
@@ -140,7 +119,6 @@ export const claudeCodeAgent = createAgent<string, CCAgentResult>({
               const message = await generateProgress(
                 { toolName: chunk.toolName, input: chunk.input },
                 abortSignal,
-                logger,
               );
               stream?.emit({
                 type: "data-tool-progress",
