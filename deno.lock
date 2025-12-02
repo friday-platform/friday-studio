@@ -32,7 +32,7 @@
     "npm:@ai-sdk/mcp@^0.0.11": "0.0.11_zod@4.1.13",
     "npm:@ai-sdk/openai@^2.0.75": "2.0.75_zod@4.1.13",
     "npm:@ai-sdk/provider@2": "2.0.0",
-    "npm:@ai-sdk/svelte@^3.0.104": "3.0.105_svelte@5.45.2__acorn@8.15.0_zod@4.1.13",
+    "npm:@ai-sdk/svelte@^3.0.106": "3.0.106_svelte@5.45.2__acorn@8.15.0_zod@4.1.13",
     "npm:@biomejs/biome@*": "2.3.8",
     "npm:@discordjs/core@2.4.0": "2.4.0",
     "npm:@discordjs/rest@2.6.0": "2.6.0",
@@ -85,8 +85,8 @@
     "npm:@types/node@*": "24.2.0",
     "npm:@types/react@^19.2.7": "19.2.7",
     "npm:ai-sdk-provider-claude-code@^2.2.3": "2.2.3_zod@4.1.13",
-    "npm:ai@^5.0.104": "5.0.105_zod@4.1.13",
-    "npm:ai@^5.0.93": "5.0.105_zod@4.1.13",
+    "npm:ai@^5.0.104": "5.0.106_zod@4.1.13",
+    "npm:ai@^5.0.93": "5.0.106_zod@4.1.13",
     "npm:cookie@^1.0.2": "1.1.1",
     "npm:cron-parser@^5.4.0": "5.4.0",
     "npm:discord-interactions@^4.4.0": "4.4.0",
@@ -94,7 +94,7 @@
     "npm:eslint-config-prettier@^10.1.8": "10.1.8_eslint@9.39.1",
     "npm:eslint-plugin-svelte@^3.13.0": "3.13.0_eslint@9.39.1_svelte@5.45.2__acorn@8.15.0_postcss@8.5.6",
     "npm:eslint@^9.39.1": "9.39.1",
-    "npm:evalite@^1.0.0-beta.15": "1.0.0-beta.15_ai@5.0.105__zod@4.1.13_zod@4.1.13",
+    "npm:evalite@^1.0.0-beta.15": "1.0.0-beta.15_ai@5.0.106__zod@4.1.13_zod@4.1.13",
     "npm:eventsource-client@^1.2.0": "1.2.0",
     "npm:fast-glob@^3.3.3": "3.3.3",
     "npm:globals@^16.5.0": "16.5.0",
@@ -225,8 +225,8 @@
         "zod"
       ]
     },
-    "@ai-sdk/gateway@2.0.17_zod@4.1.13": {
-      "integrity": "sha512-oVAG6q72KsjKlrYdLhWjRO7rcqAR8CjokAbYuyVZoCO4Uh2PH/VzZoxZav71w2ipwlXhHCNaInGYWNs889MMDA==",
+    "@ai-sdk/gateway@2.0.18_zod@4.1.13": {
+      "integrity": "sha512-sDQcW+6ck2m0pTIHW6BPHD7S125WD3qNkx/B8sEzJp/hurocmJ5Cni0ybExg6sQMGo+fr/GWOwpHF1cmCdg5rQ==",
       "dependencies": [
         "@ai-sdk/provider",
         "@ai-sdk/provider-utils@3.0.18_zod@4.1.13",
@@ -283,8 +283,8 @@
         "json-schema"
       ]
     },
-    "@ai-sdk/svelte@3.0.105_svelte@5.45.2__acorn@8.15.0_zod@4.1.13": {
-      "integrity": "sha512-Eca8o1h/gj91Y+LBZMkO4XpExBJKD3COJSjyBii55RuCp9NfZMRekcgtWpryV10D0a/7CBriikb9brgoOicnHA==",
+    "@ai-sdk/svelte@3.0.106_svelte@5.45.2__acorn@8.15.0_zod@4.1.13": {
+      "integrity": "sha512-Nb1vbecJ+zrlr3FOCUuQDXgHNu8AwMfbVXLU+7AldI2HkB/dgYSyStaEPV7cApIMhWGLzM/prqLC5YhF/0J53w==",
       "dependencies": [
         "@ai-sdk/provider-utils@3.0.18_zod@4.1.13",
         "ai",
@@ -1981,8 +1981,8 @@
         "zod"
       ]
     },
-    "ai@5.0.105_zod@4.1.13": {
-      "integrity": "sha512-waQZAvv44KYzys6S3l25ti2jcSuJnkyWFTliSKy3swASL6w6ttPxJTm80d+v9sLWoIxrqE3OwhTJbweNp065fg==",
+    "ai@5.0.106_zod@4.1.13": {
+      "integrity": "sha512-M5obwavxSJJ3tGlAFqI6eltYNJB0D20X6gIBCFx/KVorb/X1fxVVfiZZpZb+Gslu4340droSOjT0aKQFCarNVg==",
       "dependencies": [
         "@ai-sdk/gateway",
         "@ai-sdk/provider",
@@ -2553,7 +2553,7 @@
     "etag@1.8.1": {
       "integrity": "sha512-aIL5Fx7mawVa300al2BnEE4iNvo1qETxLrPI/o05L7z6go7fCw1J6EQmbK4FmJ2AS7kgVF/KEZWufBfdClMcPg=="
     },
-    "evalite@1.0.0-beta.15_ai@5.0.105__zod@4.1.13_zod@4.1.13": {
+    "evalite@1.0.0-beta.15_ai@5.0.106__zod@4.1.13_zod@4.1.13": {
       "integrity": "sha512-/4D4Iap7/FTrzUYf4fZpkaGaycRnKt8gDgMDJ/fRAr5YdfUBJuwJVPQFRSPNvtkg5AVSDI7+kgivJnfP69kFEA==",
       "dependencies": [
         "@fastify/static",
@@ -4438,7 +4438,7 @@
       "apps/web-client": {
         "packageJson": {
           "dependencies": [
-            "npm:@ai-sdk/svelte@^3.0.104",
+            "npm:@ai-sdk/svelte@^3.0.106",
             "npm:@eslint/compat@2",
             "npm:@eslint/js@^9.39.1",
             "npm:@ianvs/prettier-plugin-sort-imports@^4.7.0",
