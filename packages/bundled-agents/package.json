@@ -16,7 +16,7 @@
     "@std/media-types": "npm:@jsr/std__media-types@^1.1.0",
     "@std/path": "npm:@jsr/std__path@^1.1.2",
     "@tavily/core": "^0.5.13",
-    "ai": "^5.0.104",
+    "ai": "^5.0.106",
     "ai-sdk-provider-claude-code": "^2.2.3",
     "zod": "^4.1.13"
   }
