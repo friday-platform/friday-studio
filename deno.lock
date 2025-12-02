@@ -30,7 +30,7 @@
     "npm:@ai-sdk/anthropic@^2.0.53": "2.0.53_zod@4.1.13",
     "npm:@ai-sdk/google@^2.0.44": "2.0.44_zod@4.1.13",
     "npm:@ai-sdk/mcp@^0.0.11": "0.0.11_zod@4.1.13",
-    "npm:@ai-sdk/openai@^2.0.75": "2.0.75_zod@4.1.13",
+    "npm:@ai-sdk/openai@^2.0.76": "2.0.76_zod@4.1.13",
     "npm:@ai-sdk/provider@2": "2.0.0",
     "npm:@ai-sdk/svelte@^3.0.106": "3.0.106_svelte@5.45.3__acorn@8.15.0_zod@4.1.13",
     "npm:@biomejs/biome@*": "2.3.8",
@@ -251,8 +251,8 @@
         "zod"
       ]
     },
-    "@ai-sdk/openai@2.0.75_zod@4.1.13": {
-      "integrity": "sha512-ThDHg1+Jes7S0AOXa01EyLBSzZiZwzB5do9vAlufNkoiRHGTH1BmoShrCyci/TUsg4ky1HwbK4hPK+Z0isiE6g==",
+    "@ai-sdk/openai@2.0.76_zod@4.1.13": {
+      "integrity": "sha512-ryUkhTDVxe3D1GSAGc94vPZsJlSY8ZuBDLkpf4L81Dm7Ik5AgLfhQrZa8+0hD4kp0dxdVaIoxhpa3QOt1CmncA==",
       "dependencies": [
         "@ai-sdk/provider",
         "@ai-sdk/provider-utils@3.0.18_zod@4.1.13",
@@ -4599,7 +4599,7 @@
           "dependencies": [
             "npm:@ai-sdk/anthropic@^2.0.53",
             "npm:@ai-sdk/google@^2.0.44",
-            "npm:@ai-sdk/openai@^2.0.75",
+            "npm:@ai-sdk/openai@^2.0.76",
             "npm:@ai-sdk/provider@2",
             "npm:@jsr/std__assert@^1.0.14",
             "npm:@jsr/std__collections@^1.1.3",
