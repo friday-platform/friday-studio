@@ -57,10 +57,17 @@ jobs:
         run: |-
           echo ${{ steps.auth.outputs.auth_token }} | docker login -u oauth2accesstoken --password-stdin https://${{ env.GAR_LOCATION }}-docker.pkg.dev
 
-      - name: Push images
+      - name: Push images to sandbox
         run: |-
           docker push -a "$GAR_LOCATION-docker.pkg.dev/$PROJECT_NAME/$REPOSITORY/$REPOSITORY"
           docker push -a "$GAR_LOCATION-docker.pkg.dev/$PROJECT_NAME/$REPOSITORY/$REPOSITORY-web-client"
+
+      - name: Push images to production
+        run: |-
+          docker tag "$GAR_LOCATION-docker.pkg.dev/$PROJECT_NAME/$REPOSITORY/$REPOSITORY:$GITHUB_SHA" "$GAR_LOCATION-docker.pkg.dev/tempest-production/$REPOSITORY/$REPOSITORY:$GITHUB_SHA"
+          docker tag "$GAR_LOCATION-docker.pkg.dev/$PROJECT_NAME/$REPOSITORY/$REPOSITORY-web-client:$GITHUB_SHA" "$GAR_LOCATION-docker.pkg.dev/tempest-production/$REPOSITORY/$REPOSITORY-web-client:$GITHUB_SHA"
+          docker push "$GAR_LOCATION-docker.pkg.dev/tempest-production/$REPOSITORY/$REPOSITORY:$GITHUB_SHA"
+          docker push "$GAR_LOCATION-docker.pkg.dev/tempest-production/$REPOSITORY/$REPOSITORY-web-client:$GITHUB_SHA"
 
       - name: Fetch tempest-kustomize repository
         uses: actions/checkout@v6
@@ -78,7 +85,7 @@ jobs:
       - name: Update manifest file image tags for atlas production
         uses: mikefarah/yq@master
         with:
-          cmd: yq e -i '.spec.template.spec.containers[0].image |= "${{ steps.build-image.outputs.image }}"' 'tempest-kustomize-repository/atlas/overlays/production/deployment.yaml'
+          cmd: yq e -i '.spec.template.spec.containers[0].image |= "us-west2-docker.pkg.dev/tempest-production/atlas/atlas:${{ github.sha }}"' 'tempest-kustomize-repository/atlas/overlays/production/deployment.yaml'
 
       - name: Update manifest file image tag for shared atlas-web-client sandbox
         uses: mikefarah/yq@master
@@ -88,7 +95,7 @@ jobs:
       - name: Update manifest file image tag for shared atlas-web-client production
         uses: mikefarah/yq@master
         with:
-          cmd: yq e -i '.spec.template.spec.containers[0].image |= "${{ steps.build-image.outputs.web_client_image }}"' 'tempest-kustomize-repository/atlas-web-client/overlays/production/deployment.yaml'
+          cmd: yq e -i '.spec.template.spec.containers[0].image |= "us-west2-docker.pkg.dev/tempest-production/atlas/atlas-web-client:${{ github.sha }}"' 'tempest-kustomize-repository/atlas-web-client/overlays/production/deployment.yaml'
 
       - name: Setup tempest-kustomize Repository
         working-directory: tempest-kustomize-repository
