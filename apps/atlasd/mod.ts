@@ -6,6 +6,7 @@ export type { DaemonRoutes } from "./routes/daemon.ts";
 export type { HealthRoutes } from "./routes/health.ts";
 export type { SessionHistoryRoutes } from "./routes/sessions/history.ts";
 export type { SessionsRoutes } from "./routes/sessions/index.ts";
+export type { ShareRoutes } from "./routes/share.ts";
 export type { WorkspaceRoutes } from "./routes/workspaces/index.ts";
 export * from "./src/atlas-daemon.ts";
 export { type AppContext, type AppVariables, createApp } from "./src/factory.ts";

@@ -1,0 +1,10 @@
+displayName: AtlasKey Plugin
+type: middleware
+import: github.com/tempestteam/traefik/atlaskey
+
+testData:
+  AtlasKey:
+    jwtPublicKey: "/secrets/app/waypoint-public-key-pem"
+    headerName: "X-Atlas-User-Email"
+    issuer: "tempest-atlas"
+    audience: "atlas"

@@ -82,6 +82,8 @@ export const openPath = __TAURI_BUILD__
   ? (path: string) => _tauriOpener?.openPath(path)
   : undefined;
 
+export const openUrl = __TAURI_BUILD__ ? (url: string) => _tauriOpener?.openUrl(url) : undefined;
+
 // Notification plugin
 export const isPermissionGranted = __TAURI_BUILD__
   ? () => _tauriNotification?.isPermissionGranted()

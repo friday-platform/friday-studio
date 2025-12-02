@@ -37,6 +37,7 @@ import { healthRoutes } from "../routes/health.ts";
 import { libraryRoutes } from "../routes/library/index.ts";
 import { scratchpadApp } from "../routes/scratchpad/index.ts";
 import { sessionHistoryRoutes, sessionsRoutes } from "../routes/sessions/index.ts";
+import { shareRoutes } from "../routes/share.ts";
 import { streamsRoutes } from "../routes/streams/index.ts";
 import { userRoutes } from "../routes/user/index.ts";
 import { workspacesRoutes } from "../routes/workspaces/index.ts";
@@ -547,6 +548,7 @@ export class AtlasDaemon {
     this.app.route("/api/sse", streamsRoutes);
     this.app.route("/api/library", libraryRoutes);
     this.app.route("/api/daemon", daemonApp);
+    this.app.route("/api/share", shareRoutes);
 
     // Discord signal route will be mounted at /signal/discord after initialization in initialize() method
 

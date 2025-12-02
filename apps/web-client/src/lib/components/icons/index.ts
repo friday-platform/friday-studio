@@ -19,6 +19,7 @@ import Pause from "./pause.svelte";
 import Pencil from "./pencil.svelte";
 import Plus from "./plus.svelte";
 import Settings from "./settings.svelte";
+import Share from "./share.svelte";
 import Slack from "./slack.svelte";
 import Trash from "./trash.svelte";
 import TriangleRight from "./triangle-right.svelte";
@@ -46,6 +47,7 @@ export const Icons = {
   Pencil,
   Plus,
   Settings,
+  Share,
   Slack,
   Trash,
   TriangleRight,

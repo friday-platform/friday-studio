@@ -207,3 +207,38 @@ updates:
       - "go"
       - "traefik"
     rebase-strategy: "auto"
+
+  # Keep Go dependencies up to date (traefik atlaskey plugin)
+  - package-ecosystem: "gomod"
+    directory: "/apps/traefik/atlaskey"
+    schedule:
+      interval: "daily"
+      time: "09:00"
+    open-pull-requests-limit: 5
+    assignees:
+      - "ljagiello"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "go"
+      - "traefik"
+    rebase-strategy: "auto"
+
+  # Keep Docker dependencies up to date (for gist service)
+  - package-ecosystem: "docker"
+    directory: "/apps/gist"
+    schedule:
+      interval: "daily"
+      time: "09:00"
+    open-pull-requests-limit: 5
+    assignees:
+      - "ljagiello"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "docker"
+    rebase-strategy: "auto"

@@ -272,7 +272,7 @@ function hasConflictingEvents(id: string, start: number, end: number) {
 				position: absolute;
 				inset-block-start: 0;
 				inset-inline-start: 100%;
-				font-size: var(--font-size-10);
+				font-size: var(--font-size-0);
 				font-weight: var(--font-weight-5);
 				inline-size: max-content;
 				white-space: nowrap;

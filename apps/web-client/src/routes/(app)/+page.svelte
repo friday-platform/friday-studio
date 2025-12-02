@@ -22,6 +22,7 @@ import Response from "$lib/modules/messages/response.svelte";
 import ShowDetails from "$lib/modules/messages/show-details.svelte";
 import Table from "$lib/modules/messages/table.svelte";
 import { formatChatDate } from "$lib/utils/date";
+import { shareChat } from "$lib/utils/share-chat";
 import { invoke } from "$lib/utils/tauri-loader";
 
 const appCtx = getAppContext();
@@ -320,6 +321,24 @@ let showDetails = new SvelteMap<string, boolean>();
 
 												Add Files
 											</DropdownMenu.Item>
+
+											{#if hasMessages}
+												<DropdownMenu.Item
+													onclick={async () => {
+														if (chatContext.chat?.messages) {
+															const chatTitle = chatContext.recentChats.find(
+																(c) => c.id === chatContext.id
+															)?.title;
+															await shareChat(chatContext.chat.messages, chatTitle);
+														}
+													}}
+												>
+													<Icons.Share />
+
+													Share
+												</DropdownMenu.Item>
+											{/if}
+
 											<DropdownMenu.Item
 												onclick={() => {
 													chatContext.newChat();
@@ -328,7 +347,6 @@ let showDetails = new SvelteMap<string, boolean>();
 												<Icons.Chat />
 												New Chat</DropdownMenu.Item
 											>
-
 											{#if chatContext.recentChats.length > 0}
 												<DropdownMenu.Separator />
 

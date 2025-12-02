@@ -6,5 +6,6 @@ RUN apk add --no-cache \
     curl
 
 COPY apps/traefik/extractuserid /plugins-local/src/github.com/tempestteam/traefik/extractuserid
+COPY apps/traefik/atlaskey /plugins-local/src/github.com/tempestteam/traefik/atlaskey
 
 RUN update-ca-certificates
