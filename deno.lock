@@ -27,7 +27,7 @@
     "jsr:@std/streams@^1.0.13": "1.0.13",
     "jsr:@std/tar@~0.1.9": "0.1.9",
     "jsr:@std/testing@1": "1.0.15",
-    "npm:@ai-sdk/anthropic@^2.0.50": "2.0.53_zod@4.1.13",
+    "npm:@ai-sdk/anthropic@^2.0.53": "2.0.53_zod@4.1.13",
     "npm:@ai-sdk/google@^2.0.44": "2.0.44_zod@4.1.13",
     "npm:@ai-sdk/mcp@^0.0.11": "0.0.11_zod@4.1.13",
     "npm:@ai-sdk/openai@^2.0.75": "2.0.75_zod@4.1.13",
@@ -4597,7 +4597,7 @@
       "packages/llm": {
         "packageJson": {
           "dependencies": [
-            "npm:@ai-sdk/anthropic@^2.0.50",
+            "npm:@ai-sdk/anthropic@^2.0.53",
             "npm:@ai-sdk/google@^2.0.44",
             "npm:@ai-sdk/openai@^2.0.75",
             "npm:@ai-sdk/provider@2",
