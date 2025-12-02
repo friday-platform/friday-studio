@@ -25,6 +25,9 @@ class ChatContext {
     new Chat({
       id: this.id,
       messages: this.previousMessages,
+      onFinish: async () => {
+        this.loadRecentChats();
+      },
       transport: new DefaultChatTransport({
         api: `${getAtlasDaemonUrl()}/api/chat`,
         prepareSendMessagesRequest({ messages, id }) {

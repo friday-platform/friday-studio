@@ -3,6 +3,7 @@ import { client, type InferResponseType, parseResult } from "@atlas/client/v2";
 import { onMount } from "svelte";
 import { getAppContext } from "$lib/app-context.svelte";
 import logo from "$lib/assets/logo.png";
+import { getChatContext } from "$lib/chat-context.svelte";
 import { Icons } from "$lib/components/icons";
 import { IconSmall } from "$lib/components/icons/small";
 import AddWorkspaceDialog from "$lib/modules/spaces/add-workspace.svelte";
@@ -13,6 +14,7 @@ import NavigationControls from "./navigation-controls.svelte";
 type WorkspacesListResponse = InferResponseType<typeof client.workspace.index.$get, 200>;
 
 const ctx = getAppContext();
+const chatContext = getChatContext();
 let spaces = $state<WorkspacesListResponse>([]);
 
 let mounted = $state(false);
@@ -117,13 +119,11 @@ onMount(() => {
 
 				<AddWorkspaceDialog>
 					{#snippet triggerContents()}
-						<span class="new-space">
-							<IconSmall.Plus />
-							Add New
-						</span>
+						<span class="new-space"> Add New </span>
 					{/snippet}
 				</AddWorkspaceDialog>
 			</span>
+
 			<ul class="spaces-list">
 				{#each spaces as space}
 					<li>
@@ -135,8 +135,35 @@ onMount(() => {
 							<span class="text">{space.name}</span>
 						</a>
 					</li>
-				{:else}
-					<li class="sidebar-item no-spaces">No spaces found</li>
+				{/each}
+			</ul>
+
+			<span class="spaces-header">
+				Recent Chats
+
+				<button
+					class="new-space"
+					onclick={() => {
+						chatContext.newChat();
+					}}
+				>
+					Add New
+				</button>
+			</span>
+
+			<ul class="spaces-list">
+				{#each chatContext.recentChats as chat (chat.id)}
+					<li>
+						<button
+							class="sidebar-item"
+							class:active={chatContext.id === chat.id}
+							onclick={() => {
+								chatContext.loadChat(chat.id);
+							}}
+						>
+							<span class="text">{chat.title || '(Untitled)'}</span>
+						</button>
+					</li>
 				{/each}
 			</ul>
 		</nav>
@@ -148,7 +175,6 @@ onMount(() => {
 <style>
 	header {
 		background-color: var(--color-surface-2);
-		border-inline-end: var(--size-px) solid var(--color-border-1);
 		display: flex;
 		flex-direction: column;
 		justify-content: space-between;
@@ -156,6 +182,9 @@ onMount(() => {
 		padding-block: var(--size-13) var(--size-5);
 		padding-inline: var(--size-3);
 		position: relative;
+		overflow-y: auto;
+		scrollbar-width: none;
+		transform: translate3d(0, 0, 0);
 		z-index: var(--layer-1);
 
 		-webkit-user-select: none;
@@ -226,12 +255,15 @@ onMount(() => {
 		box-shadow: var(--shadow-1);
 		color: var(--text-1);
 		display: flex;
+		flex: none;
 		font-size: var(--font-size-2);
 		font-weight: var(--font-weight-7);
-		justify-content: center;
 		inline-size: var(--size-7);
+		inset-block-end: 0;
+		justify-content: center;
 		margin-block: auto var(--size-1);
 		margin-inline: var(--size-5) 0;
+		position: sticky;
 		transition: all 150ms ease;
 	}
 
@@ -318,7 +350,8 @@ onMount(() => {
 	}
 
 	.spaces-list {
-		a {
+		a,
+		button {
 			padding-inline: var(--size-2-5) var(--size-2);
 
 			span {
@@ -328,10 +361,12 @@ onMount(() => {
 			}
 		}
 
-		.no-spaces {
-			opacity: 0.5;
-			font-size: var(--font-size-2);
-			padding-inline: var(--size-2-5) var(--size-2);
+		button.sidebar-item {
+			border: none;
+			color: inherit;
+			cursor: pointer;
+			inline-size: 100%;
+			text-align: left;
 		}
 	}
 </style>

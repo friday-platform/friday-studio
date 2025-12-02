@@ -136,7 +136,7 @@ $effect(() => {
 							{:else if formattedMessage && formattedMessage.type === 'tool_call' && formattedMessage.metadata?.toolName === 'table_output' && formattedMessage.metadata?.result}
 								<Table
 									data={formattedMessage.metadata.result as {
-										data: { headers: string[]; rows: Record<string, string | number>[] };
+										data: { headers: string[]; rows: Record[] };
 									}}
 								/>
 							{:else if formattedMessage && formattedMessage.type === 'tool_call' && formattedMessage.metadata?.toolName === 'display_artifact' && formattedMessage.metadata?.artifactId}
