@@ -1,4 +1,5 @@
 displayName: AtlasKey Plugin
+summary: JWT authentication middleware for Atlas API keys
 type: middleware
 import: github.com/tempestteam/traefik/atlaskey
 
