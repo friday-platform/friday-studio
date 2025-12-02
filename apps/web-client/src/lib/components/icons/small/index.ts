@@ -7,10 +7,13 @@ import Check from "./check.svelte";
 import Close from "./close.svelte";
 import File from "./file.svelte";
 import Folder from "./folder.svelte";
+import InfoCircled from "./info-circled.svelte";
 import Plus from "./plus.svelte";
 import Progress from "./progress.svelte";
 import Stop from "./stop.svelte";
+import ToolCall from "./tool-call.svelte";
 import Workspace from "./workspace.svelte";
+
 export const IconSmall = {
   CaretDown,
   CaretLeft,
@@ -21,8 +24,10 @@ export const IconSmall = {
   Close,
   File,
   Folder,
+  InfoCircled,
   Plus,
   Progress,
   Stop,
+  ToolCall,
   Workspace,
 };

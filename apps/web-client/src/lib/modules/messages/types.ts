@@ -2,7 +2,7 @@ export interface OutputEntry {
   id: string;
   type:
     | "text" // response
-    | "thinking"
+    | "reasoning"
     | "request"
     | "finish"
     | "tool_call"

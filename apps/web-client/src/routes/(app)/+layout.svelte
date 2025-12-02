@@ -42,9 +42,7 @@ onMount(async () => {
       if (webview) {
         unlisten = await webview.onDragDropEvent(async (event) => {
           if (event.payload.type === "drop") {
-            // console.log('payload', event.payload);
             for (const path of event.payload.paths) {
-              // console.log('path', path);
               // Check if it's a valid workspace config file
               if (path.endsWith(".yml") || path.endsWith(".yaml")) {
                 const result = await handleWorkspaceFileDrop(path);

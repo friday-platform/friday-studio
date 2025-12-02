@@ -20,7 +20,7 @@ export function formatMessage(
     if (part.type === "reasoning") {
       return {
         id: crypto.randomUUID(),
-        type: "thinking",
+        type: "reasoning",
         timestamp: new Date().toISOString(),
         content: part.text,
       };

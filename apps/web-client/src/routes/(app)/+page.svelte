@@ -1,6 +1,7 @@
 <script lang="ts">
 import type { AtlasUIMessagePart } from "@atlas/agent-sdk";
 import { circOut } from "svelte/easing";
+import { SvelteMap } from "svelte/reactivity";
 import { slide } from "svelte/transition";
 import { z } from "zod";
 import { getAppContext, getFileType } from "$lib/app-context.svelte";
@@ -14,8 +15,11 @@ import Outline from "$lib/modules/conversation/outline.svelte";
 import ErrorMessage from "$lib/modules/messages/error-message.svelte";
 import FlexibleContainer from "$lib/modules/messages/flexible-container.svelte";
 import { formatMessage } from "$lib/modules/messages/format";
-import Message from "$lib/modules/messages/message.svelte";
 import Progress from "$lib/modules/messages/progress.svelte";
+import Reasoning from "$lib/modules/messages/reasoning.svelte";
+import Request from "$lib/modules/messages/request.svelte";
+import Response from "$lib/modules/messages/response.svelte";
+import ShowDetails from "$lib/modules/messages/show-details.svelte";
 import Table from "$lib/modules/messages/table.svelte";
 import { formatChatDate } from "$lib/utils/date";
 import { invoke } from "$lib/utils/tauri-loader";
@@ -100,6 +104,8 @@ $effect(() => {
     timestamp: lastAssistantMessage.metadata?.startTimestamp,
   };
 });
+
+let showDetails = new SvelteMap<string, boolean>();
 </script>
 
 <div class="chat">
@@ -128,23 +134,46 @@ $effect(() => {
 					</FlexibleContainer>
 
 					{#each chatContext.chat?.messages as messageContainer (messageContainer.id)}
-						{#each messageContainer.parts as message, index (index)}
-							{@const formattedMessage = formatMessage(messageContainer, message)}
+						<div class="message-parts">
+							{#each messageContainer.parts as message, index (index)}
+								{@const formattedMessage = formatMessage(messageContainer, message)}
 
-							{#if formattedMessage && (formattedMessage.type === 'request' || formattedMessage.type === 'text')}
-								<Message message={formattedMessage} />
-							{:else if formattedMessage && formattedMessage.type === 'tool_call' && formattedMessage.metadata?.toolName === 'table_output' && formattedMessage.metadata?.result}
-								<Table
-									data={formattedMessage.metadata.result as {
-										data: { headers: string[]; rows: Record[] };
-									}}
-								/>
-							{:else if formattedMessage && formattedMessage.type === 'tool_call' && formattedMessage.metadata?.toolName === 'display_artifact' && formattedMessage.metadata?.artifactId}
-								<DisplayArtifact artifactId={formattedMessage.metadata.artifactId as string} />
-							{:else if formattedMessage && formattedMessage.type === 'error'}
-								<ErrorMessage message={formattedMessage} />
+								{#if formattedMessage}
+									{#if formattedMessage.type === 'request'}
+										<Request message={formattedMessage} />
+									{:else if formattedMessage.type === 'text'}
+										<Response message={formattedMessage} parts={messageContainer.parts} />
+									{:else if formattedMessage.type === 'tool_call' && formattedMessage.metadata?.toolName === 'table_output' && formattedMessage.metadata?.result}
+										<Table
+											data={formattedMessage.metadata.result as {
+												data: { headers: string[]; rows: Record[] };
+											}}
+										/>
+									{:else if formattedMessage.type === 'tool_call' && formattedMessage.metadata?.toolName === 'display_artifact' && formattedMessage.metadata?.artifactId}
+										<DisplayArtifact artifactId={formattedMessage.metadata.artifactId as string} />
+									{:else if formattedMessage.type === 'error'}
+										<ErrorMessage message={formattedMessage} />
+									{/if}
+								{/if}
+							{/each}
+
+							{#if messageContainer.role === 'assistant' && messageContainer.parts.some((part) => part.type === 'text' && part.state === 'done')}
+								<div class="show-details" class:open={showDetails.get(messageContainer.id)}>
+									<ShowDetails
+										open={showDetails.get(messageContainer.id) ?? false}
+										onclick={() => {
+											const status = showDetails.get(messageContainer.id) ?? false;
+
+											showDetails.set(messageContainer.id, !status);
+										}}
+									/>
+								</div>
 							{/if}
-						{/each}
+
+							{#if showDetails.get(messageContainer.id)}
+								<Reasoning parts={messageContainer.parts} />
+							{/if}
+						</div>
 					{/each}
 
 					{#if chatContext.chat?.status === 'streaming' || chatContext.chat?.status === 'submitted'}
@@ -483,6 +512,24 @@ $effect(() => {
 			grid-template-columns: 1fr var(--size-56);
 			gap: var(--size-12);
 		}
+	}
+
+	.message-parts {
+		margin-inline: auto;
+		inline-size: max-content;
+		min-inline-size: var(--size-160);
+	}
+
+	.show-details {
+		opacity: 0;
+		visibility: hidden;
+		transition: opacity 250ms ease;
+	}
+
+	.message-parts:hover .show-details,
+	.show-details.open {
+		opacity: 1;
+		visibility: visible;
 	}
 
 	.messages-inner {

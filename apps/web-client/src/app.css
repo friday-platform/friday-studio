@@ -138,7 +138,7 @@ svg {
 
   /* Surfaces */
   --color-surface-1: hsl(0 0% 100% / 1);
-  --color-surface-2: hsl(41 3% 95% / 1);
+  --color-surface-2: hsl(0 0% 93% / 1);
 
   /* Borders */
   --color-border-1: hsl(300 1% 87% / 1);
@@ -170,7 +170,7 @@ svg {
     -8px rgba(26, 83, 204, 0.1), 0px 24px 48px -12px rgba(26, 83, 204, 0.08);
 
   @media (color-gamut: p3) {
-    --color-surface-2: color(display-p3 0.9515 0.9505 0.9485);
+    --color-surface-2: color(display-p3 0.9333 0.9333 0.9333);
     --color-border-1: color(display-p3 0.8706 0.8667 0.8706);
 
     --color-text: color(display-p3 0.0941 0.1098 0.1843);

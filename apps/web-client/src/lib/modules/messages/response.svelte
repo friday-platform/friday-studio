@@ -1,42 +1,34 @@
 <script lang="ts">
+import type { AtlasUIMessagePart } from "@atlas/agent-sdk";
+
+import Reasoning from "$lib/modules/messages/reasoning.svelte";
 import { markdownToHTML } from "./markdown-utils";
 import type { OutputEntry } from "./types";
 import MessageWrapper from "./wrapper.svelte";
 
-const { message }: { message: OutputEntry } = $props();
+const { message, parts }: { message: OutputEntry; parts: AtlasUIMessagePart[] } = $props();
 
 // Convert markdown to HTML
 const htmlContent = $derived(message.content ? markdownToHTML(message.content) : "");
 </script>
 
 <MessageWrapper>
-	<article class="message" class:user={message.type === 'request'}>
-		{#if message.type === 'request'}
-			<div class="request">
-				<div class="content">
-					{#if htmlContent}
-						{@html htmlContent}
-					{:else if message.content}
-						{message.content}
-					{/if}
-				</div>
-			</div>
-		{:else}
-			<div class="content">
-				{#if htmlContent}
-					{@html htmlContent}
-				{:else if message.content}
-					{message.content}
-				{/if}
-			</div>
-		{/if}
+	<article class="message">
+		<div class="content">
+			{#if htmlContent}
+				{@html htmlContent}
+			{:else if message.content}
+				{message.content}
+			{/if}
+		</div>
 	</article>
 </MessageWrapper>
 
 <style>
 	.message {
 		display: flex;
-		justify-content: center;
+		flex-direction: column;
+		align-items: center;
 		gap: var(--size-6);
 	}
 
@@ -122,44 +114,6 @@ const htmlContent = $derived(message.content ? markdownToHTML(message.content) :
 			padding-block: var(--size-4);
 			padding-inline: var(--size-6);
 			overflow-x: auto;
-		}
-	}
-
-	.message.user {
-		margin-inline: auto;
-		max-inline-size: var(--size-160);
-		padding-inline: var(--size-8);
-	}
-
-	.request {
-		background-color: var(--color-surface-2);
-		border-radius: var(--radius-3);
-		padding-block: var(--size-2);
-		padding-inline: var(--size-3);
-		inline-size: fit-content;
-		margin-inline-start: auto;
-		margin-inline-end: unset;
-		max-inline-size: 90%;
-		overflow: hidden;
-
-		.content {
-			& :global(ol),
-			& :global(ul),
-			& :global(p) {
-				max-inline-size: unset;
-				margin-inline: unset;
-				padding-inline: unset;
-				inline-size: unset;
-			}
-
-			& :global(p),
-			& :global(li) {
-				font-weight: var(--font-weight-4);
-				line-height: var(--font-lineheight-2);
-				opacity: 1;
-				font-size: var(--font-size-4);
-				word-break: break-word;
-			}
 		}
 	}
 </style>

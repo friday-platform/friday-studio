@@ -62,7 +62,7 @@ function getMessage(
   } else if (type === "data-tool-progress" && content) {
     return content;
   } else {
-    return "Thinking";
+    return "Reasoning";
   }
 }
 </script>
