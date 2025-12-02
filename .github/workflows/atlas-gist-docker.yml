@@ -90,9 +90,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.PAT }}
         run: |
-          gh pr create -B main -H release-atlas-gist-${{ github.sha }} -t "deploy-atlas-gist-${{ github.sha }}" -b ""
-          command="gh pr merge release-atlas-gist-${{ github.sha }} --squash --admin"
-          max_retries=30
-          delay=2
-          retry_count=0
-          until $command; do ((retry_count++)); [ "$retry_count" -ge "$max_retries" ] && echo "Failed after $max_retries attempts." && break; echo "Retrying in $delay seconds..."; sleep $delay; done; [ "$retry_count" -lt "$max_retries" ] && echo "Command succeeded." || echo "Command failed after maximum retries."
+          PR_BRANCH="release-atlas-gist-${{ github.sha }}"
+          gh pr create -B main -H "$PR_BRANCH" -t "deploy-atlas-gist-${{ github.sha }}" -b ""
+          for _ in {1..30}; do gh pr merge "$PR_BRANCH" --squash --admin --delete-branch && exit 0; sleep 2; done
+          exit 1
