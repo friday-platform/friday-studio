@@ -40,7 +40,7 @@ export class ConfigLoader {
     if (hasEphemeral) {
       return { path: ephemeralPath, ephemeral: true };
     }
-    throw new Error(`Workspace configuration not found at ${persistentPath} or ${ephemeralPath}`);
+    throw new ConfigNotFoundError(this.workspacePath);
   }
 
   /**
@@ -177,6 +177,20 @@ export class ConfigLoader {
     if (!result.success) {
       throw new Error(`Signal payload validation failed for '${signalName}': ${result.error}`);
     }
+  }
+}
+
+/**
+ * Error thrown when workspace configuration file is not found
+ */
+export class ConfigNotFoundError extends Error {
+  public readonly code = "CONFIG_NOT_FOUND";
+
+  constructor(public readonly workspacePath: string) {
+    super(
+      `Workspace configuration not found at ${workspacePath}/workspace.yml or ${workspacePath}/eph_workspace.yml`,
+    );
+    this.name = "ConfigNotFoundError";
   }
 }
 

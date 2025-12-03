@@ -8,7 +8,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { env } from "node:process";
-import { ConfigLoader, type MergedConfig } from "@atlas/config";
+import { ConfigLoader, ConfigNotFoundError, type MergedConfig } from "@atlas/config";
 import { logger } from "@atlas/logger";
 import { FilesystemConfigAdapter } from "@atlas/storage";
 import { SYSTEM_WORKSPACES } from "@atlas/system/workspaces";
@@ -317,7 +317,13 @@ export class WorkspaceManager {
       const configLoader = new ConfigLoader(adapter, workspace.path);
       return await configLoader.load();
     } catch (error) {
-      logger.error(`Failed to load workspace config`, { workspaceId, error: error });
+      // Missing config is expected (deleted workspace, moved directory) - log at warn level
+      // Other errors (validation, IO) are unexpected - log at error level
+      if (error instanceof ConfigNotFoundError) {
+        logger.warn("Workspace config not found", { workspaceId, path: workspace.path });
+      } else {
+        logger.error("Failed to load workspace config", { workspaceId, error });
+      }
       return null;
     }
   }
