@@ -14,7 +14,8 @@ import { memoryStore } from "../memory-store.ts";
 
 const SummarizedResultSchema = z.object({
   summary: z.string().describe("Summary (200-400 words)"),
-  key_excerpts: z.string().array().describe("Key quotes/data points - max 5"),
+  // Use coerce to handle LLM occasionally returning numbers instead of strings
+  key_excerpts: z.coerce.string().array().describe("Key quotes/data points - max 5"),
 });
 
 type SummarizedResult = z.infer<typeof SummarizedResultSchema>;
