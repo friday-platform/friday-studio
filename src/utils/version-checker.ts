@@ -4,6 +4,7 @@
  */
 
 import { getAtlasBaseUrl } from "@atlas/core";
+import { logger } from "@atlas/logger";
 import { ensureDir, existsSync } from "@std/fs";
 import { z } from "zod";
 import { ReleaseChannel } from "./release-channel.ts";
@@ -319,7 +320,7 @@ export async function checkForUpdate(channel?: string): Promise<UpdateInfo> {
   try {
     const serverResponse = await fetchLatestVersion(channel);
     if (!serverResponse) {
-      console.error(`No server response for channel: ${channel}`);
+      logger.error("No server response for update check", { channel });
       return { updateAvailable: false, currentVersion };
     }
 

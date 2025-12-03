@@ -7,6 +7,7 @@
 
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { logger } from "@atlas/logger";
 import { isErrnoException } from "@atlas/utils";
 import { getAtlasHome } from "@atlas/utils/paths.server";
 import { z } from "zod";
@@ -224,10 +225,8 @@ export class VectorSearchLocalStorageAdapter implements IVectorSearchStorageAdap
         }
       }
     } catch (error) {
-      if (isErrnoException(error) && error.code === "ENOENT") {
-        console.warn(
-          `Failed to load vector index: ${error instanceof Error ? error.message : String(error)}`,
-        );
+      if (isErrnoException(error) && error.code !== "ENOENT") {
+        logger.warn("Failed to load vector index", { error });
       }
       // File doesn't exist or is corrupted, start with empty index
     }

@@ -1,3 +1,4 @@
+import { logger } from "@atlas/logger";
 import {
   type FileWatchSignalConfig,
   FileWatchSignalProvider,
@@ -23,7 +24,7 @@ export class ProviderRegistry implements IProviderRegistry {
 
   register(provider: IProvider): void {
     this.providers.set(provider.id, provider);
-    console.log(`[ProviderRegistry] Registered provider: ${provider.id} (${provider.type})`);
+    logger.info("Registered provider", { providerId: provider.id, providerType: provider.type });
   }
 
   get(id: string): IProvider | undefined {

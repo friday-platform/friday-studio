@@ -1,3 +1,4 @@
+import { logger } from "@atlas/logger";
 import { z } from "zod";
 import {
   getAtlasBinaryPath,
@@ -55,10 +56,9 @@ exit
     try {
       await Deno.mkdir(startupFolder, { recursive: true });
       await Deno.writeTextFile(startupBatch, batchContent);
-      console.log(`Atlas startup configured successfully`);
-      console.log(`Auto-start: ${startupBatch}`);
+      logger.info("Atlas startup configured successfully", { startupBatch });
     } catch (error) {
-      console.warn(`Could not create startup entry: ${error}`);
+      logger.warn("Could not create startup entry", { error });
     }
   }
 
@@ -76,7 +76,7 @@ exit
     const startupBatch = `${homeDir}\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\Atlas.bat`;
     try {
       await Deno.remove(startupBatch);
-      console.log("Atlas startup entries removed successfully");
+      logger.info("Atlas startup entries removed successfully");
     } catch {
       // File might not exist
     }

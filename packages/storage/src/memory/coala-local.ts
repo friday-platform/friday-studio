@@ -9,6 +9,7 @@
  * - contextual.json - Session/agent specific context
  */
 
+import { logger } from "@atlas/logger";
 import type { CoALAMemoryEntry } from "@atlas/memory";
 import { CoALAMemoryEntrySchema, type CoALAMemoryType } from "@atlas/memory";
 import { isErrnoException, objectKeys } from "@atlas/utils";
@@ -90,17 +91,16 @@ export class CoALALocalFileStorageAdapter implements ICoALAMemoryStorageAdapter 
 
       // Handle JSON parsing errors gracefully
       if (error instanceof SyntaxError) {
-        console.warn(
-          `Failed to parse JSON in ${filePath}: ${error.message}. Returning empty array.`,
-        );
+        logger.warn("Failed to parse JSON, returning empty array", { filePath, error });
         return [];
       }
 
       // Handle Zod validation errors gracefully
       if (error instanceof z.ZodError) {
-        console.warn(
-          `Failed to validate memory data structure in ${filePath}: ${error.message}. Returning empty array.`,
-        );
+        logger.warn("Failed to validate memory data structure, returning empty array", {
+          filePath,
+          error,
+        });
         return [];
       }
 
@@ -222,9 +222,9 @@ export class CoALALocalFileStorageAdapter implements ICoALAMemoryStorageAdapter 
     } catch (error) {
       // Handle Zod validation errors
       if (error instanceof z.ZodError) {
-        console.warn(
-          `Failed to validate memory statistics structure: ${error.message}. Regenerating statistics.`,
-        );
+        logger.warn("Failed to validate memory statistics structure, regenerating statistics", {
+          error,
+        });
       }
 
       // If index doesn't exist or validation fails, generate statistics on the fly
