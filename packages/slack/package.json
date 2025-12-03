@@ -10,7 +10,7 @@
     "@atlas/logger": "workspace:*",
     "@atlas/workspace": "workspace:*",
     "@slack/bolt": "^4.6.0",
-    "@slack/web-api": "^7.12.0",
+    "@slack/web-api": "^7.13.0",
     "zod": "^4.0.0-beta.1"
   },
   "devDependencies": {}
