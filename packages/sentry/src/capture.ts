@@ -16,6 +16,13 @@ function applyContext(scope: Sentry.Scope, context?: CaptureContext): void {
   if (context.agentId) scope.setTag("agentId", context.agentId);
   if (context.agentName) scope.setTag("agentName", context.agentName);
   scope.setExtras(context);
+
+  // Custom fingerprinting: group all errors from the same session into one issue.
+  // This prevents a single root cause from creating multiple Sentry issues
+  // as the error propagates through layers (agent → session → workspace).
+  if (context.sessionId) {
+    scope.setFingerprint([context.sessionId]);
+  }
 }
 
 export function captureException(error: unknown, context?: CaptureContext): void {
