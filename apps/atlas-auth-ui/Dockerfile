@@ -31,4 +31,4 @@ COPY --from=builder /app/build ./build
 EXPOSE 3000
 
 # Start the Node.js server
-CMD ["deno", "run", "--allow-net", "--allow-env", "--allow-read", "build/index.js"]
+CMD ["deno", "run", "--allow-net", "--allow-env", "--allow-read", "--allow-sys=hostname", "build/index.js"]
