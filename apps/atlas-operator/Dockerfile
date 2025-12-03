@@ -1,5 +1,5 @@
 # Build stage
-FROM golang:1.25.4-alpine3.22 AS builder
+FROM golang:1.25.5-alpine3.22 AS builder
 
 # Build arguments
 ARG GITHUB_SHA
