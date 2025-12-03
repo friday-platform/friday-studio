@@ -78,6 +78,24 @@ export const FileWatchSignalConfigSchema = BaseSignalConfigSchema.extend({
 });
 
 /**
+ * Slack Signal - Slack Socket Mode triggers
+ */
+export const SlackSignalConfigSchema = BaseSignalConfigSchema.extend({
+  provider: z.literal("slack"),
+  config: z.strictObject({
+    events: z
+      .array(z.enum(["message", "app_mention"]))
+      .default(["message"])
+      .describe("Event types to listen for"),
+    channels: z
+      .array(z.enum(["dm", "channel", "group", "mpim", "app_home", "all"]))
+      .default(["dm"])
+      .describe("Channel types to filter (dm, channel, group, mpim, app_home, all)"),
+    ignoreBotMessages: z.boolean().default(true).describe("Ignore messages from bots"),
+  }),
+});
+
+/**
  * Discord Signal - Discord message events
  * Triggered via Gateway WebSocket (MESSAGE_CREATE, MESSAGE_UPDATE)
  */
@@ -126,6 +144,7 @@ export const WorkspaceSignalConfigSchema = z.discriminatedUnion("provider", [
   ScheduleSignalConfigSchema,
   SystemSignalConfigSchema,
   FileWatchSignalConfigSchema,
+  SlackSignalConfigSchema,
   DiscordSignalConfigSchema,
 ]);
 
@@ -135,6 +154,7 @@ export type WorkspaceSignalConfig = z.infer<typeof WorkspaceSignalConfigSchema>;
 export type HTTPSignalConfig = z.infer<typeof HTTPSignalConfigSchema>;
 export type ScheduleSignalConfig = z.infer<typeof ScheduleSignalConfigSchema>;
 export type SystemSignalConfig = z.infer<typeof SystemSignalConfigSchema>;
+export type SlackSignalConfig = z.infer<typeof SlackSignalConfigSchema>;
 export type DiscordSignalConfig = z.infer<typeof DiscordSignalConfigSchema>;
 
 // ==============================================================================

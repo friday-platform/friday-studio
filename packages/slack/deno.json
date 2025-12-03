@@ -1,0 +1,7 @@
+{
+  "name": "@atlas/slack",
+  "version": "1.0.0",
+  "exports": "./mod.ts",
+  "tasks": { "test": "deno test --allow-all tests/" },
+  "compilerOptions": { "strict": true, "lib": ["deno.window"] }
+}

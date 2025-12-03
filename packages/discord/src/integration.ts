@@ -29,7 +29,11 @@ export interface DaemonSignalTrigger {
     onStreamEvent?: (chunk: AtlasUIMessageChunk) => void,
   ): Promise<{ sessionId: string }>;
 
-  waitForSignalCompletion(workspaceId: string, sessionId: string): Promise<void>;
+  waitForSignalCompletion(
+    workspaceId: string,
+    sessionId: string,
+    timeoutMs?: number,
+  ): Promise<boolean>;
 }
 
 /**

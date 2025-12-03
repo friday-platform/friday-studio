@@ -15,6 +15,7 @@
     "@atlas/memory": "workspace:*",
     "@atlas/schemas": "workspace:*",
     "@atlas/signals": "workspace:*",
+    "@atlas/slack": "workspace:*",
     "@atlas/storage": "workspace:*",
     "@atlas/utils": "workspace:*",
     "@atlas/workspace": "workspace:*",

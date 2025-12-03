@@ -11,8 +11,12 @@ import { DiscordIntegration, DiscordSignalRegistrar } from "@atlas/discord";
 import { logger } from "@atlas/logger";
 import { PlatformMCPServer } from "@atlas/mcp-server";
 import { embeddingProviderForceDispose, embeddingProviderGetInstance } from "@atlas/memory";
+import { SlackIntegration, SlackSignalRegistrar } from "@atlas/slack";
 import { WorkspaceManager } from "@atlas/workspace";
-import type { WorkspaceSignalTriggerCallback } from "@atlas/workspace/types";
+import type {
+  WorkspaceSignalRegistrar,
+  WorkspaceSignalTriggerCallback,
+} from "@atlas/workspace/types";
 import { StreamableHTTPTransport } from "@atlas-vendor/hono-mcp";
 import type { Context, Next } from "hono";
 import { cors } from "hono/cors";
@@ -89,6 +93,7 @@ export class AtlasDaemon {
   private cronManager: CronManager | null = null;
   private mcpServerPool: GlobalMCPServerPool | null = null;
   private workspaceManager: WorkspaceManager | null = null;
+  private slackIntegration: SlackIntegration = new SlackIntegration();
   private discordIntegration: DiscordIntegration = new DiscordIntegration();
   private sseHealthCheckInterval: number | null = null;
   private agentSessionCleanupInterval: number | null = null;
@@ -266,6 +271,10 @@ export class AtlasDaemon {
     const cronRegistrar = new CronSignalRegistrar(this.cronManager);
     const discordRegistrar = new DiscordSignalRegistrar();
 
+    // Initialize Slack integration (self-contained config loading)
+    const slackRegistrar = new SlackSignalRegistrar(logger.child({ component: "slack-registrar" }));
+    await this.slackIntegration.initialize(slackRegistrar, wakeupCallback, this);
+
     // Initialize Discord integration (before workspace loading so it can mount HTTP handler)
     await this.discordIntegration.initialize(
       discordRegistrar,
@@ -281,8 +290,17 @@ export class AtlasDaemon {
       logger.info("Discord webhook endpoint mounted at /signal/discord/interactions");
     }
 
+    // Build registrars array with Discord always included, Slack conditionally
+    const signalRegistrars: WorkspaceSignalRegistrar[] = [
+      fsRegistrar,
+      cronRegistrar,
+      discordRegistrar,
+    ];
+    if (this.slackIntegration.getRegistrar()) {
+      signalRegistrars.push(slackRegistrar);
+    }
+
     // Initialize WorkspaceManager with registrars and watcher (manager owns lifecycle)
-    const signalRegistrars = [fsRegistrar, cronRegistrar, discordRegistrar];
     await this.workspaceManager.initialize(signalRegistrars);
 
     // Register Discord commands now that workspaces are loaded
@@ -1006,24 +1024,51 @@ export class AtlasDaemon {
   }
 
   /**
-   * Wait for a signal session to complete
+   * Wait for a workspace session to complete with timeout
    *
-   * @param workspaceId - Workspace ID where signal was triggered
-   * @param sessionId - Session ID returned from triggerWorkspaceSignal
-   * @throws Error if workspace runtime or session not found
+   * Default timeout: 30 seconds (allows reasonable time for agent processing)
+   *
+   * @returns true if session completed successfully, false if timeout/error/not found
    */
-  public async waitForSignalCompletion(workspaceId: string, sessionId: string): Promise<void> {
-    const runtime = this.runtimes.get(workspaceId);
+  public async waitForSignalCompletion(
+    workspaceId: string,
+    sessionId: string,
+    timeoutMs = 30_000,
+  ): Promise<boolean> {
+    const runtime = this.getWorkspaceRuntime(workspaceId);
     if (!runtime) {
-      throw new Error(`Workspace runtime not found: ${workspaceId}`);
+      logger.error("Workspace runtime not found", { workspaceId, sessionId });
+      return false;
     }
 
-    const session = runtime.getSession(sessionId);
+    const sessions = runtime.getSessions();
+    const session = sessions.find((s) => s.id === sessionId);
+
     if (!session) {
-      throw new Error(`Session not found: ${sessionId} in workspace ${workspaceId}`);
+      // Session not found - might have been cleaned up already
+      logger.debug("Session not found (may have been cleaned up)", { workspaceId, sessionId });
+      return false;
     }
 
-    await session.waitForCompletion();
+    // Create timeout promise that rejects after specified duration
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("timeout")), timeoutMs),
+    );
+
+    // Wait for session to reach terminal state (completed, failed, cancelled) or timeout
+    try {
+      await Promise.race([session.waitForCompletion(), timeoutPromise]);
+      return true;
+    } catch (error) {
+      const isTimeout = error instanceof Error && error.message === "timeout";
+      logger.error(isTimeout ? "Session timed out" : "Session failed", {
+        error,
+        sessionId,
+        workspaceId,
+        timeoutMs: isTimeout ? timeoutMs : undefined,
+      });
+      return false;
+    }
   }
 
   /**
@@ -1340,6 +1385,9 @@ export class AtlasDaemon {
 
     // Shutdown Discord integration
     await this.discordIntegration.shutdown();
+
+    // Shutdown Slack integration
+    await this.slackIntegration.shutdown();
 
     // Dispose MCP Server Pool
     if (this.mcpServerPool) {

@@ -1,0 +1,17 @@
+{
+  "name": "@atlas/slack",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./mod.ts",
+  "exports": { ".": "./mod.ts" },
+  "scripts": { "test": "deno test --allow-all tests/" },
+  "dependencies": {
+    "@atlas/config": "workspace:*",
+    "@atlas/logger": "workspace:*",
+    "@atlas/workspace": "workspace:*",
+    "@slack/bolt": "^4.6.0",
+    "@slack/web-api": "^7.12.0",
+    "zod": "^4.0.0-beta.1"
+  },
+  "devDependencies": {}
+}

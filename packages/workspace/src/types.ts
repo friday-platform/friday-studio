@@ -59,7 +59,7 @@ export interface WorkspaceSignalRegistrar {
     workspaceId: string,
     workspacePath: string,
     config: MergedConfig,
-  ) => Promise<void>;
+  ) => Promise<void> | void;
   unregisterWorkspace: (workspaceId: string) => Promise<void> | void;
   shutdown?: () => Promise<void>;
 }

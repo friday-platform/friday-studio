@@ -123,7 +123,19 @@ export async function runDiscordConversation(
     );
 
     // Wait for conversation to complete
-    await daemon.waitForSignalCompletion(DISCORD_CONVERSATION_WORKSPACE_ID, sessionId);
+    const completed = await daemon.waitForSignalCompletion(
+      DISCORD_CONVERSATION_WORKSPACE_ID,
+      sessionId,
+    );
+
+    if (!completed) {
+      logger.error("Discord conversation failed or timed out", {
+        chatId,
+        userId: options.userId,
+        sessionId,
+      });
+      return { ok: false, error: { error: "Conversation processing failed or timed out", chatId } };
+    }
 
     logger.info("Discord conversation completed", {
       chatId,

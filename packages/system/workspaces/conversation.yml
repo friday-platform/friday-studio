@@ -16,6 +16,13 @@ memory:
     maxEntriesPerSession: 20
     retentionDays: 90
 signals:
+  slack-dm:
+    provider: slack
+    description: "Slack direct messages and mentions"
+    config:
+      events: [message, app_mention]
+      channels: [dm, channel]
+      ignoreBotMessages: true
   conversation-stream:
     description: "Handle conversation with streaming response"
     provider: "system"
