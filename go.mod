@@ -23,7 +23,7 @@ require (
 	github.com/stretchr/testify v1.11.1
 	go.opentelemetry.io/collector/config/configtls v1.47.0
 	golang.org/x/oauth2 v0.33.0
-	google.golang.org/api v0.256.0
+	google.golang.org/api v0.257.0
 	k8s.io/apimachinery v0.34.2
 	k8s.io/client-go v0.34.2
 )
