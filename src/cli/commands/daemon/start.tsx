@@ -2,6 +2,7 @@ import { AtlasDaemon } from "@atlas/atlasd";
 import { client, parseResult } from "@atlas/client/v2";
 import { fetchCredentials, setToEnv } from "@atlas/core/credentials";
 import { logger } from "@atlas/logger";
+import { captureException, initSentry } from "@atlas/sentry";
 import { getAtlasHome } from "@atlas/utils/paths.server";
 import { load } from "@std/dotenv";
 import { exists } from "@std/fs";
@@ -77,6 +78,9 @@ export function builder(y: YargsInstance) {
 }
 
 export const handler = async (argv: StartArgs): Promise<void> => {
+  // Initialize Sentry first thing
+  initSentry();
+
   try {
     // Validate port
     if (argv.port && (argv.port < 1 || argv.port > 65535)) {
@@ -251,6 +255,7 @@ export const handler = async (argv: StartArgs): Promise<void> => {
       await startForeground(argv);
     }
   } catch (error) {
+    captureException(error);
     errorOutput(error instanceof Error ? error.message : String(error));
     Deno.exit(1);
   }

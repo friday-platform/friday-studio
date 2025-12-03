@@ -1,6 +1,11 @@
 import fs from "node:fs";
 import { dirname, join } from "node:path";
 import process from "node:process";
+import {
+  captureException,
+  captureMessage,
+  isInitialized as isSentryInitialized,
+} from "@atlas/sentry";
 import { DetailedError } from "hono/client";
 import { FileWriteCoordinator } from "../../storage/src/memory/file-write-coordinator.ts";
 import { BaseLogger } from "./base-logger.ts";
@@ -38,16 +43,45 @@ class AtlasLoggerV2 extends BaseLogger {
     } catch {
       // Continue if file writing fails
     }
+
+    // Send errors to Sentry
+    if ((level === "error" || level === "fatal") && isSentryInitialized()) {
+      try {
+        const error = finalContext.error;
+        if (error instanceof Error) {
+          captureException(error, finalContext);
+        } else {
+          captureMessage(message, level, finalContext);
+        }
+      } catch {
+        // Ignore Sentry failures
+      }
+    }
   }
 
   private formatLogEntry(level: LogLevel, message: string, context: LogContext): LogEntry {
     // Process context to serialize Error objects
     const processedContext = { ...context };
+    let stackTrace: string | undefined;
+
     if (processedContext.error !== undefined) {
+      // Extract stack trace for Cloud Error Reporting (needs top-level stack_trace field)
+      if (processedContext.error instanceof Error && processedContext.error.stack) {
+        stackTrace = processedContext.error.stack;
+      }
       processedContext.error = this.serializeError(processedContext.error);
     }
 
-    return { timestamp: new Date().toISOString(), level, message, context: processedContext };
+    // Add stack_trace at root level for Google Cloud Error Reporting auto-detection
+    const entry: LogEntry = {
+      timestamp: new Date().toISOString(),
+      level,
+      message,
+      context: processedContext,
+      stack_trace: stackTrace,
+    };
+
+    return entry;
   }
 
   private serializeError(error: unknown): unknown {

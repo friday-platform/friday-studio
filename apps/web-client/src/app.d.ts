@@ -21,6 +21,15 @@ declare global {
    * `typeof window !== 'undefined' && '__TAURI__' in window`
    */
   const __TAURI_BUILD__: boolean;
+
+  /** Build-time constant: true in development mode, false in production */
+  const __DEV_MODE__: boolean;
+
+  /** Sentry environment: "local", "sandbox", or "production" */
+  const __SENTRY_ENVIRONMENT__: string;
+
+  /** Sentry release identifier for deployment tracking */
+  const __SENTRY_RELEASE__: string;
 }
 
 declare module "@tanstack/svelte-table" {

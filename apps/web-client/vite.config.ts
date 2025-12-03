@@ -1,4 +1,6 @@
+import { execSync } from "node:child_process";
 import process from "node:process";
+import { sentrySvelteKit } from "@sentry/sveltekit";
 import { sveltekit } from "@sveltejs/kit/vite";
 import { defineConfig } from "vite";
 
@@ -8,8 +10,21 @@ const host = process.env.TAURI_DEV_HOST;
 // We set TAURI_BUILD=true in tauri.conf.json's beforeBuildCommand
 const isTauriBuild = process.env.TAURI_BUILD === "true";
 
+// Sentry environment: local (dev), sandbox, production
+// Set via SENTRY_ENVIRONMENT env var at build time, defaults to "production" for Docker builds
+const sentryEnvironment = process.env.SENTRY_ENVIRONMENT || "production";
+
+// Get git commit hash for Sentry release tracking
+const gitCommit = (() => {
+  try {
+    return execSync("git rev-parse --short HEAD", { encoding: "utf-8" }).trim();
+  } catch {
+    return "unknown";
+  }
+})();
+
 export default defineConfig(({ mode }) => ({
-  plugins: [sveltekit()],
+  plugins: [sentrySvelteKit(), sveltekit()],
   clearScreen: false,
   define: {
     "process.env": "{}",
@@ -19,6 +34,10 @@ export default defineConfig(({ mode }) => ({
     // In dev mode, client connects directly to daemon at localhost:8080
     // In production, client uses relative URLs (routed by Traefik)
     __DEV_MODE__: JSON.stringify(mode === "development"),
+    // Sentry environment injected at build time
+    __SENTRY_ENVIRONMENT__: JSON.stringify(mode === "development" ? "local" : sentryEnvironment),
+    // Sentry release for tracking deployments
+    __SENTRY_RELEASE__: JSON.stringify(`atlas-web-client@${gitCommit}`),
   },
   server: {
     port: 1420,

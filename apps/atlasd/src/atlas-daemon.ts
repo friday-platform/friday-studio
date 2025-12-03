@@ -11,6 +11,7 @@ import { DiscordIntegration, DiscordSignalRegistrar } from "@atlas/discord";
 import { logger } from "@atlas/logger";
 import { PlatformMCPServer } from "@atlas/mcp-server";
 import { embeddingProviderForceDispose, embeddingProviderGetInstance } from "@atlas/memory";
+import { flush as flushSentry } from "@atlas/sentry";
 import { SlackIntegration, SlackSignalRegistrar } from "@atlas/slack";
 import { WorkspaceManager } from "@atlas/workspace";
 import type {
@@ -1430,6 +1431,9 @@ export class AtlasDaemon {
         logger.error("Error shutting down HTTP server", { error });
       }
     }
+
+    // Flush Sentry events before exit
+    await flushSentry(2000);
 
     logger.info("Atlas daemon shutdown complete");
   }

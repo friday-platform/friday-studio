@@ -46,4 +46,6 @@ export interface LogEntry {
   level: LogLevel;
   message: string;
   context: LogContext;
+  /** Stack trace at root level for Google Cloud Error Reporting auto-detection */
+  stack_trace?: string;
 }
