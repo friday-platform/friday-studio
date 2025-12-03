@@ -345,9 +345,17 @@ export class MCPManager {
         });
       }
 
-      throw new Error(
-        `MCP server registration failed: ${error instanceof Error ? error.message : String(error)}`,
-      );
+      // Build error message with transport context for debugging
+      const msg = error instanceof Error ? error.message : String(error);
+      let context = "";
+      if (config.transport.type === "stdio") {
+        const { command, args } = config.transport;
+        context = ` (command: ${args?.length ? `${command} ${args.join(" ")}` : command})`;
+      } else if (config.transport.type === "sse" || config.transport.type === "http") {
+        context = ` (url: ${config.transport.url})`;
+      }
+
+      throw new Error(`MCP server '${config.id}' registration failed: ${msg}${context}`);
     }
   }
 
