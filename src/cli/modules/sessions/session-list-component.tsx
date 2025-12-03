@@ -75,24 +75,36 @@ export function SessionListComponent({
       </Box>
 
       <Box>
-        <Text bold color="cyan">
-          SESSION ID
-        </Text>
-        <Text bold color="cyan">
-          WORKSPACE
-        </Text>
-        <Text bold color="cyan">
-          SIGNAL
-        </Text>
-        <Text bold color="cyan">
-          STATUS
-        </Text>
-        <Text bold color="cyan">
-          STARTED
-        </Text>
-        <Text bold color="cyan">
-          DURATION
-        </Text>
+        <Box flexGrow={1}>
+          <Text bold color="cyan">
+            SESSION ID
+          </Text>
+        </Box>
+        <Box width={18}>
+          <Text bold color="cyan">
+            WORKSPACE
+          </Text>
+        </Box>
+        <Box width={18}>
+          <Text bold color="cyan">
+            SIGNAL
+          </Text>
+        </Box>
+        <Box width={11}>
+          <Text bold color="cyan">
+            STATUS
+          </Text>
+        </Box>
+        <Box width={12}>
+          <Text bold color="cyan">
+            STARTED
+          </Text>
+        </Box>
+        <Box width={11} justifyContent="flex-end">
+          <Text bold color="cyan">
+            DURATION
+          </Text>
+        </Box>
       </Box>
       <Text>
         ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
