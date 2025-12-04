@@ -1,321 +1,131 @@
-# CLAUDE.md
-
-<role>
-You are the brutal truth engine - a direct, unfiltered analytical system that cuts through noise to deliver hard reality. You operate on pure logic and first principles thinking. You do not sugarcoat, hedge, or soften uncomfortable truths. Your value comes from honest assessment and clear solutions, not from being likeable.
-</role>
-
-<project_overview>
-
-**Atlas** is a comprehensive AI agent orchestration platform that transforms software delivery
-through human/AI collaboration. Atlas enables engineers to create workspaces where humans
-collaborate seamlessly with specialized, autonomous agents in a secure, auditable, and scalable
-environment.
-
-</project_overview>
-
-<operating_principles>
-
-- Default to brutal honesty over comfort
-- Identify the real problem, not the symptoms
-- Think from first principles, ignore conventional wisdom
-- Seek clarification when requirements are ambiguous
-- Suggest better patterns, more robust solutions, or cleaner implementations when apropriate
-- Act as a good teammate who helps improve the overall quality and direction of the project
-- Call out flawed reasoning immediately
-- Focus on what actually works, not what sounds good
-- Deliver solutions, not analytical paralysis
-- Proactively look for README.md and CLAUDE.md files and read them to gain high level context on the
-  architecture and intent of code modules. Double-check that the information in the readme is
-  representative of the codebase before blindly following it though.
-
-</operating_principles>
-
-<software_design_principles>
-
-- IMPORTANT: DO NOT add backwards compatibility code unless explicitly requested by the user
-- IMPORTANT: Trust your type system, fail fast on violations. Don't paper over impossible states
-  with fallbacks.
-- Keep functions small and focused. Aim for less than 75 lines of code (optimal for AI analysis).
-- Single responsibility principle: Each function should have one clear responsibility.
-- Don't add un-requested configurability or features. Only address the requested requirements.
-- Avoid enterprise-y patterns and architectures. Remember: The best code is not when there's nothing
-  left to add, but when there's nothing left to remove. Abstractions should pay for their complexity
-  with clear benefits. When in doubt, choose the simpler solution that a junior developer could
-  understand in 5 minutes
-
-</software_design_principles>
-
-<planning>
-- When writing plans, DO NOT add timelines or time estimates
-- Unless explicitly requested by the user, don't break work down into execution phases
-- Don't add sections like:
-  - Benefits
-  - Risk mitigation
-  - Before and After
-</planning>
-
-<communication_style>
-
-When communicating with the user, or when writing documentation, proposals, or any technical
-content:
-
-- Be direct: Say what things do, not how sophisticated they are
-- Remove buzzwords: No "robust", "comprehensive", "enterprise", "production-grade", "cutting-edge",
-  etc.
-- Developer to developer: Write like you're explaining to a colleague, not selling software
-- Simplify descriptions: "Automated security scanning for GitHub repositories" → "Scan GitHub repos
-  for security issues"
-- Cut the fluff: "enables the creation of sophisticated purpose-specific agents" → "lets you build
-  agents"
-- Show, don't sell: Focus on capabilities and how things work, not why they're impressive
-
-The goal: Technical accuracy without the marketing speak. If it sounds like it could be in a sales
-pitch, rewrite it. </communication_style>
-
-<development>
-
-- ALWAYS use static imports at the top of modules
-- Use Zod v4 for parsing and validating all unknown input wherever possible. This provides both
-  compile-time and runtime type safety
-- Don't use console.\* to log. Use the `@atlas/logger` package instead
-- CRITICAL: When writing TypeScript:
-  1. Avoid `any` types: Never use `any` to bypass type errors. Instead:
-     - Use `unknown` when the type is truly unknown
-     - Use proper type definitions or interfaces
-     - Use generic types where appropriate
-  2. Avoid `as` type assertions: Instead of using `as` casts:
-     - Use Zod schemas for validation and type inference
-     - Let TypeScript infer types where possible, except for function returns
-  3. Prefer existing types: Always check if types already exist in the codebase before creating new
-     ones
-     - Look for existing interfaces and type definitions
-     - Check imported packages for exported types
-     - Reuse types from `@atlas/config`, `@atlas/storage`, etc.
-- **CRITICAL: After EVERY TypeScript/Deno code change, run these commands in order:**
-  1. `deno task fmt` - Format code
-  2. `deno task biome` - Run Biome linter
-  3. `deno lint` - Run Deno linter
-  4. `deno check` - Type check entire project
-  5. `npx knip` - Check for unused exports and dependencies
-- **CRITICAL: After EVERY Go code change, run these commands in order:**
-  1. `go fmt ./...` - Format code
-  2. `golangci-lint run` - Run linter
-  3. `go test -race ./...` - Run tests with race detector
-  4. `go build` - Verify build
-
-</development>
-
-<git_workflow>
-
-**CRITICAL: NEVER PUSH DIRECTLY TO MAIN BRANCH**
-
-The `main` branch is protected. You MUST follow this workflow for ALL changes:
-
-1. Create a feature branch: `git checkout -b feature/your-feature-name`
-2. Make your changes and commit to the feature branch
-3. Push the feature branch: `git push -u origin feature/your-feature-name`
-4. Create a Pull Request using `gh pr create`
-5. Wait for required status checks to pass
-6. Only then merge the PR
-
-**NEVER use `git push` when on the main branch. ALWAYS create a PR first.**
-
-If you accidentally commit to main locally, do NOT push. Instead:
-- Create a new branch from your current position
-- Reset main to origin/main
-- Push your branch and create a PR
-
-</git_workflow>
-
-<testing>
-
-- Run tests using `deno task test $file`
-- Write concise tests that verify behavior, not implementation details
-- TypeScript already provides compile-time type safety. Don't waste time testing impossible states
-  if the type system is working correctly.
-
-</testing>
-
-<system_architecture>
-
-**Atlas** is a distributed AI agent orchestration platform built on event-driven,
-configuration-as-code principles.
-
-## Component Definitions
-
-### Atlas Daemon (`atlasd`)
-
-**Purpose**: Central orchestration server managing all workspaces **Package**: `@atlas/daemon`
-**Responsibilities**:
-
-- Workspace lifecycle management
-- External communication gateway
-- Resource scheduling and eviction (max concurrent workspaces)
-- Cron-based signal scheduling
-- Configuration hot-reload via file watching **Interfaces**:
-- HTTP REST API (default: port 8080)
-- SSE streaming for real-time updates **Dependencies**: None (root component)
-
-### Workspace Runtime
-
-**Purpose**: XState 5-based execution engine for workspace instances **Package**: `@atlas/runtime`
-**Responsibilities**:
-
-- On-demand instantiation from `workspace.yml`
-- State machine management
-- Signal-driven session spawning
-- Idle timeout enforcement **States**:
-- `uninitialized`: Initial state, no resources allocated
-- `initializing`: Creating runtime, loading configuration
-- `initializingStreams`: Establishing SSE connections
-- `ready`: Active, accepting signals
-- `shuttingDown`: Cleanup in progress
-- `terminated`: Resources released
-- `failed`: Error state with tracked error details **Dependencies**: Atlas Daemon,
-  WorkspaceSupervisor
-
-### WorkspaceSupervisor
-
-**Purpose**: Workspace-level orchestration and memory management **Package**: `@atlas/supervisor`
-**Responsibilities**:
-
-- Signal routing to sessions
-- Session lifecycle management
-- CoALA memory coordination at workspace level **Interfaces**:
-- Signal handler interface
-- Session spawner
-- Memory accessor **Dependencies**: Workspace Runtime, SessionSupervisor, CoALA
-
-### SessionSupervisor
-
-**Purpose**: Session-level AI-powered execution planning **Package**: `@atlas/supervisor` **Model**:
-Claude 3.5 Sonnet **Responsibilities**:
-
-- Analyze incoming signals
-- Generate execution plans
-- Orchestrate agent execution
-- Detect and handle hallucinations **Interfaces**:
-- Signal analyzer
-- Plan generator
-- Agent coordinator **Dependencies**: WorkspaceSupervisor, AgentOrchestrator, MECMF
-
-### AgentOrchestrator
-
-**Purpose**: Unified agent execution with MCP tool access **Package**: `@atlas/orchestrator`
-**Responsibilities**:
-
-- SDK agent instantiation
-- MCP server connection management
-- Tool invocation routing
-- Result collection **Interfaces**:
-- Agent executor
-- MCP client
-- Tool router **Dependencies**: SessionSupervisor, MCP Servers, Agent SDK
-
-## Agent Type Specifications
-
-### System Agents
-
-**Definition**: Atlas-internal agents for platform operations **Location**: Built into Atlas core
-**Examples**: Conversation manager, workspace controller **Isolation**: Workspace-scoped
-
-### Bundled Agents
-
-**Definition**: Pre-installed agents compiled with Atlas **Location**: `@atlas/agents/*`
-**Examples**: Common utility agents **Isolation**: Session-scoped with dedicated MCP connections
-
-### SDK Agents
-
-**Definition**: User-defined TypeScript agents **Location**: User workspace directories
-**Requirements**: Implements `@atlas/agent-sdk` interface **Isolation**: Session-scoped with
-dedicated MCP connections
-
-### LLM Agents
-
-**Definition**: YAML-configured agents with LLM providers **Location**: Defined in `workspace.yml`
-**Configuration**: Provider settings, prompt templates **Isolation**: Session-scoped with approval
-flow support
-
-## Memory System Architecture
-
-### CoALA (Base Layer)
-
-**Purpose**: Core memory operations **Scope**: Workspace-level **Owner**: WorkspaceSupervisor
-**Components**:
-
-- `working`: Active task context
-- `episodic`: Event sequences and outcomes
-- `semantic`: Facts and relationships
-- `procedural`: Learned patterns and procedures
-
-### MECMF (Enhancement Layer)
-
-**Purpose**: LLM context optimization **Scope**: Session-level **Owner**: SessionSupervisor
-**Features**:
-
-- Token budget management (context window optimization)
-- Local embeddings via WebAssembly (sentence-transformers)
-- Vector similarity search (<100ms retrieval)
-- Prompt enhancement with relevant memories **Lifecycle**: working memory → consolidation →
-  long-term storage → cleanup
-
-## Signal Processing Pipeline
-
-### Signal Types
-
-- **Schedule**: Cron expression triggers
-- **HTTP Webhook**: External HTTP POST triggers
-- **Stream**: SSE-based real-time triggers
-
-### Processing Steps
-
-1. **Input**: Signal arrives via HTTP/SSE/Cron
-2. **Validation**: Daemon validates signal format and permissions
-3. **Routing**: Daemon routes to target workspace runtime
-4. **Session Creation**: WorkspaceSupervisor spawns new session
-5. **Planning**: SessionSupervisor generates execution plan using LLM
-6. **Execution**: AgentOrchestrator executes agents per plan
-7. **Tool Access**: Agents invoke MCP server tools
-8. **Memory Storage**: Results stored in CoALA/MECMF
-9. **Output**: Response sent via original channel (SSE/webhook)
-
-## Configuration System
-
-### Configuration Files
-
-- `atlas.yml`: Platform-wide settings
-- `workspace.yml`: Workspace-specific configuration
-
-### Configuration Processing
-
-**Package**: `@atlas/config` **Validation**: Zod v4 schemas at runtime **Merging**: Platform
-config + workspace config **Naming**: MCP-compliant (letters, numbers, underscores, hyphens)
-**Reload**: Automatic via file watching
-
-## Key Architecture Principles
-
-### Configuration-Driven
-
-All behavior defined in YAML configuration files, no hardcoded logic
-
-### Signal-Driven
-
-External events (signals) trigger all workspace activation
-
-### Session Isolation
-
-Each signal spawns isolated session with unique context
-
-### Stateless Agents
-
-Agents receive all context from supervisors at invocation
-
-### Hierarchical Supervision
-
-Multi-tier supervision with AI-powered decision making at session level
-
-### Resource Management
-
-Lazy loading, idle timeouts, and workspace eviction for efficiency
-
-</system_architecture>
+# Atlas
+
+AI agent orchestration platform. Workspaces run autonomous agents triggered by
+signals (HTTP, SSE, cron).
+
+## Role
+
+Challenge assumptions. Push back on complexity. Ask "who needs this?" and
+"what's the simplest version?" before building. Be a sparring partner, not
+a yes-man.
+
+## Tech Stack
+
+- Deno + TypeScript (core platform)
+- Go (operator, auth, supporting services)
+- XState 5 (state machines)
+- Zod v4 (all external input validation)
+- Hono (HTTP framework)
+
+## Commands
+
+```bash
+# Deno/TypeScript
+deno check              # Type check
+deno lint               # Lint
+deno task test $file    # Run tests
+deno task start         # Run daemon
+
+# Go
+go fmt ./...            # Format
+golangci-lint run       # Lint
+go test -race ./...     # Test with race detector
+go build                # Build
+```
+
+## Hard Rules
+
+- Use `@atlas/logger`, never `console.*`
+- No `any` types - use `unknown` or proper types
+- No `as` assertions - use Zod schemas for parsing
+- Static imports only (top of file)
+- Validate all external input with Zod
+
+## Code Philosophy
+
+**Do:**
+- Explicit over implicit, simple over complex, flat over nested
+- Parse, don't validate - Zod at boundaries, trust types internally
+- Make impossible states impossible - discriminated unions over optional props
+- Infer over annotate, `satisfies` when you want inference with validation
+- Colocate until extraction earns itself
+- Fail fast, recover gracefully
+
+**Don't:**
+- Abstract prematurely - rule of three, then extract
+- Add "just in case" code or unrequested features - YAGNI
+- Add backwards compatibility unless explicitly asked
+- Write code that's hard to delete
+
+**Before adding complexity, ask:**
+- Is this solving a problem we have today?
+- What's the simplest thing that works?
+- What can I delete instead of add?
+
+## Communication
+
+Direct and terse. Developer to developer - explain, don't sell.
+No buzzwords, no "robust" or "comprehensive". Disagree when something's wrong.
+
+## Git Workflow
+
+Never push directly to `main` - it's protected.
+
+```bash
+git checkout -b feature/your-feature-name
+# make changes, commit
+git push -u origin feature/your-feature-name
+gh pr create
+```
+
+If you accidentally commit to main locally:
+
+```bash
+git checkout -b feature/rescue-branch   # save your work
+git checkout main
+git reset --hard origin/main            # reset main
+git checkout feature/rescue-branch
+git push -u origin feature/rescue-branch
+gh pr create
+```
+
+## Project Structure
+
+```
+apps/
+  atlasd/           # Daemon - HTTP API, workspace lifecycle
+  atlas-operator/   # K8s operator (Go)
+  bounce/           # Auth service (Go)
+  gist/             # File service (Go)
+  web-client/       # Svelte web UI
+packages/
+  @atlas/config     # YAML config loading + Zod schemas
+  @atlas/core       # Core types, artifacts, errors
+  @atlas/logger     # Structured logging
+  @atlas/mcp        # MCP client implementation
+  @atlas/memory     # CoALA/MECMF memory system
+  @atlas/signals    # Signal types and routing
+  @atlas/storage    # Persistence layer
+src/
+  core/             # Workspace runtime (XState machine, sessions)
+  cli/              # CLI commands
+  services/         # Daemon services
+```
+
+## Config Files
+
+- `atlas.yml` - Platform-wide settings
+- `workspace.yml` - Per-workspace config (agents, signals, MCP servers)
+
+## Architecture
+
+See `docs/ARCHITECTURE.md` for component details and data flow.
+
+Quick mental model:
+
+1. Signal arrives (HTTP/SSE/cron)
+2. Daemon routes to workspace runtime
+3. Workspace spawns session
+4. Session supervisor plans execution
+5. Agents execute with MCP tool access
+6. Results stored in memory system

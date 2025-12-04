@@ -31,7 +31,6 @@ tasks
 
 lgtm/
 build/
-.claude/
 
 # Go binaries
 apps/bounce/bounce
