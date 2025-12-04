@@ -120,7 +120,7 @@
     "npm:prettier@^3.7.4": "3.7.4",
     "npm:react@^19.2.1": "19.2.1",
     "npm:svelte-check@^4.3.4": "4.3.4_svelte@5.45.5__acorn@8.15.0_typescript@5.9.3",
-    "npm:svelte-eslint-parser@^1.4.0": "1.4.0_svelte@5.45.5__acorn@8.15.0_postcss@8.5.6",
+    "npm:svelte-eslint-parser@^1.4.1": "1.4.1_svelte@5.45.5__acorn@8.15.0_postcss@8.5.6",
     "npm:svelte@^5.45.5": "5.45.5_acorn@8.15.0",
     "npm:typescript-eslint@^8.48.1": "8.48.1_eslint@9.39.1_typescript@5.9.3_@typescript-eslint+parser@8.48.1__eslint@9.39.1__typescript@5.9.3",
     "npm:typescript@^5.9.3": "5.9.3",
@@ -5283,8 +5283,8 @@
       ],
       "bin": true
     },
-    "svelte-eslint-parser@1.4.0_svelte@5.45.5__acorn@8.15.0_postcss@8.5.6": {
-      "integrity": "sha512-fjPzOfipR5S7gQ/JvI9r2H8y9gMGXO3JtmrylHLLyahEMquXI0lrebcjT+9/hNgDej0H7abTyox5HpHmW1PSWA==",
+    "svelte-eslint-parser@1.4.1_svelte@5.45.5__acorn@8.15.0_postcss@8.5.6": {
+      "integrity": "sha512-1eqkfQ93goAhjAXxZiu1SaKI9+0/sxp4JIWQwUpsz7ybehRE5L8dNuz7Iry7K22R47p5/+s9EM+38nHV2OlgXA==",
       "dependencies": [
         "eslint-scope",
         "eslint-visitor-keys@4.2.1",
@@ -5707,7 +5707,7 @@
             "npm:prettier-plugin-svelte@^3.4.0",
             "npm:prettier@^3.7.4",
             "npm:svelte-check@^4.3.4",
-            "npm:svelte-eslint-parser@^1.4.0",
+            "npm:svelte-eslint-parser@^1.4.1",
             "npm:svelte@^5.45.5",
             "npm:typescript-eslint@^8.48.1",
             "npm:typescript@^5.9.3",
@@ -5762,7 +5762,7 @@
             "npm:prettier-plugin-svelte@^3.4.0",
             "npm:prettier@^3.7.4",
             "npm:svelte-check@^4.3.4",
-            "npm:svelte-eslint-parser@^1.4.0",
+            "npm:svelte-eslint-parser@^1.4.1",
             "npm:svelte@^5.45.5",
             "npm:typescript-eslint@^8.48.1",
             "npm:typescript@^5.9.3",
