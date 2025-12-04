@@ -10,7 +10,7 @@ import { contentType } from "@std/media-types";
 import { resolve } from "@std/path";
 import { streamText, tool } from "ai";
 import { z } from "zod";
-import { sendEmail } from "./sendgrid.ts";
+import { extractUserFromJWT, sendEmail } from "./sendgrid.ts";
 import { template } from "./template.ts";
 
 /**
@@ -291,25 +291,36 @@ CONTENT GUIDELINES (for composeEmail):
 
     // Build email parameters with defaults from environment variables
     const fromEmail = params.from || env.SENDGRID_FROM_EMAIL || "noreply@tempestdx.com";
+    const atlasUserEmail = env.ATLAS_KEY ? extractUserFromJWT(env.ATLAS_KEY) : null;
+    if (!atlasUserEmail) {
+      logger.warn(
+        "No user email found in ATLAS_KEY JWT, sender info will not be shown in email footer",
+      );
+    }
+    const senderInfo = atlasUserEmail
+      ? `<p style="font-size: 12px;">Sent by ${atlasUserEmail}</p>`
+      : "";
 
     const emailParams: EmailParams = {
       to: params.to,
       subject: params.subject,
-      content: template.replace(
-        "{{ content }}",
-        params.content
-          .map((c) => {
-            if (c.tag === "paragraph") {
-              return `<p style="font-size: 15px; font-weight: 450; line-height: 155%; margin: 8px 0 12px 0;">${c.content}</p>`;
-            } else if (c.tag === "heading") {
-              return `<h2 style="font-size: 17px; font-weight: 650;  margin: 16px 0 0 0;">${c.content}</h2>`;
-            } else if (c.tag === "link") {
-              return `<a style="color: #2A54DF; text-decoration: underline;" href="${c.content}">${c.content}</a>`;
-            }
-            return c.content;
-          })
-          .join(""),
-      ),
+      content: template
+        .replace(
+          "{{ content }}",
+          params.content
+            .map((c) => {
+              if (c.tag === "paragraph") {
+                return `<p style="font-size: 15px; font-weight: 450; line-height: 155%; margin: 8px 0 12px 0;">${c.content}</p>`;
+              } else if (c.tag === "heading") {
+                return `<h2 style="font-size: 17px; font-weight: 650;  margin: 16px 0 0 0;">${c.content}</h2>`;
+              } else if (c.tag === "link") {
+                return `<a style="color: #2A54DF; text-decoration: underline;" href="${c.content}">${c.content}</a>`;
+              }
+              return c.content;
+            })
+            .join(""),
+        )
+        .replace("{{ sender_info }}", senderInfo),
       from: fromEmail,
       from_name: params.from_name || env.SENDGRID_FROM_NAME,
       attachments,

@@ -173,7 +173,7 @@ function buildCustomHeaders(): Record<string, string> {
 /**
  * Extract user email from JWT token
  */
-function extractUserFromJWT(token: string): string | null {
+export function extractUserFromJWT(token: string): string | null {
   try {
     const payload = JSON.parse(
       atob((token.split(".")[1] ?? "").replace(/-/g, "+").replace(/_/g, "/")),
