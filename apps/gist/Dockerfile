@@ -9,7 +9,7 @@ COPY . .
 
 RUN CGO_ENABLED=0 GOOS=linux go build -o /go/bin/gist ./apps/gist
 
-FROM alpine:3.22.2
+FROM alpine:3.23.0
 
 RUN apk --no-cache add ca-certificates
 
