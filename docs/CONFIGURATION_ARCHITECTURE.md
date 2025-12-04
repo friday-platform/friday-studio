@@ -25,6 +25,9 @@ definition with structured execution.
 
 ## Configuration Structure
 
+> **Note**: See `docs/COMPREHENSIVE_ATLAS_EXAMPLE.yml` for a complete, validated example
+> of all available atlas.yml options.
+
 ### 1. `atlas.yml` - Platform Configuration
 
 Atlas-managed configuration for supervisor behavior and core platform capabilities.

@@ -161,7 +161,7 @@ Supervision levels (from job config):
 ### packages/config - Configuration & Validation
 
 Zod schemas for all configuration. YAML files (atlas.yml, workspace.yml) parsed
-and validated here.
+and validated here. See `docs/COMPREHENSIVE_ATLAS_EXAMPLE.yml` for all available options.
 
 Key files:
 - `mod.ts` - Main exports

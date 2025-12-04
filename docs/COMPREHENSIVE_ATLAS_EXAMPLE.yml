@@ -1,16 +1,24 @@
-# Comprehensive Atlas Platform Configuration Example
-# This file demonstrates ALL available configuration options for atlas.yml
-# Atlas.yml is a superset of workspace.yml with additional platform features
+# =============================================================================
+# COMPREHENSIVE ATLAS CONFIGURATION EXAMPLE
+# =============================================================================
+# This file demonstrates ALL available configuration options for atlas.yml.
+# Atlas.yml is a superset of workspace.yml with additional platform features.
+#
+# To use: copy this file to your workspace directory and rename to atlas.yml
+#
+# Note: atlas.yml is loaded from workspace directories (${workspacePath}/atlas.yml).
+# This file serves as documentation and reference for all available options.
+# =============================================================================
 
 # Version is required - currently "1.0"
 version: "1.0"
 
-# ==============================================================================
+# =============================================================================
 # WORKSPACE IDENTITY (Same as workspace.yml)
-# ==============================================================================
+# =============================================================================
 # Atlas itself is a workspace - the platform workspace
 workspace:
-  # id: Required for platform workspace
+  # id: Optional for regular workspaces, recommended for platform workspace
   id: "atlas-platform"
 
   # name: Required, descriptive name
@@ -22,103 +30,111 @@ workspace:
   # description: Optional but recommended
   description: "Global Atlas platform workspace providing built-in agents and federation capabilities"
 
-# ==============================================================================
+  # timeout: Optional timeout configuration for workspace operations
+  timeout:
+    # Time allowed between progress signals before cancelling for inactivity
+    # Format: duration string like "30s", "2m", "1h"
+    progressTimeout: "2m"
+
+    # Hard upper limit for any operation
+    maxTotalTimeout: "30m"
+
+# =============================================================================
 # SERVER CONFIGURATION (Extended for atlas.yml)
-# ==============================================================================
-# How the Atlas platform exposes its capabilities
+# =============================================================================
+# How the Atlas platform exposes its capabilities via MCP
 server:
-  # MCP server configuration - Platform exposes itself via MCP
   mcp:
+    # Enable/disable MCP server
     enabled: true
 
-    # Transport configuration (atlas.yml only)
-    transport:
-      type: "sse"
-      url: "https://platform.atlas.example.com/mcp"
+    # Transport configuration (optional)
+    # Supported types: "stdio", "http", "sse"
+    # Note: stdio requires 'command' field, http/sse require 'url' field
+    # transport:
+    #   type: "sse"
+    #   url: "https://platform.atlas.example.com/mcp"
 
-    # What platform capabilities to expose
-    discoverable:
-      capabilities:
-        - "workspace_*" # All workspace management
-        - "federation_*" # Federation capabilities
-        - "platform_agents_*" # Platform agent access
-      jobs: [] # Platform typically doesn't expose jobs
-
-    # Authentication for platform access (atlas.yml only)
+    # Authentication configuration (atlas.yml only)
     auth:
-      required: true
-      providers: ["bearer", "api_key"]
+      required: false
+      # providers: ["bearer", "api_key"]  # Optional list of auth providers
 
     # Rate limiting (atlas.yml only)
     rate_limits:
-      requests_per_hour: 10000
-      concurrent_sessions: 100
+      requests_per_hour: 1000
+      concurrent_sessions: 10
 
-  # REST API configuration (atlas.yml only - not currently implemented)
-  rest:
-    enabled: true
-    prefix: "/api/v1"
-    swagger: true
+    # What platform capabilities to expose via MCP
+    discoverable:
+      # Capability patterns to expose (e.g., 'workspace_*')
+      capabilities:
+        - "workspace_*"
+        - "library_*"
+      # Job patterns to expose as MCP tools
+      jobs:
+        - "analyze-content"
 
-# ==============================================================================
-# TOOLS CONFIGURATION (Same as workspace.yml)
-# ==============================================================================
-# MCP servers available to platform agents
+# =============================================================================
+# TOOLS CONFIGURATION (Extended for atlas.yml)
+# =============================================================================
+# MCP servers that agents can call for tool access
 tools:
   mcp:
-    # Client configuration
+    # Client configuration for calling MCP servers
     client_config:
-      timeout: "30s" # Duration format
-      retry_policy:
-        max_attempts: 3
-      connection_pool:
-        max_connections: 20
+      # Watchdog timeout configuration
+      timeout:
+        progressTimeout: "2m"
+        maxTotalTimeout: "30m"
 
-    # Platform-level MCP servers
-    servers:
-      # Memory storage MCP server
-      memory-storage:
-        transport:
-          type: "stdio"
-          command: "atlas-memory-mcp"
-          args: ["--mode", "platform"]
-        tools:
-          allow: ["store", "retrieve", "query", "analyze"]
-
-      # Security scanning MCP server
-      security-scanner:
-        transport:
-          type: "http"
-          url: "https://security.atlas.example.com/mcp"
-        auth:
-          type: "bearer"
-          token_env: "SECURITY_MCP_TOKEN"
-        tools:
-          allow: ["scan_content", "check_privacy", "validate_safety"]
-
-    # Security policies for platform (atlas.yml only)
-    policies:
+    # Platform-level MCP tool security policies (atlas.yml only)
+    tool_policy:
+      # Policy type: "allowlist" or "denylist"
       type: "allowlist"
+      # Tools matching these patterns are allowed
       allow:
-        - "memory-storage"
-        - "security-scanner"
-        - "filesystem-mcp" # Basic filesystem access
-        - "metrics-mcp" # Metrics collection
+        - "memory-*"
+        - "library_*"
+        - "atlas_*"
+      # deny: []  # Tools matching these patterns are denied (for denylist type)
 
-# ==============================================================================
-# PLATFORM AGENTS (Atlas-specific)
-# ==============================================================================
-# These agents are available to ALL workspaces
+    # MCP servers configuration
+    # servers:
+    #   my-server:
+    #     transport:
+    #       type: "stdio"
+    #       command: "my-mcp-server"
+    #       args: ["--mode", "production"]
+    #     tools:
+    #       allow: ["tool1", "tool2"]  # Optional tool filtering
+
+# =============================================================================
+# AGENTS CONFIGURATION
+# =============================================================================
+# Platform-managed agents available to workspaces
+# Three agent types are supported: "llm", "system", "atlas"
 agents:
-  # Memory management agent
+  # ---------------------------------------------------------------------------
+  # LLM Agent Example
+  # ---------------------------------------------------------------------------
+  # LLM agents use language models directly with custom prompts
   memory-agent:
+    # Agent type - must be "llm" for LLM-based agents
     type: "llm"
+
+    # Description is REQUIRED for all agent types
     description: "Manages memory operations at session start and end"
 
+    # Config block contains all LLM-specific settings
     config:
+      # Provider is REQUIRED - e.g., "anthropic", "openai"
       provider: "anthropic"
-      model: "claude-3-5-haiku-latest" # Efficient model for memory ops
 
+      # Model is REQUIRED - the specific model to use
+      model: "claude-haiku-4-5"
+
+      # Prompt is REQUIRED - the system prompt for the agent
       prompt: |
         You are a memory management agent for Atlas workspaces.
         You can operate in two modes: LOAD (retrieve context) and STORE (save learnings).
@@ -129,166 +145,338 @@ agents:
         STORE mode: Analyze the complete session results and extract learnings about
         execution patterns, successful strategies, and interesting outcomes.
 
-      tools: ["memory-storage", "pattern-analysis", "context-retrieval"]
+      # Temperature: 0-0.7, controls randomness (optional, default: 0.3)
+      temperature: 0.3
 
-      temperature: 0.2 # Low temperature for consistent memory operations
-      max_tokens: 2000
+      # Max tokens for response (optional)
+      max_tokens: 4000
 
-      max_retries: 3
-      timeout: "30s"
+      # Max steps/iterations for agentic behavior (optional)
+      # max_steps: 10
 
-  # Security analysis agent (ACP protocol only)
+      # Tool choice strategy (optional): "auto", "required", "none"
+      # tool_choice: "auto"
+
+      # Tools available to this agent (optional)
+      # These reference MCP server tools defined in tools.mcp.servers
+      tools:
+        - "memory-storage"
+        - "pattern-analysis"
+        - "context-retrieval"
+
+      # Provider-specific options (optional)
+      # provider_options:
+      #   thinking: { budget_tokens: 5000 }
+
+      # Success condition for structured output (optional)
+      # success:
+      #   condition:
+      #     prompt: "Output contains valid JSON with required fields"
+      #   schema:
+      #     type: "object"
+      #     properties:
+      #       result: { type: "string" }
+
+      # Error condition (optional)
+      # error:
+      #   condition:
+      #     prompt: "Output indicates a failure or error state"
+
+      # Retry configuration (optional)
+      # max_retries: 3
+
+      # Timeout for agent execution (optional)
+      # timeout: "30s"
+
+  # ---------------------------------------------------------------------------
+  # Atlas Agent Example
+  # ---------------------------------------------------------------------------
+  # Atlas agents reference registered agents from the Atlas Agent Registry
+  # They run as separate processes with their own environment
   security-scanner:
-    type: "remote"
+    # Agent type - must be "atlas" for registry-based agents
+    type: "atlas"
+
+    # Agent ID from the Atlas Agent Registry - REQUIRED
+    agent: "security-scanner"
+
+    # Description is REQUIRED
     description: "Analyzes content for security concerns and sensitive information"
 
-    config:
-      protocol: "acp" # Only ACP protocol supported
-      endpoint: "https://security-api.atlas.example.com/analyze"
+    # Prompt is REQUIRED for atlas agents - passed to the agent on invocation
+    prompt: |
+      Analyze the provided content for security issues including:
+      - Content safety violations
+      - Data privacy concerns
+      - Potential malware patterns
 
-      # ACP configuration
-      agent_name: "security-scanner"
-      default_mode: "sync"
-      timeout: "30s"
-      max_retries: 2
-      health_check_interval: "30s"
+      Return a risk score (0-10), findings, and recommendations.
 
-      auth:
-        type: "bearer"
-        token_env: "SECURITY_API_TOKEN"
+    # Environment variables passed to the agent (optional)
+    env:
+      SECURITY_API_TOKEN: "${SECURITY_API_TOKEN}"
 
-      schema:
-        validate_input: true
-        validate_output: true
-        input:
-          type: "object"
-          properties:
-            content:
-              type: "string"
-              description: "Content to analyze for security issues"
-            analysis_type:
-              type: "string"
-              enum: ["content_safety", "data_privacy", "malware_detection"]
-          required: ["content"]
-        output:
-          type: "object"
-          properties:
-            risk_score:
-              type: "number"
-              minimum: 0
-              maximum: 10
-            findings:
-              type: "array"
-              items:
-                type: "object"
-            recommendations:
-              type: "array"
-              items:
-                type: "string"
-
-  # Content synthesis agent
+  # ---------------------------------------------------------------------------
+  # System Agent Example
+  # ---------------------------------------------------------------------------
+  # System agents are built-in Atlas agents with predefined behavior
   tempest-synthesizer:
+    # Agent type - must be "system" for built-in agents
     type: "system"
-    description: "Synthesize content from multiple sources"
-    agent: "content-synthesizer" # System agent identifier
 
+    # Agent identifier - REQUIRED, references a built-in system agent
+    # Available system agents: "conversation", "content-synthesizer", etc.
+    agent: "content-synthesizer"
+
+    # Description is REQUIRED
+    description: "Synthesizes multiple inputs into coherent summaries and analyses"
+
+    # Config block for system agent customization (optional)
     config:
-      synthesis_modes: ["comprehensive", "summary", "analytical"]
-      output_formats: ["markdown", "json", "plain_text"]
-      max_input_sources: 10
-      language_support: ["en", "es", "fr", "de", "ja"]
+      # Override the default model
+      model: "claude-sonnet-4-20250514"
 
-# ==============================================================================
-# JOBS (Same as workspace.yml but typically minimal for platform)
-# ==============================================================================
-jobs:
-  # Platform maintenance job
-  platform-maintenance:
-    name: "platform-maintenance"
-    description: "Performs routine platform maintenance tasks"
+      # Temperature for this agent
+      temperature: 0.5
 
-    triggers:
-      - signal: "maintenance-schedule"
+      # Max tokens
+      max_tokens: 8000
 
-    execution:
-      strategy: "sequential"
-      agents:
-        - id: "memory-agent"
-          context:
-            task: "Clean up old memory entries"
-        - id: "tempest-synthesizer"
-          context:
-            steps: "previous"
-            task: "Generate maintenance report"
+      # Tools available to this system agent
+      tools:
+        - "library_list"
+        - "library_get"
 
-    config:
-      timeout: "300s"
-      supervision:
-        level: "minimal"
-        skip_planning: true # Simple maintenance doesn't need planning
+      # Enable reasoning mode (optional)
+      # use_reasoning: true
 
-# ==============================================================================
-# SIGNALS (Same as workspace.yml)
-# ==============================================================================
+      # Max reasoning steps when reasoning is enabled (optional, 1-20)
+      # max_reasoning_steps: 5
+
+      # Custom prompt override (optional)
+      prompt: |
+        Synthesize the provided inputs into a coherent output.
+        Support multiple synthesis modes: comprehensive, summary, analytical.
+        Support multiple output formats: markdown, json, plain_text.
+
+# =============================================================================
+# SIGNALS CONFIGURATION (Same as workspace.yml)
+# =============================================================================
+# Signals are triggers that can start sessions
+# Supported providers: "http", "schedule", "system", "fs-watch", "slack", "discord"
 signals:
-  # Internal platform signals
-  maintenance-schedule:
-    provider: "schedule"
-    description: "Triggers platform maintenance"
-    config:
-      schedule: "0 2 * * *" # Daily at 2 AM
-      timezone: "UTC"
+  # ---------------------------------------------------------------------------
+  # HTTP Signal - Webhook endpoint
+  # ---------------------------------------------------------------------------
+  analyze-request:
+    # Description is REQUIRED
+    description: "Request content analysis via HTTP webhook"
 
-  platform-health-check:
-    provider: "system" # Renamed from "internal"
-    description: "Internal health check signal"
+    # Provider type
+    provider: "http"
+
+    # HTTP-specific configuration
+    config:
+      # Path for the webhook (method is always POST)
+      path: "/analyze"
+
+      # Timeout for signal processing (optional)
+      timeout: "30s"
+
+    # JSON Schema for payload validation (optional)
     schema:
       type: "object"
       properties:
-        check_type:
+        content:
           type: "string"
-          enum: ["full", "quick", "specific"]
-        target:
+        analysis_type:
           type: "string"
+      required:
+        - "content"
 
-# ==============================================================================
-# MEMORY CONFIGURATION (Atlas-specific, complex)
-# ==============================================================================
+  # ---------------------------------------------------------------------------
+  # Schedule Signal - Cron-based trigger
+  # ---------------------------------------------------------------------------
+  daily-maintenance:
+    description: "Daily maintenance and cleanup tasks"
+
+    provider: "schedule"
+
+    config:
+      # Cron expression (e.g., '0 9 * * *' for daily at 9 AM)
+      schedule: "0 3 * * *"
+
+      # Timezone for the schedule (optional, default: UTC)
+      timezone: "UTC"
+
+  # ---------------------------------------------------------------------------
+  # File Watch Signal - Filesystem change trigger
+  # ---------------------------------------------------------------------------
+  # config-changes:
+  #   description: "Watch for configuration file changes"
+  #   provider: "fs-watch"
+  #   config:
+  #     path: "./config"
+  #     recursive: true
+
+  # ---------------------------------------------------------------------------
+  # Slack Signal - Slack Socket Mode trigger
+  # ---------------------------------------------------------------------------
+  # slack-messages:
+  #   description: "Handle Slack messages"
+  #   provider: "slack"
+  #   config:
+  #     events: ["message", "app_mention"]
+  #     channels: ["dm", "channel"]
+  #     ignoreBotMessages: true
+
+  # ---------------------------------------------------------------------------
+  # Discord Signal - Discord message events
+  # ---------------------------------------------------------------------------
+  # discord-messages:
+  #   description: "Handle Discord messages"
+  #   provider: "discord"
+  #   config:
+  #     events: ["message_create"]
+  #     channels: ["dm", "mention", "guild"]
+  #     allowedGuilds: ["123456789"]  # Optional: restrict to specific servers
+
+# =============================================================================
+# JOBS CONFIGURATION (Same as workspace.yml)
+# =============================================================================
+# Jobs define execution patterns connecting signals to agents
+jobs:
+  analyze-content:
+    # MCP-compliant job name (optional, defaults to key)
+    name: "analyze-content"
+
+    # Job description (optional)
+    description: "Analyze content using the memory and synthesis agents"
+
+    # Triggers - which signals start this job
+    triggers:
+      - signal: "analyze-request"
+        # Optional condition for triggering
+        # condition:
+        #   prompt: "Signal payload contains 'urgent' flag"
+
+    # File context for the job (optional)
+    # context:
+    #   files:
+    #     patterns: ["src/**/*.ts", "!**/*.test.ts"]
+    #     base_path: "."
+    #     max_file_size: 100000
+    #     include_content: true
+
+    # Prompt for supervisor guidance (optional)
+    # prompt: "Focus on security analysis and performance implications"
+
+    # Execution configuration - REQUIRED
+    execution:
+      # Strategy: "sequential" or "parallel"
+      strategy: "sequential"
+
+      # Agent pipeline - at least one agent required
+      agents:
+        # Simple agent reference
+        - "memory-agent"
+
+        # Detailed agent configuration
+        - id: "tempest-synthesizer"
+          # nickname: "synthesizer"  # Optional reference name
+          # context:  # Optional context override
+          #   signal: true
+          #   steps: "previous"
+          # dependencies: ["memory-agent"]  # Explicit dependencies
+          # tools:  # Tool access override
+          #   allow: ["library_*"]
+
+    # Success condition (optional)
+    # success:
+    #   condition:
+    #     prompt: "All agents completed successfully with valid output"
+    #   schema:
+    #     type: "object"
+    #     properties:
+    #       summary: { type: "string" }
+
+    # Error condition (optional)
+    # error:
+    #   condition:
+    #     prompt: "Any agent failed or produced invalid output"
+
+    # Job-level configuration (optional)
+    config:
+      # Job timeout
+      timeout: "5m"
+
+      # Supervision settings
+      supervision:
+        # Level: "minimal", "standard", "detailed"
+        level: "standard"
+        # Skip planning phase for simple jobs
+        # skip_planning: true
+
+      # Memory settings for this job
+      memory:
+        enabled: true
+        # Extract facts from session
+        fact_extraction: true
+        # Include summary in session receipt
+        summary: true
+
+# =============================================================================
+# MEMORY CONFIGURATION (Extended for atlas.yml)
+# =============================================================================
+# Atlas memory configuration is more complex than workspace memory
+# It configures memory at multiple scopes: default, agent, session, workspace
 memory:
   # Default memory configuration for all components
   default:
     enabled: true
-    storage: "coala-local" # Memory storage backend
-    cognitive_loop: true # Enable cognitive processing
+    # Memory storage backend
+    storage: "coala-local"
+    # Enable cognitive processing loop
+    cognitive_loop: true
+    # Retention policy
     retention:
       max_age_days: 30
       max_entries: 1000
       cleanup_interval_hours: 24
 
-  # Streaming memory configuration for performance
+  # Streaming memory configuration for performance (optional)
   streaming:
     enabled: true
     queue_max_size: 1000
     batch_size: 10
-    flush_interval: "1s" # Duration format
+    # Duration format for flush interval
+    flush_interval: "1s"
     background_processing: true
     persistence_enabled: true
     error_retry_attempts: 3
     priority_processing: true
-    dual_write_enabled: true # Safe migration mode
-    legacy_batch_enabled: false # Disable for performance
-    stream_everything: true # Stream all memory operations
-    performance_tracking: true # Track performance metrics
+    # Safe migration mode - write to both old and new systems
+    dual_write_enabled: true
+    # Legacy batch processing
+    legacy_batch_enabled: false
+    # Stream all memory operations
+    stream_everything: true
+    # Track performance metrics
+    performance_tracking: true
 
   # Agent-level memory configuration
   agent:
     enabled: true
-    scope: "agent" # Memory scoped to individual agent
-    include_in_context: true # Include in agent execution context
+    # Scope: "agent", "session", or "workspace"
+    scope: "agent"
+    # Include memory in agent context
+    include_in_context: true
+    # Limits for context assembly
     context_limits:
       relevant_memories: 2
       past_successes: 1
       past_failures: 1
+    # Memory type configurations
     memory_types:
       working:
         enabled: true
@@ -299,7 +487,7 @@ memory:
         max_age_days: 7
         max_entries: 100
       episodic:
-        enabled: false # Agents shouldn't accumulate episodic memories
+        enabled: false  # Agents shouldn't accumulate episodic memories
         max_age_days: 1
         max_entries: 10
       semantic:
@@ -307,14 +495,14 @@ memory:
         max_age_days: 14
         max_entries: 200
       contextual:
-        enabled: false # Contextual memory at session level
+        enabled: false  # Contextual memory handled at session level
         max_age_hours: 1
         max_entries: 5
 
   # Session-level memory configuration
   session:
     enabled: true
-    scope: "session" # Memory scoped to session
+    scope: "session"
     include_in_context: true
     context_limits:
       relevant_memories: 5
@@ -326,7 +514,7 @@ memory:
         max_age_hours: 24
         max_entries: 100
       episodic:
-        enabled: true # Sessions need episodic memory
+        enabled: true  # Sessions accumulate episodic memories for task learning
         max_age_days: 7
         max_entries: 50
       procedural:
@@ -345,15 +533,16 @@ memory:
   # Workspace-level memory configuration
   workspace:
     enabled: true
-    scope: "workspace" # Memory scoped to workspace
-    include_in_context: false # Not directly in agent context
+    scope: "workspace"
+    # Workspace memory not directly included in agent context
+    include_in_context: false
     context_limits:
       relevant_memories: 10
       past_successes: 5
       past_failures: 3
     memory_types:
       working:
-        enabled: false # Workspaces don't need working memory
+        enabled: false  # Workspace doesn't need working memory
         max_entries: 0
       episodic:
         enabled: true
@@ -372,25 +561,38 @@ memory:
         max_age_days: 30
         max_entries: 200
 
-# ==============================================================================
-# SUPERVISOR CONFIGURATION (Atlas-specific)
-# ==============================================================================
+# =============================================================================
+# SUPERVISORS CONFIGURATION (atlas.yml only)
+# =============================================================================
+# Configure the three-level supervisor hierarchy
 supervisors:
-  # Workspace Supervisor
+  # Workspace supervisor - orchestrates sessions
   workspace:
-    model: "claude-3-7-sonnet-latest"
-    memory: "workspace" # Uses workspace-level memory
-
+    # Model for workspace-level decisions
+    model: "claude-sonnet-4-20250514"
+    # Memory scope to use
+    memory: "workspace"
+    # Supervision configuration - REQUIRED
     supervision:
-      level: "standard"
+      # Level: "minimal", "standard", "detailed"
+      level: "minimal"
+      # Enable caching for supervision decisions
       cache_enabled: true
+      # Cache adapter: "memory", "redis", "file"
       cache_adapter: "memory"
+      # Cache TTL in hours
       cache_ttl_hours: 1
+      # Allow parallel LLM calls
       parallel_llm_calls: true
+      # Timeout configuration
       timeouts:
-        analysis: "10s"
-        validation: "8s"
-
+        # Analysis timeout - duration format
+        analysis: "2s"
+        # Validation timeout - duration format
+        validation: "1s"
+        # Execution timeout (optional)
+        # execution: "30s"
+    # Prompts for workspace supervisor
     prompts:
       system: |
         You are a WorkspaceSupervisor responsible for orchestrating AI agent execution.
@@ -402,37 +604,22 @@ supervisors:
         - Spawn SessionSupervisors with appropriate context
         - Coordinate multiple concurrent sessions
         - Manage signal-to-agent mappings dynamically
+      # analysis: "..."  # Optional analysis prompt
+      # planning: "..."  # Optional planning prompt
 
-      analysis: |
-        Analyze the incoming signal and determine the best approach for handling it within this workspace.
-
-        Signal: {signal_name}
-        Payload: {payload}
-        Workspace Context: {workspace_context}
-
-        Please provide:
-        1. Signal type classification
-        2. Required agents for this signal
-        3. Context filtering recommendations
-        4. Session execution strategy
-        5. Any workspace-level coordination needs
-
-  # Session Supervisor
+  # Session supervisor - coordinates agent execution
   session:
-    model: "claude-3-7-sonnet-latest"
-    memory: "session" # Uses session-level memory
-
+    model: "claude-sonnet-4-20250514"
+    memory: "session"
     supervision:
-      level: "detailed"
+      level: "standard"
       cache_enabled: true
       cache_adapter: "memory"
-      cache_ttl_hours: 2
+      cache_ttl_hours: 1
       parallel_llm_calls: true
       timeouts:
-        analysis: "15s"
-        validation: "12s"
-        execution: "30s"
-
+        analysis: "2s"
+        validation: "1s"
     prompts:
       system: |
         You are a SessionSupervisor responsible for coordinating agent execution within a session.
@@ -445,25 +632,10 @@ supervisors:
         - Evaluate progress and adapt strategy as needed
         - Support iterative refinement loops
 
-      planning: |
-        Create an execution plan for this session with the given objectives and available agents.
-
-        Session Context: {session_context}
-        Available Agents: {available_agents}
-        Objectives: {objectives}
-
-        Please provide:
-        1. Task breakdown and sequencing
-        2. Agent assignments with specific responsibilities
-        3. Inter-agent dependencies and data flow
-        4. Execution timeline and milestones
-        5. Error handling and fallback strategies
-
-  # Agent Supervisor
+  # Agent supervisor - manages individual agent execution
   agent:
-    model: "claude-3-7-sonnet-latest"
-    memory: "agent" # Uses agent-level memory
-
+    model: "claude-sonnet-4-20250514"
+    memory: "agent"
     supervision:
       level: "minimal"
       cache_enabled: true
@@ -473,7 +645,6 @@ supervisors:
       timeouts:
         analysis: "2s"
         validation: "1s"
-
     prompts:
       system: |
         You are an AgentSupervisor responsible for safe agent loading and execution.
@@ -486,51 +657,71 @@ supervisors:
         - Validate outputs for quality and safety
         - Handle failures and recovery scenarios
 
-# ==============================================================================
-# A PRIORI PLANNING CONFIGURATION (Atlas-specific)
-# ==============================================================================
+# =============================================================================
+# PLANNING CONFIGURATION (atlas.yml only)
+# =============================================================================
+# A Priori planning configuration for execution and validation
 planning:
-  # Execution planning
+  # Execution planning configuration
   execution:
-    precomputation: "moderate" # aggressive | moderate | minimal | disabled
+    # Enable caching for execution plans
     cache_enabled: true
+    # Cache TTL in hours
     cache_ttl_hours: 24
+    # Invalidate cache when job definitions change
     invalidate_on_job_change: true
 
-    # Strategy selection based on job type
+    # Strategy selection based on job characteristics
     strategy_selection:
-      simple_jobs: "precomputed" # Use precomputed plans
-      complex_jobs: "behavior-tree" # Use behavior trees for conditional logic
-      optimization_jobs: "mcts" # Use Monte Carlo Tree Search
-      planning_jobs: "htn" # Use Hierarchical Task Networks
+      # Strategy for simple, straightforward jobs
+      simple_jobs: "precomputed"
+      # Strategy for jobs with conditional logic
+      complex_jobs: "behavior-tree"
+      # Strategy for optimization problems
+      optimization_jobs: "mcts"
+      # Strategy for hierarchical planning
+      planning_jobs: "htn"
 
-    # Thresholds for strategy selection
+    # Thresholds for strategy selection (0.0 - 1.0)
     strategy_thresholds:
-      complexity: 0.6 # Above this, use ExecutionEngine
-      uncertainty: 0.5 # Above this, consider MCTS
-      optimization: 0.7 # Above this, prefer MCTS
+      # Above this complexity, use ExecutionEngine
+      complexity: 0.6
+      # Above this uncertainty, consider MCTS
+      uncertainty: 0.5
+      # Above this, prefer MCTS optimization
+      optimization: 0.7
 
-  # Validation planning
+  # Validation configuration
   validation:
-    precomputation: "moderate"
-    functional_validators: true # Enable custom validators
-    smoke_tests: true # Enable heuristic tests
-    content_safety: true # Enable safety validation
-    llm_threshold: 0.7 # Confidence threshold for LLM
-    llm_fallback: true # Enable expensive LLM validation
+    # Enable custom functional validators
+    functional_validators: true
+    # Enable heuristic smoke tests
+    smoke_tests: true
+    # Enable content safety validation
+    content_safety: true
+    # Confidence threshold for LLM fallback (0.0 - 1.0)
+    llm_threshold: 0.7
+    # Enable expensive LLM validation fallback
+    llm_fallback: true
+    # Cache validation results
     cache_enabled: true
     cache_ttl_hours: 1
-    fail_fast: false # Continue validation on failures
+    # Continue validation even after failures
+    fail_fast: false
 
-    # External validation services
+    # External validation services (optional)
     external_services:
-      openai_moderation: false # OpenAI Moderation API
-      perspective_api: false # Google Perspective API
-      deepeval_service: null # Custom DeepEval service URL
+      # Enable OpenAI Moderation API
+      openai_moderation: false
+      # Enable Google Perspective API
+      perspective_api: false
+      # URL for Python DeepEval service (null to disable)
+      deepeval_service: null
 
-# ==============================================================================
-# RUNTIME CONFIGURATION (Atlas-specific)
-# ==============================================================================
+# =============================================================================
+# RUNTIME CONFIGURATION (atlas.yml only)
+# =============================================================================
+# Runtime settings for the Atlas platform
 runtime:
   # Server configuration
   server:
@@ -539,74 +730,63 @@ runtime:
 
   # Logging configuration
   logging:
-    level: "info" # debug | info | warn | error
-    format: "pretty" # pretty | json
+    # Level: "debug", "info", "warn", "error"
+    level: "info"
+    # Format: "json", "pretty"
+    format: "pretty"
 
   # Persistence configuration
   persistence:
-    type: "local" # local | s3 | gcs | azure
+    # Type: "local", "memory", "s3", "gcs", "azure"
+    type: "local"
+    # Path for local persistence
     path: "./.atlas"
 
   # Security configuration
   security:
-    cors: "*" # CORS settings
+    # CORS setting
+    cors: "*"
 
-# ==============================================================================
-# SYSTEM WORKSPACES (Atlas-specific)
-# ==============================================================================
-# Special built-in workspaces for Atlas features
-system_workspaces:
-  # Conversation system workspace
-  conversation:
-    enabled: true
-    workspace_path: "@atlas/system/conversation"
-    config:
-      max_conversation_length: 100
-      memory_integration: true
+  # Session configuration
+  sessions:
+    # Maximum session execution time in milliseconds
+    # Min: 60000 (1 minute), Max: 86400000 (24 hours)
+    # Default: 3600000 (60 minutes)
+    timeout: 3600000
 
-  # Monitoring system workspace
-  monitoring:
-    enabled: true
-    workspace_path: "@atlas/system/monitoring"
-    config:
-      metrics_collection: true
-      alert_thresholds:
-        error_rate: 0.05
-        latency_p99: 5000
+# =============================================================================
+# NOTIFICATIONS CONFIGURATION (Same as workspace.yml)
+# =============================================================================
+# Configure notification channels for workspace events
+# notifications:
+#   email:
+#     enabled: true
+#     smtp:
+#       host: "smtp.example.com"
+#       port: 587
+#       secure: true
+#     from: "atlas@example.com"
+#     to: ["admin@example.com"]
+#   slack:
+#     enabled: true
+#     webhook_url: "${SLACK_WEBHOOK_URL}"
+#   webhook:
+#     enabled: true
+#     url: "https://hooks.example.com/atlas"
 
-  # Federation hub workspace
-  federation-hub:
-    enabled: false # Optional system workspace
-    workspace_path: "@atlas/system/federation"
-    config:
-      discovery_enabled: true
-      trust_verification: true
-
-# ==============================================================================
-# FEDERATION (Same as workspace.yml)
-# ==============================================================================
-federation:
-  # Sharing configuration
-  sharing:
-    # Platform capabilities shared with trusted workspaces
-    platform-capabilities:
-      workspaces: ["trusted-workspace-1", "trusted-workspace-2"]
-      scopes: ["use_platform_agents", "access_platform_memory"]
-      grants:
-        - workspace: "admin-workspace"
-          scopes: ["platform_admin", "federation_manage"]
-
-  # Scope sets
-  scope_sets:
-    platform_user: ["use_platform_agents", "read_platform_status"]
-    platform_admin: ["platform_user", "manage_workspaces", "configure_platform"]
-# ==============================================================================
-# Notes
-# ==============================================================================
-# 1. Atlas.yml is a superset of workspace.yml
-# 2. Platform agents are available to all workspaces
-# 3. Complex memory configuration with multiple scopes
-# 4. Supervisor configuration with detailed prompts
-# 5. A priori planning for intelligent execution
-# 6. Runtime configuration for platform operation
-# 7. System workspaces provide built-in functionality
+# =============================================================================
+# FEDERATION CONFIGURATION (Same as workspace.yml)
+# =============================================================================
+# Configure workspace federation for cross-workspace resource sharing
+# federation:
+#   sharing:
+#     agents:
+#       workspaces: ["partner-workspace"]
+#       scopes: ["read", "execute"]
+#     tools:
+#       grants:
+#         - workspace: "data-workspace"
+#           scopes: ["data:read", "data:write"]
+#   scope_sets:
+#     full_access: ["read", "write", "execute", "admin"]
+#     read_only: ["read"]

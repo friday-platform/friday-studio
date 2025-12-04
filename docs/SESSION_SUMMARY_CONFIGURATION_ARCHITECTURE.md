@@ -53,9 +53,12 @@ The goal was to separate concerns between:
 
 ## Key Files Created/Modified
 
+> **Note**: The inline YAML examples in this historical document may be outdated.
+> See `docs/COMPREHENSIVE_ATLAS_EXAMPLE.yml` for the current valid schema.
+
 ### Core Architecture Files
 
-**`/atlas.yml`** - Platform configuration
+**`/atlas.yml`** - Platform configuration (now at `docs/COMPREHENSIVE_ATLAS_EXAMPLE.yml`)
 
 ```yaml
 version: "1.0"

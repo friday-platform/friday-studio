@@ -129,6 +129,8 @@ Atlas (Platform)
 **Key Innovation**: `atlas.yml` is not separate platform configuration - it **IS** a workspace.
 Specifically, it's the **default workspace with global management capabilities**.
 
+> See `docs/COMPREHENSIVE_ATLAS_EXAMPLE.yml` for a complete, validated example of all options.
+
 This means:
 
 - **Unified configuration model**: Same structure for platform and workspaces

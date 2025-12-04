@@ -114,8 +114,9 @@ src/
 
 ## Config Files
 
-- `atlas.yml` - Platform-wide settings
+- `atlas.yml` - Platform-wide settings (loaded from workspace directory, optional)
 - `workspace.yml` - Per-workspace config (agents, signals, MCP servers)
+- `docs/COMPREHENSIVE_ATLAS_EXAMPLE.yml` - Example atlas.yml with all available options
 
 ## Architecture
 

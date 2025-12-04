@@ -1,295 +1,152 @@
 # System Agent Tools Configuration Fix
 
+> **Status: COMPLETED**
+>
+> This document describes a historical schema migration that has been implemented.
+> The fix moved `tools` from the agent level into the `config` section for consistency
+> with V2 configuration principles. All schemas now use `z.strictObject()` for strict
+> validation.
+
 ## Overview
 
-This document outlines the comprehensive fix for system agents not receiving their configured tools.
-The issue stems from a schema inconsistency where tools are defined at the agent level but only the
-`config` section is passed to system agent constructors.
+This document outlines the fix for system agents not receiving their configured tools.
+The issue stemmed from a schema inconsistency where tools were defined at the agent level
+but only the `config` section was passed to system agent constructors.
 
-## Problem Statement
+## Problem Statement (Historical)
 
-### Current Issue
+### Original Issue
 
-In `packages/system/workspaces/conversation.yml`, system agents have tools defined outside the
-`config` section:
+In early configurations, system agents had tools defined outside the `config` section:
 
 ```yaml
+# OLD FORMAT (INVALID - do not use)
 conversation-agent:
   type: "system"
   agent: "conversation"
   config:
     model: "claude-3-7-sonnet-latest"
     temperature: 0.7
-    # ... other config
-  tools: # <- Tools are HERE (outside config)
+  tools:  # WRONG: tools outside config
     - "conversation_storage"
     - "stream_reply"
-    # ... more tools
 ```
 
-However, in `src/core/actors/agent-execution-actor.ts:112-115`, only the `config` section is passed
-to system agents:
+This caused tools to be silently dropped because only `agentConfig.config` was passed to
+system agent constructors.
 
-```typescript
-const fullConfig = agentConfig.config || {};
-const systemAgent = SystemAgentRegistry.createAgent(
-  systemAgentId,
-  fullConfig, // <- Only config is passed, tools are missing!
-);
-```
+## Solution (Implemented)
 
-### Configuration Flow Analysis
-
-1. **conversation.yml** defines tools at agent level (sibling to config)
-2. **agent-execution-actor.ts** passes only `agentConfig.config` to system agent constructor
-3. **conversation-agent.ts** constructor merges received config with defaults:
-   ```typescript
-   this.config = {
-     // ... defaults including tools: []
-     ...config, // <- Merges with passed config (which lacks tools!)
-   };
-   ```
-4. **Tools are used** in methods like `getDaemonCapabilityTools()` via `this.config.tools`
-5. **LLM calls** use `this.config` properties for model, temperature, etc.
-
-### Root Cause
-
-1. **Schema Inconsistency**: Tools are defined at agent level but expected in config
-2. **Config Passing**: Only `agentConfig.config` is passed to system agents
-3. **Missing Tools**: System agents never receive their configured tools
-4. **Type Safety**: The current structure doesn't align with type safety improvements
-
-### Impact on LLM Provider
-
-The conversation agent uses `this.config` properties when making LLM calls:
-
-- `this.config.model` → LLM model selection
-- `this.config.temperature` → LLM temperature
-- `this.config.tools` → Converted to daemon tools for LLM tool calling
-- System prompt comes from `this.prompts.system` (set via `this.setPrompts()`)
-
-Since tools are missing from the config, the agent operates with an empty tools array, preventing
-tool-enabled LLM interactions.
-
-## Solution Overview
-
-**Comprehensive Fix**: Move tools inside the `config` section for system agents, making the schema
-consistent with V2 configuration principles.
-
-### Target Configuration Structure
+Tools are now defined inside the `config` section for all agent types:
 
 ```yaml
-# Updated system agent structure
-conversation-agent:
-  type: "system"
-  agent: "conversation"
-  config:
-    model: "claude-3-7-sonnet-latest"
-    temperature: 0.7
-    tools: # <- Tools moved inside config
-      - "conversation_storage"
-      - "stream_reply"
-      # ... more tools
-```
-
-## Implementation Plan
-
-### Phase 1: Schema Definition and Type Updates
-
-#### 1.1 Update Config Schema Types
-
-- **File**: `packages/config/src/v2/schema.ts`
-- **Action**: Update `SystemAgentConfig` to include tools in config section with specific schema
-
-**Before:**
-
-```typescript
-export const SystemAgentConfigSchema = z.object({
-  type: z.literal("system"),
-  agent: z.string(),
-  config: z.record(z.unknown()).optional(),
-  tools: z.array(z.string()).optional(), // <- Tools at agent level
-});
-```
-
-**After:**
-
-```typescript
-// Specific schema based on conversation agent usage
-const SystemAgentConfigObjectSchema = z.object({
-  // LLM Configuration
-  model: z.string().optional().describe("LLM model to use"),
-  temperature: z.number().min(0).max(2).optional().describe("LLM temperature"),
-  max_tokens: z.number().min(1).optional().describe("Maximum tokens for LLM response"),
-
-  // Tools Configuration
-  tools: z.array(z.string()).optional().describe("Array of tool names available to the agent"),
-
-  // Reasoning Configuration
-  use_reasoning: z.boolean().optional().describe("Enable reasoning capabilities"),
-  max_reasoning_steps: z.number().min(1).max(20).optional().describe("Maximum reasoning steps"),
-
-  // Prompt Configuration
-  prompts: z.object({
-    system: z.string().optional().describe("System prompt for the agent"),
-    user: z.string().optional().describe("User prompt template"),
-  }).optional().describe("Structured prompts configuration"),
-}).passthrough().describe("System agent configuration");
-
-export const SystemAgentConfigSchema = z.object({
-  type: z.literal("system"),
-  agent: z.string(),
-  config: SystemAgentConfigObjectSchema.optional(),
-});
-```
-
-#### 1.2 Update Type Definitions
-
-- **File**: `packages/core/src/types/actors.ts`
-- **Action**: Update `AgentExecutionConfig` to reflect new structure
-
-### Phase 2: Config Loader Updates
-
-#### 2.1 Remove Config Loader Normalization
-
-- **File**: `packages/config/src/v2/loader.ts`
-- **Action**: Remove any existing normalization logic for system agent tools
-- **Note**: No normalization needed - tools will be defined in config section only
-
-### Phase 3: Agent Execution Actor Updates
-
-#### 3.1 Update System Agent Execution
-
-- **File**: `src/core/actors/agent-execution-actor.ts`
-- **Action**: Update to use new config structure (should work automatically with schema changes)
-- **Note**: No additional validation needed - schema validation handles this
-
-### Phase 4: System Workspace Updates
-
-#### 4.1 Update System Workspaces
-
-- **File**: `packages/system/workspaces/conversation.yml`
-- **Action**: Move tools from agent level to config level
-
-**Current:**
-
-```yaml
+# CORRECT FORMAT
 agents:
   conversation-agent:
     type: "system"
     agent: "conversation"
+    description: "Handle conversations with scope awareness"
     config:
-      model: "claude-3-7-sonnet-latest"
+      model: "claude-sonnet-4-20250514"
       temperature: 0.7
       max_tokens: 8000
-      use_reasoning: true
-      max_reasoning_steps: 5
-    tools:
-      - "conversation_storage"
-      - "stream_reply"
-      # ... more tools
-```
-
-**Updated:**
-
-```yaml
-agents:
-  conversation-agent:
-    type: "system"
-    agent: "conversation"
-    config:
-      model: "claude-3-7-sonnet-latest"
-      temperature: 0.7
-      max_tokens: 8000
-      use_reasoning: true
-      max_reasoning_steps: 5
-      tools: # <- Moved inside config
+      tools:  # CORRECT: tools inside config
         - "conversation_storage"
         - "stream_reply"
-        # ... more tools
+        - "atlas_workspace_describe"
+      prompt: "..."
 ```
 
-#### 4.2 Update Other System Workspaces
+## Current Agent Schema Reference
 
-- **Action**: Check for and update any other system workspaces with similar structure
+### LLM Agent
 
-### Phase 5: Testing and Validation
+```yaml
+agents:
+  my-llm-agent:
+    type: "llm"
+    description: "Agent description (required)"
+    config:
+      provider: "anthropic"           # Required
+      model: "claude-sonnet-4-20250514"  # Required
+      prompt: "System prompt..."      # Required
+      temperature: 0.3                # Optional (0-0.7)
+      max_tokens: 4000                # Optional
+      max_steps: 10                   # Optional
+      tool_choice: "auto"             # Optional: auto | required | none
+      tools:                          # Optional: array of tool names
+        - "tool_name_1"
+        - "tool_name_2"
+      max_retries: 3                  # Optional
+      timeout: "30s"                  # Optional
+```
 
-#### 5.1 Unit Tests
+### System Agent
 
-- **File**: `src/core/actors/__tests__/agent-execution-actor.test.ts`
-- **Action**: Add tests for system agent tools configuration
+```yaml
+agents:
+  my-system-agent:
+    type: "system"
+    agent: "conversation"             # Required: system agent identifier
+    description: "Agent description (required)"
+    config:                           # Optional
+      model: "claude-sonnet-4-20250514"
+      temperature: 0.5
+      max_tokens: 4000
+      tools:
+        - "tool_name_1"
+        - "tool_name_2"
+      use_reasoning: true
+      max_reasoning_steps: 5
+      prompt: "Optional prompt..."
+```
 
-#### 5.2 Integration Tests
+### Atlas Agent
 
-- **Action**: Test conversation agent with tools to ensure they're properly passed
+```yaml
+agents:
+  my-atlas-agent:
+    type: "atlas"
+    agent: "registered-agent-id"      # Required: Atlas Agent ID from registry
+    description: "Agent description (required)"
+    prompt: "Agent prompt (required)"
+    env:                              # Optional: environment variables
+      API_KEY: "${API_KEY}"
+```
 
-#### 5.3 Configuration Validation
+## Schema Validation
 
-- **Action**: Verify schema validation works with new structure
+All configuration files are validated using `z.strictObject()` which rejects unknown keys.
+If you see an error like:
 
-## Implementation Tasks
+```
+ConfigValidationError: Workspace configuration validation failed
+Unrecognized key: "tools"
+  at agents["my-agent"]
+```
 
-### Task 1: Schema and Type Updates
+This means `tools` is at the wrong level. Move it inside the `config` block.
 
-- [ ] Update `SystemAgentConfigSchema` in `packages/config/src/v2/schema.ts`
-- [ ] Update related type definitions in `packages/core/src/types/actors.ts`
-- [ ] Run type checking to ensure consistency
+## Implementation Details
 
-### Task 2: Config Loader Clean-up
+The fix involved:
 
-- [ ] Remove any existing normalization logic for system agent tools
-- [ ] Clean up config loading code
-- [ ] Test config loading with new structure
+1. **Schema Update** (`packages/config/src/agents.ts`):
+   - `SystemAgentConfigObjectSchema` includes `tools: z.array(z.string()).optional()`
+   - `LLMAgentConfigSchema.config` includes `tools: z.array(z.string()).optional()`
 
-### Task 3: Agent Execution Updates
+2. **Strict Validation** (`packages/config/src/*.ts`):
+   - All schemas use `z.strictObject()` to reject unknown keys
+   - This catches configuration errors that previously went unnoticed
 
-- [ ] Verify `executeSystemAgent()` method works with new config structure
-- [ ] Test agent execution with tools
+3. **Configuration Migration**:
+   - `packages/system/workspaces/conversation.yml` updated
+   - All example configurations updated
 
-### Task 4: System Workspace Updates
+## Related Files
 
-- [ ] Update `packages/system/workspaces/conversation.yml`
-- [ ] Check for other system workspaces that need updating
-- [ ] Validate updated configurations
-
-### Task 5: Testing
-
-- [ ] Add unit tests for new configuration structure
-- [ ] Add integration tests for system agent tool access
-- [ ] Test conversation agent functionality
-
-### Task 6: Documentation Updates
-
-- [ ] Update `WORKSPACE_CONFIG_V2_CHANGES.md` with new system agent structure
-- [ ] Update any other relevant documentation
-
-## Benefits
-
-1. **Schema Consistency**: All agent config in one place
-2. **Type Safety**: Proper type definitions for system agent tools
-3. **Tool Access**: System agents now receive their configured tools
-4. **Future-Proof**: Aligns with V2 configuration principles
-5. **Debugging**: Better logging and validation for tools configuration
-
-## Risk Mitigation
-
-1. **Breaking Changes**: Acceptable since work hasn't shipped
-2. **Testing**: Comprehensive tests ensure functionality works
-3. **Documentation**: Clear structure for future users
-
-## Success Criteria
-
-- [ ] System agents receive their configured tools
-- [ ] Tools are properly passed to system agent constructors
-- [ ] Schema validation passes with new structure
-- [ ] All tests pass
-- [ ] Conversation agent works with full tool access
-- [ ] Configuration is consistent with V2 principles
-
-## Notes
-
-- This fix addresses the immediate issue while also improving long-term schema consistency
-- The change aligns with the V2 configuration architecture goals
-- All system agents will benefit from this fix, not just conversation agents
-- The implementation should be done incrementally to ensure stability
+- `packages/config/src/agents.ts` - Agent schema definitions
+- `packages/config/src/workspace.ts` - Workspace configuration schema
+- `packages/config/src/config-loader.ts` - Configuration loading and validation
+- `examples/telephone/workspace.yml` - Example with correct format
+- `packages/system/workspaces/conversation.yml` - System workspace example
