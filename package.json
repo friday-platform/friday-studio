@@ -27,6 +27,7 @@
     "@atlas/diagnostics": "workspace:*",
     "@atlas/llm": "workspace:*",
     "@atlas/logger": "workspace:*",
+    "@atlas/sentry": "workspace:*",
     "@atlas/mcp": "workspace:*",
     "@atlas/memory": "workspace:*",
     "@atlas/oapi-client": "workspace:*",

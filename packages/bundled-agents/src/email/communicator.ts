@@ -1,16 +1,17 @@
+import { readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { env } from "node:process";
-import { createAgent, repairJson } from "@atlas/agent-sdk";
+import { createAgent } from "@atlas/agent-sdk";
 import type { EmailParams } from "@atlas/config";
 import { getDefaultProviderOpts, registry } from "@atlas/llm";
 import { getTodaysDate } from "@atlas/utils";
 import { encodeBase64 } from "@std/encoding/base64";
 import { contentType } from "@std/media-types";
 import { resolve } from "@std/path";
-import { generateObject } from "ai";
+import { streamText, tool } from "ai";
 import { z } from "zod";
 import { sendEmail } from "./sendgrid.ts";
-import template from "./template.html" with { type: "text" };
+import { template } from "./template.ts";
 
 /**
  * Email Agent
@@ -81,9 +82,10 @@ export const emailAgent = createAgent<string, Result>({
       data: { toolName: "Email", content: `Composing email` },
     });
 
-    // Define schema for email composition
-    const emailCompositionSchema = z.object({
-      to: z.email().describe("Recipient email address"),
+    // Track state for tool-based composition
+    const failureState = { failed: false, reason: "" };
+    const composeEmailSchema = z.object({
+      to: z.string().email().describe("Recipient email address"),
       subject: z.string().min(1).describe("Email subject line"),
       content: z.array(
         z.object({
@@ -93,44 +95,42 @@ export const emailAgent = createAgent<string, Result>({
           content: z.string().min(1).describe("Content to be wrapped in the tag"),
         }),
       ),
-      from: z.email().nullable().default(null).describe("Sender email address (optional)"),
-      from_name: z.string().nullable().default(null).describe("Sender name (optional)"),
+      from: z
+        .string()
+        .email()
+        .optional()
+        .describe("Sender email address. Omit if not specified in prompt"),
+      from_name: z.string().optional().describe("Sender display name. Omit if not specified"),
       attachment_paths: z
         .array(z.string())
-        .nullable()
-        .default(null)
-        .describe("File paths to attach to the email (optional)"),
+        .optional()
+        .describe("File paths to attach. Omit if none specified"),
     });
+    type ComposedEmail = z.infer<typeof composeEmailSchema>;
+    let composedEmail: ComposedEmail | null = null;
 
-    const compositionSystem = `
-You are an email composition expert. Your job is to generate professional email content from natural language prompts and data.
+    const compositionSystem = `You are an email composition expert. Analyze the prompt and either compose an email or report that you cannot.
 
-TASK:
-1. Analyze the prompt for data, context, and requirements
-2. Generate an appropriate email subject line
-3. Compose professional email body content
-4. Determine recipient email address
-5. Extract any sender details or attachment paths if specified
+DECISION:
+- Call composeEmail if the prompt contains ALL data needed to compose a meaningful email
+- Call emailFailed if the request requires:
+  - Previous emails you don't have access to (e.g., "resend the email", "forward the last message")
+  - External data lookups you cannot perform (e.g., "look up stock prices")
+  - Information not present in the prompt
+  - Content that must be retrieved from somewhere you cannot access
 
-CONTENT GENERATION GUIDELINES:
-- Use HTML formatting for structured content (tables, lists, sections)
-- Keep tone professional but friendly
-- Include all relevant data points from the context
-- Use clear section headers for multi-part content
-- Make subject line descriptive and specific
+You MUST call exactly one tool. Either composeEmail with the email parameters, or emailFailed with the reason.
+
+CONTENT GUIDELINES (for composeEmail):
+- Professional but friendly tone
+- Clear section headers for multi-part content
+- Descriptive subject line
 - Format numbers, prices, and data clearly
 - Preserve links and URLs from source data
 
-OUTPUT:
-- to: Recipient email address (required)
-- subject: Descriptive subject line (required)
-- content: Well-formatted email body - HTML or plain text (required)
-- from: Sender email ONLY if explicitly specified in the prompt (e.g. "send from alice@company.com"). NEVER infer or guess the sender. Return null if not explicitly specified. (optional, default null)
-- from_name: Sender name ONLY if explicitly specified in the prompt (optional, default null)
-- attachment_paths: Array of file paths ONLY if explicitly specified in the prompt (optional, default null)
-    `;
+`;
 
-    const compositionResult = await generateObject({
+    const compositionStream = streamText({
       model: registry.languageModel("anthropic:claude-haiku-4-5"),
       messages: [
         {
@@ -142,19 +142,54 @@ OUTPUT:
         { role: "user", content: prompt },
       ],
       abortSignal,
-      schema: emailCompositionSchema,
-      temperature: 0.3,
+      tools: {
+        composeEmail: tool({
+          description: "Compose an email with the given parameters",
+          inputSchema: composeEmailSchema,
+          execute: (params) => {
+            composedEmail = params;
+            return { status: "success", reason: null };
+          },
+        }),
+        emailFailed: tool({
+          description:
+            "Signal that the email cannot be composed due to missing information or unfulfillable request",
+          inputSchema: z.object({
+            reason: z.string().describe("Why the email cannot be composed"),
+          }),
+          execute: ({ reason }) => {
+            failureState.failed = true;
+            failureState.reason = reason;
+            return { status: "failed", reason };
+          },
+        }),
+      },
       maxOutputTokens: 4000,
-      experimental_repairText: repairJson,
+      temperature: 0.3,
+      toolChoice: "required",
     });
 
-    // Log token usage including cache statistics
-    logger.debug("AI SDK generateObject completed", {
-      agent: "email",
-      usage: compositionResult.usage,
-    });
+    // Wait for tool execution to complete (not just text output)
+    await compositionStream.toolResults;
 
-    const params = compositionResult.object;
+    // Log token usage
+    const usage = await compositionStream.usage;
+    logger.debug("AI SDK streamText completed", { agent: "email", usage });
+
+    // Check if composition failed
+    if (failureState.failed) {
+      logger.warn("Email composition refused", { reason: failureState.reason });
+      throw new Error(`Cannot compose email: ${failureState.reason}`);
+    }
+
+    // Check if no tool was called
+    if (!composedEmail) {
+      logger.warn("Email composition did not complete - no tool called");
+      throw new Error("Cannot compose email: The agent did not produce a result");
+    }
+
+    // Type assertion needed because TS can't track mutation in tool execute callback
+    const params = composedEmail as ComposedEmail;
 
     // Security validation: Verify recipient email is in prompt
     if (!prompt.toLowerCase().includes(params.to.toLowerCase())) {
@@ -168,7 +203,7 @@ OUTPUT:
       logger.warn("Security: Sender email not in prompt, using default", {
         hallucinated: params.from,
       });
-      params.from = null; // Fall back to default
+      params.from = undefined; // Fall back to default
     }
 
     logger.debug("email-communicator composed email", {
@@ -203,24 +238,24 @@ OUTPUT:
             }
 
             // Validate file exists and is readable
-            const stat = await Deno.stat(filePath);
+            const fileStat = await stat(filePath);
 
             // Check if it's a file (not directory)
-            if (!stat.isFile) {
+            if (!fileStat.isFile()) {
               throw new Error(`Path is not a file: ${filePath}`);
             }
 
             // Check file size (SendGrid limit: 30MB total attachments)
             const maxSize = 30 * 1024 * 1024; // 30MB in bytes
-            if (stat.size > maxSize) {
+            if (fileStat.size > maxSize) {
               throw new Error(
-                `File exceeds 30MB SendGrid limit: ${filePath} (${(stat.size / 1024 / 1024).toFixed(
-                  2,
-                )}MB)`,
+                `File exceeds 30MB SendGrid limit: ${filePath} (${(
+                  fileStat.size / 1024 / 1024
+                ).toFixed(2)}MB)`,
               );
             }
 
-            const content = await Deno.readFile(filePath);
+            const content = await readFile(filePath);
             const base64Content = encodeBase64(content);
             // Handle both Unix (/) and Windows (\) path separators
             const filename = filePath.split(/[/\\]/).pop() || "attachment";

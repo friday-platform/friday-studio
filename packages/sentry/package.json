@@ -1,0 +1,7 @@
+{
+  "name": "@atlas/sentry",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./mod.ts",
+  "dependencies": { "@sentry/deno": "^10.28.0" }
+}

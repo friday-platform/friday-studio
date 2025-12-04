@@ -9,6 +9,7 @@
     "@atlas/core": "workspace:*",
     "@atlas/llm": "workspace:*",
     "@atlas/logger": "workspace:*",
+    "@atlas/sentry": "workspace:*",
     "@atlas/utils": "workspace:*",
     "@std/assert": "npm:@jsr/std__assert@^1.0.14",
     "ai": "^5.0.106",

@@ -5,6 +5,8 @@
  * with only the functionality needed for the email agent.
  */
 
+import { hostname } from "node:os";
+import { env } from "node:process";
 import type { EmailParams } from "@atlas/config";
 import { logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
@@ -151,13 +153,13 @@ function buildCustomHeaders(): Record<string, string> {
 
   // Add hostname (always lowercase)
   try {
-    headers["X-Atlas-Hostname"] = Deno.hostname().toLowerCase();
+    headers["X-Atlas-Hostname"] = hostname().toLowerCase();
   } catch {
     headers["X-Atlas-Hostname"] = "unknown";
   }
 
   // Add user from Atlas key if available
-  const atlasKey = Deno.env.get("ATLAS_KEY");
+  const atlasKey = env.ATLAS_KEY;
   if (atlasKey) {
     const userEmail = extractUserFromJWT(atlasKey);
     if (userEmail) {
