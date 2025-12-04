@@ -11,15 +11,15 @@ import { csvFilterSamplerAgent } from "./csv/filter.ts";
 import { emailAgent } from "./email/communicator.ts";
 import { fathomGetTranscriptAgent } from "./fathom-ai/get-transcript.ts";
 import { GoogleCalendarAgentResultSchema, googleCalendarAgent } from "./google/calendar.ts";
-import { researchAgent } from "./research/mod.ts";
 import { slackCommunicatorAgent } from "./slack/communicator.ts";
 import { summaryAgent } from "./summary.ts";
+import { webSearchAgent } from "./web-search/web-search.ts";
 
 // Add more bundled agents here as they are created
 export const bundledAgents: AtlasAgent[] = [
   slackCommunicatorAgent,
   googleCalendarAgent,
-  researchAgent,
+  webSearchAgent,
   summaryAgent,
   emailAgent,
   fathomGetTranscriptAgent,
@@ -34,6 +34,6 @@ export {
   fathomGetTranscriptAgent,
   googleCalendarAgent,
   GoogleCalendarAgentResultSchema,
-  researchAgent,
+  webSearchAgent,
   slackCommunicatorAgent,
 };

@@ -130,7 +130,7 @@ evalite<{ intent: string }, WorkspacePlan, string>("Workspace Planner Agent - Cr
     },
   ],
   task: async (input) => {
-    const context = adapter.createContext();
+    const { context } = adapter.createContext();
 
     // Execute agent
     const result = await workspacePlannerAgent.execute(input, context);
@@ -173,7 +173,7 @@ evalite<{ intent: string; artifactId?: string; isRevision?: boolean }, Workspace
       },
     ],
     task: async (input) => {
-      const context = adapter.createContext();
+      const { context } = adapter.createContext();
 
       // For revision tests, create initial plan first
       let artifactId: string | undefined;
@@ -239,7 +239,7 @@ evalite<{ intent: string }, string, string>("Workspace Planner Agent - Validatio
     },
   ],
   task: async (input) => {
-    const context = adapter.createContext();
+    const { context } = adapter.createContext();
 
     const result = await workspacePlannerAgent.execute(input, context);
 

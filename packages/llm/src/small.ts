@@ -1,3 +1,4 @@
+import { logger } from "@atlas/logger";
 import { generateText } from "ai";
 import { wrapAISDKModel } from "evalite/ai-sdk";
 import { createGroqWithOptions } from "./groq.ts";
@@ -12,15 +13,20 @@ export async function smallLLM(params: {
   maxOutputTokens?: number;
 }): Promise<string> {
   const groq = createGroqWithOptions();
-  const result = await generateText({
-    model: wrapAISDKModel(groq("llama-3.1-8b-instant")),
-    messages: [
-      { role: "system", content: params.system },
-      { role: "user", content: params.prompt },
-    ],
-    abortSignal: params.abortSignal,
-    temperature: 0.4,
-    maxOutputTokens: params.maxOutputTokens ?? 100,
-  });
-  return result.text;
+  try {
+    const result = await generateText({
+      model: wrapAISDKModel(groq("meta-llama/llama-4-maverick-17b-128e-instruct")),
+      messages: [
+        { role: "system", content: params.system },
+        { role: "user", content: params.prompt },
+      ],
+      abortSignal: params.abortSignal,
+      temperature: 0.4,
+      maxOutputTokens: params.maxOutputTokens ?? 100,
+    });
+    return result.text;
+  } catch (e) {
+    logger.error("Small LL failed", { error: e });
+    throw e;
+  }
 }

@@ -82,18 +82,24 @@ class CapturedLogger {
 type EvalAgentContext = AgentContext & { session: { streamId: string } };
 
 /**
+ * Hermetic test context returned by createContext - captures are scoped to this instance
+ */
+export interface EvalTestContext {
+  context: EvalAgentContext;
+  getStreamEvents: () => AtlasUIMessageChunk[];
+  getLogs: () => LogEntry[];
+}
+
+/**
  * Minimal context adapter for testing agents without full Atlas infrastructure
  */
 export class AgentContextAdapter {
-  private streamEmitter: CapturedStreamEmitter | null = null;
-  private logger: CapturedLogger | null = null;
-
   constructor(
     private tools: AtlasTools = {},
     private env: Record<string, string> = {},
   ) {}
 
-  createContext(): EvalAgentContext {
+  createContext(): EvalTestContext {
     const testSessionId = crypto.randomUUID();
     const session: AgentSessionData = {
       sessionId: testSessionId,
@@ -101,26 +107,27 @@ export class AgentContextAdapter {
       userId: "eval-user",
     };
 
-    this.streamEmitter = new CapturedStreamEmitter();
-    this.logger = new CapturedLogger();
+    const streamEmitter = new CapturedStreamEmitter();
+    const logger = new CapturedLogger();
 
     const context: AgentContext = {
       tools: this.tools,
       env: this.env,
       session,
-      stream: this.streamEmitter,
-      logger: this.logger,
+      stream: streamEmitter,
+      logger,
     };
 
     // Manually appending the Stream ID is required here. See EvalAgentContext.
-    return { ...context, session: { ...session, streamId: `stream-${testSessionId}` } };
-  }
+    const evalContext: EvalAgentContext = {
+      ...context,
+      session: { ...session, streamId: `stream-${testSessionId}` },
+    };
 
-  get streamEvents(): AtlasUIMessageChunk[] {
-    return this.streamEmitter?.capturedEvents || [];
-  }
-
-  get logs(): LogEntry[] {
-    return this.logger?.capturedLogs || [];
+    return {
+      context: evalContext,
+      getStreamEvents: () => streamEmitter.capturedEvents,
+      getLogs: () => logger.capturedLogs,
+    };
   }
 }

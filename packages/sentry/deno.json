@@ -1,6 +1,1 @@
-{
-  "name": "@atlas/sentry",
-  "version": "1.0.0",
-  "exports": "./mod.ts",
-  "imports": { "@sentry/deno": "npm:@sentry/deno@^10.28.0" }
-}
+{ "name": "@atlas/sentry", "version": "1.0.0", "exports": "./mod.ts" }

@@ -72,7 +72,7 @@ evalite<{ prompt: string }, RefusalOutput, string>(
       },
     ],
     task: async (input) => {
-      const context = adapter.createContext();
+      const { context } = adapter.createContext();
 
       try {
         await emailAgent.execute(input.prompt, context);
@@ -122,7 +122,7 @@ evalite<{ prompt: string }, CompositionOutput, string>("Email Agent - Valid Comp
     },
   ],
   task: async (input) => {
-    const context = adapter.createContext();
+    const { context } = adapter.createContext();
 
     try {
       await emailAgent.execute(input.prompt, context);
