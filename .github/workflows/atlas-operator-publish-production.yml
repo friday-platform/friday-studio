@@ -72,13 +72,13 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git remote set-url --push origin https://github.com/tempestteam/tempest-kustomize.git
-          git checkout -b release-atlas-operator-${{ github.sha }}
+          git checkout -b release-atlas-operator-production-${{ github.sha }}
 
       - name: Commit
         working-directory: tempest-kustomize-repository
         run: |
           git add .
-          git commit -m "Release atlas-operator-${{ github.sha }}"
+          git commit -m "Release atlas-operator-production-${{ github.sha }}"
           git push origin HEAD
 
       - name: Create PR && merge
@@ -86,7 +86,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.PAT }}
         run: |
-          PR_BRANCH="release-atlas-operator-${{ github.sha }}"
+          PR_BRANCH="release-atlas-operator-production-${{ github.sha }}"
           gh pr create -B main -H "$PR_BRANCH" -t "deploy-atlas-operator-production-${{ github.sha }}" -b ""
           for _ in {1..30}; do gh pr merge "$PR_BRANCH" --squash --admin --delete-branch && exit 0; sleep 2; done
           exit 1
