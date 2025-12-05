@@ -2,8 +2,8 @@ name: "atlas-operator: Publish Docker Image to Production"
 
 on:
   push:
-    tags:
-      - "atlas-operator-v*"
+    branches:
+      - main
 
 env:
   GAR_LOCATION: us-west2
@@ -21,26 +21,17 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Extract version from tag
-        id: version
-        run: |
-          # Extract version from tag like atlas-operator-v1.2.3 -> v1.2.3
-          VERSION="${GITHUB_REF#refs/tags/atlas-operator-}"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-
       - name: Build Docker image
         id: build-image
         run: |
           docker build \
             --tag "$GAR_LOCATION-docker.pkg.dev/$PROJECT_NAME/$REPOSITORY/$REPOSITORY:$GITHUB_SHA" \
-            --tag "$GAR_LOCATION-docker.pkg.dev/$PROJECT_NAME/$REPOSITORY/$REPOSITORY:${{ steps.version.outputs.version }}" \
             --tag "$GAR_LOCATION-docker.pkg.dev/$PROJECT_NAME/$REPOSITORY/$REPOSITORY:latest" \
             --build-arg GITHUB_SHA="$GITHUB_SHA" \
             --build-arg GITHUB_REF="$GITHUB_REF" \
             -f apps/atlas-operator/Dockerfile \
             .
           echo "image=$GAR_LOCATION-docker.pkg.dev/$PROJECT_NAME/$REPOSITORY/$REPOSITORY:$GITHUB_SHA" >> "$GITHUB_OUTPUT"
-          echo "tag=${{ steps.version.outputs.version }}" >> "$GITHUB_OUTPUT"
 
       - id: "auth"
         name: "Authenticate to Google Cloud"
@@ -72,7 +63,7 @@ jobs:
       - name: Update manifest file image tag
         uses: mikefarah/yq@master
         with:
-          cmd: yq e -i '(.spec.template.spec.containers[] | select(.name == "manager").image) = "us-west2-docker.pkg.dev/${{ env.PROJECT_NAME }}/atlas-operator/atlas-operator:${{ steps.build-image.outputs.tag }}"' 'tempest-kustomize-repository/atlas-operator/overlays/${{ env.ENVIRONMENT }}/deployment.yaml'
+          cmd: yq e -i '(.spec.template.spec.containers[] | select(.name == "manager").image) = "us-west2-docker.pkg.dev/${{ env.PROJECT_NAME }}/atlas-operator/atlas-operator:${{ github.sha }}"' 'tempest-kustomize-repository/atlas-operator/overlays/${{ env.ENVIRONMENT }}/deployment.yaml'
 
       - name: Setup tempest-kustomize Repository
         working-directory: tempest-kustomize-repository
@@ -81,13 +72,13 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git remote set-url --push origin https://github.com/tempestteam/tempest-kustomize.git
-          git checkout -b release-atlas-operator-${{ steps.build-image.outputs.tag }}
+          git checkout -b release-atlas-operator-${{ github.sha }}
 
       - name: Commit
         working-directory: tempest-kustomize-repository
         run: |
           git add .
-          git commit -m "Release atlas-operator-${{ steps.build-image.outputs.tag }}"
+          git commit -m "Release atlas-operator-${{ github.sha }}"
           git push origin HEAD
 
       - name: Create PR && merge
@@ -95,7 +86,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.PAT }}
         run: |
-          PR_BRANCH="release-atlas-operator-${{ steps.build-image.outputs.tag }}"
-          gh pr create -B main -H "$PR_BRANCH" -t "deploy-atlas-operator-${{ steps.build-image.outputs.tag }}" -b ""
+          PR_BRANCH="release-atlas-operator-${{ github.sha }}"
+          gh pr create -B main -H "$PR_BRANCH" -t "deploy-atlas-operator-production-${{ github.sha }}" -b ""
           for _ in {1..30}; do gh pr merge "$PR_BRANCH" --squash --admin --delete-branch && exit 0; sleep 2; done
           exit 1
