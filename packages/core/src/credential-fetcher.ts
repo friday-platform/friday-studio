@@ -2,6 +2,7 @@ import process from "node:process";
 import { logger } from "@atlas/logger";
 import { formatDate } from "@atlas/utils";
 import { type RetryOptions, retry } from "@std/async/retry";
+import { decodeJwt, type JWTPayload } from "jose";
 import { z } from "zod";
 import { getCredentialsApiUrl } from "./atlas-config.ts";
 import { throwWithCause } from "./errors.ts";
@@ -23,13 +24,8 @@ import { throwWithCause } from "./errors.ts";
 const DEFAULT_RETRIES = 3;
 const DEFAULT_RETRY_DELAY = 1000;
 
-const JWTPayloadSchema = z.object({
-  email: z.string(),
-  iss: z.literal("tempest-atlas"),
-  sub: z.string(),
-  exp: z.number(),
-  iat: z.number(),
-});
+/** Schema for validating Atlas JWT claims */
+const AtlasJWTSchema = z.object({ iss: z.literal("tempest-atlas"), exp: z.number() });
 
 const CredentialsResponseSchema = z.object({
   credentials: z.record(z.string(), z.string()),
@@ -45,22 +41,40 @@ export interface FetchCredentialsOptions {
 
 export type Credentials = Record<string, string>;
 
+/**
+ * Decode JWT payload without signature verification.
+ * Returns undefined on invalid input instead of throwing.
+ */
+export function decodeJwtPayload(jwt: string): JWTPayload | undefined {
+  try {
+    return decodeJwt(jwt);
+  } catch (error) {
+    logger.warn("Failed to decode JWT", { error });
+    return undefined;
+  }
+}
+
 export function validateAtlasJWT(token: string): void {
-  const parts = token.split(".");
-  const encodedPayload = parts.at(1);
-  if (parts.length !== 3 || !encodedPayload) {
+  const payload = decodeJwtPayload(token);
+  if (!payload) {
     throwWithCause("Atlas key is invalid. Please ensure you have a valid Atlas API key.", {
       type: "unknown",
       code: "INVALID_JWT_FORMAT",
     });
   }
 
-  const payload = JSON.parse(atob(encodedPayload));
-  const jwtPayload = JWTPayloadSchema.parse(payload);
+  const result = AtlasJWTSchema.safeParse(payload);
+  if (!result.success) {
+    throwWithCause("Atlas key has invalid claims. Expected issuer 'tempest-atlas'.", {
+      type: "unknown",
+      code: "INVALID_JWT_CLAIMS",
+      issues: result.error.issues,
+    });
+  }
 
   const now = Math.floor(Date.now() / 1000);
-  if (jwtPayload.exp <= now) {
-    const expirationDate = new Date(jwtPayload.exp * 1000);
+  if (result.data.exp <= now) {
+    const expirationDate = new Date(result.data.exp * 1000);
     throwWithCause(
       "Atlas key has expired. Please generate a new key from your Atlas dashboard.",
       new Error(`Key expired on ${formatDate(expirationDate)}`),

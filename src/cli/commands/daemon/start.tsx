@@ -1,15 +1,209 @@
 import { AtlasDaemon } from "@atlas/atlasd";
 import { client, parseResult } from "@atlas/client/v2";
-import { fetchCredentials, setToEnv } from "@atlas/core/credentials";
+import { decodeJwtPayload, fetchCredentials, setToEnv } from "@atlas/core/credentials";
 import { logger } from "@atlas/logger";
 import { captureException, initSentry } from "@atlas/sentry";
 import { getAtlasHome } from "@atlas/utils/paths.server";
-import { load } from "@std/dotenv";
+import { load, parse } from "@std/dotenv";
 import { exists } from "@std/fs";
 import { dirname, join } from "@std/path";
 import { displayDaemonStatus } from "../../utils/daemon-status.ts";
 import { errorOutput, infoOutput, successOutput } from "../../utils/output.ts";
 import type { YargsInstance } from "../../utils/yargs.ts";
+
+// OTEL Configuration Strategy:
+// - OTEL must be configured via env vars BEFORE Deno starts (Deno bug #27851, fixed in PR #29240)
+// - K8s: OTEL vars set in pod spec
+// - Desktop: Auto-configured via re-exec when ATLAS_KEY is present
+const OTEL_ENDPOINT = "https://otel.atlas.tempestdx.com";
+
+// Shared deno run flags - single source of truth
+const DENO_RUN_FLAGS = [
+  "--allow-all",
+  "--unstable-kv",
+  "--unstable-broadcast-channel",
+  "--unstable-worker-options",
+  "--unstable-raw-imports",
+] as const;
+
+/**
+ * Check if running via `deno run` vs compiled binary.
+ * More robust than checking binary name - if execPath is deno, we're interpreted.
+ */
+function isRunningViaDeno(): boolean {
+  const execPath = Deno.execPath();
+  return execPath.endsWith("deno") || execPath.endsWith("deno.exe");
+}
+
+/**
+ * Build args array for `deno run` command.
+ */
+function buildDenoRunArgs(scriptPath: string, scriptArgs: string[]): string[] {
+  return ["run", ...DENO_RUN_FLAGS, scriptPath, ...scriptArgs];
+}
+
+/**
+ * Build command args, handling deno run vs compiled binary.
+ */
+function buildCommandArgs(scriptArgs: string[]): string[] {
+  if (isRunningViaDeno()) {
+    const scriptPath = Deno.mainModule.replace("file://", "");
+    return buildDenoRunArgs(scriptPath, scriptArgs);
+  }
+  return scriptArgs;
+}
+
+/**
+ * Build daemon start args from StartArgs.
+ */
+function buildDaemonArgs(argv: StartArgs): string[] {
+  return [
+    "daemon",
+    "start",
+    "--port",
+    (argv.port || 8080).toString(),
+    "--hostname",
+    argv.hostname || "127.0.0.1",
+    "--max-workspaces",
+    (argv.maxWorkspaces || 10).toString(),
+    "--idle-timeout",
+    (argv.idleTimeout || 300).toString(),
+    ...(argv.logLevel ? ["--log-level", argv.logLevel] : []),
+    ...(argv.atlasConfig ? ["--atlas-config", argv.atlasConfig] : []),
+  ];
+}
+
+/**
+ * Build OTEL environment variables from ATLAS_KEY.
+ * The Authorization header must be URL-encoded (space becomes %20).
+ * Resource attributes are added for telemetry identification.
+ */
+function buildOtelEnv(atlasKey: string): Record<string, string> {
+  // Extract user info from JWT for resource attributes
+  const jwtPayload = decodeJwtPayload(atlasKey);
+  const userMetadata = jwtPayload?.user_metadata as Record<string, string> | undefined;
+  const tempestUserId = userMetadata?.tempest_user_id;
+
+  // Build resource attributes for telemetry identification
+  const resourceAttrs: string[] = [];
+
+  // Add hostname (standard OTEL semantic convention)
+  try {
+    resourceAttrs.push(`host.name=${Deno.hostname()}`);
+  } catch {
+    // hostname() may fail in sandboxed environments
+  }
+
+  // Add tempest user ID if available
+  if (tempestUserId) {
+    resourceAttrs.push(`tempest.user_id=${tempestUserId}`);
+  }
+
+  const env: Record<string, string> = {
+    OTEL_DENO: "true",
+    OTEL_SERVICE_NAME: "atlas",
+    OTEL_EXPORTER_OTLP_ENDPOINT: OTEL_ENDPOINT,
+    OTEL_EXPORTER_OTLP_HEADERS: `Authorization=Bearer%20${atlasKey}`,
+    OTEL_BLRP_SCHEDULE_DELAY: "5000", // Buffer logs for 5 seconds before sending
+  };
+
+  if (resourceAttrs.length > 0) {
+    env.OTEL_RESOURCE_ATTRIBUTES = resourceAttrs.join(",");
+  }
+
+  return env;
+}
+
+/**
+ * Try to read ATLAS_KEY from env files without setting them to the environment.
+ * This allows us to detect if we need to re-exec with OTEL config BEFORE
+ * OTEL has initialized.
+ */
+async function peekAtlasKey(): Promise<string | undefined> {
+  // Check if already in environment (from shell or --env-file)
+  const fromEnv = Deno.env.get("ATLAS_KEY");
+  if (fromEnv) return fromEnv;
+
+  // Check ~/.atlas/.env
+  const globalEnvPath = join(getAtlasHome(), ".env");
+  try {
+    if (await exists(globalEnvPath)) {
+      const content = await Deno.readTextFile(globalEnvPath);
+      const parsed = parse(content);
+      if (parsed.ATLAS_KEY) return parsed.ATLAS_KEY;
+    }
+  } catch {
+    // Ignore read errors
+  }
+
+  // Check /etc/atlas/env (Linux system installs)
+  if (Deno.build.os === "linux") {
+    try {
+      const systemEnvPath = "/etc/atlas/env";
+      if (await exists(systemEnvPath)) {
+        const content = await Deno.readTextFile(systemEnvPath);
+        const parsed = parse(content);
+        if (parsed.ATLAS_KEY) return parsed.ATLAS_KEY;
+      }
+    } catch {
+      // Ignore read errors
+    }
+  }
+
+  return undefined;
+}
+
+/**
+ * Check if OTEL is properly configured for this process.
+ * Returns true if OTEL will be/is active.
+ */
+function isOtelConfigured(): boolean {
+  return Deno.env.get("OTEL_DENO") === "true" && !!Deno.env.get("OTEL_EXPORTER_OTLP_ENDPOINT");
+}
+
+/**
+ * Re-exec the current process with OTEL environment variables.
+ * This is needed because OTEL initializes BEFORE JavaScript runs.
+ * After re-exec, isOtelConfigured() returns true, preventing infinite loops.
+ */
+async function reExecWithOtel(atlasKey: string): Promise<never> {
+  const otelEnv = buildOtelEnv(atlasKey);
+  const mergedEnv = { ...Deno.env.toObject(), ...otelEnv };
+
+  const cmd = new Deno.Command(Deno.execPath(), {
+    args: buildCommandArgs(Deno.args),
+    env: mergedEnv,
+    stdin: "inherit",
+    stdout: "inherit",
+    stderr: "inherit",
+  });
+
+  const childProcess = cmd.spawn();
+
+  // Forward signals to child process so launchctl stop works correctly.
+  // When launchd sends SIGTERM to this wrapper process, we need to relay it
+  // to the actual daemon running in the child process.
+  //
+  // NOTE: In Deno compiled binaries, signal listeners don't properly prevent
+  // the default signal behavior. We work around this by immediately exiting
+  // with code 0 after forwarding the signal. This makes launchd's KeepAlive
+  // see a successful exit and not restart the service.
+  const forwardSignalAndExit = () => {
+    try {
+      childProcess.kill("SIGTERM");
+    } catch {
+      // Child may have already exited
+    }
+    // Exit immediately with 0 to signal clean shutdown to launchd
+    Deno.exit(0);
+  };
+  Deno.addSignalListener("SIGTERM", forwardSignalAndExit);
+  Deno.addSignalListener("SIGINT", forwardSignalAndExit);
+
+  // Normal exit path - wait for child and propagate its exit code.
+  const status = await childProcess.status;
+  Deno.exit(status.code);
+}
 
 interface StartArgs {
   port?: number;
@@ -78,7 +272,19 @@ export function builder(y: YargsInstance) {
 }
 
 export const handler = async (argv: StartArgs): Promise<void> => {
-  // Initialize Sentry first thing
+  // OTEL re-exec check: Must happen BEFORE any other initialization.
+  // OTEL in Deno initializes before JavaScript runs, so we need to re-exec
+  // with proper env vars if ATLAS_KEY is present but OTEL isn't configured.
+  // After re-exec, isOtelConfigured() returns true, preventing infinite loops.
+  if (!isOtelConfigured()) {
+    const atlasKey = await peekAtlasKey();
+    if (atlasKey) {
+      // Re-exec with OTEL configured - this never returns
+      await reExecWithOtel(atlasKey);
+    }
+  }
+
+  // Initialize Sentry early for error tracking
   initSentry();
 
   try {
@@ -112,7 +318,6 @@ export const handler = async (argv: StartArgs): Promise<void> => {
     }
 
     // Load global Atlas configuration as fallback
-    // Note: getAtlasHome() will return the appropriate path based on system/user mode
     const globalAtlasEnv = join(getAtlasHome(), ".env");
     if (await exists(globalAtlasEnv)) {
       await load({ export: true, envPath: globalAtlasEnv });
@@ -271,76 +476,19 @@ function isLocalOnlyMode(value: string | undefined): boolean {
 }
 
 async function startDetached(argv: StartArgs): Promise<void> {
-  // For detached mode, spawn a new process
-  const execPath = Deno.execPath();
-  const mainModule = Deno.mainModule;
-
-  // Check if we're running as a compiled binary
-  const isCompiledBinary =
-    execPath.endsWith("atlas-test") || execPath.endsWith("atlas") || execPath.endsWith("atlas.exe");
-
-  // On Windows, we need to use a different approach for true background process
+  // On Windows, use VBScript for true background process
   if (Deno.build.os === "windows") {
-    // Use Windows-specific method to start process in background
-    await startWindowsDetached(argv, execPath, mainModule, isCompiledBinary);
+    await startWindowsDetached(argv);
     return;
   }
 
-  let cmd: Deno.Command;
-  if (isCompiledBinary) {
-    // For compiled binaries, run the binary directly
-    cmd = new Deno.Command(execPath, {
-      args: [
-        "daemon",
-        "start",
-        "--port",
-        (argv.port || 8080).toString(),
-        "--hostname",
-        argv.hostname || "127.0.0.1",
-        "--max-workspaces",
-        (argv.maxWorkspaces || 10).toString(),
-        "--idle-timeout",
-        (argv.idleTimeout || 300).toString(),
-        ...(argv.logLevel ? ["--log-level", argv.logLevel] : []),
-        ...(argv.atlasConfig ? ["--atlas-config", argv.atlasConfig] : []),
-      ],
-      env: Deno.env.toObject(),
-      stdout: "null",
-      stderr: "null",
-      stdin: "null",
-    });
-  } else {
-    // For source code execution, use deno run
-    const denoArgs = [
-      "run",
-      "--allow-all",
-      "--unstable-kv",
-      "--unstable-broadcast-channel",
-      "--unstable-worker-options",
-      "--env-file",
-      mainModule,
-      "daemon",
-      "start",
-      "--port",
-      (argv.port || 8080).toString(),
-      "--hostname",
-      argv.hostname || "127.0.0.1",
-      "--max-workspaces",
-      (argv.maxWorkspaces || 10).toString(),
-      "--idle-timeout",
-      (argv.idleTimeout || 300).toString(),
-      ...(argv.logLevel ? ["--log-level", argv.logLevel] : []),
-      ...(argv.atlasConfig ? ["--atlas-config", argv.atlasConfig] : []),
-    ];
-
-    cmd = new Deno.Command(execPath, {
-      args: denoArgs,
-      env: Deno.env.toObject(),
-      stdout: "null",
-      stderr: "null",
-      stdin: "null",
-    });
-  }
+  const cmd = new Deno.Command(Deno.execPath(), {
+    args: buildCommandArgs(buildDaemonArgs(argv)),
+    env: Deno.env.toObject(),
+    stdout: "null",
+    stderr: "null",
+    stdin: "null",
+  });
 
   const child = cmd.spawn();
   const pid = child.pid;
@@ -363,55 +511,9 @@ async function startDetached(argv: StartArgs): Promise<void> {
   Deno.exit(0);
 }
 
-async function startWindowsDetached(
-  argv: StartArgs,
-  execPath: string,
-  mainModule: string,
-  isCompiledBinary: boolean,
-): Promise<void> {
-  // Build the command arguments
-  const args: string[] = [];
-
-  if (isCompiledBinary) {
-    // For compiled binaries
-    args.push(
-      "daemon",
-      "start",
-      "--port",
-      (argv.port || 8080).toString(),
-      "--hostname",
-      argv.hostname || "127.0.0.1",
-      "--max-workspaces",
-      (argv.maxWorkspaces || 10).toString(),
-      "--idle-timeout",
-      (argv.idleTimeout || 300).toString(),
-    );
-    if (argv.logLevel) args.push("--log-level", argv.logLevel);
-    if (argv.atlasConfig) args.push("--atlas-config", argv.atlasConfig);
-  } else {
-    // For source code execution
-    args.push(
-      "run",
-      "--allow-all",
-      "--unstable-kv",
-      "--unstable-broadcast-channel",
-      "--unstable-worker-options",
-      "--env-file",
-      mainModule,
-      "daemon",
-      "start",
-      "--port",
-      (argv.port || 8080).toString(),
-      "--hostname",
-      argv.hostname || "127.0.0.1",
-      "--max-workspaces",
-      (argv.maxWorkspaces || 10).toString(),
-      "--idle-timeout",
-      (argv.idleTimeout || 300).toString(),
-    );
-    if (argv.logLevel) args.push("--log-level", argv.logLevel);
-    if (argv.atlasConfig) args.push("--atlas-config", argv.atlasConfig);
-  }
+async function startWindowsDetached(argv: StartArgs): Promise<void> {
+  const execPath = Deno.execPath();
+  const args = buildCommandArgs(buildDaemonArgs(argv));
 
   // Create a VBScript to launch atlas in background (more reliable than PowerShell)
   const tempDir = await Deno.makeTempDir();

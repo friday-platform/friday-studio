@@ -35,8 +35,8 @@
   "tasks": {
     "prepare": "deno run -A  npm:husky@^9",
     "lint-staged": "deno run -A npm:lint-staged@^16.2.6",
-    "atlas": "cd \"$INIT_CWD\" && OTEL_DENO=true OTEL_SERVICE_NAME=atlas OTEL_SERVICE_VERSION=1.0.0 OTEL_RESOURCE_ATTRIBUTES=service.name=atlas,service.version=1.0.0 deno run -q --allow-all --unstable-broadcast-channel --unstable-worker-options --unstable-kv --unstable-raw-imports --env-file \"$(git rev-parse --show-toplevel)/src/cli.tsx\"",
-    "start": "OTEL_DENO=true deno run --allow-all --unstable-raw-imports src/cli.tsx",
+    "atlas": "cd \"$INIT_CWD\" && deno run -q --allow-all --unstable-broadcast-channel --unstable-worker-options --unstable-kv --unstable-raw-imports --env-file \"$(git rev-parse --show-toplevel)/src/cli.tsx\"",
+    "start": "deno run --allow-all --unstable-raw-imports src/cli.tsx",
     "test": "OTEL_DENO=true DENO_TESTING=true deno test --allow-all --unstable-raw-imports --no-check --env-file",
     "test:unit": "OTEL_DENO=true DENO_TESTING=true deno test --allow-all --env-file --no-check --ignore='integration-tests/**/*.test.ts'",
     "test:integration": "OTEL_DENO=true ATLAS_USE_LLM_MOCKS=true DENO_TESTING=true deno test --allow-all --env-file --no-check 'integration-tests/**/*.test.ts'",
@@ -64,6 +64,7 @@
     "cookie": "npm:cookie@^1.0.2",
     "@sendgrid/helpers": "npm:@sendgrid/helpers@^8.0.0",
     "hono/client": "npm:hono@^4.10.4/client",
+    "jose": "npm:jose@^6.1.3",
     "openapi-fetch": "npm:openapi-fetch@^0.15.0"
   }
 }

@@ -103,9 +103,11 @@
     "npm:hono@^4.10.4": "4.10.7",
     "npm:hono@^4.10.7": "4.10.7",
     "npm:ink@^6.5.1": "6.5.1_@types+react@19.2.7_react@19.2.1",
+    "npm:jose@^6.1.3": "6.1.3",
     "npm:js-levenshtein@^1.1.6": "1.1.6",
     "npm:jsonrepair@^3.13.1": "3.13.1",
     "npm:knip@5.71.0": "5.71.0_@types+node@24.2.0_typescript@5.9.3",
+    "npm:lint-staged@^16.2.6": "16.2.7",
     "npm:lint-staged@^16.2.7": "16.2.7",
     "npm:minimatch@^10.1.1": "10.1.1",
     "npm:nanoid@^5.1.6": "5.1.6",
@@ -3971,6 +3973,9 @@
       "integrity": "sha512-ekilCSN1jwRvIbgeg/57YFh8qQDNbwDb9xT/qu2DAHbFFZUicIl4ygVaAvzveMhMVr3LnpSKTNnwt8PoOfmKhQ==",
       "bin": true
     },
+    "jose@6.1.3": {
+      "integrity": "sha512-0TpaTfihd4QMNwrz/ob2Bp7X04yuxJkjRGi4aKmOqwhov54i6u79oCv7T+C7lo70MKH6BesI3vscD1yb/yzKXQ=="
+    },
     "js-levenshtein@1.1.6": {
       "integrity": "sha512-X2BB11YZtrRqY4EnQcLX5Rh373zbK4alC1FW7D7MBhL2gtcC17cTnr6DmfHZeS0s2rTHjUTMMHfG7gO8SSdw+g=="
     },
@@ -5485,6 +5490,7 @@
       "npm:@sendgrid/helpers@8",
       "npm:cookie@^1.0.2",
       "npm:hono@^4.10.4",
+      "npm:jose@^6.1.3",
       "npm:openapi-fetch@0.15"
     ],
     "packageJson": {
@@ -5501,6 +5507,7 @@
         "npm:@types/react@^19.2.7",
         "npm:ai@^5.0.106",
         "npm:ink@^6.5.1",
+        "npm:jose@^6.1.3",
         "npm:js-levenshtein@^1.1.6",
         "npm:knip@5.71.0",
         "npm:lint-staged@^16.2.7",

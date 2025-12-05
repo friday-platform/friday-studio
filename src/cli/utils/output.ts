@@ -1,6 +1,10 @@
 /**
  * Output utilities for the Atlas CLI
- * Properly separates stdout (data) from stderr (errors, progress, logs)
+ *
+ * - errorOutput/warningOutput: stderr (actual problems)
+ * - infoOutput/successOutput: stdout (status messages)
+ *
+ * This ensures OTEL correctly marks errors as ERROR and info as INFO.
  */
 
 /**
@@ -18,15 +22,15 @@ export function warningOutput(message: string): void {
 }
 
 /**
- * Write info/progress messages to stderr
+ * Write info/progress messages to stdout
  */
 export function infoOutput(message: string): void {
-  console.error(message);
+  console.log(message);
 }
 
 /**
- * Write success messages to stderr
+ * Write success messages to stdout
  */
 export function successOutput(message: string): void {
-  console.error(`✓ ${message}`);
+  console.log(`✓ ${message}`);
 }

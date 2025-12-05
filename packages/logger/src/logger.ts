@@ -30,11 +30,7 @@ class AtlasLoggerV2 extends BaseLogger {
     // Create log entry once for potential reuse
     const entry = this.formatLogEntry(level, message, finalContext);
 
-    const consoleOutput = this.shouldUseJsonFormat()
-      ? JSON.stringify(entry)
-      : this.formatConsoleOutput(level, message, finalContext);
-
-    this.outputToConsole(level, consoleOutput);
+    this.outputToConsole(level, JSON.stringify(entry));
 
     // Write to file (ignore failures)
     try {
@@ -137,81 +133,6 @@ class AtlasLoggerV2 extends BaseLogger {
     }
 
     return error; // Not an Error, return as-is
-  }
-
-  private formatConsoleOutput(level: LogLevel, message: string, context: LogContext): string {
-    const now = new Date();
-    // Use local timezone for TTY console output
-    const timestamp = this.formatLocalTime(now); // HH:MM:SS.mmm in local timezone
-    const component = this.getComponentName(context);
-
-    // Process context to serialize Error objects for console output
-    const processedContext = { ...context };
-    if (processedContext.error !== undefined) {
-      processedContext.error = this.serializeError(processedContext.error);
-    }
-
-    const contextStr =
-      Object.keys(processedContext).length > 0
-        ? ` ${JSON.stringify(processedContext, null, 0)}`
-        : "";
-
-    // Color coding for console output
-    const shouldColorize = this.shouldColorizeOutput();
-    if (!shouldColorize) {
-      return `[${timestamp}] ${level.toUpperCase()} (${component}): ${message}${contextStr}`;
-    }
-
-    const colors = {
-      fatal: "\x1b[1;31m", // bold red
-      error: "\x1b[31m", // red
-      warn: "\x1b[33m", // yellow
-      info: "\x1b[36m", // cyan
-      debug: "\x1b[90m", // bright black/gray
-      trace: "\x1b[35m", // magenta
-    } as const;
-
-    const reset = "\x1b[0m";
-    const color = colors[level] || "";
-    const componentColor = "\x1b[2m"; // dim
-
-    return `${color}[${timestamp}] ${level.toUpperCase()}${reset} ${componentColor}(${component})${reset}: ${message}${contextStr}`;
-  }
-
-  private formatLocalTime(date: Date): string {
-    // Format as HH:MM:SS.mmm in local timezone for TTY output
-    const hours = date.getHours().toString().padStart(2, "0");
-    const minutes = date.getMinutes().toString().padStart(2, "0");
-    const seconds = date.getSeconds().toString().padStart(2, "0");
-    const milliseconds = date.getMilliseconds().toString().padStart(3, "0");
-    return `${hours}:${minutes}:${seconds}.${milliseconds}`;
-  }
-
-  private shouldColorizeOutput(): boolean {
-    // Force colors if FORCE_COLOR is set
-    if (process.env.FORCE_COLOR) {
-      return true;
-    }
-
-    // Don't colorize if NO_COLOR environment variable is set
-    if (process.env.NO_COLOR) {
-      return false;
-    }
-
-    // Don't colorize if DENO_TESTING is true
-    if (process.env.DENO_TESTING === "true") {
-      return false;
-    }
-
-    // Check if we're in a TTY
-    return process.stdout.isTTY ?? false;
-  }
-
-  private getComponentName(context: LogContext): string {
-    const parts = ["∆"];
-    if (context.workspaceId) parts.push(context.workspaceId);
-    if (context.agentId) parts.push(context.agentId);
-    return parts.join(":");
   }
 
   private async writeToFile(jsonLine: string, workspaceId?: string): Promise<void> {

@@ -124,4 +124,3 @@ export const TableDataSchema = z.object({
   headers: z.array(z.string()).describe("Column headers for the table"),
   rows: z.array(z.record(z.string(), z.string())).describe("Table rows as key-value records"),
 });
-export type TableData = z.infer<typeof TableDataSchema>;

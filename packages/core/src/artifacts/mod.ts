@@ -34,5 +34,6 @@ export {
   FileDataSchema,
   SlackSummaryDataSchema,
   SummaryDataSchema,
+  TableDataSchema,
   WorkspacePlanSchema,
 } from "./primitives.ts";

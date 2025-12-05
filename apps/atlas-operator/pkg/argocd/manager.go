@@ -233,7 +233,10 @@ func (m *Manager) buildApplication(name, userID string) *unstructured.Unstructur
 - op: replace
   path: /spec/template/metadata/labels/app
   value: %s
-`, nameSuffix, serviceName, serviceName)
+- op: add
+  path: /spec/template/metadata/labels/user-id
+  value: %s
+`, nameSuffix, serviceName, serviceName, userID)
 
 	// CRITICAL: Service selector must match deployment's pod labels.
 	// Without this patch, all services select ALL atlas pods (app: atlas)

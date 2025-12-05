@@ -6,15 +6,10 @@
 
 import { createAgent, repairJson } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
+import { TableDataSchema } from "@atlas/core/artifacts";
 import { getDefaultProviderOpts, registry } from "@atlas/llm";
 import { stringifyError } from "@atlas/utils";
 import { generateObject } from "ai";
-import { z } from "zod";
-
-const TableDataSchema = z.object({
-  headers: z.array(z.string()).describe("Column headers for the table"),
-  rows: z.array(z.record(z.string(), z.string())).describe("Table rows as key-value records"),
-});
 
 type TableAgentResult = { artifactId: string; type: string; summary: string; rowCount: number };
 
@@ -61,15 +56,13 @@ Output clean, well-organized data appropriate for tabular display.`;
         usage: result.usage,
       });
 
+      const tableData = result.object;
+
       // Create artifact with the table data
       const artifactResponse = await parseResult(
         client.artifactsStorage.index.$post({
           json: {
-            data: {
-              type: "table",
-              version: 1,
-              data: { headers: result.object.headers, rows: result.object.rows },
-            },
+            data: { type: "table", version: 1, data: tableData },
             summary: `Generated table: ${prompt.slice(0, 100)}${prompt.length > 100 ? "..." : ""}`,
             workspaceId: session.workspaceId,
             chatId: session.streamId,
@@ -84,7 +77,7 @@ Output clean, well-organized data appropriate for tabular display.`;
       }
 
       const artifactId = artifactResponse.data.artifact.id;
-      const rowCount = result.object.rows.length;
+      const rowCount = tableData.rows.length;
 
       // Emit outline update
       stream?.emit({

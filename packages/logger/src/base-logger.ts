@@ -1,4 +1,3 @@
-import process from "node:process";
 import type { LogContext, Logger, LogLevel } from "./types.ts";
 
 /**
@@ -59,13 +58,5 @@ export abstract class BaseLogger implements Logger {
         console.debug(output);
         break;
     }
-  }
-
-  /**
-   * Determine if output should be JSON based on ATLAS_LOG_FORMAT env var and TTY status
-   */
-  protected shouldUseJsonFormat(): boolean {
-    const forceFormat = process.env.ATLAS_LOG_FORMAT;
-    return forceFormat === "json" || (forceFormat !== "pretty" && !process.stdout.isTTY);
   }
 }

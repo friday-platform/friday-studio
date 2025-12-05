@@ -20,6 +20,11 @@ EOF
 
 echo "Compiling Atlas to: ${OUTPUT}"
 
+# Enable OTEL at compile time so the binary has telemetry enabled.
+# Runtime env vars (OTEL_EXPORTER_OTLP_ENDPOINT, etc) control WHERE data is sent.
+# Without this, the compiled binary ignores console.log -> OTEL forwarding.
+export OTEL_DENO=true
+
 deno compile \
   --no-check \
   --allow-read \
