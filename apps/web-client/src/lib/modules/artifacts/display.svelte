@@ -4,6 +4,7 @@ import { ArtifactDataSchema } from "@atlas/core/artifacts";
 import { z } from "zod";
 import Schedule from "$lib/components/primitives/schedule.svelte";
 import Summary from "$lib/components/primitives/summary.svelte";
+import Table from "$lib/modules/messages/table.svelte";
 import MessageWrapper from "../messages/wrapper.svelte";
 import WorkspacePlan from "./workspace-plan.svelte";
 
@@ -49,6 +50,8 @@ $effect(() => {
 				<Summary data={artifact.data} source="slack" />
 			{:else if artifact.type === 'workspace-plan'}
 				<WorkspacePlan workspacePlan={artifact.data} />
+			{:else if artifact.type === 'table'}
+				<Table data={artifact.data} />
 			{/if}
 		</div>
 	{/if}

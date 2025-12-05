@@ -2,8 +2,7 @@
 import FlexibleContainer from "$lib/modules/messages/flexible-container.svelte";
 import MessageWrapper from "./wrapper.svelte";
 
-const { data }: { data: { data: { headers: string[]; rows: Record<string, string | number>[] } } } =
-  $props();
+const { data }: { data: { headers: string[]; rows: Record<string, string | number>[] } } = $props();
 </script>
 
 <MessageWrapper>
@@ -13,15 +12,15 @@ const { data }: { data: { data: { headers: string[]; rows: Record<string, string
 				<table>
 					<thead>
 						<tr>
-							{#each data.data.headers as header}
+							{#each data.headers as header}
 								<th>{header}</th>
 							{/each}
 						</tr>
 					</thead>
 					<tbody>
-						{#each data.data.rows as row}
+						{#each data.rows as row}
 							<tr>
-								{#each data.data.headers as header}
+								{#each data.headers as header}
 									<td>{row[header]}</td>
 								{/each}
 							</tr>

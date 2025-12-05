@@ -21,6 +21,7 @@ class ChatContext {
   id = $state<string>(crypto.randomUUID());
   previousMessages = $state<AtlasUIMessage[]>([]);
   recentChats = $state<ChatListItem[]>([]);
+  userHasScrolled = $state<boolean>(false);
 
   chat = $derived(
     new Chat({

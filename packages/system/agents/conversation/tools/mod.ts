@@ -14,7 +14,6 @@ import type { AtlasTools } from "@atlas/agent-sdk";
 import { displayArtifact } from "./display-artifact.ts";
 import { resourceReadTool } from "./resource-read.ts";
 import { takeNoteTool } from "./scratchpad-tools.ts";
-import { type Table, TableSchema, tableOutput } from "./table.ts";
 
 /**
  * All conversation agent tools exported as AtlasTools.
@@ -23,8 +22,5 @@ import { type Table, TableSchema, tableOutput } from "./table.ts";
 export const conversationTools: AtlasTools = {
   take_note: takeNoteTool,
   read_atlas_resource: resourceReadTool,
-  table_output: tableOutput,
   display_artifact: displayArtifact,
 };
-
-export { tableOutput, TableSchema, type Table };

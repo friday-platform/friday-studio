@@ -20,7 +20,6 @@ import Reasoning from "$lib/modules/messages/reasoning.svelte";
 import Request from "$lib/modules/messages/request.svelte";
 import Response from "$lib/modules/messages/response.svelte";
 import ShowDetails from "$lib/modules/messages/show-details.svelte";
-import Table from "$lib/modules/messages/table.svelte";
 import { formatChatDate } from "$lib/utils/date";
 import { shareChat } from "$lib/utils/share-chat";
 import { invoke } from "$lib/utils/tauri-loader";
@@ -43,12 +42,11 @@ $effect(() => {
 
 // Follow scroll handling
 let scrollContainer = $state<HTMLDivElement | null>(null);
-let userHasScrolled = $state(false);
 let animationFrameId = $state<number | null>(null);
 
 // Handle Scrolling
 function handleScroll() {
-  userHasScrolled = true;
+  chatContext.userHasScrolled = true;
 
   if (!scrollContainer) return;
 
@@ -57,11 +55,11 @@ function handleScroll() {
 
   // If user scrolls away from bottom, mark as manually scrolled
   if (!isAtBottom) {
-    userHasScrolled = true;
+    chatContext.userHasScrolled = true;
   }
   // If user scrolls back to bottom, reset the flag
   if (isAtBottom) {
-    userHasScrolled = false;
+    chatContext.userHasScrolled = false;
   }
 }
 
@@ -74,11 +72,11 @@ function scrollToBottom() {
 
 // Auto-scroll when new logs are added, unless user has manually scrolled
 $effect(() => {
-  if (userHasScrolled && animationFrameId) {
+  if (chatContext.userHasScrolled && animationFrameId) {
     cancelAnimationFrame(animationFrameId);
     animationFrameId = null;
   }
-  if (!userHasScrolled && !animationFrameId) {
+  if (!chatContext.userHasScrolled && !animationFrameId) {
     animationFrameId = requestAnimationFrame(scrollToBottom);
   }
 });
@@ -144,12 +142,6 @@ let showDetails = new SvelteMap<string, boolean>();
 										<Request message={formattedMessage} />
 									{:else if formattedMessage.type === 'text'}
 										<Response message={formattedMessage} parts={messageContainer.parts} />
-									{:else if formattedMessage.type === 'tool_call' && formattedMessage.metadata?.toolName === 'table_output' && formattedMessage.metadata?.result}
-										<Table
-											data={formattedMessage.metadata.result as {
-												data: { headers: string[]; rows: Record[] };
-											}}
-										/>
 									{:else if formattedMessage.type === 'tool_call' && formattedMessage.metadata?.toolName === 'display_artifact' && formattedMessage.metadata?.artifactId}
 										<DisplayArtifact artifactId={formattedMessage.metadata.artifactId as string} />
 									{:else if formattedMessage.type === 'error'}
@@ -244,7 +236,7 @@ let showDetails = new SvelteMap<string, boolean>();
 
 								if (!sanitizedMessage || sanitizedMessage.trim().length === 0) return;
 
-								userHasScrolled = false;
+								chatContext.userHasScrolled = false;
 								scrollToBottom();
 							} catch (e) {
 								console.error(e);

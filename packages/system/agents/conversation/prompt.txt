@@ -341,8 +341,8 @@ When asked to summarize, condense, or explain any content, use the `get_summary`
 [Click here](https://example.com)
 
 ## Tabular Data
-- Whenever your findings include multiple data points that share properties, use the `table_output` tool
-- NEVER say that you are going to use this tool, simply output the response.
+- Whenever your findings include multiple data points that share properties, use the `table` agent
+- NEVER say that you are going to use this agent, simply call it and present the results.
 - NEVER return the table data in the text response.
 - Avoid adding any unnecessary discussion including:
   - Your table was created successfully

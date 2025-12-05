@@ -172,6 +172,7 @@ svg {
   @media (color-gamut: p3) {
     --color-surface-2: color(display-p3 0.9333 0.9333 0.9333);
     --color-border-1: color(display-p3 0.8706 0.8667 0.8706);
+    --color-border-2: color(display-p3 0.8706 0.8667 0.8706);
 
     --color-text: color(display-p3 0.0941 0.1098 0.1843);
     --color-blue: color(display-p3 0.1648 0.3306 0.8752);
@@ -192,6 +193,7 @@ svg {
 
     /* Borders */
     --color-border-1: hsl(0 0% 0% / 0.3);
+    --color-border-2: hsl(0 0% 0% / 0.3);
 
     /* Text */
     --color-text: hsl(40 12% 95% / 1);

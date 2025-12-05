@@ -128,17 +128,20 @@ export const googleCalendarAgent = createAgent<string, GoogleCalendarAgentResult
 
       const artifactRefs = extractArtifactRefsFromToolResults(assembledToolResults);
 
-      stream?.emit({
-        type: "data-outline-update",
-        data: {
-          id: "google-calendar",
-          title: "Calendar",
-          icon,
-          timestamp: Date.now(),
-          artifactId: artifactRefs?.[0]?.id,
-          artifactLabel: "View Calendar",
-        },
-      });
+      if (artifactRefs.length > 0) {
+        stream?.emit({
+          type: "data-outline-update",
+          data: {
+            id: "google-calendar",
+            content: "A calendar summary was generated",
+            title: "Calendar retrieved",
+            icon,
+            timestamp: Date.now(),
+            artifactId: artifactRefs?.[0]?.id,
+            artifactLabel: "View Calendar",
+          },
+        });
+      }
 
       return { response: text.trim(), artifactRefs };
     } catch (error) {

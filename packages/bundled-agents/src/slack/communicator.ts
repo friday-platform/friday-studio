@@ -161,17 +161,19 @@ export const slackCommunicatorAgent = createAgent<string, Result>({
 
       artifactRefs = extractArtifactRefsFromToolResults(assembledToolResults);
 
-      stream?.emit({
-        type: "data-outline-update",
-        data: {
-          id: "slack-translated-summary",
-          title: "Formatted Summary",
-          icon,
-          timestamp: Date.now(),
-          artifactId: artifactRefs?.[0]?.id,
-          artifactLabel: "View Summary",
-        },
-      });
+      if (artifactRefs && artifactRefs.length > 0) {
+        stream?.emit({
+          type: "data-outline-update",
+          data: {
+            id: "slack-translated-summary",
+            title: "Formatted Summary",
+            icon,
+            timestamp: Date.now(),
+            artifactId: artifactRefs?.[0]?.id,
+            artifactLabel: "View Summary",
+          },
+        });
+      }
 
       logger.info("slack-summarizer summary", { text });
 
@@ -256,7 +258,7 @@ export const slackCommunicatorAgent = createAgent<string, Result>({
           title: "Message sent",
           icon,
           timestamp: Date.now(),
-          content: `A message was sent to Slack at ${Intl.DateTimeFormat("en-US", { timeStyle: "short" }).format(new Date()).replace(" ", "").toLowerCase()}`,
+          content: executionResult.text,
         },
       });
 

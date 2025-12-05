@@ -1,5 +1,5 @@
 import { assertEquals } from "@std/assert";
-import { formatChatDate, formatDuration, formatSessionDate } from "./date.ts";
+import { formatChatDate, formatDuration, formatOutlineDate, formatSessionDate } from "./date.ts";
 
 Deno.test("formatChatDate - just now", () => {
   const now = new Date();
@@ -268,4 +268,112 @@ Deno.test("formatDuration - 3 hours 30 minutes (no seconds)", () => {
   const start = 1000;
   const end = 12601000;
   assertEquals(formatDuration(start, end), "3 hours 30 minutes");
+});
+
+Deno.test("formatOutlineDate - today", () => {
+  const now = new Date();
+  const result = formatOutlineDate(now.toISOString());
+  const hours = now.getHours();
+  const minutes = now.getMinutes().toString().padStart(2, "0");
+  const ampm = hours >= 12 ? "pm" : "am";
+  const displayHours = hours % 12 || 12;
+  assertEquals(result, `Today at ${displayHours}:${minutes}${ampm}`);
+});
+
+Deno.test("formatOutlineDate - yesterday", () => {
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const result = formatOutlineDate(yesterday.toISOString());
+  const hours = yesterday.getHours();
+  const minutes = yesterday.getMinutes().toString().padStart(2, "0");
+  const ampm = hours >= 12 ? "pm" : "am";
+  const displayHours = hours % 12 || 12;
+  assertEquals(result, `Yesterday at ${displayHours}:${minutes}${ampm}`);
+});
+
+Deno.test("formatOutlineDate - same year, older than yesterday", () => {
+  const date = new Date();
+  date.setDate(date.getDate() - 5);
+  date.setHours(14, 30, 0, 0);
+  const result = formatOutlineDate(date.toISOString());
+  const monthNames = [
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+  ];
+  assertEquals(result, `${monthNames[date.getMonth()]} ${date.getDate()} at 2:30pm`);
+});
+
+Deno.test("formatOutlineDate - different year", () => {
+  const date = new Date(2023, 5, 15, 9, 15, 0, 0);
+  const result = formatOutlineDate(date.toISOString());
+  assertEquals(result, "Jun 15, 2023 at 9:15am");
+});
+
+Deno.test("formatOutlineDate - midnight (12am)", () => {
+  const date = new Date();
+  date.setDate(date.getDate() - 3);
+  date.setHours(0, 0, 0, 0);
+  const result = formatOutlineDate(date.toISOString());
+  const monthNames = [
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+  ];
+  assertEquals(result, `${monthNames[date.getMonth()]} ${date.getDate()} at 12:00am`);
+});
+
+Deno.test("formatOutlineDate - noon (12pm)", () => {
+  const date = new Date();
+  date.setDate(date.getDate() - 3);
+  date.setHours(12, 0, 0, 0);
+  const result = formatOutlineDate(date.toISOString());
+  const monthNames = [
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+  ];
+  assertEquals(result, `${monthNames[date.getMonth()]} ${date.getDate()} at 12:00pm`);
+});
+
+Deno.test("formatOutlineDate - zero-padded minutes", () => {
+  const date = new Date();
+  date.setDate(date.getDate() - 3);
+  date.setHours(9, 5, 0, 0);
+  const result = formatOutlineDate(date.toISOString());
+  assertEquals(result.includes(":05"), true);
+});
+
+Deno.test("formatOutlineDate - accepts number timestamp", () => {
+  const date = new Date(2023, 2, 20, 15, 45, 0, 0);
+  const timestamp = date.getTime();
+  const result = formatOutlineDate(timestamp);
+  assertEquals(result, "Mar 20, 2023 at 3:45pm");
 });

@@ -341,6 +341,16 @@ CONTENT GUIDELINES (for composeEmail):
 
     logger.info("Email sent successfully", { to: emailParams.to, message_id });
 
+    stream?.emit({
+      type: "data-outline-update",
+      data: {
+        id: "email-sent",
+        content: `Email sent successfully to ${emailParams.to}`,
+        title: "Email sent",
+        timestamp: Date.now(),
+      },
+    });
+
     return {
       response: `Email sent successfully to ${params.to}`,
       message_id,

@@ -1,4 +1,4 @@
-export function formatChatDate(dateString: string): string {
+export function formatChatDate(dateString: string | number): string {
   const date = new Date(dateString);
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
@@ -38,7 +38,7 @@ export function formatChatDate(dateString: string): string {
   return `${month} ${day} at ${displayHours}${ampm}`;
 }
 
-export function formatSessionDate(dateString: string): string {
+export function formatSessionDate(dateString: string | number): string {
   const date = new Date(dateString);
   const monthNames = [
     "January",
@@ -91,4 +91,91 @@ export function formatDuration(startMs: number, endMs: number): string {
   }
   // If at least a minute, show minutes (and seconds if any)
   return `${minutes} minute${minutes === 1 ? "" : "s"}${seconds > 0 ? ` ${seconds} second${seconds === 1 ? "" : "s"}` : ""}`;
+}
+
+/**
+ * Formats a date for conversation timelines:
+ * - Within the last 48 hours: "Today at 9:07am" / "Yesterday at 10:31pm"
+ * - Within the current year: "December 2 at 5:51pm"
+ * - Otherwise: "Nov 3, 2024 at 4:30am"
+ */
+export function formatOutlineDate(dateInput: string | number): string {
+  const date = new Date(dateInput);
+  const now = new Date();
+
+  const dateYear = date.getFullYear();
+  const nowYear = now.getFullYear();
+
+  const monthNames = [
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+  ];
+  const shortMonthNames = [
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
+  ];
+
+  function pad(num: number) {
+    return num.toString().padStart(2, "0");
+  }
+
+  const hours = date.getHours();
+  const minutes = pad(date.getMinutes());
+  const ampm = hours >= 12 ? "pm" : "am";
+  const displayHours = hours % 12 || 12;
+
+  const dateDay = date.getDate();
+  const nowDay = now.getDate();
+
+  // Same day
+  if (nowYear === dateYear && now.getMonth() === date.getMonth() && nowDay === dateDay) {
+    return `Today at ${displayHours}:${minutes}${ampm}`;
+  }
+
+  // Yesterday
+  const oneDayAgo = new Date(now);
+  oneDayAgo.setDate(nowDay - 1);
+  if (
+    nowYear === dateYear &&
+    oneDayAgo.getMonth() === date.getMonth() &&
+    oneDayAgo.getDate() === dateDay
+  ) {
+    return `Yesterday at ${displayHours}:${minutes}${ampm}`;
+  }
+
+  // Last 48h fallback (may not hit above, but for completeness)
+  const diffMs = now.getTime() - date.getTime();
+  const diffHrs = diffMs / 3600000;
+  if (diffHrs < 48 && diffMs > 0) {
+    // Fallback to today/yesterday already returned; use month+day
+    return `${monthNames[date.getMonth()]} ${dateDay} at ${displayHours}:${minutes}${ampm}`;
+  }
+
+  // Same year, but older than yesterday
+  if (nowYear === dateYear) {
+    return `${monthNames[date.getMonth()]} ${dateDay} at ${displayHours}:${minutes}${ampm}`;
+  }
+
+  // Different year
+  return `${shortMonthNames[date.getMonth()]} ${dateDay}, ${dateYear} at ${displayHours}:${minutes}${ampm}`;
 }

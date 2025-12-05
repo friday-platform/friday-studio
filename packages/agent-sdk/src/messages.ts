@@ -51,11 +51,11 @@ export const AtlasDataEventSchemas = {
   "outline-update": z.object({
     id: z.string(),
     title: z.string(),
+    timestamp: z.number(),
     icon: z.string().optional(),
     content: z.string().optional(),
     artifactId: z.string().optional(),
     artifactLabel: z.string().optional(),
-    timestamp: z.number().optional(),
   }),
 };
 

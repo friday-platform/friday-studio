@@ -5,6 +5,7 @@ import {
   FileDataSchema,
   SlackSummaryDataSchema,
   SummaryDataSchema,
+  TableDataSchema,
   WorkspacePlanSchema,
 } from "./primitives.ts";
 
@@ -45,6 +46,12 @@ const FileArtifactSchema = z.object({
   data: FileDataSchema,
 });
 
+const TableArtifactSchema = z.object({
+  type: z.literal("table"),
+  version: z.literal(1),
+  data: TableDataSchema,
+});
+
 /** Artifact data schemas for storage (output) */
 export const ArtifactDataSchema = z.discriminatedUnion("type", [
   WorkspacePlanArtifactSchema,
@@ -52,6 +59,7 @@ export const ArtifactDataSchema = z.discriminatedUnion("type", [
   SummaryArtifactSchema,
   SlackSummaryArtifactSchema,
   FileArtifactSchema,
+  TableArtifactSchema,
   // Add future schemas here
 ]);
 
@@ -68,6 +76,7 @@ const FileArtifactInputSchema = z.object({
   version: z.literal(1),
   data: FileDataInputSchema,
 });
+const TableInputSchema = TableArtifactSchema;
 
 export const ArtifactDataInputSchema = z.discriminatedUnion("type", [
   WorkspacePlanInputSchema,
@@ -75,6 +84,7 @@ export const ArtifactDataInputSchema = z.discriminatedUnion("type", [
   SummaryInputSchema,
   SlackSummaryInputSchema,
   FileArtifactInputSchema,
+  TableInputSchema,
 ]);
 
 export type ArtifactDataInput = z.infer<typeof ArtifactDataInputSchema>;
@@ -86,6 +96,7 @@ export const ArtifactTypeSchema = z.enum([
   "summary",
   "slack-summary",
   "file",
+  "table",
 ]);
 
 /** Shared request schemas for REST and MCP */

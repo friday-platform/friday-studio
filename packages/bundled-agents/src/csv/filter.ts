@@ -35,7 +35,10 @@ export const csvFilterSamplerAgent = createAgent<string, CsvFilterSamplerResult>
     ],
   },
 
-  handler: async (prompt, { session, logger, abortSignal }): Promise<CsvFilterSamplerResult> => {
+  handler: async (
+    prompt,
+    { session, logger, abortSignal, stream },
+  ): Promise<CsvFilterSamplerResult> => {
     try {
       logger.info("Parsing prompt to extract CSV path and filter criteria");
 
@@ -308,6 +311,18 @@ Call buildSqlWhere tool with your WHERE clause (WITHOUT the 'WHERE' keyword).`,
       logger.info("Artifact created", { artifactId: createResult.data.id });
 
       const summary = `Filtered ${parsedCsv.rowCount} total records to ${filteredCount} matching records, sampled ${samples.length} random record(s). ${filteredCount - samples.length} record(s) left unprocessed.`;
+
+      stream?.emit({
+        type: "data-outline-update",
+        data: {
+          id: "csv-filter-sampler",
+          content: summary,
+          title: "CSV Filter",
+          timestamp: Date.now(),
+          artifactId: createResult.data.id,
+          artifactLabel: "View Filter",
+        },
+      });
 
       return {
         summary,

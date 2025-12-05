@@ -14,7 +14,7 @@ export function registerArtifactsCreateTool(server: McpServer, ctx: ToolContext)
     "artifacts_create",
     {
       description:
-        "Create a new artifact (summary, workspace-plan, calendar-schedule, slack-summary, file)",
+        "Create a new artifact (summary, workspace-plan, calendar-schedule, slack-summary, table, file)",
       inputSchema: {
         data: z
           .preprocess(unstringifyNestedJson, ArtifactDataInputSchema)

@@ -13,6 +13,7 @@ import { fathomGetTranscriptAgent } from "./fathom-ai/get-transcript.ts";
 import { GoogleCalendarAgentResultSchema, googleCalendarAgent } from "./google/calendar.ts";
 import { slackCommunicatorAgent } from "./slack/communicator.ts";
 import { summaryAgent } from "./summary.ts";
+import { tableAgent } from "./table.ts";
 import { webSearchAgent } from "./web-search/web-search.ts";
 
 // Add more bundled agents here as they are created
@@ -25,6 +26,7 @@ export const bundledAgents: AtlasAgent[] = [
   fathomGetTranscriptAgent,
   claudeCodeAgent,
   csvFilterSamplerAgent,
+  tableAgent,
 ];
 
 export {
@@ -36,4 +38,5 @@ export {
   GoogleCalendarAgentResultSchema,
   webSearchAgent,
   slackCommunicatorAgent,
+  tableAgent,
 };
