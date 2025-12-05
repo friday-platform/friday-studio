@@ -93,7 +93,7 @@
     "npm:discord-interactions@^4.4.0": "4.4.0",
     "npm:dotenv@17.2.3": "17.2.3",
     "npm:eslint-config-prettier@^10.1.8": "10.1.8_eslint@9.39.1",
-    "npm:eslint-plugin-svelte@^3.13.0": "3.13.0_eslint@9.39.1_svelte@5.45.5__acorn@8.15.0_postcss@8.5.6",
+    "npm:eslint-plugin-svelte@^3.13.1": "3.13.1_eslint@9.39.1_svelte@5.45.5__acorn@8.15.0_postcss@8.5.6",
     "npm:eslint@^9.39.1": "9.39.1",
     "npm:evalite@^1.0.0-beta.15": "1.0.0-beta.15_ai@5.0.106__zod@4.1.13_zod@4.1.13",
     "npm:eventsource-client@^1.2.0": "1.2.0",
@@ -3241,8 +3241,8 @@
       ],
       "bin": true
     },
-    "eslint-plugin-svelte@3.13.0_eslint@9.39.1_svelte@5.45.5__acorn@8.15.0_postcss@8.5.6": {
-      "integrity": "sha512-2ohCCQJJTNbIpQCSDSTWj+FN0OVfPmSO03lmSNT7ytqMaWF6kpT86LdzDqtm4sh7TVPl/OEWJ/d7R87bXP2Vjg==",
+    "eslint-plugin-svelte@3.13.1_eslint@9.39.1_svelte@5.45.5__acorn@8.15.0_postcss@8.5.6": {
+      "integrity": "sha512-Ng+kV/qGS8P/isbNYVE3sJORtubB+yLEcYICMkUWNaDTb0SwZni/JhAYXh/Dz/q2eThUwWY0VMPZ//KYD1n3eQ==",
       "dependencies": [
         "@eslint-community/eslint-utils",
         "@jridgewell/sourcemap-codec",
@@ -5526,7 +5526,7 @@
             "npm:@sveltejs/kit@^2.49.1",
             "npm:@sveltejs/vite-plugin-svelte@^6.2.1",
             "npm:eslint-config-prettier@^10.1.8",
-            "npm:eslint-plugin-svelte@^3.13.0",
+            "npm:eslint-plugin-svelte@^3.13.1",
             "npm:eslint@^9.39.1",
             "npm:globals@^16.5.0",
             "npm:nanoid@^5.1.6",
@@ -5581,7 +5581,7 @@
             "npm:@tauri-apps/plugin-opener@^2.5.2",
             "npm:ai@^5.0.106",
             "npm:eslint-config-prettier@^10.1.8",
-            "npm:eslint-plugin-svelte@^3.13.0",
+            "npm:eslint-plugin-svelte@^3.13.1",
             "npm:eslint@^9.39.1",
             "npm:eventsource-client@^1.2.0",
             "npm:globals@^16.5.0",
