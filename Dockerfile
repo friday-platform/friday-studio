@@ -118,7 +118,7 @@ WORKDIR /app/apps/web-client
 RUN deno task build
 
 # Stage 4: Web client runtime
-FROM nginxinc/nginx-unprivileged:1.29.2-alpine3.22 AS web-client
+FROM nginxinc/nginx-unprivileged:1.29.3-alpine3.22 AS web-client
 
 # Copy built static assets from web-client-builder
 COPY --from=web-client-builder /app/apps/web-client/build /usr/share/nginx/html
