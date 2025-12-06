@@ -131,6 +131,7 @@ func sendMagicLink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	RecordEmailSent("magiclink")
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -171,6 +172,7 @@ func verifyMagicLink(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Error("error using OTP", "error", err)
 		_ = expect.ExactlyOneRow(err)
+		RecordAuth("magiclink", "failure")
 
 		msg := url.QueryEscape("magic link expired")
 
@@ -186,6 +188,7 @@ func verifyMagicLink(w http.ResponseWriter, r *http.Request) {
 
 	if otp.NotValidAfter.Time.Before(time.Now()) {
 		log.Error("Magic link OTP is expired", "otp", otp)
+		RecordAuth("magiclink", "failure")
 		http.Error(w, "Magic link expired. Please request another one", http.StatusGone)
 		return
 	}
@@ -257,5 +260,6 @@ func verifyMagicLink(w http.ResponseWriter, r *http.Request) {
 	// Redirect to default URI
 	redirectURL := cfg.RedirectURI + "/"
 	log.Info("Magic link verification successful, redirecting", "userID", tu.ID, "redirectURL", redirectURL)
+	RecordAuth("magiclink", "success")
 	http.Redirect(w, r, redirectURL, http.StatusFound)
 }

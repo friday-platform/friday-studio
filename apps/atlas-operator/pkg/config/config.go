@@ -30,7 +30,7 @@ type Config struct {
 
 	// Health Check
 	HealthCheckPort int `env:"HEALTH_CHECK_PORT" envDefault:"8080"`
-	MetricsPort     int `env:"METRICS_PORT" envDefault:"8081"`
+	MetricsPort     int `env:"METRICS_PORT" envDefault:"9090"`
 
 	// Webhook Configuration
 	WebhookEnabled bool   `env:"WEBHOOK_ENABLED" envDefault:"true"`

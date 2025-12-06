@@ -125,8 +125,8 @@ func TestLoadConfig_Defaults(t *testing.T) {
 		t.Errorf("expected default HealthCheckPort 8080, got %d", cfg.HealthCheckPort)
 	}
 
-	if cfg.MetricsPort != 8081 {
-		t.Errorf("expected default MetricsPort 8081, got %d", cfg.MetricsPort)
+	if cfg.MetricsPort != 9090 {
+		t.Errorf("expected default MetricsPort 9090, got %d", cfg.MetricsPort)
 	}
 
 	if !cfg.WebhookEnabled {
@@ -145,7 +145,7 @@ func TestValidate_Success(t *testing.T) {
 		Environment:            "sandbox",
 		ReconciliationInterval: 30 * time.Second,
 		HealthCheckPort:        8080,
-		MetricsPort:            8081,
+		MetricsPort:            9090,
 		WebhookPort:            8082,
 	}
 
@@ -179,7 +179,7 @@ func TestValidate_InvalidPortRange(t *testing.T) {
 				Environment:            "sandbox",
 				ReconciliationInterval: 30 * time.Second,
 				HealthCheckPort:        8080,
-				MetricsPort:            8081,
+				MetricsPort:            9090,
 				WebhookPort:            8082,
 			}
 

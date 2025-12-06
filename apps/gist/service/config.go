@@ -4,6 +4,7 @@ import "github.com/tempestteam/atlas/pkg/server"
 
 type Config struct {
 	Port               string `env:"PORT" envDefault:"8084"`
+	MetricsPort        string `env:"METRICS_PORT" envDefault:"9090"`
 	LogLevel           string `env:"LOG_LEVEL" envDefault:"debug"`
 	ServiceName        string `env:"SERVICE_NAME" envDefault:"gist"`
 	GCSBucket          string `env:"GCS_BUCKET,required"`

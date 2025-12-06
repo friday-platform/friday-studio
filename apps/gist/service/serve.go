@@ -20,6 +20,7 @@ func serveHandler(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
 	id, err := uuid.Parse(idStr)
 	if err != nil {
+		RecordDownload("error")
 		http.Error(w, "invalid id format", http.StatusBadRequest)
 		return
 	}
@@ -27,6 +28,7 @@ func serveHandler(w http.ResponseWriter, r *http.Request) {
 	storage, err := StorageClientFromContext(ctx)
 	if err != nil {
 		log.Error("storage client not in context", "error", err)
+		RecordDownload("error")
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
@@ -34,13 +36,17 @@ func serveHandler(w http.ResponseWriter, r *http.Request) {
 	content, err := storage.Download(ctx, id)
 	if err != nil {
 		if errors.Is(err, ErrObjectNotExist) {
+			RecordDownload("not_found")
 			http.Error(w, "not found", http.StatusNotFound)
 			return
 		}
 		log.Error("failed to download from GCS", "error", err)
+		RecordDownload("error")
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
+
+	RecordDownload("success")
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")

@@ -11,6 +11,7 @@ import (
 	"github.com/caarlos0/env/v11"
 	"github.com/joho/godotenv"
 	"github.com/tempestteam/atlas/apps/gist/service"
+	"github.com/tempestteam/atlas/pkg/metrics"
 	"github.com/tempestteam/atlas/pkg/server"
 )
 
@@ -44,6 +45,16 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Setup TLS before starting any servers
+	if err := cfg.TLSConfig.SetupTLS(); err != nil {
+		svc.Logger.Error("Failed to setup TLS", "error", err)
+		os.Exit(1)
+	}
+
+	// Start metrics server (shares TLS config with main server)
+	metricsServer := metrics.StartServer(cfg.MetricsPort, cfg.TLSConfig)
+	svc.Logger.Info("Started metrics server", "port", cfg.MetricsPort)
+
 	shutdownChan := make(chan os.Signal, 1)
 	signal.Notify(shutdownChan, syscall.SIGTERM, syscall.SIGINT)
 
@@ -70,6 +81,10 @@ func main() {
 				os.Exit(1)
 			}
 			svc.Logger.Info("Graceful shutdown completed successfully")
+		}
+
+		if err := metrics.Shutdown(shutdownCtx, metricsServer); err != nil {
+			svc.Logger.Error("Error shutting down metrics server", "error", err)
 		}
 
 		if err := svc.Close(); err != nil {

@@ -161,6 +161,7 @@ func (p oauthProvider) authCallback(w http.ResponseWriter, r *http.Request) {
 	claims, err := NewOAuthStateClaimsFromJWT(cfg, params.State)
 	if err != nil {
 		log.Error("Failed to decode state token", "error", err)
+		RecordAuth("google_oauth", "failure")
 		http.Error(w, "Failed to decode state token", http.StatusBadRequest)
 		return
 	}
@@ -209,6 +210,7 @@ func (p oauthProvider) authCallback(w http.ResponseWriter, r *http.Request) {
 
 	if user.VerifiedEmail == nil || (user.VerifiedEmail != nil && !*user.VerifiedEmail) {
 		log.Error("User email not verified in provider", "email", user.Email)
+		RecordAuth("google_oauth", "failure")
 		http.Error(w, "User email not verified", http.StatusForbidden)
 		return
 	}
@@ -506,6 +508,7 @@ func (p oauthProvider) authCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if isSignup {
+		RecordAuth("google_oauth", "success")
 		http.Redirect(w, r, cfg.AuthUIURL+"/complete-setup", http.StatusFound)
 		return
 	}
@@ -513,5 +516,6 @@ func (p oauthProvider) authCallback(w http.ResponseWriter, r *http.Request) {
 	// Use redirect_to parameter
 	redirectURL := cfg.RedirectURI + claims.RedirectTo
 	log.Info("OAuth callback successful, redirecting", "userID", tempestUser.ID, "redirectURL", redirectURL)
+	RecordAuth("google_oauth", "success")
 	http.Redirect(w, r, redirectURL, http.StatusFound)
 }

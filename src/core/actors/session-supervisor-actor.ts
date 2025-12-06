@@ -49,6 +49,7 @@ import { initializeWorkspaceMemory, type MECMFMemoryManager } from "@atlas/memor
 import { sessionSupervisorAgent } from "@atlas/system/agents";
 import { generateObject } from "ai";
 import type { IWorkspaceArtifact, IWorkspaceSignal } from "../../types/core.ts";
+import { AtlasMetrics } from "../../utils/metrics.ts";
 import {
   analyzeResults as analyzeHallucinations,
   containsSeverePatterns,
@@ -1744,6 +1745,7 @@ ${this.sessionContext.availableAgents.join(", ")}`;
 
     if (agentResult.toolCalls) {
       for (const toolCall of agentResult.toolCalls) {
+        AtlasMetrics.recordMCPToolCall(toolCall.toolName);
         void this.persistEvent(
           toToolCallEvent(agentTask.agentId, executionId, toolCall, eventContext),
         );

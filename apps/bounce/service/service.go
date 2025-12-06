@@ -31,6 +31,7 @@ type Config struct {
 	JWTPrivateKey             string `env:"JWT_PRIVATE_KEY_FILE,file,required"`
 	JWTPublicKey              string `env:"JWT_PUBLIC_KEY_FILE,file,required"`
 	LogLevel                  string `env:"LOG_LEVEL" envDefault:"debug"`
+	MetricsPort               string `env:"METRICS_PORT" envDefault:"9090"`
 	OAuthGoogleCredentialJSON string `env:"OAUTH_GOOGLE_CREDENTIALS_FILE,file,required"`
 	Port                      string `env:"PORT" envDefault:"8083"`
 	PostgresConnection        string `env:"POSTGRES_CONNECTION" envDefault:"postgresql://postgres:postgres@localhost:54322/postgres?sslmode=disable&search_path=bounce"`

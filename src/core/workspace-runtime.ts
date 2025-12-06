@@ -547,6 +547,14 @@ export class WorkspaceRuntime {
   }
 
   /**
+   * Get the provider type for a signal (http, schedule, slack, etc.)
+   */
+  getSignalProvider(signalId: string): string | undefined {
+    const signals = this.config?.workspace?.signals || {};
+    return signals[signalId]?.provider;
+  }
+
+  /**
    * Manually initialize the runtime (for lazy initialization)
    */
   async initialize(): Promise<void> {

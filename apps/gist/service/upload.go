@@ -17,6 +17,9 @@ import (
 const maxUploadRetries = 3
 
 func uploadHandler(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+	defer func() { RecordUploadDuration(time.Since(start)) }()
+
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 
@@ -24,6 +27,7 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 
 	contentType := r.Header.Get("Content-Type")
 	if !strings.HasPrefix(contentType, "text/html") {
+		RecordUpload("error")
 		http.Error(w, "Content-Type must be text/html", http.StatusUnsupportedMediaType)
 		return
 	}
@@ -31,11 +35,13 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		log.Error("failed to read body", "error", err)
+		RecordUpload("error")
 		http.Error(w, "failed to read body", http.StatusBadRequest)
 		return
 	}
 
 	if len(body) == 0 {
+		RecordUpload("error")
 		http.Error(w, "empty body", http.StatusBadRequest)
 		return
 	}
@@ -43,6 +49,7 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 	storage, err := StorageClientFromContext(ctx)
 	if err != nil {
 		log.Error("storage client not in context", "error", err)
+		RecordUpload("error")
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
@@ -61,6 +68,7 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		log.Error("failed to upload to GCS", "error", err)
+		RecordUpload("error")
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
@@ -68,6 +76,7 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 	baseURL, err := ShareBaseURLFromContext(ctx)
 	if err != nil {
 		log.Error("share base URL not in context", "error", err)
+		RecordUpload("error")
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
@@ -79,6 +88,7 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 
 	log.Info("gist uploaded", "id", id.String(), "url", shareURL, "user", userEmail)
 
+	RecordUpload("success")
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(map[string]string{"id": id.String(), "url": shareURL})

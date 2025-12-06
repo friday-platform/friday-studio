@@ -32,6 +32,7 @@ import type { LibraryStorageAdapter } from "../../../src/core/storage/library-st
 import { Workspace } from "../../../src/core/workspace.ts";
 import { WorkspaceRuntime } from "../../../src/core/workspace-runtime.ts";
 import { WorkspaceMemberRole } from "../../../src/types/core.ts";
+import { AtlasMetrics } from "../../../src/utils/metrics.ts";
 import { agents as agentsRoutes } from "../routes/agents/index.ts";
 import { artifactsApp } from "../routes/artifacts.ts";
 import chatRoutes from "../routes/chat.ts";
@@ -330,6 +331,22 @@ export class AtlasDaemon {
         logger.error("Failed to initialize global embedding provider in background", { error });
         // Continue daemon startup - memory features will initialize lazily when needed
       });
+
+    // Initialize OTEL metrics
+    await AtlasMetrics.init();
+    if (AtlasMetrics.enabled) {
+      // Register observable gauge providers
+      AtlasMetrics.registerActiveWorkspacesProvider(() => this.runtimes.size);
+      AtlasMetrics.registerSSEConnectionsProvider(() => {
+        let count = 0;
+        for (const clients of this.sseClients.values()) {
+          count += clients.length;
+        }
+        return count;
+      });
+      AtlasMetrics.registerUptimeProvider(() => Math.floor((Date.now() - this.startTime) / 1000));
+      logger.info("OTEL metrics providers registered");
+    }
 
     this.isInitialized = true;
     logger.info("Atlas daemon initialized");
@@ -876,6 +893,11 @@ export class AtlasDaemon {
         mcpServerPool: this.mcpServerPool || undefined, // Share daemon's MCP server pool
         daemonUrl: `http://localhost:${this.options.port}`, // Pass daemon URL for MCP tool fetching
         onSessionFinished: async ({ workspaceId, sessionId, status, finishedAt, summary }) => {
+          // Record session completion metric
+          if (status === "completed" || status === "failed" || status === "cancelled") {
+            AtlasMetrics.recordSession(status);
+          }
+
           try {
             const mgr = this.getWorkspaceManager();
             const ws = await mgr.find({ id: workspaceId });
@@ -1008,6 +1030,10 @@ export class AtlasDaemon {
       streamId,
       onStreamEvent,
     );
+
+    // Record signal trigger metric by provider type (http, schedule, slack, etc.)
+    const signalProvider = runtime.getSignalProvider(signalId) ?? "unknown";
+    AtlasMetrics.recordSignalTrigger(signalProvider);
 
     try {
       const manager = this.getWorkspaceManager();

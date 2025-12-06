@@ -194,6 +194,8 @@ func newEmailSignup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	RecordEmailSent("signup")
+
 	err = tx.Commit(ctx)
 	if err != nil {
 		log.Error("Could not commit transaction", "error", err)
@@ -243,6 +245,7 @@ func verifyEmailSignup(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) || errors.Is(err, sql.ErrNoRows) {
 			log.Info("Token not found", "token", req.Token)
+			RecordAuth("email", "failure")
 			http.Error(w, "", http.StatusUnauthorized)
 			return
 		}
@@ -253,6 +256,7 @@ func verifyEmailSignup(w http.ResponseWriter, r *http.Request) {
 
 	if time.Now().After(au.ConfirmationSentAt.Time.Add(time.Hour * 24)) {
 		log.Info("Token has expired", "error", errors.New("token has expired"))
+		RecordAuth("email", "failure")
 
 		// Redirect to retry page--for controlled retries to prevent brute force attacks
 		http.Redirect(w, r, cfg.AuthUIURL+"/signup-retry", http.StatusTemporaryRedirect)
@@ -275,7 +279,9 @@ func verifyEmailSignup(w http.ResponseWriter, r *http.Request) {
 
 	if !verified {
 		log.Info("Token did not verify contents", "token", req.Token, "email", au.Email)
+		RecordAuth("email", "failure")
 		http.Redirect(w, r, cfg.AuthUIURL+"/signup-retry", http.StatusTemporaryRedirect)
+		return
 	}
 
 	authUser, err := queries.ConfirmAuthUser(ctx, &bouncerepo.ConfirmAuthUserParams{
@@ -318,6 +324,7 @@ func verifyEmailSignup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// This route is hosted in the SvelteKit app at auth.atlas.tempestdx.dev/complete-setup
+	RecordAuth("email", "success")
 	http.Redirect(w, r, cfg.AuthUIURL+"/complete-setup", http.StatusTemporaryRedirect)
 }
 

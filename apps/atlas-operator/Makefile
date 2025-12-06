@@ -69,7 +69,7 @@ local-env: ## Create local .env file for development.
 	GIT_TARGET_REVISION=HEAD
 	LOG_LEVEL=debug
 	HEALTH_CHECK_PORT=8080
-	METRICS_PORT=8081
+	METRICS_PORT=9090
 	WEBHOOK_ENABLED=true
 	WEBHOOK_PORT=8082
 	WEBHOOK_TOKEN=your-local-webhook-token

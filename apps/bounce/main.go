@@ -11,6 +11,7 @@ import (
 	"github.com/caarlos0/env/v11"
 	"github.com/joho/godotenv"
 	"github.com/tempestteam/atlas/apps/bounce/service"
+	"github.com/tempestteam/atlas/pkg/metrics"
 	"github.com/tempestteam/atlas/pkg/server"
 )
 
@@ -44,6 +45,16 @@ func main() {
 		svc.Logger.Error("Failed to initialize service", "error", err)
 		os.Exit(1)
 	}
+
+	// Setup TLS before starting any servers
+	if err := cfg.TLSConfig.SetupTLS(); err != nil {
+		svc.Logger.Error("Failed to setup TLS", "error", err)
+		os.Exit(1)
+	}
+
+	// Start metrics server (shares TLS config with main server)
+	metricsServer := metrics.StartServer(cfg.MetricsPort, cfg.TLSConfig)
+	svc.Logger.Info("Started metrics server", "port", cfg.MetricsPort)
 
 	// Set up signal handling for graceful shutdown and operations
 	shutdownChan := make(chan os.Signal, 1)
@@ -80,6 +91,11 @@ func main() {
 
 		// Create shutdown context with 30 second timeout
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+
+		// Shutdown metrics server
+		if err := metrics.Shutdown(shutdownCtx, metricsServer); err != nil {
+			svc.Logger.Error("Error shutting down metrics server", "error", err)
+		}
 
 		// Call graceful shutdown
 		if serverCfg != nil && serverCfg.ShutdownFn != nil {

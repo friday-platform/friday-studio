@@ -45,8 +45,5 @@ COPY --from=builder /workspace/atlas-manager .
 # Use non-root user (nobody:nobody)
 USER 65534:65534
 
-# Expose ports for health check and metrics
-EXPOSE 8080 8081
-
 # Run the operator
 ENTRYPOINT ["/atlas-manager"]

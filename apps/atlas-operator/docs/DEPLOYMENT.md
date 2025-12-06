@@ -37,7 +37,7 @@ ARGOCD_NAMESPACE=argocd
 ENVIRONMENT=sandbox
 LOG_LEVEL=info
 HEALTH_CHECK_PORT=8080
-METRICS_PORT=8081
+METRICS_PORT=9090
 WEBHOOK_ENABLED=true
 WEBHOOK_PORT=8082
 WEBHOOK_TOKEN=your-secure-webhook-token
@@ -66,7 +66,7 @@ ARGOCD_NAMESPACE=argocd
 ENVIRONMENT=production
 LOG_LEVEL=info
 HEALTH_CHECK_PORT=8080
-METRICS_PORT=8081
+METRICS_PORT=9090
 EOF
 
 # Create the secret in GSM
@@ -161,10 +161,10 @@ kubectl describe application -n argocd atlas-user-<user-id>
 
 ```bash
 # Port forward to metrics endpoint
-kubectl port-forward -n atlas svc/atlas-operator-metrics 8081:8081
+kubectl port-forward -n atlas svc/atlas-operator-metrics 9090:9090
 
 # View metrics
-curl http://localhost:8081/metrics | grep atlas_operator
+curl http://localhost:9090/metrics | grep atlas_operator
 ```
 
 ## 5. Using the Webhook for Immediate Refresh
