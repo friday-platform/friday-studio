@@ -5,6 +5,7 @@
     "jsr:@denosaurs/plug@1": "1.1.0",
     "jsr:@std/assert@0.217": "0.217.0",
     "jsr:@std/assert@1": "1.0.15",
+    "jsr:@std/assert@^1.0.14": "1.0.15",
     "jsr:@std/assert@^1.0.15": "1.0.15",
     "jsr:@std/async@^1.0.15": "1.0.15",
     "jsr:@std/data-structures@^1.0.9": "1.0.9",
@@ -69,6 +70,7 @@
     "npm:@sentry/deno@^10.29.0": "10.29.0",
     "npm:@sentry/sveltekit@^10.29.0": "10.29.0_@sveltejs+kit@2.49.1__@opentelemetry+api@1.9.0__@sveltejs+vite-plugin-svelte@6.2.1___svelte@5.45.5____acorn@8.15.0___vite@7.2.6____@types+node@24.2.0____picomatch@4.0.3___@types+node@24.2.0__svelte@5.45.5___acorn@8.15.0__vite@7.2.6___@types+node@24.2.0___picomatch@4.0.3__acorn@8.15.0__@types+node@24.2.0_vite@7.2.6__@types+node@24.2.0__picomatch@4.0.3_svelte@5.45.5__acorn@8.15.0_@opentelemetry+api@1.9.0_@sveltejs+vite-plugin-svelte@6.2.1__svelte@5.45.5___acorn@8.15.0__vite@7.2.6___@types+node@24.2.0___picomatch@4.0.3__@types+node@24.2.0_@types+node@24.2.0",
     "npm:@slack/bolt@^4.6.0": "4.6.0_@types+express@5.0.6",
+    "npm:@slack/types@^2.19.0": "2.19.0",
     "npm:@slack/web-api@^7.13.0": "7.13.0",
     "npm:@socotra/modelcontextprotocol-sdk@^1.18.0": "1.21.0_zod@4.1.13_ajv@8.17.1_express@5.2.1",
     "npm:@socotra/modelcontextprotocol-sdk@^1.21.0": "1.21.0_zod@4.1.13_ajv@8.17.1_express@5.2.1",
@@ -5482,6 +5484,7 @@
   },
   "workspace": {
     "dependencies": [
+      "jsr:@std/assert@^1.0.14",
       "jsr:@std/dotenv@~0.225.5",
       "jsr:@std/fs@^1.0.20",
       "jsr:@std/media-types@^1.1.0",
@@ -5813,7 +5816,9 @@
       "packages/slack": {
         "packageJson": {
           "dependencies": [
+            "npm:@jsr/std__assert@^1.0.14",
             "npm:@slack/bolt@^4.6.0",
+            "npm:@slack/types@^2.19.0",
             "npm:@slack/web-api@^7.13.0",
             "npm:zod@^4.0.0-beta.1"
           ]

@@ -33,7 +33,12 @@ export type SlackEventType = "message" | "app_mention";
 
 /**
  * Payload sent to Atlas workspaces when Slack signal triggers
- * This is our boundary - we validate when transforming from Slack events to workspace payloads
+ *
+ * This is our boundary - we validate when transforming from Slack events to workspace payloads.
+ * Note: This schema intentionally simplifies the complex Slack message types into a flat structure.
+ *
+ * For reference on Slack's actual message event types (GenericMessageEvent, MessageChangedEvent, etc.):
+ * @see https://github.com/slackapi/node-slack-sdk/blob/8ec90150d52c12eea3379fb004ee429e05f16a94/packages/types/src/events/message.ts
  */
 export const SlackSignalPayloadSchema = z.strictObject({
   messageId: z.string().describe("Unique message identifier (ts)"),

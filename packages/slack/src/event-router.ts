@@ -132,10 +132,22 @@ export class SlackEventRouter {
 
     const typedEvent = event as Record<string, unknown>;
 
-    if (typedEvent.type === "message" && "channel_type" in typedEvent) {
-      await this.handleEvent(typedEvent, context, "message");
-    } else if (typedEvent.type === "app_mention") {
-      await this.handleEvent(typedEvent, context, "app_mention");
+    // We only handle message (with channel_type) and app_mention events
+    const isMessage = typedEvent.type === "message" && "channel_type" in typedEvent;
+    const isAppMention = typedEvent.type === "app_mention";
+
+    if (isMessage || isAppMention) {
+      // Skip events without text (message_changed, message_deleted, etc.)
+      // These subtypes have different structures - text may be nested or absent
+      if (typeof typedEvent.text === "string") {
+        await this.handleEvent(typedEvent, context, isMessage ? "message" : "app_mention");
+      } else {
+        this.logger.debug("Skipping event without text", {
+          type: typedEvent.type,
+          subtype: typedEvent.subtype,
+          eventId: context.eventId,
+        });
+      }
     }
   }
 

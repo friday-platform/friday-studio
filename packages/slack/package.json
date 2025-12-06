@@ -13,5 +13,5 @@
     "@slack/web-api": "^7.13.0",
     "zod": "^4.0.0-beta.1"
   },
-  "devDependencies": {}
+  "devDependencies": { "@slack/types": "^2.19.0", "@std/assert": "npm:@jsr/std__assert@^1.0.14" }
 }

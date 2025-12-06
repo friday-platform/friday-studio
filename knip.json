@@ -39,7 +39,7 @@
     },
     "packages/sentry": { "entry": ["mod.ts!"], "project": ["src/**/*.{ts,tsx,js,jsx}!"] },
     "packages/signals": { "project": ["src/**/*.{ts,tsx,js,jsx}!"] },
-    "packages/slack": { "project": ["src/**/*.{ts,tsx,js,jsx}!"] },
+    "packages/slack": { "entry": ["src/**/*.test.ts"], "project": ["src/**/*.{ts,tsx,js,jsx}!"] },
     "packages/storage": { "project": ["src/**/*.{ts,tsx,js,jsx}!"] },
     "packages/system": { "entry": ["**/*.test.ts"], "project": ["**/*.{ts,tsx,js,jsx}!"] },
     "packages/utils": { "project": ["**/*.{ts,tsx,js,jsx}!"] },
