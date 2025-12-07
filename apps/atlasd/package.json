@@ -27,7 +27,7 @@
     "@std/path": "npm:@jsr/std__path@^1.1.2",
     "@std/yaml": "npm:@jsr/std__yaml@^1.0.10",
     "hono": "^4.10.7",
-    "hono-openapi": "^1.1.1",
+    "hono-openapi": "^1.1.2",
     "zod": "^4.1.13"
   }
 }
