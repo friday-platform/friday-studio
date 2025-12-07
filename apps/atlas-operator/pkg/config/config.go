@@ -8,6 +8,7 @@ import (
 
 	"github.com/caarlos0/env/v11"
 	"github.com/joho/godotenv"
+	"github.com/tempestteam/atlas/pkg/profiler"
 )
 
 // Config holds the operator configuration.
@@ -40,6 +41,9 @@ type Config struct {
 	// Pool Configuration
 	PoolEnabled    bool `env:"POOL_ENABLED" envDefault:"true"`
 	PoolTargetSize int  `env:"POOL_TARGET_SIZE" envDefault:"5"`
+
+	// Profiler Configuration
+	Profiler profiler.Config
 }
 
 // Load loads configuration from environment variables.

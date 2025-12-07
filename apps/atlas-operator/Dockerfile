@@ -22,6 +22,9 @@ COPY apps/atlas-operator/cmd/ apps/atlas-operator/cmd/
 COPY apps/atlas-operator/internal/ apps/atlas-operator/internal/
 COPY apps/atlas-operator/pkg/ apps/atlas-operator/pkg/
 
+# Copy shared packages
+COPY pkg/ pkg/
+
 # Build the operator with version information
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
     -ldflags="-w -s -X main.GitCommit=${GITHUB_SHA} -X main.GitRef=${GITHUB_REF}" \

@@ -1,5 +1,5 @@
 # Build stage
-FROM golang:1.25.4-alpine3.22 AS builder
+FROM golang:1.25.5-alpine3.22 AS builder
 
 WORKDIR /build
 
@@ -16,10 +16,11 @@ COPY pkg ./pkg
 
 # Build the application
 WORKDIR /build/apps/bounce
-RUN CGO_ENABLED=0 GOOS=linux go build -o bounce .
+ARG GITHUB_SHA=unknown
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-X main.GitCommit=${GITHUB_SHA}" -o bounce .
 
 # Final stage
-FROM alpine:3.22.2
+FROM alpine:3.23.0
 
 RUN apk --no-cache add ca-certificates
 

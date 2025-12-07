@@ -16,6 +16,7 @@ import (
 	"github.com/go-chi/jwtauth/v5"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/tempestteam/atlas/pkg/profiler"
 	"github.com/tempestteam/atlas/pkg/server"
 	"github.com/tempestteam/atlas/pkg/x/middleware/pgxdb"
 	"github.com/tempestteam/atlas/pkg/x/middleware/secure"
@@ -43,6 +44,7 @@ type Config struct {
 	CORSAllowedOrigins        string `env:"CORS_ALLOWED_ORIGINS" envDefault:"http://localhost:8080"`
 
 	TLSConfig *server.TLSConfig
+	Profiler  profiler.Config
 }
 
 type service struct {

@@ -1,6 +1,9 @@
 package service
 
-import "github.com/tempestteam/atlas/pkg/server"
+import (
+	"github.com/tempestteam/atlas/pkg/profiler"
+	"github.com/tempestteam/atlas/pkg/server"
+)
 
 type Config struct {
 	Port               string `env:"PORT" envDefault:"8084"`
@@ -14,4 +17,5 @@ type Config struct {
 	CORSAllowedOrigins string `env:"CORS_ALLOWED_ORIGINS" envDefault:"*"`
 
 	TLSConfig *server.TLSConfig
+	Profiler  profiler.Config
 }

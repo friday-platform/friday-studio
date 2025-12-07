@@ -19,6 +19,7 @@ import (
 	"github.com/tempestteam/atlas/apps/atlas-operator/pkg/database"
 	"github.com/tempestteam/atlas/apps/atlas-operator/pkg/pool"
 	"github.com/tempestteam/atlas/apps/atlas-operator/pkg/webhook"
+	"github.com/tempestteam/atlas/pkg/profiler"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 )
@@ -123,6 +124,12 @@ func run() error {
 	// Validate configuration
 	if err := cfg.Validate(); err != nil {
 		return fmt.Errorf("invalid configuration: %w", err)
+	}
+
+	// Start profiler early - use GitCommit from ldflags for version
+	if err := profiler.Start(cfg.Profiler, "atlas-operator", GitCommit, logger); err != nil {
+		logger.Error("Failed to start profiler", "error", err)
+		// Non-fatal: continue without profiling
 	}
 
 	// Update logger level based on config

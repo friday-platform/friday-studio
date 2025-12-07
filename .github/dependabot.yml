@@ -242,3 +242,37 @@ updates:
       - "dependencies"
       - "docker"
     rebase-strategy: "auto"
+
+  # Keep Docker dependencies up to date (for bounce service)
+  - package-ecosystem: "docker"
+    directory: "/apps/bounce"
+    schedule:
+      interval: "daily"
+      time: "09:00"
+    open-pull-requests-limit: 5
+    assignees:
+      - "ljagiello"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "docker"
+    rebase-strategy: "auto"
+
+  # Keep Docker dependencies up to date (for atlas-auth-ui)
+  - package-ecosystem: "docker"
+    directory: "/apps/atlas-auth-ui"
+    schedule:
+      interval: "daily"
+      time: "09:00"
+    open-pull-requests-limit: 5
+    assignees:
+      - "ljagiello"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "docker"
+    rebase-strategy: "auto"

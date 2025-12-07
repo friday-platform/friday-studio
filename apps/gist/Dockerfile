@@ -7,7 +7,8 @@ RUN go mod download
 
 COPY . .
 
-RUN CGO_ENABLED=0 GOOS=linux go build -o /go/bin/gist ./apps/gist
+ARG GITHUB_SHA=unknown
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-X main.GitCommit=${GITHUB_SHA}" -o /go/bin/gist ./apps/gist
 
 FROM alpine:3.23.0
 

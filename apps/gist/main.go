@@ -12,8 +12,12 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/tempestteam/atlas/apps/gist/service"
 	"github.com/tempestteam/atlas/pkg/metrics"
+	"github.com/tempestteam/atlas/pkg/profiler"
 	"github.com/tempestteam/atlas/pkg/server"
 )
+
+// GitCommit is the git commit hash set via ldflags at build time.
+var GitCommit = "unknown"
 
 func main() {
 	if os.Getenv("DOT_ENV") != "" {
@@ -38,6 +42,11 @@ func main() {
 	}
 
 	svc := service.New(cfg)
+
+	// Start profiler before service initialization
+	if err := profiler.Start(cfg.Profiler, cfg.ServiceName, GitCommit, svc.Logger.Logger); err != nil {
+		svc.Logger.Error("Failed to start profiler", "error", err)
+	}
 
 	ctx := context.Background()
 	if err := svc.Init(ctx); err != nil {
