@@ -31,7 +31,7 @@
     "npm:@ai-sdk/mcp@^0.0.11": "0.0.11_zod@4.1.13",
     "npm:@ai-sdk/openai@^2.0.77": "2.0.77_zod@4.1.13",
     "npm:@ai-sdk/provider@2": "2.0.0",
-    "npm:@ai-sdk/svelte@^3.0.106": "3.0.106_svelte@5.45.6__acorn@8.15.0_zod@4.1.13",
+    "npm:@ai-sdk/svelte@^3.0.108": "3.0.108_svelte@5.45.6__acorn@8.15.0_zod@4.1.13",
     "npm:@biomejs/biome@*": "2.3.8",
     "npm:@discordjs/core@2.4.0": "2.4.0",
     "npm:@discordjs/rest@2.6.0": "2.6.0",
@@ -297,11 +297,11 @@
         "json-schema"
       ]
     },
-    "@ai-sdk/svelte@3.0.106_svelte@5.45.6__acorn@8.15.0_zod@4.1.13": {
-      "integrity": "sha512-Nb1vbecJ+zrlr3FOCUuQDXgHNu8AwMfbVXLU+7AldI2HkB/dgYSyStaEPV7cApIMhWGLzM/prqLC5YhF/0J53w==",
+    "@ai-sdk/svelte@3.0.108_svelte@5.45.6__acorn@8.15.0_zod@4.1.13": {
+      "integrity": "sha512-5zZ4jeOMRUM2EduO4Q/4VVq+rEUvhjJIIKvHkKVYnVqy1Ws48grLOs0PB9j+P5X5OkyPXM8ssIjjgLYEP2ctUQ==",
       "dependencies": [
         "@ai-sdk/provider-utils@3.0.18_zod@4.1.13",
-        "ai@5.0.106_zod@4.1.13",
+        "ai",
         "svelte",
         "zod"
       ],
@@ -2720,16 +2720,6 @@
         "zod"
       ]
     },
-    "ai@5.0.106_zod@4.1.13": {
-      "integrity": "sha512-M5obwavxSJJ3tGlAFqI6eltYNJB0D20X6gIBCFx/KVorb/X1fxVVfiZZpZb+Gslu4340droSOjT0aKQFCarNVg==",
-      "dependencies": [
-        "@ai-sdk/gateway",
-        "@ai-sdk/provider",
-        "@ai-sdk/provider-utils@3.0.18_zod@4.1.13",
-        "@opentelemetry/api",
-        "zod"
-      ]
-    },
     "ai@5.0.108_zod@4.1.13": {
       "integrity": "sha512-Jex3Lb7V41NNpuqJHKgrwoU6BCLHdI1Pg4qb4GJH4jRIDRXUBySJErHjyN4oTCwbiYCeb/8II9EnqSRPq9EifA==",
       "dependencies": [
@@ -3379,7 +3369,7 @@
         "@stricli/core",
         "@vitest/runner",
         "@vitest/utils",
-        "ai@5.0.108_zod@4.1.13",
+        "ai",
         "dotenv@16.6.1",
         "fastify",
         "file-type",
@@ -3390,7 +3380,7 @@
         "tinyrainbow"
       ],
       "optionalPeers": [
-        "ai@5.0.108_zod@4.1.13"
+        "ai"
       ],
       "bin": true
     },
@@ -5577,7 +5567,7 @@
       "apps/web-client": {
         "packageJson": {
           "dependencies": [
-            "npm:@ai-sdk/svelte@^3.0.106",
+            "npm:@ai-sdk/svelte@^3.0.108",
             "npm:@eslint/compat@2",
             "npm:@eslint/js@^9.39.1",
             "npm:@ianvs/prettier-plugin-sort-imports@^4.7.0",
