@@ -4,7 +4,7 @@ go 1.25.4
 
 require (
 	cloud.google.com/go/profiler v0.4.3
-	cloud.google.com/go/storage v1.57.2
+	cloud.google.com/go/storage v1.58.0
 	github.com/DATA-DOG/go-sqlmock v1.5.2
 	github.com/caarlos0/env/v11 v11.3.1
 	github.com/ggicci/httpin v0.20.2
