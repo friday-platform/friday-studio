@@ -18,11 +18,12 @@ if (!__DEV_MODE__) {
   document.head.appendChild(gaScript);
 
   window.dataLayer = window.dataLayer || [];
-  function gtag(...args: unknown[]) {
-    window.dataLayer.push(args);
-  }
-  gtag("js", new Date());
-  gtag("config", GA_MEASUREMENT_ID);
+  // eslint-disable-next-line prefer-rest-params -- matches Google's gtag snippet exactly
+  window.gtag = function () {
+    window.dataLayer.push(arguments);
+  };
+  window.gtag("js", new Date());
+  window.gtag("config", GA_MEASUREMENT_ID);
 
   // Microsoft Clarity
   const CLARITY_PROJECT_ID = "ug35a2otup";
