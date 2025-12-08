@@ -157,13 +157,28 @@ async function appendMessage(
   }
 }
 
+interface ListChatsOptions {
+  limit?: number;
+  cursor?: number; // mtime timestamp - returns chats older than this
+}
+
+interface ListChatsResult {
+  chats: Omit<Chat, "messages">[];
+  nextCursor: number | null;
+  hasMore: boolean;
+}
+
 /**
- * List N most recently updated chats.
+ * List most recently updated chats with cursor-based pagination.
  *
- * Reads mtime for all files, sorts by mtime descending, fully reads only top N.
- * Gracefully skips corrupted chats (logs warning).
+ * Reads mtime for all files, sorts by mtime descending.
+ * When cursor provided, returns chats with mtime < cursor.
+ * Returns chat metadata without messages for efficiency.
  */
-async function listChats(limit = 25): Promise<Result<Chat[], string>> {
+async function listChats(options?: ListChatsOptions): Promise<Result<ListChatsResult, string>> {
+  const limit = options?.limit ?? 25;
+  const cursor = options?.cursor;
+
   try {
     await ensureChatDir();
     const chatDir = getChatDir();
@@ -176,7 +191,11 @@ async function listChats(limit = 25): Promise<Result<Chat[], string>> {
         try {
           const stat = await Deno.stat(filePath);
           if (stat.mtime) {
-            fileInfos.push({ path: filePath, mtime: stat.mtime.getTime() });
+            const mtime = stat.mtime.getTime();
+            // Filter by cursor if provided
+            if (cursor === undefined || mtime < cursor) {
+              fileInfos.push({ path: filePath, mtime });
+            }
           }
         } catch (error) {
           logger.warn("Failed to stat chat file, skipping", {
@@ -189,16 +208,26 @@ async function listChats(limit = 25): Promise<Result<Chat[], string>> {
 
     fileInfos.sort((a, b) => b.mtime - a.mtime);
 
-    const chats: Chat[] = [];
-    for (const { path } of fileInfos.slice(0, limit)) {
+    // Take limit + 1 to check if there are more
+    const toRead = fileInfos.slice(0, limit + 1);
+    const hasMore = toRead.length > limit;
+    const filesToRead = toRead.slice(0, limit);
+
+    const chats: Omit<Chat, "messages">[] = [];
+    let lastMtime: number | null = null;
+
+    for (const { path, mtime } of filesToRead) {
       try {
-        chats.push(await readAndValidateChat(path));
+        const chat = await readAndValidateChat(path);
+        const { messages: _, ...chatWithoutMessages } = chat;
+        chats.push(chatWithoutMessages);
+        lastMtime = mtime;
       } catch (error) {
         logger.warn("Failed to read chat file, skipping", { path, error: stringifyError(error) });
       }
     }
 
-    return success(chats);
+    return success({ chats, nextCursor: hasMore && lastMtime ? lastMtime : null, hasMore });
   } catch (error) {
     return fail(stringifyError(error));
   }
@@ -236,4 +265,30 @@ async function updateChatTitle(chatId: string, title: string): Promise<Result<Ch
   }
 }
 
-export const ChatStorage = { createChat, getChat, appendMessage, listChats, updateChatTitle };
+/**
+ * Delete chat by ID.
+ *
+ * Removes the chat file from disk.
+ */
+async function deleteChat(chatId: string): Promise<Result<void, string>> {
+  try {
+    const chatFile = getChatFile(chatId);
+    await Deno.remove(chatFile);
+    logger.debug("Deleted chat", { chatId });
+    return success(undefined);
+  } catch (error) {
+    if (error instanceof Deno.errors.NotFound) {
+      return fail("Chat not found");
+    }
+    return fail(stringifyError(error));
+  }
+}
+
+export const ChatStorage = {
+  createChat,
+  getChat,
+  appendMessage,
+  listChats,
+  updateChatTitle,
+  deleteChat,
+};

@@ -1,10 +1,12 @@
 import { Chat } from "@ai-sdk/svelte";
-import { type AtlasUIMessage, validateAtlasUIMessages } from "@atlas/agent-sdk";
+import type { AtlasUIMessage } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
 import { getAtlasDaemonUrl } from "@atlas/oapi-client";
-import { stringifyError } from "@atlas/utils";
 import { DefaultChatTransport } from "ai";
 import { getContext, setContext } from "svelte";
+import { SvelteMap } from "svelte/reactivity";
+import { goto } from "$app/navigation";
+import { resolve } from "$app/paths";
 
 const KEY = Symbol();
 
@@ -18,19 +20,27 @@ export interface ChatListItem {
 }
 
 class ChatContext {
-  id = $state<string>(crypto.randomUUID());
-  previousMessages = $state<AtlasUIMessage[]>([]);
   recentChats = $state<ChatListItem[]>([]);
-  userHasScrolled = $state<boolean>(false);
 
-  chat = $derived(
+  // Pagination state
+  cursor = $state<number | null>(null);
+  hasMoreChats = $state(true);
+  isFetching = $state(false);
+
+  // Saved chats cache (for /chat/[chatId] routes)
+  chats = new SvelteMap<string, Chat<AtlasUIMessage>>();
+
+  // New chat state (for / route)
+  newChatId = $state<string>(crypto.randomUUID());
+  newChatMessages = $state<AtlasUIMessage[]>([]);
+
+  newChat = $derived(
     new Chat({
-      id: this.id,
-      messages: this.previousMessages,
+      id: this.newChatId,
+      messages: this.newChatMessages,
       onFinish: () => {
-        this.loadRecentChats().catch((error) => {
-          console.error("Failed to refresh chat list:", stringifyError(error));
-        });
+        this.loadChats({ reset: true });
+        this.navigateToChat(this.newChatId);
       },
       transport: new DefaultChatTransport({
         api: `${getAtlasDaemonUrl()}/api/chat`,
@@ -41,30 +51,50 @@ class ChatContext {
     }),
   );
 
-  async loadRecentChats(): Promise<void> {
-    const res = await parseResult(client.chat.index.$get());
-    if (!res.ok) {
-      console.error("Failed to fetch chats:", res.error);
-      throw new Error(`Failed to fetch chats: ${stringifyError(res.error)}`);
-    }
-
-    this.recentChats = res.data.chats || [];
+  constructor() {
+    // Fetch recent chats on mount
+    this.loadChats().catch((err) => {
+      console.error("Failed to load recent chats:", err);
+    });
   }
 
-  async loadChat(chatId: string): Promise<void> {
-    const res = await parseResult(client.chat[":chatId"].$get({ param: { chatId } }));
-    if (!res.ok) {
-      console.error("Failed to load chat:", res.error);
-      throw new Error(`Failed to load chat: ${stringifyError(res.error)}`);
-    }
+  /** Load chats - resets if no cursor, appends otherwise */
+  async loadChats(options?: { reset?: boolean }): Promise<void> {
+    const reset = options?.reset ?? !this.cursor;
 
-    this.id = chatId;
-    this.previousMessages = await validateAtlasUIMessages(res.data.messages);
+    if (!reset && (!this.hasMoreChats || this.isFetching)) return;
+
+    this.isFetching = true;
+    try {
+      const query: { limit: string; cursor?: string } = { limit: "25" };
+      if (!reset && this.cursor) {
+        query.cursor = String(this.cursor);
+      }
+
+      const res = await parseResult(client.chat.index.$get({ query }));
+      if (!res.ok) {
+        console.error("Failed to fetch chats:", res.error);
+        return;
+      }
+
+      this.recentChats = reset ? res.data.chats : [...this.recentChats, ...res.data.chats];
+      this.cursor = res.data.nextCursor;
+      this.hasMoreChats = res.data.hasMore;
+    } finally {
+      this.isFetching = false;
+    }
   }
 
-  newChat(): void {
-    this.id = crypto.randomUUID();
-    this.previousMessages = [];
+  /** Navigate to a saved chat */
+  navigateToChat(chatId: string): void {
+    goto(resolve("/chat/[chatId]", { chatId }));
+  }
+
+  /** Reset to a fresh new chat and navigate to / */
+  resetNewChat(): void {
+    this.newChatId = crypto.randomUUID();
+    this.newChatMessages = [];
+    goto(resolve("/", {}));
   }
 }
 

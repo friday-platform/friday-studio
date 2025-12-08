@@ -11,6 +11,10 @@ import { daemonFactory } from "../src/factory.ts";
 const chatRequestSchema = z.object({ id: z.uuid(), message: z.unknown() });
 const appendMessageSchema = z.object({ message: z.unknown() });
 const updateTitleSchema = z.object({ title: z.string() });
+const listChatsQuerySchema = z.object({
+  limit: z.coerce.number().min(1).max(100).optional(),
+  cursor: z.coerce.number().optional(),
+});
 
 /**
  * Extract text content from user message.
@@ -33,15 +37,16 @@ const chatRoutes = daemonFactory
   .createApp()
   /**
    * GET /api/chat
-   * List recent chats.
+   * List recent chats with cursor-based pagination.
    */
-  .get("/", async (c) => {
-    const result = await ChatStorage.listChats();
+  .get("/", zValidator("query", listChatsQuerySchema), async (c) => {
+    const { limit, cursor } = c.req.valid("query");
+    const result = await ChatStorage.listChats({ limit, cursor });
     if (!result.ok) {
       return c.json({ error: result.error }, 500);
     }
 
-    return c.json({ chats: result.data }, 200);
+    return c.json(result.data, 200);
   })
 
   /**
@@ -184,6 +189,21 @@ const chatRoutes = daemonFactory
     }
 
     return c.json({ chat: result.data }, 200);
+  })
+
+  /**
+   * DELETE /api/chat/:chatId
+   * Delete a chat.
+   */
+  .delete("/:chatId", async (c) => {
+    const chatId = c.req.param("chatId");
+
+    const result = await ChatStorage.deleteChat(chatId);
+    if (!result.ok) {
+      return c.json({ error: result.error }, result.error === "Chat not found" ? 404 : 500);
+    }
+
+    return c.json({ success: true }, 200);
   });
 
 export default chatRoutes;

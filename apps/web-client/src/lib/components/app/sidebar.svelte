@@ -1,13 +1,18 @@
 <script lang="ts">
 import { client, type InferResponseType, parseResult } from "@atlas/client/v2";
 import { onMount } from "svelte";
+import { page } from "$app/state";
 import { getAppContext } from "$lib/app-context.svelte";
 import logo from "$lib/assets/logo.png";
 import { getChatContext } from "$lib/chat-context.svelte";
+import { Dialog } from "$lib/components/dialog";
+import { DropdownMenu } from "$lib/components/dropdown-menu";
 import { Icons } from "$lib/components/icons";
 import { IconSmall } from "$lib/components/icons/small";
 import AddWorkspaceDialog from "$lib/modules/spaces/add-workspace.svelte";
 import { getActivePage } from "$lib/utils/active-page.svelte";
+import { shareChat } from "$lib/utils/share-chat";
+import ScrollListener from "../scroll-listener.svelte";
 import ExpandDecal from "./expand-decal.svelte";
 import NavigationControls from "./navigation-controls.svelte";
 
@@ -16,6 +21,8 @@ type WorkspacesListResponse = InferResponseType<typeof client.workspace.index.$g
 const ctx = getAppContext();
 const chatContext = getChatContext();
 let spaces = $state<WorkspacesListResponse>([]);
+
+const currentChatId = $derived(page.params.chatId);
 
 let mounted = $state(false);
 let isDesktop = $state(__TAURI_BUILD__);
@@ -70,7 +77,7 @@ onMount(() => {
 
 	{#if ctx.sidebarExpanded}
 		<nav>
-			<ul>
+			<ul class="section-list">
 				<li>
 					<a href={ctx.routes.main} class:active={getActivePage('/')} class="sidebar-item">
 						<Icons.Chat />
@@ -114,17 +121,17 @@ onMount(() => {
 				{/if}
 			</ul>
 
-			<span class="spaces-header">
+			<span class="section-header">
 				Spaces
 
 				<AddWorkspaceDialog>
 					{#snippet triggerContents()}
-						<span class="new-space"> Add New </span>
+						<span class="section__add-new" aria-label="New Space"> <IconSmall.Plus /> </span>
 					{/snippet}
 				</AddWorkspaceDialog>
 			</span>
 
-			<ul class="spaces-list">
+			<ul class="section-list">
 				{#each spaces as space}
 					<li>
 						<a
@@ -138,34 +145,126 @@ onMount(() => {
 				{/each}
 			</ul>
 
-			<span class="spaces-header">
+			<span class="section-header">
 				Recent Chats
 
 				<button
-					class="new-space"
+					class="section__add-new"
 					onclick={() => {
-						chatContext.newChat();
+						chatContext.resetNewChat();
 					}}
+					aria-label="New Conversation"
 				>
-					Add New
+					<IconSmall.Plus />
 				</button>
 			</span>
 
-			<ul class="spaces-list">
-				{#each chatContext.recentChats as chat (chat.id)}
-					<li>
-						<button
-							class="sidebar-item"
-							class:active={chatContext.id === chat.id}
-							onclick={() => {
-								chatContext.loadChat(chat.id);
-							}}
-						>
-							<span class="text">{chat.title || '(Untitled)'}</span>
-						</button>
-					</li>
-				{/each}
-			</ul>
+			<ScrollListener
+				requestLoadItems={() => chatContext.loadChats()}
+				hasMoreItems={chatContext.hasMoreChats}
+				cursor={chatContext.cursor}
+				isFetching={chatContext.isFetching}
+			>
+				<ul class="section-list">
+					{#each chatContext.recentChats as chat (chat.id)}
+						<li class="chat-row">
+							<a
+								class="sidebar-item"
+								class:active={currentChatId === chat.id}
+								href="/chat/{chat.id}"
+							>
+								<span class="text">{chat.title || 'Untitled'}</span>
+							</a>
+
+							<div class="chat-options">
+								<DropdownMenu.Root
+									positioning={{
+										placement: 'bottom'
+									}}
+								>
+									<DropdownMenu.Trigger aria-label="Chat options">
+										<div class="chat-trigger">
+											<Icons.TripleDots />
+										</div>
+									</DropdownMenu.Trigger>
+									<DropdownMenu.Content>
+										<DropdownMenu.Item
+											onclick={async () => {
+												const res = await parseResult(
+													client.chat[':chatId'].$get({ param: { chatId: chat.id } })
+												);
+
+												if (res.ok) {
+													// @ts-expect-error the type is correct
+													await shareChat(res.data.messages, chat.title ?? 'Untitled');
+												}
+											}}
+										>
+											<Icons.Share />
+
+											Share
+										</DropdownMenu.Item>
+
+										<Dialog.Root>
+											{#snippet children(open)}
+												<DropdownMenu.Item
+													accent="destructive"
+													onclick={() => {
+														open.set(true);
+													}}
+												>
+													<Icons.Trash />
+													Delete
+												</DropdownMenu.Item>
+
+												<Dialog.Content>
+													<Dialog.Close />
+
+													{#snippet icon()}
+														<span style:color="var(--color-red)">
+															<Icons.DeleteSpace />
+														</span>
+													{/snippet}
+
+													{#snippet header()}
+														<Dialog.Title>Delete Conversation</Dialog.Title>
+														<Dialog.Description>
+															<p>
+																Shared conversations may be available for up to 90 days after being
+																deleted.
+															</p>
+														</Dialog.Description>
+													{/snippet}
+
+													{#snippet footer()}
+														<Dialog.Button
+															onclick={async () => {
+																const res = await parseResult(
+																	client.chat[':chatId'].$delete({ param: { chatId: chat.id } })
+																);
+																if (res.ok) {
+																	await chatContext.loadChats({ reset: true });
+																	if (currentChatId === chat.id) {
+																		chatContext.resetNewChat();
+																	}
+																}
+															}}
+														>
+															Confirm
+														</Dialog.Button>
+
+														<Dialog.Cancel>Cancel</Dialog.Cancel>
+													{/snippet}
+												</Dialog.Content>
+											{/snippet}
+										</Dialog.Root>
+									</DropdownMenu.Content>
+								</DropdownMenu.Root>
+							</div>
+						</li>
+					{/each}
+				</ul>
+			</ScrollListener>
 		</nav>
 	{/if}
 
@@ -318,40 +417,53 @@ onMount(() => {
 		}
 	}
 
-	.spaces-header {
+	.section-header {
+		border-block-start: var(--size-px) solid var(--color-border-1);
 		block-size: var(--size-9);
 		display: flex;
 		color: color-mix(in srgb, var(--color-text), transparent 40%);
 		font-size: var(--font-size-2);
 		font-weight: var(--font-weight-4-5);
 		justify-content: space-between;
-
 		padding-block: var(--size-3) var(--size-1-5);
-		padding-inline: var(--size-2-5) var(--size-2);
+		padding-inline: var(--size-2-5);
 
-		.new-space {
+		.section__add-new {
 			align-items: center;
-			border-radius: var(--radius-2);
+			background-color: var(--color-surface-1);
+			border-radius: var(--radius-round);
+			block-size: var(--size-4);
+			box-shadow: var(--shadow-1);
+			inline-size: var(--size-4);
 			display: flex;
 			font-size: var(--font-size-1);
 			font-weight: var(--font-weight-5);
 			margin-inline-end: calc(-1 * var(--size-1));
-			padding-block: var(--size-0-5);
-			padding-inline: var(--size-1);
+
+			&,
+			& :global(svg) {
+				transition: transform 200ms ease-in;
+			}
 
 			&:hover {
-				background-color: color-mix(in srgb, var(--color-border-1) 80%, transparent);
+				transform: rotate(-90deg) scale(1.14);
+
+				& :global(svg) {
+					transform: scale(0.86);
+				}
+			}
+
+			:global(:focus-visible) &,
+			&:matches(button):focus-visible {
+				outline: var(--size-px) solid color-mix(in srgb, var(--color-text), transparent 50%);
 			}
 		}
 	}
 
-	:global(:focus-visible) .new-space {
-		background-color: color-mix(in srgb, var(--color-border-1) 80%, transparent);
-	}
+	.section-list {
+		padding-block-end: var(--size-2);
 
-	.spaces-list {
-		a,
-		button {
+		a {
 			padding-inline: var(--size-2-5) var(--size-2);
 
 			span {
@@ -360,13 +472,53 @@ onMount(() => {
 				text-overflow: ellipsis;
 			}
 		}
+	}
 
-		button.sidebar-item {
-			border: none;
-			color: inherit;
-			cursor: pointer;
-			inline-size: 100%;
-			text-align: left;
+	.chat-row {
+		display: flex;
+		align-items: center;
+		gap: var(--size-1);
+		position: relative;
+
+		.sidebar-item {
+			flex: 1;
+			min-inline-size: 0;
 		}
+
+		.chat-options {
+			align-items: center;
+			block-size: var(--size-7);
+			display: flex;
+			inline-size: var(--size-7);
+			inset-inline-end: 0;
+			inset-block-start: 0;
+			justify-content: center;
+			position: absolute;
+			transform: translate3d(0, 0, 0);
+		}
+
+		.chat-trigger {
+			align-items: center;
+			border-radius: var(--radius-3);
+			block-size: var(--size-6);
+			display: flex;
+			inline-size: var(--size-6);
+			justify-content: center;
+			opacity: 0;
+			transition: all 0.2s ease;
+			visibility: hidden;
+		}
+	}
+
+	.chat-row:hover .chat-trigger,
+	:global(:focus-visible) .chat-trigger,
+	:global([data-state='open']) .chat-trigger {
+		opacity: 1;
+		visibility: visible;
+	}
+
+	.chat-trigger:hover,
+	:global(:focus-visible) .chat-trigger {
+		background-color: var(--color-border-1);
 	}
 </style>

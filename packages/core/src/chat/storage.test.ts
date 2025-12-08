@@ -397,10 +397,10 @@ describe("ChatStorage", () => {
       // Update first chat to make it most recent
       await ChatStorage.appendMessage(chat1, createMessage("Update"));
 
-      const result = await ChatStorage.listChats(5);
+      const result = await ChatStorage.listChats({ limit: 5 });
       assert(result.ok);
-      assertEquals(result.data.length, 3);
-      assertEquals(result.data[0]?.id, chat1, "Most recently updated should be first");
+      assertEquals(result.data.chats.length, 3);
+      assertEquals(result.data.chats[0]?.id, chat1, "Most recently updated should be first");
     });
 
     it("only reads top N files by mtime", async () => {
@@ -409,9 +409,9 @@ describe("ChatStorage", () => {
         await new Promise((resolve) => setTimeout(resolve, 5));
       }
 
-      const result = await ChatStorage.listChats(3);
+      const result = await ChatStorage.listChats({ limit: 3 });
       assert(result.ok);
-      assertEquals(result.data.length, 3, "Should return exactly 3 of 10 chats");
+      assertEquals(result.data.chats.length, 3, "Should return exactly 3 of 10 chats");
     });
   });
 });

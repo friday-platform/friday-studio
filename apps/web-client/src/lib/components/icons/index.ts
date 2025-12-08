@@ -23,6 +23,7 @@ import Share from "./share.svelte";
 import Slack from "./slack.svelte";
 import Trash from "./trash.svelte";
 import TriangleRight from "./triangle-right.svelte";
+import TripleDots from "./triple-dots.svelte";
 import Workspace from "./workspace.svelte";
 
 export const Icons = {
@@ -51,5 +52,6 @@ export const Icons = {
   Slack,
   Trash,
   TriangleRight,
+  TripleDots,
   Workspace,
 };

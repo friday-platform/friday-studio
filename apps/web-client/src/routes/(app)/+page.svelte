@@ -31,65 +31,17 @@ let form = $state<HTMLFormElement | null>(null);
 let message = $state<string>("");
 let showChats = $state(false);
 
-// Fetch recent chats on mount
-$effect(() => {
-  if (chatContext.chat?.messages.length === 0) {
-    chatContext.loadRecentChats().catch((err) => {
-      console.error("Failed to load recent chats:", err);
-    });
-  }
-});
+// Use the newChat instance from context
+const chat = $derived(chatContext.newChat);
 
-// Follow scroll handling
-let scrollContainer = $state<HTMLDivElement | null>(null);
-let animationFrameId = $state<number | null>(null);
+const hasMessages = $derived(chat.messages.length > 0);
 
-// Handle Scrolling
-function handleScroll() {
-  chatContext.userHasScrolled = true;
-
-  if (!scrollContainer) return;
-
-  const { scrollTop, scrollHeight, clientHeight } = scrollContainer;
-  const isAtBottom = Math.abs(scrollHeight - scrollTop - clientHeight) < 5;
-
-  // If user scrolls away from bottom, mark as manually scrolled
-  if (!isAtBottom) {
-    chatContext.userHasScrolled = true;
-  }
-  // If user scrolls back to bottom, reset the flag
-  if (isAtBottom) {
-    chatContext.userHasScrolled = false;
-  }
-}
-
-// Scroll to the bottom of the container
-function scrollToBottom() {
-  if (!scrollContainer) return;
-  scrollContainer.scrollTop = scrollContainer.scrollHeight;
-  animationFrameId = requestAnimationFrame(scrollToBottom);
-}
-
-// Auto-scroll when new logs are added, unless user has manually scrolled
-$effect(() => {
-  if (chatContext.userHasScrolled && animationFrameId) {
-    cancelAnimationFrame(animationFrameId);
-    animationFrameId = null;
-  }
-  if (!chatContext.userHasScrolled && !animationFrameId) {
-    animationFrameId = requestAnimationFrame(scrollToBottom);
-  }
-});
-
-const hasMessages = $derived(chatContext.chat?.messages.length > 0);
 let actionsAfterLastUser = $state<{ parts: AtlasUIMessagePart[]; timestamp?: string }>({
   parts: [],
 });
 
 $effect(() => {
-  const lastAssistantMessage = (chatContext.chat?.messages ?? []).findLast(
-    (msg) => msg.role === "assistant",
-  );
+  const lastAssistantMessage = chat.messages.findLast((msg) => msg.role === "assistant");
 
   // If no user message found, return empty
   if (!lastAssistantMessage) {
@@ -109,15 +61,10 @@ let showDetails = new SvelteMap<string, boolean>();
 
 <div class="chat">
 	<div class="main">
-		<div
-			class="messages"
-			class:has-messages={hasMessages}
-			bind:this={scrollContainer}
-			onscroll={handleScroll}
-		>
+		<div class="messages" class:has-messages={hasMessages}>
 			<div
 				class="messages-container"
-				class:has-outline={chatContext.chat?.messages.some((msg) =>
+				class:has-outline={chatContext.newChat.messages.some((msg) =>
 					msg.parts.some((part) => part.type === 'data-outline-update')
 				)}
 			>
@@ -132,7 +79,7 @@ let showDetails = new SvelteMap<string, boolean>();
 						</div>
 					</FlexibleContainer>
 
-					{#each chatContext.chat?.messages as messageContainer (messageContainer.id)}
+					{#each chatContext.newChat.messages as messageContainer (messageContainer.id)}
 						<div class="message-parts">
 							{#each messageContainer.parts as message, index (index)}
 								{@const formattedMessage = formatMessage(messageContainer, message)}
@@ -169,7 +116,7 @@ let showDetails = new SvelteMap<string, boolean>();
 						</div>
 					{/each}
 
-					{#if chatContext.chat?.status === 'streaming' || chatContext.chat?.status === 'submitted'}
+					{#if chatContext.newChat.status === 'streaming' || chatContext.newChat.status === 'submitted'}
 						<Progress
 							actions={actionsAfterLastUser.parts}
 							timestamp={actionsAfterLastUser.timestamp}
@@ -178,7 +125,7 @@ let showDetails = new SvelteMap<string, boolean>();
 				</div>
 
 				<Outline
-					messages={(chatContext.chat?.messages ?? [])
+					messages={(chatContext.newChat.messages ?? [])
 						.filter((msg) => msg.role === 'assistant')
 						.filter((msg) => msg.parts.some((part) => part.type === 'data-outline-update'))}
 				/>
@@ -188,7 +135,7 @@ let showDetails = new SvelteMap<string, boolean>();
 
 			<div
 				class="interactive-container"
-				class:has-outline={chatContext.chat?.messages.some((msg) =>
+				class:has-outline={chatContext.newChat.messages.some((msg) =>
 					msg.parts.some((part) => part.type === 'data-outline-update')
 				)}
 			>
@@ -205,7 +152,7 @@ let showDetails = new SvelteMap<string, boolean>();
 						onsubmit={async (e) => {
 							e.preventDefault();
 
-							if (message.trim() && chatContext.chat) {
+							if (message.trim() && chat) {
 								let combinedMessage = message;
 								if (appCtx.stagedFiles.state.size > 0) {
 									combinedMessage = combinedMessage + `\n\nAttachments:`;
@@ -215,7 +162,7 @@ let showDetails = new SvelteMap<string, boolean>();
 									}
 								}
 
-								chatContext.chat.sendMessage({ text: combinedMessage });
+								chatContext.newChat.sendMessage({ text: combinedMessage });
 								message = '';
 								appCtx.stagedFiles.clear();
 							}
@@ -235,9 +182,6 @@ let showDetails = new SvelteMap<string, boolean>();
 								const { data: sanitizedMessage } = z.string().safeParse(formMessage);
 
 								if (!sanitizedMessage || sanitizedMessage.trim().length === 0) return;
-
-								chatContext.userHasScrolled = false;
-								scrollToBottom();
 							} catch (e) {
 								console.error(e);
 							}
@@ -317,11 +261,12 @@ let showDetails = new SvelteMap<string, boolean>();
 											{#if hasMessages}
 												<DropdownMenu.Item
 													onclick={async () => {
-														if (chatContext.chat?.messages) {
+														if (chatContext.newChat.messages) {
 															const chatTitle = chatContext.recentChats.find(
-																(c) => c.id === chatContext.id
+																(c) => c.id === chat.id
 															)?.title;
-															await shareChat(chatContext.chat.messages, chatTitle);
+
+															await shareChat(chat.messages, chatTitle);
 														}
 													}}
 												>
@@ -333,35 +278,12 @@ let showDetails = new SvelteMap<string, boolean>();
 
 											<DropdownMenu.Item
 												onclick={() => {
-													chatContext.newChat();
+													chatContext.resetNewChat();
 												}}
 											>
 												<Icons.Chat />
-												New Chat</DropdownMenu.Item
-											>
-											{#if chatContext.recentChats.length > 0}
-												<DropdownMenu.Separator />
-
-												<DropdownMenu.Label>Past Conversations</DropdownMenu.Label>
-
-												<DropdownMenu.List>
-													{#each chatContext.recentChats as chat (chat.id)}
-														<DropdownMenu.Item
-															onclick={() => {
-																chatContext.loadChat(chat.id);
-															}}
-														>
-															<span class="action-recent-chat-label">
-																{chat.title || '(Untitled)'}
-															</span>
-
-															{#snippet description()}
-																{formatChatDate(chat.updatedAt)}
-															{/snippet}
-														</DropdownMenu.Item>
-													{/each}
-												</DropdownMenu.List>
-											{/if}
+												New Chat
+											</DropdownMenu.Item>
 										</DropdownMenu.Content>
 									</DropdownMenu.Root>
 								</div>
@@ -377,14 +299,14 @@ let showDetails = new SvelteMap<string, boolean>();
 							/>
 
 							<div class="form-action">
-								{#if chatContext.chat?.status === 'streaming' || chatContext.chat?.status === 'submitted'}
+								{#if chat.status === 'streaming' || chat.status === 'submitted'}
 									<button
 										class="stop-process"
 										type="button"
 										onclick={async (e) => {
 											e.preventDefault();
 
-											chatContext.chat.stop();
+											chat.stop();
 										}}
 									>
 										<IconSmall.Stop />
@@ -410,17 +332,12 @@ let showDetails = new SvelteMap<string, boolean>();
 						{#if showChats}
 							<div class="chat-list" transition:slide={{ duration: 200, easing: circOut }}>
 								{#each chatContext.recentChats.slice(0, 5) as chat (chat.id)}
-									<button
-										class="chat-item"
-										onclick={() => {
-											chatContext.loadChat(chat.id);
-										}}
-									>
+									<a class="chat-item" href="/chat/{chat.id}">
 										<span class="chat--title">{chat.title || '(Untitled)'}</span>
 										<span class="chat--date" title={new Date(chat.updatedAt).toLocaleString()}
 											>{formatChatDate(chat.updatedAt)}</span
 										>
-									</button>
+									</a>
 								{/each}
 							</div>
 						{/if}
@@ -649,12 +566,6 @@ let showDetails = new SvelteMap<string, boolean>();
 		}
 	}
 
-	.action-recent-chat-label {
-		overflow: hidden;
-		text-overflow: ellipsis;
-		max-inline-size: 100%;
-	}
-
 	.staged-files {
 		display: flex;
 		flex-wrap: wrap;
@@ -725,7 +636,7 @@ let showDetails = new SvelteMap<string, boolean>();
 		}
 
 		.chat-list {
-			button {
+			a {
 				border-block-start: 1px solid color-mix(in srgb, var(--color-border-1) 50%, transparent);
 				display: flex;
 				justify-content: space-between;

@@ -42,15 +42,16 @@ const { open, menu, positioning, overlay } = getContext();
 		display: flex;
 		flex-direction: column;
 		outline: none;
-		opacity: 0;
-		overflow: hidden;
+		opacity: 1;
+		overflow: auto;
 		transform: translate3d(0, 0, 0);
-		visibility: hidden;
+		transition: opacity 100ms ease;
+		visibility: visible;
 
-		&.visible {
-			opacity: 1;
-			overflow: auto;
-			visibility: visible;
+		:global(body:has([role='dialog'][data-state='open'])) & {
+			opacity: 0;
+			overflow: hidden;
+			visibility: hidden;
 		}
 
 		&.placement--top {

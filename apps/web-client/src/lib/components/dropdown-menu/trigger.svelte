@@ -32,9 +32,15 @@ const { trigger } = getContext();
 <style>
 	button {
 		max-inline-size: 100%;
+		transition: opacity 100ms ease;
 
 		&:focus {
 			outline: none;
+		}
+
+		:global(body:has([role='dialog'][data-state='open'])) & {
+			opacity: 0;
+			visibility: hidden;
 		}
 	}
 </style>
