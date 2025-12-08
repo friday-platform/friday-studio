@@ -7,6 +7,7 @@ import { getAtlasHome } from "@atlas/utils/paths.server";
 import { load, parse } from "@std/dotenv";
 import { exists } from "@std/fs";
 import { dirname, join } from "@std/path";
+import { getVersionInfo } from "../../../utils/version.ts";
 import { displayDaemonStatus } from "../../utils/daemon-status.ts";
 import { errorOutput, infoOutput, successOutput } from "../../utils/output.ts";
 import type { YargsInstance } from "../../utils/yargs.ts";
@@ -282,6 +283,13 @@ export const handler = async (argv: StartArgs): Promise<void> => {
       // Re-exec with OTEL configured - this never returns
       await reExecWithOtel(atlasKey);
     }
+  }
+
+  // Set Sentry environment based on build type if not explicitly configured.
+  // Compiled binary defaults to "production", source code defaults to "local".
+  if (!Deno.env.get("SENTRY_ENVIRONMENT")) {
+    const { isCompiled } = getVersionInfo();
+    Deno.env.set("SENTRY_ENVIRONMENT", isCompiled ? "production" : "local");
   }
 
   // Initialize Sentry early for error tracking
