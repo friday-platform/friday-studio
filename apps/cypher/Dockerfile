@@ -11,22 +11,21 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 # Copy source code (from repo root)
-COPY apps/bounce ./apps/bounce
+COPY apps/cypher ./apps/cypher
 COPY pkg ./pkg
 
 # Build the application
-WORKDIR /build/apps/bounce
+WORKDIR /build/apps/cypher
 ARG GITHUB_SHA=unknown
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-X main.GitCommit=${GITHUB_SHA}" -o bounce .
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-X main.GitCommit=${GITHUB_SHA}" -o cypher .
 
 # Final stage
 FROM alpine:3.23.0
 
 RUN apk --no-cache add ca-certificates
 
-WORKDIR /app
+COPY --from=builder /build/apps/cypher/cypher /cypher
 
-# Copy the binary from builder
-COPY --from=builder /build/apps/bounce/bounce .
+USER 65534:65534
 
-CMD ["./bounce"]
+ENTRYPOINT ["/cypher"]

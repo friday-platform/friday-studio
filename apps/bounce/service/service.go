@@ -220,3 +220,12 @@ func (s *service) Serve() (*server.Config, <-chan error) {
 
 	return srv, errChan
 }
+
+// Close cleans up service resources.
+func (s *service) Close() error {
+	if s.signupDB != nil {
+		s.signupDB.Close()
+		s.Logger.Info("Closed database connection pool")
+	}
+	return nil
+}

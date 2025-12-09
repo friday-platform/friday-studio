@@ -26,3 +26,6 @@ jobs:
 
       - name: Build bounce service
         run: go build -v ./apps/bounce
+
+      - name: Build cypher service
+        run: go build -v ./apps/cypher

@@ -10,7 +10,7 @@ import (
 
 	"github.com/caarlos0/env/v11"
 	"github.com/joho/godotenv"
-	"github.com/tempestteam/atlas/apps/bounce/service"
+	"github.com/tempestteam/atlas/apps/cypher/service"
 	"github.com/tempestteam/atlas/pkg/metrics"
 	"github.com/tempestteam/atlas/pkg/profiler"
 	"github.com/tempestteam/atlas/pkg/server"
@@ -65,21 +65,9 @@ func main() {
 	metricsServer := metrics.StartServer(cfg.MetricsPort, cfg.TLSConfig)
 	svc.Logger.Info("Started metrics server", "port", cfg.MetricsPort)
 
-	// Set up signal handling for graceful shutdown and operations
+	// Set up signal handling for graceful shutdown
 	shutdownChan := make(chan os.Signal, 1)
 	signal.Notify(shutdownChan, syscall.SIGTERM, syscall.SIGINT)
-
-	hupChan := make(chan os.Signal, 1)
-	signal.Notify(hupChan, syscall.SIGHUP)
-
-	go func() {
-		for {
-			sig := <-hupChan
-			if sig == syscall.SIGHUP {
-				svc.Logger.Info("Received SIGHUP signal")
-			}
-		}
-	}()
 
 	// Start server
 	serverCfg, serverErrors := svc.Serve()
