@@ -2,6 +2,7 @@
 import { client, parseResult } from "@atlas/client/v2";
 import { ArtifactDataSchema } from "@atlas/core/artifacts";
 import { z } from "zod";
+import File from "$lib/components/primitives/file.svelte";
 import Schedule from "$lib/components/primitives/schedule.svelte";
 import Summary from "$lib/components/primitives/summary.svelte";
 import Table from "$lib/modules/messages/table.svelte";
@@ -52,6 +53,8 @@ $effect(() => {
 				<WorkspacePlan workspacePlan={artifact.data} />
 			{:else if artifact.type === 'table'}
 				<Table data={artifact.data} />
+			{:else if artifact.type === 'file'}
+				<File data={artifact.data} {artifactId} />
 			{/if}
 		</div>
 	{/if}

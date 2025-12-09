@@ -24,6 +24,8 @@
       "identifier": "fs:allow-read-text-file",
       "allow": [{ "path": "**/*" }, { "path": "$HOME/.atlas/**" }]
     },
+    { "identifier": "fs:allow-write-text-file", "allow": [{ "path": "$HOME/**/*" }] },
+    { "identifier": "fs:allow-app-read", "allow": [{ "path": "$HOME/**/*" }] },
     {
       "identifier": "fs:allow-exists",
       "allow": [{ "path": "**/*" }, { "path": "$HOME/.atlas/**" }]

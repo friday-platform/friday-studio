@@ -74,7 +74,7 @@ const { content, portalled, overlay, open } = getContext();
 		user-select: auto;
 
 		background: var(--color-surface-1);
-		border-radius: var(--radius-5);
+		border-radius: var(--radius-6);
 		box-shadow: var(--shadow-1);
 		display: flex;
 		flex-direction: column;

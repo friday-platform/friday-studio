@@ -6,6 +6,7 @@ import favicon from "$lib/assets/favicon.svg";
 import AppContainer from "$lib/components/app/container.svelte";
 import AppSidebar from "$lib/components/app/sidebar.svelte";
 import KeyboardListener from "$lib/components/keyboard-listener.svelte";
+import NotificationPortal from "$lib/components/notification/portal.svelte";
 import { setClientContext } from "$lib/modules/client/context.svelte";
 import { handleWorkspaceFileDrop } from "$lib/modules/spaces/utils.svelte";
 import WorkspaceDropHandler from "$lib/modules/spaces/workspace-drop-handler.svelte";
@@ -96,6 +97,8 @@ onDestroy(() => {
 		</main>
 	</AppContainer>
 </div>
+
+<NotificationPortal />
 
 <KeyboardListener />
 <WorkspaceDropHandler />

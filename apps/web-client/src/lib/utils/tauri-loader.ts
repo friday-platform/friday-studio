@@ -23,6 +23,7 @@ let _tauriWindow: typeof import("@tauri-apps/api/window") | undefined;
 let _tauriEvent: typeof import("@tauri-apps/api/event") | undefined;
 let _tauriOpener: typeof import("@tauri-apps/plugin-opener") | undefined;
 let _tauriNotification: typeof import("@tauri-apps/plugin-notification") | undefined;
+let _tauriFs: typeof import("@tauri-apps/plugin-fs") | undefined;
 
 let _initPromise: Promise<void> | undefined;
 
@@ -44,6 +45,7 @@ export async function initTauri(): Promise<void> {
       _tauriEvent,
       _tauriOpener,
       _tauriNotification,
+      _tauriFs,
     ] = await Promise.all([
       import("@tauri-apps/api/core"),
       import("@tauri-apps/api/app"),
@@ -52,6 +54,7 @@ export async function initTauri(): Promise<void> {
       import("@tauri-apps/api/event"),
       import("@tauri-apps/plugin-opener"),
       import("@tauri-apps/plugin-notification"),
+      import("@tauri-apps/plugin-fs"),
     ]);
   })();
 
@@ -94,4 +97,21 @@ export const requestPermission = __TAURI_BUILD__
 export const sendNotification = __TAURI_BUILD__
   ? (options: { title: string; body: string; sound?: string }) =>
       _tauriNotification?.sendNotification(options)
+  : undefined;
+
+// FS plugin
+export const writeTextFile = __TAURI_BUILD__
+  ? (path: string, contents: string, options?: { baseDir?: number }) =>
+      _tauriFs?.writeTextFile(path, contents, options)
+  : undefined;
+
+export const openFile = __TAURI_BUILD__
+  ? (path: string, options?: { read?: boolean; baseDir?: number }) => _tauriFs?.open(path, options)
+  : undefined;
+
+// BaseDirectory enum values (from @tauri-apps/plugin-fs)
+export const BaseDirectory = __TAURI_BUILD__
+  ? {
+      Download: 6, // BaseDirectory.Download value
+    }
   : undefined;

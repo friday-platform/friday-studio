@@ -92,6 +92,23 @@ const artifactsApp = daemonFactory
 
     return c.json({ revisions: result.data }, 200);
   })
+  /** Read file contents for a file artifact */
+  .get(
+    "/:id/contents",
+    zValidator("param", z.object({ id: z.string() })),
+    zValidator("query", GetArtifactQuery.optional()),
+    async (c) => {
+      const { id } = c.req.valid("param");
+      const query = c.req.valid("query");
+      const result = await ArtifactStorage.readFileContents({ id, revision: query?.revision });
+
+      if (!result.ok) {
+        return c.json({ error: result.error }, 400);
+      }
+
+      return c.json({ contents: result.data }, 200);
+    },
+  )
   /** List artifacts by workspace or chat */
   .get("/", zValidator("query", ListArtifactsQuery), async (c) => {
     const query = c.req.valid("query");

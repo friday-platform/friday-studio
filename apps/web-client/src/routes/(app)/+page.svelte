@@ -442,6 +442,10 @@ let showDetails = new SvelteMap<string, boolean>();
 	}
 
 	.message-parts {
+		display: flex;
+		flex-direction: column;
+		justify-content: start;
+		gap: var(--size-3);
 		margin-inline: auto;
 		inline-size: max-content;
 		min-inline-size: var(--size-160);
@@ -505,7 +509,7 @@ let showDetails = new SvelteMap<string, boolean>();
 
 		form {
 			background-color: var(--color-surface-1);
-			border-radius: var(--radius-5);
+			border-radius: var(--radius-6);
 			box-shadow: var(--shadow-1);
 			display: flex;
 			flex-direction: column;

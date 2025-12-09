@@ -354,6 +354,45 @@ async function doGetManyLatest(input: { ids: string[] }): Promise<Result<Artifac
   return success(artifacts);
 }
 
+const READABLE_MIME_TYPES = new Set(["application/json", "text/csv"]);
+
+/**
+ * Read file contents for a file artifact.
+ * Supports JSON and CSV files.
+ */
+async function readFileContents(input: {
+  id: string;
+  revision?: number;
+}): Promise<Result<string, string>> {
+  const artifactResult = await get(input);
+  if (!artifactResult.ok) {
+    return fail(artifactResult.error);
+  }
+
+  const artifact = artifactResult.data;
+  if (!artifact) {
+    return fail(`Artifact ${input.id} not found`);
+  }
+
+  if (artifact.data.type !== "file") {
+    return fail(`Artifact ${input.id} is not a file artifact`);
+  }
+
+  const { path, mimeType } = artifact.data.data;
+
+  if (!READABLE_MIME_TYPES.has(mimeType)) {
+    return fail(`Unsupported mime type for reading: ${mimeType}. Only JSON files are supported.`);
+  }
+
+  try {
+    const contents = await Deno.readTextFile(path);
+    return success(contents);
+  } catch (error) {
+    logger.error("Failed to read file contents", { path, error: stringifyError(error) });
+    return fail(`Failed to read file: ${stringifyError(error)}`);
+  }
+}
+
 export const ArtifactStorage = {
   create,
   update,
@@ -363,4 +402,5 @@ export const ArtifactStorage = {
   listByChat,
   listRevisions,
   deleteArtifact,
+  readFileContents,
 };
