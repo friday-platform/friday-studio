@@ -1,113 +1,24 @@
 <script lang="ts">
 import type { SlackSummaryData, SummaryData } from "@atlas/core/artifacts";
-import { Icons } from "$lib/components/icons";
+import Document from "$lib/components/primitives/document.svelte";
 import { markdownToHTML } from "$lib/modules/messages/markdown-utils";
 
 type Props = { data: SummaryData | SlackSummaryData; source?: "slack" };
 
 let { data, source }: Props = $props();
 const htmlContent = $derived(markdownToHTML(data));
-
-let isExpanded = $state(false);
 </script>
 
-<div class="wrapper">
-	<div class="component">
-		<header>
-			<h2>
-				{#if source === 'slack'}
-					<Icons.Slack />
-				{/if}
-
-				<span> Summary </span>
-			</h2>
-
-			<button onclick={() => (isExpanded = !isExpanded)}
-				>{isExpanded ? 'Collapse' : 'Expand'}</button
-			>
-		</header>
-		<div class="summary" class:expanded={isExpanded}>
-			{@html htmlContent}
-		</div>
+<Document name={source === 'slack' ? 'Slack Summary' : 'Search Result'}>
+	<div class="summary">
+		{@html htmlContent}
 	</div>
-</div>
+</Document>
 
 <style>
-	.wrapper {
-		inline-size: var(--size-160);
-		margin-inline: auto;
-		padding-inline: var(--size-8);
-	}
-
-	.component {
-		border: var(--size-px) solid color-mix(in oklch, var(--color-border-1), transparent 50%);
-		border-radius: var(--radius-4);
-		flex: none;
-		max-inline-size: 80%;
-		overflow: hidden;
-		position: relative;
-
-		header {
-			align-items: center;
-			display: flex;
-			font-size: var(--font-size-2);
-			justify-content: space-between;
-			padding-block-start: var(--size-5);
-			padding-inline: var(--size-5);
-			position: relative;
-			z-index: var(--layer-2);
-
-			h2 {
-				display: flex;
-				align-items: center;
-				gap: var(--size-2);
-
-				span {
-					font-weight: var(--font-weight-4-5);
-					opacity: 0.5;
-				}
-			}
-
-			button {
-				opacity: 0.8;
-
-				&:hover {
-					text-decoration: underline;
-				}
-			}
-		}
-	}
-
 	.summary {
 		& {
-			max-block-size: var(--size-24);
-			overflow: hidden;
-			padding-inline: var(--size-5);
-			padding-block: var(--size-2) var(--size-5);
-		}
-
-		&:after {
-			background: linear-gradient(
-				to top,
-				var(--color-surface-1) 0%,
-				color-mix(in oklch, var(--color-surface-1), transparent 100%)
-			);
-			content: '';
-			position: absolute;
-			inset-inline: 0;
-			inset-block-end: 0;
-			block-size: var(--size-20);
-			inline-size: 100%;
-			z-index: var(--layer-1);
-		}
-
-		&.expanded {
-			max-block-size: none;
-			overflow: visible;
-
-			&:after {
-				display: none;
-			}
+			padding: var(--size-6);
 		}
 
 		& :global(h1) {

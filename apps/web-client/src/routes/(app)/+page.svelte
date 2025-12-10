@@ -56,6 +56,8 @@ $effect(() => {
 });
 
 let showDetails = new SvelteMap<string, boolean>();
+
+$inspect(chatContext.newChat.status);
 </script>
 
 <div class="chat">
@@ -75,40 +77,44 @@ let showDetails = new SvelteMap<string, boolean>();
 					{/if}
 
 					{#each chatContext.newChat.messages as messageContainer (messageContainer.id)}
-						<div class="message-parts">
-							{#each messageContainer.parts as message, index (index)}
-								{@const formattedMessage = formatMessage(messageContainer, message)}
+						{@const messages = messageContainer.parts
+							.map((message) => formatMessage(messageContainer, message))
+							.filter((part) => part !== undefined)}
 
-								{#if formattedMessage}
-									{#if formattedMessage.type === 'request'}
-										<Request message={formattedMessage} />
-									{:else if formattedMessage.type === 'text'}
-										<Response message={formattedMessage} parts={messageContainer.parts} />
-									{:else if formattedMessage.type === 'tool_call' && formattedMessage.metadata?.toolName === 'display_artifact' && formattedMessage.metadata?.artifactId}
-										<DisplayArtifact artifactId={formattedMessage.metadata.artifactId as string} />
-									{:else if formattedMessage.type === 'error'}
-										<ErrorMessage message={formattedMessage} />
+						{#if messages.length > 0}
+							<div class="message-parts">
+								{#each messages as message, index (index)}
+									{#if message}
+										{#if message.type === 'request'}
+											<Request {message} />
+										{:else if message.type === 'text'}
+											<Response {message} parts={messageContainer.parts} />
+										{:else if message.type === 'tool_call' && message.metadata?.toolName === 'display_artifact' && message.metadata?.artifactId}
+											<DisplayArtifact artifactId={message.metadata.artifactId as string} />
+										{:else if message.type === 'error'}
+											<ErrorMessage {message} />
+										{/if}
 									{/if}
+								{/each}
+
+								{#if messageContainer.role === 'assistant' && messageContainer.parts.some((part) => part.type === 'text' && part.state === 'done')}
+									<div class="show-details" class:open={showDetails.get(messageContainer.id)}>
+										<ShowDetails
+											open={showDetails.get(messageContainer.id) ?? false}
+											onclick={() => {
+												const status = showDetails.get(messageContainer.id) ?? false;
+
+												showDetails.set(messageContainer.id, !status);
+											}}
+										/>
+									</div>
 								{/if}
-							{/each}
 
-							{#if messageContainer.role === 'assistant' && messageContainer.parts.some((part) => part.type === 'text' && part.state === 'done')}
-								<div class="show-details" class:open={showDetails.get(messageContainer.id)}>
-									<ShowDetails
-										open={showDetails.get(messageContainer.id) ?? false}
-										onclick={() => {
-											const status = showDetails.get(messageContainer.id) ?? false;
-
-											showDetails.set(messageContainer.id, !status);
-										}}
-									/>
-								</div>
-							{/if}
-
-							{#if showDetails.get(messageContainer.id)}
-								<Reasoning parts={messageContainer.parts} />
-							{/if}
-						</div>
+								{#if showDetails.get(messageContainer.id)}
+									<Reasoning parts={messageContainer.parts} />
+								{/if}
+							</div>
+						{/if}
 					{/each}
 
 					{#if chatContext.newChat.status === 'streaming' || chatContext.newChat.status === 'submitted'}
@@ -453,9 +459,12 @@ let showDetails = new SvelteMap<string, boolean>();
 	.messages-inner {
 		display: flex;
 		flex-direction: column;
+		inline-size: 100%;
 		gap: var(--size-8);
+		margin: 0 auto;
+		max-inline-size: var(--size-272);
 		overflow: hidden;
-		padding-inline: var(--size-8);
+		padding-inline: var(--size-16);
 	}
 
 	footer {

@@ -5,15 +5,13 @@ import { getAtlasDaemonUrl } from "@atlas/oapi-client";
 import { DefaultChatTransport } from "ai";
 import { onMount } from "svelte";
 import { SvelteMap } from "svelte/reactivity";
-import { fade } from "svelte/transition";
 import { z } from "zod";
-import { afterNavigate, beforeNavigate } from "$app/navigation";
+import { afterNavigate } from "$app/navigation";
 import { getAppContext, getFileType } from "$lib/app-context.svelte";
 import { getChatContext } from "$lib/chat-context.svelte";
 import { DropdownMenu } from "$lib/components/dropdown-menu";
 import { Icons } from "$lib/components/icons";
 import { IconSmall } from "$lib/components/icons/small";
-import Table from "$lib/components/primitives/table.svelte";
 import Textarea from "$lib/components/textarea.svelte";
 import DisplayArtifact from "$lib/modules/artifacts/display.svelte";
 import Outline from "$lib/modules/conversation/outline.svelte";
@@ -41,12 +39,7 @@ let message = $state<string>("");
 // Follow scroll handling
 let scrollContainer = $state<HTMLDivElement | null>(null);
 
-// Loading and visibility state
-let isVisible = $state(false);
-
 function setup() {
-  isVisible = true;
-
   if (chatContext.chats.has(data.chatId)) {
     chat = chatContext.chats.get(data.chatId);
   } else {
@@ -67,10 +60,6 @@ function setup() {
     chatContext.chats.set(data.chatId, chat);
   }
 }
-
-beforeNavigate(() => {
-  isVisible = false;
-});
 
 afterNavigate(setup);
 onMount(setup);
@@ -98,7 +87,7 @@ function handleScroll() {
 
 // Scroll to the bottom of the container
 function scrollToBottom() {
-  if (!scrollContainer || !isVisible) return;
+  if (!scrollContainer) return;
   scrollContainer.scrollTop = scrollContainer.scrollHeight;
 }
 
@@ -125,8 +114,8 @@ $effect(() => {
 let showDetails = new SvelteMap<string, boolean>();
 </script>
 
-{#if isVisible && chat}
-	<div class="chat" transition:fade={{ duration: 200 }}>
+{#if chat}
+	<div class="chat">
 		<div class="main">
 			<div class="messages" bind:this={scrollContainer} onscroll={handleScroll}>
 				<div
@@ -485,12 +474,12 @@ let showDetails = new SvelteMap<string, boolean>();
 	.messages-inner {
 		display: flex;
 		flex-direction: column;
+		inline-size: 100%;
 		gap: var(--size-8);
 		margin: 0 auto;
-		inline-size: 100%;
-		padding-inline: var(--size-16);
 		max-inline-size: var(--size-272);
 		overflow: hidden;
+		padding-inline: var(--size-16);
 	}
 
 	.interactive-container {
