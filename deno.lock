@@ -108,7 +108,7 @@
     "npm:jose@^6.1.3": "6.1.3",
     "npm:js-levenshtein@^1.1.6": "1.1.6",
     "npm:jsonrepair@^3.13.1": "3.13.1",
-    "npm:knip@5.73.0": "5.73.0_@types+node@24.2.0_typescript@5.9.3",
+    "npm:knip@5.73.1": "5.73.1_@types+node@24.2.0_typescript@5.9.3",
     "npm:lint-staged@^16.2.6": "16.2.7",
     "npm:lint-staged@^16.2.7": "16.2.7",
     "npm:minimatch@^10.1.1": "10.1.1",
@@ -4081,8 +4081,8 @@
     "kleur@4.1.5": {
       "integrity": "sha512-o+NO+8WrRiQEE4/7nwRJhN1HWpVmJm511pBHUxPLtp0BUISzlBplORYSmTclCnJvQq2tKu/sgl3xVpkc7ZWuQQ=="
     },
-    "knip@5.73.0_@types+node@24.2.0_typescript@5.9.3": {
-      "integrity": "sha512-L6zy2R/aAICy+lQWwdjl2TUY/kv2mqjkyKIL5+F4cUcn+3TQHjqzHen+N43S4oi4FyQ2qPJMNIODusr1vicTUA==",
+    "knip@5.73.1_@types+node@24.2.0_typescript@5.9.3": {
+      "integrity": "sha512-P2HTcbLcZY7v57xTS+Lx8F1bnhIzxJYF0NSVlX4ZwIRV7FcZNJseUKDRhA729TASANndDUBKxshg+3aaU05lkw==",
       "dependencies": [
         "@nodelib/fs.walk",
         "@types/node",
@@ -5573,7 +5573,7 @@
         "npm:ink@^6.5.1",
         "npm:jose@^6.1.3",
         "npm:js-levenshtein@^1.1.6",
-        "npm:knip@5.73.0",
+        "npm:knip@5.73.1",
         "npm:lint-staged@^16.2.7",
         "npm:react@^19.2.1",
         "npm:xstate@^5.25.0",
