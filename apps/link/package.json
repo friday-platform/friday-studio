@@ -14,7 +14,7 @@
     "@socotra/modelcontextprotocol-sdk": "^1.21.0",
     "@std/async": "npm:@jsr/std__async@^1.0.15",
     "@std/dotenv": "npm:@jsr/std__dotenv@^0.225.4",
-    "hono": "^4.10.6",
+    "hono": "^4.10.8",
     "nanoid": "^5.1.6",
     "oauth4webapi": "^3.8.3",
     "zod": "^4.1.13"
