@@ -17,7 +17,7 @@
     "hono": "^4.10.6",
     "nanoid": "^5.1.6",
     "oauth4webapi": "^3.8.3",
-    "zod": "^4.1.12"
+    "zod": "^4.1.13"
   },
   "devDependencies": {
     "@std/assert": "npm:@jsr/std__assert@^1.0.14",
