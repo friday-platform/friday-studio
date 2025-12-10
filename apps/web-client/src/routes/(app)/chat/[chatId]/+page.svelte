@@ -318,10 +318,7 @@ let showDetails = new SvelteMap<string, boolean>();
 												<DropdownMenu.Item
 													onclick={async () => {
 														if (chat?.messages) {
-															const chatTitle = chatContext.recentChats.find(
-																(c) => c.id === chatContext.id
-															)?.title;
-															await shareChat(chat.messages, chatTitle);
+															await shareChat(chat.messages, data.title);
 														}
 													}}
 												>

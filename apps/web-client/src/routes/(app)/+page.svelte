@@ -263,9 +263,9 @@ $inspect(chatContext.newChat.status);
 												<DropdownMenu.Item
 													onclick={async () => {
 														if (chatContext.newChat.messages) {
-															const chatTitle = chatContext.recentChats.find(
-																(c) => c.id === chat.id
-															)?.title;
+															const chatTitle =
+																chatContext.recentChats.find((c) => c.id === chat.id)?.title ??
+																'Untitled';
 
 															await shareChat(chat.messages, chatTitle);
 														}

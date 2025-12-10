@@ -18,8 +18,8 @@ if (!__DEV_MODE__) {
   document.head.appendChild(gaScript);
 
   window.dataLayer = window.dataLayer || [];
-  // eslint-disable-next-line prefer-rest-params -- matches Google's gtag snippet exactly
   window.gtag = function () {
+    // biome-ignore lint/complexity/noArguments: matches Google's gtag snippet exactly
     window.dataLayer.push(arguments);
   };
   window.gtag("js", new Date());

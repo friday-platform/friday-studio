@@ -1,3 +1,5 @@
+// HTML rendering utilities
+export { escapeHTML, renderTableHTML, renderWorkspacePlanHTML } from "./html.ts";
 // Domain model
 export type {
   Artifact,
@@ -7,7 +9,6 @@ export type {
   ArtifactType,
   CreateArtifactInput,
 } from "./model.ts";
-
 export {
   ArtifactDataInputSchema,
   ArtifactDataSchema,
@@ -26,6 +27,7 @@ export type {
   FileDataInput,
   SlackSummaryData,
   SummaryData,
+  TableData,
   WorkspacePlan,
 } from "./primitives.ts";
 export {
