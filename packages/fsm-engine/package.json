@@ -10,7 +10,7 @@
     "@atlas/utils": "workspace:*",
     "@modelcontextprotocol/sdk": "npm:@socotra/modelcontextprotocol-sdk@^1.18.0",
     "@std/assert": "npm:@jsr/std__assert@^1.0.0",
-    "@std/testing": "npm:@jsr/std__testing@^1.0.0",
+    "@std/testing": "npm:@jsr/std__testing@^1.0.16",
     "@std/yaml": "npm:@jsr/std__yaml@^1.0.9",
     "ai": "npm:ai@^5.0.93",
     "zod": "^4.1.13"

@@ -1,0 +1,27 @@
+{
+  "name": "@atlas/link",
+  "version": "0.0.1",
+  "type": "module",
+  "description": "Credential management service for Atlas",
+  "main": "src/index.ts",
+  "scripts": {
+    "start": "deno run --env-file --allow-all src/index.ts",
+    "dev": "LINK_DEV_MODE=true deno run --env-file --watch --allow-all src/index.ts"
+  },
+  "dependencies": {
+    "@atlas/utils": "workspace:*",
+    "@hono/zod-validator": "^0.7.5",
+    "@socotra/modelcontextprotocol-sdk": "^1.21.0",
+    "@std/async": "npm:@jsr/std__async@^1.0.15",
+    "@std/dotenv": "npm:@jsr/std__dotenv@^0.225.4",
+    "hono": "^4.10.6",
+    "nanoid": "^5.1.6",
+    "oauth4webapi": "^3.8.3",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@std/assert": "npm:@jsr/std__assert@^1.0.14",
+    "@std/testing": "npm:@jsr/std__testing@^1.0.16",
+    "jose": "^6.1.3"
+  }
+}

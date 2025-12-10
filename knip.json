@@ -44,6 +44,10 @@
     "packages/system": { "entry": ["**/*.test.ts"], "project": ["**/*.{ts,tsx,js,jsx}!"] },
     "packages/utils": { "project": ["**/*.{ts,tsx,js,jsx}!"] },
     "packages/workspace": { "project": ["src/**/*.{ts,tsx,js,jsx}!"] },
+    "apps/link": {
+      "entry": ["src/index.ts!", "src/**/*.test.ts", "tests/**/*.test.ts"],
+      "project": ["src/**/*.{ts,tsx,js,jsx}!", "tests/**/*.{ts,tsx,js,jsx}!"]
+    },
     "apps/atlasd": { "project": ["**/*.{ts,tsx,js,jsx}!"] },
     "apps/atlas-auth-ui": {
       "entry": ["src/app.html!", "src/routes/**/*.svelte!"],

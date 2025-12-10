@@ -12,11 +12,10 @@
   ],
   "scripts": {
     "lint": "deno lint",
-    "test": "deno test",
+    "test": "deno task test",
     "test:unit": "deno task test:unit",
     "test:integration": "deno task test:integration",
-    "knip": "knip",
-    "generate:package-json": "deno run --allow-read --allow-write scripts/generate-package-json.ts"
+    "knip": "knip"
   },
   "dependencies": {
     "@atlas/agent-sdk": "workspace:*",

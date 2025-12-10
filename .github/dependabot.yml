@@ -276,3 +276,39 @@ updates:
       - "dependencies"
       - "docker"
     rebase-strategy: "auto"
+
+  # Keep Docker dependencies up to date (for link service)
+  - package-ecosystem: "docker"
+    directory: "/apps/link"
+    schedule:
+      interval: "daily"
+      time: "09:00"
+    open-pull-requests-limit: 5
+    assignees:
+      - "ljagiello"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "docker"
+    rebase-strategy: "auto"
+
+  # Keep npm dependencies up to date (for link service)
+  - package-ecosystem: "npm"
+    directory: "/apps/link"
+    schedule:
+      interval: "daily"
+      time: "09:00"
+    versioning-strategy: "increase"
+    open-pull-requests-limit: 5
+    assignees:
+      - "ljagiello"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "npm"
+      - "link"
+    rebase-strategy: "auto"

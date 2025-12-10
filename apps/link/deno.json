@@ -1,0 +1,9 @@
+{
+  "name": "@atlas/link",
+  "version": "0.0.1",
+  "exports": "./src/index.ts",
+  "tasks": {
+    "start": "deno run --env-file --allow-all src/index.ts",
+    "dev": "LINK_DEV_MODE=true deno run --watch --env-file --allow-all src/index.ts"
+  }
+}

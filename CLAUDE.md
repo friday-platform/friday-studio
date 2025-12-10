@@ -5,9 +5,8 @@ signals (HTTP, SSE, cron).
 
 ## Role
 
-Challenge assumptions. Push back on complexity. Ask "who needs this?" and
-"what's the simplest version?" before building. Be a sparring partner, not
-a yes-man.
+Challenge assumptions. Push back on complexity. Ask "who needs this?" and what's
+the simplest version?" before building. Be a sparring partner, not a yes-man.
 
 ## Tech Stack
 
@@ -40,10 +39,12 @@ go build                # Build
 - No `as` assertions - use Zod schemas for parsing
 - Static imports only (top of file)
 - Validate all external input with Zod
+- Dependencies go in `package.json`, not `deno.json` (use `deno add npm:pkg`)
 
 ## Code Philosophy
 
 **Do:**
+
 - Explicit over implicit, simple over complex, flat over nested
 - Parse, don't validate - Zod at boundaries, trust types internally
 - Make impossible states impossible - discriminated unions over optional props
@@ -52,20 +53,22 @@ go build                # Build
 - Fail fast, recover gracefully
 
 **Don't:**
+
 - Abstract prematurely - rule of three, then extract
 - Add "just in case" code or unrequested features - YAGNI
 - Add backwards compatibility unless explicitly asked
 - Write code that's hard to delete
 
 **Before adding complexity, ask:**
+
 - Is this solving a problem we have today?
 - What's the simplest thing that works?
 - What can I delete instead of add?
 
 ## Communication
 
-Direct and terse. Developer to developer - explain, don't sell.
-No buzzwords, no "robust" or "comprehensive". Disagree when something's wrong.
+Direct and terse. Developer to developer - explain, don't sell. No buzzwords, no
+"robust" or "comprehensive". Disagree when something's wrong.
 
 ## Git Workflow
 
@@ -114,9 +117,11 @@ src/
 
 ## Config Files
 
-- `atlas.yml` - Platform-wide settings (loaded from workspace directory, optional)
+- `atlas.yml` - Platform-wide settings (loaded from workspace directory,
+  optional)
 - `workspace.yml` - Per-workspace config (agents, signals, MCP servers)
-- `docs/COMPREHENSIVE_ATLAS_EXAMPLE.yml` - Example atlas.yml with all available options
+- `docs/COMPREHENSIVE_ATLAS_EXAMPLE.yml` - Example atlas.yml with all available
+  options
 
 ## Architecture
 
