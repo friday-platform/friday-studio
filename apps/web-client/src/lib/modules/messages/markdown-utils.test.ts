@@ -74,8 +74,33 @@ Deno.test("astToHTML - bold text", () => {
   assertEquals(astToHTML(node), "<strong>bold</strong>");
 });
 
-Deno.test("astToHTML - headers to bold paragraphs", () => {
+Deno.test("astToHTML - h1 header", () => {
+  const node = { type: "ATXHeading1", content: "# Header", from: 0, to: 8, children: [] };
+  assertEquals(astToHTML(node), "<h1>Header</h1>");
+});
+
+Deno.test("astToHTML - h2 header", () => {
   const node = { type: "ATXHeading2", content: "## Header", from: 0, to: 9, children: [] };
+  assertEquals(astToHTML(node), "<h2>Header</h2>");
+});
+
+Deno.test("astToHTML - h3 header", () => {
+  const node = { type: "ATXHeading3", content: "### Header", from: 0, to: 10, children: [] };
+  assertEquals(astToHTML(node), "<h3>Header</h3>");
+});
+
+Deno.test("astToHTML - h4 header", () => {
+  const node = { type: "ATXHeading4", content: "#### Header", from: 0, to: 11, children: [] };
+  assertEquals(astToHTML(node), "<h4>Header</h4>");
+});
+
+Deno.test("astToHTML - h5 header to bold paragraph", () => {
+  const node = { type: "ATXHeading5", content: "##### Header", from: 0, to: 12, children: [] };
+  assertEquals(astToHTML(node), "<p><strong>Header</strong></p>");
+});
+
+Deno.test("astToHTML - h6 header to bold paragraph", () => {
+  const node = { type: "ATXHeading6", content: "###### Header", from: 0, to: 13, children: [] };
   assertEquals(astToHTML(node), "<p><strong>Header</strong></p>");
 });
 
@@ -114,12 +139,28 @@ Deno.test("markdownToHTML - list with inline formatting", () => {
   assertEquals(markdownToHTML(markdown), expected);
 });
 
-Deno.test("markdownToHTML - H1 to bold paragraph", () => {
-  assertEquals(markdownToHTML("# Header 1"), "<p><strong>Header 1</strong></p>");
+Deno.test("markdownToHTML - H1", () => {
+  assertEquals(markdownToHTML("# Header 1"), "<h1>Header 1</h1>");
 });
 
-Deno.test("markdownToHTML - H2 to bold paragraph", () => {
-  assertEquals(markdownToHTML("## Header 2"), "<p><strong>Header 2</strong></p>");
+Deno.test("markdownToHTML - H2", () => {
+  assertEquals(markdownToHTML("## Header 2"), "<h2>Header 2</h2>");
+});
+
+Deno.test("markdownToHTML - H3", () => {
+  assertEquals(markdownToHTML("### Header 3"), "<h3>Header 3</h3>");
+});
+
+Deno.test("markdownToHTML - H4", () => {
+  assertEquals(markdownToHTML("#### Header 4"), "<h4>Header 4</h4>");
+});
+
+Deno.test("markdownToHTML - H5 to bold paragraph", () => {
+  assertEquals(markdownToHTML("##### Header 5"), "<p><strong>Header 5</strong></p>");
+});
+
+Deno.test("markdownToHTML - H6 to bold paragraph", () => {
+  assertEquals(markdownToHTML("###### Header 6"), "<p><strong>Header 6</strong></p>");
 });
 
 Deno.test("markdownToHTML - horizontal rules removed", () => {

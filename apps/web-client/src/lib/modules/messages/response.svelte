@@ -13,34 +13,63 @@ const htmlContent = $derived(message.content ? markdownToHTML(message.content) :
 </script>
 
 <MessageWrapper>
-	<article class="message">
-		<div class="content">
-			{#if htmlContent}
-				{@html htmlContent}
-			{:else if message.content}
-				{message.content}
-			{/if}
-		</div>
+	<article class="content">
+		{#if htmlContent}
+			{@html htmlContent}
+		{:else if message.content}
+			{message.content}
+		{/if}
 	</article>
 </MessageWrapper>
 
 <style>
-	.message {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		gap: var(--size-6);
-	}
-
 	.content {
 		max-inline-size: 100%;
 
-		& :global(ol),
+		& :global(h1),
+		& :global(h2),
+		& :global(h3),
+		& :global(h4),
 		& :global(ul),
+		& :global(ol),
 		& :global(p) {
-			inline-size: var(--size-160);
-			margin-inline: auto;
-			padding-inline: var(--size-8);
+			max-inline-size: 80ch;
+		}
+
+		/* HEADING 1 */
+		& :global(h1) {
+			font-size: var(--font-size-7);
+			font-weight: var(--font-weight-6);
+			line-height: var(--font-lineheight-1);
+		}
+
+		& :global(h1 + h2) {
+			margin-block-start: var(--size-6);
+		}
+
+		/* HEADING 2 */
+		& :global(h2) {
+			font-size: var(--font-size-6);
+			font-weight: var(--font-weight-6);
+			line-height: var(--font-lineheight-1);
+		}
+
+		& :global(h2 + p),
+		& :global(h2 + ul),
+		& :global(h2 + ol) {
+			margin-block-start: var(--size-1);
+		}
+
+		/* HEADING 3 */
+		& :global(h3) {
+			font-size: var(--font-size-4);
+			font-weight: var(--font-weight-5);
+		}
+
+		/* HEADING 4 */
+		& :global(h4) {
+			font-size: var(--font-size-3);
+			font-weight: var(--font-weight-5);
 		}
 
 		& :global(p),
@@ -60,6 +89,10 @@ const htmlContent = $derived(message.content ? markdownToHTML(message.content) :
 		& :global(ol) {
 			&:global(:has(+ ul, + ol, + p)) {
 				margin-block-end: var(--size-1-5);
+			}
+
+			& :global(+ h2) {
+				margin-block-start: var(--size-6);
 			}
 		}
 

@@ -6,7 +6,6 @@ import { DropdownMenu } from "$lib/components/dropdown-menu";
 import { Icons } from "$lib/components/icons";
 import { IconSmall } from "$lib/components/icons/small";
 import { toast } from "$lib/components/notification/notification.svelte";
-import FlexibleContainer from "$lib/modules/messages/flexible-container.svelte";
 import { copyToClipboard, downloadCsv, downloadJson, getUniqueFileName } from "$lib/utils/files";
 import { BaseDirectory, openFile, openPath, writeTextFile } from "$lib/utils/tauri-loader";
 
@@ -71,78 +70,77 @@ async function handleOpenInFinder(savedFileName: string) {
 </script>
 
 {#if data}
-	<FlexibleContainer>
-		<article class="container" {...$root} use:root>
-			<header>
-				<DropdownMenu.Root
-					positioning={{
-						placement: 'bottom-end'
-					}}
-				>
-					<DropdownMenu.Trigger>
-						<h2>{fileName} <IconSmall.CaretDown /></h2>
-					</DropdownMenu.Trigger>
+	<article class="container" {...$root} use:root>
+		<header>
+			<DropdownMenu.Root
+				positioning={{
+					placement: 'bottom-end'
+				}}
+			>
+				<DropdownMenu.Trigger>
+					<h2>{fileName} <IconSmall.CaretDown /></h2>
+				</DropdownMenu.Trigger>
 
-					<DropdownMenu.Content>
-						<DropdownMenu.List>
-							<DropdownMenu.Item
-								onclick={async () => {
-									const content = await fileContents;
+				<DropdownMenu.Content>
+					<DropdownMenu.List>
+						<DropdownMenu.Item
+							onclick={async () => {
+								const content = await fileContents;
 
-									handleDownload(content);
-								}}
-							>
-								Download File
-							</DropdownMenu.Item>
-							<DropdownMenu.Separator />
-							<DropdownMenu.Label>Copy</DropdownMenu.Label>
-							<DropdownMenu.Item
-								onclick={async () => {
-									const content = await fileContents;
-									copyToClipboard(content);
-								}}
-							>
-								Text
-							</DropdownMenu.Item>
-							<DropdownMenu.Item
-								onclick={() => {
-									copyToClipboard(fileName);
-								}}
-							>
-								File Name
-							</DropdownMenu.Item>
-						</DropdownMenu.List>
-					</DropdownMenu.Content>
-				</DropdownMenu.Root>
-			</header>
+								handleDownload(content);
+							}}
+						>
+							Download File
+						</DropdownMenu.Item>
+						<DropdownMenu.Separator />
+						<DropdownMenu.Label>Copy</DropdownMenu.Label>
+						<DropdownMenu.Item
+							onclick={async () => {
+								const content = await fileContents;
+								copyToClipboard(content);
+							}}
+						>
+							Text
+						</DropdownMenu.Item>
+						<DropdownMenu.Item
+							onclick={() => {
+								copyToClipboard(fileName);
+							}}
+						>
+							File Name
+						</DropdownMenu.Item>
+					</DropdownMenu.List>
+				</DropdownMenu.Content>
+			</DropdownMenu.Root>
+		</header>
 
-			<div class="contents" use:content {...$content} class:expanded={$open}>
-				{#await fileContents}
-					<p class="loading">Loading...</p>
-				{:then content}
-					<pre><code>{content}</code></pre>
-				{:catch error}
-					<p class="error">{error}</p>
-				{/await}
+		<div class="contents" use:content {...$content} class:expanded={$open}>
+			{#await fileContents}
+				<p class="loading">Loading...</p>
+			{:then content}
+				<pre><code>{content}</code></pre>
+			{:catch error}
+				<p class="error">{error}</p>
+			{/await}
+		</div>
+
+		{#if !$open}
+			<div class="expand">
+				<button type="button" {...$trigger} use:trigger>
+					<Icons.DoubleArrow />
+					Expand
+				</button>
 			</div>
-
-			{#if !$open}
-				<div class="expand">
-					<button type="button" {...$trigger} use:trigger>
-						<Icons.DoubleArrow />
-						Expand
-					</button>
-				</div>
-			{/if}
-		</article>
-	</FlexibleContainer>
+		{/if}
+	</article>
 {/if}
 
 <style>
 	article {
 		background-color: var(--color-surface-2);
 		border-radius: var(--radius-6);
-		max-inline-size: calc(var(--size-160) - var(--size-16));
+		max-inline-size: 100%;
+		inline-size: fit-content;
 		overflow: hidden;
 		padding: var(--size-0-5);
 		position: relative;

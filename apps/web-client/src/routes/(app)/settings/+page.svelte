@@ -204,7 +204,7 @@ function showMessage(msg: string) {
 
 	h1 {
 		color: var(--color-text);
-		font-size: var(--font-size-7);
+		font-size: var(--font-size-8);
 		font-weight: var(--font-weight-6);
 		line-height: var(--font-lineheight-1);
 		font-weight: 600;

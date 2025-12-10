@@ -19,7 +19,6 @@ const { onclick, open }: { onclick: () => void; open: boolean } = $props();
 		font-size: var(--font-size-2);
 		font-weight: var(--font-weight-5);
 		margin-block-start: var(--size-2);
-		margin-inline: var(--size-8);
 		transition: opacity 250ms ease;
 
 		& :global(svg) {

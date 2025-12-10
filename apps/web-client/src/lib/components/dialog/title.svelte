@@ -14,7 +14,7 @@ const { title } = getContext();
 
 <style>
 	h2 {
-		font-size: var(--font-size-6);
+		font-size: var(--font-size-7);
 		font-weight: var(--font-weight-6);
 	}
 </style>

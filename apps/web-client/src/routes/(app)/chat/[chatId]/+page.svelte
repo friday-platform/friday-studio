@@ -13,21 +13,20 @@ import { getChatContext } from "$lib/chat-context.svelte";
 import { DropdownMenu } from "$lib/components/dropdown-menu";
 import { Icons } from "$lib/components/icons";
 import { IconSmall } from "$lib/components/icons/small";
+import Table from "$lib/components/primitives/table.svelte";
 import Textarea from "$lib/components/textarea.svelte";
 import DisplayArtifact from "$lib/modules/artifacts/display.svelte";
 import Outline from "$lib/modules/conversation/outline.svelte";
 import ErrorMessage from "$lib/modules/messages/error-message.svelte";
-import FlexibleContainer from "$lib/modules/messages/flexible-container.svelte";
 import { formatMessage } from "$lib/modules/messages/format";
 import Progress from "$lib/modules/messages/progress.svelte";
 import Reasoning from "$lib/modules/messages/reasoning.svelte";
 import Request from "$lib/modules/messages/request.svelte";
 import Response from "$lib/modules/messages/response.svelte";
 import ShowDetails from "$lib/modules/messages/show-details.svelte";
-import Table from "$lib/modules/messages/table.svelte";
 import { shareChat } from "$lib/utils/share-chat";
 import { invoke } from "$lib/utils/tauri-loader";
-import type { PageData, Snapshot } from "./$types";
+import type { PageData } from "./$types";
 
 const { data }: { data: PageData } = $props();
 
@@ -137,59 +136,49 @@ let showDetails = new SvelteMap<string, boolean>();
 					)}
 				>
 					<div class="messages-inner">
-						<FlexibleContainer>
-							<div class="first-message">
-								<h2>Welcome</h2>
-								<p>
-									Welcome to Atlas. I can help turn your ideas into action. <br />What would you
-									like to work on today?
-								</p>
-							</div>
-						</FlexibleContainer>
+						<div class="first-message">
+							<h2>{data.title ?? 'Untitled'}</h2>
+						</div>
 
 						{#each chat.messages as messageContainer, index ((messageContainer.id, index))}
-							<div class="message-parts">
-								{#each messageContainer.parts as message, index (index)}
-									{@const formattedMessage = formatMessage(messageContainer, message)}
+							{@const messages = messageContainer.parts
+								.map((message) => formatMessage(messageContainer, message))
+								.filter((part) => part !== undefined)}
 
-									{#if formattedMessage}
-										{#if formattedMessage.type === 'request'}
-											<Request message={formattedMessage} />
-										{:else if formattedMessage.type === 'text'}
-											<Response message={formattedMessage} parts={messageContainer.parts} />
-										{:else if formattedMessage.type === 'tool_call' && formattedMessage.metadata?.toolName === 'table_output' && formattedMessage.metadata?.result}
-											<Table
-												data={formattedMessage.metadata.result as {
-													data: { headers: string[]; rows: Record[] };
+							{#if messages.length > 0}
+								<div class="message-parts">
+									{#each messages as message, index (index)}
+										{#if message}
+											{#if message.type === 'request'}
+												<Request {message} />
+											{:else if message.type === 'text'}
+												<Response {message} parts={messageContainer.parts} />
+											{:else if message.type === 'tool_call' && message.metadata?.toolName === 'display_artifact' && message.metadata?.artifactId}
+												<DisplayArtifact artifactId={message.metadata.artifactId as string} />
+											{:else if message.type === 'error'}
+												<ErrorMessage {message} />
+											{/if}
+										{/if}
+									{/each}
+
+									{#if messageContainer.role === 'assistant' && messageContainer.parts.some((part) => part.type === 'text' && part.state === 'done')}
+										<div class="show-details" class:open={showDetails.get(messageContainer.id)}>
+											<ShowDetails
+												open={showDetails.get(messageContainer.id) ?? false}
+												onclick={() => {
+													const status = showDetails.get(messageContainer.id) ?? false;
+
+													showDetails.set(messageContainer.id, !status);
 												}}
 											/>
-										{:else if formattedMessage.type === 'tool_call' && formattedMessage.metadata?.toolName === 'display_artifact' && formattedMessage.metadata?.artifactId}
-											<DisplayArtifact
-												artifactId={formattedMessage.metadata.artifactId as string}
-											/>
-										{:else if formattedMessage.type === 'error'}
-											<ErrorMessage message={formattedMessage} />
-										{/if}
+										</div>
 									{/if}
-								{/each}
 
-								{#if messageContainer.role === 'assistant' && messageContainer.parts.some((part) => part.type === 'text' && part.state === 'done')}
-									<div class="show-details" class:open={showDetails.get(messageContainer.id)}>
-										<ShowDetails
-											open={showDetails.get(messageContainer.id) ?? false}
-											onclick={() => {
-												const status = showDetails.get(messageContainer.id) ?? false;
-
-												showDetails.set(messageContainer.id, !status);
-											}}
-										/>
-									</div>
-								{/if}
-
-								{#if showDetails.get(messageContainer.id)}
-									<Reasoning parts={messageContainer.parts} />
-								{/if}
-							</div>
+									{#if showDetails.get(messageContainer.id)}
+										<Reasoning parts={messageContainer.parts} />
+									{/if}
+								</div>
+							{/if}
 						{/each}
 
 						{#if chat.status === 'streaming' || chat.status === 'submitted'}
@@ -358,8 +347,8 @@ let showDetails = new SvelteMap<string, boolean>();
 													}}
 												>
 													<Icons.Chat />
-													New Chat</DropdownMenu.Item
-												>
+													New Chat
+												</DropdownMenu.Item>
 											</DropdownMenu.Content>
 										</DropdownMenu.Root>
 									</div>
@@ -425,16 +414,10 @@ let showDetails = new SvelteMap<string, boolean>();
 
 	.first-message {
 		h2 {
-			font-size: var(--font-size-7);
+			font-size: var(--font-size-8);
 			font-weight: var(--font-weight-6);
 			line-height: var(--font-lineheight-1);
 			margin-block-end: var(--size-2);
-		}
-
-		p {
-			font-size: var(--font-size-5);
-			font-weight: var(--font-weight-4);
-			opacity: 0.8;
 		}
 	}
 
@@ -477,14 +460,14 @@ let showDetails = new SvelteMap<string, boolean>();
 
 		&.has-outline {
 			grid-template-columns: 1fr var(--size-56);
-			gap: var(--size-12);
 		}
 	}
 
 	.message-parts {
-		margin-inline: auto;
-		inline-size: max-content;
-		min-inline-size: var(--size-160);
+		display: flex;
+		flex-direction: column;
+		inline-size: 100%;
+		gap: var(--size-4);
 	}
 
 	.show-details {
@@ -502,29 +485,31 @@ let showDetails = new SvelteMap<string, boolean>();
 	.messages-inner {
 		display: flex;
 		flex-direction: column;
-		gap: var(--size-4);
+		gap: var(--size-8);
+		margin: 0 auto;
+		inline-size: 100%;
+		padding-inline: var(--size-16);
+		max-inline-size: var(--size-272);
 		overflow: hidden;
 	}
 
 	.interactive-container {
 		--local__translate-y: var(--size-4);
-		--local__translate-x: calc(calc(var(--size-28) * -1) - 50%);
-		inline-size: 100%;
-		margin-inline: auto;
-		max-inline-size: var(--size-160);
-		overflow: visible;
-		padding-inline: var(--size-8);
-		position: fixed;
-		inset-inline-start: calc(var(--size-56) + 50%);
 		inset-block-end: var(--size-16);
+		inset-inline-start: calc(var(--size-56));
+		inset-inline-end: var(--size-16);
+		position: fixed;
+		transition: all 450ms ease-in-out;
 		z-index: var(--layer-2);
-		transform: translateY(var(--local__translate-y)) translateX(var(--local__translate-x));
-		transition: transform 450ms ease-in-out;
 
 		&.has-outline {
-			--local__offset: calc(calc(var(--size-56) + var(--size-6)) * -1);
-			--local__translate-x: calc(var(--local__offset) - 50%);
-			transition: transform 450ms ease-in-out;
+			inset-inline-end: calc(var(--size-56));
+		}
+
+		.interactive-container-int {
+			margin-inline: auto;
+			max-inline-size: var(--size-272);
+			padding-inline: var(--size-16);
 		}
 
 		form {

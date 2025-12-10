@@ -238,9 +238,45 @@ export function astToHTML(node: ASTNode | null, parentType: string = ""): string
 
     // Convert headers to bold paragraphs
     case "ATXHeading1":
+      // Headers have their text in children, skipping the HeaderMark
+      if (node.children.length > 0) {
+        const textChildren = node.children.filter((child) => child.type !== "HeaderMark");
+        if (textChildren.length > 0) {
+          const headerText = textChildren.map((child) => astToHTML(child, parentType)).join("");
+          return `<h1>${headerText}</h1>`;
+        }
+      }
+      return `<h1>${cleanMarkdownSyntax(node)}</h1>`;
     case "ATXHeading2":
+      // Headers have their text in children, skipping the HeaderMark
+      if (node.children.length > 0) {
+        const textChildren = node.children.filter((child) => child.type !== "HeaderMark");
+        if (textChildren.length > 0) {
+          const headerText = textChildren.map((child) => astToHTML(child, parentType)).join("");
+          return `<h2>${headerText}</h2>`;
+        }
+      }
+      return `<h2>${cleanMarkdownSyntax(node)}</h2>`;
     case "ATXHeading3":
+      // Headers have their text in children, skipping the HeaderMark
+      if (node.children.length > 0) {
+        const textChildren = node.children.filter((child) => child.type !== "HeaderMark");
+        if (textChildren.length > 0) {
+          const headerText = textChildren.map((child) => astToHTML(child, parentType)).join("");
+          return `<h3>${headerText}</h3>`;
+        }
+      }
+      return `<h3>${cleanMarkdownSyntax(node)}</h3>`;
     case "ATXHeading4":
+      // Headers have their text in children, skipping the HeaderMark
+      if (node.children.length > 0) {
+        const textChildren = node.children.filter((child) => child.type !== "HeaderMark");
+        if (textChildren.length > 0) {
+          const headerText = textChildren.map((child) => astToHTML(child, parentType)).join("");
+          return `<h4>${headerText}</h4>`;
+        }
+      }
+      return `<h4>${cleanMarkdownSyntax(node)}</h4>`;
     case "ATXHeading5":
     case "ATXHeading6":
       // Headers have their text in children, skipping the HeaderMark

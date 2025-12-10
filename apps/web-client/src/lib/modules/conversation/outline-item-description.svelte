@@ -21,7 +21,18 @@ onMount(() => {
 });
 </script>
 
-<div class:expanded role="button" onclick={() => (expanded = !expanded)}>
+<div
+	class:expanded
+	role="button"
+	tabindex="0"
+	onclick={() => (expanded = !expanded)}
+	onkeydown={(e) => {
+		if (e.key === 'Enter' || e.key === ' ') {
+			e.preventDefault();
+			expanded = !expanded;
+		}
+	}}
+>
 	<p bind:this={node}>
 		{content}
 	</p>

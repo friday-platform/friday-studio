@@ -85,7 +85,7 @@ const timelineData = $derived(parseSessionTimeline(data.session.metadata, data.s
 	}
 
 	h1 {
-		font-size: var(--font-size-7);
+		font-size: var(--font-size-8);
 		font-weight: var(--font-weight-7);
 		margin-block: var(--size-3) var(--size-1);
 		line-height: var(--font-lineheight-1);

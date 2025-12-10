@@ -1,47 +1,32 @@
 <script lang="ts">
-import FlexibleContainer from "$lib/modules/messages/flexible-container.svelte";
-import MessageWrapper from "./wrapper.svelte";
+import Document from "$lib/components/primitives/document.svelte";
 
 const { data }: { data: { headers: string[]; rows: Record<string, string | number>[] } } = $props();
 </script>
 
-<MessageWrapper>
-	<div class="table-container">
-		<FlexibleContainer>
-			{#if data}
-				<table>
-					<thead>
-						<tr>
-							{#each data.headers as header}
-								<th>{header}</th>
-							{/each}
-						</tr>
-					</thead>
-					<tbody>
-						{#each data.rows as row}
-							<tr>
-								{#each data.headers as header}
-									<td>{row[header]}</td>
-								{/each}
-							</tr>
-						{/each}
-					</tbody>
-				</table>
-			{/if}
-		</FlexibleContainer>
-	</div>
-</MessageWrapper>
+<Document name="Table">
+	<table>
+		<thead>
+			<tr>
+				{#each data.headers as header}
+					<th>{header}</th>
+				{/each}
+			</tr>
+		</thead>
+		<tbody>
+			{#each data.rows as row}
+				<tr>
+					{#each data.headers as header}
+						<td>{row[header]}</td>
+					{/each}
+				</tr>
+			{/each}
+		</tbody>
+	</table>
+</Document>
 
 <style>
-	.table-container {
-		margin-block-start: var(--size-2);
-		max-inline-size: 100%;
-		overflow-x: auto;
-		scrollbar-width: thin;
-	}
-
 	table {
-		border: var(--size-px) solid var(--color-border-1);
 		border-collapse: separate;
 		border-spacing: 0;
 		border-radius: var(--radius-3);

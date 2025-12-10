@@ -13,7 +13,6 @@ import Textarea from "$lib/components/textarea.svelte";
 import DisplayArtifact from "$lib/modules/artifacts/display.svelte";
 import Outline from "$lib/modules/conversation/outline.svelte";
 import ErrorMessage from "$lib/modules/messages/error-message.svelte";
-import FlexibleContainer from "$lib/modules/messages/flexible-container.svelte";
 import { formatMessage } from "$lib/modules/messages/format";
 import Progress from "$lib/modules/messages/progress.svelte";
 import Reasoning from "$lib/modules/messages/reasoning.svelte";
@@ -69,15 +68,11 @@ let showDetails = new SvelteMap<string, boolean>();
 				)}
 			>
 				<div class="messages-inner">
-					<FlexibleContainer>
+					{#if chatContext.newChat.messages.length === 0}
 						<div class="first-message">
-							<h2>Welcome</h2>
-							<p>
-								Welcome to Atlas. I can help turn your ideas into action. <br />What would you like
-								to work on today?
-							</p>
+							<p>What would you like to work on today?</p>
 						</div>
-					</FlexibleContainer>
+					{/if}
 
 					{#each chatContext.newChat.messages as messageContainer (messageContainer.id)}
 						<div class="message-parts">
@@ -380,16 +375,10 @@ let showDetails = new SvelteMap<string, boolean>();
 	}
 
 	.first-message {
-		h2 {
-			font-size: var(--font-size-7);
-			font-weight: var(--font-weight-6);
-			line-height: var(--font-lineheight-1);
-			margin-block-end: var(--size-2);
-		}
-
 		p {
-			font-size: var(--font-size-5);
-			font-weight: var(--font-weight-4);
+			font-size: var(--font-size-8);
+			font-weight: var(--font-weight-5);
+			text-align: center;
 			opacity: 0.8;
 		}
 	}
@@ -442,13 +431,11 @@ let showDetails = new SvelteMap<string, boolean>();
 	}
 
 	.message-parts {
+		inline-size: 100%;
 		display: flex;
 		flex-direction: column;
 		justify-content: start;
 		gap: var(--size-3);
-		margin-inline: auto;
-		inline-size: max-content;
-		min-inline-size: var(--size-160);
 	}
 
 	.show-details {
@@ -466,8 +453,9 @@ let showDetails = new SvelteMap<string, boolean>();
 	.messages-inner {
 		display: flex;
 		flex-direction: column;
-		gap: var(--size-4);
+		gap: var(--size-8);
 		overflow: hidden;
+		padding-inline: var(--size-8);
 	}
 
 	footer {
@@ -485,17 +473,17 @@ let showDetails = new SvelteMap<string, boolean>();
 
 	.interactive-container {
 		--local__translate-y: 0;
-		--local__translate-x: 0;
+
 		inline-size: 100%;
-		margin-inline: auto;
+		inset-block-end: 0;
 		margin-block-end: auto;
+		margin-inline: auto;
 		max-inline-size: var(--size-160);
 		overflow: visible;
 		padding-inline: var(--size-8);
 		position: sticky;
-		inset-block-end: 0;
+		transform: translateY(var(--local__translate-y));
 		z-index: var(--layer-2);
-		transform: translateY(var(--local__translate-y)) translateX(var(--local__translate-x));
 
 		.has-messages & {
 			--local__translate-y: var(--size-4);

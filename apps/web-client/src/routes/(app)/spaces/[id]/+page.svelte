@@ -92,7 +92,7 @@ function pluralize(count: number, singular: string, plural: string) {
 	}
 
 	h1 {
-		font-size: var(--font-size-7);
+		font-size: var(--font-size-8);
 		font-weight: var(--font-weight-7);
 		margin-bottom: var(--size-4);
 	}

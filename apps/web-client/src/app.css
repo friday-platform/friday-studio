@@ -71,6 +71,7 @@ svg {
   --size-150: calc(37.5rem * var(--size-scale));
   --size-160: calc(40rem * var(--size-scale));
   --size-216: calc(54rem * var(--size-scale));
+  --size-272: calc(68rem * var(--size-scale));
 
   /* Border radius */
   --radius-1: calc(0.25rem * var(--radius-scale));
@@ -101,7 +102,8 @@ svg {
   --font-size-4: calc(0.875rem * var(--text-scale));
   --font-size-5: calc(0.9375rem * var(--text-scale));
   --font-size-6: calc(1.125rem * var(--text-scale));
-  --font-size-7: calc(1.625rem * var(--text-scale));
+  --font-size-7: calc(1.375rem * var(--text-scale));
+  --font-size-8: calc(1.625rem * var(--text-scale));
 
   /* Font weight */
   --font-weight-4: 400;

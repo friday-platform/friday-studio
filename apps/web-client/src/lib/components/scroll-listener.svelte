@@ -62,14 +62,18 @@ $effect(() => {
 
   if (!container) return;
 
-  container.addEventListener("scroll", () => {
+  const listener = () => {
     if (timer) {
       clearTimeout(timer);
     }
+
     timer = setTimeout(() => checkObserverPosition(), 1000);
-  });
+  };
+
+  container.addEventListener("scroll", listener);
 
   return () => {
+    container.removeEventListener("scroll", listener);
     clearTimeout(timer);
   };
 });

@@ -113,10 +113,11 @@ let views = new SvelteMap<number, boolean>();
 		border-inline-start: 1.5px solid var(--color-border-1);
 		display: flex;
 		flex-direction: column;
-		margin-inline: var(--size-9);
+		margin-inline: var(--size-1);
 		padding-inline: var(--size-1);
 		margin-block-start: var(--size-3);
-		max-inline-size: calc(var(--size-160) - var(--size-18));
+		inline-size: calc(100% - var(--size-2));
+		max-inline-size: var(--size-160);
 
 		div {
 			&.padded {

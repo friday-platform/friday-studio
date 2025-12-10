@@ -1,6 +1,5 @@
 <script lang="ts">
 import { type CalendarSchedule, CalendarScheduleSchema } from "@atlas/core/artifacts";
-import FlexibleContainer from "$lib/modules/messages/flexible-container.svelte";
 
 type Event = {
   name: string;
@@ -133,61 +132,59 @@ function hasConflictingEvents(id: string, start: number, end: number) {
 {/snippet}
 
 {#if parsedEvents.size > 0}
-	<FlexibleContainer>
-		<div class="component">
-			<header>
-				{#if parsedEvents && parsedEvents.size > 0}
-					{@const dateObj = new Date(Array.from(parsedEvents.values())[0].date)}
-					<h2>{dateObj.toLocaleDateString(undefined, { weekday: 'long' })}</h2>
-					<time>{dateObj.toLocaleDateString(undefined, { month: 'long', day: 'numeric' })}</time>
-				{/if}
+	<div class="component">
+		<header>
+			{#if parsedEvents && parsedEvents.size > 0}
+				{@const dateObj = new Date(Array.from(parsedEvents.values())[0].date)}
+				<h2>{dateObj.toLocaleDateString(undefined, { weekday: 'long' })}</h2>
+				<time>{dateObj.toLocaleDateString(undefined, { month: 'long', day: 'numeric' })}</time>
+			{/if}
 
-				{#if source}
-					<svelte:element this={sourceUrl ? 'a' : 'span'} href={sourceUrl} target="_blank"
-						>{source}</svelte:element
-					>
-				{/if}
-			</header>
+			{#if source}
+				<svelte:element this={sourceUrl ? 'a' : 'span'} href={sourceUrl} target="_blank"
+					>{source}</svelte:element
+				>
+			{/if}
+		</header>
 
-			<div class="schedule" style:--block-count={blocks * 4}>
-				<div class="hours">
-					{#each Array.from({ length: blocks }, (_, i) => i + startTime) as time}
-						{@render hour(time)}
-					{/each}
-				</div>
-
-				<div class="events" bind:this={eventsContainer}>
-					{#each parsedEvents as item}
-						{@render event(item)}
-					{/each}
-				</div>
-
-				{#if currentTime.getHours() + currentTime.getMinutes() / 60 - startTime > 0 && endTime > currentTime.getHours() + currentTime.getMinutes() / 60}
-					<div
-						class="current-time"
-						style:--position={currentTime.getHours() + currentTime.getMinutes() / 60 - startTime}
-					>
-						<time>
-							<svg
-								width="16"
-								height="16"
-								viewBox="0 0 16 16"
-								fill="none"
-								xmlns="http://www.w3.org/2000/svg"
-							>
-								<path
-									d="M-5.1656e-07 8L3.76001 5.64999C5.60579 4.49638 8 5.82337 8 8C8 10.1766 5.60579 11.5036 3.76001 10.35L-5.1656e-07 8Z"
-									fill="currentColor"
-								/>
-							</svg>
-
-							{currentTime.toLocaleTimeString(undefined, { hour: 'numeric', minute: 'numeric' })}
-						</time>
-					</div>
-				{/if}
+		<div class="schedule" style:--block-count={blocks * 4}>
+			<div class="hours">
+				{#each Array.from({ length: blocks }, (_, i) => i + startTime) as time}
+					{@render hour(time)}
+				{/each}
 			</div>
+
+			<div class="events" bind:this={eventsContainer}>
+				{#each parsedEvents as item}
+					{@render event(item)}
+				{/each}
+			</div>
+
+			{#if currentTime.getHours() + currentTime.getMinutes() / 60 - startTime > 0 && endTime > currentTime.getHours() + currentTime.getMinutes() / 60}
+				<div
+					class="current-time"
+					style:--position={currentTime.getHours() + currentTime.getMinutes() / 60 - startTime}
+				>
+					<time>
+						<svg
+							width="16"
+							height="16"
+							viewBox="0 0 16 16"
+							fill="none"
+							xmlns="http://www.w3.org/2000/svg"
+						>
+							<path
+								d="M-5.1656e-07 8L3.76001 5.64999C5.60579 4.49638 8 5.82337 8 8C8 10.1766 5.60579 11.5036 3.76001 10.35L-5.1656e-07 8Z"
+								fill="currentColor"
+							/>
+						</svg>
+
+						{currentTime.toLocaleTimeString(undefined, { hour: 'numeric', minute: 'numeric' })}
+					</time>
+				</div>
+			{/if}
 		</div>
-	</FlexibleContainer>
+	</div>
 {/if}
 
 <style>
@@ -207,7 +204,7 @@ function hasConflictingEvents(id: string, start: number, end: number) {
 		h2 {
 			grid-row: 1;
 			grid-column: 1 / -1;
-			font-size: var(--font-size-6);
+			font-size: var(--font-size-7);
 			font-weight: var(--font-weight-6);
 			line-height: var(--font-lineheight-0);
 		}

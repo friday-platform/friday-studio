@@ -292,7 +292,7 @@ onDestroy(() => {
 	}
 
 	.title {
-		font-size: var(--font-size-7);
+		font-size: var(--font-size-8);
 		font-weight: var(--font-weight-6);
 		margin: 0;
 	}

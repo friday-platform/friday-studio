@@ -11,5 +11,9 @@ export const load: PageLoad = async ({ params }) => {
     redirect(302, "/");
   }
 
-  return { chatId: res.data.chat.id, messages: await validateAtlasUIMessages(res.data.messages) };
+  return {
+    title: res.data.chat.title,
+    chatId: res.data.chat.id,
+    messages: await validateAtlasUIMessages(res.data.messages),
+  };
 };

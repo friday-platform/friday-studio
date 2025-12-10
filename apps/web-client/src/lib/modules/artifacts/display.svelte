@@ -5,7 +5,7 @@ import { z } from "zod";
 import File from "$lib/components/primitives/file.svelte";
 import Schedule from "$lib/components/primitives/schedule.svelte";
 import Summary from "$lib/components/primitives/summary.svelte";
-import Table from "$lib/modules/messages/table.svelte";
+import Table from "$lib/components/primitives/table.svelte";
 import MessageWrapper from "../messages/wrapper.svelte";
 import WorkspacePlan from "./workspace-plan.svelte";
 

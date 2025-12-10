@@ -1,7 +1,6 @@
 <script lang="ts">
 import type { AtlasUIMessagePart } from "@atlas/agent-sdk";
 import { IconSmall } from "$lib/components/icons/small";
-import FlexibleContainer from "$lib/modules/messages/flexible-container.svelte";
 import { formatDuration } from "$lib/utils/date";
 import MessageWrapper from "./wrapper.svelte";
 
@@ -68,46 +67,44 @@ function getMessage(
 </script>
 
 <MessageWrapper>
-	<FlexibleContainer>
-		<div class="container">
-			<button onclick={() => (open = !open)} class:open>
-				<span class="thinking">Thinking... <IconSmall.CaretRight /></span>
+	<div class="container">
+		<button onclick={() => (open = !open)} class:open>
+			<span class="thinking">Thinking... <IconSmall.CaretRight /></span>
 
-				{#if open}
-					<footer>
-						{#if startTime}
-							<time>{formatDuration(startTime, endTime)}</time>
-						{/if}
-					</footer>
+			{#if open}
+				<footer>
+					{#if startTime}
+						<time>{formatDuration(startTime, endTime)}</time>
+					{/if}
+				</footer>
 
-					<ul class="steps">
+				<ul class="steps">
+					{#each actions as action, index (index)}
+						<li>
+							{/* @ts-expect-error action is poorly typed */
+							getMessage(action.type, action.data?.content)}
+						</li>
+					{/each}
+				</ul>
+			{:else}
+				<footer>
+					{#if startTime}
+						<time>{formatDuration(startTime, endTime)}</time>
+						{#if actions.length > 0}•{/if}
+					{/if}
+
+					<div class="actions">
 						{#each actions as action, index (index)}
-							<li>
+							<span class:inactive={index !== actions.length - 1}>
 								{/* @ts-expect-error action is poorly typed */
 								getMessage(action.type, action.data?.content)}
-							</li>
+							</span>
 						{/each}
-					</ul>
-				{:else}
-					<footer>
-						{#if startTime}
-							<time>{formatDuration(startTime, endTime)}</time>
-							{#if actions.length > 0}•{/if}
-						{/if}
-
-						<div class="actions">
-							{#each actions as action, index (index)}
-								<span class:inactive={index !== actions.length - 1}>
-									{/* @ts-expect-error action is poorly typed */
-									getMessage(action.type, action.data?.content)}
-								</span>
-							{/each}
-						</div>
-					</footer>
-				{/if}
-			</button>
-		</div>
-	</FlexibleContainer>
+					</div>
+				</footer>
+			{/if}
+		</button>
+	</div>
 </MessageWrapper>
 
 <style>

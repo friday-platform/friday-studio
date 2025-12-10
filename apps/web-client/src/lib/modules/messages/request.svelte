@@ -10,36 +10,25 @@ const htmlContent = $derived(message.content ? markdownToHTML(message.content) :
 </script>
 
 <MessageWrapper>
-	<article class="message">
-		<div class="request">
-			<div class="content">
-				{#if htmlContent}
-					{@html htmlContent}
-				{:else if message.content}
-					{message.content}
-				{/if}
-			</div>
+	<article class="request">
+		<div class="content">
+			{#if htmlContent}
+				{@html htmlContent}
+			{:else if message.content}
+				{message.content}
+			{/if}
 		</div>
 	</article>
 </MessageWrapper>
 
 <style>
-	.message {
-		display: flex;
-		gap: var(--size-6);
-		justify-content: center;
-		margin-inline: auto;
-		max-inline-size: var(--size-160);
-		padding-inline: var(--size-8);
-	}
-
 	.request {
 		background-color: var(--color-surface-2);
 		border-radius: var(--radius-3);
 		inline-size: fit-content;
 		margin-inline-end: unset;
 		margin-inline-start: auto;
-		max-inline-size: 90%;
+		max-inline-size: 75ch;
 		overflow: hidden;
 		padding-block: var(--size-2);
 		padding-inline: var(--size-3);

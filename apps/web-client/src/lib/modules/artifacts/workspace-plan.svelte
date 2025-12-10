@@ -114,7 +114,7 @@ let isExpanded = $state(false);
 		}
 
 		& :global(h1) {
-			font-size: var(--font-size-6);
+			font-size: var(--font-size-7);
 			font-weight: var(--font-weight-6);
 			line-height: var(--font-lineheight-0);
 			margin-block-end: var(--size-1-5);
