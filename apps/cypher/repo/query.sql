@@ -5,3 +5,8 @@ SELECT * FROM cypher.keyset WHERE user_id = $1;
 INSERT INTO cypher.keyset (user_id, key_set)
 VALUES ($1, $2)
 RETURNING *;
+
+-- name: GetUserByID :one
+SELECT id, email
+FROM public."user"
+WHERE id = $1;

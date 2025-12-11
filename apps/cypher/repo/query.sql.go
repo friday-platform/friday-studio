@@ -57,3 +57,26 @@ func (q *Queries) GetKeysetByUserID(ctx context.Context, userID string) (*Cypher
 	)
 	return &i, err
 }
+
+const getUserByID = `-- name: GetUserByID :one
+SELECT id, email
+FROM public."user"
+WHERE id = $1
+`
+
+type GetUserByIDRow struct {
+	ID    string `db:"id" json:"id"`
+	Email string `db:"email" json:"email"`
+}
+
+// GetUserByID
+//
+//	SELECT id, email
+//	FROM public."user"
+//	WHERE id = $1
+func (q *Queries) GetUserByID(ctx context.Context, id string) (*GetUserByIDRow, error) {
+	row := q.db.QueryRow(ctx, getUserByID, id)
+	var i GetUserByIDRow
+	err := row.Scan(&i.ID, &i.Email)
+	return &i, err
+}

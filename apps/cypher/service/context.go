@@ -11,8 +11,9 @@ type contextKey struct {
 }
 
 var (
-	userIDContextKey   = &contextKey{"userID"}
-	keyCacheContextKey = &contextKey{"keyCache"}
+	userIDContextKey    = &contextKey{"userID"}
+	keyCacheContextKey  = &contextKey{"keyCache"}
+	tokenDepsContextKey = &contextKey{"tokenDeps"}
 )
 
 // UserIDFromContext retrieves the user ID from the context.
@@ -48,4 +49,23 @@ func KeyCacheFromContext(ctx context.Context) (*KeyCache, error) {
 		return nil, errors.New("could not get key cache from context")
 	}
 	return cache, nil
+}
+
+// TokenDepsCtxMiddleware injects TokenDeps into request context.
+func TokenDepsCtxMiddleware(deps *TokenDeps) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ctx := context.WithValue(r.Context(), tokenDepsContextKey, deps)
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+}
+
+// TokenDepsFromContext retrieves TokenDeps from the context.
+func TokenDepsFromContext(ctx context.Context) (*TokenDeps, error) {
+	deps, ok := ctx.Value(tokenDepsContextKey).(*TokenDeps)
+	if !ok || deps == nil {
+		return nil, errors.New("could not get token deps from context")
+	}
+	return deps, nil
 }

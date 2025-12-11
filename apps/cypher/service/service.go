@@ -5,6 +5,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -26,6 +27,7 @@ type service struct {
 	queries   *repo.Queries
 	kms       kms.KeyEncryptionService
 	cache     *KeyCache
+	tokenDeps *TokenDeps // nil if token endpoint not configured
 }
 
 // New creates a new cypher service instance.
@@ -50,6 +52,15 @@ func (s *service) routes(r *chi.Mux) *chi.Mux {
 	r.Use(secure.NoSniff)
 	r.Use(secure.PermissionsPolicy)
 	r.Use(secure.CrossOriginPolicies)
+
+	// Token endpoint - NOT protected by JWT (it issues JWTs)
+	if s.tokenDeps != nil {
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.RequestSize(1 << 20)) // 1MB
+			r.Use(TokenDepsCtxMiddleware(s.tokenDeps))
+			r.Post("/api/atlas-token", handleGeneratePodToken)
+		})
+	}
 
 	// Protected routes require JWT auth and have body size limits
 	r.Group(func(r chi.Router) {
@@ -120,6 +131,30 @@ func (s *service) Init() error {
 	// Initialize key cache
 	s.cache = NewKeyCache(s.queries, s.kms, s.cfg.CacheSize)
 	s.Logger.Info("Initialized key cache", "size", s.cfg.CacheSize)
+
+	// Initialize token endpoint dependencies if configured
+	if s.cfg.JWTPrivateKey != "" {
+		k8sClient, err := InitK8sHTTPClient()
+		if err != nil {
+			s.Logger.Error("Failed to initialize Kubernetes HTTP client", "error", err)
+			return fmt.Errorf("init Kubernetes HTTP client: %w", err)
+		}
+		if k8sClient == nil {
+			s.Logger.Info("Token endpoint disabled (not running in Kubernetes)")
+		} else {
+			privateKey, err := ParsePrivateKey(s.cfg.JWTPrivateKey)
+			if err != nil {
+				s.Logger.Error("Failed to parse JWT private key", "error", err)
+				return fmt.Errorf("parse JWT private key: %w", err)
+			}
+			s.tokenDeps = &TokenDeps{
+				K8sHTTPClient: k8sClient,
+				JWTPrivateKey: privateKey,
+				Queries:       s.queries,
+			}
+			s.Logger.Info("Token endpoint enabled")
+		}
+	}
 
 	return nil
 }

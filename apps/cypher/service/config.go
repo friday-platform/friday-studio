@@ -30,8 +30,11 @@ type Config struct {
 	// JWT
 	// PEM-encoded public key for JWT verification. If empty, tokens are parsed
 	// without signature verification (for local dev behind traefik).
-	// In k8s, set JWT_PUBLIC_KEY_FILE to point to the mounted secret file.
+	// In Kubernetes, set JWT_PUBLIC_KEY_FILE to point to the mounted secret file.
 	JWTPublicKey string `env:"JWT_PUBLIC_KEY_FILE,file" envDefault:""`
+	// PEM-encoded private key for JWT signing. If empty, /api/atlas-token is not registered.
+	// In Kubernetes, set JWT_PRIVATE_KEY_FILE to point to the mounted secret file.
+	JWTPrivateKey string `env:"JWT_PRIVATE_KEY_FILE,file" envDefault:""`
 
 	// TLS
 	TLSConfig *server.TLSConfig

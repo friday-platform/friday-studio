@@ -3,6 +3,7 @@ sql:
   - engine: postgresql
     queries: query.sql
     schema:
+      - ../../../supabase/migrations/20251114020000_create_bounce_tables.sql
       - ../../../supabase/migrations/20251208194943_create_cypher_tables.sql
     gen:
       go:
@@ -14,7 +15,7 @@ sql:
         emit_all_enum_values: true
         json_tags_case_style: camel
         initialisms: ["id"]
-        omit_unused_structs: false
+        omit_unused_structs: true
         emit_result_struct_pointers: true
         emit_params_struct_pointers: true
         emit_sql_as_comment: true

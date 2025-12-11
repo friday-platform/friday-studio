@@ -7,6 +7,7 @@ import { getAtlasHome } from "@atlas/utils/paths.server";
 import { load, parse } from "@std/dotenv";
 import { exists } from "@std/fs";
 import { dirname, join } from "@std/path";
+import { fetchCypherToken } from "../../../services/cypher-token.ts";
 import { getVersionInfo } from "../../../utils/version.ts";
 import { displayDaemonStatus } from "../../utils/daemon-status.ts";
 import { errorOutput, infoOutput, successOutput } from "../../utils/output.ts";
@@ -14,7 +15,7 @@ import type { YargsInstance } from "../../utils/yargs.ts";
 
 // OTEL Configuration Strategy:
 // - OTEL must be configured via env vars BEFORE Deno starts (Deno bug #27851, fixed in PR #29240)
-// - K8s: OTEL vars set in pod spec
+// - Kubernetes: OTEL vars set in pod spec
 // - Desktop: Auto-configured via re-exec when ATLAS_KEY is present
 const OTEL_ENDPOINT = "https://otel.atlas.tempestdx.com";
 
@@ -116,16 +117,32 @@ function buildOtelEnv(atlasKey: string): Record<string, string> {
 }
 
 /**
- * Try to read ATLAS_KEY from env files without setting them to the environment.
- * This allows us to detect if we need to re-exec with OTEL config BEFORE
- * OTEL has initialized.
+ * Try to read ATLAS_KEY from env files OR fetch from cypher.
+ * Cypher fetch happens first if CYPHER_TOKEN_URL is set.
  */
 async function peekAtlasKey(): Promise<string | undefined> {
-  // Check if already in environment (from shell or --env-file)
+  // Priority 1: Fetch from cypher (Kubernetes pods)
+  const cypherUrl = Deno.env.get("CYPHER_TOKEN_URL");
+  if (cypherUrl) {
+    try {
+      const token = await fetchCypherToken(cypherUrl);
+      // Set to environment so later checks find it
+      Deno.env.set("ATLAS_KEY", token);
+      return token;
+    } catch (error) {
+      // Log but don't fail - fall through to other methods
+      // Common case: running locally with CYPHER_TOKEN_URL set but no Kubernetes token file
+      logger.warn("Failed to fetch token from cypher, falling back to .env", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  // Priority 2: Check if already in environment (from shell or --env-file)
   const fromEnv = Deno.env.get("ATLAS_KEY");
   if (fromEnv) return fromEnv;
 
-  // Check ~/.atlas/.env
+  // Priority 3: Check ~/.atlas/.env
   const globalEnvPath = join(getAtlasHome(), ".env");
   try {
     if (await exists(globalEnvPath)) {
@@ -137,7 +154,7 @@ async function peekAtlasKey(): Promise<string | undefined> {
     // Ignore read errors
   }
 
-  // Check /etc/atlas/env (Linux system installs)
+  // Priority 4: Check /etc/atlas/env (Linux system installs)
   if (Deno.build.os === "linux") {
     try {
       const systemEnvPath = "/etc/atlas/env";
@@ -273,16 +290,19 @@ export function builder(y: YargsInstance) {
 }
 
 export const handler = async (argv: StartArgs): Promise<void> => {
+  // Fetch ATLAS_KEY early - needed for both OTEL config and credentials.
+  // In Kubernetes: fetches from cypher via CYPHER_TOKEN_URL
+  // On desktop: reads from .env files or environment
+  const atlasKey = await peekAtlasKey();
+
   // OTEL re-exec check: Must happen BEFORE any other initialization.
   // OTEL in Deno initializes before JavaScript runs, so we need to re-exec
   // with proper env vars if ATLAS_KEY is present but OTEL isn't configured.
   // After re-exec, isOtelConfigured() returns true, preventing infinite loops.
-  if (!isOtelConfigured()) {
-    const atlasKey = await peekAtlasKey();
-    if (atlasKey) {
-      // Re-exec with OTEL configured - this never returns
-      await reExecWithOtel(atlasKey);
-    }
+  // Note: In Kubernetes, OTEL is pre-configured in pod spec, so we skip re-exec.
+  if (!isOtelConfigured() && atlasKey) {
+    // Re-exec with OTEL configured - this never returns
+    await reExecWithOtel(atlasKey);
   }
 
   // Set Sentry environment based on build type if not explicitly configured.
