@@ -13,11 +13,8 @@ import type { OAuthService } from "../oauth/service.ts";
 import { buildStaticAuthServer, getStaticClientAuth } from "../oauth/static.ts";
 import { revokeToken } from "../oauth/tokens.ts";
 import { registry } from "../providers/registry.ts";
-import { generateId } from "../service.ts";
 import {
-  type Credential,
   CredentialCreateRequestSchema,
-  type CredentialSummary,
   CredentialTypeSchema,
   type OAuthCredential,
   type StorageAdapter,
@@ -94,24 +91,14 @@ export function createCredentialsRoutes(storage: StorageAdapter, _oauthService: 
           }
 
           try {
-            const id = generateId();
-            const now = new Date().toISOString();
-
-            const credential: Credential = {
-              id,
-              type,
-              provider,
-              label,
-              secret: secretResult.data,
-              metadata: { createdAt: now, updatedAt: now },
-            };
-
-            // Persist credential
-            await storage.save(credential, userId);
+            // Storage generates ID and returns it with metadata
+            const { id, metadata } = await storage.save(
+              { type, provider, label, secret: secretResult.data },
+              userId,
+            );
 
             // Return summary without secret
-            const { secret: _, ...summary } = credential;
-            return c.json(summary as CredentialSummary, 201);
+            return c.json({ id, type, provider, label, metadata }, 201);
           } catch (error) {
             logger.error("Failed to save credential", { error });
             return c.json({ error: "Failed to save credential" }, 500);

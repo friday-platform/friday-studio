@@ -1,8 +1,9 @@
 import { logger } from "@atlas/logger";
+import { config } from "../config.ts";
 import { createGoogleProvider } from "./google.ts";
 import { notionProvider } from "./notion.ts";
 import { slackProvider } from "./slack.ts";
-import type { ProviderDefinition } from "./types.ts";
+import { defineApiKeyProvider, type ProviderDefinition } from "./types.ts";
 
 /**
  * Provider registry.
@@ -61,3 +62,17 @@ if (googleProvider) {
 // Register built-in providers
 registry.register(slackProvider);
 registry.register(notionProvider);
+
+// Dev-only test provider for manual testing
+if (config.devMode) {
+  const { z } = await import("zod");
+  registry.register(
+    defineApiKeyProvider({
+      id: "test",
+      displayName: "Test Provider",
+      description: "Development-only test provider for manual testing",
+      secretSchema: z.object({ key: z.string() }),
+      setupInstructions: "Enter any key value for testing.",
+    }),
+  );
+}

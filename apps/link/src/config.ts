@@ -25,6 +25,21 @@ async function loadEnv(): Promise<void> {
 }
 
 /**
+ * PostgreSQL pool configuration matching Go services (cypher).
+ * See: apps/cypher/service/service.go Init()
+ */
+const postgresPoolConfig = {
+  /** Max number of connections in pool */
+  max: 10,
+  /** Idle connection timeout in seconds (Go: MaxConnIdleTime = 5 min) */
+  idle_timeout: 5 * 60,
+  /** Max connection lifetime in seconds (Go: MaxConnLifetime = 15 min) */
+  max_lifetime: 15 * 60,
+  /** Connection timeout in seconds */
+  connect_timeout: 30,
+} as const;
+
+/**
  * Read configuration from environment variables.
  * Called once at startup after loadEnv().
  */
@@ -41,6 +56,15 @@ export function readConfig() {
 
     /** Path to Deno KV database file */
     dbPath: process.env.LINK_DB_PATH ?? join(getAtlasHome(), "credentials.db"),
+
+    /** Cypher encryption service URL (optional, for CypherStorageAdapter) */
+    cypherServiceUrl: process.env.CYPHER_SERVICE_URL,
+
+    /** PostgreSQL connection string (matches Go services) */
+    postgresConnection: process.env.POSTGRES_CONNECTION,
+
+    /** PostgreSQL pool settings */
+    postgresPool: postgresPoolConfig,
   } as const;
 }
 

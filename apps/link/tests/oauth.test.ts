@@ -10,12 +10,7 @@ import { createApp } from "../src/index.ts";
 import { OAuthService } from "../src/oauth/service.ts";
 import { registry } from "../src/providers/registry.ts";
 import { defineOAuthProvider, type OAuthTokens } from "../src/providers/types.ts";
-import {
-  type Credential,
-  CredentialSchema,
-  CredentialSummarySchema,
-  type OAuthCredential,
-} from "../src/types.ts";
+import { CredentialSchema, CredentialSummarySchema } from "../src/types.ts";
 import {
   completeOAuthFlow,
   type MockOAuthServer,
@@ -251,37 +246,23 @@ Deno.test(
 
     await t.step("Token Operations - POST /refresh without refresh_token returns 400", async () => {
       // Create a credential manually without refresh_token
-      const credWithoutRefresh: OAuthCredential = {
-        id: "oauth:test-no-refresh:user-no-refresh",
-        type: "oauth",
+      const credInput = {
+        type: "oauth" as const,
         provider: "test-refresh-success", // reuse registered provider
-        userIdentifier: "user-no-refresh",
         label: "No Refresh Token",
         secret: {
           access_token: "some_token",
           token_type: "Bearer",
           expires_at: Math.floor(Date.now() / 1000) + 3600,
         },
-        metadata: { createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
       };
 
-      // Convert to Credential for storage (storage expects Credential, not OAuthCredential)
-      // OAuthCredential has optional label, but Credential requires it
-      const credForStorage: Credential = {
-        id: credWithoutRefresh.id,
-        type: credWithoutRefresh.type,
-        provider: credWithoutRefresh.provider,
-        label: credWithoutRefresh.label ?? credWithoutRefresh.userIdentifier,
-        secret: credWithoutRefresh.secret,
-        metadata: credWithoutRefresh.metadata,
-      };
+      // Save and get the generated ID
+      const { id: credId } = await storage.save(credInput, "dev");
 
-      await storage.save(credForStorage, "dev");
-
-      const refreshRes = await app.request(
-        `/v1/oauth/credentials/${credWithoutRefresh.id}/refresh`,
-        { method: "POST" },
-      );
+      const refreshRes = await app.request(`/v1/oauth/credentials/${credId}/refresh`, {
+        method: "POST",
+      });
 
       assertEquals(refreshRes.status, 400);
       const json = ErrorResponse.parse(await refreshRes.json());
@@ -312,14 +293,16 @@ Deno.test(
         // Manually update credential to have near-expiring token
         const cred = await storage.get(credentialId, "dev");
         assertExists(cred);
-        const expiringCred: Credential = {
-          ...cred,
+        const expiringCredInput = {
+          type: cred.type,
+          provider: cred.provider,
+          label: cred.label,
           secret: {
             ...cred.secret,
             expires_at: Math.floor(Date.now() / 1000) + 60, // Expires in 1 minute (< 5 min buffer)
           },
         };
-        await storage.save(expiringCred, "dev");
+        await storage.update(credentialId, expiringCredInput, "dev");
 
         // Internal API should trigger proactive refresh
         const internalRes = await app.request(`/internal/v1/credentials/${credentialId}`);
@@ -334,47 +317,44 @@ Deno.test(
       },
     );
 
-    await t.step(
-      "Upsert Behavior - Same (provider, userIdentifier) updates existing credential",
-      async () => {
-        if (mockServer) mockServer.controller.abort();
+    await t.step("Each OAuth flow creates new credential", async () => {
+      if (mockServer) mockServer.controller.abort();
 
-        mockServer = await startMockOAuthServer({
-          includeProtectedResource: true,
-          includeOAuthMetadata: true,
-          includeUserinfo: true,
-        });
+      mockServer = await startMockOAuthServer({
+        includeProtectedResource: true,
+        includeOAuthMetadata: true,
+        includeUserinfo: true,
+      });
 
-        registerTestOAuthProvider("test-upsert-same", mockServer.issuer);
+      registerTestOAuthProvider("test-new-each-flow", mockServer.issuer);
 
-        // First flow
-        const { credentialId: firstCredId } = await completeOAuthFlow(
-          app,
-          mockServer,
-          "test-upsert-same",
-          { accessToken: "upsert_test_access_with_email" },
-        );
+      // First flow
+      const { credentialId: firstCredId } = await completeOAuthFlow(
+        app,
+        mockServer,
+        "test-new-each-flow",
+        { accessToken: "first_flow_access" },
+      );
 
-        // Second flow with same user
-        const { credentialId: secondCredId } = await completeOAuthFlow(
-          app,
-          mockServer,
-          "test-upsert-same",
-          { accessToken: "upsert_test_access_with_email" },
-        );
+      // Second flow creates new credential (no upsert)
+      const { credentialId: secondCredId } = await completeOAuthFlow(
+        app,
+        mockServer,
+        "test-new-each-flow",
+        { accessToken: "second_flow_access" },
+      );
 
-        // Should be same ID (upsert)
-        assertEquals(firstCredId, secondCredId);
+      // Should be different IDs (each flow creates new credential)
+      assert(firstCredId !== secondCredId);
 
-        // List should only have one credential
-        const listRes = await app.request(`/v1/credentials/type/oauth`);
-        const credentials = z.array(z.object({ id: z.string() })).parse(await listRes.json());
-        const matchingCreds = credentials.filter((c) => c.id === firstCredId);
-        assertEquals(matchingCreds.length, 1);
-      },
-    );
+      // Both should exist
+      const cred1 = await storage.get(firstCredId, "dev");
+      const cred2 = await storage.get(secondCredId, "dev");
+      assertExists(cred1);
+      assertExists(cred2);
+    });
 
-    await t.step("Upsert Behavior - Different userIdentifier creates new credential", async () => {
+    await t.step("Different userIdentifier creates new credential", async () => {
       if (mockServer) mockServer.controller.abort();
 
       mockServer = await startMockOAuthServer({
@@ -442,8 +422,10 @@ Deno.test(
         expires_at: z.number().optional(),
       }).parse(capturedTokens);
 
-      // Verify hook result used
-      assertMatch(credentialId, /hook-wins/);
+      // Verify hook result used - check the credential label (which is set to userIdentifier)
+      const cred = await storage.get(credentialId, "dev");
+      assertExists(cred);
+      assertEquals(cred.label, "hook-wins");
     });
 
     // NOTE: Health check endpoint for credentials not yet implemented

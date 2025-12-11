@@ -17,6 +17,7 @@
     "hono": "^4.10.8",
     "nanoid": "^5.1.6",
     "oauth4webapi": "^3.8.3",
+    "postgres": "^3.4.7",
     "zod": "^4.1.13"
   },
   "devDependencies": {

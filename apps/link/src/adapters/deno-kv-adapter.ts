@@ -1,4 +1,12 @@
-import type { Credential, CredentialSummary, StorageAdapter } from "../types.ts";
+import { nanoid } from "nanoid";
+import type {
+  Credential,
+  CredentialInput,
+  CredentialSummary,
+  Metadata,
+  SaveResult,
+  StorageAdapter,
+} from "../types.ts";
 
 /**
  * DenoKV-based storage adapter with tenant isolation.
@@ -7,10 +15,27 @@ import type { Credential, CredentialSummary, StorageAdapter } from "../types.ts"
 export class DenoKVStorageAdapter implements StorageAdapter {
   constructor(private kvPath: string) {}
 
-  // private kvPath = join(getAtlasHome(), "dev_credentials.db");
-  async save(credential: Credential, userId: string): Promise<void> {
+  async save(input: CredentialInput, userId: string): Promise<SaveResult> {
+    const id = nanoid();
+    const now = new Date().toISOString();
+    const metadata: Metadata = { createdAt: now, updatedAt: now };
+    const credential: Credential = { ...input, id, metadata };
     using kv = await Deno.openKv(this.kvPath);
-    await kv.set(["credentials", userId, credential.id], credential);
+    await kv.set(["credentials", userId, id], credential);
+    return { id, metadata };
+  }
+
+  async update(id: string, input: CredentialInput, userId: string): Promise<Metadata> {
+    using kv = await Deno.openKv(this.kvPath);
+    const existing = await kv.get<Credential>(["credentials", userId, id]);
+    if (!existing.value) {
+      throw new Error("Credential not found");
+    }
+    const now = new Date().toISOString();
+    const metadata: Metadata = { createdAt: existing.value.metadata.createdAt, updatedAt: now };
+    const credential: Credential = { ...input, id, metadata };
+    await kv.set(["credentials", userId, id], credential);
+    return metadata;
   }
 
   async get(id: string, userId: string): Promise<Credential | null> {

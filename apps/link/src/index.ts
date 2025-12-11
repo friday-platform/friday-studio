@@ -1,10 +1,14 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { readFileSync } from "node:fs";
 import { logger } from "@atlas/logger";
 import { jwt } from "hono/jwt";
 import { trimTrailingSlash } from "hono/trailing-slash";
 import * as jose from "jose";
+import postgres from "postgres";
+import { CypherStorageAdapter } from "./adapters/cypher-storage-adapter.ts";
 import { DenoKVStorageAdapter } from "./adapters/deno-kv-adapter.ts";
 import { config, readConfig } from "./config.ts";
+import { CypherHttpClient } from "./cypher-client.ts";
 import { factory } from "./factory.ts";
 import { OAuthService } from "./oauth/service.ts";
 import { registry } from "./providers/registry.ts";
@@ -14,14 +18,37 @@ import { providersRouter } from "./routes/providers.ts";
 import type { StorageAdapter } from "./types.ts";
 
 /**
+ * AsyncLocalStorage for per-request auth token.
+ * Used by CypherHttpClient to get the token for the current request.
+ */
+const authTokenStorage = new AsyncLocalStorage<string>();
+
+/**
+ * Get the auth token for the current request from AsyncLocalStorage.
+ */
+function getAuthToken(): string {
+  return authTokenStorage.getStore() ?? "";
+}
+
+/**
  * Create Link application with dependency-injected storage adapter and OAuth service.
  * Uses method chaining for proper type inference (critical for RPC).
  *
  * Reads config fresh on each call to support testing with different env vars.
  */
-export async function createApp(_storage: StorageAdapter, _oauthService: OAuthService) {
+export async function createApp(storage: StorageAdapter, oauthService: OAuthService) {
   // Read config fresh to support testing with different env vars
   const cfg = readConfig();
+
+  /**
+   * Auth token middleware - captures JWT for forwarding to Cypher service.
+   * Stores token in AsyncLocalStorage so CypherHttpClient can access it.
+   */
+  const authTokenMiddleware = factory.createMiddleware(async (c, next) => {
+    const authHeader = c.req.header("Authorization") ?? c.req.header("X-Atlas-Key");
+    const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : (authHeader ?? "");
+    return authTokenStorage.run(token, () => next());
+  });
 
   /**
    * Tenancy middleware - extracts userId from Traefik header (X-Atlas-User-ID).
@@ -37,8 +64,27 @@ export async function createApp(_storage: StorageAdapter, _oauthService: OAuthSe
     await next();
   });
 
+  /**
+   * Access log middleware - logs all requests with method, path, status, and duration.
+   */
+  const accessLogMiddleware = factory.createMiddleware(async (c, next) => {
+    const start = Date.now();
+    await next();
+    const duration = Date.now() - start;
+    const status = c.res.status;
+    const method = c.req.method;
+    const path = c.req.path;
+
+    // Skip health checks to reduce noise
+    if (path === "/health") return;
+
+    logger.info("request", { method, path, status, durationMs: duration, userId: c.get("userId") });
+  });
+
   const baseApp = factory
     .createApp()
+    // Access logging (first middleware to capture all requests)
+    .use(accessLogMiddleware)
     // Redirect trailing slashes to canonical paths
     .use(trimTrailingSlash())
     // Health check
@@ -69,8 +115,10 @@ export async function createApp(_storage: StorageAdapter, _oauthService: OAuthSe
     baseApp.use("/internal/*", jwtChecker);
   }
 
-  // Apply tenancy middleware to protected routes (after JWT verification)
+  // Apply auth token and tenancy middleware to protected routes (after JWT verification)
+  baseApp.use("/v1/*", authTokenMiddleware);
   baseApp.use("/v1/*", tenancyMiddleware);
+  baseApp.use("/internal/*", authTokenMiddleware);
   baseApp.use("/internal/*", tenancyMiddleware);
 
   return (
@@ -78,16 +126,55 @@ export async function createApp(_storage: StorageAdapter, _oauthService: OAuthSe
       // Provider catalog routes
       .route("/v1/providers", providersRouter)
       // OAuth flow routes
-      .route("/v1/oauth", createOAuthRoutes(registry, _oauthService, _storage))
+      .route("/v1/oauth", createOAuthRoutes(registry, oauthService, storage))
       // Public credential management API (no secrets in responses)
-      .route("/v1/credentials", createCredentialsRoutes(_storage, _oauthService))
+      .route("/v1/credentials", createCredentialsRoutes(storage, oauthService))
       // Internal runtime access API (returns secrets with proactive OAuth refresh)
-      .route("/internal/v1/credentials", createInternalCredentialsRoutes(_storage, _oauthService))
+      .route("/internal/v1/credentials", createInternalCredentialsRoutes(storage, oauthService))
   );
 }
 
+/** Postgres connection pool - stored for graceful shutdown */
+let sql: ReturnType<typeof postgres> | null = null;
+
+/**
+ * Create storage adapter based on configuration.
+ * Uses CypherStorageAdapter if Cypher and Postgres are configured, otherwise DenoKV.
+ */
+function createStorage(): StorageAdapter {
+  if (config.cypherServiceUrl && config.postgresConnection) {
+    logger.info("Using CypherStorageAdapter", {
+      cypherUrl: config.cypherServiceUrl,
+      postgres: config.postgresConnection.split("@")[1]?.split("/")[0] ?? "configured",
+      pool: config.postgresPool,
+    });
+
+    sql = postgres(config.postgresConnection, config.postgresPool);
+    const cypher = new CypherHttpClient(config.cypherServiceUrl, async () => {
+      // Return the token from AsyncLocalStorage for the current request
+      return getAuthToken();
+    });
+
+    return new CypherStorageAdapter(cypher, sql);
+  }
+
+  logger.info("Using DenoKVStorageAdapter", { dbPath: config.dbPath });
+  return new DenoKVStorageAdapter(config.dbPath);
+}
+
+/**
+ * Graceful shutdown - close database connections.
+ */
+async function shutdown(): Promise<void> {
+  logger.info("Shutting down...");
+  if (sql) {
+    await sql.end({ timeout: 5 });
+    logger.info("Postgres pool closed");
+  }
+}
+
 // Default storage adapter
-const defaultStorage = new DenoKVStorageAdapter(config.dbPath);
+const defaultStorage = createStorage();
 
 // Default OAuth service for production
 const defaultOAuthService = new OAuthService(registry, defaultStorage);
@@ -100,6 +187,11 @@ export type LinkRoutes = typeof app;
 
 // Only start server when run directly (not when imported for tests)
 if (import.meta.main) {
-  logger.info("Link service starting", { kvPath: config.dbPath, port: config.port });
-  Deno.serve({ port: config.port, handler: app.fetch });
+  logger.info("Link service starting", { port: config.port });
+
+  // Register shutdown handlers
+  Deno.addSignalListener("SIGINT", shutdown);
+  Deno.addSignalListener("SIGTERM", shutdown);
+
+  Deno.serve({ port: config.port, onListen: () => {}, handler: app.fetch });
 }
