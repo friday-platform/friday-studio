@@ -49,7 +49,6 @@ export async function sendEmail(
         try {
           return await sgMail.send(buildEmailMessage(params, options?.sandboxMode));
         } catch (error) {
-          // Log each retry attempt
           if (error instanceof ResponseError) {
             logger.error(`SendGrid attempt ${attemptCount}/${MAX_ATTEMPTS} failed`, {
               code: error.code,
@@ -72,9 +71,7 @@ export async function sendEmail(
     return response;
   } catch (error) {
     let message: string;
-    // Retry attempts exhausted
     if (error instanceof RetryError) {
-      // Error from SendGrid API
       if (error.cause instanceof ResponseError) {
         logger.error("SendGrid API Error - retry attempts exhausted", {
           code: error.cause.code,
@@ -83,12 +80,10 @@ export async function sendEmail(
         });
         message = error.cause.message;
       } else {
-        // Something else failed inside the retry
         logger.error("SendGrid retry attempts exhausted", { error: error.cause });
         message = error.message;
       }
     } else {
-      // Something else failed inside sendEmail outside the retry
       logger.error("Failed to send email", { error });
       message = stringifyError(error);
     }
@@ -106,14 +101,12 @@ function buildEmailMessage(params: EmailParams, sandboxMode = false): sgMail.Mai
     subject: params.subject,
   };
 
-  // Add content
   if (params.content.includes("<!DOCTYPE html>")) {
     message.html = params.content;
   } else {
     message.text = params.content;
   }
 
-  // Add template support
   if (params.template_id) {
     message.templateId = params.template_id;
     if (params.template_data) {
@@ -121,7 +114,6 @@ function buildEmailMessage(params: EmailParams, sandboxMode = false): sgMail.Mai
     }
   }
 
-  // Add attachments if present
   if (params.attachments && params.attachments.length > 0) {
     message.attachments = params.attachments.map((attachment) => ({
       filename: attachment.filename,
@@ -131,15 +123,11 @@ function buildEmailMessage(params: EmailParams, sandboxMode = false): sgMail.Mai
     }));
   }
 
-  // Add sandbox mode if enabled
   if (sandboxMode) {
     message.mailSettings = { sandboxMode: { enable: true } };
   }
 
-  // Always use 'tempest-atlas' IP pool
   message.ipPoolName = "tempest-atlas";
-
-  // Add custom Atlas tracking headers
   message.headers = buildCustomHeaders();
 
   return message as sgMail.MailDataRequired;
@@ -149,22 +137,18 @@ function buildEmailMessage(params: EmailParams, sandboxMode = false): sgMail.Mai
  * Build custom headers for Atlas tracking
  */
 function buildCustomHeaders(): Record<string, string> {
-  const headers: Record<string, string> = {};
-
-  // Add hostname (always lowercase)
+  let hostnameValue: string;
   try {
-    headers["X-Atlas-Hostname"] = hostname().toLowerCase();
+    hostnameValue = hostname().toLowerCase();
   } catch {
-    headers["X-Atlas-Hostname"] = "unknown";
+    hostnameValue = "unknown";
   }
 
-  // Add user from Atlas key if available
-  const atlasKey = env.ATLAS_KEY;
-  if (atlasKey) {
-    const userEmail = extractUserFromJWT(atlasKey);
-    if (userEmail) {
-      headers["X-Atlas-User"] = userEmail;
-    }
+  const headers: Record<string, string> = { "X-Atlas-Hostname": hostnameValue };
+
+  const userEmail = env.ATLAS_KEY ? extractUserFromJWT(env.ATLAS_KEY) : null;
+  if (userEmail) {
+    headers["X-Atlas-User"] = userEmail;
   }
 
   return headers;

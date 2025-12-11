@@ -8,7 +8,8 @@ import { getTodaysDate } from "@atlas/utils";
 import { encodeBase64 } from "@std/encoding/base64";
 import { contentType } from "@std/media-types";
 import { resolve } from "@std/path";
-import { streamText, tool } from "ai";
+import { generateText, tool } from "ai";
+import { wrapAISDKModel } from "evalite/ai-sdk";
 import { z } from "zod";
 import { extractUserFromJWT, sendEmail } from "./sendgrid.ts";
 import { template } from "./template.ts";
@@ -68,7 +69,6 @@ export const emailAgent = createAgent<string, Result>({
       throw new Error("ANTHROPIC_API_KEY environment variable is required");
     }
 
-    // Check for required SendGrid environment variables
     const sendGridApiKey = env.SENDGRID_API_KEY;
     if (!sendGridApiKey) {
       throw new Error(
@@ -76,16 +76,14 @@ export const emailAgent = createAgent<string, Result>({
       );
     }
 
-    // Progress: composing
     stream?.emit({
       type: "data-tool-progress",
       data: { toolName: "Email", content: `Composing email` },
     });
 
-    // Track state for tool-based composition
     const failureState = { failed: false, reason: "" };
     const composeEmailSchema = z.object({
-      to: z.string().email().describe("Recipient email address"),
+      to: z.string().describe("Recipient email address"),
       subject: z.string().min(1).describe("Email subject line"),
       content: z.array(
         z.object({
@@ -95,19 +93,14 @@ export const emailAgent = createAgent<string, Result>({
           content: z.string().min(1).describe("Content to be wrapped in the tag"),
         }),
       ),
-      from: z
-        .string()
-        .email()
-        .optional()
-        .describe("Sender email address. Omit if not specified in prompt"),
+      from: z.string().optional().describe("Sender email address. Omit if not specified in prompt"),
       from_name: z.string().optional().describe("Sender display name. Omit if not specified"),
       attachment_paths: z
         .array(z.string())
         .optional()
         .describe("File paths to attach. Omit if none specified"),
     });
-    type ComposedEmail = z.infer<typeof composeEmailSchema>;
-    let composedEmail: ComposedEmail | null = null;
+    let composedEmail: z.infer<typeof composeEmailSchema> | null = null;
 
     const compositionSystem = `You are an email composition expert. Analyze the prompt and either compose an email or report that you cannot.
 
@@ -127,11 +120,12 @@ CONTENT GUIDELINES (for composeEmail):
 - Descriptive subject line
 - Format numbers, prices, and data clearly
 - Preserve links and URLs from source data
+- Remove any markdown formatting tags and new lines - the email content will be sent as HTML
 
 `;
 
-    const compositionStream = streamText({
-      model: registry.languageModel("anthropic:claude-haiku-4-5"),
+    const res = await generateText({
+      model: wrapAISDKModel(registry.languageModel("google:gemini-flash-lite-latest")),
       messages: [
         {
           role: "system",
@@ -169,41 +163,32 @@ CONTENT GUIDELINES (for composeEmail):
       toolChoice: "required",
     });
 
-    // Wait for tool execution to complete (not just text output)
-    await compositionStream.toolResults;
+    logger.debug("AI SDK streamText completed", { agent: "email", usage: res.totalUsage });
 
-    // Log token usage
-    const usage = await compositionStream.usage;
-    logger.debug("AI SDK streamText completed", { agent: "email", usage });
-
-    // Check if composition failed
     if (failureState.failed) {
       logger.warn("Email composition refused", { reason: failureState.reason });
       throw new Error(`Cannot compose email: ${failureState.reason}`);
     }
 
-    // Check if no tool was called
     if (!composedEmail) {
       logger.warn("Email composition did not complete - no tool called");
       throw new Error("Cannot compose email: The agent did not produce a result");
     }
 
-    // Type assertion needed because TS can't track mutation in tool execute callback
-    const params = composedEmail as ComposedEmail;
+    // TS can't track mutation in tool execute callback
+    const params = composedEmail as z.infer<typeof composeEmailSchema>;
 
-    // Security validation: Verify recipient email is in prompt
     if (!prompt.toLowerCase().includes(params.to.toLowerCase())) {
       throw new Error(
         `Security: Recipient email "${params.to}" not found in prompt. The agent may be hallucinating email addresses.`,
       );
     }
 
-    // Security validation: Verify sender email (if provided) is in prompt, otherwise use default
     if (params.from && !prompt.toLowerCase().includes(params.from.toLowerCase())) {
       logger.warn("Security: Sender email not in prompt, using default", {
         hallucinated: params.from,
       });
-      params.from = undefined; // Fall back to default
+      params.from = undefined;
     }
 
     logger.debug("email-communicator composed email", {
@@ -212,7 +197,6 @@ CONTENT GUIDELINES (for composeEmail):
       contentLength: params.content.length,
     });
 
-    // Process attachments if provided
     let attachments: EmailParams["attachments"];
     if (params.attachment_paths && params.attachment_paths.length > 0) {
       stream?.emit({
@@ -226,28 +210,20 @@ CONTENT GUIDELINES (for composeEmail):
       attachments = await Promise.all(
         params.attachment_paths.map(async (filePath) => {
           try {
-            // Security: Restrict attachments to user home directory
-            const homeDir = resolve(homedir());
             const absolutePath = resolve(filePath);
-
-            // Check if path is outside home directory
-            if (!absolutePath.startsWith(homeDir)) {
+            if (!absolutePath.startsWith(resolve(homedir()))) {
               throw new Error(
-                `Security: Attachments must be within user home directory (${homeDir}). Path: ${filePath}`,
+                `Security: Attachments must be within user home directory. Path: ${filePath}`,
               );
             }
 
-            // Validate file exists and is readable
             const fileStat = await stat(filePath);
-
-            // Check if it's a file (not directory)
             if (!fileStat.isFile()) {
               throw new Error(`Path is not a file: ${filePath}`);
             }
 
-            // Check file size (SendGrid limit: 30MB total attachments)
-            const maxSize = 30 * 1024 * 1024; // 30MB in bytes
-            if (fileStat.size > maxSize) {
+            const MAX_ATTACHMENT_SIZE = 30 * 1024 * 1024;
+            if (fileStat.size > MAX_ATTACHMENT_SIZE) {
               throw new Error(
                 `File exceeds 30MB SendGrid limit: ${filePath} (${(
                   fileStat.size / 1024 / 1024
@@ -255,19 +231,14 @@ CONTENT GUIDELINES (for composeEmail):
               );
             }
 
-            const content = await readFile(filePath);
-            const base64Content = encodeBase64(content);
-            // Handle both Unix (/) and Windows (\) path separators
+            const base64Content = encodeBase64(await readFile(filePath));
             const filename = filePath.split(/[/\\]/).pop() || "attachment";
-
-            // Determine MIME type from extension
             const ext = filename.split(".").pop()?.toLowerCase() || "";
-            const mimeType = contentType(ext) || "application/octet-stream";
 
             return {
               filename,
               content: base64Content,
-              type: mimeType,
+              type: contentType(ext) || "application/octet-stream",
               disposition: "attachment" as const,
             };
           } catch (error) {
@@ -283,13 +254,11 @@ CONTENT GUIDELINES (for composeEmail):
       });
     }
 
-    // Progress: sending
     stream?.emit({
       type: "data-tool-progress",
       data: { toolName: "Email", content: `Sending email to ${params.to}` },
     });
 
-    // Build email parameters with defaults from environment variables
     const fromEmail = params.from || env.SENDGRID_FROM_EMAIL || "noreply@tempestdx.com";
     const atlasUserEmail = env.ATLAS_KEY ? extractUserFromJWT(env.ATLAS_KEY) : null;
     if (!atlasUserEmail) {
@@ -335,7 +304,6 @@ CONTENT GUIDELINES (for composeEmail):
       sandboxMode,
     });
 
-    // Send email via SendGrid
     const result = await sendEmail(sendGridApiKey, emailParams, { sandboxMode });
     const message_id = result[0]?.headers?.["x-message-id"];
 
