@@ -125,7 +125,7 @@ CONTENT GUIDELINES (for composeEmail):
 `;
 
     const res = await generateText({
-      model: wrapAISDKModel(registry.languageModel("google:gemini-flash-lite-latest")),
+      model: wrapAISDKModel(registry.languageModel("anthropic:claude-haiku-4-5")),
       messages: [
         {
           role: "system",
