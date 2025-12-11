@@ -12,7 +12,7 @@
     "@atlas/logger": "workspace:*",
     "@modelcontextprotocol/sdk": "npm:@socotra/modelcontextprotocol-sdk@^1.18.0",
     "@opentelemetry/api": "^1.9.0",
-    "ai": "^5.0.108",
+    "ai": "^5.0.110",
     "zod": "^4.1.13"
   }
 }
