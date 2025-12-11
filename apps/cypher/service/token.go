@@ -17,6 +17,7 @@ import (
 
 	"github.com/go-chi/httplog/v2"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/tempestteam/atlas/apps/cypher/repo"
 )
@@ -54,6 +55,7 @@ type tokenReviewResponse struct {
 }
 
 // AtlasTokenClaims defines the JWT claims structure.
+// Must match waypoint's CredentialTokenClaims for compatibility.
 type AtlasTokenClaims struct {
 	Email        string `json:"email,omitempty"`
 	UserMetadata struct {
@@ -240,7 +242,8 @@ func ParseUserIDFromPodName(podName string) (string, error) {
 
 // generateJWT creates a signed JWT token for the user.
 func generateJWT(privateKey *rsa.PrivateKey, user repo.GetUserByIDRow) (string, time.Time, error) {
-	expiresAt := time.Now().Add(365 * 24 * time.Hour)
+	now := time.Now()
+	expiresAt := now.Add(365 * 24 * time.Hour)
 
 	// Use email as subject if available, otherwise use user ID
 	subject := user.Email
@@ -251,11 +254,13 @@ func generateJWT(privateKey *rsa.PrivateKey, user repo.GetUserByIDRow) (string, 
 	claims := AtlasTokenClaims{
 		Email: user.Email,
 		RegisteredClaims: jwt.RegisteredClaims{
+			ID:        uuid.NewString(),
 			Issuer:    "tempest-atlas",
 			Audience:  jwt.ClaimStrings{"atlas"},
 			Subject:   subject,
 			ExpiresAt: jwt.NewNumericDate(expiresAt),
-			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			NotBefore: jwt.NewNumericDate(now),
+			IssuedAt:  jwt.NewNumericDate(now),
 		},
 	}
 	claims.UserMetadata.TempestUserID = user.ID
