@@ -2,7 +2,7 @@
 # Credential management service using Deno + Hono
 
 # Stage 1: Build binary
-FROM denoland/deno:alpine-2.5.6 AS builder
+FROM denoland/deno:alpine-2.6.0 AS builder
 
 WORKDIR /app
 
