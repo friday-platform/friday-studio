@@ -36,7 +36,7 @@
     "@tauri-apps/plugin-opener": "^2.5.2",
     "ai": "^5.0.112",
     "eventsource-client": "^1.2.0",
-    "svelte": "^5.45.8",
+    "svelte": "^5.45.10",
     "zod": "^4.1.13"
   },
   "devDependencies": {
