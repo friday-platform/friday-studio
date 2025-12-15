@@ -56,8 +56,6 @@ $effect(() => {
 });
 
 let showDetails = new SvelteMap<string, boolean>();
-
-$inspect(chatContext.newChat.status);
 </script>
 
 <div class="chat">

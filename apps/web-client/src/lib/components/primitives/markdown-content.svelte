@@ -1,47 +1,82 @@
 <script lang="ts">
 import { markdownToHTML } from "$lib/utils/markdown";
-import type { OutputEntry } from "./types";
-import MessageWrapper from "./wrapper.svelte";
 
-const { message }: { message: OutputEntry } = $props();
+const { content }: { content: string } = $props();
 
 // Convert markdown to HTML
-const htmlContent = $derived(message.content ? markdownToHTML(message.content) : "");
+const htmlContent = $derived(markdownToHTML(content));
 </script>
 
-<MessageWrapper>
-	<article class="request">
-		<div class="content">
-			{#if htmlContent}
-				{@html htmlContent}
-			{:else if message.content}
-				{message.content}
-			{/if}
-		</div>
-	</article>
-</MessageWrapper>
+<div>
+	{@html htmlContent}
+</div>
 
 <style>
-	.request {
-		background-color: var(--color-surface-2);
-		border-radius: var(--radius-3);
-		inline-size: fit-content;
-		margin-inline-end: unset;
-		margin-inline-start: auto;
-		max-inline-size: 75ch;
-		overflow: hidden;
-		padding-block: var(--size-2);
-		padding-inline: var(--size-3);
-	}
+	div {
+		& :global(h1),
+		& :global(h2),
+		& :global(h3),
+		& :global(h4),
+		& :global(ul),
+		& :global(ol),
+		& :global(p) {
+			color: color-mix(in srgb, var(--color-text) 80%, transparent 20%);
+			max-inline-size: 80ch;
+		}
 
-	.content {
-		max-inline-size: 100%;
+		/* HEADING 1 */
+		& :global(h1) {
+			font-size: var(--font-size-7);
+			font-weight: var(--font-weight-6);
+			line-height: var(--font-lineheight-1);
+		}
+
+		& :global(h1 + h2) {
+			margin-block-start: var(--size-6);
+		}
+
+		/* HEADING 2 */
+		& :global(h2) {
+			font-size: var(--font-size-6);
+			font-weight: var(--font-weight-6);
+			line-height: var(--font-lineheight-1);
+		}
+
+		& :global(h2 + p),
+		& :global(h2 + ul),
+		& :global(h2 + ol) {
+			margin-block-start: var(--size-1);
+		}
+
+		/* HEADING 3 */
+		& :global(h3) {
+			font-size: var(--font-size-5);
+			font-weight: var(--font-weight-6);
+		}
+
+		& :global(h2 + h3),
+		& :global(p + h3),
+		& :global(ol + h3),
+		& :global(ul + h3) {
+			margin-block-start: var(--size-4);
+		}
+
+		& :global(h3 + p),
+		& :global(h3 + ul),
+		& :global(h3 + ol) {
+			margin-block-start: var(--size-1);
+		}
+
+		/* HEADING 4 */
+		& :global(h4) {
+			font-size: var(--font-size-3);
+			font-weight: var(--font-weight-5);
+		}
 
 		& :global(p),
 		& :global(li) {
-			color: color-mix(in srgb, var(--color-text) 80%, transparent 20%);
-			font-size: var(--font-size-4);
-			line-height: var(--font-lineheight-2);
+			font-size: var(--font-size-5);
+			line-height: var(--font-lineheight-3);
 			word-break: break-word;
 		}
 
@@ -54,6 +89,10 @@ const htmlContent = $derived(message.content ? markdownToHTML(message.content) :
 		& :global(ol) {
 			&:global(:has(+ ul, + ol, + p)) {
 				margin-block-end: var(--size-1-5);
+			}
+
+			& :global(+ h2) {
+				margin-block-start: var(--size-6);
 			}
 		}
 

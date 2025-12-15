@@ -125,3 +125,18 @@ export const TableDataSchema = z.object({
   rows: z.array(z.record(z.string(), z.string())).describe("Table rows as key-value records"),
 });
 export type TableData = z.infer<typeof TableDataSchema>;
+
+/** Web search data schema */
+export const WebSearchDataSchema = z.object({
+  response: z.string().describe("Full markdown report"),
+  sources: z
+    .array(
+      z.object({
+        siteName: z.string().describe("Website/domain name (e.g. 'Serious Eats', 'Wikipedia')"),
+        pageTitle: z.string().describe("Page title or heading"),
+        url: z.string().describe("Complete URL of the source"),
+      }),
+    )
+    .describe("Sources found in the reasearch"),
+});
+export type WebSearchData = z.infer<typeof WebSearchDataSchema>;

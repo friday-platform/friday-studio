@@ -21,32 +21,39 @@ onMount(() => {
 });
 </script>
 
-<div
-	class:expanded
-	role="button"
-	tabindex="0"
-	onclick={() => (expanded = !expanded)}
-	onkeydown={(e) => {
-		if (e.key === 'Enter' || e.key === ' ') {
-			e.preventDefault();
-			expanded = !expanded;
-		}
-	}}
->
+{#snippet contents()}
 	<p bind:this={node}>
 		{content}
 	</p>
 
 	{#if clamped}
-		<button
-			type="presentation"
-			class="outline-toggle"
-			aria-label={expanded ? 'Show less' : 'Show more'}
-		>
+		<span class="outline-toggle">
 			<IconSmall.CaretRight />
-		</button>
+		</span>
 	{/if}
-</div>
+{/snippet}
+
+{#if clamped}
+	<div
+		class:expanded
+		role="button"
+		tabindex="0"
+		onclick={() => (expanded = !expanded)}
+		aria-label={expanded ? 'Show less' : 'Show more'}
+		onkeydown={(e) => {
+			if (e.key === 'Enter' || e.key === ' ') {
+				e.preventDefault();
+				expanded = !expanded;
+			}
+		}}
+	>
+		{@render contents()}
+	</div>
+{:else}
+	<div class:expanded>
+		{@render contents()}
+	</div>
+{/if}
 
 <style>
 	div {

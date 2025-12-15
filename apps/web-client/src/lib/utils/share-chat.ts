@@ -13,7 +13,7 @@ import {
 } from "@atlas/core/artifacts";
 import { getAtlasDaemonUrl } from "@atlas/oapi-client";
 import { formatMessage } from "../modules/messages/format.ts";
-import { markdownToHTML } from "../modules/messages/markdown-utils.ts";
+import { markdownToHTML } from "./markdown.ts";
 import { openUrl } from "./tauri-loader.ts";
 
 /** Double chevron SVG icon for expand/collapse buttons */

@@ -20,12 +20,12 @@ export type {
   SearchResult,
 } from "./types.ts";
 
-async function generateResearchProgress(
+async function generateResponseProgress(
   prompt: string,
   abortSignal?: AbortSignal,
 ): Promise<string> {
   return await smallLLM({
-    system: `Output a single research status line (≤40 chars, -ing verb, no punctuation).
+    system: `Output a single response status line (≤40 chars, -ing verb, no punctuation).
       When multiple items: describe the category or purpose, not individual names.
 
       Examples:
@@ -40,11 +40,16 @@ async function generateResearchProgress(
   });
 }
 
-async function generateReportTitle(prompt: string, abortSignal?: AbortSignal): Promise<string> {
+async function generateResponseDescription(
+  prompt: string,
+  abortSignal?: AbortSignal,
+): Promise<string> {
   return await smallLLM({
     system: `
-    Generate a concise report title (≤50 chars, noun phrase, no punctuation). Examples:
-    When multiple items: describe the category or purpose, not individual names.
+    Generate a concise response description (≤40 chars). Absolutely no markdown!
+
+    Examples:
+      When multiple items: describe the category or purpose, not individual names.
 
       "Compare AWS and GCP pricing" → "Cloud Pricing Comparison"
       "What is Parker Conrad known for?" → "Parker Conrad Background"
@@ -84,25 +89,34 @@ EXAMPLES:
 "Send an email to John"
 → failQuery: {"reason":"This is an action request, not a research question"}`;
 
-const ReportSchema = z.object({
-  report: z
-    .string()
-    .describe(
-      "Full markdown report. Use inline citations [N] referencing sources. End with ## Sources section listing each citation as: [N] Title - URL",
-    ),
-  summary: z.string().describe("2-3 sentence executive summary. Direct and factual, no fluff."),
+const ResponseSchema = z.object({
+  response: z.string().describe(`
+      - Full markdown response of the research.
+      - NEVER use inline citations [N] when referencing information.
+      - NEVER append a list of citations or sources to the end of the report.
+    `),
+  sources: z
+    .array(
+      z.object({
+        siteName: z.string().describe("Website/domain name (e.g. 'Serious Eats', 'Wikipedia')"),
+        pageTitle: z.string().describe("Page title or heading"),
+        url: z.string().describe("Complete URL of the source (do not omit or shorten)"),
+      }),
+    )
+    .describe("Sources found in the search"),
+  summary: z.string().describe("2-3 sentence summary. Direct and factual, no fluff."),
 });
 
-type ReportOutput = z.infer<typeof ReportSchema>;
+type ResponseOutput = z.infer<typeof ResponseSchema>;
 
 /**
- * Generates a research report with inline citations and an executive summary.
+ * Generates a web search response with inline citations and an executive summary.
  */
-async function generateReport(
+async function generateResponse(
   originalPrompt: string,
   searchResult: SearchResult,
   abortSignal?: AbortSignal,
-): Promise<ReportOutput> {
+): Promise<ResponseOutput> {
   const context = searchResult.results
     .map((r, i) => {
       const excerpts = r.excerpts?.join("\n\n") || "";
@@ -115,17 +129,18 @@ ${excerpts}`;
   const result = await generateObject({
     model: wrapAISDKModel(registry.languageModel("groq:openai/gpt-oss-120b")),
     abortSignal,
-    schema: ReportSchema,
+    schema: ResponseSchema,
     experimental_repairText: repairJson,
     messages: [
       {
         role: "system",
-        content: `Generate a research report answering the question using the provided sources.
+        content: `
+        Generate a full report answering the question and using the provided sources.
 
-Requirements:
-- Use inline citations [N] when referencing information
-- End with a ## Sources section listing each used source as: [N] Title - Full URL
-- Include the complete URL from each source (do not omit or shorten URLs)`,
+        Requirements:
+        - NEVER add inline citatations into the content. You may, when necessary add webpage context (ex: See: [Source Page Title])
+        - NEVER include a sources/references section at the end of the report,
+        - ALWAYS include each source in the sources array with siteName, pageTitle, and full url`,
       },
       { role: "system", content: `Today: ${getTodaysDate()}` },
       { role: "user", content: `Question: ${originalPrompt}\n\nSources:\n${context}` },
@@ -134,7 +149,11 @@ Requirements:
     maxOutputTokens: 8192,
   });
 
-  return result.object;
+  return {
+    response: result.object.response,
+    sources: result.object.sources,
+    summary: result.object.summary,
+  };
 }
 
 export const webSearchAgent = createAgent<string, WebSearchAgentResult>({
@@ -164,7 +183,7 @@ export const webSearchAgent = createAgent<string, WebSearchAgentResult>({
 
     stream?.emit({
       type: "data-tool-progress",
-      data: { toolName: "Research", content: "Analyzing query" },
+      data: { toolName: "Web Search", content: "Analyzing query" },
     });
 
     // Tagged union for analysis result - tools mutate this during execution
@@ -229,14 +248,14 @@ export const webSearchAgent = createAgent<string, WebSearchAgentResult>({
 
     const { analysis } = analysisState;
 
-    const [progressMessage, reportTitle] = await Promise.all([
-      generateResearchProgress(prompt, abortSignal),
-      generateReportTitle(prompt, abortSignal),
+    const [progressMessage, reportDescription] = await Promise.all([
+      generateResponseProgress(prompt, abortSignal),
+      generateResponseDescription(prompt, abortSignal),
     ]);
 
     stream?.emit({
       type: "data-tool-progress",
-      data: { toolName: "Research", content: progressMessage },
+      data: { toolName: "Web Search", content: progressMessage },
     });
 
     const searchResult = await executeSearch(parallelClient, prompt, analysis, logger);
@@ -246,12 +265,16 @@ export const webSearchAgent = createAgent<string, WebSearchAgentResult>({
       return fail({ reason: "No relevant results found for your query" });
     }
 
-    const { report, summary } = await generateReport(prompt, searchResult, abortSignal);
+    const {
+      response: webResponse,
+      sources,
+      summary,
+    } = await generateResponse(prompt, searchResult, abortSignal);
 
     const response = await parseResult(
       client.artifactsStorage.index.$post({
         json: {
-          data: { type: "summary", version: 1, data: report },
+          data: { type: "web-search", version: 1, data: { response: webResponse, sources } },
           summary,
           workspaceId: session.workspaceId,
           chatId: session.streamId,
@@ -269,7 +292,8 @@ export const webSearchAgent = createAgent<string, WebSearchAgentResult>({
       type: "data-outline-update",
       data: {
         id: "web-search",
-        title: reportTitle,
+        title: "Search Result",
+        content: reportDescription,
         timestamp: Date.now(),
         artifactId,
         artifactLabel: "View Report",
@@ -278,6 +302,6 @@ export const webSearchAgent = createAgent<string, WebSearchAgentResult>({
 
     logger.info("Research completed", { artifactId });
 
-    return success({ summary, artifactRef: { id: artifactId, type: "summary", summary } });
+    return success({ summary, artifactRef: { id: artifactId, type: "web-search", summary } });
   },
 });

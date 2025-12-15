@@ -6,6 +6,7 @@ import File from "$lib/components/primitives/file.svelte";
 import Schedule from "$lib/components/primitives/schedule.svelte";
 import Summary from "$lib/components/primitives/summary.svelte";
 import Table from "$lib/components/primitives/table.svelte";
+import WebSearch from "$lib/components/primitives/web-search.svelte";
 import MessageWrapper from "../messages/wrapper.svelte";
 import WorkspacePlan from "./workspace-plan.svelte";
 
@@ -45,6 +46,8 @@ $effect(() => {
 					source={artifact.data.source}
 					sourceUrl={artifact.data.sourceUrl}
 				/>
+			{:else if artifact.type === 'web-search'}
+				<WebSearch data={artifact.data} />
 			{:else if artifact.type === 'summary'}
 				<Summary data={artifact.data} />
 			{:else if artifact.type === 'slack-summary'}

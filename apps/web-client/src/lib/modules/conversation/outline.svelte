@@ -38,7 +38,6 @@ let { messages }: { messages: AtlasUIMessage[] } = $props();
 									const match = document.getElementById(`artifact-${part.data.artifactId}`);
 									if (match) {
 										e.preventDefault();
-										chatContext.userHasScrolled = true;
 
 										match.scrollIntoView({ behavior: 'smooth' });
 									}

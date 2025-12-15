@@ -5,7 +5,7 @@ import {
   extractLinkData,
   markdownToHTML,
   parseMarkdownToAST,
-} from "./markdown-utils.ts";
+} from "./markdown.ts";
 
 Deno.test("parseMarkdownToAST - simple paragraph", () => {
   const ast = parseMarkdownToAST("Hello world");

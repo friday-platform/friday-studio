@@ -28,6 +28,7 @@ export type {
   SlackSummaryData,
   SummaryData,
   TableData,
+  WebSearchData,
   WorkspacePlan,
 } from "./primitives.ts";
 export {
@@ -37,5 +38,6 @@ export {
   SlackSummaryDataSchema,
   SummaryDataSchema,
   TableDataSchema,
+  WebSearchDataSchema,
   WorkspacePlanSchema,
 } from "./primitives.ts";

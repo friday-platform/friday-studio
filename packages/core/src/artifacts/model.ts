@@ -6,6 +6,7 @@ import {
   SlackSummaryDataSchema,
   SummaryDataSchema,
   TableDataSchema,
+  WebSearchDataSchema,
   WorkspacePlanSchema,
 } from "./primitives.ts";
 
@@ -52,6 +53,12 @@ const TableArtifactSchema = z.object({
   data: TableDataSchema,
 });
 
+const WebSearchArtifactSchema = z.object({
+  type: z.literal("web-search"),
+  version: z.literal(1),
+  data: WebSearchDataSchema,
+});
+
 /** Artifact data schemas for storage (output) */
 export const ArtifactDataSchema = z.discriminatedUnion("type", [
   WorkspacePlanArtifactSchema,
@@ -60,7 +67,7 @@ export const ArtifactDataSchema = z.discriminatedUnion("type", [
   SlackSummaryArtifactSchema,
   FileArtifactSchema,
   TableArtifactSchema,
-  // Add future schemas here
+  WebSearchArtifactSchema,
 ]);
 
 export type ArtifactType = z.infer<typeof ArtifactDataSchema>["type"];
@@ -77,6 +84,7 @@ const FileArtifactInputSchema = z.object({
   data: FileDataInputSchema,
 });
 const TableInputSchema = TableArtifactSchema;
+const WebSearchInputSchema = WebSearchArtifactSchema;
 
 export const ArtifactDataInputSchema = z.discriminatedUnion("type", [
   WorkspacePlanInputSchema,
@@ -85,6 +93,7 @@ export const ArtifactDataInputSchema = z.discriminatedUnion("type", [
   SlackSummaryInputSchema,
   FileArtifactInputSchema,
   TableInputSchema,
+  WebSearchInputSchema,
 ]);
 
 export type ArtifactDataInput = z.infer<typeof ArtifactDataInputSchema>;
@@ -97,6 +106,7 @@ export const ArtifactTypeSchema = z.enum([
   "slack-summary",
   "file",
   "table",
+  "web-search",
 ]);
 
 /** Shared request schemas for REST and MCP */

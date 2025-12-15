@@ -2,7 +2,7 @@
 import type { AtlasUIMessagePart } from "@atlas/agent-sdk";
 import { SvelteMap } from "svelte/reactivity";
 import { IconSmall } from "$lib/components/icons/small";
-import { markdownToHTML } from "$lib/modules/messages/markdown-utils";
+import { markdownToHTML } from "$lib/utils/markdown";
 
 const { parts }: { parts: AtlasUIMessagePart[] } = $props();
 
