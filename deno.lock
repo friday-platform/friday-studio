@@ -33,7 +33,7 @@
     "npm:@ai-sdk/svelte@^3.0.112": "3.0.112_svelte@5.45.10__acorn@8.15.0_zod@4.1.13",
     "npm:@biomejs/biome@*": "2.3.8",
     "npm:@eslint/compat@2": "2.0.0_eslint@9.39.1",
-    "npm:@eslint/js@^9.39.1": "9.39.1",
+    "npm:@eslint/js@^9.39.2": "9.39.2",
     "npm:@faker-js/faker@^10.1.0": "10.1.0",
     "npm:@hono/standard-validator@0.2": "0.2.0_@standard-schema+spec@1.0.0_hono@4.11.1",
     "npm:@hono/zod-validator@~0.7.5": "0.7.5_hono@4.11.1_zod@4.1.13",
@@ -732,6 +732,9 @@
     },
     "@eslint/js@9.39.1": {
       "integrity": "sha512-S26Stp4zCy88tH94QbBv3XCuzRQiZ9yXofEILmglYTh/Ug/a9/umqvgFtYBAo3Lp0nsI/5/qH1CCrbdK3AP1Tw=="
+    },
+    "@eslint/js@9.39.2": {
+      "integrity": "sha512-q1mjIoW1VX4IvSocvM/vbTiveKC4k9eLrajNEuSsmjymSDEbpGddtpfOoN7YGAqBK3NG+uqo8ia4PDTt8buCYA=="
     },
     "@eslint/object-schema@2.1.7": {
       "integrity": "sha512-VtAOaymWVfZcmZbp6E2mympDIHvyjXs/12LqWYjVw6qjrfF+VK+fyG33kChz3nnK+SU5/NeHOqrTEHS8sXO3OA=="
@@ -3130,7 +3133,7 @@
         "@eslint/config-helpers",
         "@eslint/core@0.17.0",
         "@eslint/eslintrc",
-        "@eslint/js",
+        "@eslint/js@9.39.1",
         "@eslint/plugin-kit",
         "@humanfs/node",
         "@humanwhocodes/module-importer",
@@ -5349,7 +5352,7 @@
         "packageJson": {
           "dependencies": [
             "npm:@eslint/compat@2",
-            "npm:@eslint/js@^9.39.1",
+            "npm:@eslint/js@^9.39.2",
             "npm:@ianvs/prettier-plugin-sort-imports@^4.7.0",
             "npm:@melt-ui/svelte@~0.86.6",
             "npm:@sentry/sveltekit@^10.30.0",
@@ -5411,7 +5414,7 @@
           "dependencies": [
             "npm:@ai-sdk/svelte@^3.0.112",
             "npm:@eslint/compat@2",
-            "npm:@eslint/js@^9.39.1",
+            "npm:@eslint/js@^9.39.2",
             "npm:@ianvs/prettier-plugin-sort-imports@^4.7.0",
             "npm:@jsr/std__assert@^1.0.14",
             "npm:@jsr/std__yaml@^1.0.10",
