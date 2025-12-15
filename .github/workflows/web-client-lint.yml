@@ -1,17 +1,14 @@
-name: Type check
+name: Web Client Lint
 
 on:
   pull_request:
-    branches: [main]
-  merge_group:
-
-permissions:
-  contents: read
+    paths:
+      - "apps/web-client/**"
 
 jobs:
-  type-check:
+  lint:
     runs-on: ubuntu-latest
-
+    timeout-minutes: 5
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -22,7 +19,8 @@ jobs:
           deno-version: v2.6.0
 
       - name: Install dependencies
-        run: deno install --frozen
+        run: deno install
 
-      - name: Run type check
-        run: deno check
+      - name: Run ESLint
+        run: deno task eslint
+        working-directory: apps/web-client

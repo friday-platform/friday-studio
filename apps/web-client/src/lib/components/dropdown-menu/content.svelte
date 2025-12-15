@@ -19,7 +19,6 @@ let {
 const { open, menu, positioning, overlay } = getContext();
 </script>
 
-<!-- svelte-ignore event_directive_deprecated -->
 {#if $open}
 	<div class="overlay" {...$overlay} use:overlay></div>
 

@@ -1,18 +1,15 @@
 <script lang="ts">
 import type { AtlasUIMessage } from "@atlas/agent-sdk";
-import { getChatContext } from "$lib/chat-context.svelte";
 import { formatOutlineDate } from "$lib/utils/date";
 import OutlineItemDescription from "./outline-item-description.svelte";
-
-const chatContext = getChatContext();
 
 let { messages }: { messages: AtlasUIMessage[] } = $props();
 </script>
 
 {#if messages.length > 0}
 	<div class="component">
-		{#each messages as message}
-			{#each message.parts as part}
+		{#each messages as message, mi (mi)}
+			{#each message.parts as part, pi (pi)}
 				{#if part.type === 'data-outline-update'}
 					<article>
 						<header>

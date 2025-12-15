@@ -21,14 +21,14 @@ let isExpanded = $state(false);
 			<h1>{workspacePlan.workspace.name}</h1>
 			<p>{workspacePlan.workspace.purpose}</p>
 
-			{#each workspacePlan.jobs as job}
+			{#each workspacePlan.jobs as job (job.name)}
 				{@const signal = workspacePlan.signals.find((s) => s.id === job.triggerSignalId)}
 
 				<h2>{job.name}</h2>
 				<p>{signal?.description}</p>
 
 				<ul>
-					{#each job.steps as step}
+					{#each job.steps as step, i (i)}
 						{@const agent = workspacePlan.agents.find((a) => a.id === step.agentId)}
 						<li>
 							<strong>{agent?.name}</strong>

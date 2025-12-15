@@ -11,6 +11,7 @@ import svelteConfig from "./svelte.config.js";
 const gitignorePath = fileURLToPath(new URL("./.gitignore", import.meta.url));
 
 export default ts.config(
+  { languageOptions: { parserOptions: { tsconfigRootDir: import.meta.dirname } } },
   includeIgnoreFile(gitignorePath),
   js.configs.recommended,
   ...ts.configs.recommended,
@@ -23,6 +24,21 @@ export default ts.config(
       // typescript-eslint strongly recommend that you do not use the no-undef lint rule on TypeScript projects.
       // see: https://typescript-eslint.io/troubleshooting/faqs/eslint/#i-get-errors-from-the-no-undef-rule-about-global-variables-not-being-defined-even-though-there-are-no-typescript-errors
       "no-undef": "off",
+      "@typescript-eslint/no-unused-vars": [
+        "error",
+        { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
+      ],
+      // Disallow $inspect - it's for debugging only
+      "svelte/no-inspect": "error",
+      // Disable overly strict rules
+      "svelte/no-navigation-without-resolve": "off", // Would require significant refactoring
+      "svelte/no-at-html-tags": "off", // Legitimate uses with sanitized markdown
+      "svelte/require-each-key": "error", // Keys required for DOM reconciliation
+      "svelte/no-unused-props": "off", // Can be intentional for API design
+      "svelte/no-dupe-style-properties": "off", // Valid for CSS color fallbacks (P3)
+      "svelte/prefer-svelte-reactivity": "off", // Map reassignment pattern is valid
+      "svelte/no-dom-manipulating": "off", // Some intentional DOM manipulation for measurements
+      "svelte/require-store-reactive-access": "off", // Melt UI actions use raw store in use: directive
     },
   },
   {

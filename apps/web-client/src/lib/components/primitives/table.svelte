@@ -8,15 +8,15 @@ const { data }: { data: { headers: string[]; rows: Record<string, string | numbe
 	<table>
 		<thead>
 			<tr>
-				{#each data.headers as header}
+				{#each data.headers as header (header)}
 					<th>{header}</th>
 				{/each}
 			</tr>
 		</thead>
 		<tbody>
-			{#each data.rows as row}
+			{#each data.rows as row, i (i)}
 				<tr>
-					{#each data.headers as header}
+					{#each data.headers as header (header)}
 						<td>{row[header]}</td>
 					{/each}
 				</tr>

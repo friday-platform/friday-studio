@@ -66,6 +66,7 @@ onMount(async () => {
 
 onDestroy(() => {
   ctx.destroy();
+  unlisten?.();
 });
 </script>
 

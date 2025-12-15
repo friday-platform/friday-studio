@@ -45,7 +45,7 @@ function pluralize(count: number, singular: string, plural: string) {
 			<div class="sidebar-section">
 				<h2 class="sidebar-label">Jobs</h2>
 				<ul class="sidebar-list">
-					{#each Object.keys(workspace.config.jobs) as jobId}
+					{#each Object.keys(workspace.config.jobs) as jobId (jobId)}
 						<li class="sidebar-item">{workspace.config.jobs[jobId].name || jobId}</li>
 					{/each}
 				</ul>
@@ -56,7 +56,7 @@ function pluralize(count: number, singular: string, plural: string) {
 			<div class="sidebar-section">
 				<h2 class="sidebar-label">Agents</h2>
 				<ul class="sidebar-list">
-					{#each Object.keys(workspace.config.agents) as agentId}
+					{#each Object.keys(workspace.config.agents) as agentId (agentId)}
 						<li class="sidebar-item">{agentId}</li>
 					{/each}
 				</ul>
@@ -67,7 +67,7 @@ function pluralize(count: number, singular: string, plural: string) {
 			<div class="sidebar-section">
 				<h2 class="sidebar-label">Signals</h2>
 				<ul class="sidebar-list">
-					{#each Object.keys(workspace.config.signals) as signalId}
+					{#each Object.keys(workspace.config.signals) as signalId (signalId)}
 						<li class="sidebar-item">
 							{workspace.config.signals[signalId].description || signalId}
 						</li>

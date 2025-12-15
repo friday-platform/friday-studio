@@ -149,13 +149,13 @@ function hasConflictingEvents(id: string, start: number, end: number) {
 
 		<div class="schedule" style:--block-count={blocks * 4}>
 			<div class="hours">
-				{#each Array.from({ length: blocks }, (_, i) => i + startTime) as time}
+				{#each Array.from({ length: blocks }, (_, i) => i + startTime) as time (time)}
 					{@render hour(time)}
 				{/each}
 			</div>
 
 			<div class="events" bind:this={eventsContainer}>
-				{#each parsedEvents as item}
+				{#each parsedEvents as item, i (i)}
 					{@render event(item)}
 				{/each}
 			</div>

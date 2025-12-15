@@ -1,5 +1,5 @@
 <script lang="ts">
-let { artifacts }: { artifacts: string[] } = $props();
+let { artifacts: _artifacts }: { artifacts: string[] } = $props();
 </script>
 
 <!-- todo -->

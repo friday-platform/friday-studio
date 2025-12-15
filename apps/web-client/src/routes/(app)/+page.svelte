@@ -188,7 +188,7 @@ let showDetails = new SvelteMap<string, boolean>();
 					>
 						{#if appCtx.stagedFiles.state.size > 0}
 							<div class="staged-files">
-								{#each appCtx.stagedFiles.state.entries() as [itemId, file]}
+								{#each appCtx.stagedFiles.state.entries() as [itemId, file] (itemId)}
 									<button
 										title={file.path}
 										onclick={async () => {

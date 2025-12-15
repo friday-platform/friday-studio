@@ -132,7 +132,7 @@ onMount(() => {
 			</span>
 
 			<ul class="section-list">
-				{#each spaces as space}
+				{#each spaces as space (space.id)}
 					<li>
 						<a
 							href={ctx.routes.spaces.item(space.id)}

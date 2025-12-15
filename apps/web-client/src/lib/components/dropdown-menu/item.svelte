@@ -26,7 +26,7 @@ let {
   children,
   accent = "none",
   description,
-  indeterminate = false,
+  indeterminate: _indeterminate = false,
   closeOnClick = true,
   noninteractive = false,
   size = "default",

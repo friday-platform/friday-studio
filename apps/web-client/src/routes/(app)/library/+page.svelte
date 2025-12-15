@@ -26,7 +26,7 @@ onMount(async () => {
 				<div class="header created">Created</div>
 			</div>
 
-			{#each libraryItems as item}
+			{#each libraryItems as item, i (i)}
 				{#if __TAURI_BUILD__}
 					<button
 						class="row"

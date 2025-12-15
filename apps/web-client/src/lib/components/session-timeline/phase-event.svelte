@@ -53,7 +53,7 @@ const phaseDetails = $derived.by(() => {
 				<div class="phase-issues">
 					<div class="issues-label">Issues:</div>
 					<ul class="issues-list">
-						{#each phaseDetails.issues as issue}
+						{#each phaseDetails.issues as issue, i (i)}
 							<li>{issue}</li>
 						{/each}
 					</ul>

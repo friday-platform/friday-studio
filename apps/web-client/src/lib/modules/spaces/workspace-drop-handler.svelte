@@ -11,11 +11,11 @@ import { addWorkspace, handleWorkspaceFileDrop } from "./utils.svelte";
 const appCtx = getAppContext();
 
 let unlisten: (() => void) | undefined;
-let isUploading = $state(false);
+let _isUploading = $state(false);
 let workspaceConfig = $state<WorkspaceConfig | null>(null);
 
 let showDialog = $state(false);
-let open = writable(true);
+let _open = writable(true);
 
 onMount(() => {
   async function setupDragDrop() {

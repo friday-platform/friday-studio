@@ -10,7 +10,7 @@ let views = new SvelteMap<number, boolean>();
 </script>
 
 <div class="details">
-	{#each parts as part, index}
+	{#each parts as part, index (index)}
 		{#if part.type === 'step-start'}
 			<div class="step-start">
 				<span class="step-start-text">

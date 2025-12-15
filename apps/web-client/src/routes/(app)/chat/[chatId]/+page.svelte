@@ -64,11 +64,11 @@ function setup() {
 afterNavigate(setup);
 onMount(setup);
 
-let userHasScrolled = $state(false);
+let _userHasScrolled = $state(false);
 
 // Handle Scrolling
 function handleScroll() {
-  userHasScrolled = true;
+  _userHasScrolled = true;
 
   if (!scrollContainer) return;
 
@@ -77,11 +77,11 @@ function handleScroll() {
 
   // If user scrolls away from bottom, mark as manually scrolled
   if (!isAtBottom) {
-    userHasScrolled = true;
+    _userHasScrolled = true;
   }
   // If user scrolls back to bottom, reset the flag
   if (isAtBottom) {
-    userHasScrolled = false;
+    _userHasScrolled = false;
   }
 }
 
@@ -237,7 +237,7 @@ let showDetails = new SvelteMap<string, boolean>();
 
 									if (!sanitizedMessage || sanitizedMessage.trim().length === 0) return;
 
-									userHasScrolled = false;
+									_userHasScrolled = false;
 									scrollToBottom();
 								} catch (e) {
 									console.error(e);
@@ -246,7 +246,7 @@ let showDetails = new SvelteMap<string, boolean>();
 						>
 							{#if appCtx.stagedFiles.state.size > 0}
 								<div class="staged-files">
-									{#each appCtx.stagedFiles.state.entries() as [itemId, file]}
+									{#each appCtx.stagedFiles.state.entries() as [itemId, file] (itemId)}
 										<button
 											title={file.path}
 											onclick={async () => {

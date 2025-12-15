@@ -39,7 +39,7 @@ declare global {
 }
 
 declare module "@tanstack/svelte-table" {
-  // biome-ignore lint/correctness/noUnusedVariables: required by svelte table
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   interface ColumnMeta<TData extends RowData, TValue> {
     bold?: boolean;
     faded?: boolean;

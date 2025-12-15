@@ -18,9 +18,8 @@ if (!__DEV_MODE__) {
   document.head.appendChild(gaScript);
 
   window.dataLayer = window.dataLayer || [];
-  window.gtag = function () {
-    // biome-ignore lint/complexity/noArguments: matches Google's gtag snippet exactly
-    window.dataLayer.push(arguments);
+  window.gtag = function (...args: unknown[]) {
+    window.dataLayer.push(args);
   };
   window.gtag("js", new Date());
   window.gtag("config", GA_MEASUREMENT_ID);

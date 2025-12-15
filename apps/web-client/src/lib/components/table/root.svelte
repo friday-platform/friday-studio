@@ -41,7 +41,7 @@ function getColumnLayout() {
  */
 </script>
 
-{#snippet row({ item, href, index }: { item: Row<T>; href: string | undefined; index: number })}
+{#snippet row({ item, href, index }: { item: Row; href: string | undefined; index: number })}
 	<svelte:element
 		this={href !== undefined && !item.getCanExpand() ? 'a' : 'div'}
 		role={href !== undefined && !item.getCanExpand() ? 'link' : 'row'}
@@ -56,7 +56,7 @@ function getColumnLayout() {
 			}
 		}}
 	>
-		{#each item.getVisibleCells() as cell, cellIndex}
+		{#each item.getVisibleCells() as cell, cellIndex (cell.id)}
 			<TableCell
 				role="cell"
 				align={cell.column.columnDef.meta?.align ? cell.column.columnDef.meta.align : 'left'}
@@ -75,7 +75,7 @@ function getColumnLayout() {
 
 <div data-tempest class="tempest-component__data-table rowSize--{rowSize}" class:padded class:grow>
 	<div class="component" style:grid-template-columns={getColumnLayout()} role="table">
-		{#each table.getRowModel().rows as item, index}
+		{#each table.getRowModel().rows as item, index (item.id)}
 			{@render row({ item, href: rowPath ? rowPath(item.original) : undefined, index })}
 		{/each}
 	</div>

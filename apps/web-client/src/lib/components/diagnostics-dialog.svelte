@@ -39,7 +39,7 @@ async function runDiagnostics() {
 
     // Run the diagnostics command
     const { invoke } = await import("@tauri-apps/api/core");
-    const result = await invoke<string>("run_diagnostics");
+    await invoke<string>("run_diagnostics");
 
     status = "success";
     progressMessage = "Diagnostics completed successfully!";

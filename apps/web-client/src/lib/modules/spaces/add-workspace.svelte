@@ -14,7 +14,7 @@ let { triggerContents }: { triggerContents: Snippet } = $props();
 const appCtx = getAppContext();
 
 let workspaceConfig = $state<WorkspaceConfig | null>(null);
-let isCreating = $state(false);
+let _isCreating = $state(false);
 let unlisten: (() => void) | undefined;
 
 async function handleSelectFile() {

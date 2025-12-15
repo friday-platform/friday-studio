@@ -14,8 +14,8 @@ let {
   onTextChange,
   value = $bindable(),
   placeholder,
-  size = "regular",
-  autoFocus = false,
+  size: _size = "regular",
+  autoFocus: _autoFocus = false,
   disabled = false,
   ...rest
 }: Props = $props();
@@ -29,7 +29,6 @@ $effect(() => {
 
 function updateDimensions(_value?: string | null | undefined) {
   if (!textarea || !text) return;
-
   text.innerHTML = `${textarea.value} <br />`;
   const bounds = text.getBoundingClientRect();
   textarea.style.height = `${bounds.height}px`;

@@ -8,7 +8,7 @@ import { getVersion, invoke } from "$lib/utils/tauri-loader";
 const ctx = getAppContext();
 
 let envVars = $state<{ key: string; value: string; id: number }[]>([]);
-let isSaving = $state(false);
+let _isSaving = $state(false);
 let isRestarting = $state(false);
 let message = $state("");
 let nextId = 1;
@@ -56,7 +56,7 @@ async function removeEntry(id: number) {
 }
 
 async function saveChanges() {
-  isSaving = true;
+  _isSaving = true;
 
   try {
     // Only save entries that have both key and value
@@ -72,7 +72,7 @@ async function saveChanges() {
     console.error("Failed to save env vars:", err);
     alert("Failed to save environment variables");
   } finally {
-    isSaving = false;
+    _isSaving = false;
   }
 }
 
