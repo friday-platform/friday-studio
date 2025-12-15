@@ -18,7 +18,16 @@ export function registerArtifactsCreateTool(server: McpServer, ctx: ToolContext)
       inputSchema: {
         data: z
           .preprocess(unstringifyNestedJson, ArtifactDataInputSchema)
-          .describe("Type-specific artifact data"),
+          .describe(
+            "Type-specific artifact data. Note: You must include the type key value pair in here",
+          ),
+        title: z
+          .string()
+          .min(1)
+          .max(200)
+          .describe(
+            "Short, descriptive title for the artifact (e.g., 'Weekly Calendar Summary', 'Q4 Sales Data')",
+          ),
         summary: z
           .string()
           .min(10)
@@ -30,10 +39,10 @@ export function registerArtifactsCreateTool(server: McpServer, ctx: ToolContext)
         streamId: z.string().optional().describe("SSE stream ID"),
       },
     },
-    async ({ data, summary, workspaceId, streamId }): Promise<CallToolResult> => {
+    async ({ data, title, summary, workspaceId, streamId }): Promise<CallToolResult> => {
       ctx.logger.info("MCP artifacts_create called", { type: data.type, workspaceId, streamId });
 
-      const payload = { data, summary, workspaceId, chatId: streamId };
+      const payload = { data, title, summary, workspaceId, chatId: streamId };
 
       const response = await parseResult(client.artifactsStorage.index.$post({ json: payload }));
 

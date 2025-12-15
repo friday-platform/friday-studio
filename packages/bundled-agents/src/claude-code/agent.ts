@@ -144,6 +144,7 @@ export const claudeCodeAgent = createAgent<string, CCAgentResult>({
         client.artifactsStorage.index.$post({
           json: {
             data: { type: "summary" as const, version: 1 as const, data: responseText },
+            title: "Claude Code Output",
             summary: `Claude Code: ${prompt.slice(0, 100)}${prompt.length > 100 ? "..." : ""}`,
           },
         }),

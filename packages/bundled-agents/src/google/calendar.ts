@@ -82,7 +82,7 @@ export const googleCalendarAgent = createAgent<string, GoogleCalendarAgentResult
       - If no Google Calendar tools are available, reply: 'Cannot complete: Google Calendar tools unavailable.'
       - If any tool call errors (timeout, authorization, unknown), state the failure briefly and stop.
       - Summarize tool outputs to provide a concise response, including attendees, email addresses, times, locations, and event details, if available.
-      - After successfully retrieving calendar events, create an artifact with 'calendar-schedule' type.
+      - After successfully retrieving calendar events, create an artifact using artifacts_create with type 'calendar-schedule'.
       - **Only** return the number of events retrieved in the summary. Never return the the calendar schedule, times of events, or details in the response.
     `;
 

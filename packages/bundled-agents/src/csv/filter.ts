@@ -1,7 +1,6 @@
 import { stat } from "node:fs/promises";
 import { type ArtifactRef, createAgent } from "@atlas/agent-sdk";
-import { parseCsv } from "@atlas/core/artifacts";
-import { ArtifactStorage } from "@atlas/core/artifacts/server";
+import { ArtifactStorage, parseCsv } from "@atlas/core/artifacts/server";
 import { registry } from "@atlas/llm";
 import { getWorkspaceFilesDir } from "@atlas/utils/paths.server";
 import { Database } from "@db/sqlite";
@@ -301,6 +300,7 @@ Call buildSqlWhere tool with your WHERE clause (WITHOUT the 'WHERE' keyword).`,
       const createResult = await ArtifactStorage.create({
         workspaceId: session.workspaceId,
         data: { type: "file", version: 1, data: { path: jsonFilePath } },
+        title: `CSV Filter: ${basename(csvPath)}`,
         summary: `CSV filter results: ${samples.length} sample(s) from ${filteredCount} filtered record(s)`,
       });
 

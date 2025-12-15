@@ -109,12 +109,12 @@ const artifactsApp = daemonFactory
       return c.json({ contents: result.data }, 200);
     },
   )
-  /** List artifacts by workspace or chat */
+  /** List artifacts - optionally filter by workspace or chat */
   .get("/", zValidator("query", ListArtifactsQuery), async (c) => {
     const query = c.req.valid("query");
 
-    if (!query.workspaceId && !query.chatId) {
-      return c.json({ error: "Either workspaceId or chatId is required" }, 400);
+    if (query.workspaceId && query.chatId) {
+      return c.json({ error: "Cannot specify both workspaceId and chatId" }, 400);
     }
 
     if (query.workspaceId) {
@@ -140,7 +140,14 @@ const artifactsApp = daemonFactory
       return c.json({ artifacts: result.data }, 200);
     }
 
-    return c.json({ error: "Either workspaceId or chatId is required" }, 400);
+    // No filter - return all artifacts
+    const result = await ArtifactStorage.listAll({ limit: query.limit });
+
+    if (!result.ok) {
+      return c.json({ error: result.error }, 500);
+    }
+
+    return c.json({ artifacts: result.data }, 200);
   })
   /** Soft delete artifact */
   .delete("/:id", zValidator("param", z.object({ id: z.string() })), async (c) => {

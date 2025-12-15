@@ -1,79 +1,54 @@
 <script lang="ts">
-import type { LibraryItem } from "@atlas/core/library";
-import { onMount } from "svelte";
-import { getAppContext } from "$lib/app-context.svelte";
-import { openPath } from "$lib/utils/tauri-loader";
+import { resolve } from "$app/paths";
+import { Breadcrumbs } from "$lib/components/breadcrumbs";
+import type { PageData } from "./$types";
 
-const appCtx = getAppContext();
+let { data }: { data: PageData } = $props();
 
-let libraryItems = $state<LibraryItem[]>([]);
-
-onMount(async () => {
-  // Load library items
-  const items = await appCtx.daemonClient.listLibraryItems({ limit: 50 });
-  libraryItems = items.items;
-});
+function formatArtifactType(type: string): string {
+  return type.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
 </script>
 
-<div class="container">
-	<h2>Library</h2>
+<Breadcrumbs.Root>
+	<Breadcrumbs.Item href="/library">Library</Breadcrumbs.Item>
+</Breadcrumbs.Root>
 
+<div class="container">
 	<div class="items">
 		<div class="table">
 			<div class="row">
-				<div class="header">Name</div>
-				<div class="header">MIME Type</div>
+				<div class="header">Title</div>
+				<div class="header">Type</div>
 				<div class="header created">Created</div>
 			</div>
 
-			{#each libraryItems as item, i (i)}
-				{#if __TAURI_BUILD__}
-					<button
-						class="row"
-						onclick={async () => {
-							if (!openPath || !item.full_path) return;
-							try {
-								await openPath(item.full_path);
-							} catch (error) {
-								console.error('Failed to open path:', error);
-								alert('Failed to open file');
-							}
-						}}
-					>
-						<div class="cell">
-							{item.name}
-						</div>
-
-						<div class="cell">
-							{item.mime_type || 'unknown'}
-						</div>
-
-						<div class="cell created">
-							{new Date(item.created_at).toLocaleString('en-US', {
-								dateStyle: 'long',
-								timeStyle: 'short'
-							})}
-						</div>
-					</button>
-				{:else}
-					<div class="row">
-						<div class="cell">
-							{item.name}
-						</div>
-
-						<div class="cell">
-							{item.mime_type || 'unknown'}
-						</div>
-
-						<div class="cell created">
-							{new Date(item.created_at).toLocaleString('en-US', {
-								dateStyle: 'long',
-								timeStyle: 'short'
-							})}
-						</div>
+			{#each data.artifacts as artifact (artifact.id)}
+				<a class="row" href={resolve('/library/[artifactId]', { artifactId: artifact.id })}>
+					<div class="cell">
+						{artifact.title}
 					</div>
-				{/if}
+
+					<div class="cell type">
+						{formatArtifactType(artifact.type)}
+					</div>
+
+					<div class="cell created">
+						{new Date(artifact.createdAt).toLocaleString('en-US', {
+							dateStyle: 'long',
+							timeStyle: 'short'
+						})}
+					</div>
+				</a>
 			{/each}
+
+			{#if data.artifacts.length === 0}
+				<div class="row empty">
+					<div class="cell" style="grid-column: 1 / -1; text-align: center; color: var(--text-3);">
+						No artifacts yet
+					</div>
+				</div>
+			{/if}
 		</div>
 	</div>
 </div>
@@ -120,14 +95,19 @@ onMount(async () => {
 			display: grid;
 			grid-template-columns: subgrid;
 			grid-column: 1 / -1;
-			transition: all 75ms ease;
+			color: inherit;
+			text-decoration: none;
+
+			&:hover {
+				background-color: var(--surface-2);
+			}
 
 			&:last-child {
 				border-block-end: none;
 			}
 
-			&:matches(button):hover {
-				background-color: var(--color-surface-2);
+			&.empty {
+				block-size: var(--size-24);
 			}
 		}
 

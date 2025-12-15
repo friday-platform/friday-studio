@@ -90,10 +90,12 @@ EXAMPLES:
 → failQuery: {"reason":"This is an action request, not a research question"}`;
 
 const ResponseSchema = z.object({
+  title: z.string().describe("Concise title for the report (≤40 chars). No markdown."),
   response: z.string().describe(`
       - Full markdown response of the research.
       - NEVER use inline citations [N] when referencing information.
       - NEVER append a list of citations or sources to the end of the report.
+      - Use proper headings for sections
     `),
   sources: z
     .array(
@@ -150,6 +152,7 @@ ${excerpts}`;
   });
 
   return {
+    title: result.object.title,
     response: result.object.response,
     sources: result.object.sources,
     summary: result.object.summary,
@@ -266,6 +269,7 @@ export const webSearchAgent = createAgent<string, WebSearchAgentResult>({
     }
 
     const {
+      title,
       response: webResponse,
       sources,
       summary,
@@ -274,6 +278,7 @@ export const webSearchAgent = createAgent<string, WebSearchAgentResult>({
     const response = await parseResult(
       client.artifactsStorage.index.$post({
         json: {
+          title,
           data: { type: "web-search", version: 1, data: { response: webResponse, sources } },
           summary,
           workspaceId: session.workspaceId,

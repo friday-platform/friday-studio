@@ -73,6 +73,7 @@ async function create(input: CreateArtifactInput): Promise<Result<Artifact, stri
     type: artifactData.type,
     revision,
     data: artifactData,
+    title: input.title,
     summary: input.summary,
     workspaceId: input.workspaceId,
     chatId: input.chatId,
@@ -104,6 +105,7 @@ async function create(input: CreateArtifactInput): Promise<Result<Artifact, stri
 async function update(input: {
   id: string;
   data: ArtifactDataInput;
+  title?: string;
   summary: string;
   revisionMessage?: string;
 }): Promise<Result<Artifact, string>> {
@@ -151,6 +153,7 @@ async function update(input: {
     type: currentArtifact.type,
     revision: currentRevision + 1,
     data: artifactData,
+    title: input.title ?? currentArtifact.title,
     summary: input.summary,
     workspaceId: currentArtifact.workspaceId,
     chatId: currentArtifact.chatId,
@@ -254,6 +257,37 @@ async function listByChat(input: {
     if (deletedResult.value) continue;
 
     const artifactResult = await db.get<Artifact>(entry.value);
+    if (artifactResult.value) {
+      artifacts.push(artifactResult.value);
+    }
+  }
+
+  return success(artifacts);
+}
+
+/** List all artifacts (latest revisions only) */
+async function listAll(input: { limit?: number }): Promise<Result<Artifact[], string>> {
+  using db = await Deno.openKv(kvPath);
+
+  const artifacts: Artifact[] = [];
+  const limit = input.limit ?? 100;
+  const seenIds = new Set<string>();
+
+  const entries = db.list<number>({ prefix: ["artifact_latest"] });
+
+  for await (const entry of entries) {
+    if (artifacts.length >= limit) break;
+
+    const id = entry.key[1] as string;
+
+    if (seenIds.has(id)) continue;
+    seenIds.add(id);
+
+    const deletedResult = await db.get<Date>(keys.deleted(id));
+    if (deletedResult.value) continue;
+
+    const revision = entry.value;
+    const artifactResult = await db.get<Artifact>(keys.artifact(id, revision));
     if (artifactResult.value) {
       artifacts.push(artifactResult.value);
     }
@@ -398,9 +432,13 @@ export const ArtifactStorage = {
   update,
   get,
   getManyLatest,
+  listAll,
   listByWorkspace,
   listByChat,
   listRevisions,
   deleteArtifact,
   readFileContents,
 };
+
+export type { CsvParseResult } from "./parsers/mod.ts";
+export { CsvParseResultSchema, parseCsv } from "./parsers/mod.ts";

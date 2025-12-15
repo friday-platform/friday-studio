@@ -63,6 +63,7 @@ Output clean, well-organized data appropriate for tabular display.`;
         client.artifactsStorage.index.$post({
           json: {
             data: { type: "table", version: 1, data: tableData },
+            title: tableData.title || "Generated Table",
             summary: `Generated table: ${prompt.slice(0, 100)}${prompt.length > 100 ? "..." : ""}`,
             workspaceId: session.workspaceId,
             chatId: session.streamId,

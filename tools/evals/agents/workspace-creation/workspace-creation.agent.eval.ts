@@ -26,6 +26,7 @@ async function createPlanArtifact(
   const response = await parseResult(
     client.artifactsStorage.index.$post({
       json: {
+        title: plan.workspace.name,
         summary: "Test workspace plan",
         data: { type: "workspace-plan", version: 1, data: plan },
         workspaceId,

@@ -9,8 +9,7 @@
  */
 
 import { csvFilterSamplerAgent } from "@atlas/bundled-agents";
-import { parseCsv } from "@atlas/core/artifacts";
-import { ArtifactStorage } from "@atlas/core/artifacts/server";
+import { ArtifactStorage, parseCsv } from "@atlas/core/artifacts/server";
 import { assert, assertEquals } from "@std/assert";
 import { join } from "@std/path";
 import { AgentContextAdapter } from "../../lib/context.ts";

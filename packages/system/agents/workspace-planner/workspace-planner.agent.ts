@@ -509,6 +509,7 @@ Requirements: ${input.intent}`,
           client.artifactsStorage.index.$post({
             json: {
               data: { type: "workspace-plan", version: 1, data: planData },
+              title: planData.workspace.name,
               summary: artifactSummary,
               workspaceId: session.workspaceId,
               chatId: session.streamId,

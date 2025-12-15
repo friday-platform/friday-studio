@@ -121,6 +121,7 @@ export type FileDataInput = z.infer<typeof FileDataInputSchema>;
 
 /** Table data schema */
 export const TableDataSchema = z.object({
+  title: z.string().describe("Title for the table"),
   headers: z.array(z.string()).describe("Column headers for the table"),
   rows: z.array(z.record(z.string(), z.string())).describe("Table rows as key-value records"),
 });

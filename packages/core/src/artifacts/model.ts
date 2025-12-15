@@ -115,6 +115,7 @@ export const ArtifactTypeSchema = z.enum([
 // For file artifacts, mimeType will be auto-detected by storage layer
 export const CreateArtifactSchema = z.object({
   data: ArtifactDataInputSchema,
+  title: z.string().min(1).max(200),
   summary: z.string().min(1).max(1000),
   workspaceId: z.string().optional(),
   chatId: z.string().optional(),
@@ -125,6 +126,7 @@ export type CreateArtifactInput = z.infer<typeof CreateArtifactSchema>;
 export const UpdateArtifactSchema = z.object({
   type: ArtifactTypeSchema,
   data: ArtifactDataInputSchema,
+  title: z.string().min(1).max(200).optional(),
   summary: z.string().min(1).max(1000),
   revisionMessage: z.string().optional(),
 });
@@ -135,6 +137,7 @@ export const ArtifactSchema = z.object({
   type: ArtifactTypeSchema,
   revision: z.number(),
   data: ArtifactDataSchema,
+  title: z.string(),
   summary: z.string(),
   createdAt: z.iso.datetime(),
   workspaceId: z.string().optional(),

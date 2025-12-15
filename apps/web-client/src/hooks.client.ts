@@ -18,7 +18,7 @@ if (!__DEV_MODE__) {
   document.head.appendChild(gaScript);
 
   window.dataLayer = window.dataLayer || [];
-  window.gtag = function (...args: unknown[]) {
+  window.gtag = (...args: unknown[]) => {
     window.dataLayer.push(args);
   };
   window.gtag("js", new Date());

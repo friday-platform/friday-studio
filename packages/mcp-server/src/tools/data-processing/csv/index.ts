@@ -8,8 +8,8 @@
  */
 
 import type { Artifact } from "@atlas/core/artifacts";
-import { CsvParseResultSchema, FileDataSchema, parseCsv } from "@atlas/core/artifacts";
-import { ArtifactStorage } from "@atlas/core/artifacts/server";
+import { FileDataSchema } from "@atlas/core/artifacts";
+import { ArtifactStorage, CsvParseResultSchema, parseCsv } from "@atlas/core/artifacts/server";
 import { stringifyError } from "@atlas/utils";
 import { getWorkspaceFilesDir } from "@atlas/utils/paths.server";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -93,6 +93,7 @@ export function registerCsvTool(server: McpServer, context: ToolContext): void {
 
             const createResult = await ArtifactStorage.create({
               data: { type: "file", version: 1, data: { path: filePath } },
+              title: fileName,
               summary: `CSV file: ${fileName}`,
               workspaceId: input.workspaceId,
             });
@@ -202,6 +203,7 @@ export function registerCsvTool(server: McpServer, context: ToolContext): void {
           // Create artifact pointing to the file
           const createResult = await ArtifactStorage.create({
             data: { type: "file", version: 1, data: { path: outputPath } },
+            title: `${f.fileName} (transformed)`,
             summary: `Transformed CSV: ${f.fileName}`,
             workspaceId: input.workspaceId,
           });
