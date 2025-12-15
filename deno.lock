@@ -30,7 +30,7 @@
     "npm:@ai-sdk/mcp@^0.0.12": "0.0.12_zod@4.1.13",
     "npm:@ai-sdk/openai@^2.0.86": "2.0.86_zod@4.1.13",
     "npm:@ai-sdk/provider@2": "2.0.0",
-    "npm:@ai-sdk/svelte@^3.0.112": "3.0.112_svelte@5.46.0__acorn@8.15.0_zod@4.1.13",
+    "npm:@ai-sdk/svelte@^3.0.113": "3.0.113_svelte@5.46.0__acorn@8.15.0_zod@4.1.13",
     "npm:@biomejs/biome@*": "2.3.8",
     "npm:@eslint/compat@2": "2.0.0_eslint@9.39.1",
     "npm:@eslint/js@^9.39.2": "9.39.2",
@@ -291,11 +291,11 @@
         "json-schema"
       ]
     },
-    "@ai-sdk/svelte@3.0.112_svelte@5.46.0__acorn@8.15.0_zod@4.1.13": {
-      "integrity": "sha512-porGB8m3vltlnuU+cczV9AgpWEUhjpFHpaHwxHh2N3Lxg5u4m/sOM5UWcKCroDrGPdVMdtje1WDjSoRTEz5X0w==",
+    "@ai-sdk/svelte@3.0.113_svelte@5.46.0__acorn@8.15.0_zod@4.1.13": {
+      "integrity": "sha512-N99+k+W1ZmGV/byMMmhZk4GMUd5c4taIXUQ5bhzwTXSpW7wEHJLBi3KDzPZ1K/kIJ+pjo9CtgMmvaieCK5yw4w==",
       "dependencies": [
         "@ai-sdk/provider-utils@3.0.19_zod@4.1.13",
-        "ai@5.0.112_zod@4.1.13",
+        "ai",
         "svelte",
         "zod"
       ],
@@ -2575,16 +2575,6 @@
         "zod"
       ]
     },
-    "ai@5.0.112_zod@4.1.13": {
-      "integrity": "sha512-Y0dluYpe5wn81UkfHbZL78mH6CsceUfMiu4oPRaWZvjlmcoXSPdEAsPcYbOjvX8ZPvQc6m4kNZhkcEXmT2ln4w==",
-      "dependencies": [
-        "@ai-sdk/gateway",
-        "@ai-sdk/provider",
-        "@ai-sdk/provider-utils@3.0.19_zod@4.1.13",
-        "@opentelemetry/api",
-        "zod"
-      ]
-    },
     "ai@5.0.113_zod@4.1.13": {
       "integrity": "sha512-26vivpSO/mzZj0k1Si2IpsFspp26ttQICHRySQiMrtWcRd5mnJMX2a8sG28vmZ38C+JUn1cWmfZrsLMxkSMw9g==",
       "dependencies": [
@@ -3234,7 +3224,7 @@
         "@stricli/core",
         "@vitest/runner",
         "@vitest/utils",
-        "ai@5.0.113_zod@4.1.13",
+        "ai",
         "dotenv@16.6.1",
         "fastify",
         "file-type",
@@ -3245,7 +3235,7 @@
         "tinyrainbow"
       ],
       "optionalPeers": [
-        "ai@5.0.113_zod@4.1.13"
+        "ai"
       ],
       "bin": true
     },
@@ -5422,7 +5412,7 @@
       "apps/web-client": {
         "packageJson": {
           "dependencies": [
-            "npm:@ai-sdk/svelte@^3.0.112",
+            "npm:@ai-sdk/svelte@^3.0.113",
             "npm:@eslint/compat@2",
             "npm:@eslint/js@^9.39.2",
             "npm:@ianvs/prettier-plugin-sort-imports@^4.7.0",
