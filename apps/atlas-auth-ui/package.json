@@ -19,7 +19,7 @@
     "@sveltejs/kit": "^2.49.2",
     "nanoid": "^5.1.6",
     "svelte": "^5.46.0",
-    "zod": "^4.1.13",
+    "zod": "^4.2.0",
     "zod-form-data": "^3.0.1"
   },
   "devDependencies": {

@@ -9,7 +9,7 @@
     "@atlas/storage": "workspace:*",
     "@atlas/utils": "workspace:*",
     "onnxruntime-web": "1.23.2",
-    "zod": "^4.1.13"
+    "zod": "^4.2.0"
   },
   "devDependencies": {
     "@std/assert": "npm:@jsr/std__assert@^1.0.14",

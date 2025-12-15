@@ -18,7 +18,7 @@
     "nanoid": "^5.1.6",
     "oauth4webapi": "^3.8.3",
     "postgres": "^3.4.7",
-    "zod": "^4.1.13"
+    "zod": "^4.2.0"
   },
   "devDependencies": {
     "@std/assert": "npm:@jsr/std__assert@^1.0.14",
