@@ -1,0 +1,4 @@
+signal-gateway
+.env
+*.test
+coverage.out

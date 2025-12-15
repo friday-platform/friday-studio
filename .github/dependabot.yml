@@ -294,6 +294,23 @@ updates:
       - "docker"
     rebase-strategy: "auto"
 
+  # Keep Docker dependencies up to date (for signal-gateway)
+  - package-ecosystem: "docker"
+    directory: "/apps/signal-gateway"
+    schedule:
+      interval: "daily"
+      time: "09:00"
+    open-pull-requests-limit: 5
+    assignees:
+      - "ljagiello"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "docker"
+    rebase-strategy: "auto"
+
   # Keep npm dependencies up to date (for link service)
   - package-ecosystem: "npm"
     directory: "/apps/link"

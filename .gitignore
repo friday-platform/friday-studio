@@ -79,3 +79,4 @@ dist/
 .users_cache.json
 bounce
 .beads/
+apps/signal-gateway/signal-gateway

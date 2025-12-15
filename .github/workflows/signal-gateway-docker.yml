@@ -1,0 +1,103 @@
+name: signal-gateway-docker
+
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+  push:
+    branches:
+      - main
+
+env:
+  GAR_LOCATION: us-west2
+  PROJECT_NAME: ${{ secrets.GCP_PROJECT }}
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  REPOSITORY: atlas
+  IMAGE_NAME: signal-gateway
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  build-publish:
+    name: Build and Publish Signal Gateway
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Build Docker Image
+        id: build-image
+        run: |-
+          docker build \
+            -f apps/signal-gateway/Dockerfile \
+            --tag "$GAR_LOCATION-docker.pkg.dev/$PROJECT_NAME/$REPOSITORY/$IMAGE_NAME:$GITHUB_SHA" \
+            --tag "$GAR_LOCATION-docker.pkg.dev/$PROJECT_NAME/$REPOSITORY/$IMAGE_NAME:latest" \
+            --build-arg GITHUB_SHA="$GITHUB_SHA" \
+            --build-arg GITHUB_REF="$GITHUB_REF" \
+          .
+          echo "image=$GAR_LOCATION-docker.pkg.dev/$PROJECT_NAME/$REPOSITORY/$IMAGE_NAME:$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+
+      - id: auth
+        name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ secrets.GCP_PROJECT }}
+          workload_identity_provider: "projects/${{ env.PROJECT_ID }}/locations/global/workloadIdentityPools/github/providers/atlas-github"
+
+      - name: Docker configuration
+        run: |-
+          echo ${{ steps.auth.outputs.auth_token }} | docker login -u oauth2accesstoken --password-stdin https://${{ env.GAR_LOCATION }}-docker.pkg.dev
+
+      - name: Push image to sandbox
+        run: |-
+          docker push -a "$GAR_LOCATION-docker.pkg.dev/$PROJECT_NAME/$REPOSITORY/$IMAGE_NAME"
+
+      - name: Push image to production
+        run: |-
+          docker tag "$GAR_LOCATION-docker.pkg.dev/$PROJECT_NAME/$REPOSITORY/$IMAGE_NAME:$GITHUB_SHA" "$GAR_LOCATION-docker.pkg.dev/tempest-production/$REPOSITORY/$IMAGE_NAME:$GITHUB_SHA"
+          docker push "$GAR_LOCATION-docker.pkg.dev/tempest-production/$REPOSITORY/$IMAGE_NAME:$GITHUB_SHA"
+
+      - name: Fetch tempest-kustomize repository
+        uses: actions/checkout@v6
+        with:
+          repository: tempestteam/tempest-kustomize
+          token: ${{ secrets.PAT }}
+          path: tempest-kustomize-repository
+          fetch-depth: 1
+
+      - name: Update manifest file image tag for atlas-signal-gateway sandbox
+        uses: mikefarah/yq@master
+        with:
+          cmd: yq e -i '.spec.template.spec.containers[0].image |= "${{ steps.build-image.outputs.image }}"' 'tempest-kustomize-repository/atlas-signal-gateway/overlays/sandbox/deployment.yaml'
+
+      - name: Update manifest file image tag for atlas-signal-gateway production
+        uses: mikefarah/yq@master
+        with:
+          cmd: yq e -i '.spec.template.spec.containers[0].image |= "us-west2-docker.pkg.dev/tempest-production/atlas/signal-gateway:${{ github.sha }}"' 'tempest-kustomize-repository/atlas-signal-gateway/overlays/production/deployment.yaml'
+
+      - name: Setup tempest-kustomize Repository
+        working-directory: tempest-kustomize-repository
+        run: |
+          git fetch origin main
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git remote set-url --push origin https://github.com/tempestteam/tempest-kustomize.git
+          git checkout -b release-atlas-signal-gateway-${{ github.sha }}
+
+      - name: Commit
+        working-directory: tempest-kustomize-repository
+        run: |
+          git add .
+          git commit -m "Release atlas-signal-gateway-${{ github.sha }}"
+          git push origin HEAD
+
+      - name: Create PR && merge
+        working-directory: tempest-kustomize-repository
+        env:
+          GITHUB_TOKEN: ${{ secrets.PAT }}
+        run: |
+          PR_BRANCH="release-atlas-signal-gateway-${{ github.sha }}"
+          gh pr create -B main -H "$PR_BRANCH" -t "deploy-atlas-signal-gateway-${{ github.sha }}" -b ""
+          for _ in {1..30}; do gh pr merge "$PR_BRANCH" --squash --admin --delete-branch && exit 0; sleep 2; done
+          exit 1

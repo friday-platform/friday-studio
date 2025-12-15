@@ -51,7 +51,7 @@ console.log("");
 console.log("--- Ensuring user exists ---");
 await sql`
   INSERT INTO public."user" (id, full_name, email)
-  VALUES (${userId}, 'Test User', ${userId + "@test.local"})
+  VALUES (${userId}, 'Test User', ${`${userId}@test.local`})
   ON CONFLICT (id) DO NOTHING
 `;
 console.log(`✓ User '${userId}' exists`);

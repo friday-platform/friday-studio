@@ -7,12 +7,10 @@ import {
   WorkspaceSessionStatus,
 } from "@atlas/core";
 import { CronManager } from "@atlas/cron";
-import { DiscordIntegration, DiscordSignalRegistrar } from "@atlas/discord";
 import { logger } from "@atlas/logger";
 import { PlatformMCPServer } from "@atlas/mcp-server";
 import { embeddingProviderForceDispose, embeddingProviderGetInstance } from "@atlas/memory";
 import { flush as flushSentry } from "@atlas/sentry";
-import { SlackIntegration, SlackSignalRegistrar } from "@atlas/slack";
 import { WorkspaceManager } from "@atlas/workspace";
 import type {
   WorkspaceSignalRegistrar,
@@ -44,6 +42,7 @@ import { libraryRoutes } from "../routes/library/index.ts";
 import { scratchpadApp } from "../routes/scratchpad/index.ts";
 import { sessionHistoryRoutes, sessionsRoutes } from "../routes/sessions/index.ts";
 import { shareRoutes } from "../routes/share.ts";
+import { createPlatformSignalRoutes } from "../routes/signals/platform.ts";
 import { streamsRoutes } from "../routes/streams/index.ts";
 import { userRoutes } from "../routes/user/index.ts";
 import { workspacesRoutes } from "../routes/workspaces/index.ts";
@@ -95,8 +94,6 @@ export class AtlasDaemon {
   private cronManager: CronManager | null = null;
   private mcpServerPool: GlobalMCPServerPool | null = null;
   private workspaceManager: WorkspaceManager | null = null;
-  private slackIntegration: SlackIntegration = new SlackIntegration();
-  private discordIntegration: DiscordIntegration = new DiscordIntegration();
   private sseHealthCheckInterval: number | null = null;
   private agentSessionCleanupInterval: number | null = null;
   // Store per-session MCP servers and transports
@@ -271,42 +268,12 @@ export class AtlasDaemon {
     // Create signal registrars and pass them to WorkspaceManager.initialize
     const fsRegistrar = new FsWatchSignalRegistrar(wakeupCallback);
     const cronRegistrar = new CronSignalRegistrar(this.cronManager);
-    const discordRegistrar = new DiscordSignalRegistrar();
 
-    // Initialize Slack integration (self-contained config loading)
-    const slackRegistrar = new SlackSignalRegistrar(logger.child({ component: "slack-registrar" }));
-    await this.slackIntegration.initialize(slackRegistrar, wakeupCallback, this);
-
-    // Initialize Discord integration (before workspace loading so it can mount HTTP handler)
-    await this.discordIntegration.initialize(
-      discordRegistrar,
-      this.workspaceManager,
-      wakeupCallback,
-      this,
-    );
-
-    // Mount Discord HTTP handler after initialization
-    const discordHandler = this.discordIntegration.getHttpHandler();
-    if (discordHandler) {
-      this.app.route("/signal/discord", discordHandler);
-      logger.info("Discord webhook endpoint mounted at /signal/discord/interactions");
-    }
-
-    // Build registrars array with Discord always included, Slack conditionally
-    const signalRegistrars: WorkspaceSignalRegistrar[] = [
-      fsRegistrar,
-      cronRegistrar,
-      discordRegistrar,
-    ];
-    if (this.slackIntegration.getRegistrar()) {
-      signalRegistrars.push(slackRegistrar);
-    }
+    // Build registrars array
+    const signalRegistrars: WorkspaceSignalRegistrar[] = [fsRegistrar, cronRegistrar];
 
     // Initialize WorkspaceManager with registrars and watcher (manager owns lifecycle)
     await this.workspaceManager.initialize(signalRegistrars);
-
-    // Register Discord commands now that workspaces are loaded
-    await this.discordIntegration.registerCommands();
 
     // Start CronManager
     await this.cronManager.start();
@@ -586,7 +553,8 @@ export class AtlasDaemon {
     this.app.route("/api/daemon", daemonApp);
     this.app.route("/api/share", shareRoutes);
 
-    // Discord signal route will be mounted at /signal/discord after initialization in initialize() method
+    // Platform signal routes (Discord/Slack via Signal Gateway)
+    this.app.route("/signals", createPlatformSignalRoutes(this));
 
     // Global error handler - catches all uncaught errors from all routes
     this.app.onError((err, c) => {
@@ -1409,12 +1377,6 @@ export class AtlasDaemon {
       await this.cronManager.shutdown();
       this.cronManager = null;
     }
-
-    // Shutdown Discord integration
-    await this.discordIntegration.shutdown();
-
-    // Shutdown Slack integration
-    await this.slackIntegration.shutdown();
 
     // Dispose MCP Server Pool
     if (this.mcpServerPool) {

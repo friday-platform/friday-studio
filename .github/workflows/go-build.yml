@@ -29,3 +29,6 @@ jobs:
 
       - name: Build cypher service
         run: go build -v ./apps/cypher
+
+      - name: Build signal-gateway service
+        run: go build -v ./apps/signal-gateway
