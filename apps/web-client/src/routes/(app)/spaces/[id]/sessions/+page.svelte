@@ -61,7 +61,7 @@ const table = createTable({
 });
 </script>
 
-<Breadcrumbs />
+<Breadcrumbs workspace={data.workspace} />
 
 <div class="page">
 	<div class="content">

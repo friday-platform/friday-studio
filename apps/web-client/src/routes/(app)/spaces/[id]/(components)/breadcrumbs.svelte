@@ -9,17 +9,22 @@ import { DropdownMenu } from "$lib/components/dropdown-menu";
 import { Icons } from "$lib/components/icons";
 import { SegmentedControl } from "$lib/components/segmented-control";
 import { getActivePage } from "$lib/utils/active-page.svelte";
-import { getSpaceLayoutContext } from "../context.svelte";
+
+interface Workspace {
+  id: string;
+  name: string;
+}
+
+let { workspace }: { workspace: Workspace } = $props();
 
 const appCtx = getAppContext();
-const spaceCtx = getSpaceLayoutContext();
 
 async function handleDeleteWorkspace() {
-  if (!spaceCtx.workspace) return;
+  if (!workspace) return;
 
   try {
     const res = await parseResult(
-      client.workspace[":workspaceId"].$delete({ param: { workspaceId: spaceCtx.workspace.id } }),
+      client.workspace[":workspaceId"].$delete({ param: { workspaceId: workspace.id } }),
     );
 
     if (!res.ok) {
@@ -38,14 +43,14 @@ async function handleDeleteWorkspace() {
 }
 </script>
 
-{#if spaceCtx.workspace}
+{#if workspace}
 	<Breadcrumbs.Root>
 		<Breadcrumbs.Item>Spaces</Breadcrumbs.Item>
 
 		<Breadcrumbs.Segment />
 
 		<Breadcrumbs.Title>
-			{spaceCtx.workspace.name}
+			{workspace.name}
 
 			{#snippet actions(actionsOpen)}
 				<Dialog.Root
@@ -100,12 +105,12 @@ async function handleDeleteWorkspace() {
 
 		<SegmentedControl.Root>
 			<SegmentedControl.Item
-				active={getActivePage([`spaces/${spaceCtx.workspace.id}`])}
-				href={appCtx.routes.spaces.item(spaceCtx.workspace.id)}>Details</SegmentedControl.Item
+				active={getActivePage([`spaces/${workspace.id}`])}
+				href={appCtx.routes.spaces.item(workspace.id)}>Details</SegmentedControl.Item
 			>
 			<SegmentedControl.Item
-				active={getActivePage([`spaces/${spaceCtx.workspace.id}/sessions`])}
-				href={appCtx.routes.spaces.item(spaceCtx.workspace.id, 'sessions')}
+				active={getActivePage([`spaces/${workspace.id}/sessions`])}
+				href={appCtx.routes.spaces.item(workspace.id, 'sessions')}
 				>Sessions</SegmentedControl.Item
 			>
 		</SegmentedControl.Root>

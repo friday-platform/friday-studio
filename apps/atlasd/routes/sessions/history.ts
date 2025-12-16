@@ -44,7 +44,13 @@ const sessionHistoryRoutes = daemonFactory
       return c.json({ error: "Session not found" }, 404);
     }
 
-    return c.json(result.data, 200);
+    // Add workspace name
+    const ctx = c.get("app");
+    const manager = ctx.getWorkspaceManager();
+    const workspace = await manager.find({ id: result.data.metadata.workspaceId });
+    const workspaceName = workspace?.name;
+
+    return c.json({ ...result.data, workspaceName }, 200);
   });
 
 export { sessionHistoryRoutes };

@@ -14,7 +14,7 @@ const sessionDate = $derived(formatSessionDate(session.metadata.createdAt));
 const timelineData = $derived(parseSessionTimeline(session.metadata, session.events));
 </script>
 
-<Breadcrumbs {session} />
+<Breadcrumbs {session} workspaceName={data.session.workspaceName} />
 
 <div class="page">
 	<div class="content">

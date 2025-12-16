@@ -3,27 +3,27 @@ import type { SessionHistoryTimeline } from "@atlas/core/session/history-storage
 import { getAppContext } from "$lib/app-context.svelte";
 import { Breadcrumbs } from "$lib/components/breadcrumbs";
 import { DropdownMenu } from "$lib/components/dropdown-menu";
-import { getSpaceLayoutContext } from "../../context.svelte";
 
-let { session }: { session: SessionHistoryTimeline } = $props();
+let { session, workspaceName }: { session: SessionHistoryTimeline; workspaceName?: string } =
+  $props();
 
 const appCtx = getAppContext();
-const workspaceCtx = getSpaceLayoutContext();
+const workspaceId = $derived(session.metadata.workspaceId);
 </script>
 
-{#if workspaceCtx.workspace && session}
+{#if session}
 	<Breadcrumbs.Root>
 		<Breadcrumbs.Item>Spaces</Breadcrumbs.Item>
 
 		<Breadcrumbs.Segment />
 
-		<Breadcrumbs.Item href={appCtx.routes.spaces.item(workspaceCtx.workspace.id)}
-			>{workspaceCtx.workspace.name}</Breadcrumbs.Item
+		<Breadcrumbs.Item href={appCtx.routes.spaces.item(workspaceId)}
+			>{workspaceName ?? workspaceId}</Breadcrumbs.Item
 		>
 
 		<Breadcrumbs.Segment />
 
-		<Breadcrumbs.Item href={appCtx.routes.spaces.item(workspaceCtx.workspace.id, 'sessions')}
+		<Breadcrumbs.Item href={appCtx.routes.spaces.item(workspaceId, 'sessions')}
 			>Sessions</Breadcrumbs.Item
 		>
 
@@ -46,9 +46,7 @@ const workspaceCtx = getSpaceLayoutContext();
 				>
 				<DropdownMenu.Item
 					onclick={() => {
-						if (!workspaceCtx.workspace) return;
-
-						navigator.clipboard.writeText(workspaceCtx.workspace.id);
+						navigator.clipboard.writeText(workspaceId);
 					}}>Workspace ID</DropdownMenu.Item
 				>
 			{/snippet}

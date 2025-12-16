@@ -2,7 +2,6 @@
 import type { SessionHistoryEvent } from "@atlas/core/session/history-storage";
 import AgentEvent from "./agent-event.svelte";
 import PhaseEvent from "./phase-event.svelte";
-import ValidationEvent from "./validation-event.svelte";
 
 interface Props {
   event: SessionHistoryEvent;
@@ -13,9 +12,7 @@ let { event }: Props = $props();
 
 {#if event.type === 'agent-start' || event.type === 'agent-output' || event.type === 'agent-error'}
 	<AgentEvent {event} />
-{:else if event.type === 'validation-result'}
-	<ValidationEvent {event} />
-{:else if event.type === 'phase-start' || event.type === 'phase-complete'}
+{:else if event.type === 'validation-result'}{:else if event.type === 'phase-start' || event.type === 'phase-complete'}
 	<PhaseEvent {event} />
 {:else if event.type === 'agent-tool-call' || event.type === 'agent-tool-result'}
 	<!-- Tool events are handled by ToolCallSection in event-group.svelte -->

@@ -1,43 +1,115 @@
 <script lang="ts">
+import type { ReasoningResultStatusType } from "@atlas/core";
+import {
+  createColumnHelper,
+  createTable,
+  getCoreRowModel,
+  renderComponent,
+} from "@tanstack/svelte-table";
+import { getAppContext } from "$lib/app-context.svelte";
+import MarkdownContent from "$lib/components/primitives/markdown-content.svelte";
+import { Table } from "$lib/components/table";
+import { artifactColumns } from "$lib/modules/library/columns";
+import { DetailsColumn, StatusColumn, TimeColumn } from "$lib/modules/sessions/table-columns";
 import type { PageData } from "./$types";
 import Breadcrumbs from "./(components)/breadcrumbs.svelte";
 
 let { data }: { data: PageData } = $props();
 
+const appCtx = getAppContext();
 const workspace = $derived(data.workspace);
+const recentSessions = $derived(data.sessions.slice(0, 3));
+const recentArtifacts = $derived(data.artifacts.slice(0, 5));
 
-const pluralRules = new Intl.PluralRules("en-US");
-function pluralize(count: number, singular: string, plural: string) {
-  return pluralRules.select(count) === "one" ? singular : plural;
-}
+// Sessions table
+const sessionColumnHelper = createColumnHelper<{
+  sessionId: string;
+  workspaceId: string;
+  status: ReasoningResultStatusType;
+  createdAt: string;
+  updatedAt: string;
+  summary?: string | undefined;
+}>();
+
+const sessionColumns = [
+  sessionColumnHelper.display({
+    id: "deployment",
+    header: "Deployment",
+    cell: (info) => {
+      return renderComponent(DetailsColumn, {
+        job: info.row.original.sessionId,
+        summary: info.row.original.summary ?? "",
+      });
+    },
+    meta: { minWidth: "0" },
+  }),
+  sessionColumnHelper.accessor("createdAt", {
+    id: "createdAt",
+    header: "Date",
+    cell: (info) => renderComponent(TimeColumn, { date: info.getValue() }),
+    meta: { align: "center", faded: true, shrink: true, size: "small" },
+  }),
+  sessionColumnHelper.accessor("status", {
+    id: "status",
+    cell: (info) => renderComponent(StatusColumn, { status: info.getValue() }),
+    meta: { align: "center", faded: true, shrink: true, size: "small" },
+    enableSorting: false,
+  }),
+];
+
+const sessionsTable = createTable({
+  get data() {
+    return recentSessions;
+  },
+  columns: sessionColumns,
+  getCoreRowModel: getCoreRowModel(),
+  getRowId: (row) => row.sessionId,
+});
+
+const artifactsTable = createTable({
+  get data() {
+    return recentArtifacts;
+  },
+  columns: artifactColumns,
+  getCoreRowModel: getCoreRowModel(),
+  getRowId: (row) => row.id,
+});
 </script>
 
-<Breadcrumbs />
+<Breadcrumbs {workspace} />
 
 <div class="page">
 	<div class="content">
 		<h1>{workspace.name}</h1>
 
-		<div class="metadata">
-			{#if workspace.config?.jobs}
-				{@const count = Object.keys(workspace.config.jobs).length}
-				<div class="metadata-item">
-					<span>{count} {pluralize(count, 'Job', 'Jobs')}</span>
+		<MarkdownContent>
+			{#if workspace.description}
+				<p>{workspace.description}</p>
+			{/if}
+
+			{#if recentArtifacts.length > 0}
+				<h2>Artifacts</h2>
+				<div data-tempest class="artifacts">
+					<Table.Root
+						table={artifactsTable}
+						rowSize="large"
+						rowPath={(item) => `/library/${item.id}`}
+					/>
 				</div>
 			{/if}
-			{#if workspace.config?.agents}
-				{@const count = Object.keys(workspace.config.agents).length}
-				<div class="metadata-item">
-					<span>{count} {pluralize(count, 'Agent', 'Agents')}</span>
+
+			{#if recentSessions.length > 0}
+				<h2>Sessions</h2>
+				<div data-tempest class="sessions">
+					<Table.Root
+						table={sessionsTable}
+						rowSize="large"
+						rowPath={(item) =>
+							appCtx.routes.spaces.item(workspace.id, `sessions/${item.sessionId}`)}
+					/>
 				</div>
 			{/if}
-			{#if workspace.config?.signals}
-				{@const count = Object.keys(workspace.config.signals).length}
-				<div class="metadata-item">
-					<span>{count} {pluralize(count, 'Signal', 'Signals')}</span>
-				</div>
-			{/if}
-		</div>
+		</MarkdownContent>
 	</div>
 
 	<aside class="sidebar">
@@ -69,7 +141,7 @@ function pluralize(count: number, singular: string, plural: string) {
 				<ul class="sidebar-list">
 					{#each Object.keys(workspace.config.signals) as signalId (signalId)}
 						<li class="sidebar-item">
-							{workspace.config.signals[signalId].description || signalId}
+							{signalId}
 						</li>
 					{/each}
 				</ul>
@@ -80,9 +152,12 @@ function pluralize(count: number, singular: string, plural: string) {
 
 <style>
 	.page {
-		display: flex;
+		display: grid;
+		grid-template-columns: 1fr var(--size-56);
 		block-size: 100%;
 		inline-size: 100%;
+		gap: var(--size-6);
+		overflow: auto;
 	}
 
 	.content {
@@ -97,34 +172,14 @@ function pluralize(count: number, singular: string, plural: string) {
 		margin-bottom: var(--size-4);
 	}
 
-	.metadata {
-		display: flex;
-		align-items: center;
-		gap: var(--size-4);
-		margin-bottom: var(--size-7);
-	}
-
-	.metadata-item {
-		display: flex;
-		align-items: center;
-		gap: var(--size-1);
-	}
-
-	.metadata-item span {
-		font-size: var(--font-size-2);
-		font-weight: var(--font-weight-5-5);
-		color: var(--text-1);
-		opacity: 0.7;
-		line-height: 1.4;
-	}
-
 	.sidebar {
-		inline-size: 228px;
-		padding-block: var(--size-6);
-		padding-inline: var(--size-6) 0;
 		display: flex;
 		flex-direction: column;
 		gap: var(--size-7);
+		inline-size: 228px;
+		padding-block: var(--size-12);
+		padding-inline: 0 var(--size-14);
+		position: sticky;
 	}
 
 	.sidebar-section {
@@ -155,5 +210,13 @@ function pluralize(count: number, singular: string, plural: string) {
 		font-weight: var(--font-weight-5);
 		color: var(--text-1);
 		line-height: 1.25;
+	}
+
+	.artifacts {
+		margin-block-end: var(--size-8);
+	}
+
+	.sessions {
+		margin-block-start: var(--size-3);
 	}
 </style>
