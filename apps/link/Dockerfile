@@ -1,23 +1,38 @@
 # Multi-stage Dockerfile for Atlas Link service
 # Credential management service using Deno + Hono
+#
+# This Dockerfile is optimized to produce a minimal binary by:
+# 1. Only copying packages that link actually needs
+# 2. Using a build-specific deno.json without unnecessary workspace members
+# 3. Avoiding the bloated monorepo node_modules
 
 # Stage 1: Build binary
 FROM denoland/deno:alpine-2.6.1 AS builder
 
 WORKDIR /app
 
-# Create atlas user for security
-RUN addgroup -g 1001 -S atlas && adduser -u 1001 -S -G atlas -h /home/atlas -s /bin/sh atlas
+# Copy root deno.json (source of truth for imports/versions)
+COPY deno.json ./deno.json.full
 
-# Copy package files first for better caching
-COPY deno.json deno.lock package.json ./
-COPY apps/link/deno.json apps/link/package.json ./apps/link/
-COPY packages/ ./packages/
+# Copy only the packages that link actually needs:
+# - @atlas/utils (paths, stringifyError)
+# - @atlas/logger (logging)
+# - @atlas/sentry (error tracking, used by logger)
+COPY packages/utils/ ./packages/utils/
+COPY packages/logger/ ./packages/logger/
+COPY packages/sentry/ ./packages/sentry/
 
-# Copy source code
-COPY . .
+# Copy link app
+COPY apps/link/ ./apps/link/
 
-# Install dependencies (populates node_modules and deno cache)
+# Filter deno.json to only include link's workspace members
+# This keeps imports/versions from root (Dependabot-maintained) but avoids pulling in unrelated packages
+RUN apk add --no-cache jq && \
+    jq '.workspace = ["./apps/link", "./packages/utils", "./packages/logger", "./packages/sentry"]' \
+    deno.json.full > deno.json && \
+    rm deno.json.full
+
+# Install dependencies (only for the minimal workspace)
 RUN deno install
 
 # Compile Link service to a single binary
@@ -36,17 +51,10 @@ FROM debian:bookworm-20251208-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 
-# Create nobody user (65534) for consistency with other services
-RUN groupadd -g 65534 nobody || true && \
-    useradd -u 65534 -g 65534 -d /nonexistent -s /usr/sbin/nologin nobody || true
-
 WORKDIR /app
 
 # Copy the compiled binary from builder
 COPY --from=builder --chown=65534:65534 /app/apps/link/link /app/link
-
-# Make the binary executable
-RUN chmod +x /app/link
 
 # Switch to nobody user
 USER 65534:65534

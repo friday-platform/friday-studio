@@ -9,11 +9,11 @@
     "dev": "LINK_DEV_MODE=true deno run --env-file --watch --allow-all src/index.ts"
   },
   "dependencies": {
+    "@atlas/logger": "workspace:*",
     "@atlas/utils": "workspace:*",
     "@hono/zod-validator": "^0.7.5",
     "@socotra/modelcontextprotocol-sdk": "^1.21.0",
     "@std/async": "npm:@jsr/std__async@^1.0.15",
-    "@std/dotenv": "npm:@jsr/std__dotenv@^0.225.4",
     "hono": "^4.11.1",
     "nanoid": "^5.1.6",
     "oauth4webapi": "^3.8.3",

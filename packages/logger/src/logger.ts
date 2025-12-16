@@ -7,8 +7,8 @@ import {
   isInitialized as isSentryInitialized,
 } from "@atlas/sentry";
 import { DetailedError } from "hono/client";
-import { FileWriteCoordinator } from "../../storage/src/memory/file-write-coordinator.ts";
 import { BaseLogger } from "./base-logger.ts";
+import { executeWrite } from "./file-write-coordinator.ts";
 import { getAtlasLogsDir } from "./paths.ts";
 import type { LogContext, LogEntry, Logger, LogLevel } from "./types.ts";
 
@@ -142,11 +142,7 @@ class AtlasLoggerV2 extends BaseLogger {
 
     await fs.promises.mkdir(dirname(logPath), { recursive: true });
 
-    // Use FileWriteCoordinator to prevent concurrent file access and FD leaks
-    const coordinator = FileWriteCoordinator.getInstance();
-    await coordinator.executeWrite(logPath, async () => {
-      await fs.promises.appendFile(logPath, `${jsonLine}\n`);
-    });
+    await executeWrite(logPath, () => fs.promises.appendFile(logPath, `${jsonLine}\n`));
   }
 }
 
