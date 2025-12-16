@@ -1,16 +1,17 @@
 <script lang="ts">
+import type { SessionHistoryTimeline } from "@atlas/core/session/history-storage";
 import { getAppContext } from "$lib/app-context.svelte";
 import { Breadcrumbs } from "$lib/components/breadcrumbs";
 import { DropdownMenu } from "$lib/components/dropdown-menu";
 import { getSpaceLayoutContext } from "../../context.svelte";
-import { getSessionDetailContext } from "../[sessionId]/context.svelte";
+
+let { session }: { session: SessionHistoryTimeline } = $props();
 
 const appCtx = getAppContext();
 const workspaceCtx = getSpaceLayoutContext();
-const sessionCtx = getSessionDetailContext();
 </script>
 
-{#if workspaceCtx.workspace && sessionCtx.session}
+{#if workspaceCtx.workspace && session}
 	<Breadcrumbs.Root>
 		<Breadcrumbs.Item>Spaces</Breadcrumbs.Item>
 
@@ -39,9 +40,8 @@ const sessionCtx = getSessionDetailContext();
 				<DropdownMenu.Label>Copy</DropdownMenu.Label>
 				<DropdownMenu.Item
 					onclick={() => {
-						if (!sessionCtx.session) return;
-						// @ts-expect-error: incorrect!
-						navigator.clipboard.writeText(sessionCtx.session.metadata.sessionId);
+						if (!session) return;
+						navigator.clipboard.writeText(session.metadata.sessionId);
 					}}>Session ID</DropdownMenu.Item
 				>
 				<DropdownMenu.Item

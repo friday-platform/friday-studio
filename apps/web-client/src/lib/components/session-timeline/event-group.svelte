@@ -1,5 +1,6 @@
 <script lang="ts">
 import { createCollapsible } from "@melt-ui/svelte";
+import { get } from "svelte/store";
 import { slide } from "svelte/transition";
 import { Icons } from "$lib/components/icons";
 import { IconSmall } from "$lib/components/icons/small";
@@ -30,25 +31,19 @@ const nonToolEvents = $derived(
 );
 
 // Collapsible: default open for agent groups
-const collapsible = createCollapsible({ defaultOpen: false });
 const {
   elements: { trigger },
   states: { open },
-} = collapsible;
+} = createCollapsible({ defaultOpen: false });
 
 const formatted = $derived.by(() => {
   const date = new Date(group.startedAt);
-  return date.toLocaleTimeString("en-US", {
-    hour: "2-digit",
-    minute: "2-digit",
-
-    hour12: true,
-  });
+  return date.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true });
 });
 </script>
 
-<div class="event-group" id={group.executionId} class:open={$open}>
-	<button class="summary" type="button" {...$trigger} use:trigger>
+<div class="event-group" id={group.executionId} class:open={get(open)}>
+	<button class="summary" type="button" {...get(trigger)} use:trigger>
 		<div class="content">
 			<span class="title">
 				{#if group.status === 'completed'}

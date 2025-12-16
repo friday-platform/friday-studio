@@ -48,7 +48,14 @@ export function getFileType(path: string) {
 function getRouteConfig() {
   return {
     main: `${base}/`,
-    library: { list: `${base}/library`, item: (id: string) => `${base}/library/${id}` },
+    library: {
+      list: `${base}/library`,
+      item: (libraryId: string) => `${base}/library/${libraryId}`,
+    },
+    sessions: {
+      list: `${base}/sessions`,
+      item: (sessionId: string) => `${base}/sessions/${sessionId}`,
+    },
     chat: { item: (id: string) => `${base}/chat/${id}` },
     spaces: {
       item: (id: string, view?: string) =>

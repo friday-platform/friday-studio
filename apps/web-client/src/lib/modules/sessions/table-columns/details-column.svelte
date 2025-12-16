@@ -1,13 +1,13 @@
 <script lang="ts">
-type Props = { job: string; summary: string };
+type Props = { job: string; summary: string; workspaceName?: string };
 
-let { job, summary }: Props = $props();
+let { job, summary, workspaceName }: Props = $props();
 </script>
 
 <div class="component">
 	<div class="header">
 		<div class="group author">
-			{job}
+			{#if workspaceName}{workspaceName} • {/if}{job}
 		</div>
 	</div>
 

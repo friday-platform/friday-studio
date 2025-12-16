@@ -100,6 +100,18 @@ onMount(() => {
 
 				<li>
 					<a
+						href={ctx.routes.sessions.list}
+						class:active={getActivePage(['sessions', 'sessions/[sessionId]'])}
+						class="sidebar-item"
+					>
+						<Icons.Workspace />
+
+						<span class="text">Sessions</span>
+					</a>
+				</li>
+
+				<li>
+					<a
 						href={ctx.routes.settings}
 						class:active={getActivePage(['settings'])}
 						class="sidebar-item"

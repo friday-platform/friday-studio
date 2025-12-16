@@ -410,7 +410,7 @@ export interface AppendSessionEventInput {
 }
 
 export interface ListSessionsOptions {
-  workspaceId: string;
+  workspaceId?: string;
 }
 
 export interface ListSessionsResult {
@@ -644,7 +644,7 @@ export async function listSessions(
     for (const { path } of fileInfos) {
       try {
         const session = await readAndValidateSession(path);
-        if (session.workspaceId === options.workspaceId) {
+        if (!options.workspaceId || session.workspaceId === options.workspaceId) {
           sessions.push({
             sessionId: session.sessionId,
             workspaceId: session.workspaceId,

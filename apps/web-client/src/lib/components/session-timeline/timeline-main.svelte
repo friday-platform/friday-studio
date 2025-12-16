@@ -6,29 +6,16 @@ import type {
 import type { AgentGroup } from "$lib/utils/session-timeline";
 import EventGroup from "./event-group.svelte";
 
-// import SessionEvent from "./session-event.svelte";
-
 interface Props {
   metadata: SessionHistoryMetadata;
   sessionEvents: SessionHistoryEvent[];
   agentGroups: AgentGroup[];
 }
 
-let {
-  // metadata,
-  // sessionEvents,
-  agentGroups,
-}: Props = $props();
-
-// const sessionStart = $derived(sessionEvents.find((e) => e.type === 'session-start'));
-// const sessionFinish = $derived(sessionEvents.find((e) => e.type === 'session-finish'));
+let { agentGroups }: Props = $props();
 </script>
 
 <div class="timeline-main">
-	<!-- {#if sessionStart}
-		<SessionEvent event={sessionStart} {metadata} />
-	{/if} -->
-
 	{#if agentGroups.length === 0}
 		<div class="empty-state">
 			<p>No agent executions found for this session.</p>
@@ -38,10 +25,6 @@ let {
 			<EventGroup {group} />
 		{/each}
 	{/if}
-
-	<!-- {#if sessionFinish}
-		<SessionEvent event={sessionFinish} {metadata} />
-	{/if} -->
 </div>
 
 <style>

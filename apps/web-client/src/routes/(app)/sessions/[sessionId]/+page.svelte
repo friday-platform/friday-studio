@@ -3,7 +3,6 @@ import { IconSmall } from "$lib/components/icons/small";
 import TimelineMain from "$lib/components/session-timeline/timeline-main.svelte";
 import { formatSessionDate } from "$lib/utils/date";
 import { parseSessionTimeline } from "$lib/utils/session-timeline";
-
 import Breadcrumbs from "../(components)/breadcrumbs.svelte";
 import type { PageData } from "./$types";
 

@@ -6,19 +6,19 @@ import {
   getCoreRowModel,
   renderComponent,
 } from "@tanstack/svelte-table";
-import { getAppContext } from "$lib/app-context.svelte.ts";
+import { Breadcrumbs } from "$lib/components/breadcrumbs";
 import { Table } from "$lib/components/table";
+
 import { DetailsColumn, StatusColumn, TimeColumn } from "$lib/modules/sessions/table-columns";
-import Breadcrumbs from "../(components)/breadcrumbs.svelte";
 import type { PageData } from "./$types";
 
 let { data }: { data: PageData } = $props();
 const sessions = $derived(data.sessions);
-const appCtx = getAppContext();
 
 const columnHelper = createColumnHelper<{
   sessionId: string;
   workspaceId: string;
+  workspaceName?: string;
   status: ReasoningResultStatusType;
   createdAt: string;
   updatedAt: string;
@@ -33,6 +33,7 @@ const columns = [
       return renderComponent(DetailsColumn, {
         job: info.row.original.sessionId,
         summary: info.row.original.summary ?? "",
+        workspaceName: info.row.original.workspaceName,
       });
     },
     meta: { minWidth: "0" },
@@ -61,32 +62,21 @@ const table = createTable({
 });
 </script>
 
-<Breadcrumbs />
+<Breadcrumbs.Root>
+	<Breadcrumbs.Item href="/sessions">Sessions</Breadcrumbs.Item>
+</Breadcrumbs.Root>
 
 <div class="page">
-	<div class="content">
-		{#if sessions.length === 0}
-			<p class="empty">No sessions yet</p>
-		{:else}
-			<Table.Root
-				{table}
-				rowSize="large"
-				rowPath={(item) =>
-					appCtx.routes.spaces.item(data.workspace.id, `sessions/${item.sessionId}`)}
-			/>
-		{/if}
-	</div>
+	{#if sessions.length === 0}
+		<p class="empty">No sessions yet</p>
+	{:else}
+		<Table.Root {table} rowSize="large" rowPath={(item) => `/sessions/${item.sessionId}`} />
+	{/if}
 </div>
 
 <style>
 	.page {
-		display: flex;
-		block-size: 100%;
-		inline-size: 100%;
-	}
-
-	.content {
-		flex: 1;
+		overflow: auto;
 		padding-block: var(--size-12);
 		padding-inline: var(--size-14);
 	}
