@@ -18,6 +18,6 @@
     "@atlas/system": "workspace:*",
     "@std/path": "npm:@jsr/std__path@^1.1.2",
     "@std/yaml": "npm:@jsr/std__yaml@^1.0.10",
-    "zod": "^4.2.0"
+    "zod": "^4.2.1"
   }
 }
