@@ -3,8 +3,6 @@ import { onMount } from "svelte";
 import Button from "$lib/components/button.svelte";
 import Decal from "$lib/components/decal.svelte";
 import GoogleLogo from "$lib/components/icons/google-logo.svelte";
-import VortexLogo from "$lib/components/icons/vortex-logo.svelte";
-import Vortex from "$lib/components/vortex.svelte";
 
 let emailValue = $state("");
 let visible = $state(false);
@@ -34,6 +32,7 @@ async function handleMagicLink(event: Event) {
       alert("Failed to send magic link. Please try again.");
     }
   } catch (error) {
+    console.error(error);
     alert("An error occurred. Please try again.");
   } finally {
     isSubmitting = false;
@@ -52,16 +51,6 @@ onMount(() => {
 
   <section>
     <div class="details">
-      <div class="wordmark">
-        <div class="vortex">
-          <Vortex />
-        </div>
-
-        <div class="logo">
-          <VortexLogo />
-        </div>
-      </div>
-
       {#if magiclinkSent}
         <h1>Your magic link has been sent</h1>
 
@@ -124,73 +113,30 @@ onMount(() => {
   main {
     block-size: 100dvh;
     display: grid;
-    grid-template-columns: var(--size-4, 1rem) 1fr var(--size-4, 1rem);
+    grid-template-columns: var(--size-4) 1fr var(--size-4);
   }
 
   section {
     display: grid;
     grid-template-rows: 1fr auto;
-    gap: var(--size-8, 2rem);
+    gap: var(--size-8);
     overflow: scroll;
-    padding-block-end: var(--size-8, 2rem);
+    padding-block-end: var(--size-8);
   }
 
   @media (min-width: 768px) {
     section {
-      padding: var(--size-8, 2rem);
+      padding: var(--size-8);
     }
   }
 
-  .wordmark {
-    animation: fadeIn .7s 375ms ease-out 1 forwards;
-    align-items: center;
-    block-size: var(--size-80, 20rem);
-    display: grid;
-    grid-template-columns: 1;
-    grid-template-rows: 1;
-    inline-size: 100%;
-    max-inline-size: var(--size-80, 20rem);
-    justify-items: center;
-    opacity: 0;
-    transform: scale(.7);
-  }
-
-  .wordmark .vortex {
-    align-items: center;
-    display: flex;
-    grid-row: 1 / -1;
-    grid-column: 1 / -1;
-    justify-content: center;
-  }
-
-  .wordmark .logo {
-    align-items: center;
-    background-color: var(--accent-1, #1a53cc);
-    block-size: var(--size-10, 2.5rem);
-    border-radius: var(--radius-4, .75rem);
-    color: var(--background-1, white);
-    display: flex;
-    grid-row: 1 / -1;
-    grid-column: 1 / -1;
-    inline-size: var(--size-10, 2.5rem);
-    justify-content: center;
-    position: relative;
-    z-index: 2;
-  }
-
-  .wordmark .logo :global(svg) {
-    block-size: var(--size-6, 1.5rem);
-  }
-
   h1 {
-    animation: fadeIn .7s 375ms ease-out 1 forwards;
-    opacity: 0;
-    font-size: var(--font-size-7, 1.5rem);
-    font-weight: var(--font-weight-7, 700);
-    line-height: var(--font-lineheight-1, 1.25);
-    margin-block-start: var(--size-6, 1.5rem);
+    font-size: var(--font-size-7);
+    font-weight: var(--font-weight-7);
+    line-height: var(--font-lineheight-1);
+    margin-block-start: var(--size-6);
     text-wrap: balance;
-    transform: translateY(calc(-1 * var(--size-2, .5rem)));
+    transform: translateY(calc(-1 * var(--size-2)));
   }
 
   .details {
@@ -198,7 +144,7 @@ onMount(() => {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    margin-block-start: calc(-1 * var(--size-15, 3.75rem));
+    margin-block-start: calc(-1 * var(--size-15));
   }
 
   .details .login-form {
@@ -206,8 +152,8 @@ onMount(() => {
     display: grid;
     grid-template-columns: 1fr;
     grid-template-rows: 1fr;
-    margin-block-start: var(--size-6, 1.5rem);
-    max-inline-size: var(--size-72, 18rem);
+    margin-block-start: var(--size-6);
+    max-inline-size: var(--size-72);
     inline-size: 100%;
   }
 
@@ -215,7 +161,7 @@ onMount(() => {
     align-items: center;
     display: flex;
     flex-direction: column;
-    gap: var(--size-2, .5rem);
+    gap: var(--size-2);
     grid-row: 1 / -1;
     grid-column: 1 / -1;
     justify-content: center;
@@ -224,78 +170,64 @@ onMount(() => {
   }
 
   .details form input {
-    animation: fadeIn .25s 375ms ease-out 1 forwards;
-    background-color: var(--background-1, white);
-    border: var(--size-px, 1px) solid var(--border-2, rgba(0, 0, 0, 0.12));
-    border-radius: var(--radius-3, .625rem);
-    block-size: var(--size-7-5, 1.875rem);
+    background-color: var(--background-1);
+    border: var(--size-px) solid var(--border-2);
+    border-radius: var(--radius-3);
+    block-size: var(--size-7-5);
     inline-size: 100%;
-    opacity: 0;
-    padding-inline: var(--size-3, .75rem);
-    transform: scale(.92) translateZ(0);
+
+    padding-inline: var(--size-3);
+
     text-align: center;
   }
 
   .details form input::placeholder {
-    color: var(--text-3, #999);
+    color: var(--text-3);
   }
 
   .details form input:focus {
-    outline: var(--size-px, 1px) solid var(--accent-1, #1a53cc);
+    outline: var(--size-px) solid var(--accent-1);
     text-align: left;
   }
 
   .details form h2 {
-    animation: fadeIn .4s 525ms ease-out 1 forwards;
-    color: var(--text-3, #666);
-    font-size: var(--font-size-2, .75rem);
-    font-weight: var(--font-weight-5, 500);
-    opacity: 0;
-    padding-block-start: var(--size-4, 1rem);
-    transform: translateY(var(--size-1, .25rem));
+    color: var(--text-3,);
+    font-size: var(--font-size-2,);
+    font-weight: var(--font-weight-5,);
+    padding-block-start: var(--size-4,);
+    transform: translateY(var(--size-1));
   }
 
   .login-reset {
-    animation: fadeIn .5s .75s ease-out 1 forwards;
-    color: var(--text-3, #666);
-    font-weight: var(--font-weight-5, 500);
-    margin-block-start: var(--size-4, 1rem);
-    text-decoration-color: color-mix(in srgb, var(--accent-1, #1a53cc), transparent 50%);
-    text-underline-offset: var(--size-0-5, .125rem);
+    color: var(--text-3);
+    font-weight: var(--font-weight-5);
+    margin-block-start: var(--size-4);
+    text-decoration-color: color-mix(in srgb, var(--accent-1), transparent 50%);
+    text-underline-offset: var(--size-0-5);
     text-decoration-line: underline;
-    opacity: 0;
-    transition: all .15s ease;
+    transition: all 0.15s ease;
   }
 
   .login-reset:hover {
-    text-underline-offset: var(--size-1, .25rem);
+    text-underline-offset: var(--size-1,);
   }
 
   .signup {
-    animation: fadeIn 375ms .5s ease-out 1 forwards;
-    color: var(--text-3, rgba(0, 0, 0, 0.6));
-    font-size: var(--font-size-2, .75rem);
-    opacity: 0;
+    color: var(--text-3,);
+    font-size: var(--font-size-2);
     text-align: center;
   }
 
   .signup a {
-    color: var(--accent-1, #1a53cc);
-    font-weight: var(--font-weight-5, 500);
-    text-decoration-color: color-mix(in srgb, var(--accent-1, #1a53cc), transparent 50%);
-    text-underline-offset: var(--size-0-5, .125rem);
+    color: var(--accent-1);
+    font-weight: var(--font-weight-5);
+    text-decoration-color: color-mix(in srgb, (--accent-1), transparent 50%);
+    text-underline-offset: var(--size-0-5);
     text-decoration-line: underline;
-    transition: all .15s ease;
+    transition: all 0.15s ease;
   }
 
   .signup a:hover {
-    text-underline-offset: var(--size-1, .25rem);
-  }
-
-  @keyframes fadeIn {
-    to {
-      opacity: 1;
-      transform: scale(1) translateY(0);
-    }
+    text-underline-offset: var(--size-1);
   }
 </style>
