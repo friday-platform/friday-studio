@@ -30,17 +30,14 @@ let form = $state<HTMLFormElement | null>(null);
 let message = $state<string>("");
 let showChats = $state(false);
 
-// Use the newChat instance from context
-const chat = $derived(chatContext.newChat);
-
-const hasMessages = $derived(chat.messages.length > 0);
-
 let actionsAfterLastUser = $state<{ parts: AtlasUIMessagePart[]; timestamp?: string }>({
   parts: [],
 });
 
 $effect(() => {
-  const lastAssistantMessage = chat.messages.findLast((msg) => msg.role === "assistant");
+  const lastAssistantMessage = chatContext.newChat.messages.findLast(
+    (msg) => msg.role === "assistant",
+  );
 
   // If no user message found, return empty
   if (!lastAssistantMessage) {
@@ -60,7 +57,7 @@ let showDetails = new SvelteMap<string, boolean>();
 
 <div class="chat">
 	<div class="main">
-		<div class="messages" class:has-messages={hasMessages}>
+		<div class="messages" class:has-messages={chatContext.newChat.messages.length > 0}>
 			<div
 				class="messages-container"
 				class:has-outline={chatContext.newChat.messages.some((msg) =>
@@ -151,7 +148,7 @@ let showDetails = new SvelteMap<string, boolean>();
 						onsubmit={async (e) => {
 							e.preventDefault();
 
-							if (message.trim() && chat) {
+							if (message.trim() && chatContext.newChat) {
 								let combinedMessage = message;
 								if (appCtx.stagedFiles.state.size > 0) {
 									combinedMessage = combinedMessage + `\n\nAttachments:`;
@@ -257,15 +254,15 @@ let showDetails = new SvelteMap<string, boolean>();
 												Add Files
 											</DropdownMenu.Item>
 
-											{#if hasMessages}
+											{#if chatContext.newChat.messages.length > 0}
 												<DropdownMenu.Item
 													onclick={async () => {
 														if (chatContext.newChat.messages) {
 															const chatTitle =
-																chatContext.recentChats.find((c) => c.id === chat.id)?.title ??
-																'Untitled';
+																chatContext.recentChats.find((c) => c.id === chatContext.newChat.id)
+																	?.title ?? 'Untitled';
 
-															await shareChat(chat.messages, chatTitle);
+															await shareChat(chatContext.newChat.messages, chatTitle);
 														}
 													}}
 												>
@@ -298,14 +295,14 @@ let showDetails = new SvelteMap<string, boolean>();
 							/>
 
 							<div class="form-action">
-								{#if chat.status === 'streaming' || chat.status === 'submitted'}
+								{#if chatContext.newChat.status === 'streaming' || chatContext.newChat.status === 'submitted'}
 									<button
 										class="stop-process"
 										type="button"
 										onclick={async (e) => {
 											e.preventDefault();
 
-											chat.stop();
+											chatContext.newChat.stop();
 										}}
 									>
 										<IconSmall.Stop />
@@ -320,7 +317,7 @@ let showDetails = new SvelteMap<string, boolean>();
 					</form>
 				</div>
 
-				{#if !hasMessages && chatContext.recentChats.length > 0}
+				{#if chatContext.newChat.messages.length === 0 && chatContext.recentChats.length > 0}
 					<div class="recent-conversations" class:open={showChats}>
 						<button
 							class="toggle-chats"
@@ -344,12 +341,12 @@ let showDetails = new SvelteMap<string, boolean>();
 				{/if}
 			</div>
 
-			{#if hasMessages}
+			{#if chatContext.newChat.messages.length === 0}
 				<div class="background-blur"></div>
 			{/if}
 		</div>
 
-		{#if !hasMessages}
+		{#if chatContext.newChat.messages.length === 0}
 			<footer>
 				<span>Made By Tempest</span>
 			</footer>
