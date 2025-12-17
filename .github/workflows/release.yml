@@ -62,17 +62,17 @@ jobs:
       runner: ubuntu-latest-8-cores
     secrets: inherit
 
-  build-binary-darwin-amd64:
-    needs: version
-    uses: ./.github/workflows/build-component.yml
-    with:
-      component: binary
-      version: ${{ needs.version.outputs.version }}
-      platform: darwin
-      arch: amd64
-      runner: macos-15-intel
-    secrets: inherit
-
+#   build-binary-darwin-amd64:
+#     needs: version
+#     uses: ./.github/workflows/build-component.yml
+#     with:
+#       component: binary
+#       version: ${{ needs.version.outputs.version }}
+#       platform: darwin
+#       arch: amd64
+#       runner: macos-15-intel
+#     secrets: inherit
+#!
   build-binary-darwin-arm64:
     needs: version
     uses: ./.github/workflows/build-component.yml
@@ -95,17 +95,17 @@ jobs:
       runner: windows-latest-8-cores
     secrets: inherit
 
-  build-web-app-darwin-amd64:
-    needs: version
-    uses: ./.github/workflows/build-component.yml
-    with:
-      component: web-app
-      version: ${{ needs.version.outputs.version }}
-      platform: darwin
-      arch: amd64
-      runner: macos-15-intel
-    secrets: inherit
-
+#   build-web-app-darwin-amd64:
+#     needs: version
+#     uses: ./.github/workflows/build-component.yml
+#     with:
+#       component: web-app
+#       version: ${{ needs.version.outputs.version }}
+#       platform: darwin
+#       arch: amd64
+#       runner: macos-15-intel
+#     secrets: inherit
+#!
   build-web-app-darwin-arm64:
     needs: version
     uses: ./.github/workflows/build-component.yml
@@ -285,66 +285,66 @@ jobs:
             ./artifacts/binary-linux-arm64/atlas_*.tar.gz
             ./artifacts/binary-linux-arm64/atlas_*.sha256
 
-  package-darwin-amd64:
-    needs: [version, build-binary-darwin-amd64, build-web-app-darwin-amd64]
-    runs-on: macos-15-intel
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Download artifacts
-        uses: actions/download-artifact@v7
-        with:
-          path: ./artifacts/
-
-      - name: Prepare macOS AMD64 files
-        run: |
-          mkdir -p dist
-          cp ./artifacts/binary-darwin-amd64/atlas dist/atlas
-          # Find and copy the actual .app directory
-          if ls ./artifacts/web-app-darwin-amd64/*.app 1>/dev/null 2>&1; then
-            cp -r ./artifacts/web-app-darwin-amd64/*.app "dist/Atlas Web Client.app"
-            # Fix executable permissions on Tauri binary inside the app
-            chmod +x "dist/Atlas Web Client.app/Contents/MacOS/atlas-web-client"
-          fi
-        shell: bash
-
-
-      - name: Create macOS AMD64 installer
-        uses: ./.github/actions/create-installers
-        with:
-          version: ${{ needs.version.outputs.version }}
-          platform: darwin
-          arch: amd64
-          channel: release
-          binary-path: dist/atlas
-          binary-name: atlas
-          web-app-binary-path: dist/Atlas Web Client.app
-          web-app-binary-name: Atlas Web Client.app
-          macos-sign-p12: ${{ secrets.MACOS_SIGN_P12 }}
-          macos-sign-password: ${{ secrets.MACOS_SIGN_PASSWORD }}
-          macos-installer-p12: ${{ secrets.MACOS_INSTALLER_P12 }}
-          macos-installer-password: ${{ secrets.MACOS_INSTALLER_PASSWORD }}
-          macos-notary-issuer-id: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
-          macos-notary-key-id: ${{ secrets.MACOS_NOTARY_KEY_ID }}
-          macos-notary-key: ${{ secrets.MACOS_NOTARY_KEY }}
-
-      - name: Create platform bundle
-        run: |
-          ./scripts/create-platform-bundle.sh "${{ needs.version.outputs.version }}" "darwin" "amd64"
-        shell: bash
-
-      - name: Upload final artifacts
-        uses: actions/upload-artifact@v6
-        with:
-          name: darwin-amd64-packages
-          path: |
-            ./dist/atlas-bundle-*.tar.gz
-            ./dist/atlas_*.zip
-            ./dist/atlas_*.sha256
-            ./artifacts/binary-darwin-amd64/atlas_*.tar.gz
-            ./artifacts/binary-darwin-amd64/atlas_*.sha256
-
+#   package-darwin-amd64:
+#     needs: [version, build-binary-darwin-amd64, build-web-app-darwin-amd64]
+#     runs-on: macos-15-intel
+#     steps:
+#       - name: Checkout
+#         uses: actions/checkout@v6
+#!
+#       - name: Download artifacts
+#         uses: actions/download-artifact@v7
+#         with:
+#           path: ./artifacts/
+#!
+#       - name: Prepare macOS AMD64 files
+#         run: |
+#           mkdir -p dist
+#           cp ./artifacts/binary-darwin-amd64/atlas dist/atlas
+#           # Find and copy the actual .app directory
+#           if ls ./artifacts/web-app-darwin-amd64/*.app 1>/dev/null 2>&1; then
+#             cp -r ./artifacts/web-app-darwin-amd64/*.app "dist/Atlas Web Client.app"
+#             # Fix executable permissions on Tauri binary inside the app
+#             chmod +x "dist/Atlas Web Client.app/Contents/MacOS/atlas-web-client"
+#           fi
+#         shell: bash
+#!
+#!
+#       - name: Create macOS AMD64 installer
+#         uses: ./.github/actions/create-installers
+#         with:
+#           version: ${{ needs.version.outputs.version }}
+#           platform: darwin
+#           arch: amd64
+#           channel: release
+#           binary-path: dist/atlas
+#           binary-name: atlas
+#           web-app-binary-path: dist/Atlas Web Client.app
+#           web-app-binary-name: Atlas Web Client.app
+#           macos-sign-p12: ${{ secrets.MACOS_SIGN_P12 }}
+#           macos-sign-password: ${{ secrets.MACOS_SIGN_PASSWORD }}
+#           macos-installer-p12: ${{ secrets.MACOS_INSTALLER_P12 }}
+#           macos-installer-password: ${{ secrets.MACOS_INSTALLER_PASSWORD }}
+#           macos-notary-issuer-id: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+#           macos-notary-key-id: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+#           macos-notary-key: ${{ secrets.MACOS_NOTARY_KEY }}
+#!
+#       - name: Create platform bundle
+#         run: |
+#           ./scripts/create-platform-bundle.sh "${{ needs.version.outputs.version }}" "darwin" "amd64"
+#         shell: bash
+#!
+#       - name: Upload final artifacts
+#         uses: actions/upload-artifact@v6
+#         with:
+#           name: darwin-amd64-packages
+#           path: |
+#             ./dist/atlas-bundle-*.tar.gz
+#             ./dist/atlas_*.zip
+#             ./dist/atlas_*.sha256
+#             ./artifacts/binary-darwin-amd64/atlas_*.tar.gz
+#             ./artifacts/binary-darwin-amd64/atlas_*.sha256
+#!
   package-darwin-arm64:
     needs: [version, build-binary-darwin-arm64, build-web-app-darwin-arm64]
     runs-on: macos-15-xlarge
@@ -457,7 +457,7 @@ jobs:
 
   # ==================== RELEASE & UPLOAD JOBS ====================
   release:
-    needs: [version, package-linux-amd64, package-linux-arm64, package-darwin-amd64, package-darwin-arm64, package-windows]
+    needs: [version, package-linux-amd64, package-linux-arm64, package-darwin-arm64, package-windows]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -599,7 +599,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   upload-sandbox:
-    needs: [version, package-linux-amd64, package-linux-arm64, package-darwin-amd64, package-darwin-arm64, package-windows]
+    needs: [version, package-linux-amd64, package-linux-arm64, package-darwin-arm64, package-windows]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -612,7 +612,7 @@ jobs:
           version: ${{ needs.version.outputs.version }}
 
   upload-production:
-    needs: [version, package-linux-amd64, package-linux-arm64, package-darwin-amd64, package-darwin-arm64, package-windows]
+    needs: [version, package-linux-amd64, package-linux-arm64, package-darwin-arm64, package-windows]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
