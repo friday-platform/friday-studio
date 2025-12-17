@@ -5,5 +5,24 @@
   "tasks": {
     "start": "deno run --env-file --allow-all src/index.ts",
     "dev": "LINK_DEV_MODE=true deno run --watch --env-file --allow-all src/index.ts"
+  },
+  "imports": {
+    "@atlas/logger": "../../packages/logger/mod.ts",
+    "@atlas/utils": "../../packages/utils/mod.ts",
+    "@atlas/utils/paths.server": "../../packages/utils/src/paths.ts",
+    "@atlas/sentry": "../../packages/sentry/mod.ts",
+    "@std/async": "jsr:@std/async@^1.0.15",
+    "@std/dotenv": "jsr:@std/dotenv@^0.225.5",
+    "zod": "npm:zod@^4.2.1",
+    "hono": "npm:hono@^4.11.1",
+    "hono/client": "npm:hono@^4.10.4/client",
+    "postgres": "npm:postgres@^3.4.7",
+    "nanoid": "npm:nanoid@^5.1.6",
+    "oauth4webapi": "npm:oauth4webapi@^3.8.3",
+    "@hono/zod-validator": "npm:@hono/zod-validator@^0.7.5",
+    "@socotra/modelcontextprotocol-sdk": "npm:@socotra/modelcontextprotocol-sdk@^1.21.0",
+    "@sentry/deno": "npm:@sentry/deno@^10.30.0",
+    "@opentelemetry/api": "npm:@opentelemetry/api@^1.9.0",
+    "jose": "npm:jose@^6.1.3"
   }
 }
