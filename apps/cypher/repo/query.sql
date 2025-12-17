@@ -10,3 +10,6 @@ RETURNING *;
 SELECT id, email
 FROM public."user"
 WHERE id = $1;
+
+-- name: GetVirtualKeyCiphertext :one
+SELECT ciphertext FROM public.llm_virtualkey WHERE user_id = $1;

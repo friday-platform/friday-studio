@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"net/http"
+
+	"github.com/tempestteam/atlas/apps/cypher/repo"
 )
 
 type contextKey struct {
@@ -11,10 +13,11 @@ type contextKey struct {
 }
 
 var (
-	userIDContextKey       = &contextKey{"userID"}
-	keyCacheContextKey     = &contextKey{"keyCache"}
-	tokenDepsContextKey    = &contextKey{"tokenDeps"}
-	k8sTokenInfoContextKey = &contextKey{"k8sTokenInfo"}
+	userIDContextKey          = &contextKey{"userID"}
+	keyCacheContextKey        = &contextKey{"keyCache"}
+	tokenDepsContextKey       = &contextKey{"tokenDeps"}
+	k8sTokenInfoContextKey    = &contextKey{"k8sTokenInfo"}
+	credentialsDepsContextKey = &contextKey{"credentialsDeps"}
 )
 
 // UserIDFromContext retrieves the user ID from the context.
@@ -78,4 +81,30 @@ func K8sTokenInfoFromContext(ctx context.Context) (*K8sTokenInfo, error) {
 		return nil, errors.New("could not get K8s token info from context")
 	}
 	return info, nil
+}
+
+// CredentialsDeps contains dependencies for the credentials endpoint.
+type CredentialsDeps struct {
+	Queries     *repo.Queries
+	SendgridKey string
+	ParallelKey string
+}
+
+// CredentialsDepsCtxMiddleware injects CredentialsDeps into request context.
+func CredentialsDepsCtxMiddleware(deps *CredentialsDeps) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ctx := context.WithValue(r.Context(), credentialsDepsContextKey, deps)
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+}
+
+// CredentialsDepsFromContext retrieves CredentialsDeps from the context.
+func CredentialsDepsFromContext(ctx context.Context) (*CredentialsDeps, error) {
+	deps, ok := ctx.Value(credentialsDepsContextKey).(*CredentialsDeps)
+	if !ok || deps == nil || deps.Queries == nil {
+		return nil, errors.New("could not get credentials deps from context")
+	}
+	return deps, nil
 }

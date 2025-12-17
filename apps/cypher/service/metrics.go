@@ -66,6 +66,15 @@ var (
 		},
 		[]string{"result"},
 	)
+
+	// CredentialsTotal counts credentials fetch operations by result.
+	CredentialsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "cypher_credentials_total",
+			Help: "Total credentials fetch operations",
+		},
+		[]string{"result"},
+	)
 )
 
 // RecordEncrypt records an encryption operation result.
@@ -103,4 +112,9 @@ func RecordInternalEncrypt(result string) {
 // RecordTokenIssued records a token issuance operation result.
 func RecordTokenIssued(result string) {
 	TokenIssuedTotal.WithLabelValues(result).Inc()
+}
+
+// RecordCredentials records a credentials fetch operation result.
+func RecordCredentials(result string) {
+	CredentialsTotal.WithLabelValues(result).Inc()
 }

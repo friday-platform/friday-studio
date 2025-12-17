@@ -36,6 +36,10 @@ type Config struct {
 	// In Kubernetes, set JWT_PRIVATE_KEY_FILE to point to the mounted secret file.
 	JWTPrivateKey string `env:"JWT_PRIVATE_KEY_FILE,file" envDefault:""`
 
+	// Shared Secrets (for /api/credentials endpoint)
+	SendgridAPIKey string `env:"CYPHER_SECRET_SENDGRID"`
+	ParallelAPIKey string `env:"CYPHER_SECRET_PARALLEL_API"`
+
 	// TLS
 	TLSConfig *server.TLSConfig
 	Profiler  profiler.Config

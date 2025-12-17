@@ -5,6 +5,7 @@ sql:
     schema:
       - ../../../supabase/migrations/20251114020000_create_bounce_tables.sql
       - ../../../supabase/migrations/20251208194943_create_cypher_tables.sql
+      - ../../../supabase/migrations/20251211000000_create_llm_virtualkey_table.sql
     gen:
       go:
         package: repo

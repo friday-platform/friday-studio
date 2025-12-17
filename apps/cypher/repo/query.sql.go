@@ -80,3 +80,17 @@ func (q *Queries) GetUserByID(ctx context.Context, id string) (*GetUserByIDRow, 
 	err := row.Scan(&i.ID, &i.Email)
 	return &i, err
 }
+
+const getVirtualKeyCiphertext = `-- name: GetVirtualKeyCiphertext :one
+SELECT ciphertext FROM public.llm_virtualkey WHERE user_id = $1
+`
+
+// GetVirtualKeyCiphertext
+//
+//	SELECT ciphertext FROM public.llm_virtualkey WHERE user_id = $1
+func (q *Queries) GetVirtualKeyCiphertext(ctx context.Context, userID string) ([]byte, error) {
+	row := q.db.QueryRow(ctx, getVirtualKeyCiphertext, userID)
+	var ciphertext []byte
+	err := row.Scan(&ciphertext)
+	return ciphertext, err
+}
