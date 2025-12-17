@@ -16,7 +16,9 @@ import (
 	"github.com/tempestteam/atlas/apps/atlas-operator/internal/controller"
 	"github.com/tempestteam/atlas/apps/atlas-operator/pkg/argocd"
 	"github.com/tempestteam/atlas/apps/atlas-operator/pkg/config"
+	"github.com/tempestteam/atlas/apps/atlas-operator/pkg/cypher"
 	"github.com/tempestteam/atlas/apps/atlas-operator/pkg/database"
+	"github.com/tempestteam/atlas/apps/atlas-operator/pkg/litellm"
 	"github.com/tempestteam/atlas/apps/atlas-operator/pkg/pool"
 	"github.com/tempestteam/atlas/apps/atlas-operator/pkg/webhook"
 	"github.com/tempestteam/atlas/pkg/profiler"
@@ -174,8 +176,28 @@ func run() error {
 		poolManager = pool.NewManager(dbClient, cfg.PoolTargetSize, logger)
 	}
 
+	// Create LiteLLM and Cypher clients if LiteLLM is enabled
+	var litellmClient *litellm.Client
+	var cypherClient *cypher.Client
+	if cfg.LiteLLMEnabled {
+		logger.Info("LiteLLM integration enabled, creating clients")
+
+		litellmClient = litellm.NewClient(litellm.Config{
+			Endpoint:  cfg.LiteLLMEndpoint,
+			MasterKey: cfg.LiteLLMMasterKey,
+		}, logger)
+
+		var err error
+		cypherClient, err = cypher.NewClient(cypher.Config{
+			Endpoint: cfg.CypherEndpoint,
+		}, logger)
+		if err != nil {
+			return fmt.Errorf("failed to create cypher client: %w", err)
+		}
+	}
+
 	// Create reconciler
-	reconciler := controller.NewReconciler(dbClient, argoCDManager, poolManager, cfg, logger)
+	reconciler := controller.NewReconciler(dbClient, argoCDManager, poolManager, litellmClient, cypherClient, cfg, logger)
 
 	// Start health check server
 	healthServer := startHealthServer(cfg.HealthCheckPort, reconciler, logger)

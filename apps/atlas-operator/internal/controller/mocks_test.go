@@ -6,6 +6,7 @@ import (
 
 	"github.com/tempestteam/atlas/apps/atlas-operator/pkg/argocd"
 	"github.com/tempestteam/atlas/apps/atlas-operator/pkg/database"
+	"github.com/tempestteam/atlas/apps/atlas-operator/pkg/litellm"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
@@ -18,6 +19,10 @@ type MockDatabaseClient struct {
 	CountPoolErr     error
 	CreatePoolErr    error
 	CreatedPoolUsers []string
+	// Virtual key mocks
+	VirtualKeys      map[string][]byte
+	HasVirtualKeyErr error
+	InsertKeyErr     error
 }
 
 func (m *MockDatabaseClient) GetUsers(ctx context.Context, limit int, afterID string) ([]database.User, error) {
@@ -66,6 +71,28 @@ func (m *MockDatabaseClient) Health() error {
 }
 
 func (m *MockDatabaseClient) Close() error {
+	return nil
+}
+
+func (m *MockDatabaseClient) HasVirtualKey(ctx context.Context, userID string) (bool, error) {
+	if m.HasVirtualKeyErr != nil {
+		return false, m.HasVirtualKeyErr
+	}
+	if m.VirtualKeys == nil {
+		return false, nil
+	}
+	_, exists := m.VirtualKeys[userID]
+	return exists, nil
+}
+
+func (m *MockDatabaseClient) InsertVirtualKey(ctx context.Context, userID string, ciphertext []byte) error {
+	if m.InsertKeyErr != nil {
+		return m.InsertKeyErr
+	}
+	if m.VirtualKeys == nil {
+		m.VirtualKeys = make(map[string][]byte)
+	}
+	m.VirtualKeys[userID] = ciphertext
 	return nil
 }
 
@@ -160,4 +187,62 @@ func (m *MockArgoCDManager) ListApplications(ctx context.Context) ([]*unstructur
 		return nil, m.ListErr
 	}
 	return m.Applications, nil
+}
+
+// MockLiteLLMClient is a mock implementation of LiteLLMClient for testing.
+type MockLiteLLMClient struct {
+	CreatedKeys     map[string]string // userID -> key
+	DeletedUserIDs  []string
+	CreateKeyErr    error
+	DeleteKeyErr    error
+	CreateKeyResult *litellm.CreateVirtualKeyResponse
+}
+
+func (m *MockLiteLLMClient) CreateVirtualKey(ctx context.Context, req litellm.CreateVirtualKeyRequest) (*litellm.CreateVirtualKeyResponse, error) {
+	if m.CreateKeyErr != nil {
+		return nil, m.CreateKeyErr
+	}
+	if m.CreatedKeys == nil {
+		m.CreatedKeys = make(map[string]string)
+	}
+	key := "sk-test-key-" + req.UserID
+	m.CreatedKeys[req.UserID] = key
+
+	if m.CreateKeyResult != nil {
+		return m.CreateKeyResult, nil
+	}
+	return &litellm.CreateVirtualKeyResponse{
+		Key:    key,
+		UserID: req.UserID,
+	}, nil
+}
+
+func (m *MockLiteLLMClient) DeleteVirtualKeyByUserID(ctx context.Context, userID string) error {
+	if m.DeleteKeyErr != nil {
+		return m.DeleteKeyErr
+	}
+	m.DeletedUserIDs = append(m.DeletedUserIDs, userID)
+	return nil
+}
+
+// MockCypherClient is a mock implementation of CypherClient for testing.
+type MockCypherClient struct {
+	EncryptedData map[string][][]byte // userID -> ciphertexts
+	EncryptErr    error
+}
+
+func (m *MockCypherClient) Encrypt(ctx context.Context, userID string, plaintext []string) ([][]byte, error) {
+	if m.EncryptErr != nil {
+		return nil, m.EncryptErr
+	}
+	if m.EncryptedData == nil {
+		m.EncryptedData = make(map[string][][]byte)
+	}
+	// Generate fake ciphertexts
+	ciphertexts := make([][]byte, len(plaintext))
+	for i, pt := range plaintext {
+		ciphertexts[i] = []byte("encrypted-" + pt)
+	}
+	m.EncryptedData[userID] = ciphertexts
+	return ciphertexts, nil
 }

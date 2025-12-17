@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/tempestteam/atlas/apps/atlas-operator/pkg/database"
+	"github.com/tempestteam/atlas/apps/atlas-operator/pkg/litellm"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
@@ -12,6 +13,8 @@ type DatabaseClient interface {
 	GetUsers(ctx context.Context, limit int, afterID string) ([]database.User, error)
 	CountPoolUsers(ctx context.Context) (int, error)
 	CreatePoolUser(ctx context.Context) (string, error)
+	HasVirtualKey(ctx context.Context, userID string) (bool, error)
+	InsertVirtualKey(ctx context.Context, userID string, ciphertext []byte) error
 	Health() error
 	Close() error
 }
@@ -27,4 +30,15 @@ type ArgoCDManager interface {
 // PoolManager defines the interface for pool operations.
 type PoolManager interface {
 	Replenish(ctx context.Context) (int, error)
+}
+
+// LiteLLMClient defines the interface for LiteLLM API operations.
+type LiteLLMClient interface {
+	CreateVirtualKey(ctx context.Context, req litellm.CreateVirtualKeyRequest) (*litellm.CreateVirtualKeyResponse, error)
+	DeleteVirtualKeyByUserID(ctx context.Context, userID string) error
+}
+
+// CypherClient defines the interface for Cypher encryption operations.
+type CypherClient interface {
+	Encrypt(ctx context.Context, userID string, plaintext []string) ([][]byte, error)
 }

@@ -2,3 +2,6 @@
 packages/openapi-client/src/atlasd-types.gen.d.ts linguist-generated=true
 tools/evals/bun.lock linguist-generated=true
 deno.lock linguist-generated=true
+
+# Use bd merge for beads JSONL files
+.beads/issues.jsonl merge=beads

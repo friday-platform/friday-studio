@@ -5,7 +5,6 @@ go 1.25.4
 require (
 	cloud.google.com/go/profiler v0.4.3
 	cloud.google.com/go/storage v1.58.0
-	github.com/DATA-DOG/go-sqlmock v1.5.2
 	github.com/caarlos0/env/v11 v11.3.1
 	github.com/ggicci/httpin v0.20.2
 	github.com/go-chi/chi/v5 v5.2.3
@@ -16,9 +15,7 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.3.0
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.7.6
-	github.com/jmoiron/sqlx v1.4.0
 	github.com/joho/godotenv v1.5.1
-	github.com/lib/pq v1.10.9
 	github.com/phuslu/lru v1.0.18
 	github.com/prometheus/client_golang v1.23.2
 	github.com/sendgrid/sendgrid-go v3.16.1+incompatible

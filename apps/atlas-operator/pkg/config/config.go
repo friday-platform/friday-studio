@@ -42,6 +42,16 @@ type Config struct {
 	PoolEnabled    bool `env:"POOL_ENABLED" envDefault:"true"`
 	PoolTargetSize int  `env:"POOL_TARGET_SIZE" envDefault:"5"`
 
+	// LiteLLM Configuration
+	LiteLLMEnabled        bool    `env:"LITELLM_ENABLED" envDefault:"false"`
+	LiteLLMEndpoint       string  `env:"LITELLM_ENDPOINT" envDefault:"http://litellm-proxy.atlas-operator.svc.cluster.local:4000"`
+	LiteLLMMasterKey      string  `env:"LITELLM_MASTER_KEY" envDefault:""`
+	LiteLLMDefaultBudget  float64 `env:"LITELLM_DEFAULT_BUDGET" envDefault:"200.0"`
+	LiteLLMBudgetDuration string  `env:"LITELLM_BUDGET_DURATION" envDefault:"30d"`
+
+	// Cypher Configuration (for encrypting virtual keys)
+	CypherEndpoint string `env:"CYPHER_ENDPOINT" envDefault:"https://atlas-cypher.atlas-operator.svc.cluster.local:8085"`
+
 	// Profiler Configuration
 	Profiler profiler.Config
 }
@@ -80,6 +90,11 @@ func Load(logger *slog.Logger) (*Config, error) {
 		"webhook_enabled", cfg.WebhookEnabled,
 		"webhook_port", cfg.WebhookPort,
 		"webhook_auth", cfg.WebhookToken != "",
+		"litellm_enabled", cfg.LiteLLMEnabled,
+		"litellm_endpoint", cfg.LiteLLMEndpoint,
+		"litellm_default_budget", cfg.LiteLLMDefaultBudget,
+		"litellm_budget_duration", cfg.LiteLLMBudgetDuration,
+		"cypher_endpoint", cfg.CypherEndpoint,
 	)
 
 	return cfg, nil
@@ -109,6 +124,16 @@ func (c *Config) Validate() error {
 	}
 	if c.WebhookEnabled && (c.WebhookPort <= 0 || c.WebhookPort > 65535) {
 		return fmt.Errorf("invalid webhook port: %d", c.WebhookPort)
+	}
+
+	// Validate LiteLLM configuration
+	if c.LiteLLMEnabled {
+		if c.LiteLLMMasterKey == "" {
+			return fmt.Errorf("LITELLM_MASTER_KEY is required when LITELLM_ENABLED=true")
+		}
+		if c.LiteLLMDefaultBudget <= 0 {
+			return fmt.Errorf("LITELLM_DEFAULT_BUDGET must be positive")
+		}
 	}
 
 	return nil

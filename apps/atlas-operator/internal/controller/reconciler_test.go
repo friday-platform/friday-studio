@@ -23,7 +23,7 @@ func TestNewReconciler(t *testing.T) {
 	mockDB := &MockDatabaseClient{}
 	mockArgoCD := &MockArgoCDManager{}
 
-	r := NewReconciler(mockDB, mockArgoCD, nil, cfg, logger)
+	r := NewReconciler(mockDB, mockArgoCD, nil, nil, nil, cfg, logger)
 
 	if r == nil {
 		t.Fatal("expected non-nil reconciler")
@@ -45,7 +45,7 @@ func TestStop(t *testing.T) {
 		ReconciliationInterval: 100 * time.Millisecond,
 	}
 
-	r := NewReconciler(nil, nil, nil, cfg, logger)
+	r := NewReconciler(nil, nil, nil, nil, nil, cfg, logger)
 
 	// Verify stopCh is open initially
 	select {
@@ -84,7 +84,7 @@ func TestReconcile_CreateNewApplications(t *testing.T) {
 		Applications: []*unstructured.Unstructured{},
 	}
 
-	r := NewReconciler(mockDB, mockArgoCD, nil, cfg, logger)
+	r := NewReconciler(mockDB, mockArgoCD, nil, nil, nil, cfg, logger)
 
 	ctx := context.Background()
 	err := r.Reconcile(ctx)
@@ -153,7 +153,7 @@ func TestReconcile_DeleteRemovedApplications(t *testing.T) {
 		},
 	}
 
-	r := NewReconciler(mockDB, mockArgoCD, nil, cfg, logger)
+	r := NewReconciler(mockDB, mockArgoCD, nil, nil, nil, cfg, logger)
 
 	ctx := context.Background()
 	err := r.Reconcile(ctx)
@@ -225,7 +225,7 @@ func TestReconcile_MixedOperations(t *testing.T) {
 		},
 	}
 
-	r := NewReconciler(mockDB, mockArgoCD, nil, cfg, logger)
+	r := NewReconciler(mockDB, mockArgoCD, nil, nil, nil, cfg, logger)
 
 	ctx := context.Background()
 	err := r.Reconcile(ctx)
@@ -261,7 +261,7 @@ func TestReconcile_DatabaseError(t *testing.T) {
 	}
 	mockArgoCD := &MockArgoCDManager{}
 
-	r := NewReconciler(mockDB, mockArgoCD, nil, cfg, logger)
+	r := NewReconciler(mockDB, mockArgoCD, nil, nil, nil, cfg, logger)
 
 	ctx := context.Background()
 	err := r.Reconcile(ctx)
@@ -288,7 +288,7 @@ func TestReconcile_ArgoCDListError(t *testing.T) {
 		ListErr: fmt.Errorf("kubernetes API error"),
 	}
 
-	r := NewReconciler(mockDB, mockArgoCD, nil, cfg, logger)
+	r := NewReconciler(mockDB, mockArgoCD, nil, nil, nil, cfg, logger)
 
 	ctx := context.Background()
 	err := r.Reconcile(ctx)
@@ -315,7 +315,7 @@ func TestReconcile_ContinuesOnPartialFailure(t *testing.T) {
 		CreateErr:    fmt.Errorf("creation failed"),
 	}
 
-	r := NewReconciler(mockDB, mockArgoCD, nil, cfg, logger)
+	r := NewReconciler(mockDB, mockArgoCD, nil, nil, nil, cfg, logger)
 
 	ctx := context.Background()
 	err := r.Reconcile(ctx)
@@ -353,7 +353,7 @@ func TestReconcile_AppWithoutUserIDLabel(t *testing.T) {
 		},
 	}
 
-	r := NewReconciler(mockDB, mockArgoCD, nil, cfg, logger)
+	r := NewReconciler(mockDB, mockArgoCD, nil, nil, nil, cfg, logger)
 
 	ctx := context.Background()
 	err := r.Reconcile(ctx)
@@ -379,7 +379,7 @@ func TestHealth_AllHealthy(t *testing.T) {
 		Applications: []*unstructured.Unstructured{},
 	}
 
-	r := NewReconciler(mockDB, mockArgoCD, nil, cfg, logger)
+	r := NewReconciler(mockDB, mockArgoCD, nil, nil, nil, cfg, logger)
 
 	err := r.Health()
 	if err != nil {
@@ -396,7 +396,7 @@ func TestHealth_DatabaseUnhealthy(t *testing.T) {
 	}
 	mockArgoCD := &MockArgoCDManager{}
 
-	r := NewReconciler(mockDB, mockArgoCD, nil, cfg, logger)
+	r := NewReconciler(mockDB, mockArgoCD, nil, nil, nil, cfg, logger)
 
 	err := r.Health()
 	if err == nil {
@@ -415,7 +415,7 @@ func TestHealth_ArgoCDUnhealthy(t *testing.T) {
 		ListErr: fmt.Errorf("kubernetes API unavailable"),
 	}
 
-	r := NewReconciler(mockDB, mockArgoCD, nil, cfg, logger)
+	r := NewReconciler(mockDB, mockArgoCD, nil, nil, nil, cfg, logger)
 
 	err := r.Health()
 	if err == nil {
@@ -427,7 +427,7 @@ func TestHealth_NilDependencies(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
 	cfg := &config.Config{}
 
-	r := NewReconciler(nil, nil, nil, cfg, logger)
+	r := NewReconciler(nil, nil, nil, nil, nil, cfg, logger)
 
 	err := r.Health()
 	if err == nil {
@@ -448,7 +448,7 @@ func TestStart_ContextCancellation(t *testing.T) {
 		Applications: []*unstructured.Unstructured{},
 	}
 
-	r := NewReconciler(mockDB, mockArgoCD, nil, cfg, logger)
+	r := NewReconciler(mockDB, mockArgoCD, nil, nil, nil, cfg, logger)
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -489,7 +489,7 @@ func TestStart_StopChannel(t *testing.T) {
 		Applications: []*unstructured.Unstructured{},
 	}
 
-	r := NewReconciler(mockDB, mockArgoCD, nil, cfg, logger)
+	r := NewReconciler(mockDB, mockArgoCD, nil, nil, nil, cfg, logger)
 
 	ctx := context.Background()
 
@@ -532,7 +532,7 @@ func TestStart_PeriodicReconciliation(t *testing.T) {
 		Applications: []*unstructured.Unstructured{},
 	}
 
-	r := NewReconciler(mockDB, mockArgoCD, nil, cfg, logger)
+	r := NewReconciler(mockDB, mockArgoCD, nil, nil, nil, cfg, logger)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -561,4 +561,266 @@ func TestStart_PeriodicReconciliation(t *testing.T) {
 
 	cancel()
 	time.Sleep(100 * time.Millisecond)
+}
+
+func TestReconcile_WithLiteLLM_CreatesVirtualKeys(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+	cfg := &config.Config{
+		ReconciliationInterval: 30 * time.Second,
+		LiteLLMDefaultBudget:   200.0,
+	}
+
+	mockDB := &MockDatabaseClient{
+		Users: []database.User{
+			{ID: "user-1"},
+			{ID: "user-2"},
+		},
+	}
+	mockArgoCD := &MockArgoCDManager{
+		Applications: []*unstructured.Unstructured{},
+	}
+	mockLiteLLM := &MockLiteLLMClient{}
+	mockCypher := &MockCypherClient{}
+
+	r := NewReconciler(mockDB, mockArgoCD, nil, mockLiteLLM, mockCypher, cfg, logger)
+
+	ctx := context.Background()
+	err := r.Reconcile(ctx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Check that virtual keys were created for both users
+	if len(mockLiteLLM.CreatedKeys) != 2 {
+		t.Errorf("expected 2 keys created, got %d", len(mockLiteLLM.CreatedKeys))
+	}
+	if _, ok := mockLiteLLM.CreatedKeys["user-1"]; !ok {
+		t.Error("expected key for user-1")
+	}
+	if _, ok := mockLiteLLM.CreatedKeys["user-2"]; !ok {
+		t.Error("expected key for user-2")
+	}
+
+	// Check that keys were encrypted via Cypher
+	if len(mockCypher.EncryptedData) != 2 {
+		t.Errorf("expected 2 users encrypted, got %d", len(mockCypher.EncryptedData))
+	}
+
+	// Check that keys were stored in database
+	if len(mockDB.VirtualKeys) != 2 {
+		t.Errorf("expected 2 keys stored, got %d", len(mockDB.VirtualKeys))
+	}
+}
+
+func TestReconcile_WithLiteLLM_SkipsExistingKeys(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+	cfg := &config.Config{
+		ReconciliationInterval: 30 * time.Second,
+		LiteLLMDefaultBudget:   200.0,
+	}
+
+	mockDB := &MockDatabaseClient{
+		Users: []database.User{
+			{ID: "user-1"},
+			{ID: "user-2"},
+		},
+		VirtualKeys: map[string][]byte{
+			"user-1": []byte("existing-key"), // user-1 already has a key
+		},
+	}
+	mockArgoCD := &MockArgoCDManager{
+		Applications: []*unstructured.Unstructured{},
+	}
+	mockLiteLLM := &MockLiteLLMClient{}
+	mockCypher := &MockCypherClient{}
+
+	r := NewReconciler(mockDB, mockArgoCD, nil, mockLiteLLM, mockCypher, cfg, logger)
+
+	ctx := context.Background()
+	err := r.Reconcile(ctx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Only user-2 should get a new key
+	if len(mockLiteLLM.CreatedKeys) != 1 {
+		t.Errorf("expected 1 key created, got %d", len(mockLiteLLM.CreatedKeys))
+	}
+	if _, ok := mockLiteLLM.CreatedKeys["user-2"]; !ok {
+		t.Error("expected key for user-2")
+	}
+	if _, ok := mockLiteLLM.CreatedKeys["user-1"]; ok {
+		t.Error("should not create key for user-1 (already exists)")
+	}
+}
+
+func TestReconcile_WithLiteLLM_DeletesKeysForRemovedUsers(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+	cfg := &config.Config{
+		ReconciliationInterval: 30 * time.Second,
+		LiteLLMDefaultBudget:   200.0,
+	}
+
+	// No users in database
+	mockDB := &MockDatabaseClient{
+		Users: []database.User{},
+	}
+	// But user-orphan has an existing app
+	mockArgoCD := &MockArgoCDManager{
+		Applications: []*unstructured.Unstructured{
+			{
+				Object: map[string]interface{}{
+					"apiVersion": "argoproj.io/v1alpha1",
+					"kind":       "Application",
+					"metadata": map[string]interface{}{
+						"name":      "atlas-user-orphan",
+						"namespace": "argocd",
+						"labels": map[string]interface{}{
+							"managed-by": "atlas-operator",
+							"user-id":    "user-orphan",
+						},
+					},
+				},
+			},
+		},
+	}
+	mockLiteLLM := &MockLiteLLMClient{}
+	mockCypher := &MockCypherClient{}
+
+	r := NewReconciler(mockDB, mockArgoCD, nil, mockLiteLLM, mockCypher, cfg, logger)
+
+	ctx := context.Background()
+	err := r.Reconcile(ctx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Should delete the virtual key for orphaned user
+	if len(mockLiteLLM.DeletedUserIDs) != 1 {
+		t.Errorf("expected 1 key deleted, got %d", len(mockLiteLLM.DeletedUserIDs))
+	}
+	if mockLiteLLM.DeletedUserIDs[0] != "user-orphan" {
+		t.Errorf("expected deleted user-orphan, got %s", mockLiteLLM.DeletedUserIDs[0])
+	}
+
+	// Should also delete the app
+	if len(mockArgoCD.DeletedApps) != 1 {
+		t.Errorf("expected 1 app deleted, got %d", len(mockArgoCD.DeletedApps))
+	}
+}
+
+func TestReconcile_WithLiteLLM_ContinuesOnKeyCreationError(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+	cfg := &config.Config{
+		ReconciliationInterval: 30 * time.Second,
+		LiteLLMDefaultBudget:   200.0,
+	}
+
+	mockDB := &MockDatabaseClient{
+		Users: []database.User{
+			{ID: "user-1"},
+			{ID: "user-2"},
+		},
+	}
+	mockArgoCD := &MockArgoCDManager{
+		Applications: []*unstructured.Unstructured{},
+	}
+	mockLiteLLM := &MockLiteLLMClient{
+		CreateKeyErr: fmt.Errorf("LiteLLM unavailable"),
+	}
+	mockCypher := &MockCypherClient{}
+
+	r := NewReconciler(mockDB, mockArgoCD, nil, mockLiteLLM, mockCypher, cfg, logger)
+
+	ctx := context.Background()
+	err := r.Reconcile(ctx)
+	// Reconciliation should succeed even if key creation fails
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Apps should still be created
+	if len(mockArgoCD.CreatedApps) != 2 {
+		t.Errorf("expected 2 apps created, got %d", len(mockArgoCD.CreatedApps))
+	}
+}
+
+func TestReconcile_WithLiteLLM_ContinuesOnEncryptError(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+	cfg := &config.Config{
+		ReconciliationInterval: 30 * time.Second,
+		LiteLLMDefaultBudget:   200.0,
+	}
+
+	mockDB := &MockDatabaseClient{
+		Users: []database.User{
+			{ID: "user-1"},
+		},
+	}
+	mockArgoCD := &MockArgoCDManager{
+		Applications: []*unstructured.Unstructured{},
+	}
+	mockLiteLLM := &MockLiteLLMClient{}
+	mockCypher := &MockCypherClient{
+		EncryptErr: fmt.Errorf("Cypher unavailable"),
+	}
+
+	r := NewReconciler(mockDB, mockArgoCD, nil, mockLiteLLM, mockCypher, cfg, logger)
+
+	ctx := context.Background()
+	err := r.Reconcile(ctx)
+	// Reconciliation should succeed even if encryption fails
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Key was created in LiteLLM
+	if len(mockLiteLLM.CreatedKeys) != 1 {
+		t.Errorf("expected 1 key created in LiteLLM, got %d", len(mockLiteLLM.CreatedKeys))
+	}
+
+	// Key should be rolled back (deleted) due to encryption failure
+	if len(mockLiteLLM.DeletedUserIDs) != 1 || mockLiteLLM.DeletedUserIDs[0] != "user-1" {
+		t.Errorf("expected key to be rolled back for user-1, got deletions: %v", mockLiteLLM.DeletedUserIDs)
+	}
+
+	// Key should NOT be stored in database (encryption failed)
+	if len(mockDB.VirtualKeys) != 0 {
+		t.Errorf("expected 0 keys stored, got %d", len(mockDB.VirtualKeys))
+	}
+}
+
+func TestReconcile_WithoutLiteLLM_SkipsKeyOperations(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+	cfg := &config.Config{
+		ReconciliationInterval: 30 * time.Second,
+	}
+
+	mockDB := &MockDatabaseClient{
+		Users: []database.User{
+			{ID: "user-1"},
+		},
+	}
+	mockArgoCD := &MockArgoCDManager{
+		Applications: []*unstructured.Unstructured{},
+	}
+
+	// No LiteLLM or Cypher clients (nil)
+	r := NewReconciler(mockDB, mockArgoCD, nil, nil, nil, cfg, logger)
+
+	ctx := context.Background()
+	err := r.Reconcile(ctx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// App should be created
+	if len(mockArgoCD.CreatedApps) != 1 {
+		t.Errorf("expected 1 app created, got %d", len(mockArgoCD.CreatedApps))
+	}
+
+	// No keys should be created (LiteLLM disabled)
+	if len(mockDB.VirtualKeys) != 0 {
+		t.Errorf("expected 0 keys, got %d", len(mockDB.VirtualKeys))
+	}
 }

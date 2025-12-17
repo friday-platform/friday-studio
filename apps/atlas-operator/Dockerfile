@@ -21,6 +21,7 @@ RUN go mod download
 COPY apps/atlas-operator/cmd/ apps/atlas-operator/cmd/
 COPY apps/atlas-operator/internal/ apps/atlas-operator/internal/
 COPY apps/atlas-operator/pkg/ apps/atlas-operator/pkg/
+COPY apps/atlas-operator/repo/ apps/atlas-operator/repo/
 
 # Copy shared packages
 COPY pkg/ pkg/

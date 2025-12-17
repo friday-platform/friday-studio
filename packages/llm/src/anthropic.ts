@@ -24,6 +24,8 @@ interface AnthropicOptions {
   apiKey?: string;
   /** HTTP proxy URL. Defaults to ANTHROPIC_PROXY_URL env var */
   httpProxy?: string;
+  /** Base URL for API requests. Use for LiteLLM proxy routing. */
+  baseURL?: string;
 }
 
 /**
@@ -41,6 +43,9 @@ export function createAnthropicWithOptions(opts: AnthropicOptions = {}): Anthrop
   };
   if (httpProxy) {
     anthropicOptions.fetch = createProxyFetch(httpProxy);
+  }
+  if (opts.baseURL) {
+    anthropicOptions.baseURL = opts.baseURL;
   }
   return createAnthropic(anthropicOptions);
 }
