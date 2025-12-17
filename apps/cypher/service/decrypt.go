@@ -27,7 +27,7 @@ func handleDecrypt(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Warn("decrypt: no user ID in context", "error", err)
 		RecordDecrypt("failure")
-		http.Error(w, `{"error": "unauthorized"}`, http.StatusUnauthorized)
+		writeJSONError(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 
@@ -36,7 +36,7 @@ func handleDecrypt(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Error("decrypt: no key cache in context", "error", err)
 		RecordDecrypt("failure")
-		http.Error(w, `{"error": "internal error"}`, http.StatusInternalServerError)
+		writeJSONError(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 
@@ -45,14 +45,14 @@ func handleDecrypt(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		log.Warn("decrypt: failed to decode request", "error", err)
 		RecordDecrypt("failure")
-		http.Error(w, `{"error": "invalid request body"}`, http.StatusBadRequest)
+		writeJSONError(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
 
 	if len(req.Ciphertext) == 0 {
 		log.Warn("decrypt: empty ciphertext array")
 		RecordDecrypt("failure")
-		http.Error(w, `{"error": "ciphertext array cannot be empty"}`, http.StatusBadRequest)
+		writeJSONError(w, "ciphertext array cannot be empty", http.StatusBadRequest)
 		return
 	}
 
@@ -61,7 +61,7 @@ func handleDecrypt(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Error("decrypt: failed to get AEAD", "error", err, "userID", userID)
 		RecordDecrypt("failure")
-		http.Error(w, `{"error": "decryption failed"}`, http.StatusInternalServerError)
+		writeJSONError(w, "decryption failed", http.StatusInternalServerError)
 		return
 	}
 
@@ -73,7 +73,7 @@ func handleDecrypt(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			log.Warn("decrypt: decryption failed", "error", err, "userID", userID, "index", i)
 			RecordDecrypt("failure")
-			http.Error(w, `{"error": "decryption failed"}`, http.StatusBadRequest)
+			writeJSONError(w, "decryption failed", http.StatusBadRequest)
 			return
 		}
 		plaintext[i] = string(pt)

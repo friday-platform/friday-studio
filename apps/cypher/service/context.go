@@ -11,9 +11,10 @@ type contextKey struct {
 }
 
 var (
-	userIDContextKey    = &contextKey{"userID"}
-	keyCacheContextKey  = &contextKey{"keyCache"}
-	tokenDepsContextKey = &contextKey{"tokenDeps"}
+	userIDContextKey       = &contextKey{"userID"}
+	keyCacheContextKey     = &contextKey{"keyCache"}
+	tokenDepsContextKey    = &contextKey{"tokenDeps"}
+	k8sTokenInfoContextKey = &contextKey{"k8sTokenInfo"}
 )
 
 // UserIDFromContext retrieves the user ID from the context.
@@ -68,4 +69,13 @@ func TokenDepsFromContext(ctx context.Context) (*TokenDeps, error) {
 		return nil, errors.New("could not get token deps from context")
 	}
 	return deps, nil
+}
+
+// K8sTokenInfoFromContext retrieves K8sTokenInfo from the context.
+func K8sTokenInfoFromContext(ctx context.Context) (*K8sTokenInfo, error) {
+	info, ok := ctx.Value(k8sTokenInfoContextKey).(*K8sTokenInfo)
+	if !ok || info == nil {
+		return nil, errors.New("could not get K8s token info from context")
+	}
+	return info, nil
 }

@@ -27,7 +27,7 @@ func handleEncrypt(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Warn("encrypt: no user ID in context", "error", err)
 		RecordEncrypt("failure")
-		http.Error(w, `{"error": "unauthorized"}`, http.StatusUnauthorized)
+		writeJSONError(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 
@@ -36,7 +36,7 @@ func handleEncrypt(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Error("encrypt: no key cache in context", "error", err)
 		RecordEncrypt("failure")
-		http.Error(w, `{"error": "internal error"}`, http.StatusInternalServerError)
+		writeJSONError(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 
@@ -45,14 +45,14 @@ func handleEncrypt(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		log.Warn("encrypt: failed to decode request", "error", err)
 		RecordEncrypt("failure")
-		http.Error(w, `{"error": "invalid request body"}`, http.StatusBadRequest)
+		writeJSONError(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
 
 	if len(req.Plaintext) == 0 {
 		log.Warn("encrypt: empty plaintext array")
 		RecordEncrypt("failure")
-		http.Error(w, `{"error": "plaintext array cannot be empty"}`, http.StatusBadRequest)
+		writeJSONError(w, "plaintext array cannot be empty", http.StatusBadRequest)
 		return
 	}
 
@@ -61,7 +61,7 @@ func handleEncrypt(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Error("encrypt: failed to get AEAD", "error", err, "userID", userID)
 		RecordEncrypt("failure")
-		http.Error(w, `{"error": "encryption failed"}`, http.StatusInternalServerError)
+		writeJSONError(w, "encryption failed", http.StatusInternalServerError)
 		return
 	}
 
@@ -73,7 +73,7 @@ func handleEncrypt(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			log.Error("encrypt: encryption failed", "error", err, "userID", userID, "index", i)
 			RecordEncrypt("failure")
-			http.Error(w, `{"error": "encryption failed"}`, http.StatusInternalServerError)
+			writeJSONError(w, "encryption failed", http.StatusInternalServerError)
 			return
 		}
 		ciphertext[i] = ct

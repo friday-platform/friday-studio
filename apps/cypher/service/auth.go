@@ -1,10 +1,12 @@
 package service
 
 import (
+	"context"
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/go-chi/httplog/v2"
@@ -33,7 +35,7 @@ func JWTAuthMiddleware(publicKeyPEM string) func(next http.Handler) http.Handler
 			authHeader := r.Header.Get("Authorization")
 			if authHeader == "" {
 				log.Warn("auth: missing Authorization header")
-				http.Error(w, `{"error": "unauthorized"}`, http.StatusUnauthorized)
+				writeJSONError(w, "unauthorized", http.StatusUnauthorized)
 				return
 			}
 
@@ -41,7 +43,7 @@ func JWTAuthMiddleware(publicKeyPEM string) func(next http.Handler) http.Handler
 			parts := strings.SplitN(authHeader, " ", 2)
 			if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
 				log.Warn("auth: invalid Authorization header format")
-				http.Error(w, `{"error": "unauthorized"}`, http.StatusUnauthorized)
+				writeJSONError(w, "unauthorized", http.StatusUnauthorized)
 				return
 			}
 			tokenString := parts[1]
@@ -55,7 +57,7 @@ func JWTAuthMiddleware(publicKeyPEM string) func(next http.Handler) http.Handler
 				})
 				if err != nil {
 					log.Warn("auth: JWT verification failed", "error", err)
-					http.Error(w, `{"error": "unauthorized"}`, http.StatusUnauthorized)
+					writeJSONError(w, "unauthorized", http.StatusUnauthorized)
 					return
 				}
 			} else {
@@ -63,7 +65,7 @@ func JWTAuthMiddleware(publicKeyPEM string) func(next http.Handler) http.Handler
 				token, _, err = parser.ParseUnverified(tokenString, jwt.MapClaims{})
 				if err != nil {
 					log.Warn("auth: failed to parse JWT", "error", err)
-					http.Error(w, `{"error": "unauthorized"}`, http.StatusUnauthorized)
+					writeJSONError(w, "unauthorized", http.StatusUnauthorized)
 					return
 				}
 			}
@@ -71,7 +73,7 @@ func JWTAuthMiddleware(publicKeyPEM string) func(next http.Handler) http.Handler
 			claims, ok := token.Claims.(jwt.MapClaims)
 			if !ok {
 				log.Warn("auth: invalid JWT claims")
-				http.Error(w, `{"error": "unauthorized"}`, http.StatusUnauthorized)
+				writeJSONError(w, "unauthorized", http.StatusUnauthorized)
 				return
 			}
 
@@ -79,14 +81,14 @@ func JWTAuthMiddleware(publicKeyPEM string) func(next http.Handler) http.Handler
 			userMetadata, ok := claims["user_metadata"].(map[string]any)
 			if !ok {
 				log.Warn("auth: missing user_metadata in JWT")
-				http.Error(w, `{"error": "unauthorized"}`, http.StatusUnauthorized)
+				writeJSONError(w, "unauthorized", http.StatusUnauthorized)
 				return
 			}
 
 			userID, ok := userMetadata["tempest_user_id"].(string)
 			if !ok || userID == "" {
 				log.Warn("auth: missing tempest_user_id in JWT")
-				http.Error(w, `{"error": "unauthorized"}`, http.StatusUnauthorized)
+				writeJSONError(w, "unauthorized", http.StatusUnauthorized)
 				return
 			}
 
@@ -117,4 +119,58 @@ func parsePublicKey(pemData string) (any, error) {
 	}
 
 	return nil, errors.New("unsupported public key format")
+}
+
+// K8sServiceAccountAuthMiddleware validates K8s service account tokens and optionally
+// checks against an allowlist. On success, adds K8sTokenInfo to context.
+// If allowed is nil or empty, any authenticated token is accepted.
+func K8sServiceAccountAuthMiddleware(client *http.Client, allowed []string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ctx := r.Context()
+			log := httplog.LogEntry(ctx)
+
+			// Extract Bearer token from Authorization header
+			authHeader := r.Header.Get("Authorization")
+			if authHeader == "" {
+				log.Warn("k8s_auth: missing authorization header")
+				writeJSONError(w, "authorization required", http.StatusUnauthorized)
+				return
+			}
+
+			token, found := strings.CutPrefix(authHeader, "Bearer ")
+			if !found || token == "" {
+				log.Warn("k8s_auth: invalid authorization header format")
+				writeJSONError(w, "invalid authorization header", http.StatusUnauthorized)
+				return
+			}
+
+			// Validate K8s token via TokenReview API
+			tokenInfo, err := validateK8sToken(ctx, client, token)
+			if err != nil {
+				log.Warn("k8s_auth: token validation failed", "error", err)
+				writeJSONError(w, "invalid token", http.StatusUnauthorized)
+				return
+			}
+
+			// Check against allowlist (skip if empty - allows any authenticated token)
+			if len(allowed) > 0 && !slices.Contains(allowed, tokenInfo.Username) {
+				log.Warn("k8s_auth: unauthorized service account",
+					"username", tokenInfo.Username,
+					"namespace", tokenInfo.Namespace,
+				)
+				writeJSONError(w, "unauthorized service account", http.StatusForbidden)
+				return
+			}
+
+			log.Debug("k8s_auth: authenticated",
+				"username", tokenInfo.Username,
+				"namespace", tokenInfo.Namespace,
+			)
+
+			// Add token info to context
+			ctx = context.WithValue(ctx, k8sTokenInfoContextKey, tokenInfo)
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
 }

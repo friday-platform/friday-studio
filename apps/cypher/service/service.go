@@ -6,6 +6,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -27,7 +28,8 @@ type service struct {
 	queries   *repo.Queries
 	kms       kms.KeyEncryptionService
 	cache     *KeyCache
-	tokenDeps *TokenDeps // nil if token endpoint not configured
+	tokenDeps *TokenDeps   // nil if token endpoint not configured
+	k8sClient *http.Client // nil if not running in Kubernetes
 }
 
 // New creates a new cypher service instance.
@@ -54,11 +56,23 @@ func (s *service) routes(r *chi.Mux) *chi.Mux {
 	r.Use(secure.CrossOriginPolicies)
 
 	// Token endpoint - NOT protected by JWT (it issues JWTs)
+	// K8s SA auth validates token; handler restricts to atlas namespace (atlas-sa-* SAs)
 	if s.tokenDeps != nil {
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.RequestSize(1 << 20)) // 1MB
+			r.Use(K8sServiceAccountAuthMiddleware(s.k8sClient, nil))
 			r.Use(TokenDepsCtxMiddleware(s.tokenDeps))
 			r.Post("/api/atlas-token", handleGeneratePodToken)
+		})
+	}
+
+	// Internal endpoints - requires K8s service account token from atlas-operator
+	// KeyCacheCtxMiddleware already applied globally above
+	if s.k8sClient != nil {
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.RequestSize(1 << 20)) // 1MB
+			r.Use(K8sServiceAccountAuthMiddleware(s.k8sClient, AllowedInternalServiceAccounts))
+			r.Post("/internal/encrypt", handleInternalEncrypt)
 		})
 	}
 
@@ -132,23 +146,28 @@ func (s *service) Init() error {
 	s.cache = NewKeyCache(s.queries, s.kms, s.cfg.CacheSize)
 	s.Logger.Info("Initialized key cache", "size", s.cfg.CacheSize)
 
-	// Initialize token endpoint dependencies if configured
-	if s.cfg.JWTPrivateKey != "" {
-		k8sClient, err := InitK8sHTTPClient()
-		if err != nil {
-			s.Logger.Error("Failed to initialize Kubernetes HTTP client", "error", err)
-			return fmt.Errorf("init Kubernetes HTTP client: %w", err)
-		}
-		if k8sClient == nil {
-			s.Logger.Info("Token endpoint disabled (not running in Kubernetes)")
-		} else {
+	// Initialize Kubernetes HTTP client for internal endpoints
+	k8sClient, err := InitK8sHTTPClient()
+	if err != nil {
+		s.Logger.Error("Failed to initialize Kubernetes HTTP client", "error", err)
+		return fmt.Errorf("init Kubernetes HTTP client: %w", err)
+	}
+
+	if k8sClient == nil {
+		s.Logger.Info("Internal endpoints disabled (not running in Kubernetes)")
+	} else {
+		// Enable internal encrypt endpoint (K8s SA token auth)
+		s.k8sClient = k8sClient
+		s.Logger.Info("Internal encrypt endpoint enabled")
+
+		// Initialize token endpoint dependencies if configured
+		if s.cfg.JWTPrivateKey != "" {
 			privateKey, err := ParsePrivateKey(s.cfg.JWTPrivateKey)
 			if err != nil {
 				s.Logger.Error("Failed to parse JWT private key", "error", err)
 				return fmt.Errorf("parse JWT private key: %w", err)
 			}
 			s.tokenDeps = &TokenDeps{
-				K8sHTTPClient: k8sClient,
 				JWTPrivateKey: privateKey,
 				Queries:       s.queries,
 			}

@@ -21,8 +21,7 @@ export async function fetchCypherToken(url: string): Promise<string> {
 
   const response = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ k8s_token: k8sToken }),
+    headers: { Authorization: `Bearer ${k8sToken}` },
     signal: AbortSignal.timeout(5_000),
   });
 

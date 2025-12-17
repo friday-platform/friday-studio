@@ -48,6 +48,24 @@ var (
 			Help: "Total encryption keys created",
 		},
 	)
+
+	// InternalEncryptTotal counts internal encryption operations by result.
+	InternalEncryptTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "cypher_internal_encrypt_total",
+			Help: "Total internal encryption operations (from atlas-operator)",
+		},
+		[]string{"result"},
+	)
+
+	// TokenIssuedTotal counts token issuance operations by result.
+	TokenIssuedTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "cypher_token_issued_total",
+			Help: "Total pod token issuance operations",
+		},
+		[]string{"result"},
+	)
 )
 
 // RecordEncrypt records an encryption operation result.
@@ -75,4 +93,14 @@ func RecordCacheMiss() {
 // RecordKeyCreated records a new key creation.
 func RecordKeyCreated() {
 	KeysCreated.Inc()
+}
+
+// RecordInternalEncrypt records an internal encryption operation result.
+func RecordInternalEncrypt(result string) {
+	InternalEncryptTotal.WithLabelValues(result).Inc()
+}
+
+// RecordTokenIssued records a token issuance operation result.
+func RecordTokenIssued(result string) {
+	TokenIssuedTotal.WithLabelValues(result).Inc()
 }
