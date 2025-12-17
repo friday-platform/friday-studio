@@ -206,10 +206,11 @@ const artifactsTable = createTable({
 	}
 
 	.sidebar-item {
+		color: var(--text-1);
 		font-size: var(--font-size-2);
 		font-weight: var(--font-weight-5);
-		color: var(--text-1);
 		line-height: 1.25;
+		word-break: break-word;
 	}
 
 	.artifacts {
