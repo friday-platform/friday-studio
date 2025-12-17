@@ -1,4 +1,4 @@
-FROM traefik:3.6.4
+FROM traefik:3.6.5
 
 RUN apk add --no-cache \
     bash \
