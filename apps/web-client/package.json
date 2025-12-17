@@ -22,7 +22,7 @@
   "dependencies": {
     "@atlas/core": "workspace:*",
     "@atlas/oapi-client": "workspace:*",
-    "@ai-sdk/svelte": "^3.0.113",
+    "@ai-sdk/svelte": "^3.0.114",
     "@sentry/sveltekit": "^10.30.0",
     "@melt-ui/svelte": "^0.86.6",
     "@lezer/common": "^1.4.0",
