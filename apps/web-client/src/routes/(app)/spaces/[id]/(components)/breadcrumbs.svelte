@@ -7,8 +7,11 @@ import { Breadcrumbs } from "$lib/components/breadcrumbs";
 import { Dialog } from "$lib/components/dialog";
 import { DropdownMenu } from "$lib/components/dropdown-menu";
 import { Icons } from "$lib/components/icons";
+import { toast } from "$lib/components/notification/notification.svelte";
 import { SegmentedControl } from "$lib/components/segmented-control";
 import { getActivePage } from "$lib/utils/active-page.svelte";
+import { downloadYaml, getUniqueFileName } from "$lib/utils/files";
+import { BaseDirectory, openFile, writeTextFile } from "$lib/utils/tauri-loader";
 
 interface Workspace {
   id: string;
@@ -18,6 +21,60 @@ interface Workspace {
 let { workspace }: { workspace: Workspace } = $props();
 
 const appCtx = getAppContext();
+
+async function handleExportWorkspace() {
+  if (!workspace) return;
+
+  try {
+    const response = await client.workspace[":workspaceId"].export.$get({
+      param: { workspaceId: workspace.id },
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: "Export failed" }));
+      throw new Error((error as { error?: string }).error || "Failed to export workspace");
+    }
+
+    const yamlContent = await response.text();
+
+    // Extract filename from Content-Disposition header or fallback to workspace name
+    const contentDisposition = response.headers.get("Content-Disposition");
+    const filenameMatch = contentDisposition?.match(/filename="([^"]+)"/);
+    const filename = filenameMatch?.[1] || `${workspace.name}.yml`;
+
+    if (__TAURI_BUILD__ && writeTextFile && BaseDirectory) {
+      try {
+        const uniqueName = await getUniqueFileName(filename, BaseDirectory.Download);
+        await writeTextFile(uniqueName, yamlContent, { baseDir: BaseDirectory.Download });
+
+        toast({
+          title: "Exported",
+          description: `${uniqueName} has been downloaded.`,
+          viewLabel: "View File",
+          viewAction: () => handleOpenExportedFile(uniqueName),
+        });
+        return;
+      } catch (e) {
+        console.error("Failed to save file:", e);
+        // Fall through to browser download
+      }
+    }
+
+    downloadYaml(filename, yamlContent);
+  } catch (error) {
+    console.error("Failed to export workspace:", error);
+    alert(`Failed to export workspace: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+async function handleOpenExportedFile(filename: string) {
+  if (!openFile || !BaseDirectory?.Download) return;
+  try {
+    await openFile(filename, { read: true, baseDir: BaseDirectory.Download });
+  } catch (e) {
+    console.error("Failed to open file:", e);
+  }
+}
 
 async function handleDeleteWorkspace() {
   if (!workspace) return;
@@ -64,6 +121,12 @@ async function handleDeleteWorkspace() {
 					}}
 				>
 					{#snippet children(open)}
+						<DropdownMenu.Item onclick={handleExportWorkspace}>
+							<Icons.Share />
+
+							Share
+						</DropdownMenu.Item>
+
 						<DropdownMenu.Item
 							accent="destructive"
 							onclick={() => {
@@ -71,7 +134,7 @@ async function handleDeleteWorkspace() {
 							}}
 						>
 							<Icons.DeleteSpace />
-							Remove Space
+							Remove
 						</DropdownMenu.Item>
 
 						<Dialog.Content>
@@ -110,8 +173,7 @@ async function handleDeleteWorkspace() {
 			>
 			<SegmentedControl.Item
 				active={getActivePage([`spaces/${workspace.id}/sessions`])}
-				href={appCtx.routes.spaces.item(workspace.id, 'sessions')}
-				>Sessions</SegmentedControl.Item
+				href={appCtx.routes.spaces.item(workspace.id, 'sessions')}>Sessions</SegmentedControl.Item
 			>
 		</SegmentedControl.Root>
 	</Breadcrumbs.Root>

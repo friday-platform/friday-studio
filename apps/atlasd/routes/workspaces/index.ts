@@ -228,6 +228,45 @@ const workspacesRoutes = daemonFactory
       return c.json({ error: `Failed to get workspace: ${errorMessage}` }, 500);
     }
   })
+  // Export workspace configuration as YAML
+  .get("/:workspaceId/export", async (c) => {
+    const workspaceId = c.req.param("workspaceId");
+    try {
+      const ctx = c.get("app");
+      const manager = ctx.getWorkspaceManager();
+      const workspace = await manager.find({ id: workspaceId });
+      if (!workspace) {
+        return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
+      }
+      const config = await manager.getWorkspaceConfig(workspace.id);
+      if (!config) {
+        return c.json({ error: `Failed to load workspace configuration: ${workspace.id}` }, 500);
+      }
+
+      // Strip workspace.id - it will be regenerated on import
+      const { id: _id, ...workspaceIdentity } = config.workspace.workspace;
+      const exportConfig = { ...config.workspace, workspace: workspaceIdentity };
+
+      const yamlContent = stringify(exportConfig, { indent: 2, lineWidth: 100 });
+
+      // Sanitize workspace name for filename
+      const sanitizedName = workspace.name.replace(/[^a-zA-Z0-9-_]/g, "-").replace(/-+/g, "-");
+      const filename = `${sanitizedName}.yml`;
+
+      return new Response(yamlContent, {
+        headers: {
+          "Content-Type": "text/yaml",
+          "Content-Disposition": `attachment; filename="${filename}"`,
+        },
+      });
+    } catch (error) {
+      const errorMessage = stringifyError(error);
+      if (errorMessage.includes("not found")) {
+        return c.json({ error: errorMessage }, 404);
+      }
+      return c.json({ error: `Failed to export workspace: ${errorMessage}` }, 500);
+    }
+  })
   // Get workspace configuration
   .get("/:workspaceId/config", async (c) => {
     const workspaceId = c.req.param("workspaceId");

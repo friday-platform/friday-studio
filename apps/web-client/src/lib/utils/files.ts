@@ -16,6 +16,23 @@ export function downloadJson(filename: string, content: string) {
 }
 
 /**
+ * Downloads a YAML file to the user's computer.
+ * @param filename The name of the file to download.
+ * @param content The content of the file to download.
+ */
+export function downloadYaml(filename: string, content: string) {
+  const blob = new Blob([content], { type: "text/yaml" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+/**
  * Downloads a CSV file to the user's computer.
  * @param filename The name of the file to download.
  * @param content The content of the file to download.

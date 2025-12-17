@@ -229,11 +229,34 @@ Atlas and the user.
 - **Color Scheme**: Native browser color-scheme support
 - **Selection Highlight**: Custom text selection color
 
-## 3. Guiding Principles
+## 3. API Calls
+
+Use the Hono RPC client from `@atlas/client/v2` for all API calls. Never use raw
+`fetch()` for daemon API endpoints.
+
+```typescript
+// Good - use the typed Hono client
+import { client, parseResult } from "@atlas/client/v2";
+
+const result = await parseResult(
+  client.workspace[":workspaceId"].$get({ param: { workspaceId: id } }),
+);
+
+// For non-JSON responses (like text/yaml), use the client without parseResult
+const response = await client.workspace[":workspaceId"].export.$get({
+  param: { workspaceId: id },
+});
+const text = await response.text();
+
+// Bad - don't use raw fetch for daemon APIs
+const response = await fetch(`${baseUrl}/api/workspaces/${id}`);
+```
+
+## 4. Guiding Principles
 
 - Secure
 - Fast
 - Accessible
 - Beautiful
 
-## 4. Amendments
+## 5. Amendments
