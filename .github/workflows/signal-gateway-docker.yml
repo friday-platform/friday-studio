@@ -66,15 +66,15 @@ jobs:
           path: tempest-kustomize-repository
           fetch-depth: 1
 
-      - name: Update manifest file image tag for atlas-signal-gateway sandbox
+      - name: Update manifest file image tag for signal-gateway sandbox
         uses: mikefarah/yq@master
         with:
-          cmd: yq e -i '.spec.template.spec.containers[0].image |= "${{ steps.build-image.outputs.image }}"' 'tempest-kustomize-repository/atlas-signal-gateway/overlays/sandbox/deployment.yaml'
+          cmd: yq e -i '.spec.template.spec.containers[0].image |= "${{ steps.build-image.outputs.image }}"' 'tempest-kustomize-repository/signal-gateway/overlays/sandbox/statefulset.yaml'
 
-      - name: Update manifest file image tag for atlas-signal-gateway production
+      - name: Update manifest file image tag for signal-gateway production
         uses: mikefarah/yq@master
         with:
-          cmd: yq e -i '.spec.template.spec.containers[0].image |= "us-west2-docker.pkg.dev/tempest-production/atlas/signal-gateway:${{ github.sha }}"' 'tempest-kustomize-repository/atlas-signal-gateway/overlays/production/deployment.yaml'
+          cmd: yq e -i '.spec.template.spec.containers[0].image |= "us-west2-docker.pkg.dev/tempest-production/atlas/signal-gateway:${{ github.sha }}"' 'tempest-kustomize-repository/signal-gateway/overlays/production/statefulset.yaml'
 
       - name: Setup tempest-kustomize Repository
         working-directory: tempest-kustomize-repository
@@ -83,13 +83,13 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git remote set-url --push origin https://github.com/tempestteam/tempest-kustomize.git
-          git checkout -b release-atlas-signal-gateway-${{ github.sha }}
+          git checkout -b release-signal-gateway-${{ github.sha }}
 
       - name: Commit
         working-directory: tempest-kustomize-repository
         run: |
           git add .
-          git commit -m "Release atlas-signal-gateway-${{ github.sha }}"
+          git commit -m "Release signal-gateway-${{ github.sha }}"
           git push origin HEAD
 
       - name: Create PR && merge
@@ -97,7 +97,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.PAT }}
         run: |
-          PR_BRANCH="release-atlas-signal-gateway-${{ github.sha }}"
-          gh pr create -B main -H "$PR_BRANCH" -t "deploy-atlas-signal-gateway-${{ github.sha }}" -b ""
+          PR_BRANCH="release-signal-gateway-${{ github.sha }}"
+          gh pr create -B main -H "$PR_BRANCH" -t "deploy-signal-gateway-${{ github.sha }}" -b ""
           for _ in {1..30}; do gh pr merge "$PR_BRANCH" --squash --admin --delete-branch && exit 0; sleep 2; done
           exit 1
