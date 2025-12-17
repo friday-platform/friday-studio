@@ -65,7 +65,7 @@ jobs:
       version: ${{ needs.version.outputs.version }}
       platform: darwin
       arch: amd64
-      runner: macos-latest
+      runner: macos-15-intel
       retention-days: 1
     secrets: inherit
 
@@ -101,7 +101,7 @@ jobs:
       version: ${{ needs.version.outputs.version }}
       platform: darwin
       arch: amd64
-      runner: macos-latest
+      runner: macos-15-intel
       retention-days: 1
     secrets: inherit
 
@@ -302,7 +302,7 @@ jobs:
 
   package-darwin-amd64:
     needs: [version, build-binary-darwin-amd64, build-web-app-darwin-amd64]
-    runs-on: macos-latest
+    runs-on: macos-15-intel
     steps:
       - name: Checkout
         uses: actions/checkout@v6
