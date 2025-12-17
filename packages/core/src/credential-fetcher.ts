@@ -105,8 +105,8 @@ export async function fetchCredentials(options: FetchCredentialsOptions): Promis
 
   return await retry(async () => {
     const response = await fetch(apiUrl, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${atlasKey}`, "Content-Type": "application/json" },
+      method: "GET",
+      headers: { Authorization: `Bearer ${atlasKey}` },
       signal: AbortSignal.timeout(10000),
     });
 
