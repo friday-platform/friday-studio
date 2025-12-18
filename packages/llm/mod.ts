@@ -67,8 +67,23 @@ function createRegistry() {
  *   - registry.languageModel('groq:llama-3.3-70b-versatile')
  *
  * When LITELLM_API_KEY is set, all requests route through LiteLLM proxy.
+ *
+ * Note: Lazily initialized to allow credentials to be loaded before first use.
  */
-export const registry = createRegistry();
+let _registry: ReturnType<typeof createRegistry> | null = null;
+
+export const registry = {
+  languageModel: (...args: Parameters<ReturnType<typeof createRegistry>["languageModel"]>) => {
+    if (!_registry) _registry = createRegistry();
+    return _registry.languageModel(...args);
+  },
+  textEmbeddingModel: (
+    ...args: Parameters<ReturnType<typeof createRegistry>["textEmbeddingModel"]>
+  ) => {
+    if (!_registry) _registry = createRegistry();
+    return _registry.textEmbeddingModel(...args);
+  },
+};
 
 /**
  * Retrieves our default set of provider-specific metadata to apply
