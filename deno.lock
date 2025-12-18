@@ -36,7 +36,8 @@
     "npm:@eslint/js@^9.39.2": "9.39.2",
     "npm:@faker-js/faker@^10.1.0": "10.1.0",
     "npm:@hono/standard-validator@~0.2.1": "0.2.1_@standard-schema+spec@1.0.0_hono@4.11.1",
-    "npm:@hono/zod-validator@~0.7.5": "0.7.5_hono@4.11.1_zod@4.2.1",
+    "npm:@hono/zod-validator@~0.7.5": "0.7.6_hono@4.11.1_zod@4.2.1",
+    "npm:@hono/zod-validator@~0.7.6": "0.7.6_hono@4.11.1_zod@4.2.1",
     "npm:@ianvs/prettier-plugin-sort-imports@^4.7.0": "4.7.0_prettier@3.7.4",
     "npm:@inkjs/ui@2": "2.0.0_ink@6.5.1__@types+react@19.2.7__react@19.2.3_@types+react@19.2.7_react@19.2.3",
     "npm:@jsr/db__sqlite@0.12": "0.12.0",
@@ -834,8 +835,8 @@
         "hono"
       ]
     },
-    "@hono/zod-validator@0.7.5_hono@4.11.1_zod@4.2.1": {
-      "integrity": "sha512-n4l4hutkfYU07PzRUHBOVzUEn38VSfrh+UVE5d0w4lyfWDOEhzxIupqo5iakRiJL44c3vTuFJBvcmUl8b9agIA==",
+    "@hono/zod-validator@0.7.6_hono@4.11.1_zod@4.2.1": {
+      "integrity": "sha512-Io1B6d011Gj1KknV4rXYz4le5+5EubcWEU/speUjuw9XMMIaP3n78yXLhjd2A3PXaXaUwEAluOiAyLqhBEJgsw==",
       "dependencies": [
         "hono",
         "zod"
@@ -5372,7 +5373,7 @@
         "packageJson": {
           "dependencies": [
             "npm:@hono/standard-validator@~0.2.1",
-            "npm:@hono/zod-validator@~0.7.5",
+            "npm:@hono/zod-validator@~0.7.6",
             "npm:@jsr/std__fs@^1.0.19",
             "npm:@jsr/std__path@^1.1.2",
             "npm:@jsr/std__yaml@^1.0.10",
@@ -5400,7 +5401,7 @@
         ],
         "packageJson": {
           "dependencies": [
-            "npm:@hono/zod-validator@~0.7.5",
+            "npm:@hono/zod-validator@~0.7.6",
             "npm:@jsr/std__assert@^1.0.14",
             "npm:@jsr/std__async@^1.0.15",
             "npm:@jsr/std__testing@^1.0.16",
