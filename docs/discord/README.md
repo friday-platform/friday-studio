@@ -1,17 +1,22 @@
 # Discord Integration
 
-Discord bot integration for Atlas using Gateway WebSocket and HTTP interaction endpoints. Enables natural messaging, slash commands, and workspace signal triggering.
+Discord bot integration for Atlas using Gateway WebSocket and HTTP interaction
+endpoints. Enables natural messaging, slash commands, and workspace signal
+triggering.
 
 ## Overview
 
 Atlas integrates with Discord via **dual-mode architecture**:
-- **Gateway WebSocket**: Receives message events (DMs, @mentions, server messages)
+
+- **Gateway WebSocket**: Receives message events (DMs, @mentions, server
+  messages)
 - **HTTP Interactions**: Processes slash commands and button clicks
 - **Event-based signals**: Route Discord messages to workspace signals
 - **Streaming chat**: Real-time conversation responses with rate limiting
 - **Button interactions**: "Continue in DM" button for seamless transition
 
-**Architecture:** Gateway (WebSocket) + HTTP webhooks. Natural messaging via events, commands via HTTP.
+**Architecture:** Gateway (WebSocket) + HTTP webhooks. Natural messaging via
+events, commands via HTTP.
 
 ## Features
 
@@ -27,7 +32,8 @@ Atlas integrates with Discord via **dual-mode architecture**:
 
 - `/atlas ping` - Check bot status
 - `/atlas workspaces` - List available workspaces
-- `/atlas chat <message>` - Start streaming conversation with "Continue in DM" button
+- `/atlas chat <message>` - Start streaming conversation with "Continue in DM"
+  button
 
 ### Button Interactions
 
@@ -65,6 +71,7 @@ WorkspaceSignalTrigger
 ```
 
 **DiscordIntegration** (`discord-integration.ts`)
+
 - Self-contained integration class
 - Loads configuration from environment
 - Creates and manages all Discord components
@@ -72,12 +79,14 @@ WorkspaceSignalTrigger
 - Connects Gateway WebSocket on startup
 
 **DiscordGateway** (`discord-gateway.ts`)
+
 - WebSocket connection to Discord Gateway
 - Listens for MESSAGE_CREATE and MESSAGE_UPDATE events
 - Emits events to DiscordEventRouter
 - Handles reconnection and errors
 
 **DiscordEventRouter** (`discord-event-router.ts`)
+
 - Routes Gateway events to workspace signals
 - Filters bot messages (prevents loops)
 - Detects DM, @mention, and guild messages
@@ -85,11 +94,13 @@ WorkspaceSignalTrigger
 - Builds signal payloads with Discord metadata
 
 **DiscordCommandRegistrar** (`discord-command-registrar.ts`)
+
 - Registers `/atlas` commands via Discord REST API
 - Global command registration (takes ~1 hour to propagate)
 - Health check for command availability
 
 **DiscordInteractionHandler** (`discord-interaction-handler.ts`)
+
 - Processes incoming HTTP interactions
 - Ed25519 signature verification
 - Routes commands (ping, workspaces, chat)
@@ -97,12 +108,14 @@ WorkspaceSignalTrigger
 - Manages chat streaming
 
 **DiscordSignalRegistrar** (`signal-registrars/discord-registrar.ts`)
+
 - Tracks workspace Discord signals
 - Stores event configurations
 - Matches Gateway events to signal configs
 - Provides validation and lookup
 
 **DiscordConversationHandler** (`discord-conversation-handler.ts`)
+
 - Handles streaming conversations for atlas-conversation workspace
 - Shows typing indicators during processing
 - Accumulates streaming responses and sends to Discord
@@ -128,7 +141,8 @@ ATLAS_DISCORD_PUBLIC_KEY="abcdef1234567890abcdef1234567890abcdef1234567890abcdef
 1. Visit https://discord.com/developers/applications
 2. Create new application
 3. **Bot** tab → Copy token → `ATLAS_DISCORD_BOT_TOKEN`
-4. **Bot** tab → Enable **MESSAGE CONTENT INTENT** (privileged intent - required!)
+4. **Bot** tab → Enable **MESSAGE CONTENT INTENT** (privileged intent -
+   required!)
 5. **General Information** → Application ID → `ATLAS_DISCORD_APPLICATION_ID`
 6. **General Information** → Public Key → `ATLAS_DISCORD_PUBLIC_KEY`
 7. **OAuth2** → URL Generator:
@@ -137,6 +151,7 @@ ATLAS_DISCORD_PUBLIC_KEY="abcdef1234567890abcdef1234567890abcdef1234567890abcdef
 8. Use generated URL to invite bot to server
 
 **⚠️ MESSAGE CONTENT INTENT Required:**
+
 - Enables bot to read message content from Gateway
 - Required for natural messaging (DMs, @mentions)
 - For bots in 100+ servers, Discord verification required
@@ -146,6 +161,7 @@ ATLAS_DISCORD_PUBLIC_KEY="abcdef1234567890abcdef1234567890abcdef1234567890abcdef
 **Requirement:** Discord must reach your daemon via HTTPS.
 
 **Local Development:**
+
 ```bash
 # Option 1: ngrok
 ngrok http 8080
@@ -157,6 +173,7 @@ cloudflared tunnel --url http://localhost:8080
 ```
 
 **Configure in Discord Portal:**
+
 1. Developer Portal → Your App → General Information
 2. Interactions Endpoint URL: `https://your-url.ngrok.io/discord/interactions`
 3. Save (Discord will send test interaction to verify)
@@ -164,8 +181,9 @@ cloudflared tunnel --url http://localhost:8080
 ### Workspace Configuration
 
 **Event-based Signal (Natural Messaging):**
+
 ```yaml
-version: '1.0'
+version: "1.0"
 
 workspace:
   name: my-bot
@@ -176,9 +194,9 @@ signals:
     provider: discord
     description: "Respond to DMs and @mentions"
     config:
-      events: [message_create]        # message_create, message_update
-      channels: [dm, mention]         # dm, mention, guild, all
-      # allowedGuilds: ["123..."]    # Optional: restrict to specific servers
+      events: [message_create] # message_create, message_update
+      channels: [dm, mention] # dm, mention, guild, all
+# allowedGuilds: ["123..."]    # Optional: restrict to specific servers
 
 jobs:
   respond:
@@ -200,6 +218,7 @@ agents:
 ```
 
 **How it works:**
+
 - User sends DM or @mentions bot
 - Gateway receives MESSAGE_CREATE event
 - Event router matches event to `discord-dm` signal (channels: [dm, mention])
@@ -294,6 +313,7 @@ Each user gets persistent chat history per channel.
 ### Chat ID Generation
 
 Deterministic chat IDs enable conversation continuity:
+
 - **Format:** `discord-{userId}-{channelId}`
 - **DMs:** `discord-dm-{userId}-{channelId}`
 - **Server channels:** `discord-{guildId}-{channelId}-{userId}`
@@ -303,6 +323,7 @@ Deterministic chat IDs enable conversation continuity:
 ### "Discord integration disabled (missing configuration)"
 
 Check all 3 environment variables are set:
+
 ```bash
 echo $ATLAS_DISCORD_BOT_TOKEN
 echo $ATLAS_DISCORD_APPLICATION_ID
@@ -342,17 +363,20 @@ echo $ATLAS_DISCORD_PUBLIC_KEY
 ### Response Mechanism (Phase 2)
 
 **Current:** Signals triggered but responses not automatically sent back
+
 - ✅ Gateway receives messages and triggers signals
 - ✅ Event routing works correctly
 - ❌ No automatic response mechanism for Gateway events
 - ✅ Workaround: Use `/atlas chat` (has full streaming support)
 
 **How to respond to natural messages:**
+
 1. Use Discord MCP server tool in agents
 2. Agent uses `discord_send_message` tool to reply
 3. Requires Discord MCP server configured in workspace
 
 **Example:**
+
 ```yaml
 tools:
   mcp:
@@ -367,6 +391,7 @@ tools:
 ### Access Control (Partial)
 
 **Implemented:**
+
 - ✅ Guild restrictions (`allowedGuilds`)
 - ✅ Channel filtering (dm/mention/guild/all)
 
@@ -420,8 +445,7 @@ packages/config/src/
 deno check apps/atlasd/src/discord/**/*.ts
 
 # Lint
-deno task biome
-deno lint
+deno task lint
 
 # Format
 deno task fmt
@@ -432,23 +456,27 @@ deno task fmt
 ### Why Dual-Mode Architecture?
 
 **Gateway WebSocket + HTTP Interactions:**
+
 - ✅ Natural messaging via Gateway (DMs, @mentions)
 - ✅ Slash commands via HTTP (better UX for explicit actions)
 - ✅ Button interactions via HTTP (state updates)
 - ✅ Best of both worlds
 
 **Gateway alone would mean:**
+
 - ❌ No slash commands (less discoverable)
 - ❌ No button interactions
 - ❌ Everything must be natural language
 
 **HTTP alone would mean:**
+
 - ❌ No natural messaging
 - ❌ Users forced to use commands
 
 ### Why Event-Based Signals?
 
 **Event configuration over custom commands:**
+
 - ✅ More flexible (filter by DM, @mention, guild)
 - ✅ Natural UX (just send messages)
 - ✅ No command name collisions
@@ -456,6 +484,7 @@ deno task fmt
 - ❌ Requires MESSAGE_CONTENT privileged intent
 
 **Previous approach (custom commands):**
+
 - Auto-generated `/{jobname}-{workspacename}` commands
 - Hit Discord's 200 command/day limit
 - Less natural for conversation
@@ -464,6 +493,7 @@ deno task fmt
 ### Why Deterministic Chat IDs?
 
 **Format: `discord-{guildId}-{channelId}-{userId}`**
+
 - ✅ Persistent conversations per user per channel
 - ✅ No database needed for session management
 - ✅ Natural continuation of conversations
@@ -480,16 +510,18 @@ class DiscordIntegration {
     signalRegistrar: DiscordSignalRegistrar,
     workspaceManager: WorkspaceManager,
     onWakeup: WorkspaceSignalTriggerCallback,
-    getOrCreateRuntime: (workspaceId: string) => Promise<WorkspaceRuntime>
-  ): Promise<void>
+    getOrCreateRuntime: (workspaceId: string) => Promise<WorkspaceRuntime>,
+  ): Promise<void>;
 
-  async registerCommands(signalRegistrar: DiscordSignalRegistrar): Promise<void>
+  async registerCommands(
+    signalRegistrar: DiscordSignalRegistrar,
+  ): Promise<void>;
 
-  getHttpHandler(): Hono | null
+  getHttpHandler(): Hono | null;
 
-  shutdown(): void
+  shutdown(): void;
 
-  isReady(): boolean
+  isReady(): boolean;
 }
 ```
 
@@ -513,12 +545,14 @@ class DiscordIntegration {
 ```
 
 **Channel Filter Behavior:**
+
 - `dm`: Only direct messages
 - `mention`: Only @mentions of bot
 - `guild`: Only guild messages (non-DM)
 - `all`: All messages (DMs + guild)
 
 **Event Types:**
+
 - `message_create`: New messages
 - `message_update`: Edited messages
 
@@ -563,15 +597,18 @@ class DiscordIntegration {
 ### ⏸️ Future Enhancements (Phase 2)
 
 **Response Mechanism:**
+
 - Discord MCP server for agent responses
 - Automatic response to Gateway events
 - Complete natural conversation loop (currently requires manual MCP tool usage)
 
 **Access Control:**
+
 - Per-user permissions
 - Rate limiting per user
 
 **Enhanced Interactions:**
+
 - Select menus for complex inputs
 - Modal dialogs for forms
 - Rich embeds for responses

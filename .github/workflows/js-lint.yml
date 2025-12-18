@@ -1,4 +1,4 @@
-name: Biome Check
+name: Lint JS
 
 on:
   pull_request:
@@ -25,4 +25,4 @@ jobs:
         run: deno install --frozen
 
       - name: Run Biome check
-        run: deno task biome
+        run: deno task lint

@@ -1,6 +1,8 @@
 # Slack Integration
 
-Atlas integrates with Slack via **Socket Mode** (WebSocket) to trigger workspace signals from direct messages and channel mentions. **No public webhook URL required!**
+Atlas integrates with Slack via **Socket Mode** (WebSocket) to trigger workspace
+signals from direct messages and channel mentions. **No public webhook URL
+required!**
 
 ## Architecture
 
@@ -18,11 +20,13 @@ SlackEventRouter (channel filtering)
 WorkspaceSignalTrigger
 ```
 
-**Similar to Discord Gateway** - persistent WebSocket connection, no webhooks needed.
+**Similar to Discord Gateway** - persistent WebSocket connection, no webhooks
+needed.
 
 ## Features
 
 **Message Events**
+
 - Direct messages (DMs) trigger workspace signals
 - Channel messages (when configured) trigger workspace signals
 - Event-based routing with channel type filters
@@ -31,12 +35,14 @@ WorkspaceSignalTrigger
 - No public URL required (WebSocket-based)
 
 **Security**
+
 - App-level token authentication (xapp-...)
 - Envelope acknowledgment (3-second window)
 - Automatic reconnection with exponential backoff
 - No signature verification needed (authenticated WebSocket)
 
 **Conversation Workspace Integration**
+
 - Automatic routing to `atlas-conversation` workspace
 - Persistent conversation IDs based on channel/thread
 - Streaming responses via existing conversation agent
@@ -74,7 +80,8 @@ WorkspaceSignalTrigger
    - `message.groups` - For private channels (optional)
    - `message.mpim` - For group DMs (optional)
 
-**Note:** No Request URL needed! Socket Mode handles event delivery via WebSocket.
+**Note:** No Request URL needed! Socket Mode handles event delivery via
+WebSocket.
 
 ### 5. Install App
 
@@ -101,6 +108,7 @@ deno task daemon
 ```
 
 You should see:
+
 ```
 Initializing Slack Socket Mode integration...
 Connecting to Slack Socket Mode...
@@ -120,9 +128,9 @@ signals:
     provider: slack
     description: "Respond to Slack messages"
     config:
-      events: [message]                    # Event types to listen for
-      channels: [dm, channel]              # Channel type filters
-      ignoreBotMessages: true              # Filter out bot messages
+      events: [message] # Event types to listen for
+      channels: [dm, channel] # Channel type filters
+      ignoreBotMessages: true # Filter out bot messages
 
 jobs:
   handle-slack:
@@ -180,6 +188,7 @@ signals:
 ```
 
 When messages match this signal, they're routed to the conversation agent which:
+
 1. Maintains conversation history
 2. Uses Slack MCP tools to send responses
 3. Handles threading automatically
@@ -202,13 +211,13 @@ tools:
             - "-y"
             - "@modelcontextprotocol/server-slack"
         env:
-          SLACK_BOT_TOKEN: auto        # Uses ATLAS_SLACK_BOT_TOKEN
-          SLACK_TEAM_ID: auto          # Optional
+          SLACK_BOT_TOKEN: auto # Uses ATLAS_SLACK_BOT_TOKEN
+          SLACK_TEAM_ID: auto # Optional
         tools:
           allow:
-            - slack_post_message       # Send messages
-            - slack_reply_to_thread    # Reply in threads
-            - slack_add_reaction       # Add emoji reactions
+            - slack_post_message # Send messages
+            - slack_reply_to_thread # Reply in threads
+            - slack_add_reaction # Add emoji reactions
             - slack_get_channel_history
             - slack_get_user_info
 ```
@@ -236,6 +245,7 @@ agents:
 ### Connection Failed
 
 Check both tokens are set correctly:
+
 ```bash
 echo $ATLAS_SLACK_APP_TOKEN  # Should start with xapp-1-
 echo $ATLAS_SLACK_BOT_TOKEN  # Should start with xoxb-
@@ -258,6 +268,7 @@ echo $ATLAS_SLACK_BOT_TOKEN  # Should start with xoxb-
 ### Reconnection Issues
 
 Socket Mode auto-reconnects with exponential backoff:
+
 - Initial delay: 1 second
 - Max delay: 30 seconds
 - Check logs for "Slack Socket Mode disconnected" and reconnection attempts
@@ -271,18 +282,19 @@ Socket Mode auto-reconnects with exponential backoff:
 
 ## Comparison: Socket Mode vs Events API
 
-| Feature | Socket Mode (Implemented) | Events API (Webhooks) |
-|---------|--------------------------|----------------------|
-| **Public URL required** | ❌ No | ✅ Yes |
-| **Setup complexity** | ✅ Low | ❌ High |
-| **Firewall friendly** | ✅ Outbound only | ❌ Inbound required |
-| **Connection type** | WebSocket | HTTP |
-| **Authentication** | App token + bot token | Signing secret + bot token |
-| **Pattern match** | ✅ Same as Discord | ❌ Different |
-| **Development** | ✅ Easy (no ngrok) | ❌ Harder |
-| **Latency** | ✅ Lower | Higher |
+| Feature                 | Socket Mode (Implemented) | Events API (Webhooks)      |
+| ----------------------- | ------------------------- | -------------------------- |
+| **Public URL required** | ❌ No                     | ✅ Yes                     |
+| **Setup complexity**    | ✅ Low                    | ❌ High                    |
+| **Firewall friendly**   | ✅ Outbound only          | ❌ Inbound required        |
+| **Connection type**     | WebSocket                 | HTTP                       |
+| **Authentication**      | App token + bot token     | Signing secret + bot token |
+| **Pattern match**       | ✅ Same as Discord        | ❌ Different               |
+| **Development**         | ✅ Easy (no ngrok)        | ❌ Harder                  |
+| **Latency**             | ✅ Lower                  | Higher                     |
 
 **Why Socket Mode?**
+
 - No need to expose Atlas to internet
 - Better for development and internal deployments
 - Matches Discord's Gateway pattern
@@ -291,6 +303,7 @@ Socket Mode auto-reconnects with exponential backoff:
 ## Rate Limits
 
 Socket Mode limits:
+
 - Up to 10 concurrent WebSocket connections
 - Events must be acknowledged within 3 seconds (handled automatically)
 - Connection persists for hours, refreshes automatically
@@ -312,20 +325,21 @@ signals:
     provider: slack
     config:
       events: [message]
-      channels: [dm]              # DMs only
+      channels: [dm] # DMs only
       ignoreBotMessages: true
 
   team-mentions:
     provider: slack
     config:
       events: [message]
-      channels: [channel]         # Channels only
-      ignoreBotMessages: false    # Include bot messages
+      channels: [channel] # Channels only
+      ignoreBotMessages: false # Include bot messages
 ```
 
 ### Thread Handling
 
-The signal payload includes `threadTs` when a message is part of a thread. Use `slack_reply_to_thread` to maintain context:
+The signal payload includes `threadTs` when a message is part of a thread. Use
+`slack_reply_to_thread` to maintain context:
 
 ```typescript
 // In your agent logic
@@ -334,13 +348,13 @@ if (payload.threadTs) {
   slack_reply_to_thread({
     channel: payload.channelId,
     thread_ts: payload.threadTs,
-    text: "Response in thread"
+    text: "Response in thread",
   });
 } else {
   // New message
   slack_post_message({
     channel: payload.channelId,
-    text: "New message"
+    text: "New message",
   });
 }
 ```
@@ -416,13 +430,14 @@ Conversation IDs are deterministic for persistence:
 
 ```typescript
 // DM or channel message
-conversationId = `slack:${teamId}:${channelId}`
+conversationId = `slack:${teamId}:${channelId}`;
 
 // Thread message
-conversationId = `slack:${teamId}:${threadTs}`
+conversationId = `slack:${teamId}:${threadTs}`;
 ```
 
 This ensures:
+
 - Same DM maintains conversation context
 - Threads have separate conversations
 - Conversations persist across daemon restarts
@@ -431,7 +446,8 @@ This ensures:
 
 ### Local Development
 
-Socket Mode is perfect for local development - no ngrok or port forwarding needed!
+Socket Mode is perfect for local development - no ngrok or port forwarding
+needed!
 
 ```bash
 # Set tokens
@@ -460,8 +476,7 @@ deno check apps/atlasd/mod.ts
 
 ```bash
 deno task fmt
-deno task biome
-deno lint
+deno task lint
 ```
 
 ## See Also

@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
+// see biome-ignore lint/correctness/noUnusedVariables
 import "@tanstack/svelte-table";
 import type { RowData } from "@tanstack/svelte-table";
 
@@ -39,7 +41,7 @@ declare global {
 }
 
 declare module "@tanstack/svelte-table" {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  // biome-ignore lint/correctness/noUnusedVariables: We aren't using the generic, but it must be typed
   interface ColumnMeta<TData extends RowData, TValue> {
     bold?: boolean;
     faded?: boolean;

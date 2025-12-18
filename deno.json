@@ -42,8 +42,9 @@
     "test:unit": "OTEL_DENO=true DENO_TESTING=true LINK_DEV_MODE=true deno test --allow-all --env-file --no-check --ignore='integration-tests/**/*.test.ts'",
     "fmt": "deno run -A npm:@biomejs/biome format --write",
     "fmt:check": "deno run -A npm:@biomejs/biome format",
-    "biome": "deno run -A npm:@biomejs/biome check",
-    "lint": "deno lint",
+    "biome": "deno run -A npm:@biomejs/biome",
+    "lint": "deno lint --fix && deno run -A npm:@biomejs/biome check --write",
+    "lint:check": "deno lint && deno run -A npm:@biomejs/biome check",
     "clean": "deno run --allow-read --allow-write --allow-env scripts/clean.ts",
     "compile": "./scripts/compile.sh",
     "report:knip": "npx knip --reporter markdown --max-issues 0 > reports/knip-report.md"

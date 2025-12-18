@@ -147,9 +147,9 @@ function createStorage(): StorageAdapter {
     });
 
     sql = postgres(config.postgresConnection, config.postgresPool);
-    const cypher = new CypherHttpClient(config.cypherServiceUrl, async () => {
+    const cypher = new CypherHttpClient(config.cypherServiceUrl, () => {
       // Return the token from AsyncLocalStorage for the current request
-      return getAuthToken();
+      return Promise.resolve(getAuthToken());
     });
 
     return new CypherStorageAdapter(cypher, sql);

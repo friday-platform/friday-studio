@@ -1,3 +1,4 @@
+// deno-lint-ignore-file no-window -- this is only loaded in the browser.
 import * as Sentry from "@sentry/sveltekit";
 
 Sentry.init({
