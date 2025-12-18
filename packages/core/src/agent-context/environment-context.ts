@@ -10,6 +10,18 @@ import type { AgentEnvironmentConfig } from "@atlas/agent-sdk";
 import type { Logger } from "@atlas/logger";
 
 /**
+ * Keys that LITELLM_API_KEY can substitute for.
+ * When these are required but missing, LITELLM_API_KEY satisfies the requirement
+ * since @atlas/llm routes through LiteLLM proxy when LITELLM_API_KEY is set.
+ */
+const LITELLM_SUBSTITUTABLE_KEYS = new Set([
+  "ANTHROPIC_API_KEY",
+  "OPENAI_API_KEY",
+  "GOOGLE_API_KEY",
+  "GROQ_API_KEY",
+]);
+
+/**
  * Create an environment context validator
  */
 export function createEnvironmentContext(logger: Logger) {
@@ -34,16 +46,31 @@ export function createEnvironmentContext(logger: Logger) {
 
     // Validate required environment variables
     if (environmentConfig.required) {
+      const litellmKey = Deno.env.get("LITELLM_API_KEY");
+
       for (const reqVar of environmentConfig.required) {
-        const value = Deno.env.get(reqVar.name);
+        let value = Deno.env.get(reqVar.name);
+        let usedSubstitute = false;
+
+        // If primary variable is missing, check if LITELLM_API_KEY can substitute
+        if (!value && litellmKey && LITELLM_SUBSTITUTABLE_KEYS.has(reqVar.name)) {
+          value = litellmKey;
+          usedSubstitute = true;
+          logger.debug("Using LITELLM_API_KEY as substitute", {
+            operation: "environment_validation",
+            workspaceId,
+            agentId,
+            required: reqVar.name,
+          });
+        }
 
         if (value === undefined || value === "") {
           missingRequired.push(reqVar.name);
           continue;
         }
 
-        // Validate against regex pattern if provided
-        if (reqVar.validation) {
+        // Validate against regex pattern if provided (skip validation for substitutes)
+        if (reqVar.validation && !usedSubstitute) {
           let regex: RegExp;
           try {
             regex = new RegExp(reqVar.validation);
