@@ -1,0 +1,254 @@
+{
+  "displayName": "Atlas Overview",
+  "rowLayout": {
+    "rows": [
+      {
+        "widgets": [
+          {
+            "title": "Container Restarts (1h)",
+            "scorecard": {
+              "timeSeriesQuery": {
+                "timeSeriesFilter": {
+                  "filter": "metric.type=\"kubernetes.io/container/restart_count\" AND resource.labels.namespace_name=\"atlas-operator\"",
+                  "aggregation": {
+                    "alignmentPeriod": "3600s",
+                    "perSeriesAligner": "ALIGN_DELTA",
+                    "crossSeriesReducer": "REDUCE_SUM"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "title": "Active Workspaces",
+            "scorecard": {
+              "timeSeriesQuery": {
+                "timeSeriesFilter": {
+                  "filter": "metric.type=\"prometheus.googleapis.com/atlasd_active_workspaces/gauge\"",
+                  "aggregation": {
+                    "alignmentPeriod": "60s",
+                    "perSeriesAligner": "ALIGN_MEAN",
+                    "crossSeriesReducer": "REDUCE_SUM"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "title": "Managed Users",
+            "scorecard": {
+              "timeSeriesQuery": {
+                "timeSeriesFilter": {
+                  "filter": "metric.type=\"prometheus.googleapis.com/atlas_operator_users_total/gauge\"",
+                  "aggregation": {
+                    "alignmentPeriod": "60s",
+                    "perSeriesAligner": "ALIGN_MEAN",
+                    "crossSeriesReducer": "REDUCE_MAX"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "title": "Atlas instances created in last 24h",
+            "scorecard": {
+              "timeSeriesQuery": {
+                "timeSeriesFilter": {
+                  "filter": "metric.type=\"prometheus.googleapis.com/atlas_operator_applications_created_total/counter\"",
+                  "aggregation": {
+                    "alignmentPeriod": "86400s",
+                    "perSeriesAligner": "ALIGN_DELTA",
+                    "crossSeriesReducer": "REDUCE_SUM"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      {
+        "widgets": [
+          {
+            "title": "Sessions by Status",
+            "xyChart": {
+              "dataSets": [
+                {
+                  "timeSeriesQuery": {
+                    "timeSeriesFilter": {
+                      "filter": "metric.type=\"prometheus.googleapis.com/atlasd_sessions_total/counter\"",
+                      "aggregation": {
+                        "alignmentPeriod": "60s",
+                        "perSeriesAligner": "ALIGN_RATE",
+                        "crossSeriesReducer": "REDUCE_SUM",
+                        "groupByFields": ["metric.labels.status"]
+                      }
+                    }
+                  },
+                  "plotType": "STACKED_AREA",
+                  "targetAxis": "Y1"
+                }
+              ]
+            }
+          },
+          {
+            "title": "Signal Triggers by Provider",
+            "xyChart": {
+              "dataSets": [
+                {
+                  "timeSeriesQuery": {
+                    "timeSeriesFilter": {
+                      "filter": "metric.type=\"prometheus.googleapis.com/atlasd_signal_triggers_total/counter\"",
+                      "aggregation": {
+                        "alignmentPeriod": "60s",
+                        "perSeriesAligner": "ALIGN_RATE",
+                        "crossSeriesReducer": "REDUCE_SUM",
+                        "groupByFields": ["metric.labels.provider"]
+                      }
+                    }
+                  },
+                  "plotType": "LINE",
+                  "targetAxis": "Y1"
+                }
+              ]
+            }
+          },
+          {
+            "title": "MCP Tool Calls by Tool",
+            "xyChart": {
+              "dataSets": [
+                {
+                  "timeSeriesQuery": {
+                    "timeSeriesFilter": {
+                      "filter": "metric.type=\"prometheus.googleapis.com/atlasd_mcp_tool_calls_total/counter\"",
+                      "aggregation": {
+                        "alignmentPeriod": "60s",
+                        "perSeriesAligner": "ALIGN_RATE",
+                        "crossSeriesReducer": "REDUCE_SUM",
+                        "groupByFields": ["metric.labels.tool"]
+                      }
+                    }
+                  },
+                  "plotType": "LINE",
+                  "targetAxis": "Y1"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "widgets": [
+          {
+            "title": "Session Errors",
+            "xyChart": {
+              "dataSets": [
+                {
+                  "timeSeriesQuery": {
+                    "timeSeriesFilter": {
+                      "filter": "metric.type=\"prometheus.googleapis.com/atlasd_sessions_total/counter\" AND metric.labels.status=\"failed\"",
+                      "aggregation": {
+                        "alignmentPeriod": "60s",
+                        "perSeriesAligner": "ALIGN_RATE",
+                        "crossSeriesReducer": "REDUCE_SUM"
+                      }
+                    }
+                  },
+                  "plotType": "LINE",
+                  "targetAxis": "Y1"
+                }
+              ]
+            }
+          },
+          {
+            "title": "Reconciliation Errors",
+            "xyChart": {
+              "dataSets": [
+                {
+                  "timeSeriesQuery": {
+                    "timeSeriesFilter": {
+                      "filter": "metric.type=\"prometheus.googleapis.com/atlas_operator_reconciliation_duration_seconds/histogram\" AND metric.labels.status=\"error\"",
+                      "aggregation": {
+                        "alignmentPeriod": "60s",
+                        "perSeriesAligner": "ALIGN_DELTA",
+                        "crossSeriesReducer": "REDUCE_SUM"
+                      }
+                    }
+                  },
+                  "plotType": "LINE",
+                  "targetAxis": "Y1"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "widgets": [
+          {
+            "title": "CPU Usage",
+            "xyChart": {
+              "dataSets": [
+                {
+                  "timeSeriesQuery": {
+                    "timeSeriesFilter": {
+                      "filter": "metric.type=\"kubernetes.io/container/cpu/core_usage_time\" AND resource.labels.namespace_name=\"atlas-operator\"",
+                      "aggregation": {
+                        "alignmentPeriod": "60s",
+                        "perSeriesAligner": "ALIGN_RATE",
+                        "crossSeriesReducer": "REDUCE_SUM"
+                      }
+                    }
+                  },
+                  "plotType": "LINE",
+                  "targetAxis": "Y1"
+                }
+              ]
+            }
+          },
+          {
+            "title": "Memory Usage",
+            "xyChart": {
+              "dataSets": [
+                {
+                  "timeSeriesQuery": {
+                    "timeSeriesFilter": {
+                      "filter": "metric.type=\"kubernetes.io/container/memory/used_bytes\" AND resource.labels.namespace_name=\"atlas-operator\"",
+                      "aggregation": {
+                        "alignmentPeriod": "60s",
+                        "perSeriesAligner": "ALIGN_MEAN",
+                        "crossSeriesReducer": "REDUCE_SUM"
+                      }
+                    }
+                  },
+                  "plotType": "LINE",
+                  "targetAxis": "Y1"
+                }
+              ]
+            }
+          },
+          {
+            "title": "Network RX",
+            "xyChart": {
+              "dataSets": [
+                {
+                  "timeSeriesQuery": {
+                    "timeSeriesFilter": {
+                      "filter": "metric.type=\"kubernetes.io/pod/network/received_bytes_count\" AND resource.labels.namespace_name=\"atlas-operator\"",
+                      "aggregation": {
+                        "alignmentPeriod": "60s",
+                        "perSeriesAligner": "ALIGN_RATE",
+                        "crossSeriesReducer": "REDUCE_SUM"
+                      }
+                    }
+                  },
+                  "plotType": "LINE",
+                  "targetAxis": "Y1"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  }
+}
