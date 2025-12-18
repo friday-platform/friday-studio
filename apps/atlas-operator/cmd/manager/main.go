@@ -66,13 +66,6 @@ var (
 			Help: "Total number of applications deleted",
 		},
 	)
-	errorsTotal = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "atlas_operator_errors_total",
-			Help: "Total errors by type",
-		},
-		[]string{"type"},
-	)
 )
 
 func init() {
@@ -82,7 +75,6 @@ func init() {
 	prometheus.MustRegister(usersTotal)
 	prometheus.MustRegister(applicationsCreatedTotal)
 	prometheus.MustRegister(applicationsDeletedTotal)
-	prometheus.MustRegister(errorsTotal)
 }
 
 func main() {
@@ -209,7 +201,21 @@ func run() error {
 	}
 
 	// Create reconciler
-	reconciler := controller.NewReconciler(dbClient, argoCDManager, poolManager, litellmClient, cypherClient, cfg, logger)
+	reconciler := controller.NewReconciler(controller.Deps{
+		DB:      dbClient,
+		ArgoCD:  argoCDManager,
+		Pool:    poolManager,
+		LiteLLM: litellmClient,
+		Cypher:  cypherClient,
+		Config:  cfg,
+		Logger:  logger,
+		Metrics: &controller.Metrics{
+			UsersTotal:               usersTotal,
+			ApplicationsCreatedTotal: applicationsCreatedTotal,
+			ApplicationsDeletedTotal: applicationsDeletedTotal,
+			ReconciliationDuration:   reconciliationDuration,
+		},
+	})
 
 	// Start health check server
 	healthServer := startHealthServer(cfg.HealthCheckPort, reconciler, logger)

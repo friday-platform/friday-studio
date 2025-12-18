@@ -31,7 +31,7 @@ func TestStartHealthServer(t *testing.T) {
 	cfg := &config.Config{
 		ReconciliationInterval: 30 * time.Second,
 	}
-	reconciler := controller.NewReconciler(nil, nil, nil, nil, nil, cfg, logger)
+	reconciler := controller.NewReconciler(controller.Deps{Config: cfg, Logger: logger})
 
 	// Start server on a random port
 	port := 18080
@@ -63,7 +63,7 @@ func TestStartHealthServer_ReadyzWithNilDependencies(t *testing.T) {
 		ReconciliationInterval: 30 * time.Second,
 	}
 	// Create reconciler with nil dependencies (should fail readyz check)
-	reconciler := controller.NewReconciler(nil, nil, nil, nil, nil, cfg, logger)
+	reconciler := controller.NewReconciler(controller.Deps{Config: cfg, Logger: logger})
 
 	port := 18081
 	go startHealthServer(port, reconciler, logger)
@@ -192,7 +192,7 @@ func TestHealthServerShutdown(t *testing.T) {
 	cfg := &config.Config{
 		ReconciliationInterval: 30 * time.Second,
 	}
-	reconciler := controller.NewReconciler(nil, nil, nil, nil, nil, cfg, logger)
+	reconciler := controller.NewReconciler(controller.Deps{Config: cfg, Logger: logger})
 
 	port := 18084
 	serverStarted := make(chan bool)
@@ -260,7 +260,6 @@ func TestPrometheusMetricsRegistered(t *testing.T) {
 	usersTotal.Set(10)
 	applicationsCreatedTotal.Inc()
 	applicationsDeletedTotal.Inc()
-	errorsTotal.WithLabelValues("test").Inc()
 }
 
 // Helper functions.
