@@ -24,6 +24,9 @@ func TestLoadConfig_Success(t *testing.T) {
 	t.Setenv("WEBHOOK_ENABLED", "true")
 	t.Setenv("WEBHOOK_PORT", "9092")
 	t.Setenv("WEBHOOK_TOKEN", "test-token")
+	t.Setenv("TLS_CERTIFICATE_PATH", "/cert-volume/tls.crt")
+	t.Setenv("TLS_KEY_PATH", "/cert-volume/tls.key")
+	t.Setenv("TLS_CA_PATH", "/cert-volume/ca.crt")
 
 	cfg, err := Load(logger)
 	if err != nil {
@@ -90,6 +93,9 @@ func TestLoadConfig_Defaults(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgresql://user:pass@localhost:5432/db")
 	t.Setenv("GIT_REPO_URL", "git@github.com:test/repo.git")
 	t.Setenv("WEBHOOK_TOKEN", "") // Optional field, set to empty
+	t.Setenv("TLS_CERTIFICATE_PATH", "/cert-volume/tls.crt")
+	t.Setenv("TLS_KEY_PATH", "/cert-volume/tls.key")
+	t.Setenv("TLS_CA_PATH", "/cert-volume/ca.crt")
 
 	cfg, err := Load(logger)
 	if err != nil {

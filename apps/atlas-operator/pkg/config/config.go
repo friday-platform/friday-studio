@@ -73,7 +73,10 @@ func Load(logger *slog.Logger) (*Config, error) {
 	}
 
 	// Parse environment variables into Config struct
-	cfg := &Config{}
+	// Pre-initialize TLSConfig so env can populate its fields
+	cfg := &Config{
+		TLSConfig: &server.TLSConfig{},
+	}
 	if err := env.ParseWithOptions(cfg, env.Options{
 		RequiredIfNoDef: true,
 	}); err != nil {
