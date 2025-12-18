@@ -3,8 +3,12 @@
  * Provides type-safe MCP server connectivity with transport abstraction
  */
 
+import { readFileSync } from "node:fs";
+import process from "node:process";
 import { experimental_createMCPClient as createMCPClient } from "@ai-sdk/mcp";
 import { Experimental_StdioMCPTransport as StdioMCPTransport } from "@ai-sdk/mcp/mcp-stdio";
+import { type LinkCredentialRef, LinkCredentialRefSchema } from "@atlas/agent-sdk";
+import { client, parseResult } from "@atlas/client/v2";
 import {
   type MCPAuthConfig,
   MCPAuthConfigSchema,
@@ -12,10 +16,12 @@ import {
   MCPServerToolFilterSchema,
   MCPTransportConfigSchema,
 } from "@atlas/config";
+import type { Credential } from "@atlas/link";
 import { logger } from "@atlas/logger";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Span } from "@opentelemetry/api";
 import type { Tool } from "ai";
+import * as jose from "jose";
 import { z } from "zod";
 import { AtlasTelemetry } from "../../../src/utils/telemetry.ts";
 
@@ -30,7 +36,7 @@ export const MCPServerConfigSchema = z.object({
   tools: MCPServerToolFilterSchema.optional(),
   timeout_ms: z.number().positive().optional().default(30000),
   scope: z.enum(["platform", "workspace", "merged"]).optional(),
-  env: z.record(z.string(), z.string()).optional(),
+  env: z.record(z.string(), z.union([z.string(), LinkCredentialRefSchema])).optional(),
 });
 
 // Infer TypeScript type from extended schema
@@ -43,18 +49,75 @@ interface MCPClientWrapper {
 }
 
 /**
+ * Signs a JWT for authenticating with Link service
+ * @param userId User ID to include in sub claim
+ * @param privateKeyPem PEM-encoded RSA private key
+ * @returns Signed JWT token
+ */
+export async function signLinkJWT(userId: string, privateKeyPem: string): Promise<string> {
+  const privateKey = await jose.importPKCS8(privateKeyPem, "RS256");
+
+  const now = Math.floor(Date.now() / 1000);
+
+  return await new jose.SignJWT({})
+    .setProtectedHeader({ alg: "RS256" })
+    .setIssuer("atlas-daemon")
+    .setSubject(userId)
+    .setAudience("link-service")
+    .setIssuedAt(now)
+    .setExpirationTime(now + 300) // 5 minutes
+    .sign(privateKey);
+}
+
+/**
  * MCP Manager using Vercel AI SDK's native MCP client
  * Handles connection management, tool filtering, and lifecycle management
  */
 export class MCPManager {
   private static instance: MCPManager = new MCPManager();
   private clients: Map<string, MCPClientWrapper> = new Map();
+  private linkPrivateKey: string | null = null;
+
+  constructor() {
+    this.loadLinkPrivateKey();
+  }
 
   /**
    * Get the singleton instance of MCPManager
    */
   static getInstance(): MCPManager {
     return MCPManager.instance;
+  }
+
+  /**
+   * Loads Link JWT private key from file
+   * Only required in production mode (LINK_DEV_MODE=false)
+   */
+  private loadLinkPrivateKey(): void {
+    const devMode = process.env.LINK_DEV_MODE === "true";
+
+    if (devMode) {
+      logger.debug("Link dev mode enabled, skipping JWT key load");
+      return;
+    }
+
+    const keyFile = process.env.ATLAS_JWT_PRIVATE_KEY_FILE;
+
+    if (!keyFile) {
+      logger.warn(
+        "ATLAS_JWT_PRIVATE_KEY_FILE not set. Link authentication will fail in production mode. " +
+          "Set LINK_DEV_MODE=true for development, or configure JWT keys for production.",
+      );
+      return;
+    }
+
+    try {
+      this.linkPrivateKey = readFileSync(keyFile, "utf-8").trim();
+      logger.info("Loaded Link JWT private key", { keyFile });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to read Link JWT private key from ${keyFile}: ${message}`);
+    }
   }
 
   /**
@@ -211,46 +274,8 @@ export class MCPManager {
             }
           }
 
-          // Process environment variables and resolve "auto" values
-          const processedEnv: Record<string, string> = {};
-          if (env) {
-            logger.debug(`Processing environment variables for MCP server: ${config.id}`, {
-              operation: "mcp_env_setup",
-              serverId: config.id,
-              envConfig: env,
-            });
-            for (const [key, value] of Object.entries(env)) {
-              if (value === "auto" || value === "from_environment") {
-                // Read the actual environment variable
-                const envValue = Deno.env.get(key);
-                logger.debug(
-                  `Looking up environment variable: ${key} = ${envValue ? "FOUND" : "NOT_FOUND"}`,
-                  {
-                    operation: "mcp_env_setup",
-                    serverId: config.id,
-                    envVar: key,
-                    found: !!envValue,
-                  },
-                );
-                if (envValue) {
-                  processedEnv[key] = envValue;
-                  logger.debug(`Using environment variable for MCP server: ${key}`, {
-                    operation: "mcp_env_setup",
-                    serverId: config.id,
-                    envVar: key,
-                  });
-                } else {
-                  throw new Error(
-                    `Required environment variable '${key}' not found. ` +
-                      `MCP server '${config.id}' requires this variable when env is set to "auto". ` +
-                      `Set it in your workspace .env file or system environment.`,
-                  );
-                }
-              } else {
-                processedEnv[key] = String(value);
-              }
-            }
-          }
+          // Process environment variables - resolve "auto", literals, and Link credentials
+          const processedEnv: Record<string, string> = env ? await this.resolveEnvValues(env) : {};
 
           // Merge processed env vars with parent process env
           // Deno.Command replaces the environment if you pass the env option
@@ -529,6 +554,140 @@ export class MCPManager {
     });
 
     return filtered;
+  }
+
+  /**
+   * Fetches a credential from Link service
+   * @param credentialId Link credential ID
+   * @returns Credential with secret
+   */
+  private async fetchLinkCredential(credentialId: string): Promise<Credential> {
+    const userId = process.env.ATLAS_USER_ID ?? "dev";
+    const devMode = process.env.LINK_DEV_MODE === "true";
+
+    logger.debug("Fetching credential from Link", { credentialId, userId, devMode });
+
+    // Build headers
+    const headers: Record<string, string> = { "X-Atlas-User-ID": userId };
+
+    // Add JWT in production mode
+    if (!devMode) {
+      if (!this.linkPrivateKey) {
+        throw new Error(
+          "ATLAS_JWT_PRIVATE_KEY_FILE is required for Link authentication in production mode. " +
+            "Set LINK_DEV_MODE=true for development, or configure JWT keys for production.",
+        );
+      }
+
+      try {
+        const jwt = await signLinkJWT(userId, this.linkPrivateKey);
+        headers.Authorization = `Bearer ${jwt}`;
+
+        logger.debug("Generated Link JWT", {
+          credentialId,
+          userId,
+          jwtPrefix: `${jwt.substring(0, 20)}...`,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        throw new Error(`Failed to sign JWT for Link authentication: ${message}`);
+      }
+    }
+
+    const result = await parseResult(
+      client.link.internal.v1.credentials[":id"].$get({ param: { id: credentialId } }, { headers }),
+    );
+
+    if (!result.ok) {
+      throw new Error(
+        `Failed to fetch credential '${credentialId}' from Link service: ${result.error}`,
+      );
+    }
+
+    const { credential, status } = result.data;
+
+    // Handle expired/failed states
+    if (status === "expired_no_refresh") {
+      throw new Error(
+        `Credential '${credentialId}' has expired and no refresh token is available. ` +
+          `Please re-authenticate in Link UI.`,
+      );
+    }
+
+    if (status === "refresh_failed") {
+      throw new Error(
+        `Credential '${credentialId}' refresh failed. Check Link service logs for details.`,
+      );
+    }
+
+    logger.debug("Successfully fetched credential", {
+      credentialId,
+      status,
+      type: credential.type,
+      provider: credential.provider,
+    });
+
+    return credential;
+  }
+
+  /**
+   * Resolves environment variable values, fetching Link credentials as needed
+   * @param env Environment variable configuration
+   * @returns Resolved environment variables as strings
+   */
+  private async resolveEnvValues(
+    env: Record<string, string | LinkCredentialRef>,
+  ): Promise<Record<string, string>> {
+    const resolved: Record<string, string> = {};
+
+    for (const [envKey, value] of Object.entries(env)) {
+      if (typeof value === "string") {
+        // Existing logic: "auto" / "from_environment" / literal
+        if (value === "auto" || value === "from_environment") {
+          const envValue = process.env[envKey];
+          if (!envValue) {
+            throw new Error(
+              `Required environment variable '${envKey}' not found. ` +
+                `Set ${envKey} in your environment or use a literal value.`,
+            );
+          }
+          resolved[envKey] = envValue;
+        } else {
+          // Literal string value
+          resolved[envKey] = value;
+        }
+      } else if (value.from === "link") {
+        // New: Fetch from Link
+        logger.debug("Resolving Link credential", {
+          envKey,
+          credentialId: value.id,
+          secretKey: value.key,
+        });
+
+        const credential = await this.fetchLinkCredential(value.id);
+        const secretValue = credential.secret[value.key];
+
+        if (secretValue === undefined) {
+          const availableKeys = Object.keys(credential.secret).join(", ");
+          throw new Error(
+            `Key '${value.key}' not found in credential '${value.id}'. ` +
+              `Available keys: ${availableKeys || "(none)"}`,
+          );
+        }
+
+        if (typeof secretValue !== "string") {
+          throw new Error(
+            `Secret key '${value.key}' in credential '${value.id}' must be a string, ` +
+              `got ${typeof secretValue}. Check your credential configuration.`,
+          );
+        }
+
+        resolved[envKey] = secretValue;
+        logger.debug("Resolved Link credential", { envKey, credentialId: value.id });
+      }
+    }
+
+    return resolved;
   }
 
   /**

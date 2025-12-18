@@ -94,6 +94,21 @@ export const MCPServerToolFilterSchema = AllowDenyFilterSchema.describe(
 export type MCPServerToolFilter = z.infer<typeof MCPServerToolFilterSchema>;
 
 /**
+ * Link credential reference for retrieving secrets from Link service
+ */
+export const LinkCredentialRefSchema = z.strictObject({
+  from: z.literal("link"),
+  id: z.string().describe("Link credential ID (e.g., 'cred_abc123')"),
+  key: z.string().describe("Key within credential.secret object (e.g., 'token')"),
+});
+export type LinkCredentialRef = z.infer<typeof LinkCredentialRefSchema>;
+
+/**
+ * Environment variable value - either a string or a Link credential reference
+ */
+const EnvValueSchema = z.union([z.string(), LinkCredentialRefSchema]);
+
+/**
  * Individual MCP server configuration
  */
 export const MCPServerConfigSchema = z.strictObject({
@@ -102,7 +117,7 @@ export const MCPServerConfigSchema = z.strictObject({
   auth: MCPAuthConfigSchema.optional(),
   tools: MCPServerToolFilterSchema.optional(),
   env: z
-    .record(z.string(), z.string())
+    .record(z.string(), EnvValueSchema)
     .optional()
     .describe("Environment variables for the server process"),
 });

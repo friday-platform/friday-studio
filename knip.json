@@ -23,7 +23,7 @@
     },
     "packages/llm": { "entry": ["src/**/*.test.ts"], "project": ["**/*.{ts,tsx,js,jsx}!"] },
     "packages/logger": { "project": ["**/*.{ts,tsx,js,jsx}!"] },
-    "packages/mcp": { "project": ["**/*.{ts,tsx,js,jsx}!"] },
+    "packages/mcp": { "entry": ["src/**/*.test.ts"], "project": ["**/*.{ts,tsx,js,jsx}!"] },
     "packages/mcp-server": {
       "entry": ["src/**/*.test.ts"],
       "project": ["src/**/*.{ts,tsx,js,jsx}!"]

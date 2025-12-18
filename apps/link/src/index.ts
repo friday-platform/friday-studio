@@ -3,7 +3,6 @@ import { readFileSync } from "node:fs";
 import { logger } from "@atlas/logger";
 import { jwt } from "hono/jwt";
 import { trimTrailingSlash } from "hono/trailing-slash";
-import * as jose from "jose";
 import postgres from "postgres";
 import { CypherStorageAdapter } from "./adapters/cypher-storage-adapter.ts";
 import { DenoKVStorageAdapter } from "./adapters/deno-kv-adapter.ts";
@@ -36,7 +35,7 @@ function getAuthToken(): string {
  *
  * Reads config fresh on each call to support testing with different env vars.
  */
-export async function createApp(storage: StorageAdapter, oauthService: OAuthService) {
+export function createApp(storage: StorageAdapter, oauthService: OAuthService) {
   // Read config fresh to support testing with different env vars
   const cfg = readConfig();
 
@@ -44,7 +43,7 @@ export async function createApp(storage: StorageAdapter, oauthService: OAuthServ
    * Auth token middleware - captures JWT for forwarding to Cypher service.
    * Stores token in AsyncLocalStorage so CypherHttpClient can access it.
    */
-  const authTokenMiddleware = factory.createMiddleware(async (c, next) => {
+  const authTokenMiddleware = factory.createMiddleware((c, next) => {
     const authHeader = c.req.header("Authorization") ?? c.req.header("X-Atlas-Key");
     const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : (authHeader ?? "");
     return authTokenStorage.run(token, () => next());
@@ -96,12 +95,10 @@ export async function createApp(storage: StorageAdapter, oauthService: OAuthServ
       throw new Error("LINK_JWT_PUBLIC_KEY_FILE required");
     }
     const publicKeyPem = readFileSync(cfg.jwtPublicKeyFile, "utf-8").trim();
-    // Import PEM as KeyLike for hono/jwt
-    const publicKey = await jose.importSPKI(publicKeyPem, "RS256");
 
     // hono/jwt can only check one header at a time, so we need to wrap it
     // to check both X-Atlas-Key and Authorization headers
-    const jwtMiddleware = jwt({ alg: "RS256", secret: publicKey });
+    const jwtMiddleware = jwt({ alg: "RS256", secret: publicKeyPem });
     const jwtChecker = factory.createMiddleware((c, next) => {
       const atlasKey = c.req.header("X-Atlas-Key");
       if (atlasKey) {
@@ -179,11 +176,14 @@ const defaultStorage = createStorage();
 // Default OAuth service for production
 const defaultOAuthService = new OAuthService(registry, defaultStorage);
 
-// Export app instance for testing and RPC type inference (await at module load)
-export const app = await createApp(defaultStorage, defaultOAuthService);
+// Export app instance for testing and RPC type inference
+export const app = createApp(defaultStorage, defaultOAuthService);
 
 // Export app type for RPC client (hc<LinkRoutes>())
 export type LinkRoutes = typeof app;
+
+// Export types for external use
+export type { Credential, CredentialSummary, OAuthCredential } from "./types.ts";
 
 // Only start server when run directly (not when imported for tests)
 if (import.meta.main) {

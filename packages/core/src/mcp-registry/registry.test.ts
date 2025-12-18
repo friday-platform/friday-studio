@@ -35,13 +35,21 @@ describe("mcpServersRegistry", () => {
             key.includes("SECRET") ||
             key.includes("PASSWORD")
           ) {
-            const isPlaceholder =
-              value.startsWith("your-") || value.includes("${") || value.includes("xxxx");
-            assertEquals(
-              isPlaceholder,
-              true,
-              `Server ${id} has hardcoded credential ${key}: ${value}`,
-            );
+            // Link credential refs are OK (not hardcoded)
+            if (typeof value === "object" && value.from === "link") {
+              continue;
+            }
+
+            // At this point, value must be a string due to the type guard above
+            if (typeof value === "string") {
+              const isPlaceholder =
+                value.startsWith("your-") || value.includes("${") || value.includes("xxxx");
+              assertEquals(
+                isPlaceholder,
+                true,
+                `Server ${id} has hardcoded credential ${key}: ${value}`,
+              );
+            }
           }
         }
       }

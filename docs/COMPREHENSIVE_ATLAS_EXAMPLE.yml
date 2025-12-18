@@ -100,14 +100,49 @@ tools:
       # deny: []  # Tools matching these patterns are denied (for denylist type)
 
     # MCP servers configuration
-    # servers:
-    #   my-server:
-    #     transport:
-    #       type: "stdio"
-    #       command: "my-mcp-server"
-    #       args: ["--mode", "production"]
-    #     tools:
-    #       allow: ["tool1", "tool2"]  # Optional tool filtering
+    # -------------------------------------------------------------------------
+    # Link Credential Integration
+    # -------------------------------------------------------------------------
+    # MCP servers can retrieve credentials from Link service at startup.
+    #
+    # Environment setup:
+    #   Development:  export LINK_DEV_MODE=true
+    #   Production:   Generate RSA-2048 key pair and configure:
+    #                 export ATLAS_JWT_PRIVATE_KEY_FILE=/path/to/private.pem
+    #                 export LINK_JWT_PUBLIC_KEY_FILE=/path/to/public.pem (in Link)
+    # -------------------------------------------------------------------------
+    servers:
+      # Example with Link credential integration
+      slack:
+        transport:
+          type: "stdio"
+          command: "npx"
+          args: ["-y", "@anthropic/mcp-slack"]
+        env:
+          # Link credential reference - fetches token from Link service
+          SLACK_BOT_TOKEN:
+            from: link
+            id: cred_abc123xyz      # Get this from Link UI
+            key: token              # Key within credential.secret
+
+          # Static value
+          SLACK_WORKSPACE: my-workspace
+
+          # From environment variable
+          DEBUG: auto
+        tools:
+          allow: ["slack_send_message", "slack_list_channels"]
+
+      # Example without Link credentials
+      filesystem:
+        transport:
+          type: "stdio"
+          command: "npx"
+          args: ["-y", "@modelcontextprotocol/server-filesystem"]
+        env:
+          FILESYSTEM_ROOT: "/workspace"
+        tools:
+          allow: ["read_file", "list_directory"]
 
 # =============================================================================
 # AGENTS CONFIGURATION

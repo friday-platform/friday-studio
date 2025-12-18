@@ -8,6 +8,7 @@ import type {
   SessionsRoutes,
   WorkspaceRoutes,
 } from "@atlas/atlasd";
+import type { LinkRoutes } from "@atlas/link";
 import { getAtlasDaemonUrl } from "@atlas/oapi-client";
 import { fail, type Result, success } from "@atlas/utils";
 import {
@@ -29,6 +30,7 @@ export const client = {
   chatStorage: hc<ChatStorageRoutes>(`${baseUrl}/api/chat-storage`),
   daemon: hc<DaemonRoutes>(`${baseUrl}/api/daemon`),
   health: hc<HealthRoutes>(`${baseUrl}/health`),
+  link: hc<LinkRoutes>(`${baseUrl}/api/link`),
   sessionHistory: hc<SessionHistoryRoutes>(`${baseUrl}/api/sessions-history`),
   sessions: hc<SessionsRoutes>(`${baseUrl}/api/sessions`),
   workspace: hc<WorkspaceRoutes>(`${baseUrl}/api/workspaces`),
