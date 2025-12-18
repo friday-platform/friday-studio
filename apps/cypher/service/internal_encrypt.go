@@ -15,7 +15,7 @@ type InternalEncryptRequest struct {
 
 // AllowedInternalServiceAccounts lists the service accounts authorized to call /internal/encrypt.
 var AllowedInternalServiceAccounts = []string{
-	"system:serviceaccount:atlas-operator:atlas-operator",
+	"system:serviceaccount:atlas-operator:atlas-operator-sa",
 }
 
 // handleInternalEncrypt encrypts data for internal services (atlas-operator).
