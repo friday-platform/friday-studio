@@ -9,6 +9,7 @@ import (
 	"github.com/caarlos0/env/v11"
 	"github.com/joho/godotenv"
 	"github.com/tempestteam/atlas/pkg/profiler"
+	"github.com/tempestteam/atlas/pkg/server"
 )
 
 // Config holds the operator configuration.
@@ -51,6 +52,9 @@ type Config struct {
 
 	// Cypher Configuration (for encrypting virtual keys)
 	CypherEndpoint string `env:"CYPHER_ENDPOINT" envDefault:"https://atlas-cypher.atlas-operator.svc.cluster.local:8085"`
+
+	// TLS Configuration (uses standard TLS_CA_PATH for Cypher client)
+	TLSConfig *server.TLSConfig
 
 	// Profiler Configuration
 	Profiler profiler.Config

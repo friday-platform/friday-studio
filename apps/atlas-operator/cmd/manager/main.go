@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -187,9 +188,20 @@ func run() error {
 			MasterKey: cfg.LiteLLMMasterKey,
 		}, logger)
 
+		// Get CA cert pool from TLS config for Cypher client
+		var rootCAs *x509.CertPool
+		if cfg.TLSConfig != nil {
+			var err error
+			rootCAs, err = cfg.TLSConfig.GetRootCA()
+			if err != nil {
+				return fmt.Errorf("failed to get root CA for cypher client: %w", err)
+			}
+		}
+
 		var err error
 		cypherClient, err = cypher.NewClient(cypher.Config{
 			Endpoint: cfg.CypherEndpoint,
+			RootCAs:  rootCAs,
 		}, logger)
 		if err != nil {
 			return fmt.Errorf("failed to create cypher client: %w", err)

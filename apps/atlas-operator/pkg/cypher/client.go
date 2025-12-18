@@ -15,11 +15,8 @@ import (
 	"time"
 )
 
-// Standard Kubernetes service account paths.
-var (
-	k8sSATokenPath = "/var/run/secrets/kubernetes.io/serviceaccount/token" //nolint:gosec // Not credentials, just a file path
-	k8sCAPath      = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
-)
+// Standard Kubernetes service account token path.
+var k8sSATokenPath = "/var/run/secrets/kubernetes.io/serviceaccount/token" //nolint:gosec // Not credentials, just a file path
 
 // Client is an HTTP client for the Cypher /internal/encrypt endpoint.
 type Client struct {
@@ -32,31 +29,24 @@ type Client struct {
 // Config holds configuration for the Cypher client.
 type Config struct {
 	Endpoint string
+	RootCAs  *x509.CertPool // CA cert pool for TLS verification
 }
 
 const defaultTimeout = 10 * time.Second
 
 // NewClient creates a new Cypher client.
-// It configures TLS to trust the Kubernetes CA if running in-cluster.
+// It configures TLS to trust the provided CA certificate pool.
 func NewClient(cfg Config, logger *slog.Logger) (*Client, error) {
 	transport := &http.Transport{}
 
-	// If running in Kubernetes, load the CA cert for TLS
-	if _, err := os.Stat(k8sCAPath); err == nil {
-		caCert, err := os.ReadFile(k8sCAPath)
-		if err != nil {
-			return nil, fmt.Errorf("read kubernetes CA cert: %w", err)
-		}
-
-		caCertPool := x509.NewCertPool()
-		if !caCertPool.AppendCertsFromPEM(caCert) {
-			return nil, fmt.Errorf("parse kubernetes CA cert")
-		}
-
+	if cfg.RootCAs != nil {
 		transport.TLSClientConfig = &tls.Config{
-			RootCAs:    caCertPool,
+			RootCAs:    cfg.RootCAs,
 			MinVersion: tls.VersionTLS12,
 		}
+		logger.Info("Configured Cypher client with custom CA")
+	} else {
+		logger.Warn("Cypher client using system CA roots")
 	}
 
 	return &Client{
