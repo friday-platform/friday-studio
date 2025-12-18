@@ -2,20 +2,19 @@
 import type { WorkspaceConfig } from "@atlas/config";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { onDestroy, onMount } from "svelte";
-import { toStore, writable } from "svelte/store";
+import { toStore } from "svelte/store";
 import { getAppContext } from "$lib/app-context.svelte";
 import { Dialog } from "$lib/components/dialog";
 import { Icons } from "$lib/components/icons";
+import { getSpacesContext } from "./context.svelte";
 import { addWorkspace, handleWorkspaceFileDrop } from "./utils.svelte";
 
 const appCtx = getAppContext();
+const spacesCtx = getSpacesContext();
 
 let unlisten: (() => void) | undefined;
-let _isUploading = $state(false);
 let workspaceConfig = $state<WorkspaceConfig | null>(null);
-
 let showDialog = $state(false);
-let _open = writable(true);
 
 onMount(() => {
   async function setupDragDrop() {
@@ -77,17 +76,14 @@ onDestroy(() => {
 				onclick={async () => {
 					if (!workspaceConfig) return;
 
-					isUploading = true;
-
 					try {
 						await addWorkspace(workspaceConfig, {
-							refreshWorkspaces: () => appCtx.refreshWorkspaces(),
+							refreshWorkspaces: () => spacesCtx.fetchWorkspaces(),
 							getSpaceRoute: (id: string) => appCtx.routes.spaces.item(id)
 						});
 					} catch (error) {
 						console.error('Failed to add workspace:', error);
 					} finally {
-						isUploading = false;
 						workspaceConfig = null;
 						showDialog = false;
 					}

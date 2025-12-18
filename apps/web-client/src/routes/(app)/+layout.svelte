@@ -8,27 +8,21 @@ import AppSidebar from "$lib/components/app/sidebar.svelte";
 import KeyboardListener from "$lib/components/keyboard-listener.svelte";
 import NotificationPortal from "$lib/components/notification/portal.svelte";
 import { setClientContext } from "$lib/modules/client/context.svelte";
+import { setSpacesContext } from "$lib/modules/spaces/context.svelte";
 import { handleWorkspaceFileDrop } from "$lib/modules/spaces/utils.svelte";
 import WorkspaceDropHandler from "$lib/modules/spaces/workspace-drop-handler.svelte";
 
 const { children } = $props();
 
 const appCtx = getAppContext();
-
-const ctx = setClientContext(appCtx.daemonClient);
-
-$effect(() => {
-  if (appCtx.keyboard.state?.key === "escape" && ctx.atlasSessionId) {
-    ctx.conversationClient?.cancelSession(ctx.atlasSessionId);
-  }
-});
+const spacesCtx = setSpacesContext();
+const ctx = setClientContext();
 
 let unlisten: (() => void) | undefined;
 
 onMount(async () => {
-  if (!ctx.conversationClient) {
-    ctx.connect();
-  }
+  // Load spaces
+  spacesCtx.fetchWorkspaces();
 
   // Start health checks immediately
   ctx.checkHealth();
@@ -100,7 +94,6 @@ onDestroy(() => {
 </div>
 
 <NotificationPortal />
-
 <KeyboardListener />
 <WorkspaceDropHandler />
 

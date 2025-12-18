@@ -6,9 +6,9 @@ import {
   getCoreRowModel,
   renderComponent,
 } from "@tanstack/svelte-table";
+import { resolve } from "$app/paths";
 import { Breadcrumbs } from "$lib/components/breadcrumbs";
 import { Table } from "$lib/components/table";
-
 import { DetailsColumn, StatusColumn, TimeColumn } from "$lib/modules/sessions/table-columns";
 import type { PageData } from "./$types";
 
@@ -70,7 +70,14 @@ const table = createTable({
 	{#if sessions.length === 0}
 		<p class="empty">No sessions yet</p>
 	{:else}
-		<Table.Root {table} rowSize="large" rowPath={(item) => `/sessions/${item.sessionId}`} />
+		<Table.Root
+			{table}
+			rowSize="large"
+			rowPath={(item) =>
+				resolve('/sessions/[sessionId]', {
+					sessionId: item.sessionId
+				})}
+		/>
 	{/if}
 </div>
 

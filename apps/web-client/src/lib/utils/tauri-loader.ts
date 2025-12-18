@@ -22,7 +22,6 @@ let _tauriWebview: typeof import("@tauri-apps/api/webview") | undefined;
 let _tauriWindow: typeof import("@tauri-apps/api/window") | undefined;
 let _tauriEvent: typeof import("@tauri-apps/api/event") | undefined;
 let _tauriOpener: typeof import("@tauri-apps/plugin-opener") | undefined;
-let _tauriNotification: typeof import("@tauri-apps/plugin-notification") | undefined;
 let _tauriFs: typeof import("@tauri-apps/plugin-fs") | undefined;
 
 let _initPromise: Promise<void> | undefined;
@@ -37,25 +36,16 @@ export async function initTauri(): Promise<void> {
   if (_tauriCore) return; // Already initialized
 
   _initPromise = (async () => {
-    [
-      _tauriCore,
-      _tauriApp,
-      _tauriWebview,
-      _tauriWindow,
-      _tauriEvent,
-      _tauriOpener,
-      _tauriNotification,
-      _tauriFs,
-    ] = await Promise.all([
-      import("@tauri-apps/api/core"),
-      import("@tauri-apps/api/app"),
-      import("@tauri-apps/api/webview"),
-      import("@tauri-apps/api/window"),
-      import("@tauri-apps/api/event"),
-      import("@tauri-apps/plugin-opener"),
-      import("@tauri-apps/plugin-notification"),
-      import("@tauri-apps/plugin-fs"),
-    ]);
+    [_tauriCore, _tauriApp, _tauriWebview, _tauriWindow, _tauriEvent, _tauriOpener, _tauriFs] =
+      await Promise.all([
+        import("@tauri-apps/api/core"),
+        import("@tauri-apps/api/app"),
+        import("@tauri-apps/api/webview"),
+        import("@tauri-apps/api/window"),
+        import("@tauri-apps/api/event"),
+        import("@tauri-apps/plugin-opener"),
+        import("@tauri-apps/plugin-fs"),
+      ]);
   })();
 
   await _initPromise;
@@ -86,18 +76,6 @@ export const openPath = __TAURI_BUILD__
   : undefined;
 
 export const openUrl = __TAURI_BUILD__ ? (url: string) => _tauriOpener?.openUrl(url) : undefined;
-
-// Notification plugin
-export const isPermissionGranted = __TAURI_BUILD__
-  ? () => _tauriNotification?.isPermissionGranted()
-  : undefined;
-export const requestPermission = __TAURI_BUILD__
-  ? () => _tauriNotification?.requestPermission()
-  : undefined;
-export const sendNotification = __TAURI_BUILD__
-  ? (options: { title: string; body: string; sound?: string }) =>
-      _tauriNotification?.sendNotification(options)
-  : undefined;
 
 // FS plugin
 export const writeTextFile = __TAURI_BUILD__

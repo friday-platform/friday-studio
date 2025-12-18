@@ -77,7 +77,6 @@
     "npm:@tauri-apps/api@2.9.1": "2.9.1",
     "npm:@tauri-apps/cli@^2.9.6": "2.9.6",
     "npm:@tauri-apps/plugin-fs@~2.4.4": "2.4.4",
-    "npm:@tauri-apps/plugin-notification@^2.3.3": "2.3.3",
     "npm:@tauri-apps/plugin-opener@^2.5.2": "2.5.2",
     "npm:@total-typescript/ts-reset@~0.6.1": "0.6.1",
     "npm:@types/react@^19.2.7": "19.2.7",
@@ -91,7 +90,6 @@
     "npm:eslint-plugin-svelte@^3.13.1": "3.13.1_eslint@9.39.2_svelte@5.46.0__acorn@8.15.0_postcss@8.5.6",
     "npm:eslint@^9.39.2": "9.39.2",
     "npm:evalite@^1.0.0-beta.15": "1.0.0-beta.15_ai@5.0.115__zod@4.2.1_zod@4.2.1",
-    "npm:eventsource-client@^1.2.0": "1.2.0",
     "npm:fast-glob@^3.3.3": "3.3.3",
     "npm:globals@^16.5.0": "16.5.0",
     "npm:hono-openapi@^1.1.2": "1.1.2_@hono+standard-validator@0.2.1__@standard-schema+spec@1.0.0__hono@4.11.1_@standard-community+standard-json@0.3.5__@standard-schema+spec@1.0.0__@types+json-schema@7.0.15__quansync@0.2.11__zod@4.2.1_@standard-community+standard-openapi@0.2.9__@standard-community+standard-json@0.3.5___@standard-schema+spec@1.0.0___@types+json-schema@7.0.15___quansync@0.2.11___zod@4.2.1__@standard-schema+spec@1.0.0__openapi-types@12.1.3__zod@4.2.1__@types+json-schema@7.0.15_@types+json-schema@7.0.15_hono@4.11.1_openapi-types@12.1.3_zod@4.2.1",
@@ -106,6 +104,7 @@
     "npm:jsonrepair@^3.13.1": "3.13.1",
     "npm:lint-staged@^16.2.6": "16.2.7",
     "npm:knip@5.75.1": "5.75.1_@types+node@25.0.3_typescript@5.9.3",
+    "npm:lint-staged@^16.2.6": "16.2.7",
     "npm:lint-staged@^16.2.7": "16.2.7",
     "npm:minimatch@^10.1.1": "10.1.1",
     "npm:nanoid@^5.1.6": "5.1.6",
@@ -2286,12 +2285,6 @@
         "@tauri-apps/api"
       ]
     },
-    "@tauri-apps/plugin-notification@2.3.3": {
-      "integrity": "sha512-Zw+ZH18RJb41G4NrfHgIuofJiymusqN+q8fGUIIV7vyCH+5sSn5coqRv/MWB9qETsUs97vmU045q7OyseCV3Qg==",
-      "dependencies": [
-        "@tauri-apps/api"
-      ]
-    },
     "@tauri-apps/plugin-opener@2.5.2": {
       "integrity": "sha512-ei/yRRoCklWHImwpCcDK3VhNXx+QXM9793aQ64YxpqVF0BDuuIlXhZgiAkc15wnPVav+IbkYhmDJIv5R326Mew==",
       "dependencies": [
@@ -3241,12 +3234,6 @@
     },
     "eventemitter3@5.0.1": {
       "integrity": "sha512-GWkBvjiSZK87ELrYOSESUYeVIc9mvLLf/nXalMOS5dYrgZq9o5OVkbZAVM06CVxYsCwH9BDZFPlQTlPA1j4ahA=="
-    },
-    "eventsource-client@1.2.0": {
-      "integrity": "sha512-kDI75RSzO3TwyG/K9w1ap8XwqSPcwi6jaMkNulfVeZmSeUM49U8kUzk1s+vKNt0tGrXgK47i+620Yasn1ccFiw==",
-      "dependencies": [
-        "eventsource-parser"
-      ]
     },
     "eventsource-parser@3.0.6": {
       "integrity": "sha512-Vo1ab+QXPzZ4tCa8SwIHJFaSzy4R6SHf7BY79rFBDf0idraZWAkYrDjDj8uWaSm3S2TK+hJ7/t1CEmZ7jXw+pg=="
@@ -5441,13 +5428,11 @@
             "npm:@tauri-apps/api@2.9.1",
             "npm:@tauri-apps/cli@^2.9.6",
             "npm:@tauri-apps/plugin-fs@~2.4.4",
-            "npm:@tauri-apps/plugin-notification@^2.3.3",
             "npm:@tauri-apps/plugin-opener@^2.5.2",
             "npm:ai@^5.0.115",
             "npm:eslint-config-prettier@^10.1.8",
             "npm:eslint-plugin-svelte@^3.13.1",
             "npm:eslint@^9.39.2",
-            "npm:eventsource-client@^1.2.0",
             "npm:globals@^16.5.0",
             "npm:prettier-plugin-svelte@^3.4.1",
             "npm:prettier@^3.7.4",

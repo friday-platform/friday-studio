@@ -51,13 +51,6 @@ class ChatContext {
     }),
   );
 
-  constructor() {
-    // Fetch recent chats on mount
-    this.loadChats().catch((err) => {
-      console.error("Failed to load recent chats:", err);
-    });
-  }
-
   /** Load chats - resets if no cursor, appends otherwise */
   async loadChats(options?: { reset?: boolean }): Promise<void> {
     const reset = options?.reset ?? !this.cursor;

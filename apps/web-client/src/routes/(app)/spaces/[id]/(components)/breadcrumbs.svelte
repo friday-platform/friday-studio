@@ -9,6 +9,7 @@ import { DropdownMenu } from "$lib/components/dropdown-menu";
 import { Icons } from "$lib/components/icons";
 import { toast } from "$lib/components/notification/notification.svelte";
 import { SegmentedControl } from "$lib/components/segmented-control";
+import { getSpacesContext } from "$lib/modules/spaces/context.svelte";
 import { getActivePage } from "$lib/utils/active-page.svelte";
 import { downloadYaml, getUniqueFileName } from "$lib/utils/files";
 import { BaseDirectory, openFile, writeTextFile } from "$lib/utils/tauri-loader";
@@ -21,6 +22,7 @@ interface Workspace {
 let { workspace }: { workspace: Workspace } = $props();
 
 const appCtx = getAppContext();
+const spacesCtx = getSpacesContext();
 
 async function handleExportWorkspace() {
   if (!workspace) return;
@@ -89,7 +91,7 @@ async function handleDeleteWorkspace() {
     }
 
     // Trigger workspace list refresh
-    appCtx.refreshWorkspaces();
+    spacesCtx.fetchWorkspaces();
 
     // Redirect to main page
     await goto(appCtx.routes.main);

@@ -1,6 +1,5 @@
 <script lang="ts">
-import { client, type InferResponseType, parseResult } from "@atlas/client/v2";
-import { onMount } from "svelte";
+import { client, parseResult } from "@atlas/client/v2";
 import { page } from "$app/state";
 import { getAppContext } from "$lib/app-context.svelte";
 import logo from "$lib/assets/logo.png";
@@ -10,56 +9,25 @@ import { DropdownMenu } from "$lib/components/dropdown-menu";
 import { Icons } from "$lib/components/icons";
 import { IconSmall } from "$lib/components/icons/small";
 import AddWorkspaceDialog from "$lib/modules/spaces/add-workspace.svelte";
+import { getSpacesContext } from "$lib/modules/spaces/context.svelte";
 import { getActivePage } from "$lib/utils/active-page.svelte";
 import { shareChat } from "$lib/utils/share-chat";
 import ScrollListener from "../scroll-listener.svelte";
 import ExpandDecal from "./expand-decal.svelte";
 import NavigationControls from "./navigation-controls.svelte";
 
-type WorkspacesListResponse = InferResponseType<typeof client.workspace.index.$get, 200>;
-
 const ctx = getAppContext();
 const chatContext = getChatContext();
-let spaces = $state<WorkspacesListResponse>([]);
+const spacesCtx = getSpacesContext();
 
 const currentChatId = $derived(page.params.chatId);
-
-let mounted = $state(false);
-let isDesktop = $state(__TAURI_BUILD__);
-
-async function loadSpaces() {
-  try {
-    const res = await parseResult(client.workspace.index.$get());
-    if (!res.ok) {
-      console.error("Failed to load spaces:", res.error);
-      spaces = [];
-      return;
-    }
-    const allSpaces = res.data;
-    spaces = allSpaces.filter(
-      (w) => w.name !== "atlas-conversation" && !w.path.includes("/examples/"),
-    );
-  } catch (error) {
-    console.error("Failed to load spaces:", error);
-    spaces = [];
-  }
-}
-
-onMount(() => {
-  mounted = true;
-  if (typeof window !== "undefined" && "__TAURI__" in window) {
-    isDesktop = true;
-  }
-  loadSpaces();
-  ctx.setWorkspacesRefreshCallback(loadSpaces);
-});
 </script>
 
 {#if __TAURI_BUILD__ && ctx.sidebarExpanded}
 	<NavigationControls />
 {/if}
 
-<header class:expanded={ctx.sidebarExpanded} class:mounted>
+<header class:expanded={ctx.sidebarExpanded}>
 	{#if !ctx.sidebarExpanded}
 		<a href={ctx.routes.main} class="logo" aria-label="Altas">
 			<img src={logo} alt="Altas" />
@@ -122,7 +90,7 @@ onMount(() => {
 					</a>
 				</li>
 
-				{#if !isDesktop}
+				{#if !__TAURI_BUILD__}
 					<li>
 						<a href="/logout" class="sidebar-item">
 							<Icons.LogOut />
@@ -144,7 +112,7 @@ onMount(() => {
 			</span>
 
 			<ul class="section-list">
-				{#each spaces as space (space.id)}
+				{#each spacesCtx.workspaces as space (space.id)}
 					<li>
 						<a
 							href={ctx.routes.spaces.item(space.id)}

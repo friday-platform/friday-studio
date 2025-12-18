@@ -7,14 +7,15 @@ import { getAppContext } from "$lib/app-context.svelte";
 import { Dialog } from "$lib/components/dialog";
 import { Icons } from "$lib/components/icons";
 import { invoke } from "$lib/utils/tauri-loader";
+import { getSpacesContext } from "./context.svelte";
 import { addWorkspace, handleWorkspaceFileDrop } from "./utils.svelte";
 
 let { triggerContents }: { triggerContents: Snippet } = $props();
 
 const appCtx = getAppContext();
+const spacesCtx = getSpacesContext();
 
 let workspaceConfig = $state<WorkspaceConfig | null>(null);
-let _isCreating = $state(false);
 let unlisten: (() => void) | undefined;
 
 async function handleSelectFile() {
@@ -112,15 +113,13 @@ onDestroy(() => {
 
 							try {
 								await addWorkspace(workspaceConfig, {
-									refreshWorkspaces: () => appCtx.refreshWorkspaces(),
+									refreshWorkspaces: () => spacesCtx.fetchWorkspaces(),
 									getSpaceRoute: (id: string) => appCtx.routes.spaces.item(id)
 								});
 
 								open.set(false);
 							} catch (error) {
 								console.error('Failed to add workspace:', error);
-							} finally {
-								isCreating = false;
 							}
 						}}
 					>

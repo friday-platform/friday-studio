@@ -23,16 +23,24 @@ const fileName = $derived.by(() => {
   return paths[paths.length - 1];
 });
 
-const fileContents = $derived.by(async () => {
+let fileContents = $state<string | undefined>();
+
+async function fetchFile() {
   const result = await parseResult(
     client.artifactsStorage[":id"].contents.$get({ param: { id: artifactId }, query: {} }),
   );
 
   if (!result.ok) {
-    throw new Error("Failed to fetch file contents");
+    console.warn("Failed to fetch file contents");
+  } else {
+    fileContents = result.data.contents;
   }
+}
 
-  return result.data.contents;
+$effect(() => {
+  if (artifactId) {
+    fetchFile();
+  }
 });
 
 async function handleDownload(content: string) {
@@ -84,10 +92,10 @@ async function handleOpenInFinder(savedFileName: string) {
 				<DropdownMenu.Content>
 					<DropdownMenu.List>
 						<DropdownMenu.Item
-							onclick={async () => {
-								const content = await fileContents;
+							onclick={() => {
+								if (!fileContents) return;
 
-								handleDownload(content);
+								handleDownload(fileContents);
 							}}
 						>
 							Download File
@@ -95,9 +103,9 @@ async function handleOpenInFinder(savedFileName: string) {
 						<DropdownMenu.Separator />
 						<DropdownMenu.Label>Copy</DropdownMenu.Label>
 						<DropdownMenu.Item
-							onclick={async () => {
-								const content = await fileContents;
-								copyToClipboard(content);
+							onclick={() => {
+								if (!fileContents) return;
+								copyToClipboard(fileContents);
 							}}
 						>
 							Text
@@ -115,13 +123,9 @@ async function handleOpenInFinder(savedFileName: string) {
 		</header>
 
 		<div class="contents" use:content {...$content} class:expanded={$open}>
-			{#await fileContents}
-				<p class="loading">Loading...</p>
-			{:then content}
+			{#if fileContents}
 				<pre><code>{content}</code></pre>
-			{:catch error}
-				<p class="error">{error}</p>
-			{/await}
+			{/if}
 		</div>
 
 		{#if !$open}

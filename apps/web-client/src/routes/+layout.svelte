@@ -10,7 +10,7 @@ import { initTauri, listen, Webview, Window } from "$lib/utils/tauri-loader";
 
 const { children } = $props();
 const ctx = setAppContext();
-setChatContext();
+const chatCtx = setChatContext();
 
 let showDiagnosticsDialog = $state(false);
 let showFindBar = $state(false);
@@ -55,6 +55,9 @@ async function openSubWindow() {
 }
 
 onMount(() => {
+  // Load recent chats
+  chatCtx.loadChats();
+
   // Setup Tauri event listeners for desktop builds
   let unlistenAbout: (() => void) | undefined;
   let unlistenDiagnostics: (() => void) | undefined;

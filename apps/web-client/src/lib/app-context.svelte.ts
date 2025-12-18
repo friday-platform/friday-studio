@@ -1,7 +1,6 @@
 import { getContext, setContext } from "svelte";
 import { SvelteMap } from "svelte/reactivity";
-import { base } from "$app/paths";
-import { DaemonClient } from "./modules/client/daemon.ts";
+import { resolve } from "$app/paths";
 
 const KEY = Symbol();
 
@@ -47,21 +46,23 @@ export function getFileType(path: string) {
 
 function getRouteConfig() {
   return {
-    main: `${base}/`,
+    main: "/",
     library: {
-      list: `${base}/library`,
-      item: (libraryId: string) => `${base}/library/${libraryId}`,
+      list: resolve("/library", {}),
+      item: (libraryId: string) => resolve("/library/[libraryId]", { libraryId }),
     },
     sessions: {
-      list: `${base}/sessions`,
-      item: (sessionId: string) => `${base}/sessions/${sessionId}`,
+      list: resolve("/sessions", {}),
+      item: (sessionId: string) => resolve("/sessions/[sessionId]", { sessionId }),
     },
-    chat: { item: (id: string) => `${base}/chat/${id}` },
+    chat: { item: (chatId: string) => resolve("/chat/[chatId]", { chatId }) },
     spaces: {
-      item: (id: string, view?: string) =>
-        view ? `${base}/spaces/${id}/${view}` : `${base}/spaces/${id}`,
+      item: (spaceId: string, view?: string) =>
+        view
+          ? resolve("/spaces/[spaceId]/[view]", { spaceId, view })
+          : resolve("/spaces/[spaceId]", { spaceId }),
     },
-    settings: `${base}/settings`,
+    settings: resolve("/settings", {}),
   } as const;
 }
 
@@ -80,12 +81,10 @@ function getInitialSidebarState(): boolean {
 class AppContext {
   keyboard = createKeyboard();
   routes = getRouteConfig();
-  daemonClient = new DaemonClient();
   stagedFiles = createStagedFiles();
 
   #sidebarExpanded = $state(getInitialSidebarState());
   addWorkspaceDialogOpen = $state(false);
-  #workspacesRefreshCallback: (() => void) | null = null;
 
   get sidebarExpanded() {
     return this.#sidebarExpanded;
@@ -95,16 +94,6 @@ class AppContext {
     this.#sidebarExpanded = value;
     if (typeof window !== "undefined") {
       localStorage.setItem("atlas:sidebarExpanded", JSON.stringify(value));
-    }
-  }
-
-  setWorkspacesRefreshCallback(callback: () => void) {
-    this.#workspacesRefreshCallback = callback;
-  }
-
-  refreshWorkspaces() {
-    if (this.#workspacesRefreshCallback) {
-      this.#workspacesRefreshCallback();
     }
   }
 }

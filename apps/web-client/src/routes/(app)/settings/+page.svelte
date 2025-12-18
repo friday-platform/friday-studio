@@ -1,11 +1,11 @@
 <script lang="ts">
 import { onMount } from "svelte";
-import { getAppContext } from "$lib/app-context.svelte";
 import { BUILD_INFO } from "$lib/build-info";
 import { Icons } from "$lib/components/icons";
+import { getClientContext } from "$lib/modules/client/context.svelte";
 import { getVersion, invoke } from "$lib/utils/tauri-loader";
 
-const ctx = getAppContext();
+const ctx = getClientContext();
 
 let envVars = $state<{ key: string; value: string; id: number }[]>([]);
 let _isSaving = $state(false);

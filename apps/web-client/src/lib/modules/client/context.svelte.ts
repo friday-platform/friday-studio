@@ -1,130 +1,24 @@
-import type { AtlasUIMessage, AtlasUIMessageChunk, AtlasUIMessagePart } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
 import { getAtlasDaemonUrl } from "@atlas/oapi-client";
-import { readUIMessageStream } from "ai";
-import { setContext } from "svelte";
-import {
-  isPermissionGranted,
-  requestPermission,
-  sendNotification,
-} from "../../utils/tauri-loader.ts";
-import { ConversationClient, type ConversationSession } from "./conversation.ts";
-import type { DaemonClient } from "./daemon.ts";
+import { getContext, setContext } from "svelte";
+import { DaemonClient } from "./daemon.ts";
 
 const KEY = Symbol();
 
-// ABSOLUTE notification blocker - prevents ANY duplicate notifications
-let NOTIFICATION_BLOCKED_UNTIL = 0;
-
 class ClientContext {
-  client: DaemonClient;
+  daemonClient = new DaemonClient();
 
   private isSetupComplete = false;
   private healthCheckInterval: ReturnType<typeof setInterval> | null = null;
   private countdownInterval: ReturnType<typeof setInterval> | null = null;
   private readonly HEALTH_CHECK_INTERVAL_MS = 5000;
-  private windowFocused = true;
-  private notificationPermissionGranted = false;
-  private waitingForAtlasResponse = false;
-  private notifiedSessions = new Set<string>();
-  private currentSessionForNotification: string | null = null;
 
-  public conversationClient: ConversationClient | null = null;
-  sseStream: ReadableStream<AtlasUIMessageChunk> | null = null;
-  // Svelte reactive values
-  typingState = $state({ isTyping: false, elapsedSeconds: 0 });
-  messages = $state<AtlasUIMessagePart[]>([]);
-  messageHistory = $state<AtlasUIMessagePart[]>([]);
-  user = $state<string>("NA");
-  atlasSessionId = $state<string | null>(null);
   daemonStatus = $state<"connected" | "error" | "idle">("idle");
   reconnectCountdown = $state<number>(0);
   conversationSessionId = $state<string | null>(null);
 
-  sseAbortController: AbortController | null = null;
-
-  constructor(client: DaemonClient) {
-    this.client = client;
-    // Only initialize Tauri features in the browser, not during SSR
-    if (typeof window !== "undefined") {
-      this.initializeNotifications();
-      this.setupWindowFocusTracking();
-    }
-  }
-
-  private async initializeNotifications() {
-    // Use __TAURI_BUILD__ for tree-shaking - this check is eliminated in web builds
-    if (!isPermissionGranted || !requestPermission) return;
-
-    try {
-      let permissionGranted = await isPermissionGranted();
-
-      if (!permissionGranted) {
-        const permission = await requestPermission();
-        permissionGranted = permission === "granted";
-      }
-
-      this.notificationPermissionGranted = permissionGranted;
-    } catch (error) {
-      console.error("Failed to initialize notifications:", error);
-    }
-  }
-
-  private setupWindowFocusTracking() {
-    if (typeof document !== "undefined") {
-      document.addEventListener("visibilitychange", () => {
-        this.windowFocused = document.visibilityState === "visible";
-
-        // When window gains focus, clear notification state but keep message tracking
-        if (this.windowFocused) {
-          this.waitingForAtlasResponse = false;
-          // Don't clear notifiedMessages - we need to remember what we've already notified about
-          // Also reset the blocker when window gains focus
-          NOTIFICATION_BLOCKED_UNTIL = 0;
-        }
-      });
-      this.windowFocused = document.visibilityState === "visible";
-    }
-  }
-
-  private sendResponseNotification() {
-    if (!sendNotification) return;
-
-    const now = Date.now();
-
-    // ABSOLUTE BLOCK - no notifications allowed until cooldown expires
-    if (now < NOTIFICATION_BLOCKED_UNTIL) {
-      return;
-    }
-
-    // Block all future notifications for 30 seconds
-    NOTIFICATION_BLOCKED_UNTIL = now + 30000;
-
-    try {
-      sendNotification({
-        title: "Atlas",
-        body: "Atlas is waiting for your input",
-        sound: "default",
-      });
-    } catch (error) {
-      console.error("Failed to send notification:", error);
-    }
-  }
-
   getAtlasDaemonUrl() {
     return getAtlasDaemonUrl();
-  }
-
-  async getUser() {
-    if (!this.conversationClient) {
-      return;
-    }
-
-    const data = await this.conversationClient.getUser();
-
-    if (data.success) {
-      this.user = data.currentUser;
-    }
   }
 
   setup() {
@@ -134,177 +28,7 @@ class ClientContext {
     }
 
     // Clean up any existing connections but preserve session data
-    this.cleanup(true, true);
-  }
-
-  connect() {
-    try {
-      // Use "atlas-conversation" as the workspace ID for the conversation system workspace
-      this.conversationClient = new ConversationClient(
-        getAtlasDaemonUrl(),
-        "atlas-conversation",
-        "cli-user",
-      );
-    } catch (error) {
-      // Clear any loading messages and show error
-      const errorMessage = error instanceof Error ? error.message : String(error);
-
-      console.error(`Failed to start Atlas daemon: ${errorMessage}`);
-    }
-  }
-
-  async createSession() {
-    try {
-      if (!this.conversationClient) {
-        this.connect();
-      }
-
-      let session: ConversationSession | null | undefined;
-
-      // Try to reconnect to existing session if we have one
-      if (this.conversationSessionId) {
-        const existingSession = await this.conversationClient?.getSession(
-          this.conversationSessionId,
-        );
-
-        if (existingSession) {
-          session = existingSession;
-        } else {
-          session = await this.conversationClient?.createSession();
-
-          // Clear messages since we're starting fresh
-          this.messages = [];
-        }
-      } else {
-        session = await this.conversationClient?.createSession();
-        // Clear notification tracking for new conversation
-        this.notifiedSessions.clear();
-        this.waitingForAtlasResponse = false;
-        this.currentSessionForNotification = null;
-      }
-
-      if (!session) return;
-
-      // duplicate if there is an existing session, but cleaner overall to ensure the session exists first
-      this.conversationSessionId = session.sessionId;
-
-      const stream = this.conversationClient?.createMessageStream(session.sseUrl);
-
-      // Create AbortController for SSE
-      this.sseAbortController = new AbortController();
-
-      if (!stream) return;
-
-      this.sseStream = stream;
-
-      this.getUser();
-
-      // Mark setup as complete before starting the stream
-      this.isSetupComplete = true;
-      this.daemonStatus = "connected";
-
-      // Clear countdown when connected
-      this.reconnectCountdown = 0;
-      this.stopCountdownInterval();
-
-      // Start health check interval
-      this.startHealthCheckInterval();
-
-      for await (const uiMessage of readUIMessageStream<AtlasUIMessage>({ stream })) {
-        // Check if we should stop processing (e.g., if cleanup was called)
-        if (!this.sseAbortController || this.sseAbortController.signal.aborted) {
-          break;
-        }
-
-        // Track sessions and messages in this batch
-        let currentBatchSessionId: string | null = null;
-        let sessionFinishing: string | null = null;
-
-        // Check what's in this message batch
-        uiMessage.parts.forEach((part) => {
-          if (part.type === "data-session-start") {
-            const sessionId = part.data.sessionId;
-            this.atlasSessionId = sessionId;
-            currentBatchSessionId = sessionId;
-            this.typingState.isTyping = true;
-          } else if (part.type === "data-user-message" && part.data) {
-            if (currentBatchSessionId) {
-              // Check if this is a NEW session we haven't notified for yet
-              if (!this.notifiedSessions.has(currentBatchSessionId)) {
-                this.notifiedSessions.add(currentBatchSessionId);
-                this.currentSessionForNotification = currentBatchSessionId;
-                this.waitingForAtlasResponse = true;
-              }
-            }
-          } else if (part.type === "data-session-finish") {
-            sessionFinishing = this.atlasSessionId;
-            this.typingState.isTyping = false;
-            this.atlasSessionId = null;
-          } else if (part.type === "data-session-cancel") {
-            // Store the session ID before clearing it
-            const cancelledSessionId = this.atlasSessionId;
-            this.typingState.isTyping = false;
-            this.atlasSessionId = null;
-            if (this.currentSessionForNotification === cancelledSessionId) {
-              this.waitingForAtlasResponse = false;
-              this.currentSessionForNotification = null;
-            }
-          }
-        });
-
-        // Handle session finish - check if we need to send notification
-        if (
-          sessionFinishing &&
-          sessionFinishing === this.currentSessionForNotification &&
-          this.waitingForAtlasResponse &&
-          !this.windowFocused &&
-          this.notificationPermissionGranted
-        ) {
-          // Clear the flag to prevent repeated notifications
-          this.waitingForAtlasResponse = false;
-          this.currentSessionForNotification = null;
-          this.sendResponseNotification();
-        } else if (
-          sessionFinishing &&
-          sessionFinishing === this.currentSessionForNotification &&
-          this.waitingForAtlasResponse
-        ) {
-          // Clear the flag since we've handled this response
-          this.waitingForAtlasResponse = false;
-          this.currentSessionForNotification = null;
-        }
-
-        this.messages = uiMessage.parts;
-      }
-
-      // If we reached here and the abort signal wasn't triggered,
-      // it means the SSE stream ended unexpectedly (daemon likely stopped)
-      if (this.sseAbortController && !this.sseAbortController.signal.aborted) {
-        console.error("SSE stream ended unexpectedly - daemon may be down");
-        this.daemonStatus = "error";
-        this.isSetupComplete = false;
-        // Keep health checks running and preserve session to reconnect
-        this.cleanup(false, true);
-        // Ensure health checks and countdown are running
-        if (this.healthCheckInterval === null) {
-          this.startHealthCheckInterval();
-        }
-      }
-    } catch (error) {
-      // Clear any loading messages and show error
-      const errorMessage = error instanceof Error ? error.message : String(error);
-
-      console.error(`Failed to setup conversation client: ${errorMessage}`);
-
-      // Mark setup as incomplete and set error status
-      this.isSetupComplete = false;
-      this.daemonStatus = "error";
-
-      // Clean up on error but keep health checks running and preserve session
-      this.cleanup(false, true);
-      // Ensure health checks are running to detect when daemon comes back
-      this.startHealthCheckInterval();
-    }
+    this.cleanup();
   }
 
   async checkHealth() {
@@ -328,8 +52,7 @@ class ClientContext {
       } else {
         this.daemonStatus = "error";
         this.isSetupComplete = false;
-        // Clean up resources but keep health checks running and preserve session
-        this.cleanup(false, true);
+
         // Ensure health checks continue to detect when daemon comes back
         if (this.healthCheckInterval === null) {
           this.startHealthCheckInterval();
@@ -338,8 +61,7 @@ class ClientContext {
     } catch {
       this.daemonStatus = "error";
       this.isSetupComplete = false;
-      // Clean up resources but keep health checks running and preserve session
-      this.cleanup(false, true);
+
       // Ensure health checks continue to detect when daemon comes back
       if (this.healthCheckInterval === null) {
         this.startHealthCheckInterval();
@@ -347,33 +69,11 @@ class ClientContext {
     }
   }
 
-  private cleanup(stopHealthChecks = true, preserveSession = false) {
-    // Abort any existing SSE connection
-    if (this.sseAbortController) {
-      this.sseAbortController.abort();
-      this.sseAbortController = null;
-    }
-
-    // Clear stream reference
-    this.sseStream = null;
-
-    // Clear session references only if not preserving
-    if (!preserveSession) {
-      this.conversationSessionId = null;
-      this.atlasSessionId = null;
-      // Only clear messages if not preserving session
-      this.messages = [];
-    }
-
-    // Reset typing state
-    this.typingState.isTyping = false;
-
+  private cleanup() {
     // Stop health check interval only if requested
-    if (stopHealthChecks) {
-      this.stopHealthCheckInterval();
-      this.stopCountdownInterval();
-      this.reconnectCountdown = 0;
-    }
+    this.stopHealthCheckInterval();
+    this.stopCountdownInterval();
+    this.reconnectCountdown = 0;
   }
 
   startHealthCheckInterval() {
@@ -421,7 +121,11 @@ class ClientContext {
   }
 }
 
-export function setClientContext(client: DaemonClient) {
-  const ctx = new ClientContext(client);
+export function setClientContext() {
+  const ctx = new ClientContext();
   return setContext(KEY, ctx);
+}
+
+export function getClientContext() {
+  return getContext<ReturnType<typeof setClientContext>>(KEY);
 }
