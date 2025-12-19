@@ -14,10 +14,10 @@ import { OAuthService } from "../src/oauth/service.ts";
 import { registry } from "../src/providers/registry.ts";
 
 /**
- * Helper to create a JWT with tempest_user_id claim using RSA key
+ * Helper to create a JWT with user_metadata.tempest_user_id claim using RSA key
  */
 async function createTestJWT(userId: string, privateKey: CryptoKey): Promise<string> {
-  return await new jose.SignJWT({ tempest_user_id: userId })
+  return await new jose.SignJWT({ sub: userId, user_metadata: { tempest_user_id: userId } })
     .setProtectedHeader({ alg: "RS256" })
     .sign(privateKey);
 }
@@ -159,7 +159,7 @@ Deno.test(
       // Request with invalid JWT should return 401
       const res = await app.request("/v1/credentials/type/apikey", {
         method: "GET",
-        headers: { "X-Atlas-Key": "invalid.jwt.token" },
+        headers: { Authorization: "Bearer invalid.jwt.token" },
       });
 
       assertEquals(res.status, 401);
@@ -170,36 +170,39 @@ Deno.test(
       await cleanup();
     });
 
-    await t.step("prod mode: valid JWT with X-Atlas-Key = userId extracted", async () => {
-      const { app, keyPair, cleanup } = await setupProdAuthApp(storage, oauthService);
+    await t.step(
+      "prod mode: valid JWT with Authorization = userId extracted from JWT",
+      async () => {
+        const { app, keyPair, cleanup } = await setupProdAuthApp(storage, oauthService);
 
-      // Create JWT with tempest_user_id claim using jose (which accepts CryptoKey)
-      const userId = "test-user-123";
-      const token = await createTestJWT(userId, keyPair.privateKey);
+        // Create JWT with user_metadata.tempest_user_id claim using jose (which accepts CryptoKey)
+        const userId = "test-user-123";
+        const token = await createTestJWT(userId, keyPair.privateKey);
 
-      // Request with X-Atlas-Key header should succeed
-      const res = await app.request("/v1/credentials/type/apikey", {
-        method: "GET",
-        headers: { "X-Atlas-Key": token, "X-Atlas-User-ID": userId },
-      });
+        // Request with Authorization header should succeed
+        const res = await app.request("/v1/credentials/type/apikey", {
+          method: "GET",
+          headers: { Authorization: `Bearer ${token}` },
+        });
 
-      // Should succeed (200)
-      assertEquals(res.status, 200);
+        // Should succeed (200)
+        assertEquals(res.status, 200);
 
-      await cleanup();
-    });
+        await cleanup();
+      },
+    );
 
     await t.step("prod mode: valid JWT with Authorization Bearer = userId extracted", async () => {
       const { app, keyPair, cleanup } = await setupProdAuthApp(storage, oauthService);
 
-      // Create JWT with tempest_user_id claim using jose (which accepts CryptoKey)
+      // Create JWT with user_metadata.tempest_user_id claim using jose (which accepts CryptoKey)
       const userId = "test-user-456";
       const token = await createTestJWT(userId, keyPair.privateKey);
 
       // Request with Authorization header should succeed
       const res = await app.request("/v1/credentials/type/apikey", {
         method: "GET",
-        headers: { Authorization: `Bearer ${token}`, "X-Atlas-User-ID": userId },
+        headers: { Authorization: `Bearer ${token}` },
       });
 
       // Should succeed (200)
@@ -302,44 +305,19 @@ Deno.test(
       };
     }
 
-    await t.step("prod: no X-Atlas-User-ID header → 401 missing_user_id", async () => {
+    await t.step("prod: JWT missing tempest_user_id → 401 missing_user_id", async () => {
       const { app, keyPair, cleanup } = await setupProdApp();
 
-      const token = await createTestJWT("test-user", keyPair.privateKey);
+      // Create JWT without user_metadata.tempest_user_id
+      const token = await new jose.SignJWT({ sub: "test-user" })
+        .setProtectedHeader({ alg: "RS256" })
+        .sign(keyPair.privateKey);
+
       const res = await app.request("/v1/credentials/type/apikey", {
         method: "GET",
         headers: { Authorization: `Bearer ${token}` },
       });
 
-      assertEquals(res.status, 401);
-      const json = await res.json();
-      assertEquals(json, { error: "missing_user_id" });
-
-      await cleanup();
-    });
-
-    await t.step("prod: empty X-Atlas-User-ID header → 401 (treated as missing)", async () => {
-      const { app, keyPair, cleanup } = await setupProdApp();
-
-      const token = await createTestJWT("test-user", keyPair.privateKey);
-
-      // Empty string header - in JavaScript, empty string is falsy
-      // so !userId evaluates to true, triggering 401
-      const res = await app.request("/v1/credentials/apikey", {
-        method: "PUT",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "X-Atlas-User-ID": "", // Empty string fails !userId check
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          provider: testProvider.id,
-          label: "test-cred",
-          secret: { token: "test-token-123" },
-        }),
-      });
-
-      // Should fail with 401 - empty string is falsy, treated like missing header
       assertEquals(res.status, 401);
       const json = await res.json();
       assertEquals(json, { error: "missing_user_id" });
@@ -389,48 +367,23 @@ Deno.test(
       else Deno.env.delete("LINK_DEV_MODE");
     });
 
-    await t.step("header case insensitivity", async () => {
-      const { app, keyPair, cleanup } = await setupProdApp();
-
-      const token = await createTestJWT("test-user", keyPair.privateKey);
-      const userId = "case-test-user";
-
-      // Test various case combinations - HTTP headers are case-insensitive per RFC 7230
-      const casings = ["X-Atlas-User-ID", "x-atlas-user-id", "X-ATLAS-USER-ID", "x-Atlas-User-Id"];
-
-      for (const headerName of casings) {
-        const res = await app.request("/v1/credentials/type/apikey", {
-          method: "GET",
-          headers: { Authorization: `Bearer ${token}`, [headerName]: userId },
-        });
-
-        assertEquals(res.status, 200, `Failed with header: ${headerName}`);
-      }
-
-      await cleanup();
-    });
-
     await t.step("special chars in user ID propagate correctly", async () => {
       const { app, keyPair, cleanup } = await setupProdApp();
-
-      const token = await createTestJWT("test-user", keyPair.privateKey);
 
       const testCases = [
         { userId: "550e8400-e29b-41d4-a716-446655440000", desc: "UUID" },
         { userId: "org/user", desc: "with slashes" },
         { userId: "user-123_456", desc: "with dashes/underscores" },
-        // Note: Unicode not tested - HTTP headers must be ByteStrings (ASCII only)
       ];
 
       for (const { userId, desc } of testCases) {
-        // Create credential with special userId
+        // Create JWT with special userId in user_metadata
+        const token = await createTestJWT(userId, keyPair.privateKey);
+
+        // Create credential with special userId from JWT
         const putRes = await app.request("/v1/credentials/apikey", {
           method: "PUT",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "X-Atlas-User-ID": userId,
-            "Content-Type": "application/json",
-          },
+          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
           body: JSON.stringify({
             provider: testProvider.id,
             label: `test-${desc}`,

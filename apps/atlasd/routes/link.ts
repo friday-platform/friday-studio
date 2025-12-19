@@ -16,7 +16,8 @@ const PROXY_PREFIX = "/api/link";
 
 /**
  * Proxy all Link requests from /api/link/* to Link service /v1/*
- * Forwards X-Atlas-User-ID header for tenant isolation.
+ * Forwards Authorization header with ATLAS_KEY for Link authentication.
+ * Authenticates with Link using ATLAS_KEY from env.
  */
 linkRoutes.all("/*", (c) => {
   // Transform path: /api/link/foo → /v1/foo, /api/link/v1/foo → /v1/foo
@@ -27,17 +28,23 @@ linkRoutes.all("/*", (c) => {
 
   const originalUrl = new URL(c.req.url);
 
+  const headers: Record<string, string> = {
+    ...Object.fromEntries(c.req.raw.headers),
+    // Forwarded headers so Link can generate correct external URLs
+    "X-Forwarded-Host": originalUrl.host,
+    "X-Forwarded-Proto": originalUrl.protocol.replace(":", ""),
+    "X-Forwarded-Prefix": PROXY_PREFIX,
+  };
+
+  // Authenticate with Link using service ATLAS_KEY (read at request time, not module load)
+  const atlasKey = process.env.ATLAS_KEY;
+  if (atlasKey) {
+    headers.Authorization = `Bearer ${atlasKey}`;
+  }
+
   return proxy(targetUrl, {
     ...c.req.raw,
-    headers: {
-      ...Object.fromEntries(c.req.raw.headers),
-      // Ensure X-Atlas-User-ID is set (default to "dev" if missing)
-      "X-Atlas-User-ID": c.req.header("X-Atlas-User-ID") || "dev",
-      // Forwarded headers so Link can generate correct external URLs
-      "X-Forwarded-Host": originalUrl.host,
-      "X-Forwarded-Proto": originalUrl.protocol.replace(":", ""),
-      "X-Forwarded-Prefix": PROXY_PREFIX,
-    },
+    headers,
     // Don't follow redirects - pass them through to the client
     customFetch: (req) => fetch(req, { redirect: "manual" }),
   });

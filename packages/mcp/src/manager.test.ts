@@ -338,8 +338,6 @@ describe("MCPManager - JWT Authentication", () => {
 
       // Assert: No JWT in headers
       assertEquals(capturedHeaders.authorization, undefined);
-      // But X-Atlas-User-ID should still be present
-      assertExists(capturedHeaders["x-atlas-user-id"]);
     } finally {
       // Cleanup
       if (originalDevMode !== undefined) {

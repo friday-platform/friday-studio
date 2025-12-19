@@ -30,5 +30,5 @@ export function getMetrics(): string {
     lines.push(`link_http_requests_total${labels} ${count}`);
     lines.push(`link_http_request_duration_ms_total${labels} ${ms}`);
   }
-  return lines.join("\n") + "\n";
+  return `${lines.join("\n")}\n`;
 }

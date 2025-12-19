@@ -59,7 +59,7 @@ export async function signLinkJWT(userId: string, privateKeyPem: string): Promis
 
   const now = Math.floor(Date.now() / 1000);
 
-  return await new jose.SignJWT({})
+  return await new jose.SignJWT({ user_metadata: { tempest_user_id: userId } })
     .setProtectedHeader({ alg: "RS256" })
     .setIssuer("atlas-daemon")
     .setSubject(userId)
@@ -567,10 +567,8 @@ export class MCPManager {
 
     logger.debug("Fetching credential from Link", { credentialId, userId, devMode });
 
-    // Build headers
-    const headers: Record<string, string> = { "X-Atlas-User-ID": userId };
+    const headers: Record<string, string> = {};
 
-    // Add JWT in production mode
     if (!devMode) {
       if (!this.linkPrivateKey) {
         throw new Error(
@@ -579,19 +577,14 @@ export class MCPManager {
         );
       }
 
-      try {
-        const jwt = await signLinkJWT(userId, this.linkPrivateKey);
-        headers.Authorization = `Bearer ${jwt}`;
+      const jwt = await signLinkJWT(userId, this.linkPrivateKey);
+      headers.Authorization = `Bearer ${jwt}`;
 
-        logger.debug("Generated Link JWT", {
-          credentialId,
-          userId,
-          jwtPrefix: `${jwt.substring(0, 20)}...`,
-        });
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        throw new Error(`Failed to sign JWT for Link authentication: ${message}`);
-      }
+      logger.debug("Generated Link JWT", {
+        credentialId,
+        userId,
+        jwtPrefix: `${jwt.substring(0, 20)}...`,
+      });
     }
 
     const result = await parseResult(

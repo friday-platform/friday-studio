@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { readFileSync } from "node:fs";
 import { logger } from "@atlas/logger";
 import { jwt } from "hono/jwt";
+import { routePath } from "hono/route";
 import { trimTrailingSlash } from "hono/trailing-slash";
 import postgres from "postgres";
 import { CypherStorageAdapter } from "./adapters/cypher-storage-adapter.ts";
@@ -45,22 +46,31 @@ export function createApp(storage: StorageAdapter, oauthService: OAuthService) {
    * Stores token in AsyncLocalStorage so CypherHttpClient can access it.
    */
   const authTokenMiddleware = factory.createMiddleware((c, next) => {
-    const authHeader = c.req.header("Authorization") ?? c.req.header("X-Atlas-Key");
-    const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : (authHeader ?? "");
+    const authHeader = c.req.header("Authorization");
+    const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : "";
     return authTokenStorage.run(token, () => next());
   });
 
   /**
-   * Tenancy middleware - extracts userId from Traefik header (X-Atlas-User-ID).
-   * In dev mode, falls back to 'dev' user if header is missing.
-   * In production, requires the header to be present.
+   * Tenancy middleware - extracts userId from JWT payload.
+   * In dev mode, falls back to 'dev' user.
+   * In production, requires JWT with user_metadata.tempest_user_id.
    */
   const tenancyMiddleware = factory.createMiddleware(async (c, next) => {
-    const userId = c.req.header("X-Atlas-User-ID");
-    if (!userId && !cfg.devMode) {
+    // In dev mode (no JWT verification), use fallback
+    if (cfg.devMode) {
+      c.set("userId", "dev");
+      await next();
+      return;
+    }
+
+    // In prod, extract from verified JWT payload
+    const payload = c.get("jwtPayload");
+    const userId = payload?.user_metadata?.tempest_user_id;
+    if (!userId) {
       return c.json({ error: "missing_user_id" }, 401);
     }
-    c.set("userId", userId ?? "dev");
+    c.set("userId", userId);
     await next();
   });
 
@@ -79,7 +89,7 @@ export function createApp(storage: StorageAdapter, oauthService: OAuthService) {
     if (path === "/health" || path === "/metrics") return;
 
     // Record metrics using route pattern (e.g., /v1/credentials/:id) for bounded cardinality
-    recordRequest(method, c.req.routePath, status, duration);
+    recordRequest(method, routePath(c), status, duration);
 
     logger.info("request", { method, path, status, durationMs: duration, userId: c.get("userId") });
   });
@@ -105,20 +115,10 @@ export function createApp(storage: StorageAdapter, oauthService: OAuthService) {
     }
     const publicKeyPem = readFileSync(cfg.jwtPublicKeyFile, "utf-8").trim();
 
-    // hono/jwt can only check one header at a time, so we need to wrap it
-    // to check both X-Atlas-Key and Authorization headers
     const jwtMiddleware = jwt({ alg: "RS256", secret: publicKeyPem });
-    const jwtChecker = factory.createMiddleware((c, next) => {
-      const atlasKey = c.req.header("X-Atlas-Key");
-      if (atlasKey) {
-        // Set as Authorization header so jwt middleware can find it
-        c.req.raw.headers.set("Authorization", `Bearer ${atlasKey}`);
-      }
-      return jwtMiddleware(c, next);
-    });
 
-    baseApp.use("/v1/*", jwtChecker);
-    baseApp.use("/internal/*", jwtChecker);
+    baseApp.use("/v1/*", jwtMiddleware);
+    baseApp.use("/internal/*", jwtMiddleware);
   }
 
   // Apply auth token and tenancy middleware to protected routes (after JWT verification)
