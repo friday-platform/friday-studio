@@ -1,9 +1,6 @@
-//go:build appengine || plan9 || js || wasip1 || wasi
-// +build appengine plan9 js wasip1 wasi
-
 package maxminddb
 
-import "io/ioutil"
+import "os"
 
 // Open takes a string path to a MaxMind DB file and returns a Reader
 // structure or an error. The database file is opened using a memory map
@@ -11,7 +8,7 @@ import "io/ioutil"
 // as WebAssembly or Google App Engine, the database is loaded into memory.
 // Use the Close method on the Reader object to return the resources to the system.
 func Open(file string) (*Reader, error) {
-	bytes, err := ioutil.ReadFile(file)
+	bytes, err := os.ReadFile(file)
 	if err != nil {
 		return nil, err
 	}
