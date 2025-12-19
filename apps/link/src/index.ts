@@ -9,6 +9,7 @@ import { DenoKVStorageAdapter } from "./adapters/deno-kv-adapter.ts";
 import { config, readConfig } from "./config.ts";
 import { CypherHttpClient } from "./cypher-client.ts";
 import { factory } from "./factory.ts";
+import { getMetrics, recordRequest } from "./metrics.ts";
 import { OAuthService } from "./oauth/service.ts";
 import { registry } from "./providers/registry.ts";
 import { createCredentialsRoutes, createInternalCredentialsRoutes } from "./routes/credentials.ts";
@@ -74,8 +75,11 @@ export function createApp(storage: StorageAdapter, oauthService: OAuthService) {
     const method = c.req.method;
     const path = c.req.path;
 
-    // Skip health checks to reduce noise
-    if (path === "/health") return;
+    // Skip health checks and metrics to reduce noise
+    if (path === "/health" || path === "/metrics") return;
+
+    // Record metrics using route pattern (e.g., /v1/credentials/:id) for bounded cardinality
+    recordRequest(method, c.req.routePath, status, duration);
 
     logger.info("request", { method, path, status, durationMs: duration, userId: c.get("userId") });
   });
@@ -87,7 +91,12 @@ export function createApp(storage: StorageAdapter, oauthService: OAuthService) {
     // Redirect trailing slashes to canonical paths
     .use(trimTrailingSlash())
     // Health check
-    .get("/health", (c) => c.json({ status: "ok", service: "link" }));
+    .get("/health", (c) => c.json({ status: "ok", service: "link" }))
+    // Prometheus metrics
+    .get("/metrics", (c) => {
+      c.header("Content-Type", "text/plain; version=0.0.4; charset=utf-8");
+      return c.text(getMetrics());
+    });
 
   // Apply JWT verification in production mode
   if (!cfg.devMode) {
