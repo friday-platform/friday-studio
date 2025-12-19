@@ -255,5 +255,6 @@ func (e *LogEntry) withRequest(req *http.Request) *LogEntry {
 
 func (e *LogEntry) print() {
 	jsonBytes, _ := json.Marshal(e)
-	fmt.Println(string(jsonBytes))
+	// Write to stderr for reliable container log capture in Yaegi plugins
+	_, _ = os.Stderr.Write(append(jsonBytes, '\n'))
 }
