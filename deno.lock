@@ -66,7 +66,7 @@
     "npm:@sendgrid/mail@^8.1.6": "8.1.6",
     "npm:@sentry/deno@^10.30.0": "10.32.0",
     "npm:@sentry/deno@^10.32.0": "10.32.0",
-    "npm:@sentry/sveltekit@^10.31.0": "10.32.0_@sveltejs+kit@2.49.2__@opentelemetry+api@1.9.0__@sveltejs+vite-plugin-svelte@6.2.1___svelte@5.46.0____acorn@8.15.0___vite@7.3.0____picomatch@4.0.3__svelte@5.46.0___acorn@8.15.0__vite@7.3.0___picomatch@4.0.3__acorn@8.15.0_vite@7.3.0__picomatch@4.0.3_svelte@5.46.0__acorn@8.15.0_@opentelemetry+api@1.9.0_@sveltejs+vite-plugin-svelte@6.2.1__svelte@5.46.0___acorn@8.15.0__vite@7.3.0___picomatch@4.0.3",
+    "npm:@sentry/sveltekit@^10.32.0": "10.32.0_@sveltejs+kit@2.49.2__@opentelemetry+api@1.9.0__@sveltejs+vite-plugin-svelte@6.2.1___svelte@5.46.0____acorn@8.15.0___vite@7.3.0____picomatch@4.0.3__svelte@5.46.0___acorn@8.15.0__vite@7.3.0___picomatch@4.0.3__acorn@8.15.0_vite@7.3.0__picomatch@4.0.3_svelte@5.46.0__acorn@8.15.0_@opentelemetry+api@1.9.0_@sveltejs+vite-plugin-svelte@6.2.1__svelte@5.46.0___acorn@8.15.0__vite@7.3.0___picomatch@4.0.3",
     "npm:@socotra/modelcontextprotocol-sdk@^1.18.0": "1.21.0_zod@4.2.1_ajv@8.17.1_express@5.2.1",
     "npm:@socotra/modelcontextprotocol-sdk@^1.21.0": "1.21.0_zod@4.2.1_ajv@8.17.1_express@5.2.1",
     "npm:@sveltejs/adapter-node@^5.4.0": "5.4.0_@sveltejs+kit@2.49.2__@opentelemetry+api@1.9.0__@sveltejs+vite-plugin-svelte@6.2.1___svelte@5.46.0____acorn@8.15.0___vite@7.3.0____picomatch@4.0.3__svelte@5.46.0___acorn@8.15.0__vite@7.3.0___picomatch@4.0.3__acorn@8.15.0_rollup@4.53.5_@opentelemetry+api@1.9.0_@sveltejs+vite-plugin-svelte@6.2.1__svelte@5.46.0___acorn@8.15.0__vite@7.3.0___picomatch@4.0.3_svelte@5.46.0__acorn@8.15.0_vite@7.3.0__picomatch@4.0.3",
@@ -2683,8 +2683,8 @@
     "balanced-match@1.0.2": {
       "integrity": "sha512-3oSeUO0TMV67hN1AmbXsK4yaqU7tjiHlbxRDZOpH0KW9+CeX4bRAaX0Anxt0tx2MrpRpWwQaPwIlISEJhYU5Pw=="
     },
-    "baseline-browser-mapping@2.9.9": {
-      "integrity": "sha512-V8fbOCSeOFvlDj7LLChUcqbZrdKD9RU/VR260piF1790vT0mfLSwGc/Qzxv3IqiTukOpNtItePa0HBpMAj7MDg==",
+    "baseline-browser-mapping@2.9.10": {
+      "integrity": "sha512-2VIKvDx8Z1a9rTB2eCkdPE5nSe28XnA+qivGnWHoB40hMMt/h1hSz0960Zqsn6ZyxWXUie0EBdElKv8may20AA==",
       "bin": true
     },
     "binary-extensions@2.3.0": {
@@ -2754,8 +2754,8 @@
     "callsites@3.1.0": {
       "integrity": "sha512-P8BjAsXvZS+VIDUI11hHCQEv74YT67YUi5JJFNWIqL235sBmjX4+qx9Muvls5ivyNENctx46xQLQ3aTuE7ssaQ=="
     },
-    "caniuse-lite@1.0.30001760": {
-      "integrity": "sha512-7AAMPcueWELt1p3mi13HR/LHH0TJLT11cnwDJEs3xA4+CK/PLKeO9Kl1oru24htkyUKtkGCvAx4ohB0Ttry8Dw=="
+    "caniuse-lite@1.0.30001761": {
+      "integrity": "sha512-JF9ptu1vP2coz98+5051jZ4PwQgd2ni8A+gYSN7EA7dPKIMf0pDlSUxhdmVOaV3/fYK5uWBkgSXJaRLr4+3A6g=="
     },
     "chai@6.2.1": {
       "integrity": "sha512-p4Z49OGG5W/WBCPSS/dH3jQ73kD6tiMmUM+bckNK6Jr5JHMG3k9bg/BvKR8lKmtVBKmOiuVaV2ws8s9oSbwysg=="
@@ -3668,8 +3668,8 @@
         "resolve-from"
       ]
     },
-    "import-in-the-middle@2.0.0_acorn@8.15.0": {
-      "integrity": "sha512-yNZhyQYqXpkT0AKq3F3KLasUSK4fHvebNH5hOsKQw2dhGSALvQ4U0BqUc5suziKvydO5u5hgN2hy1RJaho8U5A==",
+    "import-in-the-middle@2.0.1_acorn@8.15.0": {
+      "integrity": "sha512-bruMpJ7xz+9jwGzrwEhWgvRrlKRYCRDBrfU+ur3FcasYXLJDxTruJ//8g2Noj+QFyRBeqbpj8Bhn4Fbw6HjvhA==",
       "dependencies": [
         "acorn",
         "acorn-import-attributes",
@@ -5339,7 +5339,7 @@
             "npm:@eslint/js@^9.39.2",
             "npm:@ianvs/prettier-plugin-sort-imports@^4.7.0",
             "npm:@melt-ui/svelte@~0.86.6",
-            "npm:@sentry/sveltekit@^10.31.0",
+            "npm:@sentry/sveltekit@^10.32.0",
             "npm:@sveltejs/adapter-node@^5.4.0",
             "npm:@sveltejs/kit@^2.49.2",
             "npm:@sveltejs/vite-plugin-svelte@^6.2.1",
@@ -5419,7 +5419,7 @@
             "npm:@lezer/common@^1.4.0",
             "npm:@lezer/markdown@^1.6.1",
             "npm:@melt-ui/svelte@~0.86.6",
-            "npm:@sentry/sveltekit@^10.31.0",
+            "npm:@sentry/sveltekit@^10.32.0",
             "npm:@sveltejs/adapter-static@^3.0.10",
             "npm:@sveltejs/kit@^2.49.2",
             "npm:@sveltejs/vite-plugin-svelte@^6.2.1",

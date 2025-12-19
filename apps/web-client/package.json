@@ -23,7 +23,7 @@
     "@atlas/core": "workspace:*",
     "@atlas/oapi-client": "workspace:*",
     "@ai-sdk/svelte": "^3.0.115",
-    "@sentry/sveltekit": "^10.31.0",
+    "@sentry/sveltekit": "^10.32.0",
     "@melt-ui/svelte": "^0.86.6",
     "@lezer/common": "^1.4.0",
     "@lezer/markdown": "^1.6.1",
