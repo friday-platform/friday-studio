@@ -528,6 +528,9 @@ export class AtlasDaemon {
       const duration = Date.now() - start;
       const status = c.res.status;
 
+      // Skip health checks to reduce log noise
+      if (path === "/health") return;
+
       const message = `HTTP ${method} ${path}`;
       const context = { method, path, status, duration: `${duration}ms`, component: "http" };
 
