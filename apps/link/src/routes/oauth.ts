@@ -3,6 +3,7 @@
  * Browser-facing OAuth flow endpoints
  */
 
+import { logger } from "@atlas/logger";
 import { z } from "zod";
 import { factory } from "../factory.ts";
 import { decodeState } from "../oauth/jwt-state.ts";
@@ -85,8 +86,11 @@ export function createOAuthRoutes(
 
           return c.redirect(authorizationUrl, 302);
         } catch (e) {
-          const message = e instanceof Error ? e.message : "Unknown error";
-          return c.json({ error: "oauth_initiation_failed", message }, 502);
+          logger.error("OAuth initiation failed", { provider: providerId, error: e });
+          return c.json(
+            { error: "oauth_initiation_failed", message: "Failed to initiate OAuth flow" },
+            502,
+          );
         }
       })
       /**
@@ -135,8 +139,8 @@ export function createOAuthRoutes(
 
           return renderSuccessResponse(c, credential.provider, credential.id);
         } catch (e) {
-          const message = e instanceof Error ? e.message : "Unknown error";
-          return renderErrorResponse(c, "oauth_completion_failed", message);
+          logger.error("OAuth completion failed", { error: e });
+          return renderErrorResponse(c, "oauth_completion_failed", "Failed to complete OAuth flow");
         }
       })
       /**
@@ -178,8 +182,8 @@ export function createOAuthRoutes(
               : null,
           });
         } catch (e) {
-          const message = e instanceof Error ? e.message : "Unknown error";
-          return c.json({ error: "refresh_failed", message }, 502);
+          logger.error("OAuth token refresh failed", { credentialId: id, error: e });
+          return c.json({ error: "refresh_failed", message: "Failed to refresh token" }, 502);
         }
       })
   );

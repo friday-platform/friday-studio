@@ -4,6 +4,7 @@
  */
 
 import { logger } from "@atlas/logger";
+import { stringifyError } from "@atlas/utils";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import { factory } from "../factory.ts";
@@ -264,8 +265,8 @@ export function createInternalCredentialsRoutes(
             );
             return c.json({ credential: refreshed, status: "refreshed" });
           } catch (e) {
-            const message = e instanceof Error ? e.message : "Unknown error";
-            return c.json({ credential, status: "refresh_failed", error: message });
+            logger.error("Credential refresh failed", { credentialId: id, error: e });
+            return c.json({ credential, status: "refresh_failed", error: stringifyError(e) });
           }
         } catch (error) {
           logger.error("Failed to retrieve credential", { error });
