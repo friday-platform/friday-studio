@@ -1,6 +1,7 @@
 import { logger } from "@atlas/logger";
 import { config } from "../config.ts";
 import { createGoogleProvider } from "./google.ts";
+import { linearProvider } from "./linear.ts";
 import { notionProvider } from "./notion.ts";
 import { slackProvider } from "./slack.ts";
 import { defineApiKeyProvider, type ProviderDefinition } from "./types.ts";
@@ -62,6 +63,7 @@ if (googleProvider) {
 // Register built-in providers
 registry.register(slackProvider);
 registry.register(notionProvider);
+registry.register(linearProvider);
 
 // Dev-only test provider for manual testing
 if (config.devMode) {
