@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 
+	"cloud.google.com/go/auth/credentials"
 	"cloud.google.com/go/storage"
 	"github.com/google/uuid"
 	"google.golang.org/api/googleapi"
@@ -26,7 +27,14 @@ func NewStorageClient(ctx context.Context, bucket, serviceAccountKeyFile string)
 	var err error
 
 	if serviceAccountKeyFile != "" {
-		client, err = storage.NewClient(ctx, option.WithCredentialsFile(serviceAccountKeyFile))
+		creds, credErr := credentials.DetectDefault(&credentials.DetectOptions{
+			Scopes:          []string{"https://www.googleapis.com/auth/cloud-platform"},
+			CredentialsFile: serviceAccountKeyFile,
+		})
+		if credErr != nil {
+			return nil, credErr
+		}
+		client, err = storage.NewClient(ctx, option.WithAuthCredentials(creds))
 	} else {
 		client, err = storage.NewClient(ctx)
 	}

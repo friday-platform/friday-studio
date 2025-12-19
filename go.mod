@@ -3,6 +3,7 @@ module github.com/tempestteam/atlas
 go 1.25.4
 
 require (
+	cloud.google.com/go/auth v0.17.0
 	cloud.google.com/go/profiler v0.4.3
 	cloud.google.com/go/storage v1.58.0
 	github.com/caarlos0/env/v11 v11.3.1
@@ -33,7 +34,6 @@ require (
 require (
 	cel.dev/expr v0.25.1 // indirect
 	cloud.google.com/go v0.123.0 // indirect
-	cloud.google.com/go/auth v0.17.0 // indirect
 	cloud.google.com/go/auth/oauth2adapt v0.2.8 // indirect
 	cloud.google.com/go/compute/metadata v0.9.0 // indirect
 	cloud.google.com/go/iam v1.5.3 // indirect
