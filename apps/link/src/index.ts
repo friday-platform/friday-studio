@@ -1,6 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { readFileSync } from "node:fs";
 import { logger } from "@atlas/logger";
+import { flush as flushSentry, initSentry } from "@atlas/sentry";
 import { HTTPException } from "hono/http-exception";
 import { jwt } from "hono/jwt";
 import { routePath } from "hono/route";
@@ -156,6 +157,9 @@ export function createApp(storage: StorageAdapter, oauthService: OAuthService) {
 /** Postgres connection pool - stored for graceful shutdown */
 let sql: ReturnType<typeof postgres> | null = null;
 
+/** HTTP server instance - stored for graceful shutdown */
+let server: Deno.HttpServer | null = null;
+
 /**
  * Create storage adapter based on configuration.
  * Uses CypherStorageAdapter if Cypher and Postgres are configured, otherwise DenoKV.
@@ -181,14 +185,48 @@ function createStorage(): StorageAdapter {
   return new DenoKVStorageAdapter(config.dbPath);
 }
 
+/** Shutdown state to prevent multiple shutdown attempts */
+let isShuttingDown = false;
+
 /**
- * Graceful shutdown - close database connections.
+ * Graceful shutdown - stop server, close connections, exit.
+ * Handles Kubernetes SIGTERM with proper cleanup.
  */
-async function shutdown(): Promise<void> {
-  logger.info("Shutting down...");
-  if (sql) {
-    await sql.end({ timeout: 5 });
-    logger.info("Postgres pool closed");
+async function shutdown(signal: string): Promise<void> {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+
+  logger.info("Received signal, shutting down gracefully", { signal });
+
+  // Timeout to prevent hanging - Kubernetes default terminationGracePeriodSeconds is 30s
+  const shutdownTimeout = setTimeout(() => {
+    logger.error("Shutdown timeout, forcing exit");
+    Deno.exit(1);
+  }, 25000);
+
+  try {
+    // Stop accepting new requests
+    if (server) {
+      await server.shutdown();
+      logger.info("HTTP server stopped");
+    }
+
+    // Close database connections
+    if (sql) {
+      await sql.end({ timeout: 5 });
+      logger.info("Postgres pool closed");
+    }
+
+    // Flush pending Sentry events
+    await flushSentry();
+
+    clearTimeout(shutdownTimeout);
+    logger.info("Shutdown complete");
+    Deno.exit(0);
+  } catch (error) {
+    clearTimeout(shutdownTimeout);
+    logger.error("Error during shutdown", { error });
+    Deno.exit(1);
   }
 }
 
@@ -209,11 +247,12 @@ export type { Credential, CredentialSummary, OAuthCredential } from "./types.ts"
 
 // Only start server when run directly (not when imported for tests)
 if (import.meta.main) {
+  initSentry();
   logger.info("Link service starting", { port: config.port });
 
   // Register shutdown handlers
-  Deno.addSignalListener("SIGINT", shutdown);
-  Deno.addSignalListener("SIGTERM", shutdown);
+  Deno.addSignalListener("SIGINT", () => shutdown("SIGINT"));
+  Deno.addSignalListener("SIGTERM", () => shutdown("SIGTERM"));
 
-  Deno.serve({ port: config.port, onListen: () => {}, handler: app.fetch });
+  server = Deno.serve({ port: config.port, onListen: () => {}, handler: app.fetch });
 }
