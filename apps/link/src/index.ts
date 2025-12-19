@@ -1,6 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { readFileSync } from "node:fs";
 import { logger } from "@atlas/logger";
+import { HTTPException } from "hono/http-exception";
 import { jwt } from "hono/jwt";
 import { routePath } from "hono/route";
 import { trimTrailingSlash } from "hono/trailing-slash";
@@ -68,6 +69,7 @@ export function createApp(storage: StorageAdapter, oauthService: OAuthService) {
     const payload = c.get("jwtPayload");
     const userId = payload?.user_metadata?.tempest_user_id;
     if (!userId) {
+      logger.error("JWT missing tempest_user_id", { path: c.req.path, sub: payload?.sub });
       return c.json({ error: "missing_user_id" }, 401);
     }
     c.set("userId", userId);
@@ -114,8 +116,19 @@ export function createApp(storage: StorageAdapter, oauthService: OAuthService) {
       throw new Error("LINK_JWT_PUBLIC_KEY_FILE required");
     }
     const publicKeyPem = readFileSync(cfg.jwtPublicKeyFile, "utf-8").trim();
-
     const jwtMiddleware = jwt({ alg: "RS256", secret: publicKeyPem });
+
+    // Log JWT failures (HTTPException.cause contains the actual error)
+    baseApp.onError((err, c) => {
+      if (err instanceof HTTPException && err.status === 401) {
+        logger.error("JWT verification failed", {
+          path: c.req.path,
+          error: err.cause instanceof Error ? err.cause.message : err.message,
+        });
+        return err.getResponse();
+      }
+      throw err;
+    });
 
     baseApp.use("/v1/*", jwtMiddleware);
     baseApp.use("/internal/*", jwtMiddleware);
