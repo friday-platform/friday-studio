@@ -62,6 +62,8 @@ updates:
       - "dependencies"
       - "docker"
     rebase-strategy: "auto"
+    ignore:
+      - dependency-name: "denoland/deno"
 
   # Keep Rust dependencies up to date (for web-client/src-tauri)
   - package-ecosystem: "cargo"
@@ -276,6 +278,8 @@ updates:
       - "dependencies"
       - "docker"
     rebase-strategy: "auto"
+    ignore:
+      - dependency-name: "denoland/deno"
 
   # Keep Docker dependencies up to date (for link service)
   - package-ecosystem: "docker"
@@ -293,6 +297,8 @@ updates:
       - "dependencies"
       - "docker"
     rebase-strategy: "auto"
+    ignore:
+      - dependency-name: "denoland/deno"
 
   # Keep Docker dependencies up to date (for signal-gateway)
   - package-ecosystem: "docker"
