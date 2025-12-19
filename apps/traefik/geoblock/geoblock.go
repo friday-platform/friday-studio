@@ -6,12 +6,11 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"net/netip"
 	"os"
 	"strings"
 	"time"
 
-	"github.com/oschwald/maxminddb-golang/v2"
+	"github.com/oschwald/maxminddb-golang"
 )
 
 // Config holds the plugin configuration.
@@ -150,11 +149,7 @@ func (g *GeoBlock) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	// Convert net.IP to netip.Addr for maxminddb v2
-	// Note: AddrFromSlice cannot fail here since net.ParseIP already validated the IP
-	addr, _ := netip.AddrFromSlice(ip)
-
-	country, err := g.lookupCountry(addr)
+	country, err := g.lookupCountry(ip)
 	if err != nil || country == "" {
 		if g.allowUnknown {
 			g.next.ServeHTTP(rw, req)
@@ -187,9 +182,9 @@ func (g *GeoBlock) blockRequest(rw http.ResponseWriter, req *http.Request, clien
 	}
 }
 
-func (g *GeoBlock) lookupCountry(addr netip.Addr) (string, error) {
+func (g *GeoBlock) lookupCountry(ip net.IP) (string, error) {
 	var record countryRecord
-	err := g.db.Lookup(addr).Decode(&record)
+	err := g.db.Lookup(ip, &record)
 	if err != nil {
 		return "", err
 	}
