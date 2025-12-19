@@ -64,8 +64,8 @@
     "npm:@opentelemetry/api@^1.9.0": "1.9.0",
     "npm:@sendgrid/helpers@8": "8.0.0",
     "npm:@sendgrid/mail@^8.1.6": "8.1.6",
-    "npm:@sentry/deno@^10.30.0": "10.32.0",
-    "npm:@sentry/deno@^10.32.0": "10.32.0",
+    "npm:@sentry/deno@^10.30.0": "10.32.1",
+    "npm:@sentry/deno@^10.32.1": "10.32.1",
     "npm:@sentry/sveltekit@^10.32.1": "10.32.1_@sveltejs+kit@2.49.2__@opentelemetry+api@1.9.0__@sveltejs+vite-plugin-svelte@6.2.1___svelte@5.46.0____acorn@8.15.0___vite@7.3.0____picomatch@4.0.3__svelte@5.46.0___acorn@8.15.0__vite@7.3.0___picomatch@4.0.3__acorn@8.15.0_vite@7.3.0__picomatch@4.0.3_svelte@5.46.0__acorn@8.15.0_@opentelemetry+api@1.9.0_@sveltejs+vite-plugin-svelte@6.2.1__svelte@5.46.0___acorn@8.15.0__vite@7.3.0___picomatch@4.0.3",
     "npm:@socotra/modelcontextprotocol-sdk@^1.18.0": "1.21.0_zod@4.2.1_ajv@8.17.1_express@5.2.1",
     "npm:@socotra/modelcontextprotocol-sdk@^1.21.0": "1.21.0_zod@4.2.1_ajv@8.17.1_express@5.2.1",
@@ -1834,27 +1834,27 @@
     "@sentry-internal/browser-utils@10.32.1": {
       "integrity": "sha512-sjLLep1es3rTkbtAdTtdpc/a6g7v7bK5YJiZJsUigoJ4NTiFeMI5uIDCxbH/tjJ1q23YE1LzVn7T96I+qBRjHA==",
       "dependencies": [
-        "@sentry/core@10.32.1"
+        "@sentry/core"
       ]
     },
     "@sentry-internal/feedback@10.32.1": {
       "integrity": "sha512-O24G8jxbfBY1RE/v2qFikPJISVMOrd/zk8FKyl+oUVYdOxU2Ucjk2cR3EQruBFlc7irnL6rT3GPfRZ/kBgLkmQ==",
       "dependencies": [
-        "@sentry/core@10.32.1"
+        "@sentry/core"
       ]
     },
     "@sentry-internal/replay-canvas@10.32.1": {
       "integrity": "sha512-/XGTzWNWVc+B691fIVekV2KeoHFEDA5KftrLFAhEAW7uWOwk/xy3aQX4TYM0LcPm2PBKvoumlAD+Sd/aXk63oA==",
       "dependencies": [
         "@sentry-internal/replay",
-        "@sentry/core@10.32.1"
+        "@sentry/core"
       ]
     },
     "@sentry-internal/replay@10.32.1": {
       "integrity": "sha512-KKmLUgIaLRM0VjrMA1ByQTawZyRDYSkG2evvEOVpEtR9F0sumidAQdi7UY71QEKE1RYe/Jcp/3WoaqsMh8tbnQ==",
       "dependencies": [
         "@sentry-internal/browser-utils",
-        "@sentry/core@10.32.1"
+        "@sentry/core"
       ]
     },
     "@sentry/babel-plugin-component-annotate@4.6.1": {
@@ -1867,7 +1867,7 @@
         "@sentry-internal/feedback",
         "@sentry-internal/replay",
         "@sentry-internal/replay-canvas",
-        "@sentry/core@10.32.1"
+        "@sentry/core"
       ]
     },
     "@sentry/bundler-plugin-core@4.6.1": {
@@ -1948,20 +1948,17 @@
       "integrity": "sha512-LP5p+OyCjZ+eT2WEso4YHj8b9+9Z8sx15tQcyxP6SWdYPuu54AmbgNS5zxG5z7+q2neF5HA/TtEhr/t/l5ph2g==",
       "dependencies": [
         "@opentelemetry/api",
-        "@sentry/core@10.32.1"
+        "@sentry/core"
       ]
-    },
-    "@sentry/core@10.32.0": {
-      "integrity": "sha512-E+ihb8+5PBfYMamnXHalgsmxkcG2YQqhRdgYf3yWJ5dJvi4njh1VWK3kNVj1GvsU6ktaielAx4Rg5dwEFMnbZg=="
     },
     "@sentry/core@10.32.1": {
       "integrity": "sha512-PH2ldpSJlhqsMj2vCTyU0BI2Fx1oIDhm7Izo5xFALvjVCS0gmlqHt1udu6YlKn8BtpGH6bGzssvv5APrk+OdPQ=="
     },
-    "@sentry/deno@10.32.0": {
-      "integrity": "sha512-kvMEiPRghx9kDqm5vjMw92AXBUpux9mKaZvDhvJn87DJggL7hiKWA/2yTHS3r+ueezkfqO10TtqFjVyxUYjLTg==",
+    "@sentry/deno@10.32.1": {
+      "integrity": "sha512-pOWMtvFDQYAxbNmLgQw5ARpBBCPwRQd34kAaj+tBdhxjSsg32cVtjRpkXFIMkYth0DEbq6dLWEVL1Dgg11vlWA==",
       "dependencies": [
         "@opentelemetry/api",
-        "@sentry/core@10.32.0"
+        "@sentry/core"
       ]
     },
     "@sentry/node-core@10.32.1_@opentelemetry+api@1.9.0_@opentelemetry+context-async-hooks@2.2.0__@opentelemetry+api@1.9.0_@opentelemetry+core@2.2.0__@opentelemetry+api@1.9.0_@opentelemetry+instrumentation@0.208.0__@opentelemetry+api@1.9.0_@opentelemetry+resources@2.2.0__@opentelemetry+api@1.9.0_@opentelemetry+sdk-trace-base@2.2.0__@opentelemetry+api@1.9.0_@opentelemetry+semantic-conventions@1.38.0": {
@@ -1975,7 +1972,7 @@
         "@opentelemetry/resources",
         "@opentelemetry/sdk-trace-base",
         "@opentelemetry/semantic-conventions",
-        "@sentry/core@10.32.1",
+        "@sentry/core",
         "@sentry/opentelemetry",
         "import-in-the-middle"
       ]
@@ -2013,7 +2010,7 @@
         "@opentelemetry/sdk-trace-base",
         "@opentelemetry/semantic-conventions",
         "@prisma/instrumentation",
-        "@sentry/core@10.32.1",
+        "@sentry/core",
         "@sentry/node-core",
         "@sentry/opentelemetry",
         "import-in-the-middle",
@@ -2028,14 +2025,14 @@
         "@opentelemetry/core",
         "@opentelemetry/sdk-trace-base",
         "@opentelemetry/semantic-conventions",
-        "@sentry/core@10.32.1"
+        "@sentry/core"
       ]
     },
     "@sentry/svelte@10.32.1_svelte@5.46.0__acorn@8.15.0": {
       "integrity": "sha512-vj4vuRyt1ODWKukAPtbZK39mbxSsJfxRxq1+BQFjmrmvgXYdUDSyNkR5K9M8q0cG0+Kyc0dDAMSZpHvvg2OaSA==",
       "dependencies": [
         "@sentry/browser",
-        "@sentry/core@10.32.1",
+        "@sentry/core",
         "magic-string@0.30.21",
         "svelte"
       ]
@@ -2045,7 +2042,7 @@
       "dependencies": [
         "@babel/parser@7.26.9",
         "@sentry/cloudflare",
-        "@sentry/core@10.32.1",
+        "@sentry/core",
         "@sentry/node",
         "@sentry/svelte",
         "@sentry/vite-plugin",
@@ -5637,7 +5634,7 @@
       "packages/sentry": {
         "packageJson": {
           "dependencies": [
-            "npm:@sentry/deno@^10.32.0"
+            "npm:@sentry/deno@^10.32.1"
           ]
         }
       },
