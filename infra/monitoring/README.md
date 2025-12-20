@@ -66,3 +66,42 @@ Useful filters:
 - High token usage: `llm.inputTokens > 50000`
 
 Source: `src/utils/telemetry.ts`
+
+## Alert Policies
+
+Alert policy YAML files are in `alerts/`. To recreate an alert:
+
+```bash
+gcloud alpha monitoring policies create \
+  --policy-from-file=alerts/<alert-name>.yaml \
+  --project=tempest-production
+```
+
+### Active Alerts
+
+| Alert | Severity | Condition | Notification |
+|-------|----------|-----------|--------------|
+| Infrastructure Pod Restart Loop | Warning | >3 restarts in 10min | Slack |
+| User Atlas Pod Restart Loop | Warning | >3 restarts in 10min | Slack |
+| High Memory Usage | Warning | >80% limit for 5min | Slack |
+| High CPU Usage | Warning | >80% limit for 10min | Slack |
+
+### Blocked Alerts (need prometheus metrics)
+
+| Alert | Issue |
+|-------|-------|
+| Operator Reconciliation Errors | Metric `atlas_operator_reconciliation_duration_seconds` not found |
+| Session Failure Spike | Metric `atlasd_sessions_total` not found |
+
+### Notification Channels
+
+```bash
+# List channels
+gcloud alpha monitoring channels list --project=tempest-production
+
+# Production Slack (#atlas-production-alerts)
+projects/tempest-production/notificationChannels/3729882950865339162
+
+# PagerDuty (tempest-production)
+projects/tempest-production/notificationChannels/16532143224266859840
+```

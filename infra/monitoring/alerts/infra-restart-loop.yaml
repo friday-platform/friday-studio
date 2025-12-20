@@ -1,0 +1,44 @@
+displayName: "Atlas Infrastructure Pod Restart Loop"
+combiner: OR
+conditions:
+- displayName: "Pod restart count > 3 in 10 minutes"
+  conditionThreshold:
+    filter: >-
+      resource.type="k8s_container"
+      AND resource.labels.namespace_name="atlas-operator"
+      AND metric.type="kubernetes.io/container/restart_count"
+    comparison: COMPARISON_GT
+    thresholdValue: 3
+    duration: "0s"
+    aggregations:
+    - alignmentPeriod: "600s"
+      perSeriesAligner: ALIGN_DELTA
+      crossSeriesReducer: REDUCE_SUM
+      groupByFields:
+      - resource.labels.pod_name
+    trigger:
+      count: 1
+alertStrategy:
+  autoClose: "604800s"
+severity: WARNING
+documentation:
+  content: |-
+    ## Pod Restart Loop Detected
+
+    A pod in the atlas-operator namespace has restarted more than 3 times in 10 minutes.
+
+    ### Quick Diagnosis
+    ```bash
+    kubectl -n atlas-operator get pods
+    kubectl -n atlas-operator describe pod <POD_NAME>
+    kubectl -n atlas-operator logs <POD_NAME> --previous
+    ```
+
+    ### Common Causes
+    - OOMKilled - increase memory limits
+    - CrashLoopBackOff - check application logs
+    - Liveness probe failures
+    - Missing dependencies (DB, secrets)
+  mimeType: text/markdown
+notificationChannels:
+- projects/tempest-production/notificationChannels/3729882950865339162

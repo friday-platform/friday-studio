@@ -1,0 +1,43 @@
+displayName: "Atlas High Memory Usage"
+combiner: OR
+conditions:
+- displayName: "Memory > 80% of limit for 5 minutes"
+  conditionThreshold:
+    filter: >-
+      resource.type="k8s_container"
+      AND resource.labels.namespace_name="atlas-operator"
+      AND metric.type="kubernetes.io/container/memory/limit_utilization"
+    comparison: COMPARISON_GT
+    thresholdValue: 0.8
+    duration: "300s"
+    aggregations:
+    - alignmentPeriod: "60s"
+      perSeriesAligner: ALIGN_MEAN
+      crossSeriesReducer: REDUCE_MAX
+      groupByFields:
+      - resource.labels.container_name
+    trigger:
+      count: 1
+alertStrategy:
+  autoClose: "604800s"
+severity: WARNING
+documentation:
+  content: |-
+    ## High Memory Usage
+
+    A container in atlas-operator namespace is using >80% of its memory limit.
+    OOMKill is imminent if usage continues to grow.
+
+    ### Quick Diagnosis
+    ```bash
+    kubectl -n atlas-operator top pods
+    kubectl -n atlas-operator describe pod <POD_NAME> | grep -A5 "Limits\|Requests"
+    ```
+
+    ### Resolution
+    - Check for memory leaks in application logs
+    - Consider increasing memory limits
+    - Restart the pod if leak is transient
+  mimeType: text/markdown
+notificationChannels:
+- projects/tempest-production/notificationChannels/3729882950865339162

@@ -1,0 +1,41 @@
+displayName: "Atlas Session Failure Spike"
+combiner: OR
+conditions:
+- displayName: "Session failure rate > 20%"
+  conditionMonitoringQueryLanguage:
+    query: |-
+      fetch prometheus_target
+      | metric 'prometheus.googleapis.com/atlasd_sessions_total/counter'
+      | align rate(5m)
+      | group_by [metric.status], [value_sessions_total_aggregate: aggregate(value.sessions_total)]
+      | ratio
+      | filter metric.status = 'failed'
+      | condition val() > 0.2
+    duration: "300s"
+    trigger:
+      count: 1
+alertStrategy:
+  autoClose: "604800s"
+severity: WARNING
+documentation:
+  content: |-
+    ## Session Failure Spike
+
+    More than 20% of agent sessions are failing over the last 5 minutes.
+
+    ### Quick Diagnosis
+    ```bash
+    kubectl -n atlas logs -l app=atlas --tail=100 --all-containers | grep -i "session\|error\|fail"
+    ```
+
+    ### Check Sentry
+    https://sentry.io/organizations/tempest-labs-inc/issues/?project=atlas
+
+    ### Common Causes
+    - LLM API errors (check LiteLLM logs)
+    - MCP server failures
+    - Memory pressure on atlas pods
+    - Configuration issues in workspace.yml
+  mimeType: text/markdown
+notificationChannels:
+- projects/tempest-production/notificationChannels/3729882950865339162

@@ -1,0 +1,45 @@
+displayName: "Atlas Operator Reconciliation Errors"
+combiner: OR
+conditions:
+- displayName: "High reconciliation error rate"
+  conditionThreshold:
+    filter: >-
+      resource.type="prometheus_target"
+      AND metric.type="prometheus.googleapis.com/atlas_operator_reconciliation_duration_seconds_count/counter"
+      AND metric.labels.status="error"
+    comparison: COMPARISON_GT
+    thresholdValue: 0.1
+    duration: "300s"
+    aggregations:
+    - alignmentPeriod: "60s"
+      perSeriesAligner: ALIGN_RATE
+      crossSeriesReducer: REDUCE_SUM
+    trigger:
+      count: 1
+alertStrategy:
+  autoClose: "604800s"
+severity: WARNING
+documentation:
+  content: |-
+    ## Operator Reconciliation Errors
+
+    The atlas-operator is experiencing a high rate of reconciliation errors.
+    User workspace provisioning may be failing.
+
+    ### Quick Diagnosis
+    ```bash
+    kubectl -n atlas-operator logs -l app=atlas-operator --tail=200 | grep -i error
+    kubectl -n atlas-operator logs -l app=atlas-operator --tail=200 | grep -i reconcil
+    ```
+
+    ### Check Sentry
+    https://sentry.io/organizations/tempest-labs-inc/issues/?project=atlas-operator
+
+    ### Common Causes
+    - ArgoCD connectivity issues
+    - Database connection problems
+    - Kubernetes API errors
+    - Resource quota exceeded
+  mimeType: text/markdown
+notificationChannels:
+- projects/tempest-production/notificationChannels/3729882950865339162
