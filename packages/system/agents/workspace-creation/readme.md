@@ -50,7 +50,7 @@ const plan: WorkspacePlan = {
 
 ### 2. Enrich Signals
 
-**Model**: Haiku 3.5 (fast classification)
+**Model**: Haiku 4.5 (fast classification)
 
 Classifies signal type and extracts config parameters:
 
@@ -106,7 +106,7 @@ Context flow patterns:
 
 ### 5. Generate MCP Servers
 
-**Model**: Haiku 3.5 (simple domain matching)
+**Model**: Haiku 4.5 (simple domain matching)
 
 Matches collected MCP domains to blessed MCP server registry. Only adds external servers (platform provides email/filesystem/notifications built-in).
 
@@ -201,11 +201,11 @@ All errors include context (artifact ID, component being enriched, etc.) for deb
 
 | Component | Model | Reason |
 |-----------|-------|--------|
-| Signal enrichment | Haiku 3.5 | Fast classification, simple config |
+| Signal enrichment | Haiku 4.5 | Fast classification, simple config |
 | Agent selection | Sonnet 4 | Bundled agent matching requires reasoning |
-| Domain extraction | Haiku 3.5 | Simple domain mapping |
+| Domain extraction | Haiku 4.5 | Simple domain mapping |
 | Job enrichment | Sonnet 4 | Context flow requires execution planning |
-| MCP matching | Haiku 3.5 | Registry lookup |
+| MCP matching | Haiku 4.5 | Registry lookup |
 
 ### Retries & Timeouts
 

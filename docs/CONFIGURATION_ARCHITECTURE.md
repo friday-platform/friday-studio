@@ -416,17 +416,17 @@ jobs:
 agents:
   mishearing-agent:
     type: "llm"
-    model: "claude-3-5-haiku-latest"
+    model: "claude-haiku-4-5"
     purpose: "Specializes in phonetic errors and mishearing transformations"
 
   embellishment-agent:
     type: "llm"
-    model: "claude-3-5-haiku-latest"
+    model: "claude-haiku-4-5"
     purpose: "Adds creative details and context to messages"
 
   reinterpretation-agent:
     type: "llm"
-    model: "claude-3-5-haiku-latest"
+    model: "claude-haiku-4-5"
     purpose: "Dramatically transforms and reinterprets messages"
 ```
 

@@ -61,7 +61,7 @@ Configuration captures user-specific values only (channel names, targets, prefer
 ### Models
 
 - **Planner**: Sonnet 4 (requires reasoning for affinity decisions and constraint understanding)
-- **Summarizer**: Haiku 3.5 (fast diff summaries for revision messages)
+- **Summarizer**: Haiku 4.5 (fast diff summaries for revision messages)
 
 ### System Prompt Sections
 

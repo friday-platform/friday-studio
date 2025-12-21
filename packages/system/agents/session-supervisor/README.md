@@ -65,7 +65,7 @@ Debugging context problems is hard when decisions are invisible. The reasoning f
 
 ### Model
 
-- **Filter**: Haiku 3.5 (fast binary decisions)
+- **Filter**: Haiku 4.5 (fast binary decisions)
 
 ### System Prompt Highlights
 

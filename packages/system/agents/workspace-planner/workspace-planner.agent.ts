@@ -38,7 +38,7 @@ const WorkspacePlannerInputSchema = z.object({
 type WorkspacePlannerInput = z.infer<typeof WorkspacePlannerInputSchema>;
 
 /**
- * Generates concise summaries via Haiku 3.5 for revision messages and plan summaries.
+ * Generates concise summaries via Haiku 4.5 for revision messages and plan summaries.
  */
 async function summarize(params: {
   content: string;
