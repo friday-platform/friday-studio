@@ -281,9 +281,8 @@ For example: 'Process webhooks from Stripe' or 'Daily CSV export to S3'."
 <model_selection_guide> When choosing models for agents:
 
 - **claude-haiku-4-5**: Use for simple tasks like data extraction, formatting, basic analysis
-- **claude-3-7-sonnet-latest**: Use for complex tasks like research, detailed analysis, creative
-  writing
-- **claude-sonnet-4-20250514**: Use for the most advanced tasks requiring deep reasoning, nuanced
+- **claude-sonnet-4-5**: Use for complex tasks like research, detailed analysis, creative writing
+- **claude-opus-4-5**: Use for the most advanced tasks requiring deep reasoning, nuanced
   understanding, or complex coordination
 
 Always tie model choice to practical outcomes, not technical superiority. </model_selection_guide>

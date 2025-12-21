@@ -61,7 +61,7 @@ function createRegistry() {
  * Unified provider registry with all supported LLM providers
  * Access models via: registry.languageModel('provider:model')
  * Examples:
- *   - registry.languageModel('anthropic:claude-3-5-sonnet-20241022')
+ *   - registry.languageModel('anthropic:claude-sonnet-4-5')
  *   - registry.languageModel('openai:gpt-4')
  *   - registry.languageModel('google:gemini-pro')
  *   - registry.languageModel('groq:llama-3.3-70b-versatile')

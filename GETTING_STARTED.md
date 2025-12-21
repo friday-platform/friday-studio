@@ -85,7 +85,7 @@ deno task atlas --version
 export ANTHROPIC_API_KEY="your-api-key-here"
 
 # Optional: Default model configuration
-export ATLAS_DEFAULT_MODEL="claude-3-7-sonnet-latest"
+export ATLAS_DEFAULT_MODEL="claude-sonnet-4-5"
 
 # Optional: Atlas configuration directory
 export ATLAS_HOME="$HOME/.atlas"
@@ -152,7 +152,7 @@ workspace:
 agents:
   assistant:
     type: "llm"
-    model: "claude-3-7-sonnet-latest"
+    model: "claude-sonnet-4-5"
     purpose: "General purpose AI assistant"
     prompts:
       system: "You are a helpful AI assistant."
@@ -251,7 +251,7 @@ workspace:
 agents:
   chat-bot:
     type: "llm"
-    model: "claude-3-7-sonnet-latest"
+    model: "claude-sonnet-4-5"
     purpose: "Conversational assistant"
     prompts:
       system: "You are a helpful, friendly AI assistant."

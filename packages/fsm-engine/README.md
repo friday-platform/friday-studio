@@ -89,7 +89,7 @@ function: validateOrder # References functions.validateOrder
 ```yaml
 type: llm
 provider: anthropic
-model: claude-3-5-sonnet
+model: claude-sonnet-4-5
 prompt: "Generate shipping label for this order"
 tools: ["get_address", "calculate_shipping"] # Tools LLM can call
 outputTo: shipping-label # Document ID to store result
@@ -362,7 +362,7 @@ FSM actions can call LLMs with document context and tools:
 actions:
   - type: llm
     provider: anthropic
-    model: claude-3-5-sonnet
+    model: claude-sonnet-4-5
     prompt: |
       Review this order for fraud and get customer history.
       Use the get_customer_history tool to check past orders.
@@ -407,7 +407,7 @@ Configure LLM provider:
 import { AtlasLLMProviderAdapter } from "@atlas/fsm-engine";
 
 const llmProvider = new AtlasLLMProviderAdapter(
-  "claude-3-5-sonnet",
+  "claude-sonnet-4-5",
   "anthropic",
 );
 
@@ -514,7 +514,7 @@ states:
         function: logEntry
       - type: llm
         provider: anthropic
-        model: claude-3-5-sonnet
+        model: claude-sonnet-4-5
         prompt: "Start processing"
 ```
 

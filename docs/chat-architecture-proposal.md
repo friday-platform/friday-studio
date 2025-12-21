@@ -191,7 +191,7 @@ export const conversationAgent = createAgent({
     const assistantMessageId = crypto.randomUUID();
 
     const result = streamText({
-      model: anthropic("claude-3-5-sonnet"),
+      model: anthropic("claude-sonnet-4-5"),
       messages: convertToModelMessages(messages),
       tools: {
         ...tools,

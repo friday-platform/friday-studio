@@ -590,7 +590,7 @@ handler: async (prompt, { session, logger, stream }) => {
 
   // Continue with existing streaming logic
   const result = streamText({
-    model: anthropic("claude-3-5-sonnet"),
+    model: anthropic("claude-sonnet-4-5"),
     messages: contextMessages,
     // ... rest unchanged
   });

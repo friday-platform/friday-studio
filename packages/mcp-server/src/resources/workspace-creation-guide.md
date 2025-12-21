@@ -140,7 +140,7 @@ agents:
     description: "[what this agent does]"
     config:
       provider: "anthropic"
-      model: "claude-3-7-sonnet-latest"
+      model: "claude-sonnet-4-5"
       prompt: |
         [Specific instructions for this agent]
       tools: ["[tool-name]"]
@@ -150,7 +150,7 @@ agents:
     description: "[what this agent does]"
     config:
       provider: "anthropic"
-      model: "claude-3-7-sonnet-latest"
+      model: "claude-sonnet-4-5"
       prompt: |
         [Specific instructions for this agent]
       tools: ["[tool-name]"]
@@ -270,7 +270,7 @@ agents:
     description: "Search for and extract new earnings call transcripts"
     config:
       provider: "anthropic"
-      model: "claude-3-7-sonnet-latest"
+      model: "claude-sonnet-4-5"
       prompt: |
         Search for recent earnings call transcripts from these companies: AAPL, MSFT, GOOG, META.
 
@@ -288,7 +288,7 @@ agents:
     description: "Analyze earnings transcripts with AI for key insights"
     config:
       provider: "anthropic"
-      model: "claude-3-7-sonnet-latest"
+      model: "claude-sonnet-4-5"
       prompt: |
         Analyze the earnings call transcript provided. Generate a comprehensive summary including:
 
@@ -306,7 +306,7 @@ agents:
     description: "Send formatted analysis to Slack"
     config:
       provider: "anthropic"
-      model: "claude-3-7-sonnet-latest"
+      model: "claude-sonnet-4-5"
       prompt: |
         Send the earnings analysis to Slack with formatting:
 
@@ -402,7 +402,7 @@ agents:
     description: "Validate and extract customer data from Stripe webhook"
     config:
       provider: "anthropic"
-      model: "claude-3-7-sonnet-latest"
+      model: "claude-sonnet-4-5"
       prompt: |
         Extract customer information from the Stripe webhook payload:
 
@@ -423,7 +423,7 @@ agents:
     description: "Enrich customer profile with AI-generated insights"
     config:
       provider: "anthropic"
-      model: "claude-3-7-sonnet-latest"
+      model: "claude-sonnet-4-5"
       prompt: |
         Enhance the customer profile with intelligent insights:
 
@@ -440,7 +440,7 @@ agents:
     description: "Create or update contact in HubSpot"
     config:
       provider: "anthropic"
-      model: "claude-3-7-sonnet-latest"
+      model: "claude-sonnet-4-5"
       prompt: |
         Sync the enriched customer data to HubSpot:
 
@@ -517,7 +517,7 @@ agents:
     description: "Scrape Nike website for new product releases"
     config:
       provider: "anthropic"
-      model: "claude-3-7-sonnet-latest"
+      model: "claude-sonnet-4-5"
       prompt: |
         Monitor Nike's upcoming releases page and SNKRS app for new drops:
 
@@ -538,7 +538,7 @@ agents:
     description: "Analyze potential hype level of new releases"
     config:
       provider: "anthropic"
-      model: "claude-3-7-sonnet-latest"
+      model: "claude-sonnet-4-5"
       prompt: |
         Analyze the hype potential for each Nike release:
 
@@ -557,7 +557,7 @@ agents:
     description: "Send formatted alerts to Discord"
     config:
       provider: "anthropic"
-      model: "claude-3-7-sonnet-latest"
+      model: "claude-sonnet-4-5"
       prompt: |
         Send Discord webhook with new Nike drops:
 

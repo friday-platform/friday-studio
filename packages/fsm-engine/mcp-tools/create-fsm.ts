@@ -66,7 +66,7 @@ Actions types:
   { type: "emit", event: "order.approved", data: {...} }
 
 - llm: Call LLM with context
-  { type: "llm", provider: "anthropic", model: "claude-3-5-sonnet", prompt: "...", tools: [...], outputTo: "result" }
+  { type: "llm", provider: "anthropic", model: "claude-sonnet-4-5", prompt: "...", tools: [...], outputTo: "result" }
 
 - agent: Invoke Atlas agent
   { type: "agent", agentId: "weather-fetcher", outputTo: "weather" }

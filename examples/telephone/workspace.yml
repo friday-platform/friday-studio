@@ -93,7 +93,7 @@ agents:
     description: "Specializes in phonetic errors and mishearing transformations"
     config:
       provider: "anthropic"
-      model: "claude-3-7-sonnet-latest"
+      model: "claude-sonnet-4-5"
       tools: ["filesystem-context"] # References tools.mcp.servers.filesystem-context
       prompt: |
         You are a specialized agent in the telephone game focusing on phonetic errors and mishearing.
@@ -107,7 +107,7 @@ agents:
     description: "Adds creative details and context to messages"
     config:
       provider: "anthropic"
-      model: "claude-3-7-sonnet-latest"
+      model: "claude-sonnet-4-5"
       tools: ["filesystem-context", "atlas-platform"]
       prompt: |
         You are a creative embellishment agent in the telephone game.
@@ -121,7 +121,7 @@ agents:
     description: "Dramatically transforms and reinterprets messages"
     config:
       provider: "anthropic"
-      model: "claude-3-7-sonnet-latest"
+      model: "claude-sonnet-4-5"
       tools: ["filesystem-context", "atlas-platform"]
       prompt: |
         You are a reinterpretation agent in the telephone game.

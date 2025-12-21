@@ -25,7 +25,7 @@ conversation-agent:
   type: "system"
   agent: "conversation"
   config:
-    model: "claude-3-7-sonnet-latest"
+    model: "claude-sonnet-4-5"
     temperature: 0.7
   tools:  # WRONG: tools outside config
     - "conversation_storage"

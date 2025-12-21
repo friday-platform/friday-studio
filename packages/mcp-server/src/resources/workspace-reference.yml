@@ -341,7 +341,7 @@ agents:
     # LLM-specific configuration under config (tagged union on type)
     config:
       provider: "anthropic" # Options: "anthropic", "openai", "google"
-      model: "claude-3-7-sonnet-latest" # Required for LLM
+      model: "claude-sonnet-4-5" # Required for LLM
 
       # Single prompt string
       prompt: |
@@ -402,7 +402,7 @@ agents:
 
     # Optional configuration that follows system agent schema
     config:
-      model: "claude-3-7-sonnet-latest"
+      model: "claude-sonnet-4-5"
       temperature: 0.3
       max_tokens: 4000
       prompt: "You are a report generation agent that creates comprehensive reports from data analysis"
@@ -451,7 +451,7 @@ agents:
     description: "Generate insights from analyzed data"
     config:
       provider: "anthropic"
-      model: "claude-3-7-sonnet-latest"
+      model: "claude-sonnet-4-5"
       prompt: |
         You are an insight generation specialist. Your role is to:
         1. Analyze data analysis results
@@ -469,7 +469,7 @@ agents:
     description: "Write comprehensive reports"
     config:
       provider: "anthropic"
-      model: "claude-3-7-sonnet-latest"
+      model: "claude-sonnet-4-5"
       prompt: |
         You are a professional report writer. Your role is to:
         1. Synthesize analysis and insights

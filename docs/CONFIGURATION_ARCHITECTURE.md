@@ -481,12 +481,12 @@ jobs:
 agents:
   performance-analyzer:
     type: "llm"
-    model: "claude-3-7-sonnet-latest"
+    model: "claude-sonnet-4-5"
     purpose: "Deep performance analysis and optimization recommendations"
 
   dx-analyzer:
     type: "llm"
-    model: "claude-3-7-sonnet-latest"
+    model: "claude-sonnet-4-5"
     purpose: "Developer experience analysis and improvement recommendations"
 ```
 
