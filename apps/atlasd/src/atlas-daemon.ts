@@ -1,4 +1,4 @@
-import process from "node:process";
+import process, { env } from "node:process";
 import type { AgentRegistry as AgentRegistryType, AtlasUIMessageChunk } from "@atlas/agent-sdk";
 import { type SupervisorDefaults, supervisorDefaultsWrapped } from "@atlas/config";
 import {
@@ -193,7 +193,7 @@ export class AtlasDaemon {
     logger.info("Initializing LibraryStorage...");
     this.libraryStorage = await createLibraryStorage(StorageConfigs.defaultKV(), {
       // Use XDG-compliant default location, but allow environment override
-      contentDir: Deno.env.get("ATLAS_LIBRARY_DIR"),
+      contentDir: env.ATLAS_LIBRARY_DIR,
       organizeByDate: true,
     });
 

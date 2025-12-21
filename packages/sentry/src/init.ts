@@ -1,9 +1,10 @@
+import { env } from "node:process";
 import * as Sentry from "@sentry/deno";
 import { BUILD_COMMIT } from "./build-info.ts";
 
 // DSN configurable via env var, defaults to main atlas project
 const SENTRY_DSN =
-  Deno.env.get("SENTRY_DSN") ||
+  env.SENTRY_DSN ||
   "https://504477a5bd4822c276fac7593c5c12a1@o4507579070611456.ingest.us.sentry.io/4510468135583744";
 
 let initialized = false;
@@ -17,7 +18,7 @@ export function initSentry(): void {
 
   try {
     // Environment from SENTRY_ENVIRONMENT env var, defaults to "local" for local dev
-    const environment = Deno.env.get("SENTRY_ENVIRONMENT") || "local";
+    const environment = env.SENTRY_ENVIRONMENT || "local";
 
     // Release is embedded at compile time (see compile.sh)
     const release = BUILD_COMMIT;

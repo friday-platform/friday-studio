@@ -294,7 +294,7 @@ async sendDiagnostics(gzipPath: string): Promise<void> {
   }
 
   // Get ATLAS_KEY from environment (either from .env or env variable)
-  const atlasKey = Deno.env.get("ATLAS_KEY");
+  const atlasKey = process.env.ATLAS_KEY;
   if (!atlasKey) {
     throw new Error("ATLAS_KEY not found. Please set it in ~/.atlas/.env or as an environment variable.");
   }
@@ -313,7 +313,7 @@ async sendDiagnostics(gzipPath: string): Promise<void> {
 
   // Get API URL (uses ATLAS_URL env var if set, otherwise uses default)
   // Note: ATLAS_URL supports both http (local testing) and https (production)
-  const apiUrl = Deno.env.get("ATLAS_URL") || "https://atlas.tempestdx.com";
+  const apiUrl = process.env.ATLAS_URL || "https://atlas.tempestdx.com";
 
   // Send to diagnostic endpoint
   const response = await fetch(`${apiUrl}/api/diagnostics/${filename}`, {

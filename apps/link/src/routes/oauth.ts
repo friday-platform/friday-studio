@@ -3,6 +3,7 @@
  * Browser-facing OAuth flow endpoints
  */
 
+import { env } from "node:process";
 import { logger } from "@atlas/logger";
 import { z } from "zod";
 import { factory } from "../factory.ts";
@@ -72,7 +73,7 @@ export function createOAuthRoutes(
         }
 
         // Build callback URL for this service
-        const baseUrl = Deno.env.get("LINK_CALLBACK_BASE") || new URL(c.req.url).origin;
+        const baseUrl = env.LINK_CALLBACK_BASE || new URL(c.req.url).origin;
         const callbackUrl = `${baseUrl}/v1/oauth/callback`;
 
         try {

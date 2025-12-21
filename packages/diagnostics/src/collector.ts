@@ -1,3 +1,4 @@
+import { env } from "node:process";
 import { getAtlasClient } from "@atlas/client";
 import { createLogger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
@@ -426,7 +427,7 @@ export class DiagnosticsCollector {
 
     // Directory Information
     systemInfo.directories = {
-      userHome: Deno.env.get("HOME") || Deno.env.get("USERPROFILE") || "unknown",
+      userHome: env.HOME || env.USERPROFILE || "unknown",
       currentDirectory: Deno.cwd(),
       atlasHome: getAtlasHome(),
     };
@@ -435,21 +436,18 @@ export class DiagnosticsCollector {
     systemInfo.environment = {};
     if (Deno.build.os === "windows") {
       systemInfo.environment = {
-        tempDirectory: Deno.env.get("TEMP") || "unknown",
-        systemDrive: Deno.env.get("SYSTEMDRIVE") || "unknown",
+        tempDirectory: env.TEMP || "unknown",
+        systemDrive: env.SYSTEMDRIVE || "unknown",
       };
     } else {
-      systemInfo.environment = {
-        shell: Deno.env.get("SHELL") || "unknown",
-        tmpdir: Deno.env.get("TMPDIR") || "/tmp",
-      };
+      systemInfo.environment = { shell: env.SHELL || "unknown", tmpdir: env.TMPDIR || "/tmp" };
     }
 
     // Language environment variables
-    const langVars = ["LANG", "LC_ALL", "LC_CTYPE", "LANGUAGE"];
+    const langVars = ["LANG", "LC_ALL", "LC_CTYPE", "LANGUAGE"] as const;
     const languageEnv: Record<string, string> = {};
     for (const varName of langVars) {
-      const value = Deno.env.get(varName);
+      const value = env[varName];
       if (value) {
         languageEnv[varName] = value;
       }
@@ -504,13 +502,12 @@ export class DiagnosticsCollector {
       try {
         const command = new Deno.Command("sh", { args: ["-c", "echo $LANG"] });
         const { stdout } = await command.output();
-        const currentLocale =
-          new TextDecoder().decode(stdout).trim() || Deno.env.get("LANG") || "unknown";
+        const currentLocale = new TextDecoder().decode(stdout).trim() || env.LANG || "unknown";
 
         return currentLocale;
       } catch {
         // Fallback to environment variables
-        return Deno.env.get("LANG") || Deno.env.get("LC_ALL") || "unknown";
+        return env.LANG || env.LC_ALL || "unknown";
       }
     } else if (Deno.build.os === "windows") {
       // Windows - use PowerShell to get culture info
@@ -655,10 +652,10 @@ export class DiagnosticsCollector {
       "no_proxy",
       "ALL_PROXY",
       "all_proxy",
-    ];
+    ] as const;
     const proxyConfig: Record<string, string> = {};
     for (const varName of proxyVars) {
-      const value = Deno.env.get(varName);
+      const value = env[varName];
       if (value) {
         proxyConfig[varName] = value;
       }
@@ -674,10 +671,10 @@ export class DiagnosticsCollector {
       "SSL_CERT_DIR",
       "DENO_CERT",
       "DENO_TLS_CA_STORE",
-    ];
+    ] as const;
     const certConfig: Record<string, string> = {};
     for (const varName of certVars) {
-      const value = Deno.env.get(varName);
+      const value = env[varName];
       if (value) {
         certConfig[varName] = value;
       }

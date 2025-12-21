@@ -558,7 +558,7 @@ async function checkBinaryWritePermission(): Promise<{
       }).output();
 
       const owner = new TextDecoder().decode(ownerResult.stdout).trim();
-      const currentUser = Deno.env.get("USER") || Deno.env.get("USERNAME");
+      const currentUser = process.env.USER || process.env.USERNAME;
 
       if (owner === currentUser) {
         // We own the file, we should be able to replace it

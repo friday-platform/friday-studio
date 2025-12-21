@@ -1,3 +1,4 @@
+import process from "node:process";
 import { exists } from "@std/fs";
 import { join } from "@std/path";
 import {
@@ -209,9 +210,9 @@ StandardOutput=append:${this.paths.logDir}/atlas-service.log
 StandardError=append:${this.paths.logDir}/atlas-service-error.log
 
 # Environment variables
-Environment=HOME=${Deno.env.get("HOME") || "/home/user"}
-Environment=USER=${Deno.env.get("USER") || "user"}
-Environment=PATH=${Deno.env.get("PATH") || "/usr/local/bin:/usr/bin:/bin"}
+Environment=HOME=${process.env.HOME || "/home/user"}
+Environment=USER=${process.env.USER || "user"}
+Environment=PATH=${process.env.PATH || "/usr/local/bin:/usr/bin:/bin"}
 
 # Security settings
 NoNewPrivileges=true

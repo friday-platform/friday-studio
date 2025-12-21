@@ -4,17 +4,17 @@
 // It should be run before building the application in CI/CD
 
 import { dirname, fromFileUrl, join } from "jsr:@std/path@^1.0.0";
-import process from "node:process";
+import process, { env } from "node:process";
 
 const __dirname = dirname(fromFileUrl(import.meta.url));
 
 // Determine build type based on environment variables or Git branch
 let buildType = "development";
-const envBuildType = Deno.env.get("BUILD_TYPE");
+const envBuildType = env.BUILD_TYPE;
 if (envBuildType) {
   buildType = envBuildType;
 } else {
-  const githubRef = Deno.env.get("GITHUB_REF");
+  const githubRef = env.GITHUB_REF;
   if (githubRef) {
     if (githubRef.includes("edge")) {
       buildType = "edge";
@@ -27,13 +27,12 @@ if (envBuildType) {
 // Get commit hash from environment variables
 // For local development, this should be passed via environment variable:
 // GIT_COMMIT_HASH=$(git rev-parse --short HEAD) deno run --allow-all scripts/generate-build-info.ts
-const githubSha = Deno.env.get("GITHUB_SHA");
-const commitHash =
-  Deno.env.get("GIT_COMMIT_HASH") || (githubSha ? githubSha.substring(0, 8) : "unknown");
+const githubSha = env.GITHUB_SHA;
+const commitHash = env.GIT_COMMIT_HASH || (githubSha ? githubSha.substring(0, 8) : "unknown");
 
 // Get version from package.json or environment
-let version = Deno.env.get("APP_VERSION") || "0.1.0";
-if (!Deno.env.get("APP_VERSION")) {
+let version = env.APP_VERSION || "0.1.0";
+if (!env.APP_VERSION) {
   try {
     const packageJsonText = await Deno.readTextFile(join(__dirname, "..", "package.json"));
     const packageJson = JSON.parse(packageJsonText);

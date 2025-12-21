@@ -114,7 +114,7 @@ export const handler = async (argv: RestartArgs): Promise<void> => {
         "--idle-timeout",
         (argv.idleTimeout || 300).toString(),
       ],
-      env: Deno.env.toObject(),
+      env: process.env as Record<string, string>,
     });
 
     const { success, stderr } = await cmd.output();

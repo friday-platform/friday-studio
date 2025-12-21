@@ -3,6 +3,7 @@
  * All CLI commands should use this to communicate with the Atlas daemon
  */
 
+import { env } from "node:process";
 import { parseResult, client as v2Client } from "@atlas/client/v2";
 import { getDiagnosticsApiUrl, validateAtlasJWT } from "@atlas/core";
 import { createAtlasClient } from "@atlas/oapi-client";
@@ -280,7 +281,7 @@ export class AtlasClient {
     }
 
     // Get ATLAS_KEY from environment (either from .env or env variable)
-    const atlasKey = Deno.env.get("ATLAS_KEY");
+    const atlasKey = env.ATLAS_KEY;
     if (!atlasKey) {
       throw new Error(
         "ATLAS_KEY not found. Please set it in ~/.atlas/.env or as an environment variable.",

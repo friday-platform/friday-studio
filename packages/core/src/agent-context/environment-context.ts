@@ -2,10 +2,11 @@
  * Environment Context Factory
  *
  * Creates functions for validating environment variables needed by agents.
- * Uses Deno.env for workspace-scoped variables and provides clear
+ * Uses process.env for workspace-scoped variables and provides clear
  * error messages for missing requirements.
  */
 
+import process from "node:process";
 import type { AgentEnvironmentConfig } from "@atlas/agent-sdk";
 import type { Logger } from "@atlas/logger";
 
@@ -46,10 +47,10 @@ export function createEnvironmentContext(logger: Logger) {
 
     // Validate required environment variables
     if (environmentConfig.required) {
-      const litellmKey = Deno.env.get("LITELLM_API_KEY");
+      const litellmKey = process.env.LITELLM_API_KEY;
 
       for (const reqVar of environmentConfig.required) {
-        let value = Deno.env.get(reqVar.name);
+        let value = process.env[reqVar.name];
         let usedSubstitute = false;
 
         // If primary variable is missing, check if LITELLM_API_KEY can substitute
@@ -107,7 +108,7 @@ export function createEnvironmentContext(logger: Logger) {
     // Add optional environment variables with defaults
     if (environmentConfig.optional) {
       for (const optVar of environmentConfig.optional) {
-        const value = Deno.env.get(optVar.name);
+        const value = process.env[optVar.name];
         env[optVar.name] = value ?? optVar.default ?? "";
       }
     }

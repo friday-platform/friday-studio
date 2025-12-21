@@ -73,7 +73,7 @@ private buildCustomHeaders(): Record<string, string> {
   }
 
   // Add user from Atlas key if available
-  const atlasKey = Deno.env.get("ATLAS_KEY");
+  const atlasKey = process.env.ATLAS_KEY;
   if (atlasKey) {
     const userEmail = this.extractUserFromJWT(atlasKey);
     if (userEmail) {

@@ -1,3 +1,4 @@
+import { env } from "node:process";
 import { getAtlasHome, isSystemService } from "@atlas/utils/paths.server";
 import { join } from "@std/path";
 
@@ -8,7 +9,7 @@ import { join } from "@std/path";
  */
 export function getAtlasLogsDir(): string {
   // Allow override
-  const logsDir = Deno.env.get("ATLAS_LOGS_DIR");
+  const logsDir = env.ATLAS_LOGS_DIR;
   if (logsDir) {
     return logsDir;
   }

@@ -1,3 +1,4 @@
+import process from "node:process";
 import { assert, assertEquals } from "@std/assert";
 import { afterEach, beforeEach, describe, it } from "@std/testing/bdd";
 import { ReasoningResultStatus } from "../constants/supervisor-status.ts";
@@ -12,15 +13,15 @@ let testDir: string;
 
 beforeEach(async () => {
   testDir = await Deno.makeTempDir({ prefix: "atlas_session_test_" });
-  originalAtlasHome = Deno.env.get("ATLAS_HOME");
-  Deno.env.set("ATLAS_HOME", testDir);
+  originalAtlasHome = process.env.ATLAS_HOME;
+  process.env.ATLAS_HOME = testDir;
 });
 
 afterEach(async () => {
   if (originalAtlasHome) {
-    Deno.env.set("ATLAS_HOME", originalAtlasHome);
+    process.env.ATLAS_HOME = originalAtlasHome;
   } else {
-    Deno.env.delete("ATLAS_HOME");
+    delete process.env.ATLAS_HOME;
   }
   try {
     await Deno.remove(testDir, { recursive: true });

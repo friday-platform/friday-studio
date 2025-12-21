@@ -3,6 +3,7 @@
  * Checks for newer versions from the Atlas update server with daily caching
  */
 
+import { env } from "node:process";
 import { getAtlasBaseUrl } from "@atlas/core";
 import { logger } from "@atlas/logger";
 import { ensureDir, existsSync } from "@std/fs";
@@ -116,7 +117,7 @@ function isNightlyOld(version: string): boolean {
  * Get cache directory for Atlas CLI
  */
 function getCacheDir(): string {
-  const home = Deno.env.get("HOME") || Deno.env.get("USERPROFILE") || "/tmp";
+  const home = env.HOME || env.USERPROFILE || "/tmp";
   return `${home}/.atlas/cache`;
 }
 

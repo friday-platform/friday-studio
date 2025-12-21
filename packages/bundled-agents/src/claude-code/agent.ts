@@ -1,4 +1,5 @@
 import { homedir } from "node:os";
+import { env } from "node:process";
 import { type ArtifactRef, createAgent } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
 import { getDefaultProviderOpts, smallLLM } from "@atlas/llm";
@@ -12,7 +13,7 @@ import { claudeCode } from "ai-sdk-provider-claude-code";
  * The SDK requires an absolute path because it uses fs.existsSync(), not a PATH lookup.
  */
 function getClaudeCodePath(): string {
-  const claudePath = Deno.env.get("ATLAS_CLAUDE_PATH");
+  const claudePath = env.ATLAS_CLAUDE_PATH;
   if (!claudePath) {
     throw new Error(
       "ATLAS_CLAUDE_PATH not set. Re-run the Atlas installer to detect Claude Code CLI path.",

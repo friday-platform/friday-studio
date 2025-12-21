@@ -1,3 +1,4 @@
+import process from "node:process";
 import { InMemoryStorageAdapter } from "@atlas/storage";
 import { expect } from "@std/expect";
 import { AtlasScope } from "../../../src/core/scope.ts";
@@ -8,7 +9,7 @@ import {
 } from "../src/global-embedding-provider.ts";
 
 // Set testing environment to prevent logger file operations
-Deno.env.set("DENO_TESTING", "true");
+process.env.DENO_TESTING = "true";
 
 // Initialize global embedding provider before tests to avoid message port leak detection
 await embeddingProviderGetInstance();

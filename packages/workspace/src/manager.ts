@@ -476,7 +476,7 @@ export class WorkspaceManager {
   }
 
   private isTestMode(): boolean {
-    return Deno.env.get("DENO_TEST") === "true";
+    return env.DENO_TEST === "true";
   }
 
   /**

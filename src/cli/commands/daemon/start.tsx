@@ -123,12 +123,12 @@ function buildOtelEnv(atlasKey: string): Record<string, string> {
  */
 async function peekAtlasKey(): Promise<string | undefined> {
   // Priority 1: Fetch from cypher (Kubernetes pods)
-  const cypherUrl = Deno.env.get("CYPHER_TOKEN_URL");
+  const cypherUrl = process.env.CYPHER_TOKEN_URL;
   if (cypherUrl) {
     try {
       const token = await fetchCypherToken(cypherUrl);
       // Set to environment so later checks find it
-      Deno.env.set("ATLAS_KEY", token);
+      process.env.ATLAS_KEY = token;
       return token;
     } catch (error) {
       // Log but don't fail - fall through to other methods
@@ -140,7 +140,7 @@ async function peekAtlasKey(): Promise<string | undefined> {
   }
 
   // Priority 2: Check if already in environment (from shell or --env-file)
-  const fromEnv = Deno.env.get("ATLAS_KEY");
+  const fromEnv = process.env.ATLAS_KEY;
   if (fromEnv) return fromEnv;
 
   // Priority 3: Check ~/.atlas/.env
@@ -177,7 +177,7 @@ async function peekAtlasKey(): Promise<string | undefined> {
  * Returns true if OTEL will be/is active.
  */
 function isOtelConfigured(): boolean {
-  return Deno.env.get("OTEL_DENO") === "true" && !!Deno.env.get("OTEL_EXPORTER_OTLP_ENDPOINT");
+  return process.env.OTEL_DENO === "true" && !!process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
 }
 
 /**
@@ -187,7 +187,7 @@ function isOtelConfigured(): boolean {
  */
 async function reExecWithOtel(atlasKey: string): Promise<never> {
   const otelEnv = buildOtelEnv(atlasKey);
-  const mergedEnv = { ...Deno.env.toObject(), ...otelEnv };
+  const mergedEnv = { ...process.env, ...otelEnv } as Record<string, string>;
 
   const cmd = new Deno.Command(Deno.execPath(), {
     args: buildCommandArgs(Deno.args),
@@ -308,9 +308,9 @@ export const handler = async (argv: StartArgs): Promise<void> => {
 
   // Set Sentry environment based on build type if not explicitly configured.
   // Compiled binary defaults to "production", source code defaults to "local".
-  if (!Deno.env.get("SENTRY_ENVIRONMENT")) {
+  if (!process.env.SENTRY_ENVIRONMENT) {
     const { isCompiled } = getVersionInfo();
-    Deno.env.set("SENTRY_ENVIRONMENT", isCompiled ? "production" : "local");
+    process.env.SENTRY_ENVIRONMENT = isCompiled ? "production" : "local";
   }
 
   // Initialize Sentry early for error tracking
@@ -407,7 +407,7 @@ export const handler = async (argv: StartArgs): Promise<void> => {
 
         // Extract directory from tool path using proper path utilities
         const toolDir = dirname(toolPath);
-        const currentPath = Deno.env.get("PATH") || "";
+        const currentPath = process.env.PATH || "";
         const separator = Deno.build.os === "windows" ? ";" : ":";
 
         // Check if tool directory is already in PATH
@@ -415,7 +415,7 @@ export const handler = async (argv: StartArgs): Promise<void> => {
         if (!pathSegments.includes(toolDir)) {
           // Prepend tool directory to PATH for higher priority
           const newPath = `${toolDir}${separator}${currentPath}`;
-          Deno.env.set("PATH", newPath);
+          process.env.PATH = newPath;
           logger.info(`Added ${toolName} to PATH`, { toolPath, toolDir });
         } else {
           logger.debug(`${toolName} directory already in PATH`, { toolDir });
@@ -429,7 +429,7 @@ export const handler = async (argv: StartArgs): Promise<void> => {
     };
 
     // Check for ATLAS_NPX_PATH and augment PATH if needed
-    const npxPath = Deno.env.get("ATLAS_NPX_PATH");
+    const npxPath = process.env.ATLAS_NPX_PATH;
     if (npxPath) {
       await augmentPathWithTool(npxPath, "npx");
     } else {
@@ -437,7 +437,7 @@ export const handler = async (argv: StartArgs): Promise<void> => {
     }
 
     // Check for ATLAS_NODE_PATH and augment PATH if needed (for bundled claude-code agent)
-    const nodePath = Deno.env.get("ATLAS_NODE_PATH");
+    const nodePath = process.env.ATLAS_NODE_PATH;
     if (nodePath) {
       await augmentPathWithTool(nodePath, "node");
     } else {
@@ -445,8 +445,8 @@ export const handler = async (argv: StartArgs): Promise<void> => {
     }
 
     // Check for ATLAS_KEY and fetch credentials if present
-    const atlasKey = Deno.env.get("ATLAS_KEY");
-    const localOnlyMode = isLocalOnlyMode(Deno.env.get("ATLAS_LOCAL_ONLY"));
+    const atlasKey = process.env.ATLAS_KEY;
+    const localOnlyMode = isLocalOnlyMode(process.env.ATLAS_LOCAL_ONLY);
 
     if (atlasKey && !localOnlyMode) {
       logger.info("Atlas key detected, fetching credentials...");
@@ -480,7 +480,7 @@ export const handler = async (argv: StartArgs): Promise<void> => {
 
     // Set atlas config path if provided
     if (argv.atlasConfig) {
-      Deno.env.set("ATLAS_CONFIG_PATH", argv.atlasConfig);
+      process.env.ATLAS_CONFIG_PATH = argv.atlasConfig;
     }
 
     if (argv.detached) {
@@ -513,7 +513,7 @@ async function startDetached(argv: StartArgs): Promise<void> {
 
   const cmd = new Deno.Command(Deno.execPath(), {
     args: buildCommandArgs(buildDaemonArgs(argv)),
-    env: Deno.env.toObject(),
+    env: process.env as Record<string, string>,
     stdout: "null",
     stderr: "null",
     stdin: "null",

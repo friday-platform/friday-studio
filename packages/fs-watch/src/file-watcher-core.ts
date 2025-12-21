@@ -1,3 +1,4 @@
+import { env } from "node:process";
 import { logger } from "@atlas/logger";
 import { isAbsolute, join, normalize, relative, resolve } from "@std/path";
 
@@ -11,11 +12,11 @@ export interface ResolvePathOptions {
 
 export function expandHomePath(inputPath: string): string {
   if (inputPath.startsWith("~/")) {
-    const home = Deno.env.get("HOME") || Deno.env.get("USERPROFILE");
+    const home = env.HOME || env.USERPROFILE;
     if (home) return join(home, inputPath.slice(2));
   }
   if (inputPath.startsWith("$HOME/")) {
-    const home = Deno.env.get("HOME") || Deno.env.get("USERPROFILE");
+    const home = env.HOME || env.USERPROFILE;
     if (home) return join(home, inputPath.slice("$HOME/".length));
   }
   return inputPath;

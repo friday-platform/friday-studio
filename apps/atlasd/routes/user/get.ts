@@ -1,3 +1,4 @@
+import { env } from "node:process";
 import { stringifyError } from "@atlas/utils";
 import { describeRoute, resolver } from "hono-openapi";
 import { daemonFactory } from "../../src/factory.ts";
@@ -28,7 +29,7 @@ getUser.get(
   }),
   (c) => {
     try {
-      const currentUser = Deno.env.get("USER") || Deno.env.get("USERNAME") || "You";
+      const currentUser = env.USER || env.USERNAME || "You";
 
       // get the current user
       return c.json({ success: true, currentUser });

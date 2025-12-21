@@ -207,7 +207,7 @@ async function performUpdate(params: {
   const { currentVersion, targetVersion, quiet, force, downloadUrl } = params;
 
   // Create update directory
-  const updateDir = join(Deno.env.get("HOME") || "", ".atlas", "updates");
+  const updateDir = join(process.env.HOME || "", ".atlas", "updates");
 
   try {
     // Check platform
@@ -658,7 +658,7 @@ async function checkBinaryWritePermission(): Promise<{
         owner = new TextDecoder().decode(ownerResult.stdout).trim();
       }
 
-      const currentUser = Deno.env.get("USER") || Deno.env.get("USERNAME");
+      const currentUser = process.env.USER || process.env.USERNAME;
 
       if (owner === currentUser) {
         // We own the file, we should be able to replace it
@@ -1229,7 +1229,7 @@ function logUpdateEvent(event: {
 }
 
 async function saveChannelPreference(channel: string): Promise<void> {
-  const configPath = join(Deno.env.get("HOME") || "", ".atlas", "config.json");
+  const configPath = join(process.env.HOME || "", ".atlas", "config.json");
 
   let config: Record<string, unknown> = {};
 
@@ -1245,7 +1245,7 @@ async function saveChannelPreference(channel: string): Promise<void> {
   config.updateChannel = channel;
 
   // Write config
-  await ensureDir(join(Deno.env.get("HOME") || "", ".atlas"));
+  await ensureDir(join(process.env.HOME || "", ".atlas"));
   await Deno.writeTextFile(configPath, JSON.stringify(config, null, 2));
 }
 

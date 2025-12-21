@@ -1,3 +1,4 @@
+import { env } from "node:process";
 import { logger } from "@atlas/logger";
 import type {
   Attributes,
@@ -280,7 +281,7 @@ export class AtlasTelemetry {
     AtlasTelemetry.initPromise = (async () => {
       try {
         // Check if OpenTelemetry should be enabled
-        if (Deno.env.get("OTEL_DENO") !== "true") {
+        if (env.OTEL_DENO !== "true") {
           logger.debug("OpenTelemetry disabled - set OTEL_DENO=true to enable");
           return;
         }
@@ -296,14 +297,14 @@ export class AtlasTelemetry {
         AtlasTelemetry.isEnabled = true;
 
         // Set service name if not already set
-        if (!Deno.env.get("OTEL_SERVICE_NAME")) {
-          Deno.env.set("OTEL_SERVICE_NAME", "atlas");
+        if (!env.OTEL_SERVICE_NAME) {
+          env.OTEL_SERVICE_NAME = "atlas";
         }
 
         logger.info("🔍 OpenTelemetry enabled for Atlas", {
-          serviceName: Deno.env.get("OTEL_SERVICE_NAME"),
-          endpoint: Deno.env.get("OTEL_EXPORTER_OTLP_ENDPOINT") || "default",
-          protocol: Deno.env.get("OTEL_EXPORTER_OTLP_PROTOCOL") || "http/protobuf",
+          serviceName: env.OTEL_SERVICE_NAME,
+          endpoint: env.OTEL_EXPORTER_OTLP_ENDPOINT || "default",
+          protocol: env.OTEL_EXPORTER_OTLP_PROTOCOL || "http/protobuf",
         });
       } catch (error) {
         logger.warn(

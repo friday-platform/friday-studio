@@ -3,6 +3,7 @@
  * Tests JWT verification in dev and production modes
  */
 
+import process from "node:process";
 import { assertEquals, assertExists, assertStrictEquals } from "@std/assert";
 import * as jose from "jose";
 import { z } from "zod";
@@ -67,13 +68,13 @@ async function setupProdAuthApp(
   const keyFile = await Deno.makeTempFile();
   await Deno.writeTextFile(keyFile, publicKeyPem);
 
-  const originalKeyFile = Deno.env.get("LINK_JWT_PUBLIC_KEY_FILE");
-  const originalKvPath = Deno.env.get("LINK_KV_PATH");
-  const originalDevMode = Deno.env.get("LINK_DEV_MODE");
+  const originalKeyFile = process.env.LINK_JWT_PUBLIC_KEY_FILE;
+  const originalKvPath = process.env.LINK_KV_PATH;
+  const originalDevMode = process.env.LINK_DEV_MODE;
 
-  Deno.env.set("LINK_JWT_PUBLIC_KEY_FILE", keyFile);
-  Deno.env.set("LINK_KV_PATH", ":memory:");
-  Deno.env.delete("LINK_DEV_MODE");
+  process.env.LINK_JWT_PUBLIC_KEY_FILE = keyFile;
+  process.env.LINK_KV_PATH = ":memory:";
+  delete process.env.LINK_DEV_MODE;
 
   const { createApp: createAppFresh } = await import(`../src/index.ts?t=${Date.now()}`);
   const app = await createAppFresh(storage, oauthService);
@@ -83,11 +84,11 @@ async function setupProdAuthApp(
     keyPair,
     cleanup: async () => {
       await Deno.remove(keyFile);
-      if (originalKeyFile) Deno.env.set("LINK_JWT_PUBLIC_KEY_FILE", originalKeyFile);
-      else Deno.env.delete("LINK_JWT_PUBLIC_KEY_FILE");
-      if (originalKvPath) Deno.env.set("LINK_KV_PATH", originalKvPath);
-      else Deno.env.delete("LINK_KV_PATH");
-      if (originalDevMode) Deno.env.set("LINK_DEV_MODE", originalDevMode);
+      if (originalKeyFile) process.env.LINK_JWT_PUBLIC_KEY_FILE = originalKeyFile;
+      else delete process.env.LINK_JWT_PUBLIC_KEY_FILE;
+      if (originalKvPath) process.env.LINK_KV_PATH = originalKvPath;
+      else delete process.env.LINK_KV_PATH;
+      if (originalDevMode) process.env.LINK_DEV_MODE = originalDevMode;
     },
   };
 }
@@ -106,13 +107,13 @@ Deno.test(
 
     await t.step("dev mode: no secret = userId defaults to dev", async () => {
       // Save original env vars
-      const originalKeyFile = Deno.env.get("LINK_JWT_PUBLIC_KEY_FILE");
-      const originalKvPath = Deno.env.get("LINK_KV_PATH");
+      const originalKeyFile = process.env.LINK_JWT_PUBLIC_KEY_FILE;
+      const originalKvPath = process.env.LINK_KV_PATH;
 
       // Unset LINK_JWT_PUBLIC_KEY_FILE to simulate dev mode
-      Deno.env.delete("LINK_JWT_PUBLIC_KEY_FILE");
+      delete process.env.LINK_JWT_PUBLIC_KEY_FILE;
       // Set LINK_KV_PATH so module can load
-      Deno.env.set("LINK_KV_PATH", ":memory:");
+      process.env.LINK_KV_PATH = ":memory:";
 
       // Re-import to pick up env change - use dynamic import with timestamp to bust cache
       const { createApp: createAppFresh } = await import(`../src/index.ts?t=${Date.now()}`);
@@ -126,12 +127,12 @@ Deno.test(
 
       // Restore env vars
       if (originalKeyFile) {
-        Deno.env.set("LINK_JWT_PUBLIC_KEY_FILE", originalKeyFile);
+        process.env.LINK_JWT_PUBLIC_KEY_FILE = originalKeyFile;
       }
       if (originalKvPath) {
-        Deno.env.set("LINK_KV_PATH", originalKvPath);
+        process.env.LINK_KV_PATH = originalKvPath;
       } else {
-        Deno.env.delete("LINK_KV_PATH");
+        delete process.env.LINK_KV_PATH;
       }
     });
 
@@ -279,13 +280,13 @@ Deno.test(
       const keyFile = await Deno.makeTempFile();
       await Deno.writeTextFile(keyFile, publicKeyPem);
 
-      const originalKeyFile = Deno.env.get("LINK_JWT_PUBLIC_KEY_FILE");
-      const originalKvPath = Deno.env.get("LINK_KV_PATH");
-      const originalDevMode = Deno.env.get("LINK_DEV_MODE");
+      const originalKeyFile = process.env.LINK_JWT_PUBLIC_KEY_FILE;
+      const originalKvPath = process.env.LINK_KV_PATH;
+      const originalDevMode = process.env.LINK_DEV_MODE;
 
-      Deno.env.set("LINK_JWT_PUBLIC_KEY_FILE", keyFile);
-      Deno.env.set("LINK_KV_PATH", ":memory:");
-      Deno.env.delete("LINK_DEV_MODE");
+      process.env.LINK_JWT_PUBLIC_KEY_FILE = keyFile;
+      process.env.LINK_KV_PATH = ":memory:";
+      delete process.env.LINK_DEV_MODE;
 
       const { createApp: createAppFresh } = await import(`../src/index.ts?t=${Date.now()}`);
       // IMPORTANT: Use same storage instance so credentials persist
@@ -296,11 +297,11 @@ Deno.test(
         keyPair,
         cleanup: async () => {
           await Deno.remove(keyFile);
-          if (originalKeyFile) Deno.env.set("LINK_JWT_PUBLIC_KEY_FILE", originalKeyFile);
-          else Deno.env.delete("LINK_JWT_PUBLIC_KEY_FILE");
-          if (originalKvPath) Deno.env.set("LINK_KV_PATH", originalKvPath);
-          else Deno.env.delete("LINK_KV_PATH");
-          if (originalDevMode) Deno.env.set("LINK_DEV_MODE", originalDevMode);
+          if (originalKeyFile) process.env.LINK_JWT_PUBLIC_KEY_FILE = originalKeyFile;
+          else delete process.env.LINK_JWT_PUBLIC_KEY_FILE;
+          if (originalKvPath) process.env.LINK_KV_PATH = originalKvPath;
+          else delete process.env.LINK_KV_PATH;
+          if (originalDevMode) process.env.LINK_DEV_MODE = originalDevMode;
         },
       };
     }
@@ -326,13 +327,13 @@ Deno.test(
     });
 
     await t.step("dev: no X-Atlas-User-ID → falls back to userId=dev", async () => {
-      const originalKeyFile = Deno.env.get("LINK_JWT_PUBLIC_KEY_FILE");
-      const originalKvPath = Deno.env.get("LINK_KV_PATH");
-      const originalDevMode = Deno.env.get("LINK_DEV_MODE");
+      const originalKeyFile = process.env.LINK_JWT_PUBLIC_KEY_FILE;
+      const originalKvPath = process.env.LINK_KV_PATH;
+      const originalDevMode = process.env.LINK_DEV_MODE;
 
-      Deno.env.delete("LINK_JWT_PUBLIC_KEY_FILE");
-      Deno.env.set("LINK_KV_PATH", ":memory:");
-      Deno.env.set("LINK_DEV_MODE", "true");
+      delete process.env.LINK_JWT_PUBLIC_KEY_FILE;
+      process.env.LINK_KV_PATH = ":memory:";
+      process.env.LINK_DEV_MODE = "true";
 
       const { createApp: createAppFresh } = await import(`../src/index.ts?t=${Date.now()}`);
       // Use same storage instance so we can verify data persistence
@@ -360,11 +361,11 @@ Deno.test(
       assertEquals(storedCred.label, "dev-cred");
 
       // Restore env
-      if (originalKeyFile) Deno.env.set("LINK_JWT_PUBLIC_KEY_FILE", originalKeyFile);
-      if (originalKvPath) Deno.env.set("LINK_KV_PATH", originalKvPath);
-      else Deno.env.delete("LINK_KV_PATH");
-      if (originalDevMode) Deno.env.set("LINK_DEV_MODE", originalDevMode);
-      else Deno.env.delete("LINK_DEV_MODE");
+      if (originalKeyFile) process.env.LINK_JWT_PUBLIC_KEY_FILE = originalKeyFile;
+      if (originalKvPath) process.env.LINK_KV_PATH = originalKvPath;
+      else delete process.env.LINK_KV_PATH;
+      if (originalDevMode) process.env.LINK_DEV_MODE = originalDevMode;
+      else delete process.env.LINK_DEV_MODE;
     });
 
     await t.step("special chars in user ID propagate correctly", async () => {

@@ -177,7 +177,7 @@ export class MCPManager {
           // Smart command resolution for npx
           // If command is 'npx' and we have ATLAS_NPX_PATH, use the full path
           if (command === "npx" || command === "npx.cmd") {
-            const npxPath = Deno.env.get("ATLAS_NPX_PATH");
+            const npxPath = process.env.ATLAS_NPX_PATH;
             if (npxPath) {
               // Validate the npx path exists and is executable
               try {
@@ -244,7 +244,7 @@ export class MCPManager {
                   // Expand environment variables on Windows
                   const expandedPath =
                     Deno.build.os === "windows"
-                      ? fallbackPath.replace(/%([^%]+)%/g, (_, key) => Deno.env.get(key) || "")
+                      ? fallbackPath.replace(/%([^%]+)%/g, (_, key) => process.env[key] || "")
                       : fallbackPath;
 
                   const fileInfo = await Deno.stat(expandedPath);
@@ -280,7 +280,12 @@ export class MCPManager {
           // Merge processed env vars with parent process env
           // Deno.Command replaces the environment if you pass the env option
           // We need to merge with parent to preserve PATH and other critical vars
-          const parentEnv = Deno.env.toObject();
+          // Filter out undefined values from process.env
+          const parentEnv = Object.fromEntries(
+            Object.entries(process.env).filter(
+              (entry): entry is [string, string] => entry[1] !== undefined,
+            ),
+          );
           const mergedEnv = { ...parentEnv, ...processedEnv };
 
           mcpClient = await createMCPClient({
@@ -694,7 +699,7 @@ export class MCPManager {
     if (!auth) return headers;
 
     if (auth.type === "bearer" && auth.token_env) {
-      const token = Deno.env.get(auth.token_env);
+      const token = process.env[auth.token_env];
       if (token) {
         headers.Authorization = `Bearer ${token}`;
         logger.debug("Added bearer token authentication", {
@@ -711,7 +716,7 @@ export class MCPManager {
     }
 
     if (auth.type === "api_key" && auth.token_env) {
-      const apiKey = Deno.env.get(auth.token_env);
+      const apiKey = process.env[auth.token_env];
       if (apiKey) {
         headers[auth.header || "X-API-Key"] = apiKey;
         logger.debug("Added API key authentication", {

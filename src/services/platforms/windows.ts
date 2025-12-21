@@ -1,3 +1,4 @@
+import process from "node:process";
 import { logger } from "@atlas/logger";
 import { z } from "zod";
 import {
@@ -26,7 +27,7 @@ export class WindowsService implements PlatformServiceManager {
 
   async install(config: ServiceConfig): Promise<void> {
     const binaryPath = getAtlasBinaryPath();
-    const homeDir = Deno.env.get("USERPROFILE") || "C:\\Users\\Default";
+    const homeDir = process.env.USERPROFILE || "C:\\Users\\Default";
 
     // Create log directory
     await Deno.mkdir(this.paths.logDir, { recursive: true });
@@ -63,7 +64,7 @@ exit
   }
 
   async uninstall(): Promise<void> {
-    const homeDir = Deno.env.get("USERPROFILE") || "C:\\Users\\Default";
+    const homeDir = process.env.USERPROFILE || "C:\\Users\\Default";
 
     // Stop service if running
     try {
@@ -314,7 +315,7 @@ exit
 
   async isInstalled(): Promise<boolean> {
     // Check if startup batch file exists
-    const homeDir = Deno.env.get("USERPROFILE") || "C:\\Users\\Default";
+    const homeDir = process.env.USERPROFILE || "C:\\Users\\Default";
     const startupBatch = `${homeDir}\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\Atlas.bat`;
 
     try {

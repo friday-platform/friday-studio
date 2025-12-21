@@ -7,6 +7,7 @@
  * Requires OTEL_DENO=true environment variable to be set.
  */
 
+import { env } from "node:process";
 import { logger } from "@atlas/logger";
 import type { Counter, Meter } from "@opentelemetry/api";
 
@@ -36,7 +37,7 @@ function initialize(): Promise<void> {
   initPromise = (async () => {
     try {
       // Check if OpenTelemetry should be enabled
-      if (Deno.env.get("OTEL_DENO") !== "true") {
+      if (env.OTEL_DENO !== "true") {
         logger.debug("OTEL metrics disabled - set OTEL_DENO=true to enable");
         return;
       }
@@ -91,7 +92,7 @@ function initialize(): Promise<void> {
 
       isEnabled = true;
       logger.info("OTEL metrics enabled for atlasd", {
-        serviceName: Deno.env.get("OTEL_SERVICE_NAME") || "atlas",
+        serviceName: env.OTEL_SERVICE_NAME || "atlas",
       });
     } catch (error) {
       logger.warn("Failed to initialize OTEL metrics", { error: String(error) });

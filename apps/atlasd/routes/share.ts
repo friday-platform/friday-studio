@@ -2,6 +2,7 @@
  * Share route - proxies chat HTML uploads to internal gist service
  */
 
+import { env } from "node:process";
 import { logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
 import { getAtlasHome } from "@atlas/utils/paths.server";
@@ -11,12 +12,12 @@ import { describeRoute, resolver } from "hono-openapi";
 import z from "zod";
 import { daemonFactory } from "../src/factory.ts";
 
-const GIST_SERVICE_URL = Deno.env.get("GIST_SERVICE_URL") || "https://share.atlas.tempestdx.com";
+const GIST_SERVICE_URL = env.GIST_SERVICE_URL || "https://share.atlas.tempestdx.com";
 const GIST_SERVICE_TIMEOUT_MS = 10_000;
 
 /** Get ATLAS_KEY from process env or ~/.atlas/.env file */
 async function getAtlasKey(): Promise<string | undefined> {
-  const envKey = Deno.env.get("ATLAS_KEY");
+  const envKey = env.ATLAS_KEY;
   if (envKey) return envKey;
   try {
     const content = await Deno.readTextFile(join(getAtlasHome(), ".env"));

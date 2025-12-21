@@ -3,6 +3,7 @@
  * End-to-end tests for OAuth authorization flow
  */
 
+import process from "node:process";
 import { assert, assertEquals, assertExists, assertMatch, assertObjectMatch } from "@std/assert";
 import { z } from "zod";
 import { DenoKVStorageAdapter } from "../src/adapters/deno-kv-adapter.ts";
@@ -21,7 +22,7 @@ import {
 const ErrorResponse = z.looseObject({ error: z.string() });
 
 // Allow insecure HTTP for mock OAuth server in tests
-Deno.env.set("LINK_ALLOW_INSECURE_HTTP", "true");
+process.env.LINK_ALLOW_INSECURE_HTTP = "true";
 
 /** Mock identify function for static test providers */
 const mockIdentify = async (tokens: OAuthTokens): Promise<string> => {

@@ -1,3 +1,4 @@
+import process from "node:process";
 import type { AtlasUIMessage } from "@atlas/agent-sdk";
 import { validateAtlasUIMessages } from "@atlas/agent-sdk";
 import { assert, assertEquals, assertExists } from "@std/assert";
@@ -10,15 +11,15 @@ let testDir: string;
 
 beforeEach(async () => {
   testDir = await Deno.makeTempDir({ prefix: "atlas_chat_test_" });
-  originalAtlasHome = Deno.env.get("ATLAS_HOME");
-  Deno.env.set("ATLAS_HOME", testDir);
+  originalAtlasHome = process.env.ATLAS_HOME;
+  process.env.ATLAS_HOME = testDir;
 });
 
 afterEach(async () => {
   if (originalAtlasHome) {
-    Deno.env.set("ATLAS_HOME", originalAtlasHome);
+    process.env.ATLAS_HOME = originalAtlasHome;
   } else {
-    Deno.env.delete("ATLAS_HOME");
+    delete process.env.ATLAS_HOME;
   }
   try {
     await Deno.remove(testDir, { recursive: true });

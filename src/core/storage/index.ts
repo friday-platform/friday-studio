@@ -15,6 +15,7 @@
  * - Clean testing with mock adapters
  */
 
+import { cwd, env } from "node:process";
 import { createKVStorage, type KVStorageConfig } from "./kv-storage.ts";
 import { LibraryStorageAdapter, type LibraryStorageConfig } from "./library-storage-adapter.ts";
 import { RegistryStorageAdapter } from "./registry-storage-adapter.ts";
@@ -51,7 +52,7 @@ export const StorageConfigs = {
    * Default Deno KV storage in ~/.atlas/
    */
   defaultKV(): KVStorageConfig {
-    const homeDir = Deno.env.get("HOME") || Deno.env.get("USERPROFILE") || Deno.cwd();
+    const homeDir = env.HOME || env.USERPROFILE || cwd();
     return { type: "deno-kv", connection: `${homeDir}/.atlas/storage.db` };
   },
 

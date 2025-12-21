@@ -1,3 +1,5 @@
+import process from "node:process";
+
 /**
  * Sets up fake API credentials for eval testing.
  *
@@ -44,13 +46,13 @@ export function setupFakeCredentials(envVars: string[] | "all") {
 
   for (const key of varList) {
     // Skip if already set
-    if (Deno.env.get(key)) {
+    if (process.env[key]) {
       continue;
     }
 
     // Generate random fake value
     const randomValue = generateFakeValue(key);
-    Deno.env.set(key, randomValue);
+    process.env[key] = randomValue;
     configured.push(key);
   }
 

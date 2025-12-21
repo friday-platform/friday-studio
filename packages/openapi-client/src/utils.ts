@@ -13,15 +13,14 @@ declare const __DEV_MODE__: boolean | undefined;
 
 /**
  * Get the Atlas daemon URL from environment or default
- * Works in Deno, Node.js, and browser (Tauri/web) environments
+ * Works in Node.js and browser (Tauri/web) environments
  *
  * Priority order:
  * 1. Dev mode (Vite dev server) → http://127.0.0.1:8080 (direct connection)
  * 2. Production web builds → "" (relative URLs, routed by Traefik)
- * 3. Deno.env.ATLAS_DAEMON_URL
- * 4. process.env.ATLAS_DAEMON_URL (Node.js)
- * 5. globalThis.ATLAS_DAEMON_URL (Tauri)
- * 6. Default: http://127.0.0.1:8080
+ * 3. process.env.ATLAS_DAEMON_URL (Node.js)
+ * 4. globalThis.ATLAS_DAEMON_URL (Tauri)
+ * 5. Default: http://127.0.0.1:8080
  */
 export function getAtlasDaemonUrl(): string {
   // In production web builds (not dev mode, not Tauri), use relative URLs
@@ -34,21 +33,12 @@ export function getAtlasDaemonUrl(): string {
     return "";
   }
 
-  // Try to get from environment in a cross-platform way
+  // Try to get from environment
   let daemonUrl: string | undefined;
-
-  // Check Deno environment
-  if (typeof Deno !== "undefined" && Deno.env) {
-    daemonUrl = Deno.env.get("ATLAS_DAEMON_URL");
-  }
-  // Check Node.js environment (but not Vite's stub process.env = {})
-  else if (
-    typeof process !== "undefined" &&
-    process?.env &&
-    typeof process.env.NODE_ENV !== "undefined"
-  ) {
+  if (typeof process !== "undefined" && process?.env) {
     daemonUrl = process.env.ATLAS_DAEMON_URL;
   }
+
   // Check globalThis (set by Tauri)
   if (!daemonUrl && typeof globalThis !== "undefined") {
     // @ts-expect-error - globalThis.ATLAS_DAEMON_URL may be set by Tauri

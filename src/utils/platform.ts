@@ -1,3 +1,4 @@
+import { env } from "node:process";
 import type { Platform } from "../services/types.ts";
 
 /**
@@ -54,7 +55,7 @@ export function getSystemBinaryPath(): string {
     case "linux":
       return "/usr/local/bin/atlas";
     case "windows": {
-      const userProfile = Deno.env.get("USERPROFILE") || "";
+      const userProfile = env.USERPROFILE || "";
       return `${userProfile}\\AppData\\Local\\Atlas\\atlas.exe`;
     }
     default:
@@ -67,7 +68,7 @@ export function getSystemBinaryPath(): string {
  */
 export function getPlatformPaths() {
   const platform = detectPlatform();
-  const homeDir = Deno.env.get("HOME") || Deno.env.get("USERPROFILE") || "";
+  const homeDir = env.HOME || env.USERPROFILE || "";
 
   switch (platform) {
     case "macos":

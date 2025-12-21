@@ -7,7 +7,7 @@
 import process from "node:process";
 
 // Set environment variable
-Deno.env.set("TAURI_BUILD", "true");
+process.env.TAURI_BUILD = "true";
 
 // Run the build command
 const command = new Deno.Command("deno", {

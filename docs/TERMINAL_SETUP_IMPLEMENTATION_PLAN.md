@@ -92,7 +92,7 @@ export async function detectTerminal(): Promise<TerminalInfo> {
   }
 
   // Method 1: Check environment variables (most reliable)
-  const termProgram = Deno.env.get("TERM_PROGRAM") || process.env.TERM_PROGRAM;
+  const termProgram = process.env.TERM_PROGRAM;
 
   // Direct terminal detection via TERM_PROGRAM
   if (termProgram === "Apple_Terminal") {
@@ -117,8 +117,8 @@ export async function detectTerminal(): Promise<TerminalInfo> {
 
   // iTerm2 detection via alternative env vars
   if (
-    Deno.env.get("LC_TERMINAL") === "iTerm2" ||
-    Deno.env.get("ITERM_SESSION_ID")
+    process.env.LC_TERMINAL === "iTerm2" ||
+    process.env.ITERM_SESSION_ID
   ) {
     return {
       type: "iTerm.app",
@@ -130,8 +130,8 @@ export async function detectTerminal(): Promise<TerminalInfo> {
 
   // Ghostty detection
   if (
-    Deno.env.get("GHOSTTY_RESOURCES_DIR") ||
-    Deno.env.get("GHOSTTY_BIN_DIR") ||
+    process.env.GHOSTTY_RESOURCES_DIR ||
+    process.env.GHOSTTY_BIN_DIR ||
     termProgram === "ghostty"
   ) {
     return {
@@ -263,8 +263,8 @@ async function checkGhosttyConfig(): Promise<boolean> {
   }
 
   const configPaths = [
-    `${Deno.env.get("HOME")}/.config/ghostty/config`,
-    `${Deno.env.get("HOME")}/Library/Application Support/com.mitchellh.ghostty/config`,
+    `${process.env.HOME}/.config/ghostty/config`,
+    `${process.env.HOME}/Library/Application Support/com.mitchellh.ghostty/config`,
   ];
 
   for (const path of configPaths) {
@@ -327,15 +327,15 @@ async function detectViaTTY(): Promise<TerminalInfo | null> {
 
 // Edge case handling
 export function isSSHSession(): boolean {
-  return !!(Deno.env.get("SSH_CLIENT") || Deno.env.get("SSH_TTY"));
+  return !!(process.env.SSH_CLIENT || process.env.SSH_TTY);
 }
 
 export function isTmuxSession(): boolean {
-  return !!Deno.env.get("TMUX");
+  return !!process.env.TMUX;
 }
 
 export function isScreenSession(): boolean {
-  return !!Deno.env.get("STY");
+  return !!process.env.STY;
 }
 
 export function isDockerContainer(): boolean {
@@ -485,8 +485,8 @@ const enableMultiline = async () => {
             method: terminal.detectionMethod,
             confidence: terminal.confidence,
             environment: {
-              TERM_PROGRAM: Deno.env.get("TERM_PROGRAM") || "not set",
-              TERM: Deno.env.get("TERM") || "not set",
+              TERM_PROGRAM: process.env.TERM_PROGRAM || "not set",
+              TERM: process.env.TERM || "not set",
               isSSH,
               isTmux,
               isScreen,
@@ -509,12 +509,12 @@ const enableMultiline = async () => {
 // Helper to check if running in CI environment
 function isCI(): boolean {
   return !!(
-    Deno.env.get("CI") ||
-    Deno.env.get("CONTINUOUS_INTEGRATION") ||
-    Deno.env.get("GITHUB_ACTIONS") ||
-    Deno.env.get("GITLAB_CI") ||
-    Deno.env.get("CIRCLECI") ||
-    Deno.env.get("TRAVIS")
+    process.env.CI ||
+    process.env.CONTINUOUS_INTEGRATION ||
+    process.env.GITHUB_ACTIONS ||
+    process.env.GITLAB_CI ||
+    process.env.CIRCLECI ||
+    process.env.TRAVIS
   );
 }
 
@@ -540,7 +540,7 @@ export async function preFlightCheck(): Promise<{
   // Check permissions for macOS preference files
   if (Deno.build.os === "darwin") {
     try {
-      await Deno.stat(`${Deno.env.get("HOME")}/Library/Preferences`);
+      await Deno.stat(`${process.env.HOME}/Library/Preferences`);
     } catch {
       issues.push("Cannot access macOS preferences directory");
     }

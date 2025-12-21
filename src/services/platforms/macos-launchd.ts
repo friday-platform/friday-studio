@@ -1,3 +1,4 @@
+import process from "node:process";
 import { exists } from "@std/fs";
 import { join } from "@std/path";
 import {
@@ -80,7 +81,7 @@ export class MacOSLaunchdService implements PlatformServiceManager {
       WorkingDirectory: getPlatformPaths().configDir,
       EnvironmentVariables: {
         PATH: "/usr/local/bin:/usr/bin:/bin",
-        HOME: Deno.env.get("HOME") || "",
+        HOME: process.env.HOME || "",
         ...config.environment,
       },
       RunAtLoad: config.autoStart,
