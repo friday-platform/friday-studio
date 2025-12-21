@@ -1,19 +1,15 @@
 displayName: "Atlas Operator Reconciliation Errors"
 combiner: OR
 conditions:
-- displayName: "High reconciliation error rate"
-  conditionThreshold:
-    filter: >-
-      resource.type="prometheus_target"
-      AND metric.type="prometheus.googleapis.com/atlas_operator_reconciliation_duration_seconds_count/counter"
-      AND metric.labels.status="error"
-    comparison: COMPARISON_GT
-    thresholdValue: 0.1
+- displayName: "Reconciliation errors detected"
+  conditionMonitoringQueryLanguage:
+    query: >-
+      fetch prometheus_target
+      | metric 'prometheus.googleapis.com/atlas_operator_reconciliation_duration_seconds/histogram'
+      | filter metric.status == 'error'
+      | group_by 5m, [error_count: count(value)]
+      | condition error_count > 0
     duration: "300s"
-    aggregations:
-    - alignmentPeriod: "60s"
-      perSeriesAligner: ALIGN_RATE
-      crossSeriesReducer: REDUCE_SUM
     trigger:
       count: 1
 alertStrategy:

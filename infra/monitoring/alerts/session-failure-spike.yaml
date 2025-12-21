@@ -3,14 +3,15 @@ combiner: OR
 conditions:
 - displayName: "Session failure rate > 20%"
   conditionMonitoringQueryLanguage:
-    query: |-
+    query: >-
       fetch prometheus_target
       | metric 'prometheus.googleapis.com/atlasd_sessions_total/counter'
-      | align rate(5m)
-      | group_by [metric.status], [value_sessions_total_aggregate: aggregate(value.sessions_total)]
-      | ratio
-      | filter metric.status = 'failed'
-      | condition val() > 0.2
+      | align delta(5m)
+      | group_by [metric.status], [total: sum(value)]
+      | { failed: filter metric.status == 'failed' ; all: ident }
+      | join
+      | value [failure_rate: val(0) / val(1)]
+      | condition failure_rate > 0.2
     duration: "300s"
     trigger:
       count: 1
