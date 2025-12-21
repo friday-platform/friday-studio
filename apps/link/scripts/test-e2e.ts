@@ -1,10 +1,12 @@
 #!/usr/bin/env -S deno run --allow-net --allow-env
+
 /**
  * End-to-end test script for Link + Cypher integration
  * Usage: deno run --allow-net --allow-env scripts/test-e2e.ts [user_id]
  * Requires: Link running on :3100, Cypher running on :8085, Postgres on :54322
  */
 
+import process from "node:process";
 import * as jose from "jose";
 import postgres from "postgres";
 
@@ -36,7 +38,7 @@ try {
   console.log("✓ Link is running");
 } catch {
   console.log(`❌ Link not running on ${baseUrl}`);
-  Deno.exit(1);
+  process.exit(1);
 }
 
 try {
@@ -76,7 +78,7 @@ const credId = createResult.id;
 if (!credId) {
   console.log("❌ Failed to create credential");
   await sql.end();
-  Deno.exit(1);
+  process.exit(1);
 }
 console.log(`✓ Created credential: ${credId}`);
 
@@ -89,7 +91,7 @@ const [dbRow] = await sql<[{ encrypted_secret: string }]>`
 if (dbRow.encrypted_secret.includes("sk-secret")) {
   console.log("❌ Secret not encrypted! Found plaintext in database");
   await sql.end();
-  Deno.exit(1);
+  process.exit(1);
 }
 console.log(`✓ Secret is encrypted: ${dbRow.encrypted_secret.slice(0, 50)}...`);
 
@@ -106,7 +108,7 @@ if (listResult.some((c) => c.id === credId)) {
 } else {
   console.log("❌ Credential not in list");
   await sql.end();
-  Deno.exit(1);
+  process.exit(1);
 }
 
 // Get credential metadata (public - no secret)
@@ -120,7 +122,7 @@ console.log("Response:", getResult);
 if (getResult.includes("secret")) {
   console.log("❌ Public endpoint leaked secret!");
   await sql.end();
-  Deno.exit(1);
+  process.exit(1);
 }
 console.log("✓ Public endpoint does not expose secret");
 
@@ -137,7 +139,7 @@ if (internalResult.includes("sk-secret-12345")) {
 } else {
   console.log("❌ Internal endpoint did not return correct secret");
   await sql.end();
-  Deno.exit(1);
+  process.exit(1);
 }
 
 // Delete credential (soft delete)
@@ -162,7 +164,7 @@ if (getDeletedResponse.status === 404) {
 } else {
   console.log(`❌ Expected 404, got ${getDeletedResponse.status}`);
   await sql.end();
-  Deno.exit(1);
+  process.exit(1);
 }
 
 // Verify deleted_at is set in database
@@ -174,7 +176,7 @@ if (deletedRow.deleted_at) {
 } else {
   console.log("❌ deleted_at not set (hard delete instead of soft delete?)");
   await sql.end();
-  Deno.exit(1);
+  process.exit(1);
 }
 
 console.log("");

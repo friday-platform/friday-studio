@@ -1,3 +1,4 @@
+import process from "node:process";
 import { ServiceManager } from "../../../services/service-manager.ts";
 import { errorOutput, infoOutput, successOutput } from "../../utils/output.ts";
 import type { YargsInstance } from "../../utils/yargs.ts";
@@ -33,7 +34,7 @@ export const handler = async (argv: StartArgs): Promise<void> => {
     const isInstalled = await serviceManager.isInstalled();
     if (!isInstalled) {
       errorOutput("Atlas service is not installed. Use 'atlas service install' first.");
-      Deno.exit(1);
+      process.exit(1);
     }
 
     // Check if service is already running
@@ -89,6 +90,6 @@ export const handler = async (argv: StartArgs): Promise<void> => {
     errorOutput(
       `Failed to start service: ${error instanceof Error ? error.message : String(error)}`,
     );
-    Deno.exit(1);
+    process.exit(1);
   }
 };

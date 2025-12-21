@@ -1,3 +1,4 @@
+import process from "node:process";
 import type { YargsInstance } from "../utils/yargs.ts";
 import * as install from "./service/install.tsx";
 import * as restart from "./service/restart.tsx";
@@ -17,11 +18,11 @@ export function builder(y: YargsInstance) {
     .fail((msg: string, _: unknown, yargs: YargsInstance) => {
       if (msg?.includes("Not enough non-option arguments")) {
         yargs.showHelp();
-        Deno.exit(0);
+        process.exit(0);
       }
       yargs.showHelp();
       console.error(`\n${msg}`);
-      Deno.exit(1);
+      process.exit(1);
     })
     .example("$0 service install", "Install Atlas as a system service")
     .example("$0 service status", "Check service status")

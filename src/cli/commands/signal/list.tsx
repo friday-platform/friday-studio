@@ -1,3 +1,4 @@
+import process from "node:process";
 import { render } from "ink";
 import { SignalListComponent } from "../../modules/signals/SignalListComponent.tsx";
 import { loadWorkspaceConfig, resolveWorkspaceOnly } from "../../modules/workspaces/resolver.ts";
@@ -54,6 +55,6 @@ export const handler = async (argv: ListArgs): Promise<void> => {
     }
   } catch (error) {
     console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
-    Deno.exit(1);
+    process.exit(1);
   }
 };

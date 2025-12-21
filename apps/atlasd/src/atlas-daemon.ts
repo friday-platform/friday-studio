@@ -1,3 +1,4 @@
+import process from "node:process";
 import type { AgentRegistry as AgentRegistryType, AtlasUIMessageChunk } from "@atlas/agent-sdk";
 import { type SupervisorDefaults, supervisorDefaultsWrapped } from "@atlas/config";
 import {
@@ -1208,19 +1209,19 @@ export class AtlasDaemon {
       // Add a timeout to prevent hanging indefinitely
       const shutdownTimeout = setTimeout(() => {
         logger.error("Shutdown timeout, forcing exit", { timeoutSeconds: 30 });
-        Deno.exit(1);
+        process.exit(1);
       }, 30000);
 
       this.shutdown()
         .then(() => {
           clearTimeout(shutdownTimeout);
           logger.info("Daemon shutdown complete", { daemonId });
-          Deno.exit(0);
+          process.exit(0);
         })
         .catch((error) => {
           clearTimeout(shutdownTimeout);
           logger.error("Error during shutdown", { error, daemonId });
-          Deno.exit(1);
+          process.exit(1);
         });
     };
 

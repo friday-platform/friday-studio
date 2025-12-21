@@ -646,6 +646,7 @@ function JsonOutput({ data }: { data: any }) {
 ```typescript
 import { Box, render, Text, useStdout } from "ink";
 import React from "react";
+import process from "node:process";
 import { createAtlasClient, type paths } from "@atlas/oapi-client";
 
 // Extract type from OpenAPI
@@ -676,7 +677,7 @@ export const handler = async (argv: { json?: boolean }) => {
     } else {
       console.error(`Error: ${errorMessage}`);
     }
-    Deno.exit(1);
+    process.exit(1);
   }
 };
 

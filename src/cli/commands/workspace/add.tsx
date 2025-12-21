@@ -1,3 +1,4 @@
+import process from "node:process";
 import {
   AtlasClient,
   type WorkspaceAddRequest,
@@ -376,7 +377,7 @@ export async function handler(argv: AddArgs): Promise<void> {
         if (!argv.json) {
           setTimeout(() => {
             unmount();
-            Deno.exit(0);
+            process.exit(0);
           }, 100);
         }
       }}

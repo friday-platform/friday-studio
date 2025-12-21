@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { readFileSync } from "node:fs";
+import process from "node:process";
 import { logger } from "@atlas/logger";
 import { flush as flushSentry, initSentry } from "@atlas/sentry";
 import { HTTPException } from "hono/http-exception";
@@ -201,7 +202,7 @@ async function shutdown(signal: string): Promise<void> {
   // Timeout to prevent hanging - Kubernetes default terminationGracePeriodSeconds is 30s
   const shutdownTimeout = setTimeout(() => {
     logger.error("Shutdown timeout, forcing exit");
-    Deno.exit(1);
+    process.exit(1);
   }, 25000);
 
   try {
@@ -222,11 +223,11 @@ async function shutdown(signal: string): Promise<void> {
 
     clearTimeout(shutdownTimeout);
     logger.info("Shutdown complete");
-    Deno.exit(0);
+    process.exit(0);
   } catch (error) {
     clearTimeout(shutdownTimeout);
     logger.error("Error during shutdown", { error });
-    Deno.exit(1);
+    process.exit(1);
   }
 }
 

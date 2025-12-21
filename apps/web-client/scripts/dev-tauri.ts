@@ -4,6 +4,8 @@
  * Works on Windows, macOS, and Linux
  */
 
+import process from "node:process";
+
 // Set environment variable
 Deno.env.set("TAURI_BUILD", "true");
 
@@ -16,4 +18,4 @@ const command = new Deno.Command("deno", {
 });
 
 const { code } = await command.output();
-Deno.exit(code);
+process.exit(code);

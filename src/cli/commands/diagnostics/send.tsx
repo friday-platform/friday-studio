@@ -1,3 +1,4 @@
+import process from "node:process";
 import { sendDiagnostics } from "@atlas/diagnostics";
 import { stringifyError } from "@atlas/utils";
 import { ServiceManager } from "../../../services/service-manager.ts";
@@ -22,10 +23,10 @@ export const handler = async (): Promise<void> => {
     // Send diagnostics with options
     await sendDiagnostics({ getServiceStatus, versionInfo });
 
-    Deno.exit(0);
+    process.exit(0);
   } catch (error) {
     // Extract clean error message for user-facing output
     errorOutput(stringifyError(error));
-    Deno.exit(1);
+    process.exit(1);
   }
 };

@@ -1,3 +1,4 @@
+import process from "node:process";
 import { ServiceManager } from "../../../services/service-manager.ts";
 import { errorOutput, infoOutput, successOutput } from "../../utils/output.ts";
 import type { YargsInstance } from "../../utils/yargs.ts";
@@ -42,7 +43,7 @@ export const handler = async (argv: UninstallArgs): Promise<void> => {
       errorOutput(
         "Atlas service is currently running. Stop it first or use --force to force uninstall.",
       );
-      Deno.exit(1);
+      process.exit(1);
     }
 
     if (status.running) {
@@ -67,6 +68,6 @@ export const handler = async (argv: UninstallArgs): Promise<void> => {
     errorOutput(
       `Failed to uninstall service: ${error instanceof Error ? error.message : String(error)}`,
     );
-    Deno.exit(1);
+    process.exit(1);
   }
 };

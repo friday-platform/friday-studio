@@ -1,3 +1,4 @@
+import process from "node:process";
 import { client, parseResult } from "@atlas/client/v2";
 import { logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
@@ -176,15 +177,15 @@ export const handler = async (options: UpdateOptions) => {
 
       // On Windows self-update, we must exit immediately to allow the batch script to replace the binary
       if (result.isWindowsSelfUpdate) {
-        Deno.exit(0);
+        process.exit(0);
       }
     } else {
       errorOutput(`Update failed: ${result.error}`);
-      Deno.exit(1);
+      process.exit(1);
     }
   } catch (error) {
     errorOutput(`Update failed: ${stringifyError(error)}`);
-    Deno.exit(1);
+    process.exit(1);
   }
 };
 

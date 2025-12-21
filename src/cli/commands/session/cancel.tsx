@@ -1,3 +1,4 @@
+import process from "node:process";
 import { getAtlasClient, type SessionDetailedInfo } from "@atlas/client";
 import { WorkspaceSessionStatus } from "@atlas/core";
 import { confirmAction } from "../../utils/confirm.tsx";
@@ -52,7 +53,7 @@ export const handler = async (argv: CancelArgs): Promise<void> => {
       } else {
         errorOutput(`Failed to fetch session: ${errorResult.error}`);
       }
-      Deno.exit(1);
+      process.exit(1);
     }
 
     // Check if session is already completed
@@ -61,7 +62,7 @@ export const handler = async (argv: CancelArgs): Promise<void> => {
       session.status === WorkspaceSessionStatus.FAILED
     ) {
       infoOutput(`Session '${argv.id}' is already ${session.status}`);
-      Deno.exit(0);
+      process.exit(0);
     }
 
     // Confirm cancellation
@@ -72,7 +73,7 @@ export const handler = async (argv: CancelArgs): Promise<void> => {
 
     if (!confirmed) {
       infoOutput("Session cancellation aborted");
-      Deno.exit(0);
+      process.exit(0);
     }
 
     // Show spinner while cancelling
@@ -93,7 +94,7 @@ export const handler = async (argv: CancelArgs): Promise<void> => {
       throw err;
     }
 
-    Deno.exit(0);
+    process.exit(0);
   } catch (error) {
     errorOutput(error instanceof Error ? error.message : String(error));
     Deno.exit(1);

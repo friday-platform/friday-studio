@@ -1,3 +1,4 @@
+import process from "node:process";
 import { parseResult, client as v2Client } from "@atlas/client/v2";
 import { ConfigLoader } from "@atlas/config";
 import { FilesystemConfigAdapter } from "@atlas/storage";
@@ -127,6 +128,6 @@ export const handler = async (argv: ListArgs): Promise<void> => {
     }
   } catch (error) {
     console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
-    Deno.exit(1);
+    process.exit(1);
   }
 };

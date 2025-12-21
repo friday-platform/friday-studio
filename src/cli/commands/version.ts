@@ -1,3 +1,4 @@
+import process from "node:process";
 import { displayVersion, displayVersionWithRemote } from "../../utils/version.ts";
 
 interface VersionArgs {
@@ -28,5 +29,5 @@ export const handler = async (argv: VersionArgs): Promise<void> => {
   } else {
     displayVersion(argv.json);
   }
-  Deno.exit(0);
+  process.exit(0);
 };

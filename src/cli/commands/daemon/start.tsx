@@ -1,3 +1,4 @@
+import process from "node:process";
 import { AtlasDaemon } from "@atlas/atlasd";
 import { client, parseResult } from "@atlas/client/v2";
 import { decodeJwtPayload, fetchCredentials, setToEnv } from "@atlas/core/credentials";
@@ -213,14 +214,14 @@ async function reExecWithOtel(atlasKey: string): Promise<never> {
       // Child may have already exited
     }
     // Exit immediately with 0 to signal clean shutdown to launchd
-    Deno.exit(0);
+    process.exit(0);
   };
   Deno.addSignalListener("SIGTERM", forwardSignalAndExit);
   Deno.addSignalListener("SIGINT", forwardSignalAndExit);
 
   // Normal exit path - wait for child and propagate its exit code.
   const status = await childProcess.status;
-  Deno.exit(status.code);
+  process.exit(status.code);
 }
 
 interface StartArgs {
@@ -319,7 +320,7 @@ export const handler = async (argv: StartArgs): Promise<void> => {
     // Validate port
     if (argv.port && (argv.port < 1 || argv.port > 65535)) {
       errorOutput(`Invalid port number: ${argv.port}. Port must be between 1 and 65535.`);
-      Deno.exit(1);
+      process.exit(1);
     }
 
     // Check if daemon is already running
@@ -331,7 +332,7 @@ export const handler = async (argv: StartArgs): Promise<void> => {
       if (status.ok) {
         displayDaemonStatus(status.data, port);
       }
-      Deno.exit(0);
+      process.exit(0);
     }
 
     // Load environment variables
@@ -465,7 +466,7 @@ export const handler = async (argv: StartArgs): Promise<void> => {
 
         errorOutput("\nFailed to fetch credentials with ATLAS_KEY.");
         errorOutput("Please check your ATLAS_KEY in ~/.atlas/.env and restart the daemon.");
-        Deno.exit(1);
+        process.exit(1);
       }
     } else if (atlasKey && localOnlyMode) {
       logger.info("ATLAS_LOCAL_ONLY mode enabled - skipping Atlas API credential fetch");
@@ -490,7 +491,7 @@ export const handler = async (argv: StartArgs): Promise<void> => {
   } catch (error) {
     captureException(error);
     errorOutput(error instanceof Error ? error.message : String(error));
-    Deno.exit(1);
+    process.exit(1);
   }
 };
 
@@ -533,10 +534,10 @@ async function startDetached(argv: StartArgs): Promise<void> {
     successOutput(`Status: atlas daemon status`);
   } else {
     errorOutput("Failed to start daemon in background");
-    Deno.exit(1);
+    process.exit(1);
   }
 
-  Deno.exit(0);
+  process.exit(0);
 }
 
 async function startWindowsDetached(argv: StartArgs): Promise<void> {
@@ -578,7 +579,7 @@ WshShell.Run "${cmdLine}", 0, False`;
     successOutput(`Status: atlas daemon status`);
   } else {
     errorOutput("Failed to start daemon in background");
-    Deno.exit(1);
+    process.exit(1);
   }
 }
 
@@ -596,7 +597,7 @@ async function startForeground(argv: StartArgs): Promise<void> {
     infoOutput("\nShutting down Atlas daemon...");
     await daemon.shutdown();
     successOutput("Atlas daemon stopped successfully.");
-    Deno.exit(0);
+    process.exit(0);
   };
 
   Deno.addSignalListener("SIGINT", shutdown);

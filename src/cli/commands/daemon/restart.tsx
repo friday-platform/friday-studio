@@ -1,3 +1,4 @@
+import process from "node:process";
 import { client, parseResult } from "@atlas/client/v2";
 import { sleep, stringifyError } from "@atlas/utils";
 import { errorOutput, infoOutput, successOutput } from "../../utils/output.ts";
@@ -67,7 +68,7 @@ export const handler = async (argv: RestartArgs): Promise<void> => {
           `Use --force to restart anyway or wait for workspaces to become idle.`,
       );
       infoOutput(`Active workspaces: ${status.workspaces.join(", ")}`);
-      Deno.exit(1);
+      process.exit(1);
     }
 
     // Stop the daemon
@@ -81,7 +82,7 @@ export const handler = async (argv: RestartArgs): Promise<void> => {
       const stillRunning = await parseResult(client.health.index.$get());
       if (stillRunning.ok) {
         errorOutput("Failed to stop existing daemon");
-        Deno.exit(1);
+        process.exit(1);
       } else {
         successOutput("Existing daemon stopped successfully");
       }
@@ -121,7 +122,7 @@ export const handler = async (argv: RestartArgs): Promise<void> => {
     if (!success) {
       const errorText = new TextDecoder().decode(stderr);
       errorOutput(`Failed to start daemon: ${errorText}`);
-      Deno.exit(1);
+      process.exit(1);
     }
 
     // Wait a moment and verify it's running
@@ -132,10 +133,10 @@ export const handler = async (argv: RestartArgs): Promise<void> => {
       successOutput(`Atlas daemon restarted successfully on port ${port}`);
     } else {
       errorOutput("Daemon failed to start after restart");
-      Deno.exit(1);
+      process.exit(1);
     }
   } catch (error) {
     errorOutput(stringifyError(error));
-    Deno.exit(1);
+    process.exit(1);
   }
 };

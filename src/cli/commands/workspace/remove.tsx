@@ -1,3 +1,4 @@
+import process from "node:process";
 import type { WorkspaceInfo } from "@atlas/client";
 import { createAtlasNotRunningError } from "@atlas/client";
 import { parseResult, client as v2Client } from "@atlas/client/v2";
@@ -53,7 +54,7 @@ export const handler = async (argv: RemoveArgs): Promise<void> => {
     const workspaces = await parseResult(v2Client.workspace.index.$get());
     if (!workspaces.ok) {
       errorOutput("Failed to fetch workspaces.");
-      Deno.exit(1);
+      process.exit(1);
     }
 
     let workspace: WorkspaceInfo | undefined;
@@ -72,7 +73,7 @@ export const handler = async (argv: RemoveArgs): Promise<void> => {
           ? `Workspace '${argv.workspace}' not found. Use 'atlas workspace list' to see available workspaces.`
           : "No workspace found in current directory.",
       );
-      Deno.exit(1);
+      process.exit(1);
     }
 
     // Check if workspace is running
@@ -87,7 +88,7 @@ export const handler = async (argv: RemoveArgs): Promise<void> => {
 
       if (!confirmStop) {
         infoOutput("Removal cancelled.");
-        Deno.exit(0);
+        process.exit(0);
       }
     }
 
@@ -105,7 +106,7 @@ export const handler = async (argv: RemoveArgs): Promise<void> => {
 
     if (!confirmed) {
       infoOutput("Removal cancelled.");
-      Deno.exit(0);
+      process.exit(0);
     }
 
     // Remove from registry via daemon API
@@ -137,9 +138,9 @@ export const handler = async (argv: RemoveArgs): Promise<void> => {
 
     successOutput("Workspace removed successfully.");
 
-    Deno.exit(0);
+    process.exit(0);
   } catch (error) {
     errorOutput(stringifyError(error));
-    Deno.exit(1);
+    process.exit(1);
   }
 };

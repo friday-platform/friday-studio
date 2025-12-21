@@ -1,3 +1,4 @@
+import process from "node:process";
 import type { YargsInstance } from "../utils/yargs.ts";
 import * as send from "./diagnostics/send.tsx";
 
@@ -12,11 +13,11 @@ export function builder(y: YargsInstance) {
     .fail((msg: string, _: unknown, yargs: YargsInstance) => {
       if (msg?.includes("Not enough non-option arguments")) {
         yargs.showHelp();
-        Deno.exit(0);
+        process.exit(0);
       }
       yargs.showHelp();
       console.error(`\n${msg}`);
-      Deno.exit(1);
+      process.exit(1);
     })
     .example("$0 diagnostics send", "Send diagnostic information to Atlas developers")
     .example("$0 diag send", "Send diagnostics using short alias")

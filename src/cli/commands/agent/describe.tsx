@@ -1,3 +1,4 @@
+import process from "node:process";
 import { parseResult, client as v2Client } from "@atlas/client/v2";
 import { ConfigLoader } from "@atlas/config";
 import { FilesystemConfigAdapter } from "@atlas/storage";
@@ -75,7 +76,7 @@ export const handler = async (argv: DescribeArgs): Promise<void> => {
   );
   if (!agentConfig.ok) {
     console.error(`Error: ${stringifyError(agentConfig.error)}`);
-    Deno.exit(1);
+    process.exit(1);
   }
 
   console.log(JSON.stringify(agentConfig.data, null, 2));

@@ -1,3 +1,4 @@
+import process from "node:process";
 import { getAtlasClient, type SessionDetailedInfo } from "@atlas/client";
 import { Box, render, Text } from "ink";
 import { StatusBadge } from "../../../cli/components/status-badge.tsx";
@@ -75,7 +76,7 @@ export const handler = async (argv: GetArgs): Promise<void> => {
     }
   } catch (error) {
     console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
-    Deno.exit(1);
+    process.exit(1);
   }
 };
 

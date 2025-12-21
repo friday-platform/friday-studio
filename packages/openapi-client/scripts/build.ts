@@ -1,3 +1,4 @@
+import process from "node:process";
 import { AtlasDaemon, getAtlasDaemonUrl, OPENAPI_DOCUMENTATION } from "@atlas/atlasd";
 import { generateSpecs } from "hono-openapi";
 import openapiTS, { astToString } from "openapi-typescript";
@@ -27,4 +28,4 @@ await Deno.writeTextFile("./src/atlasd-types.gen.d.ts", astToString(ast));
 
 console.log("✅ Generated OpenAPI types successfully");
 
-Deno.exit(0);
+process.exit(0);

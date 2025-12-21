@@ -1,3 +1,4 @@
+import process from "node:process";
 import type { WorkspaceInfo } from "@atlas/client";
 import { createAtlasNotRunningError, getAtlasClient } from "@atlas/client";
 import { parseResult, client as v2Client } from "@atlas/client/v2";
@@ -47,7 +48,7 @@ export const handler = async (argv: CleanupArgs): Promise<void> => {
 
     if (workspaces.data.length === 0) {
       infoOutput("No workspaces found in registry.");
-      Deno.exit(0);
+      process.exit(0);
     }
 
     // Check which workspaces have missing directories
@@ -72,7 +73,7 @@ export const handler = async (argv: CleanupArgs): Promise<void> => {
 
     if (invalidWorkspaces.length === 0) {
       successOutput("All workspaces have valid directories. No cleanup needed.");
-      Deno.exit(0);
+      process.exit(0);
     }
 
     // Show what will be cleaned up
@@ -89,7 +90,7 @@ export const handler = async (argv: CleanupArgs): Promise<void> => {
 
     if (!confirmed) {
       infoOutput("Cleanup cancelled.");
-      Deno.exit(0);
+      process.exit(0);
     }
 
     // Remove invalid workspaces
@@ -125,12 +126,12 @@ export const handler = async (argv: CleanupArgs): Promise<void> => {
 
     if (removedCount === 0 && errors.length > 0) {
       errorOutput("Failed to remove any workspaces.");
-      Deno.exit(1);
+      process.exit(1);
     }
 
-    Deno.exit(0);
+    process.exit(0);
   } catch (error) {
     errorOutput(error instanceof Error ? error.message : String(error));
-    Deno.exit(1);
+    process.exit(1);
   }
 };

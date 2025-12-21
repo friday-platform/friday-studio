@@ -1,3 +1,4 @@
+import process from "node:process";
 import { ServiceManager } from "../../../services/service-manager.ts";
 import { errorOutput, infoOutput, successOutput } from "../../utils/output.ts";
 import type { YargsInstance } from "../../utils/yargs.ts";
@@ -93,6 +94,6 @@ export const handler = async (argv: StatusArgs): Promise<void> => {
         `Failed to check service status: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
-    Deno.exit(1);
+    process.exit(1);
   }
 };

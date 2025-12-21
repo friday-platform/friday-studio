@@ -9,6 +9,7 @@
 
 import { ensureDir } from "jsr:@std/fs";
 import { join } from "jsr:@std/path";
+import process from "node:process";
 
 const TAURI_API_VERSION = "2.8.0";
 const TYPES_NODE_VERSION = "24.7.0";
@@ -47,7 +48,7 @@ async function downloadAndExtractPackage(
   const metadataResponse = await fetch(packageUrl);
   if (!metadataResponse.ok) {
     console.error(`Failed to fetch package metadata: ${metadataResponse.statusText}`);
-    Deno.exit(1);
+    process.exit(1);
   }
 
   const metadata = await metadataResponse.json();
@@ -59,7 +60,7 @@ async function downloadAndExtractPackage(
   const tarballResponse = await fetch(tarballUrl);
   if (!tarballResponse.ok) {
     console.error(`Failed to download tarball: ${tarballResponse.statusText}`);
-    Deno.exit(1);
+    process.exit(1);
   }
 
   // Create a temporary directory for extraction
@@ -88,7 +89,7 @@ async function downloadAndExtractPackage(
     if (code !== 0) {
       console.error("Failed to extract tarball:");
       console.error(new TextDecoder().decode(stderr));
-      Deno.exit(1);
+      process.exit(1);
     }
 
     // Find the extracted package directory
@@ -109,10 +110,10 @@ async function downloadAndExtractPackage(
         extractedPackageDir = join(tmpDir, entries[0]);
       } else if (entries.length === 0) {
         console.error("No directories found in extracted tarball");
-        Deno.exit(1);
+        process.exit(1);
       } else {
         console.error(`Multiple directories found in tarball: ${entries.join(", ")}`);
-        Deno.exit(1);
+        process.exit(1);
       }
     }
 
@@ -139,7 +140,7 @@ async function downloadAndExtractPackage(
     if (copyResult.code !== 0) {
       console.error("Failed to copy package:");
       console.error(new TextDecoder().decode(copyResult.stderr));
-      Deno.exit(1);
+      process.exit(1);
     }
 
     console.log(`✓ Successfully vendored ${packageName}@${version}`);

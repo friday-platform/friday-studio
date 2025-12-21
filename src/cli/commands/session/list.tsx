@@ -1,3 +1,4 @@
+import process from "node:process";
 import { render } from "ink";
 import { SessionListComponent } from "../../modules/sessions/session-list-component.tsx";
 import { getDaemonClient } from "../../utils/daemon-client.ts";
@@ -81,6 +82,6 @@ export const handler = async ({ workspace, json }: ListArgs): Promise<void> => {
     }
   } catch (error) {
     console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
-    Deno.exit(1);
+    process.exit(1);
   }
 };

@@ -1,3 +1,4 @@
+import process from "node:process";
 import yargs from "yargs";
 import { commands } from "./cli/commands/index.ts";
 import { customFailHandler } from "./cli/utils/fail-handler.ts";
@@ -9,7 +10,7 @@ if (Deno.args.includes("--version") || Deno.args.includes("-v")) {
   const { displayVersion } = await import("./utils/version.ts");
   const jsonOutput = Deno.args.includes("--json");
   displayVersion(jsonOutput);
-  Deno.exit(0);
+  process.exit(0);
 }
 
 // Browser download moved to daemon initialization to avoid blocking CLI commands

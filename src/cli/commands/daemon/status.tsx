@@ -1,3 +1,4 @@
+import process from "node:process";
 import { client, parseResult } from "@atlas/client/v2";
 import { displayDaemonStatus } from "../../utils/daemon-status.ts";
 import { errorOutput } from "../../utils/output.ts";
@@ -36,7 +37,7 @@ export const handler = async (argv: StatusArgs): Promise<void> => {
       } else {
         errorOutput(`Atlas daemon is not running on port ${port}`);
       }
-      Deno.exit(1);
+      process.exit(1);
     }
 
     if (argv.json) {
@@ -62,6 +63,6 @@ export const handler = async (argv: StatusArgs): Promise<void> => {
         `Failed to check daemon status: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
-    Deno.exit(1);
+    process.exit(1);
   }
 };

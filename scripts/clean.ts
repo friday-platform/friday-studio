@@ -1,5 +1,6 @@
 #!/usr/bin/env -S deno run --allow-read --allow-write --allow-env
 
+import process from "node:process";
 import { getAtlasHome } from "@atlas/utils/paths.server";
 import { join } from "@std/path";
 
@@ -35,7 +36,7 @@ async function clean() {
       console.error(
         `Error cleaning Atlas directory: ${error instanceof Error ? error.message : String(error)}`,
       );
-      Deno.exit(1);
+      process.exit(1);
     }
   }
 }

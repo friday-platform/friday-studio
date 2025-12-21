@@ -1,3 +1,4 @@
+import process from "node:process";
 import { client, parseResult } from "@atlas/client/v2";
 import { sleep } from "@atlas/utils";
 import { getAtlasHome } from "@atlas/utils/paths.server";
@@ -66,7 +67,7 @@ export const handler = async (argv: ResetArgs): Promise<void> => {
 
   if (!confirmed) {
     infoOutput("Reset cancelled.");
-    Deno.exit(0);
+    process.exit(0);
   }
 
   const stoppedMode = await stopAtlasIfRunning();
@@ -95,9 +96,9 @@ export const handler = async (argv: ResetArgs): Promise<void> => {
       infoOutput(`Atlas directory does not exist: ${atlasHome}`);
     } else {
       errorOutput(error instanceof Error ? error.message : String(error));
-      Deno.exit(1);
+      process.exit(1);
     }
   }
 
-  Deno.exit(0);
+  process.exit(0);
 };

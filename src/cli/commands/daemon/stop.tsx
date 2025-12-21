@@ -1,3 +1,4 @@
+import process from "node:process";
 import { client, parseResult } from "@atlas/client/v2";
 import { sleep, stringifyError } from "@atlas/utils";
 import { errorOutput, infoOutput, successOutput } from "../../utils/output.ts";
@@ -37,7 +38,7 @@ export const handler = async (argv: StopArgs): Promise<void> => {
     const status = await parseResult(client.daemon.status.$get());
     if (!status.ok) {
       errorOutput(`Atlas daemon is not running on port ${port}`);
-      Deno.exit(1);
+      process.exit(1);
     }
 
     // Check for active workspaces
@@ -47,7 +48,7 @@ export const handler = async (argv: StopArgs): Promise<void> => {
           `Use --force to stop anyway or wait for workspaces to become idle.`,
       );
       infoOutput(`Active workspaces: ${status.data.workspaces.join(", ")}`);
-      Deno.exit(1);
+      process.exit(1);
     }
 
     // Send shutdown signal
@@ -63,7 +64,7 @@ export const handler = async (argv: StopArgs): Promise<void> => {
       const stillRunning = await parseResult(client.health.index.$get());
       if (stillRunning.ok) {
         errorOutput("Daemon did not stop gracefully");
-        Deno.exit(1);
+        process.exit(1);
       } else {
         successOutput("Atlas daemon stopped successfully");
       }
@@ -74,13 +75,13 @@ export const handler = async (argv: StopArgs): Promise<void> => {
 
       if (stillRunning.ok) {
         errorOutput(`Failed to stop daemon: ${stringifyError(error)}`);
-        Deno.exit(1);
+        process.exit(1);
       } else {
         successOutput("Atlas daemon stopped successfully");
       }
     }
   } catch (error) {
     errorOutput(error instanceof Error ? error.message : String(error));
-    Deno.exit(1);
+    process.exit(1);
   }
 };

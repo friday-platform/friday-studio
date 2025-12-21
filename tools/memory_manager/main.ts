@@ -9,6 +9,7 @@
  *   deno run --allow-read --allow-write --unstable tools/memory_manager/main.ts [workspace-path]
  */
 
+import process from "node:process";
 import type { CoALAMemoryEntry, CoALAMemoryManager } from "@atlas/memory";
 import { type CoALAMemoryType, MEMORY_TYPES } from "@atlas/memory";
 import type { WorkspaceEntry } from "@atlas/workspace";
@@ -67,7 +68,7 @@ async function main() {
       console.error(
         `Error in workspace selection: ${error instanceof Error ? error.message : String(error)}`,
       );
-      Deno.exit(1);
+      process.exit(1);
     }
   } else if (!workspacePath) {
     // For non-interactive modes, fall back to current directory
@@ -114,7 +115,7 @@ async function main() {
     await tui.start();
   } catch (error) {
     console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
-    Deno.exit(1);
+    process.exit(1);
   }
 }
 
@@ -310,7 +311,7 @@ function validateMemory(coalaManager: CoALAMemoryManager) {
   );
 
   if (totalErrors > 0) {
-    Deno.exit(1);
+    process.exit(1);
   }
 }
 

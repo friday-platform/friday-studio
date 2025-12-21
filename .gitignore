@@ -80,3 +80,6 @@ dist/
 bounce
 .beads/
 apps/signal-gateway/signal-gateway
+
+# bv (beads viewer) local config and caches
+.bv/

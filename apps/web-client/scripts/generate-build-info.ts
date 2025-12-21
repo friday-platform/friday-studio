@@ -4,6 +4,7 @@
 // It should be run before building the application in CI/CD
 
 import { dirname, fromFileUrl, join } from "jsr:@std/path@^1.0.0";
+import process from "node:process";
 
 const __dirname = dirname(fromFileUrl(import.meta.url));
 
@@ -78,5 +79,5 @@ try {
   console.log("Build info generated successfully:", buildInfo);
 } catch (error) {
   console.error("Failed to generate build info:", error);
-  Deno.exit(1);
+  process.exit(1);
 }

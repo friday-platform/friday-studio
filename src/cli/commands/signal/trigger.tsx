@@ -1,3 +1,4 @@
+import process from "node:process";
 import { batchTriggerSignal, validateSignalPayload } from "../../modules/signals/trigger.ts";
 import { errorOutput } from "../../utils/output.ts";
 import { confirm, isCancel, text } from "../../utils/prompts.tsx";
@@ -157,9 +158,9 @@ export const handler = async (argv: TriggerArgs): Promise<void> => {
         console.log("\n📊 Monitor sessions with: atlas ps");
       }
     }
-    Deno.exit(0);
+    process.exit(0);
   } catch (error) {
     errorOutput(error instanceof Error ? error.message : String(error));
-    Deno.exit(1);
+    process.exit(1);
   }
 };

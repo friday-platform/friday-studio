@@ -1,3 +1,4 @@
+import process from "node:process";
 import { client, parseResult } from "@atlas/client/v2";
 import { logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
@@ -28,7 +29,7 @@ export async function handler(argv: unknown): Promise<void> {
   const parsed = ArgsSchema.safeParse(argv);
   if (!parsed.success) {
     logger.error(z.prettifyError(parsed.error));
-    Deno.exit(1);
+    process.exit(1);
   }
 
   const { id, revision } = parsed.data;
@@ -42,7 +43,7 @@ export async function handler(argv: unknown): Promise<void> {
 
   if (!res.ok) {
     logger.error(`Failed to retrieve artifact: ${stringifyError(res.error)}`);
-    Deno.exit(1);
+    process.exit(1);
   }
 
   // Print raw JSON from endpoint

@@ -1,3 +1,4 @@
+import process from "node:process";
 import { formatResourceHelp } from "../utils/resource-help.ts";
 import type { YargsInstance } from "../utils/yargs.ts";
 import * as add from "./workspace/add.tsx";
@@ -17,11 +18,11 @@ export function builder(y: YargsInstance) {
     .fail((msg: string, _: unknown, yargs: YargsInstance) => {
       if (msg?.includes("Not enough non-option arguments")) {
         yargs.showHelp();
-        Deno.exit(0);
+        process.exit(0);
       }
       yargs.showHelp();
       console.error(`\n${msg}`);
-      Deno.exit(1);
+      process.exit(1);
     })
     .example("$0 workspace init", "Initialize a new workspace interactively")
     .example("$0 workspace list", "List all registered workspaces")

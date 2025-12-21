@@ -1,3 +1,4 @@
+import process from "node:process";
 import { client, type InferResponseType, parseResult } from "@atlas/client/v2";
 import { stringifyError } from "@atlas/utils";
 import { Box, render, Text, useStdout } from "ink";
@@ -74,7 +75,7 @@ export const handler = async (argv: ListArgs): Promise<void> => {
     } else {
       console.error(`Error: ${errorMessage}`);
     }
-    Deno.exit(1);
+    process.exit(1);
   }
 };
 

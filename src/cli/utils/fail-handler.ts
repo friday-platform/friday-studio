@@ -1,3 +1,4 @@
+import process from "node:process";
 import { COMMANDS, findClosestCommand, formatSuggestions } from "./command-suggestions.ts";
 
 /**
@@ -17,12 +18,12 @@ export function customFailHandler(msg: string, err: Error | null): void {
       if (!commandPath) {
         console.error("Error: No command specified\n");
         console.error("Run 'atlas --help' to see available commands.");
-        Deno.exit(1);
+        process.exit(1);
       }
 
       console.error(`Error: Missing required argument for 'atlas ${commandPath}'`);
       console.error(`\nRun 'atlas ${commandPath} --help' for usage information.`);
-      Deno.exit(1);
+      process.exit(1);
     }
   }
 
@@ -54,7 +55,7 @@ export function customFailHandler(msg: string, err: Error | null): void {
     console.error(`Error: Unknown command: '${unknownCommand}'`);
     console.error(formatSuggestions(suggestions));
 
-    Deno.exit(1);
+    process.exit(1);
   }
 
   // For other errors, show the original message with help
@@ -70,5 +71,5 @@ export function customFailHandler(msg: string, err: Error | null): void {
   }
 
   console.error("\nRun 'atlas --help' for usage information.");
-  Deno.exit(1);
+  process.exit(1);
 }
