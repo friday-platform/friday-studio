@@ -29,11 +29,13 @@ export function loadFromYAML(yaml: string, options: FSMEngineOptions): FSMEngine
 }
 
 /**
- * Load FSM from file with validation
+ * Load FSM from file with validation and initialization
  */
 export async function loadFromFile(path: string, options: FSMEngineOptions): Promise<FSMEngine> {
   const yaml = await Deno.readTextFile(path);
-  return loadFromYAML(yaml, options);
+  const engine = loadFromYAML(yaml, options);
+  await engine.initialize();
+  return engine;
 }
 
 /**

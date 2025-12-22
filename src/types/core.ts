@@ -1,10 +1,24 @@
 // Core Atlas interfaces based on technical design document
 
+import type { AgentResult } from "@atlas/agent-sdk";
 import type { WorkspaceSignalConfig } from "@atlas/config";
 import type { AgentOrchestrator } from "@atlas/core";
 import type { CoALAMemoryEntry, CoALAMemoryType } from "@atlas/memory";
 import type { MaybePromise } from "@atlas/utils";
-import type { SessionSummary } from "../core/actors/session-supervisor-actor.ts";
+
+// Session summary returned from FSM execution
+export interface SessionSummary {
+  sessionId: string;
+  workspaceId: string;
+  status: string;
+  totalPhases: number;
+  totalAgents: number;
+  completedPhases: number;
+  executedAgents: number;
+  duration: number;
+  reasoning: string;
+  results: AgentResult[];
+}
 
 export interface IAtlasScope {
   id: string;

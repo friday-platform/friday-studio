@@ -88,12 +88,17 @@ const chatRoutes = daemonFactory
       runtime
         .triggerSignalWithSession(
           "conversation-stream",
-          { chatId, message: textContent, userId },
+          { chatId, message: textContent, userId, streamId: chatId },
           chatId,
-          async (event) => {
+          async (event: unknown) => {
             try {
               await streamWriter.write(`data: ${JSON.stringify(event)}\n\n`);
-              if (event.type === "data-session-finish") {
+              if (
+                typeof event === "object" &&
+                event !== null &&
+                "type" in event &&
+                event.type === "data-session-finish"
+              ) {
                 sessionComplete = true;
               }
             } catch (error) {

@@ -414,7 +414,13 @@ const workspacesRoutes = daemonFactory
   .post(
     "/:workspaceId/signals/:signalId",
     zValidator("param", z.object({ workspaceId: z.string(), signalId: z.string() })),
-    zValidator("json", z.any()),
+    zValidator(
+      "json",
+      z.object({
+        payload: z.record(z.string(), z.unknown()).optional(),
+        streamId: z.string().optional(),
+      }),
+    ),
     async (c) => {
       const { workspaceId, signalId } = c.req.valid("param");
       const { payload, streamId } = c.req.valid("json");

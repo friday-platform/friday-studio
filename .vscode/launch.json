@@ -11,7 +11,7 @@
       "program": "${workspaceFolder}/src/cli.tsx",
       "args": ["daemon", "start"],
       "cwd": "${workspaceFolder}",
-      "env": {},
+      "env": { "OTEL_DENO": "true", "OTEL_EXPORTER_OTLP_ENDPOINT": "disabled" },
       "runtimeExecutable": "/opt/homebrew/bin/deno",
       "runtimeArgs": ["run", "--unstable", "--inspect-wait", "--allow-all"],
       "attachSimplePort": 9229

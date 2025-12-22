@@ -5,6 +5,7 @@
     "ignoreUnknown": false,
     "includes": [
       "**",
+      "!**/.atlas",
       "!**/.svelte-kit",
       "!**/build",
       "!**/.vite",

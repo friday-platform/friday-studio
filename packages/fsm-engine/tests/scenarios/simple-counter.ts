@@ -18,11 +18,11 @@ export const simpleCounterFSM: FSMDefinition = {
     incrementCounter: {
       type: "action",
       code: `
-        export default (context, event, updateDoc) => {
+        export default (context, event) => {
           const counter = context.documents.find(d => d.id === 'counter');
           if (counter) {
             const currentValue = counter.data.value || 0;
-            updateDoc('counter', { value: currentValue + 1 });
+            context.updateDoc('counter', { value: currentValue + 1 });
           }
         }
       `,

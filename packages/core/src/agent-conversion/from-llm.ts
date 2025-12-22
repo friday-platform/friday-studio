@@ -1,5 +1,5 @@
 import { APICallError } from "@ai-sdk/provider";
-import type { ArtifactRef, AtlasAgent, AtlasTools, ToolCall, ToolResult } from "@atlas/agent-sdk";
+import type { ArtifactRef, AtlasAgent, ToolCall, ToolResult } from "@atlas/agent-sdk";
 import { createAgent } from "@atlas/agent-sdk";
 import {
   collectToolUsageFromSteps,
@@ -39,9 +39,6 @@ export function convertLLMToAgent(
   const provider = validateProvider(config.config.provider);
   const model = registry.languageModel(`${provider}:${config.config.model}`);
 
-  // Store tools restriction for buildAgentContext to filter
-  const allowedToolNames = config.config.tools;
-
   const agent = createAgent<string, WrappedAgentResult>({
     id: agentId,
     version: "1.0.0",
@@ -57,28 +54,9 @@ export function convertLLMToAgent(
           data: { toolName: agentId, content: "Warming up" },
         });
 
-        // Filter tools based on agent config or workspace defaults
-        // If agent specifies explicit tools, use those directly without workspace-level filtering
-        // Otherwise, apply deny list to remove platform management tools while allowing MCP server tools
-        // @FIXME: this should get rolled into the agent context builder.
-        let filteredTools: AtlasTools;
-
-        if (allowedToolNames && allowedToolNames.length > 0) {
-          // Agent has explicit tool list - filter directly from all available tools
-          const allowedSet = new Set(allowedToolNames);
-          filteredTools = Object.fromEntries(
-            Object.entries(tools).filter(([toolName]) => allowedSet.has(toolName)),
-          );
-
-          logger.debug("Applied agent-specific tool filtering", {
-            agentId,
-            toolCount: `${Object.keys(filteredTools).length}/${allowedToolNames.length}`,
-          });
-        } else {
-          // No explicit tool list - apply deny list filtering to remove platform management tools
-          // This preserves MCP server tools while blocking workspace/session/job/signal/agent management
-          filteredTools = filterWorkspaceAgentTools(tools, logger);
-        }
+        // Filter tools based on workspace defaults (apply deny list to remove management tools)
+        // Tools are provided via execution context from workspace-level MCP servers
+        const filteredTools = filterWorkspaceAgentTools(tools, logger);
 
         const result = streamText({
           model,
@@ -193,4 +171,40 @@ export function convertLLMToAgent(
   });
 
   return agent;
+}
+
+/**
+ * Create a wrapper agent for type:atlas agent configurations.
+ * Wraps a bundled agent with custom prompt and environment variables.
+ */
+export function wrapAtlasAgent(
+  baseAgent: AtlasAgent,
+  wrapperId: string,
+  customPrompt: string,
+  customEnv?: Record<string, string>,
+  description?: string,
+  logger?: Logger,
+): AtlasAgent<string, unknown> {
+  return createAgent({
+    id: wrapperId,
+    version: baseAgent.metadata.version,
+    description: description || baseAgent.metadata.description,
+    expertise: baseAgent.metadata.expertise,
+    handler: async (prompt, context) => {
+      // Merge custom env with context env
+      const mergedContext = { ...context, env: { ...context.env, ...customEnv } };
+
+      // Prepend custom prompt to user prompt
+      const enrichedPrompt = `${customPrompt}\n\n${prompt}`;
+
+      logger?.debug("Wrapped agent executing with custom prompt and env", {
+        wrapperId,
+        baseAgentId: baseAgent.metadata.id,
+        hasCustomEnv: !!customEnv,
+      });
+
+      // Delegate to base agent
+      return await baseAgent.execute(enrichedPrompt, mergedContext);
+    },
+  });
 }

@@ -2,10 +2,10 @@
  * MCP tool for running FSM test suites
  */
 
-import { InMemoryDocumentStore } from "@atlas/document-store";
 import { stringifyError } from "@atlas/utils";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import { InMemoryDocumentStore } from "../../document-store/node.ts";
 import { TestRunner } from "./lib/runner.ts";
 import { TestSuiteSchema } from "./lib/schema.ts";
 import { createErrorResponse, createSuccessResponse } from "./utils.ts";

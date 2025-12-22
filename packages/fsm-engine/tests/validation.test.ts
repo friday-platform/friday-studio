@@ -18,8 +18,8 @@ describe("FSM Engine - Validation", () => {
         updateBad: {
           type: "action",
           code: `
-            export default (ctx, e, updateDoc) => {
-              updateDoc('doc1', { val: 'not-a-number' });
+            export default (ctx, e) => {
+              ctx.updateDoc('doc1', { val: 'not-a-number' });
             }
           `,
         },

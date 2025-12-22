@@ -7,7 +7,7 @@
 
 import type { Logger } from "@atlas/logger";
 import { z } from "zod";
-import type { SessionSummary } from "../../../src/core/actors/session-supervisor-actor.ts";
+import type { SessionSummary } from "../../../src/types/core.ts";
 
 export interface ConversationContext {
   sessionId: string;

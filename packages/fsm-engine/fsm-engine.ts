@@ -5,10 +5,11 @@
  * Guards and actions are executed via dynamic import from code strings.
  */
 
-import type { DocumentScope, DocumentStore } from "@atlas/document-store";
 import { logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
+import type { Tool } from "ai";
 import { z } from "zod";
+import type { DocumentScope, DocumentStore } from "../document-store/node.ts";
 import { FSMDocumentDataSchema } from "./document-schemas.ts";
 import { jsonSchemaToZod, validateJSONSchema } from "./json-schema-to-zod.ts";
 import * as serializer from "./serializer.ts";
@@ -22,21 +23,53 @@ import type {
   GuardFunction,
   LLMProvider,
   Signal,
+  SignalWithContext,
   TransitionDefinition,
 } from "./types.ts";
 
 const FSMStateSchema = z.object({ state: z.string() });
 
+/**
+ * Agent execution result interface
+ * Matches AgentResult from @atlas/agent-sdk
+ */
+export interface AgentResult {
+  agentId: string;
+  task: string;
+  input: unknown;
+  output: unknown;
+  reasoning?: string;
+  error?: string;
+  duration: number;
+  timestamp?: string;
+}
+
+/**
+ * Agent executor callback type
+ * Integrates FSM agent actions with external agent orchestration systems
+ *
+ * @param agentId - The ID of the agent to execute
+ * @param context - FSM context with documents, state, and utility functions
+ * @param signal - Signal with context (sessionId, workspaceId, onEvent callback)
+ */
+export type AgentExecutor = (
+  agentId: string,
+  context: Context,
+  signal: SignalWithContext,
+) => Promise<AgentResult>;
+
 export interface FSMEngineOptions {
   llmProvider?: LLMProvider;
   documentStore: DocumentStore;
   scope: DocumentScope;
+  agentExecutor?: AgentExecutor;
+  mcpToolProvider?: import("./mcp-tool-context.ts").MCPToolProvider;
 }
 
 export class FSMEngine {
   private _currentState: string;
   private _documents = new Map<string, Document>();
-  private _signalQueue: Signal[] = [];
+  private _signalQueue: SignalWithContext[] = [];
   private _processing = false;
   private _initialized = false;
   private _recursionDepth = 0;
@@ -137,8 +170,8 @@ export class FSMEngine {
           FSMDocumentDataSchema,
         );
         if (doc) {
-          const docType = doc.data.type as string;
-          const docData = doc.data.data as Record<string, unknown>;
+          const docType = doc.data.type;
+          const docData = doc.data.data;
           this.validateDocumentData(docType, docData, id);
           this._documents.set(id, { id, type: docType, data: docData });
         }
@@ -156,6 +189,11 @@ export class FSMEngine {
 
       // Execute entry actions for initial state
       if (initialState?.entry) {
+        logger.debug("Executing entry actions for initial state", {
+          state: this._currentState,
+          actionCount: initialState.entry.length,
+        });
+
         await this.executeActions(
           initialState.entry,
           { type: "__init__" },
@@ -164,6 +202,8 @@ export class FSMEngine {
           this._signalQueue,
           this._currentState,
         );
+
+        logger.debug("Initial state entry actions completed");
       }
 
       // Persist initial documents if any
@@ -204,8 +244,16 @@ export class FSMEngine {
     }
   }
 
-  async signal(sig: Signal): Promise<void> {
-    this._signalQueue.push(sig);
+  async signal(
+    sig: Signal,
+    context?: {
+      sessionId: string;
+      workspaceId: string;
+      onEvent?: (event: import("./types.ts").FSMEvent) => void;
+    },
+  ): Promise<void> {
+    const signalWithContext: SignalWithContext = context ? { ...sig, _context: context } : sig;
+    this._signalQueue.push(signalWithContext);
     if (!this._processing) {
       await this.processQueue();
     }
@@ -232,11 +280,21 @@ export class FSMEngine {
     }
   }
 
-  private async processSingleSignal(sig: Signal): Promise<void> {
+  private async processSingleSignal(sig: SignalWithContext): Promise<void> {
+    logger.debug("Processing signal", {
+      signalType: sig.type,
+      currentState: this._currentState,
+      hasData: !!sig.data,
+    });
+
     const state = this.definition.states[this._currentState];
     if (!state) throw new Error(`Invalid state: ${this._currentState}`);
 
     if (!state.on || !state.on[sig.type]) {
+      logger.debug("No transition defined for signal", {
+        signalType: sig.type,
+        currentState: this._currentState,
+      });
       return; // No transition for this signal
     }
 
@@ -268,6 +326,13 @@ export class FSMEngine {
 
         try {
           const passed = guardFn(this.context, sig);
+          logger.debug("Guard evaluated", {
+            guardName,
+            passed,
+            signalType: sig.type,
+            currentState: this._currentState,
+          });
+
           if (!passed) {
             allGuardsPassed = false;
             break;
@@ -330,6 +395,11 @@ export class FSMEngine {
 
       // Execute entry actions for new state
       if (newStateDefinition?.entry) {
+        logger.debug("Executing entry actions for state", {
+          state: pendingState,
+          actionCount: newStateDefinition.entry.length,
+        });
+
         await this.executeActions(
           newStateDefinition.entry,
           sig,
@@ -338,6 +408,8 @@ export class FSMEngine {
           pendingSignals,
           pendingState,
         );
+
+        logger.debug("Entry actions completed for state", { state: pendingState });
       }
 
       // COMMIT PHASE
@@ -355,6 +427,22 @@ export class FSMEngine {
       // 5. Persist
       await this.persistDocuments();
       await this.persistExecutionState();
+
+      // 6. Emit state transition event if callback provided and state changed
+      if (sig._context?.onEvent && previousState !== pendingState) {
+        sig._context.onEvent({
+          type: "data-fsm-state-transition",
+          data: {
+            sessionId: sig._context.sessionId,
+            workspaceId: sig._context.workspaceId,
+            jobName: this.definition.id,
+            fromState: previousState,
+            toState: pendingState,
+            triggeringSignal: sig.type,
+            timestamp: Date.now(),
+          },
+        });
+      }
     } catch (error) {
       logger.error(`FSM error in state ${this._currentState}, signal ${sig.type}`, { error });
       throw error;
@@ -363,10 +451,10 @@ export class FSMEngine {
 
   private async executeActions(
     actions: Action[],
-    sig: Signal,
+    sig: SignalWithContext,
     documents: Map<string, Document>,
     events: EmittedEvent[],
-    signals: Signal[],
+    signals: SignalWithContext[],
     currentState: string,
   ): Promise<void> {
     this._recursionDepth++;
@@ -388,22 +476,56 @@ export class FSMEngine {
 
   private async executeAction(
     action: Action,
-    sig: Signal,
+    sig: SignalWithContext,
     documents: Map<string, Document>,
     events: EmittedEvent[],
-    signals: Signal[],
+    signals: SignalWithContext[],
     currentState: string,
   ): Promise<void> {
+    const actionStartTime = Date.now();
+
+    // Emit action started event
+    if (sig._context?.onEvent) {
+      sig._context.onEvent({
+        type: "data-fsm-action-execution",
+        data: {
+          sessionId: sig._context.sessionId,
+          workspaceId: sig._context.workspaceId,
+          jobName: this.definition.id,
+          actionType: action.type,
+          actionId:
+            action.type === "agent"
+              ? action.agentId
+              : action.type === "code"
+                ? action.function
+                : undefined,
+          state: currentState,
+          status: "started",
+          timestamp: actionStartTime,
+        },
+      });
+    }
+
     // Create a context bound to the pending documents/signals
     const context: Context = {
       documents: Array.from(documents.values()),
       state: currentState,
       emit: (s: Signal) => {
-        signals.push(s);
+        logger.debug("Signal emitted from action", {
+          signalType: s.type,
+          currentState,
+          hasData: !!s.data,
+        });
+        // Cascaded signals inherit parent's context (including onEvent callback)
+        const cascadedSignal: SignalWithContext = sig._context
+          ? { ...s, _context: sig._context }
+          : s;
+        signals.push(cascadedSignal);
         return Promise.resolve();
       },
       updateDoc: this.makeUpdateDocFn(documents),
       createDoc: this.makeCreateDocFn(documents, currentState),
+      deleteDoc: this.makeDeleteDocFn(documents, currentState),
     };
 
     switch (action.type) {
@@ -413,8 +535,15 @@ export class FSMEngine {
           throw new Error(`Action function "${action.function}" not found`);
         }
 
+        logger.debug("Executing code action", {
+          function: action.function,
+          state: currentState,
+          signalType: sig.type,
+        });
+
         try {
-          await actionFn(context, sig, context.updateDoc);
+          await actionFn(context, sig);
+          logger.debug("Code action completed", { function: action.function, state: currentState });
         } catch (error) {
           throw new Error(`Action "${action.function}" threw error: ${stringifyError(error)}`);
         }
@@ -437,40 +566,28 @@ export class FSMEngine {
           throw new Error("LLM action requires llmProvider in FSMEngineOptions");
         }
 
-        // Build context prompt with documents
-        const contextPrompt = this.buildContextPrompt(action.prompt, documents);
+        logger.debug("Executing LLM action", {
+          model: action.model,
+          state: currentState,
+          hasTools: !!action.tools,
+          toolCount: action.tools?.length ?? 0,
+          outputTo: action.outputTo,
+        });
 
-        // Get tool executors if tools are specified
-        const toolExecutors = action.tools
-          ? await this.buildToolExecutors(action.tools)
-          : undefined;
+        const contextPrompt = this.buildContextPrompt(action.prompt, documents);
+        const tools = action.tools ? await this.buildTools(action.tools, context) : undefined;
 
         const response = await this.options.llmProvider.call({
           model: action.model,
           prompt: contextPrompt,
-          tools: action.tools
-            ? action.tools.map((toolName) => {
-                const tool = this.definition.tools?.[toolName];
-                if (!tool) {
-                  throw new Error(`Tool "${toolName}" not found in FSM definition`);
-                }
-                return {
-                  name: toolName,
-                  description: tool.description,
-                  input_schema: tool.inputSchema as Record<string, unknown>,
-                };
-              })
-            : undefined,
-          toolExecutors,
+          tools,
         });
 
-        // Store result in document if outputTo is specified
         if (action.outputTo) {
           const outputDoc = documents.get(action.outputTo);
           if (outputDoc) {
             outputDoc.data = { ...outputDoc.data, ...response.data, content: response.content };
           } else {
-            // Create new document for output
             documents.set(action.outputTo, {
               id: action.outputTo,
               type: "LLMResult",
@@ -484,27 +601,93 @@ export class FSMEngine {
       }
 
       case "agent": {
-        // Agent execution is handled externally via orchestrator
-        // This is a placeholder that will be filled in when integrated with Atlas
-        logger.warn("Agent action not yet integrated with Atlas orchestrator", {
+        if (!this.options.agentExecutor) {
+          throw new Error(
+            `Agent action requires agentExecutor in FSMEngineOptions. ` +
+              `Pass agentExecutor callback that integrates with your agent system. ` +
+              `Agent: ${action.agentId}`,
+          );
+        }
+
+        logger.debug("Executing agent action", {
           agentId: action.agentId,
+          state: currentState,
+          outputTo: action.outputTo,
         });
 
-        // Create placeholder result document
-        if (action.outputTo) {
-          documents.set(action.outputTo, {
-            id: action.outputTo,
-            type: "AgentResult",
-            data: { agentId: action.agentId, status: "pending" },
-          });
+        // Build context for agent execution
+        const agentContext: Context = {
+          documents: Array.from(documents.values()),
+          state: currentState,
+          emit: context.emit,
+          updateDoc: (id: string, data: Record<string, unknown>) => {
+            const doc = documents.get(id);
+            if (doc) {
+              doc.data = { ...doc.data, ...data };
+            }
+          },
+          createDoc: (doc: Document) => {
+            documents.set(doc.id, doc);
+          },
+          deleteDoc: (id: string) => {
+            documents.delete(id);
+          },
+        };
+
+        // Execute agent via callback, passing signal context
+        const result = await this.options.agentExecutor(action.agentId, agentContext, sig);
+
+        if (result.error) {
+          throw new Error(`Agent ${action.agentId} failed: ${result.error}`);
         }
+
+        // Store result in document if outputTo specified
+        if (action.outputTo && result.output) {
+          const parsed = z.record(z.string(), z.unknown()).safeParse(result.output);
+          const data = parsed.success ? parsed.data : { value: result.output };
+          const existingDoc = documents.get(action.outputTo);
+          if (existingDoc) {
+            existingDoc.data = { ...existingDoc.data, ...data };
+          } else {
+            documents.set(action.outputTo, { id: action.outputTo, type: "AgentResult", data });
+          }
+        }
+
+        logger.debug("Agent action completed", {
+          agentId: action.agentId,
+          outputTo: action.outputTo,
+          duration: result.duration,
+        });
         break;
       }
 
       default: {
-        const exhaustive: never = action;
-        throw new Error(`Unknown action type: ${(exhaustive as Action).type}`);
+        logger.error("Unknown action type", { action });
+        throw new Error(`Unknown action type`);
       }
+    }
+
+    // Emit action completed event
+    if (sig._context?.onEvent) {
+      sig._context.onEvent({
+        type: "data-fsm-action-execution",
+        data: {
+          sessionId: sig._context.sessionId,
+          workspaceId: sig._context.workspaceId,
+          jobName: this.definition.id,
+          actionType: action.type,
+          actionId:
+            action.type === "agent"
+              ? action.agentId
+              : action.type === "code"
+                ? action.function
+                : undefined,
+          state: currentState,
+          status: "completed",
+          duration: Date.now() - actionStartTime,
+          timestamp: Date.now(),
+        },
+      });
     }
   }
 
@@ -525,30 +708,40 @@ export class FSMEngine {
     return `${basePrompt}\n\nAvailable Documents:\n${docsContext}`;
   }
 
-  private async buildToolExecutors(
-    toolNames: string[],
-  ): Promise<
-    Record<string, (args: Record<string, unknown>, context: Context) => Promise<unknown>>
-  > {
-    const executors: Record<
-      string,
-      (args: Record<string, unknown>, context: Context) => Promise<unknown>
-    > = {};
+  /**
+   * Build AI SDK Tool objects for LLM action
+   * FSM tools: JSONSchema → Zod → Tool (one conversion)
+   * MCP tools: Already Tool objects (pass through)
+   */
+  private async buildTools(toolNames: string[], context: Context): Promise<Record<string, Tool>> {
+    const tools: Record<string, Tool> = {};
 
-    for (const toolName of toolNames) {
-      const tool = this.definition.tools?.[toolName];
-      if (!tool) {
-        throw new Error(`Tool "${toolName}" not found in FSM definition`);
+    const fsmToolNames = toolNames.filter((name) => this.definition.tools?.[name]);
+    const mcpServerIds = toolNames.filter((name) => !this.definition.tools?.[name]);
+
+    // FSM tools: compile code, wrap in Tool
+    for (const toolName of fsmToolNames) {
+      const toolDef = this.definition.tools?.[toolName];
+      if (!toolDef) {
+        throw new Error(`Tool ${toolName} not found in FSM definition`);
       }
+      const zodSchema = jsonSchemaToZod(toolDef.inputSchema);
+      const toolFn = await this.compileFunctionCode(toolDef.code, toolName);
 
-      // Compile tool code
-      const toolFn = await this.compileFunctionCode(tool.code, toolName);
-      executors[toolName] = async (args: Record<string, unknown>, context: Context) => {
-        return await toolFn(context, { type: "__tool__", data: args });
+      tools[toolName] = {
+        description: toolDef.description,
+        inputSchema: zodSchema,
+        execute: (args) => toolFn(context, { type: "__tool__", data: args }),
       };
     }
 
-    return executors;
+    // MCP tools: already Tool objects, just merge
+    if (mcpServerIds.length > 0 && this.options.mcpToolProvider) {
+      const mcpTools = await this.options.mcpToolProvider.getToolsForServers(mcpServerIds);
+      Object.assign(tools, mcpTools);
+    }
+
+    return tools;
   }
 
   private validateDocumentData(type: string, data: Record<string, unknown>, id: string): void {
@@ -642,6 +835,24 @@ export class FSMEngine {
     };
   }
 
+  /**
+   * Create deleteDoc function for context
+   * Allows FSM actions to selectively remove documents
+   * Idempotent - no-op if document doesn't exist
+   */
+  private makeDeleteDocFn(
+    documents: Map<string, Document> = this._documents,
+    currentState: string = this._currentState,
+  ): (id: string) => void {
+    return (id: string) => {
+      const existed = documents.has(id);
+      if (existed) {
+        documents.delete(id);
+        logger.debug("Document deleted", { documentId: id, state: currentState });
+      }
+    };
+  }
+
   private async persistExecutionState(): Promise<void> {
     await this.options.documentStore.saveState(this.options.scope, this.definition.id, {
       state: this._currentState,
@@ -672,6 +883,15 @@ export class FSMEngine {
     return this._documents.get(id);
   }
 
+  /**
+   * Clear all documents from memory
+   * Used when workspace needs to start fresh for each signal
+   */
+  clearDocuments(): void {
+    this._documents.clear();
+    logger.debug("Cleared all documents from FSM engine", { fsmId: this.definition.id });
+  }
+
   get context(): Context {
     return {
       documents: this.documents,
@@ -679,6 +899,7 @@ export class FSMEngine {
       emit: (s: Signal) => this.signal(s),
       updateDoc: this.makeUpdateDocFn(),
       createDoc: this.makeCreateDocFn(),
+      deleteDoc: this.makeDeleteDocFn(),
     };
   }
 
@@ -692,5 +913,48 @@ export class FSMEngine {
 
   stop(): void {
     // No-op (no worker to stop yet)
+  }
+
+  /**
+   * Reset FSM to initial state without re-initialization
+   * Clears all runtime state (signals, events) and returns to initial state
+   * Re-runs idle state entry actions to allow selective document cleanup
+   * Used when workspace needs to start fresh for trigger signals
+   */
+  async reset(): Promise<void> {
+    this._currentState = this.definition.initial;
+
+    // DON'T clear documents - let idle state entry actions decide what to clean
+    this._signalQueue = [];
+    this._emittedEvents = [];
+    this._recursionDepth = 0;
+    this._processedSignalsCount = 0;
+    this._processing = false;
+
+    // Re-run idle entry actions (like initialize() does)
+    const initialState = this.definition.states[this._currentState];
+    if (initialState?.entry) {
+      logger.debug("Executing entry actions for reset state", {
+        state: this._currentState,
+        actionCount: initialState.entry.length,
+      });
+
+      await this.executeActions(
+        initialState.entry,
+        { type: "__reset__" },
+        this._documents,
+        this._emittedEvents,
+        this._signalQueue,
+        this._currentState,
+      );
+
+      // Persist any document changes from entry actions
+      await this.persistDocuments();
+    }
+
+    logger.debug("FSM reset to initial state", {
+      fsmId: this.definition.id,
+      initialState: this._currentState,
+    });
   }
 }

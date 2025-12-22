@@ -88,7 +88,8 @@
     "**/dist/**",
     "**/build/**",
     "packages/vendor/**",
-    "apps/atlas-installer/**"
+    "apps/atlas-installer/**",
+    "**/$lib/build-info"
   ],
   "ignoreDependencies": ["@std/tar"],
   "ignoreBinaries": [],

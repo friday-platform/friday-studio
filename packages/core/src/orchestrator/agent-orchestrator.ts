@@ -132,6 +132,11 @@ export class AgentOrchestrator implements IAgentOrchestrator {
   private sessionMemories = new Map<string, CoALAMemoryManager>();
   // Track active MCP requests for cancellation
   private activeMCPRequests = new Map<string, { requestId: string; sessionId: string }>();
+  // Track active agent executions to prevent premature workspace shutdown
+  private activeAgentExecutions = new Map<
+    string,
+    { agentId: string; sessionId: string; startTime: number }
+  >();
 
   // (No ad-hoc resource parsing; we read the typed agents list resource instead)
 
@@ -286,6 +291,27 @@ export class AgentOrchestrator implements IAgentOrchestrator {
   }
 
   /**
+   * Check if there are any active agent executions.
+   * Used by the daemon to prevent premature workspace shutdown.
+   */
+  hasActiveExecutions(): boolean {
+    return this.activeAgentExecutions.size > 0;
+  }
+
+  /**
+   * Get count and details of active agent executions.
+   * Used for debugging and monitoring.
+   */
+  getActiveExecutions(): Array<{ agentId: string; sessionId: string; durationMs: number }> {
+    const now = Date.now();
+    return Array.from(this.activeAgentExecutions.values()).map((exec) => ({
+      agentId: exec.agentId,
+      sessionId: exec.sessionId,
+      durationMs: now - exec.startTime,
+    }));
+  }
+
+  /**
    * Extract tool metadata from agent output, removing it from the output object
    * to prevent double-counting in token calculations.
    */
@@ -358,6 +384,14 @@ export class AgentOrchestrator implements IAgentOrchestrator {
         return { type: "completed", result: "Canceled by user" };
       }
 
+      // Log the full response text for debugging (truncated in error message)
+      this.logger.error("Failed to parse MCP response as JSON", {
+        component: "AgentOrchestrator",
+        textContent: textContent.substring(0, 500), // Log first 500 chars
+        textLength: textContent.length,
+        errorMessage: error instanceof Error ? error.message : String(error),
+      });
+
       // Re-throw agent errors and validation errors with context
       if (error instanceof z.ZodError) {
         throw new Error(`Invalid agent execution result: ${error.message}`);
@@ -370,7 +404,7 @@ export class AgentOrchestrator implements IAgentOrchestrator {
         throw error; // Re-throw our formatted agent errors
       }
       throw new Error(
-        `Invalid JSON in MCP response: ${error instanceof Error ? error.message : String(error)}`,
+        `Invalid JSON in MCP response: ${error instanceof Error ? error.message : String(error)}. Response text: ${textContent.substring(0, 200)}`,
       );
     }
   }
@@ -431,6 +465,18 @@ export class AgentOrchestrator implements IAgentOrchestrator {
   ): Promise<AgentResult> {
     const startTime = Date.now();
     const logger = this.logger.child({ agentId, sessionId: context.sessionId });
+
+    // Track this execution to prevent premature workspace shutdown
+    const executionKey = `${context.sessionId}:${agentId}`;
+    this.activeAgentExecutions.set(executionKey, {
+      agentId,
+      sessionId: context.sessionId,
+      startTime,
+    });
+    logger.debug("Started tracking agent execution", {
+      executionKey,
+      activeExecutionsCount: this.activeAgentExecutions.size,
+    });
 
     // Set up real-time event streaming if requested
     // Only register handler if both callback and streamId are provided
@@ -561,6 +607,17 @@ export class AgentOrchestrator implements IAgentOrchestrator {
         toolCalls: undefined,
         toolResults: undefined,
       };
+    } finally {
+      // Always clean up execution tracking, whether success or failure
+      const executionKey = `${context.sessionId}:${agentId}`;
+      const wasTracking = this.activeAgentExecutions.delete(executionKey);
+      if (wasTracking) {
+        logger.debug("Stopped tracking agent execution", {
+          executionKey,
+          activeExecutionsCount: this.activeAgentExecutions.size,
+          duration: Date.now() - startTime,
+        });
+      }
     }
   }
 

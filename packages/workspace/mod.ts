@@ -18,6 +18,7 @@
 
 // Export system workspaces
 export { SYSTEM_WORKSPACES } from "@atlas/system/workspaces";
+export type { RuntimeInvalidateCallback } from "./src/manager.ts";
 // Export WorkspaceManagerOptions interface
 // Export main components
 export { getWorkspaceManager, WorkspaceManager } from "./src/manager.ts";

@@ -51,40 +51,9 @@ signals:
       path: "/telephone"
       timeout: 30s
 
-# Job definitions
-jobs:
-  telephone:
-    name: "telephone"
-    description: |
-      Telephone game message transformation workflow:
-      1. Mishearing agent introduces phonetic distortions and sound-alike substitutions
-      2. Embellishment agent adds creative details, vivid imagery, and narrative context
-      3. Reinterpretation agent dramatically transforms meaning while maintaining plausibility
-      Result: Original message transformed through realistic telephone game effects demonstrating
-      how information degrades and mutates through sequential processing
-    triggers:
-      - signal: "telephone-message"
-        condition:
-          jsonlogic:
-            and:
-              - { "var": "message" }
-              - { ">": [{ "length": { "var": "message" } }, 0] }
-              - { "<": [{ "length": { "var": "message" } }, 100] }
-    execution:
-      strategy: "sequential"
-      agents:
-        - "mishearing-agent"
-        - "embellishment-agent"
-        - "reinterpretation-agent"
-
-  # Test job that should NOT be discoverable (not in discoverable.jobs list)
-  private_test:
-    name: "private_test"
-    description: "A private test job that should not be accessible via MCP"
-    execution:
-      strategy: "sequential"
-      agents:
-        - "mishearing-agent"
+# NOTE: Jobs are deprecated. This workspace needs migration to FSM format.
+# Create a telephone.fsm.yaml file to define the workflow as a finite state machine.
+# See conversation.fsm.yaml for an example FSM structure.
 
 # Agent definitions
 agents:

@@ -1,0 +1,170 @@
+fsm:
+  id: atlas-conversation
+  initial: idle
+
+  documentTypes:
+    ConversationContext:
+      type: object
+      properties:
+        conversationId:
+          type: string
+        userId:
+          type: string
+        message:
+          type: string
+        streamId:
+          type: string
+      required:
+        - userId
+
+    ConversationResult:
+      type: object
+      properties:
+        response:
+          type: string
+        conversationId:
+          type: string
+      required:
+        - response
+
+  states:
+    idle:
+      on:
+        conversation-stream:
+          target: processing
+          actions:
+            - type: code
+              function: cleanup_previous_conversation
+            - type: code
+              function: storeConversationContext
+
+        conversation-list:
+          target: listing
+          actions:
+            - type: code
+              function: cleanup_previous_conversation
+            - type: code
+              function: prepareListQuery
+
+        conversation-resume:
+          target: resuming
+          actions:
+            - type: code
+              function: cleanup_previous_conversation
+            - type: code
+              function: prepareResumeContext
+
+        shutdown:
+          target: done
+
+    processing:
+      entry:
+        - type: agent
+          agentId: conversation
+          outputTo: conversation-result
+        - type: emit
+          event: conversation_complete
+      on:
+        conversation_complete:
+          target: idle
+
+    listing:
+      entry:
+        - type: agent
+          agentId: conversation-query
+          outputTo: query-result
+        - type: emit
+          event: list_complete
+      on:
+        list_complete:
+          target: idle
+
+    resuming:
+      entry:
+        - type: agent
+          agentId: conversation-loader
+          outputTo: resume-result
+        - type: emit
+          event: resume_complete
+      on:
+        resume_complete:
+          target: idle
+
+    done:
+      type: final
+
+  functions:
+    cleanup_previous_conversation:
+      type: action
+      code: |
+        export default function cleanup_previous_conversation(context, event) {
+          // Clean all temporary documents from previous conversation
+          // These are recreated for each new conversation/list/resume operation
+
+          // Conversation documents
+          context.deleteDoc?.('conversation-context');
+          context.deleteDoc?.('conversation-result');
+
+          // List operation documents
+          context.deleteDoc?.('list-query');
+          context.deleteDoc?.('query-result');
+
+          // Resume operation documents
+          context.deleteDoc?.('resume-context');
+          context.deleteDoc?.('resume-result');
+
+          // Note: If we add stateful documents later (conversation history cache,
+          // user preferences, rate limits), do NOT delete them here
+        }
+
+    storeConversationContext:
+      type: action
+      code: |
+        export default function storeConversationContext(context, event) {
+          context.createDoc({
+            id: 'conversation-context',
+            type: 'ConversationContext',
+            data: {
+              conversationId: event.data.conversationId || event.data.id,
+              userId: event.data.userId,
+              message: event.data.message,
+              streamId: event.data.streamId
+            }
+          });
+        }
+
+    prepareListQuery:
+      type: action
+      code: |
+        export default function prepareListQuery(context, event) {
+          context.createDoc({
+            id: 'list-query',
+            type: 'ConversationContext',
+            data: {
+              userId: event.data.userId,
+              scope: event.data.scope
+            }
+          });
+        }
+
+    prepareResumeContext:
+      type: action
+      code: |
+        export default function prepareResumeContext(context, event) {
+          context.createDoc({
+            id: 'resume-context',
+            type: 'ConversationContext',
+            data: {
+              conversationId: event.data.conversationId,
+              userId: event.data.userId
+            }
+          });
+        }
+
+    cleanupContext:
+      type: action
+      code: |
+        export default function cleanupContext(context, event) {
+          // Context cleanup after conversation processing
+          // Documents are automatically persisted by FSM engine
+        }

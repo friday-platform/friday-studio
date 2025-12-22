@@ -439,6 +439,3 @@ export const ArtifactStorage = {
   deleteArtifact,
   readFileContents,
 };
-
-export type { CsvParseResult } from "./parsers/mod.ts";
-export { CsvParseResultSchema, parseCsv } from "./parsers/mod.ts";

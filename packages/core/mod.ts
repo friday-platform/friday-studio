@@ -10,7 +10,7 @@
 export type { IWorkspaceSession } from "../../src/types/core.ts";
 export type { WrappedAgentResult } from "./src/agent-conversion/from-llm.ts";
 // Export strongly-typed LLM converter directly to preserve WrappedAgentResult generic
-export { convertLLMToAgent } from "./src/agent-conversion/from-llm.ts";
+export { convertLLMToAgent, wrapAtlasAgent } from "./src/agent-conversion/from-llm.ts";
 export type { LLMAgentConfig } from "./src/agent-conversion/index.ts";
 // Agent Conversion Layer
 export { convertLLMAgentToSDK } from "./src/agent-conversion/index.ts";

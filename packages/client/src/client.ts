@@ -108,7 +108,7 @@ export class AtlasClient {
     const response = await parseResult(
       v2Client.workspace[":workspaceId"].signals[":signalId"].$post({
         param: { workspaceId, signalId },
-        json: payload,
+        json: { payload },
       }),
     );
     if (!response.ok) {

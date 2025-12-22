@@ -36,10 +36,14 @@ import { registerSessionCancelTool } from "./session/cancel.ts";
 import { registerSessionDescribeTool } from "./session/describe.ts";
 // Import signal tools
 import { registerSignalsListTool } from "./signals/list.ts";
+import { registerSignalTriggerTool } from "./signals/trigger.ts";
 // Import system tools
 import { registerBashTool } from "./system/bash.ts";
+// Import task tools
+import { registerDoTaskTool } from "./task/do-task.ts";
 import type { ToolContext } from "./types.ts";
 // Import workspace tools
+import { registerConvertTaskToWorkspaceTool } from "./workspace/convert-task-to-workspace.ts";
 import { registerWorkspaceDeleteTool } from "./workspace/delete.ts";
 import { registerWorkspaceDescribeTool } from "./workspace/describe.ts";
 import { registerWorkspaceListTool } from "./workspace/list.ts";
@@ -54,6 +58,7 @@ export function registerTools(server: McpServer, context: ToolContext): void {
   registerWorkspaceDeleteTool(server, context);
   registerWorkspaceDescribeTool(server, context);
   registerWorkspacePersistenceTool(server, context);
+  registerConvertTaskToWorkspaceTool(server, context);
 
   // Session tools
   registerSessionDescribeTool(server, context);
@@ -65,6 +70,7 @@ export function registerTools(server: McpServer, context: ToolContext): void {
 
   // Signal tools
   registerSignalsListTool(server, context);
+  registerSignalTriggerTool(server, context);
 
   // Agent tools
   registerAgentsListTool(server, context);
@@ -96,6 +102,9 @@ export function registerTools(server: McpServer, context: ToolContext): void {
 
   // System tools
   registerBashTool(server, context);
+
+  // Task execution tools
+  registerDoTaskTool(server, context);
 
   registerVersionTool(server);
 

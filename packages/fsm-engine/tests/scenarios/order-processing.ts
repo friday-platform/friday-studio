@@ -41,9 +41,9 @@ export const orderProcessingFSM: FSMDefinition = {
     updateOrderStatus: {
       type: "action",
       code: `
-        export default (context, event, updateDoc) => {
+        export default (context, event) => {
           const status = event.type === 'APPROVE' ? 'approved' : 'rejected';
-          updateDoc('order', { status });
+          context.updateDoc('order', { status });
         }
       `,
     },

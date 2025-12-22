@@ -110,36 +110,52 @@ export type JobConfig = z.infer<typeof JobConfigSchema>;
 // JOB SPECIFICATION
 // ==============================================================================
 
-export const JobSpecificationSchema = z.strictObject({
-  name: MCPToolNameSchema.optional().describe("MCP-compliant job name"),
-  description: z.string().optional(),
+export const JobSpecificationSchema = z
+  .strictObject({
+    name: MCPToolNameSchema.optional().describe("MCP-compliant job name"),
+    description: z.string().optional(),
 
-  // Triggers
-  triggers: z.array(TriggerSpecificationSchema).optional(),
+    // Triggers
+    triggers: z.array(TriggerSpecificationSchema).optional(),
 
-  // Context configuration
-  context: z
-    .strictObject({ files: FileContextSchema.optional().describe("Job-level file context") })
-    .optional(),
+    // Context configuration
+    context: z
+      .strictObject({ files: FileContextSchema.optional().describe("Job-level file context") })
+      .optional(),
 
-  // Prompt for supervisor guidance
-  prompt: z.string().optional().describe("Single prompt string for supervisor"),
+    // Prompt for supervisor guidance
+    prompt: z.string().optional().describe("Single prompt string for supervisor"),
 
-  // Execution
-  execution: JobExecutionSchema,
+    // Execution - either agent-based or FSM-based
+    execution: JobExecutionSchema.optional().describe("Agent-based execution pipeline"),
+    fsm: z
+      .any()
+      .optional()
+      .describe(
+        "FSM-based workflow definition. See @atlas/fsm-engine for FSMDefinition structure.",
+      ),
 
-  // Terminal states
-  success: z
-    .strictObject({
-      condition: ConditionSchema,
-      schema: SchemaObjectSchema.optional().describe("Structured output schema"),
-    })
-    .optional(),
+    // Terminal states
+    success: z
+      .strictObject({
+        condition: ConditionSchema,
+        schema: SchemaObjectSchema.optional().describe("Structured output schema"),
+      })
+      .optional(),
 
-  error: z.strictObject({ condition: ConditionSchema }).optional(),
+    error: z.strictObject({ condition: ConditionSchema }).optional(),
 
-  // Job configuration
-  config: JobConfigSchema.optional(),
-});
+    // Job configuration
+    config: JobConfigSchema.optional(),
+  })
+  .refine(
+    (data) => {
+      // Exactly one of execution or fsm must be provided
+      const hasExecution = data.execution !== undefined;
+      const hasFsm = data.fsm !== undefined;
+      return (hasExecution && !hasFsm) || (!hasExecution && hasFsm);
+    },
+    { message: "Job must specify exactly one of: execution (agent-based) or fsm (FSM-based)" },
+  );
 
 export type JobSpecification = z.infer<typeof JobSpecificationSchema>;

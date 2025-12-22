@@ -1,3 +1,4 @@
+import { SessionHistoryStorage } from "@atlas/core";
 import { logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
 import { zValidator } from "@hono/zod-validator";
@@ -28,15 +29,15 @@ const sessionsRoutes = daemonFactory
     const allSessions: SessionInfo[] = [];
 
     for (const [workspaceId, runtime] of ctx.daemon.runtimes) {
-      const sessions = runtime.getSessions().map((session) => ({
-        id: session.id,
+      const sessions = runtime.getSessions().map((activeSession) => ({
+        id: activeSession.id,
         workspaceId,
-        status: session.status,
-        summary: session.summarize(),
-        signal: session.signals?.triggers?.[0]?.id || "unknown",
-        startTime: undefined, // Private property, not accessible
-        endTime: undefined, // Private property, not accessible
-        progress: session.progress(),
+        status: activeSession.session.status,
+        summary: activeSession.session.summarize(),
+        signal: activeSession.signalId,
+        startTime: activeSession.startedAt.toISOString(),
+        endTime: undefined, // Not tracked in current implementation
+        progress: activeSession.session.progress(),
       }));
       allSessions.push(...sessions);
     }
@@ -44,29 +45,56 @@ const sessionsRoutes = daemonFactory
     return c.json(allSessions, 200);
   })
   // Get specific session from any workspace
-  .get("/:id", (c) => {
+  .get("/:id", async (c) => {
     const ctx = c.get("app");
     const sessionId = c.req.param("id");
 
-    // Find session across all runtimes
+    // 1. Check active runtimes first (in-memory sessions)
     for (const [workspaceId, runtime] of ctx.daemon.runtimes) {
-      const session = runtime.getSession(sessionId);
-      if (session) {
+      const activeSession = runtime.getSessions().find((s) => s.id === sessionId);
+      if (activeSession) {
         return c.json(
           {
-            id: session.id,
+            id: activeSession.id,
             workspaceId,
-            status: session.status,
-            progress: session.progress(),
-            summary: session.summarize(),
-            signal: session.signals?.triggers?.[0]?.id || "unknown",
-            startTime: undefined, // Private property, not accessible
-            endTime: undefined, // Private property, not accessible
-            artifacts: session.getArtifacts(),
+            status: activeSession.session.status,
+            progress: activeSession.session.progress(),
+            summary: activeSession.session.summarize(),
+            signal: activeSession.signalId,
+            startTime: activeSession.startedAt.toISOString(),
+            endTime: undefined, // Not tracked in current implementation
+            artifacts: activeSession.session.getArtifacts(),
           },
           200,
         );
       }
+    }
+
+    // 2. Fallback to history storage for completed sessions
+    const historyResult = await SessionHistoryStorage.getSessionMetadata(sessionId);
+
+    if (!historyResult.ok) {
+      logger.error("Failed to query session history", { sessionId, error: historyResult.error });
+      return c.json({ error: `Session not found: ${sessionId}` }, 404);
+    }
+
+    if (historyResult.data) {
+      // Found in history storage
+      return c.json(
+        {
+          id: historyResult.data.sessionId,
+          workspaceId: historyResult.data.workspaceId,
+          status: historyResult.data.status,
+          progress: 100, // Completed sessions are always 100%
+          summary: historyResult.data.summary || `Session ${sessionId}`,
+          signal: historyResult.data.signal.id,
+          startTime: historyResult.data.createdAt,
+          endTime: historyResult.data.updatedAt,
+          artifacts: [], // Could load from timeline if needed
+          source: "history", // Indicate this came from storage
+        },
+        200,
+      );
     }
 
     return c.json({ error: `Session not found: ${sessionId}` }, 404);
@@ -79,8 +107,8 @@ const sessionsRoutes = daemonFactory
 
     // Find session across all runtimes
     for (const [workspaceId, runtime] of runtimes) {
-      const session = runtime.getSession(sessionId);
-      if (session) {
+      const activeSession = runtime.getSessions().find((s) => s.id === sessionId);
+      if (activeSession) {
         try {
           await runtime.cancelSession(sessionId);
           return c.json({ message: `Session ${sessionId} cancelled`, workspaceId }, 200);

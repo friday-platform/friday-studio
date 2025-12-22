@@ -42,9 +42,9 @@ Functions are TypeScript code strings that will be executed via dynamic import:
   }
 
 - Actions: Functions that modify state and documents
-  function validateOrder(context, event, updateDoc) {
+  function validateOrder(context, event) {
     const order = context.documents.find(d => d.id === 'order');
-    updateDoc(order.id, { status: 'validated' });
+    context.updateDoc(order.id, { status: 'validated' });
   }
 
 States have:
@@ -92,7 +92,7 @@ Example:
     },
     "updateStatus": {
       "type": "action",
-      "code": "export default function(context, event, updateDoc) { const order = context.documents[0]; updateDoc(order.id, { status: 'approved' }); }"
+      "code": "export default function(context, event) { const order = context.documents[0]; context.updateDoc(order.id, { status: 'approved' }); }"
     }
   },
   "states": {

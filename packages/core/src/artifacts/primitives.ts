@@ -23,6 +23,12 @@ export const WorkspacePlanSchema = z.object({
         .describe(
           "When and how this triggers, including rationale. 1-2 sentences. Examples: 'Runs every 30 minutes during business hours to catch new products quickly without overwhelming the website' or 'Webhook endpoint receives GitHub push events to trigger immediate CI builds'",
         ),
+      payloadSchema: z
+        .record(z.string(), z.unknown())
+        .optional()
+        .describe(
+          "JSON Schema defining required payload fields for this signal. Define if signal needs user input, file paths, or parameters. Example: { type: 'object', required: ['user_input'], properties: { user_input: { type: 'string', description: 'User text input or description' } } }. Use snake_case for field names. Omit for schedule-only triggers.",
+        ),
     }),
   ),
 

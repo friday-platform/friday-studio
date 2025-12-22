@@ -8,18 +8,30 @@
 // Document schemas and utilities
 export * from "./document-schemas.ts";
 // Core engine and execution
-export type { FSMEngineOptions } from "./fsm-engine.ts";
+export type {
+  AgentExecutor,
+  AgentResult,
+  FSMEngineOptions,
+} from "./fsm-engine.ts";
 export { FSMEngine } from "./fsm-engine.ts";
 export { jsonSchemaToZod, validateJSONSchema } from "./json-schema-to-zod.ts";
 // LLM integration
 export { AtlasLLMProviderAdapter } from "./llm-provider-adapter.ts";
 // FSM loader with validation
 export { createEngine, loadFromFile, loadFromYAML } from "./loader.ts";
+// MCP tool context provider for FSM LLM actions
+export {
+  GlobalMCPToolProvider,
+  type MCPToolProvider,
+} from "./mcp-tool-context.ts";
 // MCP tools for FSM operations
 export * from "./mcp-tools/index.ts";
 // Testing utilities
 export { TestRunner } from "./mcp-tools/lib/runner.ts";
-export { TestDefinitionSchema, TestSuiteSchema } from "./mcp-tools/lib/schema.ts";
+export {
+  TestDefinitionSchema,
+  TestSuiteSchema,
+} from "./mcp-tools/lib/schema.ts";
 export type {
   TestDefinition,
   TestResult,

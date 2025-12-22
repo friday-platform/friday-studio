@@ -152,7 +152,7 @@ async function triggerSignal(options: TriggerSignalOptions): Promise<TriggerSign
     const response = await parseResult(
       v2Client.workspace[":workspaceId"].signals[":signalId"].$post({
         param: { workspaceId: options.workspaceId, signalId: options.signalName },
-        json: options.payload,
+        json: { payload: options.payload },
       }),
     );
 

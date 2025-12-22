@@ -45,20 +45,10 @@ import type {
   WorkspaceAgentConfig,
   WorkspaceAgentConfigSchema,
 } from "./src/agents.ts";
-import type { JobSpecificationSchema } from "./src/jobs.ts";
+// Jobs removed - workflows are now defined in workspace.fsm.yaml
+// import type { JobSpecificationSchema } from "./src/jobs.ts";
 import type { WorkspaceSignalConfig } from "./src/signals.ts";
 import type { MergedConfig } from "./src/workspace.ts";
-
-/**
- * Get a job by name from the configuration
- * Checks workspace first, then atlas
- */
-export function getJob(
-  config: MergedConfig,
-  name: string,
-): z.infer<typeof JobSpecificationSchema> | undefined {
-  return config.workspace.jobs?.[name] || config.atlas?.jobs?.[name];
-}
 
 /**
  * Get a signal by name from the configuration

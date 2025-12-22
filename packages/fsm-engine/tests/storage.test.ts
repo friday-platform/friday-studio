@@ -75,8 +75,8 @@ describe("FSM Engine - Storage & Persistence", () => {
         functions: {
           modifyDoc: {
             type: "action",
-            code: `export default (ctx, e, updateDoc) => {
-              updateDoc('doc', { val: 1 });
+            code: `export default (ctx, e) => {
+              ctx.updateDoc('doc', { val: 1 });
             }`,
           },
           throwError: {

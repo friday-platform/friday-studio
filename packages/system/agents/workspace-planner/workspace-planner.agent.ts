@@ -17,6 +17,7 @@ import {
   matchBundledAgents,
 } from "@atlas/core/mcp-registry/deterministic-matching";
 import { validateRequiredFields } from "@atlas/core/mcp-registry/requirement-validator";
+import { JSONSchemaSchema } from "@atlas/fsm-engine";
 import { getDefaultProviderOpts, registry } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
 import { fail, getTodaysDate, type Result, stringifyError, success } from "@atlas/utils";
@@ -225,6 +226,12 @@ export const workspacePlannerAgent = createAgent<WorkspacePlannerInput, Workspac
                   .describe(
                     "When and how this triggers, including rationale. 1-2 sentences. Examples: 'Runs every 30 minutes during business hours to catch new products quickly without overwhelming the website' or 'Webhook endpoint receives GitHub push events to trigger immediate CI builds'",
                   ),
+                payloadSchema: JSONSchemaSchema.optional().describe(
+                  "JSON Schema for signal payload. Define if signal needs user input, file paths, or parameters. " +
+                    "Required: array of field names. Properties: field definitions. " +
+                    "Example: { type: 'object', required: ['user_input'], properties: { user_input: { type: 'string', description: 'User text input or description' } } }. " +
+                    "Use snake_case for field names. Omit for schedule-only triggers.",
+                ),
               }),
             ),
             agents: z.array(

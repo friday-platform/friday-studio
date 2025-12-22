@@ -2,9 +2,9 @@
  * Daemon API client for CLI commands
  * All CLI commands should use this to communicate with the daemon
  */
-import { getAtlasDaemonUrl } from "@atlas/atlasd";
+
 import { parseResult, client as v2Client } from "@atlas/client/v2";
-import { createAtlasClient } from "@atlas/oapi-client";
+import { createAtlasClient, getAtlasDaemonUrl } from "@atlas/oapi-client";
 import { stringifyError } from "@atlas/utils";
 
 interface WorkspaceInfo {

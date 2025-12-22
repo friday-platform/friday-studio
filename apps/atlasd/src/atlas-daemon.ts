@@ -4,8 +4,10 @@ import { type SupervisorDefaults, supervisorDefaultsWrapped } from "@atlas/confi
 import {
   AtlasAgentsMCPServer,
   AgentRegistry as CoreAgentRegistry,
+  convertLLMToAgent,
   GlobalMCPServerPool,
   WorkspaceSessionStatus,
+  wrapAtlasAgent,
 } from "@atlas/core";
 import { CronManager } from "@atlas/cron";
 import { logger } from "@atlas/logger";
@@ -188,6 +190,9 @@ export class AtlasDaemon {
     logger.info("Creating WorkspaceManager...");
     const registry = await createRegistryStorage(StorageConfigs.defaultKV());
     this.workspaceManager = new WorkspaceManager(registry);
+
+    // Wire up runtime invalidation callback so file watcher changes clear both maps
+    this.workspaceManager.setRuntimeInvalidateCallback(this.destroyWorkspaceRuntime.bind(this));
 
     // Initialize LibraryStorage with hybrid storage
     logger.info("Initializing LibraryStorage...");
@@ -836,9 +841,65 @@ export class AtlasDaemon {
       logger.debug("Workspace configuration loaded", {
         workspaceId: workspace.id,
         signals: Object.keys(mergedConfig.workspace?.signals || {}).length,
-        jobs: Object.keys(mergedConfig.workspace?.jobs || {}).length,
         agents: Object.keys(mergedConfig.workspace?.agents || {}).length,
       });
+
+      // Register workspace-level LLM agents with agent registry
+      const workspaceAgents = mergedConfig.workspace?.agents || {};
+      for (const [agentId, agentConfig] of Object.entries(workspaceAgents)) {
+        if (agentConfig.type === "llm") {
+          try {
+            logger.debug("Registering workspace LLM agent", { workspaceId: workspace.id, agentId });
+            const agent = convertLLMToAgent(agentConfig, agentId, logger);
+            await this.agentRegistry?.registerAgent(agent);
+            logger.info("Registered workspace LLM agent", { workspaceId: workspace.id, agentId });
+          } catch (error) {
+            logger.error("Failed to register workspace LLM agent", {
+              workspaceId: workspace.id,
+              agentId,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
+        } else if (agentConfig.type === "atlas") {
+          try {
+            logger.debug("Registering workspace Atlas agent wrapper", {
+              workspaceId: workspace.id,
+              wrapperId: agentId,
+              baseAgentId: agentConfig.agent,
+            });
+
+            // Get the bundled agent from registry
+            const baseAgent = await this.agentRegistry?.getAgent(agentConfig.agent);
+            if (!baseAgent) {
+              throw new Error(`Base agent not found: ${agentConfig.agent}`);
+            }
+
+            // Create wrapper agent with custom prompt and env
+            const wrapperAgent = wrapAtlasAgent(
+              baseAgent,
+              agentId,
+              agentConfig.prompt,
+              agentConfig.env,
+              agentConfig.description,
+              logger,
+            );
+
+            await this.agentRegistry?.registerAgent(wrapperAgent);
+            logger.info("Registered workspace Atlas agent wrapper", {
+              workspaceId: workspace.id,
+              wrapperId: agentId,
+              baseAgentId: agentConfig.agent,
+            });
+          } catch (error) {
+            logger.error("Failed to register workspace Atlas agent wrapper", {
+              workspaceId: workspace.id,
+              wrapperId: agentId,
+              baseAgentId: agentConfig.agent,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
+        }
+      }
 
       logger.debug("Creating Workspace object from config");
       logger.debug("Workspace signals", {
@@ -860,10 +921,19 @@ export class AtlasDaemon {
       // Status will be updated to "running" when registerRuntime is called
 
       logger.debug("Creating WorkspaceRuntime", { workspaceId: workspace.id });
+
+      // Determine workspace path
+      let workspacePath: string | undefined;
+      if (workspace.metadata?.system) {
+        // System workspaces are in packages/system/workspaces/{workspace-name}/
+        workspacePath = new URL(`../../../packages/system/workspaces`, import.meta.url).pathname;
+      } else {
+        workspacePath = workspace.path;
+      }
+
       runtime = new WorkspaceRuntime(workspaceObj, mergedConfig, {
         lazy: true, // Always use lazy loading in daemon mode
-        workspacePath: workspace.metadata?.system ? undefined : workspace.path, // Pass workspace path for daemon mode
-        libraryStorage: this.libraryStorage || undefined, // Share daemon's library storage
+        workspacePath, // Pass workspace path for daemon mode
         mcpServerPool: this.mcpServerPool || undefined, // Share daemon's MCP server pool
         daemonUrl: `http://localhost:${this.options.port}`, // Pass daemon URL for MCP tool fetching
         onSessionFinished: async ({ workspaceId, sessionId, status, finishedAt, summary }) => {
@@ -890,8 +960,8 @@ export class AtlasDaemon {
               const sessions = currentRuntime.getSessions();
               const hasActive = sessions.some(
                 (s) =>
-                  s.status === WorkspaceSessionStatus.EXECUTING ||
-                  s.status === WorkspaceSessionStatus.PENDING,
+                  s.session.status === WorkspaceSessionStatus.EXECUTING ||
+                  s.session.status === WorkspaceSessionStatus.PENDING,
               );
 
               if (!hasActive) {
@@ -1083,8 +1153,8 @@ export class AtlasDaemon {
       const sessions = runtime.getSessions();
       const hasActiveSessions = sessions.some(
         (s) =>
-          s.status === WorkspaceSessionStatus.EXECUTING ||
-          s.status === WorkspaceSessionStatus.PENDING,
+          s.session.status === WorkspaceSessionStatus.EXECUTING ||
+          s.session.status === WorkspaceSessionStatus.PENDING,
       );
 
       if (!hasActiveSessions) {
@@ -1147,15 +1217,49 @@ export class AtlasDaemon {
     const sessions = runtime.getSessions();
     const hasActiveSessions = sessions.some(
       (s) =>
-        s.status === WorkspaceSessionStatus.EXECUTING ||
-        s.status === WorkspaceSessionStatus.PENDING,
+        s.session.status === WorkspaceSessionStatus.EXECUTING ||
+        s.session.status === WorkspaceSessionStatus.PENDING,
     );
 
-    if (!hasActiveSessions) {
+    // Check for active agent executions in the orchestrator
+    let hasActiveExecutions = false;
+    let activeExecutions: Array<{ agentId: string; sessionId: string; durationMs: number }> = [];
+
+    // WorkspaceRuntimeFSM has getOrchestrator() method
+    if ("getOrchestrator" in runtime && typeof runtime.getOrchestrator === "function") {
+      const orchestrator = runtime.getOrchestrator();
+      hasActiveExecutions = orchestrator.hasActiveExecutions();
+      if (hasActiveExecutions) {
+        activeExecutions = orchestrator.getActiveExecutions();
+      }
+    }
+
+    // Log detailed info for debugging
+    logger.debug("Checking idle workspace", {
+      workspaceId,
+      sessionsCount: sessions.length,
+      sessionStatuses: sessions.map((s) => s.session.status),
+      hasActiveSessions,
+      hasActiveExecutions,
+      activeExecutionsCount: activeExecutions.length,
+      activeExecutions: activeExecutions.map((e) => ({
+        agentId: e.agentId,
+        sessionId: e.sessionId,
+        durationSec: Math.round(e.durationMs / 1000),
+      })),
+    });
+
+    if (!hasActiveSessions && !hasActiveExecutions) {
       logger.info("Destroying idle workspace runtime", { workspaceId });
       await this.destroyWorkspaceRuntime(workspaceId);
     } else {
-      // Still has active sessions, reset timeout
+      // Still has active sessions or executions, reset timeout
+      if (hasActiveExecutions) {
+        logger.debug("Workspace has active agent executions, resetting idle timeout", {
+          workspaceId,
+          activeExecutionsCount: activeExecutions.length,
+        });
+      }
       this.resetIdleTimeout(workspaceId);
     }
   }

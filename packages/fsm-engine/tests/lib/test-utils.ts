@@ -1,4 +1,4 @@
-import { InMemoryDocumentStore } from "@atlas/document-store";
+import { InMemoryDocumentStore } from "../../../document-store/node.ts";
 import { FSMDocumentDataSchema } from "../../document-schemas.ts";
 import { FSMEngine } from "../../fsm-engine.ts";
 import type { FSMDefinition } from "../../types.ts";

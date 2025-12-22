@@ -186,9 +186,84 @@ signals:
       required: ["event_type"]
 
 # ==============================================================================
-# JOBS (Workflows)
+# FSM (Finite State Machine) Workflows
 # ==============================================================================
-# Job definitions with all configuration options
+# Workflows are now defined in separate workspace.fsm.yaml files
+# The FSM engine replaces the previous jobs/supervisor architecture
+#
+# Key concepts:
+# - States: Named stages in your workflow (idle, processing, done)
+# - Transitions: Explicit moves between states triggered by signals
+# - Documents: Typed data containers managed by the FSM (documentTypes)
+# - Actions: Code or agent invocations that execute during transitions/entry
+# - Guards: Conditional logic that gates transitions
+#
+# Architecture: AtlasDaemon → WorkspaceRuntime → FSM Engine → AgentOrchestrator
+#
+# Example FSM structure (create workspace.fsm.yaml):
+#
+# fsm:
+#   id: my-workflow
+#   initial: idle
+#
+#   # Define document schemas for type-safe data
+#   documentTypes:
+#     InputContext:
+#       type: object
+#       properties:
+#         message: { type: string }
+#         userId: { type: string }
+#       required: [message, userId]
+#
+#   # Define states and transitions
+#   states:
+#     idle:
+#       on:
+#         my-signal:  # Signal name from signals section below
+#           target: processing
+#           actions:
+#             - type: code
+#               function: storeInput
+#
+#     processing:
+#       entry:
+#         - type: agent
+#           agentId: data-analyzer  # References agents section below
+#           outputTo: analysis-result
+#         - type: emit
+#           event: processing_complete
+#       on:
+#         processing_complete:
+#           target: idle
+#
+#     done:
+#       type: final
+#
+#   # Inline TypeScript functions
+#   functions:
+#     storeInput:
+#       type: action
+#       code: |
+#         export default function storeInput(context, event) {
+#           context.createDoc({
+#             id: 'input-context',
+#             type: 'InputContext',
+#             data: {
+#               message: event.data.message,
+#               userId: event.data.userId
+#             }
+#           });
+#         }
+#
+# See packages/system/workspaces/workspace.fsm.yaml for a complete example.
+# ==============================================================================
+
+# ==============================================================================
+# DEPRECATED: JOBS (Legacy)
+# ==============================================================================
+# Jobs have been replaced by FSM definitions (see above).
+# This section is kept for reference only.
+# ==============================================================================
 jobs:
   # Comprehensive job example
   analyze-and-report:

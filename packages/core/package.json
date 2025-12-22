@@ -6,7 +6,7 @@
     ".": "./mod.ts",
     "./credentials": "./src/credential-fetcher.ts",
     "./artifacts": "./src/artifacts/mod.ts",
-    "./artifacts/server": "./src/artifacts/storage.ts",
+    "./artifacts/server": "./src/artifacts/server.ts",
     "./errors": "./src/errors.ts",
     "./library": "./src/library/types.ts",
     "./chat/storage": "./src/chat/storage.ts",

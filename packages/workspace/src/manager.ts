@@ -25,6 +25,9 @@ import type { WorkspaceRuntime } from "../../../src/core/workspace-runtime.ts";
 import type { WorkspaceEntry, WorkspaceSignalRegistrar, WorkspaceStatus } from "./types.ts";
 import { WorkspaceConfigWatcher } from "./watchers/index.ts";
 
+/** Called when a runtime needs to be destroyed (config changed, workspace deleted) */
+export type RuntimeInvalidateCallback = (workspaceId: string) => Promise<void>;
+
 /**
  * Validates that all "auto" environment variables required by MCP servers are available.
  * Checks both system environment and workspace .env file.
@@ -101,9 +104,15 @@ export class WorkspaceManager {
   private runtimes = new Map<string, WorkspaceRuntime>();
   private signalRegistrars: WorkspaceSignalRegistrar[] = [];
   private fileWatcher: WorkspaceConfigWatcher | null = null;
+  private onRuntimeInvalidate?: RuntimeInvalidateCallback;
 
   constructor(registry: RegistryStorageAdapter) {
     this.registry = registry;
+  }
+
+  /** Set callback for when runtime needs invalidation. Called by AtlasDaemon. */
+  setRuntimeInvalidateCallback(cb: RuntimeInvalidateCallback): void {
+    this.onRuntimeInvalidate = cb;
   }
 
   /**
@@ -882,6 +891,12 @@ export class WorkspaceManager {
   }
 
   private async stopRuntimeIfActive(workspaceId: string): Promise<void> {
+    // If daemon callback set, let daemon handle full cleanup (both maps)
+    if (this.onRuntimeInvalidate) {
+      await this.onRuntimeInvalidate(workspaceId);
+      return;
+    }
+    // Fallback: local cleanup only (for tests without daemon)
     const runtime = this.runtimes.get(workspaceId);
     if (!runtime) return;
     try {

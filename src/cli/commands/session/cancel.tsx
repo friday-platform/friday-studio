@@ -97,6 +97,6 @@ export const handler = async (argv: CancelArgs): Promise<void> => {
     process.exit(0);
   } catch (error) {
     errorOutput(error instanceof Error ? error.message : String(error));
-    Deno.exit(1);
+    process.exit(1);
   }
 };

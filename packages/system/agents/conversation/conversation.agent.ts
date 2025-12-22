@@ -28,10 +28,6 @@ import {
   streamText,
   tool,
 } from "ai";
-import {
-  type CancellationNotification,
-  StreamContentNotificationSchema,
-} from "../../../core/src/streaming/stream-emitters.ts";
 import { estimateTokens, processMessageHistory } from "./message-windowing.ts";
 import SYSTEM_PROMPT from "./prompt.txt" with { type: "text" };
 import { conversationTools } from "./tools/mod.ts";
@@ -200,8 +196,12 @@ ${messages.map((m) => `${m.role}: ${JSON.stringify(m.parts.filter((p) => p.type 
   }
 }
 
+/**
+ * Connect to agent server for system agents with custom inputSchemas.
+ * Only used for workspace-planner and fsm-workspace-creator which need structured inputs.
+ * Regular bundled agents (calendar, email, etc.) go through do_task tool.
+ */
 async function getAgentServerClient(streamId: string, logger: Logger) {
-  // Create official MCP client (not AI SDK client - supports notifications)
   const client = new Client({ name: "atlas-streaming-client", version: "1.0.0" });
 
   const transport = new StreamableHTTPClientTransport(new URL("http://localhost:8080/agents"), {
@@ -210,7 +210,7 @@ async function getAgentServerClient(streamId: string, logger: Logger) {
 
   try {
     await client.connect(transport);
-    logger.info("Connected to Agent Server via MCP");
+    logger.info("Connected to Agent Server via MCP for system agents");
   } catch (error) {
     logger.error("Failed to connect to Agent Server", { error });
     throw new Error(`Failed to connect to Agent Server: ${error}`);
@@ -257,8 +257,8 @@ export const conversationAgent = createAgent({
     }
 
     /**
-     * Connect directly to the Atlas Agent server so that we can invoke agents and
-     * intercept streamed notifications to show their progress and status updates.
+     * Connect to Agent Server for system agents with custom inputSchemas.
+     * Regular agents (calendar, email, etc.) go through do_task tool.
      */
     const { agentServer, agentServerTransport } = await getAgentServerClient(
       session.streamId,
@@ -323,83 +323,76 @@ export const conversationAgent = createAgent({
           throw new Error("Stream ID is required");
         }
 
-        agentServer.setNotificationHandler(StreamContentNotificationSchema, (notification) => {
-          const { event } = notification.params;
-          // Event is validated by schema to have required structure
-          // @ts-expect-error will be addressed during Chat
-          writer.write(event);
-        });
+        // MVP: Notification handler removed - agents accessed via do_task only
+        // agentServer.setNotificationHandler(StreamContentNotificationSchema, (notification) => {
+        //   const { event } = notification.params;
+        //   // Event is validated by schema to have required structure
+        //   // @ts-expect-error will be addressed during Chat
+        //   writer.write(event);
+        // });
 
         // Track active agent invocations for cancellation
-        const activeMCPRequests = new Map<string, string>(); // agentName:invocationId -> requestId
+        // MVP: Removed - no direct agent invocation
+        // const activeMCPRequests = new Map<string, string>(); // agentName:invocationId -> requestId
 
         // Handle cancellation - send notifications for all active agent invocations
-        if (abortSignal) {
-          abortSignal.addEventListener("abort", async () => {
-            logger.info("Conversation cancelled, notifying active agents", {
-              activeAgents: Array.from(activeMCPRequests.keys()),
-            });
+        // MVP: Removed - no direct agent invocation
+        // if (abortSignal) {
+        //   abortSignal.addEventListener("abort", async () => {
+        //     logger.info("Conversation cancelled, notifying active agents", {
+        //       activeAgents: Array.from(activeMCPRequests.keys()),
+        //     });
 
-            for (const [key, requestId] of activeMCPRequests) {
-              const agentName = key.split(":")[0];
-              try {
-                const notification: CancellationNotification = {
-                  method: "notifications/cancelled",
-                  params: { requestId, reason: "Conversation cancelled by user" },
-                };
-                await agentServer.notification(notification);
-                logger.debug("Sent cancellation notification", { agentName, requestId });
-              } catch (error) {
-                logger.warn("Failed to send cancellation notification", {
-                  error,
-                  requestId,
-                  agentName,
-                });
-              }
-            }
-            activeMCPRequests.clear();
-          });
-        }
+        //     for (const [key, requestId] of activeMCPRequests) {
+        //       const agentName = key.split(":")[0];
+        //       try {
+        //         const notification: CancellationNotification = {
+        //           method: "notifications/cancelled",
+        //           params: { requestId, reason: "Conversation cancelled by user" },
+        //         };
+        //         await agentServer.notification(notification);
+        //         logger.debug("Sent cancellation notification", { agentName, requestId });
+        //       } catch (error) {
+        //         logger.warn("Failed to send cancellation notification", {
+        //           error,
+        //           requestId,
+        //           agentName,
+        //         });
+        //       }
+        //     }
+        //     activeMCPRequests.clear();
+        //   });
+        // }
 
         /**
-         * Register and transform all agents from the Agent Server for use
-         * by the conversation agent.
+         * Register ONLY system agents with custom inputSchemas as direct tools.
+         * These agents (workspace-planner, fsm-workspace-creator) need structured inputs.
+         * Regular bundled agents (calendar, email, etc.) are accessed via do_task tool.
          */
         const { tools: agentTools } = await agentServer.listTools();
-        const agents: AtlasTools = {};
-        const agentNames: string[] = [];
+        const systemAgents: AtlasTools = {};
+        const systemAgentNames = ["workspace-planner", "fsm-workspace-creator"];
+
         for (const agent of agentTools) {
-          // Skip the conversation agent. The universe might implode.
-          if (agent.name === "conversation") continue;
+          // Only register system agents with custom inputSchemas
+          if (!systemAgentNames.includes(agent.name)) continue;
 
-          agentNames.push(agent.name);
+          logger.info("Registering system agent as direct tool", { agentName: agent.name });
 
-          /**
-           * @hack
-           * Right now, we're stuffing session context into the input schema for the agent.
-           * This is because when I originally wrote it, I was unaware of the _meta property.
-           * Subsequently, I figured it out (see the requestId) but didn't yet move over
-           * the session context.
-           *
-           * The structured cloning and deletion of params is to trim those from the input schema
-           * that the conversation agent will have to generate since they're injected programatically.
-           */
           const paramsSchema = structuredClone(agent.inputSchema);
           delete paramsSchema.properties?._sessionContext;
-          paramsSchema.required = paramsSchema.required?.filter((r) => r !== "_sessionContext");
+          paramsSchema.required = paramsSchema.required?.filter(
+            (r: string) => r !== "_sessionContext",
+          );
 
-          agents[agent.name] = tool({
+          systemAgents[agent.name] = tool({
             name: agent.name,
             description: agent.description,
-            // @ts-expect-error the JSON Schema output by the MCP SDK tool definition doesn't align with the AI SDK.
             inputSchema: jsonSchema(paramsSchema),
             execute: async (input) => {
               const requestId = crypto.randomUUID();
-              const invocationId = crypto.randomUUID(); // Unique ID for this specific invocation
-              const trackingKey = `${agent.name}:${invocationId}`;
 
-              // Track this invocation for cancellation
-              activeMCPRequests.set(trackingKey, requestId);
+              logger.debug("Executing system agent", { agentName: agent.name, input });
 
               try {
                 const result = await agentServer.callTool(
@@ -414,26 +407,26 @@ export const conversationAgent = createAgent({
                         streamId: session.streamId,
                       },
                     },
-                    _meta: { requestId }, // Pass requestId for cancellation correlation
+                    _meta: { requestId },
                   },
                   undefined,
                   { timeout: 1_200_000 },
                 );
                 return { result };
               } catch (error) {
-                logger.error("Agent invocation failed", {
+                logger.error("System agent invocation failed", {
                   error,
                   agentName: agent.name,
                   requestId,
                 });
-                throw error; // Re-throw to maintain error propagation
-              } finally {
-                // Clean up tracking regardless of success/failure
-                activeMCPRequests.delete(trackingKey);
+                throw error;
               }
             },
           });
         }
+
+        // Track system agent names for prompt injection
+        const agentNames = Object.keys(systemAgents);
 
         // Fetch workspaces and jobs for prompt injection
         logger.info("Fetching workspaces and jobs for prompt injection");
@@ -445,7 +438,41 @@ export const conversationAgent = createAgent({
           agentCount: agentNames.length,
         });
 
-        const allTools = { ...tools, ...conversationTools, ...agents };
+        // MVP: Tool allowlist - only expose specific workspace management and task execution tools
+        const ALLOWED_TOOLS = new Set([
+          // Workspace management
+          "atlas_workspace_list",
+          "atlas_workspace_create",
+          "atlas_workspace_describe",
+          "atlas_workspace_update",
+          "atlas_workspace_delete",
+          // Session/job inspection
+          "atlas_session_describe",
+          "atlas_session_cancel",
+          "atlas_job_list",
+          "atlas_job_describe",
+          // Signal triggering
+          "atlas_workspace_signal_trigger",
+          "atlas_signals_list",
+          // Library
+          "atlas_library_list",
+          "atlas_library_get",
+          // Artifacts
+          "atlas_artifact_create",
+          "atlas_artifact_update",
+          "atlas_artifact_get",
+          "atlas_artifact_get_by_chat",
+          // System
+          "system_version",
+          // Task execution - NEW
+          "do_task",
+        ]);
+
+        const filteredTools = Object.fromEntries(
+          Object.entries(tools).filter(([name]) => ALLOWED_TOOLS.has(name)),
+        );
+
+        const allTools = { ...filteredTools, ...conversationTools, ...systemAgents };
 
         // Load scratchpad context for automatic injection
         const scratchpadContext = await fetchScratchpadContext(
@@ -699,7 +726,7 @@ export const conversationAgent = createAgent({
      * Even though this doesn't return a value, it *must* be awaited otherwise
      * the pipe will break before the LLM has a chance to respond.
      */
-    await pipeUIMessageStream(persistStreamMessage, stream).catch((pipeError) => {
+    await pipeUIMessageStream(persistStreamMessage, stream).catch(async (pipeError) => {
       logger.error("pipeUIMessageStream failed", { error: pipeError });
 
       const apiError = parseAPICallError(pipeError);
@@ -707,10 +734,17 @@ export const conversationAgent = createAgent({
         interceptedApiError = apiError;
       }
 
+      // Close MCP transport on error
+      try {
+        await agentServerTransport.close();
+        logger.info("Closed MCP transport after pipe error");
+      } catch (closeError) {
+        logger.error("Failed to close MCP transport", { error: closeError });
+      }
       throw pipeError;
     });
 
-    // Successfully completed - close MCP transport now that streaming is done
+    // Successfully completed - close MCP transport
     try {
       await agentServerTransport.close();
       logger.info("Closed MCP transport after successful completion");

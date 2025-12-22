@@ -1,5 +1,5 @@
 import { logger } from "@atlas/logger";
-import type { SessionSummary } from "../../../src/core/actors/session-supervisor-actor.ts";
+import type { SessionSummary } from "../../../src/types/core.ts";
 import type { Logger } from "../../logger/src/types.ts";
 import { ContextAssemblyService, type FormatType } from "./context-assembly.ts";
 import { EnhancedTokenBudgetManager } from "./enhanced-token-budget-manager.ts";

@@ -2,7 +2,7 @@
  * Core type definitions for the FSM Engine
  */
 
-import type { DocumentScope } from "@atlas/document-store";
+import type { DocumentScope } from "../document-store/node.ts";
 
 // Re-export DocumentScope for convenience
 export type { DocumentScope };
@@ -95,19 +95,59 @@ export interface Context {
   emit?: (signal: Signal) => Promise<void>;
   updateDoc?: (id: string, data: Record<string, unknown>) => void;
   createDoc?: (doc: Document) => void;
+  deleteDoc?: (id: string) => void;
 }
 
 export type GuardFunction = (context: Context, event: Signal) => boolean;
 
-export type ActionFunction = (
-  context: Context,
-  event: Signal,
-  updateDoc: Context["updateDoc"],
-) => void | Promise<void>;
+export type ActionFunction = (context: Context, event: Signal) => void | Promise<void>;
 
 export interface Signal {
   type: string;
   data?: Record<string, unknown>;
+}
+
+/**
+ * FSM event types for streaming state transitions and action executions
+ * These match the AtlasDataEvents schema in @atlas/agent-sdk
+ * Note: Uses "data-" prefix as required by Vercel AI SDK for data events
+ */
+export interface FSMStateTransitionEvent {
+  type: "data-fsm-state-transition";
+  data: {
+    sessionId: string;
+    workspaceId: string;
+    jobName: string;
+    fromState: string;
+    toState: string;
+    triggeringSignal: string;
+    timestamp: number;
+  };
+}
+
+export interface FSMActionExecutionEvent {
+  type: "data-fsm-action-execution";
+  data: {
+    sessionId: string;
+    workspaceId: string;
+    jobName: string;
+    actionType: string;
+    actionId?: string;
+    state: string;
+    status: "started" | "completed" | "failed";
+    duration?: number;
+    error?: string;
+    timestamp: number;
+  };
+}
+
+export type FSMEvent = FSMStateTransitionEvent | FSMActionExecutionEvent;
+
+/**
+ * Signal with additional context for execution tracking and event streaming
+ */
+export interface SignalWithContext extends Signal {
+  _context?: { sessionId: string; workspaceId: string; onEvent?: (event: FSMEvent) => void };
 }
 
 export interface EmittedEvent {
@@ -120,22 +160,10 @@ export interface LLMResponse {
   data?: Record<string, unknown>;
 }
 
-export interface ToolDefinition {
-  name: string;
-  description: string;
-  input_schema: Record<string, unknown>;
-}
-
-export type ToolExecutor = (
-  args: Record<string, unknown>,
-  context: Context,
-) => Promise<unknown> | unknown;
-
 export interface LLMProvider {
   call(params: {
     model: string;
     prompt: string;
-    tools?: ToolDefinition[];
-    toolExecutors?: Record<string, ToolExecutor>;
+    tools?: Record<string, import("ai").Tool>;
   }): Promise<LLMResponse>;
 }

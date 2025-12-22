@@ -1,5 +1,4 @@
 import process from "node:process";
-import { AtlasDaemon } from "@atlas/atlasd";
 import { client, parseResult } from "@atlas/client/v2";
 import { decodeJwtPayload, fetchCredentials, setToEnv } from "@atlas/core/credentials";
 import { logger } from "@atlas/logger";
@@ -584,6 +583,8 @@ WshShell.Run "${cmdLine}", 0, False`;
 }
 
 async function startForeground(argv: StartArgs): Promise<void> {
+  // Dynamic import to avoid loading daemon module chain at CLI startup
+  const { AtlasDaemon } = await import("@atlas/atlasd");
   const daemon = new AtlasDaemon({
     port: argv.port,
     hostname: argv.hostname,

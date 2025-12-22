@@ -2,41 +2,11 @@
  * Zod schemas for runtime validation of FSM definitions
  */
 
+import { JSONSchemaSchema } from "@atlas/core/artifacts";
 import { z } from "zod";
 
-/**
- * JSON Schema validation schema
- * Supports a subset of JSON Schema for document type definitions
- */
-export const JSONSchemaSchema: z.ZodType<{
-  type?: "object" | "array" | "string" | "number" | "boolean" | "null";
-  properties?: Record<string, unknown>;
-  items?: unknown;
-  required?: string[];
-  enum?: unknown[];
-  minimum?: number;
-  maximum?: number;
-  minLength?: number;
-  maxLength?: number;
-  pattern?: string;
-  additionalProperties?: boolean | unknown;
-  description?: string;
-}> = z.lazy(() =>
-  z.object({
-    type: z.enum(["object", "array", "string", "number", "boolean", "null"]).optional(),
-    properties: z.record(z.string(), JSONSchemaSchema).optional(),
-    items: JSONSchemaSchema.optional(),
-    required: z.array(z.string()).optional(),
-    enum: z.array(z.unknown()).optional(),
-    minimum: z.number().optional(),
-    maximum: z.number().optional(),
-    minLength: z.number().optional(),
-    maxLength: z.number().optional(),
-    pattern: z.string().optional(),
-    additionalProperties: z.union([z.boolean(), JSONSchemaSchema]).optional(),
-    description: z.string().optional(),
-  }),
-);
+// Re-export from @atlas/core/artifacts for consistency
+export { JSONSchemaSchema };
 
 export const DocumentSchema = z.object({
   id: z.string(),
@@ -120,4 +90,4 @@ export type ValidatedStateDefinition = z.infer<typeof StateDefinitionSchema>;
 export type ValidatedDocument = z.infer<typeof DocumentSchema>;
 export type ValidatedAction = z.infer<typeof ActionSchema>;
 export type ValidatedSignal = z.infer<typeof SignalSchema>;
-export type ValidatedJSONSchema = z.infer<typeof JSONSchemaSchema>;
+export type { ValidatedJSONSchema } from "@atlas/core/artifacts";

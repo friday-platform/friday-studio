@@ -189,9 +189,9 @@ fsm:
     validateOrder:
       type: action
       code: |
-        export default function validateOrder(context, event, updateDoc) {
+        export default function validateOrder(context, event) {
           const order = context.documents[0];
-          updateDoc(order.id, { status: 'validated' });
+          context.updateDoc(order.id, { status: 'validated' });
         }
 ```
 
@@ -269,7 +269,7 @@ const fsm = createFSM({
     validateOrder: {
       type: "action",
       code:
-        "export default function validateOrder(context, event, updateDoc) { updateDoc('order', { status: 'validated' }); }",
+        "export default function validateOrder(context, event) { context.updateDoc('order', { status: 'validated' }); }",
     },
   },
 });
@@ -443,7 +443,7 @@ TypeScript code strings for guards and actions.
         },
         "validateOrder": {
           "type": "action",
-          "code": "export default function validateOrder(context, event, updateDoc) { updateDoc('order', { status: 'validated' }); }"
+          "code": "export default function validateOrder(context, event) { context.updateDoc('order', { status: 'validated' }); }"
         }
       }
     }
@@ -495,8 +495,8 @@ to 10 to prevent infinite loops:
 
 ```typescript
 // Action emits signal
-export default function triggerNext(context, event, updateDoc, emit) {
-  emit({ type: "NEXT" }); // Triggers transition
+export default function triggerNext(context, event) {
+  context.emit({ type: "NEXT" }); // Triggers transition
 }
 ```
 
@@ -526,11 +526,11 @@ Failed actions abort transition - state doesn't change, error thrown. No
 automatic rollback or retry. Handle errors in action code:
 
 ```typescript
-export default function risky(context, event, updateDoc) {
+export default function risky(context, event) {
   try {
     // Risky operation
   } catch (error) {
-    updateDoc("error-log", { error: error.message });
+    context.updateDoc("error-log", { error: error.message });
     throw error; // Abort transition
   }
 }

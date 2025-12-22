@@ -5,10 +5,8 @@
 
 import {
   AtlasConfigSchema,
-  type JobSpecificationSchema,
   type MergedConfig,
   validateSignalPayload,
-  type WorkspaceAgentConfigSchema,
   WorkspaceConfigSchema,
   type WorkspaceSignalConfigSchema,
 } from "@atlas/config";
@@ -110,43 +108,10 @@ export class ConfigLoader {
       ...(config.workspace.signals || {}),
     };
 
-    // Get all agents from both configs
-    const allAgents: Record<string, z.infer<typeof WorkspaceAgentConfigSchema>> = {
-      ...(config.atlas?.agents || {}),
-      ...(config.workspace.agents || {}),
-    };
-
-    // Get all jobs from both configs
-    const allJobs: Record<string, z.infer<typeof JobSpecificationSchema>> = {
-      ...(config.atlas?.jobs || {}),
-      ...(config.workspace.jobs || {}),
-    };
-
     // System signals should only be in system workspaces
     for (const [name, signal] of Object.entries(allSignals)) {
       if (signal.provider === "system" && !this.isSystemWorkspace(config)) {
         throw new Error(`System signal '${name}' can only be used in system workspaces`);
-      }
-    }
-
-    // Validate agent references in jobs
-    for (const [jobName, job] of Object.entries(allJobs)) {
-      for (const agent of job.execution.agents) {
-        const agentId = typeof agent === "string" ? agent : agent.id;
-        if (!allAgents[agentId]) {
-          throw new Error(`Job '${jobName}' references undefined agent '${agentId}'`);
-        }
-      }
-    }
-
-    // Validate signal references in triggers
-    for (const [jobName, job] of Object.entries(allJobs)) {
-      if (job.triggers) {
-        for (const trigger of job.triggers) {
-          if (!allSignals[trigger.signal]) {
-            throw new Error(`Job '${jobName}' references undefined signal '${trigger.signal}'`);
-          }
-        }
       }
     }
   }

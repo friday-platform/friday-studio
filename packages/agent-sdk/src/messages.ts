@@ -39,6 +39,27 @@ export const AtlasDataEventSchemas = {
   "agent-start": z.object({ agentId: z.string(), task: z.string() }),
   "agent-finish": z.object({ agentId: z.string(), duration: z.number() }),
   "agent-error": z.object({ agentId: z.string(), duration: z.number(), error: z.string() }),
+  "data-fsm-state-transition": z.object({
+    sessionId: z.string(),
+    workspaceId: z.string(),
+    jobName: z.string(),
+    fromState: z.string(),
+    toState: z.string(),
+    triggeringSignal: z.string(),
+    timestamp: z.number(),
+  }),
+  "data-fsm-action-execution": z.object({
+    sessionId: z.string(),
+    workspaceId: z.string(),
+    jobName: z.string(),
+    actionType: z.string(),
+    actionId: z.string().optional(),
+    state: z.string(),
+    status: z.enum(["started", "completed", "failed"]),
+    duration: z.number().optional(),
+    error: z.string().optional(),
+    timestamp: z.number(),
+  }),
   "agent-timeout": z.object({
     agentId: z.string(),
     task: z.string(),
@@ -75,6 +96,8 @@ export type AtlasDataEvents = {
   "user-message": z.infer<(typeof AtlasDataEventSchemas)["user-message"]>;
   "tool-progress": z.infer<(typeof AtlasDataEventSchemas)["tool-progress"]>;
   "outline-update": z.infer<(typeof AtlasDataEventSchemas)["outline-update"]>;
+  "data-fsm-state-transition": z.infer<(typeof AtlasDataEventSchemas)["data-fsm-state-transition"]>;
+  "data-fsm-action-execution": z.infer<(typeof AtlasDataEventSchemas)["data-fsm-action-execution"]>;
 };
 
 /**

@@ -78,6 +78,9 @@ dist/
 .channels_cache_v2.json
 .users_cache.json
 bounce
+
+# Temp files
+temp/
 .beads/
 apps/signal-gateway/signal-gateway
 

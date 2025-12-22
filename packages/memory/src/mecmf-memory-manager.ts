@@ -5,12 +5,12 @@
  * integrating all MECMF components into a unified memory system for Atlas.
  */
 
-import type { SessionSummary } from "../../../src/core/actors/session-supervisor-actor.ts";
 import {
   type FactSourceType,
   type SemanticFact,
   SemanticFactExtractor,
 } from "../../../src/core/services/semantic-fact-extractor.ts";
+import type { SessionSummary } from "../../../src/types/core.ts";
 import type { Logger } from "../../logger/src/types.ts";
 import type { IMemoryScope } from "./coala-memory.ts";
 // Import existing Atlas components
@@ -538,7 +538,6 @@ export class AtlasMECMFMemoryManager implements MECMFMemoryManager {
       const summaryBlock = [
         `Status: ${summary.status}`,
         `Reasoning: ${summary.reasoning || ""}`,
-        `FailureReason: ${summary.failureReason || ""}`,
         `Agents: ${summary.totalAgents}, Phases: ${summary.totalPhases}`,
       ].join("\n");
       batches.push({ text: summaryBlock, sourceType: "session_summary" });
@@ -596,7 +595,7 @@ export class AtlasMECMFMemoryManager implements MECMFMemoryManager {
         summary.workspaceId || "global",
         {
           currentTask: "semantic_fact_extraction",
-          activeAgents: summary.results.map((r) => r.agentId),
+          activeAgents: summary.results.map((r: { agentId: string }) => r.agentId),
         },
       );
 

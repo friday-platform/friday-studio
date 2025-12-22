@@ -1,7 +1,7 @@
 import type { AtlasAgent } from "@atlas/agent-sdk";
 import {
   conversationAgent,
-  workspaceCreationAgent,
+  fsmWorkspaceCreatorAgent,
   workspacePlannerAgent,
 } from "@atlas/system/agents";
 import { AgentNotFoundError } from "../errors.ts";
@@ -24,7 +24,7 @@ export class SystemAgentAdapter implements AgentAdapter {
   private registerSystemAgents(): void {
     this.agents.set(conversationAgent.metadata.id, conversationAgent);
     this.agents.set(workspacePlannerAgent.metadata.id, workspacePlannerAgent);
-    this.agents.set(workspaceCreationAgent.metadata.id, workspaceCreationAgent);
+    this.agents.set(fsmWorkspaceCreatorAgent.metadata.id, fsmWorkspaceCreatorAgent);
   }
 
   loadAgent(id: string): Promise<AgentSourceData> {

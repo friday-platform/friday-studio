@@ -137,3 +137,63 @@ Quick mental model:
 4. Session supervisor plans execution
 5. Agents execute with MCP tool access
 6. Results stored in memory system
+
+## Agent Feedback Loop
+
+`deno task atlas prompt` and `deno task atlas logs` let agents test Atlas
+changes without human intervention. No more waiting for humans to copy/paste
+logs or restart daemons.
+
+### Commands
+
+- `deno task atlas prompt "message"` — headless chat, JSON output
+- `deno task atlas prompt --chat <id> "follow-up"` — continue conversation
+- `deno task atlas logs --since 30s` — recent logs (JSON lines)
+- `deno task atlas logs --level error,warn` — filter by level
+- `deno task atlas logs --human` — human-readable (debugging only)
+
+### Output
+
+`deno task atlas prompt` emits JSON messages, then `cli-summary`:
+
+```json
+{
+  "type": "cli-summary",
+  "chatId": "...",
+  "toolsCalled": ["do_task"],
+  "error": null,
+  "continuation": { "canContinue": true, "command": "atlas prompt --chat ..." }
+}
+```
+
+`deno task atlas logs` emits JSON lines:
+
+```json
+{
+  "timestamp": "...",
+  "level": "error",
+  "message": "...",
+  "context": { "workspaceId": "..." }
+}
+```
+
+### Workflow
+
+```bash
+# Start a detatched process
+deno task atlas daemon start --detached
+# make changes (daemon auto-restarts)
+deno task atlas prompt "test artifact extraction"
+# if issues:
+deno task atlas logs --since 30s --level error
+# Stop the daemon (can time out after 10sec)
+deno task atlas daemon stop
+```
+
+### Best Practices
+
+- Parse `cli-summary` for `chatId`; use `--chat` for multi-turn
+- Scope logs with `--since 30s` to recent run
+- Filter with `--level error,warn` to reduce noise
+- JSON is default; `--human` only for debugging
+- Exit code non-zero means stream error
