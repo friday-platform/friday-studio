@@ -3,6 +3,7 @@
  * Checks for newer versions from the Atlas update server with daily caching
  */
 
+import { readFile } from "node:fs/promises";
 import { env } from "node:process";
 import { getAtlasBaseUrl } from "@atlas/core";
 import { logger } from "@atlas/logger";
@@ -148,7 +149,7 @@ async function loadCache(): Promise<VersionCache | null> {
       return null;
     }
 
-    const data = await Deno.readTextFile(cacheFile);
+    const data = await readFile(cacheFile, "utf-8");
     const cache = versionCacheSchema.safeParse(JSON.parse(data));
 
     if (!cache.success) {

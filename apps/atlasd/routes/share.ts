@@ -2,6 +2,7 @@
  * Share route - proxies chat HTML uploads to internal gist service
  */
 
+import { readFile } from "node:fs/promises";
 import { env } from "node:process";
 import { logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
@@ -20,7 +21,7 @@ async function getAtlasKey(): Promise<string | undefined> {
   const envKey = env.ATLAS_KEY;
   if (envKey) return envKey;
   try {
-    const content = await Deno.readTextFile(join(getAtlasHome(), ".env"));
+    const content = await readFile(join(getAtlasHome(), ".env"), "utf-8");
     return parse(content).ATLAS_KEY;
   } catch {
     return undefined;

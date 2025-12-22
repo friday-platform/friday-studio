@@ -8,6 +8,7 @@
  * 4. Return proper JSON artifact with metadata
  */
 
+import { readFile } from "node:fs/promises";
 import { csvFilterSamplerAgent } from "@atlas/bundled-agents";
 import { ArtifactStorage, parseCsv } from "@atlas/core/artifacts/server";
 import { assert, assertEquals } from "@std/assert";
@@ -124,7 +125,7 @@ Deno.test("CSV Filter Sampler Agent", async (t) => {
     assert(artifactResult.data.data.type === "file", "Artifact should be file type");
 
     const artifactFilePath = artifactResult.data.data.data.path;
-    const artifactContent = await Deno.readTextFile(artifactFilePath);
+    const artifactContent = await readFile(artifactFilePath, "utf-8");
     const artifactData = JSON.parse(artifactContent) as {
       metadata: {
         totalRecords: number;
@@ -217,7 +218,7 @@ Deno.test("CSV Filter Sampler Agent", async (t) => {
       assert(artifactResult.data.data.type === "file", "Artifact should be file type");
 
       const artifactFilePath = artifactResult.data.data.data.path;
-      const artifactContent = await Deno.readTextFile(artifactFilePath);
+      const artifactContent = await readFile(artifactFilePath, "utf-8");
       const artifactData = JSON.parse(artifactContent) as { samples: Array<{ Email: string }> };
 
       // Collect sample emails as unique identifiers
@@ -280,7 +281,7 @@ Deno.test("CSV Filter Sampler Agent", async (t) => {
     assert(artifactResult.data.data.type === "file", "Artifact should be file type");
 
     const artifactFilePath = artifactResult.data.data.data.path;
-    const artifactContent = await Deno.readTextFile(artifactFilePath);
+    const artifactContent = await readFile(artifactFilePath, "utf-8");
     const artifactData = JSON.parse(artifactContent) as {
       metadata: { filteredCount: number; sampleCount: number };
       samples: Array<unknown>;

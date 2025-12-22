@@ -4,6 +4,7 @@
  * Separates concerns: loading/validation happens here, execution in FSMEngine
  */
 
+import { readFile } from "node:fs/promises";
 import type { FSMEngineOptions } from "./fsm-engine.ts";
 import { FSMEngine } from "./fsm-engine.ts";
 import * as serializer from "./serializer.ts";
@@ -32,7 +33,7 @@ export function loadFromYAML(yaml: string, options: FSMEngineOptions): FSMEngine
  * Load FSM from file with validation and initialization
  */
 export async function loadFromFile(path: string, options: FSMEngineOptions): Promise<FSMEngine> {
-  const yaml = await Deno.readTextFile(path);
+  const yaml = await readFile(path, "utf-8");
   const engine = loadFromYAML(yaml, options);
   await engine.initialize();
   return engine;

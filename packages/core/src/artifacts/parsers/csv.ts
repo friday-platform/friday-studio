@@ -4,6 +4,7 @@
  * Parses CSV files for file artifacts.
  */
 
+import { readFile } from "node:fs/promises";
 import Papa from "papaparse";
 import { z } from "zod";
 
@@ -50,7 +51,7 @@ function findHeaderLine(content: string): string {
  * Parse a CSV file from the given file path.
  */
 export async function parseCsv(filePath: string): Promise<CsvParseResult> {
-  const rawContent = await Deno.readTextFile(filePath);
+  const rawContent = await readFile(filePath, "utf-8");
   const content = findHeaderLine(rawContent);
 
   const parsed = Papa.parse<Record<string, CsvCell>>(content, {

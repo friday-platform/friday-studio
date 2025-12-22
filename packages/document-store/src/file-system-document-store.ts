@@ -2,6 +2,8 @@
  * Filesystem implementation of DocumentStore
  */
 
+import { readFile } from "node:fs/promises";
+import { isErrnoException } from "@atlas/utils";
 import { getAtlasHome } from "@atlas/utils/paths.server";
 import { ensureDir } from "@std/fs";
 import { join } from "@std/path";
@@ -53,7 +55,7 @@ export class FileSystemDocumentStore extends DocumentStore {
       });
       return true;
     } catch (error: unknown) {
-      if (error instanceof Deno.errors.NotFound) {
+      if (isErrnoException(error) && error.code === "ENOENT") {
         return false;
       }
       throw error;
@@ -66,7 +68,7 @@ export class FileSystemDocumentStore extends DocumentStore {
       await Deno.stat(path);
       return true;
     } catch (error: unknown) {
-      if (error instanceof Deno.errors.NotFound) {
+      if (isErrnoException(error) && error.code === "ENOENT") {
         return false;
       }
       throw error;
@@ -87,7 +89,7 @@ export class FileSystemDocumentStore extends DocumentStore {
       }
       return ids;
     } catch (error: unknown) {
-      if (error instanceof Deno.errors.NotFound) {
+      if (isErrnoException(error) && error.code === "ENOENT") {
         return [];
       }
       throw error;
@@ -97,13 +99,13 @@ export class FileSystemDocumentStore extends DocumentStore {
   protected async readRaw(scope: DocumentScope, type: string, id: string): Promise<unknown | null> {
     const path = this.buildPath(scope, type, id);
     try {
-      const content = await Deno.readTextFile(path);
+      const content = await readFile(path, "utf-8");
       if (!content.trim()) {
         return null;
       }
       return JSON.parse(content);
     } catch (error: unknown) {
-      if (error instanceof Deno.errors.NotFound) {
+      if (isErrnoException(error) && error.code === "ENOENT") {
         return null;
       }
       throw error;
@@ -139,13 +141,13 @@ export class FileSystemDocumentStore extends DocumentStore {
   async loadState(scope: DocumentScope, key: string): Promise<unknown | null> {
     const path = this.buildStatePath(scope, key);
     try {
-      const content = await Deno.readTextFile(path);
+      const content = await readFile(path, "utf-8");
       if (!content.trim()) {
         return null;
       }
       return JSON.parse(content);
     } catch (error: unknown) {
-      if (error instanceof Deno.errors.NotFound) {
+      if (isErrnoException(error) && error.code === "ENOENT") {
         return null;
       }
       throw error;

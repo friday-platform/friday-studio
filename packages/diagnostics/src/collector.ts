@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { env } from "node:process";
 import { getAtlasClient } from "@atlas/client";
 import { createLogger } from "@atlas/logger";
@@ -821,7 +822,7 @@ export class DiagnosticsCollector {
     // DNS resolver information
     try {
       if (Deno.build.os !== "windows") {
-        const resolvConf = await Deno.readTextFile("/etc/resolv.conf").catch(() => null);
+        const resolvConf = await readFile("/etc/resolv.conf", "utf-8").catch(() => null);
         if (resolvConf) {
           const nameservers = resolvConf
             .split("\n")

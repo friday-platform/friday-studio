@@ -1,5 +1,5 @@
+import { mkdir, readFile } from "node:fs/promises";
 import process from "node:process";
-import { mkdir } from "node:fs/promises";
 import { logger } from "@atlas/logger";
 import { z } from "zod";
 import {
@@ -340,7 +340,7 @@ exit
 
   private async getConfiguredPort(): Promise<number> {
     try {
-      const text = await Deno.readTextFile(this.configPath);
+      const text = await readFile(this.configPath, "utf-8");
       const configData = portConfigSchema.parse(JSON.parse(text));
       return configData.port;
     } catch {

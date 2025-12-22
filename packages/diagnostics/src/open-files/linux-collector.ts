@@ -1,3 +1,4 @@
+import { isErrnoException } from "@atlas/utils";
 import type { FileType, OpenFileEntry, PlatformCollector } from "./types.ts";
 
 function detectType(path: string): FileType {
@@ -24,7 +25,7 @@ export const LinuxCollector: PlatformCollector = {
 
         yield { fd, type: detectType(link), path: link };
       } catch (error) {
-        if (error instanceof Deno.errors.PermissionDenied) {
+        if (isErrnoException(error) && (error.code === "EACCES" || error.code === "EPERM")) {
           yield { fd, type: "UNKNOWN", path: "[Permission Denied]" };
         }
       }

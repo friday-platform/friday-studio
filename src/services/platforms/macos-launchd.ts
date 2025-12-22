@@ -1,5 +1,6 @@
+import { mkdir, readFile } from "node:fs/promises";
 import process from "node:process";
-import { mkdir } from "node:fs/promises";
+import { isErrnoException } from "@atlas/utils";
 import { exists } from "@std/fs";
 import { join } from "@std/path";
 import {
@@ -166,7 +167,7 @@ export class MacOSLaunchdService implements PlatformServiceManager {
     try {
       await Deno.remove(this.plistPath);
     } catch (error) {
-      if (!(error instanceof Deno.errors.NotFound)) {
+      if (!(isErrnoException(error) && error.code === "ENOENT")) {
         throw new Error(
           `Failed to remove service configuration: ${
             error instanceof Error ? error.message : String(error)
@@ -253,7 +254,7 @@ export class MacOSLaunchdService implements PlatformServiceManager {
 
       // Try to determine port from service configuration
       try {
-        const configText = await Deno.readTextFile(this.plistPath);
+        const configText = await readFile(this.plistPath, "utf-8");
         const portMatch = configText.match(/--port[\s\n]*<string>(\d+)<\/string>/);
         const portString = portMatch?.[1];
         if (portString) {

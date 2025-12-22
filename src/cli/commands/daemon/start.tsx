@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import process from "node:process";
 import { client, parseResult } from "@atlas/client/v2";
 import { decodeJwtPayload, fetchCredentials, setToEnv } from "@atlas/core/credentials";
@@ -146,7 +147,7 @@ async function peekAtlasKey(): Promise<string | undefined> {
   const globalEnvPath = join(getAtlasHome(), ".env");
   try {
     if (await exists(globalEnvPath)) {
-      const content = await Deno.readTextFile(globalEnvPath);
+      const content = await readFile(globalEnvPath, "utf-8");
       const parsed = parse(content);
       if (parsed.ATLAS_KEY) return parsed.ATLAS_KEY;
     }
@@ -159,7 +160,7 @@ async function peekAtlasKey(): Promise<string | undefined> {
     try {
       const systemEnvPath = "/etc/atlas/env";
       if (await exists(systemEnvPath)) {
-        const content = await Deno.readTextFile(systemEnvPath);
+        const content = await readFile(systemEnvPath, "utf-8");
         const parsed = parse(content);
         if (parsed.ATLAS_KEY) return parsed.ATLAS_KEY;
       }

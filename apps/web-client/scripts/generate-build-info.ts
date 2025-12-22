@@ -4,6 +4,7 @@
 // It should be run before building the application in CI/CD
 
 import { dirname, fromFileUrl, join } from "jsr:@std/path@^1.0.0";
+import { readFile } from "node:fs/promises";
 import process, { env } from "node:process";
 
 const __dirname = dirname(fromFileUrl(import.meta.url));
@@ -34,7 +35,7 @@ const commitHash = env.GIT_COMMIT_HASH || (githubSha ? githubSha.substring(0, 8)
 let version = env.APP_VERSION || "0.1.0";
 if (!env.APP_VERSION) {
   try {
-    const packageJsonText = await Deno.readTextFile(join(__dirname, "..", "package.json"));
+    const packageJsonText = await readFile(join(__dirname, "..", "package.json"), "utf-8");
     const packageJson = JSON.parse(packageJsonText);
     if (
       typeof packageJson === "object" &&

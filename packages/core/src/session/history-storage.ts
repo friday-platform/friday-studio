@@ -1,9 +1,9 @@
+import { mkdir, readFile } from "node:fs/promises";
 import type { AgentResult, ArtifactRef, ToolCall, ToolResult } from "@atlas/agent-sdk";
 import { createLogger } from "@atlas/logger";
-import { fail, type Result, stringifyError, success } from "@atlas/utils";
+import { fail, isErrnoException, type Result, stringifyError, success } from "@atlas/utils";
 import { getAtlasHome } from "@atlas/utils/paths.server";
 import { join } from "@std/path";
-import { mkdir } from "node:fs/promises";
 import type { LanguageModelUsage, ReasoningOutput } from "ai";
 import { z } from "zod";
 import type { IWorkspaceSignal } from "../../../../src/types/core.ts";
@@ -435,7 +435,7 @@ async function ensureSessionDir(): Promise<void> {
 }
 
 async function readAndValidateSession(filePath: string): Promise<StoredSession> {
-  const content = await Deno.readTextFile(filePath);
+  const content = await readFile(filePath, "utf-8");
   const json = JSON.parse(content);
   const parsedSession = StoredSessionSchema.parse(json);
   const events = parsedSession.events.map((e) => SessionHistoryEventSchema.parse(e));
@@ -480,7 +480,7 @@ export async function createSessionRecord(
       });
       return success(existing);
     } catch (error) {
-      if (!(error instanceof Deno.errors.NotFound)) {
+      if (!(isErrnoException(error) && error.code === "ENOENT")) {
         logger.warn("Error reading existing session, creating new", {
           sessionId: input.sessionId,
           error: stringifyError(error),
@@ -545,7 +545,7 @@ export async function appendSessionEvent(
 
     return success(event);
   } catch (error) {
-    if (error instanceof Deno.errors.NotFound) {
+    if (isErrnoException(error) && error.code === "ENOENT") {
       return fail("Session not found");
     }
     if (error instanceof z.ZodError) {
@@ -581,7 +581,7 @@ export async function markSessionComplete(
     const { events: _, ...metadata } = session;
     return success(metadata);
   } catch (error) {
-    if (error instanceof Deno.errors.NotFound) {
+    if (isErrnoException(error) && error.code === "ENOENT") {
       return fail("Session not found");
     }
     if (error instanceof z.ZodError) {
@@ -603,7 +603,7 @@ export async function getSessionMetadata(
     const { events: _, ...metadata } = session;
     return success(metadata);
   } catch (error) {
-    if (error instanceof Deno.errors.NotFound) {
+    if (isErrnoException(error) && error.code === "ENOENT") {
       return success(null);
     }
     if (error instanceof z.ZodError) {
@@ -677,7 +677,7 @@ export async function loadSessionTimeline(
     const { events, ...metadata } = session;
     return success({ metadata, events });
   } catch (error) {
-    if (error instanceof Deno.errors.NotFound) {
+    if (isErrnoException(error) && error.code === "ENOENT") {
       return success(null);
     }
     if (error instanceof z.ZodError) {

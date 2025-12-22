@@ -1,8 +1,9 @@
 /**
  * Filesystem implementation of ConfigurationAdapter
- * Loads configuration from local filesystem using Deno APIs
+ * Loads configuration from local filesystem
  */
 
+import { readFile } from "node:fs/promises";
 import { parse as parseYaml } from "@std/yaml";
 import type { ConfigurationAdapter } from "./mod.ts";
 
@@ -17,7 +18,7 @@ export class FilesystemConfigAdapter implements ConfigurationAdapter {
    * Read and parse a YAML file from the filesystem
    */
   async readYaml(path: string): Promise<unknown> {
-    const content = await Deno.readTextFile(path);
+    const content = await readFile(path, "utf-8");
     return parseYaml(content);
   }
 

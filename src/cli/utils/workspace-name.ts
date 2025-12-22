@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { exists } from "@std/fs";
 import { join } from "@std/path";
 import { parse as parseYaml } from "@std/yaml";
@@ -17,7 +18,7 @@ export async function getCurrentWorkspaceName(workspaceDir?: string): Promise<st
   }
 
   try {
-    const content = await Deno.readTextFile(workspaceYmlPath);
+    const content = await readFile(workspaceYmlPath, "utf-8");
     // @TODO: check this with Zod
     const config = parseYaml(content);
 

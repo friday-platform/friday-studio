@@ -1,7 +1,8 @@
+import { readFile } from "node:fs/promises";
 import process from "node:process";
 import { client, parseResult } from "@atlas/client/v2";
 import { logger } from "@atlas/logger";
-import { stringifyError } from "@atlas/utils";
+import { isErrnoException, stringifyError } from "@atlas/utils";
 import { ensureDir, exists } from "@std/fs";
 import { join } from "@std/path";
 import z from "zod";
@@ -948,7 +949,7 @@ async function replaceBinary(
         }
       } catch (error) {
         // If lstat fails, the binary path doesn't exist
-        if (error instanceof Deno.errors.NotFound) {
+        if (isErrnoException(error) && error.code === "ENOENT") {
           throw new Error(`Binary not found at ${binaryPath}`);
         }
         // Other errors, continue with normal flow
@@ -1235,7 +1236,7 @@ async function saveChannelPreference(channel: string): Promise<void> {
 
   // Read existing config if it exists
   try {
-    const content = await Deno.readTextFile(configPath);
+    const content = await readFile(configPath, "utf-8");
     config = z.record(z.string(), z.unknown()).parse(JSON.parse(content));
   } catch {
     // Config doesn't exist yet

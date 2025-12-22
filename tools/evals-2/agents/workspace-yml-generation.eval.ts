@@ -3,7 +3,7 @@
  * Tests enrichers and output structure directly (no daemon required)
  */
 
-import { mkdir } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { assert } from "@std/assert";
 import { parse as parseYaml, stringify as stringifyYaml } from "@std/yaml";
 import { WorkspaceConfigSchema } from "../../../packages/config/src/workspace.ts";
@@ -126,7 +126,7 @@ Deno.test("Workspace YML Generation - Daily Report with Discord", async (t) => {
     assert(workspaceYmlExists, "workspace.yml should be created");
 
     // Read and parse workspace.yml to verify it was written correctly
-    const workspaceYmlContent = await Deno.readTextFile(workspaceYmlPath);
+    const workspaceYmlContent = await readFile(workspaceYmlPath, "utf-8");
     const parsedYaml = parseYaml(workspaceYmlContent);
 
     // Validate against WorkspaceConfigSchema
@@ -331,7 +331,7 @@ Deno.test("Workspace YML Generation - Multiple MCP Servers", async (t) => {
     await Deno.writeTextFile("./test-workspace-multi/workspace.yml", workspaceYml);
 
     // Read and parse workspace.yml
-    const workspaceYmlContent = await Deno.readTextFile("./test-workspace-multi/workspace.yml");
+    const workspaceYmlContent = await readFile("./test-workspace-multi/workspace.yml", "utf-8");
     const parsedYaml = parseYaml(workspaceYmlContent);
 
     // Validate against WorkspaceConfigSchema

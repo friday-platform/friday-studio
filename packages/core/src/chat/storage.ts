@@ -1,10 +1,10 @@
+import { mkdir, readFile } from "node:fs/promises";
 import type { AtlasUIMessage } from "@atlas/agent-sdk";
 import { validateAtlasUIMessages } from "@atlas/agent-sdk";
 import { createLogger } from "@atlas/logger";
-import { fail, type Result, stringifyError, success } from "@atlas/utils";
+import { fail, isErrnoException, type Result, stringifyError, success } from "@atlas/utils";
 import { getAtlasHome } from "@atlas/utils/paths.server";
 import { join } from "@std/path";
-import { mkdir } from "node:fs/promises";
 import { z } from "zod";
 
 const logger = createLogger({ component: "chat-storage" });
@@ -46,7 +46,7 @@ async function ensureChatDir(): Promise<void> {
  * Throws: file not found, JSON parse error, schema validation error, message validation error
  */
 async function readAndValidateChat(filePath: string): Promise<Chat> {
-  const content = await Deno.readTextFile(filePath);
+  const content = await readFile(filePath, "utf-8");
   const json = JSON.parse(content);
   const parsedChat = StoredChatSchema.parse(json);
   const messages = await validateAtlasUIMessages(parsedChat.messages);
@@ -77,7 +77,7 @@ async function createChat(input: {
       });
       return success(existing);
     } catch (error) {
-      if (!(error instanceof Deno.errors.NotFound)) {
+      if (!(isErrnoException(error) && error.code === "ENOENT")) {
         logger.warn("Error reading existing chat, creating new", {
           chatId: input.chatId,
           error: stringifyError(error),
@@ -115,7 +115,7 @@ async function getChat(chatId: string): Promise<Result<Chat | null, string>> {
     const chat = await readAndValidateChat(getChatFile(chatId));
     return success(chat);
   } catch (error) {
-    if (error instanceof Deno.errors.NotFound) {
+    if (isErrnoException(error) && error.code === "ENOENT") {
       return success(null);
     }
     if (error instanceof z.ZodError) {
@@ -151,7 +151,7 @@ async function appendMessage(
 
     return success(undefined);
   } catch (error) {
-    if (error instanceof Deno.errors.NotFound) {
+    if (isErrnoException(error) && error.code === "ENOENT") {
       return fail("Chat not found");
     }
     if (error instanceof z.ZodError) {
@@ -259,7 +259,7 @@ async function updateChatTitle(chatId: string, title: string): Promise<Result<Ch
 
     return success(chat);
   } catch (error) {
-    if (error instanceof Deno.errors.NotFound) {
+    if (isErrnoException(error) && error.code === "ENOENT") {
       return fail("Chat not found");
     }
     if (error instanceof z.ZodError) {
@@ -281,7 +281,7 @@ async function deleteChat(chatId: string): Promise<Result<void, string>> {
     logger.debug("Deleted chat", { chatId });
     return success(undefined);
   } catch (error) {
-    if (error instanceof Deno.errors.NotFound) {
+    if (isErrnoException(error) && error.code === "ENOENT") {
       return fail("Chat not found");
     }
     return fail(stringifyError(error));

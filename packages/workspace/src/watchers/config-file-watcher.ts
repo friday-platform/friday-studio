@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { WorkspaceConfigSchema } from "@atlas/config";
 import { createFsWatchRunner, type FsWatchRunner } from "@atlas/fs-watch";
 import { logger } from "@atlas/logger";
@@ -180,7 +181,7 @@ export class WorkspaceConfigWatcher {
     absoluteConfigPath: string,
   ): Promise<void> {
     try {
-      const initialContent = await Deno.readTextFile(absoluteConfigPath);
+      const initialContent = await readFile(absoluteConfigPath, "utf-8");
       const initialHash = await this.computeSha256Hex(initialContent);
       this.lastConfigHashByWorkspace.set(workspaceId, initialHash);
     } catch (error) {
@@ -388,7 +389,7 @@ export class WorkspaceConfigWatcher {
   }
 
   private async readConfigAndHash(filePath: string): Promise<{ content: string; hash: string }> {
-    const content = await Deno.readTextFile(filePath);
+    const content = await readFile(filePath, "utf-8");
     const hash = await this.computeSha256Hex(content);
     return { content, hash };
   }

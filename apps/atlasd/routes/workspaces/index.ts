@@ -1,12 +1,12 @@
+import { mkdir, readFile } from "node:fs/promises";
 import { WorkspaceConfigSchema } from "@atlas/config";
 import { logger } from "@atlas/logger";
 import { FilesystemWorkspaceCreationAdapter } from "@atlas/storage";
-import { stringifyError } from "@atlas/utils";
+import { isErrnoException, stringifyError } from "@atlas/utils";
 import { getAtlasHome } from "@atlas/utils/paths.server";
 import { zValidator } from "@hono/zod-validator";
 import { join } from "@std/path";
 import { stringify } from "@std/yaml";
-import { mkdir } from "node:fs/promises";
 import { z } from "zod";
 import { daemonFactory } from "../../src/factory.ts";
 import { createWorkspaceFromConfigSchema } from "./schemas.ts";
@@ -335,7 +335,7 @@ const workspacesRoutes = daemonFactory
             const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
             const backupPath = join(workspacePath, `workspace.yml.backup-${timestamp}`);
             try {
-              const existingContent = await Deno.readTextFile(workspaceYmlPath);
+              const existingContent = await readFile(workspaceYmlPath, "utf-8");
               await Deno.writeTextFile(backupPath, existingContent);
             } catch (backupError) {
               return c.json(
@@ -583,7 +583,7 @@ const workspacesRoutes = daemonFactory
               targetPath = join(unregisteredDir, `${workspaceName}-${counter}`);
             } catch (error) {
               // Path doesn't exist (NotFound error), we can use it
-              if (error instanceof Deno.errors.NotFound) {
+              if (isErrnoException(error) && error.code === "ENOENT") {
                 break;
               }
               // Some other error, throw it

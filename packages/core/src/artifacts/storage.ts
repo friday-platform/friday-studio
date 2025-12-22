@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { createLogger } from "@atlas/logger";
 import { fail, type Result, stringifyError, success } from "@atlas/utils";
 import { getAtlasHome } from "@atlas/utils/paths.server";
@@ -419,7 +420,7 @@ async function readFileContents(input: {
   }
 
   try {
-    const contents = await Deno.readTextFile(path);
+    const contents = await readFile(path, "utf-8");
     return success(contents);
   } catch (error) {
     logger.error("Failed to read file contents", { path, error: stringifyError(error) });

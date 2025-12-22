@@ -1,6 +1,7 @@
 #!/usr/bin/env -S deno run --allow-read --allow-write --allow-env
 
 import process from "node:process";
+import { isErrnoException, stringifyError } from "@atlas/utils";
 import { getAtlasHome } from "@atlas/utils/paths.server";
 import { join } from "@std/path";
 
@@ -30,12 +31,10 @@ async function clean() {
       console.log("Nothing to clean.");
     }
   } catch (error) {
-    if (error instanceof Deno.errors.NotFound) {
+    if (isErrnoException(error) && error.code === "ENOENT") {
       console.log(`Atlas directory does not exist: ${atlasHome}`);
     } else {
-      console.error(
-        `Error cleaning Atlas directory: ${error instanceof Error ? error.message : String(error)}`,
-      );
+      console.error(`Error cleaning Atlas directory: ${stringifyError(error)}`);
       process.exit(1);
     }
   }

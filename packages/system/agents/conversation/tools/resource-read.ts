@@ -2,6 +2,7 @@
  * Atlas Resource Tools - AI SDK Compatible
  */
 
+import { readFile } from "node:fs/promises";
 import { objectKeys, stringifyError } from "@atlas/utils";
 import { tool } from "ai";
 import { z } from "zod";
@@ -35,7 +36,7 @@ Use this tool to access detailed technical documentation when helping users with
     }
 
     try {
-      const content = await Deno.readTextFile(resource.filePath);
+      const content = await readFile(resource.filePath, "utf-8");
       return { uri, name: resource.name, description: resource.description, content };
     } catch (error) {
       throw new Error(`Failed to read resource ${uri}: ${stringifyError(error)}`);

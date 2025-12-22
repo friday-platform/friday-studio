@@ -1,6 +1,6 @@
 import process from "node:process";
 import { client, parseResult } from "@atlas/client/v2";
-import { sleep } from "@atlas/utils";
+import { isErrnoException, sleep, stringifyError } from "@atlas/utils";
 import { getAtlasHome } from "@atlas/utils/paths.server";
 import { join } from "@std/path";
 import { ServiceManager } from "../../services/service-manager.ts";
@@ -92,10 +92,10 @@ export const handler = async (argv: ResetArgs): Promise<void> => {
       warningOutput(`Run 'atlas ${stoppedMode} start' to restart the ${stoppedMode}.`);
     }
   } catch (error) {
-    if (error instanceof Deno.errors.NotFound) {
+    if (isErrnoException(error) && error.code === "ENOENT") {
       infoOutput(`Atlas directory does not exist: ${atlasHome}`);
     } else {
-      errorOutput(error instanceof Error ? error.message : String(error));
+      errorOutput(stringifyError(error));
       process.exit(1);
     }
   }

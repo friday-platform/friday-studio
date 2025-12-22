@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import process from "node:process";
 import { getAtlasHome } from "@atlas/utils/paths.server";
@@ -31,7 +32,7 @@ interface LogEntry {
 
 async function readLogFile(path: string): Promise<LogEntry[]> {
   if (!(await exists(path))) return [];
-  const content = await Deno.readTextFile(path);
+  const content = await readFile(path, "utf-8");
   const entries: LogEntry[] = [];
   for (const line of content.split("\n")) {
     if (line.trim() === "") continue;

@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { logger } from "@atlas/logger";
 import { z } from "zod";
 
@@ -17,7 +18,7 @@ const TokenResponseSchema = z.object({
  */
 export async function fetchCypherToken(url: string): Promise<string> {
   // Trim to remove any trailing newline/whitespace
-  const k8sToken = (await Deno.readTextFile(K8S_SA_TOKEN_PATH)).trim();
+  const k8sToken = (await readFile(K8S_SA_TOKEN_PATH, "utf-8")).trim();
 
   const response = await fetch(url, {
     method: "POST",
