@@ -3,6 +3,7 @@ import { createLogger } from "@atlas/logger";
 import { fail, type Result, stringifyError, success } from "@atlas/utils";
 import { getAtlasHome } from "@atlas/utils/paths.server";
 import { join } from "@std/path";
+import { mkdir } from "node:fs/promises";
 import type { LanguageModelUsage, ReasoningOutput } from "ai";
 import { z } from "zod";
 import type { IWorkspaceSignal } from "../../../../src/types/core.ts";
@@ -430,7 +431,7 @@ function getSessionFile(sessionId: string): string {
 }
 
 async function ensureSessionDir(): Promise<void> {
-  await Deno.mkdir(getSessionDir(), { recursive: true });
+  await mkdir(getSessionDir(), { recursive: true });
 }
 
 async function readAndValidateSession(filePath: string): Promise<StoredSession> {

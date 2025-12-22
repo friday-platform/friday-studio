@@ -4,6 +4,8 @@
  */
 
 import { join } from "@std/path";
+import { mkdir } from "node:fs/promises";
+import { isErrnoException } from "@atlas/utils";
 
 /**
  * Interface for workspace creation adapters
@@ -41,7 +43,7 @@ export class FilesystemWorkspaceCreationAdapter implements WorkspaceCreationAdap
    */
   async createWorkspaceDirectory(basePath: string, name: string): Promise<string> {
     // First ensure the base path exists
-    await Deno.mkdir(basePath, { recursive: true });
+    await mkdir(basePath, { recursive: true });
 
     let targetPath = join(basePath, name);
     let counter = 1;
@@ -50,12 +52,12 @@ export class FilesystemWorkspaceCreationAdapter implements WorkspaceCreationAdap
     while (true) {
       try {
         // Try to create the directory (without recursive flag for atomicity)
-        await Deno.mkdir(targetPath, { recursive: false });
+        await mkdir(targetPath, { recursive: false });
         // Success! Return this path
         return targetPath;
       } catch (error) {
         // Check if it's because directory already exists
-        if (error instanceof Deno.errors.AlreadyExists) {
+        if (isErrnoException(error) && error.code === "EEXIST") {
           // Try next number
           counter++;
           targetPath = join(basePath, `${name}-${counter}`);

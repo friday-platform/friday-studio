@@ -10,6 +10,7 @@ import { parse, stringify } from "@std/dotenv";
 import { exists } from "@std/fs";
 import { join } from "@std/path";
 import { describeRoute, resolver, validator } from "hono-openapi";
+import { mkdir } from "node:fs/promises";
 import z from "zod";
 import { daemonFactory } from "../src/factory.ts";
 
@@ -103,7 +104,7 @@ configRoutes.put(
 
       // Create .atlas directory if it doesn't exist
       if (!(await exists(atlasDir))) {
-        await Deno.mkdir(atlasDir, { recursive: true });
+        await mkdir(atlasDir, { recursive: true });
       }
 
       // Write the file using @std/dotenv stringify

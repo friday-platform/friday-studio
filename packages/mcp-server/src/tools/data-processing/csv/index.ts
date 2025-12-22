@@ -7,6 +7,7 @@
  *
  */
 
+import { mkdir } from "node:fs/promises";
 import type { Artifact } from "@atlas/core/artifacts";
 import { FileDataSchema } from "@atlas/core/artifacts";
 import { ArtifactStorage, CsvParseResultSchema, parseCsv } from "@atlas/core/artifacts/server";
@@ -191,7 +192,7 @@ export function registerCsvTool(server: McpServer, context: ToolContext): void {
 
           // Write to workspace files directory
           const workspaceFilesDir = getWorkspaceFilesDir(input.workspaceId);
-          await Deno.mkdir(workspaceFilesDir, { recursive: true });
+          await mkdir(workspaceFilesDir, { recursive: true });
 
           const outputFileName = `${crypto.randomUUID()}.csv`;
           const outputPath = `${workspaceFilesDir}/${outputFileName}`;

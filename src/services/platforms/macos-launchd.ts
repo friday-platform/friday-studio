@@ -1,4 +1,5 @@
 import process from "node:process";
+import { mkdir } from "node:fs/promises";
 import { exists } from "@std/fs";
 import { join } from "@std/path";
 import {
@@ -28,17 +29,7 @@ export class MacOSLaunchdService implements PlatformServiceManager {
 
   async install(config: ServiceConfig): Promise<void> {
     // Ensure service directory exists
-    try {
-      await Deno.mkdir(this.serviceDir, { recursive: true });
-    } catch (error) {
-      if (!(error instanceof Deno.errors.AlreadyExists)) {
-        throw new Error(
-          `Failed to create service directory: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        );
-      }
-    }
+    await mkdir(this.serviceDir, { recursive: true });
 
     // Get binary path - prefer system binary path if it's a symlink to our binary
     let binaryPath = getAtlasBinaryPath();
@@ -73,7 +64,7 @@ export class MacOSLaunchdService implements PlatformServiceManager {
 
     // Create LaunchAgent configuration
     const logDir = getPlatformPaths().logDir;
-    await Deno.mkdir(logDir, { recursive: true });
+    await mkdir(logDir, { recursive: true });
 
     const launchAgentConfig: LaunchAgentConfig = {
       Label: this.serviceName,

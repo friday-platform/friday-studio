@@ -1,4 +1,5 @@
 import process from "node:process";
+import { mkdir } from "node:fs/promises";
 import { exists } from "@std/fs";
 import { join } from "@std/path";
 import {
@@ -27,7 +28,7 @@ export class LinuxSystemdService implements PlatformServiceManager {
 
   async install(config: ServiceConfig): Promise<void> {
     // Ensure service directory exists
-    await Deno.mkdir(this.paths.serviceDir, { recursive: true });
+    await mkdir(this.paths.serviceDir, { recursive: true });
 
     // Create systemd service file
     const serviceContent = this.generateServiceFile(config);

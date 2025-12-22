@@ -205,8 +205,18 @@ export function sleep(ms: number): Promise<void> {
 export type MaybePromise<T> = Promise<T> | T;
 
 /**
+ * NodeJS-style exception with error code (e.g., ENOENT, EACCES)
+ */
+export interface ErrnoException extends Error {
+  errno?: number;
+  code?: string;
+  path?: string;
+  syscall?: string;
+}
+
+/**
  * Returns whether `error` is a NodeJS-style exception with an error code.
  */
-export function isErrnoException(error: unknown): error is NodeJS.ErrnoException {
+export function isErrnoException(error: unknown): error is ErrnoException {
   return error instanceof Error && ("errno" in error || "code" in error);
 }

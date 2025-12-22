@@ -4,6 +4,7 @@ import { createLogger } from "@atlas/logger";
 import { fail, type Result, stringifyError, success } from "@atlas/utils";
 import { getAtlasHome } from "@atlas/utils/paths.server";
 import { join } from "@std/path";
+import { mkdir } from "node:fs/promises";
 import { z } from "zod";
 
 const logger = createLogger({ component: "chat-storage" });
@@ -37,7 +38,7 @@ function getChatFile(chatId: string): string {
 
 /** Create chats directory if missing */
 async function ensureChatDir(): Promise<void> {
-  await Deno.mkdir(getChatDir(), { recursive: true });
+  await mkdir(getChatDir(), { recursive: true });
 }
 
 /**

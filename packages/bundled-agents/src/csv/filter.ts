@@ -1,7 +1,8 @@
-import { stat } from "node:fs/promises";
+import { mkdir, stat } from "node:fs/promises";
 import { type ArtifactRef, createAgent } from "@atlas/agent-sdk";
 import { ArtifactStorage, parseCsv } from "@atlas/core/artifacts/server";
 import { registry } from "@atlas/llm";
+import { isErrnoException } from "@atlas/utils";
 import { getWorkspaceFilesDir } from "@atlas/utils/paths.server";
 import { Database } from "@db/sqlite";
 import { basename, join } from "@std/path";
@@ -76,7 +77,7 @@ export const csvFilterSamplerAgent = createAgent<string, CsvFilterSamplerResult>
 
             return { success: true, message: `Valid CSV file path: ${params.csvPath}` };
           } catch (error) {
-            if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+            if (isErrnoException(error) && error.code === "ENOENT") {
               throw new Error(`CSV file not found: ${params.csvPath}`);
             }
             throw error;
@@ -289,7 +290,7 @@ Call buildSqlWhere tool with your WHERE clause (WITHOUT the 'WHERE' keyword).`,
 
       // Write JSON to file
       const workspaceFilesDir = getWorkspaceFilesDir(session.workspaceId);
-      await Deno.mkdir(workspaceFilesDir, { recursive: true });
+      await mkdir(workspaceFilesDir, { recursive: true });
 
       const jsonFileName = `csv-filter-${timestamp.replace(/[:.]/g, "-")}.json`;
       const jsonFilePath = join(workspaceFilesDir, jsonFileName);

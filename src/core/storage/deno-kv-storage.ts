@@ -7,6 +7,7 @@
  * ensuring that no storage-specific types leak into the business logic layer.
  */
 
+import { mkdir } from "node:fs/promises";
 import {
   type AtomicOperation,
   KVConnectionError,
@@ -114,7 +115,7 @@ export class DenoKVStorage implements KVStorage {
       if (this.path) {
         const dir = this.path.substring(0, this.path.lastIndexOf("/"));
         if (dir) {
-          await Deno.mkdir(dir, { recursive: true });
+          await mkdir(dir, { recursive: true });
         }
       }
 

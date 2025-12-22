@@ -6,6 +6,7 @@ import { getAtlasHome } from "@atlas/utils/paths.server";
 import { zValidator } from "@hono/zod-validator";
 import { join } from "@std/path";
 import { stringify } from "@std/yaml";
+import { mkdir } from "node:fs/promises";
 import { z } from "zod";
 import { daemonFactory } from "../../src/factory.ts";
 import { createWorkspaceFromConfigSchema } from "./schemas.ts";
@@ -566,14 +567,7 @@ const workspacesRoutes = daemonFactory
         if (workspacePath.startsWith(atlasDir)) {
           // Create unregistered directory if it doesn't exist
           const unregisteredDir = join(atlasDir, "unregistered");
-          try {
-            await Deno.mkdir(unregisteredDir, { recursive: true });
-          } catch (error) {
-            // Directory might already exist, that's fine
-            if (!(error instanceof Deno.errors.AlreadyExists)) {
-              throw error;
-            }
-          }
+          await mkdir(unregisteredDir, { recursive: true });
 
           // Move workspace to unregistered folder with collision handling
           const workspaceName = workspacePath.split("/").pop() || workspaceId;
