@@ -9,6 +9,7 @@
 
 import { ensureDir } from "jsr:@std/fs";
 import { join } from "jsr:@std/path";
+import { readdir } from "node:fs/promises";
 import process from "node:process";
 
 const TAURI_API_VERSION = "2.8.0";
@@ -99,12 +100,8 @@ async function downloadAndExtractPackage(
       await Deno.stat(extractedPackageDir);
     } catch {
       // If no 'package' directory, list contents and find the first directory
-      const entries = [];
-      for await (const entry of Deno.readDir(tmpDir)) {
-        if (entry.isDirectory) {
-          entries.push(entry.name);
-        }
-      }
+      const dirEntries = await readdir(tmpDir, { withFileTypes: true });
+      const entries = dirEntries.filter((entry) => entry.isDirectory()).map((entry) => entry.name);
 
       if (entries.length === 1) {
         extractedPackageDir = join(tmpDir, entries[0]);

@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { env } from "node:process";
 import { getAtlasClient } from "@atlas/client";
 import { createLogger } from "@atlas/logger";
@@ -301,8 +301,9 @@ export class DiagnosticsCollector {
 
         if (await exists(systemWorkspacesPath)) {
           // Copy all YAML files from system workspaces directory
-          for await (const entry of Deno.readDir(systemWorkspacesPath)) {
-            if (entry.isFile && entry.name.endsWith(".yml")) {
+          const systemEntries = await readdir(systemWorkspacesPath, { withFileTypes: true });
+          for (const entry of systemEntries) {
+            if (entry.isFile() && entry.name.endsWith(".yml")) {
               try {
                 const sourcePath = join(systemWorkspacesPath, entry.name);
                 const destPath = join(systemDir, entry.name);
@@ -363,16 +364,17 @@ export class DiagnosticsCollector {
   ): Promise<void> {
     await ensureDir(dest);
 
-    for await (const entry of Deno.readDir(source)) {
+    const sourceEntries = await readdir(source, { withFileTypes: true });
+    for (const entry of sourceEntries) {
       // Skip excluded directories
-      if (entry.isDirectory && excludeDirs.includes(entry.name)) {
+      if (entry.isDirectory() && excludeDirs.includes(entry.name)) {
         continue;
       }
 
       const sourcePath = join(source, entry.name);
       const destPath = join(dest, entry.name);
 
-      if (entry.isDirectory) {
+      if (entry.isDirectory()) {
         await this.copyDirectory(sourcePath, destPath, excludeDirs);
       } else {
         try {

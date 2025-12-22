@@ -7,6 +7,7 @@
  */
 
 import { existsSync, readFileSync } from "node:fs";
+import { readdir } from "node:fs/promises";
 import { env } from "node:process";
 import { ConfigLoader, ConfigNotFoundError, type MergedConfig } from "@atlas/config";
 import { logger } from "@atlas/logger";
@@ -612,8 +613,9 @@ export class WorkspaceManager {
         "target",
       ]);
       // Scan subdirectories
-      for await (const entry of Deno.readDir(path)) {
-        if (entry.isDirectory && !skipDirs.has(entry.name)) {
+      const entries = await readdir(path, { withFileTypes: true });
+      for (const entry of entries) {
+        if (entry.isDirectory() && !skipDirs.has(entry.name)) {
           await this.scanDirectory(join(path, entry.name), results, maxDepth, currentDepth + 1);
         }
       }

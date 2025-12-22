@@ -1,4 +1,4 @@
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir, readdir, readFile } from "node:fs/promises";
 import type { AgentResult, ArtifactRef, ToolCall, ToolResult } from "@atlas/agent-sdk";
 import { createLogger } from "@atlas/logger";
 import { fail, isErrnoException, type Result, stringifyError, success } from "@atlas/utils";
@@ -622,8 +622,9 @@ export async function listSessions(
 
     const fileInfos: Array<{ path: string; mtime: number }> = [];
 
-    for await (const entry of Deno.readDir(sessionDir)) {
-      if (entry.isFile && entry.name.endsWith(".json")) {
+    const sessionEntries = await readdir(sessionDir, { withFileTypes: true });
+    for (const entry of sessionEntries) {
+      if (entry.isFile() && entry.name.endsWith(".json")) {
         const filePath = join(sessionDir, entry.name);
         try {
           const stat = await Deno.stat(filePath);

@@ -1,3 +1,4 @@
+import { readdir } from "node:fs/promises";
 import { isErrnoException } from "@atlas/utils";
 import type { FileType, OpenFileEntry, PlatformCollector } from "./types.ts";
 
@@ -13,7 +14,8 @@ export const LinuxCollector: PlatformCollector = {
   async *getOpenFiles(pid: number, signal: AbortSignal): AsyncIterableIterator<OpenFileEntry> {
     const fdDir = `/proc/${pid}/fd`;
 
-    for await (const entry of Deno.readDir(fdDir)) {
+    const fdEntries = await readdir(fdDir, { withFileTypes: true });
+    for (const entry of fdEntries) {
       if (signal.aborted) {
         return;
       }

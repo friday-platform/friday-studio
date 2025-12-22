@@ -1,3 +1,4 @@
+import { readdir } from "node:fs/promises";
 import process from "node:process";
 import { client, parseResult } from "@atlas/client/v2";
 import { isErrnoException, sleep, stringifyError } from "@atlas/utils";
@@ -74,7 +75,8 @@ export const handler = async (argv: ResetArgs): Promise<void> => {
 
   try {
     let didDelete = false;
-    for await (const entry of Deno.readDir(atlasHome)) {
+    const entries = await readdir(atlasHome, { withFileTypes: true });
+    for (const entry of entries) {
       if (PRESERVED_ENTRIES.has(entry.name)) {
         continue;
       }

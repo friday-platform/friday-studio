@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import process from "node:process";
 import { getAtlasHome } from "@atlas/utils/paths.server";
@@ -61,8 +61,9 @@ async function readAllLogs(): Promise<LogEntry[]> {
   // Workspace logs
   const wsDir = join(logsDir, "workspaces");
   if (await exists(wsDir)) {
-    for await (const f of Deno.readDir(wsDir)) {
-      if (f.isFile && f.name.endsWith(".log")) {
+    const files = await readdir(wsDir, { withFileTypes: true });
+    for (const f of files) {
+      if (f.isFile() && f.name.endsWith(".log")) {
         entries.push(...(await readLogFile(join(wsDir, f.name))));
       }
     }

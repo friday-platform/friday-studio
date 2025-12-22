@@ -1,4 +1,4 @@
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir, readdir, readFile } from "node:fs/promises";
 import type { AtlasUIMessage } from "@atlas/agent-sdk";
 import { validateAtlasUIMessages } from "@atlas/agent-sdk";
 import { createLogger } from "@atlas/logger";
@@ -189,8 +189,9 @@ async function listChats(options?: ListChatsOptions): Promise<Result<ListChatsRe
 
     const fileInfos: Array<{ path: string; mtime: number }> = [];
 
-    for await (const entry of Deno.readDir(chatDir)) {
-      if (entry.isFile && entry.name.endsWith(".json")) {
+    const chatEntries = await readdir(chatDir, { withFileTypes: true });
+    for (const entry of chatEntries) {
+      if (entry.isFile() && entry.name.endsWith(".json")) {
         const filePath = join(chatDir, entry.name);
         try {
           const stat = await Deno.stat(filePath);
