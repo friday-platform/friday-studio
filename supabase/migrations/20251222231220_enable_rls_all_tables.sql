@@ -1,0 +1,13 @@
+-- Defense in depth: ensure all tables have RLS enabled and forced
+
+ALTER TABLE bounce.auth_user ENABLE ROW LEVEL SECURITY;
+ALTER TABLE bounce.auth_user FORCE ROW LEVEL SECURITY;
+
+ALTER TABLE bounce.identity ENABLE ROW LEVEL SECURITY;
+ALTER TABLE bounce.identity FORCE ROW LEVEL SECURITY;
+
+ALTER TABLE bounce.otp ENABLE ROW LEVEL SECURITY;
+ALTER TABLE bounce.otp FORCE ROW LEVEL SECURITY;
+
+ALTER TABLE public."user" FORCE ROW LEVEL SECURITY;
+ALTER TABLE public.platform_route FORCE ROW LEVEL SECURITY;
