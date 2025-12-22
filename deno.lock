@@ -81,15 +81,15 @@
     "npm:@total-typescript/ts-reset@~0.6.1": "0.6.1",
     "npm:@types/react@^19.2.7": "19.2.7",
     "npm:ai-sdk-provider-claude-code@^2.2.4": "2.2.4_zod@4.2.1",
-    "npm:ai@^5.0.115": "5.0.115_zod@4.2.1",
-    "npm:ai@^5.0.93": "5.0.115_zod@4.2.1",
+    "npm:ai@^5.0.116": "5.0.116_zod@4.2.1",
+    "npm:ai@^5.0.93": "5.0.116_zod@4.2.1",
     "npm:cookie@^1.0.2": "1.1.1",
     "npm:cron-parser@^5.4.0": "5.4.0",
     "npm:dotenv@17.2.3": "17.2.3",
     "npm:eslint-config-prettier@^10.1.8": "10.1.8_eslint@9.39.2",
     "npm:eslint-plugin-svelte@^3.13.1": "3.13.1_eslint@9.39.2_svelte@5.46.0__acorn@8.15.0_postcss@8.5.6",
     "npm:eslint@^9.39.2": "9.39.2",
-    "npm:evalite@^1.0.0-beta.15": "1.0.0-beta.15_ai@5.0.115__zod@4.2.1_zod@4.2.1",
+    "npm:evalite@^1.0.0-beta.15": "1.0.0-beta.15_ai@5.0.116__zod@4.2.1_zod@4.2.1",
     "npm:fast-glob@^3.3.3": "3.3.3",
     "npm:globals@^16.5.0": "16.5.0",
     "npm:hono-openapi@^1.1.2": "1.1.2_@hono+standard-validator@0.2.1__@standard-schema+spec@1.0.0__hono@4.11.1_@standard-community+standard-json@0.3.5__@standard-schema+spec@1.0.0__@types+json-schema@7.0.15__quansync@0.2.11__zod@4.2.1_@standard-community+standard-openapi@0.2.9__@standard-community+standard-json@0.3.5___@standard-schema+spec@1.0.0___@types+json-schema@7.0.15___quansync@0.2.11___zod@4.2.1__@standard-schema+spec@1.0.0__openapi-types@12.1.3__zod@4.2.1__@types+json-schema@7.0.15_@types+json-schema@7.0.15_hono@4.11.1_openapi-types@12.1.3_zod@4.2.1",
@@ -235,6 +235,15 @@
         "zod"
       ]
     },
+    "@ai-sdk/gateway@2.0.23_zod@4.2.1": {
+      "integrity": "sha512-qmX7afPRszUqG5hryHF3UN8ITPIRSGmDW6VYCmByzjoUkgm3MekzSx2hMV1wr0P+llDeuXb378SjqUfpvWJulg==",
+      "dependencies": [
+        "@ai-sdk/provider",
+        "@ai-sdk/provider-utils@3.0.19_zod@4.2.1",
+        "@vercel/oidc",
+        "zod"
+      ]
+    },
     "@ai-sdk/google@2.0.49_zod@4.2.1": {
       "integrity": "sha512-efwKk4mOV0SpumUaQskeYABk37FJPmEYwoDJQEjyLRmGSjtHRe9P5Cwof5ffLvaFav2IaJpBGEz98pyTs7oNWA==",
       "dependencies": [
@@ -296,7 +305,7 @@
       "integrity": "sha512-FUwnnw6B+upU9gPB78kMm0r40+Wb871eGDwCDwQ9T+vyJEYT7Lo11FjiKxQ6TUZRzBPRTnuqICqZM0zeFR9bNA==",
       "dependencies": [
         "@ai-sdk/provider-utils@3.0.19_zod@4.2.1",
-        "ai",
+        "ai@5.0.115_zod@4.2.1",
         "svelte",
         "zod"
       ],
@@ -2570,7 +2579,17 @@
     "ai@5.0.115_zod@4.2.1": {
       "integrity": "sha512-aVuHx0orGxXvhyL7oXUyW8TnWQE6Al8f3Bl6VZjz0WHMV+WaACHPkSyvQ3wje2QCUGzdl5DBF5d+OaXyghPQyg==",
       "dependencies": [
-        "@ai-sdk/gateway",
+        "@ai-sdk/gateway@2.0.22_zod@4.2.1",
+        "@ai-sdk/provider",
+        "@ai-sdk/provider-utils@3.0.19_zod@4.2.1",
+        "@opentelemetry/api",
+        "zod"
+      ]
+    },
+    "ai@5.0.116_zod@4.2.1": {
+      "integrity": "sha512-+2hYJ80/NcDWuv9K2/MLP3cTCFgwWHmHlS1tOpFUKKcmLbErAAlE/S2knsKboc3PNAu8pQkDr2N3K/Vle7ENgQ==",
+      "dependencies": [
+        "@ai-sdk/gateway@2.0.23_zod@4.2.1",
         "@ai-sdk/provider",
         "@ai-sdk/provider-utils@3.0.19_zod@4.2.1",
         "@opentelemetry/api",
@@ -3207,7 +3226,7 @@
     "etag@1.8.1": {
       "integrity": "sha512-aIL5Fx7mawVa300al2BnEE4iNvo1qETxLrPI/o05L7z6go7fCw1J6EQmbK4FmJ2AS7kgVF/KEZWufBfdClMcPg=="
     },
-    "evalite@1.0.0-beta.15_ai@5.0.115__zod@4.2.1_zod@4.2.1": {
+    "evalite@1.0.0-beta.15_ai@5.0.116__zod@4.2.1_zod@4.2.1": {
       "integrity": "sha512-/4D4Iap7/FTrzUYf4fZpkaGaycRnKt8gDgMDJ/fRAr5YdfUBJuwJVPQFRSPNvtkg5AVSDI7+kgivJnfP69kFEA==",
       "dependencies": [
         "@fastify/static",
@@ -3216,7 +3235,7 @@
         "@stricli/core",
         "@vitest/runner",
         "@vitest/utils",
-        "ai",
+        "ai@5.0.116_zod@4.2.1",
         "dotenv@16.6.1",
         "fastify",
         "file-type",
@@ -3227,7 +3246,7 @@
         "tinyrainbow"
       ],
       "optionalPeers": [
-        "ai"
+        "ai@5.0.116_zod@4.2.1"
       ],
       "bin": true
     },
@@ -5319,7 +5338,7 @@
         "npm:@sendgrid/helpers@8",
         "npm:@total-typescript/ts-reset@~0.6.1",
         "npm:@types/react@^19.2.7",
-        "npm:ai@^5.0.115",
+        "npm:ai@^5.0.116",
         "npm:ink@^6.5.1",
         "npm:jose@^6.1.3",
         "npm:js-levenshtein@^1.1.6",
@@ -5428,7 +5447,7 @@
             "npm:@tauri-apps/cli@^2.9.6",
             "npm:@tauri-apps/plugin-fs@~2.4.4",
             "npm:@tauri-apps/plugin-opener@^2.5.2",
-            "npm:ai@^5.0.115",
+            "npm:ai@^5.0.116",
             "npm:eslint-config-prettier@^10.1.8",
             "npm:eslint-plugin-svelte@^3.13.1",
             "npm:eslint@^9.39.2",
@@ -5450,7 +5469,7 @@
           "dependencies": [
             "npm:@jsr/std__assert@^1.0.14",
             "npm:@opentelemetry/api@^1.9.0",
-            "npm:ai@^5.0.115",
+            "npm:ai@^5.0.116",
             "npm:jsonrepair@^3.13.1",
             "npm:zod@^4.2.1"
           ]
@@ -5473,7 +5492,7 @@
             "npm:@jsr/std__path@^1.1.2",
             "npm:@sendgrid/mail@^8.1.6",
             "npm:ai-sdk-provider-claude-code@^2.2.4",
-            "npm:ai@^5.0.115",
+            "npm:ai@^5.0.116",
             "npm:evalite@^1.0.0-beta.15",
             "npm:parallel-web@0.2.4",
             "npm:zod@^4.2.1"
@@ -5510,7 +5529,7 @@
             "npm:@jsr/std__path@^1.1.2",
             "npm:@jsr/std__testing@^1.0.16",
             "npm:@socotra/modelcontextprotocol-sdk@^1.18.0",
-            "npm:ai@^5.0.115",
+            "npm:ai@^5.0.116",
             "npm:papaparse@^5.5.3",
             "npm:xstate@^5.25.0",
             "npm:zod@^4.2.1"
@@ -5564,7 +5583,7 @@
             "npm:@ai-sdk/provider@2",
             "npm:@jsr/std__assert@^1.0.14",
             "npm:@jsr/std__collections@^1.1.3",
-            "npm:ai@^5.0.115",
+            "npm:ai@^5.0.116",
             "npm:evalite@^1.0.0-beta.15",
             "npm:zod@^4.2.1"
           ]
@@ -5585,7 +5604,7 @@
             "npm:@jsr/std__testing@^1.0.16",
             "npm:@opentelemetry/api@^1.9.0",
             "npm:@socotra/modelcontextprotocol-sdk@^1.18.0",
-            "npm:ai@^5.0.115",
+            "npm:ai@^5.0.116",
             "npm:jose@6.1.3",
             "npm:zod@^4.2.1"
           ]
@@ -5597,7 +5616,7 @@
             "npm:@jsr/std__expect@^1.0.17",
             "npm:@jsr/std__path@^1.1.2",
             "npm:@socotra/modelcontextprotocol-sdk@^1.18.0",
-            "npm:ai@^5.0.115",
+            "npm:ai@^5.0.116",
             "npm:fast-glob@^3.3.3",
             "npm:minimatch@^10.1.1",
             "npm:papaparse@^5.5.3",
@@ -5661,7 +5680,7 @@
             "npm:@jsr/std__text@^1.0.16",
             "npm:@jsr/std__yaml@^1.0.10",
             "npm:@socotra/modelcontextprotocol-sdk@^1.18.0",
-            "npm:ai@^5.0.115",
+            "npm:ai@^5.0.116",
             "npm:evalite@^1.0.0-beta.15",
             "npm:zod@^4.2.1"
           ]
@@ -5706,7 +5725,7 @@
             "npm:@jsr/std__path@^1.1.2",
             "npm:@jsr/std__text@^1.0.16",
             "npm:@opentelemetry/api@^1.9.0",
-            "npm:ai@^5.0.115",
+            "npm:ai@^5.0.116",
             "npm:papaparse@^5.5.3",
             "npm:zod@^4.2.1"
           ]
@@ -5716,7 +5735,7 @@
         "packageJson": {
           "dependencies": [
             "npm:@jsr/std__assert@^1.0.14",
-            "npm:ai@^5.0.115",
+            "npm:ai@^5.0.116",
             "npm:dotenv@17.2.3",
             "npm:evalite@^1.0.0-beta.15",
             "npm:vitest@^4.0.16",
