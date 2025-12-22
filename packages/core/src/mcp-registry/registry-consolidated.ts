@@ -270,6 +270,20 @@ export const mcpServersRegistry: MCPServersRegistry = {
         },
       },
     },
+    atlassian: {
+      id: "atlassian",
+      name: "Atlassian (Jira & Confluence)",
+      domains: ["jira", "atlassian", "confluence"],
+      source: "static",
+      securityRating: "high",
+      configTemplate: {
+        transport: {
+          type: "stdio",
+          command: "npx",
+          args: ["-y", "mcp-remote", "https://mcp.atlassian.com/v1/mcp"],
+        },
+      },
+    },
     trello: {
       id: "trello",
       name: "Trello Board Management",
