@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/tempestteam/atlas/apps/cypher/repo"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func TestUserIDContext(t *testing.T) {
@@ -76,8 +76,11 @@ func TestKeyCacheFromContext_Missing(t *testing.T) {
 }
 
 func TestCredentialsDepsCtxMiddleware(t *testing.T) {
+	// Create a minimal pool config for testing (won't actually connect)
+	poolCfg, _ := pgxpool.ParseConfig("postgres://test:test@localhost:5432/test")
+	pool, _ := pgxpool.NewWithConfig(context.Background(), poolCfg)
 	deps := &CredentialsDeps{
-		Queries:     repo.New(nil), // non-nil Queries required
+		Pool:        pool, // non-nil Pool required
 		SendgridKey: "test-sendgrid",
 		ParallelKey: "test-parallel",
 	}

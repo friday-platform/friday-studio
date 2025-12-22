@@ -146,7 +146,7 @@ func (s *service) Init() error {
 	}
 
 	// Initialize key cache
-	s.cache = NewKeyCache(s.queries, s.kms, s.cfg.CacheSize)
+	s.cache = NewKeyCache(s.db, s.kms, s.cfg.CacheSize)
 	s.Logger.Info("Initialized key cache", "size", s.cfg.CacheSize)
 
 	// Initialize Kubernetes HTTP client for internal endpoints
@@ -172,7 +172,7 @@ func (s *service) Init() error {
 			}
 			s.tokenDeps = &TokenDeps{
 				JWTPrivateKey: privateKey,
-				Queries:       s.queries,
+				Pool:          s.db,
 			}
 			s.Logger.Info("Token endpoint enabled")
 		}
@@ -180,7 +180,7 @@ func (s *service) Init() error {
 
 	// Initialize credentials endpoint dependencies
 	s.credentialsDeps = &CredentialsDeps{
-		Queries:     s.queries,
+		Pool:        s.db,
 		SendgridKey: s.cfg.SendgridAPIKey,
 		ParallelKey: s.cfg.ParallelAPIKey,
 	}

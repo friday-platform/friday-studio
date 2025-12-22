@@ -5,7 +5,7 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/tempestteam/atlas/apps/cypher/repo"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type contextKey struct {
@@ -85,7 +85,7 @@ func K8sTokenInfoFromContext(ctx context.Context) (*K8sTokenInfo, error) {
 
 // CredentialsDeps contains dependencies for the credentials endpoint.
 type CredentialsDeps struct {
-	Queries     *repo.Queries
+	Pool        *pgxpool.Pool
 	SendgridKey string
 	ParallelKey string
 }
@@ -103,7 +103,7 @@ func CredentialsDepsCtxMiddleware(deps *CredentialsDeps) func(http.Handler) http
 // CredentialsDepsFromContext retrieves CredentialsDeps from the context.
 func CredentialsDepsFromContext(ctx context.Context) (*CredentialsDeps, error) {
 	deps, ok := ctx.Value(credentialsDepsContextKey).(*CredentialsDeps)
-	if !ok || deps == nil || deps.Queries == nil {
+	if !ok || deps == nil || deps.Pool == nil {
 		return nil, errors.New("could not get credentials deps from context")
 	}
 	return deps, nil

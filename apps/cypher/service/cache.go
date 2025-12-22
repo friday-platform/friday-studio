@@ -8,6 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/phuslu/lru"
 	"github.com/tink-crypto/tink-go/v2/aead"
 	"github.com/tink-crypto/tink-go/v2/keyset"
@@ -20,17 +21,18 @@ import (
 // KeyCache provides thread-safe access to user AEAD primitives with LRU caching.
 // Cache misses load from the database; if no key exists, a new one is created.
 type KeyCache struct {
-	queries *repo.Queries
-	kms     cypherKms.KeyEncryptionService
-	cache   *lru.TTLCache[string, tink.AEAD]
+	pool  *pgxpool.Pool
+	kms   cypherKms.KeyEncryptionService
+	cache *lru.TTLCache[string, tink.AEAD]
 }
 
-// NewKeyCache creates a new KeyCache with the given queries, KMS, and cache size.
-func NewKeyCache(queries *repo.Queries, kms cypherKms.KeyEncryptionService, cacheSize int) *KeyCache {
+// NewKeyCache creates a new KeyCache with the given pool, KMS, and cache size.
+// The pool is used for RLS-scoped transactions with user context.
+func NewKeyCache(pool *pgxpool.Pool, kms cypherKms.KeyEncryptionService, cacheSize int) *KeyCache {
 	return &KeyCache{
-		queries: queries,
-		kms:     kms,
-		cache:   lru.NewTTLCache[string, tink.AEAD](cacheSize),
+		pool:  pool,
+		kms:   kms,
+		cache: lru.NewTTLCache[string, tink.AEAD](cacheSize),
 	}
 }
 
@@ -86,8 +88,12 @@ func isUniqueViolation(err error) bool {
 
 // loadFromDB loads an encrypted keyset from the database and returns the AEAD primitive.
 // Returns nil, nil if no keyset exists for the user.
+// Uses RLS-scoped transaction with request.user_id session variable.
 func (c *KeyCache) loadFromDB(ctx context.Context, userID string) (tink.AEAD, error) {
-	row, err := c.queries.GetKeysetByUserID(ctx, userID)
+	// Execute query within RLS-scoped transaction
+	row, err := withUserContextRead(ctx, c.pool, userID, func(queries *repo.Queries) (*repo.CypherKeyset, error) {
+		return queries.GetKeysetByUserID(ctx, userID)
+	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
@@ -118,6 +124,7 @@ func (c *KeyCache) loadFromDB(ctx context.Context, userID string) (tink.AEAD, er
 }
 
 // createAndStore creates a new AES-256-GCM keyset, encrypts it with KMS, and stores it.
+// Uses RLS-scoped transaction with request.user_id session variable.
 func (c *KeyCache) createAndStore(ctx context.Context, userID string) (tink.AEAD, error) {
 	// Generate new AES-256-GCM keyset
 	handle, err := keyset.NewHandle(aead.AES256GCMKeyTemplate())
@@ -138,10 +145,13 @@ func (c *KeyCache) createAndStore(ctx context.Context, userID string) (tink.AEAD
 		return nil, fmt.Errorf("failed to encrypt keyset: %w", err)
 	}
 
-	// Store in database
-	_, err = c.queries.CreateKeyset(ctx, &repo.CreateKeysetParams{
-		UserID: userID,
-		KeySet: buf.Bytes(),
+	// Store in database within RLS-scoped transaction
+	err = withUserContext(ctx, c.pool, userID, func(queries *repo.Queries) error {
+		_, err := queries.CreateKeyset(ctx, &repo.CreateKeysetParams{
+			UserID: userID,
+			KeySet: buf.Bytes(),
+		})
+		return err
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to store keyset: %w", err)

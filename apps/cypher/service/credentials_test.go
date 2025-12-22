@@ -59,12 +59,12 @@ func TestHandleGetCredentials_NoDeps(t *testing.T) {
 	}
 }
 
-func TestHandleGetCredentials_NilQueries(t *testing.T) {
+func TestHandleGetCredentials_NilPool(t *testing.T) {
 	req := httptest.NewRequest("GET", "/api/credentials", nil)
-	// Add userID and deps with nil Queries - should fail safely (not panic)
+	// Add userID and deps with nil Pool - should fail safely (not panic)
 	ctx := WithUserID(req.Context(), "user-123")
 	ctx = context.WithValue(ctx, credentialsDepsContextKey, &CredentialsDeps{
-		Queries:     nil, // nil Queries should be caught by CredentialsDepsFromContext
+		Pool:        nil, // nil Pool should be caught by CredentialsDepsFromContext
 		SendgridKey: "sg-key",
 		ParallelKey: "parallel-key",
 	})

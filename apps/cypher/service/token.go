@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-chi/httplog/v2"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/tempestteam/atlas/apps/cypher/repo"
 )
 
@@ -23,7 +24,7 @@ const atlasUserSAPrefix = "system:serviceaccount:atlas:atlas-sa-"
 // TokenDeps contains dependencies for the token endpoint.
 type TokenDeps struct {
 	JWTPrivateKey *rsa.PrivateKey
-	Queries       *repo.Queries
+	Pool          *pgxpool.Pool
 }
 
 // handleGeneratePodToken handles POST /api/atlas-token.
@@ -68,8 +69,10 @@ func handleGeneratePodToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Lookup user in database
-	user, err := deps.Queries.GetUserByID(ctx, userID)
+	// Lookup user in database (RLS-scoped)
+	user, err := withUserContextRead(ctx, deps.Pool, userID, func(queries *repo.Queries) (*repo.GetUserByIDRow, error) {
+		return queries.GetUserByID(ctx, userID)
+	})
 	if err != nil {
 		RecordTokenIssued("failure")
 		if errors.Is(err, pgx.ErrNoRows) {

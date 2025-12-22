@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-chi/httplog/v2"
 	"github.com/jackc/pgx/v5"
+	"github.com/tempestteam/atlas/apps/cypher/repo"
 )
 
 // handleGetCredentials returns shared and per-user credentials.
@@ -48,7 +49,10 @@ func handleGetCredentials(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Add per-user LiteLLM key (may not exist yet - that's OK)
-	ciphertext, err := deps.Queries.GetVirtualKeyCiphertext(ctx, userID)
+	// Uses RLS-scoped transaction
+	ciphertext, err := withUserContextRead(ctx, deps.Pool, userID, func(queries *repo.Queries) ([]byte, error) {
+		return queries.GetVirtualKeyCiphertext(ctx, userID)
+	})
 	if err == nil {
 		aead, err := cache.GetAEAD(ctx, userID)
 		if err == nil {

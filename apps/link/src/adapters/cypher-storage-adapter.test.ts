@@ -18,14 +18,35 @@ function createMockCypher(overrides?: Partial<CypherClient>): CypherClient {
 
 /**
  * Creates a mock SQL template tag function for testing.
+ * Now includes a `begin` method to support RLS transaction wrapper.
+ *
+ * @param options.queryResult - Result to return from queries
+ * @param options.throwError - Error to throw from queries
+ * @param options.trackCalls - Array to capture SQL calls (query + values)
  */
-function createMockSql(options?: { queryResult?: unknown[]; throwError?: Error }): Sql {
-  const mockSql = ((_strings: TemplateStringsArray, ..._values: unknown[]) => {
+function createMockSql(options?: {
+  queryResult?: unknown[];
+  throwError?: Error;
+  trackCalls?: { query: string; values: unknown[] }[];
+}): Sql {
+  const handler = (strings: TemplateStringsArray, ...values: unknown[]) => {
+    options?.trackCalls?.push({ query: strings.join("?"), values });
     if (options?.throwError) {
       return Promise.reject(options.throwError);
     }
     return Promise.resolve(options?.queryResult ?? []);
-  }) as Sql;
+  };
+
+  const mockSql = handler as Sql;
+
+  // Add begin method for transaction support (used by withUserContext)
+  // @ts-expect-error - Mock doesn't need to match full postgres.js begin signature
+  // biome-ignore lint/suspicious/noExplicitAny: TransactionSql type is complex and not exported, using any for test mocks
+  // deno-lint-ignore no-explicit-any require-await
+  mockSql.begin = async <T>(callback: (tx: any) => Promise<T>): Promise<T> => {
+    return callback(handler as Sql);
+  };
+
   return mockSql;
 }
 
@@ -47,17 +68,16 @@ Deno.test("CypherStorageAdapter", async (t) => {
     });
 
     const sqlCalls: { query: string; values: unknown[] }[] = [];
-    const mockSql = ((strings: TemplateStringsArray, ...values: unknown[]) => {
-      sqlCalls.push({ query: strings.join("?"), values });
-      // Return the generated ID and timestamps from Postgres
-      return Promise.resolve([
+    const mockSql = createMockSql({
+      queryResult: [
         {
           id: "pg-generated-id",
           created_at: new Date("2024-01-01T00:00:00Z"),
           updated_at: new Date("2024-01-01T00:00:00Z"),
         },
-      ]);
-    }) as Sql;
+      ],
+      trackCalls: sqlCalls,
+    });
 
     const adapter = new CypherStorageAdapter(mockCypher, mockSql);
     const result = await adapter.save(testCredentialInput, "user-123");
@@ -72,8 +92,9 @@ Deno.test("CypherStorageAdapter", async (t) => {
     assertEquals(encryptCalls[0], ['{"key":"sk-test-key"}']);
 
     // Verify SQL was called with encrypted secret (no id passed - Postgres generates it)
-    assertEquals(sqlCalls.length, 1);
-    const values = sqlCalls[0]?.values ?? [];
+    // Note: 3 calls now - first is SET LOCAL ROLE, second is SET_CONFIG for RLS, third is the INSERT
+    assertEquals(sqlCalls.length, 3);
+    const values = sqlCalls[2]?.values ?? []; // Get values from the INSERT query (third call)
     assertEquals(values[0], "user-123"); // user_id
     assertEquals(values[1], "apikey"); // type
     assertEquals(values[2], "openai"); // provider
@@ -215,12 +236,10 @@ Deno.test("CypherStorageAdapter", async (t) => {
     });
 
     const sqlCalls: { query: string; values: unknown[] }[] = [];
-    const mockSql = ((strings: TemplateStringsArray, ...values: unknown[]) => {
-      sqlCalls.push({ query: strings.join("?"), values });
-      return Promise.resolve([
-        { created_at: new Date("2024-01-01"), updated_at: new Date("2024-01-02") },
-      ]);
-    }) as Sql;
+    const mockSql = createMockSql({
+      queryResult: [{ created_at: new Date("2024-01-01"), updated_at: new Date("2024-01-02") }],
+      trackCalls: sqlCalls,
+    });
 
     const adapter = new CypherStorageAdapter(mockCypher, mockSql);
     const metadata = await adapter.update("cred-123", testCredentialInput, "user-123");
@@ -234,10 +253,11 @@ Deno.test("CypherStorageAdapter", async (t) => {
     assertEquals(encryptCalls[0], ['{"key":"sk-test-key"}']);
 
     // Verify SQL UPDATE was called
-    assertEquals(sqlCalls.length, 1);
-    assertEquals(sqlCalls[0]?.query.includes("UPDATE"), true);
-    assertEquals(sqlCalls[0]?.query.includes("deleted_at IS NULL"), true);
-    const values = sqlCalls[0]?.values ?? [];
+    // Note: 3 calls now - first is SET LOCAL ROLE, second is SET_CONFIG for RLS, third is the UPDATE
+    assertEquals(sqlCalls.length, 3);
+    assertEquals(sqlCalls[2]?.query.includes("UPDATE"), true);
+    assertEquals(sqlCalls[2]?.query.includes("deleted_at IS NULL"), true);
+    const values = sqlCalls[2]?.values ?? [];
     assertEquals(values[0], "apikey"); // type
     assertEquals(values[1], "openai"); // provider
     assertEquals(values[2], "My API Key"); // label
@@ -284,19 +304,17 @@ Deno.test("CypherStorageAdapter", async (t) => {
 
   await t.step("delete: soft deletes by setting deleted_at", async () => {
     const sqlCalls: { query: string; values: unknown[] }[] = [];
-    const mockSql = ((strings: TemplateStringsArray, ...values: unknown[]) => {
-      sqlCalls.push({ query: strings.join("?"), values });
-      return Promise.resolve([]);
-    }) as Sql;
+    const mockSql = createMockSql({ trackCalls: sqlCalls });
 
     const adapter = new CypherStorageAdapter(createMockCypher(), mockSql);
     await adapter.delete("cred-123", "user-456");
 
-    assertEquals(sqlCalls.length, 1);
+    // Note: 3 calls now - first is SET LOCAL ROLE, second is SET_CONFIG for RLS, third is the UPDATE
+    assertEquals(sqlCalls.length, 3);
     // Verify it's an UPDATE (soft delete), not DELETE
-    assertEquals(sqlCalls[0]?.query.includes("UPDATE"), true);
-    assertEquals(sqlCalls[0]?.query.includes("deleted_at"), true);
-    const values = sqlCalls[0]?.values ?? [];
+    assertEquals(sqlCalls[2]?.query.includes("UPDATE"), true);
+    assertEquals(sqlCalls[2]?.query.includes("deleted_at"), true);
+    const values = sqlCalls[2]?.values ?? [];
     assertEquals(values[0], "cred-123"); // id
     assertEquals(values[1], "user-456"); // user_id
   });
