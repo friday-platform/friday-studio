@@ -110,6 +110,7 @@ async function processSlackSignal(
       payload._slack.user_id,
       workspaceId,
       payload.text,
+      "slack",
     );
 
     if (!chatResult.ok) {

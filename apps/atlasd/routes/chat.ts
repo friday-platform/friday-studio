@@ -60,7 +60,7 @@ const chatRoutes = daemonFactory
     const userId = c.req.header("X-User-Id") || "default-user";
     const workspaceId = c.req.header("X-Workspace-Id") || "atlas-conversation";
 
-    const result = await ChatStorage.createChat({ chatId, userId, workspaceId });
+    const result = await ChatStorage.createChat({ chatId, userId, workspaceId, source: "atlas" });
     if (!result.ok) {
       return c.json({ error: "Failed to create chat" }, 500);
     }

@@ -29,7 +29,7 @@ afterEach(async () => {
 });
 
 const createTestChat = (chatId: string) =>
-  ChatStorage.createChat({ chatId, userId: "test-user", workspaceId: "test-ws" });
+  ChatStorage.createChat({ chatId, userId: "test-user", workspaceId: "test-ws", source: "atlas" });
 
 const createMessage = (text: string): AtlasUIMessage => ({
   id: crypto.randomUUID(),
@@ -247,6 +247,7 @@ describe("ChatStorage", () => {
         id: chatId,
         userId: "test-user",
         workspaceId: "test-ws",
+        source: "atlas",
         createdAt: "not-a-datetime",
         updatedAt: "2025-11-02T12:00:00Z",
         messages: [],
@@ -259,6 +260,7 @@ describe("ChatStorage", () => {
         id: chatId,
         userId: "",
         workspaceId: "test-ws",
+        source: "atlas",
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         messages: [],
@@ -271,6 +273,19 @@ describe("ChatStorage", () => {
         id: chatId,
         userId: "test-user",
         workspaceId: "",
+        source: "atlas",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        messages: [],
+      });
+    });
+
+    it("rejects missing source field", async () => {
+      const chatId = crypto.randomUUID();
+      await testValidation("Should reject missing source", {
+        id: chatId,
+        userId: "test-user",
+        workspaceId: "test-ws",
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         messages: [],

@@ -42,17 +42,19 @@ export async function generateSlackChatId(
  * @param userId - User identifier
  * @param workspaceId - Workspace handling this chat
  * @param userMessage - User's message text
+ * @param source - Platform source (slack or discord)
  */
 export async function initializePlatformChat(
   chatId: string,
   userId: string,
   workspaceId: string,
   userMessage: string,
+  source: "slack" | "discord",
 ): Promise<Result<void, string>> {
   const { ChatStorage } = await import("@atlas/core/src/chat/storage.ts");
 
   // Create or get existing chat (idempotent)
-  const createResult = await ChatStorage.createChat({ chatId, userId, workspaceId });
+  const createResult = await ChatStorage.createChat({ chatId, userId, workspaceId, source });
 
   if (!createResult.ok) {
     return createResult;

@@ -14,6 +14,7 @@ export interface ChatListItem {
   id: string;
   userId: string;
   workspaceId: string;
+  source: "atlas" | "slack" | "discord";
   title?: string;
   createdAt: string;
   updatedAt: string;
@@ -70,7 +71,8 @@ class ChatContext {
         return;
       }
 
-      this.recentChats = reset ? res.data.chats : [...this.recentChats, ...res.data.chats];
+      const atlasChats = res.data.chats.filter((chat) => chat.source === "atlas");
+      this.recentChats = reset ? atlasChats : [...this.recentChats, ...atlasChats];
       this.cursor = res.data.nextCursor;
       this.hasMoreChats = res.data.hasMore;
     } finally {
