@@ -1,3 +1,4 @@
+import { writeFile } from "node:fs/promises";
 import { ensureDir } from "@std/fs";
 import { dirname, join } from "@std/path";
 import { slugify } from "@std/text/unstable-slugify";
@@ -50,7 +51,7 @@ export async function saveSnapshot(options: SnapshotOptions): Promise<string> {
   }
 
   // Write the snapshot
-  await Deno.writeTextFile(filepath, JSON.stringify(data, null, 2));
+  await writeFile(filepath, JSON.stringify(data, null, 2), "utf-8");
 
   return filepath;
 }

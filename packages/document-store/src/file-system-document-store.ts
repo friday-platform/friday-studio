@@ -2,7 +2,7 @@
  * Filesystem implementation of DocumentStore
  */
 
-import { readdir, readFile } from "node:fs/promises";
+import { readdir, readFile, writeFile } from "node:fs/promises";
 import { isErrnoException } from "@atlas/utils";
 import { getAtlasHome } from "@atlas/utils/paths.server";
 import { ensureDir } from "@std/fs";
@@ -122,7 +122,7 @@ export class FileSystemDocumentStore extends DocumentStore {
     const path = this.buildPath(scope, type, id);
     await ensureDir(join(path, ".."));
 
-    await Deno.writeTextFile(path, JSON.stringify(doc, null, 2));
+    await writeFile(path, JSON.stringify(doc, null, 2), "utf-8");
 
     this.logger.debug("Document written to filesystem", {
       type,
@@ -136,7 +136,7 @@ export class FileSystemDocumentStore extends DocumentStore {
   async saveState(scope: DocumentScope, key: string, state: unknown): Promise<void> {
     const path = this.buildStatePath(scope, key);
     await ensureDir(join(path, ".."));
-    await Deno.writeTextFile(path, JSON.stringify(state, null, 2));
+    await writeFile(path, JSON.stringify(state, null, 2), "utf-8");
   }
 
   async loadState(scope: DocumentScope, key: string): Promise<unknown | null> {

@@ -3,6 +3,7 @@
  * Tests JWT verification in dev and production modes
  */
 
+import { writeFile } from "node:fs/promises";
 import process from "node:process";
 import { assertEquals, assertExists, assertStrictEquals } from "@std/assert";
 import * as jose from "jose";
@@ -66,7 +67,7 @@ async function setupProdAuthApp(
   }
 
   const keyFile = await Deno.makeTempFile();
-  await Deno.writeTextFile(keyFile, publicKeyPem);
+  await writeFile(keyFile, publicKeyPem, "utf-8");
 
   const originalKeyFile = process.env.LINK_JWT_PUBLIC_KEY_FILE;
   const originalKvPath = process.env.LINK_KV_PATH;
@@ -278,7 +279,7 @@ Deno.test(
       const publicKeyPem = `-----BEGIN PUBLIC KEY-----\n${base64Lines.join("\n")}\n-----END PUBLIC KEY-----\n`;
 
       const keyFile = await Deno.makeTempFile();
-      await Deno.writeTextFile(keyFile, publicKeyPem);
+      await writeFile(keyFile, publicKeyPem, "utf-8");
 
       const originalKeyFile = process.env.LINK_JWT_PUBLIC_KEY_FILE;
       const originalKvPath = process.env.LINK_KV_PATH;

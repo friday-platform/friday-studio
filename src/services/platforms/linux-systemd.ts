@@ -1,4 +1,4 @@
-import { mkdir } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import process from "node:process";
 import { exists } from "@std/fs";
 import { join } from "@std/path";
@@ -32,7 +32,7 @@ export class LinuxSystemdService implements PlatformServiceManager {
 
     // Create systemd service file
     const serviceContent = this.generateServiceFile(config);
-    await Deno.writeTextFile(this.serviceFile, serviceContent);
+    await writeFile(this.serviceFile, serviceContent, "utf-8");
 
     // Reload systemd daemon to recognize new service
     const reloadCmd = new Deno.Command("systemctl", {

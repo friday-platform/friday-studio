@@ -5,7 +5,7 @@
  * Replaces template-based generation with dynamic TypeScript code execution.
  */
 
-import { mkdir } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { createAgent } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
 import { type WorkspacePlan, WorkspacePlanSchema } from "@atlas/core/artifacts";
@@ -268,7 +268,7 @@ export const fsmWorkspaceCreatorAgent = createAgent<FSMCreatorInput, FSMCreatorR
       const workspaceYml = stringifyYaml(workspaceConfig);
       const ymlPath = `${workspacePath}/workspace.yml`;
 
-      await Deno.writeTextFile(ymlPath, workspaceYml);
+      await writeFile(ymlPath, workspaceYml, "utf-8");
 
       // Register workspace with daemon
       stream?.emit({

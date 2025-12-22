@@ -2,6 +2,7 @@
  * Test runner for FSM transition validation
  */
 
+import { writeFile } from "node:fs/promises";
 import { logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
 import type { DocumentScope, DocumentStore } from "../../../document-store/node.ts";
@@ -72,7 +73,7 @@ async function runCustomValidation(
 ): Promise<{ passed: boolean; error?: string }> {
   const tempFile = await Deno.makeTempFile({ suffix: ".ts" });
   try {
-    await Deno.writeTextFile(tempFile, code);
+    await writeFile(tempFile, code, "utf-8");
     const module = await import(`file://${tempFile}`);
     const validate = module.validate ?? module.default;
 

@@ -1,4 +1,4 @@
-import { mkdir, readdir, readFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import type { AgentResult, ArtifactRef, ToolCall, ToolResult } from "@atlas/agent-sdk";
 import { createLogger } from "@atlas/logger";
 import { fail, isErrnoException, type Result, stringifyError, success } from "@atlas/utils";
@@ -507,7 +507,7 @@ export async function createSessionRecord(
       events: [],
     };
 
-    await Deno.writeTextFile(sessionFile, JSON.stringify(session, null, 2));
+    await writeFile(sessionFile, JSON.stringify(session, null, 2), "utf-8");
     logger.debug("Created new session", { sessionId: input.sessionId });
 
     return success(session);
@@ -541,7 +541,7 @@ export async function appendSessionEvent(
     session.events.push(event);
     session.updatedAt = timestamp;
 
-    await Deno.writeTextFile(sessionFile, JSON.stringify(session, null, 2));
+    await writeFile(sessionFile, JSON.stringify(session, null, 2), "utf-8");
 
     return success(event);
   } catch (error) {
@@ -576,7 +576,7 @@ export async function markSessionComplete(
     if (details?.failureReason !== undefined) session.failureReason = details.failureReason;
     if (details?.summary !== undefined) session.summary = details.summary;
 
-    await Deno.writeTextFile(sessionFile, JSON.stringify(session, null, 2));
+    await writeFile(sessionFile, JSON.stringify(session, null, 2), "utf-8");
 
     const { events: _, ...metadata } = session;
     return success(metadata);

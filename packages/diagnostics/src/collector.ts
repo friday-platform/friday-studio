@@ -1,4 +1,4 @@
-import { readdir, readFile } from "node:fs/promises";
+import { readdir, readFile, writeFile } from "node:fs/promises";
 import { env } from "node:process";
 import { getAtlasClient } from "@atlas/client";
 import { createLogger } from "@atlas/logger";
@@ -204,11 +204,11 @@ export class DiagnosticsCollector {
                     // Save runtime config as YAML
                     const yamlContent = stringify(workspaceDetails.config);
                     const configPath = join(workspaceDir, "runtime-config.yml");
-                    await Deno.writeTextFile(configPath, yamlContent);
+                    await writeFile(configPath, yamlContent, "utf-8");
 
                     // Also save a note explaining this is runtime config
                     const notePath = join(workspaceDir, "README.txt");
-                    await Deno.writeTextFile(
+                    await writeFile(
                       notePath,
                       `This workspace configuration was fetched from the runtime.\n` +
                         `Workspace ID: ${workspace.id}\n` +
@@ -216,6 +216,7 @@ export class DiagnosticsCollector {
                         `Path: ${workspace.path}\n` +
                         `Type: ${isSystemWorkspace ? "System Workspace" : "User Workspace"}\n` +
                         `Status: ${workspaceDetails.status || "unknown"}\n`,
+                      "utf-8",
                     );
                   }
                 } catch {
@@ -225,22 +226,24 @@ export class DiagnosticsCollector {
               } else if (isSystemWorkspace && !hasYamlFile) {
                 // For system workspaces without YAML files, just note their presence
                 const notePath = join(workspaceDir, "README.txt");
-                await Deno.writeTextFile(
+                await writeFile(
                   notePath,
                   `System workspace (configuration embedded in Atlas binary)\n` +
                     `Name: ${workspace.name}\n` +
                     `Path: ${workspace.path}\n` +
                     `ID: ${workspace.id || "not set"}\n`,
+                  "utf-8",
                 );
               } else if (!hasYamlFile && !workspace.id) {
                 // No YAML file and no ID to fetch runtime config
                 const notePath = join(workspaceDir, "NO_CONFIG.txt");
-                await Deno.writeTextFile(
+                await writeFile(
                   notePath,
                   `This workspace has no workspace.yml file and no workspace ID for fetching runtime config.\n` +
                     `Name: ${workspace.name}\n` +
                     `Path: ${workspace.path}\n` +
                     `Type: ${isSystemWorkspace ? "System Workspace" : "User Workspace"}\n`,
+                  "utf-8",
                 );
               }
 
@@ -281,14 +284,15 @@ export class DiagnosticsCollector {
             // Save as YAML
             const yamlContent = stringify(config);
             const yamlPath = join(workspaceDir, "system-config.yml");
-            await Deno.writeTextFile(yamlPath, yamlContent);
+            await writeFile(yamlPath, yamlContent, "utf-8");
 
             // Save metadata
             const metaPath = join(workspaceDir, "README.txt");
-            await Deno.writeTextFile(
+            await writeFile(
               metaPath,
               `System workspace: ${id}\n` +
                 `This is a built-in system workspace embedded in the Atlas binary.\n`,
+              "utf-8",
             );
           } catch (error) {
             log.warn(`Failed to save system workspace ${id}:`, { error });
@@ -316,10 +320,11 @@ export class DiagnosticsCollector {
 
           // Add a note about system workspaces
           const notePath = join(systemDir, "README.txt");
-          await Deno.writeTextFile(
+          await writeFile(
             notePath,
             `System workspaces are built-in workspaces that come with Atlas.\n` +
               `These YAML files define the system workspace configurations.\n`,
+            "utf-8",
           );
         }
       }
@@ -347,13 +352,13 @@ export class DiagnosticsCollector {
 
       // Save as JSON
       const jsonPath = join(outputDir, "open-files.json");
-      await Deno.writeTextFile(jsonPath, JSON.stringify(report, null, 2));
+      await writeFile(jsonPath, JSON.stringify(report, null, 2), "utf-8");
     } catch (error) {
       // Never let diagnostics crash the main process - fail silently
 
       // Save error info for debugging
       const errorPath = join(outputDir, "collection-error.txt");
-      await Deno.writeTextFile(errorPath, stringifyError(error));
+      await writeFile(errorPath, stringifyError(error), "utf-8");
     }
   }
 
@@ -877,7 +882,7 @@ export class DiagnosticsCollector {
       denoVersion: Deno.version.deno,
       systemInfo: systemInfo,
     };
-    await Deno.writeTextFile(metadataPath, JSON.stringify(metadata, null, 2));
+    await writeFile(metadataPath, JSON.stringify(metadata, null, 2), "utf-8");
 
     // Convert directory to tar stream entries
     const tarEntries = await this.createTarStreamEntries(this.tempDir);

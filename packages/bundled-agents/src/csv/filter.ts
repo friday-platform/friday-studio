@@ -1,4 +1,4 @@
-import { mkdir, stat } from "node:fs/promises";
+import { mkdir, stat, writeFile } from "node:fs/promises";
 import { type ArtifactRef, createAgent } from "@atlas/agent-sdk";
 import { ArtifactStorage, parseCsv } from "@atlas/core/artifacts/server";
 import { registry } from "@atlas/llm";
@@ -295,7 +295,7 @@ Call buildSqlWhere tool with your WHERE clause (WITHOUT the 'WHERE' keyword).`,
       const jsonFileName = `csv-filter-${timestamp.replace(/[:.]/g, "-")}.json`;
       const jsonFilePath = join(workspaceFilesDir, jsonFileName);
 
-      await Deno.writeTextFile(jsonFilePath, JSON.stringify(artifactData, null, 2));
+      await writeFile(jsonFilePath, JSON.stringify(artifactData, null, 2), "utf-8");
 
       // Create file artifact
       const createResult = await ArtifactStorage.create({

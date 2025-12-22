@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import process from "node:process";
 import { client, parseResult } from "@atlas/client/v2";
 import { decodeJwtPayload, fetchCredentials, setToEnv } from "@atlas/core/credentials";
@@ -555,7 +555,7 @@ async function startWindowsDetached(argv: StartArgs): Promise<void> {
   const vbsContent = `Set WshShell = CreateObject("WScript.Shell")
 WshShell.Run "${cmdLine}", 0, False`;
 
-  await Deno.writeTextFile(vbsFile, vbsContent);
+  await writeFile(vbsFile, vbsContent, "utf-8");
 
   // Give VBScript a moment to launch the process
   await new Promise((resolve) => setTimeout(resolve, 1000));

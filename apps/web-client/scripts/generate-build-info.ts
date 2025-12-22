@@ -4,7 +4,7 @@
 // It should be run before building the application in CI/CD
 
 import { dirname, fromFileUrl, join } from "jsr:@std/path@^1.0.0";
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import process, { env } from "node:process";
 
 const __dirname = dirname(fromFileUrl(import.meta.url));
@@ -75,7 +75,7 @@ export const BUILD_INFO = ${JSON.stringify(buildInfo, null, 2)} as const;
 const outputPath = join(__dirname, "..", "src", "lib", "build-info.ts");
 
 try {
-  await Deno.writeTextFile(outputPath, content);
+  await writeFile(outputPath, content, "utf-8");
   console.log("Build info generated successfully:", buildInfo);
 } catch (error) {
   console.error("Failed to generate build info:", error);

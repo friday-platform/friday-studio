@@ -1,4 +1,4 @@
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import process from "node:process";
 import { logger } from "@atlas/logger";
 import { z } from "zod";
@@ -36,7 +36,7 @@ export class WindowsService implements PlatformServiceManager {
     // Persist configuration for later start/status
     try {
       await mkdir(this.paths.configDir, { recursive: true });
-      await Deno.writeTextFile(this.configPath, JSON.stringify({ port: config.port }, null, 2));
+      await writeFile(this.configPath, JSON.stringify({ port: config.port }, null, 2), "utf-8");
     } catch (_err) {
       // Best effort; start() will fallback to default port
     }
@@ -57,7 +57,7 @@ exit
     // Write to startup folder
     try {
       await mkdir(startupFolder, { recursive: true });
-      await Deno.writeTextFile(startupBatch, batchContent);
+      await writeFile(startupBatch, batchContent, "utf-8");
       logger.info("Atlas startup configured successfully", { startupBatch });
     } catch (error) {
       logger.warn("Could not create startup entry", { error });

@@ -1,4 +1,4 @@
-import { mkdir, readdir, readFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import type { AtlasUIMessage } from "@atlas/agent-sdk";
 import { validateAtlasUIMessages } from "@atlas/agent-sdk";
 import { createLogger } from "@atlas/logger";
@@ -95,7 +95,7 @@ async function createChat(input: {
       messages: [],
     };
 
-    await Deno.writeTextFile(chatFile, JSON.stringify(chat, null, 2));
+    await writeFile(chatFile, JSON.stringify(chat, null, 2), "utf-8");
     logger.debug("Created new chat", { chatId: input.chatId });
 
     return success(chat);
@@ -147,7 +147,7 @@ async function appendMessage(
     chat.messages.push(message);
     chat.updatedAt = new Date().toISOString();
 
-    await Deno.writeTextFile(chatFile, JSON.stringify(chat, null, 2));
+    await writeFile(chatFile, JSON.stringify(chat, null, 2), "utf-8");
 
     return success(undefined);
   } catch (error) {
@@ -256,7 +256,7 @@ async function updateChatTitle(chatId: string, title: string): Promise<Result<Ch
     chat.title = title;
     chat.updatedAt = new Date().toISOString();
 
-    await Deno.writeTextFile(chatFile, JSON.stringify(chat, null, 2));
+    await writeFile(chatFile, JSON.stringify(chat, null, 2), "utf-8");
 
     return success(chat);
   } catch (error) {

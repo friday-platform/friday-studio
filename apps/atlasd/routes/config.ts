@@ -3,7 +3,7 @@
  * Handles environment variable CRUD operations
  */
 
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
 import { getAtlasHome } from "@atlas/utils/paths.server";
@@ -109,7 +109,7 @@ configRoutes.put(
 
       // Write the file using @std/dotenv stringify
       const content = stringify(envVars);
-      await Deno.writeTextFile(envPath, content);
+      await writeFile(envPath, content, "utf-8");
 
       logger.info("Environment variables updated successfully", {
         envPath,

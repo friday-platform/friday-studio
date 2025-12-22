@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import process from "node:process";
 import { client, parseResult } from "@atlas/client/v2";
 import { logger } from "@atlas/logger";
@@ -639,7 +639,7 @@ async function checkBinaryWritePermission(): Promise<{
   // Try to write to a test file next to the actual binary
   const testPath = `${actualBinaryPath}.update-test`;
   try {
-    await Deno.writeTextFile(testPath, "test");
+    await writeFile(testPath, "test", "utf-8");
     await Deno.remove(testPath);
     return { canWrite: true, binaryPath, actualBinaryPath, isSymlink };
   } catch {
@@ -738,7 +738,7 @@ async function downloadAndVerifyChecksum(binaryUrl: string, binaryPath: string):
     return true;
   }
 
-  await Deno.writeTextFile(checksumPath, checksumContent);
+  await writeFile(checksumPath, checksumContent, "utf-8");
 
   // Parse expected checksum (format: "hash  filename")
   const expectedHash = checksumContent.trim().split(/\s+/)[0];
@@ -1197,7 +1197,7 @@ async function windowsSelfReplace(tempBinaryPath: string, targetBinaryPath: stri
     `(goto) 2>nul & del "%~f0"`,
   ].join("\r\n");
 
-  await Deno.writeTextFile(updaterBat, batContent);
+  await writeFile(updaterBat, batContent, "utf-8");
 
   // Give the batch script a moment to start before we exit
   // This prevents a race condition where the process might exit before
@@ -1247,7 +1247,7 @@ async function saveChannelPreference(channel: string): Promise<void> {
 
   // Write config
   await ensureDir(join(process.env.HOME || "", ".atlas"));
-  await Deno.writeTextFile(configPath, JSON.stringify(config, null, 2));
+  await writeFile(configPath, JSON.stringify(config, null, 2), "utf-8");
 }
 
 async function checkAnyAtlasProcesses(): Promise<boolean> {

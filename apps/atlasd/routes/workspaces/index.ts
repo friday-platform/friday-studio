@@ -1,4 +1,4 @@
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { WorkspaceConfigSchema } from "@atlas/config";
 import { logger } from "@atlas/logger";
 import { FilesystemWorkspaceCreationAdapter } from "@atlas/storage";
@@ -336,7 +336,7 @@ const workspacesRoutes = daemonFactory
             const backupPath = join(workspacePath, `workspace.yml.backup-${timestamp}`);
             try {
               const existingContent = await readFile(workspaceYmlPath, "utf-8");
-              await Deno.writeTextFile(backupPath, existingContent);
+              await writeFile(backupPath, existingContent, "utf-8");
             } catch (backupError) {
               return c.json(
                 {
@@ -350,7 +350,7 @@ const workspacesRoutes = daemonFactory
             }
           }
 
-          await Deno.writeTextFile(workspaceYmlPath, yamlConfig);
+          await writeFile(workspaceYmlPath, yamlConfig, "utf-8");
 
           const runtime = ctx.getWorkspaceRuntime(workspace.id);
           if (runtime) {

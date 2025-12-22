@@ -9,7 +9,7 @@ Replaces the 500+ line `AtlasLogger` with a ~150 line implementation:
 - Winston-style interface: `logger.info(message, context)` and `logger.child()`
 - Writes structured JSON to disk files + human-readable output to console
 - Color-coded console output with automatic TTY detection
-- Uses `Deno.writeTextFile()` - no file handle management
+- Uses `writeFile` from `node:fs/promises` - no file handle management
 - No resource cleanup needed
 - Console output captured by Deno's OpenTelemetry
 

@@ -3,7 +3,7 @@
  * Checks for newer versions from the Atlas update server with daily caching
  */
 
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { env } from "node:process";
 import { getAtlasBaseUrl } from "@atlas/core";
 import { logger } from "@atlas/logger";
@@ -179,7 +179,7 @@ async function saveCache(result: VersionCheckResult): Promise<void> {
     const cache: VersionCache = { timestamp: Date.now(), result };
 
     const cacheFile = getCacheFilePath();
-    await Deno.writeTextFile(cacheFile, JSON.stringify(cache));
+    await writeFile(cacheFile, JSON.stringify(cache), "utf-8");
   } catch {
     // Ignore cache write errors - don't let them affect CLI
   }

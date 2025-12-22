@@ -8,6 +8,7 @@
  * 3. Mixed env types - Link ref + literal + auto
  */
 
+import { writeFile } from "node:fs/promises";
 import process from "node:process";
 import { assertEquals, assertExists, assertMatch, assertRejects } from "@std/assert";
 import { afterEach, beforeEach, describe, it } from "@std/testing/bdd";
@@ -259,7 +260,7 @@ describe("MCPManager - JWT Authentication", () => {
     const keyPair = await jose.generateKeyPair("RS256", { extractable: true });
     const privateKeyPem = await jose.exportPKCS8(keyPair.privateKey);
     const tempKeyFile = await Deno.makeTempFile({ suffix: ".pem" });
-    await Deno.writeTextFile(tempKeyFile, privateKeyPem);
+    await writeFile(tempKeyFile, privateKeyPem, "utf-8");
 
     // Setup: Mock environment for prod mode
     const originalDevMode = process.env.LINK_DEV_MODE;

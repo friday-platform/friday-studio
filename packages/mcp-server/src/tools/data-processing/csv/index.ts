@@ -7,7 +7,7 @@
  *
  */
 
-import { mkdir } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import type { Artifact } from "@atlas/core/artifacts";
 import { FileDataSchema } from "@atlas/core/artifacts";
 import { ArtifactStorage, CsvParseResultSchema, parseCsv } from "@atlas/core/artifacts/server";
@@ -196,7 +196,7 @@ export function registerCsvTool(server: McpServer, context: ToolContext): void {
 
           const outputFileName = `${crypto.randomUUID()}.csv`;
           const outputPath = `${workspaceFilesDir}/${outputFileName}`;
-          await Deno.writeTextFile(outputPath, csvContent);
+          await writeFile(outputPath, csvContent, "utf-8");
 
           // Set restrictive permissions (owner read/write only)
           await Deno.chmod(outputPath, 0o600);

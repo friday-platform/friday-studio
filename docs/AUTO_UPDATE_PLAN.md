@@ -499,7 +499,7 @@ async function downloadAndVerifyChecksum(
   }
 
   const checksumContent = await checksumResponse.text();
-  await Deno.writeTextFile(checksumPath, checksumContent);
+  await writeFile(checksumPath, checksumContent, "utf-8");
 
   // Parse expected checksum (format: "hash  filename")
   const expectedHash = checksumContent.trim().split(/\s+/)[0];
@@ -542,7 +542,7 @@ async function checkBinaryWritePermission(): Promise<{
   // Try to write to a test file next to the binary
   const testPath = `${binaryPath}.update-test`;
   try {
-    await Deno.writeTextFile(testPath, "test");
+    await writeFile(testPath, "test", "utf-8");
     await Deno.remove(testPath);
     return { canWrite: true, needsSudo: false, binaryPath };
   } catch {

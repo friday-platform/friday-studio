@@ -1,3 +1,4 @@
+import { writeFile } from "node:fs/promises";
 import process from "node:process";
 import { AtlasDaemon, getAtlasDaemonUrl, OPENAPI_DOCUMENTATION } from "@atlas/atlasd";
 import { generateSpecs } from "hono-openapi";
@@ -24,7 +25,7 @@ const spec = await generateSpecs(app, {
 const ast = await openapiTS(spec);
 
 // Convert AST to TypeScript string
-await Deno.writeTextFile("./src/atlasd-types.gen.d.ts", astToString(ast));
+await writeFile("./src/atlasd-types.gen.d.ts", astToString(ast), "utf-8");
 
 console.log("✅ Generated OpenAPI types successfully");
 

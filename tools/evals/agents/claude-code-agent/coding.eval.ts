@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { claudeCodeAgent } from "@atlas/bundled-agents";
 import { client, parseResult } from "@atlas/client/v2";
 import { assert, assertEquals } from "@std/assert";
@@ -31,7 +31,7 @@ Deno.test({
       const testFileName = "test-input.txt";
       const testFilePath = path.join(tempWorkspace, testFileName);
       const testContent = "Hello from the test file!\nThis is line 2.\nThis is line 3.";
-      await Deno.writeTextFile(testFilePath, testContent);
+      await writeFile(testFilePath, testContent, "utf-8");
 
       const packageJsonPath = path.join(tempWorkspace, "package.json");
       const packageJsonContent = JSON.stringify(
@@ -43,7 +43,7 @@ Deno.test({
         null,
         2,
       );
-      await Deno.writeTextFile(packageJsonPath, packageJsonContent);
+      await writeFile(packageJsonPath, packageJsonContent, "utf-8");
 
       const adapter = new AgentContextAdapter({}, {});
       adapter.enableTelemetry();

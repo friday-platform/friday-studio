@@ -1,3 +1,4 @@
+import { writeFile } from "node:fs/promises";
 import process from "node:process";
 import type { AtlasUIMessage } from "@atlas/agent-sdk";
 import { validateAtlasUIMessages } from "@atlas/agent-sdk";
@@ -39,7 +40,7 @@ const createMessage = (text: string): AtlasUIMessage => ({
 
 const corruptChatFile = async (chatId: string, data: object) => {
   const chatFile = join(testDir, "chats", `${chatId}.json`);
-  await Deno.writeTextFile(chatFile, JSON.stringify(data));
+  await writeFile(chatFile, JSON.stringify(data), "utf-8");
 };
 
 describe("ChatStorage", () => {

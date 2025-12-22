@@ -3,6 +3,7 @@
  * Creates ~1k records with realistic data for testing the CSV Filter Sampler agent
  */
 
+import { writeFile } from "node:fs/promises";
 import { faker } from "@faker-js/faker";
 import Papa from "papaparse";
 
@@ -217,7 +218,7 @@ export async function generateFakeCSV(
 
   // Convert to CSV
   const csv = Papa.unparse(records);
-  await Deno.writeTextFile(outputPath, csv);
+  await writeFile(outputPath, csv, "utf-8");
 
   console.log(`Generated ${totalRecords} fake contact records at ${outputPath}`);
   console.log(`- USA contacts: ${usaCount} (${(usaPercentage * 100).toFixed(1)}%)`);

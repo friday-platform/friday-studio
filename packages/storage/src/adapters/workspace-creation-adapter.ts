@@ -3,7 +3,7 @@
  * Abstracts workspace directory creation and file writing from filesystem
  */
 
-import { mkdir } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { isErrnoException } from "@atlas/utils";
 import { join } from "@std/path";
 
@@ -81,10 +81,10 @@ export class FilesystemWorkspaceCreationAdapter implements WorkspaceCreationAdap
     // Write workspace.yml or eph_workspace.yml
     const configFileName = options?.ephemeral ? "eph_workspace.yml" : "workspace.yml";
     const configPath = join(workspacePath, configFileName);
-    await Deno.writeTextFile(configPath, config);
+    await writeFile(configPath, config, "utf-8");
 
     // Create .env file with placeholder
     const envPath = join(workspacePath, ".env");
-    await Deno.writeTextFile(envPath, "# Add your environment variables here\n");
+    await writeFile(envPath, "# Add your environment variables here\n", "utf-8");
   }
 }

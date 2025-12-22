@@ -1,4 +1,4 @@
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import process from "node:process";
 import { isErrnoException } from "@atlas/utils";
 import { exists } from "@std/fs";
@@ -114,7 +114,7 @@ export class MacOSLaunchdService implements PlatformServiceManager {
 
     // Write plist file
     try {
-      await Deno.writeTextFile(this.plistPath, plistXml);
+      await writeFile(this.plistPath, plistXml, "utf-8");
     } catch (error) {
       throw new Error(
         `Failed to write service configuration: ${

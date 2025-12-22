@@ -438,7 +438,7 @@ for (const f of parsed) {
 
   const outputFileName = `${crypto.randomUUID()}.csv`;
   const outputPath = `${workspaceFilesDir}/${outputFileName}`;
-  await Deno.writeTextFile(outputPath, csvContent);
+  await writeFile(outputPath, csvContent, "utf-8");
 
   // Create artifact pointing to the file (storage detects MIME type and size)
   const createResult = await ArtifactStorage.create({
