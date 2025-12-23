@@ -42,7 +42,10 @@
     "packages/slack": { "entry": ["src/**/*.test.ts"], "project": ["src/**/*.{ts,tsx,js,jsx}!"] },
     "packages/storage": { "project": ["src/**/*.{ts,tsx,js,jsx}!"] },
     "packages/system": { "entry": ["**/*.test.ts"], "project": ["**/*.{ts,tsx,js,jsx}!"] },
-    "packages/utils": { "project": ["**/*.{ts,tsx,js,jsx}!"] },
+    "packages/utils": {
+      "entry": ["mod.ts!", "src/paths.ts!", "src/telemetry.ts!", "src/temp.server.ts!"],
+      "project": ["**/*.{ts,tsx,js,jsx}!"]
+    },
     "packages/workspace": { "project": ["src/**/*.{ts,tsx,js,jsx}!"] },
     "apps/link": {
       "entry": ["src/index.ts!", "src/**/*.test.ts", "tests/**/*.test.ts"],

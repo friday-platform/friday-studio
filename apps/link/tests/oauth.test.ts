@@ -4,6 +4,7 @@
  */
 
 import process from "node:process";
+import { makeTempDir } from "@atlas/utils/temp.server";
 import { assert, assertEquals, assertExists, assertMatch, assertObjectMatch } from "@std/assert";
 import { z } from "zod";
 import { DenoKVStorageAdapter } from "../src/adapters/deno-kv-adapter.ts";
@@ -65,7 +66,7 @@ Deno.test(
     sanitizeResources: false,
   },
   async (t) => {
-    const tempDir = await Deno.makeTempDir();
+    const tempDir = makeTempDir();
     const storage = new DenoKVStorageAdapter(`${tempDir}/kv.db`);
     const oauthService = new OAuthService(registry, storage);
     const app = await createApp(storage, oauthService);
@@ -492,7 +493,7 @@ Deno.test(
 );
 
 Deno.test({ name: "Static OAuth Integration", sanitizeResources: false }, async (t) => {
-  const tempDir = await Deno.makeTempDir();
+  const tempDir = makeTempDir();
   const storage = new DenoKVStorageAdapter(`${tempDir}/kv.db`);
   const oauthService = new OAuthService(registry, storage);
   const app = await createApp(storage, oauthService);

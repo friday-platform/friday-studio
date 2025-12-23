@@ -5,6 +5,7 @@
 
 import { writeFile } from "node:fs/promises";
 import process from "node:process";
+import { makeTempDir } from "@atlas/utils/temp.server";
 import { assertEquals, assertExists, assertStrictEquals } from "@std/assert";
 import * as jose from "jose";
 import { z } from "zod";
@@ -239,7 +240,7 @@ Deno.test(
   { name: "tenancy middleware", sanitizeResources: false, sanitizeOps: false },
   async (t) => {
     // Use temp file-based KV for testing (":memory:" creates separate DBs per open call)
-    const tempDir = await Deno.makeTempDir();
+    const tempDir = makeTempDir();
     const storage = new DenoKVStorageAdapter(`${tempDir}/tenancy-test.db`);
     const oauthService = new OAuthService(registry, storage);
 

@@ -1,4 +1,5 @@
 import process from "node:process";
+import { makeTempDir } from "@atlas/utils/temp.server";
 import { assert, assertEquals } from "@std/assert";
 import { afterEach, beforeEach, describe, it } from "@std/testing/bdd";
 import { ReasoningResultStatus } from "../constants/supervisor-status.ts";
@@ -11,8 +12,8 @@ import {
 let originalAtlasHome: string | undefined;
 let testDir: string;
 
-beforeEach(async () => {
-  testDir = await Deno.makeTempDir({ prefix: "atlas_session_test_" });
+beforeEach(() => {
+  testDir = makeTempDir({ prefix: "atlas_session_test_" });
   originalAtlasHome = process.env.ATLAS_HOME;
   process.env.ATLAS_HOME = testDir;
 });

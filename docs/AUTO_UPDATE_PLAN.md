@@ -466,7 +466,7 @@ async function downloadBinary(options: DownloadOptions): Promise<void> {
 }
 
 async function extractBinary(archivePath: string, platform: string): Promise<string> {
-  const tempDir = await Deno.makeTempDir();
+  const tempDir = await makeTempDir();
 
   if (platform === "windows") {
     // Extract from zip

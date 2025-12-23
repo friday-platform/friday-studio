@@ -4,6 +4,7 @@
   "exports": {
     ".": "./mod.ts",
     "./paths.server": "./src/paths.ts",
-    "./telemetry.server": "./src/telemetry.ts"
+    "./telemetry.server": "./src/telemetry.ts",
+    "./temp.server": "./src/temp.server.ts"
   }
 }

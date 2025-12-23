@@ -136,7 +136,7 @@ export class DiagnosticsCollector {
   private tempDir: string;
 
   constructor() {
-    this.tempDir = join(Deno.makeTempDirSync(), "atlas-diagnostics");
+    this.tempDir = join(makeTempDir(), "atlas-diagnostics");
   }
 
   async collectAndArchive(): Promise<string> {
@@ -153,7 +153,7 @@ export class DiagnosticsCollector {
     await this.collectWorkspaces();
 
     // Create gzip archive
-    const gzipPath = join(Deno.makeTempDirSync(), "diagnostics.tar.gz");
+    const gzipPath = join(makeTempDir(), "diagnostics.tar.gz");
     await this.createGzipArchive(gzipPath);
 
     return gzipPath;

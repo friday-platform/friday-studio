@@ -9,7 +9,9 @@
 
 import { ensureDir } from "jsr:@std/fs";
 import { join } from "jsr:@std/path";
+import { mkdtempSync } from "node:fs";
 import { readdir } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import process from "node:process";
 
 const TAURI_API_VERSION = "2.8.0";
@@ -65,7 +67,7 @@ async function downloadAndExtractPackage(
   }
 
   // Create a temporary directory for extraction
-  const tmpDir = await Deno.makeTempDir({ prefix: `${packageName.replace(/[@/]/g, "-")}-` });
+  const tmpDir = mkdtempSync(join(tmpdir(), `${packageName.replace(/[@/]/g, "-")}-`));
   const tarballPath = join(tmpDir, "package.tgz");
 
   try {

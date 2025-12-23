@@ -1,4 +1,5 @@
 import { readFile, writeFile } from "node:fs/promises";
+import { makeTempDir } from "@atlas/utils/temp.server";
 import { claudeCodeAgent } from "@atlas/bundled-agents";
 import { client, parseResult } from "@atlas/client/v2";
 import { assert, assertEquals } from "@std/assert";
@@ -24,7 +25,7 @@ Deno.test({
   sanitizeResources: false,
   async fn(t) {
     await loadCredentials();
-    const tempWorkspace = await Deno.makeTempDir({ prefix: "claude-code-eval-" });
+    const tempWorkspace = makeTempDir({ prefix: "claude-code-eval-" });
 
     try {
       // Setup test files in workspace

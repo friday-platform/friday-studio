@@ -3,6 +3,7 @@ import { env } from "node:process";
 import { getAtlasClient } from "@atlas/client";
 import { createLogger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
+import { makeTempDir } from "@atlas/utils/temp.server";
 import { getAtlasHome } from "@atlas/utils/paths.server";
 import type { WorkspaceEntry } from "@atlas/workspace";
 import { ensureDir, exists, walk } from "@std/fs";
@@ -41,7 +42,7 @@ export class DiagnosticsCollector {
   constructor(options: DiagnosticsCollectorOptions = {}) {
     this.options = options;
     // Create temp directory directly without subdirectory
-    this.tempDir = Deno.makeTempDirSync({ prefix: "atlas-diagnostics-" });
+    this.tempDir = makeTempDir({ prefix: "atlas-diagnostics-" });
   }
 
   async collectAndArchive(): Promise<string> {
@@ -78,7 +79,7 @@ export class DiagnosticsCollector {
 
     // Create tar.gz archive
     log.info("Creating compressed archive...");
-    const gzipPath = join(Deno.makeTempDirSync(), "diagnostics.tar.gz");
+    const gzipPath = join(makeTempDir(), "diagnostics.tar.gz");
     await this.createTarGzArchive(gzipPath);
 
     return gzipPath;

@@ -5,6 +5,7 @@ import { decodeJwtPayload, fetchCredentials, setToEnv } from "@atlas/core/creden
 import { logger } from "@atlas/logger";
 import { captureException, initSentry } from "@atlas/sentry";
 import { getAtlasHome } from "@atlas/utils/paths.server";
+import { makeTempDir } from "@atlas/utils/temp.server";
 import { load, parse } from "@std/dotenv";
 import { exists } from "@std/fs";
 import { dirname, join } from "@std/path";
@@ -545,7 +546,7 @@ async function startWindowsDetached(argv: StartArgs): Promise<void> {
   const args = buildCommandArgs(buildDaemonArgs(argv));
 
   // Create a VBScript to launch atlas in background (more reliable than PowerShell)
-  const tempDir = await Deno.makeTempDir();
+  const tempDir = await makeTempDir();
   const vbsFile = `${tempDir}\\atlas-daemon.vbs`;
 
   // Build command line

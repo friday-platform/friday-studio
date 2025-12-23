@@ -3,6 +3,7 @@ import process from "node:process";
 import { client, parseResult } from "@atlas/client/v2";
 import { logger } from "@atlas/logger";
 import { isErrnoException, stringifyError } from "@atlas/utils";
+import { makeTempDir } from "@atlas/utils/temp.server";
 import { ensureDir, exists } from "@std/fs";
 import { join } from "@std/path";
 import z from "zod";
@@ -765,7 +766,7 @@ async function downloadAndVerifyChecksum(binaryUrl: string, binaryPath: string):
 }
 
 async function extractBinary(archivePath: string, platform: string): Promise<string> {
-  const tempDir = await Deno.makeTempDir();
+  const tempDir = await makeTempDir();
 
   if (platform === "windows") {
     // Extract from zip using PowerShell on Windows
@@ -1136,7 +1137,7 @@ async function replaceBinary(
 // copies the new binary over the running one, starts the service, and cleans up.
 async function windowsSelfReplace(tempBinaryPath: string, targetBinaryPath: string): Promise<void> {
   // Create a temporary directory to hold scripts
-  const tempDir = await Deno.makeTempDir();
+  const tempDir = await makeTempDir();
   const updaterBat = join(tempDir, "atlas-self-update.bat");
 
   // Escape paths for cmd

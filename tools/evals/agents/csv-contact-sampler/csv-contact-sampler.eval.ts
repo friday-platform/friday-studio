@@ -9,6 +9,7 @@
  */
 
 import { readFile } from "node:fs/promises";
+import { makeTempDir } from "@atlas/utils/temp.server";
 import { csvFilterSamplerAgent } from "@atlas/bundled-agents";
 import { ArtifactStorage, parseCsv } from "@atlas/core/artifacts/server";
 import { assert, assertEquals } from "@std/assert";
@@ -66,7 +67,7 @@ Deno.test("CSV Filter Sampler Agent", async (t) => {
   const adapter = new AgentContextAdapter();
 
   // Generate fake CSV in temp directory
-  const tempDir = await Deno.makeTempDir();
+  const tempDir = makeTempDir();
   const csvPath = join(tempDir, "fake-contacts.csv");
   await generateFakeCSV(csvPath, 1000, 0.35, 0.25);
 

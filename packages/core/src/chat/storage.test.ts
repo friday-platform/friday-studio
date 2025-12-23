@@ -1,5 +1,6 @@
 import { writeFile } from "node:fs/promises";
 import process from "node:process";
+import { makeTempDir } from "@atlas/utils/temp.server";
 import type { AtlasUIMessage } from "@atlas/agent-sdk";
 import { validateAtlasUIMessages } from "@atlas/agent-sdk";
 import { assert, assertEquals, assertExists } from "@std/assert";
@@ -10,8 +11,8 @@ import { ChatStorage } from "./storage.ts";
 let originalAtlasHome: string | undefined;
 let testDir: string;
 
-beforeEach(async () => {
-  testDir = await Deno.makeTempDir({ prefix: "atlas_chat_test_" });
+beforeEach(() => {
+  testDir = makeTempDir({ prefix: "atlas_chat_test_" });
   originalAtlasHome = process.env.ATLAS_HOME;
   process.env.ATLAS_HOME = testDir;
 });
