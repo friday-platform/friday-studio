@@ -11,7 +11,7 @@
     "@atlas/logger": "workspace:*",
     "@atlas/utils": "workspace:*",
     "@std/assert": "npm:@jsr/std__assert@^1.0.14",
-    "ai": "^5.0.116",
+    "ai": "^6.0.1",
     "dotenv": "17.2.3",
     "evalite": "^1.0.0-beta.15",
     "vitest": "^4.0.16",
