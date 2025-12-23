@@ -38,6 +38,7 @@ RUN deno install
 # Compile the Atlas CLI to a single binary for optimal performance
 # OTEL_DENO=true must be set at compile time - the config is baked into the binary
 RUN OTEL_DENO=true deno compile \
+    --include=src \
     --include=packages \
     --allow-all \
     --no-check \

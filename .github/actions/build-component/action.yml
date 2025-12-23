@@ -55,7 +55,7 @@ runs:
           binary)
             entry_point="src/cli.tsx"
             output_name="atlas"
-            compile_args="--include=src --include=examples --include=packages/workspace-builder/mcp-tools/codegen.worker.ts"
+            compile_args="--include=src --include=packages/workspace-builder/mcp-tools/codegen.worker.ts"
             ;;
           web-app)
             # Web app uses different build process
