@@ -222,7 +222,7 @@ export class FSMEngine {
 
   /**
    * Compile function code string to executable function
-   * Uses dynamic import with data URL for code execution
+   * Uses dynamic import with Blob URL for code execution (supports UTF-8)
    */
   private async compileFunctionCode<
     T = (context: Context, event: Signal, ...args: unknown[]) => unknown,
@@ -230,17 +230,21 @@ export class FSMEngine {
     // Wrap code in module format if it's not already
     const moduleCode = code.includes("export default") ? code : `export default ${code}`;
 
-    // Create data URL for dynamic import
-    const dataUrl = `data:text/javascript;base64,${btoa(moduleCode)}`;
+    // Create Blob URL for dynamic import (handles UTF-8 correctly, unlike btoa)
+    const blob = new Blob([moduleCode], { type: "text/javascript" });
+    const blobUrl = URL.createObjectURL(blob);
 
     try {
-      const module = await import(dataUrl);
+      const module = await import(blobUrl);
       if (!module.default || typeof module.default !== "function") {
         throw new Error(`Function "${name}" must export a default function`);
       }
       return module.default as T;
     } catch (error) {
       throw new Error(`Failed to compile function "${name}": ${stringifyError(error)}`);
+    } finally {
+      // Clean up Blob URL to prevent memory leaks
+      URL.revokeObjectURL(blobUrl);
     }
   }
 
