@@ -45,6 +45,13 @@ updates:
       atlas-workspace:
         patterns:
           - "@atlas/*"
+    # Block major version upgrades for AI SDK - requires coordinated migration
+    # See: https://ai-sdk.dev/docs/migration-guides/migration-guide-6-0
+    ignore:
+      - dependency-name: "ai"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@ai-sdk/*"
+        update-types: ["version-update:semver-major"]
 
   # Keep Docker dependencies up to date
   - package-ecosystem: "docker"
@@ -352,3 +359,9 @@ updates:
       - "npm"
       - "link"
     rebase-strategy: "auto"
+    # Block major version upgrades for AI SDK - requires coordinated migration
+    ignore:
+      - dependency-name: "ai"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@ai-sdk/*"
+        update-types: ["version-update:semver-major"]

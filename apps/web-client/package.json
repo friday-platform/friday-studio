@@ -22,7 +22,7 @@
   "dependencies": {
     "@atlas/core": "workspace:*",
     "@atlas/oapi-client": "workspace:*",
-    "@ai-sdk/svelte": "^4.0.1",
+    "@ai-sdk/svelte": "^3.0.116",
     "@sentry/sveltekit": "^10.32.1",
     "@melt-ui/svelte": "^0.86.6",
     "@lezer/common": "^1.5.0",
@@ -33,7 +33,7 @@
     "@tauri-apps/api": "2.9.1",
     "@tauri-apps/plugin-fs": "~2.4.4",
     "@tauri-apps/plugin-opener": "^2.5.2",
-    "ai": "^6.0.1",
+    "ai": "^5.0.116",
     "svelte": "^5.46.0",
     "zod": "^4.2.1"
   },
