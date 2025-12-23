@@ -3,6 +3,7 @@ import type { AtlasUIMessage } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
 import { getAtlasDaemonUrl } from "@atlas/oapi-client";
 import { DefaultChatTransport } from "ai";
+import { nanoid } from "nanoid";
 import { getContext, setContext } from "svelte";
 import { SvelteMap } from "svelte/reactivity";
 import { goto } from "$app/navigation";
@@ -32,7 +33,7 @@ class ChatContext {
   chats = new SvelteMap<string, Chat<AtlasUIMessage>>();
 
   // New chat state (for / route)
-  newChatId = $state<string>(crypto.randomUUID());
+  newChatId = $state<string>(nanoid());
   newChatMessages = $state<AtlasUIMessage[]>([]);
 
   newChat = $derived(
@@ -87,7 +88,7 @@ class ChatContext {
 
   /** Reset to a fresh new chat and navigate to / */
   resetNewChat(): void {
-    this.newChatId = crypto.randomUUID();
+    this.newChatId = nanoid();
     this.newChatMessages = [];
     goto(resolve("/", {}));
   }

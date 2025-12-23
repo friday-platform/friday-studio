@@ -2,6 +2,7 @@ import process from "node:process";
 import type { AtlasUIMessage, AtlasUIMessageChunk } from "@atlas/agent-sdk";
 import { getAtlasDaemonUrl } from "@atlas/oapi-client";
 import { readUIMessageStream, type UIMessageChunk } from "ai";
+import { nanoid } from "nanoid";
 import type { YargsInstance } from "../utils/yargs.ts";
 
 export const command = "prompt <message>";
@@ -107,8 +108,8 @@ export const handler = async (argv: PromptArgs): Promise<void> => {
   streamError = undefined;
   atlasDataEvents = [];
 
-  const chatId = argv.chat ?? crypto.randomUUID();
-  const messageId = crypto.randomUUID().slice(0, 8);
+  const chatId = argv.chat ?? nanoid();
+  const messageId = nanoid(8);
   const daemonUrl = getAtlasDaemonUrl();
 
   const body = {

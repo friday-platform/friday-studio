@@ -1,6 +1,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import process from "node:process";
+import { client, parseResult } from "@atlas/client/v2";
 import { getAtlasHome } from "@atlas/utils/paths.server";
 import { exists } from "@std/fs";
 import type { YargsInstance } from "../utils/yargs.ts";
@@ -13,13 +14,19 @@ interface LogsArgs {
   since?: string;
   level?: string;
   human?: boolean;
+  chat?: string;
+  session?: string;
+  workspace?: string;
 }
 
 export function builder(y: YargsInstance) {
   return y
     .option("since", { type: "string", describe: "Time filter (30s, 5m, 1h)" })
     .option("level", { type: "string", describe: "Filter by level (debug,info,warn,error)" })
-    .option("human", { type: "boolean", describe: "Human-readable output", default: false });
+    .option("human", { type: "boolean", describe: "Human-readable output", default: false })
+    .option("chat", { type: "string", describe: "Filter by chat ID" })
+    .option("session", { type: "string", describe: "Filter by session ID" })
+    .option("workspace", { type: "string", describe: "Filter by workspace ID" });
 }
 
 /** Log entry from ~/.atlas/logs/*.log files (JSON lines) */
@@ -112,8 +119,67 @@ function formatHuman(entry: LogEntry): string {
   return out;
 }
 
+async function getChatWorkspaceId(chatId: string): Promise<string> {
+  const result = await parseResult(client.chat[":chatId"].$get({ param: { chatId } }));
+  if (!result.ok) {
+    console.error(`Failed to get chat: ${chatId}`);
+    process.exit(1);
+  }
+  return result.data.chat.workspaceId;
+}
+
+/**
+ * Read logs for a specific workspace.
+ * Only reads workspace-specific log file, not global logs.
+ */
+async function readWorkspaceLogs(workspaceId: string): Promise<LogEntry[]> {
+  const logsDir = join(getAtlasHome(), "logs");
+  const wsLogPath = join(logsDir, "workspaces", `${workspaceId}.log`);
+
+  if (!(await exists(wsLogPath))) {
+    return [];
+  }
+
+  return readLogFile(wsLogPath);
+}
+
 export const handler = async (argv: LogsArgs): Promise<void> => {
-  let entries = await readAllLogs();
+  let entries: LogEntry[] = [];
+  let workspaceId: string | undefined;
+
+  // Resolve correlation IDs to workspace
+  if (argv.chat) {
+    workspaceId = await getChatWorkspaceId(argv.chat);
+  } else if (argv.session) {
+    const result = await parseResult(client.sessions[":id"].$get({ param: { id: argv.session } }));
+    if (!result.ok) {
+      console.error(`Failed to get session: ${argv.session}`);
+      process.exit(1);
+    }
+    workspaceId = result.data.workspaceId;
+  } else if (argv.workspace) {
+    workspaceId = argv.workspace;
+  }
+
+  // Read logs (workspace-specific or all)
+  if (workspaceId) {
+    entries = await readWorkspaceLogs(workspaceId);
+  } else {
+    entries = await readAllLogs();
+  }
+
+  // Filter by correlation IDs if specified
+  if (argv.chat) {
+    // chatId and streamId are synonymous - check both fields
+    entries = entries.filter((e) => {
+      return e.context.chatId === argv.chat || e.context.streamId === argv.chat;
+    });
+  } else if (argv.session) {
+    entries = entries.filter((e) => e.context.sessionId === argv.session);
+  } else if (workspaceId) {
+    // When filtering by workspace only, include all logs from that workspace
+    entries = entries.filter((e) => e.context.workspaceId === workspaceId);
+  }
 
   // Time filter
   if (argv.since) {

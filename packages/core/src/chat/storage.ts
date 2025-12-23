@@ -14,7 +14,7 @@ const logger = createLogger({ component: "chat-storage" });
  * Messages validated separately via validateAtlasUIMessages (allows partial reads).
  */
 const StoredChatSchema = z.object({
-  id: z.uuid(),
+  id: z.string().min(1),
   userId: z.string().min(1),
   workspaceId: z.string().min(1),
   source: z.enum(["atlas", "slack", "discord"]),

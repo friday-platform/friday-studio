@@ -8,7 +8,7 @@ import { stream } from "hono/streaming";
 import { z } from "zod";
 import { daemonFactory } from "../src/factory.ts";
 
-const chatRequestSchema = z.object({ id: z.uuid(), message: z.unknown() });
+const chatRequestSchema = z.object({ id: z.string().min(1), message: z.unknown() });
 const appendMessageSchema = z.object({ message: z.unknown() });
 const updateTitleSchema = z.object({ title: z.string() });
 const listChatsQuerySchema = z.object({

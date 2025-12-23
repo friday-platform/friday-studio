@@ -5319,6 +5319,7 @@
         "npm:js-levenshtein@^1.1.6",
         "npm:knip@5.76.3",
         "npm:lint-staged@^16.2.7",
+        "npm:nanoid@^5.1.6",
         "npm:react@^19.2.3",
         "npm:yargs@18",
         "npm:zod@^4.2.1"

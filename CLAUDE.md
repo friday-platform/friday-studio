@@ -151,6 +151,8 @@ logs or restart daemons.
 - `deno task atlas logs --since 30s` — recent logs (JSON lines)
 - `deno task atlas logs --level error,warn` — filter by level
 - `deno task atlas logs --human` — human-readable (debugging only)
+- `deno task atlas chat <id>` — view chat transcript (JSON lines)
+- `deno task atlas chat <id> --human` — human-readable transcript
 
 ### Output
 
@@ -197,3 +199,24 @@ deno task atlas daemon stop
 - Filter with `--level error,warn` to reduce noise
 - JSON is default; `--human` only for debugging
 - Exit code non-zero means stream error
+
+### Viewing Chat History
+
+After a prompt session, you can review the full transcript:
+
+```bash
+# Get chatId from cli-summary
+deno task atlas prompt "test the API"
+# output includes: {"type":"cli-summary","chatId":"abc123",...}
+
+# View full conversation
+deno task atlas chat abc123
+
+# Or human-readable
+deno task atlas chat abc123 --human
+```
+
+Use this to debug:
+- What tools were called and their outputs
+- How the agent reasoned about the task
+- What the full conversation looked like
