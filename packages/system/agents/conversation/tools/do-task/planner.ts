@@ -1,16 +1,11 @@
-import { registry } from "@atlas/llm";
+import { registry, smallLLM } from "@atlas/llm";
 import { logger } from "@atlas/logger";
 import { generateText } from "ai";
 import {
   generateMCPServers,
   type MCPServerResult,
-} from "../../../../system/agents/fsm-workspace-creator/enrichers/mcp-servers.ts";
+} from "../../../fsm-workspace-creator/enrichers/mcp-servers.ts";
 import type { CatalogAgent } from "./catalog.ts";
-
-// Legacy type (kept for backward compatibility)
-export interface TaskPlan {
-  steps: Array<{ agentId: string; description: string }>;
-}
 
 // Enhanced types for FSM-based execution
 export interface EnhancedTaskStep {
@@ -18,6 +13,7 @@ export interface EnhancedTaskStep {
   description: string;
   executionType: "agent" | "llm";
   needs: string[]; // e.g., ["slack", "github"]
+  friendlyDescription?: string;
 }
 
 export interface EnhancedTaskPlan {
@@ -26,131 +22,41 @@ export interface EnhancedTaskPlan {
   mcpServers: MCPServerResult[];
 }
 
-export type PlanResult = { success: true; plan: TaskPlan } | { success: false; reason: string };
-
 export type EnhancedPlanResult =
   | { success: true; plan: EnhancedTaskPlan }
   | { success: false; reason: string };
 
 /**
- * Use LLM to plan which agents to use and in what order.
- * This is the core of the MVP - testing if focused planning improves agent selection.
+ * Generate friendly descriptions for all steps in a single batch.
+ * Falls back to raw descriptions on error.
  */
-export async function planTask(
+async function generateFriendlyDescriptions(
+  steps: Array<{ agentId?: string; description: string }>,
   intent: string,
-  agents: CatalogAgent[],
   abortSignal?: AbortSignal,
-): Promise<PlanResult> {
-  const model = registry.languageModel("anthropic:claude-sonnet-4-5");
-
-  const prompt = `You are a task planner. Select agents and order steps to accomplish the user's intent.
-
-Available agents:
-${agents.map((a) => `- ${a.id}: ${a.description}`).join("\n")}
-
-User intent: "${intent}"
-
-Think through:
-1. What data or actions are needed to accomplish this?
-2. Which agents provide those capabilities?
-3. What order makes sense (dependencies first)?
-4. Are the step descriptions specific enough (include key parameters)?
-
-Output JSON with this exact structure:
-{
-  "steps": [
-    { "agentId": "agent-id", "description": "specific task for this agent with details" }
-  ]
-}
-
-Rules:
-- Pick agents that can actually accomplish the task
-- Order steps logically (if step B needs data from step A, A must come first)
-- Make descriptions specific and actionable (include parameters like dates, filters, etc)
-- If NO agents can help, output: { "error": "explanation of what capabilities are missing" }
-- Output ONLY valid JSON, no markdown or explanation
-
-Examples:
-User: "what's on my calendar today?"
-Output: { "steps": [{ "agentId": "google-calendar", "description": "Fetch today's calendar events" }] }
-
-User: "check my calendar and email me the results"
-Output: { "steps": [
-  { "agentId": "google-calendar", "description": "Fetch today's calendar events" },
-  { "agentId": "gmail-send", "description": "Send email with calendar events to user" }
-] }`;
+): Promise<string[]> {
+  if (steps.length === 0) return [];
 
   try {
-    const result = await generateText({
-      model,
-      messages: [{ role: "user", content: prompt }],
-      temperature: 0.3, // Lower = more consistent choices
+    const stepList = steps
+      .map((s, i) => `${i + 1}. [${s.agentId || "llm"}] ${s.description}`)
+      .join("\n");
+
+    const result = await smallLLM({
+      system:
+        "Generate brief, friendly progress messages (≤10 words each) for what an AI assistant is doing. One per line, matching input order. Be specific but concise. No numbering, no punctuation at end.",
+      prompt: `User intent: ${intent}\n\nSteps:\n${stepList}`,
+      maxOutputTokens: 50 * steps.length,
       abortSignal,
     });
 
-    logger.debug("Planning LLM response", { text: result.text });
-
-    // Parse LLM response
-    let parsed: unknown;
-    try {
-      // Remove markdown code blocks if present
-      const cleanedText = result.text
-        .replace(/```json\n?/g, "")
-        .replace(/```\n?/g, "")
-        .trim();
-      parsed = JSON.parse(cleanedText);
-    } catch (parseError) {
-      logger.error("Failed to parse planning response", { error: parseError, text: result.text });
-      return { success: false, reason: `Planning failed: Could not parse LLM response as JSON` };
-    }
-
-    // Check if LLM returned error
-    if (
-      typeof parsed === "object" &&
-      parsed !== null &&
-      "error" in parsed &&
-      typeof parsed.error === "string"
-    ) {
-      return { success: false, reason: parsed.error };
-    }
-
-    // Validate structure
-    if (
-      typeof parsed !== "object" ||
-      parsed === null ||
-      !("steps" in parsed) ||
-      !Array.isArray(parsed.steps)
-    ) {
-      return { success: false, reason: "Planning failed: Invalid response structure" };
-    }
-
-    if (parsed.steps.length === 0) {
-      return { success: false, reason: "Planning failed: No steps generated" };
-    }
-
-    // Validate each step with type guards
-    const validSteps: Array<{ agentId: string; description: string }> = [];
-    for (const step of parsed.steps) {
-      if (
-        typeof step !== "object" ||
-        step === null ||
-        !("agentId" in step) ||
-        !("description" in step) ||
-        typeof step.agentId !== "string" ||
-        typeof step.description !== "string"
-      ) {
-        return { success: false, reason: "Planning failed: Invalid step structure" };
-      }
-      validSteps.push({ agentId: step.agentId, description: step.description });
-    }
-
-    return { success: true, plan: { steps: validSteps } };
-  } catch (error) {
-    logger.error("Planning failed with exception", { error });
-    return {
-      success: false,
-      reason: `Planning failed: ${error instanceof Error ? error.message : String(error)}`,
-    };
+    const lines = result
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean);
+    return steps.map((step, i) => lines[i] || step.description);
+  } catch {
+    return steps.map((s) => s.description);
   }
 }
 
@@ -373,7 +279,22 @@ Output: {
       mcpServerCount: mcpServers.length,
     });
 
-    return { success: true, plan: { steps: validSteps, needs: Array.from(allNeeds), mcpServers } };
+    // Generate friendly descriptions in batch
+    const friendlyDescriptions = await generateFriendlyDescriptions(
+      validSteps,
+      intent,
+      abortSignal,
+    );
+
+    const stepsWithFriendly = validSteps.map((step, i) => ({
+      ...step,
+      friendlyDescription: friendlyDescriptions[i],
+    }));
+
+    return {
+      success: true,
+      plan: { steps: stepsWithFriendly, needs: Array.from(allNeeds), mcpServers },
+    };
   } catch (error) {
     logger.error("Enhanced planning failed with exception", { error });
     return {

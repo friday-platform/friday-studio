@@ -68,7 +68,12 @@ export const AtlasDataEventSchemas = {
   }),
   error: z.object({ error: z.string(), errorCause: z.unknown() }),
   "user-message": z.object({ content: z.string() }),
-  "tool-progress": z.object({ toolName: z.string(), content: z.string() }),
+  "tool-progress": z.object({
+    toolName: z.string(),
+    content: z.string(),
+    stepIndex: z.number().optional(),
+    totalSteps: z.number().optional(),
+  }),
   "outline-update": z.object({
     id: z.string(),
     title: z.string(),

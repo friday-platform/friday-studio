@@ -30,6 +30,7 @@ import {
 } from "ai";
 import { estimateTokens, processMessageHistory } from "./message-windowing.ts";
 import SYSTEM_PROMPT from "./prompt.txt" with { type: "text" };
+import { createDoTaskTool } from "./tools/do-task/index.ts";
 import { conversationTools } from "./tools/mod.ts";
 import { fetchScratchpadContext } from "./tools/scratchpad-tools.ts";
 
@@ -464,15 +465,32 @@ export const conversationAgent = createAgent({
           "atlas_artifact_get_by_chat",
           // System
           "system_version",
-          // Task execution - NEW
-          "do_task",
         ]);
 
         const filteredTools = Object.fromEntries(
           Object.entries(tools).filter(([name]) => ALLOWED_TOOLS.has(name)),
         );
 
-        const allTools = { ...filteredTools, ...conversationTools, ...systemAgents };
+        // Create do_task tool with writer closure for progress
+        const doTaskTool = createDoTaskTool(
+          writer,
+          {
+            sessionId: session.sessionId || `session-${Date.now()}`,
+            workspaceId: session.workspaceId || "atlas-conversation",
+            streamId: session.streamId,
+            userId: session.userId,
+            daemonUrl: process.env.ATLAS_DAEMON_URL,
+          },
+          logger,
+          abortSignal,
+        );
+
+        const allTools = {
+          ...filteredTools,
+          ...conversationTools,
+          ...systemAgents,
+          do_task: doTaskTool,
+        };
 
         // Load scratchpad context for automatic injection
         const scratchpadContext = await fetchScratchpadContext(
@@ -519,7 +537,7 @@ export const conversationAgent = createAgent({
           removedMessages: messages.length - prunedModelMessages.length,
         });
 
-        let result: Awaited<ReturnType<typeof streamText>>;
+        let result: Awaited<ReturnType<typeof streamText<typeof allTools>>>;
         let errorEmitted = false;
 
         // Set up unhandled rejection interceptor to catch API errors that escape the SDK

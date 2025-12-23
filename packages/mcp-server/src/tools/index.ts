@@ -39,8 +39,6 @@ import { registerSignalsListTool } from "./signals/list.ts";
 import { registerSignalTriggerTool } from "./signals/trigger.ts";
 // Import system tools
 import { registerBashTool } from "./system/bash.ts";
-// Import task tools
-import { registerDoTaskTool } from "./task/do-task.ts";
 import type { ToolContext } from "./types.ts";
 // Import workspace tools
 import { registerConvertTaskToWorkspaceTool } from "./workspace/convert-task-to-workspace.ts";
@@ -102,9 +100,6 @@ export function registerTools(server: McpServer, context: ToolContext): void {
 
   // System tools
   registerBashTool(server, context);
-
-  // Task execution tools
-  registerDoTaskTool(server, context);
 
   registerVersionTool(server);
 

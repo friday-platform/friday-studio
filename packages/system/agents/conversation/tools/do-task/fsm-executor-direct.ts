@@ -8,8 +8,9 @@ import { InMemoryDocumentStore } from "@atlas/document-store";
 import type { Context, FSMEvent, SignalWithContext } from "@atlas/fsm-engine";
 import { AtlasLLMProviderAdapter, createEngine, type MCPToolProvider } from "@atlas/fsm-engine";
 import { logger } from "@atlas/logger";
-import type { FSMDefinition } from "../../../../workspace-builder/types.ts";
+import type { FSMDefinition } from "../../../../../workspace-builder/types.ts";
 import type { EnhancedTaskStep } from "./planner.ts";
+import type { TaskProgressEvent } from "./types.ts";
 
 interface ExecutionContext {
   sessionId: string;
@@ -19,10 +20,14 @@ interface ExecutionContext {
   daemonUrl?: string;
   mcpServerPool?: GlobalMCPServerPool;
   mcpToolProvider?: MCPToolProvider;
+  onProgress?: (event: TaskProgressEvent) => void;
+  abortSignal?: AbortSignal;
 }
 
-interface ExecutionResult {
+export interface ExecutionResult {
   success: boolean;
+  failedStep?: number;
+  error?: string;
   results: Array<{
     step: number;
     agent: string;
@@ -51,6 +56,11 @@ export async function executeTaskViaFSMDirect(
     hasMCPPool: !!context.mcpServerPool,
   });
 
+  // Check abort signal before starting
+  if (context.abortSignal?.aborted) {
+    return { success: false, error: "Task cancelled", results: [] };
+  }
+
   let orchestrator: AgentOrchestrator | undefined;
 
   try {
@@ -58,7 +68,20 @@ export async function executeTaskViaFSMDirect(
     const docStore = new InMemoryDocumentStore();
     const scope = { workspaceId: context.workspaceId };
 
-    // 2. Create shared AgentOrchestrator with isolated MCP pool
+    // 2. Build stepByAgentId lookup
+    const stepByAgentId = new Map<string, { index: number; step: EnhancedTaskStep }>();
+    for (let i = 0; i < steps.length; i++) {
+      const step = steps[i];
+      if (step) {
+        const agentId = step.agentId || `llm-step-${i}`;
+        stepByAgentId.set(agentId, { index: i, step });
+      }
+    }
+
+    // 3. Create unique task session ID to isolate from parent conversation
+    const taskSessionId = `${context.sessionId}-task-${crypto.randomUUID().slice(0, 8)}`;
+
+    // 4. Create shared AgentOrchestrator with isolated MCP pool
     const agentsServerUrl = context.daemonUrl || "http://localhost:8080";
     orchestrator = new AgentOrchestrator(
       {
@@ -70,12 +93,29 @@ export async function executeTaskViaFSMDirect(
       logger.child({ component: "TaskFSMOrchestrator" }),
     );
 
-    // 3. Create agent executor callback
+    // 4. Create agent executor callback
     const agentExecutor = async (
       agentId: string,
       fsmContext: Context,
       signal: SignalWithContext,
     ) => {
+      // Check abort before each step
+      if (context.abortSignal?.aborted) {
+        throw new Error("Task cancelled");
+      }
+
+      const stepInfo = stepByAgentId.get(agentId);
+
+      // Emit step-start progress
+      if (stepInfo && context.onProgress) {
+        context.onProgress({
+          type: "step-start",
+          stepIndex: stepInfo.index,
+          totalSteps: steps.length,
+          description: stepInfo.step.friendlyDescription || stepInfo.step.description,
+        });
+      }
+
       logger.debug("Executing agent via orchestrator", {
         agentId,
         documentCount: fsmContext.documents.length,
@@ -93,7 +133,7 @@ export async function executeTaskViaFSMDirect(
         throw new Error("Orchestrator not initialized");
       }
       const result = await orchestrator.executeAgent(agentId, prompt, {
-        sessionId: context.sessionId,
+        sessionId: taskSessionId,
         workspaceId: context.workspaceId,
         streamId: context.streamId,
         userId: context.userId,
@@ -108,11 +148,20 @@ export async function executeTaskViaFSMDirect(
         additionalContext: { documents: fsmContext.documents },
       });
 
+      // Emit step-complete progress
+      if (stepInfo && context.onProgress) {
+        context.onProgress({
+          type: "step-complete",
+          stepIndex: stepInfo.index,
+          success: !result.error,
+        });
+      }
+
       logger.debug("Agent execution completed", { agentId, success: !result.error });
       return result;
     };
 
-    // 4. Create FSM engine
+    // 5. Create FSM engine
     const engine = createEngine(fsmDefinition, {
       documentStore: docStore,
       llmProvider: new AtlasLLMProviderAdapter("claude-sonnet-4-5"),
@@ -124,14 +173,48 @@ export async function executeTaskViaFSMDirect(
     await engine.initialize();
     logger.debug("FSM engine initialized");
 
-    // 5. Execute FSM by sending trigger signal
+    // 6. Execute FSM by sending trigger signal
     const triggerSignalType = fsmDefinition.id.replace(/-fsm$/, "-trigger");
+
+    // Build state-to-step lookup (state "step_0" → index 0)
+    const stateToStepIndex = new Map<string, number>();
+    for (let i = 0; i < steps.length; i++) {
+      stateToStepIndex.set(`step_${i}`, i);
+    }
+
+    // Handle FSM events for LLM actions (agent actions already handled by agentExecutor)
+    const onEvent = (event: FSMEvent) => {
+      if (event.type !== "data-fsm-action-execution") return;
+      if (event.data.actionType !== "llm") return;
+
+      const stepIndex = stateToStepIndex.get(event.data.state);
+      if (stepIndex === undefined) return;
+
+      const step = steps[stepIndex];
+      if (!step || !context.onProgress) return;
+
+      if (event.data.status === "started") {
+        context.onProgress({
+          type: "step-start",
+          stepIndex,
+          totalSteps: steps.length,
+          description: step.friendlyDescription || step.description,
+        });
+      } else if (event.data.status === "completed" || event.data.status === "failed") {
+        context.onProgress({
+          type: "step-complete",
+          stepIndex,
+          success: event.data.status === "completed",
+        });
+      }
+    };
+
     await engine.signal(
       { type: triggerSignalType },
-      { sessionId: context.sessionId, workspaceId: context.workspaceId },
+      { sessionId: context.sessionId, workspaceId: context.workspaceId, onEvent },
     );
 
-    // 6. Collect results from FSM documents
+    // 7. Collect results from FSM documents
     logger.debug("FSM execution completed", {
       documentCount: engine.documents.length,
       documents: engine.documents.map((d) => ({

@@ -6,13 +6,13 @@
 
 import type { WorkspacePlan } from "@atlas/core/artifacts";
 import { mapNeedToMCPServers } from "@atlas/core/mcp-registry/deterministic-matching";
+import { validateFSMStructure } from "@atlas/fsm-engine";
 import { logger } from "@atlas/logger";
 import { fail, type Result, success } from "@atlas/utils";
-import { validateFSMStructure } from "../../../../fsm-engine/validator.ts";
-import { generateFSMCode } from "../../../../system/agents/fsm-workspace-creator/fsm-generation-core.ts";
-import type { SimplifiedAgent } from "../../../../system/agents/fsm-workspace-creator/types.ts";
-import { executeCodegen } from "../../../../workspace-builder/mcp-tools/codegen.ts";
-import type { BuildError, FSMDefinition } from "../../../../workspace-builder/types.ts";
+import { executeCodegen } from "../../../../../workspace-builder/mcp-tools/codegen.ts";
+import type { BuildError, FSMDefinition } from "../../../../../workspace-builder/types.ts";
+import { generateFSMCode } from "../../../fsm-workspace-creator/fsm-generation-core.ts";
+import type { SimplifiedAgent } from "../../../fsm-workspace-creator/types.ts";
 import type { EnhancedTaskPlan } from "./planner.ts";
 
 type WorkspaceJobPlan = WorkspacePlan["jobs"][0];
@@ -45,12 +45,18 @@ function mapCapabilitiesToServerIds(needs: string[]): string[] {
  *
  * @param plan - Enhanced task plan with execution types and MCP needs
  * @param intent - User's original intent (for context)
+ * @param abortSignal - Optional signal to cancel generation
  * @returns Result with FSM definition or build errors
  */
 export async function generateTaskFSM(
   plan: EnhancedTaskPlan,
   intent: string,
+  abortSignal?: AbortSignal,
 ): Promise<Result<FSMDefinition, Error>> {
+  if (abortSignal?.aborted) {
+    return fail(new Error("FSM generation cancelled"));
+  }
+
   logger.info("Generating FSM from task plan", {
     stepCount: plan.steps.length,
     needsCount: plan.needs.length,
@@ -114,7 +120,7 @@ export async function generateTaskFSM(
   logger.debug("Generating FSM code via LLM");
   let fsmCode: string;
   try {
-    fsmCode = await generateFSMCode(jobPlan, agents, triggerSignal);
+    fsmCode = await generateFSMCode(jobPlan, agents, triggerSignal, undefined, abortSignal);
     logger.debug("FSM code generated", { codeLength: fsmCode.length });
   } catch (error) {
     logger.error("FSM code generation failed", { error });
