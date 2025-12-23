@@ -10,12 +10,25 @@ import (
 	"time"
 
 	"github.com/caarlos0/env/v11"
+	"github.com/joho/godotenv"
 	"github.com/tempestteam/atlas/apps/cortex/service"
 	"github.com/tempestteam/atlas/pkg/metrics"
 	"github.com/tempestteam/atlas/pkg/server"
 )
 
 func main() {
+	if os.Getenv("DOT_ENV") != "" {
+		err := godotenv.Load(os.Getenv("DOT_ENV"))
+		if err != nil {
+			fmt.Printf("no .env file found at %s, using env vars\n", os.Getenv("DOT_ENV"))
+		}
+	} else {
+		err := godotenv.Load()
+		if err != nil {
+			fmt.Println("no .env file found, using env vars")
+		}
+	}
+
 	cfg := service.Config{
 		TLSConfig: &server.TLSConfig{},
 	}
