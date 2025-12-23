@@ -228,6 +228,23 @@ updates:
       - "traefik"
     rebase-strategy: "auto"
 
+  # Keep Docker dependencies up to date (for cortex service)
+  - package-ecosystem: "docker"
+    directory: "/apps/cortex"
+    schedule:
+      interval: "daily"
+      time: "09:00"
+    open-pull-requests-limit: 5
+    assignees:
+      - "ljagiello"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "docker"
+    rebase-strategy: "auto"
+
   # Keep Docker dependencies up to date (for gist service)
   - package-ecosystem: "docker"
     directory: "/apps/gist"
