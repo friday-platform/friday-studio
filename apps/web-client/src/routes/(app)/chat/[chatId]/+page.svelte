@@ -1,6 +1,7 @@
 <script lang="ts">
 import { Chat } from "@ai-sdk/svelte";
 import { type AtlasUIMessage, type AtlasUIMessagePart } from "@atlas/agent-sdk";
+import { client, parseResult } from "@atlas/client/v2";
 import { getAtlasDaemonUrl } from "@atlas/oapi-client";
 import { DefaultChatTransport } from "ai";
 import { onMount } from "svelte";
@@ -15,6 +16,7 @@ import { IconSmall } from "$lib/components/icons/small";
 import Textarea from "$lib/components/textarea.svelte";
 import DisplayArtifact from "$lib/modules/artifacts/display.svelte";
 import Outline from "$lib/modules/conversation/outline.svelte";
+import ConnectService from "$lib/modules/messages/connect-service.svelte";
 import ErrorMessage from "$lib/modules/messages/error-message.svelte";
 import { formatMessage } from "$lib/modules/messages/format";
 import Progress from "$lib/modules/messages/progress.svelte";
@@ -62,7 +64,33 @@ function setup() {
 }
 
 afterNavigate(setup);
-onMount(setup);
+onMount(async () => {
+  setup();
+
+  // Handle OAuth return flow
+  const url = new URL(window.location.href);
+  const credentialId = url.searchParams.get("credential_id");
+
+  if (credentialId && chat) {
+    try {
+      const result = await parseResult(
+        client.link.v1.credentials[":id"].$get({ param: { id: credentialId } }),
+      );
+
+      if (result.ok) {
+        const { provider, label } = result.data;
+        const syntheticMessage = `I've linked my ${provider} account - ${label}`;
+        chat.sendMessage({ text: syntheticMessage });
+      }
+    } catch (error) {
+      console.error("Failed to fetch credential details:", error);
+    } finally {
+      // Clean URL params
+      url.searchParams.delete("credential_id");
+      window.history.replaceState({}, "", url.toString());
+    }
+  }
+});
 
 let _userHasScrolled = $state(false);
 
@@ -133,7 +161,6 @@ let showDetails = new SvelteMap<string, boolean>();
 							{@const messages = messageContainer.parts
 								.map((message) => formatMessage(messageContainer, message))
 								.filter((part) => part !== undefined)}
-
 							{#if messages.length > 0}
 								<div class="message-parts">
 									{#each messages as message, index (index)}
@@ -144,12 +171,13 @@ let showDetails = new SvelteMap<string, boolean>();
 												<Response {message} parts={messageContainer.parts} />
 											{:else if message.type === 'tool_call' && message.metadata?.toolName === 'display_artifact' && message.metadata?.artifactId}
 												<DisplayArtifact artifactId={message.metadata.artifactId as string} />
+											{:else if message.type === 'tool_call' && message.metadata?.toolName === 'connect_service'}
+												<ConnectService provider={message.metadata.provider as string} {chat} />
 											{:else if message.type === 'error'}
 												<ErrorMessage {message} />
 											{/if}
 										{/if}
 									{/each}
-
 									{#if messageContainer.role === 'assistant' && messageContainer.parts.some((part) => part.type === 'text' && part.state === 'done')}
 										<div class="show-details" class:open={showDetails.get(messageContainer.id)}>
 											<ShowDetails

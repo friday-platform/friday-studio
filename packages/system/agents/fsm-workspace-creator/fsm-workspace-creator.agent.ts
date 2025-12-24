@@ -17,6 +17,7 @@ import { stringify as stringifyYaml } from "@std/yaml";
 import { z } from "zod";
 import { classifyAgents } from "./agent-classifier.ts";
 import { flattenAgent } from "./agent-helpers.ts";
+import { enrichAgentCredentials } from "./enrichers/agent-credentials.ts";
 import { generateMCPServers } from "./enrichers/mcp-servers.ts";
 import { enrichSignal } from "./enrichers/signals.ts";
 import { generateFSMCode } from "./fsm-generation-core.ts";
@@ -124,7 +125,7 @@ export const fsmWorkspaceCreatorAgent = createAgent<FSMCreatorInput, FSMCreatorR
         data: { toolName: "FSM Creator", content: "Generating MCP server configurations" },
       });
 
-      const mcpServers = generateMCPServers(plan.agents);
+      const mcpServers = generateMCPServers(plan.agents, plan.credentials);
 
       logger.info("MCP generation complete", {
         count: mcpServers.length,
@@ -137,7 +138,8 @@ export const fsmWorkspaceCreatorAgent = createAgent<FSMCreatorInput, FSMCreatorR
         data: { toolName: "FSM Creator", content: "Classifying agents" },
       });
 
-      const agents = classifyAgents(plan);
+      const classifiedAgents = classifyAgents(plan);
+      const agents = enrichAgentCredentials(classifiedAgents, plan.credentials);
 
       logger.info("Agent classification complete", {
         count: agents.length,

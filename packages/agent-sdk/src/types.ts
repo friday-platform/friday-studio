@@ -64,12 +64,9 @@ const MCPTransportStdioSchema = z.strictObject({
 
 const MCPTransportHTTPSchema = z.strictObject({ type: z.literal("http"), url: z.url() });
 
-const MCPTransportSSESchema = z.strictObject({ type: z.literal("sse"), url: z.url() });
-
 export const MCPTransportConfigSchema = z.discriminatedUnion("type", [
   MCPTransportStdioSchema,
   MCPTransportHTTPSchema,
-  MCPTransportSSESchema,
 ]);
 export type MCPTransportConfig = z.infer<typeof MCPTransportConfigSchema>;
 
@@ -77,11 +74,8 @@ export type MCPTransportConfig = z.infer<typeof MCPTransportConfigSchema>;
  * MCP authentication configuration
  */
 export const MCPAuthConfigSchema = z.strictObject({
-  type: z.enum(["bearer", "api_key", "basic"]),
-  header: z.string().optional().describe("Header name for the token"),
+  type: z.literal("bearer"),
   token_env: z.string().optional().describe("Environment variable containing the token"),
-  username_env: z.string().optional().describe("For basic auth"),
-  password_env: z.string().optional().describe("For basic auth"),
 });
 export type MCPAuthConfig = z.infer<typeof MCPAuthConfigSchema>;
 
@@ -96,11 +90,16 @@ export type MCPServerToolFilter = z.infer<typeof MCPServerToolFilterSchema>;
 /**
  * Link credential reference for retrieving secrets from Link service
  */
-export const LinkCredentialRefSchema = z.strictObject({
-  from: z.literal("link"),
-  id: z.string().describe("Link credential ID (e.g., 'cred_abc123')"),
-  key: z.string().describe("Key within credential.secret object (e.g., 'token')"),
-});
+export const LinkCredentialRefSchema = z
+  .strictObject({
+    from: z.literal("link"),
+    id: z.string().min(1).optional().describe("Link credential ID (e.g., 'cred_abc123')"),
+    provider: z.string().min(1).optional().describe("Provider name (e.g., 'github', 'slack')"),
+    key: z.string().describe("Key within credential.secret object (e.g., 'token')"),
+  })
+  .refine((data) => Boolean(data.id) !== Boolean(data.provider), {
+    message: "Exactly one of 'id' or 'provider' must be specified",
+  });
 export type LinkCredentialRef = z.infer<typeof LinkCredentialRefSchema>;
 
 /**
@@ -155,6 +154,17 @@ export type AgentMetadata = z.infer<typeof AgentMetadataSchema>;
 /** MCP server config - same format as workspace MCP servers */
 export type AgentMCPServerConfig = MCPServerConfig;
 
+/**
+ * Simple link reference schema for nested linkRef usage.
+ * Used in AgentEnvironmentConfig where `from: "link"` discriminator is unnecessary
+ * since the field is already named `linkRef`.
+ * Uses same field names as LinkCredentialRefSchema for consistency.
+ */
+const SimpleLinkRefSchema = z.strictObject({
+  provider: z.string().describe("Provider name (e.g., 'slack', 'github')"),
+  key: z.string().describe("Key within credential.secret object (e.g., 'access_token')"),
+});
+
 /** Environment variables needed by an agent */
 export const AgentEnvironmentConfigSchema = z.object({
   required: z
@@ -177,6 +187,9 @@ export const AgentEnvironmentConfigSchema = z.object({
             },
             { message: "Invalid validation regex pattern" },
           ),
+        linkRef: SimpleLinkRefSchema.optional().describe(
+          "Link credential reference for automatic resolution",
+        ),
       }),
     )
     .optional(),
@@ -412,7 +425,7 @@ export const AtlasAgentConfigSchema = z.object({
   //   .describe("Agent-specific configuration passed to the agent"),
   //
   env: z
-    .record(z.string(), z.string())
+    .record(z.string(), z.union([z.string(), LinkCredentialRefSchema]))
     .optional()
     // biome-ignore lint/suspicious/noTemplateCurlyInString: Explanation of how env variables can be formatted.
     .meta({ description: "Environment variables for the agent (supports ${VAR} interpolation)" }),

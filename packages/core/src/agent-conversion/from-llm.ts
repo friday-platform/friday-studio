@@ -1,5 +1,11 @@
 import { APICallError } from "@ai-sdk/provider";
-import type { ArtifactRef, AtlasAgent, ToolCall, ToolResult } from "@atlas/agent-sdk";
+import type {
+  ArtifactRef,
+  AtlasAgent,
+  LinkCredentialRef,
+  ToolCall,
+  ToolResult,
+} from "@atlas/agent-sdk";
 import { createAgent } from "@atlas/agent-sdk";
 import {
   collectToolUsageFromSteps,
@@ -176,23 +182,37 @@ export function convertLLMToAgent(
 /**
  * Create a wrapper agent for type:atlas agent configurations.
  * Wraps a bundled agent with custom prompt and environment variables.
+ *
+ * Note: Link credential refs in customEnv are filtered out - they should be
+ * resolved by the agent credential enricher before reaching this function.
  */
 export function wrapAtlasAgent(
   baseAgent: AtlasAgent,
   wrapperId: string,
   customPrompt: string,
-  customEnv?: Record<string, string>,
+  customEnv?: Record<string, string | LinkCredentialRef>,
   description?: string,
   logger?: Logger,
 ): AtlasAgent<string, unknown> {
+  // Filter out Link credential refs - only pass string values
+  // Link refs should be resolved by the agent credential enricher
+  const resolvedEnv: Record<string, string> = {};
+  if (customEnv) {
+    for (const [key, value] of Object.entries(customEnv)) {
+      if (typeof value === "string") {
+        resolvedEnv[key] = value;
+      }
+    }
+  }
+
   return createAgent({
     id: wrapperId,
     version: baseAgent.metadata.version,
     description: description || baseAgent.metadata.description,
     expertise: baseAgent.metadata.expertise,
     handler: async (prompt, context) => {
-      // Merge custom env with context env
-      const mergedContext = { ...context, env: { ...context.env, ...customEnv } };
+      // Merge resolved env with context env
+      const mergedContext = { ...context, env: { ...context.env, ...resolvedEnv } };
 
       // Prepend custom prompt to user prompt
       const enrichedPrompt = `${customPrompt}\n\n${prompt}`;

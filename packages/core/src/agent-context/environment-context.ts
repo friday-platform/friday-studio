@@ -9,6 +9,10 @@
 import process from "node:process";
 import type { AgentEnvironmentConfig } from "@atlas/agent-sdk";
 import type { Logger } from "@atlas/logger";
+import {
+  fetchLinkCredential,
+  resolveCredentialsByProvider,
+} from "../mcp-registry/credential-resolver.ts";
 
 /**
  * Keys that LITELLM_API_KEY can substitute for.
@@ -26,7 +30,7 @@ const LITELLM_SUBSTITUTABLE_KEYS = new Set([
  * Create an environment context validator
  */
 export function createEnvironmentContext(logger: Logger) {
-  return function validateEnvironment(
+  return async function validateEnvironment(
     workspaceId: string,
     agentId: string,
     environmentConfig?: AgentEnvironmentConfig,
@@ -45,6 +49,26 @@ export function createEnvironmentContext(logger: Logger) {
 
     const missingRequired: string[] = [];
 
+    // Load Link private key if needed (for credential resolution)
+    let linkPrivateKey: string | null = null;
+    const devMode = process.env.LINK_DEV_MODE === "true";
+
+    if (!devMode) {
+      const keyFile = process.env.ATLAS_JWT_PRIVATE_KEY_FILE;
+      if (keyFile) {
+        try {
+          const { readFileSync } = await import("node:fs");
+          linkPrivateKey = readFileSync(keyFile, "utf-8").trim();
+        } catch (error) {
+          logger.warn("Failed to load Link JWT private key", {
+            operation: "environment_validation",
+            keyFile,
+            error,
+          });
+        }
+      }
+    }
+
     // Validate required environment variables
     if (environmentConfig.required) {
       const litellmKey = process.env.LITELLM_API_KEY;
@@ -52,6 +76,52 @@ export function createEnvironmentContext(logger: Logger) {
       for (const reqVar of environmentConfig.required) {
         let value = process.env[reqVar.name];
         let usedSubstitute = false;
+
+        // Try to resolve from Link if linkRef is provided and value is missing
+        if (!value && reqVar.linkRef) {
+          try {
+            const userId = process.env.ATLAS_USER_ID ?? "dev";
+            const credentials = await resolveCredentialsByProvider(reqVar.linkRef.provider, userId);
+            if (credentials.length > 0) {
+              const credential = await fetchLinkCredential(
+                credentials[0]!.id,
+                linkPrivateKey,
+                logger,
+              );
+              const secretValue = credential.secret[reqVar.linkRef.key];
+
+              if (typeof secretValue === "string") {
+                value = secretValue;
+                logger.debug("Resolved credential from Link", {
+                  operation: "environment_validation",
+                  workspaceId,
+                  agentId,
+                  variable: reqVar.name,
+                  provider: reqVar.linkRef.provider,
+                });
+              } else if (secretValue !== undefined) {
+                logger.warn("Link credential key value is not a string", {
+                  operation: "environment_validation",
+                  workspaceId,
+                  agentId,
+                  variable: reqVar.name,
+                  provider: reqVar.linkRef.provider,
+                  key: reqVar.linkRef.key,
+                });
+              }
+            }
+          } catch (err) {
+            logger.debug("Failed to resolve Link credential", {
+              operation: "environment_validation",
+              workspaceId,
+              agentId,
+              variable: reqVar.name,
+              provider: reqVar.linkRef.provider,
+              error: err,
+            });
+            // Continue - will be caught as missing required below if still undefined
+          }
+        }
 
         // If primary variable is missing, check if LITELLM_API_KEY can substitute
         if (!value && litellmKey && LITELLM_SUBSTITUTABLE_KEYS.has(reqVar.name)) {

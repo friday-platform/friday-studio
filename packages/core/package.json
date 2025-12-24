@@ -16,6 +16,7 @@
     "./mcp-registry/deterministic-matching": "./src/mcp-registry/deterministic-matching.ts",
     "./mcp-registry/requirement-validator": "./src/mcp-registry/requirement-validator.ts",
     "./mcp-registry/clarification": "./src/mcp-registry/clarification.ts",
+    "./mcp-registry/credential-resolver": "./src/mcp-registry/credential-resolver.ts",
     "./bundled-agents/registry": "./src/bundled-agents/registry.ts"
   },
   "main": "./mod.ts",
@@ -36,6 +37,7 @@
     "@std/path": "npm:@jsr/std__path@^1.1.2",
     "@std/testing": "npm:@jsr/std__testing@^1.0.16",
     "ai": "^5.0.116",
+    "jose": "^6.1.3",
     "papaparse": "^5.5.3",
     "xstate": "^5.25.0",
     "zod": "^4.2.1"

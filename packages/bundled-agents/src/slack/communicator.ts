@@ -1,5 +1,10 @@
 import { env } from "node:process";
-import { type ArtifactRef, createAgent, repairJson } from "@atlas/agent-sdk";
+import {
+  type ArtifactRef,
+  createAgent,
+  type LinkCredentialRef,
+  repairJson,
+} from "@atlas/agent-sdk";
 import {
   collectToolUsageFromSteps,
   extractArtifactRefsFromToolResults,
@@ -44,6 +49,7 @@ export const slackCommunicatorAgent = createAgent<string, Result>({
         name: "SLACK_MCP_XOXP_TOKEN",
         description: "Slack user token used by slack-mcp-server to access Slack APIs",
         validation: "^(xoxb|xoxc|xoxp|xoxd)-",
+        linkRef: { provider: "slack", key: "access_token" },
       },
     ],
   },
@@ -52,7 +58,14 @@ export const slackCommunicatorAgent = createAgent<string, Result>({
   mcp: {
     slack: {
       transport: { type: "stdio", command: "npx", args: ["-y", "slack-mcp-server@latest"] },
-      env: { SLACK_MCP_XOXP_TOKEN: "auto", SLACK_MCP_ADD_MESSAGE_TOOL: "true" },
+      env: {
+        SLACK_MCP_XOXP_TOKEN: {
+          from: "link",
+          provider: "slack",
+          key: "access_token",
+        } satisfies LinkCredentialRef,
+        SLACK_MCP_ADD_MESSAGE_TOOL: "true",
+      },
       client_config: { timeout: { progressTimeout: "2m", maxTotalTimeout: "30m" } },
     },
   },

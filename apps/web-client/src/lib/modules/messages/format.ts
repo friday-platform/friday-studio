@@ -45,6 +45,14 @@ export function formatMessage(
         timestamp: new Date().toISOString(),
         metadata: { toolName: "workspace_summary", result: part.output },
       };
+    } else if (part.type === "tool-connect_service") {
+      return {
+        id: crypto.randomUUID(),
+        type: "tool_call",
+        timestamp: new Date().toISOString(),
+        // @TODO: fix
+        metadata: { toolName: "connect_service", provider: part?.output?.provider ?? "" },
+      };
     } else if (part.type === "tool-display_artifact") {
       return {
         id: crypto.randomUUID(),

@@ -9,7 +9,14 @@ type JwtPayload = {
   user_metadata: { tempest_user_id: string; tempest_auth_user_id?: string };
 };
 
-type Env = { Variables: { userId: string; jwtPayload: JwtPayload } };
+type Env = {
+  Variables: {
+    userId: string;
+    jwtPayload: JwtPayload;
+    /** External base URL for generating URLs in responses/redirects. Includes proxy prefix if behind one. */
+    externalBaseUrl: string;
+  };
+};
 
 export const factory = createFactory<Env>();
 export type { Env };

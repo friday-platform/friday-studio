@@ -3,33 +3,33 @@ import { SlackSecretSchema, slackProvider } from "./slack.ts";
 
 Deno.test("SlackSecretSchema", async (t) => {
   await t.step("accepts valid xoxb- token", () => {
-    const result = SlackSecretSchema.safeParse({ token: "xoxb-123-456-abc" });
+    const result = SlackSecretSchema.safeParse({ access_token: "xoxb-123-456-abc" });
     assertEquals(result.success, true);
   });
 
   await t.step("accepts valid xoxp- token", () => {
-    const result = SlackSecretSchema.safeParse({ token: "xoxp-user-token" });
+    const result = SlackSecretSchema.safeParse({ access_token: "xoxp-user-token" });
     assertEquals(result.success, true);
   });
 
   await t.step("rejects xoxa- token", () => {
-    const result = SlackSecretSchema.safeParse({ token: "xoxa-app-token" });
+    const result = SlackSecretSchema.safeParse({ access_token: "xoxa-app-token" });
     assertEquals(result.success, false);
   });
 
   await t.step("rejects xoxc-, xoxd-, xoxr- tokens", () => {
-    assertEquals(SlackSecretSchema.safeParse({ token: "xoxc-token" }).success, false);
-    assertEquals(SlackSecretSchema.safeParse({ token: "xoxd-token" }).success, false);
-    assertEquals(SlackSecretSchema.safeParse({ token: "xoxr-token" }).success, false);
+    assertEquals(SlackSecretSchema.safeParse({ access_token: "xoxc-token" }).success, false);
+    assertEquals(SlackSecretSchema.safeParse({ access_token: "xoxd-token" }).success, false);
+    assertEquals(SlackSecretSchema.safeParse({ access_token: "xoxr-token" }).success, false);
   });
 
   await t.step("rejects token without xox prefix", () => {
-    const result = SlackSecretSchema.safeParse({ token: "sk-abc123" });
+    const result = SlackSecretSchema.safeParse({ access_token: "sk-abc123" });
     assertEquals(result.success, false);
   });
 
   await t.step("rejects token with invalid xox suffix", () => {
-    const result = SlackSecretSchema.safeParse({ token: "xoxz-invalid" });
+    const result = SlackSecretSchema.safeParse({ access_token: "xoxz-invalid" });
     assertEquals(result.success, false);
   });
 
@@ -39,12 +39,12 @@ Deno.test("SlackSecretSchema", async (t) => {
   });
 
   await t.step("rejects empty token", () => {
-    const result = SlackSecretSchema.safeParse({ token: "" });
+    const result = SlackSecretSchema.safeParse({ access_token: "" });
     assertEquals(result.success, false);
   });
 
   await t.step("provides descriptive error message", () => {
-    const result = SlackSecretSchema.safeParse({ token: "invalid" });
+    const result = SlackSecretSchema.safeParse({ access_token: "invalid" });
     assertEquals(result.success, false);
     if (!result.success) {
       const firstIssue = result.error.issues[0];
@@ -75,7 +75,7 @@ Deno.test("slackProvider.health", async (t) => {
     });
 
     assertExists(slackProvider.health, "health function should be defined");
-    const result = await slackProvider.health({ token: "xoxb-test-token" });
+    const result = await slackProvider.health({ access_token: "xoxb-test-token" });
 
     assertEquals(result.healthy, true);
     if (result.healthy) {
@@ -94,7 +94,7 @@ Deno.test("slackProvider.health", async (t) => {
     });
 
     assertExists(slackProvider.health, "health function should be defined");
-    const result = await slackProvider.health({ token: "xoxb-invalid-token" });
+    const result = await slackProvider.health({ access_token: "xoxb-invalid-token" });
 
     assertEquals(result.healthy, false);
     if (!result.healthy) {
@@ -110,7 +110,7 @@ Deno.test("slackProvider.health", async (t) => {
     });
 
     assertExists(slackProvider.health, "health function should be defined");
-    const result = await slackProvider.health({ token: "xoxb-revoked-token" });
+    const result = await slackProvider.health({ access_token: "xoxb-revoked-token" });
 
     assertEquals(result.healthy, false);
     if (!result.healthy) {
@@ -123,7 +123,7 @@ Deno.test("slackProvider.health", async (t) => {
     using _mockFetch = mockFetchError("https://slack.com/api/auth.test", "Network error");
 
     assertExists(slackProvider.health, "health function should be defined");
-    const result = await slackProvider.health({ token: "xoxb-test-token" });
+    const result = await slackProvider.health({ access_token: "xoxb-test-token" });
 
     assertEquals(result.healthy, false);
     if (!result.healthy) {
@@ -142,7 +142,7 @@ Deno.test("slackProvider.health", async (t) => {
     });
 
     assertExists(slackProvider.health, "health function should be defined");
-    const result = await slackProvider.health({ token: "xoxb-test-token" });
+    const result = await slackProvider.health({ access_token: "xoxb-test-token" });
 
     assertEquals(result.healthy, false);
     if (!result.healthy) {

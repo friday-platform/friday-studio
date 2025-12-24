@@ -1,5 +1,5 @@
 import process from "node:process";
-import { assertEquals, assertThrows } from "@std/assert";
+import { assertEquals, assertRejects } from "@std/assert";
 import { createEnvironmentContext } from "./environment-context.ts";
 
 // Mock logger - cast to bypass full interface requirement
@@ -37,10 +37,10 @@ Deno.test("validateEnvironment - passes when required var exists", async () => {
   }
 });
 
-Deno.test("validateEnvironment - throws when required var missing", () => {
+Deno.test("validateEnvironment - throws when required var missing", async () => {
   delete process.env.MISSING_VAR;
   const validate = createEnvironmentContext(mockLogger);
-  assertThrows(
+  await assertRejects(
     () => validate("workspace", "agent", { required: [reqVar("MISSING_VAR")] }),
     Error,
     "Required environment variables not found MISSING_VAR",
@@ -75,23 +75,23 @@ Deno.test("validateEnvironment - prefers primary key over LITELLM substitute", a
   }
 });
 
-Deno.test("validateEnvironment - throws when both primary and LITELLM missing", () => {
+Deno.test("validateEnvironment - throws when both primary and LITELLM missing", async () => {
   delete process.env.ANTHROPIC_API_KEY;
   delete process.env.LITELLM_API_KEY;
   const validate = createEnvironmentContext(mockLogger);
-  assertThrows(
+  await assertRejects(
     () => validate("workspace", "agent", { required: [reqVar("ANTHROPIC_API_KEY")] }),
     Error,
     "Required environment variables not found ANTHROPIC_API_KEY",
   );
 });
 
-Deno.test("validateEnvironment - LITELLM does not substitute for non-LLM keys", () => {
+Deno.test("validateEnvironment - LITELLM does not substitute for non-LLM keys", async () => {
   delete process.env.SOME_OTHER_KEY;
   process.env.LITELLM_API_KEY = "sk-litellm-test";
   try {
     const validate = createEnvironmentContext(mockLogger);
-    assertThrows(
+    await assertRejects(
       () => validate("workspace", "agent", { required: [reqVar("SOME_OTHER_KEY")] }),
       Error,
       "Required environment variables not found SOME_OTHER_KEY",
@@ -113,11 +113,11 @@ Deno.test("validateEnvironment - skips regex validation for LITELLM substitute",
   }
 });
 
-Deno.test("validateEnvironment - runs regex validation for primary key", () => {
+Deno.test("validateEnvironment - runs regex validation for primary key", async () => {
   process.env.ANTHROPIC_API_KEY = "invalid-key";
   try {
     const validate = createEnvironmentContext(mockLogger);
-    assertThrows(
+    await assertRejects(
       () => validate("workspace", "agent", { required: [reqVar("ANTHROPIC_API_KEY", "^sk-ant-")] }),
       Error,
       "failed validation pattern",

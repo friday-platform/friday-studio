@@ -1,4 +1,4 @@
-import type { BundledAgentConfigField } from "../bundled-agents/registry.ts";
+import type { BundledAgentConfigFieldInput } from "../bundled-agents/registry.ts";
 import { bundledAgentsRegistry } from "../bundled-agents/registry.ts";
 import { mcpServersRegistry } from "./registry-consolidated.ts";
 import type { RequiredConfigField } from "./schemas.ts";
@@ -69,7 +69,7 @@ export type BundledAgentMatch = {
   name: string;
   description: string;
   matchedCapabilities: string[];
-  requiredConfig: BundledAgentConfigField[];
+  requiredConfig: BundledAgentConfigFieldInput[];
 };
 
 /**

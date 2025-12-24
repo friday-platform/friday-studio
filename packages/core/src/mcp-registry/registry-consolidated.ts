@@ -15,18 +15,9 @@ export const mcpServersRegistry: MCPServersRegistry = {
       source: "static",
       securityRating: "high",
       configTemplate: {
-        transport: {
-          type: "stdio",
-          command: "npx",
-          args: [
-            "-y",
-            "mcp-remote",
-            "https://api.githubcopilot.com/mcp",
-            "--header",
-            "Authorization: Bearer ${GH_CLASSIC_PAT}",
-          ],
-        },
-        env: { GH_CLASSIC_PAT: "your-github-classic-personal-access-token" },
+        transport: { type: "http", url: "https://api.githubcopilot.com/mcp" },
+        auth: { type: "bearer", token_env: "GH_CLASSIC_PAT" },
+        env: { GH_CLASSIC_PAT: { from: "link", provider: "github", key: "access_token" } },
       },
       requiredConfig: [
         {
@@ -44,18 +35,9 @@ export const mcpServersRegistry: MCPServersRegistry = {
       source: "static",
       securityRating: "high",
       configTemplate: {
-        transport: {
-          type: "stdio",
-          command: "npx",
-          args: [
-            "-y",
-            "mcp-remote",
-            "https://mcp.hubspot.com",
-            "--header",
-            "Authorization: Bearer ${HUBSPOT_ACCESS_TOKEN}",
-          ],
-        },
-        env: { HUBSPOT_ACCESS_TOKEN: "your-hubspot-access-token" },
+        transport: { type: "http", url: "https://mcp.hubspot.com" },
+        auth: { type: "bearer", token_env: "HUBSPOT_ACCESS_TOKEN" },
+        env: { HUBSPOT_ACCESS_TOKEN: { from: "link", provider: "hubspot", key: "access_token" } },
       },
       requiredConfig: [
         { key: "HUBSPOT_ACCESS_TOKEN", description: "HubSpot App Access Token.", type: "string" },
@@ -111,7 +93,6 @@ export const mcpServersRegistry: MCPServersRegistry = {
       securityRating: "high",
       configTemplate: {
         transport: { type: "stdio", command: "npx", args: ["-y", "@stripe/mcp", "--tools=all"] },
-        auth: { type: "api_key", token_env: "STRIPE_SECRET_KEY" },
         tools: {
           allow: [
             "create_customer",
@@ -169,7 +150,6 @@ export const mcpServersRegistry: MCPServersRegistry = {
       securityRating: "medium",
       configTemplate: {
         transport: { type: "stdio", command: "npx", args: ["-y", "@timlukahorstmann/mcp-weather"] },
-        auth: { type: "api_key", token_env: "ACCUWEATHER_API_KEY" },
         tools: { allow: ["weather-get_hourly", "weather-get_daily"] },
         env: { ACCUWEATHER_API_KEY: "your-api-key" },
         client_config: { timeout: { progressTimeout: "30s", maxTotalTimeout: "30m" } },
@@ -263,12 +243,13 @@ export const mcpServersRegistry: MCPServersRegistry = {
       source: "static",
       securityRating: "high",
       configTemplate: {
-        transport: {
-          type: "stdio",
-          command: "npx",
-          args: ["-y", "mcp-remote", "https://mcp.linear.app/mcp"],
-        },
+        transport: { type: "http", url: "https://mcp.linear.app/mcp" },
+        auth: { type: "bearer", token_env: "LINEAR_ACCESS_TOKEN" },
+        env: { LINEAR_ACCESS_TOKEN: { from: "link", provider: "linear", key: "access_token" } },
       },
+      requiredConfig: [
+        { key: "LINEAR_ACCESS_TOKEN", description: "Linear API access token", type: "string" },
+      ],
     },
     atlassian: {
       id: "atlassian",
@@ -277,12 +258,19 @@ export const mcpServersRegistry: MCPServersRegistry = {
       source: "static",
       securityRating: "high",
       configTemplate: {
-        transport: {
-          type: "stdio",
-          command: "npx",
-          args: ["-y", "mcp-remote", "https://mcp.atlassian.com/v1/mcp"],
+        transport: { type: "http", url: "https://mcp.atlassian.com/v1/mcp" },
+        auth: { type: "bearer", token_env: "ATLASSIAN_ACCESS_TOKEN" },
+        env: {
+          ATLASSIAN_ACCESS_TOKEN: { from: "link", provider: "atlassian", key: "access_token" },
         },
       },
+      requiredConfig: [
+        {
+          key: "ATLASSIAN_ACCESS_TOKEN",
+          description: "Atlassian API access token",
+          type: "string",
+        },
+      ],
     },
     trello: {
       id: "trello",
@@ -292,7 +280,6 @@ export const mcpServersRegistry: MCPServersRegistry = {
       securityRating: "medium",
       configTemplate: {
         transport: { type: "stdio", command: "npx", args: ["@delorenj/mcp-server-trello"] },
-        auth: { type: "api_key", token_env: "TRELLO_API_KEY" },
         tools: {
           allow: [
             "list_boards",
@@ -317,12 +304,13 @@ export const mcpServersRegistry: MCPServersRegistry = {
       source: "static",
       securityRating: "high",
       configTemplate: {
-        transport: {
-          type: "stdio",
-          command: "npx",
-          args: ["-y", "mcp-remote", "https://mcp.notion.com/mcp"],
-        },
+        transport: { type: "http", url: "https://mcp.notion.com/mcp" },
+        auth: { type: "bearer", token_env: "NOTION_ACCESS_TOKEN" },
+        env: { NOTION_ACCESS_TOKEN: { from: "link", provider: "notion", key: "access_token" } },
       },
+      requiredConfig: [
+        { key: "NOTION_ACCESS_TOKEN", description: "Notion API access token", type: "string" },
+      ],
     },
     rss: {
       id: "rss",
@@ -371,18 +359,9 @@ export const mcpServersRegistry: MCPServersRegistry = {
       source: "static",
       securityRating: "high",
       configTemplate: {
-        transport: {
-          type: "stdio",
-          command: "npx",
-          args: [
-            "-y",
-            "mcp-remote",
-            "https://mcp.posthog.com/sse",
-            "--header",
-            "Authorization: Bearer ${POSTHOG_API_KEY}",
-          ],
-        },
-        env: { POSTHOG_API_KEY: "your-posthog-api-key" },
+        transport: { type: "http", url: "https://mcp.posthog.com/mcp" },
+        auth: { type: "bearer", token_env: "POSTHOG_API_KEY" },
+        env: { POSTHOG_API_KEY: { from: "link", provider: "posthog", key: "access_token" } },
       },
       requiredConfig: [{ key: "POSTHOG_API_KEY", description: "PostHog API key", type: "string" }],
     },
@@ -393,12 +372,13 @@ export const mcpServersRegistry: MCPServersRegistry = {
       source: "static",
       securityRating: "high",
       configTemplate: {
-        transport: {
-          type: "stdio",
-          command: "npx",
-          args: ["-y", "mcp-remote", "https://mcp.sentry.dev/mcp"],
-        },
+        transport: { type: "http", url: "https://mcp.sentry.dev/mcp" },
+        auth: { type: "bearer", token_env: "SENTRY_ACCESS_TOKEN" },
+        env: { SENTRY_ACCESS_TOKEN: { from: "link", provider: "sentry", key: "access_token" } },
       },
+      requiredConfig: [
+        { key: "SENTRY_ACCESS_TOKEN", description: "Sentry API access token", type: "string" },
+      ],
     },
     discord: {
       id: "discord",

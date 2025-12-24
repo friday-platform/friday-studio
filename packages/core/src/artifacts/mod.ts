@@ -24,6 +24,7 @@ export {
 // Primitives
 export type {
   CalendarSchedule,
+  CredentialBinding,
   FileData,
   FileDataInput,
   SlackSummaryData,
@@ -34,6 +35,7 @@ export type {
 } from "./primitives.ts";
 export {
   CalendarScheduleSchema,
+  CredentialBindingSchema,
   FileDataInputSchema,
   FileDataSchema,
   SlackSummaryDataSchema,

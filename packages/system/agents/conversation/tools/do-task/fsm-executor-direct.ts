@@ -5,10 +5,9 @@
 
 import { AgentOrchestrator, type GlobalMCPServerPool } from "@atlas/core";
 import { InMemoryDocumentStore } from "@atlas/document-store";
-import type { Context, FSMEvent, SignalWithContext } from "@atlas/fsm-engine";
+import type { Context, FSMDefinition, FSMEvent, SignalWithContext } from "@atlas/fsm-engine";
 import { AtlasLLMProviderAdapter, createEngine, type MCPToolProvider } from "@atlas/fsm-engine";
 import { logger } from "@atlas/logger";
-import type { FSMDefinition } from "../../../../../workspace-builder/types.ts";
 import type { EnhancedTaskStep } from "./planner.ts";
 import type { TaskProgressEvent } from "./types.ts";
 

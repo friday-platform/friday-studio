@@ -4,7 +4,7 @@
  */
 
 import type { MCPServerConfig } from "@atlas/config";
-import type { WorkspacePlan } from "@atlas/core/artifacts";
+import type { CredentialBinding, WorkspacePlan } from "@atlas/core/artifacts";
 import {
   mapNeedToMCPServers,
   matchBundledAgents,
@@ -20,16 +20,23 @@ export interface MCPServerResult {
 }
 
 /**
- * Generates MCP server configs from agent needs
- * Uses blessed registry only (same infrastructure as workspace-planner)
+ * Generates MCP server configs from agent needs.
+ *
+ * Credential bindings are pre-resolved by workspace-planner and passed in.
+ * This function applies them declaratively by serverId - no Link API calls,
+ * no object shape inspection.
  *
  * CRITICAL: Only generates MCP servers for needs NOT satisfied by bundled agents.
  * Bundled agents manage their own MCP connections (e.g., slack bundled agent provides slack-mcp-server).
  *
  * @param agents - Agents from WorkspacePlan
+ * @param credentials - Pre-resolved credential bindings from workspace-planner
  * @returns Array of MCP server configs ready for workspace.yml
  */
-export function generateMCPServers(agents: WorkspacePlan["agents"]): MCPServerResult[] {
+export function generateMCPServers(
+  agents: WorkspacePlan["agents"],
+  credentials?: CredentialBinding[],
+): MCPServerResult[] {
   // Collect needs from agents that DON'T have bundled agent matches
   const needsForMCP = new Set<string>();
 
@@ -69,7 +76,22 @@ export function generateMCPServers(agents: WorkspacePlan["agents"]): MCPServerRe
       // Get config from blessed registry
       const serverMetadata = mcpServersRegistry.servers[serverId];
       if (serverMetadata?.configTemplate) {
-        servers.push({ id: serverId, config: serverMetadata.configTemplate });
+        const config = structuredClone(serverMetadata.configTemplate);
+
+        // Apply credential bindings declaratively
+        if (config.env && credentials) {
+          for (const binding of credentials.filter(
+            (b) => b.targetType === "mcp" && b.serverId === serverId,
+          )) {
+            config.env[binding.field] = {
+              from: "link" as const,
+              id: binding.credentialId,
+              key: binding.key,
+            };
+          }
+        }
+
+        servers.push({ id: serverId, config });
         processedServerIds.add(serverId);
       }
     }

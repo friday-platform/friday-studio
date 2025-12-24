@@ -6,11 +6,10 @@
 
 import type { WorkspacePlan } from "@atlas/core/artifacts";
 import { mapNeedToMCPServers } from "@atlas/core/mcp-registry/deterministic-matching";
-import { validateFSMStructure } from "@atlas/fsm-engine";
+import { type FSMDefinition, validateFSMStructure } from "@atlas/fsm-engine";
 import { logger } from "@atlas/logger";
 import { fail, type Result, success } from "@atlas/utils";
-import { executeCodegen } from "../../../../../workspace-builder/mcp-tools/codegen.ts";
-import type { BuildError, FSMDefinition } from "../../../../../workspace-builder/types.ts";
+import { type BuildError, executeCodegen } from "@atlas/workspace-builder";
 import { generateFSMCode } from "../../../fsm-workspace-creator/fsm-generation-core.ts";
 import type { SimplifiedAgent } from "../../../fsm-workspace-creator/types.ts";
 import type { EnhancedTaskPlan } from "./planner.ts";

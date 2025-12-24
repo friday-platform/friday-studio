@@ -22,7 +22,10 @@ const PROXY_PREFIX = "/api/link";
 linkRoutes.all("/*", (c) => {
   // Transform path: /api/link/foo → /v1/foo, /api/link/v1/foo → /v1/foo
   const strippedPath = c.req.path.replace(PROXY_PREFIX, "") || "/";
-  const targetPath = strippedPath.startsWith("/v1") ? strippedPath : `/v1${strippedPath}`;
+  const targetPath =
+    strippedPath.startsWith("/v1") || strippedPath.startsWith("/internal")
+      ? strippedPath
+      : `/v1${strippedPath}`;
   const query = new URL(c.req.url).search;
   const targetUrl = `${LINK_SERVICE_URL}${targetPath}${query}`;
 
@@ -43,7 +46,7 @@ linkRoutes.all("/*", (c) => {
   }
 
   return proxy(targetUrl, {
-    ...c.req.raw,
+    raw: c.req.raw,
     headers,
     // Don't follow redirects - pass them through to the client
     customFetch: (req) => fetch(req, { redirect: "manual" }),

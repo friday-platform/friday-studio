@@ -73,7 +73,7 @@ export function createOAuthRoutes(
         }
 
         // Build callback URL for this service
-        const baseUrl = env.LINK_CALLBACK_BASE || new URL(c.req.url).origin;
+        const baseUrl = env.LINK_CALLBACK_BASE || c.get("externalBaseUrl");
         const callbackUrl = `${baseUrl}/v1/oauth/callback`;
 
         try {

@@ -56,7 +56,7 @@ Deno.test("Workspace YML Generation - Daily Report with Discord", async (t) => {
       plan.signals.map((s: WorkspacePlan["signals"][number]) => enrichSignal(s)),
     );
 
-    const mcpServers = generateMCPServers(plan.agents);
+    const mcpServers = generateMCPServers(plan.agents, plan.credentials);
 
     // Generate workspace config structure (simulating what fsm-workspace-creator does)
     // Extract job for type safety
@@ -278,7 +278,7 @@ Deno.test("Workspace YML Generation - Multiple MCP Servers", async (t) => {
       plan.signals.map((s: WorkspacePlan["signals"][number]) => enrichSignal(s)),
     );
 
-    const mcpServers = generateMCPServers(plan.agents);
+    const mcpServers = generateMCPServers(plan.agents, plan.credentials);
 
     // Generate workspace config
     // Extract job for type safety

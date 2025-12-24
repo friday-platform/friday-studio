@@ -1,5 +1,34 @@
 import { z } from "zod";
 
+/**
+ * Credential binding resolved during workspace planning.
+ * Each binding maps one MCP server or agent field to one resolved credential.
+ * Created by workspace-planner, applied by fsm-workspace-creator.
+ */
+const MCPCredentialBindingSchema = z.object({
+  targetType: z.literal("mcp"),
+  serverId: z.string().describe("MCP server ID (e.g., slack-mcp-server)"),
+  field: z.string().describe("Env var name (e.g., SLACK_BOT_TOKEN)"),
+  credentialId: z.string().describe("Resolved Link credential ID"),
+  provider: z.string().describe("Provider for debugging"),
+  key: z.string().describe("Secret key (e.g., access_token)"),
+});
+
+const AgentCredentialBindingSchema = z.object({
+  targetType: z.literal("agent"),
+  agentId: z.string().describe("Agent ID from workspace plan"),
+  field: z.string().describe("Env var name (e.g., SLACK_BOT_TOKEN)"),
+  credentialId: z.string().describe("Resolved Link credential ID"),
+  provider: z.string().describe("Provider for debugging"),
+  key: z.string().describe("Secret key (e.g., access_token)"),
+});
+
+export const CredentialBindingSchema = z.discriminatedUnion("targetType", [
+  MCPCredentialBindingSchema,
+  AgentCredentialBindingSchema,
+]);
+export type CredentialBinding = z.infer<typeof CredentialBindingSchema>;
+
 /** Workspace plan data schema */
 /** Workspace plan data schema - prose descriptions of workspace structure */
 export const WorkspacePlanSchema = z.object({
@@ -11,6 +40,11 @@ export const WorkspacePlanSchema = z.object({
         "What this workspace accomplishes and why it matters. 3-5 sentences that explain the automation's value to the user.",
       ),
   }),
+
+  credentials: z
+    .array(CredentialBindingSchema)
+    .optional()
+    .describe("Resolved credential bindings - applied declaratively during workspace creation"),
 
   signals: z.array(
     z.object({

@@ -1,6 +1,8 @@
+import process from "node:process";
 import { createAgent, repairJson } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
-import type { WorkspacePlan } from "@atlas/core/artifacts";
+import type { CredentialBinding, WorkspacePlan } from "@atlas/core/artifacts";
+import { bundledAgentsRegistry } from "@atlas/core/bundled-agents/registry";
 import {
   type ClarificationItem,
   createAmbiguousBundledClarification,
@@ -11,11 +13,16 @@ import {
   formatClarificationReport,
 } from "@atlas/core/mcp-registry/clarification";
 import {
+  CredentialNotFoundError,
+  resolveCredentialsByProvider,
+} from "@atlas/core/mcp-registry/credential-resolver";
+import {
   findUnmatchedNeeds,
   type MCPServerMatch,
   mapNeedToMCPServers,
   matchBundledAgents,
 } from "@atlas/core/mcp-registry/deterministic-matching";
+import { mcpServersRegistry } from "@atlas/core/mcp-registry/registry-consolidated";
 import { validateRequiredFields } from "@atlas/core/mcp-registry/requirement-validator";
 import { JSONSchemaSchema } from "@atlas/fsm-engine";
 import { getDefaultProviderOpts, registry } from "@atlas/llm";
@@ -301,8 +308,10 @@ export const workspacePlannerAgent = createAgent<WorkspacePlannerInput, Workspac
         type: "data-tool-progress",
         data: { toolName: "Workspace Planner", content: "Validating agent integrations" },
       });
-      // Validate agent integrations (deterministic matching + LLM field validation)
+      // Validate agent integrations (deterministic matching + unified credential validation)
       const clarifications: ClarificationItem[] = [];
+      const credentialBindings: CredentialBinding[] = [];
+
       for (const agent of agentsWithIds) {
         // STEP 1: Try bundled agents (deterministic keyword matching)
         const bundledMatches = matchBundledAgents(agent.needs);
@@ -310,14 +319,14 @@ export const workspacePlannerAgent = createAgent<WorkspacePlannerInput, Workspac
           // Single bundled match - validate required fields
           const bundledMatch = bundledMatches.at(0);
           if (bundledMatch) {
-            const missingFields = validateRequiredFields(bundledMatch.requiredConfig);
-            if (missingFields.length > 0) {
+            const validationResult = await validateRequiredFields(bundledMatch.requiredConfig);
+            if (validationResult.missingCredentials.length > 0) {
               clarifications.push(
                 createBundledMissingFieldsClarification(
                   agent.name,
                   agent.needs,
                   bundledMatch,
-                  missingFields,
+                  validationResult.missingCredentials,
                 ),
               );
             }
@@ -337,19 +346,32 @@ export const workspacePlannerAgent = createAgent<WorkspacePlannerInput, Workspac
           const mcpMatches = mapNeedToMCPServers(need);
           mcpMatchesByNeed.set(need, mcpMatches);
           if (mcpMatches.length === 1) {
-            // Single MCP match - validate required fields
+            // Single MCP match - validate required fields with configTemplate
             const mcpMatch = mcpMatches.at(0);
             if (mcpMatch) {
-              const missingFields = validateRequiredFields(mcpMatch.requiredConfig);
-              if (missingFields.length > 0) {
+              const serverMeta = mcpServersRegistry.servers[mcpMatch.serverId];
+              const validationResult = await validateRequiredFields(
+                mcpMatch.requiredConfig,
+                serverMeta?.configTemplate,
+              );
+              if (validationResult.missingCredentials.length > 0) {
                 clarifications.push(
                   createMCPMissingFieldsClarification(
                     agent.name,
                     agent.needs,
                     mcpMatch,
-                    missingFields,
+                    validationResult.missingCredentials,
                   ),
                 );
+              }
+
+              // Collect resolved credentials
+              for (const resolved of validationResult.resolvedCredentials) {
+                credentialBindings.push({
+                  targetType: "mcp",
+                  serverId: mcpMatch.serverId,
+                  ...resolved,
+                });
               }
             }
           } else if (mcpMatches.length > 1) {
@@ -363,6 +385,51 @@ export const workspacePlannerAgent = createAgent<WorkspacePlannerInput, Workspac
           clarifications.push(createNoMatchClarification(agent.name, need));
         }
       }
+
+      // STEP 4: Validate atlas bundled agent credential requirements
+      // User ID from env (set by Traefik middleware from JWT sub claim)
+      const userId = process.env.ATLAS_USER_ID ?? "dev";
+
+      for (const agent of agentsWithIds) {
+        // Try to match to a bundled agent by capabilities
+        const bundledMatches = matchBundledAgents(agent.needs);
+        if (bundledMatches.length !== 1) continue;
+
+        const bundledMatch = bundledMatches[0];
+        if (!bundledMatch) continue;
+
+        const bundledAgent = bundledAgentsRegistry[bundledMatch.agentId];
+        if (!bundledAgent) continue;
+
+        for (const field of bundledAgent.requiredConfig) {
+          // Skip non-Link fields (regular env vars validated elsewhere)
+          if (field.from !== "link") continue;
+
+          try {
+            const creds = await resolveCredentialsByProvider(field.provider, userId);
+            if (creds.length > 0) {
+              credentialBindings.push({
+                targetType: "agent",
+                agentId: agent.id,
+                field: field.envKey,
+                credentialId: creds[0]!.id,
+                provider: field.provider,
+                key: field.key,
+              });
+            }
+          } catch (e) {
+            if (e instanceof CredentialNotFoundError) {
+              // Handle missing credential - add to missingCredentials
+              logger.warn("Missing Link credential for agent", {
+                agentId: agent.id,
+                field: field.envKey,
+                provider: field.provider,
+              });
+            }
+          }
+        }
+      }
+
       // If any clarifications needed, return error and DON'T save artifact
       if (clarifications.length > 0) {
         const clarificationMessage = formatClarificationReport(clarifications);
@@ -459,6 +526,7 @@ Requirements: ${input.intent}`,
       });
       const planData: WorkspacePlan = {
         workspace: phase1.workspace,
+        credentials: credentialBindings.length > 0 ? credentialBindings : undefined,
         signals: signalsWithIds,
         agents: agentsWithIds,
         jobs: jobsWithIds,

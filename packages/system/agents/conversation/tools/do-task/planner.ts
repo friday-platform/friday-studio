@@ -1,3 +1,10 @@
+import type { RequiredConfigField } from "@atlas/core";
+import {
+  CredentialNotFoundError,
+  resolveCredentialsByProvider,
+  validateRequiredFields,
+} from "@atlas/core";
+import type { CredentialBinding } from "@atlas/core/artifacts";
 import { registry, smallLLM } from "@atlas/llm";
 import { logger } from "@atlas/logger";
 import { generateText } from "ai";
@@ -67,6 +74,7 @@ async function generateFriendlyDescriptions(
 export async function planTaskEnhanced(
   intent: string,
   agents: CatalogAgent[],
+  userId?: string,
   abortSignal?: AbortSignal,
 ): Promise<EnhancedPlanResult> {
   const model = registry.languageModel("anthropic:claude-sonnet-4-5");
@@ -271,7 +279,86 @@ Output: {
         executionType: "llm" as const,
       }));
 
-    const mcpServers = generateMCPServers(agentsForMCP);
+    const mcpServersForValidation = generateMCPServers(agentsForMCP);
+
+    // Validate Link credentials for MCP servers BEFORE execution
+    // Fail fast if credentials are missing or ambiguous
+    // Collect resolved credentials to pass to final MCP server generation
+    const credentialBindings: CredentialBinding[] = [];
+    for (const server of mcpServersForValidation) {
+      // Extract required config fields from server config
+      const requiredFields: RequiredConfigField[] = [];
+      if (server.config.env) {
+        for (const [key, value] of Object.entries(server.config.env)) {
+          if (
+            typeof value === "object" &&
+            value !== null &&
+            "from" in value &&
+            value.from === "link"
+          ) {
+            requiredFields.push({
+              key,
+              description: `Link credential for ${key}`,
+              type: "string", // Link credentials are always strings
+            });
+          }
+        }
+      }
+
+      // Skip validation if no Link credentials required
+      if (requiredFields.length === 0) {
+        continue;
+      }
+
+      // Validate credentials
+      const validation = await validateRequiredFields(requiredFields, server.config, userId);
+
+      // Fail fast on missing credentials
+      if (validation.missingCredentials.length > 0) {
+        const missing = validation.missingCredentials.at(0);
+        return {
+          success: false,
+          reason: `Cannot execute task: ${missing?.reason}. MCP server '${server.id}' requires this credential.`,
+        };
+      }
+
+      // Fail fast on ambiguous credentials (multiple credentials found)
+      // Also collect the resolved credentials for final MCP server generation
+      for (const resolved of validation.resolvedCredentials) {
+        // Check if multiple credentials exist for this provider
+        try {
+          const allCreds = await resolveCredentialsByProvider(resolved.provider, userId ?? "dev");
+          if (allCreds.length > 1) {
+            return {
+              success: false,
+              reason: `Cannot execute task: Found ${allCreds.length} credentials for provider '${resolved.provider}'. Please specify which credential to use by ID in workspace.yml.`,
+            };
+          }
+        } catch (err) {
+          if (err instanceof CredentialNotFoundError) {
+            // Already caught by validateRequiredFields, this shouldn't happen
+            return {
+              success: false,
+              reason: `Cannot execute task: No credentials found for provider '${err.provider}'`,
+            };
+          }
+          throw err;
+        }
+
+        // Collect the resolved credential binding
+        credentialBindings.push({
+          targetType: "mcp",
+          serverId: server.id,
+          field: resolved.field,
+          credentialId: resolved.credentialId,
+          provider: resolved.provider,
+          key: resolved.key,
+        });
+      }
+    }
+
+    // Regenerate MCP servers with the collected credential bindings
+    const mcpServers = generateMCPServers(agentsForMCP, credentialBindings);
 
     logger.info("Enhanced planning succeeded", {
       stepCount: validSteps.length,

@@ -1,6 +1,8 @@
 import process from "node:process";
+import type { MCPServerConfig } from "@atlas/config";
 import { z } from "zod";
-import type { BundledAgentConfigField } from "../bundled-agents/registry.ts";
+import type { BundledAgentConfigFieldInput } from "../bundled-agents/registry.ts";
+import { CredentialNotFoundError, resolveCredentialsByProvider } from "./credential-resolver.ts";
 import type { RequiredConfigField } from "./schemas.ts";
 
 /**
@@ -14,37 +16,153 @@ const MissingFieldSchema = z.object({
 export type MissingField = z.infer<typeof MissingFieldSchema>;
 
 /**
+ * Successfully resolved credential(s)
+ */
+const ResolvedCredentialSchema = z.object({
+  field: z.string().describe("Configuration field key"),
+  provider: z.string().describe("Provider name"),
+  credentialId: z.string().describe("First matching credential ID"),
+  key: z.string().describe("Secret key within credential.secret (e.g. access_token)"),
+});
+
+export type ResolvedCredential = z.infer<typeof ResolvedCredentialSchema>;
+
+/**
  * Unified config field type (works with both bundled agents and MCP servers)
  */
-type ConfigField = BundledAgentConfigField | RequiredConfigField;
+type ConfigField = BundledAgentConfigFieldInput | RequiredConfigField;
+
+/**
+ * Result of credential resolution validation
+ */
+export interface ValidationResult {
+  missingCredentials: MissingField[];
+  resolvedCredentials: ResolvedCredential[];
+}
 
 /**
  * Validates that all required configuration fields are available in the system environment.
  *
- * All configuration for bundled agents and MCP servers comes from environment variables.
- * This function checks that each required field exists in the system environment.
+ * For bundled agents with `from: "link"`: resolves Link credential references by provider.
+ * For bundled agents without Link refs: validates environment variables only.
+ * For MCP servers with configTemplate: resolves Link credential references by provider.
  *
  * @param requiredConfig - Required configuration fields from matched integration
- * @returns Array of missing fields (empty if all requirements met)
+ * @param configTemplate - Optional MCP server config template with env definitions
+ * @param userId - User ID for Link credential resolution (required for Link credential resolution)
+ * @returns Validation result with missing and resolved credentials
  */
-export function validateRequiredFields(requiredConfig: ConfigField[]): MissingField[] {
+export async function validateRequiredFields(
+  requiredConfig: ConfigField[],
+  configTemplate?: MCPServerConfig,
+  userId?: string,
+): Promise<ValidationResult> {
+  const missingCredentials: MissingField[] = [];
+  const resolvedCredentials: ResolvedCredential[] = [];
+
   // No required config = nothing to validate
   if (requiredConfig.length === 0) {
-    return [];
+    return { missingCredentials, resolvedCredentials };
   }
 
-  const missingFields: MissingField[] = [];
+  // User ID from param (passed by caller) or fall back to env (set by Traefik middleware from JWT sub claim)
+  const effectiveUserId = userId ?? process.env.ATLAS_USER_ID ?? "dev";
 
-  // Check all required fields in system environment
+  // Without configTemplate, check for Link credential refs or fall back to env var validation
+  if (!configTemplate) {
+    for (const field of requiredConfig) {
+      // Check for Link credential reference (from: "link" pattern)
+      // Schema: { from: "link", envKey, provider, key }
+      // - envKey: env var name to expose
+      // - provider: Link provider for credential lookup
+      // - key: secret key within credential.secret
+      const hasFromLink = "from" in field && field.from === "link" && "provider" in field;
+
+      if (hasFromLink) {
+        // from: "link" pattern (bundled agent registry config)
+        const linkField = field as { provider: string; key: string; envKey: string };
+        try {
+          const credentials = await resolveCredentialsByProvider(
+            linkField.provider,
+            effectiveUserId,
+          );
+          resolvedCredentials.push({
+            field: linkField.envKey,
+            provider: linkField.provider,
+            credentialId: credentials[0]!.id,
+            key: linkField.key,
+          });
+        } catch (error) {
+          if (error instanceof CredentialNotFoundError) {
+            missingCredentials.push({
+              field: linkField.envKey,
+              reason: `No credentials found for provider '${linkField.provider}'`,
+            });
+          } else {
+            throw error;
+          }
+        }
+      } else {
+        // No Link ref, validate environment variable
+        const envValue = process.env[field.key];
+        if (!envValue) {
+          missingCredentials.push({
+            field: field.key,
+            reason: `Environment variable ${field.key} is not set. ${field.description}`,
+          });
+        }
+      }
+    }
+    return { missingCredentials, resolvedCredentials };
+  }
+
+  // With configTemplate, validate each field and resolve Link credentials
   for (const field of requiredConfig) {
-    const envValue = process.env[field.key];
-    if (!envValue) {
-      missingFields.push({
-        field: field.key,
-        reason: `Environment variable ${field.key} is not set. ${field.description}`,
-      });
+    const envDef = configTemplate.env?.[field.key];
+
+    // Field not in template = registry misconfiguration
+    if (envDef === undefined) {
+      throw new Error(
+        `Registry misconfiguration: required field '${field.key}' not found in configTemplate.env`,
+      );
+    }
+
+    // String value = direct env var, skip validation (runtime will handle)
+    if (typeof envDef === "string") {
+      continue;
+    }
+
+    // Link credential reference
+    if (envDef.from === "link") {
+      // Already resolved by ID = skip
+      if (envDef.id) {
+        continue;
+      }
+
+      // Resolve by provider - returns ALL matching credentials
+      if (envDef.provider) {
+        try {
+          const credentials = await resolveCredentialsByProvider(envDef.provider, effectiveUserId);
+          // First-match: use the first credential found
+          resolvedCredentials.push({
+            field: field.key,
+            provider: envDef.provider,
+            credentialId: credentials[0]!.id,
+            key: envDef.key,
+          });
+        } catch (error) {
+          if (error instanceof CredentialNotFoundError) {
+            missingCredentials.push({
+              field: field.key,
+              reason: `No credentials found for provider '${error.provider}'`,
+            });
+          } else {
+            throw error;
+          }
+        }
+      }
     }
   }
 
-  return missingFields;
+  return { missingCredentials, resolvedCredentials };
 }

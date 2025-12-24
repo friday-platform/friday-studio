@@ -19,6 +19,7 @@ import { registry } from "./providers/registry.ts";
 import { createCredentialsRoutes, createInternalCredentialsRoutes } from "./routes/credentials.ts";
 import { createOAuthRoutes } from "./routes/oauth.ts";
 import { providersRouter } from "./routes/providers.ts";
+import { createSummaryRoutes } from "./routes/summary.ts";
 import type { StorageAdapter } from "./types.ts";
 
 /**
@@ -75,6 +76,30 @@ export function createApp(storage: StorageAdapter, oauthService: OAuthService) {
       return c.json({ error: "missing_user_id" }, 401);
     }
     c.set("userId", userId);
+    await next();
+  });
+
+  /**
+   * External URL middleware - computes base URL for external-facing URLs.
+   * Respects X-Forwarded-* headers when behind a proxy, allowing Link to
+   * generate correct redirect URLs and Location headers without the proxy
+   * needing to rewrite them.
+   *
+   * Headers:
+   * - X-Forwarded-Host: The original host the client connected to
+   * - X-Forwarded-Proto: The original protocol (http/https)
+   * - X-Forwarded-Prefix: Path prefix to prepend (e.g., /api/link)
+   */
+  const externalUrlMiddleware = factory.createMiddleware(async (c, next) => {
+    const forwardedHost = c.req.header("X-Forwarded-Host");
+    const forwardedProto = c.req.header("X-Forwarded-Proto") || "https";
+    const forwardedPrefix = c.req.header("X-Forwarded-Prefix") || "";
+
+    const baseUrl = forwardedHost
+      ? `${forwardedProto}://${forwardedHost}${forwardedPrefix}`
+      : new URL(c.req.url).origin;
+
+    c.set("externalBaseUrl", baseUrl);
     await next();
   });
 
@@ -136,11 +161,13 @@ export function createApp(storage: StorageAdapter, oauthService: OAuthService) {
     baseApp.use("/internal/*", jwtMiddleware);
   }
 
-  // Apply auth token and tenancy middleware to protected routes (after JWT verification)
+  // Apply auth token, tenancy, and external URL middleware to protected routes (after JWT verification)
   baseApp.use("/v1/*", authTokenMiddleware);
   baseApp.use("/v1/*", tenancyMiddleware);
+  baseApp.use("/v1/*", externalUrlMiddleware);
   baseApp.use("/internal/*", authTokenMiddleware);
   baseApp.use("/internal/*", tenancyMiddleware);
+  baseApp.use("/internal/*", externalUrlMiddleware);
 
   return (
     baseApp
@@ -150,6 +177,8 @@ export function createApp(storage: StorageAdapter, oauthService: OAuthService) {
       .route("/v1/oauth", createOAuthRoutes(registry, oauthService, storage))
       // Public credential management API (no secrets in responses)
       .route("/v1/credentials", createCredentialsRoutes(storage, oauthService))
+      // Summary endpoint - aggregated providers and credentials
+      .route("/v1/summary", createSummaryRoutes(storage))
       // Internal runtime access API (returns secrets with proactive OAuth refresh)
       .route("/internal/v1/credentials", createInternalCredentialsRoutes(storage, oauthService))
   );

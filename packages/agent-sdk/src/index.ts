@@ -58,7 +58,6 @@ export type {
   ToolResult,
 } from "./types.ts";
 // Zod Schemas for runtime validation
-// Exceptions
 export {
   AgentEnvironmentConfigSchema,
   AgentExpertiseSchema,

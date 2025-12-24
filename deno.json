@@ -37,7 +37,7 @@
     "lint-staged": "deno run -A npm:lint-staged@^16.2.6",
     "atlas": "deno run -q --allow-all --unstable-broadcast-channel --unstable-worker-options --unstable-kv --unstable-raw-imports --env-file --watch src/cli.tsx",
     "start": "deno run --allow-all --unstable-raw-imports src/cli.tsx",
-    "dev": "deno run -A npm:concurrently -n daemon,link -c blue,green 'deno task atlas daemon start' 'cd apps/link && deno task dev'",
+    "dev": "LINK_DEV_MODE=true deno run -A npm:concurrently -n daemon,link -c blue,green 'deno task atlas daemon start' 'cd apps/link && deno task dev'",
     "test": "OTEL_DENO=true DENO_TESTING=true LINK_DEV_MODE=true deno test --allow-all --unstable-raw-imports --no-check --env-file",
     "test:unit": "OTEL_DENO=true DENO_TESTING=true LINK_DEV_MODE=true deno test --allow-all --env-file --no-check --ignore='integration-tests/**/*.test.ts'",
     "fmt": "deno run -A npm:@biomejs/biome format --write",
@@ -45,7 +45,7 @@
     "biome": "deno run -A npm:@biomejs/biome",
     "lint": "deno lint --fix && deno run -A npm:@biomejs/biome check --write",
     "lint:check": "deno lint && deno run -A npm:@biomejs/biome check",
-    "clean": "deno run --allow-read --allow-write --allow-env scripts/clean.ts",
+    "clean": "deno run -A scripts/clean.ts",
     "compile": "./scripts/compile.sh"
   },
   "lint": {

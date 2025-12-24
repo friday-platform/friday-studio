@@ -28,8 +28,13 @@ export { conversationStorage } from "./src/chat-storage.ts";
 export * from "./src/constants/supervisor-status.ts";
 // Credential Fetcher
 export * from "./src/credential-fetcher.ts";
+export {
+  CredentialNotFoundError,
+  resolveCredentialsByProvider,
+} from "./src/mcp-registry/credential-resolver.ts";
 // MCP Registry
 export { mcpServersRegistry } from "./src/mcp-registry/registry-consolidated.ts";
+export { validateRequiredFields } from "./src/mcp-registry/requirement-validator.ts";
 export type {
   MCPServerMetadata,
   MCPServersRegistry,

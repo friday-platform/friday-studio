@@ -3,7 +3,7 @@ import { z } from "zod";
 import { defineApiKeyProvider } from "./types.ts";
 
 export const SlackSecretSchema = z.object({
-  token: z
+  access_token: z
     .string()
     .regex(
       /^xox[bp]-/,
@@ -73,7 +73,7 @@ For each channel the bot should access:
       const response = await fetch("https://slack.com/api/auth.test", {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${secret.token}`,
+          Authorization: `Bearer ${secret.access_token}`,
           "Content-Type": "application/x-www-form-urlencoded",
         },
       });

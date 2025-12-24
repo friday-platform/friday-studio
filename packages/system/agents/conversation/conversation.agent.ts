@@ -28,8 +28,10 @@ import {
   streamText,
   tool,
 } from "ai";
+import { fetchLinkSummary, formatLinkedCredentialsSection } from "./link-context.ts";
 import { estimateTokens, processMessageHistory } from "./message-windowing.ts";
 import SYSTEM_PROMPT from "./prompt.txt" with { type: "text" };
+import { createConnectServiceTool } from "./tools/connect-service.ts";
 import { createDoTaskTool } from "./tools/do-task/index.ts";
 import { conversationTools } from "./tools/mod.ts";
 import { fetchScratchpadContext } from "./tools/scratchpad-tools.ts";
@@ -138,6 +140,7 @@ function getSystemPrompt(
   streamId?: string,
   workspacesSection?: string,
   agentsSection?: string,
+  linkedCredentialsSection?: string,
 ): string {
   let prompt = SYSTEM_PROMPT;
 
@@ -156,6 +159,11 @@ function getSystemPrompt(
   // Inject agents section at the end
   if (agentsSection) {
     prompt = `${prompt}\n\n${agentsSection}`;
+  }
+
+  // Inject linked credentials section at the end
+  if (linkedCredentialsSection) {
+    prompt = `${prompt}\n\n${linkedCredentialsSection}`;
   }
 
   return prompt;
@@ -434,9 +442,25 @@ export const conversationAgent = createAgent({
         const { workspaces, jobsByWorkspace } = await fetchWorkspacesAndJobs(logger);
         const workspacesSection = formatWorkspacesAndJobsSection(workspaces, jobsByWorkspace);
         const agentsSection = formatAgentsSection(agentNames);
+
+        // Fetch Link summary for prompt injection (gracefully handle if Link is unavailable)
+        const linkSummary = await fetchLinkSummary(logger);
+        const linkedCredentialsSection = linkSummary
+          ? formatLinkedCredentialsSection(linkSummary)
+          : undefined;
+
+        // Create link auth tool if Link is available with provider-constrained enum
+        const connectServiceTool: AtlasTools = {};
+        if (linkSummary && linkSummary.providers.length > 0) {
+          const providerIds = linkSummary.providers.map((p) => p.id);
+          connectServiceTool.connect_service = createConnectServiceTool(providerIds);
+        }
+
         logger.debug("Workspaces and agents sections prepared", {
           workspaceCount: workspaces.length,
           agentCount: agentNames.length,
+          linkCredentials: linkSummary ? linkSummary.credentials.length : "unavailable",
+          linkProviders: linkSummary ? linkSummary.providers.length : "unavailable",
         });
 
         // MVP: Tool allowlist - only expose specific workspace management and task execution tools
@@ -488,6 +512,7 @@ export const conversationAgent = createAgent({
         const allTools = {
           ...filteredTools,
           ...conversationTools,
+          ...connectServiceTool,
           ...systemAgents,
           do_task: doTaskTool,
         };
@@ -500,10 +525,15 @@ export const conversationAgent = createAgent({
         );
 
         // Estimate system prompt tokens to determine message history budget
-        const systemPrompt = getSystemPrompt(session.streamId, workspacesSection, agentsSection);
+        const systemPrompt = getSystemPrompt(
+          session.streamId,
+          workspacesSection,
+          agentsSection,
+          linkedCredentialsSection,
+        );
         const datetimeMessage = `Current datetime (UTC): ${new Date().toISOString()}`;
         const systemTokens =
-          estimateTokens(systemPrompt) + // Already includes workspacesSection + agentsSection
+          estimateTokens(systemPrompt) + // Already includes workspacesSection + agentsSection + linkedCredentialsSection
           estimateTokens(scratchpadContext) +
           estimateTokens(datetimeMessage);
 
@@ -584,7 +614,12 @@ export const conversationAgent = createAgent({
               messages: [
                 {
                   role: ROLE_SYSTEM,
-                  content: getSystemPrompt(session.streamId, workspacesSection, agentsSection),
+                  content: getSystemPrompt(
+                    session.streamId,
+                    workspacesSection,
+                    agentsSection,
+                    linkedCredentialsSection,
+                  ),
                   providerOptions: getDefaultProviderOpts("anthropic"),
                 },
                 {

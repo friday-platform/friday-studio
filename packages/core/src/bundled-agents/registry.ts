@@ -4,8 +4,14 @@ import { z } from "zod";
  * Configuration field descriptor for bundled agents
  * Describes what users must provide for this agent to work
  */
-const BundledAgentConfigFieldSchema = z.object({
-  key: z.string().min(1),
+
+/**
+ * Environment variable configuration field (input type)
+ * For plain environment variables (not resolved from Link)
+ */
+const EnvConfigFieldInputSchema = z.object({
+  from: z.literal("env").optional(),
+  key: z.string().min(1).describe("Env var name"),
   description: z.string().min(1),
   type: z.enum(["string", "array", "object", "number", "boolean"]),
   validation: z.string().optional(),
@@ -13,7 +19,38 @@ const BundledAgentConfigFieldSchema = z.object({
   examples: z.array(z.string()).optional(),
 });
 
+/**
+ * Environment variable configuration field (output type)
+ */
+const EnvConfigFieldSchema = EnvConfigFieldInputSchema.transform((val) => ({
+  ...val,
+  from: "env" as const,
+}));
+
+/**
+ * Link credential reference configuration field
+ * Aligns with LinkCredentialRefSchema from @atlas/agent-sdk:
+ * - `from: "link"` discriminator
+ * - `provider` for provider-based resolution
+ * - `key` for the secret key within credential.secret
+ * - `envKey` for the env var name to expose (bundled-agent specific)
+ */
+const LinkConfigFieldSchema = z.object({
+  from: z.literal("link"),
+  envKey: z.string().min(1).describe("Env var name to expose (e.g., SLACK_MCP_XOXP_TOKEN)"),
+  provider: z.string().describe("Link provider (e.g., slack)"),
+  key: z.string().describe("Key in credential.secret (e.g., access_token)"),
+  description: z.string().min(1),
+});
+
+const BundledAgentConfigFieldSchema = z.union([EnvConfigFieldSchema, LinkConfigFieldSchema]);
+
 export type BundledAgentConfigField = z.infer<typeof BundledAgentConfigFieldSchema>;
+
+/**
+ * Input type for bundled agent config field (what developers write in the registry)
+ */
+export type BundledAgentConfigFieldInput = z.input<typeof BundledAgentConfigFieldSchema>;
 
 /**
  * Bundled agent registry item
@@ -31,8 +68,8 @@ export type BundledAgentRegistryItem = {
   examples: string[];
 
   // Configuration
-  requiredConfig: BundledAgentConfigField[];
-  optionalConfig?: BundledAgentConfigField[];
+  requiredConfig: BundledAgentConfigFieldInput[];
+  optionalConfig?: BundledAgentConfigFieldInput[];
 
   // Integration
   packagePath: string; // e.g., "@atlas/bundled-agents/slack"
@@ -57,11 +94,11 @@ export const bundledAgentsRegistry: Record<string, BundledAgentRegistryItem> = {
     ],
     requiredConfig: [
       {
-        key: "SLACK_MCP_XOXP_TOKEN",
-        description: "Slack user token used by slack-mcp-server to access Slack APIs",
-        type: "string",
-        validation: "^(xoxb|xoxc|xoxp|xoxd)-",
-        examples: ["xoxp-123456789-123456789-123456789-abc123"],
+        from: "link",
+        envKey: "SLACK_MCP_XOXP_TOKEN",
+        provider: "slack",
+        key: "access_token",
+        description: "Slack user token from Link",
       },
     ],
     packagePath: "@atlas/bundled-agents/slack",
@@ -84,10 +121,8 @@ export const bundledAgentsRegistry: Record<string, BundledAgentRegistryItem> = {
     requiredConfig: [
       {
         key: "SENDGRID_API_KEY",
-        description: "SendGrid API key for sending emails",
+        description: "SendGrid API key (from https://app.sendgrid.com/settings/api_keys)",
         type: "string",
-        validation: "^SG\\.",
-        examples: ["SG.abc123xyz..."],
       },
     ],
     optionalConfig: [
@@ -129,11 +164,12 @@ export const bundledAgentsRegistry: Record<string, BundledAgentRegistryItem> = {
     ],
     requiredConfig: [
       {
-        key: "GOOGLE_OAUTH_CREDENTIALS",
-        description:
-          "Google OAuth credentials JSON for Google Calendar API access via Google Calendar MCP Server",
-        type: "string",
-        examples: ['{"client_id":"...","client_secret":"...","refresh_token":"..."}'],
+        from: "link",
+        envKey: "GOOGLE_OAUTH_CREDENTIALS",
+        provider: "google",
+        key: "credentials",
+        // TODO(#1080): Update to google-workspace MCP credential pattern after PR #1080 merges
+        description: "Google OAuth credentials from Link",
       },
     ],
     packagePath: "@atlas/bundled-agents/google",
@@ -166,9 +202,8 @@ export const bundledAgentsRegistry: Record<string, BundledAgentRegistryItem> = {
     requiredConfig: [
       {
         key: "TAVILY_API_KEY",
-        description: "Tavily API key for web search capabilities",
+        description: "Tavily API key (from https://app.tavily.com)",
         type: "string",
-        examples: ["tvly-abc123..."],
       },
     ],
     packagePath: "@atlas/bundled-agents/research",
@@ -200,14 +235,7 @@ export const bundledAgentsRegistry: Record<string, BundledAgentRegistryItem> = {
       "Show me the most recent meeting transcript",
       "What was discussed in my last meeting?",
     ],
-    requiredConfig: [
-      {
-        key: "FATHOM_API_KEY",
-        description: "Fathom AI API key for authentication",
-        type: "string",
-        examples: ["fathom_abc123..."],
-      },
-    ],
+    requiredConfig: [{ key: "FATHOM_API_KEY", description: "Fathom API key", type: "string" }],
     packagePath: "@atlas/bundled-agents/fathom",
   },
 };

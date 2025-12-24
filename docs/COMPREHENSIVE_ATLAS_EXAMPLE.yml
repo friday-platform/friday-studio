@@ -58,7 +58,7 @@ server:
     # Authentication configuration (atlas.yml only)
     auth:
       required: false
-      # providers: ["bearer", "api_key"]  # Optional list of auth providers
+      # providers: ["bearer"]  # Optional list of auth providers
 
     # Rate limiting (atlas.yml only)
     rate_limits:
