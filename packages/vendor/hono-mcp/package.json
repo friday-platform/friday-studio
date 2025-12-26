@@ -4,5 +4,5 @@
   "description": "Vendored @hono/mcp with forked MCP SDK",
   "type": "module",
   "exports": { ".": "./src/index.ts" },
-  "dependencies": { "@socotra/modelcontextprotocol-sdk": "^1.21.0", "hono": "^4.10.8" }
+  "dependencies": { "@socotra/modelcontextprotocol-sdk": "^1.21.0", "hono": "^4.11.2" }
 }
