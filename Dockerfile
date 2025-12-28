@@ -20,8 +20,10 @@ FROM denoland/deno:alpine-2.6.1 AS daemon-builder
 WORKDIR /app
 
 # Create atlas user for security (Deno image is based on Alpine)
-# Use a different GID/UID to avoid conflicts with existing users
-RUN addgroup -g 1001 -S atlas && adduser -u 1001 -S -G atlas -h /home/atlas -s /bin/sh atlas
+# UID 65534 / GID 266 matches Kubernetes securityContext for consistency
+RUN addgroup -g 266 -S atlas && \
+    deluser nobody 2>/dev/null || true && \
+    adduser -u 65534 -S -G atlas -h /home/atlas -s /bin/sh atlas
 
 # Copy package files first for better caching
 COPY deno.json deno.lock package.json ./
@@ -64,9 +66,10 @@ RUN apk add --no-cache nodejs npm && \
     chmod +x /usr/local/bin/claude && \
     rm -rf /tmp/docker-deps
 
-# Create atlas user and group (if not already exists)
-RUN addgroup -g 1001 -S atlas 2>/dev/null || true && \
-    adduser -u 1001 -S -G atlas -h /home/atlas -s /bin/sh atlas 2>/dev/null || true
+# Create atlas user and group matching Kubernetes securityContext (65534:266)
+RUN addgroup -g 266 -S atlas && \
+    deluser nobody 2>/dev/null || true && \
+    adduser -u 65534 -S -G atlas -h /home/atlas -s /bin/sh atlas
 
 # Create necessary directories with proper permissions
 RUN mkdir -p /home/atlas/.atlas/logs \
@@ -75,10 +78,11 @@ RUN mkdir -p /home/atlas/.atlas/logs \
     && chown -R atlas:atlas /home/atlas
 
 # Copy the compiled Atlas binary from daemon-builder stage
-COPY --from=daemon-builder --chown=atlas:atlas /app/atlas /usr/local/bin/atlas
-
-# Make the binary executable
-RUN chmod +x /usr/local/bin/atlas
+# Owned by root:root with minimal permissions (005 = -------r-x)
+# Only "others" need read+execute; owner/group perms don't matter since root bypasses them
+# Note: Deno compiled binaries require read access to extract embedded JS
+COPY --from=daemon-builder /app/atlas /usr/local/bin/atlas
+RUN chmod 005 /usr/local/bin/atlas
 
 # Switch to atlas user
 USER atlas
