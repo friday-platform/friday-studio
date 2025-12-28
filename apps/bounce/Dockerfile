@@ -24,9 +24,10 @@ FROM alpine:3.23.2
 
 RUN apk --no-cache add ca-certificates
 
-WORKDIR /app
-
 # Copy the binary from builder
-COPY --from=builder /build/apps/bounce/bounce .
+COPY --from=builder /build/apps/bounce/bounce /bounce
 
-CMD ["./bounce"]
+# Run as non-root user (nobody)
+USER 65534:65534
+
+ENTRYPOINT ["/bounce"]
