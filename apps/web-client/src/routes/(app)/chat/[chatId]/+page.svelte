@@ -68,7 +68,7 @@ onMount(async () => {
   const url = new URL(window.location.href);
   const credentialId = url.searchParams.get("credential_id");
 
-  if (credentialId && chat) {
+  if (credentialId && chatContext.chats.has(data.chatId)) {
     try {
       const result = await parseResult(
         client.link.v1.credentials[":id"].$get({ param: { id: credentialId } }),
@@ -77,7 +77,7 @@ onMount(async () => {
       if (result.ok) {
         const { provider, label } = result.data;
         const syntheticMessage = `I've linked my ${provider} account - ${label}`;
-        chat.sendMessage({ text: syntheticMessage });
+        chatContext.chats.get(data.chatId)?.sendMessage({ text: syntheticMessage });
       }
     } catch (error) {
       console.error("Failed to fetch credential details:", error);
@@ -171,7 +171,10 @@ let showDetails = new SvelteMap<string, boolean>();
 											{:else if message.type === 'tool_call' && message.metadata?.toolName === 'display_artifact' && message.metadata?.artifactId}
 												<DisplayArtifact artifactId={message.metadata.artifactId as string} />
 											{:else if message.type === 'tool_call' && message.metadata?.toolName === 'connect_service'}
-												<ConnectService provider={message.metadata.provider as string} {chat} />
+												{@const currentChat = chatContext.chats.get(data.chatId)}
+												{#if currentChat}
+													<ConnectService provider={message.metadata.provider as string} chat={currentChat} />
+												{/if}
 											{:else if message.type === 'error'}
 												<ErrorMessage {message} />
 											{/if}
@@ -344,12 +347,9 @@ let showDetails = new SvelteMap<string, boolean>();
 
 												<DropdownMenu.Item
 													onclick={async () => {
-														if (chatContext.chats.has(data.chatId)) {
-															// @ts-expect-error chat must exist if we are in this condition
-															await shareChat(
-																chatContext.chats.get(data.chatId)?.messages,
-																data.title
-															);
+														const messages = chatContext.chats.get(data.chatId)?.messages;
+														if (messages) {
+															await shareChat(messages, data.title);
 														}
 													}}
 												>
