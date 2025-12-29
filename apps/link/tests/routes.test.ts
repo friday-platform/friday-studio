@@ -1,3 +1,4 @@
+import { rm } from "node:fs/promises";
 import { makeTempDir } from "@atlas/utils/temp.server";
 import { assert, assertEquals, assertExists, assertMatch, assertObjectMatch } from "@std/assert";
 import { z } from "zod";
@@ -419,5 +420,5 @@ Deno.test("Link HTTP routes", async (t) => {
   );
 
   // Cleanup
-  await Deno.remove(tempDir, { recursive: true });
+  await rm(tempDir, { recursive: true });
 });

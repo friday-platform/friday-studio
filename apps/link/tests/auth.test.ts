@@ -3,7 +3,7 @@
  * Tests JWT verification in dev and production modes
  */
 
-import { writeFile } from "node:fs/promises";
+import { rm, writeFile } from "node:fs/promises";
 import process from "node:process";
 import { makeTempDir } from "@atlas/utils/temp.server";
 import { assertEquals, assertExists, assertStrictEquals } from "@std/assert";
@@ -85,7 +85,7 @@ async function setupProdAuthApp(
     app,
     keyPair,
     cleanup: async () => {
-      await Deno.remove(keyFile);
+      await rm(keyFile);
       if (originalKeyFile) process.env.LINK_JWT_PUBLIC_KEY_FILE = originalKeyFile;
       else delete process.env.LINK_JWT_PUBLIC_KEY_FILE;
       if (originalKvPath) process.env.LINK_KV_PATH = originalKvPath;
@@ -298,7 +298,7 @@ Deno.test(
         app,
         keyPair,
         cleanup: async () => {
-          await Deno.remove(keyFile);
+          await rm(keyFile);
           if (originalKeyFile) process.env.LINK_JWT_PUBLIC_KEY_FILE = originalKeyFile;
           else delete process.env.LINK_JWT_PUBLIC_KEY_FILE;
           if (originalKvPath) process.env.LINK_KV_PATH = originalKvPath;

@@ -8,7 +8,7 @@
  * 3. Mixed env types - Link ref + literal + auto
  */
 
-import { writeFile } from "node:fs/promises";
+import { rm, writeFile } from "node:fs/promises";
 import process from "node:process";
 import { assertEquals, assertExists, assertMatch, assertRejects } from "@std/assert";
 import { afterEach, beforeEach, describe, it } from "@std/testing/bdd";
@@ -313,7 +313,7 @@ describe("MCPManager - JWT Authentication", () => {
       await testManager.dispose();
     } finally {
       // Cleanup
-      await Deno.remove(tempKeyFile);
+      await rm(tempKeyFile);
       if (originalDevMode !== undefined) {
         process.env.LINK_DEV_MODE = originalDevMode;
       } else {

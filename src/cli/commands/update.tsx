@@ -1,4 +1,4 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { copyFile, readFile, readlink, rm, stat, writeFile } from "node:fs/promises";
 import process from "node:process";
 import { client, parseResult } from "@atlas/client/v2";
 import { logger } from "@atlas/logger";
@@ -556,7 +556,7 @@ async function performUpdate(params: {
   } finally {
     // Always cleanup update directory, even on error
     try {
-      await Deno.remove(updateDir, { recursive: true });
+      await rm(updateDir, { recursive: true });
     } catch {
       // Ignore cleanup errors
     }
@@ -627,7 +627,7 @@ async function checkBinaryWritePermission(): Promise<{
     const stat = await Deno.lstat(binaryPath);
     if (stat.isSymlink) {
       isSymlink = true;
-      const linkTarget = await Deno.readLink(binaryPath);
+      const linkTarget = await readlink(binaryPath, "utf-8");
       // Resolve relative paths
       actualBinaryPath = linkTarget.startsWith("/")
         ? linkTarget
@@ -641,7 +641,7 @@ async function checkBinaryWritePermission(): Promise<{
   const testPath = `${actualBinaryPath}.update-test`;
   try {
     await writeFile(testPath, "test", "utf-8");
-    await Deno.remove(testPath);
+    await rm(testPath);
     return { canWrite: true, binaryPath, actualBinaryPath, isSymlink };
   } catch {
     // Can't write to directory, check if we can overwrite the file itself
@@ -745,7 +745,7 @@ async function downloadAndVerifyChecksum(binaryUrl: string, binaryPath: string):
   const expectedHash = checksumContent.trim().split(/\s+/)[0];
 
   // Calculate actual checksum of downloaded file
-  const fileData = await Deno.readFile(binaryPath);
+  const fileData = await readFile(binaryPath);
   const hashBuffer = await crypto.subtle.digest("SHA-256", fileData);
   const actualHash = Array.from(new Uint8Array(hashBuffer))
     .map((b) => b.toString(16).padStart(2, "0"))
@@ -760,7 +760,7 @@ async function downloadAndVerifyChecksum(binaryUrl: string, binaryPath: string):
   }
 
   // Cleanup checksum file
-  await Deno.remove(checksumPath);
+  await rm(checksumPath);
 
   return true;
 }
@@ -929,16 +929,16 @@ async function replaceBinary(
     } else {
       // Additional symlink check as fallback
       try {
-        const stat = await Deno.lstat(binaryPath);
-        if (stat.isSymlink) {
-          const linkTarget = await Deno.readLink(binaryPath);
+        const fileInfo = await Deno.lstat(binaryPath);
+        if (fileInfo.isSymlink) {
+          const linkTarget = await readlink(binaryPath, "utf-8");
 
           // Check for broken symlink
           targetPath = linkTarget.startsWith("/") ? linkTarget : join(binaryPath, "..", linkTarget);
 
           // Verify the target exists
           try {
-            await Deno.stat(targetPath);
+            await stat(targetPath);
           } catch {
             throw new Error(
               `Symlink points to non-existent file: ${binaryPath} -> ${targetPath}\n` +
@@ -978,7 +978,7 @@ async function replaceBinary(
         }
         visited.add(checkPath);
 
-        const nextTarget = await Deno.readLink(checkPath);
+        const nextTarget = await readlink(checkPath, "utf-8");
         checkPath = nextTarget.startsWith("/") ? nextTarget : join(checkPath, "..", nextTarget);
         depth++;
       } catch {
@@ -1007,7 +1007,7 @@ async function replaceBinary(
         });
 
         // If ditto fails, try direct replacement
-        await Deno.remove(targetPath);
+        await rm(targetPath);
         await Deno.rename(newBinaryPath, targetPath);
       }
 
@@ -1038,7 +1038,7 @@ async function replaceBinary(
     // For regular files or if symlink update failed, try to remove then copy
     // This avoids permission issues with overwriting in-place
     try {
-      await Deno.remove(targetPath);
+      await rm(targetPath);
 
       // Use ditto to copy to the now-empty location
       const dittoCmd = new Deno.Command("ditto", { args: [newBinaryPath, targetPath] });
@@ -1071,7 +1071,7 @@ async function replaceBinary(
 
         if (!result.success) {
           logger.debug("ditto to temp location failed, using copyFile", { tempPath });
-          await Deno.copyFile(newBinaryPath, tempPath);
+          await copyFile(newBinaryPath, tempPath);
         }
 
         // Make temp file executable
@@ -1084,7 +1084,7 @@ async function replaceBinary(
       } catch (error) {
         // Clean up temp file if it exists
         try {
-          await Deno.remove(tempPath);
+          await rm(tempPath);
         } catch {
           // Ignore cleanup errors
         }
@@ -1112,7 +1112,7 @@ async function replaceBinary(
     });
 
     try {
-      await Deno.copyFile(newBinaryPath, targetPath);
+      await copyFile(newBinaryPath, targetPath);
       logger.debug("Binary copied successfully", { target: targetPath });
     } catch (error) {
       if (isSymlink) {

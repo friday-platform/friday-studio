@@ -1,4 +1,4 @@
-import { readdir, readFile, writeFile } from "node:fs/promises";
+import { copyFile, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { env } from "node:process";
 import { getAtlasClient } from "@atlas/client";
 import { createLogger } from "@atlas/logger";
@@ -117,7 +117,7 @@ export class DiagnosticsCollector {
       const destPath = join(storageDir, file);
       try {
         if (await exists(sourcePath)) {
-          await Deno.copyFile(sourcePath, destPath);
+          await copyFile(sourcePath, destPath);
         }
       } catch (error) {
         log.warn(`Failed to collect ${file}:`, { error });
@@ -190,7 +190,7 @@ export class DiagnosticsCollector {
               if (!isSystemWorkspace) {
                 const workspaceYmlPath = join(workspace.path, "workspace.yml");
                 if (await exists(workspaceYmlPath)) {
-                  await Deno.copyFile(workspaceYmlPath, join(workspaceDir, "workspace.yml"));
+                  await copyFile(workspaceYmlPath, join(workspaceDir, "workspace.yml"));
                   hasYamlFile = true;
                 }
               }
@@ -312,7 +312,7 @@ export class DiagnosticsCollector {
               try {
                 const sourcePath = join(systemWorkspacesPath, entry.name);
                 const destPath = join(systemDir, entry.name);
-                await Deno.copyFile(sourcePath, destPath);
+                await copyFile(sourcePath, destPath);
               } catch (error) {
                 log.warn(`Failed to copy system workspace ${entry.name}:`, { error });
               }
@@ -384,7 +384,7 @@ export class DiagnosticsCollector {
         await this.copyDirectory(sourcePath, destPath, excludeDirs);
       } else {
         try {
-          await Deno.copyFile(sourcePath, destPath);
+          await copyFile(sourcePath, destPath);
         } catch (error) {
           log.warn(`Failed to copy ${entry.name}:`, { error });
         }
@@ -913,7 +913,7 @@ export class DiagnosticsCollector {
     }
 
     // Clean up temp directory
-    await Deno.remove(this.tempDir, { recursive: true });
+    await rm(this.tempDir, { recursive: true });
   }
 
   private async createTarStreamEntries(baseDir: string): Promise<TarStreamInput[]> {
@@ -974,14 +974,14 @@ export class DiagnosticsCollector {
         });
       } else if (entry.isFile) {
         try {
-          const stat = await Deno.stat(entry.path);
+          const fileStat = await stat(entry.path);
           // Read file content immediately instead of opening a stream
-          const content = await Deno.readFile(entry.path);
+          const content = await readFile(entry.path);
 
           entries.push({
             type: "file",
             path: relativePath,
-            size: stat.size,
+            size: fileStat.size,
             readable: new ReadableStream({
               start(controller) {
                 controller.enqueue(content);

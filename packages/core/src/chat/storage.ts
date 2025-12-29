@@ -1,4 +1,4 @@
-import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import type { AtlasUIMessage } from "@atlas/agent-sdk";
 import { validateAtlasUIMessages } from "@atlas/agent-sdk";
 import { createLogger } from "@atlas/logger";
@@ -194,9 +194,9 @@ async function listChats(options?: ListChatsOptions): Promise<Result<ListChatsRe
       if (entry.isFile() && entry.name.endsWith(".json")) {
         const filePath = join(chatDir, entry.name);
         try {
-          const stat = await Deno.stat(filePath);
-          if (stat.mtime) {
-            const mtime = stat.mtime.getTime();
+          const fileStat = await stat(filePath);
+          if (fileStat.mtime) {
+            const mtime = fileStat.mtime.getTime();
             // Filter by cursor if provided
             if (cursor === undefined || mtime < cursor) {
               fileInfos.push({ path: filePath, mtime });
@@ -278,7 +278,7 @@ async function updateChatTitle(chatId: string, title: string): Promise<Result<Ch
 async function deleteChat(chatId: string): Promise<Result<void, string>> {
   try {
     const chatFile = getChatFile(chatId);
-    await Deno.remove(chatFile);
+    await rm(chatFile);
     logger.debug("Deleted chat", { chatId });
     return success(undefined);
   } catch (error) {

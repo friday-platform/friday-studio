@@ -1,3 +1,4 @@
+import { rm } from "node:fs/promises";
 import { assertEquals, assertExists, assertObjectMatch } from "@std/assert";
 import { z } from "zod";
 import { DenoKVStorageAdapter } from "../adapters/deno-kv-adapter.ts";
@@ -160,7 +161,7 @@ Deno.test("GET /v1/summary endpoint", async (t) => {
     // But no credentials
     assertEquals(json.credentials.length, 0);
 
-    await Deno.remove(emptyTempDir, { recursive: true });
+    await rm(emptyTempDir, { recursive: true });
   });
 
   await t.step("filters credentials by provider query param", async () => {
@@ -235,5 +236,5 @@ Deno.test("GET /v1/summary endpoint", async (t) => {
   });
 
   // Cleanup
-  await Deno.remove(tempDir, { recursive: true });
+  await rm(tempDir, { recursive: true });
 });

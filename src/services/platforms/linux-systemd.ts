@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import process from "node:process";
 import { exists } from "@std/fs";
 import { join } from "@std/path";
@@ -83,7 +83,7 @@ export class LinuxSystemdService implements PlatformServiceManager {
 
     // Remove service file
     try {
-      await Deno.remove(this.serviceFile);
+      await rm(this.serviceFile);
     } catch {
       // File might not exist, continue
     }

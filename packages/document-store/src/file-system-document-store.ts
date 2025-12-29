@@ -2,7 +2,7 @@
  * Filesystem implementation of DocumentStore
  */
 
-import { readdir, readFile, writeFile } from "node:fs/promises";
+import { readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { isErrnoException } from "@atlas/utils";
 import { getAtlasHome } from "@atlas/utils/paths.server";
 import { ensureDir } from "@std/fs";
@@ -45,7 +45,7 @@ export class FileSystemDocumentStore extends DocumentStore {
     const path = this.buildPath(scope, type, id);
 
     try {
-      await Deno.remove(path);
+      await rm(path);
       this.logger.debug("Document deleted", {
         type,
         id,
@@ -65,7 +65,7 @@ export class FileSystemDocumentStore extends DocumentStore {
   async exists(scope: DocumentScope, type: string, id: string): Promise<boolean> {
     const path = this.buildPath(scope, type, id);
     try {
-      await Deno.stat(path);
+      await stat(path);
       return true;
     } catch (error: unknown) {
       if (isErrnoException(error) && error.code === "ENOENT") {

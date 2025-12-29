@@ -8,7 +8,7 @@
  * 4. Return proper JSON artifact with metadata
  */
 
-import { readFile } from "node:fs/promises";
+import { readFile, rm } from "node:fs/promises";
 import { csvFilterSamplerAgent } from "@atlas/bundled-agents";
 import { ArtifactStorage, parseCsv } from "@atlas/core/artifacts/server";
 import { makeTempDir } from "@atlas/utils/temp.server";
@@ -79,7 +79,7 @@ Deno.test("CSV Filter Sampler Agent", async (t) => {
   // Cleanup function
   const cleanup = async () => {
     try {
-      await Deno.remove(tempDir, { recursive: true });
+      await rm(tempDir, { recursive: true });
     } catch (error) {
       console.error("Failed to cleanup temp directory:", error);
     }

@@ -1,4 +1,4 @@
-import { readdir } from "node:fs/promises";
+import { readdir, rm } from "node:fs/promises";
 import process from "node:process";
 import { client, parseResult } from "@atlas/client/v2";
 import { isErrnoException, sleep, stringifyError } from "@atlas/utils";
@@ -80,7 +80,7 @@ export const handler = async (argv: ResetArgs): Promise<void> => {
       if (PRESERVED_ENTRIES.has(entry.name)) {
         continue;
       }
-      await Deno.remove(join(atlasHome, entry.name), { recursive: true });
+      await rm(join(atlasHome, entry.name), { recursive: true });
       didDelete = true;
     }
 

@@ -6,6 +6,7 @@
  * while maintaining complete storage backend independence.
  */
 
+import { stat } from "node:fs/promises";
 import { logger } from "@atlas/logger";
 import type { WorkspaceStatus } from "@atlas/workspace";
 import { type WorkspaceEntry, WorkspaceEntrySchema, WorkspaceStatusEnum } from "@atlas/workspace";
@@ -351,8 +352,8 @@ export class RegistryStorageAdapter {
     for (const workspace of workspaces) {
       try {
         // Check if workspace directory still exists
-        const stat = await Deno.stat(workspace.path);
-        if (!stat.isDirectory) {
+        const statResult = await stat(workspace.path);
+        if (!statResult.isDirectory()) {
           orphanedIds.push(workspace.id);
         }
       } catch {

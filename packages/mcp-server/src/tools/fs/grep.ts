@@ -1,3 +1,4 @@
+import { stat } from "node:fs/promises";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { createSuccessResponse } from "../utils.ts";
@@ -135,7 +136,7 @@ export function registerGrepTool(server: McpServer) {
 
         let modTime = 0;
         try {
-          const stats = await Deno.stat(filePath);
+          const stats = await stat(filePath);
           modTime = stats.mtime?.getTime() ?? 0;
         } catch {
           continue;

@@ -7,7 +7,7 @@
  */
 
 import { existsSync, readFileSync } from "node:fs";
-import { readdir } from "node:fs/promises";
+import { readdir, rm, stat } from "node:fs/promises";
 import { env } from "node:process";
 import { ConfigLoader, ConfigNotFoundError, type MergedConfig } from "@atlas/config";
 import { logger } from "@atlas/logger";
@@ -425,7 +425,7 @@ export class WorkspaceManager {
     // Optionally remove directory
     if (options?.removeDirectory && !workspace.path.startsWith("system://")) {
       try {
-        await Deno.remove(workspace.path, { recursive: true });
+        await rm(workspace.path, { recursive: true });
         logger.info("Workspace directory removed", { id, path: workspace.path });
       } catch (error) {
         logger.warn("Failed to remove workspace directory", { id, path: workspace.path, error });
@@ -547,7 +547,7 @@ export class WorkspaceManager {
     const ephPath = join(workspacePath, "eph_workspace.yml");
     if (!existsSync(ephPath)) return false;
     try {
-      const info = await Deno.stat(ephPath);
+      const info = await stat(ephPath);
       const mtime = info.mtime ?? new Date();
       const ageMs = Date.now() - mtime.getTime();
       const ttlMs = 30 * 24 * 60 * 60 * 1000;
@@ -556,7 +556,7 @@ export class WorkspaceManager {
           path: workspacePath,
         });
         try {
-          await Deno.remove(ephPath);
+          await rm(ephPath);
           logger.info("Removed expired eph_workspace.yml", { path: ephPath });
         } catch (removeError) {
           logger.warn("Failed to remove expired eph_workspace.yml", {

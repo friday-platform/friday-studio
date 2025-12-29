@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readlink, rm, writeFile } from "node:fs/promises";
 import process from "node:process";
 import { isErrnoException } from "@atlas/utils";
 import { exists } from "@std/fs";
@@ -41,7 +41,7 @@ export class MacOSLaunchdService implements PlatformServiceManager {
       const systemBinaryStat = await Deno.lstat(systemBinaryPath);
       if (systemBinaryStat.isSymlink) {
         // It's a symlink, check if it points to our binary
-        const symlinkTarget = await Deno.readLink(systemBinaryPath);
+        const symlinkTarget = await readlink(systemBinaryPath, "utf-8");
         const resolvedTarget = symlinkTarget.startsWith("/")
           ? symlinkTarget
           : `/usr/local/bin/${symlinkTarget}`;
@@ -165,7 +165,7 @@ export class MacOSLaunchdService implements PlatformServiceManager {
 
     // Remove plist file
     try {
-      await Deno.remove(this.plistPath);
+      await rm(this.plistPath);
     } catch (error) {
       if (!(isErrnoException(error) && error.code === "ENOENT")) {
         throw new Error(

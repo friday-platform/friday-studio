@@ -1,3 +1,4 @@
+import { rm } from "node:fs/promises";
 import process from "node:process";
 import type { WorkspaceInfo } from "@atlas/client";
 import { createAtlasNotRunningError } from "@atlas/client";
@@ -128,7 +129,7 @@ export const handler = async (argv: RemoveArgs): Promise<void> => {
       deleteSpinner.start(`Deleting workspace files at ${workspace.path}...`);
 
       try {
-        await Deno.remove(workspace.path, { recursive: true });
+        await rm(workspace.path, { recursive: true });
         deleteSpinner.stop("Workspace files deleted");
       } catch (err) {
         deleteSpinner.stop("Failed to delete workspace files");

@@ -3,7 +3,7 @@
  * Tests enrichers and output structure directly (no daemon required)
  */
 
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { assert } from "@std/assert";
 import { parse as parseYaml, stringify as stringifyYaml } from "@std/yaml";
 import { WorkspaceConfigSchema } from "../../../packages/config/src/workspace.ts";
@@ -117,7 +117,7 @@ Deno.test("Workspace YML Generation - Daily Report with Discord", async (t) => {
     let workspaceYmlExists = false;
 
     try {
-      await Deno.stat(workspaceYmlPath);
+      await stat(workspaceYmlPath);
       workspaceYmlExists = true;
     } catch {
       // File doesn't exist
@@ -224,7 +224,7 @@ Deno.test("Workspace YML Generation - Daily Report with Discord", async (t) => {
     snapshot({ hasLLMAction, firstJobFsm: fsm });
 
     // Cleanup
-    await Deno.remove("./test-workspace", { recursive: true });
+    await rm("./test-workspace", { recursive: true });
 
     return { parsedConfig, signal, discordServer, hasLLMAction };
   });
@@ -404,7 +404,7 @@ Deno.test("Workspace YML Generation - Multiple MCP Servers", async (t) => {
     assert(firstJob.fsm, "Job should have FSM inside");
 
     // Cleanup
-    await Deno.remove("./test-workspace-multi", { recursive: true });
+    await rm("./test-workspace-multi", { recursive: true });
 
     return { parsedConfig, signal, githubServer, discordServer };
   });

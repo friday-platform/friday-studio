@@ -1,4 +1,4 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, rm, stat, writeFile } from "node:fs/promises";
 import { claudeCodeAgent } from "@atlas/bundled-agents";
 import { client, parseResult } from "@atlas/client/v2";
 import { makeTempDir } from "@atlas/utils/temp.server";
@@ -12,7 +12,7 @@ import { saveSnapshot } from "../../lib/snapshot.ts";
 /** Check if file exists at given path. */
 async function fileExists(filePath: string): Promise<boolean> {
   try {
-    await Deno.stat(filePath);
+    await stat(filePath);
     return true;
   } catch {
     return false;
@@ -287,7 +287,7 @@ Deno.test({
         });
       });
     } finally {
-      await Deno.remove(tempWorkspace, { recursive: true });
+      await rm(tempWorkspace, { recursive: true });
     }
   },
 });

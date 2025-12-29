@@ -1,3 +1,4 @@
+import { rm, stat } from "node:fs/promises";
 import { getAtlasClient } from "@atlas/client";
 import { createLogger } from "@atlas/logger";
 import { DiagnosticsCollector, type DiagnosticsCollectorOptions } from "./collector.ts";
@@ -17,7 +18,7 @@ export async function sendDiagnostics(options: DiagnosticsCollectorOptions = {})
 
     // Check size
     log.info("Verifying archive size...");
-    const fileInfo = await Deno.stat(gzipPath);
+    const fileInfo = await stat(gzipPath);
     const sizeMB = (fileInfo.size / 1024 / 1024).toFixed(2);
     log.info(`Archive size: ${sizeMB} MB`);
 
@@ -38,7 +39,7 @@ export async function sendDiagnostics(options: DiagnosticsCollectorOptions = {})
   } finally {
     // Clean up temp file
     if (gzipPath) {
-      await Deno.remove(gzipPath).catch(() => {});
+      await rm(gzipPath).catch(() => {});
     }
   }
 }

@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import process from "node:process";
 import { logger } from "@atlas/logger";
 import { z } from "zod";
@@ -77,7 +77,7 @@ exit
     // Remove startup folder entry
     const startupBatch = `${homeDir}\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\Atlas.bat`;
     try {
-      await Deno.remove(startupBatch);
+      await rm(startupBatch);
       logger.info("Atlas startup entries removed successfully");
     } catch {
       // File might not exist
@@ -85,7 +85,7 @@ exit
 
     // Remove stored config
     try {
-      await Deno.remove(this.configPath);
+      await rm(this.configPath);
     } catch {
       // ignore
     }
@@ -320,7 +320,7 @@ exit
     const startupBatch = `${homeDir}\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\Atlas.bat`;
 
     try {
-      await Deno.stat(startupBatch);
+      await stat(startupBatch);
       return true;
     } catch {
       return false;

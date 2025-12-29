@@ -2,7 +2,7 @@
  * Test runner for FSM transition validation
  */
 
-import { writeFile } from "node:fs/promises";
+import { rm, writeFile } from "node:fs/promises";
 import { logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
 import type { DocumentScope, DocumentStore } from "../../../document-store/node.ts";
@@ -100,7 +100,7 @@ async function runCustomValidation(
   } catch (error) {
     return { passed: false, error: `Custom validation error: ${stringifyError(error)}` };
   } finally {
-    await Deno.remove(tempFile).catch(() => {});
+    await rm(tempFile).catch(() => {});
   }
 }
 

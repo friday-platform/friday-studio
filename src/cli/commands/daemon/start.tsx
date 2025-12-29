@@ -1,4 +1,4 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, rm, stat, writeFile } from "node:fs/promises";
 import process from "node:process";
 import { client, parseResult } from "@atlas/client/v2";
 import { decodeJwtPayload, fetchCredentials, setToEnv } from "@atlas/core/credentials";
@@ -371,8 +371,8 @@ export const handler = async (argv: StartArgs): Promise<void> => {
           }
 
           // Check if the path exists and is a file (after following symlinks)
-          const fileInfo = await Deno.stat(realPath);
-          if (!fileInfo.isFile) {
+          const fileInfo = await stat(realPath);
+          if (!fileInfo.isFile()) {
             logger.warn(`${toolName} path is not a file: ${realPath} (original: ${toolPath})`);
             return;
           }
@@ -384,7 +384,7 @@ export const handler = async (argv: StartArgs): Promise<void> => {
             // - owner execute: 0o100
             // - group execute: 0o010
             // - other execute: 0o001
-            const mode = fileInfo.mode ?? 0;
+            const mode = fileInfo.mode;
             const isExecutable = (mode & 0o111) !== 0; // Check any execute bit
 
             if (!isExecutable) {
@@ -563,8 +563,8 @@ WshShell.Run "${cmdLine}", 0, False`;
 
   // Clean up VBScript file
   try {
-    await Deno.remove(vbsFile);
-    await Deno.remove(tempDir);
+    await rm(vbsFile);
+    await rm(tempDir);
   } catch {
     // Ignore cleanup errors
   }

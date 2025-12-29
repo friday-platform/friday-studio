@@ -1,3 +1,4 @@
+import { rm } from "node:fs/promises";
 import { assertEquals, assertExists } from "@std/assert";
 import { DenoKVStorageAdapter } from "./deno-kv-adapter.ts";
 
@@ -39,5 +40,5 @@ Deno.test("DenoKVStorageAdapter tenant isolation", async (t) => {
     assertEquals(list[0]?.id, credIdA);
   });
 
-  await Deno.remove(tempFile);
+  await rm(tempFile);
 });

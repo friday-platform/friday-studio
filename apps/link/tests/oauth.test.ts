@@ -3,6 +3,7 @@
  * End-to-end tests for OAuth authorization flow
  */
 
+import { rm } from "node:fs/promises";
 import process from "node:process";
 import { makeTempDir } from "@atlas/utils/temp.server";
 import { assert, assertEquals, assertExists, assertMatch, assertObjectMatch } from "@std/assert";
@@ -488,7 +489,7 @@ Deno.test(
 
     // Cleanup
     if (mockServer) mockServer.controller.abort();
-    await Deno.remove(tempDir, { recursive: true });
+    await rm(tempDir, { recursive: true });
   },
 );
 
@@ -759,5 +760,5 @@ Deno.test({ name: "Static OAuth Integration", sanitizeResources: false }, async 
 
   // Cleanup
   if (mockServer) mockServer.controller.abort();
-  await Deno.remove(tempDir, { recursive: true });
+  await rm(tempDir, { recursive: true });
 });

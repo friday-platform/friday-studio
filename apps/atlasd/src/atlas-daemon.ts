@@ -1,3 +1,4 @@
+import { stat } from "node:fs/promises";
 import process, { env } from "node:process";
 import type { AgentRegistry as AgentRegistryType, AtlasUIMessageChunk } from "@atlas/agent-sdk";
 import { type SupervisorDefaults, supervisorDefaultsWrapped } from "@atlas/config";
@@ -820,8 +821,8 @@ export class AtlasDaemon {
       if (!workspace.metadata?.system) {
         // Validate workspace path exists
         try {
-          const stat = await Deno.stat(workspace.path);
-          if (!stat.isDirectory) {
+          const pathStat = await stat(workspace.path);
+          if (!pathStat.isDirectory()) {
             throw new Error(`Workspace path is not a directory: ${workspace.path}`);
           }
         } catch (error) {

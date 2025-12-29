@@ -3,7 +3,7 @@
  * Loads configuration from local filesystem
  */
 
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { parse as parseYaml } from "@std/yaml";
 import type { ConfigurationAdapter } from "./mod.ts";
 
@@ -27,7 +27,7 @@ export class FilesystemConfigAdapter implements ConfigurationAdapter {
    */
   async exists(path: string): Promise<boolean> {
     try {
-      await Deno.stat(path);
+      await stat(path);
       return true;
     } catch {
       return false;

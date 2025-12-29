@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { createLogger } from "@atlas/logger";
 import { fail, type Result, stringifyError, success } from "@atlas/utils";
 import { getAtlasHome } from "@atlas/utils/paths.server";
@@ -55,7 +55,7 @@ async function create(input: CreateArtifactInput): Promise<Result<Artifact, stri
     const fileInput = input.data.data;
 
     try {
-      await Deno.stat(fileInput.path);
+      await stat(fileInput.path);
     } catch (error) {
       return fail(`File not found: ${fileInput.path} (${stringifyError(error)})`);
     }
@@ -138,7 +138,7 @@ async function update(input: {
     const fileInput = input.data.data;
 
     try {
-      await Deno.stat(fileInput.path);
+      await stat(fileInput.path);
     } catch (error) {
       return fail(`File not found: ${fileInput.path} (${stringifyError(error)})`);
     }

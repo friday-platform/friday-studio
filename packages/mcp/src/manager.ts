@@ -4,6 +4,7 @@
  */
 
 import { readFileSync } from "node:fs";
+import { stat } from "node:fs/promises";
 import process from "node:process";
 import { experimental_createMCPClient as createMCPClient } from "@ai-sdk/mcp";
 import { Experimental_StdioMCPTransport as StdioMCPTransport } from "@ai-sdk/mcp/mcp-stdio";
@@ -165,8 +166,8 @@ export class MCPManager {
                   realPath = npxPath;
                 }
 
-                const fileInfo = await Deno.stat(realPath);
-                if (fileInfo.isFile) {
+                const fileInfo = await stat(realPath);
+                if (fileInfo.isFile()) {
                   logger.debug(`Using configured npx path: ${npxPath}`, {
                     operation: "mcp_command_resolution",
                     serverId: config.id,
@@ -216,8 +217,8 @@ export class MCPManager {
                       ? fallbackPath.replace(/%([^%]+)%/g, (_, key) => process.env[key] || "")
                       : fallbackPath;
 
-                  const fileInfo = await Deno.stat(expandedPath);
-                  if (fileInfo.isFile) {
+                  const fileInfo = await stat(expandedPath);
+                  if (fileInfo.isFile()) {
                     logger.info(`Found npx at fallback location: ${expandedPath}`, {
                       operation: "mcp_command_resolution",
                       serverId: config.id,

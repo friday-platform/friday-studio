@@ -10,7 +10,7 @@
 import { ensureDir } from "jsr:@std/fs";
 import { join } from "jsr:@std/path";
 import { mkdtempSync } from "node:fs";
-import { readdir } from "node:fs/promises";
+import { readdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import process from "node:process";
 
@@ -99,7 +99,7 @@ async function downloadAndExtractPackage(
     // Most npm packages extract to a 'package' subdirectory
     let extractedPackageDir = join(tmpDir, "package");
     try {
-      await Deno.stat(extractedPackageDir);
+      await stat(extractedPackageDir);
     } catch {
       // If no 'package' directory, list contents and find the first directory
       const dirEntries = await readdir(tmpDir, { withFileTypes: true });
@@ -121,7 +121,7 @@ async function downloadAndExtractPackage(
 
     // Remove existing directory if it exists
     try {
-      await Deno.remove(targetDir, { recursive: true });
+      await rm(targetDir, { recursive: true });
     } catch {
       // Ignore if doesn't exist
     }
@@ -146,7 +146,7 @@ async function downloadAndExtractPackage(
   } finally {
     // Clean up temp directory
     try {
-      await Deno.remove(tmpDir, { recursive: true });
+      await rm(tmpDir, { recursive: true });
     } catch (err) {
       console.warn(`Failed to clean up temp directory: ${err}`);
     }
@@ -159,7 +159,7 @@ async function vendorDependencies() {
 
   // Verify the vendored files
   try {
-    await Deno.stat(join(VENDOR_DIR, "api", "core.js"));
+    await stat(join(VENDOR_DIR, "api", "core.js"));
     console.log("✓ Verified @tauri-apps/api/core.js exists");
   } catch {
     console.error("Warning: core.js not found in vendored directory");
@@ -170,7 +170,7 @@ async function vendorDependencies() {
 
   // Verify @types/node
   try {
-    await Deno.stat(join(TYPES_DIR, "node", "index.d.ts"));
+    await stat(join(TYPES_DIR, "node", "index.d.ts"));
     console.log("✓ Verified @types/node/index.d.ts exists");
   } catch {
     console.error("Warning: @types/node index.d.ts not found");

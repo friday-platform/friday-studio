@@ -1,6 +1,6 @@
 #!/usr/bin/env -S deno run --allow-read --allow-write --allow-env
 
-import { readdir } from "node:fs/promises";
+import { readdir, rm } from "node:fs/promises";
 import process from "node:process";
 import { isErrnoException, stringifyError } from "@atlas/utils";
 import { getAtlasHome } from "@atlas/utils/paths.server";
@@ -23,7 +23,7 @@ async function clean() {
       if (PRESERVED_ENTRIES.has(entry.name)) {
         continue;
       }
-      await Deno.remove(join(atlasHome, entry.name), { recursive: true });
+      await rm(join(atlasHome, entry.name), { recursive: true });
       didDelete = true;
     }
 

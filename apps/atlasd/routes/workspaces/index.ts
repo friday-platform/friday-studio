@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { WorkspaceConfigSchema } from "@atlas/config";
 import { logger } from "@atlas/logger";
 import { FilesystemWorkspaceCreationAdapter } from "@atlas/storage";
@@ -577,7 +577,7 @@ const workspacesRoutes = daemonFactory
           // Find an available name if there's a collision
           while (true) {
             try {
-              await Deno.stat(targetPath);
+              await stat(targetPath);
               // Path exists, try next number
               counter++;
               targetPath = join(unregisteredDir, `${workspaceName}-${counter}`);

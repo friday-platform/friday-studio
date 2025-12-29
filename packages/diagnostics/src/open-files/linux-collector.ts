@@ -1,4 +1,4 @@
-import { readdir } from "node:fs/promises";
+import { readdir, readlink } from "node:fs/promises";
 import { isErrnoException } from "@atlas/utils";
 import type { FileType, OpenFileEntry, PlatformCollector } from "./types.ts";
 
@@ -23,7 +23,7 @@ export const LinuxCollector: PlatformCollector = {
       const fd = entry.name;
 
       try {
-        const link = await Deno.readLink(`${fdDir}/${fd}`);
+        const link = await readlink(`${fdDir}/${fd}`, "utf-8");
 
         yield { fd, type: detectType(link), path: link };
       } catch (error) {

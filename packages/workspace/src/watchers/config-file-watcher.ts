@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { WorkspaceConfigSchema } from "@atlas/config";
 import { createFsWatchRunner, type FsWatchRunner } from "@atlas/fs-watch";
 import { logger } from "@atlas/logger";
@@ -376,7 +376,7 @@ export class WorkspaceConfigWatcher {
   // ----- Private helpers: config validation -----
 
   private async isConfigTooLarge(filePath: string): Promise<boolean> {
-    const stats = await Deno.stat(filePath);
+    const stats = await stat(filePath);
     if (stats.size > this.maxConfigSize) {
       logger.warn("Config file too large, skipping reload", {
         filePath,

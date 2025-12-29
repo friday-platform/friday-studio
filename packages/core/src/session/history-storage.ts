@@ -1,4 +1,4 @@
-import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import type { AgentResult, ArtifactRef, ToolCall, ToolResult } from "@atlas/agent-sdk";
 import { createLogger } from "@atlas/logger";
 import { fail, isErrnoException, type Result, stringifyError, success } from "@atlas/utils";
@@ -627,9 +627,9 @@ export async function listSessions(
       if (entry.isFile() && entry.name.endsWith(".json")) {
         const filePath = join(sessionDir, entry.name);
         try {
-          const stat = await Deno.stat(filePath);
-          if (stat.mtime) {
-            fileInfos.push({ path: filePath, mtime: stat.mtime.getTime() });
+          const fileStat = await stat(filePath);
+          if (fileStat.mtime) {
+            fileInfos.push({ path: filePath, mtime: fileStat.mtime.getTime() });
           }
         } catch (error) {
           logger.warn("Failed to stat session file, skipping", {

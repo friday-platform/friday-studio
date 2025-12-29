@@ -3,7 +3,7 @@
  * Checks for newer versions from the Atlas update server with daily caching
  */
 
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, rm, writeFile } from "node:fs/promises";
 import { env } from "node:process";
 import { getAtlasBaseUrl } from "@atlas/core";
 import { logger } from "@atlas/logger";
@@ -153,7 +153,7 @@ async function loadCache(): Promise<VersionCache | null> {
     const cache = versionCacheSchema.safeParse(JSON.parse(data));
 
     if (!cache.success) {
-      await Deno.remove(cacheFile).catch(() => {});
+      await rm(cacheFile).catch(() => {});
       return null;
     }
 
@@ -161,7 +161,7 @@ async function loadCache(): Promise<VersionCache | null> {
       return cache.data;
     }
 
-    await Deno.remove(cacheFile).catch(() => {});
+    await rm(cacheFile).catch(() => {});
     return null;
   } catch {
     return null;

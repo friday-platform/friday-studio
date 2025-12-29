@@ -1,3 +1,4 @@
+import { rm } from "node:fs/promises";
 import process from "node:process";
 import { makeTempDir } from "@atlas/utils/temp.server";
 import { assert, assertEquals } from "@std/assert";
@@ -25,7 +26,7 @@ afterEach(async () => {
     delete process.env.ATLAS_HOME;
   }
   try {
-    await Deno.remove(testDir, { recursive: true });
+    await rm(testDir, { recursive: true });
   } catch {
     // Ignore cleanup errors
   }

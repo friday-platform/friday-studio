@@ -1,3 +1,4 @@
+import { stat } from "node:fs/promises";
 import process from "node:process";
 import {
   AtlasClient,
@@ -124,13 +125,13 @@ const WorkspaceAddUI = ({ args, onComplete }: { args: AddArgs; onComplete: () =>
               throw new Error(`Path not found: ${resolvedPath}`);
             }
 
-            const stats = await Deno.stat(resolvedPath);
+            const stats = await stat(resolvedPath);
 
-            if (stats.isFile && basename(resolvedPath) === "workspace.yml") {
+            if (stats.isFile() && basename(resolvedPath) === "workspace.yml") {
               // If the path is a workspace.yml file, use its parent directory
               const workspaceDir = dirname(resolvedPath);
               paths.push(workspaceDir);
-            } else if (stats.isDirectory) {
+            } else if (stats.isDirectory()) {
               // If it's a directory, check for workspace.yml inside
               const workspaceYml = join(resolvedPath, "workspace.yml");
               if (!(await exists(workspaceYml))) {

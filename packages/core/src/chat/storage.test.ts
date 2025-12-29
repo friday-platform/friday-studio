@@ -1,4 +1,4 @@
-import { writeFile } from "node:fs/promises";
+import { rm, writeFile } from "node:fs/promises";
 import process from "node:process";
 import type { AtlasUIMessage } from "@atlas/agent-sdk";
 import { validateAtlasUIMessages } from "@atlas/agent-sdk";
@@ -24,7 +24,7 @@ afterEach(async () => {
     delete process.env.ATLAS_HOME;
   }
   try {
-    await Deno.remove(testDir, { recursive: true });
+    await rm(testDir, { recursive: true });
   } catch {
     // Ignore cleanup errors
   }

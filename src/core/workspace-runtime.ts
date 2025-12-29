@@ -6,6 +6,7 @@
  */
 
 import { EventEmitter } from "node:events";
+import { stat } from "node:fs/promises";
 import type { AgentResult, AtlasUIMessageChunk } from "@atlas/agent-sdk";
 import type { MergedConfig } from "@atlas/config";
 import {
@@ -288,7 +289,7 @@ export class WorkspaceRuntime {
       // Check for main workspace FSM
       const mainFSM = path.join(workspacePath, "workspace.fsm.yaml");
       try {
-        await Deno.stat(mainFSM);
+        await stat(mainFSM);
         fsmFiles.push(mainFSM);
       } catch {
         // No main FSM

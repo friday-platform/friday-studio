@@ -1,3 +1,4 @@
+import { stat } from "node:fs/promises";
 import { env } from "node:process";
 import { logger } from "@atlas/logger";
 import { isAbsolute, join, normalize, relative, resolve } from "@std/path";
@@ -71,8 +72,8 @@ export function computeRelativeToRoot(pathAbs: string, workspaceRoot?: string): 
 
 export async function isDirectoryPath(pathAbs: string): Promise<boolean> {
   try {
-    const stats = await Deno.stat(pathAbs);
-    return stats.isDirectory;
+    const stats = await stat(pathAbs);
+    return stats.isDirectory();
   } catch {
     return false;
   }

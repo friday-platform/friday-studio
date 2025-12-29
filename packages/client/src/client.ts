@@ -4,6 +4,7 @@
  */
 
 import { env } from "node:process";
+import { readFile } from "node:fs/promises";
 import { parseResult, client as v2Client } from "@atlas/client/v2";
 import { getDiagnosticsApiUrl, validateAtlasJWT } from "@atlas/core";
 import { createAtlasClient } from "@atlas/oapi-client";
@@ -292,7 +293,7 @@ export class AtlasClient {
     validateAtlasJWT(atlasKey);
 
     // Read the gzip file
-    const diagnosticData = await Deno.readFile(gzipPath);
+    const diagnosticData = await readFile(gzipPath);
 
     // Get filename from path (handle both Unix and Windows paths)
     const filename = basename(gzipPath);
