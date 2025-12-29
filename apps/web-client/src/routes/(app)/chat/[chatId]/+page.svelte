@@ -1,6 +1,6 @@
 <script lang="ts">
 import { Chat } from "@ai-sdk/svelte";
-import { type AtlasUIMessage, type AtlasUIMessagePart } from "@atlas/agent-sdk";
+import { type AtlasUIMessagePart } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
 import { getAtlasDaemonUrl } from "@atlas/oapi-client";
 import { DefaultChatTransport } from "ai";
@@ -33,8 +33,6 @@ const { data }: { data: PageData } = $props();
 const appCtx = getAppContext();
 const chatContext = getChatContext();
 
-let chat = $state<Chat<AtlasUIMessage>>();
-
 let form = $state<HTMLFormElement | null>(null);
 let message = $state<string>("");
 
@@ -42,24 +40,23 @@ let message = $state<string>("");
 let scrollContainer = $state<HTMLDivElement | null>(null);
 
 function setup() {
-  if (chatContext.chats.has(data.chatId)) {
-    chat = chatContext.chats.get(data.chatId);
-  } else {
-    chat = new Chat({
-      id: data.chatId,
-      messages: data.messages,
-      onFinish: () => {
-        scrollToBottom();
-      },
-      transport: new DefaultChatTransport({
-        api: `${getAtlasDaemonUrl()}/api/chat`,
-        prepareSendMessagesRequest({ messages, id }) {
-          return { body: { message: messages.at(-1), id } };
+  if (!chatContext.chats.has(data.chatId)) {
+    chatContext.chats.set(
+      data.chatId,
+      new Chat({
+        id: data.chatId,
+        messages: data.messages,
+        onFinish: () => {
+          scrollToBottom();
         },
+        transport: new DefaultChatTransport({
+          api: `${getAtlasDaemonUrl()}/api/chat`,
+          prepareSendMessagesRequest({ messages, id }) {
+            return { body: { message: messages.at(-1), id } };
+          },
+        }),
       }),
-    });
-
-    chatContext.chats.set(data.chatId, chat);
+    );
   }
 }
 
@@ -124,7 +121,9 @@ let actionsAfterLastUser = $state<{ parts: AtlasUIMessagePart[]; timestamp?: str
 });
 
 $effect(() => {
-  const lastAssistantMessage = (chat?.messages ?? []).findLast((msg) => msg.role === "assistant");
+  const lastAssistantMessage = (chatContext.chats.get(data.chatId)?.messages ?? []).findLast(
+    (msg) => msg.role === "assistant",
+  );
 
   // If no user message found, return empty
   if (!lastAssistantMessage) {
@@ -142,22 +141,22 @@ $effect(() => {
 let showDetails = new SvelteMap<string, boolean>();
 </script>
 
-{#if chat}
+{#if chatContext.chats.has(data.chatId)}
 	<div class="chat">
 		<div class="main">
 			<div class="messages" bind:this={scrollContainer} onscroll={handleScroll}>
 				<div
 					class="messages-container"
-					class:has-outline={chat.messages.some((msg) =>
-						msg.parts.some((part) => part.type === 'data-outline-update')
-					)}
+					class:has-outline={chatContext.chats
+						.get(data.chatId)
+						?.messages.some((msg) => msg.parts.some((part) => part.type === 'data-outline-update'))}
 				>
 					<div class="messages-inner">
 						<div class="first-message">
 							<h2>{data.title ?? 'Untitled'}</h2>
 						</div>
 
-						{#each chat.messages as messageContainer, index ((messageContainer.id, index))}
+						{#each chatContext.chats.get(data.chatId)?.messages as messageContainer, index ((messageContainer.id, index))}
 							{@const messages = messageContainer.parts
 								.map((message) => formatMessage(messageContainer, message))
 								.filter((part) => part !== undefined)}
@@ -198,7 +197,7 @@ let showDetails = new SvelteMap<string, boolean>();
 							{/if}
 						{/each}
 
-						{#if chat.status === 'streaming' || chat.status === 'submitted'}
+						{#if chatContext.chats.get(data.chatId)?.status === 'streaming' || chatContext.chats.get(data.chatId)?.status === 'submitted'}
 							<Progress
 								actions={actionsAfterLastUser.parts}
 								timestamp={actionsAfterLastUser.timestamp}
@@ -207,7 +206,7 @@ let showDetails = new SvelteMap<string, boolean>();
 					</div>
 
 					<Outline
-						messages={(chat.messages ?? [])
+						messages={(chatContext.chats.get(data.chatId)?.messages ?? [])
 							.filter((msg) => msg.role === 'assistant')
 							.filter((msg) => msg.parts.some((part) => part.type === 'data-outline-update'))}
 					/>
@@ -217,9 +216,9 @@ let showDetails = new SvelteMap<string, boolean>();
 
 				<div
 					class="interactive-container"
-					class:has-outline={chat.messages.some((msg) =>
-						msg.parts.some((part) => part.type === 'data-outline-update')
-					)}
+					class:has-outline={chatContext.chats
+						.get(data.chatId)
+						?.messages.some((msg) => msg.parts.some((part) => part.type === 'data-outline-update'))}
 				>
 					<div class="interactive-container-int">
 						<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
@@ -234,7 +233,7 @@ let showDetails = new SvelteMap<string, boolean>();
 							onsubmit={async (e) => {
 								e.preventDefault();
 
-								if (chat && message.trim()) {
+								if (chatContext.chats.has(data.chatId) && message.trim()) {
 									let combinedMessage = message;
 									if (appCtx.stagedFiles.state.size > 0) {
 										combinedMessage = combinedMessage + `\n\nAttachments:`;
@@ -244,7 +243,7 @@ let showDetails = new SvelteMap<string, boolean>();
 										}
 									}
 
-									chat.sendMessage({ text: combinedMessage });
+									chatContext.chats.get(data.chatId)?.sendMessage({ text: combinedMessage });
 									message = '';
 									appCtx.stagedFiles.clear();
 								}
@@ -345,8 +344,12 @@ let showDetails = new SvelteMap<string, boolean>();
 
 												<DropdownMenu.Item
 													onclick={async () => {
-														if (chat?.messages) {
-															await shareChat(chat.messages, data.title);
+														if (chatContext.chats.has(data.chatId)) {
+															// @ts-expect-error chat must exist if we are in this condition
+															await shareChat(
+																chatContext.chats.get(data.chatId)?.messages,
+																data.title
+															);
 														}
 													}}
 												>
@@ -378,14 +381,14 @@ let showDetails = new SvelteMap<string, boolean>();
 								/>
 
 								<div class="form-action">
-									{#if chat.status === 'streaming' || chat.status === 'submitted'}
+									{#if chatContext.chats.get(data.chatId)?.status === 'streaming' || chatContext.chats.get(data.chatId)?.status === 'submitted'}
 										<button
 											class="stop-process"
 											type="button"
 											onclick={async (e) => {
 												e.preventDefault();
 
-												chat?.stop();
+												chatContext.chats.get(data.chatId)?.stop();
 											}}
 										>
 											<IconSmall.Stop />
