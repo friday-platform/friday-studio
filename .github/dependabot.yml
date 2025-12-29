@@ -52,6 +52,8 @@ updates:
         update-types: ["version-update:semver-major"]
       - dependency-name: "@ai-sdk/*"
         update-types: ["version-update:semver-major"]
+      - dependency-name: "ai-sdk-provider-claude-code"
+        update-types: ["version-update:semver-major"]
 
   # Keep Docker dependencies up to date
   - package-ecosystem: "docker"
