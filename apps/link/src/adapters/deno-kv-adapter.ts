@@ -25,6 +25,39 @@ export class DenoKVStorageAdapter implements StorageAdapter {
     return { id, metadata };
   }
 
+  async upsert(input: CredentialInput, userId: string): Promise<SaveResult> {
+    using kv = await Deno.openKv(this.kvPath);
+
+    // Find existing credential with same provider+label
+    let existingId: string | null = null;
+    let existingMetadata: Metadata | null = null;
+
+    for await (const entry of kv.list<Credential>({ prefix: ["credentials", userId] })) {
+      if (entry.value.provider === input.provider && entry.value.label === input.label) {
+        existingId = entry.value.id;
+        existingMetadata = entry.value.metadata;
+        break;
+      }
+    }
+
+    const now = new Date().toISOString();
+
+    if (existingId && existingMetadata) {
+      // Update existing
+      const metadata: Metadata = { createdAt: existingMetadata.createdAt, updatedAt: now };
+      const credential: Credential = { ...input, id: existingId, metadata };
+      await kv.set(["credentials", userId, existingId], credential);
+      return { id: existingId, metadata };
+    }
+
+    // Create new
+    const id = nanoid();
+    const metadata: Metadata = { createdAt: now, updatedAt: now };
+    const credential: Credential = { ...input, id, metadata };
+    await kv.set(["credentials", userId, id], credential);
+    return { id, metadata };
+  }
+
   async update(id: string, input: CredentialInput, userId: string): Promise<Metadata> {
     using kv = await Deno.openKv(this.kvPath);
     const existing = await kv.get<Credential>(["credentials", userId, id]);

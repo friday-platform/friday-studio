@@ -6,7 +6,14 @@
 import { rm } from "node:fs/promises";
 import process from "node:process";
 import { makeTempDir } from "@atlas/utils/temp.server";
-import { assert, assertEquals, assertExists, assertMatch, assertObjectMatch } from "@std/assert";
+import {
+  assert,
+  assertEquals,
+  assertExists,
+  assertMatch,
+  assertNotEquals,
+  assertObjectMatch,
+} from "@std/assert";
 import { z } from "zod";
 import { DenoKVStorageAdapter } from "../src/adapters/deno-kv-adapter.ts";
 import { createApp } from "../src/index.ts";
@@ -320,7 +327,7 @@ Deno.test(
       },
     );
 
-    await t.step("Each OAuth flow creates new credential", async () => {
+    await t.step("Same OAuth identity updates existing credential (upsert)", async () => {
       if (mockServer) mockServer.controller.abort();
 
       mockServer = await startMockOAuthServer({
@@ -329,32 +336,31 @@ Deno.test(
         includeUserinfo: true,
       });
 
-      registerTestOAuthProvider("test-new-each-flow", mockServer.issuer);
+      registerTestOAuthProvider("test-upsert", mockServer.issuer);
 
-      // First flow
+      // First flow - creates credential
       const { credentialId: firstCredId } = await completeOAuthFlow(
         app,
         mockServer,
-        "test-new-each-flow",
+        "test-upsert",
         { accessToken: "first_flow_access" },
       );
 
-      // Second flow creates new credential (no upsert)
+      // Second flow - same provider, same userIdentifier (derived from access_token hash)
+      // Should UPDATE same credential, not create duplicate
       const { credentialId: secondCredId } = await completeOAuthFlow(
         app,
         mockServer,
-        "test-new-each-flow",
-        { accessToken: "second_flow_access" },
+        "test-upsert",
+        { accessToken: "first_flow_access" }, // SAME token = same userIdentifier
       );
 
-      // Should be different IDs (each flow creates new credential)
-      assert(firstCredId !== secondCredId);
+      // SAME ID = credential was updated, not duplicated
+      assertEquals(firstCredId, secondCredId);
 
-      // Both should exist
-      const cred1 = await storage.get(firstCredId, "dev");
-      const cred2 = await storage.get(secondCredId, "dev");
-      assertExists(cred1);
-      assertExists(cred2);
+      // Verify credential still exists and is valid
+      const cred = await storage.get(firstCredId, "dev");
+      assertExists(cred);
     });
 
     await t.step("Different userIdentifier creates new credential", async () => {
@@ -392,6 +398,38 @@ Deno.test(
       const cred2 = await storage.get(secondCredId, "dev");
       assertExists(cred1);
       assertExists(cred2);
+    });
+
+    await t.step("OAuth flow after delete creates new credential", async () => {
+      if (mockServer) mockServer.controller.abort();
+      mockServer = await startMockOAuthServer({
+        includeProtectedResource: true,
+        includeOAuthMetadata: true,
+        includeUserinfo: true,
+      });
+      registerTestOAuthProvider("test-delete-then-create", mockServer.issuer);
+
+      // First flow
+      const { credentialId: firstId } = await completeOAuthFlow(
+        app,
+        mockServer,
+        "test-delete-then-create",
+        { accessToken: "delete_test_token" },
+      );
+
+      // Delete the credential
+      await storage.delete(firstId, "dev");
+
+      // Second flow - same identity, but original was deleted
+      const { credentialId: secondId } = await completeOAuthFlow(
+        app,
+        mockServer,
+        "test-delete-then-create",
+        { accessToken: "delete_test_token" }, // Same token = same identity
+      );
+
+      // DIFFERENT ID = new credential created (deleted one ignored)
+      assertNotEquals(firstId, secondId);
     });
 
     // Identity resolution via identify hook

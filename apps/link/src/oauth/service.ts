@@ -271,8 +271,8 @@ export class OAuthService {
       },
     };
 
-    // 8. Save credential (storage generates ID and returns metadata)
-    const { id, metadata } = await this.storage.save(credentialInput, userId || "dev");
+    // 8. Upsert credential (atomic create-or-update by provider+label identity)
+    const { id, metadata } = await this.storage.upsert(credentialInput, userId || "dev");
 
     // Build OAuthCredential response (includes userIdentifier)
     const credential: OAuthCredential = {

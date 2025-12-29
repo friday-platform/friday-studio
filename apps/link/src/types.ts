@@ -65,6 +65,12 @@ export interface StorageAdapter {
   save(credential: CredentialInput, userId: string): Promise<SaveResult>;
   /** Update an existing credential by ID, returns updated metadata */
   update(id: string, credential: CredentialInput, userId: string): Promise<Metadata>;
+  /**
+   * Create or update credential by composite key (provider, label, userId).
+   * If active credential with same key exists, updates it. Otherwise creates new.
+   * Atomic—no race conditions.
+   */
+  upsert(credential: CredentialInput, userId: string): Promise<SaveResult>;
   get(id: string, userId: string): Promise<Credential | null>;
   list(type: string, userId: string): Promise<CredentialSummary[]>;
   delete(id: string, userId: string): Promise<void>;

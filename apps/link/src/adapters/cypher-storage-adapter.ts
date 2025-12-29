@@ -89,6 +89,38 @@ export class CypherStorageAdapter implements StorageAdapter {
     });
   }
 
+  async upsert(input: CredentialInput, userId: string): Promise<SaveResult> {
+    const encryptedSecret = await this.encryptSecret(input.secret);
+
+    return await withUserContext(this.sql, userId, async (tx) => {
+      const rows = await tx<{ id: string; created_at: Date; updated_at: Date }[]>`
+        INSERT INTO public.credential (user_id, type, provider, label, encrypted_secret)
+        VALUES (
+          ${userId},
+          ${input.type},
+          ${input.provider},
+          ${input.label},
+          ${encryptedSecret}
+        )
+        ON CONFLICT (user_id, provider, label) WHERE deleted_at IS NULL
+        DO UPDATE SET
+          encrypted_secret = EXCLUDED.encrypted_secret,
+        RETURNING id, created_at, updated_at
+      `;
+
+      const row = rows[0];
+      if (!row) throw new Error("Upsert failed: no row returned");
+
+      return {
+        id: row.id,
+        metadata: {
+          createdAt: row.created_at.toISOString(),
+          updatedAt: row.updated_at.toISOString(),
+        },
+      };
+    });
+  }
+
   async update(id: string, input: CredentialInput, userId: string): Promise<Metadata> {
     const encryptedSecret = await this.encryptSecret(input.secret);
 

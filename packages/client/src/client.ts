@@ -3,8 +3,8 @@
  * All CLI commands should use this to communicate with the Atlas daemon
  */
 
-import { env } from "node:process";
 import { readFile } from "node:fs/promises";
+import { env } from "node:process";
 import { parseResult, client as v2Client } from "@atlas/client/v2";
 import { getDiagnosticsApiUrl, validateAtlasJWT } from "@atlas/core";
 import { createAtlasClient } from "@atlas/oapi-client";
