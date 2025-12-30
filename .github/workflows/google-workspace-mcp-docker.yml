@@ -1,0 +1,72 @@
+name: google-workspace-mcp-docker
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'workspace-mcp version override (e.g., 1.7.1)'
+        required: false
+  push:
+    branches:
+      - main
+    paths:
+      - 'apps/google-workspace-mcp/**'
+
+env:
+  GAR_LOCATION: us-west2
+  PROJECT_NAME: ${{ secrets.GCP_PROJECT }}
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  REPOSITORY: atlas
+  IMAGE_NAME: google-workspace-mcp
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  build-publish:
+    name: Build and Publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Build Docker Image
+        id: build-image
+        env:
+          VERSION_OVERRIDE: ${{ github.event.inputs.version }}
+        shell: bash
+        run: |
+          build_args=(
+            --build-arg "GITHUB_SHA=$GITHUB_SHA"
+            --build-arg "GITHUB_REF=$GITHUB_REF"
+          )
+          if [[ -n "$VERSION_OVERRIDE" ]]; then
+            build_args+=(--build-arg "WORKSPACE_MCP_VERSION=$VERSION_OVERRIDE")
+          fi
+          docker build \
+            -f apps/google-workspace-mcp/Dockerfile \
+            --tag "$GAR_LOCATION-docker.pkg.dev/$PROJECT_NAME/$REPOSITORY/$IMAGE_NAME:$GITHUB_SHA" \
+            --tag "$GAR_LOCATION-docker.pkg.dev/$PROJECT_NAME/$REPOSITORY/$IMAGE_NAME:latest" \
+            "${build_args[@]}" \
+            .
+          echo "image=$GAR_LOCATION-docker.pkg.dev/$PROJECT_NAME/$REPOSITORY/$IMAGE_NAME:$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+
+      - id: auth
+        name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ secrets.GCP_PROJECT }}
+          workload_identity_provider: "projects/${{ env.PROJECT_ID }}/locations/global/workloadIdentityPools/github/providers/atlas-github"
+
+      - name: Docker configuration
+        run: |-
+          echo '${{ steps.auth.outputs.auth_token }}' | docker login -u oauth2accesstoken --password-stdin "https://$GAR_LOCATION-docker.pkg.dev"
+
+      - name: Push image to sandbox
+        run: |-
+          docker push -a "$GAR_LOCATION-docker.pkg.dev/$PROJECT_NAME/$REPOSITORY/$IMAGE_NAME"
+
+      - name: Push image to production
+        run: |-
+          docker tag "$GAR_LOCATION-docker.pkg.dev/$PROJECT_NAME/$REPOSITORY/$IMAGE_NAME:$GITHUB_SHA" "$GAR_LOCATION-docker.pkg.dev/tempest-production/$REPOSITORY/$IMAGE_NAME:$GITHUB_SHA"
+          docker push "$GAR_LOCATION-docker.pkg.dev/tempest-production/$REPOSITORY/$IMAGE_NAME:$GITHUB_SHA"

@@ -343,6 +343,42 @@ updates:
       - "docker"
     rebase-strategy: "auto"
 
+  # Keep google-workspace-mcp Python dependencies up to date
+  - package-ecosystem: "pip"
+    directory: "/apps/google-workspace-mcp"
+    schedule:
+      interval: "daily"
+      time: "09:00"
+    open-pull-requests-limit: 5
+    assignees:
+      - "ljagiello"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "python"
+      - "mcp"
+    rebase-strategy: "auto"
+
+  # Keep google-workspace-mcp Docker dependencies up to date
+  - package-ecosystem: "docker"
+    directory: "/apps/google-workspace-mcp"
+    schedule:
+      interval: "daily"
+      time: "09:00"
+    open-pull-requests-limit: 5
+    assignees:
+      - "ljagiello"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "docker"
+      - "mcp"
+    rebase-strategy: "auto"
+
   # Keep npm dependencies up to date (for link service)
   - package-ecosystem: "npm"
     directory: "/apps/link"
