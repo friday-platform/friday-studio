@@ -157,7 +157,7 @@ async function peekAtlasKey(): Promise<string | undefined> {
   }
 
   // Priority 4: Check /etc/atlas/env (Linux system installs)
-  if (Deno.build.os === "linux") {
+  if (process.platform === "linux") {
     try {
       const systemEnvPath = "/etc/atlas/env";
       if (await exists(systemEnvPath)) {
@@ -340,7 +340,7 @@ export const handler = async (argv: StartArgs): Promise<void> => {
     await load({ export: true });
 
     // Load system Atlas configuration (Linux packages)
-    if (Deno.build.os === "linux") {
+    if (process.platform === "linux") {
       const systemAtlasEnv = "/etc/atlas/env";
       if (await exists(systemAtlasEnv)) {
         await load({ export: true, envPath: systemAtlasEnv });
@@ -378,7 +378,7 @@ export const handler = async (argv: StartArgs): Promise<void> => {
           }
 
           // Check if executable by examining file permissions (more robust than running)
-          if (Deno.build.os !== "windows") {
+          if (process.platform !== "win32") {
             // On Unix-like systems, check if file has execute permission
             // mode is a number where execute permissions are:
             // - owner execute: 0o100
@@ -409,7 +409,7 @@ export const handler = async (argv: StartArgs): Promise<void> => {
         // Extract directory from tool path using proper path utilities
         const toolDir = dirname(toolPath);
         const currentPath = process.env.PATH || "";
-        const separator = Deno.build.os === "windows" ? ";" : ":";
+        const separator = process.platform === "win32" ? ";" : ":";
 
         // Check if tool directory is already in PATH
         const pathSegments = currentPath.split(separator);
@@ -507,7 +507,7 @@ function isLocalOnlyMode(value: string | undefined): boolean {
 
 async function startDetached(argv: StartArgs): Promise<void> {
   // On Windows, use VBScript for true background process
-  if (Deno.build.os === "windows") {
+  if (process.platform === "win32") {
     await startWindowsDetached(argv);
     return;
   }
@@ -606,7 +606,7 @@ async function startForeground(argv: StartArgs): Promise<void> {
   Deno.addSignalListener("SIGINT", shutdown);
 
   // SIGTERM is not supported on Windows
-  if (Deno.build.os !== "windows") {
+  if (process.platform !== "win32") {
     Deno.addSignalListener("SIGTERM", shutdown);
   }
 

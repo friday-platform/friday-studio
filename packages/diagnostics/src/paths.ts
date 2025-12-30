@@ -1,4 +1,4 @@
-import { env } from "node:process";
+import process, { env } from "node:process";
 import { getAtlasHome, isSystemService } from "@atlas/utils/paths.server";
 import { join } from "@std/path";
 
@@ -15,7 +15,7 @@ export function getAtlasLogsDir(): string {
   }
 
   // System mode uses /var/log/atlas
-  if (isSystemService() && Deno.build.os !== "windows") {
+  if (isSystemService() && process.platform !== "win32") {
     return "/var/log/atlas";
   }
 

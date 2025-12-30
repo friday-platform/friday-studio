@@ -1,16 +1,16 @@
-import { env } from "node:process";
+import { env, platform as processPlatform } from "node:process";
 import type { Platform } from "../services/types.ts";
 
 /**
  * Detect the current platform
  */
 export function detectPlatform(): Platform {
-  switch (Deno.build.os) {
+  switch (processPlatform) {
     case "darwin":
       return "macos";
     case "linux":
       return "linux";
-    case "windows":
+    case "win32":
       return "windows";
     default:
       return "unknown";

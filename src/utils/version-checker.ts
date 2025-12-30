@@ -4,7 +4,7 @@
  */
 
 import { readFile, rm, writeFile } from "node:fs/promises";
-import { env } from "node:process";
+import { arch, env, platform } from "node:process";
 import { getAtlasBaseUrl } from "@atlas/core";
 import { logger } from "@atlas/logger";
 import { ensureDir, existsSync } from "@std/fs";
@@ -332,10 +332,10 @@ export async function checkForUpdate(channel?: string): Promise<UpdateInfo> {
     const hasUpdate = versionInfo.isDev ? true : isVersionOlder(currentVersion, latestVersion);
 
     // Build download URL for current platform
-    const platform =
-      Deno.build.os === "darwin" ? "darwin" : Deno.build.os === "linux" ? "linux" : "windows";
-    const arch = Deno.build.arch === "x86_64" ? "amd64" : "arm64";
-    const platformKey = `${platform}_${arch}`;
+    const osPlatform =
+      platform === "darwin" ? "darwin" : platform === "linux" ? "linux" : "windows";
+    const osArch = arch === "x64" ? "amd64" : "arm64";
+    const platformKey = `${osPlatform}_${osArch}`;
 
     const platformData = serverResponse.platforms?.[platformKey];
     let downloadUrl = platformData?.download_url || serverResponse.latest.download_url;
@@ -348,7 +348,7 @@ export async function checkForUpdate(channel?: string): Promise<UpdateInfo> {
 
     // CRITICAL FIX 2: The version API returns .zip URLs for macOS but we need .tar.gz
     // Fix the extension based on platform
-    if ((platform === "darwin" || platform === "linux") && downloadUrl) {
+    if ((osPlatform === "darwin" || osPlatform === "linux") && downloadUrl) {
       // Replace .zip with .tar.gz for macOS/Linux
       downloadUrl = downloadUrl.replace(/\.zip$/, ".tar.gz");
     }

@@ -25,7 +25,7 @@ const NPM_REGISTRY = "https://registry.npmjs.org";
  * Example: C:\Users\foo -> /c/Users/foo
  */
 function toUnixPath(path: string): string {
-  if (Deno.build.os === "windows") {
+  if (process.platform === "win32") {
     // Convert backslashes to forward slashes
     let unixPath = path.replace(/\\/g, "/");
     // Convert drive letter (C: -> /c)

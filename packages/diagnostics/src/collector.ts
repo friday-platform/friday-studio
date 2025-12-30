@@ -1,5 +1,5 @@
 import { copyFile, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
-import { env } from "node:process";
+import process, { env } from "node:process";
 import { getAtlasClient } from "@atlas/client";
 import { createLogger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
@@ -397,8 +397,8 @@ export class DiagnosticsCollector {
 
     // OS Information
     try {
-      systemInfo.os = Deno.build.os;
-      systemInfo.arch = Deno.build.arch;
+      systemInfo.os = process.platform;
+      systemInfo.arch = process.arch;
       systemInfo.osVersion = Deno.osRelease();
       systemInfo.hostname = Deno.hostname();
     } catch (error) {
@@ -443,7 +443,7 @@ export class DiagnosticsCollector {
 
     // Environment Information
     systemInfo.environment = {};
-    if (Deno.build.os === "windows") {
+    if (process.platform === "win32") {
       systemInfo.environment = {
         tempDirectory: env.TEMP || "unknown",
         systemDrive: env.SYSTEMDRIVE || "unknown",
@@ -488,7 +488,7 @@ export class DiagnosticsCollector {
   }
 
   private async getOSLanguage(): Promise<string> {
-    if (Deno.build.os === "darwin") {
+    if (process.platform === "darwin") {
       // macOS - use defaults command
       try {
         const command = new Deno.Command("defaults", { args: ["read", "-g", "AppleLocale"] });
@@ -506,7 +506,7 @@ export class DiagnosticsCollector {
       } catch {
         return "unknown";
       }
-    } else if (Deno.build.os === "linux") {
+    } else if (process.platform === "linux") {
       // Linux - check locale
       try {
         const command = new Deno.Command("sh", { args: ["-c", "echo $LANG"] });
@@ -518,7 +518,7 @@ export class DiagnosticsCollector {
         // Fallback to environment variables
         return env.LANG || env.LC_ALL || "unknown";
       }
-    } else if (Deno.build.os === "windows") {
+    } else if (process.platform === "win32") {
       // Windows - use PowerShell to get culture info
       try {
         const command = new Deno.Command("powershell", {
@@ -552,7 +552,7 @@ export class DiagnosticsCollector {
   }
 
   private async getScreenResolution(): Promise<string> {
-    if (Deno.build.os === "darwin") {
+    if (process.platform === "darwin") {
       // macOS
       try {
         const command = new Deno.Command("system_profiler", { args: ["SPDisplaysDataType"] });
@@ -563,7 +563,7 @@ export class DiagnosticsCollector {
       } catch {
         return "unknown";
       }
-    } else if (Deno.build.os === "linux") {
+    } else if (process.platform === "linux") {
       // Linux - try multiple methods
       // Method 1: xrandr (X11)
       try {
@@ -591,7 +591,7 @@ export class DiagnosticsCollector {
       }
 
       return "unknown";
-    } else if (Deno.build.os === "windows") {
+    } else if (process.platform === "win32") {
       // Windows - try wmic first, then PowerShell
       try {
         // Method 1: wmic (works on older Windows)
@@ -740,7 +740,7 @@ export class DiagnosticsCollector {
         };
 
         try {
-          if (Deno.build.os === "darwin") {
+          if (process.platform === "darwin") {
             // Use openssl to verify certificate chain on macOS
             const command = new Deno.Command("openssl", {
               args: [
@@ -780,7 +780,7 @@ export class DiagnosticsCollector {
                 return { subject, issuer };
               });
             }
-          } else if (Deno.build.os === "linux") {
+          } else if (process.platform === "linux") {
             // Similar openssl command for Linux
             const command = new Deno.Command("openssl", {
               args: [
@@ -807,7 +807,7 @@ export class DiagnosticsCollector {
                 verifyResult.verifyCode = `${verifyMatch[1]} (${verifyMatch[2]})`;
               }
             }
-          } else if (Deno.build.os === "windows") {
+          } else if (process.platform === "win32") {
             // Windows doesn't have openssl by default, just note the platform
             verifyResult.platform = "Windows";
             verifyResult.note =
@@ -829,7 +829,7 @@ export class DiagnosticsCollector {
 
     // DNS resolver information
     try {
-      if (Deno.build.os !== "windows") {
+      if (process.platform !== "win32") {
         const resolvConf = await readFile("/etc/resolv.conf", "utf-8").catch(() => null);
         if (resolvConf) {
           const nameservers = resolvConf
@@ -879,7 +879,7 @@ export class DiagnosticsCollector {
       channel,
       isCompiled: versionInfo.isCompiled,
       isDev: versionInfo.isDev,
-      platform: Deno.build.os,
+      platform: process.platform,
       denoVersion: Deno.version.deno,
       systemInfo: systemInfo,
     };

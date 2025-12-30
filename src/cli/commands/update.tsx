@@ -129,9 +129,9 @@ export const handler = async (options: UpdateOptions) => {
     }
 
     // SAFETY CHECK: Ensure we're downloading the correct package type
-    const isMacOS = Deno.build.os === "darwin";
-    const isLinux = Deno.build.os === "linux";
-    const isWindows = Deno.build.os === "windows";
+    const isMacOS = process.platform === "darwin";
+    const isLinux = process.platform === "linux";
+    const isWindows = process.platform === "win32";
 
     if ((isMacOS || isLinux) && !updateInfo.downloadUrl.endsWith(".tar.gz")) {
       errorOutput(
@@ -263,9 +263,7 @@ async function performUpdate(params: {
             const bar = "█".repeat(filledLength) + "░".repeat(barLength - filledLength);
 
             // Clear line and redraw progress bar
-            Deno.stdout.writeSync(
-              new TextEncoder().encode(`\r  ${bar} ${percent}% (${mb}/${totalMb} MB)`),
-            );
+            process.stdout.write(`\r  ${bar} ${percent}% (${mb}/${totalMb} MB)`);
           },
     });
 
@@ -364,7 +362,7 @@ async function performUpdate(params: {
     const normalizePath = (p: string | null | undefined): string => {
       if (!p) return "";
       // On Windows, normalize to lowercase and forward slashes for comparison
-      if (Deno.build.os === "windows") {
+      if (process.platform === "win32") {
         return p.toLowerCase().replace(/\\/g, "/");
       }
       return p;
@@ -382,8 +380,8 @@ async function performUpdate(params: {
 
     // On Windows, if we are updating the running binary itself, we must stage
     // a self-replacement using a detached batch script to avoid file-in-use errors
-    const isWindows = Deno.build.os === "windows";
-    const isSelfUpdatingWindows = isWindows && isUpdatingSelf;
+    const isWindowsForSelfUpdate = process.platform === "win32";
+    const isSelfUpdatingWindows = isWindowsForSelfUpdate && isUpdatingSelf;
 
     if (isSelfUpdatingWindows) {
       await windowsSelfReplace(extractedBinaryPath, permissionCheck.binaryPath);
@@ -399,7 +397,7 @@ async function performUpdate(params: {
     }
 
     // Remove quarantine attribute on macOS to prevent SIGKILL
-    if (Deno.build.os === "darwin") {
+    if (process.platform === "darwin") {
       try {
         const xattrCmd = new Deno.Command("xattr", {
           args: ["-d", "com.apple.quarantine", permissionCheck.binaryPath],
@@ -413,7 +411,7 @@ async function performUpdate(params: {
     // Post-installation verification - skip when self-updating on macOS
     // When the binary updates itself, macOS applies security attributes that cause
     // the first run to fail, but subsequent runs work fine
-    if (!isSelfUpdatingWindows && (!isUpdatingSelf || Deno.build.os !== "darwin")) {
+    if (!isSelfUpdatingWindows && (!isUpdatingSelf || process.platform !== "darwin")) {
       if (!quiet) {
         infoOutput("Verifying installation...");
       }
@@ -570,8 +568,8 @@ interface PlatformInfo {
 
 function getPlatformInfo(): PlatformInfo {
   const platform =
-    Deno.build.os === "darwin" ? "darwin" : Deno.build.os === "linux" ? "linux" : "windows";
-  const arch = Deno.build.arch === "x86_64" ? "amd64" : "arm64";
+    process.platform === "darwin" ? "darwin" : process.platform === "linux" ? "linux" : "windows";
+  const arch = process.arch === "x64" ? "amd64" : "arm64";
   return { platform, arch };
 }
 
@@ -607,7 +605,7 @@ async function checkBinaryWritePermission(): Promise<{
     binaryPath = currentExecPath;
   } else {
     // Otherwise, find binary location using platform-specific command
-    const findCmd = Deno.build.os === "windows" ? "where" : "which";
+    const findCmd = process.platform === "win32" ? "where" : "which";
     const result = await new Deno.Command(findCmd, { args: ["atlas"] }).output();
 
     if (!result.success) {
@@ -648,9 +646,9 @@ async function checkBinaryWritePermission(): Promise<{
     try {
       // Check file ownership on the actual binary
       const statCmd =
-        Deno.build.os === "darwin"
+        process.platform === "darwin"
           ? ["stat", "-f", "%Su", actualBinaryPath]
-          : Deno.build.os === "windows"
+          : process.platform === "win32"
             ? null
             : ["stat", "-c", "%U", actualBinaryPath];
 
@@ -825,7 +823,7 @@ async function extractBinary(archivePath: string, platform: string): Promise<str
 async function testNewBinary(binaryPath: string): Promise<{ success: boolean; error?: string }> {
   try {
     // Make binary executable
-    if (Deno.build.os !== "windows") {
+    if (process.platform !== "win32") {
       await Deno.chmod(binaryPath, 0o755);
     }
 
@@ -915,10 +913,10 @@ async function replaceBinary(
     binaryPath,
     actualBinaryPath,
     isSymlink,
-    platform: Deno.build.os,
+    platform: process.platform,
   });
 
-  if (Deno.build.os === "darwin") {
+  if (process.platform === "darwin") {
     // Use the symlink resolution from permission check if available
     let targetPath = binaryPath;
 
@@ -1106,7 +1104,7 @@ async function replaceBinary(
     const targetPath = isSymlink && actualBinaryPath ? actualBinaryPath : binaryPath;
 
     logger.debug("Replacing binary on non-macOS platform", {
-      platform: Deno.build.os,
+      platform: process.platform,
       target: targetPath,
       isSymlink,
     });
@@ -1126,7 +1124,7 @@ async function replaceBinary(
   }
 
   // Ensure binary is executable (use the resolved path)
-  if (Deno.build.os !== "windows") {
+  if (process.platform !== "win32") {
     const targetPath = isSymlink && actualBinaryPath ? actualBinaryPath : binaryPath;
     await Deno.chmod(targetPath, 0o755);
     logger.debug("Binary permissions set", { target: targetPath, permissions: "0755" });
@@ -1255,7 +1253,7 @@ async function checkAnyAtlasProcesses(): Promise<boolean> {
   // Check if any atlas daemon processes are running (beyond what checkDaemonStatus found)
   // This catches manually started instances that might be on custom ports or not responding
 
-  if (Deno.build.os !== "windows") {
+  if (process.platform !== "win32") {
     try {
       // First try pgrep for atlas daemon processes
       const result = await new Deno.Command("pgrep", {

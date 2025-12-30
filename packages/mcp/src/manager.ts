@@ -196,7 +196,7 @@ export class MCPManager {
             if (command === "npx" || command === "npx.cmd") {
               // Fallback: Try to find npx in common locations
               const fallbackPaths =
-                Deno.build.os === "windows"
+                process.platform === "win32"
                   ? [
                       "C:\\Program Files\\nodejs\\npx.cmd", // Windows default
                       "C:\\Program Files (x86)\\nodejs\\npx.cmd", // Windows 32-bit on 64-bit
@@ -213,7 +213,7 @@ export class MCPManager {
                 try {
                   // Expand environment variables on Windows
                   const expandedPath =
-                    Deno.build.os === "windows"
+                    process.platform === "win32"
                       ? fallbackPath.replace(/%([^%]+)%/g, (_, key) => process.env[key] || "")
                       : fallbackPath;
 

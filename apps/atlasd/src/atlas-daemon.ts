@@ -1335,7 +1335,7 @@ export class AtlasDaemon {
     this.signalHandlers.push({ signal: "SIGINT", handler: sigintHandler });
 
     // SIGTERM is not supported on Windows
-    if (Deno.build.os !== "windows") {
+    if (process.platform !== "win32") {
       const sigtermHandler = () => handleShutdown("SIGTERM");
       Deno.addSignalListener("SIGTERM", sigtermHandler);
       this.signalHandlers.push({ signal: "SIGTERM", handler: sigtermHandler });

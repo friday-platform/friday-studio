@@ -151,8 +151,8 @@ describe("MCPManager - Link Credential Integration", () => {
       id: "test-slack-server",
       transport: {
         type: "stdio" as const,
-        command: Deno.build.os === "windows" ? "cmd.exe" : "echo",
-        args: Deno.build.os === "windows" ? ["/c", "echo"] : [],
+        command: process.platform === "win32" ? "cmd.exe" : "echo",
+        args: process.platform === "win32" ? ["/c", "echo"] : [],
       },
       env: {
         SLACK_BOT_TOKEN: { from: "link" as const, id: "cred_slack_prod", key: "access_token" },
@@ -185,7 +185,7 @@ describe("MCPManager - Link Credential Integration", () => {
       id: "test-missing-cred-server",
       transport: {
         type: "stdio" as const,
-        command: Deno.build.os === "windows" ? "cmd.exe" : "echo",
+        command: process.platform === "win32" ? "cmd.exe" : "echo",
         args: [],
       },
       env: { API_KEY: { from: "link" as const, id: "cred_nonexistent", key: "token" } },
@@ -210,8 +210,8 @@ describe("MCPManager - Link Credential Integration", () => {
       id: "test-mixed-env-server",
       transport: {
         type: "stdio" as const,
-        command: Deno.build.os === "windows" ? "cmd.exe" : "echo",
-        args: Deno.build.os === "windows" ? ["/c", "echo"] : [],
+        command: process.platform === "win32" ? "cmd.exe" : "echo",
+        args: process.platform === "win32" ? ["/c", "echo"] : [],
       },
       env: {
         // From Link

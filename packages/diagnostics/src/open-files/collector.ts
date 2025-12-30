@@ -1,3 +1,4 @@
+import process from "node:process";
 import { stringifyError } from "@atlas/utils";
 import { LinuxCollector } from "./linux-collector.ts";
 import { MacOSCollector } from "./macos-collector.ts";
@@ -6,7 +7,7 @@ import type { OpenFileEntry, OpenFilesReport, PlatformCollector } from "./types.
 const MAX_COLLECTION_TIME_MS = 5000;
 
 export async function collectOpenFiles(pid?: number): Promise<OpenFilesReport> {
-  const targetPid = pid || Deno.pid;
+  const targetPid = pid || process.pid;
   const collector = getPlatformCollector();
 
   const startTime = Date.now();
@@ -37,14 +38,14 @@ export async function collectOpenFiles(pid?: number): Promise<OpenFilesReport> {
 }
 
 function getPlatformCollector(): PlatformCollector {
-  switch (Deno.build.os) {
+  switch (process.platform) {
     case "darwin":
       return MacOSCollector;
     case "linux":
       return LinuxCollector;
-    case "windows":
+    case "win32":
       return { async *getOpenFiles() {} };
     default:
-      throw new Error(`Unsupported platform: ${Deno.build.os}`);
+      throw new Error(`Unsupported platform: ${process.platform}`);
   }
 }
