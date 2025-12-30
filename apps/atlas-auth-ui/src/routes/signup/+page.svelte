@@ -4,6 +4,7 @@ import Button from "$lib/components/button.svelte";
 import GoogleLogo from "$lib/components/icons/google-logo.svelte";
 
 let submitted = $state(false);
+let agree_to_terms = $state(false);
 </script>
 
 <svelte:head>
@@ -51,6 +52,15 @@ let submitted = $state(false);
           };
         }}
       >
+        <label>
+          <input type="checkbox" required name="agree_to_terms" bind:checked={agree_to_terms} />
+
+          By signing up for Friday, I agree to the
+          <a href="https://tempestdx.com/company/privacypolicy" target="_blank">Privacy Policy</a>
+          and
+          <a href="https://tempestdx.com/company/terms" target="_blank">Terms of Service</a>
+        </label>
+
         <input
           type="email"
           placeholder="Enter your email address"
@@ -63,30 +73,16 @@ let submitted = $state(false);
         </Button>
 
         <h2>Additional Options</h2>
-        <a href="/oauth/google/authorize">
-          <Button disabled={submitted}>
-            {#snippet prepend()}
-              <GoogleLogo />
-            {/snippet}
 
-            Sign up with Google Workspace
-          </Button>
-        </a>
+        <Button disabled={submitted || !agree_to_terms} href="/oauth/google/authorize">
+          {#snippet prepend()}
+            <GoogleLogo />
+          {/snippet}
+
+          Sign up with Google Workspace
+        </Button>
       </form>
     </div>
-
-    <footer>
-      <p>
-        By signing up for Friday, you agree to our <a
-          href="https://tempestdx.com/company/privacypolicy"
-          target="_blank"
-        >
-          Privacy Policy
-        </a>
-        and
-        <a href="https://tempestdx.com/company/terms" target="_blank">Terms of Service</a>
-      </p>
-    </footer>
   </section>
 </main>
 
@@ -124,24 +120,13 @@ let submitted = $state(false);
   }
 
   section {
+    align-items: center;
+    display: flex;
+    justify-content: center;
     min-block-size: 100dvh;
-    display: grid;
-    grid-template-rows: 1fr auto;
     padding: var(--size-8);
-    padding-block-end: 0;
-
-    @media (min-width: 1024px) {
-      block-size: auto;
-      grid-column: 2;
-      grid-row: 1;
-    }
 
     .title {
-      & :global(svg) {
-        inline-size: var(--size-9);
-        margin: 0 auto;
-      }
-
       h1 {
         font-size: var(--font-size-7);
         font-weight: var(--font-weight-7);
@@ -153,7 +138,7 @@ let submitted = $state(false);
       align-items: center;
       display: flex;
       flex-direction: column;
-      gap: var(--size-8);
+      /* gap: var(--size-8); */
       justify-content: center;
       text-align: center;
 
@@ -165,7 +150,7 @@ let submitted = $state(false);
         justify-content: center;
         inline-size: var(--size-72);
 
-        input {
+        input[type="email"] {
           background-color: var(--background-1);
           border: var(--size-px) solid var(--border-2);
           border-radius: var(--radius-3);
@@ -188,54 +173,24 @@ let submitted = $state(false);
           font-weight: var(--font-weight-5);
           padding-block-start: var(--size-6);
         }
-      }
 
-      a {
-        color: var(--accent-1);
-        font-size: var(--font-size-2);
-        font-weight: var(--font-weight-5);
-        text-decoration-color: color-mix(in srgb, var(--accent-1), transparent 60%);
-        text-underline-offset: var(--size-0-5);
-        text-decoration-line: underline;
-        transition: all 150ms ease;
-
-        &:hover {
-          text-underline-offset: var(--size-1);
+        label {
+          color: var(--text-3);
+          margin-block: var(--size-2) var(--size-8);
         }
-      }
-    }
-  }
 
-  footer {
-    align-items: center;
-    display: flex;
-    flex-direction: column;
-    gap: var(--size-2);
-    justify-content: center;
-    padding-block: var(--size-6);
+        a {
+          color: var(--accent-1);
+          font-size: var(--font-size-2);
+          font-weight: var(--font-weight-5);
+          text-decoration-color: color-mix(in srgb, var(--accent-1), transparent 60%);
+          text-underline-offset: var(--size-0-5);
+          text-decoration-line: underline;
+          transition: all 150ms ease;
 
-    @media (min-width: 375px) {
-      flex-direction: row;
-      gap: var(--size-4);
-    }
-
-    p {
-      color: var(--text-3);
-      font-size: var(--font-size-2);
-      font-weight: var(--font-weight-5);
-      text-underline-offset: var(--size-1);
-      text-decoration-color: color-mix(in srgb, var(--text-3), transparent 70%);
-
-      a {
-        color: var(--accent-1);
-        font-weight: var(--font-weight-5);
-        text-decoration-color: color-mix(in srgb, var(--accent-1), transparent 50%);
-        text-underline-offset: var(--size-0-5);
-        text-decoration-line: underline;
-        transition: all 150ms ease;
-
-        &:hover {
-          text-underline-offset: var(--size-1);
+          &:hover {
+            text-underline-offset: var(--size-1);
+          }
         }
       }
     }
