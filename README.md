@@ -329,7 +329,87 @@ Each workspace includes:
 - Signal and job specifications
 - Setup and usage instructions
 
+## AI-Assisted Development Workflow
+
+This repo includes Claude slash commands that support a structured planning-to-execution flow:
+
+### 1. Design Phase: `/brainstorm`
+
+Start with a rough idea. Claude uses Socratic questioning to refine it into a concrete design:
+- One question at a time (multiple choice when possible)
+- Explores 2-3 approaches with trade-offs
+- Presents design in small sections for incremental validation
+- Outputs a plan document to `docs/plans/`
+
+```
+/brainstorm I want to add real-time collaboration to workspaces
+```
+
+### 2. Planning Phase: `/make-beads`
+
+Convert the validated design into trackable work items:
+- Creates an epic with tasks and subtasks
+- Establishes dependency structure
+- Adds implementation details to each bead
+
+```
+/make-beads docs/plans/2024-12-30-realtime-collab-design.md
+```
+
+### 3. Refinement: `/improve-beads`
+
+Polish beads for worker consumption (1-3 iterations until satisfied):
+- Makes instructions unambiguous and implementation-ready
+- Researches codebase to fill gaps
+- Surfaces unresolved questions
+
+```
+/improve-beads
+```
+
+### 4. Prioritization: `/whats-next`
+
+Uses `bv` and `bd` to identify which beads are ready and highest priority based on the dependency graph.
+
+```
+/whats-next
+```
+
+### 5. Execution: `/spawn-worker`
+
+Spawns sub-agents to execute beads in parallel:
+- One agent per bead
+- Each agent: claims → implements → commits → closes
+
+```
+/spawn-worker pick up bv-12 and bv-15, they can be done in parallel
+```
+
 ## Development
+
+### Prerequisites
+
+Before contributing, install these tools:
+
+**Beads** (issue tracking):
+
+```bash
+brew install steveyegge/beads/bd
+```
+
+**Beads Viewer** (TUI for beads):
+
+```bash
+curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/beads_viewer/main/install.sh?$(date +%s)" | bash
+```
+
+**Git Hooks** (run once after cloning):
+
+```bash
+npx husky
+```
+
+This configures pre-commit hooks for linting and post-checkout hooks that auto-initialize beads when switching branches.
 
 ### Running from Source
 

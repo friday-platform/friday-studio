@@ -1,22 +1,3 @@
-<!-- OPENSPEC:START -->
-# OpenSpec Instructions
-
-These instructions are for AI assistants working in this project.
-
-Always open `@/openspec/AGENTS.md` when the request:
-- Mentions planning or proposals (words like proposal, spec, change, plan)
-- Introduces new capabilities, breaking changes, architecture shifts, or big performance/security work
-- Sounds ambiguous and you need the authoritative spec before coding
-
-Use `@/openspec/AGENTS.md` to learn:
-- How to create and apply change proposals
-- Spec format and conventions
-- Project structure and guidelines
-
-Keep this managed block so 'openspec update' can refresh the instructions.
-
-<!-- OPENSPEC:END -->
-
 # Atlas
 
 AI agent orchestration platform. Workspaces run autonomous agents triggered by
@@ -227,15 +208,158 @@ After a prompt session, you can review the full transcript:
 # Get chatId from cli-summary
 deno task atlas prompt "test the API"
 # output includes: {"type":"cli-summary","chatId":"abc123",...}
-
 # View full conversation
 deno task atlas chat abc123
-
 # Or human-readable
 deno task atlas chat abc123 --human
 ```
 
 Use this to debug:
+
 - What tools were called and their outputs
 - How the agent reasoned about the task
 - What the full conversation looked like
+
+## Issue Tracking with bd (beads)
+
+All issue tracking goes through **bd**. No other TODO systems.
+
+Key invariants:
+
+- Whenever you run a Beads command (`bd`) always run it with the `--no-daemon`
+  flag. Eg: `bd --no-daemon <command>`.
+
+### Basics
+
+Check ready work:
+
+```bash
+bd --no-daemon ready --json
+```
+
+Create issues:
+
+```bash
+bd --no-daemon create "Issue title" -t bug|feature|task -p 0-4 --json
+bd --no-daemon create "Issue title" -p 1 --deps discovered-from:bv-123 --json
+```
+
+Update:
+
+```bash
+bd --no-daemon update bv-42 --status in_progress --json
+bd --no-daemon update bv-42 --priority 1 --json
+```
+
+Complete:
+
+```bash
+bd --no-daemon close bv-42 --reason "Completed" --json
+```
+
+Types:
+
+- `bug`, `feature`, `task`, `epic`, `chore`
+
+Priorities:
+
+- `0` critical (security, data loss, broken builds)
+- `1` high
+- `2` medium (default)
+- `3` low
+- `4` backlog
+
+Agent workflow:
+
+1. `bd --no-daemon ready` to find unblocked work.
+2. Claim: `bd --no-daemon update <id> --status in_progress`.
+3. Implement + test.
+4. If you discover new work, create a new bead with
+   `discovered-from:<parent-id>`.
+5. Close when done.
+
+Never:
+
+- Use markdown TODO lists.
+- Use other trackers.
+- Duplicate tracking.
+
+---
+
+## Using bv as an AI Sidecar
+
+bv is a graph-aware triage engine for Beads projects (.beads/beads.jsonl).
+Instead of parsing JSONL or hallucinating graph traversal, use robot flags for
+deterministic, dependency-aware outputs with precomputed metrics (PageRank,
+betweenness, critical path, cycles, HITS, eigenvector, k-core).
+
+**Scope boundary:** bv handles _what to work on_ (triage, priority, planning).
+For agent-to-agent coordination (messaging, work claiming, file reservations),
+use MCP Agent Mail.
+
+**⚠️ CRITICAL: Use ONLY `--robot-*` flags. Bare `bv` launches an interactive TUI
+that blocks your session.**
+
+### The Workflow: Start With Triage
+
+**`bv --robot-triage` is your single entry point.** It returns everything you
+need in one call:
+
+- `quick_ref`: at-a-glance counts + top 3 picks
+- `recommendations`: ranked actionable items with scores, reasons, unblock info
+- `quick_wins`: low-effort high-impact items
+- `blockers_to_clear`: items that unblock the most downstream work
+- `project_health`: status/type/priority distributions, graph metrics
+- `commands`: copy-paste shell commands for next steps
+
+```bash
+bv --robot-triage        # THE MEGA-COMMAND: start here
+bv --robot-next          # Minimal: just the single top pick + claim command
+```
+
+### Other Commands
+
+**Planning:**
+
+| Command            | Returns                                         |
+| ------------------ | ----------------------------------------------- |
+| `--robot-plan`     | Parallel execution tracks with `unblocks` lists |
+| `--robot-priority` | Priority misalignment detection with confidence |
+
+**Graph Analysis:**
+
+| Command                                         | Returns                                                                                                           |
+| ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `--robot-insights`                              | Full metrics: PageRank, betweenness, HITS, eigenvector, critical path, cycles, k-core, articulation points, slack |
+| `--robot-label-health`                          | Per-label health: `health_level` (healthy\|warning\|critical), `velocity_score`, `staleness`, `blocked_count`     |
+| `--robot-label-flow`                            | Cross-label dependency: `flow_matrix`, `dependencies`, `bottleneck_labels`                                        |
+| `--robot-label-attention [--attention-limit=N]` | Attention-ranked labels by: (pagerank × staleness × block_impact) / velocity                                      |
+
+### Scoping & Filtering
+
+```bash
+bv --robot-plan --label backend              # Scope to label's subgraph
+bv --robot-insights --as-of HEAD~30          # Historical point-in-time
+bv --recipe actionable --robot-plan          # Pre-filter: ready to work (no blockers)
+bv --recipe high-impact --robot-triage       # Pre-filter: top PageRank scores
+bv --robot-triage --robot-triage-by-track    # Group by parallel work streams
+bv --robot-triage --robot-triage-by-label    # Group by domain
+```
+
+### jq Quick Reference
+
+```bash
+bv --robot-triage | jq '.quick_ref'                        # At-a-glance summary
+bv --robot-triage | jq '.recommendations[0]'               # Top recommendation
+bv --robot-plan | jq '.plan.summary.highest_impact'        # Best unblock target
+bv --robot-insights | jq '.status'                         # Check metric readiness
+bv --robot-insights | jq '.Cycles'                         # Circular deps (must fix!)
+bv --robot-label-health | jq '.results.labels[] | select(.health_level == "critical")'
+```
+
+**Performance:** Phase 1 instant, Phase 2 async (500ms timeout). Prefer
+`--robot-plan` over `--robot-insights` when speed matters. Results cached by
+data hash. Use `bv --profile-startup` for diagnostics.
+
+Use bv instead of parsing beads.jsonl—it computes PageRank, critical paths,
+cycles, and parallel tracks deterministically.

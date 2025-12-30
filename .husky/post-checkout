@@ -1,0 +1,10 @@
+#!/bin/bash
+
+# Only on branch checkouts, skip file checkouts
+[[ "$3" != "1" ]] && exit 0
+
+# Idempotent init - fast no-op if .beads/ exists
+bd init --stealth --quiet 2>/dev/null || true
+
+# Housekeeping
+bd --no-daemon doctor --fix --yes --quiet 2>/dev/null || true
