@@ -13,7 +13,7 @@ COPY apps/link/src/ ./apps/link/src/
 WORKDIR /app/apps/link
 RUN deno compile --allow-all --no-check --output=link --unstable-kv --config=deno.json src/index.ts
 
-FROM debian:bookworm-20251208-slim
+FROM debian:bookworm-20251229-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && \
     rm -rf /var/lib/apt/lists/*
