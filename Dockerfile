@@ -29,7 +29,6 @@ RUN addgroup -g 266 -S atlas && \
 COPY deno.json deno.lock package.json ./
 COPY apps/atlasd/deno.json ./apps/atlasd/
 COPY packages/ ./packages/
-COPY tools/memory_manager/ ./tools/memory_manager/
 
 # Copy source code
 COPY . .

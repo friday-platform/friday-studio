@@ -73,7 +73,6 @@
         "$app/*": ["../../node_modules/@sveltejs/kit/src/runtime/app/*"]
       }
     },
-    "tools/memory_manager": { "project": ["**/*.{ts,tsx,js,jsx}!"] },
     "tools/evals": {
       "entry": ["agents/**/*.eval.ts!", "lib/*.ts!"],
       "project": ["agents/**/*.{ts,tsx,js,jsx}!", "lib/**/*.{ts,tsx,js,jsx}!"]

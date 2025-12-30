@@ -6,7 +6,6 @@
     "./apps/*",
     "./packages/*",
     "./packages/vendor/*",
-    "./tools/memory_manager",
     "./tools/evals",
     "./tools/evals-2"
   ],
