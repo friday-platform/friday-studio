@@ -21,20 +21,13 @@ RUN if [ -n "$WORKSPACE_MCP_VERSION" ]; then \
 COPY apps/google-workspace-mcp/apply-tls-patch.py /tmp/
 RUN python /tmp/apply-tls-patch.py && rm /tmp/apply-tls-patch.py
 
-# Copy entrypoint
-COPY apps/google-workspace-mcp/entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+COPY --chmod=755 apps/google-workspace-mcp/entrypoint.sh /entrypoint.sh
 
-# Create non-root user
-RUN addgroup -g 65534 -S app && \
-    adduser -u 65534 -S -G app -H -s /sbin/nologin app
-
-# Environment for read-only filesystem compatibility
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     HOME=/tmp
 
-USER 65534:65534
+USER nobody:nobody
 
 # External OAuth 2.1 mode - fully stateless, no secrets needed
 ENV MCP_ENABLE_OAUTH21="true" \
