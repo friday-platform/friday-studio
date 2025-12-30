@@ -1,4 +1,4 @@
-# Atlas
+# Friday
 
 AI agent orchestration platform. Workspaces run autonomous agents triggered by
 signals (HTTP, SSE, cron).
@@ -140,7 +140,7 @@ Quick mental model:
 
 ## Agent Feedback Loop
 
-`deno task atlas prompt` and `deno task atlas logs` let agents test Atlas
+`deno task atlas prompt` and `deno task atlas logs` let agents test Friday
 changes without human intervention. No more waiting for humans to copy/paste
 logs or restart daemons.
 
