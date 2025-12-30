@@ -153,6 +153,10 @@ logs or restart daemons.
 - `deno task atlas logs --human` — human-readable (debugging only)
 - `deno task atlas chat <id>` — view chat transcript (JSON lines)
 - `deno task atlas chat <id> --human` — human-readable transcript
+- `deno task atlas chat <id> --show-prompts` — view system prompt sent to LLM
+  (JSON)
+- `deno task atlas chat <id> --show-prompts --human` — human-readable system
+  prompt
 
 ### Output
 
@@ -219,6 +223,26 @@ Use this to debug:
 - What tools were called and their outputs
 - How the agent reasoned about the task
 - What the full conversation looked like
+
+### Debugging Agent Behavior
+
+When the chat agent behaves unexpectedly, inspect its system prompt:
+
+```bash
+deno task atlas chat <chatId> --show-prompts --human
+```
+
+This shows all system messages sent to the LLM:
+
+- Main prompt (with workspace/agent/credential context baked in)
+- Current datetime
+- Scratchpad notes (if any)
+
+Use JSON mode for programmatic analysis:
+
+```bash
+deno task atlas chat <chatId> --show-prompts | jq '.systemMessages[0]'
+```
 
 ## Issue Tracking with bd (beads)
 

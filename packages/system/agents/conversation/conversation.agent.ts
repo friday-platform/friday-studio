@@ -12,6 +12,7 @@ import type { AtlasTools, AtlasUIMessage } from "@atlas/agent-sdk";
 import { createAgent, validateAtlasUIMessages } from "@atlas/agent-sdk";
 import { pipeUIMessageStream } from "@atlas/agent-sdk/vercel-helpers";
 import { client, parseResult } from "@atlas/client/v2";
+import { ChatStorage } from "@atlas/core/chat/storage";
 import { createErrorCause, getErrorDisplayMessage, parseAPICallError } from "@atlas/core/errors";
 import { getDefaultProviderOpts, registry } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
@@ -531,7 +532,22 @@ export const conversationAgent = createAgent({
           agentsSection,
           linkedCredentialsSection,
         );
+
         const datetimeMessage = `Current datetime (UTC): ${new Date().toISOString()}`;
+
+        // Capture system prompt context on first turn (fire-and-forget)
+        // Must happen after datetimeMessage is defined to capture actual messages sent to LLM
+        if (messages.length <= 1) {
+          const systemMessages = [
+            systemPrompt, // Already assembled by getSystemPrompt()
+            datetimeMessage,
+            ...(scratchpadContext ? [scratchpadContext] : []),
+          ];
+          ChatStorage.setSystemPromptContext(session.streamId!, { systemMessages }).catch(
+            (err: unknown) =>
+              logger.warn("Failed to capture system prompt context", { error: err }),
+          );
+        }
         const systemTokens =
           estimateTokens(systemPrompt) + // Already includes workspacesSection + agentsSection + linkedCredentialsSection
           estimateTokens(scratchpadContext) +

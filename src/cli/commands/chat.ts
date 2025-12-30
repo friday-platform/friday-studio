@@ -11,13 +11,15 @@ interface ChatArgs {
   id?: string;
   human: boolean;
   limit: number;
+  showPrompts: boolean;
 }
 
 export function builder(y: YargsInstance) {
   return y
     .positional("id", { type: "string", describe: "Chat ID to view" })
     .option("human", { type: "boolean", default: false, describe: "Human-readable output" })
-    .option("limit", { type: "number", default: 25, describe: "Max chats to list (1-100)" });
+    .option("limit", { type: "number", default: 25, describe: "Max chats to list (1-100)" })
+    .option("show-prompts", { type: "boolean", default: false, describe: "Show system prompt" });
 }
 
 /**
@@ -126,21 +128,47 @@ export const handler = async (argv: ChatArgs): Promise<void> => {
     throw new Error(`HTTP ${response.status}: ${response.statusText}`);
   }
 
-  const { chat, messages } = (await response.json()) as {
+  const { chat, messages, systemPromptContext } = (await response.json()) as {
     chat: { id: string; title?: string; createdAt: string; updatedAt: string };
     messages: AtlasUIMessage[];
+    systemPromptContext: { timestamp: string; systemMessages: string[] } | null;
   };
 
   if (!argv.human) {
-    // JSON mode: one message per line, strip providerMetadata from reasoning
+    // JSON mode: --show-prompts outputs context only
+    if (argv.showPrompts) {
+      if (systemPromptContext) {
+        console.log(JSON.stringify(systemPromptContext));
+        process.exit(0);
+      } else {
+        console.error("No system prompt context (chat predates feature)");
+        process.exit(1);
+      }
+    }
+    // Default: output messages
     for (const msg of messages) {
-      const cleaned = cleanMessage(msg);
-      console.log(JSON.stringify(cleaned));
+      console.log(JSON.stringify(cleanMessage(msg)));
     }
   } else {
-    // Human mode (basic)
+    // Human mode
     console.log(`Chat: ${chat.id}`);
-    console.log(`Title: ${chat.title ?? "Untitled"}\n`);
+    console.log(`Title: ${chat.title ?? "Untitled"}`);
+
+    if (argv.showPrompts) {
+      if (!systemPromptContext) {
+        console.log("\n[No system prompt context - chat predates feature]\n");
+      } else {
+        console.log(`\n=== SYSTEM PROMPT (${systemPromptContext.timestamp}) ===\n`);
+        systemPromptContext.systemMessages.forEach((msg, i) => {
+          console.log(`--- Message ${i + 1} ---\n`);
+          console.log(msg);
+          console.log();
+        });
+        console.log("=== END ===\n");
+      }
+    }
+
+    console.log();
     for (const msg of messages) {
       console.log(`[${msg.role}]`);
       for (const part of msg.parts ?? []) {

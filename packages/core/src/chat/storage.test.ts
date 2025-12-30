@@ -106,6 +106,41 @@ describe("ChatStorage", () => {
       assertEquals(chat1.data?.messages[0]?.id, msg1.id);
       assertEquals(chat2.data?.messages[0]?.id, msg2.id);
     });
+
+    it("sets and retrieves system prompt context", async () => {
+      const chatId = crypto.randomUUID();
+      await createTestChat(chatId);
+
+      const context = {
+        systemMessages: [
+          "You are a helpful assistant.",
+          "Current datetime (UTC): 2025-12-30T00:00:00Z",
+        ],
+      };
+
+      const setResult = await ChatStorage.setSystemPromptContext(chatId, context);
+      assert(setResult.ok, "setSystemPromptContext should succeed");
+
+      const getResult = await ChatStorage.getChat(chatId);
+      assert(getResult.ok && getResult.data);
+      assertExists(getResult.data.systemPromptContext);
+      assertEquals(getResult.data.systemPromptContext.systemMessages, context.systemMessages);
+    });
+
+    it("setSystemPromptContext is idempotent", async () => {
+      const chatId = crypto.randomUUID();
+      await createTestChat(chatId);
+
+      const first = { systemMessages: ["First prompt"] };
+      const second = { systemMessages: ["Second prompt"] };
+
+      await ChatStorage.setSystemPromptContext(chatId, first);
+      await ChatStorage.setSystemPromptContext(chatId, second);
+
+      const result = await ChatStorage.getChat(chatId);
+      assert(result.ok && result.data);
+      assertEquals(result.data.systemPromptContext?.systemMessages, ["First prompt"]);
+    });
   });
 
   describe("Message ordering", () => {

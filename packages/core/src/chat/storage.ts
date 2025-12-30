@@ -9,6 +9,11 @@ import { z } from "zod";
 
 const logger = createLogger({ component: "chat-storage" });
 
+const SystemPromptContextSchema = z.object({
+  timestamp: z.iso.datetime(),
+  systemMessages: z.array(z.string()),
+});
+
 /**
  * Chat structure on disk.
  * Messages validated separately via validateAtlasUIMessages (allows partial reads).
@@ -22,6 +27,7 @@ const StoredChatSchema = z.object({
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
   messages: z.array(z.unknown()),
+  systemPromptContext: SystemPromptContextSchema.optional(),
 });
 
 type Chat = Omit<z.infer<typeof StoredChatSchema>, "messages"> & { messages: AtlasUIMessage[] };
@@ -289,6 +295,38 @@ async function deleteChat(chatId: string): Promise<Result<void, string>> {
   }
 }
 
+/**
+ * Set system prompt context. Idempotent - only writes on first call.
+ * Called from conversation agent on first turn.
+ */
+async function setSystemPromptContext(
+  chatId: string,
+  context: { systemMessages: string[] },
+): Promise<Result<void, string>> {
+  try {
+    const chatFile = getChatFile(chatId);
+
+    using file = await Deno.open(chatFile, { read: true, write: true });
+    await file.lock(true);
+
+    const chat = await readAndValidateChat(chatFile);
+    if (chat.systemPromptContext) {
+      return success(undefined); // Already set, skip
+    }
+
+    chat.systemPromptContext = { timestamp: new Date().toISOString(), ...context };
+    chat.updatedAt = new Date().toISOString();
+
+    await writeFile(chatFile, JSON.stringify(chat, null, 2), "utf-8");
+    return success(undefined);
+  } catch (error) {
+    if (isErrnoException(error) && error.code === "ENOENT") {
+      return fail("Chat not found");
+    }
+    return fail(stringifyError(error));
+  }
+}
+
 export const ChatStorage = {
   createChat,
   getChat,
@@ -296,4 +334,5 @@ export const ChatStorage = {
   listChats,
   updateChatTitle,
   deleteChat,
+  setSystemPromptContext,
 };

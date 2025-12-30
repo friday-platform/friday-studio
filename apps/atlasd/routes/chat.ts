@@ -142,11 +142,14 @@ const chatRoutes = daemonFactory
       return c.json({ error: "Chat not found" }, 404);
     }
 
-    const { messages, ...chat } = chatResult.data;
+    const { messages, systemPromptContext, ...chat } = chatResult.data;
     // Return last 100 messages in chronological order (oldest first)
     const limitedMessages = messages.slice(-100);
 
-    return c.json({ chat, messages: limitedMessages }, 200);
+    return c.json(
+      { chat, messages: limitedMessages, systemPromptContext: systemPromptContext ?? null },
+      200,
+    );
   })
 
   /**
