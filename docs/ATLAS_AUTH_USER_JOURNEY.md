@@ -9,7 +9,7 @@ graph TB
     end
 
     subgraph "Traefik Ingress (atlas-operator namespace)"
-        Ingress[app.atlas.tempestdx.dev]
+        Ingress[app.hellofriday.dev]
         ExtractUserID[extractuserid middleware]
         ErrorRedirect[http-error-redirect middleware]
         ParentRoute[atlas-parent IngressRoute]
@@ -53,9 +53,9 @@ sequenceDiagram
     participant R as http-error-redirect
     participant A as atlas-auth-ui
 
-    Note over U: User visits app.atlas.tempestdx.dev
+    Note over U: User visits app.hellofriday.dev
 
-    U->>T: GET app.atlas.tempestdx.dev
+    U->>T: GET app.hellofriday.dev
     T->>E: Check JWT cookie
     E-->>T: No JWT (401)
     T->>R: Handle 401
@@ -77,16 +77,16 @@ sequenceDiagram
     participant SG as SendGrid
 
     alt Email Login Flow
-        U->>B: POST auth.atlas.tempestdx.dev/login/email
+        U->>B: POST auth.hellofriday.dev/login/email
         B->>S: Check if user exists
         B->>SG: Send magic link email
         B-->>U: "Check your email"
         Note over U: User clicks email link
-        U->>B: GET auth.atlas.tempestdx.dev/verify?token=xxx
+        U->>B: GET auth.hellofriday.dev/verify?token=xxx
         B->>S: Validate token
         B->>S: Create/update user
     else Google OAuth Flow
-        U->>B: GET auth.atlas.tempestdx.dev/oauth/google
+        U->>B: GET auth.hellofriday.dev/oauth/google
         B-->>U: Redirect to Google
         U->>G: Authenticate with Google
         G-->>B: OAuth callback with user info
@@ -94,7 +94,7 @@ sequenceDiagram
     end
 
     B->>B: Generate JWT with user ID
-    B-->>U: Set JWT cookie + redirect to app.atlas.tempestdx.dev
+    B-->>U: Set JWT cookie + redirect to app.hellofriday.dev
 ```
 
 ### Phase 3: Instance Provisioning
@@ -135,7 +135,7 @@ sequenceDiagram
     participant I as Atlas Instance
 
     Note over U: Redirected after login
-    U->>T: GET app.atlas.tempestdx.dev (with JWT)
+    U->>T: GET app.hellofriday.dev (with JWT)
     T->>E: Validate JWT
     E->>E: Extract user ID from 'sub' claim
     E-->>T: Set X-Atlas-User-ID header (no conversion)
@@ -175,7 +175,7 @@ sequenceDiagram
 
     Note over U: User has valid JWT cookie
 
-    U->>T: GET app.atlas.tempestdx.dev
+    U->>T: GET app.hellofriday.dev
     T->>E: Check JWT cookie
     E->>E: Validate JWT (RS256)
     E->>E: Extract user ID from sub claim
@@ -241,7 +241,7 @@ sequenceDiagram
 
 ```mermaid
 flowchart TD
-    Request[Request to app.atlas.tempestdx.dev] --> Parent[atlas-parent IngressRoute]
+    Request[Request to app.hellofriday.dev] --> Parent[atlas-parent IngressRoute]
     Parent --> Extract[extractuserid middleware]
 
     Extract --> Check{JWT Valid?}
@@ -302,7 +302,7 @@ graph TB
     subgraph "JWT Token Flow"
         Create[User authenticates]
         Sign[bounce signs JWT<br/>RS256 private key]
-        Cookie[Set atlas_token cookie<br/>domain: .atlas.tempestdx.dev]
+        Cookie[Set atlas_token cookie<br/>domain: .hellofriday.dev]
         Validate[extractuserid validates<br/>RS256 public key]
         Extract[Extract user ID from 'sub' claim<br/>e.g., 6bd8e78lgpqzw]
         Header[Add X-Atlas-User-ID header<br/>DIRECTLY - NO HEX CONVERSION]
@@ -367,7 +367,7 @@ flowchart TD
 ### Key Security Features
 - RS256 JWT signing
 - HTTPOnly secure cookies
-- Domain-locked cookies (`.atlas.tempestdx.dev`)
+- Domain-locked cookies (`.hellofriday.dev`)
 - No JWT = automatic redirect to login
 - User ID extraction prevents header injection
 - Per-user isolated instances

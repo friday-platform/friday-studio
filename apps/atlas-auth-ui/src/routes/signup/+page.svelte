@@ -7,8 +7,8 @@ let submitted = $state(false);
 </script>
 
 <svelte:head>
-  <title>Atlas</title>
-  <meta name="description" content="Sign up for Atlas" />
+  <title>Friday</title>
+  <meta name="description" content="Sign up for Friday" />
 </svelte:head>
 
 <main>
@@ -20,7 +20,7 @@ let submitted = $state(false);
   <section>
     <div class="form">
       <div class="title">
-        <h1>Sign up for Atlas</h1>
+        <h1>Sign up for Friday</h1>
       </div>
 
       <form
@@ -77,7 +77,7 @@ let submitted = $state(false);
 
     <footer>
       <p>
-        By signing up for Atlas, you agree to our <a
+        By signing up for Friday, you agree to our <a
           href="https://tempestdx.com/company/privacypolicy"
           target="_blank"
         >

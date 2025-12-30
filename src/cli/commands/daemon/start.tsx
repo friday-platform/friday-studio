@@ -19,7 +19,7 @@ import type { YargsInstance } from "../../utils/yargs.ts";
 // - OTEL must be configured via env vars BEFORE Deno starts (Deno bug #27851, fixed in PR #29240)
 // - Kubernetes: OTEL vars set in pod spec
 // - Desktop: Auto-configured via re-exec when ATLAS_KEY is present
-const OTEL_ENDPOINT = "https://otel.atlas.tempestdx.com";
+const OTEL_ENDPOINT = "https://otel.hellofriday.ai";
 
 // Shared deno run flags - single source of truth
 const DENO_RUN_FLAGS = [

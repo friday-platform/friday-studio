@@ -32,7 +32,7 @@ e) Sublicense, sell, rent, lease, or redistribute the Software without explicit 
 4. PRIVACY AND DATA COLLECTION
 
 a) The Software may collect telemetry data, usage statistics, and error reports to improve the Software and provide support.
-b) We handle your data in accordance with our Privacy Policy, available at https://atlas.tempestdx.com/privacy
+b) We handle your data in accordance with our Privacy Policy, available at https://hellofriday.ai/privacy
 c) You maintain ownership of any data, content, or AI agents you create using the Software.
 
 5. THIRD-PARTY SERVICES
@@ -43,7 +43,7 @@ The Software may integrate with third-party services, including AI model provide
 
 a) Tempest may provide updates, patches, and new versions of the Software at its discretion.
 b) Updates may be automatically downloaded and installed to ensure security and functionality.
-c) Support services are provided as described on our website at https://atlas.tempestdx.com/support
+c) Support services are provided as described on our website at https://hellofriday.ai/support
 
 7. DISCLAIMER OF WARRANTIES
 
@@ -88,6 +88,6 @@ If you have questions about this Agreement, please contact us at:
 
 Tempest Technologies, Inc.
 Email: support@tempestdx.com
-Website: https://atlas.tempestdx.com
+Website: https://hellofriday.ai
 
 By clicking "I Agree" or using the Software, you acknowledge that you have read, understood, and agree to be bound by all terms of this Agreement.

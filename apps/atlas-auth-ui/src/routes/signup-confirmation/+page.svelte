@@ -1,13 +1,13 @@
 <script lang="ts">
 import { page } from "$app/stores";
 import Decal from "$lib/components/decal.svelte";
-import Wordmark from "$lib/components/logos/atlas-wordmark.svelte";
+import Wordmark from "$lib/components/logos/friday-wordmark.svelte";
 
 const email = $derived($page.url.searchParams.get("email"));
 </script>
 
 <svelte:head>
-  <title>Check your email | Atlas</title>
+  <title>Check your email | Friday</title>
 </svelte:head>
 
 <main>
@@ -37,7 +37,7 @@ const email = $derived($page.url.searchParams.get("email"));
 
     <footer>
       <p>
-        By signing up for Atlas, you agree to our <a
+        By signing up for Friday, you agree to our <a
           href="https://tempestdx.com/company/privacypolicy"
           target="_blank"
         >

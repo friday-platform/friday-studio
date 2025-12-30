@@ -3,7 +3,7 @@ import { zfd } from "zod-form-data";
 import Button from "$lib/components/button.svelte";
 import Decal from "$lib/components/decal.svelte";
 import { Form } from "$lib/components/form";
-import Wordmark from "$lib/components/logos/atlas-wordmark.svelte";
+import Wordmark from "$lib/components/logos/friday-wordmark.svelte";
 import { toast } from "$lib/components/notifications/notifications.svelte";
 
 const { data } = $props();
@@ -99,8 +99,8 @@ const signupSchema = zfd.formData({ user_full_name: zfd.text() });
 </main>
 
 <svelte:head>
-  <title>Complete Setup - Atlas</title>
-  <meta name="description" content="Complete your Atlas setup" />
+  <title>Complete Setup - Friday</title>
+  <meta name="description" content="Complete your Friday setup" />
   <meta name="robots" content="noindex, nofollow" />
 </svelte:head>
 

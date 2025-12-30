@@ -2,7 +2,7 @@
 import { enhance } from "$app/forms";
 import Button from "$lib/components/button.svelte";
 import Decal from "$lib/components/decal.svelte";
-import Wordmark from "$lib/components/logos/atlas-wordmark.svelte";
+import Wordmark from "$lib/components/logos/friday-wordmark.svelte";
 import { toast } from "$lib/components/notifications/notifications.svelte";
 
 let success = $state(false);
@@ -10,7 +10,7 @@ let submitted = $state(false);
 </script>
 
 <svelte:head>
-  <title>Link Expired | Atlas</title>
+  <title>Link Expired | Friday</title>
 </svelte:head>
 
 <main>
@@ -82,7 +82,7 @@ let submitted = $state(false);
 
     <footer>
       <p>
-        By signing up for Atlas, you agree to our <a
+        By signing up for Friday, you agree to our <a
           href="https://tempestdx.com/company/privacypolicy"
           target="_blank"
         >

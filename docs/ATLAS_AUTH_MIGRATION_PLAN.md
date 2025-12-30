@@ -504,18 +504,18 @@ func CompleteSignup(email, fullName string) error {
 // config.go (aligned with tempest-core/applications/bounce/service/service.go)
 type Config struct {
     // Service configuration
-    BounceServiceURL          string `env:"BOUNCE_SERVICE_URL" envDefault:"https://auth.atlas.tempestdx.dev"`
+    BounceServiceURL          string `env:"BOUNCE_SERVICE_URL" envDefault:"https://auth.hellofriday.dev"`
     Port                      string `env:"PORT" envDefault:"8083"`
     ServiceName              string `env:"SERVICE_NAME" envDefault:"bounce"`
     LogLevel                 string `env:"LOG_LEVEL" envDefault:"debug"`
 
     // URLs
-    RedirectURI              string `env:"REDIRECT_URI" envDefault:"https://app.atlas.tempestdx.dev"`
-    SignupHostname           string `env:"SIGNUP_HOSTNAME" envDefault:"https://auth.atlas.tempestdx.dev"`
+    RedirectURI              string `env:"REDIRECT_URI" envDefault:"https://app.hellofriday.dev"`
+    SignupHostname           string `env:"SIGNUP_HOSTNAME" envDefault:"https://auth.hellofriday.dev"`
 
     // Cookie configuration
     CookieName               string `env:"COOKIE_NAME" envDefault:"atlas_token"`
-    CookieDomain            string `env:"COOKIE_DOMAIN"`  // MUST be .atlas.tempestdx.dev for subdomain sharing (auth.atlas ↔ app.atlas)
+    CookieDomain            string `env:"COOKIE_DOMAIN"`  // MUST be .hellofriday.dev for subdomain sharing (auth.atlas ↔ app.atlas)
 
     // JWT configuration - loads from files using envconfig file tag
     JWTPrivateKey           string `env:"JWT_PRIVATE_KEY_FILE,file,required"`
@@ -529,13 +529,13 @@ type Config struct {
 
     // Email
     SendgridAPIKey          string `env:"SENDGRID_API_KEY_FILE,file,required"`
-    EmailDomain            string `env:"EMAIL_DOMAIN" envDefault:"atlas.tempestdx.dev"`
+    EmailDomain            string `env:"EMAIL_DOMAIN" envDefault:"hellofriday.dev"`
 
     // Signup
     SignupHMACSecret        string `env:"SIGNUP_HMAC_SECRET,required"`
 
     // CORS
-    CORSAllowedOrigins     string `env:"CORS_ALLOWED_ORIGINS" envDefault:"https://app.atlas.tempestdx.dev"`
+    CORSAllowedOrigins     string `env:"CORS_ALLOWED_ORIGINS" envDefault:"https://app.hellofriday.dev"`
 
     // Atlas Operator Integration
     AtlasOperatorURL        string `env:"ATLAS_OPERATOR_URL" envDefault:"http://atlas-operator:8082"`
@@ -748,7 +748,7 @@ func handleSignupComplete(w http.ResponseWriter, r *http.Request) {
 #### 5. OAuth Flow and Redirect Handling
 
 The OAuth flow works as follows:
-1. User clicks "Login with Google" on auth.atlas.tempestdx.dev
+1. User clicks "Login with Google" on auth.hellofriday.dev
 2. Frontend redirects to `/oauth/google/authorize?redirect_to={origin}`
 3. Bounce generates state token and redirects to Google
 4. Google redirects back to `/oauth/google/callback`
@@ -780,12 +780,12 @@ func handleOAuthCallback(w http.ResponseWriter, r *http.Request) {
     // Get redirect URL from state claims
     redirectTo := claims.RedirectTo
     if redirectTo == "" {
-        redirectTo = "https://app.atlas.tempestdx.dev"
+        redirectTo = "https://app.hellofriday.dev"
     }
 
     // Redirect to app
     // If instance not ready, Traefik will return 404 which triggers redirect to
-    // https://auth.atlas.tempestdx.dev/provisioning via http-error-redirect middleware
+    // https://auth.hellofriday.dev/provisioning via http-error-redirect middleware
     http.Redirect(w, r, redirectTo, http.StatusFound)
 }
 ```
@@ -1105,7 +1105,7 @@ spec:
     - websecure
   routes:
     # Match requests with the X-Atlas-User-ID header (same as JWT 'sub' claim)
-    - match: Host(`app.atlas.tempestdx.dev`) && Header(`X-Atlas-User-ID`, `6bd8e78lgpqzw`)
+    - match: Host(`app.hellofriday.dev`) && Header(`X-Atlas-User-ID`, `6bd8e78lgpqzw`)
       kind: Rule
       services:
         - name: atlas-6bd8e78lgpqzw
@@ -1113,14 +1113,14 @@ spec:
       middlewares: []
 
     # Route /api to daemon
-    - match: Host(`app.atlas.tempestdx.dev`) && Header(`X-Atlas-User-ID`, `6bd8e78lgpqzw`) && PathPrefix(`/api`)
+    - match: Host(`app.hellofriday.dev`) && Header(`X-Atlas-User-ID`, `6bd8e78lgpqzw`) && PathPrefix(`/api`)
       kind: Rule
       services:
         - name: atlas-6bd8e78lgpqzw
           port: 8080  # daemon
 
     # Route /health to daemon
-    - match: Host(`app.atlas.tempestdx.dev`) && Header(`X-Atlas-User-ID`, `6bd8e78lgpqzw`) && Path(`/health`)
+    - match: Host(`app.hellofriday.dev`) && Header(`X-Atlas-User-ID`, `6bd8e78lgpqzw`) && Path(`/health`)
       kind: Rule
       services:
         - name: atlas-6bd8e78lgpqzw
@@ -1184,7 +1184,7 @@ func LoadConfigWithEnvironment() (*Config, error) {
         if strings.Contains(cfg.RedirectURI, "localhost") {
             cfg.CookieDomain = "localhost"
         } else {
-            cfg.CookieDomain = ".atlas.tempestdx.dev"
+            cfg.CookieDomain = ".hellofriday.dev"
         }
     }
 
@@ -1202,11 +1202,11 @@ POSTGRES_CONNECTION=postgresql://postgres:postgres@localhost:5432/atlas?sslmode=
 CORS_ALLOWED_ORIGINS=http://localhost:1420,http://localhost:8084
 
 # .env.production
-COOKIE_DOMAIN=.atlas.tempestdx.dev
-REDIRECT_URI=https://app.atlas.tempestdx.dev
-SIGNUP_HOSTNAME=https://auth.atlas.tempestdx.dev
+COOKIE_DOMAIN=.hellofriday.dev
+REDIRECT_URI=https://app.hellofriday.dev
+SIGNUP_HOSTNAME=https://auth.hellofriday.dev
 POSTGRES_CONNECTION=postgresql://postgres:password@postgres:5432/atlas?sslmode=require
-CORS_ALLOWED_ORIGINS=https://app.atlas.tempestdx.dev
+CORS_ALLOWED_ORIGINS=https://app.hellofriday.dev
 ```
 
 #### 8. OTP Implementation
@@ -2016,8 +2016,8 @@ const healthRoutes = daemonFactory.createApp().get("/", (c) => {
 
   // Add CORS headers for provisioning page
   const origin = c.req.header("Origin");
-  if (origin === "https://auth.atlas.tempestdx.dev" ||
-      origin === "https://app.atlas.tempestdx.dev" ||
+  if (origin === "https://auth.hellofriday.dev" ||
+      origin === "https://app.hellofriday.dev" ||
       origin?.includes("localhost")) {
     c.header("Access-Control-Allow-Origin", origin);
     c.header("Access-Control-Allow-Credentials", "true");
@@ -2043,15 +2043,15 @@ export { healthRoutes };
 The auth service will be exposed directly via Traefik ingress, no proxy needed:
 
 **Domains**:
-- Development: `auth.atlas.tempestdx.dev`
-- Production: `auth.atlas.tempestdx.com`
+- Development: `auth.hellofriday.dev`
+- Production: `auth.hellofriday.ai`
 
 ```yaml
 # k8s/auth-ingressroute.yaml
 apiVersion: traefik.io/v1alpha1
 kind: IngressRoute
 metadata:
-  name: auth.atlas.tempestdx.dev
+  name: auth.hellofriday.dev
   namespace: atlas-operator
 spec:
   entryPoints:
@@ -2060,7 +2060,7 @@ spec:
     # Route API calls to bounce service
     - kind: Rule
       match: |
-        Host(`auth.atlas.tempestdx.dev`) && (
+        Host(`auth.hellofriday.dev`) && (
           PathPrefix(`/login/email`) ||
           PathPrefix(`/signup/email`) ||
           PathPrefix(`/signup/complete`) ||
@@ -2079,7 +2079,7 @@ spec:
     # Route static pages to auth UI service
     - kind: Rule
       match: |
-        Host(`auth.atlas.tempestdx.dev`) && !PathPrefix(`/login/email`) && !PathPrefix(`/signup/email`) && !PathPrefix(`/magiclink`) && !PathPrefix(`/oauth`)
+        Host(`auth.hellofriday.dev`) && !PathPrefix(`/login/email`) && !PathPrefix(`/signup/email`) && !PathPrefix(`/magiclink`) && !PathPrefix(`/oauth`)
       priority: 10
       services:
         - name: atlas-auth-ui
@@ -2093,7 +2093,7 @@ spec:
 
 JWT verification is handled by the existing Traefik setup in atlas-traefik. The auth service only needs to:
 1. Issue JWTs with the correct format
-2. Set cookies with the right domain (`.atlas.tempestdx.dev`)
+2. Set cookies with the right domain (`.hellofriday.dev`)
 3. Provide a `/sessioncheck` endpoint for session validation
 
 No changes needed to the existing Traefik middleware configuration - it will work with the new auth service as long as we use the same JWT format and cookie name (`atlas_token`).
@@ -2106,7 +2106,7 @@ After successful authentication, there's a delay while the Atlas operator create
 
 1. **After Successful Login/Signup**:
    - Bounce service creates user, sets JWT cookie
-   - Redirects to `app.atlas.tempestdx.dev`
+   - Redirects to `app.hellofriday.dev`
 
 2. **Instance Not Ready Yet**:
    - Traefik's `atlas-router` checks if user's instance exists
@@ -2135,12 +2135,12 @@ After successful authentication, there's a delay while the Atlas operator create
        // Poll for instance availability
        const APP_URL = window.location.hostname === 'localhost'
          ? 'http://localhost:1420'
-         : 'https://app.atlas.tempestdx.dev';
+         : 'https://app.hellofriday.dev';
 
        async function checkInstance() {
          try {
            // Check the app domain's health endpoint
-           // Cookie domain is .atlas.tempestdx.dev so it works across subdomains
+           // Cookie domain is .hellofriday.dev so it works across subdomains
            // The cookie will be sent, extractuserid will set X-Atlas-User-ID,
            // and if the IngressRoute exists, we'll get routed to the instance
            const response = await fetch(`${APP_URL}/health`, {
@@ -2230,7 +2230,7 @@ After successful authentication, there's a delay while the Atlas operator create
   - bounce service (auth backend)
   - atlas-auth-ui (static auth pages)
   - atlas-operator (instance manager)
-  - Parent IngressRoute for app.atlas.tempestdx.dev
+  - Parent IngressRoute for app.hellofriday.dev
   - extractuserid middleware
 
 - `atlas` namespace: User instances
@@ -2244,10 +2244,10 @@ After successful authentication, there's a delay while the Atlas operator create
 
 #### How Users Get to Login Page
 
-**Hosted Version (app.atlas.tempestdx.dev):**
+**Hosted Version (app.hellofriday.dev):**
 
 1. **Traefik-Handled Redirect Flow** (following Tempest's pattern):
-   - User visits `app.atlas.tempestdx.dev` without valid JWT
+   - User visits `app.hellofriday.dev` without valid JWT
    - Traefik middleware chain:
      a. `checkjwt` middleware validates JWT cookie → returns 401 if invalid/missing
      b. `http-error-redirect` middleware catches 401 → redirects to `/login` with 302
@@ -2281,7 +2281,7 @@ After successful authentication, there's a delay while the Atlas operator create
        redirectErrors:
          status:
            - "404"
-         target: "https://auth.atlas.tempestdx.dev/provisioning"
+         target: "https://auth.hellofriday.dev/provisioning"
          outputStatus: 302
          # Only redirect if user is authenticated (has X-Atlas-User-ID header)
          requireHeader: "X-Atlas-User-ID"
@@ -2289,7 +2289,7 @@ After successful authentication, there's a delay while the Atlas operator create
 
 3. **IngressRoute Configuration**:
    ```yaml
-   # Parent IngressRoute for app.atlas.tempestdx.dev
+   # Parent IngressRoute for app.hellofriday.dev
    ---
    apiVersion: traefik.io/v1alpha1
    kind: IngressRoute
@@ -2303,7 +2303,7 @@ After successful authentication, there's a delay while the Atlas operator create
        secretName: app-atlas-tempestdx-dev
      routes:
        # Public auth routes (no auth required)
-       - match: Host(`app.atlas.tempestdx.dev`) && (PathPrefix(`/login`) || PathPrefix(`/signup`) || PathPrefix(`/verify`) || PathPrefix(`/complete-setup`))
+       - match: Host(`app.hellofriday.dev`) && (PathPrefix(`/login`) || PathPrefix(`/signup`) || PathPrefix(`/verify`) || PathPrefix(`/complete-setup`))
          kind: Rule
          priority: 200  # Higher priority
          services:
@@ -2312,7 +2312,7 @@ After successful authentication, there's a delay while the Atlas operator create
              port: 80
 
        # Provisioning page (requires JWT but served by auth-ui)
-       - match: Host(`app.atlas.tempestdx.dev`) && PathPrefix(`/provisioning`)
+       - match: Host(`app.hellofriday.dev`) && PathPrefix(`/provisioning`)
          kind: Rule
          priority: 190
          middlewares:
@@ -2326,7 +2326,7 @@ After successful authentication, there's a delay while the Atlas operator create
              port: 80
 
        # All other routes (require auth, delegate to child IngressRoutes)
-       - match: Host(`app.atlas.tempestdx.dev`)
+       - match: Host(`app.hellofriday.dev`)
          kind: Rule
          priority: 100
          middlewares:
@@ -2337,7 +2337,7 @@ After successful authentication, there's a delay while the Atlas operator create
            - name: atlas-provisioning-redirect  # Redirects 404 to /provisioning if authenticated
              namespace: atlas-operator
 
-   # IngressRoute for auth.atlas.tempestdx.dev (bounce service)
+   # IngressRoute for auth.hellofriday.dev (bounce service)
    ---
    apiVersion: traefik.io/v1alpha1
    kind: IngressRoute
@@ -2350,7 +2350,7 @@ After successful authentication, there's a delay while the Atlas operator create
      tls:
        secretName: auth-atlas-tempestdx-dev
      routes:
-       - match: Host(`auth.atlas.tempestdx.dev`)
+       - match: Host(`auth.hellofriday.dev`)
          kind: Rule
          services:
            - name: atlas-bounce
@@ -2359,13 +2359,13 @@ After successful authentication, there's a delay while the Atlas operator create
    ```
 
 4. **Route Configuration**:
-   - `app.atlas.tempestdx.dev/api/*` → Atlas daemon:8080 (user's instance)
-   - `app.atlas.tempestdx.dev/health` → Atlas daemon:8080 (user's instance)
-   - `app.atlas.tempestdx.dev/streams/*` → Atlas daemon:8080 (user's instance)
-   - `app.atlas.tempestdx.dev/login` → atlas-auth-ui (no JWT required)
-   - `app.atlas.tempestdx.dev/signup` → atlas-auth-ui (no JWT required)
-   - `app.atlas.tempestdx.dev/*` → web-client:3000 (user's instance, JWT required)
-   - `auth.atlas.tempestdx.dev/*` → bounce service (for authentication API)
+   - `app.hellofriday.dev/api/*` → Atlas daemon:8080 (user's instance)
+   - `app.hellofriday.dev/health` → Atlas daemon:8080 (user's instance)
+   - `app.hellofriday.dev/streams/*` → Atlas daemon:8080 (user's instance)
+   - `app.hellofriday.dev/login` → atlas-auth-ui (no JWT required)
+   - `app.hellofriday.dev/signup` → atlas-auth-ui (no JWT required)
+   - `app.hellofriday.dev/*` → web-client:3000 (user's instance, JWT required)
+   - `auth.hellofriday.dev/*` → bounce service (for authentication API)
 
 **Tauri/Standalone Version:**
 - No auth checks or redirects
@@ -2524,7 +2524,7 @@ spec:
         <button onclick="loginWithGoogle()">Login with Google</button>
 
         <script>
-            const AUTH_API = 'https://auth.atlas.tempestdx.dev';
+            const AUTH_API = 'https://auth.hellofriday.dev';
 
             async function sendMagicLink() {
                 const email = document.getElementById('email').value;
@@ -2564,7 +2564,7 @@ spec:
         <h2>Setting up your Atlas workspace...</h2>
         <p>This usually takes 30-60 seconds</p>
         <script>
-            const APP_URL = 'https://app.atlas.tempestdx.dev';
+            const APP_URL = 'https://app.hellofriday.dev';
 
             async function checkInstance() {
                 try {
@@ -2597,7 +2597,7 @@ The web client will make auth requests directly to the auth subdomain:
 
 ```typescript
 // apps/web-client/src/lib/auth.ts
-const AUTH_URL = import.meta.env.ATLAS_AUTH_URL || "https://auth.atlas.tempestdx.dev";
+const AUTH_URL = import.meta.env.ATLAS_AUTH_URL || "https://auth.hellofriday.dev";
 
 export async function signup(email: string) {
   const response = await fetch(`${AUTH_URL}/signup/email`, {
@@ -2626,10 +2626,10 @@ export async function logout() {
 Environment variables set during build:
 ```bash
 # .env.development
-ATLAS_AUTH_URL=https://auth.atlas.tempestdx.dev
+ATLAS_AUTH_URL=https://auth.hellofriday.dev
 
 # .env.production
-ATLAS_AUTH_URL=https://auth.atlas.tempestdx.com
+ATLAS_AUTH_URL=https://auth.hellofriday.ai
 ```
 
 ### Cookie Configuration for Cross-Subdomain
@@ -2642,7 +2642,7 @@ func setAuthCookie(w http.ResponseWriter, token string) {
     cookie := &http.Cookie{
         Name:     "atlas_token",
         Value:    token,
-        Domain:   ".atlas.tempestdx.dev",  // Works for all *.atlas.tempestdx.dev subdomains
+        Domain:   ".hellofriday.dev",  // Works for all *.hellofriday.dev subdomains
         Path:     "/",
         MaxAge:   604800,                   // 7 days
         HttpOnly: true,                     // Not accessible via JavaScript
@@ -2654,8 +2654,8 @@ func setAuthCookie(w http.ResponseWriter, token string) {
 ```
 
 This allows the cookie to be shared between Atlas subdomains only:
-- `auth.atlas.tempestdx.dev` (auth service)
-- `app.atlas.tempestdx.dev` (Atlas web UI and API at /api/*)
+- `auth.hellofriday.dev` (auth service)
+- `app.hellofriday.dev` (Atlas web UI and API at /api/*)
 - But NOT with `app.tempestdx.dev` (Tempest app)
 
 ## 6. CI/CD Integration
@@ -3523,7 +3523,7 @@ http {
         add_header X-Content-Type-Options "nosniff" always;
         add_header X-Frame-Options "DENY" always;
         add_header X-XSS-Protection "1; mode=block" always;
-        add_header Content-Security-Policy "default-src 'self' https://auth.atlas.tempestdx.dev; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline';" always;
+        add_header Content-Security-Policy "default-src 'self' https://auth.hellofriday.dev; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline';" always;
 
         # Serve static files
         location / {
@@ -3589,7 +3589,7 @@ spec:
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self' https://auth.atlas.tempestdx.dev; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline';">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' https://auth.hellofriday.dev; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline';">
   <meta http-equiv="X-Content-Type-Options" content="nosniff">
   <meta http-equiv="X-Frame-Options" content="DENY">
   <title>Sign in to Atlas</title>
@@ -3634,7 +3634,7 @@ spec:
   </div>
 
   <script>
-    const API_URL = 'https://auth.atlas.tempestdx.dev';  // Bounce service
+    const API_URL = 'https://auth.hellofriday.dev';  // Bounce service
 
     document.getElementById('login-form').addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -3743,7 +3743,7 @@ spec:
   </div>
 
   <script>
-    const API_URL = 'https://auth.atlas.tempestdx.dev';
+    const API_URL = 'https://auth.hellofriday.dev';
 
     document.getElementById('signup-form').addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -3844,7 +3844,7 @@ spec:
   </div>
 
   <script>
-    const API_URL = 'https://auth.atlas.tempestdx.dev';
+    const API_URL = 'https://auth.hellofriday.dev';
 
     document.getElementById('complete-setup-form').addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -3874,7 +3874,7 @@ spec:
 
         if (response.ok) {
           // Redirect to main app
-          window.location.href = 'https://app.atlas.tempestdx.dev';
+          window.location.href = 'https://app.hellofriday.dev';
         } else {
           const data = await response.json();
           errorDiv.textContent = data.error || 'Failed to complete setup';
@@ -4321,8 +4321,8 @@ PUBLIC_AUTH_URL=http://localhost:8083
 PUBLIC_APP_URL=http://localhost:1420
 
 # apps/web-client/.env.production
-PUBLIC_AUTH_URL=https://auth.atlas.tempestdx.dev
-PUBLIC_APP_URL=https://app.atlas.tempestdx.dev
+PUBLIC_AUTH_URL=https://auth.hellofriday.dev
+PUBLIC_APP_URL=https://app.hellofriday.dev
 ```
 
 ### Styles (`apps/web-client/src/styles/auth.css`)
@@ -4516,10 +4516,10 @@ make generate-jwt-keys
    - Application type: Web application
    - Name: Atlas Authentication
    - Authorized JavaScript origins:
-     - `https://auth.atlas.tempestdx.dev`
+     - `https://auth.hellofriday.dev`
      - `http://localhost:1420` (for development)
    - Authorized redirect URIs:
-     - `https://auth.atlas.tempestdx.dev/oauth/google/callback`
+     - `https://auth.hellofriday.dev/oauth/google/callback`
      - `http://localhost:1420/oauth/google/callback` (for development)
 5. Save Client ID and Client Secret in Google Secret Manager
 
@@ -4606,12 +4606,12 @@ server {
 
     # Verify redirects to bounce service
     location /signup/email/verify {
-        return 302 https://auth.atlas.tempestdx.dev$request_uri;
+        return 302 https://auth.hellofriday.dev$request_uri;
     }
 
     # OAuth redirects to bounce service
     location /oauth/ {
-        return 302 https://auth.atlas.tempestdx.dev$request_uri;
+        return 302 https://auth.hellofriday.dev$request_uri;
     }
 
     # Static assets
@@ -4682,7 +4682,7 @@ apps/atlas-auth-ui/
 
 ### Implementation Notes
 
-- Pages make API calls to `https://auth.atlas.tempestdx.dev` (bounce service)
+- Pages make API calls to `https://auth.hellofriday.dev` (bounce service)
 - Use fetch API with `credentials: 'include'` for cookies
 - Style consistently with Atlas UI
 - No React/Vue/framework needed - plain HTML/JS

@@ -1,10 +1,10 @@
-# Atlas
+# Friday
 
 AI agent orchestration platform that transforms software delivery through human/AI collaboration.
 
 ## Overview
 
-Atlas enables engineers to create workspaces where humans collaborate seamlessly with specialized,
+Friday enables engineers to create workspaces where humans collaborate seamlessly with specialized,
 autonomous agents in a secure, auditable, and scalable environment.
 
 ### Key Features
@@ -23,7 +23,7 @@ autonomous agents in a secure, auditable, and scalable environment.
 ### Prerequisites
 
 - [Deno](https://deno.land/) 2.4.0+ installed
-- Anthropic API key (for Claude) - [Get one here](https://atlas.tempestdx.com/)
+- Anthropic API key (for Claude) - [Get one here](https://hellofriday.ai/)
 
 ### Installation
 
@@ -33,7 +33,7 @@ Download from [releases](https://github.com/tempestteam/atlas/releases):
 
 **macOS:**
 
-- Download the Atlas installer `.zip` file (recommended) - Professional installation experience
+- Download the Friday installer `.zip` file (recommended) - Professional installation experience
   with:
   - License agreement integration
   - Optional API key collection and secure storage
@@ -56,7 +56,7 @@ Download from [releases](https://github.com/tempestteam/atlas/releases):
 
 **Windows:**
 
-- Download the Atlas installer `.exe` file (recommended) - Complete installation experience
+- Download the Friday installer `.exe` file (recommended) - Complete installation experience
   featuring:
   - License agreement and professional UI
   - API key collection and secure storage in ~/.atlas/.env
@@ -68,7 +68,7 @@ All binaries are signed and notarized for security.
 
 #### Option 2: Homebrew
 
-Atlas is available in three channels to suit different usage patterns:
+Friday is available in three channels to suit different usage patterns:
 
 ```bash
 # Add the Tempest tap
@@ -116,7 +116,7 @@ export ATLAS_WORKSPACES_DIR="/path/to/workspaces:/another/path"
 export ATLAS_WORKSPACES_DIR="C:\path\to\workspaces;D:\another\path"
 ```
 
-2. **Start the Atlas daemon**
+2. **Start the Friday daemon**
 
 ```bash
 # Start daemon in background
@@ -137,7 +137,7 @@ atlas init
 cd examples/workspaces/telephone
 ```
 
-4. **Launch Atlas Interactive Mode**
+4. **Launch Friday Interactive Mode**
 
 ```bash
 # Interactive terminal interface
@@ -149,7 +149,7 @@ This launches an interactive terminal interface that:
 - ✅ **Auto-detects** registered workspaces
 - ✅ **Real-time logs** in dual-panel layout
 - ✅ **Vi-style navigation** (j/k/gg/G/Ctrl+D/U)
-- ✅ **Slash commands** for all Atlas operations
+- ✅ **Slash commands** for all Friday operations
 - ✅ **Help system** - type `help` to see available commands
 - ✅ **Copy to clipboard** - press `y` on any selected line
 
@@ -168,8 +168,8 @@ help                                    # Show all commands
 ### Daemon Management
 
 ```bash
-atlas daemon start                 # Start Atlas daemon
-atlas daemon stop                  # Stop Atlas daemon
+atlas daemon start                 # Start Friday daemon
+atlas daemon stop                  # Stop Friday daemon
 atlas daemon status                # Check daemon status
 atlas daemon restart               # Restart daemon
 ```
@@ -242,11 +242,11 @@ jobs:
 
 ## Architecture
 
-Atlas uses a modern daemon-based architecture:
+Friday uses a modern daemon-based architecture:
 
 ```
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Atlas CLI     │───▶│  Atlas Daemon   │───▶│ Workspace Mgr   │
+│   Friday CLI     │───▶│  Friday Daemon   │───▶│ Workspace Mgr   │
 │  (Commands)     │    │   (HTTP API)    │    │ (KV Storage)    │
 └─────────────────┘    └─────────────────┘    └─────────────────┘
                                 │
@@ -268,7 +268,7 @@ Atlas uses a modern daemon-based architecture:
 
 ### Actor System Type Safety
 
-Atlas implements a type-safe actor hierarchy with full TypeScript support:
+Friday implements a type-safe actor hierarchy with full TypeScript support:
 
 #### Actor Hierarchy
 
@@ -360,7 +360,7 @@ deno fmt
 
 ### Code Quality with Knip
 
-[Knip](https://knip.dev/) is a dead code detection tool that finds and removes unused dependencies, exports, and files in JavaScript and TypeScript projects. Atlas uses Knip to maintain a clean codebase by identifying code that's no longer referenced.
+[Knip](https://knip.dev/) is a dead code detection tool that finds and removes unused dependencies, exports, and files in JavaScript and TypeScript projects. Friday uses Knip to maintain a clean codebase by identifying code that's no longer referenced.
 
 #### Running Knip
 
@@ -377,7 +377,7 @@ npx knip --debug
 
 #### Understanding Knip Modes
 
-Atlas configures Knip with two distinct analysis modes:
+Friday configures Knip with two distinct analysis modes:
 
 **Regular Mode** (`npx knip`):
 - Analyzes all code including tests and test utilities

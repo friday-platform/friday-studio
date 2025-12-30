@@ -313,7 +313,7 @@ async sendDiagnostics(gzipPath: string): Promise<void> {
 
   // Get API URL (uses ATLAS_URL env var if set, otherwise uses default)
   // Note: ATLAS_URL supports both http (local testing) and https (production)
-  const apiUrl = process.env.ATLAS_URL || "https://atlas.tempestdx.com";
+  const apiUrl = process.env.ATLAS_URL || "https://hellofriday.ai";
 
   // Send to diagnostic endpoint
   const response = await fetch(`${apiUrl}/api/diagnostics/${filename}`, {
@@ -454,7 +454,7 @@ Error: Diagnostic archive too large (>100MB). Please contact support.
 1. **No filtering**: As requested, no sensitive data filtering
 2. **Authentication**: Uses existing ATLAS_KEY mechanism
 3. **Transport security**:
-   - Production: HTTPS required (https://atlas.tempestdx.com)
+   - Production: HTTPS required (https://hellofriday.ai)
    - Local testing: HTTP allowed (http://localhost:8020)
    - Controlled by ATLAS_URL environment variable
 4. **No local storage**: Temp files cleaned up after upload

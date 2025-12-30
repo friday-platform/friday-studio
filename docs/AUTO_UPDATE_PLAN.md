@@ -11,13 +11,13 @@ staged update process that handles both the CLI client and daemon gracefully.
 ### 1. Update Check System (Existing)
 
 - **Current State**: `atlas version --remote` already checks for updates via
-  `https://atlas.tempestdx.com/version/{channel}`
+  `https://hellofriday.ai/version/{channel}`
 - **Enhancement**: Background update checks during daemon startup and periodically (every 24h)
 - **Channels**: Support for `stable`, `edge`, and `nightly` channels
 
 ### 2. Binary Download Service
 
-- **Base URL**: `https://atlas.tempestdx.com`
+- **Base URL**: `https://hellofriday.ai`
 - **Version API**: `GET /version/{channel}` returns platform-specific download URLs
 - **Download URLs**: Relative paths from the version API response
 - **Authentication**: None required (as per your requirement)
@@ -312,7 +312,7 @@ The Atlas auto-update functionality has been successfully implemented with all p
 
 The update functionality is fully implemented but requires server-side configuration:
 
-**Current Issue**: Binary files at `https://atlas.tempestdx.com/download/` are not publicly
+**Current Issue**: Binary files at `https://hellofriday.ai/download/` are not publicly
 accessible
 
 - Downloads redirect to `/login` (HTTP 302)

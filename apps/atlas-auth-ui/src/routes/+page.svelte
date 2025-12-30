@@ -65,7 +65,7 @@ onMount(() => {
           Go back
         </button>
       {:else}
-        <h1>Login to Atlas</h1>
+        <h1>Login to Friday</h1>
 
         <div class="login-form">
           <form onsubmit={handleMagicLink}>
@@ -104,8 +104,8 @@ onMount(() => {
 </main>
 
 <svelte:head>
-  <title>Atlas</title>
-  <meta name="description" content="Sign in to Atlas" />
+  <title>Friday</title>
+  <meta name="description" content="Sign in to Friday" />
   <meta name="robots" content="noindex, nofollow" />
 </svelte:head>
 

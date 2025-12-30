@@ -1,7 +1,7 @@
-<div aria-hidden="true" class="atlas-login-decal"></div>
+<div aria-hidden="true" class="friday-login-decal"></div>
 
 <style>
-  .atlas-login-decal {
+  .friday-login-decal {
     background: linear-gradient(180deg, #e3e7f1 0%, #faf4ed 54.93%, #fbfbf6 106.67%);
     background: linear-gradient(
       180deg,

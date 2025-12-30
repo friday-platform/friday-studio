@@ -177,7 +177,7 @@ Version:        ${RPM_VERSION}
 Release:        ${RPM_RELEASE}%{?dist}
 Summary:        Atlas AI Agent Orchestration Platform (CLI and GUI)
 License:        Proprietary
-URL:            https://atlas.tempestdx.com
+URL:            https://hellofriday.ai
 BuildArch:      ${RPM_ARCH}
 
 Requires:       glibc
@@ -235,7 +235,7 @@ elif [ ! -f /etc/atlas/env ]; then
     # Create default environment file with placeholder only if no backup and doesn't exist
     cat > /etc/atlas/env << 'ENVFILE'
 # Atlas Configuration
-# Get your Atlas Key from: https://atlas.tempestdx.com/
+# Get your Atlas Key from: https://hellofriday.ai/
 #
 # Uncomment and add your Atlas Key below:
 # ATLAS_KEY=your_atlas_key_here
@@ -287,7 +287,7 @@ else
     echo "⚠ Atlas daemon is installed but not running"
     echo ""
     echo "To start Atlas:"
-    echo "  1. Get your Atlas Key from https://atlas.tempestdx.com/"
+    echo "  1. Get your Atlas Key from https://hellofriday.ai/"
     echo "  2. Edit /etc/atlas/env and add: ATLAS_KEY=your_key_here"
     echo "  3. Start the daemon: sudo systemctl start atlas.service"
 fi

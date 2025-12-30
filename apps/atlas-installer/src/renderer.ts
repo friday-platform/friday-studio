@@ -186,7 +186,7 @@ interface BinaryCheckResult {
         }
 
         // Check if issuer is correct (support both formats)
-        if (payload.iss !== "tempest-atlas" && payload.iss !== "https://atlas.tempestdx.com") {
+        if (payload.iss !== "tempest-atlas" && payload.iss !== "https://hellofriday.ai") {
           return false;
         }
 

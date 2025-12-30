@@ -13,7 +13,7 @@ import { describeRoute, resolver } from "hono-openapi";
 import z from "zod";
 import { daemonFactory } from "../src/factory.ts";
 
-const GIST_SERVICE_URL = env.GIST_SERVICE_URL || "https://share.atlas.tempestdx.com";
+const GIST_SERVICE_URL = env.GIST_SERVICE_URL || "https://share.hellofriday.ai";
 const GIST_SERVICE_TIMEOUT_MS = 10_000;
 
 /** Get ATLAS_KEY from process env or ~/.atlas/.env file */
