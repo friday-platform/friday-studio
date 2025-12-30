@@ -11,8 +11,5 @@ if [ -n "$TOOLS" ]; then
     args="$args --tools $TOOLS"
 fi
 
-if [ -n "$PORT" ]; then
-    args="$args --port $PORT"
-fi
-
+# PORT is read directly from environment by FastMCP, not via CLI arg
 exec workspace-mcp $args "$@"
