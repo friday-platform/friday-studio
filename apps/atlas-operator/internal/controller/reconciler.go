@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -264,6 +265,17 @@ func (r *Reconciler) ensureVirtualKey(ctx context.Context, userID string) (bool,
 	}
 
 	resp, err := r.LiteLLM.CreateVirtualKey(ctx, req)
+	// Handle orphaned key: exists in LiteLLM but not in our database (checked above).
+	// This happens when a previous reconciliation created the key but failed to store it.
+	if err != nil && strings.Contains(err.Error(), "already exists") {
+		r.Logger.Warn("Found orphaned virtual key in LiteLLM, deleting and recreating",
+			"user_id", userID,
+		)
+		if delErr := r.LiteLLM.DeleteVirtualKeyByUserID(ctx, userID); delErr != nil {
+			return false, fmt.Errorf("delete orphaned virtual key: %w", delErr)
+		}
+		resp, err = r.LiteLLM.CreateVirtualKey(ctx, req)
+	}
 	if err != nil {
 		return false, fmt.Errorf("create virtual key: %w", err)
 	}

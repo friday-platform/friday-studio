@@ -824,3 +824,67 @@ func TestReconcile_WithoutLiteLLM_SkipsKeyOperations(t *testing.T) {
 		t.Errorf("expected 0 keys, got %d", len(mockDB.VirtualKeys))
 	}
 }
+
+func TestReconcile_WithLiteLLM_RecreatesOrphanedKey(t *testing.T) {
+	// This test verifies that when a key exists in LiteLLM but not in our database
+	// (orphaned key), the reconciler deletes the orphaned key and creates a new one.
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+	cfg := &config.Config{
+		ReconciliationInterval: 30 * time.Second,
+		LiteLLMDefaultBudget:   200.0,
+	}
+
+	mockDB := &MockDatabaseClient{
+		Users: []database.User{
+			{ID: "user-orphan"}, // This user has an orphaned key in LiteLLM
+			{ID: "user-normal"}, // This user has no key anywhere
+		},
+		// Note: no virtual keys in database - user-orphan has orphaned key in LiteLLM only
+	}
+	mockArgoCD := &MockArgoCDManager{
+		Applications: []*unstructured.Unstructured{},
+	}
+	mockLiteLLM := &MockLiteLLMClient{
+		OrphanedKeyUserIDs: map[string]bool{
+			"user-orphan": true, // Key exists in LiteLLM but not in our database
+		},
+	}
+	mockCypher := &MockCypherClient{}
+
+	r := NewReconciler(Deps{DB: mockDB, ArgoCD: mockArgoCD, LiteLLM: mockLiteLLM, Cypher: mockCypher, Config: cfg, Logger: logger})
+
+	ctx := context.Background()
+	err := r.Reconcile(ctx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// The orphaned key should be deleted first
+	if len(mockLiteLLM.DeletedUserIDs) != 1 {
+		t.Errorf("expected 1 key deleted, got %d", len(mockLiteLLM.DeletedUserIDs))
+	}
+	if mockLiteLLM.DeletedUserIDs[0] != "user-orphan" {
+		t.Errorf("expected deleted user-orphan, got %s", mockLiteLLM.DeletedUserIDs[0])
+	}
+
+	// Both users should have keys created (orphan was recreated, normal was created)
+	if len(mockLiteLLM.CreatedKeys) != 2 {
+		t.Errorf("expected 2 keys created, got %d", len(mockLiteLLM.CreatedKeys))
+	}
+	if _, ok := mockLiteLLM.CreatedKeys["user-orphan"]; !ok {
+		t.Error("expected key for user-orphan to be recreated")
+	}
+	if _, ok := mockLiteLLM.CreatedKeys["user-normal"]; !ok {
+		t.Error("expected key for user-normal")
+	}
+
+	// Both keys should be encrypted via Cypher
+	if len(mockCypher.EncryptedData) != 2 {
+		t.Errorf("expected 2 users encrypted, got %d", len(mockCypher.EncryptedData))
+	}
+
+	// Both keys should be stored in database
+	if len(mockDB.VirtualKeys) != 2 {
+		t.Errorf("expected 2 keys stored, got %d", len(mockDB.VirtualKeys))
+	}
+}

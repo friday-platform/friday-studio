@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
 	"github.com/tempestteam/atlas/apps/atlas-operator/pkg/argocd"
@@ -191,14 +192,19 @@ func (m *MockArgoCDManager) ListApplications(ctx context.Context) ([]*unstructur
 
 // MockLiteLLMClient is a mock implementation of LiteLLMClient for testing.
 type MockLiteLLMClient struct {
-	CreatedKeys     map[string]string // userID -> key
-	DeletedUserIDs  []string
-	CreateKeyErr    error
-	DeleteKeyErr    error
-	CreateKeyResult *litellm.CreateVirtualKeyResponse
+	CreatedKeys        map[string]string // userID -> key
+	DeletedUserIDs     []string
+	CreateKeyErr       error
+	DeleteKeyErr       error
+	CreateKeyResult    *litellm.CreateVirtualKeyResponse
+	OrphanedKeyUserIDs map[string]bool // userIDs that have orphaned keys in LiteLLM
 }
 
 func (m *MockLiteLLMClient) CreateVirtualKey(ctx context.Context, req litellm.CreateVirtualKeyRequest) (*litellm.CreateVirtualKeyResponse, error) {
+	// Simulate orphaned key scenario: key exists in LiteLLM but not in our database
+	if m.OrphanedKeyUserIDs != nil && m.OrphanedKeyUserIDs[req.UserID] {
+		return nil, fmt.Errorf("unexpected status 400: Key with alias 'atlas-%s' already exists", req.UserID)
+	}
 	if m.CreateKeyErr != nil {
 		return nil, m.CreateKeyErr
 	}
@@ -222,6 +228,10 @@ func (m *MockLiteLLMClient) DeleteVirtualKeyByUserID(ctx context.Context, userID
 		return m.DeleteKeyErr
 	}
 	m.DeletedUserIDs = append(m.DeletedUserIDs, userID)
+	// Clear the orphaned key status when deleted
+	if m.OrphanedKeyUserIDs != nil {
+		delete(m.OrphanedKeyUserIDs, userID)
+	}
 	return nil
 }
 
