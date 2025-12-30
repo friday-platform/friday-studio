@@ -1,6 +1,6 @@
 {
   "name": "@atlas/web-client",
-  "version": "0.0.1",
+  "version": "1.0.0-beta",
   "exports": "./mod.ts",
   "exclude": [
     ".svelte-kit/**",

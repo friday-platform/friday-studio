@@ -13,8 +13,7 @@ let isRestarting = $state(false);
 let message = $state("");
 let nextId = 1;
 
-let version = $state<string>(BUILD_INFO?.version || "0.1.0");
-let buildType = BUILD_INFO?.buildType || "development";
+let version = $state<string>(BUILD_INFO?.version || "1.0.0-beta");
 let commitHash = BUILD_INFO?.commitHash || "unknown";
 
 onMount(async () => {
@@ -176,11 +175,7 @@ function showMessage(msg: string) {
 		<div class="version-info">
 			<h2>App Details</h2>
 
-			<p>
-				Version {version} ({commitHash})
-				<br />
-				{buildType}
-			</p>
+			<p>Version {version} ({commitHash})</p>
 		</div>
 	</div>
 </div>

@@ -112,6 +112,9 @@ CMD ["atlas", "daemon", "start", "--hostname", "0.0.0.0", "--port", "8080"]
 # Stage 3: Build web client static assets
 FROM denoland/deno:alpine-2.6.1 AS web-client-builder
 
+# Accept build args for version info
+ARG GITHUB_SHA=unknown
+
 WORKDIR /app
 
 # Copy all files (simpler approach for first working version)
@@ -121,8 +124,9 @@ COPY . .
 RUN deno install
 
 # Build static assets using Deno task
+# GITHUB_SHA is truncated to 8 chars by generate-build-info.ts
 WORKDIR /app/apps/web-client
-RUN deno task build
+RUN GITHUB_SHA="${GITHUB_SHA}" deno task build
 
 # Stage 4: Web client runtime
 FROM nginxinc/nginx-unprivileged:1.29.3-alpine3.22 AS web-client
