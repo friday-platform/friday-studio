@@ -9,7 +9,10 @@
       "entry": ["src/**/*.test.ts"],
       "project": ["src/**/*.{ts,tsx,js,jsx}!"]
     },
-    "packages/bundled-agents": { "project": ["src/**/*.{ts,tsx,js,jsx}!"] },
+    "packages/bundled-agents": {
+      "entry": ["src/**/*.test.ts"],
+      "project": ["src/**/*.{ts,tsx,js,jsx}!"]
+    },
     "packages/client": { "project": ["**/*.{ts,tsx,js,jsx}!"] },
     "packages/config": { "project": ["**/*.{ts,tsx,js,jsx}!"] },
     "packages/core": { "entry": ["src/**/*.test.ts"], "project": ["src/**/*.{ts,tsx,js,jsx}!"] },

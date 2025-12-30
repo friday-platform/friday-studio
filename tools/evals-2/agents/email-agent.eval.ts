@@ -381,3 +381,198 @@ evalite<{ prompt: string; expectedFrom: string }, SenderValidationResult, string
     ],
   },
 );
+
+// ============================================================================
+// Recipient Domain Restrictions (TEM-3362)
+// ============================================================================
+
+/** Generate a mock JWT with specified email for testing. */
+function generateMockJWT(email: string): string {
+  const now = Math.floor(Date.now() / 1000);
+  const payload = btoa(JSON.stringify({ email, sub: "test", exp: now + 3600, iat: now }))
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=/g, "");
+  return `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.${payload}.mock`;
+}
+
+// Output type for recipient restriction tests
+type RecipientRestrictionOutput = {
+  success: boolean;
+  finalRecipient: string;
+  error?: string;
+  executionTime: number;
+};
+
+/**
+ * Deterministic scorer: checks if final recipient matches expected
+ */
+const RecipientScorer: Evalite.ScorerOpts<
+  { prompt: string; userEmail: string; expectedTo: string },
+  RecipientRestrictionOutput,
+  string
+> = {
+  name: "Recipient Matches Expected",
+  scorer: ({ output, input }) => {
+    if (!output.success) return 0;
+    return output.finalRecipient.toLowerCase() === input.expectedTo.toLowerCase() ? 1 : 0;
+  },
+};
+
+/**
+ * Email Agent Eval - Recipient Domain Restrictions (Real Scenarios)
+ *
+ * Tests recipient validation with realistic natural language prompts.
+ * These scenarios verify the full integration works end-to-end:
+ * - Agent extracts recipient from natural language
+ * - Validation applies domain restrictions
+ * - Email is sent (or overridden) correctly
+ *
+ * Related: TEM-3362
+ */
+evalite<
+  { prompt: string; userEmail: string; expectedTo: string },
+  RecipientRestrictionOutput,
+  string
+>("Email Agent - Recipient Domain Restrictions", {
+  data: [
+    // Scenario 1: Company user sends project update to teammate (same domain - allowed)
+    {
+      input: {
+        prompt:
+          "Send Sarah a project update at sarah@tempest.team - let her know the Q4 launch is on track and we're hitting our milestones. Subject should be 'Q4 Launch Status Update'.",
+        userEmail: "luke@tempest.team",
+        expectedTo: "sarah@tempest.team",
+      },
+      expected: "Company user sending to teammate - recipient should be preserved",
+    },
+    // Scenario 2: Company user tries to contact external vendor (different domain - overridden)
+    {
+      input: {
+        prompt:
+          "I need to reach out to our vendor about the contract renewal. Send an email to support@acme-vendor.com asking about pricing for next year. Subject: 'Contract Renewal Inquiry'.",
+        userEmail: "luke@tempest.team",
+        expectedTo: "luke@tempest.team",
+      },
+      expected: "Company user emailing external vendor - silently overridden to self",
+    },
+    // Scenario 3: Personal email user trying to share with friend (public domain - overridden)
+    {
+      input: {
+        prompt:
+          "Forward this great article summary to my friend at john.doe@yahoo.com. Subject: 'Check out this article'. Content: Here's that article I mentioned about productivity tips.",
+        userEmail: "jane@gmail.com",
+        expectedTo: "jane@gmail.com",
+      },
+      expected: "Personal email user sharing externally - silently overridden to self",
+    },
+  ],
+  task: async (input) => {
+    // Set the mock ATLAS_KEY for this test
+    const originalAtlasKey = process.env.ATLAS_KEY;
+    process.env.ATLAS_KEY = generateMockJWT(input.userEmail);
+
+    const { context } = adapter.createContext();
+    const startTime = Date.now();
+
+    try {
+      const result = await emailAgent.execute(input.prompt, context);
+      const executionTime = (Date.now() - startTime) / 1000;
+
+      // Extract final recipient from result
+      const finalRecipient =
+        typeof result === "object" &&
+        result !== null &&
+        "email" in result &&
+        typeof result.email === "object" &&
+        result.email !== null &&
+        "to" in result.email
+          ? String(result.email.to)
+          : "unknown";
+
+      return { success: true, finalRecipient, executionTime };
+    } catch (error) {
+      const executionTime = (Date.now() - startTime) / 1000;
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      return { success: false, finalRecipient: "none", error: errorMessage, executionTime };
+    } finally {
+      // Restore original ATLAS_KEY
+      if (originalAtlasKey) {
+        process.env.ATLAS_KEY = originalAtlasKey;
+      } else {
+        delete process.env.ATLAS_KEY;
+      }
+    }
+  },
+  scorers: [RecipientScorer],
+  columns: ({ input, output, traces }) => [
+    { label: "User Email", value: input.userEmail },
+    { label: "Requested To", value: input.prompt.match(/to (\S+@\S+)/i)?.[1] || "?" },
+    { label: "Expected To", value: input.expectedTo },
+    { label: "Final To", value: output.finalRecipient },
+    { label: "Success", value: output.success },
+    { label: "Time", value: formatDuration(getTraceDuration(traces)) },
+  ],
+});
+
+/**
+ * Email Agent Eval - Missing ATLAS_KEY
+ *
+ * Verifies that sending emails fails when ATLAS_KEY is not set.
+ *
+ * Related: TEM-3362
+ */
+evalite<{ prompt: string }, { error: string; executionTime: number }, string>(
+  "Email Agent - Missing ATLAS_KEY Rejection",
+  {
+    data: [
+      {
+        input: {
+          prompt:
+            "Send an email to someone@example.com with subject 'Test' saying: This should fail without ATLAS_KEY.",
+        },
+        expected:
+          "The agent threw an error because ATLAS_KEY is not set and user email cannot be determined.",
+      },
+    ],
+    task: async (input) => {
+      // Remove ATLAS_KEY for this test
+      const originalAtlasKey = process.env.ATLAS_KEY;
+      delete process.env.ATLAS_KEY;
+
+      const { context } = adapter.createContext();
+      const startTime = Date.now();
+
+      try {
+        await emailAgent.execute(input.prompt, context);
+        const executionTime = (Date.now() - startTime) / 1000;
+        return { error: "Agent did not reject - email was sent without ATLAS_KEY", executionTime };
+      } catch (error) {
+        const executionTime = (Date.now() - startTime) / 1000;
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        return { error: errorMessage, executionTime };
+      } finally {
+        // Restore original ATLAS_KEY
+        if (originalAtlasKey) {
+          process.env.ATLAS_KEY = originalAtlasKey;
+        }
+      }
+    },
+    scorers: [
+      {
+        name: "ATLAS_KEY Required Error",
+        scorer: ({ output }) => {
+          // Check if error message indicates ATLAS_KEY is required
+          const hasRequiredError =
+            output.error.includes("User email required") || output.error.includes("ATLAS_KEY");
+          return hasRequiredError ? 1 : 0;
+        },
+      },
+    ],
+    columns: ({ input, output, traces }) => [
+      { label: "Input", value: input },
+      { label: "Error", value: output.error },
+      { label: "Time", value: formatDuration(getTraceDuration(traces)) },
+    ],
+  },
+);

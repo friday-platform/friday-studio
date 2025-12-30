@@ -11,6 +11,7 @@ import { resolve } from "@std/path";
 import { generateText, tool } from "ai";
 import { wrapAISDKModel } from "evalite/ai-sdk";
 import { z } from "zod";
+import { validateRecipient } from "./recipient-validation.ts";
 import { extractUserFromJWT, sendEmail } from "./sendgrid.ts";
 import { template } from "./template.ts";
 
@@ -178,7 +179,26 @@ CONTENT GUIDELINES (for composeEmail):
     // TS can't track mutation in tool execute callback
     const params = composedEmail as z.infer<typeof composeEmailSchema>;
 
-    if (!prompt.toLowerCase().includes(params.to.toLowerCase())) {
+    // Validate recipient based on user's email domain
+    const atlasUserEmail = env.ATLAS_KEY ? extractUserFromJWT(env.ATLAS_KEY) : null;
+    if (!atlasUserEmail) {
+      throw new Error(
+        "User email required from ATLAS_KEY to send emails. Please ensure you are authenticated.",
+      );
+    }
+
+    const recipientResult = validateRecipient(atlasUserEmail, params.to);
+    if (recipientResult.overridden) {
+      logger.info("Recipient overridden to user's email (domain restriction)", {
+        original: params.to,
+        final: recipientResult.to,
+        userEmail: atlasUserEmail,
+      });
+    }
+    params.to = recipientResult.to;
+
+    // Security check: verify recipient is in prompt (skip if we overrode it)
+    if (!recipientResult.overridden && !prompt.toLowerCase().includes(params.to.toLowerCase())) {
       throw new Error(
         `Security: Recipient email "${params.to}" not found in prompt. The agent may be hallucinating email addresses.`,
       );
@@ -260,15 +280,8 @@ CONTENT GUIDELINES (for composeEmail):
     });
 
     const fromEmail = params.from || env.SENDGRID_FROM_EMAIL || "noreply@tempestdx.com";
-    const atlasUserEmail = env.ATLAS_KEY ? extractUserFromJWT(env.ATLAS_KEY) : null;
-    if (!atlasUserEmail) {
-      logger.warn(
-        "No user email found in ATLAS_KEY JWT, sender info will not be shown in email footer",
-      );
-    }
-    const senderInfo = atlasUserEmail
-      ? `<p style="font-size: 12px;">Sent by ${atlasUserEmail}</p>`
-      : "";
+    // atlasUserEmail is already validated above - it's required for sending
+    const senderInfo = `<p style="font-size: 12px;">Sent by ${atlasUserEmail}</p>`;
 
     const emailParams: EmailParams = {
       to: params.to,
