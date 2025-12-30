@@ -81,10 +81,19 @@ gcloud alpha monitoring policies create \
 
 | Alert | Severity | Condition | Notification |
 |-------|----------|-----------|--------------|
+| GKE Container Restarts | Warning | >5 restarts in 10min (cluster-wide) | PagerDuty |
 | Infrastructure Pod Restart Loop | Warning | >3 restarts in 10min | Slack |
 | User Atlas Pod Restart Loop | Warning | >3 restarts in 10min | Slack |
 | High Memory Usage | Warning | >80% limit for 5min | Slack |
 | High CPU Usage | Warning | >80% limit for 10min | Slack |
+
+### Alert Auto-Close Policy
+
+All alerts use `autoClose: 3600s` (1 hour) with `notificationPrompts: [OPENED, CLOSED]`.
+This ensures PagerDuty/Slack receive resolution notifications when alerts auto-close.
+
+**Important**: GCP Monitoring does NOT auto-resolve alerts when conditions clear.
+Alerts stay open until the `autoClose` duration expires after the last violation.
 
 ### Blocked Alerts (need prometheus metrics)
 

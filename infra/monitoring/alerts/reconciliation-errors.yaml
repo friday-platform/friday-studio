@@ -13,7 +13,10 @@ conditions:
     trigger:
       count: 1
 alertStrategy:
-  autoClose: "604800s"
+  autoClose: "3600s"
+  notificationPrompts:
+  - OPENED
+  - CLOSED
 severity: WARNING
 documentation:
   content: |-
