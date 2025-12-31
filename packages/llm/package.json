@@ -10,7 +10,7 @@
     "@ai-sdk/anthropic": "^2.0.56",
     "@ai-sdk/google": "^2.0.52",
     "@ai-sdk/openai": "^2.0.89",
-    "@ai-sdk/provider": "^2.0.0",
+    "@ai-sdk/provider": "^2.0.1",
     "@std/assert": "npm:@jsr/std__assert@^1.0.14",
     "@std/collections": "npm:@jsr/std__collections@^1.1.3",
     "ai": "^5.0.116",

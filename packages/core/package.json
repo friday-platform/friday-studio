@@ -21,7 +21,7 @@
   },
   "main": "./mod.ts",
   "dependencies": {
-    "@ai-sdk/provider": "^2.0.0",
+    "@ai-sdk/provider": "^2.0.1",
     "@atlas/agent-sdk": "workspace:*",
     "@atlas/bundled-agents": "workspace:*",
     "@atlas/config": "workspace:*",
