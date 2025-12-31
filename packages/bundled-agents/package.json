@@ -15,7 +15,7 @@
     "@std/encoding": "npm:@jsr/std__encoding@^1.0.10",
     "@std/media-types": "npm:@jsr/std__media-types@^1.1.0",
     "@std/path": "npm:@jsr/std__path@^1.1.2",
-    "ai": "^5.0.116",
+    "ai": "^5.0.117",
     "ai-sdk-provider-claude-code": "^2.2.4",
     "evalite": "^1.0.0-beta.15",
     "parallel-web": "0.2.4",
