@@ -35,7 +35,7 @@
     "npm:@ai-sdk/mcp@^0.0.12": "0.0.12_zod@4.2.1",
     "npm:@ai-sdk/openai@^2.0.89": "2.0.89_zod@4.2.1",
     "npm:@ai-sdk/provider@2": "2.0.1",
-    "npm:@ai-sdk/svelte@^3.0.116": "3.0.116_svelte@5.46.1__acorn@8.15.0_zod@4.2.1",
+    "npm:@ai-sdk/svelte@^3.0.117": "3.0.117_svelte@5.46.1__acorn@8.15.0_zod@4.2.1",
     "npm:@biomejs/biome@*": "2.3.10",
     "npm:@eslint/compat@2": "2.0.0_eslint@9.39.2",
     "npm:@eslint/js@^9.39.2": "9.39.2",
@@ -86,8 +86,8 @@
     "npm:@total-typescript/ts-reset@~0.6.1": "0.6.1",
     "npm:@types/react@^19.2.7": "19.2.7",
     "npm:ai-sdk-provider-claude-code@^2.2.4": "2.2.4_zod@4.2.1",
-    "npm:ai@^5.0.116": "5.0.116_zod@4.2.1",
-    "npm:ai@^5.0.93": "5.0.116_zod@4.2.1",
+    "npm:ai@^5.0.116": "5.0.117_zod@4.2.1",
+    "npm:ai@^5.0.93": "5.0.117_zod@4.2.1",
     "npm:concurrently@*": "9.2.0",
     "npm:cookie@^1.0.2": "1.1.1",
     "npm:cron-parser@^5.4.0": "5.4.0",
@@ -95,7 +95,7 @@
     "npm:eslint-config-prettier@^10.1.8": "10.1.8_eslint@9.39.2",
     "npm:eslint-plugin-svelte@^3.13.1": "3.13.1_eslint@9.39.2_svelte@5.46.1__acorn@8.15.0_postcss@8.5.6",
     "npm:eslint@^9.39.2": "9.39.2",
-    "npm:evalite@^1.0.0-beta.15": "1.0.0-beta.15_ai@5.0.116__zod@4.2.1_zod@4.2.1",
+    "npm:evalite@^1.0.0-beta.15": "1.0.0-beta.15_ai@5.0.117__zod@4.2.1_zod@4.2.1",
     "npm:fast-glob@^3.3.3": "3.3.3",
     "npm:globals@^16.5.0": "16.5.0",
     "npm:hono-openapi@^1.1.2": "1.1.2_@hono+standard-validator@0.2.1__@standard-schema+spec@1.0.0__hono@4.11.3_@standard-community+standard-json@0.3.5__@standard-schema+spec@1.0.0__@types+json-schema@7.0.15__quansync@0.2.11__zod@4.2.1_@standard-community+standard-openapi@0.2.9__@standard-community+standard-json@0.3.5___@standard-schema+spec@1.0.0___@types+json-schema@7.0.15___quansync@0.2.11___zod@4.2.1__@standard-schema+spec@1.0.0__openapi-types@12.1.3__zod@4.2.1__@types+json-schema@7.0.15_@types+json-schema@7.0.15_hono@4.11.3_openapi-types@12.1.3_zod@4.2.1",
@@ -243,11 +243,11 @@
         "zod"
       ]
     },
-    "@ai-sdk/gateway@2.0.23_zod@4.2.1": {
-      "integrity": "sha512-qmX7afPRszUqG5hryHF3UN8ITPIRSGmDW6VYCmByzjoUkgm3MekzSx2hMV1wr0P+llDeuXb378SjqUfpvWJulg==",
+    "@ai-sdk/gateway@2.0.24_zod@4.2.1": {
+      "integrity": "sha512-mflk80YF8hj8vrF9e1IHhovGKC1ubX+sY88pesSk3pUiXfH5VPO8dgzNnxjwsqsCZrnkHcztxS5cSl4TzSiEuA==",
       "dependencies": [
-        "@ai-sdk/provider@2.0.0",
-        "@ai-sdk/provider-utils@3.0.19_zod@4.2.1",
+        "@ai-sdk/provider@2.0.1",
+        "@ai-sdk/provider-utils@3.0.20_zod@4.2.1",
         "@vercel/oidc",
         "zod"
       ]
@@ -324,10 +324,10 @@
         "json-schema"
       ]
     },
-    "@ai-sdk/svelte@3.0.116_svelte@5.46.1__acorn@8.15.0_zod@4.2.1": {
-      "integrity": "sha512-RcM6KTQyqdSgtsyoQJbS+vb+Y/OJRgMp0rndMt5j1cVvbzsXgAu4P9WpCiUaRc4G0xWjEhcugjVg/thwPtJB2g==",
+    "@ai-sdk/svelte@3.0.117_svelte@5.46.1__acorn@8.15.0_zod@4.2.1": {
+      "integrity": "sha512-thFOdpBPOOOMixob6z5bFe+CpHwf9Fmb3zWhr0sdZ81n6zXNlBolTyAd+5a4KUAvrf0uUUQmrtmQJJHoQDpKNg==",
       "dependencies": [
-        "@ai-sdk/provider-utils@3.0.19_zod@4.2.1",
+        "@ai-sdk/provider-utils@3.0.20_zod@4.2.1",
         "ai",
         "svelte",
         "zod"
@@ -2619,12 +2619,12 @@
         "zod"
       ]
     },
-    "ai@5.0.116_zod@4.2.1": {
-      "integrity": "sha512-+2hYJ80/NcDWuv9K2/MLP3cTCFgwWHmHlS1tOpFUKKcmLbErAAlE/S2knsKboc3PNAu8pQkDr2N3K/Vle7ENgQ==",
+    "ai@5.0.117_zod@4.2.1": {
+      "integrity": "sha512-uE6HNkdSwxbeHGKP/YbvapwD8fMOpj87wyfT9Z00pbzOh2fpnw5acak/4kzU00SX2vtI9K0uuy+9Tf9ytw5RwA==",
       "dependencies": [
         "@ai-sdk/gateway",
-        "@ai-sdk/provider@2.0.0",
-        "@ai-sdk/provider-utils@3.0.19_zod@4.2.1",
+        "@ai-sdk/provider@2.0.1",
+        "@ai-sdk/provider-utils@3.0.20_zod@4.2.1",
         "@opentelemetry/api",
         "zod"
       ]
@@ -3280,7 +3280,7 @@
     "etag@1.8.1": {
       "integrity": "sha512-aIL5Fx7mawVa300al2BnEE4iNvo1qETxLrPI/o05L7z6go7fCw1J6EQmbK4FmJ2AS7kgVF/KEZWufBfdClMcPg=="
     },
-    "evalite@1.0.0-beta.15_ai@5.0.116__zod@4.2.1_zod@4.2.1": {
+    "evalite@1.0.0-beta.15_ai@5.0.117__zod@4.2.1_zod@4.2.1": {
       "integrity": "sha512-/4D4Iap7/FTrzUYf4fZpkaGaycRnKt8gDgMDJ/fRAr5YdfUBJuwJVPQFRSPNvtkg5AVSDI7+kgivJnfP69kFEA==",
       "dependencies": [
         "@fastify/static",
@@ -5524,7 +5524,7 @@
       "apps/web-client": {
         "packageJson": {
           "dependencies": [
-            "npm:@ai-sdk/svelte@^3.0.116",
+            "npm:@ai-sdk/svelte@^3.0.117",
             "npm:@eslint/compat@2",
             "npm:@eslint/js@^9.39.2",
             "npm:@ianvs/prettier-plugin-sort-imports@^4.7.0",
