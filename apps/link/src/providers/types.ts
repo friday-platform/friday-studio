@@ -1,4 +1,4 @@
-import type { z } from "zod";
+import { z } from "zod";
 
 /**
  * OAuth configuration discriminated union.
@@ -46,6 +46,45 @@ export type OAuthTokens = {
   refresh_token?: string;
   token_type: string;
   expires_at?: number;
+};
+
+/**
+ * Supported platforms for app installation flows.
+ * Currently Slack only, will expand to GitHub, Discord, etc.
+ */
+export type Platform = "slack";
+
+/**
+ * Zod schema for app install credential secrets.
+ * Contains OAuth tokens and routing key for multi-tenant apps.
+ */
+export const AppInstallCredentialSecretSchema = z.object({
+  externalId: z.string(), // Routing key (team_id, guild_id)
+  access_token: z.string(),
+  token_type: z.string(),
+  refresh_token: z.string().optional(),
+  expires_at: z.number().optional(),
+});
+
+/**
+ * Base credential secret structure for app install providers.
+ * Inferred from AppInstallCredentialSecretSchema.
+ */
+export type AppInstallCredentialSecret = z.infer<typeof AppInstallCredentialSecretSchema>;
+
+/**
+ * Result of completing an app installation flow.
+ * Contains external identity and credential to persist.
+ */
+export type AppInstallResult = {
+  readonly externalId: string;
+  readonly externalName: string;
+  readonly credential: {
+    readonly type: "oauth"; // stored as oauth - no DB migration
+    readonly provider: string;
+    readonly label: string;
+    readonly secret: AppInstallCredentialSecret;
+  };
 };
 
 /**
@@ -188,7 +227,76 @@ export function defineOAuthProvider(provider: Omit<OAuthProvider, "type">): OAut
 }
 
 /**
+ * App install provider type.
+ * For OAuth apps installed into workspaces (Slack, GitHub, Discord).
+ * Use `defineAppInstallProvider` factory for type-safe provider creation.
+ */
+export type AppInstallProvider = BaseProviderDefinition & {
+  /** Authentication type discriminator */
+  readonly type: "app_install";
+
+  /** Platform this provider targets */
+  readonly platform: Platform;
+
+  /**
+   * Builds OAuth authorization URL for app installation.
+   * Called when user initiates install flow.
+   */
+  buildAuthorizationUrl(callbackUrl: string, state: string): string;
+
+  /**
+   * Completes installation after OAuth callback.
+   * Exchanges code for tokens and returns workspace identity + credentials.
+   */
+  completeInstallation(code: string, callbackUrl: string): Promise<AppInstallResult>;
+
+  /**
+   * Optional health check against upstream service.
+   * Called periodically to verify tokens still work.
+   */
+  healthCheck?(secret: AppInstallCredentialSecret): Promise<HealthResult>;
+
+  /**
+   * Optional token refresh implementation.
+   * Called when access token is expired or near expiry.
+   * Returns updated tokens that should replace the existing credential.
+   * Provider is responsible for accessing its own client credentials.
+   */
+  refreshToken?(
+    refreshToken: string,
+  ): Promise<{ access_token: string; refresh_token: string; expires_in: number }>;
+};
+
+/**
+ * Factory for creating app install providers
+ *
+ * @example
+ * ```typescript
+ * const slackProvider = defineAppInstallProvider({
+ *   id: "slack",
+ *   displayName: "Slack",
+ *   description: "Install app into Slack workspace",
+ *   platform: "slack",
+ *   buildAuthorizationUrl(callbackUrl, state) {
+ *     return `https://slack.com/oauth/v2/authorize?client_id=...&state=${state}`;
+ *   },
+ *   async completeInstallation(code, callbackUrl) {
+ *     // Exchange code for tokens, return AppInstallResult
+ *   },
+ *   async healthCheck(secret) {
+ *     // Verify tokens still work
+ *   }
+ * });
+ * ```
+ */
+export function defineAppInstallProvider(
+  provider: Omit<AppInstallProvider, "type">,
+): AppInstallProvider {
+  return { type: "app_install", ...provider };
+}
+
+/**
  * Union of all provider definition types.
  * Use the type discriminator to narrow to specific provider type.
  */
-export type ProviderDefinition = ApiKeyProvider | OAuthProvider;
+export type ProviderDefinition = ApiKeyProvider | OAuthProvider | AppInstallProvider;

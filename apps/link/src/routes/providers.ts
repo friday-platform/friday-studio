@@ -67,7 +67,13 @@ export const providersRouter = factory
                     },
             }
           : {}),
-        supportsHealth: typeof provider.health === "function",
+        ...(provider.type === "app_install" ? { platform: provider.platform } : {}),
+        supportsHealth:
+          provider.type === "apikey" || provider.type === "oauth"
+            ? typeof provider.health === "function"
+            : provider.type === "app_install"
+              ? typeof provider.healthCheck === "function"
+              : false,
       },
       200,
     );

@@ -16,6 +16,7 @@ import {
 } from "@std/assert";
 import { z } from "zod";
 import { DenoKVStorageAdapter } from "../src/adapters/deno-kv-adapter.ts";
+import { NoOpPlatformRouteRepository } from "../src/adapters/platform-route-repository.ts";
 import { createApp } from "../src/index.ts";
 import { OAuthService } from "../src/oauth/service.ts";
 import { registry } from "../src/providers/registry.ts";
@@ -77,7 +78,7 @@ Deno.test(
     const tempDir = makeTempDir();
     const storage = new DenoKVStorageAdapter(`${tempDir}/kv.db`);
     const oauthService = new OAuthService(registry, storage);
-    const app = await createApp(storage, oauthService);
+    const app = await createApp(storage, oauthService, new NoOpPlatformRouteRepository());
 
     let mockServer: MockOAuthServer | undefined;
 
@@ -535,7 +536,7 @@ Deno.test({ name: "Static OAuth Integration", sanitizeResources: false }, async 
   const tempDir = makeTempDir();
   const storage = new DenoKVStorageAdapter(`${tempDir}/kv.db`);
   const oauthService = new OAuthService(registry, storage);
-  const app = await createApp(storage, oauthService);
+  const app = await createApp(storage, oauthService, new NoOpPlatformRouteRepository());
 
   let mockServer: MockOAuthServer | undefined;
 

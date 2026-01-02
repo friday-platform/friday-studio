@@ -2,6 +2,7 @@ import { rm } from "node:fs/promises";
 import { assertEquals, assertExists, assertObjectMatch } from "@std/assert";
 import { z } from "zod";
 import { DenoKVStorageAdapter } from "../adapters/deno-kv-adapter.ts";
+import { NoOpPlatformRouteRepository } from "../adapters/platform-route-repository.ts";
 import { createApp } from "../index.ts";
 import { OAuthService } from "../oauth/service.ts";
 import { registry } from "../providers/registry.ts";
@@ -51,7 +52,7 @@ Deno.test("GET /v1/summary endpoint", async (t) => {
   const tempDir = await Deno.makeTempDir();
   const storage = new DenoKVStorageAdapter(`${tempDir}/kv.db`);
   const oauthService = new OAuthService(registry, storage);
-  const app = await createApp(storage, oauthService);
+  const app = await createApp(storage, oauthService, new NoOpPlatformRouteRepository());
 
   // Register test providers
   Object.values(testProviders).forEach((provider) => {
@@ -149,7 +150,11 @@ Deno.test("GET /v1/summary endpoint", async (t) => {
     const emptyTempDir = await Deno.makeTempDir();
     const emptyStorage = new DenoKVStorageAdapter(`${emptyTempDir}/kv.db`);
     const emptyOauthService = new OAuthService(registry, emptyStorage);
-    const emptyApp = await createApp(emptyStorage, emptyOauthService);
+    const emptyApp = await createApp(
+      emptyStorage,
+      emptyOauthService,
+      new NoOpPlatformRouteRepository(),
+    );
 
     const res = await emptyApp.request("/v1/summary");
     assertEquals(res.status, 200);

@@ -10,12 +10,19 @@ import { trimTrailingSlash } from "hono/trailing-slash";
 import postgres from "postgres";
 import { CypherStorageAdapter } from "./adapters/cypher-storage-adapter.ts";
 import { DenoKVStorageAdapter } from "./adapters/deno-kv-adapter.ts";
+import {
+  NoOpPlatformRouteRepository,
+  type PlatformRouteRepository,
+  PostgresPlatformRouteRepository,
+} from "./adapters/platform-route-repository.ts";
+import { AppInstallService } from "./app-install/service.ts";
 import { config, readConfig } from "./config.ts";
 import { CypherHttpClient } from "./cypher-client.ts";
 import { factory } from "./factory.ts";
 import { getMetrics, recordRequest } from "./metrics.ts";
 import { OAuthService } from "./oauth/service.ts";
 import { registry } from "./providers/registry.ts";
+import { createAppInstallRoutes } from "./routes/app-install.ts";
 import { createCredentialsRoutes, createInternalCredentialsRoutes } from "./routes/credentials.ts";
 import { createOAuthRoutes } from "./routes/oauth.ts";
 import { providersRouter } from "./routes/providers.ts";
@@ -41,9 +48,16 @@ function getAuthToken(): string {
  *
  * Reads config fresh on each call to support testing with different env vars.
  */
-export function createApp(storage: StorageAdapter, oauthService: OAuthService) {
+export function createApp(
+  storage: StorageAdapter,
+  oauthService: OAuthService,
+  platformRouteRepo: PlatformRouteRepository,
+) {
   // Read config fresh to support testing with different env vars
   const cfg = readConfig();
+
+  // Callback base URL for OAuth redirects
+  const callbackBase = Deno.env.get("LINK_CALLBACK_BASE") || "http://localhost:3000";
 
   /**
    * Auth token middleware - captures JWT for forwarding to Cypher service.
@@ -169,6 +183,14 @@ export function createApp(storage: StorageAdapter, oauthService: OAuthService) {
   baseApp.use("/internal/*", tenancyMiddleware);
   baseApp.use("/internal/*", externalUrlMiddleware);
 
+  // Create AppInstallService
+  const appInstallService = new AppInstallService(
+    registry,
+    storage,
+    platformRouteRepo,
+    callbackBase,
+  );
+
   return (
     baseApp
       // Provider catalog routes
@@ -181,6 +203,8 @@ export function createApp(storage: StorageAdapter, oauthService: OAuthService) {
       .route("/v1/summary", createSummaryRoutes(storage))
       // Internal runtime access API (returns secrets with proactive OAuth refresh)
       .route("/internal/v1/credentials", createInternalCredentialsRoutes(storage, oauthService))
+      // App install routes (Slack, GitHub, etc.)
+      .route("/v1/app-install", createAppInstallRoutes(appInstallService))
   );
 }
 
@@ -193,16 +217,24 @@ let server: Deno.HttpServer | null = null;
 /**
  * Create storage adapter based on configuration.
  * Uses CypherStorageAdapter if Cypher and Postgres are configured, otherwise DenoKV.
+ *
+ * Note: Postgres connection is created independently for platform_route even when
+ * using DenoKV for credential storage (e.g., when Cypher auth isn't available).
  */
 function createStorage(): StorageAdapter {
-  if (config.cypherServiceUrl && config.postgresConnection) {
-    logger.info("Using CypherStorageAdapter", {
-      cypherUrl: config.cypherServiceUrl,
+  // Create Postgres connection if configured (needed for platform_route even without Cypher)
+  if (config.postgresConnection) {
+    sql = postgres(config.postgresConnection, config.postgresPool);
+    logger.info("Postgres connection initialized", {
       postgres: config.postgresConnection.split("@")[1]?.split("/")[0] ?? "configured",
       pool: config.postgresPool,
     });
+  }
 
-    sql = postgres(config.postgresConnection, config.postgresPool);
+  // Use Cypher + Postgres for credential storage if both are configured
+  if (config.cypherServiceUrl && sql) {
+    logger.info("Using CypherStorageAdapter", { cypherUrl: config.cypherServiceUrl });
+
     const cypher = new CypherHttpClient(config.cypherServiceUrl, () => {
       // Return the token from AsyncLocalStorage for the current request
       return Promise.resolve(getAuthToken());
@@ -211,6 +243,7 @@ function createStorage(): StorageAdapter {
     return new CypherStorageAdapter(cypher, sql);
   }
 
+  // Fall back to DenoKV for credential storage (platform_route still uses Postgres if available)
   logger.info("Using DenoKVStorageAdapter", { dbPath: config.dbPath });
   return new DenoKVStorageAdapter(config.dbPath);
 }
@@ -266,8 +299,22 @@ const defaultStorage = createStorage();
 // Default OAuth service for production
 const defaultOAuthService = new OAuthService(registry, defaultStorage);
 
+// Create platform route repository (Postgres required in production)
+function createPlatformRouteRepo(): PlatformRouteRepository {
+  if (sql) {
+    return new PostgresPlatformRouteRepository(sql);
+  }
+  if (config.devMode) {
+    logger.warn("Using NoOpPlatformRouteRepository - platform routes will not persist");
+    return new NoOpPlatformRouteRepository();
+  }
+  throw new Error("POSTGRES_CONNECTION required in production for platform route storage");
+}
+
+const platformRouteRepo = createPlatformRouteRepo();
+
 // Export app instance for testing and RPC type inference
-export const app = createApp(defaultStorage, defaultOAuthService);
+export const app = createApp(defaultStorage, defaultOAuthService, platformRouteRepo);
 
 // Export app type for RPC client (hc<LinkRoutes>())
 export type LinkRoutes = typeof app;

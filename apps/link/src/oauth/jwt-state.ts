@@ -3,14 +3,9 @@
  * Encodes flow state as signed JWT tokens, eliminating need for server-side storage
  */
 
-import { readFileSync } from "node:fs";
-import process from "node:process";
 import { sign, verify } from "hono/jwt";
 import { z } from "zod";
-
-// Load secret at module initialization - use file if configured, otherwise ephemeral for dev
-const secretFile = process.env.LINK_STATE_SIGNING_KEY_FILE;
-const SECRET = secretFile ? readFileSync(secretFile, "utf-8").trim() : crypto.randomUUID();
+import { STATE_JWT_SECRET } from "./jwt-secret.ts";
 
 /**
  * JWT payload for OAuth flow state
@@ -36,7 +31,7 @@ export type StatePayload = z.infer<typeof StatePayloadSchema>;
 export async function encodeState(payload: Omit<StatePayload, "exp">): Promise<string> {
   return await sign(
     { ...payload, exp: Math.floor(Date.now() / 1000) + 600 }, // 10min
-    SECRET,
+    STATE_JWT_SECRET,
   );
 }
 
@@ -47,6 +42,6 @@ export async function encodeState(payload: Omit<StatePayload, "exp">): Promise<s
  * @throws If signature invalid or token expired
  */
 export async function decodeState(state: string): Promise<StatePayload> {
-  const payload = await verify(state, SECRET);
+  const payload = await verify(state, STATE_JWT_SECRET);
   return StatePayloadSchema.parse(payload);
 }

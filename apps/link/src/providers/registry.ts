@@ -1,3 +1,4 @@
+import { logger } from "@atlas/logger";
 import { config } from "../config.ts";
 import { atlassianProvider } from "./atlassian.ts";
 import {
@@ -9,7 +10,7 @@ import {
 } from "./google-providers.ts";
 import { linearProvider } from "./linear.ts";
 import { notionProvider } from "./notion.ts";
-import { slackProvider } from "./slack.ts";
+import { createSlackAppInstallProvider } from "./slack-app.ts";
 import { defineApiKeyProvider, type ProviderDefinition } from "./types.ts";
 
 /**
@@ -71,8 +72,16 @@ for (const provider of googleProviders) {
   if (provider) registry.register(provider);
 }
 
+const slackAppProvider = createSlackAppInstallProvider();
+if (slackAppProvider) {
+  registry.register(slackAppProvider);
+} else {
+  logger.info(
+    "Skipping Slack app install provider: SLACK_APP_CLIENT_ID_FILE or SLACK_APP_CLIENT_SECRET_FILE not set",
+  );
+}
+
 // Register built-in providers
-registry.register(slackProvider);
 registry.register(notionProvider);
 registry.register(atlassianProvider);
 registry.register(linearProvider);

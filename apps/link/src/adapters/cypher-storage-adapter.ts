@@ -219,4 +219,50 @@ export class CypherStorageAdapter implements StorageAdapter {
       `;
     });
   }
+
+  async findByProviderAndExternalId(
+    provider: string,
+    externalId: string,
+    userId: string,
+  ): Promise<Credential | null> {
+    return await withUserContext(this.sql, userId, async (tx) => {
+      // Get all credentials for this user + provider
+      const rows = await tx<CredentialRow[]>`
+        SELECT id, user_id, type, provider, label, encrypted_secret, created_at, updated_at
+        FROM public.credential
+        WHERE user_id = ${userId} AND provider = ${provider} AND deleted_at IS NULL
+      `;
+
+      // Decrypt and check each for matching externalId
+      for (const row of rows) {
+        const decrypted = await this.cypher.decrypt([row.encrypted_secret]);
+        const secretJson = decrypted[0];
+        if (secretJson === undefined) continue;
+
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(secretJson);
+        } catch {
+          continue;
+        }
+
+        const secret = SecretSchema.parse(parsed);
+        if (typeof secret.externalId === "string" && secret.externalId === externalId) {
+          return {
+            id: row.id,
+            type: CredentialTypeSchema.parse(row.type),
+            provider: row.provider,
+            label: row.label,
+            secret,
+            metadata: {
+              createdAt: row.created_at.toISOString(),
+              updatedAt: row.updated_at.toISOString(),
+            },
+          };
+        }
+      }
+
+      return null;
+    });
+  }
 }

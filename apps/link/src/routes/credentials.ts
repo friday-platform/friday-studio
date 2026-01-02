@@ -15,9 +15,14 @@ import { buildStaticAuthServer, getStaticClientAuth } from "../oauth/static.ts";
 import { revokeToken } from "../oauth/tokens.ts";
 import { registry } from "../providers/registry.ts";
 import {
+  type AppInstallCredentialSecret,
+  AppInstallCredentialSecretSchema,
+} from "../providers/types.ts";
+import {
   CredentialCreateRequestSchema,
+  type CredentialInput,
   CredentialTypeSchema,
-  type OAuthCredential,
+  OAuthCredentialSchema,
   type StorageAdapter,
 } from "../types.ts";
 
@@ -257,16 +262,71 @@ export function createInternalCredentialsRoutes(
             return c.json({ credential, status: "expired_no_refresh" });
           }
 
-          // Try refresh
-          try {
-            const refreshed = await oauthService.refreshCredential(
-              credential as OAuthCredential,
-              userId,
-            );
-            return c.json({ credential: refreshed, status: "refreshed" });
-          } catch (e) {
-            logger.error("Credential refresh failed", { credentialId: id, error: e });
-            return c.json({ credential, status: "refresh_failed", error: stringifyError(e) });
+          // Try refresh - check if this is an app_install provider
+          const provider = registry.get(credential.provider);
+          if (provider?.type === "app_install" && provider.refreshToken) {
+            // App install provider with refresh support
+            try {
+              const secretResult = AppInstallCredentialSecretSchema.safeParse(credential.secret);
+              if (!secretResult.success) {
+                return c.json({
+                  credential,
+                  status: "refresh_failed",
+                  error: "Credential secret does not match expected schema",
+                });
+              }
+              const secret = secretResult.data;
+
+              if (!secret.refresh_token) {
+                return c.json({ credential, status: "expired_no_refresh" });
+              }
+
+              const refreshResult = await provider.refreshToken(secret.refresh_token);
+
+              // Update credential with new tokens
+              const updatedSecret: AppInstallCredentialSecret = {
+                externalId: secret.externalId,
+                access_token: refreshResult.access_token,
+                token_type: secret.token_type,
+                refresh_token: refreshResult.refresh_token,
+                expires_at: Math.floor(Date.now() / 1000) + refreshResult.expires_in,
+              };
+
+              const credentialInput: CredentialInput = {
+                type: credential.type,
+                provider: credential.provider,
+                label: credential.label,
+                secret: updatedSecret,
+              };
+
+              const metadata = await storage.update(credential.id, credentialInput, userId);
+
+              return c.json({
+                credential: { ...credential, secret: updatedSecret, metadata },
+                status: "refreshed",
+              });
+            } catch (e) {
+              logger.error("Credential refresh failed", { credentialId: id, error: e });
+              return c.json({ credential, status: "refresh_failed", error: stringifyError(e) });
+            }
+          } else {
+            // Standard OAuth provider
+            const oauthCredResult = OAuthCredentialSchema.safeParse(credential);
+            if (!oauthCredResult.success) {
+              return c.json({
+                credential,
+                status: "refresh_failed",
+                error: "Credential does not match OAuth schema",
+              });
+            }
+
+            try {
+              const refreshed = await oauthService.refreshCredential(oauthCredResult.data, userId);
+              return c.json({ credential: refreshed, status: "refreshed" });
+            } catch (e) {
+              logger.error("Credential refresh failed", { credentialId: id, error: e });
+              return c.json({ credential, status: "refresh_failed", error: stringifyError(e) });
+            }
           }
         } catch (error) {
           logger.error("Failed to retrieve credential", { error });

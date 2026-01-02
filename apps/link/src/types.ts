@@ -35,7 +35,7 @@ export type Credential = z.infer<typeof CredentialSchema>;
 /**
  * OAuth credential schema for credentials obtained via OAuth flow.
  */
-const OAuthCredentialSchema = z.object({
+export const OAuthCredentialSchema = z.object({
   id: z.string(),
   type: z.literal("oauth"),
   provider: z.string(),
@@ -74,6 +74,15 @@ export interface StorageAdapter {
   get(id: string, userId: string): Promise<Credential | null>;
   list(type: string, userId: string): Promise<CredentialSummary[]>;
   delete(id: string, userId: string): Promise<void>;
+  /**
+   * Find credential by provider and external ID.
+   * Used for re-install detection - updates existing instead of creating new.
+   */
+  findByProviderAndExternalId(
+    provider: string,
+    externalId: string,
+    userId: string,
+  ): Promise<Credential | null>;
 }
 
 /**

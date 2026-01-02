@@ -1,0 +1,27 @@
+/**
+ * App install error codes.
+ */
+export type AppInstallErrorCode =
+  | "PROVIDER_NOT_FOUND" // Provider ID not in registry
+  | "INVALID_PROVIDER_TYPE" // Provider exists but not app_install
+  | "STATE_INVALID" // State JWT invalid/expired
+  | "SLACK_NETWORK_ERROR" // DNS, timeout, connection refused
+  | "SLACK_HTTP_ERROR" // Non-2xx from Slack
+  | "SLACK_PARSE_ERROR" // Invalid JSON from Slack
+  | "SLACK_OAUTH_ERROR" // Slack returned ok: false
+  | "SLACK_REFRESH_ERROR" // Slack token refresh failed
+  | "CREDENTIAL_NOT_FOUND" // Race condition
+  | "INVALID_CREDENTIAL"; // Missing expected fields
+
+/**
+ * App install service error.
+ */
+export class AppInstallError extends Error {
+  constructor(
+    public readonly code: AppInstallErrorCode,
+    message: string,
+  ) {
+    super(message);
+    this.name = "AppInstallError";
+  }
+}

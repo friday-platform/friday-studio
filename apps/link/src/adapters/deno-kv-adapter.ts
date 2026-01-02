@@ -93,4 +93,24 @@ export class DenoKVStorageAdapter implements StorageAdapter {
     using kv = await Deno.openKv(this.kvPath);
     await kv.delete(["credentials", userId, id]);
   }
+
+  async findByProviderAndExternalId(
+    provider: string,
+    externalId: string,
+    userId: string,
+  ): Promise<Credential | null> {
+    using kv = await Deno.openKv(this.kvPath);
+    // List all credentials for user, filter by provider + externalId
+    for await (const entry of kv.list<Credential>({ prefix: ["credentials", userId] })) {
+      const cred = entry.value;
+      if (
+        cred.provider === provider &&
+        typeof cred.secret.externalId === "string" &&
+        cred.secret.externalId === externalId
+      ) {
+        return cred;
+      }
+    }
+    return null;
+  }
 }
