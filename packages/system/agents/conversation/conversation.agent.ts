@@ -9,31 +9,32 @@
  */
 import process from "node:process";
 import type { AtlasTools, AtlasUIMessage } from "@atlas/agent-sdk";
-import { createAgent, validateAtlasUIMessages } from "@atlas/agent-sdk";
+import { createAgent, repairToolCall, validateAtlasUIMessages } from "@atlas/agent-sdk";
 import { pipeUIMessageStream } from "@atlas/agent-sdk/vercel-helpers";
 import { client, parseResult } from "@atlas/client/v2";
 import { ChatStorage } from "@atlas/core/chat/storage";
 import { createErrorCause, getErrorDisplayMessage, parseAPICallError } from "@atlas/core/errors";
-import { getDefaultProviderOpts, registry } from "@atlas/llm";
+import { registry, smallLLM } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
 import { Client } from "@modelcontextprotocol/sdk/client";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import {
   createIdGenerator,
   createUIMessageStream,
-  generateText,
   jsonSchema,
-  type ModelMessage,
   smoothStream,
   stepCountIs,
   streamText,
   tool,
 } from "ai";
-import { fetchLinkSummary, formatLinkedCredentialsSection } from "./link-context.ts";
+import { getCapabilitiesSection } from "./capabilities.ts";
+import { fetchLinkSummary, formatIntegrationsSection } from "./link-context.ts";
 import { estimateTokens, processMessageHistory } from "./message-windowing.ts";
 import SYSTEM_PROMPT from "./prompt.txt" with { type: "text" };
+import { formatSkillsSection } from "./skills/index.ts";
 import { createConnectServiceTool } from "./tools/connect-service.ts";
 import { createDoTaskTool } from "./tools/do-task/index.ts";
+import { loadSkillTool } from "./tools/load-skill.ts";
 import { conversationTools } from "./tools/mod.ts";
 import { fetchScratchpadContext } from "./tools/scratchpad-tools.ts";
 
@@ -141,7 +142,9 @@ function getSystemPrompt(
   streamId?: string,
   workspacesSection?: string,
   agentsSection?: string,
-  linkedCredentialsSection?: string,
+  integrationsSection?: string,
+  skillsSection?: string,
+  supportedDomainsSection?: string,
 ): string {
   let prompt = SYSTEM_PROMPT;
 
@@ -162,9 +165,17 @@ function getSystemPrompt(
     prompt = `${prompt}\n\n${agentsSection}`;
   }
 
-  // Inject linked credentials section at the end
-  if (linkedCredentialsSection) {
-    prompt = `${prompt}\n\n${linkedCredentialsSection}`;
+  // Inject integrations section at the end
+  if (integrationsSection) {
+    prompt = `${prompt}\n\n${integrationsSection}`;
+  }
+
+  if (skillsSection) {
+    prompt = `${prompt}\n\n${skillsSection}`;
+  }
+
+  if (supportedDomainsSection) {
+    prompt = `${prompt}\n\n${supportedDomainsSection}`;
   }
 
   return prompt;
@@ -174,32 +185,17 @@ function getSystemPrompt(
  * Generates a concise 3-5 word title for a conversation based on its messages.
  */
 async function generateChatTitle(messages: AtlasUIMessage[], logger: Logger): Promise<string> {
-  try {
-    const chatMessages: Array<ModelMessage> = [
-      {
-        role: ROLE_SYSTEM,
-        content:
-          "You generate concise 2-3 word titles for conversations. Only output the title, nothing else.",
-        providerOptions: getDefaultProviderOpts("anthropic"),
-      },
-      {
-        role: "user",
-        content: `Generate a title for this conversation:
-${messages.map((m) => `${m.role}: ${JSON.stringify(m.parts.filter((p) => p.type === "text"))}`).join("\n")}`,
-      },
-    ];
+  const messagePreview = messages
+    .map((m) => `${m.role}: ${JSON.stringify(m.parts.filter((p) => p.type === "text"))}`)
+    .join("\n");
 
-    const result = await generateText({
-      model: registry.languageModel("anthropic:claude-haiku-4-5"),
-      messages: chatMessages,
+  try {
+    return await smallLLM({
+      system:
+        "You generate concise 2-3 word titles for conversations. Only output the title, nothing else.",
+      prompt: `Generate a title for this conversation:\n${messagePreview}`,
       maxOutputTokens: 50,
     });
-    logger.debug("AI SDK generateText completed", {
-      agent: "conversation",
-      step: "generate-chat-title",
-      usage: result.usage,
-    });
-    return result.text;
   } catch (error) {
     logger.error("Failed to generate chat title", { error });
     return "Saved Chat";
@@ -333,47 +329,6 @@ export const conversationAgent = createAgent({
           throw new Error("Stream ID is required");
         }
 
-        // MVP: Notification handler removed - agents accessed via do_task only
-        // agentServer.setNotificationHandler(StreamContentNotificationSchema, (notification) => {
-        //   const { event } = notification.params;
-        //   // Event is validated by schema to have required structure
-        //   // @ts-expect-error will be addressed during Chat
-        //   writer.write(event);
-        // });
-
-        // Track active agent invocations for cancellation
-        // MVP: Removed - no direct agent invocation
-        // const activeMCPRequests = new Map<string, string>(); // agentName:invocationId -> requestId
-
-        // Handle cancellation - send notifications for all active agent invocations
-        // MVP: Removed - no direct agent invocation
-        // if (abortSignal) {
-        //   abortSignal.addEventListener("abort", async () => {
-        //     logger.info("Conversation cancelled, notifying active agents", {
-        //       activeAgents: Array.from(activeMCPRequests.keys()),
-        //     });
-
-        //     for (const [key, requestId] of activeMCPRequests) {
-        //       const agentName = key.split(":")[0];
-        //       try {
-        //         const notification: CancellationNotification = {
-        //           method: "notifications/cancelled",
-        //           params: { requestId, reason: "Conversation cancelled by user" },
-        //         };
-        //         await agentServer.notification(notification);
-        //         logger.debug("Sent cancellation notification", { agentName, requestId });
-        //       } catch (error) {
-        //         logger.warn("Failed to send cancellation notification", {
-        //           error,
-        //           requestId,
-        //           agentName,
-        //         });
-        //       }
-        //     }
-        //     activeMCPRequests.clear();
-        //   });
-        // }
-
         /**
          * Register ONLY system agents with custom inputSchemas as direct tools.
          * These agents (workspace-planner, fsm-workspace-creator) need structured inputs.
@@ -446,9 +401,15 @@ export const conversationAgent = createAgent({
 
         // Fetch Link summary for prompt injection (gracefully handle if Link is unavailable)
         const linkSummary = await fetchLinkSummary(logger);
-        const linkedCredentialsSection = linkSummary
-          ? formatLinkedCredentialsSection(linkSummary)
+        const integrationsSection = linkSummary
+          ? formatIntegrationsSection(linkSummary)
           : undefined;
+
+        // Load skills for prompt injection
+        const skillsSection = formatSkillsSection();
+
+        // Generate capabilities section from bundled agents + MCP registry
+        const supportedDomainsSection = getCapabilitiesSection();
 
         // Create link auth tool if Link is available with provider-constrained enum
         const connectServiceTool: AtlasTools = {};
@@ -460,8 +421,8 @@ export const conversationAgent = createAgent({
         logger.debug("Workspaces and agents sections prepared", {
           workspaceCount: workspaces.length,
           agentCount: agentNames.length,
-          linkCredentials: linkSummary ? linkSummary.credentials.length : "unavailable",
-          linkProviders: linkSummary ? linkSummary.providers.length : "unavailable",
+          integrations: linkSummary ? linkSummary.credentials.length : "unavailable",
+          providers: linkSummary ? linkSummary.providers.length : "unavailable",
         });
 
         // MVP: Tool allowlist - only expose specific workspace management and task execution tools
@@ -516,6 +477,7 @@ export const conversationAgent = createAgent({
           ...connectServiceTool,
           ...systemAgents,
           do_task: doTaskTool,
+          load_skill: loadSkillTool,
         };
 
         // Load scratchpad context for automatic injection
@@ -530,7 +492,9 @@ export const conversationAgent = createAgent({
           session.streamId,
           workspacesSection,
           agentsSection,
-          linkedCredentialsSection,
+          integrationsSection,
+          skillsSection,
+          supportedDomainsSection,
         );
 
         const datetimeMessage = `Current datetime (UTC): ${new Date().toISOString()}`;
@@ -549,12 +513,12 @@ export const conversationAgent = createAgent({
           );
         }
         const systemTokens =
-          estimateTokens(systemPrompt) + // Already includes workspacesSection + agentsSection + linkedCredentialsSection
+          estimateTokens(systemPrompt) + // Already includes workspacesSection + agentsSection + integrationsSection
           estimateTokens(scratchpadContext) +
           estimateTokens(datetimeMessage);
 
         // Calculate dynamic message budget based on actual system context
-        const MODEL_CONTEXT_LIMIT = 200_000;
+        const MODEL_CONTEXT_LIMIT = 131_072;
         const OUTPUT_RESERVE = 20_000; // Reserve for assistant response with extended thinking
         const SAFETY_BUFFER = 10_000; // Margin for token estimation error
 
@@ -626,7 +590,8 @@ export const conversationAgent = createAgent({
         try {
           try {
             result = streamText({
-              model: registry.languageModel("anthropic:claude-sonnet-4-5"),
+              model: registry.languageModel("groq:openai/gpt-oss-120b"),
+              experimental_repairToolCall: repairToolCall,
               messages: [
                 {
                   role: ROLE_SYSTEM,
@@ -634,9 +599,10 @@ export const conversationAgent = createAgent({
                     session.streamId,
                     workspacesSection,
                     agentsSection,
-                    linkedCredentialsSection,
+                    integrationsSection,
+                    skillsSection,
+                    supportedDomainsSection,
                   ),
-                  providerOptions: getDefaultProviderOpts("anthropic"),
                 },
                 {
                   role: ROLE_SYSTEM,
@@ -653,9 +619,7 @@ export const conversationAgent = createAgent({
               experimental_transform: smoothStream({ chunking: "word" }),
               maxRetries: 3, // Enable retries for API resilience (e.g., 529 errors)
               abortSignal, // Pass the abort signal for cancellation
-              providerOptions: {
-                anthropic: { thinking: { type: "enabled", budgetTokens: 25000 } },
-              },
+              providerOptions: { groq: { reasoningFormat: "parsed", reasoningEffort: "medium" } },
               experimental_context: { conversationSessionId: session.sessionId },
               // Pass telemetry config if provided in context
               experimental_telemetry: telemetry ? { isEnabled: true, ...telemetry } : undefined,
@@ -824,7 +788,7 @@ export const conversationAgent = createAgent({
     return { text: finalText };
   },
   environment: {
-    required: [{ name: "ANTHROPIC_API_KEY", description: "Claude API key" }],
+    required: [{ name: "GROQ_API_KEY", description: "Groq API key" }],
     optional: [{ name: "ATLAS_DAEMON_URL", description: "Platform MCP server URL" }],
   },
 });

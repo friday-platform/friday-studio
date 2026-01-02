@@ -2,6 +2,7 @@
  * Adapter for @atlas/llm registry to work with FSM engine's LLMProvider interface
  */
 
+import { repairToolCall } from "@atlas/agent-sdk";
 import { registry } from "@atlas/llm";
 import type { Tool } from "ai";
 import { generateText } from "ai";
@@ -30,6 +31,7 @@ export class AtlasLLMProviderAdapter implements LLMProvider {
       model: registry.languageModel(modelId),
       prompt: params.prompt,
       tools: params.tools,
+      experimental_repairToolCall: repairToolCall,
     });
 
     return {

@@ -1,4 +1,5 @@
-import type { RepairTextFunction } from "ai";
+import type { AtlasTools } from "@atlas/agent-sdk";
+import { InvalidToolInputError, type RepairTextFunction, type ToolCallRepairFunction } from "ai";
 import { jsonrepair } from "jsonrepair";
 
 /**
@@ -78,4 +79,53 @@ export const repairJson: RepairTextFunction = ({ text }) => {
 
   const unstringified = unstringifyNestedJson(parsed);
   return Promise.resolve(JSON.stringify(unstringified));
+};
+
+/**
+ * Repair function for malformed tool call arguments in streamText/generateText.
+ *
+ * When an LLM generates invalid JSON for tool call arguments (trailing commas,
+ * missing quotes, unclosed brackets), this function attempts to repair them
+ * using jsonrepair before the SDK throws an error.
+ *
+ * @example
+ * ```ts
+ * import { repairToolCall } from "@atlas/agent-sdk";
+ *
+ * const result = streamText({
+ *   model: registry.languageModel("groq:openai/gpt-oss-120b"),
+ *   experimental_repairToolCall: repairToolCall,
+ *   // ...
+ * });
+ * ```
+ */
+
+/**
+ * Repair function for tool call arguments. Matches the signature expected by
+ * streamText/generateText's experimental_repairToolCall option.
+ */
+export const repairToolCall: ToolCallRepairFunction<AtlasTools> = ({ toolCall, error }) => {
+  // Only attempt repair for invalid input errors, not missing tools
+  if (!InvalidToolInputError.isInstance(error)) {
+    return Promise.resolve(null);
+  }
+
+  const input = toolCall.input;
+  if (typeof input !== "string") {
+    return Promise.resolve(null);
+  }
+
+  try {
+    // First try to repair the JSON
+    const repaired = jsonrepair(input);
+
+    // Validate the repaired JSON parses correctly
+    JSON.parse(repaired);
+
+    // Return the repaired tool call
+    return Promise.resolve({ ...toolCall, input: repaired });
+  } catch {
+    // If repair fails, return null to let the error propagate
+    return Promise.resolve(null);
+  }
 };

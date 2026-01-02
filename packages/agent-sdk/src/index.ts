@@ -75,4 +75,4 @@ export {
   MCPTransportConfigSchema,
 } from "./types.ts";
 // Vercel AI SDK helpers
-export { repairJson } from "./vercel-helpers/json-repair.ts";
+export { repairJson, repairToolCall } from "./vercel-helpers/json-repair.ts";

@@ -1,6 +1,6 @@
+import { createLogger } from "@atlas/logger";
 import { assertEquals, assertRejects } from "@std/assert";
 import { afterEach, beforeEach, describe, it } from "@std/testing/bdd";
-import { createLogger } from "@atlas/logger";
 import {
   CredentialNotFoundError,
   resolveCredentialsByProvider,

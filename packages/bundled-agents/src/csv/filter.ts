@@ -1,5 +1,5 @@
 import { mkdir, stat, writeFile } from "node:fs/promises";
-import { type ArtifactRef, createAgent } from "@atlas/agent-sdk";
+import { type ArtifactRef, createAgent, repairToolCall } from "@atlas/agent-sdk";
 import { ArtifactStorage, parseCsv } from "@atlas/core/artifacts/server";
 import { registry } from "@atlas/llm";
 import { isErrnoException } from "@atlas/utils";
@@ -105,6 +105,7 @@ Call validatePath tool with the extracted information to verify the path exists.
         abortSignal,
         messages: parseMessages,
         tools: { validatePath: validatePathTool },
+        experimental_repairToolCall: repairToolCall,
       });
 
       // Log token usage including cache statistics
@@ -245,6 +246,7 @@ Call buildSqlWhere tool with your WHERE clause (WITHOUT the 'WHERE' keyword).`,
         abortSignal,
         messages: sqlMessages,
         tools: { buildSqlWhere: buildSqlWhereTool },
+        experimental_repairToolCall: repairToolCall,
       });
 
       // Log token usage including cache statistics

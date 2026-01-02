@@ -1,5 +1,5 @@
 import process from "node:process";
-import { createAgent, repairJson } from "@atlas/agent-sdk";
+import { createAgent, repairJson, repairToolCall } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
 import { registry, smallLLM } from "@atlas/llm";
 import { fail, getTodaysDate, type Result, success } from "@atlas/utils";
@@ -164,9 +164,18 @@ export const webSearchAgent = createAgent<string, WebSearchAgentResult>({
   displayName: "Web Search",
   version: "2.0.0",
   description:
-    "Performs comprehensive web research. Works best when given the user's broader goal, decision context, or how the information will be used. Handles complex multi-faceted research in a single call.",
+    "Web research with cross-referenced, cited sources. Use for: news/daily digests, company/person/product research, competitive intelligence, market analysis, fact-checking, or any question needing current web information.",
   expertise: {
-    domains: ["research", "web-search"],
+    domains: [
+      "research",
+      "news",
+      "daily-digest",
+      "company-research",
+      "competitive-intelligence",
+      "market-analysis",
+      "fact-checking",
+      "web-search",
+    ],
     examples: [
       "I'm evaluating cloud providers for our startup. Research AWS, GCP, and Azure's serverless offerings, pricing models, and cold start performance as of 2024.",
       "I'm writing a technical blog post about Rust's ownership model. Find authoritative documentation, common misconceptions from community discussions, and recent improvements.",
@@ -228,6 +237,7 @@ export const webSearchAgent = createAgent<string, WebSearchAgentResult>({
           }),
         },
         toolChoice: "required",
+        experimental_repairToolCall: repairToolCall,
         temperature: 0.3,
         maxOutputTokens: 2000,
         abortSignal,

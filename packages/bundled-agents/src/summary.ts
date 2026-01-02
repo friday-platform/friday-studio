@@ -1,4 +1,4 @@
-import { type ArtifactRef, createAgent } from "@atlas/agent-sdk";
+import { type ArtifactRef, createAgent, repairToolCall } from "@atlas/agent-sdk";
 import {
   collectToolUsageFromSteps,
   extractArtifactRefsFromToolResults,
@@ -25,7 +25,7 @@ export const summaryAgent = createAgent({
   version: "1.0.0",
   description: "Create a summary of the provided content",
   expertise: {
-    domains: ["summaries"],
+    domains: ["summaries", "summarization", "tldr"],
     examples: ["Create a summary of the provided content", "Summarize this content"],
   },
   handler: async (prompt, { tools, logger, abortSignal, stream }): Promise<Result> => {
@@ -89,6 +89,7 @@ export const summaryAgent = createAgent({
         maxOutputTokens: 2000,
         providerOptions: { anthropic: { thinking: { type: "enabled", budgetTokens: 12000 } } },
         stopWhen: stepCountIs(10),
+        experimental_repairToolCall: repairToolCall,
       });
 
       logger.debug("AI SDK generateText completed", {

@@ -41,46 +41,32 @@ export async function fetchLinkSummary(logger: Logger): Promise<SummaryResponse 
 
 /**
  * Format credentials into system prompt section.
- * Groups credentials by provider and separates active credentials from available providers.
+ * Uses flat XML with status attributes for unambiguous service state.
  *
  * @param summary - Summary response from Link service
- * @returns Formatted markdown section for system prompt
+ * @returns Formatted XML section for system prompt
  */
-export function formatLinkedCredentialsSection(summary: SummaryResponse): string {
+export function formatIntegrationsSection(summary: SummaryResponse): string {
   const { credentials, providers } = summary;
 
-  // Group credentials by provider
-  const credentialsByProvider = new Map<string, Array<{ label: string; type: string }>>();
+  // Build credential lookup: providerId -> label
+  const credentialLabels = new Map<string, string>();
   for (const cred of credentials) {
-    if (!credentialsByProvider.has(cred.provider)) {
-      credentialsByProvider.set(cred.provider, []);
-    }
-    credentialsByProvider.get(cred.provider)?.push({ label: cred.label, type: cred.type });
+    // If multiple credentials for same provider, join labels
+    const existing = credentialLabels.get(cred.provider);
+    credentialLabels.set(cred.provider, existing ? `${existing}, ${cred.label}` : cred.label);
   }
 
-  // Build section
-  let section = `<linked_credentials>`;
-
-  // Connected services section (providers with credentials)
-  if (credentialsByProvider.size > 0) {
-    section += `\n## Connected Services\n`;
-    for (const [providerId, creds] of credentialsByProvider) {
-      const provider = providers.find((p) => p.id === providerId);
-      const displayName = provider?.displayName ?? providerId;
-      const labels = creds.map((c) => c.label).join(", ");
-      section += `- ${displayName} (ID: ${providerId}): ${labels}\n`;
+  // Build flat XML
+  let section = "<integrations>\n";
+  for (const provider of providers) {
+    const label = credentialLabels.get(provider.id);
+    if (label) {
+      section += `  <service id="${provider.id}" status="ready" label="${label}"/>\n`;
+    } else {
+      section += `  <service id="${provider.id}" status="unconnected"/>\n`;
     }
   }
-
-  // Available services section (providers without credentials)
-  const availableProviders = providers.filter((p) => !credentialsByProvider.has(p.id));
-  if (availableProviders.length > 0) {
-    section += `\n## Available Services\n`;
-    for (const provider of availableProviders) {
-      section += `- ${provider.displayName} (ID: ${provider.id}, type: ${provider.type})\n`;
-    }
-  }
-
-  section += `</linked_credentials>`;
+  section += "</integrations>";
   return section;
 }

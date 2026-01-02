@@ -1,6 +1,6 @@
 import { env } from "node:process";
 import type { LinkCredentialRef, ToolCall, ToolResult } from "@atlas/agent-sdk";
-import { createAgent } from "@atlas/agent-sdk";
+import { createAgent, repairToolCall } from "@atlas/agent-sdk";
 import {
   collectToolUsageFromSteps,
   extractArtifactRefsFromToolResults,
@@ -38,7 +38,7 @@ export const googleCalendarAgent = createAgent<string, GoogleCalendarAgentResult
   version: "1.0.0",
   description: "Search Google Calendar events via google-calendar-mcp",
   expertise: {
-    domains: ["google", "calendar"],
+    domains: ["calendar", "schedule", "meetings", "events", "availability"],
     examples: [
       "Please provide availability looking at both my personal and work calendar for this upcoming week. I am looking for a good time to meet with someone in London for 1 hr.",
       "Which events tomorrow have attendees who have not accepted the invitation?",
@@ -119,6 +119,7 @@ export const googleCalendarAgent = createAgent<string, GoogleCalendarAgentResult
         maxOutputTokens: 3000,
         providerOptions: { anthropic: { thinking: { type: "enabled", budgetTokens: 12000 } } },
         stopWhen: stepCountIs(20),
+        experimental_repairToolCall: repairToolCall,
       });
 
       logger.debug("AI SDK generateText completed", {

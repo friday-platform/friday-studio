@@ -1,7 +1,7 @@
 import { assert, assertEquals } from "@std/assert";
-import { JSONParseError } from "ai";
+import { InvalidToolInputError, JSONParseError, NoSuchToolError } from "ai";
 import { z } from "zod";
-import { repairJson } from "./json-repair.ts";
+import { repairJson, repairToolCall } from "./json-repair.ts";
 
 // Test schemas matching actual workspace-planner usage
 const WorkspacePlanSchema = z.object({
@@ -139,4 +139,80 @@ Deno.test("repairJson - repairs stringified array in object field (search-tools 
     parsed.key_excerpts[0],
     "Person A - Digital Coordinator at Music Company, a global distribution company",
   );
+});
+
+Deno.test("repairToolCall - repairs malformed JSON in tool call arguments", async () => {
+  const malformedInput = `{"query": "test", "options": {trailing: comma,}}`;
+  const toolCall = {
+    type: "tool-call" as const,
+    toolCallId: "call_123",
+    toolName: "search",
+    input: malformedInput,
+  };
+
+  const result = await repairToolCall({
+    system: undefined,
+    messages: [],
+    tools: {},
+    inputSchema: () => ({}),
+    toolCall,
+    error: new InvalidToolInputError({
+      toolName: "search",
+      toolInput: malformedInput,
+      cause: new Error("Invalid JSON"),
+    }),
+  });
+
+  assert(result !== null);
+  assertEquals(result.toolCallId, "call_123");
+  assertEquals(result.toolName, "search");
+  // Verify the repaired JSON is valid
+  const ParsedSchema = z.object({ query: z.string() });
+  const parsed = ParsedSchema.parse(JSON.parse(result.input));
+  assertEquals(parsed.query, "test");
+});
+
+Deno.test("repairToolCall - returns null for NoSuchToolError", async () => {
+  const toolCall = {
+    type: "tool-call" as const,
+    toolCallId: "call_123",
+    toolName: "unknown_tool",
+    input: "{}",
+  };
+
+  const result = await repairToolCall({
+    system: undefined,
+    messages: [],
+    tools: {},
+    inputSchema: () => ({}),
+    toolCall,
+    error: new NoSuchToolError({ toolName: "unknown_tool" }),
+  });
+
+  assertEquals(result, null);
+});
+
+Deno.test("repairToolCall - returns null for unrepairable JSON", async () => {
+  const unreparableInput = "completely invalid {{{{";
+  const toolCall = {
+    type: "tool-call" as const,
+    toolCallId: "call_123",
+    toolName: "search",
+    input: unreparableInput,
+  };
+
+  const result = await repairToolCall({
+    system: undefined,
+    messages: [],
+    tools: {},
+    inputSchema: () => ({}),
+    toolCall,
+    error: new InvalidToolInputError({
+      toolName: "search",
+      toolInput: unreparableInput,
+      cause: new Error("Invalid JSON"),
+    }),
+  });
+
+  assertEquals(result, null);
 });

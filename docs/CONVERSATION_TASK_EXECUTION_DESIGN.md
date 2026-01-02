@@ -836,7 +836,7 @@ const managementTools = Object.fromEntries(
 // New tool set
 const allTools = {
   ...managementTools,
-  ...conversationTools, // take_note, read_atlas_resource, display_artifact
+  ...conversationTools, // take_note, display_artifact
   do_task, // NEW - unified task execution
 };
 ```

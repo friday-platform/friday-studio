@@ -2,6 +2,7 @@
  * CSV Parsing and Prompt Utilities
  */
 
+import { repairToolCall } from "@atlas/agent-sdk";
 import { registry } from "@atlas/llm";
 import { getTodaysDate } from "@atlas/utils";
 import { generateText } from "ai";
@@ -103,6 +104,7 @@ export async function executeCsvOperation(
     prompt: task,
     tools,
     maxRetries: 3,
+    experimental_repairToolCall: repairToolCall,
   });
 
   context.logger.info("CSV operation completed", {

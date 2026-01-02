@@ -200,8 +200,6 @@ agents:
         - "atlas_session_describe"
         # job tools
         - "atlas_workspace_jobs_describe"
-        # resources
-        - "read_atlas_resource"
         # version
         - "system_version"
       prompt: ""

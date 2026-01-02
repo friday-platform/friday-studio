@@ -11,10 +11,10 @@
  * - Requires --allow-net (for HTTP requests) and --allow-env (for client config)
  */
 
+import { CredentialNotFoundError, resolveCredentialsByProvider } from "@atlas/core";
 import { assertEquals, assertRejects } from "@std/assert";
 import { afterAll, beforeAll, describe, it } from "@std/testing/bdd";
 import * as jose from "jose";
-import { CredentialNotFoundError, resolveCredentialsByProvider } from "@atlas/core";
 
 const LINK_BASE_URL = "http://localhost:3100";
 const TEST_USER_ID = "integration-test-user";
@@ -122,7 +122,7 @@ describe("credential-resolver integration tests", () => {
     }
   });
 
-  it("resolves single credential by provider", async function () {
+  it("resolves single credential by provider", async () => {
     if (!linkAvailable) {
       throw new Error("SKIP: Link service not available at " + LINK_BASE_URL);
     }
@@ -148,7 +148,7 @@ describe("credential-resolver integration tests", () => {
     }
   });
 
-  it("throws CredentialNotFoundError when no credentials exist", async function () {
+  it("throws CredentialNotFoundError when no credentials exist", async () => {
     if (!linkAvailable) {
       throw new Error("SKIP: Link service not available at " + LINK_BASE_URL);
     }
@@ -162,7 +162,7 @@ describe("credential-resolver integration tests", () => {
     );
   });
 
-  it("returns all credentials when multiple exist", async function () {
+  it("returns all credentials when multiple exist", async () => {
     if (!linkAvailable) {
       throw new Error("SKIP: Link service not available at " + LINK_BASE_URL);
     }
@@ -213,7 +213,7 @@ describe("Google OAuth credential resolution (requires completed OAuth flow)", (
   });
 
   for (const provider of GOOGLE_PROVIDERS) {
-    it(`resolves ${provider} credentials when OAuth is configured`, async function () {
+    it(`resolves ${provider} credentials when OAuth is configured`, async () => {
       if (!linkAvailable) {
         throw new Error("SKIP: Link service not available at " + LINK_BASE_URL);
       }
@@ -236,7 +236,7 @@ describe("Google OAuth credential resolution (requires completed OAuth flow)", (
     });
   }
 
-  it("resolves google-calendar access_token format (ya29.*)", async function () {
+  it("resolves google-calendar access_token format (ya29.*)", async () => {
     if (!linkAvailable) {
       throw new Error("SKIP: Link service not available at " + LINK_BASE_URL);
     }

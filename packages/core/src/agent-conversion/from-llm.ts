@@ -6,7 +6,7 @@ import type {
   ToolCall,
   ToolResult,
 } from "@atlas/agent-sdk";
-import { createAgent } from "@atlas/agent-sdk";
+import { createAgent, repairToolCall } from "@atlas/agent-sdk";
 import {
   collectToolUsageFromSteps,
   extractArtifactRefsFromToolResults,
@@ -82,6 +82,7 @@ export function convertLLMToAgent(
           maxRetries,
           stopWhen: stepCountIs(config.config.max_steps || 10),
           abortSignal,
+          experimental_repairToolCall: repairToolCall,
           ...(config.config.provider_options || {}),
         });
 

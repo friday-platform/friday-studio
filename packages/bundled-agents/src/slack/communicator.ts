@@ -4,6 +4,7 @@ import {
   createAgent,
   type LinkCredentialRef,
   repairJson,
+  repairToolCall,
 } from "@atlas/agent-sdk";
 import {
   collectToolUsageFromSteps,
@@ -33,7 +34,7 @@ export const slackCommunicatorAgent = createAgent<string, Result>({
   description:
     "Post messages to Slack channels and DMs; search message history across channels, threads, and conversations; manage channels and users via slack-mcp-server",
   expertise: {
-    domains: ["slack"],
+    domains: ["slack", "slack-posting", "slack-notifications"],
     examples: [
       "Post update to #general: Shipping v1.2 today",
       "Send this artifact to #product: {{artifact_id}}",
@@ -160,6 +161,7 @@ export const slackCommunicatorAgent = createAgent<string, Result>({
         maxOutputTokens: 2000,
         providerOptions: { anthropic: { thinking: { type: "enabled", budgetTokens: 12000 } } },
         stopWhen: stepCountIs(10),
+        experimental_repairToolCall: repairToolCall,
       });
 
       logger.debug("AI SDK generateText completed", {
@@ -262,6 +264,7 @@ export const slackCommunicatorAgent = createAgent<string, Result>({
         stopWhen: stepCountIs(10),
         maxOutputTokens: 800,
         providerOptions: { anthropic: { thinking: { type: "enabled", budgetTokens: 12000 } } },
+        experimental_repairToolCall: repairToolCall,
       });
 
       stream?.emit({

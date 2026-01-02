@@ -72,11 +72,11 @@ maintaining transparent, debuggable interactions.
 │          │                                ▼                     │
 │          ▼                    ┌──────────────────────────────────┐ │
 │  ┌─────────────────┐          │         Tool Ecosystem          │ │
-│  │ MCP Resources   │          │  - atlas_stream_event           │ │
-│  │ atlas://...     │          │  - atlas_todo_read              │ │
+│  │ Skills System   │          │  - atlas_stream_event           │ │
+│  │                 │          │  - atlas_todo_read              │ │
 │  │ - guides        │          │  - atlas_todo_write             │ │
-│  │ - patterns      │          │  - Resource access tools        │ │
-│  │ - tool lists    │          └──────────────────────────────────┘ │
+│  │ - patterns      │          │  - load_skill tool              │ │
+│  │                 │          └──────────────────────────────────┘ │
 │  └─────────────────┘                             │                │
 │          │                                       │                │
 │          ▼                                       ▼                │
@@ -116,9 +116,9 @@ maintaining transparent, debuggable interactions.
 
 ### 2.4 Resource Design Principles
 
-**Invisible Tool Usage**: The agent accesses resources transparently using the `read_atlas_resource`
-tool without exposing this mechanism to users. Responses should never mention "querying the guide"
-or "accessing resources" - knowledge should appear seamlessly integrated.
+**Invisible Knowledge Integration**: The agent has access to specialized knowledge through the skills
+system. Responses should never mention "querying guides" or "accessing resources" - knowledge should
+appear seamlessly integrated.
 
 **Single Source of Truth**: Each domain of technical knowledge (workspace creation, debugging,
 patterns) lives in exactly one resource, eliminating duplication and versioning conflicts.
@@ -129,16 +129,7 @@ principles, enabling direct incorporation into responses without style mismatche
 **Comprehensive Coverage**: Resources contain complete technical knowledge for their domain,
 including patterns, examples, error solutions, and configuration references.
 
-### 2.5 Resource Naming Convention
-
-Resources use the `atlas://` URI scheme with descriptive names:
-
-- `atlas://workspace-creation-guide` - Complete workspace creation knowledge
-- `atlas://debugging-guide` - Session investigation and troubleshooting
-- `atlas://pattern-library` - Categorized automation patterns
-- `atlas://mcp-tool-list` - Available tools and capabilities
-
-### 2.6 Performance Benefits
+### 2.5 Performance Benefits
 
 This architecture delivers:
 
@@ -383,27 +374,7 @@ fetch tool."
 **Precedent**: Provide specific technical details (timestamps, endpoints, headers) while maintaining
 focus on resolution.
 
-### 5.5 The Resource-Driven Knowledge Case
-
-**Request**: "I want to monitor Nike's website for new shoes and notify Discord"
-
-**Internal Process**:
-
-1. Intent recognition detects workspace creation need
-2. Agent calls `read_atlas_resource` with uri="atlas://workspace-creation-guide"
-3. Resource returns comprehensive patterns, examples, and configurations
-4. Agent processes guide content to find relevant web monitoring pattern
-5. Response integrates resource knowledge seamlessly
-
-**Response**: "I'll help you create a Nike monitoring workspace. We'll set it up to check Nike's
-upcoming drops page every 30 minutes, extract product details and images, generate hype analysis
-with AI, and send formatted Discord notifications. Let me create this for you..."
-
-**Precedent**: Users receive expert guidance without awareness of resource access. Knowledge appears
-naturally integrated, maintaining conversational flow while providing comprehensive technical
-capability.
-
-### 5.6 The Rich Event Streaming Case
+### 5.5 The Rich Event Streaming Case
 
 **Request**: "Create a workspace to monitor Nike's website"
 
@@ -440,7 +411,7 @@ conversation flow. Users see exactly what tools are called, with what parameters
 they return. This builds trust and enables debugging while keeping the conversation focused on the
 user's goal.
 
-### 5.7 The Conversational Task Memory Case
+### 5.6 The Conversational Task Memory Case
 
 **Session 1 Request**: "Create a workspace to monitor Nike's website for new shoes"
 
@@ -645,13 +616,6 @@ requests without proper User-Agent headers"\
 **Not**: "AgentExecutor.execute() threw NetworkError in session abc123 at step 3 of 5..."
 
 ### Future Considerations
-
-**Resource Architecture Evolution**:
-
-- Expanding to `atlas://debugging-guide` for session investigation and troubleshooting
-- Adding `atlas://pattern-library` with categorized automation templates
-- Creating `atlas://mcp-tool-list` for comprehensive tool capabilities
-- Implementing resource versioning for knowledge updates
 
 **User Experience Enhancement**:
 

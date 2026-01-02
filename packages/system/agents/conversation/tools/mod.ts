@@ -6,13 +6,11 @@
  * - Streaming events back to the client
  * - Managing conversation storage/history
  * - Todo list management
- * - Resource reading from the platform
  * - Workspace creation and updating
  */
 
 import type { AtlasTools } from "@atlas/agent-sdk";
 import { displayArtifact } from "./display-artifact.ts";
-import { resourceReadTool } from "./resource-read.ts";
 import { takeNoteTool } from "./scratchpad-tools.ts";
 
 /**
@@ -21,6 +19,7 @@ import { takeNoteTool } from "./scratchpad-tools.ts";
  */
 export const conversationTools: AtlasTools = {
   take_note: takeNoteTool,
-  read_atlas_resource: resourceReadTool,
   display_artifact: displayArtifact,
 };
+
+export { loadSkillTool } from "./load-skill.ts";

@@ -1,6 +1,6 @@
 import { homedir } from "node:os";
 import { env } from "node:process";
-import { type ArtifactRef, createAgent } from "@atlas/agent-sdk";
+import { type ArtifactRef, createAgent, repairToolCall } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
 import { getDefaultProviderOpts, smallLLM } from "@atlas/llm";
 import { fail, type Result, stringifyError, success } from "@atlas/utils";
@@ -114,6 +114,7 @@ export const claudeCodeAgent = createAgent<string, CCAgentResult>({
         abortSignal,
         stopWhen: stepCountIs(25),
         maxOutputTokens: 30000,
+        experimental_repairToolCall: repairToolCall,
         onChunk: async ({ chunk }) => {
           switch (chunk.type) {
             case "tool-call": {

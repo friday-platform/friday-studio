@@ -1,7 +1,7 @@
 import { readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { env } from "node:process";
-import { createAgent } from "@atlas/agent-sdk";
+import { createAgent, repairToolCall } from "@atlas/agent-sdk";
 import type { EmailParams } from "@atlas/config";
 import { getDefaultProviderOpts, registry } from "@atlas/llm";
 import { getTodaysDate } from "@atlas/utils";
@@ -162,6 +162,7 @@ CONTENT GUIDELINES (for composeEmail):
       maxOutputTokens: 4000,
       temperature: 0.3,
       toolChoice: "required",
+      experimental_repairToolCall: repairToolCall,
     });
 
     logger.debug("AI SDK streamText completed", { agent: "email", usage: res.totalUsage });
