@@ -3,7 +3,10 @@
 # Only on branch checkouts, skip file checkouts
 [[ "$3" != "1" ]] && exit 0
 
-# Idempotent init - fast no-op if .beads/ exists
+# Skip if beads already initialized
+[[ -d ".beads" ]] && exit 0
+
+# Initialize beads for new branches
 bd init --stealth --quiet 2>/dev/null || true
 
 # Housekeeping
