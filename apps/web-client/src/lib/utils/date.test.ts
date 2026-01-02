@@ -292,25 +292,11 @@ Deno.test("formatOutlineDate - yesterday", () => {
 });
 
 Deno.test("formatOutlineDate - same year, older than yesterday", () => {
-  const date = new Date();
-  date.setDate(date.getDate() - 5);
-  date.setHours(14, 30, 0, 0);
+  // Use explicit mid-year date to avoid year boundary issues in early January
+  const now = new Date();
+  const date = new Date(now.getFullYear(), 5, 15, 14, 30, 0, 0); // June 15, current year
   const result = formatOutlineDate(date.toISOString());
-  const monthNames = [
-    "January",
-    "February",
-    "March",
-    "April",
-    "May",
-    "June",
-    "July",
-    "August",
-    "September",
-    "October",
-    "November",
-    "December",
-  ];
-  assertEquals(result, `${monthNames[date.getMonth()]} ${date.getDate()} at 2:30pm`);
+  assertEquals(result, `June 15 at 2:30pm`);
 });
 
 Deno.test("formatOutlineDate - different year", () => {
@@ -320,47 +306,19 @@ Deno.test("formatOutlineDate - different year", () => {
 });
 
 Deno.test("formatOutlineDate - midnight (12am)", () => {
-  const date = new Date();
-  date.setDate(date.getDate() - 3);
-  date.setHours(0, 0, 0, 0);
+  // Use explicit mid-year date to avoid year boundary issues in early January
+  const now = new Date();
+  const date = new Date(now.getFullYear(), 6, 20, 0, 0, 0, 0); // July 20, current year, midnight
   const result = formatOutlineDate(date.toISOString());
-  const monthNames = [
-    "January",
-    "February",
-    "March",
-    "April",
-    "May",
-    "June",
-    "July",
-    "August",
-    "September",
-    "October",
-    "November",
-    "December",
-  ];
-  assertEquals(result, `${monthNames[date.getMonth()]} ${date.getDate()} at 12:00am`);
+  assertEquals(result, `July 20 at 12:00am`);
 });
 
 Deno.test("formatOutlineDate - noon (12pm)", () => {
-  const date = new Date();
-  date.setDate(date.getDate() - 3);
-  date.setHours(12, 0, 0, 0);
+  // Use explicit mid-year date to avoid year boundary issues in early January
+  const now = new Date();
+  const date = new Date(now.getFullYear(), 6, 20, 12, 0, 0, 0); // July 20, current year, noon
   const result = formatOutlineDate(date.toISOString());
-  const monthNames = [
-    "January",
-    "February",
-    "March",
-    "April",
-    "May",
-    "June",
-    "July",
-    "August",
-    "September",
-    "October",
-    "November",
-    "December",
-  ];
-  assertEquals(result, `${monthNames[date.getMonth()]} ${date.getDate()} at 12:00pm`);
+  assertEquals(result, `July 20 at 12:00pm`);
 });
 
 Deno.test("formatOutlineDate - zero-padded minutes", () => {
