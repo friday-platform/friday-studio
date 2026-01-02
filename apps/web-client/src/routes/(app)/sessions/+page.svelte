@@ -25,38 +25,36 @@ const columnHelper = createColumnHelper<{
   summary?: string | undefined;
 }>();
 
-const columns = [
-  columnHelper.display({
-    id: "deployment",
-    header: "Deployment",
-    cell: (info) => {
-      return renderComponent(DetailsColumn, {
-        job: info.row.original.sessionId,
-        summary: info.row.original.summary ?? "",
-        workspaceName: info.row.original.workspaceName,
-      });
-    },
-    meta: { minWidth: "0" },
-  }),
-  columnHelper.accessor("createdAt", {
-    id: "createdAt",
-    header: "Date",
-    cell: (info) => renderComponent(TimeColumn, { date: info.getValue() }),
-    meta: { align: "center", faded: true, shrink: true, size: "small" },
-  }),
-  columnHelper.accessor("status", {
-    id: "status",
-    cell: (info) => renderComponent(StatusColumn, { status: info.getValue() }),
-    meta: { align: "center", faded: true, shrink: true, size: "small" },
-    enableSorting: false,
-  }),
-];
-
 const table = createTable({
   get data() {
     return sessions;
   },
-  columns: columns,
+  columns: [
+    columnHelper.display({
+      id: "deployment",
+      header: "Deployment",
+      cell: (info) => {
+        return renderComponent(DetailsColumn, {
+          job: info.row.original.sessionId,
+          summary: info.row.original.summary ?? "",
+          workspaceName: info.row.original.workspaceName,
+        });
+      },
+      meta: { minWidth: "0" },
+    }),
+    columnHelper.accessor("createdAt", {
+      id: "createdAt",
+      header: "Date",
+      cell: (info) => renderComponent(TimeColumn, { date: info.getValue() }),
+      meta: { align: "center", faded: true, shrink: true, size: "small" },
+    }),
+    columnHelper.accessor("status", {
+      id: "status",
+      cell: (info) => renderComponent(StatusColumn, { status: info.getValue() }),
+      meta: { align: "center", faded: true, shrink: true, size: "small" },
+      enableSorting: false,
+    }),
+  ],
   getCoreRowModel: getCoreRowModel(),
   getRowId: (row) => row.sessionId,
 });
@@ -72,6 +70,7 @@ const table = createTable({
 	{:else}
 		<Table.Root
 			{table}
+			hideHeader
 			rowSize="large"
 			rowPath={(item) =>
 				resolve('/sessions/[sessionId]', {

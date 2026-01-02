@@ -91,7 +91,7 @@ const formatted = $derived.by(() => {
 
 <style>
 	.event-group {
-		border-block-end: var(--size-px) solid var(--color-border-2);
+		border-block-end: var(--size-px) solid var(--color-border-1);
 		margin-inline: calc(var(--size-3) * -1) calc(var(--size-2) * -1);
 	}
 

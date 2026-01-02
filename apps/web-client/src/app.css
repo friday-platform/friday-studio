@@ -140,11 +140,13 @@ svg {
   /* Colors */
 
   /* Surfaces */
-  --color-surface-1: hsl(0 0% 100% / 1);
-  --color-surface-2: hsl(0 0% 93% / 1);
+  --color-surface-1: hsl(240 100% 100% / 1);
+  --color-surface-2: hsl(240 12% 95% / 1);
+
+  --color-highlight-1: hsl(221 88% 20% / 0.06);
 
   /* Borders */
-  --color-border-1: hsl(300 1% 87% / 1);
+  --color-border-1: hsl(220 24% 90%);
   --color-border-2: hsl(240 3 94% / 1);
 
   /* Text */
@@ -176,9 +178,12 @@ svg {
     ), 0px 24px 48px -12px rgba(26, 83, 204, 0.08);
 
   @media (color-gamut: p3) {
-    --color-surface-2: color(display-p3 0.9333 0.9333 0.9333);
-    --color-border-1: color(display-p3 0.8706 0.8667 0.8706);
-    --color-border-2: color(display-p3 0.8706 0.8667 0.8706);
+    --color-surface-1: color(display-p3 0.9961 0.9961 1);
+    --color-surface-2: color(display-p3 0.9451 0.9451 0.9569);
+
+    --color-highlight-1: color(display-p3 0.0243 0.1391 0.3785 / 0.06);
+
+    --color-border-1: color(display-p3 0.8784 0.8941 0.9255);
 
     --color-text: color(display-p3 0.0941 0.1098 0.1843);
     --color-blue: color(display-p3 0.1648 0.3306 0.8752);
@@ -191,17 +196,11 @@ svg {
   }
 
   @media (prefers-color-scheme: dark) {
-    /* Colors */
-
     /* Surfaces */
-    --color-surface-1: hsl(229 18% 12% / 1);
-    --color-surface-2: hsl(233 17% 10% / 1);
-
-    /* Borders */
-    --color-border-1: hsl(0 0% 0% / 0.3);
-    --color-border-2: hsl(0 0% 0% / 0.3);
-
-    /* Text */
+    --color-surface-1: hsl(230 11% 11% / 1);
+    --color-surface-2: hsl(228 11% 9% / 1);
+    --color-highlight-1: hsl(223 28% 90% / 0.06);
+    --color-border-1: hsl(230 10% 24%);
     --color-text: hsl(40 12% 95% / 1);
 
     /* Shadows */
@@ -222,8 +221,11 @@ svg {
   }
 
   @media (prefers-color-scheme: dark) and (color-gamut: p3) {
-    --color-surface-1: color(display-p3 0.098 0.1059 0.1412);
-    --color-surface-2: color(display-p3 0.0863 0.0902 0.1216);
+    --color-surface-1: color(display-p3 0.098 0.102 0.1216);
+    --color-surface-2: color(display-p3 0.0784 0.0824 0.098);
+    --color-highlight-1: color(display-p3 0.8745 0.8902 0.9294 / 0.06);
+    --color-border-1: color(display-p3 0.2118 0.2196 0.2588);
+
     --color-text: color(display-p3 0.9569 0.9529 0.9451);
   }
 
@@ -238,7 +240,7 @@ html {
 }
 
 body {
-  background-color: var(--color-surface-1);
+  background-color: var(--color-surface-2);
   color: var(--color-text);
   cursor: default;
   block-size: 100dvh;

@@ -68,27 +68,31 @@ onDestroy(() => {
 	<link rel="icon" href={favicon} />
 </svelte:head>
 
-<div class="titlebar" data-tauri-drag-region></div>
+{#if __TAURI_BUILD__}
+	<div class="titlebar" data-tauri-drag-region></div>
+{/if}
 
 <div role="region">
 	<AppContainer>
 		<AppSidebar />
 
 		<main>
-			{#if ctx.daemonStatus === 'error'}
-				<div class="daemon-error">
-					<p>
-						The connection to Atlas was lost
-						{#if ctx.reconnectCountdown > 0}
-							<span class="reconnect-countdown">(reconnecting in {ctx.reconnectCountdown}s)</span>
-						{:else if ctx.reconnectCountdown === 0}
-							<span class="reconnect-countdown">(reconnecting...)</span>
-						{/if}
-					</p>
-					<button type="button" onclick={() => ctx.checkHealth()}>Try again</button>
-				</div>
-			{/if}
-			{@render children?.()}
+			<div class="app-content">
+				{#if ctx.daemonStatus === 'error'}
+					<div class="daemon-error">
+						<p>
+							The connection to Atlas was lost
+							{#if ctx.reconnectCountdown > 0}
+								<span class="reconnect-countdown">(reconnecting in {ctx.reconnectCountdown}s)</span>
+							{:else if ctx.reconnectCountdown === 0}
+								<span class="reconnect-countdown">(reconnecting...)</span>
+							{/if}
+						</p>
+						<button type="button" onclick={() => ctx.checkHealth()}>Try again</button>
+					</div>
+				{/if}
+				{@render children?.()}
+			</div>
 		</main>
 	</AppContainer>
 </div>
@@ -98,6 +102,19 @@ onDestroy(() => {
 <WorkspaceDropHandler />
 
 <style>
+	main {
+		padding: var(--size-1-5);
+	}
+
+	.app-content {
+		background-color: var(--color-surface-1);
+		box-shadow: var(--shadow-1);
+		border-radius: var(--radius-5) var(--radius-5) 20px var(--radius-5);
+		overflow: auto;
+		scrollbar-width: thin;
+		min-block-size: 100%;
+	}
+
 	.titlebar {
 		block-size: 3.25rem;
 		inset-block-start: 0;

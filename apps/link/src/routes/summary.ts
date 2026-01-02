@@ -47,6 +47,7 @@ export function createSummaryRoutes(storage: StorageAdapter) {
             type: c.type,
             provider: c.provider,
             label: c.label,
+            createdAt: c.metadata.createdAt,
           }));
 
           // Filter by provider if query param provided

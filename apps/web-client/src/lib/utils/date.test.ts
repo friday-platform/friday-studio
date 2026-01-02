@@ -1,5 +1,11 @@
 import { assertEquals } from "@std/assert";
-import { formatChatDate, formatDuration, formatOutlineDate, formatSessionDate } from "./date.ts";
+import {
+  formatChatDate,
+  formatDuration,
+  formatFullDate,
+  formatOutlineDate,
+  formatSessionDate,
+} from "./date.ts";
 
 Deno.test("formatChatDate - just now", () => {
   const now = new Date();
@@ -334,4 +340,29 @@ Deno.test("formatOutlineDate - accepts number timestamp", () => {
   const timestamp = date.getTime();
   const result = formatOutlineDate(timestamp);
   assertEquals(result, "Mar 20, 2023 at 3:45pm");
+});
+
+Deno.test("formatFullDate - basic formatting", () => {
+  const date = new Date(2025, 11, 30, 0, 0, 0, 0); // December 30, 2025
+  const result = formatFullDate(date.toISOString());
+  assertEquals(result, "December 30, 2025");
+});
+
+Deno.test("formatFullDate - single digit day", () => {
+  const date = new Date(2025, 0, 5, 0, 0, 0, 0); // January 5, 2025
+  const result = formatFullDate(date.toISOString());
+  assertEquals(result, "January 5, 2025");
+});
+
+Deno.test("formatFullDate - different year", () => {
+  const date = new Date(2024, 6, 4, 0, 0, 0, 0); // July 4, 2024
+  const result = formatFullDate(date.toISOString());
+  assertEquals(result, "July 4, 2024");
+});
+
+Deno.test("formatFullDate - accepts number timestamp", () => {
+  const date = new Date(2025, 2, 15, 10, 30, 0, 0); // March 15, 2025
+  const timestamp = date.getTime();
+  const result = formatFullDate(timestamp);
+  assertEquals(result, "March 15, 2025");
 });

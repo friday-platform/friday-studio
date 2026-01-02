@@ -94,6 +94,7 @@ const artifactsTable = createTable({
 						table={artifactsTable}
 						rowSize="large"
 						rowPath={(item) => `/library/${item.id}`}
+						hideHeader
 					/>
 				</div>
 			{/if}
@@ -106,6 +107,7 @@ const artifactsTable = createTable({
 						rowSize="large"
 						rowPath={(item) =>
 							appCtx.routes.spaces.item(workspace.id, `sessions/${item.sessionId}`)}
+						hideHeader
 					/>
 				</div>
 			{/if}

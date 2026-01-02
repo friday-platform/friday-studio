@@ -1,25 +1,162 @@
 <script lang="ts">
+import { client, parseResult } from "@atlas/client/v2";
+import { createCollapsible } from "@melt-ui/svelte";
+import {
+  createColumnHelper,
+  createTable,
+  getCoreRowModel,
+  renderComponent,
+} from "@tanstack/svelte-table";
 import { onMount } from "svelte";
+import { invalidateAll } from "$app/navigation";
 import { BUILD_INFO } from "$lib/build-info";
-import { Icons } from "$lib/components/icons";
+import { Breadcrumbs } from "$lib/components/breadcrumbs";
+import Button from "$lib/components/button.svelte";
+import { IconSmall } from "$lib/components/icons/small";
+import { Table } from "$lib/components/table";
 import { getClientContext } from "$lib/modules/client/context.svelte";
 import { getVersion, invoke } from "$lib/utils/tauri-loader";
+import type { PageData } from "./$types";
+import KeyInputCell from "./(components)/key-input-cell.svelte";
+import Logo from "./(components)/logo-column.svelte";
+import ProviderDetails from "./(components)/provider-details-column.svelte";
+import RemoveButtonCell from "./(components)/remove-button-cell.svelte";
+import RemoveCredential from "./(components)/remove-credential-column.svelte";
+import ValueInputCell from "./(components)/value-input-cell.svelte";
+
+let { data }: { data: PageData } = $props();
+const credentials = $derived(data.credentials);
+const providers = $derived(data.providers);
+
+// Lookup provider displayName by ID
+function getProviderName(providerId: string): string {
+  const provider = providers.find((p) => p.id === providerId);
+  return provider?.displayName ?? providerId.charAt(0).toUpperCase() + providerId.slice(1);
+}
+
+// Remove credential by ID
+async function removeCredential(id: string) {
+  const res = await parseResult(client.link.v1.credentials[":id"].$delete({ param: { id } }));
+
+  if (!res.ok) {
+    console.error("Failed to delete credential:", res.error);
+    alert("Failed to delete credential");
+    return;
+  }
+
+  // Refresh the page data
+  await invalidateAll();
+}
 
 const ctx = getClientContext();
 
-let envVars = $state<{ key: string; value: string; id: number }[]>([]);
+// Initialize env vars from loaded data
+let nextId = 1;
+let envVars = $derived<{ key: string; value: string; id: number }[]>(
+  Object.entries(data.envVars)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, value]) => ({ key, value, id: nextId++ })),
+);
 let _isSaving = $state(false);
 let isRestarting = $state(false);
 let message = $state("");
-let nextId = 1;
 
 let version = $state<string>(BUILD_INFO?.version || "1.0.0-beta");
 let commitHash = BUILD_INFO?.commitHash || "unknown";
 
-onMount(async () => {
-  // Load env vars from daemon API (works in both web and desktop)
-  loadEnvVars();
+// Credentials table
+type CredentialRow = PageData["credentials"][number];
 
+const columnHelper = createColumnHelper<CredentialRow>();
+
+const credentialsTable = createTable({
+  get data() {
+    return credentials;
+  },
+  columns: [
+    columnHelper.accessor("provider", {
+      id: "provider_logo",
+      header: "",
+      cell: (info) => {
+        return renderComponent(Logo, { provider: info.getValue() });
+      },
+      meta: { shrink: true },
+    }),
+    columnHelper.display({
+      id: "provider",
+      header: "Provider",
+      cell: (info) =>
+        renderComponent(ProviderDetails, {
+          name: getProviderName(info.row.original.provider),
+          date: info.row.original.createdAt,
+        }),
+    }),
+
+    columnHelper.display({
+      id: "actions",
+      header: "",
+      cell: (info) =>
+        renderComponent(RemoveCredential, {
+          onclick: () => removeCredential(info.row.original.id),
+        }),
+      meta: { shrink: true },
+    }),
+  ],
+  getCoreRowModel: getCoreRowModel(),
+  getRowId: (row) => row.id,
+});
+
+// Env vars table
+type EnvVarRow = { key: string; value: string; id: number };
+
+const envVarColumnHelper = createColumnHelper<EnvVarRow>();
+
+function updateEnvVarKey(id: number, key: string) {
+  envVars = envVars.map((v) => (v.id === id ? { ...v, key } : v));
+}
+
+function updateEnvVarValue(id: number, value: string) {
+  envVars = envVars.map((v) => (v.id === id ? { ...v, value } : v));
+}
+
+const envVarsTable = createTable({
+  get data() {
+    return envVars;
+  },
+  columns: [
+    envVarColumnHelper.display({
+      id: "key",
+      header: "Key",
+      cell: (info) =>
+        renderComponent(KeyInputCell, {
+          value: info.row.original.key,
+          onchange: (v: string) => updateEnvVarKey(info.row.original.id, v),
+        }),
+      meta: { width: "var(--size-72)" },
+    }),
+    envVarColumnHelper.display({
+      id: "value",
+      header: "Value",
+      cell: (info) =>
+        renderComponent(ValueInputCell, {
+          value: info.row.original.value,
+          onchange: (v: string) => updateEnvVarValue(info.row.original.id, v),
+          onblur: () => saveChanges(),
+        }),
+    }),
+    envVarColumnHelper.display({
+      id: "actions",
+      header: "",
+      cell: (info) =>
+        renderComponent(RemoveButtonCell, { onclick: () => removeEntry(info.row.original.id) }),
+      meta: { shrink: true, width: "var(--size-10)" },
+    }),
+  ],
+  getCoreRowModel: getCoreRowModel(),
+  getRowId: (row) => String(row.id),
+});
+
+onMount(async () => {
   // Get version info from Tauri if available
   if (getVersion) {
     try {
@@ -32,18 +169,6 @@ onMount(async () => {
     }
   }
 });
-
-async function loadEnvVars() {
-  try {
-    const result = await ctx.daemonClient.getEnvVars();
-    // Sort entries by key alphabetically
-    envVars = Object.entries(result)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([key, value]) => ({ key, value, id: nextId++ }));
-  } catch (err) {
-    console.error("Failed to load env vars:", err);
-  }
-}
 
 function addEntry() {
   envVars = [...envVars, { key: "", value: "", id: nextId++ }];
@@ -97,126 +222,99 @@ function showMessage(msg: string) {
     message = "";
   }, 5000);
 }
+
+const {
+  elements: { root, trigger, content },
+  states: { open },
+} = createCollapsible({ forceVisible: true });
 </script>
 
 <div class="main">
+	<div class="breadcrumbs">
+		<Breadcrumbs.Root>
+			<Breadcrumbs.Item>Settings</Breadcrumbs.Item>
+		</Breadcrumbs.Root>
+	</div>
+
 	<div class="main-int">
-		<h1>Settings</h1>
+		<h2>Integrations</h2>
 
-		<h2>Environment Variables</h2>
-
-		<div class="list" role="table">
-			<div class="list-header">
-				<span class="list-heading">Key</span>
-				<span class="list-heading">Value</span>
-				<span class="list-heading">&nbsp;</span>
-			</div>
-
-			{#each envVars as entry (entry.id)}
-				<div class="list-row">
-					<div class="list-cell">
-						<input
-							type="text"
-							placeholder="KEY"
-							bind:value={() => entry.key, (v) => (entry.key = v)}
-							class="key-input"
-						/>
-					</div>
-
-					<div class="list-cell">
-						<input
-							type="text"
-							placeholder="value"
-							bind:value={() => entry.value, (v) => (entry.value = v)}
-							onblur={() => {
-								saveChanges();
-							}}
-							class="value-input"
-						/>
-					</div>
-
-					<div class="list-cell">
-						<button
-							type="button"
-							class="remove-button"
-							onclick={() => removeEntry(entry.id)}
-							aria-label="Remove entry"
-						>
-							<Icons.Trash />
-						</button>
-					</div>
-				</div>
-			{/each}
-		</div>
-
-		<button class="add-button" onclick={addEntry}>
-			<Icons.Plus />
-			Add Variable
-		</button>
-
-		{#if __TAURI_BUILD__}
-			<div class="daemon-section">
-				<h2>Daemon</h2>
-
-				<p>This operation may take a second.</p>
-
-				<button class="restart-daemon-button" onclick={restartDaemon} disabled={isRestarting}>
-					{isRestarting ? 'Restarting...' : 'Restart Daemon'}
-				</button>
-
-				{#if message}
-					<p class="daemon-message">
-						{message}
-					</p>
-				{/if}
+		{#if credentials.length === 0}
+			<p class="empty">No integrations have been configured</p>
+		{:else}
+			<div class="credentials-table">
+				<Table.Root table={credentialsTable} rowSize="large" hideHeader />
 			</div>
 		{/if}
 
-		<div class="version-info">
-			<h2>App Details</h2>
+		<div class="advanced-settings" {...$root} use:root>
+			<h2>
+				<button {...$trigger} use:trigger class:expanded={$open}>
+					Advanced Settings <IconSmall.CaretRight /></button
+				>
+			</h2>
 
-			<p>Version {version} ({commitHash})</p>
+			<div class="advanced-settings--content" use:content {...$content} class:expanded={$open}>
+				<div class="env-vars-table">
+					<Table.Root table={envVarsTable} rowSize="small" />
+				</div>
+
+				<Button size="small" onclick={addEntry}>Add Variable</Button>
+			</div>
+
+			{#if __TAURI_BUILD__}
+				<div class="daemon-section">
+					<h2>Daemon</h2>
+
+					<p>This operation may take a second.</p>
+
+					<Button size="small" onclick={restartDaemon} disabled={isRestarting}>
+						{isRestarting ? 'Restarting...' : 'Restart Daemon'}
+					</Button>
+
+					{#if message}
+						<p class="daemon-message">
+							{message}
+						</p>
+					{/if}
+				</div>
+
+				<div class="version-info">
+					<h2>App Details</h2>
+
+					<p>Version {version} ({commitHash})</p>
+				</div>
+			{/if}
 		</div>
 	</div>
 </div>
 
 <style>
 	.main {
-		block-size: 100%;
-		inline-size: 100%;
-		overflow: auto;
-		padding-block: var(--size-14);
-		padding-inline: var(--size-16);
 		position: relative;
 		transition: all 150ms ease;
 		z-index: var(--layer-1);
 	}
 
 	.main-int {
-		max-inline-size: var(--size-216);
-		margin-inline: auto;
-	}
-
-	h1 {
-		color: var(--color-text);
-		font-size: var(--font-size-8);
-		font-weight: var(--font-weight-6);
-		line-height: var(--font-lineheight-1);
-		font-weight: 600;
-		margin-block-end: var(--size-4);
+		padding-block: var(--size-9) var(--size-10);
+		padding-inline: var(--size-14);
 	}
 
 	.version-info {
 		margin-block-start: var(--size-8);
 	}
 
+	.breadcrumbs {
+		position: sticky;
+		inset-block-start: var(--size-3-5);
+	}
+
 	h2 {
 		color: var(--color-text);
-		/* @TODO: update to style guide value */
-		font-size: 18px;
+		font-size: var(--font-size-5);
 		font-weight: var(--font-weight-6);
 		line-height: var(--font-lineheight-1);
-		font-weight: 600;
 	}
 
 	p {
@@ -227,127 +325,56 @@ function showMessage(msg: string) {
 		opacity: 0.8;
 	}
 
-	button {
-		align-items: center;
-		block-size: var(--size-7);
-		border-radius: var(--radius-3);
-		box-shadow: var(--shadow-1);
-		display: flex;
+	.empty {
+		color: var(--text-3);
 		font-size: var(--font-size-3);
-		font-weight: var(--font-weight-5);
-		gap: var(--size-1-5);
-		padding-inline: var(--size-2-5) var(--size-3);
-		transition: all 0.2s ease;
-
-		&:hover:not(:disabled) {
-			background: color-mix(in srgb, var(--color-text) 3%, transparent);
-		}
-
-		&:disabled {
-			opacity: 0.8;
-			cursor: not-allowed;
-		}
 	}
 
-	.list {
-		& {
-			display: grid;
-			grid-template-columns: var(--size-64) 1fr var(--size-10);
-			inline-size: 100%;
-			margin-block-end: var(--size-4);
-		}
+	.credentials-table {
+		margin-block: var(--size-4) var(--size-8);
+	}
 
-		.list-header {
-			display: grid;
-			grid-template-columns: subgrid;
-			grid-column: 1 / -1;
-		}
-
-		.list-heading,
-		.list-cell {
-			border-bottom: 1px solid var(--color-border-1);
-			font-size: var(--font-size-4);
-
-			text-align: left;
-			padding-block: var(--size-2);
-		}
-
-		.list-heading {
-			font-weight: var(--font-weight-6);
-		}
-
-		.list-row {
-			display: grid;
-			grid-template-columns: subgrid;
-			grid-column: 1 / -1;
-		}
-
-		.key-input,
-		.value-input {
-			inline-size: 100%;
-			opacity: 0.8;
-			transition: border-color 0.2s;
-		}
-
-		.key-input {
-			font-size: var(--font-size-2);
-			font-weight: var(--font-weight-6);
-		}
-
-		.value-input {
-			font-size: var(--font-size-3);
-		}
-
-		.key-input:focus,
-		.value-input:focus {
-			outline: none;
-			border-color: var(--accent-1, #007bff);
-		}
-
-		.remove-button {
-			align-items: center;
-			background: none;
-			box-shadow: none;
-			color: color-mix(in srgb, var(--color-text) 80%, transparent);
-			display: flex;
-			inline-size: var(--size-8);
-			justify-content: center;
-			margin-inline-start: auto;
-			opacity: 0;
-			padding: 0;
-			transition:
-				opacity 0.2s ease,
-				color 0.2s ease;
-		}
-
-		.remove-button:hover {
-			background: none;
-			color: var(--color-red);
-		}
-
-		.remove-button:focus,
-		.list-row:hover .remove-button {
-			opacity: 1;
-			outline: none;
-		}
-
-		.remove-button:focus-within {
-			outline: 1px solid var(--color-border-1);
-		}
+	.env-vars-table {
+		margin-block: var(--size-4);
 	}
 
 	.daemon-section {
-		margin-block-start: var(--size-12);
-
-		.restart-daemon-button {
-			color: var(--color-red);
-			padding-inline-start: var(--size-3);
-		}
+		border-block-start: var(--size-px) solid var(--color-border-1);
+		margin-block-start: var(--size-10);
+		padding-block-start: var(--size-10);
 
 		.daemon-message {
 			font-size: var(--font-size-2);
 			font-weight: var(--font-weight-5);
 			opacity: 0.5;
+		}
+	}
+
+	.advanced-settings {
+		margin-block-start: var(--size-10);
+
+		h2 button {
+			align-items: center;
+			display: flex;
+			gap: var(--size-1-5);
+
+			:global(svg) {
+				transition: all 200ms ease;
+			}
+
+			&.expanded :global(svg) {
+				transform: rotate(90deg);
+			}
+		}
+	}
+
+	.advanced-settings--content {
+		overflow: hidden;
+		max-block-size: 0;
+
+		&.expanded {
+			overflow: visible;
+			max-block-size: none;
 		}
 	}
 </style>

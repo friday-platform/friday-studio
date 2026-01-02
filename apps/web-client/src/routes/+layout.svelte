@@ -103,3 +103,7 @@ onMount(() => {
 
 <DiagnosticsDialog bind:open={showDiagnosticsDialog} />
 <FindBar bind:open={showFindBar} onClose={() => (showFindBar = false)} />
+
+<svelte:head>
+	<title>Friday</title>
+</svelte:head>

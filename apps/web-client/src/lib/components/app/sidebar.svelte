@@ -27,7 +27,7 @@ const currentChatId = $derived(page.params.chatId);
 	<NavigationControls />
 {/if}
 
-<header class:expanded={ctx.sidebarExpanded}>
+<header class:expanded={ctx.sidebarExpanded} class:is-app-sidebar={__TAURI_BUILD__}>
 	{#if !ctx.sidebarExpanded}
 		<a href={ctx.routes.main} class="logo" aria-label="Altas">
 			<img src={logo} alt="Altas" />
@@ -258,7 +258,7 @@ const currentChatId = $derived(page.params.chatId);
 		flex-direction: column;
 		justify-content: space-between;
 		gap: var(--size-4);
-		padding-block: var(--size-13) var(--size-5);
+		padding-block: var(--size-5);
 		padding-inline: var(--size-3);
 		position: relative;
 		overflow-y: auto;
@@ -269,6 +269,10 @@ const currentChatId = $derived(page.params.chatId);
 		-webkit-user-select: none;
 		-moz-user-select: none;
 		user-select: none;
+
+		&.is-app-sidebar {
+			padding-block: var(--size-13) var(--size-5);
+		}
 	}
 
 	ul {
@@ -304,7 +308,7 @@ const currentChatId = $derived(page.params.chatId);
 
 		&.active,
 		&:focus-visible {
-			background-color: color-mix(in srgb, var(--color-border-1) 80%, transparent);
+			background-color: var(--color-highlight-1);
 		}
 	}
 

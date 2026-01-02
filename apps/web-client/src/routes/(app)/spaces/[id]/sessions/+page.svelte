@@ -73,6 +73,7 @@ const table = createTable({
 				rowSize="large"
 				rowPath={(item) =>
 					appCtx.routes.spaces.item(data.workspace.id, `sessions/${item.sessionId}`)}
+				hideHeader
 			/>
 		{/if}
 	</div>

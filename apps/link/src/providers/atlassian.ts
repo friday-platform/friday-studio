@@ -27,7 +27,7 @@ async function createMcpClient(accessToken: string): Promise<Client> {
 
 export const atlassianProvider = defineOAuthProvider({
   id: "atlassian",
-  displayName: "Atlassian (Jira & Confluence)",
+  displayName: "Atlassian – Jira & Confluence",
   description: "Jira and Confluence access via MCP",
   oauthConfig: { mode: "discovery", serverUrl: MCP_URL },
   health: async (tokens) => {

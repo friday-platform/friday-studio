@@ -1,3 +1,17 @@
+/**
+ * Formats a date for chat messages with relative time for recent dates.
+ *
+ * @example
+ * // Recent times (< 1 week)
+ * formatChatDate(Date.now() - 30000)      // "just now"
+ * formatChatDate(Date.now() - 300000)     // "5 mins ago"
+ * formatChatDate(Date.now() - 7200000)    // "2 hours ago"
+ * formatChatDate(Date.now() - 172800000)  // "2 days ago"
+ *
+ * // Older dates (> 1 week)
+ * formatChatDate("2025-10-25T17:00:00Z")  // "Oct 25 at 5pm"
+ * formatChatDate("2025-03-10T09:00:00Z")  // "Mar 10 at 9am"
+ */
 export function formatChatDate(dateString: string | number): string {
   const date = new Date(dateString);
   const now = new Date();
@@ -38,6 +52,14 @@ export function formatChatDate(dateString: string | number): string {
   return `${month} ${day} at ${displayHours}${ampm}`;
 }
 
+/**
+ * Formats a date for session details with full month name and timezone.
+ *
+ * @example
+ * formatSessionDate("2025-03-15T14:30:00Z")  // "March 15 at 2:30pm PST"
+ * formatSessionDate("2025-12-25T09:05:00Z")  // "December 25 at 9:05am PST"
+ * formatSessionDate("2025-07-04T00:00:00Z")  // "July 4 at 12:00am PST"
+ */
 export function formatSessionDate(dateString: string | number): string {
   const date = new Date(dateString);
   const monthNames = [
@@ -72,6 +94,17 @@ export function formatSessionDate(dateString: string | number): string {
   return `${month} ${day} at ${displayHours}:${displayMinutes}${ampm} ${tzAbbr}`;
 }
 
+/**
+ * Formats a duration between two timestamps as human-readable text.
+ *
+ * @example
+ * formatDuration(0, 5000)      // "5 seconds"
+ * formatDuration(0, 1000)      // "1 second"
+ * formatDuration(0, 65000)     // "1 minute 5 seconds"
+ * formatDuration(0, 3600000)   // "1 hour"
+ * formatDuration(0, 3723000)   // "1 hour 2 minutes 3 seconds"
+ * formatDuration(0, 7380000)   // "2 hours 3 minutes"
+ */
 export function formatDuration(startMs: number, endMs: number): string {
   const totalSeconds = endMs <= startMs ? 0 : Math.round((endMs - startMs) / 1000);
 
@@ -94,10 +127,48 @@ export function formatDuration(startMs: number, endMs: number): string {
 }
 
 /**
- * Formats a date for conversation timelines:
- * - Within the last 48 hours: "Today at 9:07am" / "Yesterday at 10:31pm"
- * - Within the current year: "December 2 at 5:51pm"
- * - Otherwise: "Nov 3, 2024 at 4:30am"
+ * Formats a date as full month name, day, and year.
+ *
+ * @example
+ * formatFullDate("2025-12-30T00:00:00Z")  // "December 30, 2025"
+ * formatFullDate("2025-01-15T10:30:00Z")  // "January 15, 2025"
+ * formatFullDate("2024-07-04T00:00:00Z")  // "July 4, 2024"
+ */
+export function formatFullDate(dateInput: string | number): string {
+  const date = new Date(dateInput);
+  const monthNames = [
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+  ];
+
+  return `${monthNames[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`;
+}
+
+/**
+ * Formats a date for conversation timelines with contextual formatting.
+ *
+ * @example
+ * // Today
+ * formatOutlineDate(Date.now())                // "Today at 9:07am"
+ *
+ * // Yesterday
+ * formatOutlineDate(Date.now() - 86400000)     // "Yesterday at 10:31pm"
+ *
+ * // Same year (older than yesterday)
+ * formatOutlineDate("2025-12-02T17:51:00Z")    // "December 2 at 5:51pm"
+ *
+ * // Different year
+ * formatOutlineDate("2024-11-03T04:30:00Z")    // "Nov 3, 2024 at 4:30am"
  */
 export function formatOutlineDate(dateInput: string | number): string {
   const date = new Date(dateInput);

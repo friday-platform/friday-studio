@@ -26,7 +26,7 @@ const table = createTable({
 		{#if data.artifacts.length === 0}
 			<p class="empty">No artifacts yet</p>
 		{:else}
-			<Table.Root {table} rowSize="large" rowPath={(item) => `/library/${item.id}`} />
+			<Table.Root {table} rowSize="large" rowPath={(item) => `/library/${item.id}`} hideHeader />
 		{/if}
 	</div>
 </div>

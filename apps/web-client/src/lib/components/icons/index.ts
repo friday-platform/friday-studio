@@ -14,6 +14,7 @@ import Folder from "./folder.svelte";
 import Globe from "./globe.svelte";
 import Image from "./image.svelte";
 import InfoCircled from "./info-circled.svelte";
+import Key from "./key.svelte";
 import LogOut from "./log-out.svelte";
 import Paperclip from "./paperclip.svelte";
 import Pause from "./pause.svelte";
@@ -44,6 +45,7 @@ export const Icons = {
   Globe,
   Image,
   InfoCircled,
+  Key,
   LogOut,
   Paperclip,
   Pause,
