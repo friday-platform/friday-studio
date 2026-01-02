@@ -302,7 +302,7 @@ export class AtlasClient {
     const response = await fetch(getDiagnosticsApiUrl(filename), {
       method: "POST",
       headers: { Authorization: `Bearer ${atlasKey}`, "Content-Type": "application/gzip" },
-      body: diagnosticData,
+      body: new Uint8Array(diagnosticData),
     });
 
     if (!response.ok) {

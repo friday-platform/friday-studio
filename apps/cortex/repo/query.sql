@@ -33,3 +33,17 @@ WHERE user_id = $1
 ORDER BY created_at DESC
 LIMIT sqlc.arg('limit')
 OFFSET sqlc.arg('offset');
+
+-- name: ListObjectsWithMetadataFilter :many
+SELECT id, user_id, content_size, metadata, created_at, updated_at, deleted_at
+FROM cortex.object
+WHERE user_id = sqlc.arg('user_id')
+  AND deleted_at IS NULL
+  AND (sqlc.narg('metadata')::jsonb IS NULL OR metadata @> sqlc.narg('metadata'))
+ORDER BY
+  created_at DESC,
+  -- Defensive ordering: if multiple revisions are marked is_latest (during migration or race),
+  -- return the highest revision number first. COALESCE handles NULL/invalid revision fields.
+  COALESCE((metadata->>'revision')::int, -1) DESC NULLS LAST
+LIMIT sqlc.arg('limit')
+OFFSET sqlc.arg('offset');

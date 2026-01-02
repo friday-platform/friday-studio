@@ -81,17 +81,6 @@ const artifactsApp = daemonFactory
       return c.json({ artifact: result.data }, 200);
     },
   )
-  /** List all revisions of an artifact */
-  .get("/:id/revisions", zValidator("param", z.object({ id: z.string() })), async (c) => {
-    const { id } = c.req.valid("param");
-    const result = await ArtifactStorage.listRevisions({ id });
-
-    if (!result.ok) {
-      return c.json({ error: result.error }, 500);
-    }
-
-    return c.json({ revisions: result.data }, 200);
-  })
   /** Read file contents for a file artifact */
   .get(
     "/:id/contents",

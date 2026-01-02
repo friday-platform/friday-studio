@@ -75,20 +75,81 @@ WHERE user_id = $1
   AND ($2::text IS NULL OR metadata->>'workspace_id' = $2)
   AND ($3::text IS NULL OR metadata->>'chat_id' = $3)
 ORDER BY created_at DESC
-LIMIT $4
-OFFSET $5
+LIMIT $5
+OFFSET $4
 `
 
 type ListObjectsParams struct {
 	UserID      string
 	WorkspaceID pgtype.Text
 	ChatID      pgtype.Text
-	Limit       int32
 	Offset      int32
+	Limit       int32
 }
 
 func (q *Queries) ListObjects(ctx context.Context, arg ListObjectsParams) ([]CortexObject, error) {
-	rows, err := q.db.Query(ctx, listObjects, arg.UserID, arg.WorkspaceID, arg.ChatID, arg.Limit, arg.Offset)
+	rows, err := q.db.Query(ctx, listObjects,
+		arg.UserID,
+		arg.WorkspaceID,
+		arg.ChatID,
+		arg.Offset,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CortexObject
+	for rows.Next() {
+		var i CortexObject
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.ContentSize,
+			&i.Metadata,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.DeletedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listObjectsWithMetadataFilter = `-- name: ListObjectsWithMetadataFilter :many
+SELECT id, user_id, content_size, metadata, created_at, updated_at, deleted_at
+FROM cortex.object
+WHERE user_id = $1
+  AND deleted_at IS NULL
+  AND ($2::jsonb IS NULL OR metadata @> $2)
+ORDER BY
+  created_at DESC,
+  -- Defensive ordering: if multiple revisions are marked is_latest (during migration or race),
+  -- return the highest revision number first. COALESCE handles NULL/invalid revision fields.
+  COALESCE((metadata->>'revision')::int, -1) DESC NULLS LAST
+LIMIT $4
+OFFSET $3
+`
+
+type ListObjectsWithMetadataFilterParams struct {
+	UserID   string
+	Metadata []byte
+	Offset   int32
+	Limit    int32
+}
+
+func (q *Queries) ListObjectsWithMetadataFilter(ctx context.Context, arg ListObjectsWithMetadataFilterParams) ([]CortexObject, error) {
+	rows, err := q.db.Query(ctx, listObjectsWithMetadataFilter,
+		arg.UserID,
+		arg.Metadata,
+		arg.Offset,
+		arg.Limit,
+	)
 	if err != nil {
 		return nil, err
 	}

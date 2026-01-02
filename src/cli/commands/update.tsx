@@ -744,7 +744,7 @@ async function downloadAndVerifyChecksum(binaryUrl: string, binaryPath: string):
 
   // Calculate actual checksum of downloaded file
   const fileData = await readFile(binaryPath);
-  const hashBuffer = await crypto.subtle.digest("SHA-256", fileData);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", new Uint8Array(fileData));
   const actualHash = Array.from(new Uint8Array(hashBuffer))
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");

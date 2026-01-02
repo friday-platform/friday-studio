@@ -152,11 +152,15 @@ export const FileDataSchema = z.object({
   mimeType: z
     .string()
     .describe("MIME type (e.g., text/csv, application/json). Always populated by storage layer."),
+  originalName: z
+    .string()
+    .optional()
+    .describe("Original filename from upload. Optional for backward compatibility."),
 });
 export type FileData = z.infer<typeof FileDataSchema>;
 
 /** File artifact data (input) - omits fields populated by storage layer */
-export const FileDataInputSchema = FileDataSchema.omit({ mimeType: true });
+export const FileDataInputSchema = FileDataSchema.omit({ mimeType: true, originalName: true });
 export type FileDataInput = z.infer<typeof FileDataInputSchema>;
 
 /** Table data schema */

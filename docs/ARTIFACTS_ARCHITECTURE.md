@@ -107,7 +107,6 @@ updateArtifact(artifactId, data, revisionMessage?) → ArtifactWithRevision
 getArtifact(artifactId, revision?) → ArtifactWithRevision | null
 getArtifactsByWorkspace(workspaceId, limit = 100) → ArtifactWithRevision[]
 getArtifactsByChatId(chatId, limit = 100) → ArtifactWithRevision[]
-listRevisions(artifactId) → ArtifactRevisionSummary[]
 softDeleteArtifact(artifactId) → void
 ```
 

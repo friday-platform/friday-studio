@@ -3,6 +3,7 @@ sql:
   - engine: postgresql
     queries: query.sql
     schema:
+      - ../../../supabase/migrations/20251114020000_create_bounce_tables.sql
       - ../../../supabase/migrations/20251223000000_create_cortex_schema.sql
     gen:
       go:
