@@ -24,7 +24,7 @@ $$ LANGUAGE plpgsql;
 
 -- Create object table for storing blob metadata and references
 CREATE TABLE cortex.object (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v1mc(),
+    id UUID PRIMARY KEY DEFAULT extensions.uuid_generate_v1mc(),
     user_id TEXT NOT NULL REFERENCES public."user"(id) ON DELETE CASCADE,
     content_size BIGINT,
     metadata JSONB NOT NULL DEFAULT '{}',
