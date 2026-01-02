@@ -99,7 +99,7 @@
     "npm:eslint@^9.39.2": "9.39.2",
     "npm:evalite@^1.0.0-beta.15": "1.0.0-beta.15_ai@5.0.117__zod@4.3.2_zod@4.3.2",
     "npm:fast-glob@^3.3.3": "3.3.3",
-    "npm:globals@^16.5.0": "16.5.0",
+    "npm:globals@17": "17.0.0",
     "npm:hono-openapi@^1.1.2": "1.1.2_@hono+standard-validator@0.2.1__@standard-schema+spec@1.0.0__hono@4.11.3_@standard-community+standard-json@0.3.5__@standard-schema+spec@1.0.0__@types+json-schema@7.0.15__quansync@0.2.11__zod@4.3.2_@standard-community+standard-openapi@0.2.9__@standard-community+standard-json@0.3.5___@standard-schema+spec@1.0.0___@types+json-schema@7.0.15___quansync@0.2.11___zod@4.3.2__@standard-schema+spec@1.0.0__openapi-types@12.1.3__zod@4.3.2__@types+json-schema@7.0.15_@types+json-schema@7.0.15_hono@4.11.3_openapi-types@12.1.3_zod@4.3.2",
     "npm:hono@^4.10.4": "4.11.3",
     "npm:hono@^4.11.1": "4.11.3",
@@ -3615,6 +3615,9 @@
     "globals@16.5.0": {
       "integrity": "sha512-c/c15i26VrJ4IRt5Z89DnIzCGDn9EcebibhAOjw5ibqEHsE1wLUgkPn9RDmNcUKyU87GeaL633nyJ+pplFR2ZQ=="
     },
+    "globals@17.0.0": {
+      "integrity": "sha512-gv5BeD2EssA793rlFWVPMMCqefTlpusw6/2TbAVMy0FzcG8wKJn4O+NqJ4+XWmmwrayJgw5TzrmWjFgmz1XPqw=="
+    },
     "globalyzer@0.1.0": {
       "integrity": "sha512-40oNTM9UfG6aBmuKxk/giHn5nQ8RVz/SS4Ir6zgzOv9/qC3kKZ9v4etGTcJbEl/NyVQH7FGU7d+X1egr57Md2Q=="
     },
@@ -5402,7 +5405,7 @@
             "npm:eslint-config-prettier@^10.1.8",
             "npm:eslint-plugin-svelte@^3.13.1",
             "npm:eslint@^9.39.2",
-            "npm:globals@^16.5.0",
+            "npm:globals@17",
             "npm:nanoid@^5.1.6",
             "npm:prettier-plugin-svelte@^3.4.1",
             "npm:prettier@^3.7.4",
@@ -5488,7 +5491,7 @@
             "npm:eslint-config-prettier@^10.1.8",
             "npm:eslint-plugin-svelte@^3.13.1",
             "npm:eslint@^9.39.2",
-            "npm:globals@^16.5.0",
+            "npm:globals@17",
             "npm:prettier-plugin-svelte@^3.4.1",
             "npm:prettier@^3.7.4",
             "npm:svelte-check@^4.3.5",
