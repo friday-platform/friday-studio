@@ -28,7 +28,7 @@
   "nodeModulesDir": "auto",
   "tasks": {
     "prepare": "deno run -A  npm:husky@^9",
-    "lint-staged": "deno run -A npm:lint-staged@^16.2.6",
+    "lint-staged": "deno run -A npm:lint-staged@^16.2.7",
     "atlas": "deno run -q --allow-all --unstable-broadcast-channel --unstable-worker-options --unstable-kv --unstable-raw-imports --env-file --watch src/cli.tsx",
     "start": "deno run --allow-all --unstable-raw-imports src/cli.tsx",
     "dev": "LINK_DEV_MODE=true deno run -A npm:concurrently -n daemon,link,web -c blue,green,magenta 'deno task atlas daemon start' 'cd apps/link && deno task dev' 'cd apps/web-client && deno task dev'",
