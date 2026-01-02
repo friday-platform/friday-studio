@@ -157,4 +157,5 @@ type User struct {
 	ProfilePhoto     string             `db:"profile_photo" json:"profilePhoto"`
 	PoolAvailable    bool               `db:"pool_available" json:"poolAvailable"`
 	Name             pgtype.Text        `db:"name" json:"name"`
+	StripeCustomerID pgtype.Text        `db:"stripe_customer_id" json:"stripeCustomerId"`
 }

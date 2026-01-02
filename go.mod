@@ -22,6 +22,7 @@ require (
 	github.com/sendgrid/sendgrid-go v3.16.1+incompatible
 	github.com/slack-go/slack v0.17.3
 	github.com/stretchr/testify v1.11.1
+	github.com/stripe/stripe-go/v84 v84.1.0
 	github.com/tink-crypto/tink-go-gcpkms/v2 v2.2.0
 	github.com/tink-crypto/tink-go/v2 v2.6.0
 	go.opentelemetry.io/collector/config/configtls v1.48.0

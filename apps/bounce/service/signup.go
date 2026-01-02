@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	bouncerepo "github.com/tempestteam/atlas/apps/bounce/repo"
+	"github.com/tempestteam/atlas/apps/bounce/stripe"
 	pgxdb "github.com/tempestteam/atlas/pkg/x/middleware/pgxdb"
 	pgxerr "github.com/tempestteam/atlas/pkg/x/pgxhelper"
 )
@@ -423,6 +425,14 @@ func completeSignup(w http.ResponseWriter, r *http.Request) {
 		pgxerr.WithContext(ctx),
 	)
 
+	// Get the pool before the request context is done - needed for async Stripe operations
+	pool, err := pgxdb.PoolFromContext(ctx, "signup")
+	if err != nil {
+		log.Error("Could not get database pool", "error", err)
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+
 	tx, queries, conn, err := queriesWithTx(ctx)
 	defer expect.DeferRollbackRelease(tx, conn)
 	if err != nil {
@@ -456,6 +466,58 @@ func completeSignup(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_, _ = fmt.Fprintf(w, `{"success": true}`)
+
+	// Async: Create Stripe customer (non-blocking, fire-and-forget)
+	go createStripeCustomer(log, cfg, pool, user)
+}
+
+// createStripeCustomer creates a Stripe customer for the given user and stores the customer ID.
+// This is a fire-and-forget operation - errors are logged but don't affect the user's signup.
+func createStripeCustomer(log *slog.Logger, cfg Config, pool *pgxpool.Pool, user *bouncerepo.User) {
+	sublog := log.WithGroup("create.stripe.signup").With("user_id", user.ID)
+
+	if cfg.StripeSecretKey == "" {
+		sublog.Debug("Stripe not configured, skipping customer creation")
+		return
+	}
+
+	// Skip if user already has a Stripe customer (idempotency)
+	if user.StripeCustomerID.Valid && user.StripeCustomerID.String != "" {
+		sublog.Debug("User already has Stripe customer", "stripe_customer_id", user.StripeCustomerID.String)
+		return
+	}
+
+	stripeCID, err := stripe.CreateCustomer(cfg.StripeSecretKey, user.ID, user.Email, user.FullName)
+	if err != nil {
+		sublog.Error("Could not create Stripe customer", "error", err)
+		return
+	}
+
+	sublog.Info("Created Stripe customer", "stripe_customer_id", stripeCID)
+
+	// Store the Stripe customer ID in the database
+	// Use timeout to prevent hanging during shutdown
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	dbConn, err := pool.Acquire(ctx)
+	if err != nil {
+		sublog.Error("Could not acquire database connection", "error", err)
+		return
+	}
+	defer dbConn.Release()
+
+	repo := bouncerepo.New(dbConn)
+	err = repo.UpdateUserStripeCustomerID(ctx, &bouncerepo.UpdateUserStripeCustomerIDParams{
+		ID:               user.ID,
+		StripeCustomerID: pgtype.Text{String: stripeCID, Valid: true},
+	})
+	if err != nil {
+		sublog.Error("Could not save Stripe customer ID", "error", err)
+		return
+	}
+
+	sublog.Info("Saved Stripe customer ID to database")
 }
 
 // claimOrCreateUser tries to claim a pre-provisioned pool user first, falling back to direct creation.

@@ -119,3 +119,9 @@ WHERE id = (
     FOR UPDATE SKIP LOCKED
 )
 RETURNING *;
+
+-- name: UpdateUserStripeCustomerID :exec
+-- Updates a user's Stripe customer ID after successful Stripe customer creation.
+UPDATE public."user"
+SET stripe_customer_id = $2
+WHERE id = $1;

@@ -4,6 +4,7 @@ sql:
     queries: query.sql
     schema:
       - ../../../supabase/migrations/20251114020000_create_bounce_tables.sql
+      - ../../../supabase/migrations/20251230223546_add_stripe_customer_id.sql
     gen:
       go:
         package: repo

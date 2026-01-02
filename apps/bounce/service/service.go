@@ -41,6 +41,7 @@ type Config struct {
 	ServiceName               string `env:"SERVICE_NAME" envDefault:"bounce"`
 	SignupHMACSecret          string `env:"SIGNUP_HMAC_SECRET,required"`
 	SignupHostname            string `env:"SIGNUP_HOSTNAME" envDefault:"http://localhost:8083"`
+	StripeSecretKey           string `env:"STRIPE_SECRET_KEY_FILE,file"`
 	CORSAllowedOrigins        string `env:"CORS_ALLOWED_ORIGINS" envDefault:"http://localhost:8080"`
 
 	TLSConfig *server.TLSConfig
