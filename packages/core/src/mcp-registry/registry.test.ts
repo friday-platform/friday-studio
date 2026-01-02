@@ -42,8 +42,12 @@ describe("mcpServersRegistry", () => {
 
             // At this point, value must be a string due to the type guard above
             if (typeof value === "string") {
+              // "auto" means credential is injected at runtime via Link
               const isPlaceholder =
-                value.startsWith("your-") || value.includes("${") || value.includes("xxxx");
+                value.startsWith("your-") ||
+                value.includes("${") ||
+                value.includes("xxxx") ||
+                value === "auto";
               assertEquals(
                 isPlaceholder,
                 true,

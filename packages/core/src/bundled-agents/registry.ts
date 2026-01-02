@@ -165,15 +165,14 @@ export const bundledAgentsRegistry: Record<string, BundledAgentRegistryItem> = {
     requiredConfig: [
       {
         from: "link",
-        envKey: "GOOGLE_OAUTH_CREDENTIALS",
-        provider: "google",
-        key: "credentials",
-        // TODO(#1080): Update to google-workspace MCP credential pattern after PR #1080 merges
-        description: "Google OAuth credentials from Link",
+        envKey: "GOOGLE_CALENDAR_ACCESS_TOKEN",
+        provider: "google-calendar",
+        key: "access_token",
+        description: "Google Calendar OAuth token from Link",
       },
     ],
     packagePath: "@atlas/bundled-agents/google",
-    requiresMCP: ["google-calendar-mcp"],
+    requiresMCP: ["google-calendar"],
   },
 
   "get-summary": {

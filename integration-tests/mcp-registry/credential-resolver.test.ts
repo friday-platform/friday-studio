@@ -7,14 +7,14 @@
  *
  * Requirements:
  * - Link service running on http://localhost:3100
- * - Test will skip gracefully if Link is not available
+ * - Tests will FAIL with clear error message if Link is not available
  * - Requires --allow-net (for HTTP requests) and --allow-env (for client config)
  */
 
 import { assertEquals, assertRejects } from "@std/assert";
 import { afterAll, beforeAll, describe, it } from "@std/testing/bdd";
 import * as jose from "jose";
-import { CredentialNotFoundError, resolveCredentialsByProvider } from "./credential-resolver.ts";
+import { CredentialNotFoundError, resolveCredentialsByProvider } from "@atlas/core";
 
 const LINK_BASE_URL = "http://localhost:3100";
 const TEST_USER_ID = "integration-test-user";
@@ -81,6 +81,18 @@ async function deleteTestCredential(token: string, credentialId: string): Promis
   await response.text();
 }
 
+/**
+ * Google OAuth providers for integration testing.
+ * These require real OAuth flow completion to have valid credentials.
+ */
+const GOOGLE_PROVIDERS = [
+  "google-calendar",
+  "google-gmail",
+  "google-drive",
+  "google-docs",
+  "google-sheets",
+] as const;
+
 describe("credential-resolver integration tests", () => {
   let linkAvailable = false;
   let token = "";
@@ -90,8 +102,7 @@ describe("credential-resolver integration tests", () => {
     linkAvailable = await isLinkAvailable();
 
     if (!linkAvailable) {
-      console.log("⚠️  Link service not available - skipping integration tests");
-      console.log(`   Start Link with: deno task --cwd apps/link start`);
+      // Tests will fail explicitly with clear error messages
       return;
     }
 
@@ -111,8 +122,10 @@ describe("credential-resolver integration tests", () => {
     }
   });
 
-  it("resolves single credential by provider", async () => {
-    if (!linkAvailable) return;
+  it("resolves single credential by provider", async function () {
+    if (!linkAvailable) {
+      throw new Error("SKIP: Link service not available at " + LINK_BASE_URL);
+    }
 
     // Create test credential
     const credId = await createTestCredential(token, "test", "integration-test-single");
@@ -135,8 +148,10 @@ describe("credential-resolver integration tests", () => {
     }
   });
 
-  it("throws CredentialNotFoundError when no credentials exist", async () => {
-    if (!linkAvailable) return;
+  it("throws CredentialNotFoundError when no credentials exist", async function () {
+    if (!linkAvailable) {
+      throw new Error("SKIP: Link service not available at " + LINK_BASE_URL);
+    }
 
     const nonExistentProvider = `test-nonexistent-${crypto.randomUUID()}`;
 
@@ -147,8 +162,10 @@ describe("credential-resolver integration tests", () => {
     );
   });
 
-  it("returns all credentials when multiple exist", async () => {
-    if (!linkAvailable) return;
+  it("returns all credentials when multiple exist", async function () {
+    if (!linkAvailable) {
+      throw new Error("SKIP: Link service not available at " + LINK_BASE_URL);
+    }
 
     // Use registered "test" provider - Link requires known providers
     const provider = "test";
@@ -171,5 +188,90 @@ describe("credential-resolver integration tests", () => {
       createdCredentials.splice(createdCredentials.indexOf(cred1), 1);
       createdCredentials.splice(createdCredentials.indexOf(cred2), 1);
     }
+  });
+});
+
+/**
+ * Check if Google OAuth credentials exist for a provider.
+ * Returns true if at least one credential exists (from completed OAuth flow).
+ */
+async function hasGoogleCredential(provider: string, userId: string): Promise<boolean> {
+  try {
+    const credentials = await resolveCredentialsByProvider(provider, userId);
+    return credentials.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+describe("Google OAuth credential resolution (requires completed OAuth flow)", () => {
+  let linkAvailable = false;
+
+  beforeAll(async () => {
+    linkAvailable = await isLinkAvailable();
+    // linkAvailable checked in each test - tests will fail explicitly if unavailable
+  });
+
+  for (const provider of GOOGLE_PROVIDERS) {
+    it(`resolves ${provider} credentials when OAuth is configured`, async function () {
+      if (!linkAvailable) {
+        throw new Error("SKIP: Link service not available at " + LINK_BASE_URL);
+      }
+
+      const hasCredential = await hasGoogleCredential(provider, TEST_USER_ID);
+      if (!hasCredential) {
+        throw new Error(
+          `SKIP: No ${provider} OAuth credential found - complete OAuth flow to enable`,
+        );
+      }
+
+      const credentials = await resolveCredentialsByProvider(provider, TEST_USER_ID);
+      assertEquals(
+        credentials.length >= 1,
+        true,
+        `Should have at least one ${provider} credential`,
+      );
+      assertEquals(credentials[0]!.provider, provider);
+      assertEquals(credentials[0]!.type, "oauth");
+    });
+  }
+
+  it("resolves google-calendar access_token format (ya29.*)", async function () {
+    if (!linkAvailable) {
+      throw new Error("SKIP: Link service not available at " + LINK_BASE_URL);
+    }
+
+    const hasCredential = await hasGoogleCredential("google-calendar", TEST_USER_ID);
+    if (!hasCredential) {
+      throw new Error(
+        "SKIP: No google-calendar OAuth credential found - complete OAuth flow to enable",
+      );
+    }
+
+    const credentials = await resolveCredentialsByProvider("google-calendar", TEST_USER_ID);
+
+    // Get full credential to check token format
+    const credId = credentials[0]!.id;
+    const response = await fetch(`${LINK_BASE_URL}/internal/v1/credentials/${credId}`, {
+      headers: { "X-Atlas-User-ID": TEST_USER_ID },
+    });
+
+    if (!response.ok) {
+      throw new Error(
+        "SKIP: Could not fetch full credential - internal API returned " + response.status,
+      );
+    }
+
+    const { credential } = (await response.json()) as {
+      credential: { secret: { access_token?: string } };
+    };
+    const accessToken = credential.secret.access_token;
+
+    assertEquals(typeof accessToken, "string", "access_token should be a string");
+    assertEquals(
+      accessToken?.startsWith("ya29."),
+      true,
+      "Google access token should start with ya29.",
+    );
   });
 });

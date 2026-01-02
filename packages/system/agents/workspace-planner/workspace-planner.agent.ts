@@ -22,7 +22,10 @@ import {
   mapNeedToMCPServers,
   matchBundledAgents,
 } from "@atlas/core/mcp-registry/deterministic-matching";
-import { mcpServersRegistry } from "@atlas/core/mcp-registry/registry-consolidated";
+import {
+  getAvailableIntegrationsPrompt,
+  mcpServersRegistry,
+} from "@atlas/core/mcp-registry/registry-consolidated";
 import { validateRequiredFields } from "@atlas/core/mcp-registry/requirement-validator";
 import { JSONSchemaSchema } from "@atlas/fsm-engine";
 import { getDefaultProviderOpts, registry } from "@atlas/llm";
@@ -104,6 +107,11 @@ Examples:
 - Good: ONE "Website Monitor" with targets: ["Nike.com", "Adidas.com"] (same operation, different targets)
 - Bad: ONE "Research + Email Agent" (mixes research capability with email integration)
 - Bad: ONE "Calendar + Research + Email Pipeline" (bundles unrelated systems)
+
+### Agent needs
+
+The \`needs\` array lists external integrations (e.g., calendar, email, discord, sheets).
+Use keywords from the available integrations list. Include ALL services the agent uses.
 
 ### Agent configuration
 
@@ -273,6 +281,12 @@ export const workspacePlannerAgent = createAgent<WorkspacePlannerInput, Workspac
             role: "system",
             content: SYSTEM_PROMPT,
             providerOptions: getDefaultProviderOpts("anthropic"),
+          },
+          {
+            role: "system",
+            content: `## Available integrations (use these keywords in agent needs)
+
+${getAvailableIntegrationsPrompt()}`,
           },
           { role: "system", content: `Current date: ${getTodaysDate()}` },
           { role: "user", content: signalsAndAgentsPrompt },

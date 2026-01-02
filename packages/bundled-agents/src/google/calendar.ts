@@ -1,5 +1,5 @@
 import { env } from "node:process";
-import type { ToolCall, ToolResult } from "@atlas/agent-sdk";
+import type { LinkCredentialRef, ToolCall, ToolResult } from "@atlas/agent-sdk";
 import { createAgent } from "@atlas/agent-sdk";
 import {
   collectToolUsageFromSteps,
@@ -50,19 +50,24 @@ export const googleCalendarAgent = createAgent<string, GoogleCalendarAgentResult
   environment: {
     required: [
       {
-        name: "GOOGLE_OAUTH_CREDENTIALS",
-        description:
-          "Google OAuth credentials JSON for Google Calendar API access via Google Calendar MCP Server",
+        name: "GOOGLE_CALENDAR_ACCESS_TOKEN",
+        description: "Google Calendar OAuth access token from Link",
+        linkRef: { provider: "google-calendar", key: "access_token" },
       },
     ],
   },
-  // Provide Google Cloud MCP config here so callers (e.g., orchestrator) can merge and use it
-  // with google-calendar-mcp using GOOGLE_OAUTH_CREDENTIALS token via npx.
+  // MCP config for Google Calendar via workspace-mcp HTTP transport
   mcp: {
-    "google-cal": {
-      transport: { type: "stdio", command: "npx", args: ["-y", "@cocal/google-calendar-mcp"] },
-      // @TODO: should this be auto (might be impacted by auth)
-      env: { GOOGLE_OAUTH_CREDENTIALS: "auto" },
+    "google-calendar": {
+      transport: { type: "http", url: env.GOOGLE_WORKSPACE_MCP_URL || "http://localhost:8000/mcp" },
+      auth: { type: "bearer", token_env: "GOOGLE_CALENDAR_ACCESS_TOKEN" },
+      env: {
+        GOOGLE_CALENDAR_ACCESS_TOKEN: {
+          from: "link",
+          provider: "google-calendar",
+          key: "access_token",
+        } satisfies LinkCredentialRef,
+      },
       client_config: { timeout: { progressTimeout: "2m", maxTotalTimeout: "30m" } },
     },
   },

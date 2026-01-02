@@ -128,6 +128,57 @@ evalite<{ intent: string }, WorkspacePlan, string>("Workspace Planner Agent - Cr
           6. Define sequential job flow with clear dependencies between phases
           The plan must show it grasps the complexity: initial filtering phase → persistence layer → daily selection → research → structured output.`,
     },
+    {
+      input: {
+        intent:
+          "Every morning at 8am, check my Google Calendar for today's meetings. For each meeting, email me a summary to work@example.com.",
+      },
+      expected: `The workspace plan should:
+        1. Define a daily schedule signal at 8am
+        2. Include separate agents for: calendar reading (Google Calendar), email composition/sending
+        3. Agent needs should include "calendar" or "google-calendar" (to match Google Calendar MCP)
+        4. Capture configuration: email address (work@example.com)
+        5. Define job flow: fetch calendar → compose email → send
+        The plan should demonstrate that the planner can identify Google Calendar as a required integration.`,
+    },
+    {
+      input: {
+        intent:
+          "Every Monday at 9am, create a weekly digest: pull my Google Calendar events for the week, unread emails from Gmail, and new files added to my Google Drive folder. Compile everything into one email and send it to summary@example.com.",
+      },
+      expected: `The workspace plan should:
+        1. Define a weekly schedule signal for Monday mornings at 9am
+        2. Include separate agents for: calendar reader (Google Calendar), email fetcher (Gmail), file fetcher (Google Drive), digest compiler, email sender
+        3. Agent needs should include multiple Google services: "calendar" or "google-calendar", "gmail" or "email", "drive" or "google-drive"
+        4. Capture configuration: email recipient (summary@example.com), timeframe (week)
+        5. Define job flow with data aggregation: fetch calendar → fetch gmail → fetch drive → compile digest → send email
+        The plan should demonstrate that the planner can identify multiple Google services as separate needs.`,
+    },
+    {
+      input: {
+        intent:
+          "When a new event is added to my Google Calendar, create a Google Doc with meeting notes template and add a link to the doc in the calendar event description.",
+      },
+      expected: `The workspace plan should:
+        1. Define a webhook or polling signal to detect new calendar events
+        2. Include separate agents for: calendar event monitoring (Google Calendar), document creation (Google Docs), calendar update (Google Calendar)
+        3. Agent needs should include: "calendar" or "google-calendar", "docs" or "google-docs"
+        4. Define job flow: detect new event → create doc → update event with doc link
+        The plan should show understanding of event-driven automation with multiple Google service integrations.`,
+    },
+    {
+      input: {
+        intent:
+          "Every day at 5pm, check my Gmail for emails from clients (filter by label 'clients'). For urgent emails, send me a Discord notification to #alerts channel. Also log email details to a Google Sheet for tracking.",
+      },
+      expected: `The workspace plan should:
+        1. Define a daily schedule signal at 5pm
+        2. Include separate agents for: Gmail reader (with label filtering), urgency detector/analyzer, Discord notifier, spreadsheet logger (Google Sheets)
+        3. Agent needs should include: "gmail" or "email", "discord", "sheets" or "google-sheets" or "spreadsheet"
+        4. Capture configuration: Gmail label ('clients'), Discord channel (#alerts)
+        5. Define job flow: fetch emails → analyze urgency → (conditional) send Discord alert + log to sheet
+        The plan should demonstrate mixed integration needs: Google services + third-party services.`,
+    },
   ],
   task: async (input) => {
     const { context } = adapter.createContext();
@@ -222,7 +273,112 @@ evalite<{ intent: string; artifactId?: string; isRevision?: boolean }, Workspace
   },
 );
 
-// Test suite 3: Validation failure tests
+// Test suite 3: Google Services Precision Tests
+// Tests that the planner correctly identifies specific Google services without over-matching
+evalite<{ intent: string }, WorkspacePlan, string>(
+  "Workspace Planner Agent - Google Services Precision",
+  {
+    data: [
+      // === SINGLE SERVICE PRECISION ===
+      {
+        input: { intent: "Check my calendar for tomorrow" },
+        expected: `The workspace plan should:
+        1. Include an agent that needs Google Calendar integration
+        2. Agent needs should include "calendar" or "google-calendar"
+        3. Should NOT include gmail, drive, docs, or sheets integrations
+        4. Keep agent descriptions focused on calendar operations
+        The plan should demonstrate precise service identification - calendar only, no other Google services.`,
+      },
+      {
+        input: { intent: "Read my latest emails" },
+        expected: `The workspace plan should:
+        1. Include an agent that needs Gmail integration
+        2. Agent needs should include "gmail" or "email" or "google-gmail"
+        3. Should NOT include calendar, drive, docs, or sheets integrations
+        4. Keep agent descriptions focused on email reading
+        The plan should demonstrate precise service identification - gmail only, no other Google services.`,
+      },
+      {
+        input: { intent: "Find files in my Google Drive" },
+        expected: `The workspace plan should:
+        1. Include an agent that needs Google Drive integration
+        2. Agent needs should include "drive" or "google-drive"
+        3. Should NOT include calendar, gmail, docs, or sheets integrations
+        4. Keep agent descriptions focused on file searching/management
+        The plan should demonstrate precise service identification - drive only, no other Google services.`,
+      },
+
+      // === MULTI-SERVICE COMBOS ===
+      {
+        input: { intent: "Check my calendar and then email the attendees" },
+        expected: `The workspace plan should:
+        1. Include agents that need both Google Calendar AND Gmail integrations
+        2. Agent needs should include calendar-related identifiers ("calendar" or "google-calendar")
+        3. Agent needs should also include email-related identifiers ("gmail" or "google-gmail" or "email")
+        4. Define job flow: fetch calendar events → compose/send email to attendees
+        5. Should NOT include drive, docs, or sheets integrations
+        The plan should demonstrate correct identification of exactly two Google services needed.`,
+      },
+      {
+        input: { intent: "Find the document in Drive and edit it" },
+        expected: `The workspace plan should:
+        1. Include agents that need both Google Drive AND Google Docs integrations
+        2. Agent needs should include drive-related identifiers ("drive" or "google-drive")
+        3. Agent needs should also include docs-related identifiers ("docs" or "google-docs")
+        4. Define job flow: search drive → open/edit document
+        5. Should NOT include calendar, gmail, or sheets integrations
+        The plan should demonstrate correct identification of exactly two Google services: Drive for finding, Docs for editing.`,
+      },
+
+      // === NEGATIVE TESTS (should NOT match Google services) ===
+      {
+        input: { intent: "Add this to my Outlook calendar" },
+        expected: `The workspace plan should:
+        1. NOT include Google Calendar integration (user explicitly mentioned Outlook)
+        2. Agent needs should NOT include "google-calendar" or similar Google identifiers
+        3. May include Outlook-specific or generic calendar integrations instead
+        4. Respect the user's explicit choice of Outlook over Google
+        The plan should demonstrate that explicit non-Google service requests are respected.`,
+      },
+      {
+        input: { intent: "Create an Excel spreadsheet" },
+        expected: `The workspace plan should:
+        1. NOT include Google Sheets integration (user explicitly mentioned Excel)
+        2. Agent needs should NOT include "google-sheets" or "sheets" Google identifiers
+        3. May include Excel-specific or generic spreadsheet capabilities instead
+        4. Respect the user's explicit choice of Excel over Google Sheets
+        The plan should demonstrate that explicit non-Google service requests are respected.`,
+      },
+    ],
+    task: async (input) => {
+      const { context } = adapter.createContext();
+
+      // Execute agent
+      const result = await workspacePlannerAgent.execute(input, context);
+      if (!result.ok) {
+        logger.error("Agent execution failed", { error: result.error });
+      }
+      assert(result.ok, "Agent execution failed");
+      assert(result.data.artifactId, "Missing artifact ID");
+      assert(result.data.revision === 1, "Expected revision 1 for new plan");
+
+      // Fetch artifact via daemon API
+      const artifactResponse = await parseResult(
+        client.artifactsStorage[":id"].$get({ param: { id: result.data.artifactId } }),
+      );
+      if (!artifactResponse.ok) {
+        logger.error("Failed to fetch artifact", { error: artifactResponse.error });
+      }
+      assert(artifactResponse.ok, `Failed to fetch artifact`);
+      assert(artifactResponse.data.artifact.data.type === "workspace-plan", "Wrong artifact type");
+
+      return artifactResponse.data.artifact.data.data;
+    },
+    scorers: [LLMJudge],
+  },
+);
+
+// Test suite 4: Validation failure tests
 // Note: This test validates error handling by expecting the agent to fail when
 // referencing an unavailable integration (Zendesk)
 evalite<{ intent: string }, string, string>("Workspace Planner Agent - Validation", {

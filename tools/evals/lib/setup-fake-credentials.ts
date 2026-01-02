@@ -27,7 +27,11 @@ export function setupFakeCredentials(envVars: string[] | "all") {
           "TAVILY_API_KEY",
           "GITHUB_TOKEN",
           "GITHUB_PERSONAL_ACCESS_TOKEN",
-          "GOOGLE_OAUTH_CREDENTIALS",
+          "GOOGLE_CALENDAR_ACCESS_TOKEN",
+          "GOOGLE_GMAIL_ACCESS_TOKEN",
+          "GOOGLE_DRIVE_ACCESS_TOKEN",
+          "GOOGLE_DOCS_ACCESS_TOKEN",
+          "GOOGLE_SHEETS_ACCESS_TOKEN",
           "ACCUWEATHER_API_KEY",
           "DISCORD_TOKEN",
           "DISCORD_BOT_TOKEN",
@@ -91,12 +95,8 @@ function generateFakeValue(envVarName: string): string {
   if (envVarName.includes("NOTION")) {
     return `secret_fake_eval_${random}`;
   }
-  if (envVarName.includes("GOOGLE_OAUTH_CREDENTIALS")) {
-    return JSON.stringify({
-      client_id: `fake_eval_${random}.apps.googleusercontent.com`,
-      client_secret: `fake_eval_secret_${random}`,
-      refresh_token: `fake_eval_refresh_${random}`,
-    });
+  if (envVarName.includes("GOOGLE_") && envVarName.includes("_ACCESS_TOKEN")) {
+    return `ya29.fake_eval_${random}`;
   }
   if (envVarName.includes("WEBHOOK_URL") || envVarName.includes("URL")) {
     return `https://fake-eval-webhook.example.com/${random}`;

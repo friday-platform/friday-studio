@@ -1,7 +1,12 @@
-import { logger } from "@atlas/logger";
 import { config } from "../config.ts";
 import { atlassianProvider } from "./atlassian.ts";
-import { createGoogleProvider } from "./google.ts";
+import {
+  createGoogleCalendarProvider,
+  createGoogleDocsProvider,
+  createGoogleDriveProvider,
+  createGoogleGmailProvider,
+  createGoogleSheetsProvider,
+} from "./google-providers.ts";
 import { linearProvider } from "./linear.ts";
 import { notionProvider } from "./notion.ts";
 import { slackProvider } from "./slack.ts";
@@ -54,11 +59,16 @@ export class ProviderRegistry {
  */
 export const registry = new ProviderRegistry();
 
-const googleProvider = createGoogleProvider();
-if (googleProvider) {
-  registry.register(googleProvider);
-} else {
-  logger.info("Skipping Google provider: GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET not set");
+// Google Workspace providers (each has its own OAuth scopes)
+const googleProviders = [
+  createGoogleCalendarProvider(),
+  createGoogleGmailProvider(),
+  createGoogleDriveProvider(),
+  createGoogleDocsProvider(),
+  createGoogleSheetsProvider(),
+];
+for (const provider of googleProviders) {
+  if (provider) registry.register(provider);
 }
 
 // Register built-in providers

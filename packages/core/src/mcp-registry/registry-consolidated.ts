@@ -1,5 +1,65 @@
-/** biome-ignore-all lint/suspicious/noTemplateCurlyInString: mcp-remote requires ${} interpolation */
-import type { MCPServersRegistry } from "./schemas.ts";
+import process from "node:process";
+import type { MCPServerMetadata, MCPServersRegistry } from "./schemas.ts";
+
+/**
+ * Google Workspace service definitions.
+ * All services use workspace-mcp with OAuth credentials injected at runtime.
+ */
+const GOOGLE_WORKSPACE_SERVICES = [
+  {
+    id: "google-calendar",
+    name: "Google Calendar",
+    domains: ["google-calendar", "calendar", "gcal"],
+  },
+  {
+    id: "google-gmail",
+    name: "Gmail",
+    domains: ["google-gmail", "gmail", "email", "google-email"],
+  },
+  { id: "google-drive", name: "Google Drive", domains: ["google-drive", "drive", "gdrive"] },
+  { id: "google-docs", name: "Google Docs", domains: ["google-docs", "docs"] },
+  {
+    id: "google-sheets",
+    name: "Google Sheets",
+    domains: ["google-sheets", "sheets", "spreadsheet"],
+  },
+] as const;
+
+/**
+ * Get Google Workspace MCP URL from environment.
+ * Falls back to localhost for local development.
+ */
+function getGoogleWorkspaceMcpUrl(): string {
+  return process.env.GOOGLE_WORKSPACE_MCP_URL || "http://localhost:8000/mcp";
+}
+
+function createGoogleWorkspaceEntry(
+  spec: (typeof GOOGLE_WORKSPACE_SERVICES)[number],
+): MCPServerMetadata {
+  // Token env var: google-calendar -> GOOGLE_CALENDAR_ACCESS_TOKEN
+  const tokenEnvKey = `${spec.id.toUpperCase().replace(/-/g, "_")}_ACCESS_TOKEN`;
+
+  return {
+    id: spec.id,
+    name: spec.name,
+    domains: [...spec.domains],
+    source: "static",
+    securityRating: "high",
+    configTemplate: {
+      transport: { type: "http", url: getGoogleWorkspaceMcpUrl() },
+      auth: { type: "bearer", token_env: tokenEnvKey },
+      env: { [tokenEnvKey]: { from: "link", provider: spec.id, key: "access_token" } },
+      client_config: { timeout: { progressTimeout: "60s", maxTotalTimeout: "30m" } },
+    },
+    requiredConfig: [
+      { key: tokenEnvKey, description: `${spec.name} access token from Link`, type: "string" },
+    ],
+  };
+}
+
+const googleWorkspaceEntries = Object.fromEntries(
+  GOOGLE_WORKSPACE_SERVICES.map((spec) => [spec.id, createGoogleWorkspaceEntry(spec)]),
+) as Record<string, MCPServerMetadata>;
 
 /**
  * Consolidated MCP servers registry
@@ -118,7 +178,7 @@ export const mcpServersRegistry: MCPServersRegistry = {
     playwright: {
       id: "playwright",
       name: "Playwright Browser Automation",
-      domains: ["automated testing", "ui automation", "screenshot generation"],
+      domains: ["playwright", "browser", "web-scraping", "scraping"],
       source: "static",
       securityRating: "medium",
       configTemplate: {
@@ -134,7 +194,7 @@ export const mcpServersRegistry: MCPServersRegistry = {
     time: {
       id: "time",
       name: "Time & Timezone",
-      domains: ["timekeeping", "timezone conversion"],
+      domains: ["timekeeping", "timezone-conversion"],
       source: "static",
       securityRating: "high",
       configTemplate: {
@@ -161,7 +221,7 @@ export const mcpServersRegistry: MCPServersRegistry = {
     "google-genai-toolbox": {
       id: "google-genai-toolbox",
       name: "Google GenAI Toolbox",
-      domains: ["google genai"],
+      domains: ["google-genai"],
       source: "static",
       securityRating: "medium",
       configTemplate: {
@@ -411,6 +471,34 @@ export const mcpServersRegistry: MCPServersRegistry = {
         },
       ],
     },
+    // Google Workspace services (generated from GOOGLE_WORKSPACE_SERVICES)
+    ...googleWorkspaceEntries,
   },
   metadata: { version: "2.0.0", lastUpdated: "2025-01-27" },
 };
+
+let _cachedIntegrationsPrompt: string | null = null;
+
+/**
+ * Returns a formatted string of available integrations for use in LLM prompts.
+ * Lists each server with its recognized keywords (domains).
+ *
+ * Example output:
+ * - Google Calendar: google-calendar, calendar, gcal
+ * - Slack: slack
+ *
+ * Scaling: ~40 chars per server, ~800 chars for 20 servers.
+ * For 100+ servers, consider semantic search or category-based injection.
+ *
+ * @returns List of integration names with their keywords
+ */
+export function getAvailableIntegrationsPrompt(): string {
+  if (_cachedIntegrationsPrompt) return _cachedIntegrationsPrompt;
+  const lines: string[] = [];
+  for (const server of Object.values(mcpServersRegistry.servers)) {
+    lines.push(`- ${server.name}: ${server.domains.join(", ")}`);
+  }
+  lines.sort((a, b) => a.localeCompare(b));
+  _cachedIntegrationsPrompt = lines.join("\n");
+  return _cachedIntegrationsPrompt;
+}
