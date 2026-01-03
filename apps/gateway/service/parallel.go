@@ -19,6 +19,7 @@ var allowedProxyHeaders = map[string]bool{
 	"accept-language":  true,
 	"user-agent":       true,
 	"cache-control":    true,
+	"parallel-beta":    true,
 }
 
 func (s *Service) HandleParallelProxy(w http.ResponseWriter, r *http.Request) {

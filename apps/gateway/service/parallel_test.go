@@ -20,6 +20,7 @@ func TestAllowedProxyHeaders(t *testing.T) {
 		"Accept-Language",
 		"User-Agent",
 		"Cache-Control",
+		"parallel-beta",
 	}
 
 	for _, h := range allowed {
