@@ -8,6 +8,8 @@ import { createProxyFetch, PROVIDER_ENV_VARS } from "./util.ts";
 interface GroqOptions {
   /** API key for Groq. Defaults to GROQ_API_KEY env var */
   apiKey?: string;
+  /** Base URL for API calls. Defaults to Groq's API */
+  baseURL?: string;
   /** HTTP proxy URL. Defaults to GROQ_PROXY_URL env var */
   httpProxy?: string;
 }
@@ -24,6 +26,7 @@ export function createGroqWithOptions(opts: GroqOptions = {}): GroqProvider {
 
   const groqOptions: GroqProviderSettings = {
     apiKey: opts.apiKey || process.env[PROVIDER_ENV_VARS.groq],
+    baseURL: opts.baseURL,
   };
   if (httpProxy) {
     groqOptions.fetch = createProxyFetch(httpProxy);

@@ -26,13 +26,16 @@ function createRegistry() {
       baseURL: `${litellmBaseURL}/v1`,
     });
 
+    // Groq: Use native SDK to preserve provider-specific options (e.g., reasoningFormat)
+    const groqViaLitellm = createGroqWithOptions({ apiKey: litellmKey, baseURL: litellmBaseURL });
+
     // Other providers: Use OpenAI-compatible /chat/completions
     const litellmOpenAI = createOpenAI({ apiKey: litellmKey, baseURL: litellmBaseURL });
 
     return createProviderRegistry({
       anthropic: anthropicViaLitellm,
       google: litellmOpenAI,
-      groq: litellmOpenAI,
+      groq: groqViaLitellm,
       openai: litellmOpenAI,
     });
   }
