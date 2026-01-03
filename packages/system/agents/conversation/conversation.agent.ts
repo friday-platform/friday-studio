@@ -788,7 +788,7 @@ export const conversationAgent = createAgent({
     return { text: finalText };
   },
   environment: {
-    required: [{ name: "GROQ_API_KEY", description: "Groq API key" }],
+    required: [],
     optional: [{ name: "ATLAS_DAEMON_URL", description: "Platform MCP server URL" }],
   },
 });
