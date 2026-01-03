@@ -110,7 +110,7 @@ export const bundledAgentsRegistry: Record<string, BundledAgentRegistryItem> = {
     name: "Email",
     version: "1.0.0",
     description:
-      "Compose and send email notifications via SendGrid. Generates email content from provided data/context, with template support, file attachments, and automatic retry with exponential backoff",
+      "Compose and send email notifications via SendGrid through Atlas gateway. Generates email content from provided data/context, with template support, file attachments, and automatic retry with exponential backoff",
     capabilities: ["email", "notifications", "sendgrid", "messaging"],
     examples: [
       "Send email to john@example.com with subject 'Test' saying hello",
@@ -120,9 +120,10 @@ export const bundledAgentsRegistry: Record<string, BundledAgentRegistryItem> = {
     ],
     requiredConfig: [
       {
-        key: "SENDGRID_API_KEY",
-        description: "SendGrid API key (from https://app.sendgrid.com/settings/api_keys)",
+        key: "FRIDAY_GATEWAY_URL",
+        description: "Gateway URL (e.g., https://gateway.friday.ai)",
         type: "string",
+        examples: ["https://gateway.friday.ai", "http://localhost:8080"],
       },
     ],
     optionalConfig: [
@@ -130,7 +131,7 @@ export const bundledAgentsRegistry: Record<string, BundledAgentRegistryItem> = {
         key: "SENDGRID_FROM_EMAIL",
         description: "Default sender email address",
         type: "string",
-        default: "noreply@tempestdx.com",
+        default: "noreply@hellofriday.ai",
         examples: ["noreply@company.com", "team@startup.io"],
       },
       {
@@ -198,10 +199,17 @@ export const bundledAgentsRegistry: Record<string, BundledAgentRegistryItem> = {
       "Find information about quantum computing trends",
       "Research market analysis for AI startups",
     ],
-    requiredConfig: [
+    requiredConfig: [],
+    optionalConfig: [
       {
-        key: "TAVILY_API_KEY",
-        description: "Tavily API key (from https://app.tavily.com)",
+        key: "FRIDAY_GATEWAY_URL",
+        description: "Gateway URL. When set, routes Parallel API calls through the gateway.",
+        type: "string",
+        examples: ["https://gateway.friday.ai"],
+      },
+      {
+        key: "PARALLEL_API_KEY",
+        description: "Parallel API key for direct access (alternative to gateway).",
         type: "string",
       },
     ],

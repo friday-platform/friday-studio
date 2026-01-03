@@ -45,17 +45,13 @@ export const emailAgent = createAgent<string, Result>({
   },
   environment: {
     required: [
-      {
-        name: "SENDGRID_API_KEY",
-        description: "SendGrid API key for sending emails",
-        validation: "^SG\\.",
-      },
+      { name: "FRIDAY_GATEWAY_URL", description: "Gateway URL (e.g., https://gateway.friday.ai)" },
     ],
     optional: [
       {
         name: "SENDGRID_FROM_EMAIL",
         description: "Default sender email address",
-        default: "noreply@tempestdx.com",
+        default: "noreply@hellofriday.ai",
       },
       { name: "SENDGRID_FROM_NAME", description: "Default sender name" },
       {
@@ -68,13 +64,6 @@ export const emailAgent = createAgent<string, Result>({
   handler: async (prompt, { logger, abortSignal, stream }): Promise<Result> => {
     if (!env.ANTHROPIC_API_KEY) {
       throw new Error("ANTHROPIC_API_KEY environment variable is required");
-    }
-
-    const sendGridApiKey = env.SENDGRID_API_KEY;
-    if (!sendGridApiKey) {
-      throw new Error(
-        "SENDGRID_API_KEY environment variable is required. Please set it in your .env file.",
-      );
     }
 
     stream?.emit({
@@ -280,7 +269,7 @@ CONTENT GUIDELINES (for composeEmail):
       data: { toolName: "Email", content: `Sending email to ${params.to}` },
     });
 
-    const fromEmail = params.from || env.SENDGRID_FROM_EMAIL || "noreply@tempestdx.com";
+    const fromEmail = params.from || env.SENDGRID_FROM_EMAIL || "noreply@hellofriday.ai";
     // atlasUserEmail is already validated above - it's required for sending
     const senderInfo = `<p style="font-size: 12px;">Sent by ${atlasUserEmail}</p>`;
 
@@ -318,8 +307,8 @@ CONTENT GUIDELINES (for composeEmail):
       sandboxMode,
     });
 
-    const result = await sendEmail(sendGridApiKey, emailParams, { sandboxMode });
-    const message_id = result[0]?.headers?.["x-message-id"];
+    const result = await sendEmail(emailParams, { sandboxMode });
+    const message_id = result.headers.get("x-message-id") ?? undefined;
 
     logger.info("Email sent successfully", { to: emailParams.to, message_id });
 

@@ -10,8 +10,6 @@
     "@atlas/llm": "workspace:*",
     "@atlas/logger": "workspace:*",
     "@db/sqlite": "npm:@jsr/db__sqlite@^0.12.0",
-    "@sendgrid/mail": "^8.1.6",
-    "@std/async": "npm:@jsr/std__async@^1.0.15",
     "@std/encoding": "npm:@jsr/std__encoding@^1.0.10",
     "@std/media-types": "npm:@jsr/std__media-types@^1.1.0",
     "@std/path": "npm:@jsr/std__path@^1.1.2",

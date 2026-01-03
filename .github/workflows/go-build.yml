@@ -32,3 +32,6 @@ jobs:
 
       - name: Build signal-gateway service
         run: go build -v ./apps/signal-gateway
+
+      - name: Build gateway service
+        run: go build -v ./apps/gateway

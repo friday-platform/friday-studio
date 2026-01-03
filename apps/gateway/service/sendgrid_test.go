@@ -1,0 +1,259 @@
+package service
+
+import (
+	"fmt"
+	"net/http"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func TestValidateSendEmailRequest(t *testing.T) {
+	tests := []struct {
+		name    string
+		req     SendEmailRequest
+		wantErr string
+	}{
+		{
+			name:    "missing to",
+			req:     SendEmailRequest{From: "sender@example.com", Subject: "test", Content: "hello"},
+			wantErr: "missing required field: to",
+		},
+		{
+			name:    "missing from",
+			req:     SendEmailRequest{To: "test@example.com", Subject: "test", Content: "hello"},
+			wantErr: "missing required field: from",
+		},
+		{
+			name:    "missing subject",
+			req:     SendEmailRequest{To: "test@example.com", From: "sender@example.com", Content: "hello"},
+			wantErr: "missing required field: subject",
+		},
+		{
+			name:    "missing content and template",
+			req:     SendEmailRequest{To: "test@example.com", From: "sender@example.com", Subject: "test"},
+			wantErr: "missing required: content or template_id",
+		},
+		{
+			name:    "invalid to email",
+			req:     SendEmailRequest{To: "not-an-email", From: "sender@example.com", Subject: "test", Content: "hello"},
+			wantErr: "invalid email format: to",
+		},
+		{
+			name:    "invalid from email",
+			req:     SendEmailRequest{To: "test@example.com", From: "bad", Subject: "test", Content: "hello"},
+			wantErr: "invalid email format: from",
+		},
+		{
+			name: "subject too long",
+			req: SendEmailRequest{
+				To:      "test@example.com",
+				From:    "sender@example.com",
+				Subject: string(make([]byte, 1000)),
+				Content: "hello",
+			},
+			wantErr: "subject exceeds maximum length",
+		},
+		{
+			name: "invalid template_id format",
+			req: SendEmailRequest{
+				To:         "test@example.com",
+				From:       "sender@example.com",
+				Subject:    "test",
+				TemplateID: "template with spaces!",
+			},
+			wantErr: "invalid template_id format",
+		},
+		{
+			name: "valid with content",
+			req: SendEmailRequest{
+				To:      "test@example.com",
+				From:    "sender@example.com",
+				Subject: "test",
+				Content: "hello world",
+			},
+			wantErr: "",
+		},
+		{
+			name: "valid with template",
+			req: SendEmailRequest{
+				To:         "test@example.com",
+				From:       "sender@example.com",
+				Subject:    "test",
+				TemplateID: "d-abc123",
+			},
+			wantErr: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateSendEmailRequest(&tt.req)
+			if tt.wantErr == "" {
+				assert.NoError(t, err)
+			} else {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestDetectContentType(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		want    string
+	}{
+		{
+			name:    "plain text",
+			content: "Hello, this is plain text",
+			want:    "text/plain",
+		},
+		{
+			name:    "html with doctype",
+			content: "<!DOCTYPE html><html><body>Hello</body></html>",
+			want:    "text/html",
+		},
+		{
+			name:    "html without doctype",
+			content: "<html><body>Hello</body></html>",
+			want:    "text/html",
+		},
+		{
+			name:    "html fragment",
+			content: "<div><p>Hello world</p></div>",
+			want:    "text/html", // http.DetectContentType detects HTML tags
+		},
+		{
+			name:    "empty string",
+			content: "",
+			want:    "text/plain",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := detectContentType(tt.content)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestCalculateRetryDelay(t *testing.T) {
+	tests := []struct {
+		attempt int
+		want    time.Duration
+	}{
+		{attempt: 1, want: 5 * time.Second},
+		{attempt: 2, want: 10 * time.Second},
+		{attempt: 3, want: 20 * time.Second},
+		{attempt: 4, want: 20 * time.Second}, // capped at max
+		{attempt: 10, want: 20 * time.Second},
+	}
+
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("attempt_%d", tt.attempt), func(t *testing.T) {
+			got := calculateRetryDelay(tt.attempt)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestShouldRetry(t *testing.T) {
+	tests := []struct {
+		status int
+		want   bool
+	}{
+		{status: http.StatusOK, want: false},
+		{status: http.StatusCreated, want: false},
+		{status: http.StatusBadRequest, want: false},
+		{status: http.StatusUnauthorized, want: false},
+		{status: http.StatusForbidden, want: false},
+		{status: http.StatusNotFound, want: false},
+		{status: http.StatusTooManyRequests, want: true},
+		{status: http.StatusInternalServerError, want: true},
+		{status: http.StatusBadGateway, want: true},
+		{status: http.StatusServiceUnavailable, want: true},
+		{status: http.StatusGatewayTimeout, want: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(http.StatusText(tt.status), func(t *testing.T) {
+			got := shouldRetry(tt.status)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestSanitizeHeader(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "no special chars",
+			input: "normal header value",
+			want:  "normal header value",
+		},
+		{
+			name:  "with CR",
+			input: "value\rwith\rCR",
+			want:  "valuewithCR",
+		},
+		{
+			name:  "with LF",
+			input: "value\nwith\nLF",
+			want:  "valuewithLF",
+		},
+		{
+			name:  "with CRLF",
+			input: "value\r\nwith\r\nCRLF",
+			want:  "valuewithCRLF",
+		},
+		{
+			name:  "header injection attempt",
+			input: "value\r\nX-Injected: malicious",
+			want:  "valueX-Injected: malicious",
+		},
+		{
+			name:  "empty string",
+			input: "",
+			want:  "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := sanitizeHeader(tt.input)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestTemplateIDRegex(t *testing.T) {
+	tests := []struct {
+		id    string
+		valid bool
+	}{
+		{id: "d-abc123", valid: true},
+		{id: "template-name-123", valid: true},
+		{id: "UPPERCASE", valid: true},
+		{id: "123456", valid: true},
+		{id: "a", valid: true},
+		{id: "template with spaces", valid: false},
+		{id: "template@special!", valid: false},
+		{id: "template\nnewline", valid: false},
+		{id: "", valid: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.id, func(t *testing.T) {
+			got := templateIDRegex.MatchString(tt.id)
+			assert.Equal(t, tt.valid, got)
+		})
+	}
+}

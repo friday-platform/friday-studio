@@ -187,11 +187,20 @@ export const webSearchAgent = createAgent<string, WebSearchAgentResult>({
   handler: async (prompt, { logger, stream, abortSignal, session }) => {
     logger.info("Starting web search agent", { prompt });
 
+    const gatewayUrl = process.env.FRIDAY_GATEWAY_URL;
+    const atlasKey = process.env.ATLAS_KEY;
     const apiKey = process.env.PARALLEL_API_KEY;
-    if (!apiKey) {
-      throw new Error("PARALLEL_API_KEY environment variable is required");
+
+    if (!gatewayUrl && !apiKey) {
+      throw new Error("FRIDAY_GATEWAY_URL or PARALLEL_API_KEY is required");
     }
-    const parallelClient = new Parallel({ apiKey });
+    if (gatewayUrl && !atlasKey) {
+      throw new Error("ATLAS_KEY is required when using FRIDAY_GATEWAY_URL");
+    }
+
+    const baseURL = gatewayUrl ? `${gatewayUrl}/v1/parallel` : undefined;
+    const defaultHeaders = gatewayUrl ? { Authorization: `Bearer ${atlasKey}` } : undefined;
+    const parallelClient = new Parallel({ apiKey: apiKey ?? "", baseURL, defaultHeaders });
 
     stream?.emit({
       type: "data-tool-progress",

@@ -84,6 +84,8 @@ bounce
 temp/
 .beads/
 apps/signal-gateway/signal-gateway
+apps/gateway/gateway
+gateway
 
 # bv (beads viewer) local config and caches
 .bv/
