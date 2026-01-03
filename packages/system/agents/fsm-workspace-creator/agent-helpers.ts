@@ -37,6 +37,7 @@ export function buildFSMGenerationPrompt(
 - Job ID: ${job.id}
 - Job Name: ${job.name}
 - Trigger Signal: ${triggerSignal.id}
+- User Intent: ${triggerSignal.description}
 
 **Job Steps:**
 ${job.steps
@@ -257,6 +258,8 @@ builder.addFunction('prepare_agent_request', 'action', \\\`
     });
   }
 \\\`);
+
+**CRITICAL:** In prepare_*_request functions, extract and use the ACTUAL data from the User Intent above (emails, content, parameters), not placeholder summaries.
 
 Process agent output function example (validation only):
 
