@@ -23,6 +23,7 @@ import { getMetrics, recordRequest } from "./metrics.ts";
 import { OAuthService } from "./oauth/service.ts";
 import { registry } from "./providers/registry.ts";
 import { createAppInstallRoutes } from "./routes/app-install.ts";
+import { createCallbackRoutes } from "./routes/callback.ts";
 import { createCredentialsRoutes, createInternalCredentialsRoutes } from "./routes/credentials.ts";
 import { createOAuthRoutes } from "./routes/oauth.ts";
 import { providersRouter } from "./routes/providers.ts";
@@ -195,8 +196,10 @@ export function createApp(
     baseApp
       // Provider catalog routes
       .route("/v1/providers", providersRouter)
-      // OAuth flow routes
+      // OAuth flow routes (authorize + refresh)
       .route("/v1/oauth", createOAuthRoutes(registry, oauthService, storage))
+      // Unified callback routes (provider-namespaced for readability)
+      .route("/v1/callback", createCallbackRoutes(oauthService, appInstallService))
       // Public credential management API (no secrets in responses)
       .route("/v1/credentials", createCredentialsRoutes(storage, oauthService))
       // Summary endpoint - aggregated providers and credentials

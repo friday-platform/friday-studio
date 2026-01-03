@@ -186,8 +186,11 @@ describe("AppInstallService", () => {
         true,
       );
       assertEquals(result.authorizationUrl.includes("state="), true);
+      // Callback URL should include provider name for readability (e.g., /v1/callback/test-slack)
       assertEquals(
-        result.authorizationUrl.includes("redirect_uri=https%3A%2F%2Flink.example.com"),
+        result.authorizationUrl.includes(
+          "redirect_uri=https%3A%2F%2Flink.example.com%2Fv1%2Fcallback%2Ftest-slack",
+        ),
         true,
       );
     });

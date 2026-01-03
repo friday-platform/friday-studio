@@ -175,19 +175,23 @@ Deno.test(
       const fakeState = "expired-or-invalid-state";
       const code = crypto.randomUUID();
 
-      const callbackRes = await app.request(`/v1/oauth/callback?code=${code}&state=${fakeState}`);
+      const callbackRes = await app.request(
+        `/v1/callback/test-unknown-state?code=${code}&state=${fakeState}`,
+      );
 
       assertEquals(callbackRes.status, 400);
       const json = ErrorResponse.parse(await callbackRes.json());
-      assertObjectMatch(json, { status: "error", error: "oauth_completion_failed" });
+      assertObjectMatch(json, { error: "invalid_state" });
     });
 
     await t.step("Flow State - Invalid state returns 400", async () => {
-      const callbackRes = await app.request(`/v1/oauth/callback?code=somecode&state=invalid-state`);
+      const callbackRes = await app.request(
+        `/v1/callback/any-provider?code=somecode&state=invalid-state`,
+      );
 
       assertEquals(callbackRes.status, 400);
       const json = ErrorResponse.parse(await callbackRes.json());
-      assertObjectMatch(json, { error: "oauth_completion_failed" });
+      assertObjectMatch(json, { error: "invalid_state" });
     });
 
     await t.step("Flow State - Reused state returns error", async () => {
@@ -216,11 +220,15 @@ Deno.test(
       mockServer.authCodes.set(state, { code, redirect_uri, access_token });
 
       // First callback - should succeed
-      const firstCallback = await app.request(`/v1/oauth/callback?code=${code}&state=${state}`);
+      const firstCallback = await app.request(
+        `/v1/callback/test-reuse-state?code=${code}&state=${state}`,
+      );
       assertEquals(firstCallback.status, 200);
 
       // Second callback with same state - should fail (state consumed)
-      const secondCallback = await app.request(`/v1/oauth/callback?code=${code}&state=${state}`);
+      const secondCallback = await app.request(
+        `/v1/callback/test-reuse-state?code=${code}&state=${state}`,
+      );
       assertEquals(secondCallback.status, 400);
     });
 
@@ -495,7 +503,7 @@ Deno.test(
 
       // Simulate provider returning error
       const callbackRes = await app.request(
-        `/v1/oauth/callback?state=${state}&error=access_denied&error_description=User%20denied%20access`,
+        `/v1/callback/test-provider-error?state=${state}&error=access_denied&error_description=User%20denied%20access`,
       );
 
       assertEquals(callbackRes.status, 302);

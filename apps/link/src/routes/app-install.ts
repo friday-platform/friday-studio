@@ -1,6 +1,8 @@
 /**
  * App Install Routes
  * Browser-facing OAuth flow endpoints for app installations (Slack, GitHub, Discord)
+ *
+ * Note: Callback is handled by unified /v1/callback/:provider route
  */
 
 import type { Context } from "hono";
@@ -8,29 +10,21 @@ import { z } from "zod";
 import { AppInstallError } from "../app-install/errors.ts";
 import type { AppInstallService } from "../app-install/service.ts";
 import { factory } from "../factory.ts";
-import { renderErrorResponse, renderSuccessResponse } from "../oauth/responses.ts";
 
 const AuthorizeQuerySchema = z.object({
   redirect_uri: z.string().optional(),
   user_id: z.string().optional(),
 });
 
-const CallbackQuerySchema = z.object({
-  state: z.string().min(1),
-  code: z.string().optional(),
-  error: z.string().optional(),
-  error_description: z.string().optional(),
-});
-
 const ReconcileBodySchema = z.object({ credential_id: z.string().min(1) });
 
 /**
- * Create app install router with authorize, callback, and reconcile endpoints.
+ * Create app install router with authorize and reconcile endpoints.
  * Mounted at /v1/app-install in main app.
+ * Callback is handled separately at /v1/callback/:provider.
  *
  * Routes:
  * - GET /:provider/authorize - Initiate OAuth app install flow
- * - GET /callback - OAuth callback (shared across providers)
  * - POST /:provider/reconcile - Re-upsert route for existing credential
  *
  * @param service - App install service for flow management
@@ -78,50 +72,6 @@ export function createAppInstallRoutes(service: AppInstallService) {
           }
           const message = e instanceof Error ? e.message : "Unknown error";
           return c.json({ error: "app_install_failed", message }, 500);
-        }
-      })
-      /**
-       * GET /v1/app-install/callback
-       * OAuth callback - exchange code for tokens, create credential, upsert route
-       */
-      .get("/callback", async (c) => {
-        // Parse and validate query params
-        const query = CallbackQuerySchema.safeParse(c.req.query());
-        if (!query.success) {
-          return c.json({ error: "invalid_query", message: query.error.message }, 400);
-        }
-
-        const { state, code, error, error_description } = query.data;
-
-        // Provider returned an error (user denied or provider error)
-        if (error) {
-          return renderErrorResponse(c, error, error_description);
-        }
-
-        // Must have code to complete flow
-        if (!code) {
-          return renderErrorResponse(c, "missing_code", "No authorization code in callback");
-        }
-
-        try {
-          const { credential, redirectUri } = await service.completeInstall(state, code);
-
-          // Redirect back to caller's app if they provided redirect_uri
-          if (redirectUri) {
-            const url = new URL(redirectUri);
-            url.searchParams.set("credential_id", credential.id);
-            url.searchParams.set("provider", credential.provider);
-            return c.redirect(url.toString(), 302);
-          }
-
-          // No redirect_uri - render success page
-          return renderSuccessResponse(c, credential.provider, credential.id);
-        } catch (e) {
-          if (e instanceof AppInstallError) {
-            return mapAppInstallErrorToResponse(c, e);
-          }
-          const message = e instanceof Error ? e.message : "Unknown error";
-          return c.json({ error: "app_install_completion_failed", message }, 500);
         }
       })
       /**

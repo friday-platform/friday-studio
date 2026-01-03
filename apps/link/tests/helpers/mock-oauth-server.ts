@@ -299,8 +299,10 @@ export async function completeOAuthFlow<E extends Env, S extends Schema, B exten
   const code = crypto.randomUUID();
   mockServer.authCodes.set(state, { code, redirect_uri, access_token: accessToken });
 
-  // Step 4: Complete OAuth flow via callback
-  const callbackResponse = await app.request(`/v1/oauth/callback?code=${code}&state=${state}`);
+  // Step 4: Complete OAuth flow via callback (provider-namespaced URL)
+  const callbackResponse = await app.request(
+    `/v1/callback/${providerId}?code=${code}&state=${state}`,
+  );
 
   if (callbackResponse.status !== 200 && callbackResponse.status !== 302) {
     throw new Error(`Failed to complete OAuth flow: ${callbackResponse.status}`);

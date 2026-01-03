@@ -1,14 +1,14 @@
 /**
  * OAuth Routes
  * Browser-facing OAuth flow endpoints
+ *
+ * Note: Callback is handled by unified /v1/callback/:provider route
  */
 
 import { env } from "node:process";
 import { logger } from "@atlas/logger";
 import { z } from "zod";
 import { factory } from "../factory.ts";
-import { decodeState } from "../oauth/jwt-state.ts";
-import { renderErrorResponse, renderSuccessResponse } from "../oauth/responses.ts";
 import type { OAuthService } from "../oauth/service.ts";
 import type { ProviderRegistry } from "../providers/registry.ts";
 import type { OAuthCredential, StorageAdapter } from "../types.ts";
@@ -19,8 +19,9 @@ const AuthorizeQuerySchema = z.object({
 });
 
 /**
- * Create OAuth router with authorization and callback endpoints.
+ * Create OAuth router with authorization and refresh endpoints.
  * Mounted at /v1/oauth in main app.
+ * Callback is handled separately at /v1/callback/:provider.
  *
  * @param registry - Provider registry for validation
  * @param oauthService - OAuth service for flow management
@@ -72,9 +73,9 @@ export function createOAuthRoutes(
           }
         }
 
-        // Build callback URL for this service
+        // Build callback URL for this service (provider-namespaced for readability)
         const baseUrl = env.LINK_CALLBACK_BASE || c.get("externalBaseUrl");
-        const callbackUrl = `${baseUrl}/v1/oauth/callback`;
+        const callbackUrl = `${baseUrl}/v1/callback/${providerId}`;
 
         try {
           const { authorizationUrl } = await oauthService.initiateFlow(
@@ -92,56 +93,6 @@ export function createOAuthRoutes(
             { error: "oauth_initiation_failed", message: "Failed to initiate OAuth flow" },
             502,
           );
-        }
-      })
-      /**
-       * GET /callback
-       * OAuth callback - exchange code for tokens, create credential
-       */
-      .get("/callback", async (c) => {
-        const { code, state, error, error_description } = c.req.query();
-
-        // Must have state to look up flow
-        if (!state) {
-          return renderErrorResponse(c, "missing_state", "No state parameter in callback");
-        }
-
-        // Provider returned an error
-        if (error) {
-          // Try to decode state to see if we should redirect
-          try {
-            const decoded = await decodeState(state);
-            if (decoded.r) {
-              const url = new URL(decoded.r);
-              url.searchParams.set("error", error);
-              if (error_description) url.searchParams.set("error_description", error_description);
-              return c.redirect(url.toString(), 302);
-            }
-          } catch {
-            // Invalid/expired state, just render error
-          }
-          return renderErrorResponse(c, error, error_description);
-        }
-
-        // Must have code
-        if (!code) {
-          return renderErrorResponse(c, "missing_code", "No authorization code in callback");
-        }
-
-        try {
-          const { credential, redirectUri } = await oauthService.completeFlow(state, code);
-
-          if (redirectUri) {
-            const url = new URL(redirectUri);
-            url.searchParams.set("credential_id", credential.id);
-            url.searchParams.set("provider", credential.provider);
-            return c.redirect(url.toString(), 302);
-          }
-
-          return renderSuccessResponse(c, credential.provider, credential.id);
-        } catch (e) {
-          logger.error("OAuth completion failed", { error: e });
-          return renderErrorResponse(c, "oauth_completion_failed", "Failed to complete OAuth flow");
         }
       })
       /**

@@ -58,7 +58,8 @@ export class AppInstallService {
     userId?: string,
   ): Promise<{ authorizationUrl: string }> {
     const provider = this.requireAppInstallProvider(providerId);
-    const callbackUrl = `${this.callbackBaseUrl}/v1/app-install/callback`;
+    // Provider-namespaced callback URL for readability (e.g., /v1/callback/slack)
+    const callbackUrl = `${this.callbackBaseUrl}/v1/callback/${providerId}`;
 
     const state = await encodeAppInstallState({ p: providerId, r: redirectUri, u: userId });
 
@@ -108,7 +109,8 @@ export class AppInstallService {
 
     // 2. Get provider from registry
     const provider = this.requireAppInstallProvider(providerId);
-    const callbackUrl = `${this.callbackBaseUrl}/v1/app-install/callback`;
+    // Provider-namespaced callback URL (must match what was used in initiateInstall)
+    const callbackUrl = `${this.callbackBaseUrl}/v1/callback/${providerId}`;
 
     // 3. Exchange code for tokens and get workspace identity
     const result = await provider.completeInstallation(code, callbackUrl);

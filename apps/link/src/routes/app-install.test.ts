@@ -9,9 +9,12 @@ import { z } from "zod";
 import type { PlatformRouteRepository } from "../adapters/platform-route-repository.ts";
 import { AppInstallService } from "../app-install/service.ts";
 import { factory } from "../factory.ts";
+import { OAuthService } from "../oauth/service.ts";
+import { ProviderRegistry } from "../providers/registry.ts";
 import { defineAppInstallProvider, type ProviderDefinition } from "../providers/types.ts";
 import type { Credential, CredentialInput, SaveResult, StorageAdapter } from "../types.ts";
 import { createAppInstallRoutes } from "./app-install.ts";
+import { createCallbackRoutes } from "./callback.ts";
 
 /** Response schemas for type-safe test assertions */
 const ErrorResponseSchema = z.object({
@@ -139,9 +142,11 @@ class MockPlatformRouteRepository implements PlatformRouteRepository {
 
 describe("App Install Routes", () => {
   let registry: MockProviderRegistry;
+  let providerRegistry: ProviderRegistry;
   let storage: MockStorageAdapter;
   let routeStorage: MockPlatformRouteRepository;
   let service: AppInstallService;
+  let oauthService: OAuthService;
   let app: ReturnType<typeof factory.createApp>;
 
   const mockProvider = defineAppInstallProvider({
@@ -171,15 +176,20 @@ describe("App Install Routes", () => {
 
   beforeEach(() => {
     registry = new MockProviderRegistry();
+    providerRegistry = new ProviderRegistry();
     storage = new MockStorageAdapter();
     routeStorage = new MockPlatformRouteRepository();
     service = new AppInstallService(registry, storage, routeStorage, "https://link.example.com");
+    oauthService = new OAuthService(providerRegistry, storage);
 
     // Register mock provider
     registry.register(mockProvider);
 
-    // Create app with routes
-    app = factory.createApp().route("/v1/app-install", createAppInstallRoutes(service));
+    // Create app with routes (including unified callback)
+    app = factory
+      .createApp()
+      .route("/v1/app-install", createAppInstallRoutes(service))
+      .route("/v1/callback", createCallbackRoutes(oauthService, service));
   });
 
   describe("GET /v1/app-install/:provider/authorize", () => {
@@ -240,7 +250,7 @@ describe("App Install Routes", () => {
     });
   });
 
-  describe("GET /v1/app-install/callback", () => {
+  describe("GET /v1/callback/:provider (app install)", () => {
     it("completes flow and redirects with credential_id", async () => {
       // First get authorization URL to get valid state
       const startRes = await app.request(
@@ -251,9 +261,9 @@ describe("App Install Routes", () => {
       const state = new URL(authUrl).searchParams.get("state");
       assertExists(state);
 
-      // Complete callback
+      // Complete callback via unified route
       const callbackRes = await app.request(
-        `/v1/app-install/callback?state=${state}&code=test-code-123`,
+        `/v1/callback/test-slack?state=${state}&code=test-code-123`,
       );
 
       assertEquals(callbackRes.status, 302);
@@ -273,9 +283,9 @@ describe("App Install Routes", () => {
       const state = new URL(authUrl).searchParams.get("state");
       assertExists(state);
 
-      // Complete callback
+      // Complete callback via unified route
       const callbackRes = await app.request(
-        `/v1/app-install/callback?state=${state}&code=test-code-123`,
+        `/v1/callback/test-slack?state=${state}&code=test-code-123`,
       );
 
       assertEquals(callbackRes.status, 200);
@@ -284,7 +294,7 @@ describe("App Install Routes", () => {
       assertEquals(json.provider, "test-slack");
     });
 
-    it("handles OAuth denial with error param", async () => {
+    it("handles OAuth denial with error param and redirects", async () => {
       // Start flow
       const startRes = await app.request(
         "/v1/app-install/test-slack/authorize?redirect_uri=https://myapp.example.com/settings",
@@ -294,35 +304,28 @@ describe("App Install Routes", () => {
       const state = new URL(authUrl).searchParams.get("state");
       assertExists(state);
 
-      // User denied access
+      // User denied access - unified callback redirects with error
       const callbackRes = await app.request(
-        `/v1/app-install/callback?state=${state}&error=access_denied&error_description=User%20denied%20access`,
+        `/v1/callback/test-slack?state=${state}&error=access_denied&error_description=User%20denied%20access`,
       );
 
-      // App install routes return 400 with error (don't decode state for redirect)
-      assertEquals(callbackRes.status, 400);
-      const json = ErrorResponseSchema.parse(await callbackRes.json());
-      assertEquals(json.status, "error");
-      assertEquals(json.error, "access_denied");
-      assertEquals(json.error_description, "User denied access");
-    });
-
-    it("returns 400 for missing query params", async () => {
-      const res = await app.request("/v1/app-install/callback");
-
-      assertEquals(res.status, 400);
-      const json = ErrorResponseSchema.parse(await res.json());
-      assertEquals(json.error, "invalid_query");
+      // Unified callback redirects to redirect_uri with error params
+      assertEquals(callbackRes.status, 302);
+      const location = callbackRes.headers.get("Location");
+      assertExists(location);
+      const redirectUrl = new URL(location);
+      assertEquals(redirectUrl.searchParams.get("error"), "access_denied");
+      assertEquals(redirectUrl.searchParams.get("error_description"), "User denied access");
     });
 
     it("returns 400 for invalid state JWT", async () => {
       const res = await app.request(
-        "/v1/app-install/callback?state=invalid-jwt-token&code=test-code",
+        "/v1/callback/test-slack?state=invalid-jwt-token&code=test-code",
       );
 
       assertEquals(res.status, 400);
       const json = ErrorResponseSchema.parse(await res.json());
-      assertEquals(json.error, "STATE_INVALID");
+      assertEquals(json.error, "invalid_state");
     });
 
     it("returns 400 when code is missing and no error", async () => {
@@ -334,11 +337,29 @@ describe("App Install Routes", () => {
       assertExists(state);
 
       // Callback without code or error
-      const callbackRes = await app.request(`/v1/app-install/callback?state=${state}`);
+      const callbackRes = await app.request(`/v1/callback/test-slack?state=${state}`);
 
       assertEquals(callbackRes.status, 400);
       const json = ErrorResponseSchema.parse(await callbackRes.json());
       assertEquals(json.error, "missing_code");
+    });
+
+    it("returns 400 for provider mismatch between URL and state", async () => {
+      // Start flow for test-slack
+      const startRes = await app.request("/v1/app-install/test-slack/authorize");
+      const authUrl = startRes.headers.get("Location");
+      assertExists(authUrl);
+      const state = new URL(authUrl).searchParams.get("state");
+      assertExists(state);
+
+      // Callback with wrong provider in URL
+      const callbackRes = await app.request(
+        `/v1/callback/wrong-provider?state=${state}&code=test-code`,
+      );
+
+      assertEquals(callbackRes.status, 400);
+      const json = ErrorResponseSchema.parse(await callbackRes.json());
+      assertEquals(json.error, "provider_mismatch");
     });
 
     it("re-install updates existing credential", async () => {
@@ -348,9 +369,7 @@ describe("App Install Routes", () => {
       assertExists(location1);
       const state1 = new URL(location1).searchParams.get("state");
       assertExists(state1);
-      const callback1 = await app.request(
-        `/v1/app-install/callback?state=${state1}&code=same-team`,
-      );
+      const callback1 = await app.request(`/v1/callback/test-slack?state=${state1}&code=same-team`);
       assertEquals(callback1.status, 200);
       const result1 = SuccessResponseSchema.parse(await callback1.json());
       const credId1 = result1.credential_id;
@@ -361,9 +380,7 @@ describe("App Install Routes", () => {
       assertExists(location2);
       const state2 = new URL(location2).searchParams.get("state");
       assertExists(state2);
-      const callback2 = await app.request(
-        `/v1/app-install/callback?state=${state2}&code=same-team`,
-      );
+      const callback2 = await app.request(`/v1/callback/test-slack?state=${state2}&code=same-team`);
       assertEquals(callback2.status, 200);
       const result2 = SuccessResponseSchema.parse(await callback2.json());
 
@@ -384,7 +401,7 @@ describe("App Install Routes", () => {
       assertExists(location);
       const state = new URL(location).searchParams.get("state");
       assertExists(state);
-      const callback = await app.request(`/v1/app-install/callback?state=${state}&code=team-123`);
+      const callback = await app.request(`/v1/callback/test-slack?state=${state}&code=team-123`);
       const { credential_id } = SuccessResponseSchema.parse(await callback.json());
 
       // Reconcile route
