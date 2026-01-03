@@ -20,6 +20,15 @@ type Service struct {
 	client *http.Client
 }
 
+// atlasClaims defines the JWT claims structure for Atlas tokens.
+type atlasClaims struct {
+	Email        string `json:"email,omitempty"`
+	UserMetadata struct {
+		TempestUserID string `json:"tempest_user_id"`
+	} `json:"user_metadata"`
+	jwt.RegisteredClaims
+}
+
 func New(cfg Config) *Service {
 	logger := Logger(cfg)
 	logger.Debug("Creating service")
@@ -66,7 +75,8 @@ func jwtAuthMiddleware(publicKeyPEM string) func(http.Handler) http.Handler {
 				return
 			}
 
-			token, err := jwt.Parse(tokenString, func(t *jwt.Token) (any, error) {
+			var claims atlasClaims
+			token, err := jwt.ParseWithClaims(tokenString, &claims, func(t *jwt.Token) (any, error) {
 				if _, ok := t.Method.(*jwt.SigningMethodRSA); !ok {
 					return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
 				}
@@ -83,6 +93,12 @@ func jwtAuthMiddleware(publicKeyPEM string) func(http.Handler) http.Handler {
 				http.Error(w, "invalid token", http.StatusUnauthorized)
 				return
 			}
+
+			// Add user identity to log context
+			httplog.LogEntrySetFields(r.Context(), map[string]any{
+				"userID": claims.UserMetadata.TempestUserID,
+				"email":  claims.Email,
+			})
 
 			next.ServeHTTP(w, r)
 		})

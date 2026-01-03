@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-chi/httplog/v2"
 	"github.com/sendgrid/rest"
 	"github.com/sendgrid/sendgrid-go"
 	sgmail "github.com/sendgrid/sendgrid-go/helpers/mail"
@@ -121,6 +122,13 @@ func (s *Service) HandleSendGridEmail(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+
+	// Add email context to logs
+	httplog.LogEntrySetFields(r.Context(), map[string]any{
+		"emailTo":      req.To,
+		"emailFrom":    req.From,
+		"emailSubject": req.Subject,
+	})
 
 	message := s.buildSendGridMessage(&req)
 
