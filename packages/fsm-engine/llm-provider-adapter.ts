@@ -21,6 +21,7 @@ export class AtlasLLMProviderAdapter implements LLMProvider {
     model: string;
     prompt: string;
     tools?: Record<string, Tool>;
+    toolChoice?: "auto" | "required" | "none";
   }): Promise<LLMResponse> {
     const modelId = `${this.provider}:${params.model || this.defaultModel}` as
       | `anthropic:${string}`
@@ -31,8 +32,15 @@ export class AtlasLLMProviderAdapter implements LLMProvider {
       model: registry.languageModel(modelId),
       prompt: params.prompt,
       tools: params.tools,
+      toolChoice: params.toolChoice,
       experimental_repairToolCall: repairToolCall,
     });
+
+    // Extract first tool call for calledTool field (used for failStep detection)
+    const firstToolCall = response.toolCalls?.[0];
+    const calledTool = firstToolCall
+      ? { name: firstToolCall.toolName, args: firstToolCall.input }
+      : undefined;
 
     return {
       content: response.text,
@@ -52,6 +60,7 @@ export class AtlasLLMProviderAdapter implements LLMProvider {
               })),
             }
           : undefined,
+      calledTool,
     };
   }
 }

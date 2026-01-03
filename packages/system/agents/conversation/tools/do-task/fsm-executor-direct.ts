@@ -61,6 +61,7 @@ export async function executeTaskViaFSMDirect(
   }
 
   let orchestrator: AgentOrchestrator | undefined;
+  let currentStepIndex = 0;
 
   try {
     // 1. Create in-memory document store for FSM
@@ -104,6 +105,11 @@ export async function executeTaskViaFSMDirect(
       }
 
       const stepInfo = stepByAgentId.get(agentId);
+
+      // Track current step for error reporting
+      if (stepInfo) {
+        currentStepIndex = stepInfo.index;
+      }
 
       // Emit step-start progress
       if (stepInfo && context.onProgress) {
@@ -277,13 +283,14 @@ export async function executeTaskViaFSMDirect(
 
     return { success, results };
   } catch (error) {
-    logger.error("FSM execution failed", { error });
+    logger.error("FSM execution failed", { error, step: currentStepIndex });
     return {
       success: false,
+      failedStep: currentStepIndex,
       results: [
         {
-          step: 0,
-          agent: steps[0]?.agentId || "unknown",
+          step: currentStepIndex,
+          agent: steps[currentStepIndex]?.agentId || "unknown",
           success: false,
           error: error instanceof Error ? error.message : String(error),
         },

@@ -158,6 +158,7 @@ export interface EmittedEvent {
 export interface LLMResponse {
   content: string;
   data?: Record<string, unknown>;
+  calledTool?: { name: string; args: unknown };
 }
 
 export interface LLMProvider {
@@ -165,5 +166,6 @@ export interface LLMProvider {
     model: string;
     prompt: string;
     tools?: Record<string, import("ai").Tool>;
+    toolChoice?: "auto" | "required" | "none";
   }): Promise<LLMResponse>;
 }

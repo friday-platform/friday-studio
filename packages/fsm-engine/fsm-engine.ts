@@ -7,7 +7,7 @@
 
 import { logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
-import type { Tool } from "ai";
+import { type Tool, tool } from "ai";
 import { z } from "zod";
 import type { DocumentScope, DocumentStore } from "../document-store/node.ts";
 import { FSMDocumentDataSchema } from "./document-schemas.ts";
@@ -579,14 +579,36 @@ export class FSMEngine {
           outputTo: action.outputTo,
         });
 
-        const contextPrompt = this.buildContextPrompt(action.prompt, documents);
-        const tools = action.tools ? await this.buildTools(action.tools, context) : undefined;
+        // Build base tools from action definition
+        const baseTools = action.tools ? await this.buildTools(action.tools, context) : {};
+
+        // Inject failStep tool for explicit failure signaling
+        const failStepTool = tool({
+          description: `Signal that you cannot complete this task. Use this when you lack required information, encounter an unrecoverable error, or the task is impossible to complete.`,
+          inputSchema: z.object({
+            reason: z.string().describe("Why the task cannot be completed"),
+          }),
+          execute: ({ reason }) => ({ failed: true, reason }),
+        });
+
+        const tools: Record<string, Tool> = { ...baseTools, failStep: failStepTool };
+
+        // Append failStep instruction to prompt
+        const contextPrompt =
+          this.buildContextPrompt(action.prompt, documents) +
+          "\n\nIMPORTANT: If you cannot complete this task, call the failStep tool with a reason.";
 
         const response = await this.options.llmProvider.call({
           model: action.model,
           prompt: contextPrompt,
           tools,
+          toolChoice: "required",
         });
+
+        // Check if LLM called failStep
+        if (response.calledTool?.name === "failStep") {
+          throw new Error(`LLM step failed: ${response.calledTool.args}`);
+        }
 
         if (action.outputTo) {
           const outputDoc = documents.get(action.outputTo);
