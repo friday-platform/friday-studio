@@ -1,6 +1,6 @@
 <script lang="ts">
-import { page } from "$app/stores";
 import { onMount } from "svelte";
+import { page } from "$app/stores";
 
 /**
  * OAuth callback page for popup-based app installation flow.

@@ -76,8 +76,8 @@ export const googleCalendarAgent = createAgent<string, GoogleCalendarAgentResult
     prompt,
     { tools, logger, abortSignal, stream },
   ): Promise<GoogleCalendarAgentResult> => {
-    if (!env.ANTHROPIC_API_KEY) {
-      throw new Error("ANTHROPIC_API_KEY environment variable is required");
+    if (!env.ANTHROPIC_API_KEY && !env.LITELLM_API_KEY) {
+      throw new Error("ANTHROPIC_API_KEY or LITELLM_API_KEY environment variable is required");
     }
 
     const system = `

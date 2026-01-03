@@ -62,8 +62,8 @@ export const emailAgent = createAgent<string, Result>({
   },
 
   handler: async (prompt, { logger, abortSignal, stream }): Promise<Result> => {
-    if (!env.ANTHROPIC_API_KEY) {
-      throw new Error("ANTHROPIC_API_KEY environment variable is required");
+    if (!env.ANTHROPIC_API_KEY && !env.LITELLM_API_KEY) {
+      throw new Error("ANTHROPIC_API_KEY or LITELLM_API_KEY environment variable is required");
     }
 
     stream?.emit({
