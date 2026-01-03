@@ -10,7 +10,7 @@ export const template = `<!DOCTYPE html>
     </div>
     <div style="margin-top: 24px; text-align: center; opacity: .5;">
       {{ sender_info }}
-      <p style="font-size: 12px;">Powered by Atlas</p>
+      <p style="font-size: 12px;">Powered by Friday</p>
     </div>
   </body>
 </html>`;
