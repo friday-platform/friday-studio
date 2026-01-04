@@ -47,15 +47,16 @@ export interface ValidationResult {
  * For bundled agents without Link refs: validates environment variables only.
  * For MCP servers with configTemplate: resolves Link credential references by provider.
  *
+ * Link credential resolution uses ATLAS_KEY from environment for authentication.
+ * The user ID is extracted from the JWT by the Link service.
+ *
  * @param requiredConfig - Required configuration fields from matched integration
  * @param configTemplate - Optional MCP server config template with env definitions
- * @param userId - User ID for Link credential resolution (required for Link credential resolution)
  * @returns Validation result with missing and resolved credentials
  */
 export async function validateRequiredFields(
   requiredConfig: ConfigField[],
   configTemplate?: MCPServerConfig,
-  userId?: string,
 ): Promise<ValidationResult> {
   const missingCredentials: MissingField[] = [];
   const resolvedCredentials: ResolvedCredential[] = [];
@@ -64,9 +65,6 @@ export async function validateRequiredFields(
   if (requiredConfig.length === 0) {
     return { missingCredentials, resolvedCredentials };
   }
-
-  // User ID from param (passed by caller) or fall back to env (set by Traefik middleware from JWT sub claim)
-  const effectiveUserId = userId ?? process.env.ATLAS_USER_ID ?? "dev";
 
   // Without configTemplate, check for Link credential refs or fall back to env var validation
   if (!configTemplate) {
@@ -82,10 +80,7 @@ export async function validateRequiredFields(
         // from: "link" pattern (bundled agent registry config)
         const linkField = field as { provider: string; key: string; envKey: string };
         try {
-          const credentials = await resolveCredentialsByProvider(
-            linkField.provider,
-            effectiveUserId,
-          );
+          const credentials = await resolveCredentialsByProvider(linkField.provider);
           resolvedCredentials.push({
             field: linkField.envKey,
             provider: linkField.provider,
@@ -142,7 +137,7 @@ export async function validateRequiredFields(
       // Resolve by provider - returns ALL matching credentials
       if (envDef.provider) {
         try {
-          const credentials = await resolveCredentialsByProvider(envDef.provider, effectiveUserId);
+          const credentials = await resolveCredentialsByProvider(envDef.provider);
           // First-match: use the first credential found
           resolvedCredentials.push({
             field: field.key,

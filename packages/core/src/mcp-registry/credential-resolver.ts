@@ -21,15 +21,23 @@ export class CredentialNotFoundError extends Error {
   }
 }
 
-async function fetchCredentialsByProvider(
-  userId: string,
-  provider: string,
-): Promise<CredentialSummary[]> {
+/** Build auth headers for Link API calls. Returns empty object in dev mode. */
+function getLinkAuthHeaders(): Record<string, string> {
+  if (process.env.LINK_DEV_MODE === "true") return {};
+
+  const atlasKey = process.env.ATLAS_KEY;
+  if (!atlasKey) {
+    throw new Error(
+      "ATLAS_KEY is required for Link authentication in production mode. " +
+        "Set LINK_DEV_MODE=true for development, or ensure ATLAS_KEY is available.",
+    );
+  }
+  return { Authorization: `Bearer ${atlasKey}` };
+}
+
+async function fetchCredentialsByProvider(provider: string): Promise<CredentialSummary[]> {
   const result = await parseResult(
-    client.link.v1.summary.$get(
-      { query: { provider } },
-      { headers: { "X-Atlas-User-ID": userId } },
-    ),
+    client.link.v1.summary.$get({ query: { provider } }, { headers: getLinkAuthHeaders() }),
   );
   if (!result.ok) {
     throw new Error(`Failed to fetch credentials: ${result.error}`);
@@ -37,11 +45,8 @@ async function fetchCredentialsByProvider(
   return result.data.credentials;
 }
 
-export async function resolveCredentialsByProvider(
-  provider: string,
-  userId: string,
-): Promise<CredentialSummary[]> {
-  const credentials = await fetchCredentialsByProvider(userId, provider);
+export async function resolveCredentialsByProvider(provider: string): Promise<CredentialSummary[]> {
+  const credentials = await fetchCredentialsByProvider(provider);
 
   if (credentials.length === 0) throw new CredentialNotFoundError(provider);
   return credentials;
@@ -51,38 +56,18 @@ export async function resolveCredentialsByProvider(
  * Fetches a credential from Link service.
  * Uses ATLAS_KEY (obtained from Cypher) for authentication in production mode.
  * In dev mode (LINK_DEV_MODE=true), no authentication is required.
- *
- * @param credentialId Link credential ID
- * @param logger Logger instance for debug output
- * @returns Credential with secret
  */
 export async function fetchLinkCredential(
   credentialId: string,
   logger: Logger,
 ): Promise<Credential> {
-  const userId = process.env.ATLAS_USER_ID ?? "dev";
-  const devMode = process.env.LINK_DEV_MODE === "true";
-
-  logger.debug("Fetching credential from Link", { credentialId, userId, devMode });
-
-  const headers: Record<string, string> = {};
-
-  if (!devMode) {
-    // Use ATLAS_KEY for authentication - this is a JWT signed by Cypher,
-    // specific to this user. Never use the private key directly in daemon pods.
-    const atlasKey = process.env.ATLAS_KEY;
-    if (!atlasKey) {
-      throw new Error(
-        "ATLAS_KEY is required for Link authentication in production mode. " +
-          "Set LINK_DEV_MODE=true for development, or ensure ATLAS_KEY is available.",
-      );
-    }
-
-    headers.Authorization = `Bearer ${atlasKey}`;
-  }
+  logger.debug("Fetching credential from Link", { credentialId });
 
   const result = await parseResult(
-    client.link.internal.v1.credentials[":id"].$get({ param: { id: credentialId } }, { headers }),
+    client.link.internal.v1.credentials[":id"].$get(
+      { param: { id: credentialId } },
+      { headers: getLinkAuthHeaders() },
+    ),
   );
 
   if (!result.ok) {
@@ -132,8 +117,7 @@ export async function resolveEnvValues(
 
       // Support provider-based resolution (resolve provider to credential ID)
       if (!credentialId && value.provider) {
-        const userId = process.env.ATLAS_USER_ID ?? "dev";
-        const credentials = await fetchCredentialsByProvider(userId, value.provider);
+        const credentials = await fetchCredentialsByProvider(value.provider);
         const firstCredential = credentials.at(0);
         if (!firstCredential) {
           throw new Error(`No credentials found for provider '${value.provider}'.`);

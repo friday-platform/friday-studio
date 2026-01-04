@@ -1,4 +1,3 @@
-import process from "node:process";
 import { createAgent, repairJson } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
 import type { CredentialBinding, WorkspacePlan } from "@atlas/core/artifacts";
@@ -401,9 +400,6 @@ ${getAvailableIntegrationsPrompt()}`,
       }
 
       // STEP 4: Validate atlas bundled agent credential requirements
-      // User ID from env (set by Traefik middleware from JWT sub claim)
-      const userId = process.env.ATLAS_USER_ID ?? "dev";
-
       for (const agent of agentsWithIds) {
         // Try to match to a bundled agent by capabilities
         const bundledMatches = matchBundledAgents(agent.needs);
@@ -420,7 +416,7 @@ ${getAvailableIntegrationsPrompt()}`,
           if (field.from !== "link") continue;
 
           try {
-            const creds = await resolveCredentialsByProvider(field.provider, userId);
+            const creds = await resolveCredentialsByProvider(field.provider);
             if (creds.length > 0) {
               credentialBindings.push({
                 targetType: "agent",

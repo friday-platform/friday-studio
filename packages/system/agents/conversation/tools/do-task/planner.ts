@@ -74,7 +74,6 @@ async function generateFriendlyDescriptions(
 export async function planTaskEnhanced(
   intent: string,
   agents: CatalogAgent[],
-  userId?: string,
   abortSignal?: AbortSignal,
 ): Promise<EnhancedPlanResult> {
   const model = registry.languageModel("anthropic:claude-sonnet-4-5");
@@ -311,7 +310,7 @@ Output: {
       }
 
       // Validate credentials
-      const validation = await validateRequiredFields(requiredFields, server.config, userId);
+      const validation = await validateRequiredFields(requiredFields, server.config);
 
       // Fail fast on missing credentials
       if (validation.missingCredentials.length > 0) {
@@ -327,7 +326,7 @@ Output: {
       for (const resolved of validation.resolvedCredentials) {
         // Check if multiple credentials exist for this provider
         try {
-          const allCreds = await resolveCredentialsByProvider(resolved.provider, userId ?? "dev");
+          const allCreds = await resolveCredentialsByProvider(resolved.provider);
           if (allCreds.length > 1) {
             return {
               success: false,

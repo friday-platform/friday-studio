@@ -158,7 +158,7 @@ export function createDoTaskTool(
         // 1. Planning
         emitProgress({ type: "planning" });
         const catalog = await getAgentCatalog();
-        const planResult = await planTaskEnhanced(intent, catalog, session.userId, abortSignal);
+        const planResult = await planTaskEnhanced(intent, catalog, abortSignal);
 
         if (!planResult.success) {
           return { success: false, error: planResult.reason };

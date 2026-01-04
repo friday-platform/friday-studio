@@ -133,7 +133,7 @@ describe("credential-resolver integration tests", () => {
 
     try {
       // Call resolver - this hits the real Link API
-      const credentials = await resolveCredentialsByProvider("test", TEST_USER_ID);
+      const credentials = await resolveCredentialsByProvider("test");
 
       assertEquals(credentials.length, 1, "Should return exactly one credential");
       assertEquals(
@@ -156,7 +156,7 @@ describe("credential-resolver integration tests", () => {
     const nonExistentProvider = `test-nonexistent-${crypto.randomUUID()}`;
 
     await assertRejects(
-      () => resolveCredentialsByProvider(nonExistentProvider, TEST_USER_ID),
+      () => resolveCredentialsByProvider(nonExistentProvider),
       CredentialNotFoundError,
       `No credentials found for provider '${nonExistentProvider}'`,
     );
@@ -176,7 +176,7 @@ describe("credential-resolver integration tests", () => {
     createdCredentials.push(cred1, cred2);
 
     try {
-      const credentials = await resolveCredentialsByProvider(provider, TEST_USER_ID);
+      const credentials = await resolveCredentialsByProvider(provider);
 
       assertEquals(credentials.length >= 2, true, "Should have at least 2 credentials");
       const ids = credentials.map((c) => c.id);
@@ -195,9 +195,9 @@ describe("credential-resolver integration tests", () => {
  * Check if Google OAuth credentials exist for a provider.
  * Returns true if at least one credential exists (from completed OAuth flow).
  */
-async function hasGoogleCredential(provider: string, userId: string): Promise<boolean> {
+async function hasGoogleCredential(provider: string): Promise<boolean> {
   try {
-    const credentials = await resolveCredentialsByProvider(provider, userId);
+    const credentials = await resolveCredentialsByProvider(provider);
     return credentials.length > 0;
   } catch {
     return false;
@@ -218,14 +218,14 @@ describe("Google OAuth credential resolution (requires completed OAuth flow)", (
         throw new Error("SKIP: Link service not available at " + LINK_BASE_URL);
       }
 
-      const hasCredential = await hasGoogleCredential(provider, TEST_USER_ID);
+      const hasCredential = await hasGoogleCredential(provider);
       if (!hasCredential) {
         throw new Error(
           `SKIP: No ${provider} OAuth credential found - complete OAuth flow to enable`,
         );
       }
 
-      const credentials = await resolveCredentialsByProvider(provider, TEST_USER_ID);
+      const credentials = await resolveCredentialsByProvider(provider);
       assertEquals(
         credentials.length >= 1,
         true,
@@ -241,14 +241,14 @@ describe("Google OAuth credential resolution (requires completed OAuth flow)", (
       throw new Error("SKIP: Link service not available at " + LINK_BASE_URL);
     }
 
-    const hasCredential = await hasGoogleCredential("google-calendar", TEST_USER_ID);
+    const hasCredential = await hasGoogleCredential("google-calendar");
     if (!hasCredential) {
       throw new Error(
         "SKIP: No google-calendar OAuth credential found - complete OAuth flow to enable",
       );
     }
 
-    const credentials = await resolveCredentialsByProvider("google-calendar", TEST_USER_ID);
+    const credentials = await resolveCredentialsByProvider("google-calendar");
 
     // Get full credential to check token format
     const credId = credentials[0]!.id;

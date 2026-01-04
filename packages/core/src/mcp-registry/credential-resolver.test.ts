@@ -1,3 +1,4 @@
+import process from "node:process";
 import { createLogger } from "@atlas/logger";
 import { assertEquals, assertRejects } from "@std/assert";
 import { afterEach, beforeEach, describe, it } from "@std/testing/bdd";
@@ -99,13 +100,21 @@ function mockLinkFetch(
 // =============================================================================
 
 let originalFetch: typeof fetch;
+let originalDevMode: string | undefined;
 
 beforeEach(() => {
   originalFetch = globalThis.fetch;
+  originalDevMode = process.env.LINK_DEV_MODE;
+  process.env.LINK_DEV_MODE = "true"; // Use dev mode to skip ATLAS_KEY auth
 });
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
+  if (originalDevMode === undefined) {
+    delete process.env.LINK_DEV_MODE;
+  } else {
+    process.env.LINK_DEV_MODE = originalDevMode;
+  }
 });
 
 describe("resolveCredentialsByProvider", () => {
@@ -114,7 +123,7 @@ describe("resolveCredentialsByProvider", () => {
       { id: "cred_abc", provider: "slack", label: "Work", type: "oauth" },
     ]);
 
-    const credentials = await resolveCredentialsByProvider("slack", "user-123");
+    const credentials = await resolveCredentialsByProvider("slack");
     assertEquals(credentials.length, 1);
     assertEquals(credentials[0]!.id, "cred_abc");
   });
@@ -123,7 +132,7 @@ describe("resolveCredentialsByProvider", () => {
     globalThis.fetch = mockSummaryFetch("slack", []);
 
     await assertRejects(
-      () => resolveCredentialsByProvider("slack", "user-123"),
+      () => resolveCredentialsByProvider("slack"),
       CredentialNotFoundError,
       "No credentials found for provider 'slack'",
     );
@@ -135,7 +144,7 @@ describe("resolveCredentialsByProvider", () => {
       { id: "cred_xyz", provider: "slack", label: "Personal", type: "oauth" },
     ]);
 
-    const credentials = await resolveCredentialsByProvider("slack", "user-123");
+    const credentials = await resolveCredentialsByProvider("slack");
     assertEquals(credentials.length, 2);
     assertEquals(credentials[0]!.id, "cred_abc");
     assertEquals(credentials[1]!.id, "cred_xyz");
@@ -172,7 +181,7 @@ describe("Google credential resolution", () => {
         { id: `cred_${provider}_123`, provider, label: "Test Account", type: "oauth" },
       ]);
 
-      const credentials = await resolveCredentialsByProvider(provider, "user-123");
+      const credentials = await resolveCredentialsByProvider(provider);
       assertEquals(credentials.length, 1);
       assertEquals(credentials[0]!.provider, provider);
       assertEquals(credentials[0]!.type, "oauth");
