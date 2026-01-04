@@ -42,6 +42,8 @@ export interface AgentResult {
   error?: string;
   duration: number;
   timestamp?: string;
+  /** Artifact references created by this agent */
+  artifactRefs?: Array<{ id: string; type: string; summary: string }>;
 }
 
 /**
@@ -671,7 +673,14 @@ export class FSMEngine {
         // Store result in document if outputTo specified
         if (action.outputTo && result.output) {
           const parsed = z.record(z.string(), z.unknown()).safeParse(result.output);
-          const data = parsed.success ? parsed.data : { value: result.output };
+          const baseData = parsed.success ? parsed.data : { value: result.output };
+
+          // Include artifactRefs so subsequent steps can access artifact references
+          const data =
+            result.artifactRefs && result.artifactRefs.length > 0
+              ? { ...baseData, artifactRefs: result.artifactRefs }
+              : baseData;
+
           const existingDoc = documents.get(action.outputTo);
           if (existingDoc) {
             existingDoc.data = { ...existingDoc.data, ...data };
