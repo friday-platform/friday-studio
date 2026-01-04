@@ -49,6 +49,7 @@ export function createEnvironmentContext(logger: Logger) {
     }
 
     const missingRequired: string[] = [];
+    const missingProviders = new Set<string>();
 
     // Validate required environment variables
     if (environmentConfig.required) {
@@ -132,7 +133,12 @@ export function createEnvironmentContext(logger: Logger) {
         }
 
         if (value === undefined || value === "") {
-          missingRequired.push(reqVar.name);
+          // Track Link providers separately for better error messages
+          if (reqVar.linkRef) {
+            missingProviders.add(reqVar.linkRef.provider);
+          } else {
+            missingRequired.push(reqVar.name);
+          }
           continue;
         }
 
@@ -179,17 +185,40 @@ export function createEnvironmentContext(logger: Logger) {
       }
     }
 
-    // If there are missing required variables, throw detailed error
-    if (missingRequired.length > 0) {
-      const error = new Error(
-        `Can't execute ${agentId} in workspace '${workspaceId}': Required environment variables not found ${missingRequired.join(
-          ", ",
-        )}. Please add these variables to your workspace .env file.`,
-        { cause: { missingVariables: missingRequired, workspaceId, agentId } },
-      );
+    // If there are missing credentials or variables, throw detailed error
+    if (missingProviders.size > 0 || missingRequired.length > 0) {
+      const errorParts: string[] = [];
 
-      logger.error("Environment variable validation failed", { missingVariables: missingRequired });
-      throw error;
+      // Link credentials require OAuth connection, not .env file
+      if (missingProviders.size > 0) {
+        const providers = [...missingProviders];
+        errorParts.push(
+          `Please connect your ${providers.join(", ")} account${providers.length > 1 ? "s" : ""} to continue.`,
+        );
+      }
+
+      // Regular env vars need .env file
+      if (missingRequired.length > 0) {
+        errorParts.push(
+          `Required environment variables not found: ${missingRequired.join(", ")}. Please add these to your workspace .env file.`,
+        );
+      }
+
+      logger.error("Environment variable validation failed", {
+        missingVariables: missingRequired,
+        missingProviders: [...missingProviders],
+      });
+      throw new Error(
+        `Can't execute ${agentId} in workspace '${workspaceId}': ${errorParts.join(" ")}`,
+        {
+          cause: {
+            missingVariables: missingRequired,
+            missingProviders: [...missingProviders],
+            workspaceId,
+            agentId,
+          },
+        },
+      );
     }
 
     logger.info("Validated environment variables", { providedVariables: Object.keys(env).length });

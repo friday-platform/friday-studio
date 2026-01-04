@@ -43,7 +43,7 @@ Deno.test("validateEnvironment - throws when required var missing", async () => 
   await assertRejects(
     () => validate("workspace", "agent", { required: [reqVar("MISSING_VAR")] }),
     Error,
-    "Required environment variables not found MISSING_VAR",
+    "Required environment variables not found: MISSING_VAR",
   );
 });
 
@@ -82,7 +82,7 @@ Deno.test("validateEnvironment - throws when both primary and LITELLM missing", 
   await assertRejects(
     () => validate("workspace", "agent", { required: [reqVar("ANTHROPIC_API_KEY")] }),
     Error,
-    "Required environment variables not found ANTHROPIC_API_KEY",
+    "Required environment variables not found: ANTHROPIC_API_KEY",
   );
 });
 
@@ -94,7 +94,7 @@ Deno.test("validateEnvironment - LITELLM does not substitute for non-LLM keys", 
     await assertRejects(
       () => validate("workspace", "agent", { required: [reqVar("SOME_OTHER_KEY")] }),
       Error,
-      "Required environment variables not found SOME_OTHER_KEY",
+      "Required environment variables not found: SOME_OTHER_KEY",
     );
   } finally {
     delete process.env.LITELLM_API_KEY;
@@ -125,4 +125,59 @@ Deno.test("validateEnvironment - runs regex validation for primary key", async (
   } finally {
     delete process.env.ANTHROPIC_API_KEY;
   }
+});
+
+Deno.test("validateEnvironment - shows connect message when user hasn't linked account", async () => {
+  // Mock fetch to return empty credentials, triggering CredentialNotFoundError.
+  // This tests the new code path: user hasn't connected → "Please connect your account"
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = () =>
+    Promise.resolve(
+      new Response(JSON.stringify({ providers: [], credentials: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+  delete process.env.GOOGLE_CALENDAR_ACCESS_TOKEN;
+  try {
+    const validate = createEnvironmentContext(mockLogger);
+    await assertRejects(
+      () =>
+        validate("workspace", "agent", {
+          required: [
+            {
+              name: "GOOGLE_CALENDAR_ACCESS_TOKEN",
+              description: "Google Calendar OAuth token",
+              linkRef: { provider: "google-calendar", key: "access_token" },
+            },
+          ],
+        }),
+      Error,
+      "Please connect your google-calendar account to continue",
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+Deno.test("validateEnvironment - shows reconnect message when Link API fails", async () => {
+  // Tests the API failure path: when Link HTTP call fails with a
+  // non-CredentialNotFoundError, users see "credentials could not be loaded".
+  delete process.env.GOOGLE_CALENDAR_ACCESS_TOKEN;
+  const validate = createEnvironmentContext(mockLogger);
+  await assertRejects(
+    () =>
+      validate("workspace", "agent", {
+        required: [
+          {
+            name: "GOOGLE_CALENDAR_ACCESS_TOKEN",
+            description: "Google Calendar OAuth token",
+            linkRef: { provider: "google-calendar", key: "access_token" },
+          },
+        ],
+      }),
+    Error,
+    "credentials could not be loaded",
+  );
 });
