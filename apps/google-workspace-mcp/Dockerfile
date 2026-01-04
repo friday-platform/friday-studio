@@ -30,14 +30,15 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 USER nobody:nobody
 
 # External OAuth 2.1 mode - fully stateless, no secrets needed
-ENV MCP_ENABLE_OAUTH21="true" \
-    EXTERNAL_OAUTH21_PROVIDER="true" \
-    WORKSPACE_MCP_STATELESS_MODE="true" \
+ENV EXTERNAL_OAUTH21_PROVIDER="true" \
+    FASTMCP_STATELESS_HTTP="true" \
     GOOGLE_OAUTH_CLIENT_ID="external" \
     GOOGLE_OAUTH_CLIENT_SECRET="external" \
+    MCP_ENABLE_OAUTH21="true" \
+    PORT=8000 \
     TOOL_TIER="" \
     TOOLS="" \
-    PORT=8000
+    WORKSPACE_MCP_STATELESS_MODE="true"
 
 # TLS: Mount certificates and set these env vars to enable HTTPS
 # SSL_KEYFILE=/certs/tls.key
