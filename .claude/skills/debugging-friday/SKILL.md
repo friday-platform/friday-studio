@@ -1,5 +1,5 @@
 ---
-name: friday-debugging
+name: debugging-friday
 description: Use when debugging Friday agent behavior with a user - covers local debugging with atlas CLI and remote debugging via GCS logs.
 compatibility: Requires gcloud CLI configured for GCS queries
 ---
@@ -24,7 +24,8 @@ compatibility: Requires gcloud CLI configured for GCS queries
 - `deno task atlas chat <id>` - view chat transcript (JSON lines)
 - `deno task atlas chat <id> --human` - human-readable transcript
 - `deno task atlas chat <id> --show-prompts` - view system prompt sent to LLM
-- `deno task atlas chat <id> --show-prompts --human` - human-readable system prompt
+- `deno task atlas chat <id> --show-prompts --human` - human-readable system
+  prompt
 
 ### Workflow
 
@@ -67,6 +68,7 @@ deno task atlas chat <chatId> --show-prompts --human
 ```
 
 Shows all system messages sent to the LLM:
+
 - Main prompt (with workspace/agent/credential context)
 - Current datetime
 - Scratchpad notes (if any)
@@ -77,6 +79,23 @@ Query logs via gcloud CLI. All queries return JSON.
 
 **Note:** Use `streamId` for chat queries - it's synonymous with chatId but has
 better coverage across components.
+
+### Use a Subagent for Log Retrieval
+
+**Always delegate GCS log retrieval to a subagent.** Production logs are verbose
+and will consume significant context. Spawn a sub-agent with explicit
+instructions:
+
+```
+"Query GCS logs for streamId='CHAT_ID' (or sessionId, userId, etc.).
+Filter for errors/warnings. Return a summary of:
+1. Any errors with stack traces (condensed)
+2. The sequence of events leading to the issue
+3. Relevant context fields (workspaceId, agentId, etc.)
+Do NOT return raw logs - summarize findings only."
+```
+
+The subagent handles the raw log volume; you receive a digestible summary.
 
 ### By chatId (streamId)
 
@@ -128,17 +147,17 @@ gcloud logging read 'jsonPayload.context.workspaceId="WORKSPACE_ID"' \
 
 Key fields in GCS logs:
 
-| Field | Path |
-|-------|------|
-| streamId | `jsonPayload.context.streamId` (synonymous with chatId) |
-| sessionId | `jsonPayload.context.sessionId` |
-| workspaceId | `jsonPayload.context.workspaceId` |
-| agentId | `jsonPayload.context.agentId` |
-| level | `jsonPayload.level` |
-| message | `jsonPayload.message` |
-| userId | `labels."k8s-pod/user-id"` |
-| error | `jsonPayload.context.error.message` |
-| stack | `jsonPayload.context.error.stack` |
+| Field       | Path                                                    |
+| ----------- | ------------------------------------------------------- |
+| streamId    | `jsonPayload.context.streamId` (synonymous with chatId) |
+| sessionId   | `jsonPayload.context.sessionId`                         |
+| workspaceId | `jsonPayload.context.workspaceId`                       |
+| agentId     | `jsonPayload.context.agentId`                           |
+| level       | `jsonPayload.level`                                     |
+| message     | `jsonPayload.message`                                   |
+| userId      | `labels."k8s-pod/user-id"`                              |
+| error       | `jsonPayload.context.error.message`                     |
+| stack       | `jsonPayload.context.error.stack`                       |
 
 ## Chats (Remote)
 
