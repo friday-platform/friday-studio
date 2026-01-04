@@ -40,4 +40,10 @@ if (!__DEV_MODE__) {
   document.head.appendChild(clarityScript);
 }
 
-export const handleError = Sentry.handleErrorWithSentry();
+export const handleError = Sentry.handleErrorWithSentry(({ error }: { error: unknown }) => {
+  // Handle stale deployment errors - when new version is deployed, old chunk files
+  // no longer exist. Reload the page to get the new version.
+  if (error instanceof TypeError && error.message.includes("dynamically imported module")) {
+    window.location.reload();
+  }
+});
