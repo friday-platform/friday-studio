@@ -10,6 +10,7 @@ import process from "node:process";
 import type { AgentEnvironmentConfig } from "@atlas/agent-sdk";
 import type { Logger } from "@atlas/logger";
 import {
+  CredentialNotFoundError,
   fetchLinkCredential,
   resolveCredentialsByProvider,
 } from "../mcp-registry/credential-resolver.ts";
@@ -87,15 +88,34 @@ export function createEnvironmentContext(logger: Logger) {
               }
             }
           } catch (err) {
-            logger.debug("Failed to resolve Link credential", {
-              operation: "environment_validation",
-              workspaceId,
-              agentId,
-              variable: reqVar.name,
-              provider: reqVar.linkRef.provider,
-              error: err,
-            });
-            // Continue - will be caught as missing required below if still undefined
+            // CredentialNotFoundError means user hasn't connected to the provider yet.
+            // This is expected - continue and mark as missing required variable.
+            if (err instanceof CredentialNotFoundError) {
+              logger.debug("No credentials found for provider", {
+                operation: "environment_validation",
+                workspaceId,
+                agentId,
+                variable: reqVar.name,
+                provider: reqVar.linkRef.provider,
+              });
+              // Continue - will be caught as missing required below
+            } else {
+              // Other errors (refresh failed, expired, API errors) should surface immediately
+              // so users understand the actual problem rather than seeing "variable not found".
+              logger.error("Credential resolution failed", {
+                operation: "environment_validation",
+                workspaceId,
+                agentId,
+                variable: reqVar.name,
+                provider: reqVar.linkRef.provider,
+                error: err,
+              });
+              throw new Error(
+                `Can't execute ${agentId}: Your '${reqVar.linkRef.provider}' credentials could not be loaded. ` +
+                  `Please reconnect your ${reqVar.linkRef.provider} account and try again.`,
+                { cause: err },
+              );
+            }
           }
         }
 
