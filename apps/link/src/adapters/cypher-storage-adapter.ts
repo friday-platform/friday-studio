@@ -104,7 +104,7 @@ export class CypherStorageAdapter implements StorageAdapter {
         )
         ON CONFLICT (user_id, provider, label) WHERE deleted_at IS NULL
         DO UPDATE SET
-          encrypted_secret = EXCLUDED.encrypted_secret,
+          encrypted_secret = EXCLUDED.encrypted_secret
         RETURNING id, created_at, updated_at
       `;
 
