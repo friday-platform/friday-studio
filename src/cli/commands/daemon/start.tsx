@@ -1,7 +1,7 @@
 import { readFile, rm, stat, writeFile } from "node:fs/promises";
 import process from "node:process";
 import { client, parseResult } from "@atlas/client/v2";
-import { decodeJwtPayload, fetchCredentials, setToEnv } from "@atlas/core/credentials";
+import { extractTempestUserId, fetchCredentials, setToEnv } from "@atlas/core/credentials";
 import { logger } from "@atlas/logger";
 import { captureException, initSentry } from "@atlas/sentry";
 import { getAtlasHome } from "@atlas/utils/paths.server";
@@ -83,10 +83,7 @@ function buildDaemonArgs(argv: StartArgs): string[] {
  * Resource attributes are added for telemetry identification.
  */
 function buildOtelEnv(atlasKey: string): Record<string, string> {
-  // Extract user info from JWT for resource attributes
-  const jwtPayload = decodeJwtPayload(atlasKey);
-  const userMetadata = jwtPayload?.user_metadata as Record<string, string> | undefined;
-  const tempestUserId = userMetadata?.tempest_user_id;
+  const tempestUserId = extractTempestUserId(atlasKey);
 
   // Build resource attributes for telemetry identification
   const resourceAttrs: string[] = [];

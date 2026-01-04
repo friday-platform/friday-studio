@@ -54,6 +54,15 @@ export function decodeJwtPayload(jwt: string): JWTPayload | undefined {
   }
 }
 
+/**
+ * Extract tempest_user_id from an Atlas JWT.
+ * Returns undefined if the JWT is invalid or missing the claim.
+ */
+export function extractTempestUserId(atlasKey: string): string | undefined {
+  const payload = decodeJwtPayload(atlasKey);
+  return (payload?.user_metadata as Record<string, string> | undefined)?.tempest_user_id;
+}
+
 export function validateAtlasJWT(token: string): void {
   const payload = decodeJwtPayload(token);
   if (!payload) {

@@ -1,6 +1,8 @@
+import process from "node:process";
 import type { AtlasUIMessage } from "@atlas/agent-sdk";
 import { validateAtlasUIMessages } from "@atlas/agent-sdk";
 import { ChatStorage } from "@atlas/core/chat/storage";
+import { extractTempestUserId } from "@atlas/core/credentials";
 import { logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
 import { zValidator } from "@hono/zod-validator";
@@ -15,6 +17,15 @@ const listChatsQuerySchema = z.object({
   limit: z.coerce.number().min(1).max(100).optional(),
   cursor: z.coerce.number().optional(),
 });
+
+/**
+ * Extract userId from ATLAS_KEY JWT.
+ * Falls back to "default-user" in dev mode (no ATLAS_KEY).
+ */
+function getUserId(): string {
+  const atlasKey = process.env.ATLAS_KEY;
+  return (atlasKey && extractTempestUserId(atlasKey)) || "default-user";
+}
 
 /**
  * Extract text content from user message.
@@ -57,7 +68,7 @@ const chatRoutes = daemonFactory
   .post("/", zValidator("json", chatRequestSchema), async (c) => {
     const ctx = c.get("app");
     const { id: chatId, message } = c.req.valid("json");
-    const userId = c.req.header("X-User-Id") || "default-user";
+    const userId = getUserId();
     const workspaceId = c.req.header("X-Workspace-Id") || "atlas-conversation";
 
     const result = await ChatStorage.createChat({ chatId, userId, workspaceId, source: "atlas" });
