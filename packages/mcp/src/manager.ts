@@ -3,7 +3,6 @@
  * Provides type-safe MCP server connectivity with transport abstraction
  */
 
-import { readFileSync } from "node:fs";
 import { stat } from "node:fs/promises";
 import process from "node:process";
 import { experimental_createMCPClient as createMCPClient } from "@ai-sdk/mcp";
@@ -54,48 +53,12 @@ interface MCPClientWrapper {
 export class MCPManager {
   private static instance: MCPManager = new MCPManager();
   private clients: Map<string, MCPClientWrapper> = new Map();
-  private linkPrivateKey: string | null = null;
-
-  constructor() {
-    this.loadLinkPrivateKey();
-  }
 
   /**
    * Get the singleton instance of MCPManager
    */
   static getInstance(): MCPManager {
     return MCPManager.instance;
-  }
-
-  /**
-   * Loads Link JWT private key from file
-   * Only required in production mode (LINK_DEV_MODE=false)
-   */
-  private loadLinkPrivateKey(): void {
-    const devMode = process.env.LINK_DEV_MODE === "true";
-
-    if (devMode) {
-      logger.debug("Link dev mode enabled, skipping JWT key load");
-      return;
-    }
-
-    const keyFile = process.env.ATLAS_JWT_PRIVATE_KEY_FILE;
-
-    if (!keyFile) {
-      logger.warn(
-        "ATLAS_JWT_PRIVATE_KEY_FILE not set. Link authentication will fail in production mode. " +
-          "Set LINK_DEV_MODE=true for development, or configure JWT keys for production.",
-      );
-      return;
-    }
-
-    try {
-      this.linkPrivateKey = readFileSync(keyFile, "utf-8").trim();
-      logger.info("Loaded Link JWT private key", { keyFile });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      throw new Error(`Failed to read Link JWT private key from ${keyFile}: ${message}`);
-    }
   }
 
   /**
@@ -246,7 +209,7 @@ export class MCPManager {
 
           // Process environment variables - resolve "auto", literals, and Link credentials
           const processedEnv: Record<string, string> = env
-            ? await resolveEnvValues(env, { linkPrivateKey: this.linkPrivateKey, logger })
+            ? await resolveEnvValues(env, logger)
             : {};
 
           // Merge processed env vars with parent process env
@@ -271,10 +234,7 @@ export class MCPManager {
 
           // Resolve env values (including Link credentials) for auth headers
           const resolvedEnv = validatedConfig.env
-            ? await resolveEnvValues(validatedConfig.env, {
-                linkPrivateKey: this.linkPrivateKey,
-                logger,
-              })
+            ? await resolveEnvValues(validatedConfig.env, logger)
             : {};
 
           const transport = new StreamableHTTPClientTransport(new URL(url), {

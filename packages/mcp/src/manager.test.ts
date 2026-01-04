@@ -8,11 +8,9 @@
  * 3. Mixed env types - Link ref + literal + auto
  */
 
-import { rm, writeFile } from "node:fs/promises";
 import process from "node:process";
-import { assertEquals, assertExists, assertMatch, assertRejects } from "@std/assert";
+import { assertEquals, assertMatch, assertRejects } from "@std/assert";
 import { afterEach, beforeEach, describe, it } from "@std/testing/bdd";
-import * as jose from "jose";
 import { MCPManager } from "./manager.ts";
 
 // =============================================================================
@@ -235,99 +233,54 @@ describe("MCPManager - Link Credential Integration", () => {
 });
 
 // =============================================================================
-// JWT Authentication Tests
+// Link Authentication Tests
 // =============================================================================
 
-describe("MCPManager - JWT Authentication", () => {
-  it("generates valid JWT with correct claims", async () => {
-    // Generate test key pair with extractable=true
-    const keyPair = await jose.generateKeyPair("RS256", { extractable: true });
-    const privateKeyPem = await jose.exportPKCS8(keyPair.privateKey);
-
-    // Test the exported signLinkJWT function directly (now in @atlas/core)
-    const { signLinkJWT } = await import("@atlas/core/mcp-registry/credential-resolver");
-
-    // Sign JWT
-    const jwt = await signLinkJWT("test-user", privateKeyPem);
-
-    // Decode and verify claims (no signature verification needed)
-    const payload = jose.decodeJwt(jwt);
-    assertEquals(payload.iss, "atlas-daemon");
-    assertEquals(payload.sub, "test-user");
-    assertEquals(payload.aud, "link-service");
-    assertExists(payload.iat);
-    assertExists(payload.exp);
-
-    // Verify TTL is 5 minutes (300 seconds)
-    const ttl = payload.exp - payload.iat;
-    assertEquals(ttl, 300);
-  });
-
-  it("includes JWT in Authorization header when fetching credentials in prod mode", async () => {
-    // Setup: Generate test key pair and write to temp file
-    const keyPair = await jose.generateKeyPair("RS256", { extractable: true });
-    const privateKeyPem = await jose.exportPKCS8(keyPair.privateKey);
-    const tempKeyFile = await Deno.makeTempFile({ suffix: ".pem" });
-    await writeFile(tempKeyFile, privateKeyPem, "utf-8");
-
-    // Setup: Mock environment for prod mode
+describe("MCPManager - Link Authentication", () => {
+  it("includes ATLAS_KEY in Authorization header in prod mode", async () => {
+    // Setup: Mock environment for prod mode with ATLAS_KEY
     const originalDevMode = process.env.LINK_DEV_MODE;
-    const originalKeyFile = process.env.ATLAS_JWT_PRIVATE_KEY_FILE;
+    const originalAtlasKey = process.env.ATLAS_KEY;
+    const testAtlasKey = "test-atlas-key-jwt-token";
 
     process.env.LINK_DEV_MODE = "false";
-    process.env.ATLAS_JWT_PRIVATE_KEY_FILE = tempKeyFile;
+    process.env.ATLAS_KEY = testAtlasKey;
 
     // Setup: Mock Link API with header capture
     let capturedHeaders: Record<string, string> = {};
-    globalThis.fetch = mockCredentialFetch("cred_jwt_test", TestFixtures.validOAuth, (headers) => {
+    globalThis.fetch = mockCredentialFetch("cred_key_test", TestFixtures.validOAuth, (headers) => {
       capturedHeaders = headers;
     });
 
     try {
-      // Create new manager instance to load the private key
-      const { MCPManager: FreshMCPManager } = await import(`./manager.ts?t=${Date.now()}`);
-      const testManager = new (FreshMCPManager as typeof MCPManager)();
-
       // Register a server that requires Link credentials
-      // This will trigger credential fetching with JWT
       const config = {
-        id: "test-jwt-server",
+        id: "test-key-server",
         transport: { type: "stdio" as const, command: "nonexistent-command", args: [] },
-        env: { TOKEN: { from: "link" as const, id: "cred_jwt_test", key: "access_token" } },
+        env: { TOKEN: { from: "link" as const, id: "cred_key_test", key: "access_token" } },
       };
 
-      // Attempt to register - will fail on command, but should fetch credential with JWT
-      await assertRejects(async () => await testManager.registerServer(config));
+      // Attempt to register - will fail on command, but should fetch credential with ATLAS_KEY
+      await assertRejects(async () => await manager.registerServer(config));
 
-      // Assert: JWT present in Authorization header
-      assertExists(capturedHeaders.authorization);
-      assertMatch(capturedHeaders.authorization, /^Bearer .+\..+\..+$/);
-
-      // Verify JWT is valid by decoding
-      const token = capturedHeaders.authorization.replace("Bearer ", "");
-      const payload = jose.decodeJwt(token);
-      assertEquals(payload.iss, "atlas-daemon");
-      assertEquals(payload.aud, "link-service");
-
-      // Cleanup registered server
-      await testManager.dispose();
+      // Assert: ATLAS_KEY present in Authorization header
+      assertEquals(capturedHeaders.authorization, `Bearer ${testAtlasKey}`);
     } finally {
       // Cleanup
-      await rm(tempKeyFile);
       if (originalDevMode !== undefined) {
         process.env.LINK_DEV_MODE = originalDevMode;
       } else {
         delete process.env.LINK_DEV_MODE;
       }
-      if (originalKeyFile !== undefined) {
-        process.env.ATLAS_JWT_PRIVATE_KEY_FILE = originalKeyFile;
+      if (originalAtlasKey !== undefined) {
+        process.env.ATLAS_KEY = originalAtlasKey;
       } else {
-        delete process.env.ATLAS_JWT_PRIVATE_KEY_FILE;
+        delete process.env.ATLAS_KEY;
       }
     }
   });
 
-  it("skips JWT in dev mode", async () => {
+  it("skips auth header in dev mode", async () => {
     // Already in dev mode from beforeEach
     // Setup: Mock Link API with header capture
     let capturedHeaders: Record<string, string> = {};
@@ -342,29 +295,25 @@ describe("MCPManager - JWT Authentication", () => {
       env: { TOKEN: { from: "link" as const, id: "cred_dev_test", key: "access_token" } },
     };
 
-    // Attempt to register - will fail on command, but should fetch credential without JWT
+    // Attempt to register - will fail on command, but should fetch credential without auth
     await assertRejects(async () => await manager.registerServer(config));
 
-    // Assert: No JWT in headers
+    // Assert: No auth header in dev mode
     assertEquals(capturedHeaders.authorization, undefined);
   });
 
-  it("throws clear error when private key missing in prod mode", async () => {
-    // Setup: Mock environment for prod without key file
+  it("throws clear error when ATLAS_KEY missing in prod mode", async () => {
+    // Setup: Mock environment for prod without ATLAS_KEY
     const originalDevMode = process.env.LINK_DEV_MODE;
-    const originalKeyFile = process.env.ATLAS_JWT_PRIVATE_KEY_FILE;
+    const originalAtlasKey = process.env.ATLAS_KEY;
 
     process.env.LINK_DEV_MODE = "false";
-    delete process.env.ATLAS_JWT_PRIVATE_KEY_FILE;
+    delete process.env.ATLAS_KEY;
+
+    // Mock fetch
+    globalThis.fetch = mockCredentialFetch("cred_test", TestFixtures.validOAuth);
 
     try {
-      // Create new manager instance that will not have private key
-      const { MCPManager: FreshMCPManager } = await import(`./manager.ts?t=${Date.now()}`);
-      const testManager = new (FreshMCPManager as typeof MCPManager)();
-
-      // Mock fetch
-      globalThis.fetch = mockCredentialFetch("cred_test", TestFixtures.validOAuth);
-
       // Register server that requires Link credential
       const config = {
         id: "test-no-key-server",
@@ -372,15 +321,12 @@ describe("MCPManager - JWT Authentication", () => {
         env: { TOKEN: { from: "link" as const, id: "cred_test", key: "access_token" } },
       };
 
-      // Should throw when trying to fetch credential without key
+      // Should throw when trying to fetch credential without ATLAS_KEY
       await assertRejects(
-        async () => await testManager.registerServer(config),
+        async () => await manager.registerServer(config),
         Error,
-        "ATLAS_JWT_PRIVATE_KEY_FILE is required",
+        "ATLAS_KEY is required",
       );
-
-      // Cleanup
-      await testManager.dispose();
     } finally {
       // Cleanup
       if (originalDevMode !== undefined) {
@@ -388,10 +334,10 @@ describe("MCPManager - JWT Authentication", () => {
       } else {
         delete process.env.LINK_DEV_MODE;
       }
-      if (originalKeyFile !== undefined) {
-        process.env.ATLAS_JWT_PRIVATE_KEY_FILE = originalKeyFile;
+      if (originalAtlasKey !== undefined) {
+        process.env.ATLAS_KEY = originalAtlasKey;
       } else {
-        delete process.env.ATLAS_JWT_PRIVATE_KEY_FILE;
+        delete process.env.ATLAS_KEY;
       }
     }
   });

@@ -2,7 +2,6 @@ import process from "node:process";
 import type { LinkCredentialRef } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
 import type { Logger } from "@atlas/logger";
-import * as jose from "jose";
 
 /** Minimal credential info from Link summary endpoint */
 export type CredentialSummary = { id: string; provider: string; label: string; type: string };
@@ -49,35 +48,16 @@ export async function resolveCredentialsByProvider(
 }
 
 /**
- * Signs a JWT for authenticating with Link service
- * @param userId User ID to include in sub claim
- * @param privateKeyPem PEM-encoded RSA private key
- * @returns Signed JWT token
- */
-export async function signLinkJWT(userId: string, privateKeyPem: string): Promise<string> {
-  const privateKey = await jose.importPKCS8(privateKeyPem, "RS256");
-  const now = Math.floor(Date.now() / 1000);
-
-  return await new jose.SignJWT({ user_metadata: { tempest_user_id: userId } })
-    .setProtectedHeader({ alg: "RS256" })
-    .setIssuer("atlas-daemon")
-    .setSubject(userId)
-    .setAudience("link-service")
-    .setIssuedAt(now)
-    .setExpirationTime(now + 300)
-    .sign(privateKey);
-}
-
-/**
- * Fetches a credential from Link service
+ * Fetches a credential from Link service.
+ * Uses ATLAS_KEY (obtained from Cypher) for authentication in production mode.
+ * In dev mode (LINK_DEV_MODE=true), no authentication is required.
+ *
  * @param credentialId Link credential ID
- * @param linkPrivateKey PEM-encoded RSA private key (null in dev mode)
  * @param logger Logger instance for debug output
  * @returns Credential with secret
  */
 export async function fetchLinkCredential(
   credentialId: string,
-  linkPrivateKey: string | null,
   logger: Logger,
 ): Promise<Credential> {
   const userId = process.env.ATLAS_USER_ID ?? "dev";
@@ -88,15 +68,17 @@ export async function fetchLinkCredential(
   const headers: Record<string, string> = {};
 
   if (!devMode) {
-    if (!linkPrivateKey) {
+    // Use ATLAS_KEY for authentication - this is a JWT signed by Cypher,
+    // specific to this user. Never use the private key directly in daemon pods.
+    const atlasKey = process.env.ATLAS_KEY;
+    if (!atlasKey) {
       throw new Error(
-        "ATLAS_JWT_PRIVATE_KEY_FILE is required for Link authentication in production mode. " +
-          "Set LINK_DEV_MODE=true for development, or configure JWT keys for production.",
+        "ATLAS_KEY is required for Link authentication in production mode. " +
+          "Set LINK_DEV_MODE=true for development, or ensure ATLAS_KEY is available.",
       );
     }
 
-    const jwt = await signLinkJWT(userId, linkPrivateKey);
-    headers.Authorization = `Bearer ${jwt}`;
+    headers.Authorization = `Bearer ${atlasKey}`;
   }
 
   const result = await parseResult(
@@ -122,22 +104,16 @@ export async function fetchLinkCredential(
   return credential;
 }
 
-export interface ResolveEnvOptions {
-  linkPrivateKey: string | null;
-  logger: Logger;
-}
-
 /**
  * Resolves environment variable values, fetching Link credentials as needed
  * @param env Environment variable configuration (strings or Link credential refs)
- * @param options Resolution options (linkPrivateKey, logger)
+ * @param logger Logger instance for debug output
  * @returns Resolved environment variables as strings
  */
 export async function resolveEnvValues(
   env: Record<string, string | LinkCredentialRef>,
-  options: ResolveEnvOptions,
+  logger: Logger,
 ): Promise<Record<string, string>> {
-  const { linkPrivateKey, logger } = options;
   const resolved: Record<string, string> = {};
 
   for (const [envKey, value] of Object.entries(env)) {
@@ -158,10 +134,11 @@ export async function resolveEnvValues(
       if (!credentialId && value.provider) {
         const userId = process.env.ATLAS_USER_ID ?? "dev";
         const credentials = await fetchCredentialsByProvider(userId, value.provider);
-        if (credentials.length === 0) {
+        const firstCredential = credentials.at(0);
+        if (!firstCredential) {
           throw new Error(`No credentials found for provider '${value.provider}'.`);
         }
-        credentialId = credentials[0]!.id;
+        credentialId = firstCredential.id;
         logger.debug("Resolved credential ID from provider", {
           envKey,
           provider: value.provider,
@@ -175,7 +152,7 @@ export async function resolveEnvValues(
         );
       }
 
-      const credential = await fetchLinkCredential(credentialId, linkPrivateKey, logger);
+      const credential = await fetchLinkCredential(credentialId, logger);
       const secretValue = credential.secret[value.key];
 
       if (secretValue === undefined) {

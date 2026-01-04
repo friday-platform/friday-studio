@@ -107,9 +107,7 @@ tools:
     #
     # Environment setup:
     #   Development:  export LINK_DEV_MODE=true
-    #   Production:   Generate RSA-2048 key pair and configure:
-    #                 export ATLAS_JWT_PRIVATE_KEY_FILE=/path/to/private.pem
-    #                 export LINK_JWT_PUBLIC_KEY_FILE=/path/to/public.pem (in Link)
+    #   Production:   ATLAS_KEY is provided automatically by Cypher service
     # -------------------------------------------------------------------------
     servers:
       # Example with Link credential integration

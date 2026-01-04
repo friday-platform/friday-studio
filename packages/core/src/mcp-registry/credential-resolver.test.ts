@@ -209,7 +209,7 @@ describe("Google credential resolution", () => {
       },
     };
 
-    const resolved = await resolveEnvValues(env, { linkPrivateKey: null, logger });
+    const resolved = await resolveEnvValues(env, logger);
 
     const token = resolved.GOOGLE_CALENDAR_ACCESS_TOKEN;
     assertEquals(token, fakeAccessToken);
@@ -237,7 +237,7 @@ describe("Google credential resolution", () => {
       GMAIL_TOKEN: { from: "link" as const, provider: "google-gmail", key: "access_token" },
     };
 
-    const resolved = await resolveEnvValues(env, { linkPrivateKey: null, logger });
+    const resolved = await resolveEnvValues(env, logger);
     assertEquals(resolved.GMAIL_TOKEN, fakeAccessToken);
   });
 
@@ -262,7 +262,7 @@ describe("Google credential resolution", () => {
     };
 
     await assertRejects(
-      () => resolveEnvValues(env, { linkPrivateKey: null, logger }),
+      () => resolveEnvValues(env, logger),
       Error,
       "Key 'access_token' not found in credential",
     );

@@ -49,26 +49,6 @@ export function createEnvironmentContext(logger: Logger) {
 
     const missingRequired: string[] = [];
 
-    // Load Link private key if needed (for credential resolution)
-    let linkPrivateKey: string | null = null;
-    const devMode = process.env.LINK_DEV_MODE === "true";
-
-    if (!devMode) {
-      const keyFile = process.env.ATLAS_JWT_PRIVATE_KEY_FILE;
-      if (keyFile) {
-        try {
-          const { readFileSync } = await import("node:fs");
-          linkPrivateKey = readFileSync(keyFile, "utf-8").trim();
-        } catch (error) {
-          logger.warn("Failed to load Link JWT private key", {
-            operation: "environment_validation",
-            keyFile,
-            error,
-          });
-        }
-      }
-    }
-
     // Validate required environment variables
     if (environmentConfig.required) {
       const litellmKey = process.env.LITELLM_API_KEY;
@@ -82,12 +62,9 @@ export function createEnvironmentContext(logger: Logger) {
           try {
             const userId = process.env.ATLAS_USER_ID ?? "dev";
             const credentials = await resolveCredentialsByProvider(reqVar.linkRef.provider, userId);
-            if (credentials.length > 0) {
-              const credential = await fetchLinkCredential(
-                credentials[0]!.id,
-                linkPrivateKey,
-                logger,
-              );
+            const firstCredential = credentials.at(0);
+            if (firstCredential) {
+              const credential = await fetchLinkCredential(firstCredential.id, logger);
               const secretValue = credential.secret[reqVar.linkRef.key];
 
               if (typeof secretValue === "string") {
