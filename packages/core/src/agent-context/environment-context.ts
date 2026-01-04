@@ -103,7 +103,8 @@ export function createEnvironmentContext(logger: Logger) {
             } else {
               // Other errors (refresh failed, expired, API errors) should surface immediately
               // so users understand the actual problem rather than seeing "variable not found".
-              logger.error("Credential resolution failed", {
+              // Use warn (not error) since this is an expected user scenario, not an app bug.
+              logger.warn("Credential resolution failed", {
                 operation: "environment_validation",
                 workspaceId,
                 agentId,
