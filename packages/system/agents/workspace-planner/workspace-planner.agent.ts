@@ -216,7 +216,7 @@ export const workspacePlannerAgent = createAgent<WorkspacePlannerInput, Workspac
       }
       // Generate workspace, signals, agents with LLM-chosen names
       const phase1Result = await generateObject({
-        model: wrapAISDKModel(registry.languageModel("anthropic:claude-sonnet-4-5-20250929")),
+        model: wrapAISDKModel(registry.languageModel("anthropic:claude-sonnet-4-5")),
         experimental_repairText: repairJson,
         schema: z.object({
           plan: z.object({
@@ -473,7 +473,7 @@ ${getAvailableIntegrationsPrompt()}`,
 Generate jobs that connect the available signals and agents to fulfill the workspace requirements.`;
 
       const phase2Result = await generateObject({
-        model: wrapAISDKModel(registry.languageModel("anthropic:claude-sonnet-4-5-20250929")),
+        model: wrapAISDKModel(registry.languageModel("anthropic:claude-sonnet-4-5")),
         experimental_repairText: repairJson,
         schema: z.object({
           jobs: z.array(
