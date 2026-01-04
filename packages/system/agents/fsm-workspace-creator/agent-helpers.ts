@@ -323,6 +323,10 @@ const result = builder.build();
 **CRITICAL - Code String Escaping:**
 When adding function code with addFunction(), use TEMPLATE LITERALS (backticks) for multi-line strings.
 
+IMPORTANT: Inside function code, use DOUBLE QUOTES for string literals that may contain apostrophes.
+- WRONG: task: 'Analyze the blog post's style'  (apostrophe breaks single-quoted string)
+- RIGHT: task: "Analyze the blog post's style"  (double quotes handle apostrophes)
+
 Example:
 builder.addFunction('my_function', 'action', \\\`
   export default function my_function(context, event) {
