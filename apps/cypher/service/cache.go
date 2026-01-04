@@ -36,6 +36,9 @@ func NewKeyCache(pool *pgxpool.Pool, kms cypherKms.KeyEncryptionService, cacheSi
 	}
 }
 
+// Pool returns the database connection pool.
+func (c *KeyCache) Pool() *pgxpool.Pool { return c.pool }
+
 // GetAEAD returns the AEAD primitive for a user, loading from DB or creating if needed.
 func (c *KeyCache) GetAEAD(ctx context.Context, userID string) (tink.AEAD, error) {
 	// Check cache first

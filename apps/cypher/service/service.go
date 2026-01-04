@@ -20,17 +20,16 @@ import (
 )
 
 type service struct {
-	Logger          *httplog.Logger
-	cfg             Config
-	mux             *chi.Mux
-	tlsConfig       *server.TLSConfig
-	db              *pgxpool.Pool
-	queries         *repo.Queries
-	kms             kms.KeyEncryptionService
-	cache           *KeyCache
-	tokenDeps       *TokenDeps       // nil if token endpoint not configured
-	credentialsDeps *CredentialsDeps // for /api/credentials endpoint
-	k8sClient       *http.Client     // nil if not running in Kubernetes
+	Logger    *httplog.Logger
+	cfg       Config
+	mux       *chi.Mux
+	tlsConfig *server.TLSConfig
+	db        *pgxpool.Pool
+	queries   *repo.Queries
+	kms       kms.KeyEncryptionService
+	cache     *KeyCache
+	tokenDeps *TokenDeps   // nil if token endpoint not configured
+	k8sClient *http.Client // nil if not running in Kubernetes
 }
 
 // New creates a new cypher service instance.
@@ -83,8 +82,7 @@ func (s *service) routes(r *chi.Mux) *chi.Mux {
 		r.Use(middleware.RequestSize(1 << 20)) // 1MB
 		r.Post("/encrypt", handleEncrypt)
 		r.Post("/decrypt", handleDecrypt)
-		r.With(CredentialsDepsCtxMiddleware(s.credentialsDeps)).
-			Get("/api/credentials", handleGetCredentials)
+		r.Get("/api/credentials", handleGetCredentials)
 	})
 
 	return r
@@ -176,13 +174,6 @@ func (s *service) Init() error {
 			}
 			s.Logger.Info("Token endpoint enabled")
 		}
-	}
-
-	// Initialize credentials endpoint dependencies
-	s.credentialsDeps = &CredentialsDeps{
-		Pool:        s.db,
-		SendgridKey: s.cfg.SendgridAPIKey,
-		ParallelKey: s.cfg.ParallelAPIKey,
 	}
 
 	return nil

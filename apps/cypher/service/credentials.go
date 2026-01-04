@@ -22,14 +22,6 @@ func handleGetCredentials(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	deps, err := CredentialsDepsFromContext(ctx)
-	if err != nil {
-		log.Error("credentials: no deps in context", "error", err)
-		RecordCredentials("failure")
-		writeJSONError(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-
 	cache, err := KeyCacheFromContext(ctx)
 	if err != nil {
 		log.Error("credentials: no cache in context", "error", err)
@@ -40,17 +32,9 @@ func handleGetCredentials(w http.ResponseWriter, r *http.Request) {
 
 	creds := map[string]string{}
 
-	// Add shared secrets (always present if configured)
-	if deps.SendgridKey != "" {
-		creds["SENDGRID_API_KEY"] = deps.SendgridKey
-	}
-	if deps.ParallelKey != "" {
-		creds["PARALLEL_API_KEY"] = deps.ParallelKey
-	}
-
 	// Add per-user LiteLLM key (may not exist yet - that's OK)
 	// Uses RLS-scoped transaction
-	ciphertext, err := withUserContextRead(ctx, deps.Pool, userID, func(queries *repo.Queries) ([]byte, error) {
+	ciphertext, err := withUserContextRead(ctx, cache.Pool(), userID, func(queries *repo.Queries) ([]byte, error) {
 		return queries.GetVirtualKeyCiphertext(ctx, userID)
 	})
 	if err == nil {
