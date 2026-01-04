@@ -38,7 +38,9 @@ export async function shareChat(messages: AtlasUIMessage[], title?: string): Pro
   });
 
   if (!response.ok) {
-    throw new Error(`Failed to share chat: ${response.statusText}`);
+    const body = (await response.json().catch(() => ({}))) as { error?: string };
+    console.error(`Failed to share chat: ${body.error ?? `HTTP ${response.status}`}`);
+    throw new Error("Failed to share chat");
   }
 
   const data = (await response.json()) as { id: string; url: string };
