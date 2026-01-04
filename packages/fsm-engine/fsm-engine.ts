@@ -607,7 +607,7 @@ export class FSMEngine {
 
         // Check if LLM called failStep
         if (response.calledTool?.name === "failStep") {
-          throw new Error(`LLM step failed: ${response.calledTool.args}`);
+          throw new Error(`LLM step failed: ${JSON.stringify(response.calledTool.args)}`);
         }
 
         if (action.outputTo) {

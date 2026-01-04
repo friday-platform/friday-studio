@@ -169,6 +169,47 @@ describe("FSM Engine - Core Mechanics", () => {
       assertStringIncludes(String(error), "Action Boom");
     });
 
+    it("should include failStep reason in error message, not [object Object]", async () => {
+      const fsm: FSMDefinition = {
+        id: "llm-failstep",
+        initial: "start",
+        states: {
+          start: {
+            on: {
+              RUN_LLM: {
+                target: "end",
+                actions: [{ type: "llm", provider: "test", model: "test", prompt: "test" }],
+              },
+            },
+          },
+          end: { type: "final" },
+        },
+      };
+
+      const { store, scope } = await createTestEngine(fsm, { initialState: "start" });
+
+      // Create engine with mock LLM provider that returns failStep
+      const mockLLMProvider = {
+        call: () =>
+          Promise.resolve({
+            content: "",
+            calledTool: { name: "failStep", args: { reason: "Missing required data" } },
+          }),
+      };
+
+      const engine = new FSMEngine(fsm, {
+        documentStore: store,
+        scope,
+        llmProvider: mockLLMProvider,
+      });
+      await engine.initialize();
+
+      const error = await assertRejects(async () => await engine.signal({ type: "RUN_LLM" }));
+
+      // Should contain the actual reason, not [object Object]
+      assertStringIncludes(String(error), '"reason":"Missing required data"');
+    });
+
     it("should enforce recursion depth limits", async () => {
       const fsm: FSMDefinition = {
         id: "recursion",
