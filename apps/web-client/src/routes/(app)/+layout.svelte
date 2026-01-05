@@ -9,7 +9,6 @@ import KeyboardListener from "$lib/components/keyboard-listener.svelte";
 import NotificationPortal from "$lib/components/notification/portal.svelte";
 import { setClientContext } from "$lib/modules/client/context.svelte";
 import { setSpacesContext } from "$lib/modules/spaces/context.svelte";
-import { handleWorkspaceFileDrop } from "$lib/modules/spaces/utils.svelte";
 import WorkspaceDropHandler from "$lib/modules/spaces/workspace-drop-handler.svelte";
 
 const { children } = $props();
@@ -30,7 +29,8 @@ onMount(async () => {
   // Ensure periodic health checks are running for auto-reconnect
   ctx.startHealthCheckInterval();
 
-  // Setup drag and drop for desktop builds
+  // Setup drag and drop for staged files in desktop builds
+  // Note: Workspace file drops (.yml/.yaml) are handled by WorkspaceDropHandler
   if (__TAURI_BUILD__) {
     try {
       const webview = getCurrentWebview();
@@ -38,13 +38,9 @@ onMount(async () => {
         unlisten = await webview.onDragDropEvent(async (event) => {
           if (event.payload.type === "drop") {
             for (const path of event.payload.paths) {
-              // Check if it's a valid workspace config file
+              // Skip workspace config files - handled by WorkspaceDropHandler
               if (path.endsWith(".yml") || path.endsWith(".yaml")) {
-                const result = await handleWorkspaceFileDrop(path);
-                if (result) {
-                  // Valid workspace file - skip it, let WorkspaceDropHandler handle it
-                  continue;
-                }
+                continue;
               }
 
               appCtx.stagedFiles.add(path, { path, type: getFileType(path) });

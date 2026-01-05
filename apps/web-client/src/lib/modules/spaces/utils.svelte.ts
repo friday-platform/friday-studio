@@ -1,51 +1,34 @@
 import { client, parseResult } from "@atlas/client/v2";
 import { type WorkspaceConfig, WorkspaceConfigSchema } from "@atlas/config";
 import { parse } from "@std/yaml";
-import { getCurrentWindow } from "@tauri-apps/api/window";
-import { readTextFile } from "@tauri-apps/plugin-fs";
+import { ZodError } from "zod";
 import { goto } from "$app/navigation";
+import { toast } from "$lib/components/notification/notification.svelte";
 
 /**
- * Parse workspace name from workspace.yml file
+ * Handle .yml/.yaml file selection - parses workspace config from File object
  */
-async function parseWorkspaceConfig(filePath: string): Promise<WorkspaceConfig | null> {
+export async function handleWorkspaceFile(file: File): Promise<{ config: WorkspaceConfig } | null> {
+  // Silently ignore non-yaml files
+  if (!file.name.endsWith(".yml") && !file.name.endsWith(".yaml")) {
+    return null;
+  }
+
   try {
-    const content = await readTextFile(filePath);
-    const parsed = WorkspaceConfigSchema.parse(parse(content));
-    return parsed;
+    const content = await file.text();
+    const config = WorkspaceConfigSchema.parse(parse(content));
+    return { config };
   } catch (error) {
-    console.warn("Yaml file configuration is not a workspace:", error);
+    if (error instanceof ZodError) {
+      console.warn("Workspace config validation failed:", error.issues);
+    }
+    toast({
+      title: "Couldn't add Space",
+      description: "This isn't a valid workspace.yml file.",
+      error: true,
+    });
     return null;
   }
-}
-
-/**
- * Handle .yml/.yaml file drop - focuses window and parses workspace info
- */
-export async function handleWorkspaceFileDrop(
-  filePath: string,
-): Promise<{ path: string; config: WorkspaceConfig } | null> {
-  const fileName = filePath.split("/").pop() || "";
-
-  if (!fileName.endsWith(".yml") && !fileName.endsWith(".yaml")) {
-    return null;
-  }
-
-  // Focus the window when workspace is dropped
-  try {
-    await getCurrentWindow().setFocus();
-  } catch (error) {
-    console.error("Failed to focus window:", error);
-  }
-
-  // Parse workspace name from the YAML file
-  const config = await parseWorkspaceConfig(filePath);
-
-  if (!config) {
-    return null;
-  }
-
-  return { path: filePath, config };
 }
 
 /**

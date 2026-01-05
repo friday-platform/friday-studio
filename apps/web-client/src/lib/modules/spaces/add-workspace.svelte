@@ -1,14 +1,11 @@
 <script lang="ts">
 import type { WorkspaceConfig } from "@atlas/config";
-import { getCurrentWebview } from "@tauri-apps/api/webview";
 import type { Snippet } from "svelte";
-import { onDestroy, onMount } from "svelte";
 import { getAppContext } from "$lib/app-context.svelte";
 import { Dialog } from "$lib/components/dialog";
 import { Icons } from "$lib/components/icons";
-import { invoke } from "$lib/utils/tauri-loader";
 import { getSpacesContext } from "./context.svelte";
-import { addWorkspace, handleWorkspaceFileDrop } from "./utils.svelte";
+import { addWorkspace, handleWorkspaceFile } from "./utils.svelte";
 
 let { triggerContents }: { triggerContents: Snippet } = $props();
 
@@ -16,57 +13,62 @@ const appCtx = getAppContext();
 const spacesCtx = getSpacesContext();
 
 let workspaceConfig = $state<WorkspaceConfig | null>(null);
-let unlisten: (() => void) | undefined;
+let fileInput: HTMLInputElement;
 
-async function handleSelectFile() {
-  if (!invoke) return;
+async function handleFileSelected(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
 
-  try {
-    const paths = (await invoke("open_file_or_folder_picker", {
-      multiple: false,
-      foldersOnly: false,
-    })) as string[];
+  if (!file) return;
 
-    if (paths && paths.length > 0) {
-      const result = await handleWorkspaceFileDrop(paths[0]);
-      if (result) {
-        workspaceConfig = result.config;
-      }
-    }
-  } catch (error) {
-    console.error("Failed to open file picker:", error);
+  const result = await handleWorkspaceFile(file);
+  if (result) {
+    workspaceConfig = result.config;
+  }
+
+  // Reset input so the same file can be selected again
+  input.value = "";
+}
+
+function handleDragOver(e: DragEvent) {
+  if (e.dataTransfer?.types.includes("Files")) {
+    e.preventDefault();
   }
 }
 
-onMount(() => {
-  async function setupDragDrop() {
-    if (__TAURI_BUILD__) {
-      unlisten = await getCurrentWebview().onDragDropEvent(async (event) => {
-        // Only handle drops if this dialog is open
-        if (!appCtx.addWorkspaceDialogOpen) return;
+async function handleDrop(e: DragEvent) {
+  const file = e.dataTransfer?.files[0];
+  if (!file) return;
 
-        if (event.payload.type === "drop") {
-          for (const path of event.payload.paths) {
-            const result = await handleWorkspaceFileDrop(path);
+  e.preventDefault();
 
-            if (result) {
-              workspaceConfig = result.config;
-            }
-          }
-        }
-      });
-    }
+  const result = await handleWorkspaceFile(file);
+  if (result) {
+    workspaceConfig = result.config;
   }
+}
 
-  setupDragDrop();
-});
+// Add document-level drop handlers when dialog is open
+$effect(() => {
+  if (!appCtx.addWorkspaceDialogOpen) return;
 
-onDestroy(() => {
-  if (unlisten) {
-    unlisten();
-  }
+  document.addEventListener("dragover", handleDragOver);
+  document.addEventListener("drop", handleDrop);
+
+  return () => {
+    document.removeEventListener("dragover", handleDragOver);
+    document.removeEventListener("drop", handleDrop);
+  };
 });
 </script>
+
+<input
+	type="file"
+	accept=".yml,.yaml"
+	bind:this={fileInput}
+	onchange={handleFileSelected}
+	hidden
+/>
 
 <Dialog.Root
 	onOpenChange={({ next }) => {
@@ -126,7 +128,7 @@ onDestroy(() => {
 						Create Space
 					</Dialog.Button>
 				{:else}
-					<Dialog.Button closeOnClick={false} onclick={handleSelectFile}>Select File</Dialog.Button>
+					<Dialog.Button closeOnClick={false} onclick={() => fileInput.click()}>Select File</Dialog.Button>
 				{/if}
 				<Dialog.Cancel>Cancel</Dialog.Cancel>
 			{/snippet}

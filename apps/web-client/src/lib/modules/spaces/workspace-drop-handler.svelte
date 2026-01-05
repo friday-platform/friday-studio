@@ -1,51 +1,43 @@
 <script lang="ts">
 import type { WorkspaceConfig } from "@atlas/config";
-import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { onDestroy, onMount } from "svelte";
 import { toStore } from "svelte/store";
 import { getAppContext } from "$lib/app-context.svelte";
 import { Dialog } from "$lib/components/dialog";
 import { Icons } from "$lib/components/icons";
 import { getSpacesContext } from "./context.svelte";
-import { addWorkspace, handleWorkspaceFileDrop } from "./utils.svelte";
+import { addWorkspace, handleWorkspaceFile } from "./utils.svelte";
 
 const appCtx = getAppContext();
 const spacesCtx = getSpacesContext();
 
-let unlisten: (() => void) | undefined;
 let workspaceConfig = $state<WorkspaceConfig | null>(null);
 let showDialog = $state(false);
 
-onMount(() => {
-  async function setupDragDrop() {
-    if (__TAURI_BUILD__) {
-      unlisten = await getCurrentWebview().onDragDropEvent(async (event) => {
-        // Skip if add-workspace dialog is open
-        if (appCtx.addWorkspaceDialogOpen) return;
-
-        if (event.payload.type === "drop") {
-          for (const path of event.payload.paths) {
-            const result = await handleWorkspaceFileDrop(path);
-
-            if (result) {
-              workspaceConfig = result.config;
-              showDialog = true;
-            }
-          }
-        }
-      });
-    }
+function handleDragOver(e: DragEvent) {
+  // Must preventDefault to allow drop
+  if (e.dataTransfer?.types.includes("Files")) {
+    e.preventDefault();
   }
+}
 
-  setupDragDrop();
-});
+async function handleDrop(e: DragEvent) {
+  // Skip if add-workspace dialog is open (let that component handle it)
+  if (appCtx.addWorkspaceDialogOpen) return;
 
-onDestroy(() => {
-  if (unlisten) {
-    unlisten();
+  const file = e.dataTransfer?.files[0];
+  if (!file) return;
+
+  e.preventDefault();
+
+  const result = await handleWorkspaceFile(file);
+  if (result) {
+    workspaceConfig = result.config;
+    showDialog = true;
   }
-});
+}
 </script>
+
+<svelte:document ondragover={handleDragOver} ondrop={handleDrop} />
 
 <Dialog.Root
 	open={toStore(
@@ -67,7 +59,7 @@ onDestroy(() => {
 		{#snippet header()}
 			<Dialog.Title>Add Space</Dialog.Title>
 			<Dialog.Description>
-				<p>Upload and add a Space for “{workspaceConfig?.workspace.name}”?</p>
+				<p>Upload and add a Space for "{workspaceConfig?.workspace.name}"?</p>
 			</Dialog.Description>
 		{/snippet}
 
