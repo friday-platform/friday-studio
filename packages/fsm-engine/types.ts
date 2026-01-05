@@ -147,7 +147,12 @@ export type FSMEvent = FSMStateTransitionEvent | FSMActionExecutionEvent;
  * Signal with additional context for execution tracking and event streaming
  */
 export interface SignalWithContext extends Signal {
-  _context?: { sessionId: string; workspaceId: string; onEvent?: (event: FSMEvent) => void };
+  _context?: {
+    sessionId: string;
+    workspaceId: string;
+    onEvent?: (event: FSMEvent) => void;
+    abortSignal?: AbortSignal;
+  };
 }
 
 export interface EmittedEvent {

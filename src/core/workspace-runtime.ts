@@ -395,6 +395,7 @@ export class WorkspaceRuntime {
   async processSignal(
     signal: WorkspaceRuntimeSignal,
     onStreamEvent?: (chunk: AtlasUIMessageChunk) => void,
+    abortSignal?: AbortSignal,
   ): Promise<IWorkspaceSession> {
     await this.ensureInitialized();
 
@@ -428,7 +429,7 @@ export class WorkspaceRuntime {
     await this.initializeJobEngine(job);
 
     // Process signal through job's FSM engine
-    const sessionResult = await this.processSignalForJob(job, signal, onStreamEvent);
+    const sessionResult = await this.processSignalForJob(job, signal, onStreamEvent, abortSignal);
 
     // Store session result for completion tracking
     this.sessionResults.set(sessionResult.id, sessionResult);
@@ -485,6 +486,7 @@ export class WorkspaceRuntime {
     job: FSMJob,
     signal: WorkspaceRuntimeSignal,
     onStreamEvent?: (chunk: AtlasUIMessageChunk) => void,
+    abortSignal?: AbortSignal,
   ): Promise<SessionResult> {
     if (!job.engine) {
       throw new Error(`Job ${job.name} engine not initialized`);
@@ -539,18 +541,19 @@ export class WorkspaceRuntime {
       // Process signal through FSM with callback context
       await job.engine.signal(
         { type: signal.id, data: signal.data || {} },
-        onStreamEvent
-          ? {
-              sessionId: session.id,
-              workspaceId: this.workspace.id,
-              // Wrap callback: FSMEvent types are valid AtlasUIMessageChunk types
-              // TypeScript can't prove the discriminated union compatibility, but
-              // at runtime FSMEvent is guaranteed to be a valid data event chunk
-              onEvent: (event) => {
+        {
+          sessionId: session.id,
+          workspaceId: this.workspace.id,
+          abortSignal,
+          // Wrap callback: FSMEvent types are valid AtlasUIMessageChunk types
+          // TypeScript can't prove the discriminated union compatibility, but
+          // at runtime FSMEvent is guaranteed to be a valid data event chunk
+          onEvent: onStreamEvent
+            ? (event) => {
                 onStreamEvent(event as unknown as AtlasUIMessageChunk);
-              },
-            }
-          : undefined,
+              }
+            : undefined,
+        },
       );
 
       // Extract artifacts from FSM documents
@@ -628,11 +631,12 @@ export class WorkspaceRuntime {
       }
     }
 
-    // Build context (facts, documents, signal data)
-    const context = buildAgentPrompt(
+    // Build context (facts, documents, signal data) with expanded artifacts
+    const context = await buildAgentPrompt(
       agentId,
       fsmContext,
       signal, // Use actual signal instead of synthetic one
+      signal._context?.abortSignal,
     );
 
     // Combine agent prompt with context

@@ -10,6 +10,7 @@ import { stringifyError } from "@atlas/utils";
 import { type Tool, tool } from "ai";
 import { z } from "zod";
 import type { DocumentScope, DocumentStore } from "../document-store/node.ts";
+import { expandArtifactRefsInDocuments } from "./artifact-expansion.ts";
 import { FSMDocumentDataSchema } from "./document-schemas.ts";
 import { jsonSchemaToZod, validateJSONSchema } from "./json-schema-to-zod.ts";
 import * as serializer from "./serializer.ts";
@@ -257,6 +258,7 @@ export class FSMEngine {
       sessionId: string;
       workspaceId: string;
       onEvent?: (event: import("./types.ts").FSMEvent) => void;
+      abortSignal?: AbortSignal;
     },
   ): Promise<void> {
     const signalWithContext: SignalWithContext = context ? { ...sig, _context: context } : sig;
@@ -595,9 +597,9 @@ export class FSMEngine {
 
         const tools: Record<string, Tool> = { ...baseTools, failStep: failStepTool };
 
-        // Append failStep instruction to prompt
+        // Append failStep instruction to prompt with expanded artifact content
         const contextPrompt =
-          this.buildContextPrompt(action.prompt, documents) +
+          (await this.buildContextPrompt(action.prompt, documents)) +
           "\n\nIMPORTANT: If you cannot complete this task, call the failStep tool with a reason.";
 
         const response = await this.options.llmProvider.call({
@@ -727,17 +729,20 @@ export class FSMEngine {
     }
   }
 
-  private buildContextPrompt(
+  private async buildContextPrompt(
     basePrompt: string,
     documents: Map<string, Document> = this._documents,
-  ): string {
-    // Inject document context into prompt
+  ): Promise<string> {
+    // Inject document context into prompt with expanded artifact content
     const docs = Array.from(documents.values());
     if (docs.length === 0) {
       return basePrompt;
     }
 
-    const docsContext = docs
+    // Expand artifact refs to include actual content for downstream LLM steps
+    const expandedDocs = await expandArtifactRefsInDocuments(docs);
+
+    const docsContext = expandedDocs
       .map((doc) => `Document ${doc.id} (${doc.type}): ${JSON.stringify(doc.data, null, 2)}`)
       .join("\n\n");
 

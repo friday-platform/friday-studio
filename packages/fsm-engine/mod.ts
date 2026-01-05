@@ -5,6 +5,11 @@
  * Executes finite state machines defined in YAML with TypeScript functions.
  */
 
+// Artifact expansion for multi-step workflows
+export {
+  expandArtifactRefsInDocuments,
+  type DocumentWithArtifactContent,
+} from "./artifact-expansion.ts";
 // Document schemas and utilities
 export * from "./document-schemas.ts";
 // Core engine and execution

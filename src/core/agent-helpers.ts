@@ -5,6 +5,7 @@
 
 import type { AgentResult } from "@atlas/agent-sdk";
 import type { Context, JSONSchema, Signal } from "@atlas/fsm-engine";
+import { expandArtifactRefsInDocuments } from "@atlas/fsm-engine";
 import { logger } from "@atlas/logger";
 import {
   analyzeResults as analyzeHallucinations,
@@ -20,7 +21,7 @@ import { SupervisionLevel } from "./supervision-levels.ts";
  *
  * Includes:
  * - Signal data from FSM context
- * - FSM documents (business context)
+ * - FSM documents (business context) with expanded artifact content
  * - Previous agent outputs (from other documents)
  * - Task description
  *
@@ -28,9 +29,16 @@ import { SupervisionLevel } from "./supervision-levels.ts";
  * FSM integration, we're keeping this minimal. The session supervisor's MECMF
  * integration can be added later if needed.
  */
-export function buildAgentPrompt(_agentId: string, fsmContext: Context, signal: Signal): string {
-  const documents = fsmContext.documents;
+export async function buildAgentPrompt(
+  _agentId: string,
+  fsmContext: Context,
+  signal: Signal,
+  abortSignal?: AbortSignal,
+): Promise<string> {
   const signalContext = signal.data;
+
+  // Expand artifact refs to include actual content for downstream agents
+  const documents = await expandArtifactRefsInDocuments(fsmContext.documents, abortSignal);
 
   const sections: string[] = [];
 

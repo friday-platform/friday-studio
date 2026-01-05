@@ -6,7 +6,12 @@
 import { AgentOrchestrator, type GlobalMCPServerPool } from "@atlas/core";
 import { InMemoryDocumentStore } from "@atlas/document-store";
 import type { Context, FSMDefinition, FSMEvent, SignalWithContext } from "@atlas/fsm-engine";
-import { AtlasLLMProviderAdapter, createEngine, type MCPToolProvider } from "@atlas/fsm-engine";
+import {
+  AtlasLLMProviderAdapter,
+  createEngine,
+  expandArtifactRefsInDocuments,
+  type MCPToolProvider,
+} from "@atlas/fsm-engine";
 import { logger } from "@atlas/logger";
 import type { EnhancedTaskStep } from "./planner.ts";
 import type { TaskProgressEvent } from "./types.ts";
@@ -127,8 +132,14 @@ export async function executeTaskViaFSMDirect(
         state: fsmContext.state,
       });
 
-      // Build context from FSM documents
-      const contextDocs = fsmContext.documents
+      // Expand artifact refs to include actual content for downstream agents
+      const expandedDocs = await expandArtifactRefsInDocuments(
+        fsmContext.documents,
+        context.abortSignal,
+      );
+
+      // Build context from expanded FSM documents
+      const contextDocs = expandedDocs
         .map((doc) => `${doc.type}(${doc.id}): ${JSON.stringify(doc.data)}`)
         .join("\n");
       const prompt = `Execute task step\n\nContext:\n${contextDocs}`;
