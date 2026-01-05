@@ -17,7 +17,7 @@
     "ai-sdk-provider-claude-code": "^2.2.4",
     "evalite": "^1.0.0-beta.15",
     "parallel-web": "0.2.4",
-    "zod": "^4.3.4"
+    "zod": "^4.3.5"
   },
   "devDependencies": { "@std/assert": "npm:@jsr/std__assert@^1.0.16" }
 }

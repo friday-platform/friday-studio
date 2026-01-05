@@ -8,5 +8,5 @@
     "./paths.server": "./src/paths.ts",
     "./telemetry.server": "./src/telemetry.ts"
   },
-  "dependencies": { "@opentelemetry/api": "^1.9.0", "zod": "^4.3.4" }
+  "dependencies": { "@opentelemetry/api": "^1.9.0", "zod": "^4.3.5" }
 }
