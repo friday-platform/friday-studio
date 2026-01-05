@@ -11,7 +11,7 @@
     "@atlas/oapi-client": "workspace:*",
     "@atlas/system": "workspace:*",
     "@atlas/utils": "workspace:*",
-    "@faker-js/faker": "^10.1.0",
+    "@faker-js/faker": "^10.2.0",
     "@opentelemetry/api": "^1.9.0",
     "@std/dotenv": "npm:@jsr/std__dotenv@^0.225.5",
     "@std/fs": "npm:@jsr/std__fs@^1.0.19",

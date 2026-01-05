@@ -40,7 +40,8 @@
     "npm:@biomejs/biome@*": "2.3.10",
     "npm:@eslint/compat@2": "2.0.0_eslint@9.39.2",
     "npm:@eslint/js@^9.39.2": "9.39.2",
-    "npm:@faker-js/faker@^10.1.0": "10.1.0",
+    "npm:@faker-js/faker@^10.1.0": "10.2.0",
+    "npm:@faker-js/faker@^10.2.0": "10.2.0",
     "npm:@hono/standard-validator@~0.2.1": "0.2.1_@standard-schema+spec@1.0.0_hono@4.11.3",
     "npm:@hono/zod-validator@~0.7.5": "0.7.6_hono@4.11.3_zod@4.3.4",
     "npm:@hono/zod-validator@~0.7.6": "0.7.6_hono@4.11.3_zod@4.3.4",
@@ -765,8 +766,8 @@
         "levn"
       ]
     },
-    "@faker-js/faker@10.1.0": {
-      "integrity": "sha512-C3mrr3b5dRVlKPJdfrAXS8+dq+rq8Qm5SNRazca0JKgw1HQERFmrVb0towvMmw5uu8hHKNiQasMaR/tydf3Zsg=="
+    "@faker-js/faker@10.2.0": {
+      "integrity": "sha512-rTXwAsIxpCqzUnZvrxVh3L0QA0NzToqWBLAhV+zDV3MIIwiQhAZHMdPCIaj5n/yADu/tyk12wIPgL6YHGXJP+g=="
     },
     "@fastify/accept-negotiator@2.0.1": {
       "integrity": "sha512-/c/TW2bO/v9JeEgoD/g1G5GxGeCF1Hafdf79WPmUlgYiBXummY0oX3VVq4yFkKKVBKDNlaDUYoab7g38RpPqCQ=="
@@ -5683,7 +5684,7 @@
         ],
         "packageJson": {
           "dependencies": [
-            "npm:@faker-js/faker@^10.1.0",
+            "npm:@faker-js/faker@^10.2.0",
             "npm:@jsr/std__assert@^1.0.14",
             "npm:@jsr/std__dotenv@~0.225.5",
             "npm:@jsr/std__fs@^1.0.19",
