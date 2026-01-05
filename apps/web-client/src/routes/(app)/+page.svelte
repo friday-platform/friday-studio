@@ -8,6 +8,7 @@ import { slide } from "svelte/transition";
 import { z } from "zod";
 import { getAppContext, getFileType } from "$lib/app-context.svelte";
 import { getChatContext } from "$lib/chat-context.svelte";
+import ChatBufferBlur from "$lib/components/chat-buffer-blur.svelte";
 import { DropdownMenu } from "$lib/components/dropdown-menu";
 import { Icons } from "$lib/components/icons";
 import { IconSmall } from "$lib/components/icons/small";
@@ -116,7 +117,10 @@ let showDetails = new SvelteMap<string, boolean>();
 										{:else if message.type === 'tool_call' && message.metadata?.toolName === 'display_artifact' && message.metadata?.artifactId}
 											<DisplayArtifact artifactId={message.metadata.artifactId as string} />
 										{:else if message.type === 'tool_call' && message.metadata?.toolName === 'connect_service' && message.metadata?.provider}
-											<ConnectService provider={message.metadata.provider as string} chat={chatContext.newChat} />
+											<ConnectService
+												provider={message.metadata.provider as string}
+												chat={chatContext.newChat}
+											/>
 										{:else if message.type === 'error'}
 											<ErrorMessage {message} />
 										{/if}
@@ -372,8 +376,8 @@ let showDetails = new SvelteMap<string, boolean>();
 				{/if}
 			</div>
 
-			{#if chatContext.newChat.messages.length === 0}
-				<div class="background-blur"></div>
+			{#if chatContext.newChat.messages.length > 0}
+				<ChatBufferBlur />
 			{/if}
 		</div>
 
@@ -424,17 +428,6 @@ let showDetails = new SvelteMap<string, boolean>();
 		position: relative;
 		scrollbar-width: thin;
 		scroll-behavior: smooth;
-	}
-
-	.background-blur {
-		background: linear-gradient(to top, var(--color-surface-1) 75%, transparent);
-		block-size: 5.5625rem;
-		inset-block-end: 0;
-		inset-inline: 0;
-		position: fixed;
-		opacity: 1;
-		pointer-events: none;
-		z-index: var(--layer-1);
 	}
 
 	.spacer {

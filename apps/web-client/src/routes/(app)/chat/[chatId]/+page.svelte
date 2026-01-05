@@ -10,6 +10,7 @@ import { z } from "zod";
 import { afterNavigate } from "$app/navigation";
 import { getAppContext, getFileType } from "$lib/app-context.svelte";
 import { getChatContext } from "$lib/chat-context.svelte";
+import ChatBufferBlur from "$lib/components/chat-buffer-blur.svelte";
 import { DropdownMenu } from "$lib/components/dropdown-menu";
 import { Icons } from "$lib/components/icons";
 import { IconSmall } from "$lib/components/icons/small";
@@ -61,6 +62,7 @@ function setup() {
 }
 
 afterNavigate(setup);
+
 onMount(async () => {
   setup();
 
@@ -173,7 +175,10 @@ let showDetails = new SvelteMap<string, boolean>();
 											{:else if message.type === 'tool_call' && message.metadata?.toolName === 'connect_service'}
 												{@const currentChat = chatContext.chats.get(data.chatId)}
 												{#if currentChat}
-													<ConnectService provider={message.metadata.provider as string} chat={currentChat} />
+													<ConnectService
+														provider={message.metadata.provider as string}
+														chat={currentChat}
+													/>
 												{/if}
 											{:else if message.type === 'error'}
 												<ErrorMessage {message} />
@@ -404,7 +409,7 @@ let showDetails = new SvelteMap<string, boolean>();
 					</div>
 				</div>
 
-				<div class="background-blur"></div>
+				<ChatBufferBlur />
 			</div>
 		</div>
 	</div>
@@ -444,22 +449,10 @@ let showDetails = new SvelteMap<string, boolean>();
 		flex-direction: column;
 		overflow-y: scroll;
 		scroll-padding: 100px;
-		justify-content: end;
 		padding-block: 0 var(--size-16);
 		position: relative;
 		scrollbar-width: thin;
 		scroll-behavior: smooth;
-	}
-
-	.background-blur {
-		background: linear-gradient(to top, var(--color-surface-1) 75%, transparent);
-		block-size: 5.5625rem;
-		inset-block-end: 0;
-		inset-inline: 0;
-		position: fixed;
-		opacity: 1;
-		pointer-events: none;
-		z-index: var(--layer-1);
 	}
 
 	.spacer {
@@ -469,7 +462,6 @@ let showDetails = new SvelteMap<string, boolean>();
 	.messages-container {
 		display: grid;
 		grid-template-columns: 1fr 0;
-		gap: 0;
 		padding-block: var(--size-10) var(--size-16);
 		transition:
 			grid-template-columns 450ms ease-in-out,
@@ -514,7 +506,7 @@ let showDetails = new SvelteMap<string, boolean>();
 		--local__translate-y: var(--size-4);
 		inset-block-end: var(--size-16);
 		inset-inline-start: calc(var(--size-56));
-		inset-inline-end: var(--size-16);
+		inset-inline-end: var(--size-1-5);
 		position: fixed;
 		transition: all 450ms ease-in-out;
 		z-index: var(--layer-2);
@@ -525,8 +517,8 @@ let showDetails = new SvelteMap<string, boolean>();
 
 		.interactive-container-int {
 			margin-inline: auto;
-			max-inline-size: var(--size-272);
-			padding-inline: var(--size-16);
+			max-inline-size: var(--size-160);
+			padding-inline: var(--size-8);
 		}
 
 		form {

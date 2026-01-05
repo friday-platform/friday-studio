@@ -109,7 +109,7 @@ onDestroy(() => {
 	.app-content {
 		background-color: var(--color-surface-1);
 		box-shadow: var(--shadow-1);
-		border-radius: var(--radius-5) var(--radius-5) 20px var(--radius-5);
+		border-radius: var(--radius-5) var(--radius-5) 1.25rem var(--radius-5);
 		overflow: auto;
 		scrollbar-width: thin;
 		min-block-size: 100%;

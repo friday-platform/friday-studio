@@ -7,8 +7,8 @@
 
 // Artifact expansion for multi-step workflows
 export {
-  expandArtifactRefsInDocuments,
   type DocumentWithArtifactContent,
+  expandArtifactRefsInDocuments,
 } from "./artifact-expansion.ts";
 // Document schemas and utilities
 export * from "./document-schemas.ts";
