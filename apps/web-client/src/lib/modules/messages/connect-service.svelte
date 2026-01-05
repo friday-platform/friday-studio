@@ -75,7 +75,7 @@ function handleOAuthMessage(event: MessageEvent) {
 
   // Send synthetic message to continue the chat
   if (providerDetails) {
-    const syntheticMessage = `I've installed the ${providerDetails.displayName} app`;
+    const syntheticMessage = `I've connected ${providerDetails.displayName}`;
     chat.sendMessage({ text: syntheticMessage });
   }
 }
@@ -112,6 +112,33 @@ $effect(() => {
 });
 
 function startOAuth() {
+  popupBlocked = false;
+
+  const daemonUrl = getAtlasDaemonUrl();
+  const callbackUrl = new URL("/oauth/callback", window.location.origin);
+  const url = new URL(`/api/link/v1/oauth/authorize/${provider}`, daemonUrl);
+  url.searchParams.set("redirect_uri", callbackUrl.href);
+
+  const width = 600;
+  const height = 700;
+  const left = Math.round(window.screenX + (window.outerWidth - width) / 2);
+  const top = Math.round(window.screenY + (window.outerHeight - height) / 2);
+  const features = `width=${width},height=${height},left=${left},top=${top},popup=yes`;
+
+  const popup = window.open(url.href, "oauth-popup", features);
+
+  if (!popup || popup.closed) {
+    popupBlocked = true;
+    return;
+  }
+
+  addMessageListener();
+}
+
+/**
+ * Fallback: navigate in same tab when popup is blocked for OAuth.
+ */
+function startOAuthFallback() {
   const daemonUrl = getAtlasDaemonUrl();
   const url = new URL(`/api/link/v1/oauth/authorize/${provider}`, daemonUrl);
   url.searchParams.set("redirect_uri", window.location.href);
@@ -182,6 +209,14 @@ function handleModalSuccess(label: string) {
 				<button class="connect-button" onclick={startOAuth}>
 					Connect {providerDetails.displayName}
 				</button>
+				{#if popupBlocked}
+					<div class="popup-blocked">
+						<p>Popup was blocked by your browser.</p>
+						<button class="fallback-link" onclick={startOAuthFallback}>
+							Continue in this tab instead
+						</button>
+					</div>
+				{/if}
 			{:else if providerDetails.type === 'app_install'}
 				<button class="connect-button" onclick={startAppInstall}>
 					Install {providerDetails.displayName}
