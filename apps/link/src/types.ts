@@ -25,6 +25,7 @@ export const CredentialSchema = z.object({
   id: z.string(),
   type: CredentialTypeSchema,
   provider: z.string(), // "openai", "github", etc.
+  userIdentifier: z.string().optional(), // OAuth: email, sub, or account ID
   label: z.string(), // user-friendly name
   secret: z.record(z.string(), z.unknown()),
   metadata: MetadataSchema,

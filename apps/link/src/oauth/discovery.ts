@@ -1,11 +1,17 @@
 /**
  * OAuth Authorization Server Discovery
- * Implements RFC 9728 (Protected Resource Metadata) + RFC 8414 (AS Metadata)
+ * Implements RFC 9728 (Protected Resource Metadata) with fallback to RFC 8414 (AS Metadata)
+ *
+ * Discovery order:
+ * 1. Try RFC 9728: /.well-known/oauth-protected-resource → extract issuer → fetch AS metadata
+ * 2. Fallback to RFC 8414: /.well-known/oauth-authorization-server directly on serverUrl
+ *
+ * This fallback is necessary because many OAuth providers (e.g., Linear) only implement
+ * RFC 8414 and don't expose Protected Resource Metadata.
  *
  * @module oauth/discovery
  */
 
-import { logger } from "@atlas/logger";
 import { deadline } from "@std/async/deadline";
 import { z } from "zod";
 import * as oauth from "./client.ts";
@@ -26,19 +32,76 @@ const ProtectedResourceMetadataSchema = z.object({
   resource_encryption_enc_values_supported: z.array(z.string()).optional(),
 });
 
-type ProtectedResourceMetadata = z.infer<typeof ProtectedResourceMetadataSchema>;
+/**
+ * Attempt RFC 9728 Protected Resource Metadata discovery
+ *
+ * @param serverUrl - The server URL to discover from
+ * @returns The issuer URL if successful, null if RFC 9728 is not supported
+ */
+async function tryProtectedResourceDiscovery(serverUrl: string): Promise<URL | null> {
+  const prUrl = new URL("/.well-known/oauth-protected-resource", serverUrl);
+
+  let prResponse: Response;
+  try {
+    prResponse = await deadline(fetch(prUrl), DISCOVERY_TIMEOUT_MS);
+  } catch {
+    return null;
+  }
+
+  if (!prResponse.ok) {
+    return null;
+  }
+
+  try {
+    const json: unknown = await prResponse.json();
+    const protectedResource = ProtectedResourceMetadataSchema.parse(json);
+    const issuerUrl = protectedResource.authorization_servers.at(0);
+    return issuerUrl ? new URL(issuerUrl) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Discover Authorization Server metadata from an issuer URL
+ *
+ * Uses oauth4webapi which tries /.well-known/oauth-authorization-server first,
+ * then falls back to /.well-known/openid-configuration
+ *
+ * @param issuer - The issuer URL
+ * @returns Authorization Server metadata
+ */
+async function discoverFromIssuer(issuer: URL): Promise<oauth.AuthorizationServer> {
+  const asResponse = await deadline(
+    oauth.discoveryRequest(issuer, {
+      algorithm: "oauth2",
+      [oauth.allowInsecureRequests]: shouldAllowInsecureForLocalDev(),
+    }),
+    DISCOVERY_TIMEOUT_MS,
+  );
+
+  return oauth.processDiscoveryResponse(issuer, asResponse);
+}
 
 /**
  * Discover OAuth Authorization Server for a protected resource
  *
- * Implements the two-phase discovery chain required for MCP servers:
- * 1. Fetch Protected Resource Metadata from {serverUrl}/.well-known/oauth-protected-resource (RFC 9728)
+ * Implements a two-phase discovery with fallback:
+ *
+ * **Phase 1 - RFC 9728 (Protected Resource Metadata):**
+ * 1. Fetch {serverUrl}/.well-known/oauth-protected-resource
  * 2. Extract authorization_servers[0] as the issuer URL
- * 3. Use oauth4webapi to discover AS metadata from the issuer (RFC 8414)
+ * 3. Discover AS metadata from the issuer
+ *
+ * **Phase 2 - RFC 8414 Fallback (if Phase 1 fails):**
+ * 1. Treat serverUrl itself as the issuer
+ * 2. Discover AS metadata directly from serverUrl
+ *
+ * This fallback is necessary because providers like Linear only implement RFC 8414.
  *
  * @param serverUrl - The MCP server URL (e.g., https://mcp.example.com)
  * @returns Authorization Server metadata
- * @throws Error if discovery fails at any step
+ * @throws Error if both discovery methods fail
  *
  * @example
  * ```ts
@@ -49,41 +112,30 @@ type ProtectedResourceMetadata = z.infer<typeof ProtectedResourceMetadataSchema>
 export async function discoverAuthorizationServer(
   serverUrl: string,
 ): Promise<oauth.AuthorizationServer> {
-  // Step 1: Fetch Protected Resource Metadata (RFC 9728)
-  const prUrl = new URL("/.well-known/oauth-protected-resource", serverUrl);
-  const prResponse = await deadline(fetch(prUrl), DISCOVERY_TIMEOUT_MS);
-
-  if (!prResponse.ok) {
-    throw new Error(
-      `Failed to fetch protected resource metadata from ${prUrl}: ${prResponse.status} ${prResponse.statusText}`,
-    );
+  // Phase 1: Try RFC 9728 Protected Resource Metadata
+  const issuerFromPRM = await tryProtectedResourceDiscovery(serverUrl);
+  if (issuerFromPRM) {
+    return discoverFromIssuer(issuerFromPRM);
   }
 
-  let protectedResource: ProtectedResourceMetadata;
+  // Phase 2: RFC 8414 fallback - try origin first, then with path
+  // Most providers (e.g., Linear) have issuer at origin even when MCP endpoint has a path
+  const serverUrlObj = new URL(serverUrl);
+  const hasPath = serverUrlObj.pathname !== "/" && serverUrlObj.pathname !== "";
+
+  // Try origin-only first (most common case)
   try {
-    const json = await prResponse.json();
-    protectedResource = ProtectedResourceMetadataSchema.parse(json);
-  } catch (error) {
-    logger.error("Invalid Protected Resource Metadata", { serverUrl, error });
-    throw new Error(`Invalid Protected Resource Metadata from ${prUrl}`);
+    return await discoverFromIssuer(new URL(serverUrlObj.origin));
+  } catch (originError) {
+    if (!hasPath) {
+      throw new Error(`OAuth discovery failed for ${serverUrl}`, { cause: originError });
+    }
+
+    // Try with path appended (per RFC 8414 spec for path-based issuers)
+    try {
+      return await discoverFromIssuer(serverUrlObj);
+    } catch (pathError) {
+      throw new Error(`OAuth discovery failed for ${serverUrl}`, { cause: pathError });
+    }
   }
-
-  // Step 2: Extract issuer URL
-  const issuerUrl = protectedResource.authorization_servers.at(0);
-  if (!issuerUrl) {
-    throw new Error(`No authorization server found in protected resource metadata from ${prUrl}`);
-  }
-
-  // Step 3: Discover AS metadata via oauth4webapi (RFC 8414)
-  const issuer = new URL(issuerUrl);
-  const asResponse = await deadline(
-    oauth.discoveryRequest(issuer, {
-      // tries .well-known/oauth-authorization-server first, then /.well-known/openid-configuration
-      algorithm: "oauth2",
-      [oauth.allowInsecureRequests]: shouldAllowInsecureForLocalDev(),
-    }),
-    DISCOVERY_TIMEOUT_MS,
-  );
-
-  return oauth.processDiscoveryResponse(issuer, asResponse);
 }

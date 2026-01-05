@@ -315,6 +315,7 @@ Deno.test(
         const expiringCredInput = {
           type: cred.type,
           provider: cred.provider,
+          userIdentifier: cred.userIdentifier,
           label: cred.label,
           secret: {
             ...cred.secret,

@@ -260,6 +260,7 @@ export class OAuthService {
     const credentialInput = {
       type: "oauth" as const,
       provider: providerId,
+      userIdentifier,
       label: userIdentifier,
       secret: {
         access_token: tokens.access_token,
