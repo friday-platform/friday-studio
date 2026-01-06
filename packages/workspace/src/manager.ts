@@ -33,8 +33,13 @@ export type RuntimeInvalidateCallback = (workspaceId: string) => Promise<void>;
  * Validates that all "auto" environment variables required by MCP servers are available.
  * Checks both system environment and workspace .env file.
  * Throws if any required env vars are missing.
+ *
+ * @internal Exported for testing
  */
-function validateMCPEnvironmentForWorkspace(config: MergedConfig, workspacePath: string): void {
+export function validateMCPEnvironmentForWorkspace(
+  config: MergedConfig,
+  workspacePath: string,
+): void {
   const mcpServers = config.workspace.tools?.mcp?.servers;
   if (!mcpServers) return;
 
@@ -72,6 +77,15 @@ function validateMCPEnvironmentForWorkspace(config: MergedConfig, workspacePath:
     // Also check auth config
     if (serverConfig.auth?.token_env) {
       const tokenEnv = serverConfig.auth.token_env;
+
+      // Skip if env config has any entry for token_env:
+      // - Link refs are resolved at runtime
+      // - Literal strings provide the value directly
+      // - "auto"/"from_environment" are already validated in the loop above
+      if (serverConfig.env?.[tokenEnv] !== undefined) {
+        continue;
+      }
+
       const systemValue = env[tokenEnv];
       const workspaceValue = workspaceEnv[tokenEnv];
 
