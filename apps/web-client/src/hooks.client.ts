@@ -7,6 +7,8 @@ Sentry.init({
   release: __SENTRY_RELEASE__,
   tracesSampleRate: 1.0,
   sendDefaultPii: true,
+  // Chunk loading errors are expected during deployments (stale cache)
+  ignoreErrors: [/dynamically imported module/],
 });
 
 // Analytics - only load in production builds
