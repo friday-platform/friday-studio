@@ -2,7 +2,6 @@
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { onDestroy, onMount } from "svelte";
 import { getAppContext } from "$lib/app-context.svelte";
-import favicon from "$lib/assets/favicon.svg";
 import AppContainer from "$lib/components/app/container.svelte";
 import AppSidebar from "$lib/components/app/sidebar.svelte";
 import KeyboardListener from "$lib/components/keyboard-listener.svelte";
@@ -60,10 +59,6 @@ onDestroy(() => {
   unlisten?.();
 });
 </script>
-
-<svelte:head>
-	<link rel="icon" href={favicon} />
-</svelte:head>
 
 {#if __TAURI_BUILD__}
 	<div class="titlebar" data-tauri-drag-region></div>

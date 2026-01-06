@@ -3,6 +3,8 @@ import "../app.css";
 import { onMount } from "svelte";
 import { goto } from "$app/navigation";
 import { setAppContext } from "$lib/app-context.svelte";
+import appleTouchIcon from "$lib/assets/apple-touch-icon.png";
+import favicon from "$lib/assets/favicon.png";
 import { setChatContext } from "$lib/chat-context.svelte";
 import DiagnosticsDialog from "$lib/components/diagnostics-dialog.svelte";
 import FindBar from "$lib/components/find-bar.svelte";
@@ -106,4 +108,7 @@ onMount(() => {
 
 <svelte:head>
 	<title>Friday</title>
+
+	<link rel="apple-touch-icon" href={appleTouchIcon} />
+	<link rel="icon" href={favicon} sizes="32x32" />
 </svelte:head>
