@@ -1,0 +1,15 @@
+{
+  "name": "@atlas/hallucination",
+  "version": "1.0.0",
+  "type": "module",
+  "exports": { ".": "./mod.ts" },
+  "main": "./mod.ts",
+  "dependencies": {
+    "@atlas/agent-sdk": "workspace:*",
+    "@atlas/fsm-engine": "workspace:*",
+    "@atlas/llm": "workspace:*",
+    "@atlas/logger": "workspace:*",
+    "ai": "^5.0.118",
+    "zod": "^4.3.5"
+  }
+}

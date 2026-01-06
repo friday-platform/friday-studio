@@ -13,6 +13,7 @@ import {
   type MCPToolProvider,
 } from "@atlas/fsm-engine";
 import { logger } from "@atlas/logger";
+import { createFSMOutputValidator, SupervisionLevel } from "@atlas/hallucination";
 import type { EnhancedTaskStep } from "./planner.ts";
 import type { TaskProgressEvent } from "./types.ts";
 
@@ -184,6 +185,7 @@ export async function executeTaskViaFSMDirect(
       scope,
       agentExecutor,
       mcpToolProvider: context.mcpToolProvider,
+      validateOutput: createFSMOutputValidator(SupervisionLevel.STANDARD),
     });
 
     await engine.initialize();

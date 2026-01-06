@@ -46,7 +46,7 @@ import type {
 } from "../types/core.ts";
 import { MessageUser } from "../types/core.ts";
 import { buildAgentPrompt, validateAgentOutput } from "./agent-helpers.ts";
-import { SupervisionLevel } from "./supervision-levels.ts";
+import { createFSMOutputValidator, SupervisionLevel } from "@atlas/hallucination";
 
 // WorkspaceRuntime signal type - plain payload without full IAtlasScope implementation
 interface WorkspaceRuntimeSignal {
@@ -356,6 +356,7 @@ export class WorkspaceRuntime {
       llmProvider: new AtlasLLMProviderAdapter("claude-sonnet-4-5"),
       agentExecutor,
       mcpToolProvider,
+      validateOutput: createFSMOutputValidator(SupervisionLevel.STANDARD),
     };
 
     // Load engine from inline definition or file

@@ -2,7 +2,7 @@
   "$schema": "https://unpkg.com/knip@latest/schema.json",
   "workspaces": {
     ".": {
-      "entry": ["mod.ts!", "src/cli.tsx!"],
+      "entry": ["mod.ts!", "src/cli.tsx!", "src/**/*.test.ts"],
       "project": ["src/**/*.{ts,tsx,js,jsx}!", "*.ts!"]
     },
     "packages/agent-sdk": {
@@ -23,6 +23,10 @@
     "packages/fsm-engine": {
       "entry": ["tests/**/*.test.ts"],
       "project": ["**/*.{ts,tsx,js,jsx}!"]
+    },
+    "packages/hallucination": {
+      "entry": ["src/**/*.test.ts"],
+      "project": ["src/**/*.{ts,tsx,js,jsx}!"]
     },
     "packages/llm": { "entry": ["src/**/*.test.ts"], "project": ["**/*.{ts,tsx,js,jsx}!"] },
     "packages/logger": { "project": ["**/*.{ts,tsx,js,jsx}!"] },

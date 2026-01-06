@@ -2,6 +2,7 @@
  * Core type definitions for the FSM Engine
  */
 
+import type { ToolCall, ToolResult } from "@atlas/agent-sdk";
 import type { DocumentScope } from "../document-store/node.ts";
 
 // Re-export DocumentScope for convenience
@@ -162,9 +163,43 @@ export interface EmittedEvent {
 
 export interface LLMResponse {
   content: string;
-  data?: Record<string, unknown>;
+  data?: { toolCalls?: ToolCall[]; toolResults?: ToolResult[]; [key: string]: unknown };
   calledTool?: { name: string; args: unknown };
 }
+
+/**
+ * Trace data from an LLM action, capturing what is needed for hallucination detection.
+ * Uses AI SDK's native ToolCall/ToolResult types via @atlas/agent-sdk.
+ */
+export interface LLMActionTrace {
+  /** The LLMs final output content */
+  content: string;
+  /** Tool calls made during execution - uses AI SDK's native format */
+  toolCalls?: ToolCall[];
+  /** Tool results returned - uses AI SDK's native format */
+  toolResults?: ToolResult[];
+  /** Model identifier used for the call */
+  model: string;
+  /** Full prompt including any injected document context */
+  prompt: string;
+}
+
+/**
+ * Result of validating LLM output.
+ * Named distinctly to avoid collision with ValidationResult in validator.ts.
+ */
+export interface LLMOutputValidationResult {
+  /** Whether the output passed validation */
+  valid: boolean;
+  /** Required when valid=false - feedback for retry prompt injection */
+  feedback?: string;
+}
+
+/**
+ * Function type for validating LLM action output.
+ * Returns a promise because real validators call LLMs for analysis.
+ */
+export type OutputValidator = (trace: LLMActionTrace) => Promise<LLMOutputValidationResult>;
 
 export interface LLMProvider {
   call(params: {

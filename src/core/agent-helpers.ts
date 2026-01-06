@@ -11,10 +11,10 @@ import {
   analyzeResults as analyzeHallucinations,
   containsSeverePatterns,
   getSevereIssues,
+  SupervisionLevel,
   type HallucinationAnalysis,
   type HallucinationDetectorConfig,
-} from "./services/hallucination-detector.ts";
-import { SupervisionLevel } from "./supervision-levels.ts";
+} from "@atlas/hallucination";
 
 /**
  * Build agent prompt with context (extracted from SessionSupervisor lines 1347-1446)

@@ -5351,6 +5351,7 @@
     "packageJson": {
       "dependencies": [
         "npm:@inkjs/ui@2",
+        "npm:@jsr/std__assert@^1.0.16",
         "npm:@jsr/std__dotenv@~0.225.5",
         "npm:@jsr/std__fs@^1.0.19",
         "npm:@jsr/std__media-types@^1.1.0",
@@ -5593,6 +5594,14 @@
             "npm:@jsr/std__yaml@^1.0.9",
             "npm:@socotra/modelcontextprotocol-sdk@^1.18.0",
             "npm:ai@^5.0.93",
+            "npm:zod@^4.3.5"
+          ]
+        }
+      },
+      "packages/hallucination": {
+        "packageJson": {
+          "dependencies": [
+            "npm:ai@^5.0.118",
             "npm:zod@^4.3.5"
           ]
         }

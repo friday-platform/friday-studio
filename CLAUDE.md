@@ -37,7 +37,7 @@ go build                # Build
 - Use `@atlas/logger`, never `console.*`
 - No `any` types - use `unknown` or proper types
 - No `as` assertions - use Zod schemas for parsing
-- Static imports only (top of file)
+- Static imports only (top of file, no inline `import("pkg")` in types)
 - Validate all external input with Zod
 - Use `process.env` from `node:process`, not `Deno.env` (migrating away from
   Deno APIs)

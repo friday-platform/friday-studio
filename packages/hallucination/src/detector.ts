@@ -18,7 +18,7 @@ import type { Logger } from "@atlas/logger";
 import type { CoreMessage } from "ai";
 import { generateObject } from "ai";
 import { z } from "zod";
-import { SupervisionLevel } from "../supervision-levels.ts";
+import { SupervisionLevel } from "./supervision-levels.ts";
 
 /**
  * Check if issues indicate severe fabrication

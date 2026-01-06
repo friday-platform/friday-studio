@@ -5,6 +5,8 @@
   "exports": { ".": "./mod.ts", "./mcp-tools": "./mcp-tools/index.ts" },
   "main": "./mod.ts",
   "dependencies": {
+    "@atlas/agent-sdk": "workspace:*",
+    "@atlas/hallucination": "workspace:*",
     "@atlas/llm": "workspace:*",
     "@atlas/logger": "workspace:*",
     "@atlas/utils": "workspace:*",

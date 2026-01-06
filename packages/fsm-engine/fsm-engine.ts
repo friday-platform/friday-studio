@@ -22,13 +22,34 @@ import type {
   EmittedEvent,
   FSMDefinition,
   GuardFunction,
+  LLMActionTrace,
   LLMProvider,
+  LLMResponse,
+  OutputValidator,
   Signal,
   SignalWithContext,
   TransitionDefinition,
 } from "./types.ts";
 
 const FSMStateSchema = z.object({ state: z.string() });
+
+/**
+ * Build LLMActionTrace from an LLM response for hallucination detection.
+ * Passes through AI SDK tool types directly without transformation.
+ */
+export function buildLLMActionTrace(
+  response: LLMResponse,
+  model: string,
+  prompt: string,
+): LLMActionTrace {
+  return {
+    content: response.content,
+    toolCalls: response.data?.toolCalls,
+    toolResults: response.data?.toolResults,
+    model,
+    prompt,
+  };
+}
 
 /**
  * Agent execution result interface
@@ -67,6 +88,7 @@ export interface FSMEngineOptions {
   scope: DocumentScope;
   agentExecutor?: AgentExecutor;
   mcpToolProvider?: import("./mcp-tool-context.ts").MCPToolProvider;
+  validateOutput?: OutputValidator;
 }
 
 export class FSMEngine {
@@ -602,7 +624,7 @@ export class FSMEngine {
           (await this.buildContextPrompt(action.prompt, documents)) +
           "\n\nIMPORTANT: If you cannot complete this task, call the failStep tool with a reason.";
 
-        const response = await this.options.llmProvider.call({
+        let response = await this.options.llmProvider.call({
           model: action.model,
           prompt: contextPrompt,
           tools,
@@ -612,6 +634,60 @@ export class FSMEngine {
         // Check if LLM called failStep
         if (response.calledTool?.name === "failStep") {
           throw new Error(`LLM step failed: ${JSON.stringify(response.calledTool.args)}`);
+        }
+
+        // Validate output if validator provided
+        if (this.options.validateOutput) {
+          const trace = buildLLMActionTrace(response, action.model, contextPrompt);
+
+          const validation = await this.options.validateOutput(trace);
+          // Note: If validator throws, error propagates and aborts the action (fail-closed)
+
+          if (!validation.valid) {
+            logger.warn("LLM action failed validation, retrying with feedback", {
+              state: currentState,
+              model: action.model,
+              feedback: validation.feedback,
+            });
+
+            const retryPrompt =
+              `${contextPrompt}\n\n` +
+              `<validation-feedback>\n${validation.feedback ?? "Output failed validation."}\n</validation-feedback>\n` +
+              `IMPORTANT: Use only data from tool results. If you cannot comply, call failStep.`;
+
+            response = await this.options.llmProvider.call({
+              model: action.model,
+              prompt: retryPrompt,
+              tools,
+              toolChoice: "required",
+            });
+
+            // Check if LLM called failStep on retry
+            if (response.calledTool?.name === "failStep") {
+              throw new Error(
+                `LLM step failed on retry: ${JSON.stringify(response.calledTool.args)}`,
+              );
+            }
+
+            const retryTrace = buildLLMActionTrace(response, action.model, retryPrompt);
+            const retryValidation = await this.options.validateOutput(retryTrace);
+
+            if (!retryValidation.valid) {
+              logger.error("LLM action failed validation after retry", {
+                state: currentState,
+                model: action.model,
+                feedback: retryValidation.feedback,
+              });
+              throw new Error(
+                `LLM action failed validation after retry: ${retryValidation.feedback ?? "no feedback"}`,
+              );
+            }
+
+            logger.info("LLM action passed validation on retry", {
+              state: currentState,
+              model: action.model,
+            });
+          }
         }
 
         if (action.outputTo) {

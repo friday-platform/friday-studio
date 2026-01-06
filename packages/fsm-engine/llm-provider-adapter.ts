@@ -46,19 +46,7 @@ export class AtlasLLMProviderAdapter implements LLMProvider {
       content: response.text,
       data:
         response.toolCalls && response.toolCalls.length > 0
-          ? {
-              toolCalls: response.toolCalls.map((tc) => ({
-                id: tc.toolCallId,
-                name: tc.toolName,
-                input: tc.input,
-              })),
-              toolResults: response.toolResults?.map((tr) => ({
-                id: tr.toolCallId,
-                toolName: tr.toolName,
-                input: tr.input,
-                output: tr.output,
-              })),
-            }
+          ? { toolCalls: response.toolCalls, toolResults: response.toolResults }
           : undefined,
       calledTool,
     };

@@ -11,9 +11,9 @@ import type { AgentResult } from "@atlas/agent-sdk";
 import { assert } from "@std/assert";
 import {
   analyzeResults,
+  SupervisionLevel,
   type HallucinationDetectorConfig,
-} from "../../../../src/core/services/hallucination-detector.ts";
-import { SupervisionLevel } from "../../../../src/core/supervision-levels.ts";
+} from "@atlas/hallucination";
 import { loadCredentials } from "../../lib/load-credentials.ts";
 import { createTestToolCall, createTestToolResult } from "../../lib/test-helpers.ts";
 import { setupTest } from "../../lib/utils.ts";
