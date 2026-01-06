@@ -23,6 +23,7 @@ const columnHelper = createColumnHelper<{
   createdAt: string;
   updatedAt: string;
   summary?: string | undefined;
+  title?: string | undefined;
 }>();
 
 const table = createTable({
@@ -38,6 +39,7 @@ const table = createTable({
           job: info.row.original.sessionId,
           summary: info.row.original.summary ?? "",
           workspaceName: info.row.original.workspaceName,
+          title: info.row.original.title,
         });
       },
       meta: { minWidth: "0" },

@@ -23,6 +23,7 @@ const columnHelper = createColumnHelper<{
   createdAt: string;
   updatedAt: string;
   summary?: string | undefined;
+  title?: string | undefined;
 }>();
 
 const columns = [
@@ -33,6 +34,7 @@ const columns = [
       return renderComponent(DetailsColumn, {
         job: info.row.original.sessionId,
         summary: info.row.original.summary ?? "",
+        title: info.row.original.title,
       });
     },
     meta: { minWidth: "0" },

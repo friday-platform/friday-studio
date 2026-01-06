@@ -135,6 +135,32 @@ describe("SessionHistoryStorage", () => {
       assert(timeline.data);
       assertEquals(timeline.data.events.length, 5);
     });
+
+    // Concurrent title updates don't corrupt data
+    it("handles concurrent title updates without corruption", async () => {
+      const sessionId = crypto.randomUUID();
+      await SessionHistoryStorage.createSessionRecord(createMetadataInput(sessionId));
+
+      const titles = ["First Title", "Second Title", "Third Title", "Fourth Title", "Fifth Title"];
+
+      const promises = titles.map((title) =>
+        SessionHistoryStorage.updateSessionTitle(sessionId, title),
+      );
+
+      const results = await Promise.all(promises);
+      for (const result of results) {
+        assert(result.ok, "All concurrent title updates should succeed");
+      }
+
+      const metadata = await SessionHistoryStorage.getSessionMetadata(sessionId);
+      assert(metadata.ok);
+      assert(metadata.data);
+      // Title should be one of the values we wrote, not garbage
+      assert(
+        titles.includes(metadata.data.title ?? ""),
+        `Title should be one of the written values, got: ${metadata.data.title}`,
+      );
+    });
   });
 
   describe("Idempotency", () => {

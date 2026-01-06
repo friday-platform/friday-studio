@@ -9,6 +9,10 @@ export { createGroqWithOptions } from "./src/groq.ts";
 export { createOpenAIWithOptions } from "./src/openai.ts";
 export { pruneMessages } from "./src/prune-messages.ts";
 export { registry } from "./src/registry.ts";
+export {
+  type GenerateSessionTitleInput,
+  generateSessionTitle,
+} from "./src/session-title.ts";
 export { smallLLM } from "./src/small.ts";
 export { validateProvider } from "./src/util.ts";
 

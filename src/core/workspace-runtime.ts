@@ -29,6 +29,7 @@ import {
   type MCPToolProvider,
   type SignalWithContext,
 } from "@atlas/fsm-engine";
+import { type GenerateSessionTitleInput, generateSessionTitle } from "@atlas/llm";
 import { logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
 import { getAtlasHome } from "@atlas/utils/paths.server";
@@ -1308,6 +1309,20 @@ export class WorkspaceRuntime {
   }
 
   /**
+   * Generate and store a title for a session (fire-and-forget)
+   */
+  private async generateAndStoreTitle(
+    sessionId: string,
+    input: GenerateSessionTitleInput,
+  ): Promise<void> {
+    const title = await generateSessionTitle(input);
+    const result = await SessionHistoryStorage.updateSessionTitle(sessionId, title);
+    if (!result.ok) {
+      logger.warn("Failed to store session title", { sessionId, error: result.error });
+    }
+  }
+
+  /**
    * Persist session to history storage
    */
   private async persistSessionToHistory(
@@ -1356,6 +1371,19 @@ export class WorkspaceRuntime {
         });
         return;
       }
+
+      // Generate title before other writes to avoid race condition
+      await this.generateAndStoreTitle(sessionResult.id, {
+        signal: { type: signal.type, id: signal.id, data: signal.data },
+        output: sessionResult.artifacts[0]?.data,
+        status: sessionResult.status === "completed" ? "completed" : "failed",
+        jobName: job.name,
+      }).catch((error) => {
+        logger.warn("Title generation failed", {
+          sessionId: sessionResult.id,
+          error: stringifyError(error),
+        });
+      });
 
       // Append session-start event
       await SessionHistoryStorage.appendSessionEvent({

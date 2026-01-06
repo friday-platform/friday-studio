@@ -368,6 +368,7 @@ const StoredSessionSchema = z.object({
   durationMs: z.number().optional(),
   failureReason: z.string().optional(),
   summary: z.string().optional(),
+  title: z.string().optional(),
   events: z.array(z.unknown()),
 });
 
@@ -384,6 +385,7 @@ export interface SessionHistoryListItem {
   createdAt: string;
   updatedAt: string;
   summary?: string;
+  title?: string;
 }
 
 export interface SessionHistoryTimeline {
@@ -440,6 +442,33 @@ async function readAndValidateSession(filePath: string): Promise<StoredSession> 
   const parsedSession = StoredSessionSchema.parse(json);
   const events = parsedSession.events.map((e) => SessionHistoryEventSchema.parse(e));
   return { ...parsedSession, events };
+}
+
+/**
+ * Reads session data through an already-opened and locked file handle.
+ * This ensures the read happens within the lock's protection.
+ */
+async function readSessionFromHandle(file: Deno.FsFile): Promise<StoredSession> {
+  const fileStat = await file.stat();
+  const buf = new Uint8Array(fileStat.size);
+  await file.seek(0, Deno.SeekMode.Start);
+  await file.read(buf);
+  const content = new TextDecoder().decode(buf);
+  const json = JSON.parse(content);
+  const parsedSession = StoredSessionSchema.parse(json);
+  const events = parsedSession.events.map((e) => SessionHistoryEventSchema.parse(e));
+  return { ...parsedSession, events };
+}
+
+/**
+ * Writes session data through an already-opened and locked file handle.
+ * Truncates and rewrites the entire file.
+ */
+async function writeSessionToHandle(file: Deno.FsFile, session: StoredSession): Promise<void> {
+  const encoded = new TextEncoder().encode(JSON.stringify(session, null, 2));
+  await file.truncate(0);
+  await file.seek(0, Deno.SeekMode.Start);
+  await file.write(encoded);
 }
 
 // ---------------------------------------------------------------------------
@@ -526,7 +555,7 @@ export async function appendSessionEvent(
     using file = await Deno.open(sessionFile, { read: true, write: true });
     await file.lock(true);
 
-    const session = await readAndValidateSession(sessionFile);
+    const session = await readSessionFromHandle(file);
 
     const timestamp = new Date().toISOString();
     const eventId = crypto.randomUUID();
@@ -541,7 +570,7 @@ export async function appendSessionEvent(
     session.events.push(event);
     session.updatedAt = timestamp;
 
-    await writeFile(sessionFile, JSON.stringify(session, null, 2), "utf-8");
+    await writeSessionToHandle(file, session);
 
     return success(event);
   } catch (error) {
@@ -568,7 +597,7 @@ export async function markSessionComplete(
     using file = await Deno.open(sessionFile, { read: true, write: true });
     await file.lock(true);
 
-    const session = await readAndValidateSession(sessionFile);
+    const session = await readSessionFromHandle(file);
 
     session.status = status;
     session.updatedAt = finishedAt;
@@ -576,7 +605,42 @@ export async function markSessionComplete(
     if (details?.failureReason !== undefined) session.failureReason = details.failureReason;
     if (details?.summary !== undefined) session.summary = details.summary;
 
-    await writeFile(sessionFile, JSON.stringify(session, null, 2), "utf-8");
+    await writeSessionToHandle(file, session);
+
+    const { events: _, ...metadata } = session;
+    return success(metadata);
+  } catch (error) {
+    if (isErrnoException(error) && error.code === "ENOENT") {
+      return fail("Session not found");
+    }
+    if (error instanceof z.ZodError) {
+      return fail(`Invalid session data format: ${error.message}`);
+    }
+    return fail(stringifyError(error));
+  }
+}
+
+/**
+ * Updates the title of an existing session.
+ * Title is cosmetic metadata - does NOT modify updatedAt.
+ */
+export async function updateSessionTitle(
+  sessionId: string,
+  title: string,
+): Promise<Result<SessionHistoryMetadata, string>> {
+  try {
+    await ensureSessionDir();
+    const sessionFile = getSessionFile(sessionId);
+
+    using file = await Deno.open(sessionFile, { read: true, write: true });
+    await file.lock(true);
+
+    const session = await readSessionFromHandle(file);
+
+    session.title = title;
+    // Note: Not modifying updatedAt - title is cosmetic metadata, not content change
+
+    await writeSessionToHandle(file, session);
 
     const { events: _, ...metadata } = session;
     return success(metadata);
@@ -654,6 +718,7 @@ export async function listSessions(
             createdAt: session.createdAt,
             updatedAt: session.updatedAt,
             summary: session.summary,
+            title: session.title,
           });
         }
       } catch (error) {
@@ -749,6 +814,7 @@ export const SessionHistoryStorage = {
   createSessionRecord,
   appendSessionEvent,
   markSessionComplete,
+  updateSessionTitle,
   getSessionMetadata,
   listSessions,
   loadSessionTimeline,

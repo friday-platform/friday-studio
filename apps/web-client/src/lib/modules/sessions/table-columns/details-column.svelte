@@ -1,13 +1,15 @@
 <script lang="ts">
-type Props = { job: string; summary: string; workspaceName?: string };
+type Props = { job: string; summary: string; workspaceName?: string; title?: string };
 
-let { job, summary, workspaceName }: Props = $props();
+let { job, summary, workspaceName, title }: Props = $props();
+
+const displayTitle = $derived(title ?? job);
 </script>
 
 <div class="component">
 	<div class="header">
 		<div class="group author">
-			{#if workspaceName}{workspaceName} • {/if}{job}
+			{#if workspaceName}{workspaceName} • {/if}{displayTitle}
 		</div>
 	</div>
 

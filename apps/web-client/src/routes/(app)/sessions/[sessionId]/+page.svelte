@@ -35,7 +35,7 @@ const timelineData = $derived(parseSessionTimeline(session.metadata, session.eve
 			{/if}
 		</span>
 
-		<h1>{data.session.metadata.sessionId}</h1>
+		<h1>{data.session.metadata.title ?? data.session.metadata.sessionId}</h1>
 
 		<time
 			title={data.session.metadata.createdAt}
