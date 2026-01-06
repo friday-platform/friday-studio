@@ -8,8 +8,9 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/jackc/pgx/v5/pgtype"
 )
+
+func ptr(s string) *string { return &s }
 
 func TestMeResponse_JSON(t *testing.T) {
 	resp := MeResponse{
@@ -18,9 +19,8 @@ func TestMeResponse_JSON(t *testing.T) {
 		Email:        "test@example.com",
 		CreatedAt:    "2024-01-01T00:00:00.000000Z",
 		UpdatedAt:    "2024-01-02T00:00:00.000000Z",
-		DisplayName:  "testuser",
-		ProfilePhoto: "https://example.com/photo.jpg",
-		Name:         pgtype.Text{String: "Test", Valid: true},
+		DisplayName:  ptr("testuser"),
+		ProfilePhoto: ptr("https://example.com/photo.jpg"),
 	}
 
 	data, err := json.Marshal(resp)
@@ -42,24 +42,23 @@ func TestMeResponse_JSON(t *testing.T) {
 	if decoded.Email != resp.Email {
 		t.Errorf("Email = %q, want %q", decoded.Email, resp.Email)
 	}
-	if decoded.DisplayName != resp.DisplayName {
-		t.Errorf("DisplayName = %q, want %q", decoded.DisplayName, resp.DisplayName)
+	if *decoded.DisplayName != *resp.DisplayName {
+		t.Errorf("DisplayName = %q, want %q", *decoded.DisplayName, *resp.DisplayName)
 	}
-	if decoded.ProfilePhoto != resp.ProfilePhoto {
-		t.Errorf("ProfilePhoto = %q, want %q", decoded.ProfilePhoto, resp.ProfilePhoto)
+	if *decoded.ProfilePhoto != *resp.ProfilePhoto {
+		t.Errorf("ProfilePhoto = %q, want %q", *decoded.ProfilePhoto, *resp.ProfilePhoto)
 	}
 }
 
-func TestMeResponse_NullName(t *testing.T) {
+func TestMeResponse_NullFields(t *testing.T) {
 	resp := MeResponse{
 		ID:           "test-user-id",
 		FullName:     "Test User",
 		Email:        "test@example.com",
 		CreatedAt:    "2024-01-01T00:00:00.000000Z",
 		UpdatedAt:    "2024-01-02T00:00:00.000000Z",
-		DisplayName:  "testuser",
-		ProfilePhoto: "https://example.com/photo.jpg",
-		Name:         pgtype.Text{Valid: false}, // null
+		DisplayName:  nil,
+		ProfilePhoto: nil,
 	}
 
 	data, err := json.Marshal(resp)
@@ -67,16 +66,17 @@ func TestMeResponse_NullName(t *testing.T) {
 		t.Fatalf("Failed to marshal MeResponse: %v", err)
 	}
 
-	// Verify name field is present but null
+	// Verify nullable fields serialize as null
 	var raw map[string]any
 	if err := json.Unmarshal(data, &raw); err != nil {
 		t.Fatalf("Failed to unmarshal to map: %v", err)
 	}
 
-	// pgtype.Text marshals as {"String":"","Valid":false} not null
-	// This is expected behavior for pgtype
-	if _, exists := raw["name"]; !exists {
-		t.Error("name field should be present in JSON")
+	if raw["display_name"] != nil {
+		t.Errorf("display_name should be null, got %v", raw["display_name"])
+	}
+	if raw["profile_photo"] != nil {
+		t.Errorf("profile_photo should be null, got %v", raw["profile_photo"])
 	}
 }
 

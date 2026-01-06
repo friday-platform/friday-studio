@@ -44,6 +44,7 @@ import { daemonApp } from "../routes/daemon.ts";
 import { healthRoutes } from "../routes/health.ts";
 import { libraryRoutes } from "../routes/library/index.ts";
 import { linkRoutes } from "../routes/link.ts";
+import { meRoutes } from "../routes/me/index.ts";
 import { scratchpadApp } from "../routes/scratchpad/index.ts";
 import { sessionHistoryRoutes, sessionsRoutes } from "../routes/sessions/index.ts";
 import { shareRoutes } from "../routes/share.ts";
@@ -564,6 +565,7 @@ export class AtlasDaemon {
     this.app.route("/api/daemon", daemonApp);
     this.app.route("/api/share", shareRoutes);
     this.app.route("/api/link", linkRoutes);
+    this.app.route("/api/me", meRoutes);
 
     // Platform signal routes (Discord/Slack via Signal Gateway)
     this.app.route("/signals", createPlatformSignalRoutes(this));

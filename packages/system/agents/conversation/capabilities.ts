@@ -14,7 +14,10 @@ export function getCapabilitiesSection(): string {
   const agentsXml = bundledAgents
     .map((agent) => {
       const domains = agent.metadata.expertise?.domains?.join(", ") ?? "";
-      return `<agent id="${agent.metadata.id}" domains="${domains}">${agent.metadata.description}</agent>`;
+      const constraints = agent.metadata.constraints
+        ? `\n  <constraints>${agent.metadata.constraints}</constraints>`
+        : "";
+      return `<agent id="${agent.metadata.id}" domains="${domains}">${agent.metadata.description}${constraints}</agent>`;
     })
     .join("\n");
 

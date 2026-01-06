@@ -40,6 +40,7 @@ class AtlasAgentImpl<TInput = string, TOutput = unknown> implements AtlasAgent<T
       displayName: config.displayName,
       version: config.version,
       description: config.description,
+      constraints: config.constraints,
       expertise: config.expertise,
       inputSchema: config.inputSchema,
     };

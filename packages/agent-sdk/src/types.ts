@@ -142,6 +142,10 @@ export const AgentMetadataSchema = z.object({
   displayName: z.string().optional().meta({ description: "Agent display name" }),
   version: z.string().meta({ description: "Agent version" }),
   description: z.string().min(1).meta({ description: "What this agent does" }),
+  constraints: z
+    .string()
+    .optional()
+    .meta({ description: "Human-readable limitations or restrictions on agent capabilities" }),
   expertise: AgentExpertiseSchema,
   inputSchema: z
     .any()

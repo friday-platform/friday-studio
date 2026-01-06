@@ -38,6 +38,7 @@ import { createDoTaskTool } from "./tools/do-task/index.ts";
 import { loadSkillTool } from "./tools/load-skill.ts";
 import { conversationTools } from "./tools/mod.ts";
 import { fetchScratchpadContext } from "./tools/scratchpad-tools.ts";
+import { fetchUserIdentitySection } from "./user-identity.ts";
 
 const ROLE_SYSTEM = "system" as const;
 
@@ -136,8 +137,17 @@ ${agents.join(", ")}
 }
 
 /**
- * Get the system prompt with optional conversation history injection and available tools
- * Based on existing conversation-agent.ts buildSystemPrompt logic
+ * Build system prompt with optional context sections.
+ *
+ * Sections are appended in order:
+ * 1. Base prompt (from prompt.txt)
+ * 2. Stream ID (if present)
+ * 3. Workspaces
+ * 4. Agents
+ * 5. Integrations
+ * 6. Skills
+ * 7. Supported domains
+ * 8. User identity (if present)
  */
 function getSystemPrompt(
   streamId?: string,
@@ -146,6 +156,7 @@ function getSystemPrompt(
   integrationsSection?: string,
   skillsSection?: string,
   supportedDomainsSection?: string,
+  userIdentitySection?: string,
 ): string {
   let prompt = SYSTEM_PROMPT;
 
@@ -177,6 +188,11 @@ function getSystemPrompt(
 
   if (supportedDomainsSection) {
     prompt = `${prompt}\n\n${supportedDomainsSection}`;
+  }
+
+  // User identity at end - context about who is being served
+  if (userIdentitySection) {
+    prompt = `${prompt}\n\n${userIdentitySection}`;
   }
 
   return prompt;
@@ -394,14 +410,18 @@ export const conversationAgent = createAgent({
         // Track system agent names for prompt injection
         const agentNames = Object.keys(systemAgents);
 
-        // Fetch workspaces and jobs for prompt injection
-        logger.info("Fetching workspaces and jobs for prompt injection");
-        const { workspaces, jobsByWorkspace } = await fetchWorkspacesAndJobs(logger);
+        // Parallel fetch of startup context
+        logger.info("Fetching startup context for prompt injection");
+        const [{ workspaces, jobsByWorkspace }, linkSummary, userIdentitySection] =
+          await Promise.all([
+            fetchWorkspacesAndJobs(logger),
+            fetchLinkSummary(logger),
+            fetchUserIdentitySection(logger),
+          ]);
+
+        // Format sections from fetched data
         const workspacesSection = formatWorkspacesAndJobsSection(workspaces, jobsByWorkspace);
         const agentsSection = formatAgentsSection(agentNames);
-
-        // Fetch Link summary for prompt injection (gracefully handle if Link is unavailable)
-        const linkSummary = await fetchLinkSummary(logger);
         const integrationsSection = linkSummary
           ? formatIntegrationsSection(linkSummary)
           : undefined;
@@ -419,11 +439,12 @@ export const conversationAgent = createAgent({
           connectServiceTool.connect_service = createConnectServiceTool(providerIds);
         }
 
-        logger.debug("Workspaces and agents sections prepared", {
+        logger.debug("Startup context sections prepared", {
           workspaceCount: workspaces.length,
           agentCount: agentNames.length,
           integrations: linkSummary ? linkSummary.credentials.length : "unavailable",
           providers: linkSummary ? linkSummary.providers.length : "unavailable",
+          userIdentity: userIdentitySection ? "available" : "unavailable",
         });
 
         // MVP: Tool allowlist - only expose specific workspace management and task execution tools
@@ -496,6 +517,7 @@ export const conversationAgent = createAgent({
           integrationsSection,
           skillsSection,
           supportedDomainsSection,
+          userIdentitySection,
         );
 
         const datetimeMessage = `Current datetime (UTC): ${new Date().toISOString()}`;
@@ -603,6 +625,7 @@ export const conversationAgent = createAgent({
                     integrationsSection,
                     skillsSection,
                     supportedDomainsSection,
+                    userIdentitySection,
                   ),
                 },
                 {

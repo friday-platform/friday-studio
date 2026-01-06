@@ -33,14 +33,15 @@ export const emailAgent = createAgent<string, Result>({
   version: "1.0.0",
   description:
     "Compose and send email notifications via SendGrid. Generates email content from provided data/context, with template support, file attachments, and automatic retry with exponential backoff",
+  constraints:
+    "Recipients restricted to authenticated user's email or same organization domain. External recipients are automatically redirected to sender. Single recipient only - no CC, BCC, or multi-send supported.",
   expertise: {
     domains: ["email", "notifications", "sendgrid"],
     examples: [
-      "Send email to john@example.com with subject 'Test' saying hello",
-      "Email sarah@company.com a meeting reminder for 2pm today",
-      "Send deployment completion notification to team@startup.io",
-      "Create professional pricing report email from this data and send to client@company.com",
-      "Compose weekly summary email from these metrics and send to stakeholders@corp.com",
+      "Send me an email summary of today's meeting notes",
+      "Email me a reminder about the 2pm deadline",
+      "Send a status update email to my team",
+      "Compose a weekly report email and send it to me",
     ],
   },
   environment: {

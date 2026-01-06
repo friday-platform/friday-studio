@@ -6,21 +6,27 @@ import (
 
 	"github.com/go-chi/httplog/v2"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/tempestteam/atlas/apps/persona/repo"
 	"github.com/tempestteam/atlas/pkg/x/middleware/jwt"
 )
 
 type MeResponse struct {
-	ID           string      `json:"id"`
-	FullName     string      `json:"full_name"`
-	Email        string      `json:"email"`
-	CreatedAt    string      `json:"created_at"`
-	UpdatedAt    string      `json:"updated_at"`
-	DisplayName  string      `json:"display_name"`
-	ProfilePhoto string      `json:"profile_photo"`
-	Name         pgtype.Text `json:"name"`
+	ID           string  `json:"id"`
+	FullName     string  `json:"full_name"`
+	Email        string  `json:"email"`
+	CreatedAt    string  `json:"created_at"`
+	UpdatedAt    string  `json:"updated_at"`
+	DisplayName  *string `json:"display_name"`
+	ProfilePhoto *string `json:"profile_photo"`
+}
+
+// nullIfEmpty returns nil for empty strings, pointer to string otherwise.
+func nullIfEmpty(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }
 
 func handleMe(w http.ResponseWriter, r *http.Request) {
@@ -54,9 +60,8 @@ func handleMe(w http.ResponseWriter, r *http.Request) {
 		Email:        user.Email,
 		CreatedAt:    user.CreatedAt.Time.Format("2006-01-02T15:04:05.000000Z07:00"),
 		UpdatedAt:    user.UpdatedAt.Time.Format("2006-01-02T15:04:05.000000Z07:00"),
-		DisplayName:  user.DisplayName,
-		ProfilePhoto: user.ProfilePhoto,
-		Name:         user.Name,
+		DisplayName:  nullIfEmpty(user.DisplayName),
+		ProfilePhoto: nullIfEmpty(user.ProfilePhoto),
 	}
 
 	writeJSON(w, resp, http.StatusOK)
