@@ -67,7 +67,7 @@
     "npm:@jsr/std__yaml@^1.0.10": "1.0.10",
     "npm:@jsr/std__yaml@^1.0.9": "1.0.10",
     "npm:@lezer/common@^1.5.0": "1.5.0",
-    "npm:@lezer/markdown@^1.6.2": "1.6.2",
+    "npm:@lezer/markdown@^1.6.3": "1.6.3",
     "npm:@melt-ui/svelte@~0.86.6": "0.86.6_svelte@5.46.1__acorn@8.15.0",
     "npm:@modelcontextprotocol/sdk@^1.25.1": "1.25.1_zod@4.3.5_hono@4.11.3_ajv@8.17.1_express@5.2.1",
     "npm:@opentelemetry/api@^1.9.0": "1.9.0",
@@ -1151,8 +1151,8 @@
         "@lezer/common"
       ]
     },
-    "@lezer/markdown@1.6.2": {
-      "integrity": "sha512-iNSdKrIK0FfOjVPVpV0fu7OykdncYpEzf4vkG9szFf60ql/ObZShoVbM9u1tgkogDOmubms1CyoNS2/unOXWNw==",
+    "@lezer/markdown@1.6.3": {
+      "integrity": "sha512-jpGm5Ps+XErS+xA4urw7ogEGkeZOahVQF21Z6oECF0sj+2liwZopd2+I8uH5I/vZsRuuze3OxBREIANLf6KKUw==",
       "dependencies": [
         "@lezer/common",
         "@lezer/highlight"
@@ -5382,7 +5382,7 @@
             "npm:@jsr/std__assert@^1.0.14",
             "npm:@jsr/std__yaml@^1.0.10",
             "npm:@lezer/common@^1.5.0",
-            "npm:@lezer/markdown@^1.6.2",
+            "npm:@lezer/markdown@^1.6.3",
             "npm:@melt-ui/svelte@~0.86.6",
             "npm:@sentry/sveltekit@^10.32.1",
             "npm:@sveltejs/adapter-static@^3.0.10",
