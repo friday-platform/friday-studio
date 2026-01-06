@@ -159,6 +159,82 @@ describe("expandArtifactRefsInDocuments", () => {
       assertEquals(content?.[arrayId2], arrayData2);
     });
 
+    it("expands artifactRef wrapped in Result pattern { ok: true, data: { artifactRef } }", async () => {
+      // Arrange: create artifact and doc with Result wrapper (common agent output pattern)
+      const artifactData: ArtifactDataInput = {
+        type: "summary",
+        version: 1,
+        data: "Web search results",
+      };
+      const artifactId = await createTestArtifact(artifactData);
+
+      // This matches how web-search agent returns: success({ summary, artifactRef })
+      // which becomes { ok: true, data: { summary, artifactRef } }
+      const docs: Document[] = [
+        {
+          id: "web-search-result",
+          type: "AgentResult",
+          data: {
+            ok: true,
+            data: {
+              summary: "Found 3 results",
+              artifactRef: { id: artifactId, type: "web-search", summary: "Search results" },
+            },
+          },
+        },
+      ];
+
+      // Act
+      const expanded = await expandArtifactRefsInDocuments(docs);
+
+      // Assert: artifactContent should be added with the fetched content
+      assertEquals(expanded.length, 1);
+      assertExists(expanded[0]?.data?.artifactContent, "artifactContent should be defined");
+      assertEquals(expanded[0]?.data?.artifactContent?.[artifactId], artifactData);
+    });
+
+    it("expands artifactRefs array wrapped in Result pattern", async () => {
+      // Arrange: create two artifacts with Result wrapper pattern
+      const artifact1Data: ArtifactDataInput = {
+        type: "summary",
+        version: 1,
+        data: "First result",
+      };
+      const artifact2Data: ArtifactDataInput = {
+        type: "summary",
+        version: 1,
+        data: "Second result",
+      };
+      const artifact1Id = await createTestArtifact(artifact1Data);
+      const artifact2Id = await createTestArtifact(artifact2Data);
+
+      const docs: Document[] = [
+        {
+          id: "multi-result",
+          type: "AgentResult",
+          data: {
+            ok: true,
+            data: {
+              response: "Found multiple items",
+              artifactRefs: [
+                { id: artifact1Id, type: "summary", summary: "First" },
+                { id: artifact2Id, type: "summary", summary: "Second" },
+              ],
+            },
+          },
+        },
+      ];
+
+      // Act
+      const expanded = await expandArtifactRefsInDocuments(docs);
+
+      // Assert
+      assertEquals(expanded.length, 1);
+      assertExists(expanded[0]?.data?.artifactContent);
+      assertEquals(expanded[0]?.data?.artifactContent?.[artifact1Id], artifact1Data);
+      assertEquals(expanded[0]?.data?.artifactContent?.[artifact2Id], artifact2Data);
+    });
+
     it("deduplicates when multiple documents reference the same artifact", async () => {
       // Arrange: one artifact, two documents referencing it
       const sharedData: ArtifactDataInput = { type: "summary", version: 1, data: "Shared content" };

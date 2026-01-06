@@ -16,14 +16,28 @@ const logger = baseLogger.child({ component: "artifact-expansion" });
 
 /**
  * Extract artifact refs from a document, handling both singular and array forms.
+ * Also handles Result wrapper pattern: { ok: true, data: { artifactRef: {...} } }
  * Malformed refs are logged and skipped rather than crashing.
  */
 function extractRefs(doc: Document): ArtifactRef[] {
   const refs: ArtifactRef[] = [];
+  const raw = doc.data;
+
+  // Skip non-objects
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return refs;
+
+  // Unwrap Result pattern { ok: true, data: {...} } if present
+  const obj = raw as Record<string, unknown>;
+  const data =
+    obj.ok === true && obj.data && typeof obj.data === "object" && !Array.isArray(obj.data)
+      ? (obj.data as Record<string, unknown>)
+      : obj;
+
+  if (!data) return refs;
 
   // Parse singular artifactRef
-  if (doc.data?.artifactRef !== undefined) {
-    const result = ArtifactRefSchema.safeParse(doc.data.artifactRef);
+  if (data.artifactRef !== undefined) {
+    const result = ArtifactRefSchema.safeParse(data.artifactRef);
     if (result.success) {
       refs.push(result.data);
     } else {
@@ -35,8 +49,8 @@ function extractRefs(doc: Document): ArtifactRef[] {
   }
 
   // Parse array of artifactRefs
-  if (Array.isArray(doc.data?.artifactRefs)) {
-    for (const rawRef of doc.data.artifactRefs) {
+  if (Array.isArray(data.artifactRefs)) {
+    for (const rawRef of data.artifactRefs) {
       const result = ArtifactRefSchema.safeParse(rawRef);
       if (result.success) {
         refs.push(result.data);
