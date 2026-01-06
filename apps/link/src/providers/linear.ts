@@ -42,6 +42,8 @@ export const linearProvider = defineOAuthProvider({
       return { healthy: true };
     } catch (e) {
       return { healthy: false, error: stringifyError(e) };
+    } finally {
+      await mcpClient.close();
     }
   },
   identify: async (tokens) => {
