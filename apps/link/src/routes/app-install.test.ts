@@ -186,8 +186,13 @@ describe("App Install Routes", () => {
     registry.register(mockProvider);
 
     // Create app with routes (including unified callback)
+    // Add middleware to set userId (simulates tenancy middleware from main app)
     app = factory
       .createApp()
+      .use("*", async (c, next) => {
+        c.set("userId", "test-user");
+        await next();
+      })
       .route("/v1/app-install", createAppInstallRoutes(service))
       .route("/v1/callback", createCallbackRoutes(oauthService, service));
   });
@@ -388,7 +393,7 @@ describe("App Install Routes", () => {
       assertEquals(result2.credential_id, credId1);
 
       // Should only have one credential
-      const allCreds = await storage.list("oauth", "dev");
+      const allCreds = await storage.list("oauth", "test-user");
       assertEquals(allCreds.length, 1);
     });
   });

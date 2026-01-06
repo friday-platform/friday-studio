@@ -11,10 +11,7 @@ import { AppInstallError } from "../app-install/errors.ts";
 import type { AppInstallService } from "../app-install/service.ts";
 import { factory } from "../factory.ts";
 
-const AuthorizeQuerySchema = z.object({
-  redirect_uri: z.string().optional(),
-  user_id: z.string().optional(),
-});
+const AuthorizeQuerySchema = z.object({ redirect_uri: z.string().optional() });
 
 const ReconcileBodySchema = z.object({ credential_id: z.string().min(1) });
 
@@ -47,7 +44,8 @@ export function createAppInstallRoutes(service: AppInstallService) {
           return c.json({ error: "invalid_query", message: query.error.message }, 400);
         }
 
-        const { redirect_uri, user_id } = query.data;
+        const { redirect_uri } = query.data;
+        const userId = c.get("userId"); // From JWT middleware, always present
 
         // Validate redirect_uri format if provided
         if (redirect_uri) {
@@ -62,7 +60,7 @@ export function createAppInstallRoutes(service: AppInstallService) {
           const { authorizationUrl } = await service.initiateInstall(
             provider,
             redirect_uri,
-            user_id,
+            userId,
           );
 
           return c.redirect(authorizationUrl, 302);
