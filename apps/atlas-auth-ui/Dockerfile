@@ -1,5 +1,5 @@
 # Build stage
-FROM denoland/deno:alpine-2.6.1 AS builder
+FROM denoland/deno:alpine-2.6.4 AS builder
 
 WORKDIR /app
 
@@ -16,7 +16,7 @@ COPY . .
 RUN deno task build
 
 # Production stage
-FROM denoland/deno:alpine-2.6.1
+FROM denoland/deno:alpine-2.6.4
 
 WORKDIR /app
 
