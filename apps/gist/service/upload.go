@@ -86,7 +86,11 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 	// Extract user email from Bearer token for logging (permissive - no auth enforcement)
 	userEmail := extractUserEmail(r)
 
-	log.Info("gist uploaded", "id", id.String(), "url", shareURL, "user", userEmail)
+	if userEmail != "" {
+		log.Info("gist uploaded", "id", id.String(), "url", shareURL, "user", userEmail)
+	} else {
+		log.Info("gist uploaded", "id", id.String(), "url", shareURL)
+	}
 
 	RecordUpload("success")
 	w.Header().Set("Content-Type", "application/json")

@@ -95,10 +95,13 @@ func jwtAuthMiddleware(publicKeyPEM string) func(http.Handler) http.Handler {
 			}
 
 			// Add user identity to log context
-			httplog.LogEntrySetFields(r.Context(), map[string]any{
+			fields := map[string]any{
 				"userID": claims.UserMetadata.TempestUserID,
-				"email":  claims.Email,
-			})
+			}
+			if claims.Email != "" {
+				fields["email"] = claims.Email
+			}
+			httplog.LogEntrySetFields(r.Context(), fields)
 
 			next.ServeHTTP(w, r)
 		})
