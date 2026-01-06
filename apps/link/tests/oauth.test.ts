@@ -135,6 +135,52 @@ Deno.test(
     // and not easily testable without mocking at the HTTP level. The discovery implementation
     // works correctly in production - this test is removed to avoid flakiness.
 
+    await t.step(
+      "Discovery - Issuer mismatch redirects to actual issuer (Atlassian-like)",
+      async () => {
+        if (mockServer) mockServer.controller.abort();
+
+        // Start the ACTUAL issuer server (like cf.mcp.atlassian.com)
+        const actualIssuerServer = await startMockOAuthServer({
+          includeProtectedResource: false,
+          includeOAuthMetadata: true,
+          includeUserinfo: true,
+        });
+
+        // Start a DISCOVERY PROXY server (like mcp.atlassian.com) that reports the actual issuer
+        // in its metadata - simulates Atlassian's behavior
+        mockServer = await startMockOAuthServer({
+          includeProtectedResource: false, // 404 on protected resource (triggers RFC 8414 fallback)
+          includeOAuthMetadata: true,
+          includeUserinfo: true,
+          metadataIssuer: actualIssuerServer.issuer, // Report the actual issuer server
+        });
+
+        // Register provider pointing to the DISCOVERY PROXY (like mcp.atlassian.com)
+        registerTestOAuthProvider("test-issuer-mismatch", mockServer.issuer);
+
+        // Complete OAuth flow - should follow the issuer redirect
+        const { credentialId, callbackResponse } = await completeOAuthFlow(
+          app,
+          actualIssuerServer, // Use actual issuer server for token exchange
+          "test-issuer-mismatch",
+          { accessToken: "issuer_mismatch_token" },
+        );
+
+        // Verify callback succeeded
+        assertEquals(callbackResponse.status, 200);
+
+        // Verify credential was created
+        const credRes = await app.request(`/v1/credentials/${credentialId}`);
+        assertEquals(credRes.status, 200);
+        const credSummary = CredentialSummarySchema.parse(await credRes.json());
+        assertObjectMatch(credSummary, { type: "oauth", provider: "test-issuer-mismatch" });
+
+        // Cleanup the actual issuer server
+        actualIssuerServer.controller.abort();
+      },
+    );
+
     await t.step("Discovery - Protected Resource missing returns 502", async () => {
       if (mockServer) mockServer.controller.abort();
 

@@ -63,6 +63,20 @@ async function tryProtectedResourceDiscovery(serverUrl: string): Promise<URL | n
 }
 
 /**
+ * Schema for OAuth AS Metadata (RFC 8414) with required fields for our use case.
+ * We only validate the fields we need; additional fields are passed through.
+ */
+const ASMetadataSchema = z
+  .object({
+    issuer: z.url(),
+    authorization_endpoint: z.string().optional(),
+    token_endpoint: z.string().optional(),
+    registration_endpoint: z.string().optional(),
+    revocation_endpoint: z.string().optional(),
+  })
+  .passthrough();
+
+/**
  * Discover Authorization Server metadata from an issuer URL
  *
  * Uses oauth4webapi which tries /.well-known/oauth-authorization-server first,
@@ -81,6 +95,48 @@ async function discoverFromIssuer(issuer: URL): Promise<oauth.AuthorizationServe
   );
 
   return oauth.processDiscoveryResponse(issuer, asResponse);
+}
+
+/**
+ * Fetch OAuth AS metadata from a URL and handle issuer mismatch.
+ *
+ * Some providers (e.g., Atlassian) serve discovery metadata at one origin but
+ * report a different issuer in the metadata itself. Per RFC 8414 Section 3.3,
+ * the `issuer` in the response is authoritative. This function:
+ * 1. Fetches metadata from the discovery URL
+ * 2. Extracts the actual issuer from the response
+ * 3. Re-validates using the correct issuer for proper signature/claim verification
+ *
+ * @param discoveryOrigin - The origin URL to fetch discovery metadata from
+ * @returns Authorization Server metadata with validated issuer
+ */
+async function discoverFromOriginWithIssuerRedirect(
+  discoveryOrigin: URL,
+): Promise<oauth.AuthorizationServer> {
+  // Fetch the raw metadata to extract the actual issuer
+  const wellKnownUrl = new URL("/.well-known/oauth-authorization-server", discoveryOrigin);
+
+  const rawResponse = await deadline(
+    fetch(wellKnownUrl, { headers: { Accept: "application/json" } }),
+    DISCOVERY_TIMEOUT_MS,
+  );
+
+  if (!rawResponse.ok) {
+    throw new Error(`Discovery request failed: ${rawResponse.status}`);
+  }
+
+  const rawMetadata = ASMetadataSchema.parse(await rawResponse.json());
+  const actualIssuer = new URL(rawMetadata.issuer);
+
+  // If the issuer matches the discovery origin, use standard flow
+  if (actualIssuer.origin === discoveryOrigin.origin) {
+    return discoverFromIssuer(discoveryOrigin);
+  }
+
+  // Issuer differs from discovery origin - re-discover from actual issuer
+  // This handles cases like Atlassian where discovery is at mcp.atlassian.com
+  // but issuer is cf.mcp.atlassian.com
+  return discoverFromIssuer(actualIssuer);
 }
 
 /**
@@ -124,8 +180,10 @@ export async function discoverAuthorizationServer(
   const hasPath = serverUrlObj.pathname !== "/" && serverUrlObj.pathname !== "";
 
   // Try origin-only first (most common case)
+  // Use discoverFromOriginWithIssuerRedirect to handle providers like Atlassian
+  // that serve discovery from one origin but report a different issuer
   try {
-    return await discoverFromIssuer(new URL(serverUrlObj.origin));
+    return await discoverFromOriginWithIssuerRedirect(new URL(serverUrlObj.origin));
   } catch (originError) {
     if (!hasPath) {
       throw new Error(`OAuth discovery failed for ${serverUrl}`, { cause: originError });

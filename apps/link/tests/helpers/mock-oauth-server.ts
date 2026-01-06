@@ -41,11 +41,17 @@ export type MockOAuthServer = {
 
 /**
  * Start mock OAuth server that handles discovery, registration, token exchange, and userinfo
+ *
+ * @param opts.metadataIssuer - If provided, the discovery metadata will report this as the issuer
+ *                              instead of the server's own URL. This simulates providers like
+ *                              Atlassian that serve discovery at one origin but report a different
+ *                              issuer in the metadata (e.g., mcp.atlassian.com → cf.mcp.atlassian.com)
  */
 export async function startMockOAuthServer(opts: {
   includeProtectedResource?: boolean;
   includeOAuthMetadata?: boolean;
   includeUserinfo?: boolean;
+  metadataIssuer?: string;
 }): Promise<MockOAuthServer> {
   const controller = new AbortController();
   const clients = new Map<string, MockClient>();
@@ -65,6 +71,7 @@ export async function startMockOAuthServer(opts: {
     includeProtectedResource: opts.includeProtectedResource !== false,
     includeOAuthMetadata: opts.includeOAuthMetadata !== false,
     includeUserinfo: opts.includeUserinfo !== false,
+    metadataIssuer: opts.metadataIssuer,
   };
 
   // Start server (needs to stay in scope for lifecycle)
@@ -95,12 +102,14 @@ export async function startMockOAuthServer(opts: {
         if (!config.includeOAuthMetadata) {
           return new Response("Not Found", { status: 404 });
         }
+        // Use metadataIssuer if provided (simulates Atlassian-like issuer mismatch)
+        const reportedIssuer = config.metadataIssuer ?? issuer;
         return Response.json({
-          issuer,
-          authorization_endpoint: `${issuer}/authorize`,
-          token_endpoint: `${issuer}/token`,
-          registration_endpoint: `${issuer}/register`,
-          userinfo_endpoint: config.includeUserinfo ? `${issuer}/userinfo` : undefined,
+          issuer: reportedIssuer,
+          authorization_endpoint: `${reportedIssuer}/authorize`,
+          token_endpoint: `${reportedIssuer}/token`,
+          registration_endpoint: `${reportedIssuer}/register`,
+          userinfo_endpoint: config.includeUserinfo ? `${reportedIssuer}/userinfo` : undefined,
         });
       }
 
