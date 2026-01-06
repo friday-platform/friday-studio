@@ -6,12 +6,10 @@ import { getAtlasDaemonUrl } from "@atlas/oapi-client";
 import { DefaultChatTransport } from "ai";
 import { onMount } from "svelte";
 import { SvelteMap } from "svelte/reactivity";
-import { z } from "zod";
 import { afterNavigate } from "$app/navigation";
-import { getAppContext, getFileType } from "$lib/app-context.svelte";
+import { getAppContext, handleFileDrop } from "$lib/app-context.svelte";
 import { getChatContext } from "$lib/chat-context.svelte";
 import ChatBufferBlur from "$lib/components/chat-buffer-blur.svelte";
-import { DropdownMenu } from "$lib/components/dropdown-menu";
 import { Icons } from "$lib/components/icons";
 import { IconSmall } from "$lib/components/icons/small";
 import Textarea from "$lib/components/textarea.svelte";
@@ -25,9 +23,16 @@ import Reasoning from "$lib/modules/messages/reasoning.svelte";
 import Request from "$lib/modules/messages/request.svelte";
 import Response from "$lib/modules/messages/response.svelte";
 import ShowDetails from "$lib/modules/messages/show-details.svelte";
-import { shareChat } from "$lib/utils/share-chat";
-import { invoke } from "$lib/utils/tauri-loader";
 import type { PageData } from "./$types";
+
+/**
+ * Formats a file size in bytes to a human-readable string.
+ */
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 const { data }: { data: PageData } = $props();
 
@@ -222,13 +227,18 @@ let showDetails = new SvelteMap<string, boolean>();
 
 				<div class="spacer"></div>
 
-				<div
-					class="interactive-container"
-					class:has-outline={chatContext.chats
-						.get(data.chatId)
-						?.messages.some((msg) => msg.parts.some((part) => part.type === 'data-outline-update'))}
-				>
-					<div class="interactive-container-int">
+			<div
+				class="interactive-container"
+				class:has-outline={chatContext.chats
+					.get(data.chatId)
+					?.messages.some((msg) => msg.parts.some((part) => part.type === 'data-outline-update'))}
+				ondragover={(e) => e.preventDefault()}
+				ondrop={(e) => {
+					e.preventDefault();
+					handleFileDrop(appCtx, Array.from(e.dataTransfer?.files ?? []), data.chatId);
+				}}
+			>
+				<div class="interactive-container-int">
 						<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 						<form
 							bind:this={form}
@@ -241,41 +251,32 @@ let showDetails = new SvelteMap<string, boolean>();
 							onsubmit={async (e) => {
 								e.preventDefault();
 
-								if (chatContext.chats.has(data.chatId) && message.trim()) {
-									let combinedMessage = message;
-									if (appCtx.stagedFiles.state.size > 0) {
-										combinedMessage = combinedMessage + `\n\nAttachments:`;
+								// Check if still uploading
+								const hasUploadingFiles = Array.from(appCtx.stagedFiles.state.values()).some(
+									(f) => f.status === 'uploading'
+								);
+								if (hasUploadingFiles) return;
 
-										for (const id of appCtx.stagedFiles.state.keys()) {
-											combinedMessage = combinedMessage + `\n- ${id}`;
+								if (chatContext.chats.has(data.chatId) && message.trim()) {
+									// Build message with ready attachments only
+									let combinedMessage = message;
+									const readyFiles = Array.from(appCtx.stagedFiles.state.values()).filter(
+										(f) => f.status === 'ready' && f.artifactId
+									);
+
+									if (readyFiles.length > 0) {
+										combinedMessage += '\n\nAttachments:';
+										for (const file of readyFiles) {
+											combinedMessage += `\n- artifact:${file.artifactId}`;
 										}
 									}
 
 									chatContext.chats.get(data.chatId)?.sendMessage({ text: combinedMessage });
 									message = '';
 									appCtx.stagedFiles.clear();
-								}
-
-								try {
-									const formData = new FormData(e.target as HTMLFormElement);
-									let formMessage = formData.get('message');
-
-									if (appCtx.stagedFiles.state.size > 0) {
-										formMessage = formMessage + `\n\nAttachments:`;
-
-										for (const id of appCtx.stagedFiles.state.keys()) {
-											formMessage = formMessage + `\n- ${id}`;
-										}
-									}
-
-									const { data: sanitizedMessage } = z.string().safeParse(formMessage);
-
-									if (!sanitizedMessage || sanitizedMessage.trim().length === 0) return;
 
 									_userHasScrolled = false;
 									scrollToBottom();
-								} catch (e) {
-									console.error(e);
 								}
 							}}
 						>
@@ -283,99 +284,45 @@ let showDetails = new SvelteMap<string, boolean>();
 								<div class="staged-files">
 									{#each appCtx.stagedFiles.state.entries() as [itemId, file] (itemId)}
 										<button
-											title={file.path}
-											onclick={async () => {
-												appCtx.stagedFiles.remove(itemId);
+											class="staged-file"
+											class:uploading={file.status === 'uploading'}
+											class:ready={file.status === 'ready'}
+											class:error={file.status === 'error'}
+											title={file.error || file.name}
+											onclick={() => {
+												if (file.status !== 'uploading') {
+													appCtx.stagedFiles.remove(itemId);
+												}
 											}}
+											disabled={file.status === 'uploading'}
 										>
-											{#if file.type === 'file'}
-												<IconSmall.File />
-											{:else}
-												<IconSmall.Folder />
+											{#if file.status === 'uploading'}
+												<span class="status-icon spinning"><IconSmall.Progress /></span>
+											{:else if file.status === 'ready'}
+												<span class="status-icon"><IconSmall.Check /></span>
+											{:else if file.status === 'error'}
+												<span class="status-icon"><IconSmall.InfoCircled /></span>
 											{/if}
 
-											<span class="file-path">{file.name}</span>
+											<span class="file-name">{file.name}</span>
 
-											<span class="close-button">
-												<IconSmall.Close />
-											</span>
+											{#if file.status === 'error'}
+												<span class="error-text">{file.error}</span>
+											{:else}
+												<span class="file-size">{formatFileSize(file.size)}</span>
+											{/if}
+
+											{#if file.status !== 'uploading'}
+												<span class="close-button">
+													<IconSmall.Close />
+												</span>
+											{/if}
 										</button>
 									{/each}
 								</div>
 							{/if}
 
 							<div class="textarea-container">
-								{#if __TAURI_BUILD__}
-									<div class="actions">
-										<DropdownMenu.Root
-											positioning={{
-												placement: 'bottom-start',
-												gutter: 0,
-												offset: { crossAxis: -6, mainAxis: 12 }
-											}}
-										>
-											<DropdownMenu.Trigger>
-												<div class="action-trigger">
-													<Icons.Plus />
-												</div>
-											</DropdownMenu.Trigger>
-											<DropdownMenu.Content size="regular">
-												<DropdownMenu.Item
-													onclick={async (e) => {
-														e.preventDefault();
-
-														if (invoke) {
-															try {
-																const paths = (await invoke('open_file_or_folder_picker', {
-																	multiple: true,
-																	foldersOnly: false
-																})) as string[];
-
-																if (paths && paths.length > 0) {
-																	for (const path of paths) {
-																		appCtx.stagedFiles.add(path, {
-																			path,
-																			type: getFileType(path)
-																		});
-																	}
-																}
-															} catch (error) {
-																console.error('Failed to open file picker:', error);
-															}
-														}
-													}}
-												>
-													<Icons.Paperclip />
-
-													Add Files
-												</DropdownMenu.Item>
-
-												<DropdownMenu.Item
-													onclick={async () => {
-														const messages = chatContext.chats.get(data.chatId)?.messages;
-														if (messages) {
-															await shareChat(messages, data.title);
-														}
-													}}
-												>
-													<Icons.Share />
-
-													Share
-												</DropdownMenu.Item>
-
-												<DropdownMenu.Item
-													onclick={() => {
-														chatContext.resetNewChat();
-													}}
-												>
-													<Icons.Chat />
-													New Chat
-												</DropdownMenu.Item>
-											</DropdownMenu.Content>
-										</DropdownMenu.Root>
-									</div>
-								{/if}
-
 								<Textarea
 									name="message"
 									placeholder="Type here..."
@@ -399,7 +346,10 @@ let showDetails = new SvelteMap<string, boolean>();
 											<IconSmall.Stop />
 										</button>
 									{:else}
-										<button type="submit" aria-label="Send message">
+										{@const hasUploadingFiles = Array.from(appCtx.stagedFiles.state.values()).some(
+											(f) => f.status === 'uploading'
+										)}
+										<button type="submit" aria-label="Send message" disabled={hasUploadingFiles}>
 											<Icons.ArrowUp />
 										</button>
 									{/if}
@@ -547,11 +497,16 @@ let showDetails = new SvelteMap<string, boolean>();
 				inline-size: var(--size-7);
 				transition: all 200ms ease;
 
-				&:hover {
+				&:hover:not(:disabled) {
 					background-color: var(--color-text);
 					@media (prefers-color-scheme: dark) {
 						color: var(--color-surface-1);
 					}
+				}
+
+				&:disabled {
+					opacity: 0.5;
+					cursor: not-allowed;
 				}
 			}
 
@@ -559,27 +514,6 @@ let showDetails = new SvelteMap<string, boolean>();
 				align-items: end;
 				display: flex;
 				gap: var(--size-1);
-			}
-
-			.actions {
-				display: flex;
-				margin-block-end: var(--size-1-5);
-			}
-
-			.action-trigger {
-				align-items: center;
-				block-size: var(--size-7);
-				border-radius: var(--radius-4);
-				color: color-mix(in srgb, var(--color-text), transparent 30%);
-				display: flex;
-				justify-content: center;
-				inline-size: var(--size-7);
-				transition: all 200ms ease;
-
-				&:hover,
-				:global(:focus-visible) & {
-					background-color: var(--color-surface-2);
-				}
 			}
 		}
 	}
@@ -592,7 +526,7 @@ let showDetails = new SvelteMap<string, boolean>();
 		padding-block-start: var(--size-2);
 		margin-inline-start: calc(-1 * var(--size-0-5));
 
-		button {
+		.staged-file {
 			align-items: center;
 			block-size: var(--size-5-5);
 			border-radius: var(--radius-2-5);
@@ -607,18 +541,62 @@ let showDetails = new SvelteMap<string, boolean>();
 			padding-inline: var(--size-1);
 			overflow: hidden;
 			text-align: left;
+			transition: all 150ms ease;
 
-			& :global(svg) {
-				opacity: 0.5;
-				flex: none;
+			&.uploading {
+				opacity: 0.7;
+				cursor: wait;
 			}
 
-			.file-path {
+			&.ready {
+				border-color: var(--color-success, #22c55e);
+
+				.status-icon {
+					color: var(--color-success, #22c55e);
+				}
+			}
+
+			&.error {
+				border-color: var(--color-error, #ef4444);
+				color: var(--color-error, #ef4444);
+
+				.status-icon {
+					color: var(--color-error, #ef4444);
+				}
+			}
+
+			.status-icon {
+				flex: none;
+				display: flex;
+				align-items: center;
+
+				&.spinning {
+					animation: spin 1s linear infinite;
+				}
+			}
+
+			.file-name {
 				text-overflow: ellipsis;
 				overflow: hidden;
 				white-space: nowrap;
 				flex: 1;
 				opacity: 0.7;
+			}
+
+			.file-size {
+				font-size: var(--font-size-0);
+				opacity: 0.5;
+				flex: none;
+			}
+
+			.error-text {
+				font-size: var(--font-size-0);
+				opacity: 0.8;
+				flex: none;
+				max-inline-size: var(--size-24);
+				text-overflow: ellipsis;
+				overflow: hidden;
+				white-space: nowrap;
 			}
 
 			.close-button {
@@ -632,6 +610,15 @@ let showDetails = new SvelteMap<string, boolean>();
 			&:hover .close-button {
 				background-color: var(--color-surface-2);
 			}
+		}
+	}
+
+	@keyframes spin {
+		from {
+			transform: rotate(0deg);
+		}
+		to {
+			transform: rotate(360deg);
 		}
 	}
 </style>

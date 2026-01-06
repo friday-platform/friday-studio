@@ -159,8 +159,8 @@ export const FileDataSchema = z.object({
 });
 export type FileData = z.infer<typeof FileDataSchema>;
 
-/** File artifact data (input) - omits fields populated by storage layer */
-export const FileDataInputSchema = FileDataSchema.omit({ mimeType: true, originalName: true });
+/** File artifact data (input) - omits mimeType (auto-detected), allows optional originalName */
+export const FileDataInputSchema = FileDataSchema.omit({ mimeType: true });
 export type FileDataInput = z.infer<typeof FileDataInputSchema>;
 
 /** Table data schema */

@@ -189,6 +189,26 @@ export async function createTempCsvFile(rows: string[][]): Promise<string> {
 }
 
 /**
+ * Create a temporary text file with test data.
+ * Caller is responsible for cleanup.
+ */
+export async function createTempTextFile(content: string): Promise<string> {
+  const tempFile = await Deno.makeTempFile({ suffix: ".txt" });
+  await Deno.writeTextFile(tempFile, content);
+  return tempFile;
+}
+
+/**
+ * Create a temporary markdown file with test data.
+ * Caller is responsible for cleanup.
+ */
+export async function createTempMarkdownFile(content: string): Promise<string> {
+  const tempFile = await Deno.makeTempFile({ suffix: ".md" });
+  await Deno.writeTextFile(tempFile, content);
+  return tempFile;
+}
+
+/**
  * Clean up a temporary file.
  */
 export async function cleanupTempFile(path: string): Promise<void> {

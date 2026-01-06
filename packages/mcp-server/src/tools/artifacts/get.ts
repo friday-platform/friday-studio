@@ -36,8 +36,8 @@ export function registerArtifactsGetTool(server: McpServer, ctx: ToolContext) {
       if (!response.ok) {
         return createErrorResponse("Failed to retrieve artifact", stringifyError(response.error));
       }
-      const { artifact } = response.data;
-      return createSuccessResponse({ ...artifact });
+      const { artifact, contents } = response.data;
+      return createSuccessResponse({ ...artifact, contents });
     },
   );
 }

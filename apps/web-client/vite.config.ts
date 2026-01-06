@@ -44,8 +44,8 @@ export default defineConfig(({ mode }) => ({
     strictPort: true,
     host: host || false,
     hmr: host ? { protocol: "ws", host, port: 1421 } : undefined,
-    // Note: API proxying is handled by SvelteKit server routes (src/routes/api/[...path]/+server.ts)
-    // This eliminates Vite proxy errors and gives us full control over error handling
+    // Note: In dev mode, client connects directly to daemon at localhost:8080 via getAtlasDaemonUrl().
+    // In production, Traefik routes /api/* to daemon. No SvelteKit proxy needed.
     watch: {
       // 3. tell Vite to ignore watching `src-tauri`
       ignored: ["**/src-tauri/**"],

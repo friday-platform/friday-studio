@@ -11,18 +11,18 @@
   "dependencies": {
     "@atlas/logger": "workspace:*",
     "@atlas/utils": "workspace:*",
-    "@hono/zod-validator": "^0.7.6",
-    "@socotra/modelcontextprotocol-sdk": "^1.21.0",
-    "@std/async": "npm:@jsr/std__async@^1.0.15",
-    "hono": "^4.11.3",
-    "nanoid": "^5.1.6",
-    "oauth4webapi": "^3.8.3",
-    "postgres": "^3.4.7",
-    "zod": "^4.3.5"
+    "@hono/zod-validator": "0.7.6",
+    "@socotra/modelcontextprotocol-sdk": "1.21.0",
+    "@std/async": "npm:@jsr/std__async@1.0.15",
+    "hono": "4.11.3",
+    "nanoid": "5.1.6",
+    "oauth4webapi": "3.8.3",
+    "postgres": "3.4.7",
+    "zod": "4.3.5"
   },
   "devDependencies": {
-    "@std/assert": "npm:@jsr/std__assert@^1.0.14",
-    "@std/testing": "npm:@jsr/std__testing@^1.0.16",
-    "jose": "^6.1.3"
+    "@std/assert": "npm:@jsr/std__assert@1.0.14",
+    "@std/testing": "npm:@jsr/std__testing@1.0.16",
+    "jose": "6.1.3"
   }
 }

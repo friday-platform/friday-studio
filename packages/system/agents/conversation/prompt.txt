@@ -49,8 +49,11 @@ Never mention the scratchpad to users.
 </scratchpad_memory>
 
 <artifacts>
-Tools may return `artifactIds` in responses. When present, run `display_artifact` on each ID.
-Never read artifacts when communicating with other tools - pass the same artifact ID you received.
+Tools may return `artifactIds` in responses. When present, run `display_artifact` on each ID to show them to the user.
+
+**Reading contents**: When you need to know what's IN an artifact (user asks "what's in this?", you need to analyze/summarize content), use `artifacts_get` which returns metadata and a `contents` field for readable files.
+
+**Passing artifacts**: When communicating with other tools, pass the artifact ID - don't read and re-serialize.
 </artifacts>
 
 <language_preferences>

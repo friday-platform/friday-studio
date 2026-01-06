@@ -4,7 +4,7 @@ import { fail, type Result, stringifyError, success } from "@atlas/utils";
 import { getAtlasHome } from "@atlas/utils/paths.server";
 import { deadline } from "@std/async";
 import { typeByExtension } from "@std/media-types";
-import { extname, join } from "@std/path";
+import { basename, extname, join } from "@std/path";
 import type { Artifact, ArtifactData, ArtifactDataInput, CreateArtifactInput } from "./model.ts";
 import type { ArtifactStorageAdapter } from "./types.ts";
 
@@ -37,7 +37,13 @@ function detectMimeType(filePath: string): string {
   return detected || "application/octet-stream";
 }
 
-const READABLE_MIME_TYPES = new Set(["application/json", "text/csv"]);
+const READABLE_MIME_TYPES = new Set([
+  "application/json",
+  "text/csv",
+  "text/plain",
+  "text/markdown",
+  "text/x-markdown",
+]);
 
 /**
  * Local storage adapter using Deno KV (SQLite-backed).
@@ -73,7 +79,15 @@ export class LocalStorageAdapter implements ArtifactStorageAdapter {
       }
 
       const mimeType = detectMimeType(fileInput.path);
-      artifactData = { type: "file", version: 1, data: { path: fileInput.path, mimeType } };
+      artifactData = {
+        type: "file",
+        version: 1,
+        data: {
+          path: fileInput.path,
+          mimeType,
+          originalName: fileInput.originalName || basename(fileInput.path),
+        },
+      };
     } else {
       artifactData = input.data;
     }
@@ -156,7 +170,15 @@ export class LocalStorageAdapter implements ArtifactStorageAdapter {
       }
 
       const mimeType = detectMimeType(fileInput.path);
-      artifactData = { type: "file", version: 1, data: { path: fileInput.path, mimeType } };
+      artifactData = {
+        type: "file",
+        version: 1,
+        data: {
+          path: fileInput.path,
+          mimeType,
+          originalName: fileInput.originalName || basename(fileInput.path),
+        },
+      };
     } else {
       artifactData = input.data;
     }
@@ -394,7 +416,9 @@ export class LocalStorageAdapter implements ArtifactStorageAdapter {
     const { path, mimeType } = artifact.data.data;
 
     if (!READABLE_MIME_TYPES.has(mimeType)) {
-      return fail(`Unsupported mime type for reading: ${mimeType}. Only JSON files are supported.`);
+      return fail(
+        `Unsupported mime type for reading: ${mimeType}. Supported: JSON, CSV, plain text, Markdown.`,
+      );
     }
 
     try {

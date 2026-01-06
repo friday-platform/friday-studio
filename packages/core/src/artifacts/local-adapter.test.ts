@@ -10,6 +10,8 @@ import {
   createTableArtifactInput,
   createTempCsvFile,
   createTempJsonFile,
+  createTempMarkdownFile,
+  createTempTextFile,
   createWebSearchInput,
   createWorkspacePlanInput,
 } from "./test-utils/shared-fixtures.ts";
@@ -535,6 +537,38 @@ Deno.test("LocalAdapter: Files - readFileContents for CSV file", async () => {
   assertResultOk(readResult);
   assertEquals(readResult.data.includes("Alice"), true);
   assertEquals(readResult.data.includes("Bob"), true);
+
+  await cleanupTempFile(tempFile);
+});
+
+Deno.test("LocalAdapter: Files - readFileContents for plain text file", async () => {
+  const adapter = await createTestAdapter();
+  const testContent = "Hello, world!\nThis is a test file.";
+  const tempFile = await createTempTextFile(testContent);
+
+  const createResult = await adapter.create(createFileArtifactInput(tempFile));
+  assertResultOk(createResult);
+
+  const readResult = await adapter.readFileContents({ id: createResult.data.id });
+
+  assertResultOk(readResult);
+  assertEquals(readResult.data, testContent);
+
+  await cleanupTempFile(tempFile);
+});
+
+Deno.test("LocalAdapter: Files - readFileContents for markdown file", async () => {
+  const adapter = await createTestAdapter();
+  const testContent = "# Heading\n\n- Item 1\n- Item 2\n\n**Bold text**";
+  const tempFile = await createTempMarkdownFile(testContent);
+
+  const createResult = await adapter.create(createFileArtifactInput(tempFile));
+  assertResultOk(createResult);
+
+  const readResult = await adapter.readFileContents({ id: createResult.data.id });
+
+  assertResultOk(readResult);
+  assertEquals(readResult.data, testContent);
 
   await cleanupTempFile(tempFile);
 });

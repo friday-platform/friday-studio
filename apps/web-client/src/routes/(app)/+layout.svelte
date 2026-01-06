@@ -1,7 +1,7 @@
 <script lang="ts">
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { onDestroy, onMount } from "svelte";
-import { getAppContext, getFileType } from "$lib/app-context.svelte";
+import { getAppContext } from "$lib/app-context.svelte";
 import favicon from "$lib/assets/favicon.svg";
 import AppContainer from "$lib/components/app/container.svelte";
 import AppSidebar from "$lib/components/app/sidebar.svelte";
@@ -43,7 +43,8 @@ onMount(async () => {
                 continue;
               }
 
-              appCtx.stagedFiles.add(path, { path, type: getFileType(path) });
+              const name = path.split("/").pop() || path;
+              appCtx.stagedFiles.add({ name, size: 0, status: "ready" });
             }
           }
         });

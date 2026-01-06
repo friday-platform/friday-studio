@@ -467,10 +467,10 @@ export const conversationAgent = createAgent({
           "atlas_library_list",
           "atlas_library_get",
           // Artifacts
-          "atlas_artifact_create",
-          "atlas_artifact_update",
-          "atlas_artifact_get",
-          "atlas_artifact_get_by_chat",
+          "artifacts_create",
+          "artifacts_update",
+          "artifacts_get",
+          "artifacts_get_by_chat",
           // System
           "system_version",
         ]);

@@ -124,7 +124,7 @@ async function handleOpenInFinder(savedFileName: string) {
 
 		<div class="contents" use:content {...$content} class:expanded={$open}>
 			{#if fileContents}
-				<pre><code>{content}</code></pre>
+				<pre><code>{fileContents}</code></pre>
 			{/if}
 		</div>
 

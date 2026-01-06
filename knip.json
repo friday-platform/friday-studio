@@ -40,21 +40,18 @@
       "project": ["**/*.{ts,tsx,js,jsx}!"],
       "entry": ["scripts/build.ts!"]
     },
-    "packages/sentry": { "entry": ["mod.ts!"], "project": ["src/**/*.{ts,tsx,js,jsx}!"] },
+    "packages/sentry": { "project": ["src/**/*.{ts,tsx,js,jsx}!"] },
     "packages/signals": { "project": ["src/**/*.{ts,tsx,js,jsx}!"] },
     "packages/slack": { "entry": ["src/**/*.test.ts"], "project": ["src/**/*.{ts,tsx,js,jsx}!"] },
     "packages/storage": { "project": ["src/**/*.{ts,tsx,js,jsx}!"] },
     "packages/system": { "entry": ["**/*.test.ts"], "project": ["**/*.{ts,tsx,js,jsx}!"] },
-    "packages/utils": {
-      "entry": ["mod.ts!", "src/paths.ts!", "src/telemetry.ts!", "src/temp.server.ts!"],
-      "project": ["**/*.{ts,tsx,js,jsx}!"]
-    },
+    "packages/utils": { "entry": ["src/temp.server.ts!"], "project": ["**/*.{ts,tsx,js,jsx}!"] },
     "packages/workspace": { "project": ["src/**/*.{ts,tsx,js,jsx}!"] },
     "apps/link": {
-      "entry": ["src/index.ts!", "src/**/*.test.ts", "tests/**/*.test.ts"],
+      "entry": ["src/**/*.test.ts", "tests/**/*.test.ts"],
       "project": ["src/**/*.{ts,tsx,js,jsx}!", "tests/**/*.{ts,tsx,js,jsx}!"]
     },
-    "apps/atlasd": { "project": ["**/*.{ts,tsx,js,jsx}!"] },
+    "apps/atlasd": { "entry": ["**/*.test.ts"], "project": ["**/*.{ts,tsx,js,jsx}!"] },
     "apps/atlas-auth-ui": {
       "entry": ["src/app.html!", "src/routes/**/*.svelte!"],
       "project": ["src/**/*.{ts,tsx,js,jsx,svelte}!", "*.js!"],

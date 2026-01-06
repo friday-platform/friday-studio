@@ -6,6 +6,7 @@
     "./credentials": "./src/credential-fetcher.ts",
     "./types": "./src/types/workspace.ts",
     "./artifacts": "./src/artifacts/mod.ts",
+    "./artifacts/file-upload": "./src/artifacts/file-upload.ts",
     "./artifacts/server": "./src/artifacts/server.ts",
     "./errors": "./src/errors.ts",
     "./library": "./src/library/types.ts",
