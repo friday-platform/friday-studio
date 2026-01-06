@@ -8,6 +8,7 @@ import {
   createGoogleGmailProvider,
   createGoogleSheetsProvider,
 } from "./google-providers.ts";
+import { createHubSpotProvider } from "./hubspot.ts";
 import { linearProvider } from "./linear.ts";
 import { notionProvider } from "./notion.ts";
 import { createSlackAppInstallProvider } from "./slack-app.ts";
@@ -85,6 +86,15 @@ if (slackAppProvider) {
 registry.register(notionProvider);
 registry.register(atlassianProvider);
 registry.register(linearProvider);
+
+const hubspotProvider = createHubSpotProvider();
+if (hubspotProvider) {
+  registry.register(hubspotProvider);
+} else {
+  logger.info(
+    "Skipping HubSpot provider: HUBSPOT_CLIENT_ID_FILE or HUBSPOT_CLIENT_SECRET_FILE not set",
+  );
+}
 
 // Dev-only test provider for manual testing
 if (config.devMode) {
