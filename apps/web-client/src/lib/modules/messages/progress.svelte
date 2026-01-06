@@ -7,6 +7,23 @@ import MessageWrapper from "./wrapper.svelte";
 const { actions, timestamp }: { actions: AtlasUIMessagePart[]; timestamp?: string } = $props();
 
 const startTime = $derived(timestamp ? new Date(timestamp).getTime() : undefined);
+
+// Collapse consecutive identical messages into single entries
+const dedupedActions = $derived.by(() => {
+  const result: AtlasUIMessagePart[] = [];
+  let lastMsg: string | undefined;
+
+  for (const action of actions) {
+    // @ts-expect-error action is poorly typed
+    const msg = getMessage(action.type, action.data?.content);
+    if (msg !== lastMsg) {
+      result.push(action);
+      lastMsg = msg;
+    }
+  }
+
+  return result;
+});
 let endTime = $state(Date.now());
 let open = $state(false);
 
@@ -79,7 +96,7 @@ function getMessage(
 				</footer>
 
 				<ul class="steps">
-					{#each actions as action, index (index)}
+					{#each dedupedActions as action, index (index)}
 						<li>
 							{/* @ts-expect-error action is poorly typed */
 							getMessage(action.type, action.data?.content)}
@@ -90,12 +107,12 @@ function getMessage(
 				<footer>
 					{#if startTime}
 						<time>{formatDuration(startTime, endTime)}</time>
-						{#if actions.length > 0}•{/if}
+						{#if dedupedActions.length > 0}•{/if}
 					{/if}
 
 					<div class="actions">
-						{#each actions as action, index (index)}
-							<span class:inactive={index !== actions.length - 1}>
+						{#each dedupedActions as action, index (index)}
+							<span class:inactive={index !== dedupedActions.length - 1}>
 								{/* @ts-expect-error action is poorly typed */
 								getMessage(action.type, action.data?.content)}
 							</span>
