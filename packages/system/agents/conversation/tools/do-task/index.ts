@@ -175,9 +175,11 @@ export function createDoTaskTool(
           return { success: false, error: fsmResult.error.message };
         }
 
-        // 3. Create MCP provider if needed
+        // 3. Create MCP pool and provider
+        // Always create the pool - bundled agents (like google-calendar) need it
+        // for their embedded MCP configs even when plan.mcpServers is empty
         let mcpToolProvider: MCPToolProvider | undefined;
-        let mcpServerPool: GlobalMCPServerPool | undefined;
+        const mcpServerPool = new GlobalMCPServerPool(logger.child({ component: "TaskMCPPool" }));
 
         if (plan.mcpServers.length > 0) {
           const mcpServerConfigs: Record<string, MCPServerConfig> = {};
@@ -185,7 +187,6 @@ export function createDoTaskTool(
             mcpServerConfigs[server.id] = server.config;
           }
 
-          mcpServerPool = new GlobalMCPServerPool(logger.child({ component: "TaskMCPPool" }));
           mcpToolProvider = new GlobalMCPToolProvider(
             mcpServerPool,
             session.workspaceId,
@@ -260,9 +261,7 @@ export function createDoTaskTool(
             };
           }
         } finally {
-          if (mcpServerPool) {
-            await mcpServerPool.dispose();
-          }
+          await mcpServerPool.dispose();
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
