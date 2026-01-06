@@ -1,12 +1,12 @@
-import { getContext, setContext } from "svelte";
-import { SvelteMap } from "svelte/reactivity";
-import { resolve } from "$app/paths";
-import { getAtlasDaemonUrl } from "@atlas/oapi-client";
 import {
   ALLOWED_EXTENSIONS,
   ALLOWED_MIME_TYPES,
   MAX_FILE_SIZE,
 } from "@atlas/core/artifacts/file-upload";
+import { getAtlasDaemonUrl } from "@atlas/oapi-client";
+import { getContext, setContext } from "svelte";
+import { SvelteMap } from "svelte/reactivity";
+import { resolve } from "$app/paths";
 
 const KEY = Symbol();
 

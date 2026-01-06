@@ -54,10 +54,6 @@ updates:
         update-types: ["version-update:semver-major"]
       - dependency-name: "ai-sdk-provider-claude-code"
         update-types: ["version-update:semver-major"]
-      # postgres 3.4.8 has broken TransactionSql types (Omit strips call signatures)
-      # See: https://github.com/porsager/postgres/issues/1143
-      - dependency-name: "postgres"
-        versions: [">= 3.4.8"]
 
   # Keep Docker dependencies up to date
   - package-ecosystem: "docker"
@@ -407,6 +403,10 @@ updates:
         update-types: ["version-update:semver-major"]
       - dependency-name: "@ai-sdk/*"
         update-types: ["version-update:semver-major"]
+      # postgres 3.4.8 has broken TransactionSql types (Omit strips call signatures)
+      # See: https://github.com/porsager/postgres/issues/1143
+      - dependency-name: "postgres"
+        versions: [">= 3.4.8"]
 
   # Keep Docker dependencies up to date (for static service)
   - package-ecosystem: "docker"
