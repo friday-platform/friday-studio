@@ -89,3 +89,6 @@ gateway
 
 # bv (beads viewer) local config and caches
 .bv/
+
+# cypheradmin binary
+apps/cypher/cypheradmin/cypheradmin
