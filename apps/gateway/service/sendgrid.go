@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/go-chi/httplog/v2"
+	"github.com/k3a/html2text"
 	"github.com/sendgrid/rest"
 	"github.com/sendgrid/sendgrid-go"
 	sgmail "github.com/sendgrid/sendgrid-go/helpers/mail"
@@ -190,7 +191,7 @@ func (s *Service) buildSendGridMessage(req *SendEmailRequest) *sgmail.SGMailV3 {
 			p.SetDynamicTemplateData(k, v)
 		}
 	} else {
-		message.AddContent(sgmail.NewContent(detectContentType(req.Content), req.Content))
+		addEmailContent(message, req.Content)
 	}
 
 	message.AddPersonalizations(p)
@@ -277,6 +278,24 @@ func detectContentType(content string) string {
 		return "text/html"
 	}
 	return "text/plain"
+}
+
+// addEmailContent adds content to the message as multipart/alternative when HTML.
+// For HTML content, includes both plain text (generated from HTML) and HTML versions.
+// Plain text must come first per RFC 2046 for proper email client rendering.
+func addEmailContent(message *sgmail.SGMailV3, content string) {
+	if detectContentType(content) == "text/html" {
+		// Generate plain text fallback from HTML
+		plainText := html2text.HTML2TextWithOptions(content,
+			html2text.WithLinksInnerText(), // "Click here <url>" preserves link text
+			html2text.WithUnixLineBreaks(), // Consistent \n line breaks
+		)
+		// Order matters: plain text first, then HTML (RFC 2046)
+		message.AddContent(sgmail.NewContent("text/plain", plainText))
+		message.AddContent(sgmail.NewContent("text/html", content))
+	} else {
+		message.AddContent(sgmail.NewContent("text/plain", content))
+	}
 }
 
 func calculateRetryDelay(attempt int) time.Duration {

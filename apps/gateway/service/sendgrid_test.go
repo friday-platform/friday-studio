@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	sgmail "github.com/sendgrid/sendgrid-go/helpers/mail"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -256,4 +257,83 @@ func TestTemplateIDRegex(t *testing.T) {
 			assert.Equal(t, tt.valid, got)
 		})
 	}
+}
+
+func TestAddEmailContent(t *testing.T) {
+	tests := []struct {
+		name              string
+		content           string
+		expectedContents  int
+		expectedFirstType string
+		expectedLastType  string
+	}{
+		{
+			name:              "HTML content adds both plain and HTML",
+			content:           "<html><body><h1>Hello</h1><p>World</p></body></html>",
+			expectedContents:  2,
+			expectedFirstType: "text/plain",
+			expectedLastType:  "text/html",
+		},
+		{
+			name:              "plain text content adds only plain",
+			content:           "Hello, this is plain text",
+			expectedContents:  1,
+			expectedFirstType: "text/plain",
+			expectedLastType:  "text/plain",
+		},
+		{
+			name:              "HTML with links preserves URLs in plain text",
+			content:           `<p>Visit <a href="https://example.com">our site</a></p>`,
+			expectedContents:  2,
+			expectedFirstType: "text/plain",
+			expectedLastType:  "text/html",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			message := sgmail.NewV3Mail()
+			addEmailContent(message, tt.content)
+
+			require.Len(t, message.Content, tt.expectedContents)
+			assert.Equal(t, tt.expectedFirstType, message.Content[0].Type)
+			assert.Equal(t, tt.expectedLastType, message.Content[len(message.Content)-1].Type)
+
+			// For HTML content, verify plain text doesn't contain HTML tags
+			if tt.expectedContents == 2 {
+				plainContent := message.Content[0].Value
+				assert.NotContains(t, plainContent, "<html>")
+				assert.NotContains(t, plainContent, "<body>")
+				assert.NotContains(t, plainContent, "<p>")
+			}
+		})
+	}
+}
+
+func TestAddEmailContentPreservesLinks(t *testing.T) {
+	html := `<html><body><p>Click <a href="https://example.com/path">here</a> for more info.</p></body></html>`
+
+	message := sgmail.NewV3Mail()
+	addEmailContent(message, html)
+
+	require.Len(t, message.Content, 2)
+
+	plainText := message.Content[0].Value
+	// WithLinksInnerText preserves link text: "here <url>"
+	assert.Contains(t, plainText, "here")
+	assert.Contains(t, plainText, "https://example.com/path")
+}
+
+func TestAddEmailContentWithTable(t *testing.T) {
+	html := `<table><tr><th>Name</th><th>Value</th></tr><tr><td>Item</td><td>$10</td></tr></table>`
+
+	message := sgmail.NewV3Mail()
+	addEmailContent(message, html)
+
+	require.Len(t, message.Content, 2)
+
+	plainText := message.Content[0].Value
+	// Table cell text is extracted (formatting is basic but content preserved)
+	assert.Contains(t, plainText, "Name")
+	assert.Contains(t, plainText, "Item")
 }
