@@ -12,6 +12,8 @@ import { join } from "@std/path";
  */
 
 const PRESERVED_ENTRIES = new Set([".env", "bin"]);
+// OAuth credentials written by setup-secrets.sh (e.g. google_client_id, hubspot_client_secret)
+const PRESERVED_SUFFIXES = ["_client_id", "_client_secret"];
 
 async function clean() {
   const atlasHome = getAtlasHome();
@@ -20,7 +22,10 @@ async function clean() {
     let didDelete = false;
     const entries = await readdir(atlasHome, { withFileTypes: true });
     for (const entry of entries) {
-      if (PRESERVED_ENTRIES.has(entry.name)) {
+      if (
+        PRESERVED_ENTRIES.has(entry.name) ||
+        PRESERVED_SUFFIXES.some((suffix) => entry.name.endsWith(suffix))
+      ) {
         continue;
       }
       await rm(join(atlasHome, entry.name), { recursive: true });
