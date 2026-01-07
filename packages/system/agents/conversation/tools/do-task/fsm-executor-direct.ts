@@ -143,7 +143,8 @@ export async function executeTaskViaFSMDirect(
       const contextDocs = expandedDocs
         .map((doc) => `${doc.type}(${doc.id}): ${JSON.stringify(doc.data)}`)
         .join("\n");
-      const prompt = `Execute task step\n\nContext:\n${contextDocs}`;
+      const taskDescription = stepInfo?.step.description || "Execute task step";
+      const prompt = `Task: ${taskDescription}\n\nContext:\n${contextDocs}`;
 
       // Execute agent via orchestrator
       if (!orchestrator) {
