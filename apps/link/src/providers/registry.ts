@@ -2,6 +2,7 @@ import { logger } from "@atlas/logger";
 import { config } from "../config.ts";
 import { anthropicProvider } from "./anthropic.ts";
 import { atlassianProvider } from "./atlassian.ts";
+import { githubProvider } from "./github.ts";
 import {
   createGoogleCalendarProvider,
   createGoogleDocsProvider,
@@ -88,6 +89,7 @@ registry.register(anthropicProvider);
 registry.register(notionProvider);
 registry.register(atlassianProvider);
 registry.register(linearProvider);
+registry.register(githubProvider);
 
 const hubspotProvider = createHubSpotProvider();
 if (hubspotProvider) {

@@ -4,6 +4,8 @@ import type { AtlasUIMessage } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
 import { getAtlasDaemonUrl } from "@atlas/oapi-client";
 import { z } from "zod";
+import Button from "$lib/components/button.svelte";
+import MarkdownContent from "$lib/components/primitives/markdown-content.svelte";
 import LinkAuthModal from "./link-auth-modal.svelte";
 import MessageWrapper from "./wrapper.svelte";
 
@@ -206,9 +208,9 @@ function handleModalSuccess(label: string) {
 				<p class="description">{providerDetails.description}</p>
 			</div>
 			{#if providerDetails.type === 'oauth'}
-				<button class="connect-button" onclick={startOAuth}>
+				<Button onclick={startOAuth}>
 					Connect {providerDetails.displayName}
-				</button>
+				</Button>
 				{#if popupBlocked}
 					<div class="popup-blocked">
 						<p>Popup was blocked by your browser.</p>
@@ -218,9 +220,9 @@ function handleModalSuccess(label: string) {
 					</div>
 				{/if}
 			{:else if providerDetails.type === 'app_install'}
-				<button class="connect-button" onclick={startAppInstall}>
+				<Button onclick={startAppInstall}>
 					Install {providerDetails.displayName}
-				</button>
+				</Button>
 				{#if popupBlocked}
 					<div class="popup-blocked">
 						<p>Popup was blocked by your browser.</p>
@@ -229,26 +231,30 @@ function handleModalSuccess(label: string) {
 						</button>
 					</div>
 				{/if}
-			{:else if providerDetails.type === 'apikey' && providerDetails.secretSchema?.required?.[0]}
-				<LinkAuthModal
+{:else if providerDetails.type === 'apikey' && providerDetails.secretSchema?.required?.[0]}
+			{#if providerDetails.setupInstructions}
+				<div class="instructions">
+					<MarkdownContent content={providerDetails.setupInstructions} />
+				</div>
+			{/if}
+			<LinkAuthModal
 					provider={providerDetails.id}
 					displayName={providerDetails.displayName}
-					setupInstructions={providerDetails.setupInstructions}
 					secretFieldName={providerDetails.secretSchema.required[0]}
 					onSuccess={handleModalSuccess}
 				>
 					{#snippet triggerContents()}
-						<button class="connect-button">
+						<Button>
 							Connect {providerDetails?.displayName}
-						</button>
+						</Button>
 					{/snippet}
 				</LinkAuthModal>
 			{:else if providerDetails.type === 'apikey'}
 				<p class="error">Provider missing secret schema</p>
 			{:else}
-				<button class="connect-button" disabled>
+				<Button disabled>
 					Connect {providerDetails.displayName}
-				</button>
+				</Button>
 			{/if}
 		</div>
 	{:else}
@@ -260,12 +266,13 @@ function handleModalSuccess(label: string) {
 
 <style>
 	.link-auth-request {
-		background-color: var(--color-surface-2);
+		background-color: var(--color-surface-1);
 		border-radius: var(--radius-4);
 		border: var(--size-px) solid var(--color-border-1);
 		padding: var(--size-4);
 		display: flex;
 		flex-direction: column;
+		align-items: flex-start;
 		gap: var(--size-3);
 	}
 
@@ -285,28 +292,6 @@ function handleModalSuccess(label: string) {
 		font-size: var(--font-size-2);
 		opacity: 0.7;
 		margin: 0;
-	}
-
-	.connect-button {
-		align-items: center;
-		background-color: var(--color-yellow);
-		block-size: var(--size-8);
-		border-radius: var(--radius-3);
-		color: var(--color-white);
-		display: flex;
-		font-size: var(--font-size-3);
-		font-weight: var(--font-weight-5);
-		justify-content: center;
-		transition: all 200ms ease;
-	}
-
-	.connect-button:disabled {
-		cursor: not-allowed;
-		opacity: 0.5;
-	}
-
-	.connect-button:not(:disabled):hover {
-		background-color: var(--color-text);
 	}
 
 	.link-auth-error,
@@ -343,5 +328,35 @@ function handleModalSuccess(label: string) {
 
 	.fallback-link:hover {
 		color: var(--color-text);
+	}
+
+	.instructions {
+		background-color: var(--color-surface-1);
+		border-radius: var(--radius-3);
+		padding: var(--size-3);
+		font-size: var(--font-size-2);
+		max-inline-size: 100%;
+		overflow-x: auto;
+	}
+
+	.instructions :global(h2) {
+		font-size: var(--font-size-4);
+		margin-block-end: var(--size-2);
+	}
+
+	.instructions :global(h3) {
+		font-size: var(--font-size-3);
+		margin-block-start: var(--size-3);
+		margin-block-end: var(--size-1);
+	}
+
+	.instructions :global(p),
+	.instructions :global(li) {
+		font-size: var(--font-size-2);
+		line-height: var(--font-lineheight-3);
+	}
+
+	.instructions :global(code) {
+		font-size: var(--font-size-1);
 	}
 </style>

@@ -7,20 +7,12 @@ import { Dialog } from "$lib/components/dialog";
 type Props = {
   provider: string;
   displayName: string;
-  setupInstructions?: string;
   secretFieldName: string;
   onSuccess: (label: string) => void;
   triggerContents: Snippet;
 };
 
-let {
-  provider,
-  displayName,
-  setupInstructions,
-  secretFieldName,
-  onSuccess,
-  triggerContents,
-}: Props = $props();
+let { provider, displayName, secretFieldName, onSuccess, triggerContents }: Props = $props();
 
 let label = $state("");
 let apiKey = $state("");
@@ -81,13 +73,9 @@ async function handleSubmit(open: { set: (v: boolean) => void }) {
 
 			{#snippet header()}
 				<Dialog.Title>Connect {displayName}</Dialog.Title>
-				<Dialog.Description>
-					{#if setupInstructions}
-						<p class="setup-instructions">{setupInstructions}</p>
-					{:else}
-						<p>Enter your API key to connect {displayName}</p>
-					{/if}
-				</Dialog.Description>
+			<Dialog.Description>
+				Enter your credentials to connect {displayName}
+			</Dialog.Description>
 			{/snippet}
 
 			{#snippet footer()}
@@ -204,11 +192,4 @@ async function handleSubmit(open: { set: (v: boolean) => void }) {
 		inline-size: 100%;
 	}
 
-	.setup-instructions {
-		font-size: var(--font-size-3);
-		line-height: var(--font-lineheight-3);
-		opacity: 0.8;
-		text-align: start;
-		white-space: pre-wrap;
-	}
 </style>

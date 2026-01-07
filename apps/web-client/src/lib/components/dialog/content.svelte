@@ -81,7 +81,7 @@ const { content, portalled, overlay, open } = getContext();
 		align-items: center;
 		gap: var(--size-6);
 		inline-size: fit-content;
-		max-inline-size: var(--size-72);
+		max-inline-size: var(--size-96);
 		padding-block: var(--size-12) var(--size-8);
 		padding-inline: var(--size-6);
 		position: relative;

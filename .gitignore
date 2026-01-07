@@ -82,6 +82,7 @@ bounce
 
 # Temp files
 temp/
+tmp/
 .beads/
 apps/signal-gateway/signal-gateway
 apps/gateway/gateway
