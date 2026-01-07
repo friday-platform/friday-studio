@@ -88,6 +88,7 @@ const credentialsTable = createTable({
       cell: (info) =>
         renderComponent(ProviderDetails, {
           name: getProviderName(info.row.original.provider),
+          label: info.row.original.label,
           date: info.row.original.createdAt,
         }),
     }),

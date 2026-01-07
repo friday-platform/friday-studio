@@ -13,6 +13,8 @@ import {
 import { createHubSpotProvider } from "./hubspot.ts";
 import { linearProvider } from "./linear.ts";
 import { notionProvider } from "./notion.ts";
+import { posthogProvider } from "./posthog.ts";
+import { sentryProvider } from "./sentry.ts";
 import { createSlackAppInstallProvider } from "./slack-app.ts";
 import { defineApiKeyProvider, type ProviderDefinition } from "./types.ts";
 
@@ -90,6 +92,8 @@ registry.register(notionProvider);
 registry.register(atlassianProvider);
 registry.register(linearProvider);
 registry.register(githubProvider);
+registry.register(sentryProvider);
+registry.register(posthogProvider);
 
 const hubspotProvider = createHubSpotProvider();
 if (hubspotProvider) {

@@ -1,13 +1,16 @@
 <script lang="ts">
 import { formatFullDate } from "$lib/utils/date";
 
-type Props = { name: string; date: string };
+type Props = { name: string; label?: string; date: string };
 
-let { name, date }: Props = $props();
+let { name, label, date }: Props = $props();
 </script>
 
 <div>
-	<span>{name}</span>
+	<span
+		><span class="provider">{name} •</span>{#if label}<span class="account">{label}</span
+			>{/if}</span
+	>
 	<time datetime={date}>{formatFullDate(date)}</time>
 </div>
 
@@ -17,12 +20,17 @@ let { name, date }: Props = $props();
 		flex-direction: column;
 	}
 
-	span {
+	.provider {
 		font-weight: var(--font-weight-5);
+		padding-inline-end: var(--size-1);
+	}
+
+	.account,
+	time {
+		opacity: 0.6;
 	}
 
 	time {
 		font-size: var(--font-size-2);
-		opacity: 0.6;
 	}
 </style>
