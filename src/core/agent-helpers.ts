@@ -6,15 +6,15 @@
 import type { AgentResult } from "@atlas/agent-sdk";
 import type { Context, JSONSchema, Signal } from "@atlas/fsm-engine";
 import { expandArtifactRefsInDocuments } from "@atlas/fsm-engine";
-import { logger } from "@atlas/logger";
 import {
   analyzeResults as analyzeHallucinations,
   containsSeverePatterns,
   getSevereIssues,
-  SupervisionLevel,
   type HallucinationAnalysis,
   type HallucinationDetectorConfig,
+  SupervisionLevel,
 } from "@atlas/hallucination";
+import { logger } from "@atlas/logger";
 
 /**
  * Build agent prompt with context (extracted from SessionSupervisor lines 1347-1446)

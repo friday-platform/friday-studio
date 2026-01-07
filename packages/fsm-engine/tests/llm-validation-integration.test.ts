@@ -11,9 +11,9 @@
  */
 
 import process from "node:process";
+import { createFSMOutputValidator } from "@atlas/hallucination";
 import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
 import { describe, it } from "@std/testing/bdd";
-import { createFSMOutputValidator } from "@atlas/hallucination";
 import { InMemoryDocumentStore } from "../../document-store/node.ts";
 import { FSMDocumentDataSchema } from "../document-schemas.ts";
 import { FSMEngine } from "../fsm-engine.ts";

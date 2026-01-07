@@ -417,3 +417,165 @@ evalite<{ intent: string }, string, string>("Workspace Planner Agent - Validatio
   },
   scorers: [LLMJudge],
 });
+
+// Test suite 5: Email vs Gmail Capability Selection
+// Tests disambiguation between bundled email agent and google-gmail MCP
+// Background: PR #1343 fixed confusion where "email me" triggered OAuth-required google-gmail
+evalite<{ intent: string }, WorkspacePlan, string>(
+  "Workspace Planner Agent - Email vs Gmail Disambiguation",
+  {
+    data: [
+      // === BUNDLED EMAIL CASES (no OAuth, SendGrid) ===
+      {
+        input: { intent: "Email me a daily summary of completed tasks" },
+        expected: `The workspace plan should:
+          1. Use the bundled email agent for sending notifications
+          2. Agent needs should include "email" (NOT "google-gmail")
+          3. Should NOT require OAuth or Google account connection
+          4. Description should indicate email sending/notification capability
+          The plan should use bundled email for SENDING notifications, not google-gmail MCP.`,
+      },
+      {
+        input: { intent: "Gmail me the research results when done" },
+        expected: `The workspace plan should:
+          1. Use the bundled email agent (users say "gmail me" to mean "email me" - genericized)
+          2. Agent needs should include "email" or "gmail" (which maps to bundled email)
+          3. Should NOT include "google-gmail" (that's for inbox access)
+          4. This is about SENDING a message, not reading inbox
+          The plan should recognize "gmail me" as genericized email sending request.`,
+      },
+      {
+        input: { intent: "Send a notification to team@company.com when the build fails" },
+        expected: `The workspace plan should:
+          1. Use the bundled email agent for notifications
+          2. Agent needs should include "email" or "notifications"
+          3. Should NOT require google-gmail MCP (OAuth not needed for sending)
+          4. Capture recipient: team@company.com
+          The plan should use bundled email for sending notifications to arbitrary addresses.`,
+      },
+      {
+        input: { intent: "Every morning at 8am, email me a briefing about today's meetings" },
+        expected: `The workspace plan should:
+          1. Define a daily schedule signal at 8am
+          2. Use bundled email agent for the email-sending step
+          3. Agent needs for email step should be "email" (NOT "google-gmail")
+          4. May use google-calendar for reading meetings (that's correct)
+          5. Email sending does NOT require OAuth
+          The plan should use google-calendar for reading but bundled email for sending.`,
+      },
+
+      // === GOOGLE-GMAIL MCP CASES (OAuth required, inbox access) ===
+      {
+        input: { intent: "Search my Gmail inbox for invoices from last month" },
+        expected: `The workspace plan should:
+          1. Use google-gmail MCP for inbox search functionality
+          2. Agent needs should include "google-gmail" (explicit inbox access)
+          3. OAuth is correctly required for reading user's inbox
+          4. Description should indicate inbox search/read capability
+          The plan should use google-gmail MCP for READING inbox - this requires OAuth.`,
+      },
+      {
+        input: { intent: "Read my unread emails and summarize them" },
+        expected: `The workspace plan should:
+          1. Use google-gmail MCP for reading inbox
+          2. Agent needs should include "google-gmail"
+          3. OAuth is required - accessing user's email content
+          4. Description should indicate reading/fetching email content
+          The plan should use google-gmail for reading inbox content.`,
+      },
+      {
+        input: { intent: "Draft a reply to the latest email from my boss" },
+        expected: `The workspace plan should:
+          1. Use google-gmail MCP for drafting in user's Gmail
+          2. Agent needs should include "google-gmail"
+          3. OAuth required - creating draft in user's account
+          4. May need to read inbox first to find the email
+          The plan should use google-gmail for draft creation in user's Gmail account.`,
+      },
+      {
+        input: {
+          intent:
+            "When I get an email from clients@important.com, auto-archive it and notify me on Slack",
+        },
+        expected: `The workspace plan should:
+          1. Use google-gmail MCP for monitoring inbox and archiving
+          2. Agent needs should include "google-gmail" (reading/managing inbox)
+          3. May use Slack integration for notification
+          4. OAuth required for inbox access and archive action
+          The plan should use google-gmail for inbox monitoring/management.`,
+      },
+
+      // === MIXED CASES (both services in one workflow) ===
+      {
+        input: {
+          intent:
+            "Check my Gmail for meeting invites, then email a summary to assistant@company.com",
+        },
+        expected: `The workspace plan should:
+          1. Use google-gmail MCP for reading inbox (checking for invites)
+          2. Use bundled email agent for sending summary (to arbitrary address)
+          3. Two different capabilities: google-gmail for reading, email for sending
+          4. OAuth required for inbox read, but NOT for the send step
+          The plan should correctly use both services: google-gmail to read, bundled email to send.`,
+      },
+    ],
+    task: async (input) => {
+      const { context } = adapter.createContext();
+      const result = await workspacePlannerAgent.execute(input, context);
+      if (!result.ok) {
+        logger.error("Agent execution failed", { error: result.error });
+      }
+      assert(result.ok, "Agent execution failed");
+      assert(result.data.artifactId, "Missing artifact ID");
+
+      const artifactResponse = await parseResult(
+        client.artifactsStorage[":id"].$get({ param: { id: result.data.artifactId } }),
+      );
+      assert(artifactResponse.ok, "Failed to fetch artifact");
+      assert(artifactResponse.data.artifact.data.type === "workspace-plan", "Wrong artifact type");
+
+      return artifactResponse.data.artifact.data.data;
+    },
+    scorers: [LLMJudge],
+  },
+);
+
+// Test suite 6: Output Structure Validation
+// Tests that workspace-planner returns nextStep field to prevent re-planning loop
+// Background: PR #1343 added nextStep to prevent LLM from re-calling workspace-planner after user confirms
+evalite<{ intent: string }, { hasNextStep: boolean; nextStepContent: string }, string>(
+  "Workspace Planner Agent - Output Structure",
+  {
+    data: [
+      {
+        input: { intent: "Monitor a folder for new files and notify me" },
+        expected: `The agent result should include:
+          1. ok: true (successful execution)
+          2. data.artifactId: non-empty string
+          3. data.planSummary: non-empty string
+          4. data.revision: number (1 for new plans)
+          5. data.nextStep: string that:
+             - Mentions "fsm-workspace-creator" (the next tool to call)
+             - Contains warning against re-calling workspace-planner ("do not" or "don't")
+          The nextStep field is critical for preventing the re-planning loop observed in production.`,
+      },
+    ],
+    task: async (input) => {
+      const { context } = adapter.createContext();
+      const result = await workspacePlannerAgent.execute(input, context);
+
+      assert(result.ok, "Agent execution should succeed");
+      assert(result.data.artifactId, "Missing artifact ID");
+      assert(result.data.revision === 1, "Expected revision 1");
+
+      // Extract nextStep validation
+      const hasNextStep =
+        typeof result.data.nextStep === "string" && result.data.nextStep.length > 0;
+      const nextStepContent = result.data.nextStep ?? "";
+
+      // Return structured validation result
+      return { hasNextStep, nextStepContent };
+    },
+    scorers: [LLMJudge],
+  },
+);

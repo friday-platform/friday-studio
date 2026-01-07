@@ -42,10 +42,47 @@ Present planSummary to user.
 ### Step 4: Get Approval
 NEVER create without explicit approval.
 Wait for: "yes", "proceed", "go ahead", "create it"
-If user wants changes: call workspace-planner again with same artifactId + changes.
+
+**On approval (user says yes):**
+- The artifactId is in workspace-planner's response
+- Go directly to Step 5
+- DO NOT call workspace-planner again
+
+**On change request (user asks for modifications):**
+- Call workspace-planner with SAME artifactId + user's changes
+- This creates a revision, not a new plan
+- Return to Step 3 to show updated plan
 
 ### Step 5: Create Workspace
-Only after approval: call fsm-workspace-creator with {artifactId}
+IMMEDIATELY after approval, call fsm-workspace-creator with {artifactId}.
+Do NOT re-plan. The plan was already approved.
+
+### Step 6: Handle Creation Errors
+
+If fsm-workspace-creator fails:
+
+**"Missing integrations" or error has missingCredentials array:**
+The error includes structured data for recovery:
+- missingCredentials: array of {provider, service} objects
+- suggestedAction: "connect_service"
+
+IMMEDIATELY call connect_service for each missing provider:
+1. Parse missingCredentials from the error response
+2. For each credential, call connect_service(provider)
+3. Wait for OAuth completion
+4. Retry fsm-workspace-creator with the SAME artifactId
+5. DO NOT re-plan - credentials won't appear via re-planning
+
+Example: If missingCredentials = [{provider: "google-calendar", service: "Google Calendar"}]
+→ Call connect_service("google-calendar")
+→ After user completes OAuth, retry fsm-workspace-creator
+
+**"registration failed" or other errors:**
+- Report the error clearly
+- Ask if user wants to try again or modify the plan
+- DO NOT automatically re-plan
+
+CRITICAL: Never call workspace-planner after creation failure unless user explicitly asks to change requirements.
 
 ## Configuration Requirements
 

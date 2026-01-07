@@ -35,6 +35,12 @@ export type MCPServerMetadata = {
   name: string;
   domains: string[];
 
+  // Description & Constraints (for LLM prompt injection)
+  /** What this server does - shown to LLMs for capability selection */
+  description?: string;
+  /** Limitations or usage guidance - helps LLMs choose between similar capabilities */
+  constraints?: string;
+
   // Security & Quality
   securityRating: SecurityRating;
   source: MCPSource;

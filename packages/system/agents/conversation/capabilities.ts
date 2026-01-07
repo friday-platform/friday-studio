@@ -22,10 +22,13 @@ export function getCapabilitiesSection(): string {
     .join("\n");
 
   const serversXml = Object.values(mcpServersRegistry.servers)
-    .map(
-      (server) =>
-        `<server id="${server.id}" domains="${server.domains.join(", ")}">${server.name}</server>`,
-    )
+    .map((server) => {
+      const constraints = server.constraints
+        ? `\n  <constraints>${server.constraints}</constraints>`
+        : "";
+      const desc = server.description ?? server.name;
+      return `<server id="${server.id}" domains="${server.domains.join(", ")}">${desc}${constraints}</server>`;
+    })
     .join("\n");
 
   return `<bundled_agents>

@@ -29,6 +29,7 @@ import {
   type MCPToolProvider,
   type SignalWithContext,
 } from "@atlas/fsm-engine";
+import { createFSMOutputValidator, SupervisionLevel } from "@atlas/hallucination";
 import { type GenerateSessionTitleInput, generateSessionTitle } from "@atlas/llm";
 import { logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
@@ -46,7 +47,6 @@ import type {
 } from "../types/core.ts";
 import { MessageUser } from "../types/core.ts";
 import { buildAgentPrompt, validateAgentOutput } from "./agent-helpers.ts";
-import { createFSMOutputValidator, SupervisionLevel } from "@atlas/hallucination";
 
 // WorkspaceRuntime signal type - plain payload without full IAtlasScope implementation
 interface WorkspaceRuntimeSignal {

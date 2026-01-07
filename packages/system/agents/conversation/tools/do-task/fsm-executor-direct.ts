@@ -12,8 +12,8 @@ import {
   expandArtifactRefsInDocuments,
   type MCPToolProvider,
 } from "@atlas/fsm-engine";
-import { logger } from "@atlas/logger";
 import { createFSMOutputValidator, SupervisionLevel } from "@atlas/hallucination";
+import { logger } from "@atlas/logger";
 import type { EnhancedTaskStep } from "./planner.ts";
 import type { TaskProgressEvent } from "./types.ts";
 

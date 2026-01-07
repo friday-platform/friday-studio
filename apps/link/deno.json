@@ -4,7 +4,7 @@
   "exports": "./src/index.ts",
   "tasks": {
     "start": "deno run --env-file --allow-all src/index.ts",
-    "dev": "LINK_DEV_MODE=true deno run --watch --env-file --allow-all src/index.ts"
+    "dev": "LINK_DEV_MODE=true deno run --watch --env-file=$HOME/.atlas/link.env --allow-all src/index.ts"
   },
   "imports": {
     "@std/async": "jsr:@std/async@^1.0.15",

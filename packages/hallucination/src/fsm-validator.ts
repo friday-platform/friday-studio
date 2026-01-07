@@ -8,13 +8,13 @@
 import type { AgentResult } from "@atlas/agent-sdk";
 import type { LLMActionTrace, LLMOutputValidationResult } from "@atlas/fsm-engine";
 import { logger } from "@atlas/logger";
-import { SupervisionLevel } from "./supervision-levels.ts";
 import {
   analyzeResults,
   containsSeverePatterns,
   getSevereIssues,
   type HallucinationDetectorConfig,
 } from "./detector.ts";
+import { SupervisionLevel } from "./supervision-levels.ts";
 
 /**
  * Convert FSM LLM action trace to AgentResult for hallucination detection.

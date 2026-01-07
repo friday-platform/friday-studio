@@ -66,6 +66,18 @@ describe("matchBundledAgents", () => {
 
     assertEquals(matches.length >= 1, true, "Should match after trimming");
   });
+
+  it("gmail resolves to email agent", () => {
+    const matches = matchBundledAgents(["gmail"]);
+
+    assertEquals(matches.length, 1, "Should have exactly one match");
+    const match = matches[0];
+    assertEquals(
+      match !== undefined && match.agentId === "email",
+      true,
+      "Should match email agent",
+    );
+  });
 });
 
 describe("mapNeedToMCPServers", () => {

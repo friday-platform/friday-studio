@@ -8,12 +8,12 @@
  */
 
 import type { AgentResult } from "@atlas/agent-sdk";
-import { assert } from "@std/assert";
 import {
   analyzeResults,
-  SupervisionLevel,
   type HallucinationDetectorConfig,
+  SupervisionLevel,
 } from "@atlas/hallucination";
+import { assert } from "@std/assert";
 import { loadCredentials } from "../../lib/load-credentials.ts";
 import { createTestToolCall, createTestToolResult } from "../../lib/test-helpers.ts";
 import { setupTest } from "../../lib/utils.ts";

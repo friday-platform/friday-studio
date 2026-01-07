@@ -111,7 +111,7 @@ export const bundledAgentsRegistry: Record<string, BundledAgentRegistryItem> = {
     version: "1.0.0",
     description:
       "Compose and send email notifications via SendGrid through Atlas gateway. Generates email content from provided data/context, with template support, file attachments, and automatic retry with exponential backoff",
-    capabilities: ["email", "notifications", "sendgrid", "messaging"],
+    capabilities: ["email", "gmail", "notifications", "sendgrid", "messaging"],
     examples: [
       "Send email to john@example.com with subject 'Test' saying hello",
       "Email sarah@company.com a meeting reminder for 2pm today",

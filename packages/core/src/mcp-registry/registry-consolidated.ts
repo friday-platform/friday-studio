@@ -10,18 +10,38 @@ const GOOGLE_WORKSPACE_SERVICES = [
     id: "google-calendar",
     name: "Google Calendar",
     domains: ["google-calendar", "calendar", "gcal"],
+    description: "Read and manage Google Calendar events via OAuth",
+    constraints:
+      "Requires OAuth. Use for reading calendar, checking availability, managing events.",
   },
   {
     id: "google-gmail",
     name: "Gmail",
-    domains: ["google-gmail", "gmail", "email", "google-email"],
+    domains: ["google-gmail"],
+    description: "Full Gmail inbox access via OAuth - read, search, draft, send",
+    constraints:
+      "Requires OAuth. Use for reading inbox, searching messages, creating drafts. For sending notifications without OAuth, use bundled email agent instead.",
   },
-  { id: "google-drive", name: "Google Drive", domains: ["google-drive", "drive", "gdrive"] },
-  { id: "google-docs", name: "Google Docs", domains: ["google-docs", "docs"] },
+  {
+    id: "google-drive",
+    name: "Google Drive",
+    domains: ["google-drive", "drive", "gdrive"],
+    description: "Access and manage Google Drive files and folders via OAuth",
+    constraints: "Requires OAuth. Use for file storage, sharing, and document management.",
+  },
+  {
+    id: "google-docs",
+    name: "Google Docs",
+    domains: ["google-docs", "docs"],
+    description: "Create and edit Google Docs documents via OAuth",
+    constraints: "Requires OAuth. Use for document creation, editing, and collaboration.",
+  },
   {
     id: "google-sheets",
     name: "Google Sheets",
     domains: ["google-sheets", "sheets", "spreadsheet"],
+    description: "Read and write Google Sheets spreadsheets via OAuth",
+    constraints: "Requires OAuth. Use for spreadsheet data, formulas, and data analysis.",
   },
 ] as const;
 
@@ -43,6 +63,8 @@ function createGoogleWorkspaceEntry(
     id: spec.id,
     name: spec.name,
     domains: [...spec.domains],
+    description: spec.description,
+    constraints: spec.constraints,
     source: "static",
     securityRating: "high",
     configTemplate: {

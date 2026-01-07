@@ -21,7 +21,15 @@ import { enrichAgentCredentials } from "./enrichers/agent-credentials.ts";
 import { generateMCPServers } from "./enrichers/mcp-servers.ts";
 import { enrichSignal } from "./enrichers/signals.ts";
 import { generateFSMCode } from "./fsm-generation-core.ts";
+import {
+  formatMissingCredentialsError,
+  type MissingCredential,
+  validateCredentials,
+} from "./preflight-validator.ts";
 import { buildWorkspaceConfig } from "./workspace-config-builder.ts";
+
+// Re-export for consumers who need the type
+export type { MissingCredential } from "./preflight-validator.ts";
 
 type FSMCreatorResult = Result<
   {
@@ -32,7 +40,13 @@ type FSMCreatorResult = Result<
       codegenAttempts: Record<string, number>; // jobId -> number of attempts
     };
   },
-  { reason: string }
+  {
+    reason: string;
+    /** Structured credential info for LLM to call connect_service */
+    missingCredentials?: MissingCredential[];
+    /** Suggested recovery action for the LLM */
+    suggestedAction?: "connect_service";
+  }
 >;
 
 const FSMCreatorInputSchema = z.object({
@@ -106,6 +120,25 @@ export const fsmWorkspaceCreatorAgent = createAgent<FSMCreatorInput, FSMCreatorR
           });
         }
       }
+
+      // 1.5 PRE-FLIGHT: Verify Link credentials exist for MCP servers
+      stream?.emit({
+        type: "data-tool-progress",
+        data: { toolName: "FSM Creator", content: "Verifying credentials" },
+      });
+
+      const mcpServersPrecheck = generateMCPServers(plan.agents, plan.credentials);
+      const preflightResult = validateCredentials(mcpServersPrecheck, plan.credentials);
+
+      if (!preflightResult.valid) {
+        return fail({
+          reason: formatMissingCredentialsError(preflightResult.missingCredentials),
+          missingCredentials: preflightResult.missingCredentials,
+          suggestedAction: "connect_service",
+        });
+      }
+
+      logger.info("Credential pre-flight passed", { servers: mcpServersPrecheck.map((s) => s.id) });
 
       // 2. Enrich signals (prose → workspace.yml configs)
       stream?.emit({

@@ -21,10 +21,7 @@ import {
   mapNeedToMCPServers,
   matchBundledAgents,
 } from "@atlas/core/mcp-registry/deterministic-matching";
-import {
-  getAvailableIntegrationsPrompt,
-  mcpServersRegistry,
-} from "@atlas/core/mcp-registry/registry-consolidated";
+import { mcpServersRegistry } from "@atlas/core/mcp-registry/registry-consolidated";
 import { validateRequiredFields } from "@atlas/core/mcp-registry/requirement-validator";
 import { JSONSchemaSchema } from "@atlas/fsm-engine";
 import { getDefaultProviderOpts, registry } from "@atlas/llm";
@@ -34,9 +31,11 @@ import { toKebabCase } from "@std/text";
 import { generateObject, generateText } from "ai";
 import { wrapAISDKModel } from "evalite/ai-sdk";
 import { z } from "zod";
+import { getCapabilitiesSection } from "../conversation/capabilities.ts";
+import { fetchLinkSummary, formatIntegrationsSection } from "../conversation/link-context.ts";
 
 type WorkspacePlannerResult = Result<
-  { planSummary: string; artifactId: string; revision: number },
+  { planSummary: string; artifactId: string; revision: number; nextStep: string },
   { reason: string }
 >;
 
@@ -198,6 +197,13 @@ export const workspacePlannerAgent = createAgent<WorkspacePlannerInput, Workspac
           logger.warn("Failed to load existing plan for revision", { error });
         }
       }
+
+      // Fetch user's connected services
+      const linkSummary = await fetchLinkSummary(logger);
+      const integrationsXml = linkSummary
+        ? formatIntegrationsSection(linkSummary)
+        : "<integrations><!-- No OAuth services connected --></integrations>";
+
       stream?.emit({
         type: "data-tool-progress",
         data: { toolName: "Workspace Planner", content: "Analyzing requirements" },
@@ -283,9 +289,13 @@ export const workspacePlannerAgent = createAgent<WorkspacePlannerInput, Workspac
           },
           {
             role: "system",
-            content: `## Available integrations (use these keywords in agent needs)
+            content: `## Capabilities
 
-${getAvailableIntegrationsPrompt()}`,
+${getCapabilitiesSection()}
+
+## User's Connected Services
+
+${integrationsXml}`,
           },
           { role: "system", content: `Current date: ${getTodaysDate()}` },
           { role: "user", content: signalsAndAgentsPrompt },
@@ -581,6 +591,8 @@ Requirements: ${input.intent}`,
           planSummary: planData.workspace.purpose,
           artifactId: response.data.artifact.id,
           revision: response.data.artifact.revision,
+          nextStep:
+            "Show plan to user. On approval, call fsm-workspace-creator with this artifactId. Do NOT call workspace-planner again.",
         });
       } else {
         const artifactSummary = await summarize({
@@ -608,6 +620,8 @@ Requirements: ${input.intent}`,
           planSummary: planData.workspace.purpose,
           artifactId: response.data.artifact.id,
           revision: 1,
+          nextStep:
+            "Show plan to user. On approval, call fsm-workspace-creator with this artifactId. Do NOT call workspace-planner again.",
         });
       }
     } catch (error) {
