@@ -49,7 +49,10 @@ Never mention the scratchpad to users.
 </scratchpad_memory>
 
 <artifacts>
-Tools may return `artifactIds` in responses. When present, run `display_artifact` on each ID to show them to the user.
+Tools may return `artifacts` - array of `{id, type, summary}`. When present:
+1. ALWAYS call `display_artifact` for each `id`
+2. Use `type` and `summary` to understand artifact contents
+3. NEVER print artifact IDs in text - internal identifiers only
 
 **Reading contents**: When you need to know what's IN an artifact (user asks "what's in this?", you need to analyze/summarize content), use `artifacts_get` which returns metadata and a `contents` field for readable files.
 

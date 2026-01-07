@@ -1,7 +1,6 @@
 /**
  * do_task Tool - Direct tool with progress emission
  */
-import type { ArtifactRef } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
 import type { MCPServerConfig } from "@atlas/config";
 import { GlobalMCPServerPool } from "@atlas/core";
@@ -11,7 +10,7 @@ import type { Logger } from "@atlas/logger";
 import type { UIMessageStreamWriter } from "ai";
 import { jsonSchema, tool } from "ai";
 import { getAgentCatalog } from "./catalog.ts";
-import { extractArtifactsFromOutput } from "./extract-artifacts.ts";
+import { extractArtifactsFromOutput, sanitizeAgentOutput } from "./extract-artifacts.ts";
 import { executeTaskViaFSM } from "./fsm-executor.ts";
 import { generateTaskFSM } from "./fsm-generator.ts";
 import { planTaskEnhanced } from "./planner.ts";
@@ -45,12 +44,12 @@ interface DoTaskResult {
     step: number;
     agent: string;
     success: boolean;
-    output?: unknown;
+    output?: { ok: boolean; data?: { response?: string }; error?: unknown };
     error?: string;
   }>;
   error?: string;
-  artifactId?: string;
-  artifacts?: ArtifactRef[];
+  /** Artifacts created - call display_artifact for each id */
+  artifacts?: Array<{ id: string; type: string; summary: string }>;
 }
 
 async function generateTaskSummary(
@@ -215,13 +214,22 @@ export function createDoTaskTool(
             mcpToolProvider,
           );
 
-          // 5. Extract artifacts
+          // 5. Extract artifacts from agent outputs
           const artifacts = execResult.results
             .filter((r) => r.success && r.output)
             .flatMap((r) => extractArtifactsFromOutput(r.output));
 
-          // 6. Store artifact
-          const artifactId = await storeTaskArtifact(
+          // Sanitize results: strip artifactRef/artifactRefs, keep response text
+          const sanitizedResults = execResult.results.map((r) => ({
+            step: r.step,
+            agent: r.agent,
+            success: r.success,
+            error: r.error,
+            output: sanitizeAgentOutput(r.output),
+          }));
+
+          // 6. Store task artifact (for debugging/history, not shown to user)
+          await storeTaskArtifact(
             { intent, plan: plan.steps, results: execResult.results, success: execResult.success },
             { workspaceId: session.workspaceId, streamId: session.streamId },
             logger,
@@ -237,11 +245,10 @@ export function createDoTaskTool(
                   description: s.description,
                   executionType: s.executionType,
                 })),
-                mcpServers: plan.mcpServers.map((s) => s.id),
+                mcpServers: plan.mcpServers.map((m) => m.id),
               },
-              results: execResult.results,
-              artifactId,
-              artifacts,
+              results: sanitizedResults,
+              artifacts: artifacts.length > 0 ? artifacts : undefined,
             };
           } else {
             const failedStep = execResult.results.find((r) => !r.success);
@@ -254,10 +261,10 @@ export function createDoTaskTool(
                   description: s.description,
                   executionType: s.executionType,
                 })),
-                mcpServers: plan.mcpServers.map((s) => s.id),
+                mcpServers: plan.mcpServers.map((m) => m.id),
               },
-              results: execResult.results,
-              artifacts,
+              results: sanitizedResults,
+              artifacts: artifacts.length > 0 ? artifacts : undefined,
             };
           }
         } finally {
