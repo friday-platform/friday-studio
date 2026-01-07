@@ -3,6 +3,7 @@
   "specifiers": {
     "jsr:@db/sqlite@0.12": "0.12.0",
     "jsr:@denosaurs/plug@1": "1.1.0",
+    "jsr:@std/assert@*": "1.0.16",
     "jsr:@std/assert@0.217": "0.217.0",
     "jsr:@std/assert@1": "1.0.16",
     "jsr:@std/assert@^1.0.15": "1.0.16",
@@ -14,6 +15,7 @@
     "jsr:@std/encoding@1.0.10": "1.0.10",
     "jsr:@std/encoding@^1.0.10": "1.0.10",
     "jsr:@std/fmt@1": "1.0.8",
+    "jsr:@std/fs@*": "1.0.21",
     "jsr:@std/fs@1": "1.0.21",
     "jsr:@std/fs@^1.0.19": "1.0.21",
     "jsr:@std/fs@^1.0.20": "1.0.21",
@@ -38,6 +40,7 @@
     "npm:@ai-sdk/openai@^2.0.89": "2.0.89_zod@4.3.5",
     "npm:@ai-sdk/provider@^2.0.1": "2.0.1",
     "npm:@ai-sdk/svelte@^3.0.118": "3.0.118_svelte@5.46.1__acorn@8.15.0_zod@4.3.5",
+    "npm:@anthropic-ai/claude-agent-sdk@~0.1.76": "0.1.76_zod@4.3.5",
     "npm:@biomejs/biome@*": "2.3.11",
     "npm:@eslint/compat@2": "2.0.0_eslint@9.39.2",
     "npm:@eslint/js@^9.39.2": "9.39.2",
@@ -91,7 +94,6 @@
     "npm:@tauri-apps/plugin-opener@^2.5.2": "2.5.2",
     "npm:@total-typescript/ts-reset@~0.6.1": "0.6.1",
     "npm:@types/react@^19.2.7": "19.2.7",
-    "npm:ai-sdk-provider-claude-code@^2.2.4": "2.2.4_zod@4.3.5",
     "npm:ai@^5.0.118": "5.0.118_zod@4.3.5",
     "npm:ai@^5.0.93": "5.0.118_zod@4.3.5",
     "npm:concurrently@*": "9.2.1",
@@ -250,16 +252,16 @@
     "@ai-sdk/anthropic@2.0.57_zod@4.3.5": {
       "integrity": "sha512-DREpYqW2pylgaj69gZ+K8u92bo9DaMgFdictYnY+IwYeY3bawQ4zI7l/o1VkDsBDljAx8iYz5lPURwVZNu+Xpg==",
       "dependencies": [
-        "@ai-sdk/provider@2.0.1",
-        "@ai-sdk/provider-utils@3.0.20_zod@4.3.5",
+        "@ai-sdk/provider",
+        "@ai-sdk/provider-utils",
         "zod"
       ]
     },
     "@ai-sdk/gateway@2.0.24_zod@4.3.5": {
       "integrity": "sha512-mflk80YF8hj8vrF9e1IHhovGKC1ubX+sY88pesSk3pUiXfH5VPO8dgzNnxjwsqsCZrnkHcztxS5cSl4TzSiEuA==",
       "dependencies": [
-        "@ai-sdk/provider@2.0.1",
-        "@ai-sdk/provider-utils@3.0.20_zod@4.3.5",
+        "@ai-sdk/provider",
+        "@ai-sdk/provider-utils",
         "@vercel/oidc",
         "zod"
       ]
@@ -267,24 +269,24 @@
     "@ai-sdk/google@2.0.52_zod@4.3.5": {
       "integrity": "sha512-2XUnGi3f7TV4ujoAhA+Fg3idUoG/+Y2xjCRg70a1/m0DH1KSQqYaCboJ1C19y6ZHGdf5KNT20eJdswP6TvrY2g==",
       "dependencies": [
-        "@ai-sdk/provider@2.0.1",
-        "@ai-sdk/provider-utils@3.0.20_zod@4.3.5",
+        "@ai-sdk/provider",
+        "@ai-sdk/provider-utils",
         "zod"
       ]
     },
     "@ai-sdk/groq@2.0.34_zod@4.3.5": {
       "integrity": "sha512-wfCYkVgmVjxNA32T57KbLabVnv9aFUflJ4urJ7eWgTwbnmGQHElCTu+rJ3ydxkXSqxOkXPwMOttDm7XNrvPjmg==",
       "dependencies": [
-        "@ai-sdk/provider@2.0.1",
-        "@ai-sdk/provider-utils@3.0.20_zod@4.3.5",
+        "@ai-sdk/provider",
+        "@ai-sdk/provider-utils",
         "zod"
       ]
     },
     "@ai-sdk/mcp@0.0.13_zod@4.3.5": {
       "integrity": "sha512-MdxlUvbCty9GZUrmtK8aFdfxWw0KPhMNC2L4skkFYftsIRZLs8RnrEIynZ2aP20TVODcsnKvJhcjPFIsCHImYQ==",
       "dependencies": [
-        "@ai-sdk/provider@2.0.1",
-        "@ai-sdk/provider-utils@3.0.20_zod@4.3.5",
+        "@ai-sdk/provider",
+        "@ai-sdk/provider-utils",
         "pkce-challenge",
         "zod"
       ]
@@ -292,33 +294,18 @@
     "@ai-sdk/openai@2.0.89_zod@4.3.5": {
       "integrity": "sha512-4+qWkBCbL9HPKbgrUO/F2uXZ8GqrYxHa8SWEYIzxEJ9zvWw3ISr3t1/27O1i8MGSym+PzEyHBT48EV4LAwWaEw==",
       "dependencies": [
-        "@ai-sdk/provider@2.0.1",
-        "@ai-sdk/provider-utils@3.0.20_zod@4.3.5",
+        "@ai-sdk/provider",
+        "@ai-sdk/provider-utils",
         "zod"
       ]
     },
     "@ai-sdk/provider-utils@3.0.20_zod@4.3.5": {
       "integrity": "sha512-iXHVe0apM2zUEzauqJwqmpC37A5rihrStAih5Ks+JE32iTe4LZ58y17UGBjpQQTCRw9YxMeo2UFLxLpBluyvLQ==",
       "dependencies": [
-        "@ai-sdk/provider@2.0.1",
+        "@ai-sdk/provider",
         "@standard-schema/spec",
         "eventsource-parser",
         "zod"
-      ]
-    },
-    "@ai-sdk/provider-utils@3.0.9_zod@4.3.5": {
-      "integrity": "sha512-Pm571x5efqaI4hf9yW4KsVlDBDme8++UepZRnq+kqVBWWjgvGhQlzU8glaFq0YJEB9kkxZHbRRyVeHoV2sRYaQ==",
-      "dependencies": [
-        "@ai-sdk/provider@2.0.0",
-        "@standard-schema/spec",
-        "eventsource-parser",
-        "zod"
-      ]
-    },
-    "@ai-sdk/provider@2.0.0": {
-      "integrity": "sha512-6o7Y2SeO9vFKB8lArHXehNuusnpddKPk7xqL7T2/b+OvXMRIXUO1rR4wcv1hAFUAT9avGZshty3Wlua/XA7TvA==",
-      "dependencies": [
-        "json-schema"
       ]
     },
     "@ai-sdk/provider@2.0.1": {
@@ -330,7 +317,7 @@
     "@ai-sdk/svelte@3.0.118_svelte@5.46.1__acorn@8.15.0_zod@4.3.5": {
       "integrity": "sha512-w7N5OB3J6alDSkvP9xWX6S3QMKHb3/q+hLt8vGC1arX4VcGRtMRYI8vVyK45LbJExakAjmjoBkNUlnK9YJ6/OQ==",
       "dependencies": [
-        "@ai-sdk/provider-utils@3.0.20_zod@4.3.5",
+        "@ai-sdk/provider-utils",
         "ai",
         "svelte",
         "zod"
@@ -2630,21 +2617,12 @@
     "agent-base@7.1.4": {
       "integrity": "sha512-MnA+YT8fwfJPgBx3m60MNqakm30XOkyIoH1y6huTQvC0PwZG7ki8NacLBcrPbNoo8vEZy7Jpuk7+jMO+CUovTQ=="
     },
-    "ai-sdk-provider-claude-code@2.2.4_zod@4.3.5": {
-      "integrity": "sha512-RhURJ0kMlWQqqB+s/VDel6yNTQZzjL3Upqgp5Vimhnn3O4B3541WUvtkKI4eJrQCk5zT+OyByeXPZDKqalYgzQ==",
-      "dependencies": [
-        "@ai-sdk/provider@2.0.0",
-        "@ai-sdk/provider-utils@3.0.9_zod@4.3.5",
-        "@anthropic-ai/claude-agent-sdk",
-        "zod"
-      ]
-    },
     "ai@5.0.118_zod@4.3.5": {
       "integrity": "sha512-sKJHfhJkvAyq5NC3yJJ4R8Z3tn4pSHF760/jInKAtmLwPLWTHfGo293DSO4un8QUAgJOagHd09VSXOXv+STMNQ==",
       "dependencies": [
         "@ai-sdk/gateway",
-        "@ai-sdk/provider@2.0.1",
-        "@ai-sdk/provider-utils@3.0.20_zod@4.3.5",
+        "@ai-sdk/provider",
+        "@ai-sdk/provider-utils",
         "@opentelemetry/api",
         "zod"
       ]
@@ -5563,12 +5541,12 @@
         ],
         "packageJson": {
           "dependencies": [
+            "npm:@anthropic-ai/claude-agent-sdk@~0.1.76",
             "npm:@jsr/db__sqlite@0.12",
             "npm:@jsr/std__assert@^1.0.16",
             "npm:@jsr/std__encoding@^1.0.10",
             "npm:@jsr/std__media-types@^1.1.0",
             "npm:@jsr/std__path@^1.1.2",
-            "npm:ai-sdk-provider-claude-code@^2.2.4",
             "npm:ai@^5.0.118",
             "npm:evalite@^1.0.0-beta.15",
             "npm:parallel-web@0.2.4",

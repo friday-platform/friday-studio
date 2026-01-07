@@ -220,14 +220,22 @@ export const bundledAgentsRegistry: Record<string, BundledAgentRegistryItem> = {
     id: "claude-code",
     name: "Claude Code",
     version: "1.0.0",
-    description: "Execute coding tasks with local filesystem access and tool integration",
+    description: "Execute coding tasks using Claude API with sandboxed filesystem access",
     capabilities: ["code-generation", "coding", "file-operations", "development", "programming"],
     examples: [
       "Write a TypeScript function to parse JSON",
       "Read and analyze the package.json file",
       "Generate a React component",
     ],
-    requiredConfig: [],
+    requiredConfig: [
+      {
+        from: "link",
+        envKey: "ANTHROPIC_API_KEY",
+        provider: "anthropic",
+        key: "api_key",
+        description: "Anthropic API key from Link for Claude API access",
+      },
+    ],
     packagePath: "@atlas/bundled-agents/claude-code",
   },
 

@@ -1,5 +1,6 @@
 import { logger } from "@atlas/logger";
 import { config } from "../config.ts";
+import { anthropicProvider } from "./anthropic.ts";
 import { atlassianProvider } from "./atlassian.ts";
 import {
   createGoogleCalendarProvider,
@@ -83,6 +84,7 @@ if (slackAppProvider) {
 }
 
 // Register built-in providers
+registry.register(anthropicProvider);
 registry.register(notionProvider);
 registry.register(atlassianProvider);
 registry.register(linearProvider);

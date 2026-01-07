@@ -1,33 +1,35 @@
-import { homedir } from "node:os";
-import { env } from "node:process";
-import { type ArtifactRef, createAgent, repairToolCall } from "@atlas/agent-sdk";
+import process from "node:process";
+import { query } from "@anthropic-ai/claude-agent-sdk";
+import { type ArtifactRef, createAgent } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
-import { getDefaultProviderOpts, smallLLM } from "@atlas/llm";
+import { smallLLM } from "@atlas/llm";
 import { fail, type Result, stringifyError, success } from "@atlas/utils";
-import { stepCountIs, streamText } from "ai";
-import { claudeCode } from "ai-sdk-provider-claude-code";
+import { createSandbox, sandboxOptions } from "./sandbox.ts";
+
+/** Timeout between SDK messages before we consider it stalled (ms) */
+const MESSAGE_TIMEOUT_MS = 60_000;
 
 /**
- * Get the absolute path to the Claude Code CLI executable.
- * ATLAS_CLAUDE_PATH is set by the installer and loaded from ~/.atlas/.env at daemon startup.
- * The SDK requires an absolute path because it uses fs.existsSync(), not a PATH lookup.
+ * Wraps an async iterable with a timeout that resets on each yielded value.
+ * Throws if no value is received within the timeout period.
  */
-function getClaudeCodePath(): string {
-  const claudePath = env.ATLAS_CLAUDE_PATH;
-  if (!claudePath) {
-    throw new Error(
-      "ATLAS_CLAUDE_PATH not set. Re-run the Atlas installer to detect Claude Code CLI path.",
-    );
+async function* withMessageTimeout<T>(
+  iterable: AsyncIterable<T>,
+  timeoutMs: number,
+  onTimeout: () => Error,
+): AsyncGenerator<T> {
+  const iterator = iterable[Symbol.asyncIterator]();
+  while (true) {
+    const result = await Promise.race([
+      iterator.next(),
+      new Promise<never>((_, reject) => setTimeout(() => reject(onTimeout()), timeoutMs)),
+    ]);
+    if (result.done) break;
+    yield result.value;
   }
-  return claudePath;
 }
 
-type CCAgentResult = Result<
-  // Summary of the research findings
-  { response: string; artifactRef: ArtifactRef },
-  // Reason for failure
-  { reason: string }
->;
+type CCAgentResult = Result<{ response: string; artifactRef: ArtifactRef }, { reason: string }>;
 
 /**
  * Format tool invocation as concise single-line status message (≤50 chars).
@@ -61,7 +63,7 @@ export const claudeCodeAgent = createAgent<string, CCAgentResult>({
   id: "claude-code",
   displayName: "Claude Code",
   version: "1.0.0",
-  description: "Execute tasks using Claude Code with local filesystem access and tool integration",
+  description: "Execute coding tasks using Claude API with sandboxed filesystem access",
   expertise: {
     domains: ["code-generation", "file-operations", "development"],
     examples: [
@@ -69,79 +71,96 @@ export const claudeCodeAgent = createAgent<string, CCAgentResult>({
       "Read and analyze the package.json file",
     ],
   },
-  handler: async (prompt, { logger, abortSignal, stream }) => {
-    /**
-     * Execute prompt via Claude Code provider.
-     * Streams progress as tools execute, stores result as artifact, returns summary.
-     */
+  environment: {
+    required: [
+      {
+        name: "ANTHROPIC_API_KEY",
+        description: "Anthropic API key for Claude API access",
+        linkRef: { provider: "anthropic", key: "api_key" },
+      },
+    ],
+  },
+  handler: async (prompt, { logger, abortSignal, stream, session, env }) => {
+    const apiKey = env.ANTHROPIC_API_KEY;
+    if (!apiKey) {
+      return fail({ reason: "ANTHROPIC_API_KEY not set. Connect Anthropic in Link." });
+    }
+
+    const sandbox = await createSandbox(session.sessionId);
+
+    const controller = new AbortController();
+    abortSignal?.addEventListener("abort", () => controller.abort());
+
     try {
-      logger.debug("Starting Claude Code agent execution", { prompt });
+      let responseText = "";
 
-      const claudeCodePath = getClaudeCodePath();
-      logger.debug("Using Claude Code CLI", { path: claudeCodePath });
-
-      const result = streamText({
-        model: claudeCode("sonnet", {
-          cwd: homedir(),
-          disallowedTools: ["Bash(rm:*)"],
-          maxTurns: 25,
-          // Use globally installed Claude CLI instead of bundled cli.js
-          // The bundled cli.js doesn't work with Deno compiled binaries because
-          // Deno only extracts files on-demand for Deno code, not for external
-          // Node.js child processes that the SDK spawns.
-          // Note: The SDK uses fs.existsSync() so an absolute path is required.
-          pathToClaudeCodeExecutable: claudeCodePath,
+      const sdkStream = query({
+        prompt,
+        options: {
+          cwd: sandbox.workDir,
+          model: "claude-sonnet-4-5",
+          tools: { type: "preset", preset: "claude_code" },
+          disallowedTools: ["Bash(rm -rf:*)", "Bash(curl:*)", "Bash(wget:*)", "Bash(sudo:*)"],
           permissionMode: "bypassPermissions",
-          settingSources: ["user", "project", "local"],
-          stderr: (data: string) => logger.warn("Claude Code stderr", { stderr: data }),
-          streamingInput: "always",
-          systemPrompt: { type: "preset", preset: "claude_code" },
-        }),
-        messages: [
-          {
-            role: "system",
-            content: `Return summary of actions taken. Output only the summary—no preamble or explanation.
-          DO NOT explain what you are going to do. Just do it.
-
-          Your summary:
-            - Direct, factual
-            - Concise. Sacrifice grammar for concision, but keep clarity
-            - Use markdown`,
-            providerOptions: getDefaultProviderOpts("anthropic"),
+          settingSources: [],
+          maxTurns: 25,
+          sandbox: sandboxOptions,
+          abortController: controller,
+          env: { ...process.env, ANTHROPIC_API_KEY: apiKey },
+          systemPrompt: {
+            type: "preset",
+            preset: "claude_code",
+            append: "Return summary of actions. Concise, factual, markdown.",
           },
-          { role: "user", content: prompt },
-        ],
-        abortSignal,
-        stopWhen: stepCountIs(25),
-        maxOutputTokens: 30000,
-        experimental_repairToolCall: repairToolCall,
-        onChunk: async ({ chunk }) => {
-          switch (chunk.type) {
-            case "tool-call": {
-              const message = await generateProgress(
-                { toolName: chunk.toolName, input: chunk.input },
+        },
+      });
+
+      const timedStream = withMessageTimeout(
+        sdkStream,
+        MESSAGE_TIMEOUT_MS,
+        () => new Error(`SDK stalled: no message received in ${MESSAGE_TIMEOUT_MS / 1000}s`),
+      );
+
+      for await (const message of timedStream) {
+        // System init
+        if (message.type === "system" && message.subtype === "init") {
+          logger.debug("Session started", { sessionId: message.session_id, cwd: message.cwd });
+        }
+
+        // Tool progress from assistant messages
+        if (message.type === "assistant") {
+          for (const block of message.message.content) {
+            if (block.type === "tool_use") {
+              const progress = await generateProgress(
+                { toolName: block.name, input: block.input },
                 abortSignal,
               );
               stream?.emit({
                 type: "data-tool-progress",
-                data: { toolName: "Claude Code", content: message },
+                data: { toolName: "Claude Code", content: progress },
               });
             }
           }
-        },
-      });
+        }
 
-      const responseText = await result.text;
-      const usage = await result.usage;
+        // Final result
+        if (message.type === "result") {
+          if (message.subtype === "success") {
+            responseText = message.result;
+            logger.debug("Execution complete", {
+              cost: message.total_cost_usd,
+              turns: message.num_turns,
+            });
+          } else {
+            // Error types: error_max_turns, error_during_execution, etc.
+            const errorMsg = message.subtype;
+            logger.error("Execution failed", { subtype: errorMsg });
+            return fail({ reason: errorMsg });
+          }
+        }
+      }
 
-      logger.debug("AI SDK streamText completed", {
-        agent: "claude-code",
-        step: "main-execution",
-        usage,
-      });
-
-      logger.debug("Claude Code execution completed", { responseLength: responseText.length });
-
+      // Create artifact
       const artifactResponse = await parseResult(
         client.artifactsStorage.index.$post({
           json: {
@@ -153,13 +172,15 @@ export const claudeCodeAgent = createAgent<string, CCAgentResult>({
       );
 
       if (!artifactResponse.ok) {
-        logger.error("Artifact creation failed", { error: artifactResponse.error });
         return fail({ reason: stringifyError(artifactResponse.error) });
       }
+
       return success({ response: responseText, artifactRef: artifactResponse.data.artifact });
     } catch (error) {
       logger.error("Claude Code agent failed", { error });
-      return fail({ reason: `Agent failed to execute: ${stringifyError(error)}` });
+      return fail({ reason: `Agent failed: ${stringifyError(error)}` });
+    } finally {
+      await sandbox.cleanup();
     }
   },
 });

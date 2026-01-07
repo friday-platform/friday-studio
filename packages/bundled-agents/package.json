@@ -5,6 +5,7 @@
   "main": "./src/index.ts",
   "exports": { ".": "./src/index.ts" },
   "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.1.76",
     "@atlas/agent-sdk": "workspace:*",
     "@atlas/config": "workspace:*",
     "@atlas/llm": "workspace:*",
@@ -14,7 +15,6 @@
     "@std/media-types": "npm:@jsr/std__media-types@^1.1.0",
     "@std/path": "npm:@jsr/std__path@^1.1.2",
     "ai": "^5.0.118",
-    "ai-sdk-provider-claude-code": "^2.2.4",
     "evalite": "^1.0.0-beta.15",
     "parallel-web": "0.2.4",
     "zod": "^4.3.5"
