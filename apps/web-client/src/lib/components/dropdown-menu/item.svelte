@@ -20,6 +20,7 @@ type Props = {
   disabled?: boolean;
   size?: "default" | "large";
   faded?: boolean;
+  fileInput?: { onchange: (files: File[]) => void; accept?: string; multiple?: boolean };
 };
 
 let {
@@ -33,11 +34,24 @@ let {
   faded = false,
   // important: disabled should not have a default value, as any value is considered true
   disabled,
+  fileInput,
   ...rest
 }: Props & HTMLAttributes<HTMLElement> = $props();
 
+const fileInputId = $derived(fileInput ? crypto.randomUUID() : undefined);
+
+function handleFileChange(e: Event & { currentTarget: HTMLInputElement }) {
+  const files = e.currentTarget.files;
+  if (files?.length) {
+    fileInput?.onchange(Array.from(files));
+    e.currentTarget.value = ""; // reset for re-select same file
+  }
+}
+
 function getElementType() {
-  if (rest?.href) {
+  if (fileInput) {
+    return "label";
+  } else if (rest?.href) {
     return "a";
   } else if (noninteractive) {
     return "div";
@@ -79,9 +93,22 @@ function getElementType() {
 		{@render contents()}
 	</button>
 {:else}
+	{#if fileInput}
+		<!-- IMPORTANT: Files cannot use mixed event handlers (onchange/on:m-click is invalid, so this has to be on:change) -->
+		<!-- svelte-ignore event_directive_deprecated -->
+		<input
+			type="file"
+			id={fileInputId}
+			class="sr-only"
+			accept={fileInput.accept}
+			multiple={fileInput.multiple}
+			on:change={handleFileChange}
+		/>
+	{/if}
 	<!-- svelte-ignore event_directive_deprecated -->
 	<svelte:element
 		this={getElementType()}
+		for={fileInputId}
 		{disabled}
 		use:item
 		{...$item}
@@ -178,5 +205,14 @@ function getElementType() {
 
 	.accent--destructive :global(svg) {
 		color: var(--color-red);
+	}
+
+	.sr-only {
+		block-size: 1px;
+		clip: rect(0, 0, 0, 0);
+		inline-size: 1px;
+		overflow: hidden;
+		position: absolute;
+		white-space: nowrap;
 	}
 </style>

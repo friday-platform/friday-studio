@@ -37,6 +37,8 @@ export const EXTENSION_TO_MIME = new Map([
   [".txt", "text/plain"],
   [".md", "text/markdown"],
   [".markdown", "text/markdown"],
+  [".yml", "text/yaml"],
+  [".yaml", "text/yaml"],
 ]);
 
 /**
@@ -55,6 +57,7 @@ export const ALLOWED_MIME_TYPES = new Set([
   "application/json",
   "text/markdown",
   "text/x-markdown",
+  "text/yaml",
 ]);
 
 /** Allowed file extensions for client-side validation */

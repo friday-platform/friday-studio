@@ -10,6 +10,7 @@ import { afterNavigate } from "$app/navigation";
 import { getAppContext, handleFileDrop } from "$lib/app-context.svelte";
 import { getChatContext } from "$lib/chat-context.svelte";
 import ChatBufferBlur from "$lib/components/chat-buffer-blur.svelte";
+import { DropdownMenu } from "$lib/components/dropdown-menu";
 import { Icons } from "$lib/components/icons";
 import { IconSmall } from "$lib/components/icons/small";
 import Textarea from "$lib/components/textarea.svelte";
@@ -23,6 +24,7 @@ import Reasoning from "$lib/modules/messages/reasoning.svelte";
 import Request from "$lib/modules/messages/request.svelte";
 import Response from "$lib/modules/messages/response.svelte";
 import ShowDetails from "$lib/modules/messages/show-details.svelte";
+import { shareChat } from "$lib/utils/share-chat";
 import type { PageData } from "./$types";
 
 /**
@@ -227,18 +229,20 @@ let showDetails = new SvelteMap<string, boolean>();
 
 				<div class="spacer"></div>
 
-			<div
-				class="interactive-container"
-				class:has-outline={chatContext.chats
-					.get(data.chatId)
-					?.messages.some((msg) => msg.parts.some((part) => part.type === 'data-outline-update'))}
-				ondragover={(e) => e.preventDefault()}
-				ondrop={(e) => {
-					e.preventDefault();
-					handleFileDrop(appCtx, Array.from(e.dataTransfer?.files ?? []), data.chatId);
-				}}
-			>
-				<div class="interactive-container-int">
+				<div
+					class="interactive-container"
+					role="region"
+					aria-label="Drag and drop files to attach them to your conversation"
+					class:has-outline={chatContext.chats
+						.get(data.chatId)
+						?.messages.some((msg) => msg.parts.some((part) => part.type === 'data-outline-update'))}
+					ondragover={(e) => e.preventDefault()}
+					ondrop={(e) => {
+						e.preventDefault();
+						handleFileDrop(appCtx, Array.from(e.dataTransfer?.files ?? []), data.chatId);
+					}}
+				>
+					<div class="interactive-container-int">
 						<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 						<form
 							bind:this={form}
@@ -323,6 +327,65 @@ let showDetails = new SvelteMap<string, boolean>();
 							{/if}
 
 							<div class="textarea-container">
+								<div class="actions">
+									<DropdownMenu.Root
+										positioning={{
+											placement: 'top-start',
+											gutter: 0,
+											offset: { crossAxis: -6, mainAxis: 12 }
+										}}
+									>
+										{#snippet children(open)}
+											<DropdownMenu.Trigger>
+												<div class="action-trigger">
+													<Icons.Plus />
+												</div>
+											</DropdownMenu.Trigger>
+											<DropdownMenu.Content>
+												<DropdownMenu.Item
+													closeOnClick={false}
+													fileInput={{
+														onchange: (files) => {
+															handleFileDrop(appCtx, files);
+															open.set(false);
+														},
+														multiple: true
+													}}
+												>
+													Add Files
+												</DropdownMenu.Item>
+
+												{#if chatContext.newChat.messages.length > 0}
+													<DropdownMenu.Item
+														onclick={async () => {
+															if (chatContext.newChat.messages) {
+																const chatTitle =
+																	chatContext.recentChats.find(
+																		(c) => c.id === chatContext.newChat.id
+																	)?.title ?? 'Untitled';
+
+																await shareChat(chatContext.newChat.messages, chatTitle);
+															}
+														}}
+													>
+														Share
+													</DropdownMenu.Item>
+												{/if}
+
+												<DropdownMenu.Separator />
+
+												<DropdownMenu.Item
+													onclick={() => {
+														chatContext.resetNewChat();
+													}}
+												>
+													New Chat
+												</DropdownMenu.Item>
+											</DropdownMenu.Content>
+										{/snippet}
+									</DropdownMenu.Root>
+								</div>
+
 								<Textarea
 									name="message"
 									placeholder="Type here..."
@@ -514,6 +577,27 @@ let showDetails = new SvelteMap<string, boolean>();
 				align-items: end;
 				display: flex;
 				gap: var(--size-1);
+			}
+
+			.actions {
+				display: flex;
+				margin-block-end: var(--size-1-5);
+			}
+
+			.action-trigger {
+				align-items: center;
+				block-size: var(--size-7);
+				border-radius: var(--radius-4);
+				color: color-mix(in srgb, var(--color-text), transparent 30%);
+				display: flex;
+				justify-content: center;
+				inline-size: var(--size-7);
+				transition: all 200ms ease;
+
+				&:hover,
+				:global(:focus-visible) & {
+					background-color: var(--color-surface-2);
+				}
 			}
 		}
 	}

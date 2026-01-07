@@ -8,6 +8,7 @@ import { slide } from "svelte/transition";
 import { getAppContext, handleFileDrop } from "$lib/app-context.svelte";
 import { getChatContext } from "$lib/chat-context.svelte";
 import ChatBufferBlur from "$lib/components/chat-buffer-blur.svelte";
+import { DropdownMenu } from "$lib/components/dropdown-menu";
 import { Icons } from "$lib/components/icons";
 import { IconSmall } from "$lib/components/icons/small";
 import Textarea from "$lib/components/textarea.svelte";
@@ -170,6 +171,8 @@ let showDetails = new SvelteMap<string, boolean>();
 			<div class="spacer"></div>
 
 			<div
+				role="region"
+				aria-label="Drag and drop files to attach them to your conversation"
 				class="interactive-container"
 				class:has-outline={chatContext.newChat.messages.some((msg) =>
 					msg.parts.some((part) => part.type === 'data-outline-update')
@@ -262,6 +265,38 @@ let showDetails = new SvelteMap<string, boolean>();
 						{/if}
 
 						<div class="textarea-container">
+							<div class="actions">
+								<DropdownMenu.Root
+									positioning={{
+										placement: 'top-start',
+										gutter: 0,
+										offset: { crossAxis: -6, mainAxis: 12 }
+									}}
+								>
+									{#snippet children(open)}
+										<DropdownMenu.Trigger>
+											<div class="action-trigger">
+												<Icons.Plus />
+											</div>
+										</DropdownMenu.Trigger>
+										<DropdownMenu.Content>
+											<DropdownMenu.Item
+												closeOnClick={false}
+												fileInput={{
+													onchange: (files) => {
+														handleFileDrop(appCtx, files);
+														open.set(false);
+													},
+													multiple: true
+												}}
+											>
+												Add Files
+											</DropdownMenu.Item>
+										</DropdownMenu.Content>
+									{/snippet}
+								</DropdownMenu.Root>
+							</div>
+
 							<Textarea
 								name="message"
 								placeholder="Type here..."
@@ -511,6 +546,27 @@ let showDetails = new SvelteMap<string, boolean>();
 				align-items: end;
 				display: flex;
 				gap: var(--size-1);
+			}
+
+			.actions {
+				display: flex;
+				margin-block-end: var(--size-1-5);
+			}
+
+			.action-trigger {
+				align-items: center;
+				block-size: var(--size-7);
+				border-radius: var(--radius-4);
+				color: color-mix(in srgb, var(--color-text), transparent 30%);
+				display: flex;
+				justify-content: center;
+				inline-size: var(--size-7);
+				transition: all 200ms ease;
+
+				&:hover,
+				:global(:focus-visible) & {
+					background-color: var(--color-surface-2);
+				}
 			}
 		}
 	}
