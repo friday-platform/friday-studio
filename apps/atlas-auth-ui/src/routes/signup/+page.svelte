@@ -56,9 +56,9 @@ let agree_to_terms = $state(false);
           <input type="checkbox" required name="agree_to_terms" bind:checked={agree_to_terms} />
 
           By signing up for Friday, I agree to the
-          <a href="https://tempestdx.com/company/privacypolicy" target="_blank">Privacy Policy</a>
+          <a href="https://hellofriday.ai/privacy" target="_blank">Privacy Policy</a>
           and
-          <a href="https://tempestdx.com/company/terms" target="_blank">Terms of Service</a>
+          <a href="https://hellofriday.ai/terms" target="_blank">Terms of Service</a>
         </label>
 
         <input
