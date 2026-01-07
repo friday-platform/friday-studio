@@ -161,6 +161,43 @@ Deno.test("validateEnvironment - shows connect message when user hasn't linked a
   }
 });
 
+Deno.test("validateEnvironment - LITELLM does not substitute when linkRef is present", async () => {
+  // When linkRef is specified, user MUST connect via Link - no LITELLM fallback.
+  // This prevents passing proxy keys to agents that need real provider keys
+  // (e.g., Claude Code needs real sk-ant-* key for Claude CLI).
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = () =>
+    Promise.resolve(
+      new Response(JSON.stringify({ providers: [], credentials: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+  delete process.env.ANTHROPIC_API_KEY;
+  process.env.LITELLM_API_KEY = "sk-litellm-test";
+  try {
+    const validate = createEnvironmentContext(mockLogger);
+    await assertRejects(
+      () =>
+        validate("workspace", "agent", {
+          required: [
+            {
+              name: "ANTHROPIC_API_KEY",
+              description: "Anthropic API key",
+              linkRef: { provider: "anthropic", key: "api_key" },
+            },
+          ],
+        }),
+      Error,
+      "Please connect your anthropic account to continue",
+    );
+  } finally {
+    delete process.env.LITELLM_API_KEY;
+    globalThis.fetch = originalFetch;
+  }
+});
+
 Deno.test("validateEnvironment - shows reconnect message when Link API fails", async () => {
   // Tests the API failure path: when Link HTTP call fails with a
   // non-CredentialNotFoundError, users see "credentials could not be loaded".

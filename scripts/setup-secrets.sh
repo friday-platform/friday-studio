@@ -10,6 +10,7 @@
 #   slack-oauth    - Slack App OAuth credentials for Link service
 #   gateway        - Gateway service secrets (JWT public, SendGrid, Parallel)
 #   bounce         - Bounce service secrets (JWT private/public)
+#   litellm        - LiteLLM proxy configuration and master key
 #   all            - Set up all secrets (default)
 #
 # The script fetches secrets from 1Password and writes them to:
@@ -31,6 +32,8 @@ OP_SLACK="op://Engineering/atlas-link-slack-sandbox"
 OP_SENDGRID="op://Engineering/atlas-gateway-sendgrid-sandbox"
 OP_PARALLEL="op://Engineering/atlas-gateway-parallel-sandbox"
 OP_JWT="op://Engineering/atlas-jwt-keypair-sandbox"
+OP_LITELLM_CONFIG="op://Engineering/LiteLLM Production Config (tempest-sandbox)"
+OP_LITELLM_MASTER_KEY="op://Engineering/LiteLLM Sandbox Master Key/password"
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -168,6 +171,48 @@ setup_bounce() {
 	success "Wrote Bounce secrets to $ATLAS_DIR/"
 }
 
+setup_litellm() {
+	info "Fetching LiteLLM configuration from 1Password..."
+
+	# Download the config document
+	local config_file="$ATLAS_DIR/litellm-config.yaml"
+	op document get "LiteLLM Production Config (tempest-sandbox)" --vault Engineering --out-file "$config_file" --force 2>/dev/null || {
+		die "Failed to download LiteLLM config from 1Password"
+	}
+	chmod 600 "$config_file"
+
+	# Get the master key
+	write_secret "$ATLAS_DIR/litellm_master_key" "$(op_read "$OP_LITELLM_MASTER_KEY")"
+
+	success "Wrote LiteLLM config to $config_file"
+}
+
+# Generate ~/.atlas/litellm.env
+generate_litellm_env() {
+	local master_key
+	master_key=$(cat "$ATLAS_DIR/litellm_master_key" 2>/dev/null) || {
+		warn "LiteLLM master key not found, run 'setup-secrets.sh litellm' first"
+		return 1
+	}
+
+	local env_file="$ATLAS_DIR/litellm.env"
+
+	cat >"$env_file" <<EOF
+LITELLM_API_KEY=${master_key}
+LITELLM_BASE_URL=http://localhost:4000
+EOF
+
+	chmod 600 "$env_file"
+	success "Created $env_file"
+
+	echo ""
+	info "To start LiteLLM proxy locally, run:"
+	echo "  deno task litellm:start"
+	echo ""
+	info "Or with the full config:"
+	echo "  docker run -d --name litellm-proxy -p 4000:4000 -v $ATLAS_DIR/litellm-config.yaml:/app/config.yaml ghcr.io/berriai/litellm:main-latest --config /app/config.yaml"
+}
+
 # Generate ~/.atlas/link.env
 generate_link_env() {
 	local env_file="$ATLAS_DIR/link.env"
@@ -243,6 +288,7 @@ usage() {
 	echo "  slack-oauth    Slack App OAuth credentials for Link service"
 	echo "  gateway        Gateway service secrets (JWT public, SendGrid, Parallel)"
 	echo "  bounce         Bounce service secrets (JWT keypair, SendGrid)"
+	echo "  litellm        LiteLLM proxy configuration and master key"
 	echo "  all            Set up all secrets (default)"
 	echo ""
 	echo "Examples:"
@@ -252,6 +298,7 @@ usage() {
 	echo "  $0 slack-oauth   # Set up only Slack OAuth"
 	echo "  $0 gateway       # Set up only Gateway secrets"
 	echo "  $0 bounce        # Set up only Bounce secrets"
+	echo "  $0 litellm       # Set up only LiteLLM config"
 }
 
 main() {
@@ -284,6 +331,11 @@ main() {
 		setup_bounce
 		generate_bounce_env
 		;;
+	litellm)
+		require_op
+		setup_litellm
+		generate_litellm_env
+		;;
 	all)
 		require_op
 		setup_google_oauth
@@ -291,9 +343,11 @@ main() {
 		setup_slack_oauth
 		setup_gateway
 		setup_bounce
+		setup_litellm
 		generate_link_env
 		generate_gateway_env
 		generate_bounce_env
+		generate_litellm_env
 		;;
 	*)
 		error "Unknown secret: $secret"

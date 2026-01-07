@@ -121,8 +121,16 @@ export function createEnvironmentContext(logger: Logger) {
           }
         }
 
-        // If primary variable is missing, check if LITELLM_API_KEY can substitute
-        if (!value && litellmKey && LITELLM_SUBSTITUTABLE_KEYS.has(reqVar.name)) {
+        // If primary variable is missing, check if LITELLM_API_KEY can substitute.
+        // Skip substitution if linkRef is present - user must connect via Link.
+        // This prevents LITELLM keys from being passed to agents that need real provider keys
+        // (e.g., Claude Code uses @anthropic-ai/claude-agent-sdk which requires a real sk-ant-* key).
+        if (
+          !value &&
+          litellmKey &&
+          LITELLM_SUBSTITUTABLE_KEYS.has(reqVar.name) &&
+          !reqVar.linkRef
+        ) {
           value = litellmKey;
           usedSubstitute = true;
           logger.debug("Using LITELLM_API_KEY as substitute", {
