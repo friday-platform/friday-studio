@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@atlas/logger": "workspace:*",
+    "@atlas/sentry": "workspace:*",
     "@atlas/utils": "workspace:*",
     "@hono/zod-validator": "0.7.6",
     "@socotra/modelcontextprotocol-sdk": "1.21.0",
