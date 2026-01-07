@@ -542,8 +542,10 @@ export class AtlasDaemon {
       const message = `HTTP ${method} ${path}`;
       const context = { method, path, status, duration: `${duration}ms`, component: "http" };
 
-      if (status >= 400) {
+      if (status >= 500) {
         logger.error(message, context);
+      } else if (status >= 400) {
+        logger.warn(message, context);
       } else {
         logger.info(message, context);
       }
