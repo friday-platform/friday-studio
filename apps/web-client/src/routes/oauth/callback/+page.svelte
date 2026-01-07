@@ -73,7 +73,7 @@ onMount(() => {
 	{:else if status === "no-opener"}
 		<div class="status-box success">
 			<p>Authentication successful!</p>
-			<p class="hint">You can close this window and return to Atlas.</p>
+			<p class="hint">You can close this window and return to Friday.</p>
 		</div>
 	{:else if status === "error"}
 		<div class="status-box error">

@@ -95,7 +95,7 @@ export function createSlackAppInstallProvider(): AppInstallProvider | undefined 
     id: "slack",
     platform: "slack",
     displayName: "Slack",
-    description: "Install Atlas bot into a Slack workspace",
+    description: "Install Friday bot into a Slack workspace",
     docsUrl: "https://api.slack.com/apps",
 
     buildAuthorizationUrl(callbackUrl, state) {
