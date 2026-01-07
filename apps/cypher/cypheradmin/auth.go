@@ -34,19 +34,23 @@ func isAuthError(err error) bool {
 		strings.Contains(s, "Could not find default credentials")
 }
 
-func doOAuthLogin(ctx context.Context) error {
-	conf := &oauth2.Config{
+func getOAuthConfig() *oauth2.Config {
+	return &oauth2.Config{
 		ClientID:     gcloudClientID,
 		ClientSecret: gcloudClientSecret,
 		Endpoint:     google.Endpoint,
 		RedirectURL:  "http://" + callbackAddr,
 		Scopes:       []string{"https://www.googleapis.com/auth/cloud-platform", "openid", "email"},
 	}
+}
+
+func doOAuthLogin(ctx context.Context) (*oauth2.Token, error) {
+	conf := getOAuthConfig()
 
 	// Generate random state for CSRF protection
 	stateBytes := make([]byte, 16)
 	if _, err := rand.Read(stateBytes); err != nil {
-		return fmt.Errorf("failed to generate state: %w", err)
+		return nil, fmt.Errorf("failed to generate state: %w", err)
 	}
 	expectedState := base64.URLEncoding.EncodeToString(stateBytes)
 
@@ -78,7 +82,7 @@ func doOAuthLogin(ctx context.Context) error {
 	// Start listener first to avoid race condition
 	listener, err := net.Listen("tcp", callbackAddr)
 	if err != nil {
-		return fmt.Errorf("failed to start callback server: %w", err)
+		return nil, fmt.Errorf("failed to start callback server: %w", err)
 	}
 
 	server := &http.Server{
@@ -106,50 +110,17 @@ func doOAuthLogin(ctx context.Context) error {
 	select {
 	case code = <-codeChan:
 	case err := <-errChan:
-		return err
+		return nil, err
 	case <-time.After(5 * time.Minute):
-		return errors.New("authentication timed out")
+		return nil, errors.New("authentication timed out")
 	}
 
 	token, err := conf.Exchange(ctx, code)
 	if err != nil {
-		return fmt.Errorf("token exchange failed: %w", err)
+		return nil, fmt.Errorf("token exchange failed: %w", err)
 	}
 
-	return saveADC(token.RefreshToken)
-}
-
-func saveADC(refreshToken string) error {
-	adc := map[string]string{
-		"client_id":     gcloudClientID,
-		"client_secret": gcloudClientSecret,
-		"refresh_token": refreshToken,
-		"type":          "authorized_user",
-	}
-
-	adcPath := getADCPath()
-	if err := os.MkdirAll(filepath.Dir(adcPath), 0o700); err != nil {
-		return err
-	}
-
-	f, err := os.Create(adcPath) //nolint:gosec
-	if err != nil {
-		return err
-	}
-
-	enc := json.NewEncoder(f)
-	enc.SetIndent("", "  ")
-	encErr := enc.Encode(adc)
-	closeErr := f.Close()
-	if encErr != nil {
-		return encErr
-	}
-	if closeErr != nil {
-		return closeErr
-	}
-
-	fmt.Fprintf(os.Stderr, "Credentials saved to: %s\n", adcPath)
-	return nil
+	return token, nil
 }
 
 func openBrowser(url string) error {
@@ -167,10 +138,40 @@ func openBrowser(url string) error {
 	return cmd.Start()
 }
 
-func getADCPath() string {
-	if runtime.GOOS == "windows" {
-		return filepath.Join(os.Getenv("APPDATA"), "gcloud", "application_default_credentials.json")
-	}
+func getTokenCachePath() string {
 	configDir, _ := os.UserConfigDir()
-	return filepath.Join(configDir, "gcloud", "application_default_credentials.json")
+	return filepath.Join(configDir, "cypheradmin", "token.json")
+}
+
+func loadCachedToken() *oauth2.Token {
+	data, err := os.ReadFile(getTokenCachePath())
+	if err != nil {
+		return nil
+	}
+	var token oauth2.Token
+	if err := json.Unmarshal(data, &token); err != nil {
+		return nil
+	}
+	return &token
+}
+
+func saveTokenCache(token *oauth2.Token) error {
+	path := getTokenCachePath()
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	data, err := json.Marshal(token)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0o600)
+}
+
+// getCachedTokenSource returns a token source from cached credentials, or nil if none exist.
+func getCachedTokenSource(ctx context.Context) oauth2.TokenSource {
+	token := loadCachedToken()
+	if token == nil {
+		return nil
+	}
+	return getOAuthConfig().TokenSource(ctx, token)
 }

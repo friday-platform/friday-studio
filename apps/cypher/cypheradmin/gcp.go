@@ -10,6 +10,8 @@ import (
 
 	secretmanager "cloud.google.com/go/secretmanager/apiv1"
 	"cloud.google.com/go/secretmanager/apiv1/secretmanagerpb"
+	"golang.org/x/oauth2"
+	"google.golang.org/api/option"
 )
 
 const jwtSecretName = "waypoint-jwt-private-key" //nolint:gosec // Not a credential, just a secret name.
@@ -59,8 +61,13 @@ func detectProject() string {
 	return ""
 }
 
-func fetchSecret(ctx context.Context, project, secretName string) (string, error) {
-	client, err := secretmanager.NewClient(ctx)
+func fetchSecret(ctx context.Context, project, secretName string, tokenSource oauth2.TokenSource) (string, error) {
+	var opts []option.ClientOption
+	if tokenSource != nil {
+		opts = append(opts, option.WithTokenSource(tokenSource))
+	}
+
+	client, err := secretmanager.NewClient(ctx, opts...)
 	if err != nil {
 		return "", err
 	}

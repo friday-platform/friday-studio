@@ -52,14 +52,22 @@ func runGenerate(cmd *cobra.Command, args []string) {
 
 	ctx := context.Background()
 
-	privateKeyPEM, err := fetchSecret(ctx, project, jwtSecretName)
+	// Try cached token first, then OAuth if needed
+	tokenSource := getCachedTokenSource(ctx)
+	privateKeyPEM, err := fetchSecret(ctx, project, jwtSecretName, tokenSource)
 	if err != nil && isAuthError(err) {
 		fmt.Fprintln(os.Stderr, "Authentication required. Starting OAuth flow...")
-		if authErr := doOAuthLogin(ctx); authErr != nil {
+		oauthToken, authErr := doOAuthLogin(ctx)
+		if authErr != nil {
 			fmt.Fprintf(os.Stderr, "error: OAuth failed: %v\n", authErr)
 			os.Exit(1)
 		}
-		privateKeyPEM, err = fetchSecret(ctx, project, jwtSecretName)
+		// Cache the token for future runs
+		if cacheErr := saveTokenCache(oauthToken); cacheErr != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to cache token: %v\n", cacheErr)
+		}
+		tokenSource = getOAuthConfig().TokenSource(ctx, oauthToken)
+		privateKeyPEM, err = fetchSecret(ctx, project, jwtSecretName, tokenSource)
 	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: failed to fetch secret: %v\n", err)
@@ -72,12 +80,12 @@ func runGenerate(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	token, expiresAt, err := generateJWT(privateKey, userID, email)
+	jwtToken, expiresAt, err := generateJWT(privateKey, userID, email)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: failed to generate JWT: %v\n", err)
 		os.Exit(1)
 	}
 
 	fmt.Fprintf(os.Stderr, "Generated ATLAS_KEY for user %s (expires: %s)\n", userID, expiresAt.Format(time.RFC3339))
-	fmt.Println(token)
+	fmt.Println(jwtToken)
 }
