@@ -7,6 +7,10 @@
     "dev": "LINK_DEV_MODE=true deno run --watch --env-file=$HOME/.atlas/link.env --allow-all src/index.ts"
   },
   "imports": {
+    "@atlas/logger": "../../packages/logger/mod.ts",
+    "@atlas/utils": "../../packages/utils/mod.ts",
+    "@atlas/utils/paths.server": "../../packages/utils/src/paths.ts",
+    "@atlas/sentry": "../../packages/sentry/mod.ts",
     "@std/async": "jsr:@std/async@^1.0.15",
     "@std/dotenv": "jsr:@std/dotenv@^0.225.5",
     "zod": "npm:zod@^4.2.1",
