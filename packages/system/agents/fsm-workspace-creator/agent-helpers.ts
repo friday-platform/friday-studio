@@ -206,36 +206,33 @@ Counter-examples - these documents lack consumers:
 - 'step-tracker' (internal bookkeeping) → never read by any step
 - 'execution-log' (progress metadata) → never read by any step
 
-**CRITICAL - Document Cleanup in Idle State:**
+**CRITICAL - codeAction() Requires Function Definition:**
 
-The idle state entry actions run before each workflow execution.
-Use them to clean up temporary documents from previous runs while preserving stateful data.
+Before using codeAction('function_name'), you MUST define it once with addFunction('function_name', ...).
+- Define each function ONCE with addFunction(), then use it anywhere with codeAction()
+- If you use codeAction() without addFunction(), the FSM build will fail with "undefined function" error
+- If you call addFunction() twice for the same name, the FSM build will fail with "duplicate function" error
 
-Example cleanup function:
+**Document Cleanup in Idle State:**
 
+Documents persist between runs. The idle state must clean up temporary documents (requests, results)
+before each execution to prevent "document already exists" errors on rerun.
+
+IMPORTANT: You MUST define the cleanup function with addFunction() BEFORE using it in onEntry():
+
+// Step 1: ALWAYS define the function first
 builder.addFunction('cleanup_before_run', 'action', \\\`
   export default function cleanup_before_run(context, event) {
-    // Delete temporary documents from previous run
-    // Use context.deleteDoc?.() to safely remove documents
-
-    // Delete request/result documents (these are recreated each run)
+    // Delete request/result documents from previous run (these are recreated each run)
+    // Use the actual document IDs from your FSM steps
     context.deleteDoc?.('agent-request');
     context.deleteDoc?.('agent_result');
-
-    // Delete session-specific temporary data
-    context.deleteDoc?.('temp-research');
-    context.deleteDoc?.('session-metadata');
-
-    // Keep stateful documents intact by NOT deleting them:
-    // - 'contacted-leads' (tracks historical state)
-    // - 'message-counter' (persists across runs)
-    // - 'user-preferences' (long-lived configuration)
   }
 \\\`);
 
-// Add cleanup function to idle state if workspace needs fresh documents:
+// Step 2: THEN use it in the idle state
 builder.addState('idle')
-  .onEntry(codeAction('cleanup_before_run'))
+  .onEntry(codeAction('cleanup_before_run'))  // This REQUIRES the addFunction() above!
   .onTransition('TRIGGER_SIGNAL', 'step_0');
 
 Process functions validate the result exists - keep them simple.

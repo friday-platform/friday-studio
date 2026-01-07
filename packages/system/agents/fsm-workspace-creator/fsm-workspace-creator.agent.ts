@@ -20,7 +20,7 @@ import { flattenAgent } from "./agent-helpers.ts";
 import { enrichAgentCredentials } from "./enrichers/agent-credentials.ts";
 import { generateMCPServers } from "./enrichers/mcp-servers.ts";
 import { enrichSignal } from "./enrichers/signals.ts";
-import { generateFSMCode } from "./fsm-generation-core.ts";
+import { generateFSMCode, type PreviousAttempt } from "./fsm-generation-core.ts";
 import {
   formatMissingCredentialsError,
   type MissingCredential,
@@ -210,71 +210,94 @@ export const fsmWorkspaceCreatorAgent = createAgent<FSMCreatorInput, FSMCreatorR
           });
         }
 
-        // Generate TypeScript code via LLM
-        logger.info(`Generating builder code via LLM for job: ${job.id}`);
+        // Generate TypeScript code via LLM with retry on validation failures
+        const MAX_RETRIES = 2;
+        let previousAttempt: PreviousAttempt | undefined;
+        let lastError: string | undefined;
+        let fsm: ValidatedFSMDefinition | undefined;
 
-        const generatedCode = await generateFSMCode(
-          job,
-          jobAgents,
-          triggerSignal,
-          triggerSignal.payloadSchema,
-          abortSignal,
-        );
+        for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+          logger.info(`Generating builder code via LLM for job: ${job.id}`, {
+            attempt: attempt + 1,
+            maxAttempts: MAX_RETRIES + 1,
+            isRetry: attempt > 0,
+          });
 
-        logger.info(`Generated ${generatedCode.length} chars of builder code for job: ${job.id}`);
+          const generatedCode = await generateFSMCode(
+            job,
+            jobAgents,
+            triggerSignal,
+            triggerSignal.payloadSchema,
+            abortSignal,
+            previousAttempt,
+          );
 
-        // Save generated code for debugging
-        generatedCodeMap[job.id] = generatedCode;
-        codegenAttemptsMap[job.id] = 1; // Track attempts (for future retry logic)
+          logger.info(`Generated ${generatedCode.length} chars of builder code for job: ${job.id}`);
 
-        // Execute code via Worker-based codegen (no imports needed - APIs injected in worker scope)
-        const codegenResult = await executeCodegen({ code: generatedCode, timeout: 30000 });
+          // Save generated code for debugging
+          generatedCodeMap[job.id] = generatedCode;
+          codegenAttemptsMap[job.id] = attempt + 1;
 
-        if (!codegenResult.success) {
-          logger.error("Codegen execution failed", { jobId: job.id, error: codegenResult.error });
-          logger.error("Failed code saved in generatedCodeMap", {
+          // Execute code via Worker-based codegen (no imports needed - APIs injected in worker scope)
+          const codegenResult = await executeCodegen({ code: generatedCode, timeout: 30000 });
+
+          if (!codegenResult.success) {
+            const errorMsg = codegenResult.error.message;
+            logger.error("Codegen execution failed", {
+              jobId: job.id,
+              error: codegenResult.error,
+              attempt: attempt + 1,
+            });
+            lastError = `Failed to execute generated code for job '${job.id}': ${errorMsg}`;
+            previousAttempt = { code: generatedCode, error: errorMsg };
+            continue;
+          }
+
+          const buildResult = codegenResult.result;
+
+          if (!buildResult.success) {
+            const errorMsg = JSON.stringify(buildResult.error, null, 2);
+            logger.error("FSM build failed", {
+              jobId: job.id,
+              errors: buildResult.error,
+              attempt: attempt + 1,
+            });
+            lastError = `FSM build failed for job '${job.id}': ${errorMsg}`;
+            previousAttempt = { code: generatedCode, error: errorMsg };
+            continue;
+          }
+
+          // Validate FSM structure
+          const validationResult = validateFSMStructure(buildResult.value);
+          if (!validationResult.valid) {
+            const errorMsg = validationResult.errors.join("\n");
+            logger.error("FSM validation failed", {
+              jobId: job.id,
+              errors: validationResult.errors,
+              attempt: attempt + 1,
+            });
+            lastError = `FSM validation failed for job '${job.id}':\n${errorMsg}`;
+            previousAttempt = { code: generatedCode, error: errorMsg };
+            continue;
+          }
+
+          // Success!
+          fsm = buildResult.value;
+          logger.info("FSM validated successfully", {
             jobId: job.id,
-            codeLength: generatedCode.length,
+            fsmId: fsm.id,
+            stateCount: Object.keys(fsm.states).length,
+            attempts: attempt + 1,
           });
-
-          return fail({
-            reason: `Failed to execute generated code for job '${job.id}': ${codegenResult.error.message}`,
-          });
+          break;
         }
 
-        const buildResult = codegenResult.result;
-
-        if (!buildResult.success) {
-          logger.error("FSM build failed", { jobId: job.id, errors: buildResult.error });
-
+        // Check if we succeeded
+        if (!fsm) {
           return fail({
-            reason: `FSM build failed for job '${job.id}': ${JSON.stringify(
-              buildResult.error,
-              null,
-              2,
-            )}`,
+            reason: lastError ?? `FSM generation failed for job '${job.id}' after all retries`,
           });
         }
-
-        const fsm = buildResult.value;
-
-        // Validate FSM structure
-        const validationResult = validateFSMStructure(fsm);
-        if (!validationResult.valid) {
-          logger.error("FSM validation failed", { jobId: job.id, errors: validationResult.errors });
-
-          return fail({
-            reason: `FSM validation failed for job '${job.id}':\n${validationResult.errors.join(
-              "\n",
-            )}`,
-          });
-        }
-
-        logger.info("FSM validated successfully", {
-          jobId: job.id,
-          fsmId: fsm.id,
-          stateCount: Object.keys(fsm.states).length,
-        });
 
         // Store validated FSM
         fsms.set(job.id, fsm);

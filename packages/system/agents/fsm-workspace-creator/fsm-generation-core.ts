@@ -17,6 +17,14 @@ type WorkspaceJobPlan = WorkspacePlan["jobs"][0];
 type WorkspaceSignal = WorkspacePlan["signals"][0];
 
 /**
+ * Previous attempt info for retry with feedback
+ */
+export interface PreviousAttempt {
+  code: string;
+  error: string;
+}
+
+/**
  * Generate FSM TypeScript code via LLM (no Worker execution)
  *
  * Pure function that calls LLM and returns generated code.
@@ -27,6 +35,7 @@ type WorkspaceSignal = WorkspacePlan["signals"][0];
  * @param triggerSignal - Signal that triggers this job
  * @param signalPayloadSchema - Optional JSON Schema defining signal payload structure
  * @param abortSignal - Optional abort signal
+ * @param previousAttempt - Optional previous failed attempt for retry with feedback
  * @returns Generated TypeScript code using FSMBuilder API
  */
 export async function generateFSMCode(
@@ -35,8 +44,28 @@ export async function generateFSMCode(
   triggerSignal: WorkspaceSignal,
   signalPayloadSchema?: JSONSchema,
   abortSignal?: AbortSignal,
+  previousAttempt?: PreviousAttempt,
 ): Promise<string> {
-  const prompt = buildFSMGenerationPrompt(job, agents, triggerSignal, signalPayloadSchema);
+  let prompt = buildFSMGenerationPrompt(job, agents, triggerSignal, signalPayloadSchema);
+
+  // Add previous attempt feedback for retry
+  if (previousAttempt) {
+    prompt += `
+
+**PREVIOUS ATTEMPT FAILED - FIX THE ERROR:**
+
+Your previous code generation attempt failed with this error:
+\`\`\`
+${previousAttempt.error}
+\`\`\`
+
+Your previous code was:
+\`\`\`typescript
+${previousAttempt.code}
+\`\`\`
+
+Generate the corrected code now.`;
+  }
 
   const { text } = await generateText({
     model: wrapAISDKModel(registry.languageModel("groq:moonshotai/kimi-k2-instruct-0905")),

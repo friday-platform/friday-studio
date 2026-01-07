@@ -10,7 +10,10 @@ import { type FSMDefinition, validateFSMStructure } from "@atlas/fsm-engine";
 import { logger } from "@atlas/logger";
 import { fail, type Result, success } from "@atlas/utils";
 import { type BuildError, executeCodegen } from "@atlas/workspace-builder";
-import { generateFSMCode } from "../../../fsm-workspace-creator/fsm-generation-core.ts";
+import {
+  generateFSMCode,
+  type PreviousAttempt,
+} from "../../../fsm-workspace-creator/fsm-generation-core.ts";
 import type { SimplifiedAgent } from "../../../fsm-workspace-creator/types.ts";
 import type { EnhancedTaskPlan } from "./planner.ts";
 
@@ -115,89 +118,122 @@ export async function generateTaskFSM(
     description: intent,
   };
 
-  // 4. Generate FSM code via LLM
-  logger.debug("Generating FSM code via LLM");
-  let fsmCode: string;
-  try {
-    fsmCode = await generateFSMCode(jobPlan, agents, triggerSignal, undefined, abortSignal);
-    logger.debug("FSM code generated", { codeLength: fsmCode.length });
-  } catch (error) {
-    logger.error("FSM code generation failed", { error });
-    return fail(
-      new Error(`FSM generation failed: ${error instanceof Error ? error.message : String(error)}`),
-    );
-  }
+  // 4. Generate FSM code via LLM with retry on validation failures
+  const MAX_RETRIES = 2;
+  let previousAttempt: PreviousAttempt | undefined;
+  let lastError: Error | undefined;
 
-  // 5. Compile and validate via worker
-  logger.debug("Compiling FSM code via worker");
-  const codegenResult = await executeCodegen({ code: fsmCode, timeout: 30000 });
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    if (abortSignal?.aborted) {
+      return fail(new Error("FSM generation cancelled"));
+    }
 
-  if (!codegenResult.success) {
-    logger.error("FSM compilation failed", { error: codegenResult.error });
-    return fail(
-      new Error(
-        `FSM compilation failed: ${codegenResult.error.type} - ${codegenResult.error.message}`,
-      ),
-    );
-  }
-
-  const buildResult = codegenResult.result;
-  if (!buildResult.success) {
-    logger.error("FSM build failed", { errors: buildResult.error });
-    const errorMessages = buildResult.error
-      .map((e: BuildError) => `${e.type}: ${e.message}`)
-      .join("; ");
-    return fail(new Error(`FSM build failed: ${errorMessages}`));
-  }
-
-  const fsmDefinition = buildResult.value;
-
-  // 6. Validate FSM structure
-  logger.debug("Validating FSM structure");
-  const validation = validateFSMStructure(fsmDefinition);
-
-  // Additional validation: Check if initial state can receive trigger signal
-  const initialState = fsmDefinition.states[fsmDefinition.initial];
-  const triggerSignalId = triggerSignal.id;
-  const hasInitialTransition =
-    initialState?.on && Object.keys(initialState.on).includes(triggerSignalId);
-
-  if (!hasInitialTransition) {
-    validation.valid = false;
-    validation.errors.push(
-      `Initial state "${fsmDefinition.initial}" has no transition for trigger signal "${triggerSignalId}". ` +
-        `Fix: Add transition from "${fsmDefinition.initial}" on "${triggerSignalId}" event.`,
-    );
-  }
-
-  if (!validation.valid) {
-    logger.error("FSM validation failed", {
-      errors: validation.errors,
-      warnings: validation.warnings,
-      fsmId: fsmDefinition.id,
-      triggerSignalId,
-      initialState: fsmDefinition.initial,
+    logger.debug("Generating FSM code via LLM", {
+      attempt: attempt + 1,
+      maxAttempts: MAX_RETRIES + 1,
+      isRetry: attempt > 0,
     });
-    return fail(
-      new Error(
-        `FSM validation failed:\n${validation.errors.join(
-          "\n",
-        )}\n\nGenerated FSM has structural issues that would prevent execution.`,
-      ),
-    );
-  }
 
-  if (validation.warnings.length > 0) {
-    logger.warn("FSM validation warnings", {
-      warnings: validation.warnings,
+    let fsmCode: string;
+    try {
+      fsmCode = await generateFSMCode(
+        jobPlan,
+        agents,
+        triggerSignal,
+        undefined,
+        abortSignal,
+        previousAttempt,
+      );
+      logger.debug("FSM code generated", { codeLength: fsmCode.length, attempt: attempt + 1 });
+    } catch (error) {
+      logger.error("FSM code generation failed", { error, attempt: attempt + 1 });
+      lastError = new Error(
+        `FSM generation failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      continue;
+    }
+
+    // 5. Compile and validate via worker
+    logger.debug("Compiling FSM code via worker", { attempt: attempt + 1 });
+    const codegenResult = await executeCodegen({ code: fsmCode, timeout: 30000 });
+
+    if (!codegenResult.success) {
+      const errorMsg = `${codegenResult.error.type} - ${codegenResult.error.message}`;
+      logger.error("FSM compilation failed", { error: codegenResult.error, attempt: attempt + 1 });
+      lastError = new Error(`FSM compilation failed: ${errorMsg}`);
+      previousAttempt = { code: fsmCode, error: errorMsg };
+      continue;
+    }
+
+    const buildResult = codegenResult.result;
+    if (!buildResult.success) {
+      const errorMessages = buildResult.error
+        .map((e: BuildError) => `${e.type}: ${e.message}`)
+        .join("; ");
+      logger.error("FSM build failed", { errors: buildResult.error, attempt: attempt + 1 });
+      lastError = new Error(`FSM build failed: ${errorMessages}`);
+      previousAttempt = { code: fsmCode, error: errorMessages };
+      continue;
+    }
+
+    const fsmDefinition = buildResult.value;
+
+    // 6. Validate FSM structure
+    logger.debug("Validating FSM structure", { attempt: attempt + 1 });
+    const validation = validateFSMStructure(fsmDefinition);
+
+    // Additional validation: Check if initial state can receive trigger signal
+    const initialState = fsmDefinition.states[fsmDefinition.initial];
+    const triggerSignalId = triggerSignal.id;
+    const hasInitialTransition =
+      initialState?.on && Object.keys(initialState.on).includes(triggerSignalId);
+
+    if (!hasInitialTransition) {
+      validation.valid = false;
+      validation.errors.push(
+        `Initial state "${fsmDefinition.initial}" has no transition for trigger signal "${triggerSignalId}". ` +
+          `Fix: Add transition from "${fsmDefinition.initial}" on "${triggerSignalId}" event.`,
+      );
+    }
+
+    if (!validation.valid) {
+      const errorMessages = validation.errors.join("\n");
+      logger.error("FSM validation failed", {
+        errors: validation.errors,
+        warnings: validation.warnings,
+        fsmId: fsmDefinition.id,
+        triggerSignalId,
+        initialState: fsmDefinition.initial,
+        attempt: attempt + 1,
+      });
+      lastError = new Error(
+        `FSM validation failed:\n${errorMessages}\n\nGenerated FSM has structural issues that would prevent execution.`,
+      );
+      previousAttempt = { code: fsmCode, error: errorMessages };
+      continue;
+    }
+
+    // Success!
+    if (validation.warnings.length > 0) {
+      logger.warn("FSM validation warnings", {
+        warnings: validation.warnings,
+        fsmId: fsmDefinition.id,
+      });
+    }
+
+    logger.info("FSM generation succeeded", {
+      stateCount: Object.keys(fsmDefinition.states).length,
       fsmId: fsmDefinition.id,
+      attempts: attempt + 1,
     });
+
+    return success(fsmDefinition);
   }
 
-  logger.info("FSM generation succeeded", {
-    stateCount: fsmDefinition.states.length,
-    fsmId: fsmDefinition.id,
+  // All retries exhausted
+  logger.error("FSM generation failed after all retries", {
+    maxRetries: MAX_RETRIES,
+    lastError: lastError?.message,
   });
-
-  return success(fsmDefinition);
+  return fail(lastError ?? new Error("FSM generation failed after all retries"));
 }
