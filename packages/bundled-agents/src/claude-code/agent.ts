@@ -97,6 +97,8 @@ export const claudeCodeAgent = createAgent<string, CCAgentResult>({
       const sdkStream = query({
         prompt,
         options: {
+          // SDK defaults to bundled cli.js which doesn't exist in compiled Deno binaries
+          pathToClaudeCodeExecutable: process.env.ATLAS_CLAUDE_PATH,
           cwd: sandbox.workDir,
           model: "claude-sonnet-4-5",
           tools: { type: "preset", preset: "claude_code" },
@@ -107,6 +109,7 @@ export const claudeCodeAgent = createAgent<string, CCAgentResult>({
           sandbox: sandboxOptions,
           abortController: controller,
           env: { ...process.env, ANTHROPIC_API_KEY: apiKey },
+          stderr: (data) => logger.debug("Claude CLI stderr", { data }),
           systemPrompt: {
             type: "preset",
             preset: "claude_code",
@@ -146,6 +149,11 @@ export const claudeCodeAgent = createAgent<string, CCAgentResult>({
         // Final result
         if (message.type === "result") {
           if (message.subtype === "success") {
+            // API auth failures have subtype=success but is_error=true
+            if (message.is_error) {
+              return fail({ reason: message.result || "Execution failed" });
+            }
+
             responseText = message.result;
             logger.debug("Execution complete", {
               cost: message.total_cost_usd,
@@ -178,7 +186,7 @@ export const claudeCodeAgent = createAgent<string, CCAgentResult>({
       return success({ response: responseText, artifactRef: artifactResponse.data.artifact });
     } catch (error) {
       logger.error("Claude Code agent failed", { error });
-      return fail({ reason: `Agent failed: ${stringifyError(error)}` });
+      return fail({ reason: stringifyError(error) });
     } finally {
       await sandbox.cleanup();
     }
