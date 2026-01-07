@@ -5,7 +5,7 @@
 import { repairToolCall } from "@atlas/agent-sdk";
 import { registry } from "@atlas/llm";
 import type { Tool } from "ai";
-import { generateText } from "ai";
+import { generateText, stepCountIs } from "ai";
 import type { LLMProvider, LLMResponse } from "./types.ts";
 
 /**
@@ -34,6 +34,7 @@ export class AtlasLLMProviderAdapter implements LLMProvider {
       tools: params.tools,
       toolChoice: params.toolChoice,
       experimental_repairToolCall: repairToolCall,
+      stopWhen: stepCountIs(10), // Give LLM room to gather info before completing task
     });
 
     // Extract first tool call for calledTool field (used for failStep detection)

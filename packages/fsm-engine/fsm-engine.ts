@@ -628,7 +628,7 @@ export class FSMEngine {
           model: action.model,
           prompt: contextPrompt,
           tools,
-          toolChoice: "required",
+          toolChoice: "auto", // Let LLM decide when to stop calling tools
         });
 
         // Check if LLM called failStep
@@ -659,7 +659,7 @@ export class FSMEngine {
               model: action.model,
               prompt: retryPrompt,
               tools,
-              toolChoice: "required",
+              toolChoice: "auto", // Let LLM decide when to stop calling tools
             });
 
             // Check if LLM called failStep on retry
