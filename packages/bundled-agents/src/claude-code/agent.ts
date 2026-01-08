@@ -78,12 +78,22 @@ export const claudeCodeAgent = createAgent<string, CCAgentResult>({
         description: "Anthropic API key for Claude API access",
         linkRef: { provider: "anthropic", key: "api_key" },
       },
+      {
+        name: "GH_TOKEN",
+        description: "GitHub PAT for gh CLI access to private repos",
+        linkRef: { provider: "github", key: "access_token" },
+      },
     ],
   },
   handler: async (prompt, { logger, abortSignal, stream, session, env }) => {
     const apiKey = env.ANTHROPIC_API_KEY;
     if (!apiKey) {
       return fail({ reason: "ANTHROPIC_API_KEY not set. Connect Anthropic in Link." });
+    }
+
+    const ghToken = env.GH_TOKEN;
+    if (!ghToken) {
+      return fail({ reason: "GH_TOKEN not set. Connect GitHub in Link." });
     }
 
     const sandbox = await createSandbox(session.sessionId);
@@ -108,12 +118,13 @@ export const claudeCodeAgent = createAgent<string, CCAgentResult>({
           maxTurns: 25,
           sandbox: sandboxOptions,
           abortController: controller,
-          env: { ...process.env, ANTHROPIC_API_KEY: apiKey },
+          env: { ...process.env, ANTHROPIC_API_KEY: apiKey, GH_TOKEN: ghToken },
           stderr: (data) => logger.debug("Claude CLI stderr", { data }),
           systemPrompt: {
             type: "preset",
             preset: "claude_code",
-            append: "Return summary of actions. Concise, factual, markdown.",
+            append:
+              "You have authenticated access to the gh CLI for GitHub operations. Use it for cloning repos, creating PRs, managing issues, and interacting with GitHub APIs. Return summary of actions. Concise, factual, markdown.",
           },
         },
       });
