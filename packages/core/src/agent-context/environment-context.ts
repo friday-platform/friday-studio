@@ -213,7 +213,10 @@ export function createEnvironmentContext(logger: Logger) {
         );
       }
 
-      logger.error("Environment variable validation failed", {
+      // Use warn (not error) since this is an expected user scenario - they haven't
+      // connected their OAuth account or configured required environment variables yet.
+      // This shouldn't alert in Sentry; it's handled gracefully in the UI.
+      logger.warn("Environment variable validation failed", {
         missingVariables: missingRequired,
         missingProviders: [...missingProviders],
       });
