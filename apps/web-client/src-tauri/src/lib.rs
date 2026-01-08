@@ -627,7 +627,7 @@ pub fn run() {
                     // Use invite link - redirects members to channel, shows invite for non-members
                     let _ = app
                         .opener()
-                        .open_url("https://discord.gg/Mx5YFWmDuJ", None::<String>);
+                        .open_url("https://discord.gg/eKQkRnKa7T", None::<String>);
                 } else if event.id() == &MenuId("settings".to_string()) {
                     // Emit event to show settings dialog
                     let _ = app.emit("show-settings-dialog", ());
