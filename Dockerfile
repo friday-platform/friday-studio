@@ -54,11 +54,11 @@ RUN OTEL_DENO=true deno compile \
 # Stage 2: Daemon runtime
 FROM denoland/deno:alpine-2.6.4 AS daemon
 
-# Install Node.js, npm, and Claude Code CLI
+# Install Node.js, npm, GitHub CLI, and Claude Code CLI
 # Version is managed in docker/package.json (updated by Dependabot)
 # Note: LD_LIBRARY_PATH is set to use system libgcc instead of Deno's bundled one
 COPY docker/package.json /tmp/docker-deps/package.json
-RUN apk add --no-cache nodejs npm bash && \
+RUN apk add --no-cache nodejs npm bash github-cli && \
     cd /tmp/docker-deps && LD_LIBRARY_PATH=/usr/lib:/usr/local/lib npm install && \
     cp -r node_modules/@anthropic-ai/claude-code /usr/local/lib/claude-code && \
     ln -s /usr/local/lib/claude-code/cli.js /usr/local/bin/claude && \
