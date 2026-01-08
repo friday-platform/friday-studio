@@ -14,6 +14,18 @@ export function formatMessage(
         content: String(part.text),
       };
     }
+    // Handle credential-linked data parts from user messages (OAuth completion)
+    if (part.type === "data-credential-linked") {
+      return {
+        id: message.id,
+        type: "credential_linked",
+        timestamp: new Date().toISOString(),
+        metadata: {
+          provider: part.data?.provider ?? "",
+          displayName: part.data?.displayName ?? "",
+        },
+      };
+    }
   }
 
   if (message.role === "assistant") {

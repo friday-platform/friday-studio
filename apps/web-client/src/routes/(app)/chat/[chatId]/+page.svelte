@@ -17,6 +17,7 @@ import Textarea from "$lib/components/textarea.svelte";
 import DisplayArtifact from "$lib/modules/artifacts/display.svelte";
 import Outline from "$lib/modules/conversation/outline.svelte";
 import ConnectService from "$lib/modules/messages/connect-service.svelte";
+import CredentialLinked from "$lib/modules/messages/credential-linked.svelte";
 import ErrorMessage from "$lib/modules/messages/error-message.svelte";
 import { formatMessage } from "$lib/modules/messages/format";
 import Progress from "$lib/modules/messages/progress.svelte";
@@ -84,9 +85,12 @@ onMount(async () => {
       );
 
       if (result.ok) {
-        const { provider, label } = result.data;
-        const syntheticMessage = `I've linked my ${provider} account - ${label}`;
-        chatContext.chats.get(data.chatId)?.sendMessage({ text: syntheticMessage });
+        const { provider } = result.data;
+        chatContext.chats
+          .get(data.chatId)
+          ?.sendMessage({
+            parts: [{ type: "data-credential-linked", data: { provider, displayName: provider } }],
+          });
       }
     } catch (error) {
       console.error("Failed to fetch credential details:", error);
@@ -187,6 +191,8 @@ let showDetails = new SvelteMap<string, boolean>();
 														chat={currentChat}
 													/>
 												{/if}
+											{:else if message.type === 'credential_linked'}
+												<CredentialLinked {message} />
 											{:else if message.type === 'error'}
 												<ErrorMessage {message} />
 											{/if}

@@ -83,6 +83,10 @@ export const AtlasDataEventSchemas = {
     artifactId: z.string().optional(),
     artifactLabel: z.string().optional(),
   }),
+  "credential-linked": z.object({
+    provider: z.string(), // e.g., 'google-calendar'
+    displayName: z.string(), // e.g., 'Google Calendar'
+  }),
 };
 
 /**
@@ -103,6 +107,7 @@ export type AtlasDataEvents = {
   "outline-update": z.infer<(typeof AtlasDataEventSchemas)["outline-update"]>;
   "data-fsm-state-transition": z.infer<(typeof AtlasDataEventSchemas)["data-fsm-state-transition"]>;
   "data-fsm-action-execution": z.infer<(typeof AtlasDataEventSchemas)["data-fsm-action-execution"]>;
+  "credential-linked": z.infer<(typeof AtlasDataEventSchemas)["credential-linked"]>;
 };
 
 /**

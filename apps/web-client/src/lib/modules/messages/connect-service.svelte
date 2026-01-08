@@ -75,10 +75,16 @@ function handleOAuthMessage(event: MessageEvent) {
   // Clean up listener after successful callback
   removeMessageListener();
 
-  // Send synthetic message to continue the chat
+  // Send data part to continue the chat
   if (providerDetails) {
-    const syntheticMessage = `I've connected ${providerDetails.displayName}`;
-    chat.sendMessage({ text: syntheticMessage });
+    chat.sendMessage({
+      parts: [
+        {
+          type: "data-credential-linked",
+          data: { provider: providerDetails.id, displayName: providerDetails.displayName },
+        },
+      ],
+    });
   }
 }
 
@@ -188,10 +194,16 @@ function startAppInstallFallback() {
   window.location.href = url.href;
 }
 
-function handleModalSuccess(label: string) {
+function handleModalSuccess() {
   if (providerDetails) {
-    const syntheticMessage = `I've linked my ${providerDetails.displayName} account - ${label}`;
-    chat.sendMessage({ text: syntheticMessage });
+    chat.sendMessage({
+      parts: [
+        {
+          type: "data-credential-linked",
+          data: { provider: providerDetails.id, displayName: providerDetails.displayName },
+        },
+      ],
+    });
   }
 }
 </script>

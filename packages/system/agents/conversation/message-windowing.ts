@@ -19,6 +19,31 @@ interface MessageWindowConfig {
 const AVG_CHARS_PER_TOKEN = 4;
 
 /**
+ * Expand credential-linked data parts into text parts for LLM consumption.
+ * Transforms: { type: 'data-credential-linked', data: { displayName: 'Google Calendar' } }
+ * Into: { type: 'text', text: '[Connected Google Calendar]' }
+ *
+ * Note: Uses runtime type checking because the AI SDK's type inference doesn't
+ * always include all data event types in the union.
+ */
+function expandCredentialLinkedParts(messages: AtlasUIMessage[]): AtlasUIMessage[] {
+  return messages.map((msg) => {
+    const hasCredentialPart = msg.parts.some((p) => p.type === "data-credential-linked");
+    if (!hasCredentialPart) return msg;
+
+    return {
+      ...msg,
+      parts: msg.parts.map((part) => {
+        if (part.type === "data-credential-linked" && part.data?.displayName) {
+          return { type: "text" as const, text: `[Connected ${part.data.displayName}]` };
+        }
+        return part;
+      }),
+    };
+  });
+}
+
+/**
  * Estimate tokens for any input (message object or string) using robust JSON string length heuristic.
  */
 export function estimateTokens(input: unknown): number {
@@ -94,8 +119,11 @@ export function processMessageHistory(
   config: MessageWindowConfig,
   logger: Logger,
 ): ModelMessage[] {
+  // 0. Expand credential-linked parts to text before conversion
+  const expandedMessages = expandCredentialLinkedParts(messages);
+
   // 1. Convert to ModelMessages first (to enable pruning)
-  const modelMessages = convertToModelMessages(messages);
+  const modelMessages = convertToModelMessages(expandedMessages);
 
   // 2. Prune tool results (Phase 1)
   // This shrinks the "fat" messages BEFORE we calculate budget.

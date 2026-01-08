@@ -1,5 +1,4 @@
 import process from "node:process";
-import type { AtlasUIMessage } from "@atlas/agent-sdk";
 import { validateAtlasUIMessages } from "@atlas/agent-sdk";
 import { ChatStorage } from "@atlas/core/chat/storage";
 import { extractTempestUserId } from "@atlas/core/credentials";
@@ -25,23 +24,6 @@ const listChatsQuerySchema = z.object({
 function getUserId(): string {
   const atlasKey = process.env.ATLAS_KEY;
   return (atlasKey && extractTempestUserId(atlasKey)) || "default-user";
-}
-
-/**
- * Extract text content from user message.
- * TEMPORARY: Signal handler should accept full AtlasUIMessage, not just text.
- * This extraction belongs in the conversation agent, not the transport layer.
- */
-function extractTextContent(message: AtlasUIMessage): string {
-  if (!message.parts) throw new Error("Message has no parts");
-
-  const textParts = message.parts
-    .filter((part) => part.type === "text")
-    .map((part) => ("text" in part ? part.text : ""))
-    .join("\n");
-
-  if (!textParts.trim()) throw new Error("Message has no text content");
-  return textParts;
 }
 
 const chatRoutes = daemonFactory
@@ -89,9 +71,6 @@ const chatRoutes = daemonFactory
 
     const runtime = await ctx.getOrCreateWorkspaceRuntime(workspaceId);
 
-    // TEMPORARY: Extract text for signal handler. Remove when handler accepts full message.
-    const textContent = extractTextContent(userMessage);
-
     // Stream response directly with SSE format
     return stream(c, async (streamWriter) => {
       let sessionComplete = false;
@@ -99,7 +78,8 @@ const chatRoutes = daemonFactory
       runtime
         .triggerSignalWithSession(
           "conversation-stream",
-          { chatId, message: textContent, userId, streamId: chatId },
+          // Conversation agent just pulls the entire message history (including user message) from chat history.
+          { chatId, message: "", userId, streamId: chatId },
           chatId,
           async (event: unknown) => {
             try {

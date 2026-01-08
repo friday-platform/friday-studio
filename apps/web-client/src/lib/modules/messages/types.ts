@@ -9,7 +9,8 @@ export interface OutputEntry {
     | "tool_result"
     | "error"
     | "header"
-    | "typing";
+    | "typing"
+    | "credential_linked";
   author?: string;
   timestamp?: string;
   content?: string;
