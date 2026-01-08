@@ -47,7 +47,7 @@
     "@tauri-apps/cli": "^2.9.6",
     "eslint": "^9.39.2",
     "eslint-config-prettier": "^10.1.8",
-    "eslint-plugin-svelte": "^3.13.1",
+    "eslint-plugin-svelte": "^3.14.0",
     "globals": "^17.0.0",
     "prettier": "^3.7.4",
     "prettier-plugin-svelte": "^3.4.1",
