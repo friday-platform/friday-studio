@@ -13,6 +13,7 @@ import { registerArtifactsGetByChatTool } from "./artifacts/get-by-chat.ts";
 import { registerArtifactsUpdateTool } from "./artifacts/update.ts";
 // Data processing tools
 import { registerCsvTool } from "./data-processing/csv/index.ts";
+import { registerFetchTool } from "./fetch.ts";
 // Import filesystem tools
 import { registerGlobTool } from "./fs/glob.ts";
 import { registerGrepTool } from "./fs/grep.ts";
@@ -102,6 +103,8 @@ export function registerTools(server: McpServer, context: ToolContext): void {
   registerBashTool(server, context);
 
   registerVersionTool(server);
+
+  registerFetchTool(server, context);
 
   context.logger.info("Registered all tools with MCP server");
 }

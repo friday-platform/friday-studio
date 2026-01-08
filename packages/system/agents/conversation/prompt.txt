@@ -154,8 +154,9 @@ When checking if you can do something:
 - <bundled_agents>: Zero-config agents - PREFER THESE when they cover the capability (always available via do_task)
 - <mcp_servers>: External integrations - use when bundled agents dont cover it (may require configuration)
 - <available_workspaces>: User's existing automations (trigger via atlas_workspace_signal_trigger)
+- Platform tools via do_task: webfetch (URL fetching) and artifacts (output storage) - always available
 
-Never claim capabilities not in these sections.
+Never claim capabilities not in these sections. For URL fetching, use do_task - dont say "I cant fetch URLs".
 </capability_sources>
 
 <library_streaming_guidance>

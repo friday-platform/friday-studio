@@ -4,7 +4,7 @@
 import { client, parseResult } from "@atlas/client/v2";
 import type { MCPServerConfig } from "@atlas/config";
 import { GlobalMCPServerPool } from "@atlas/core";
-import { GlobalMCPToolProvider, type MCPToolProvider } from "@atlas/fsm-engine";
+import { GlobalMCPToolProvider } from "@atlas/fsm-engine";
 import { smallLLM } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
 import type { UIMessageStreamWriter } from "ai";
@@ -177,22 +177,21 @@ export function createDoTaskTool(
         // 3. Create MCP pool and provider
         // Always create the pool - bundled agents (like google-calendar) need it
         // for their embedded MCP configs even when plan.mcpServers is empty
-        let mcpToolProvider: MCPToolProvider | undefined;
         const mcpServerPool = new GlobalMCPServerPool(logger.child({ component: "TaskMCPPool" }));
 
-        if (plan.mcpServers.length > 0) {
-          const mcpServerConfigs: Record<string, MCPServerConfig> = {};
-          for (const server of plan.mcpServers) {
-            mcpServerConfigs[server.id] = server.config;
-          }
-
-          mcpToolProvider = new GlobalMCPToolProvider(
-            mcpServerPool,
-            session.workspaceId,
-            mcpServerConfigs,
-            logger.child({ component: "TaskMCPProvider" }),
-          );
+        // Always create provider - GlobalMCPToolProvider auto-includes atlas-platform
+        // for ambient tools (webfetch, artifacts) even when no explicit servers requested
+        const mcpServerConfigs: Record<string, MCPServerConfig> = {};
+        for (const server of plan.mcpServers) {
+          mcpServerConfigs[server.id] = server.config;
         }
+
+        const mcpToolProvider = new GlobalMCPToolProvider(
+          mcpServerPool,
+          session.workspaceId,
+          mcpServerConfigs,
+          logger.child({ component: "TaskMCPProvider" }),
+        );
 
         try {
           // 4. Execute with progress callbacks

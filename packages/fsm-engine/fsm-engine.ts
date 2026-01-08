@@ -852,8 +852,9 @@ export class FSMEngine {
       };
     }
 
-    // MCP tools: already Tool objects, just merge
-    if (mcpServerIds.length > 0 && this.options.mcpToolProvider) {
+    // MCP tools: always fetch when provider available (includes ambient platform tools)
+    // GlobalMCPToolProvider auto-includes atlas-platform for webfetch/artifacts even with empty serverIds
+    if (this.options.mcpToolProvider) {
       const mcpTools = await this.options.mcpToolProvider.getToolsForServers(mcpServerIds);
       Object.assign(tools, mcpTools);
     }

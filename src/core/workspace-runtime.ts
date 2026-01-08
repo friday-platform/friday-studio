@@ -329,11 +329,13 @@ export class WorkspaceRuntime {
     const agentExecutor: AgentExecutor = (agentId, context, signal) =>
       this.executeAgent(agentId, context, job, signal);
 
-    // Create MCP tool provider if workspace has MCP servers configured
+    // Always create MCP tool provider when pool available
+    // GlobalMCPToolProvider auto-includes atlas-platform for ambient tools (webfetch, artifacts)
+    // even when workspace has no explicit MCP servers configured
     let mcpToolProvider: MCPToolProvider | undefined;
     const mcpServerConfigs = this.config.workspace.tools?.mcp?.servers || {};
 
-    if (Object.keys(mcpServerConfigs).length > 0 && this.options.mcpServerPool) {
+    if (this.options.mcpServerPool) {
       mcpToolProvider = new GlobalMCPToolProvider(
         this.options.mcpServerPool,
         this.workspace.id,

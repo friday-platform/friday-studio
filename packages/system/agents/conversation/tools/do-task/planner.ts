@@ -88,6 +88,16 @@ ${agentList}
 
 User intent: "${intent}"
 
+## Built-in Capabilities (always available to LLM steps)
+
+LLM steps (executionType="llm") automatically have these tools:
+- webfetch: Fetch content from any URL (read-only)
+- artifacts_create, artifacts_get, artifacts_update: Store/retrieve task outputs
+
+These require NO entries in needs[]. Use needs=[] when only webfetch or artifacts needed.
+
+CRITICAL: For URL fetching, use executionType="llm" with needs=[]. Do NOT use research agent (research = web SEARCH, not direct URL fetch).
+
 For each step, determine:
 1. Can a bundled agent handle this? → Use agent
 2. Requires MCP tools without bundled agent? → Use ad-hoc LLM with MCP tools
@@ -152,6 +162,32 @@ Output: {
       "description": "Post calendar summary to Slack #general",
       "executionType": "llm",
       "needs": ["slack"]
+    }
+  ]
+}
+
+User: "read the content at https://example.com/page"
+Output: {
+  "steps": [{
+    "description": "Fetch content from https://example.com/page using webfetch",
+    "executionType": "llm",
+    "needs": []
+  }]
+}
+
+User: "fetch this URL and summarize it: https://news.com/article"
+Output: {
+  "steps": [
+    {
+      "description": "Fetch content from https://news.com/article using webfetch",
+      "executionType": "llm",
+      "needs": []
+    },
+    {
+      "agentId": "get-summary",
+      "description": "Summarize the fetched content",
+      "executionType": "agent",
+      "needs": []
     }
   ]
 }`;

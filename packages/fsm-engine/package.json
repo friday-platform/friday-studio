@@ -9,6 +9,7 @@
     "@atlas/hallucination": "workspace:*",
     "@atlas/llm": "workspace:*",
     "@atlas/logger": "workspace:*",
+    "@atlas/mcp": "workspace:*",
     "@atlas/utils": "workspace:*",
     "@modelcontextprotocol/sdk": "npm:@socotra/modelcontextprotocol-sdk@^1.18.0",
     "@std/assert": "npm:@jsr/std__assert@^1.0.0",

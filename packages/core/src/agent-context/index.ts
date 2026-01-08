@@ -10,6 +10,7 @@ import { client, parseResult } from "@atlas/client/v2";
 import type { MCPServerConfig, WorkspaceConfig } from "@atlas/config";
 import type { Logger } from "@atlas/logger";
 import { type CoALAMemoryManager, MEMORY_TYPES, MemorySource } from "@atlas/memory";
+import { getAtlasDaemonUrl } from "@atlas/oapi-client";
 import { stringifyError } from "@atlas/utils";
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import type { GlobalMCPServerPool } from "../mcp-server-pool.ts";
@@ -214,7 +215,7 @@ function mergeServerConfigs(
 
   // Add Atlas platform server (takes priority over workspace servers)
   const platformServerConfig: MCPServerConfig = {
-    transport: { type: "http", url: "http://localhost:8080/mcp" },
+    transport: { type: "http", url: `${getAtlasDaemonUrl()}/mcp` },
   };
 
   merged["atlas-platform"] = platformServerConfig;
