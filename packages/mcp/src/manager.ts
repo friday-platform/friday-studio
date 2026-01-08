@@ -19,9 +19,18 @@ import { resolveEnvValues } from "@atlas/core/mcp-registry/credential-resolver";
 import { logger } from "@atlas/logger";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Span } from "@opentelemetry/api";
+import { type RetryOptions, retry } from "@std/async/retry";
 import type { Tool } from "ai";
 import { z } from "zod";
 import { AtlasTelemetry } from "../../../src/utils/telemetry.ts";
+
+// Retry configuration for HTTP MCP connections (matches credential-fetcher.ts pattern)
+const HTTP_RETRY_OPTIONS: RetryOptions = {
+  maxAttempts: 3,
+  multiplier: 2, // Exponential backoff
+  minTimeout: 1000,
+  maxTimeout: 5000,
+};
 
 // ai doesn't export the MCPClient type, so we need to infer it.
 type MCPClient = Awaited<ReturnType<typeof createMCPClient>>;
@@ -237,25 +246,7 @@ export class MCPManager {
             ? await resolveEnvValues(validatedConfig.env, logger)
             : {};
 
-          const transport = new StreamableHTTPClientTransport(new URL(url), {
-            requestInit: {
-              headers: this.buildAuthHeaders(validatedConfig.auth, resolvedEnv),
-              signal: AbortSignal.timeout(5000),
-            },
-          });
-
-          mcpClient = await Promise.race([
-            createMCPClient({ transport }),
-            new Promise<never>((_, reject) =>
-              setTimeout(
-                () =>
-                  reject(
-                    new Error(`MCP server '${config.id}': HTTP connection timeout after 5000ms`),
-                  ),
-                5000,
-              ),
-            ),
-          ]);
+          mcpClient = await this.connectHttpWithRetry(config.id, url, validatedConfig, resolvedEnv);
           break;
         }
       }
@@ -531,6 +522,39 @@ export class MCPManager {
     return headers;
   }
 
+  private async connectHttpWithRetry(
+    serverId: string,
+    url: string,
+    config: MCPServerConfig,
+    resolvedEnv: Record<string, string>,
+  ): Promise<MCPClient> {
+    const connectionTimeout = 5000;
+
+    return await retry(async () => {
+      const transport = new StreamableHTTPClientTransport(new URL(url), {
+        requestInit: {
+          headers: this.buildAuthHeaders(config.auth, resolvedEnv),
+          signal: AbortSignal.timeout(connectionTimeout),
+        },
+      });
+
+      return await Promise.race([
+        createMCPClient({ transport }),
+        new Promise<never>((_, reject) =>
+          setTimeout(
+            () =>
+              reject(
+                new Error(
+                  `MCP server '${serverId}': HTTP connection timeout after ${connectionTimeout}ms`,
+                ),
+              ),
+            connectionTimeout,
+          ),
+        ),
+      ]);
+    }, HTTP_RETRY_OPTIONS);
+  }
+
   /**
    * Closes a specific MCP server connection
    * @param serverId Server ID to close
@@ -709,14 +733,16 @@ export class MCPManager {
 
         return false;
       } else {
-        // For HTTP transport, try immediate verification
+        // For HTTP transport, retry verification with exponential backoff
         try {
-          await Promise.race([
-            client.tools(),
-            new Promise((_, reject) =>
-              setTimeout(() => reject(new Error("Connection verification timeout")), 3000),
-            ),
-          ]);
+          await retry(async () => {
+            await Promise.race([
+              client.tools(),
+              new Promise((_, reject) =>
+                setTimeout(() => reject(new Error("Connection verification timeout")), 3000),
+              ),
+            ]);
+          }, HTTP_RETRY_OPTIONS);
 
           logger.info(`MCP server connection verified: ${serverId}`, {
             operation: "mcp_connection_verification",
@@ -727,13 +753,16 @@ export class MCPManager {
 
           return true;
         } catch (error) {
-          logger.fatal(`Failed to connect to MCP server: ${serverId}`, {
-            operation: "mcp_connection_verification",
-            serverId,
-            transportType,
-            error,
-            success: false,
-          });
+          logger.error(
+            `Failed to verify MCP server after ${HTTP_RETRY_OPTIONS.maxAttempts} attempts: ${serverId}`,
+            {
+              operation: "mcp_connection_verification",
+              serverId,
+              transportType,
+              success: false,
+              error,
+            },
+          );
 
           return false;
         }
