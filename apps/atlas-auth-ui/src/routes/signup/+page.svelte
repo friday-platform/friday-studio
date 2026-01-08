@@ -7,7 +7,7 @@ let submitted = $state(false);
 let agree_to_terms = $state(false);
 
 function handleGoogleAuth() {
-  window.location.href = "/oauth/google/authorize";
+  window.location.href = "/auth/google?signup=true";
 }
 </script>
 
