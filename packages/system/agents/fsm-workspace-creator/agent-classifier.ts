@@ -3,14 +3,20 @@
  */
 
 import type { WorkspacePlan } from "@atlas/core/artifacts";
-import { matchBundledAgents } from "@atlas/core/mcp-registry/deterministic-matching";
+import {
+  extractKeywordsFromNeed,
+  matchBundledAgents,
+} from "@atlas/core/mcp-registry/deterministic-matching";
 import type { ClassifiedAgent } from "./types.ts";
 
 /**
  * Classify a single agent: bundled or LLM with MCP tools
  */
 function classifyAgent(agent: WorkspacePlan["agents"][0]): ClassifiedAgent {
-  const bundledMatches = matchBundledAgents(agent.needs);
+  // Pre-process needs to extract known keywords from verbose descriptions
+  // e.g., "html-email" → ["email"], which matches the email bundled agent
+  const normalizedNeeds = agent.needs.flatMap(extractKeywordsFromNeed);
+  const bundledMatches = matchBundledAgents(normalizedNeeds);
 
   if (bundledMatches.length === 1 && bundledMatches[0]) {
     const match = bundledMatches[0];

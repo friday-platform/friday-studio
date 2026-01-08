@@ -5748,6 +5748,7 @@
         "packageJson": {
           "dependencies": [
             "npm:@jsr/std__assert@^1.0.14",
+            "npm:@jsr/std__testing@^1.0.16",
             "npm:@jsr/std__text@^1.0.16",
             "npm:@jsr/std__yaml@^1.0.10",
             "npm:@modelcontextprotocol/sdk@^1.25.1",
