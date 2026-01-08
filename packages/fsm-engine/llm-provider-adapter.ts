@@ -3,6 +3,7 @@
  */
 
 import { repairToolCall } from "@atlas/agent-sdk";
+import { collectToolUsageFromSteps } from "@atlas/agent-sdk/vercel-helpers";
 import { registry } from "@atlas/llm";
 import type { Tool } from "ai";
 import { generateText, stepCountIs } from "ai";
@@ -37,8 +38,11 @@ export class AtlasLLMProviderAdapter implements LLMProvider {
       stopWhen: stepCountIs(10), // Give LLM room to gather info before completing task
     });
 
+    // Aggregate tool calls/results across ALL steps (response.toolCalls only has last step)
+    const { assembledToolCalls, assembledToolResults } = collectToolUsageFromSteps(response);
+
     // Extract first tool call for calledTool field (used for failStep detection)
-    const firstToolCall = response.toolCalls?.[0];
+    const firstToolCall = assembledToolCalls[0];
     const calledTool = firstToolCall
       ? { name: firstToolCall.toolName, args: firstToolCall.input }
       : undefined;
@@ -46,8 +50,8 @@ export class AtlasLLMProviderAdapter implements LLMProvider {
     return {
       content: response.text,
       data:
-        response.toolCalls && response.toolCalls.length > 0
-          ? { toolCalls: response.toolCalls, toolResults: response.toolResults }
+        assembledToolCalls.length > 0
+          ? { toolCalls: assembledToolCalls, toolResults: assembledToolResults }
           : undefined,
       calledTool,
     };
