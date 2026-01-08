@@ -114,8 +114,17 @@ export function createSlackAppInstallProvider(): AppInstallProvider | undefined 
     id: "slack",
     platform: "slack",
     displayName: "Slack",
-    description: "Install Friday bot into a Slack workspace",
+    description: "Connect Friday to your Slack workspace",
     docsUrl: "https://api.slack.com/apps",
+    setupInstructions: `
+## After Installing
+
+Friday can only read and respond in channels where it's been added.
+
+To add Friday to a channel:
+1. Go to the channel in Slack
+2. Type \`/invite @Friday\` and press Enter
+`.trim(),
 
     buildAuthorizationUrl(callbackUrl, state) {
       const url = new URL("https://slack.com/oauth/v2/authorize");

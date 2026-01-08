@@ -238,6 +238,9 @@ export type AppInstallProvider = BaseProviderDefinition & {
   /** Platform this provider targets */
   readonly platform: Platform;
 
+  /** Markdown guide shown before OAuth flow */
+  readonly setupInstructions?: string;
+
   /**
    * Builds OAuth authorization URL for app installation.
    * Called when user initiates install flow.

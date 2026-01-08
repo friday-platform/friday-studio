@@ -220,6 +220,11 @@ function handleModalSuccess(label: string) {
 					</div>
 				{/if}
 			{:else if providerDetails.type === 'app_install'}
+				{#if providerDetails.setupInstructions}
+					<div class="instructions">
+						<MarkdownContent content={providerDetails.setupInstructions} />
+					</div>
+				{/if}
 				<Button onclick={startAppInstall}>
 					Install {providerDetails.displayName}
 				</Button>

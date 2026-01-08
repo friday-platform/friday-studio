@@ -67,7 +67,9 @@ export const providersRouter = factory
                     },
             }
           : {}),
-        ...(provider.type === "app_install" ? { platform: provider.platform } : {}),
+        ...(provider.type === "app_install"
+          ? { platform: provider.platform, setupInstructions: provider.setupInstructions }
+          : {}),
         supportsHealth:
           provider.type === "apikey" || provider.type === "oauth"
             ? typeof provider.health === "function"
