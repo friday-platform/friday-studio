@@ -36,15 +36,18 @@ export const googleCalendarAgent = createAgent<string, GoogleCalendarAgentResult
   id: "google-calendar",
   displayName: "Google Calendar",
   version: "1.0.0",
-  description: "Search Google Calendar events via google-calendar-mcp",
+  description:
+    "Manage Google Calendar - list calendars, search/get events, create new events with attendees and Google Meet, modify existing events, and delete events",
   expertise: {
-    domains: ["calendar", "schedule", "meetings", "events", "availability"],
+    domains: ["calendar", "schedule", "meetings", "events", "availability", "scheduling"],
     examples: [
-      "Please provide availability looking at both my personal and work calendar for this upcoming week. I am looking for a good time to meet with someone in London for 1 hr.",
-      "Which events tomorrow have attendees who have not accepted the invitation?",
       "Get all of my events for today",
-      "Get all of my events for next week",
-      "Get all of my events for next month",
+      "Create a meeting with john@example.com tomorrow at 2pm for 1 hour",
+      "Schedule a team standup every Monday at 9am with Google Meet",
+      "Move my 3pm meeting to 4pm",
+      "Delete the meeting with Sarah",
+      "What's on my calendar this week?",
+      "Add Jane to the project kickoff meeting",
     ],
   },
   environment: {
@@ -81,21 +84,32 @@ export const googleCalendarAgent = createAgent<string, GoogleCalendarAgentResult
     }
 
     const system = `
-      You are a Google Calendar assistant. Be concise, direct, and factual. Do not narrate intentions or plans. Never use phrases like 'I'll', 'I will', or 'Let me'. Output only the result without prefacing text. When asked to obtain events, use the available Google Calendar tools to list events if needed. Base responses strictly on tool outputs. If tools are unavailable or a tool call fails, respond with a brief factual notice about the limitation (e.g., 'Cannot complete: Google Calendar tools unavailable' or 'Tool call failed: timeout/authorization').
-      Follow the plan exactly:
-      - Never fabricate information if it is absent. Only use information from tool outputs.
+      You are a Google Calendar assistant with full access to manage calendars. Be concise, direct, and factual. Do not narrate intentions or plans. Never use phrases like 'I'll', 'I will', or 'Let me'. Output only the result without prefacing text.
+
+      Available capabilities:
+      - list_calendars: List all accessible calendars
+      - get_events: Search and retrieve calendar events (by time range, query, or event ID)
+      - create_event: Create new events with attendees, Google Meet, reminders, attachments
+      - modify_event: Update existing events (title, time, attendees, location, etc.)
+      - delete_event: Remove events from calendar
+
+      Follow these rules:
+      - Never fabricate information. Only use information from tool outputs.
       - If no Google Calendar tools are available, reply: 'Cannot complete: Google Calendar tools unavailable.'
       - If any tool call errors (timeout, authorization, unknown), state the failure briefly and stop.
-      - Summarize tool outputs to provide a concise response, including attendees, email addresses, times, locations, and event details, if available.
-      - After successfully retrieving calendar events, create an artifact using artifacts_create with type 'calendar-schedule'.
-      - **Only** return the number of events retrieved in the summary. Never return the the calendar schedule, times of events, or details in the response.
+      - For READ operations (get_events, list_calendars): Summarize tool outputs concisely. After successfully retrieving events, create an artifact using artifacts_create with type 'calendar-schedule'. Return only the number of events in the summary.
+      - For WRITE operations (create_event, modify_event, delete_event): Confirm the action was completed with key details (event title, time, link).
+      - When creating events with attendees, use their email addresses.
+      - When asked to add Google Meet, set add_google_meet=true.
+      - When modifying events, first use get_events to find the event ID, then use modify_event.
+      - When deleting events, first use get_events to find the event ID, then use delete_event.
     `;
 
     try {
       // Progress: starting execution
       stream?.emit({
         type: "data-tool-progress",
-        data: { toolName: "Google Calendar", content: `Fetching Calendar` },
+        data: { toolName: "Google Calendar", content: `Processing calendar request` },
       });
 
       // If no tools are available, do not attempt execution; return a clear message.

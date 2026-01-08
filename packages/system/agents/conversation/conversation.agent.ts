@@ -15,6 +15,7 @@ import { client, parseResult } from "@atlas/client/v2";
 import { ChatStorage } from "@atlas/core/chat/storage";
 import { createErrorCause, getErrorDisplayMessage, parseAPICallError } from "@atlas/core/errors";
 import { registry, smallLLM } from "@atlas/llm";
+import { getAtlasDaemonUrl } from "@atlas/oapi-client";
 import type { Logger } from "@atlas/logger";
 import { Client } from "@modelcontextprotocol/sdk/client";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
@@ -487,7 +488,7 @@ export const conversationAgent = createAgent({
             workspaceId: session.workspaceId || "atlas-conversation",
             streamId: session.streamId,
             userId: session.userId,
-            daemonUrl: process.env.ATLAS_DAEMON_URL,
+            daemonUrl: getAtlasDaemonUrl(),
           },
           logger,
           abortSignal,

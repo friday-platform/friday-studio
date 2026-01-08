@@ -9,39 +9,47 @@ const GOOGLE_WORKSPACE_SERVICES = [
   {
     id: "google-calendar",
     name: "Google Calendar",
-    domains: ["google-calendar", "calendar", "gcal"],
-    description: "Read and manage Google Calendar events via OAuth",
+    domains: ["google-calendar", "calendar", "gcal", "scheduling", "meetings", "events"],
+    description:
+      "Full Google Calendar management via OAuth - list calendars, search/get events, create events with attendees and Google Meet, modify events, delete events",
     constraints:
-      "Requires OAuth. Use for reading calendar, checking availability, managing events.",
+      "Requires OAuth. Use for reading calendar, checking availability, creating meetings, modifying events, deleting events.",
   },
   {
     id: "google-gmail",
     name: "Gmail",
-    domains: ["google-gmail"],
-    description: "Full Gmail inbox access via OAuth - read, search, draft, send",
+    domains: ["google-gmail", "gmail", "email", "inbox"],
+    description:
+      "Full Gmail management via OAuth - search messages, read content and attachments, send emails, create drafts, manage labels and filters, batch operations",
     constraints:
-      "Requires OAuth. Use for reading inbox, searching messages, creating drafts. For sending notifications without OAuth, use bundled email agent instead.",
+      "Requires OAuth. Use for reading inbox, searching messages, sending emails, creating drafts, managing labels/filters. For simple notifications without OAuth, use bundled email agent instead.",
   },
   {
     id: "google-drive",
     name: "Google Drive",
-    domains: ["google-drive", "drive", "gdrive"],
-    description: "Access and manage Google Drive files and folders via OAuth",
-    constraints: "Requires OAuth. Use for file storage, sharing, and document management.",
+    domains: ["google-drive", "drive", "gdrive", "files", "storage"],
+    description:
+      "Full Google Drive management via OAuth - search files, list folders, create/update files, manage sharing and permissions, get download URLs",
+    constraints:
+      "Requires OAuth. Use for file storage, searching, sharing, managing permissions, and document access.",
   },
   {
     id: "google-docs",
     name: "Google Docs",
-    domains: ["google-docs", "docs"],
-    description: "Create and edit Google Docs documents via OAuth",
-    constraints: "Requires OAuth. Use for document creation, editing, and collaboration.",
+    domains: ["google-docs", "docs", "documents"],
+    description:
+      "Full Google Docs management via OAuth - search docs, create documents, edit text, insert images/tables, find and replace, export to PDF",
+    constraints:
+      "Requires OAuth. Use for document creation, editing, formatting, tables, images, and PDF export.",
   },
   {
     id: "google-sheets",
     name: "Google Sheets",
-    domains: ["google-sheets", "sheets", "spreadsheet"],
-    description: "Read and write Google Sheets spreadsheets via OAuth",
-    constraints: "Requires OAuth. Use for spreadsheet data, formulas, and data analysis.",
+    domains: ["google-sheets", "sheets", "spreadsheet", "spreadsheets"],
+    description:
+      "Full Google Sheets management via OAuth - list spreadsheets, read/write values, create sheets, format cells, conditional formatting",
+    constraints:
+      "Requires OAuth. Use for spreadsheet data, formulas, formatting, and conditional formatting.",
   },
 ] as const;
 

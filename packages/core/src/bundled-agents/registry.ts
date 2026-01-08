@@ -155,13 +155,24 @@ export const bundledAgentsRegistry: Record<string, BundledAgentRegistryItem> = {
     id: "google-calendar",
     name: "Google Calendar",
     version: "1.0.0",
-    description: "Search Google Calendar events via google-calendar-mcp",
-    capabilities: ["google-calendar", "google", "calendar", "scheduling", "meetings"],
+    description:
+      "Manage Google Calendar - list calendars, search/get events, create new events with attendees and Google Meet, modify existing events, and delete events",
+    capabilities: [
+      "google-calendar",
+      "google",
+      "calendar",
+      "scheduling",
+      "meetings",
+      "events",
+      "availability",
+    ],
     examples: [
-      "Please provide availability looking at both my personal and work calendar for this upcoming week",
-      "Which events tomorrow have attendees who have not accepted the invitation?",
       "Get all of my events for today",
-      "Get all of my events for next week",
+      "Create a meeting with john@example.com tomorrow at 2pm for 1 hour",
+      "Schedule a team standup every Monday at 9am with Google Meet",
+      "Move my 3pm meeting to 4pm",
+      "Delete the meeting with Sarah",
+      "What's on my calendar this week?",
     ],
     requiredConfig: [
       {
