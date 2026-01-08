@@ -9,8 +9,8 @@ import type { AtlasTool } from "@atlas/agent-sdk";
 import type { MCPServerConfig } from "@atlas/config";
 import type { GlobalMCPServerPool } from "@atlas/core";
 import type { Logger } from "@atlas/logger";
+import type { MCPManager } from "@atlas/mcp";
 import { getAtlasDaemonUrl } from "@atlas/oapi-client";
-import { MCPManager } from "@atlas/mcp";
 
 /**
  * Platform tools exposed to FSM LLM steps.

@@ -15,8 +15,8 @@ import { client, parseResult } from "@atlas/client/v2";
 import { ChatStorage } from "@atlas/core/chat/storage";
 import { createErrorCause, getErrorDisplayMessage, parseAPICallError } from "@atlas/core/errors";
 import { registry, smallLLM } from "@atlas/llm";
-import { getAtlasDaemonUrl } from "@atlas/oapi-client";
 import type { Logger } from "@atlas/logger";
+import { getAtlasDaemonUrl } from "@atlas/oapi-client";
 import { Client } from "@modelcontextprotocol/sdk/client";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import {
