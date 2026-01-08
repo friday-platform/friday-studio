@@ -146,7 +146,8 @@ export async function generateTaskFSM(
       );
       logger.debug("FSM code generated", { codeLength: fsmCode.length, attempt: attempt + 1 });
     } catch (error) {
-      logger.error("FSM code generation failed", { error, attempt: attempt + 1 });
+      // Use warn for intermediate failures - only error after all retries exhausted
+      logger.warn("FSM code generation failed (will retry)", { error, attempt: attempt + 1 });
       lastError = new Error(
         `FSM generation failed: ${error instanceof Error ? error.message : String(error)}`,
       );
@@ -159,7 +160,11 @@ export async function generateTaskFSM(
 
     if (!codegenResult.success) {
       const errorMsg = `${codegenResult.error.type} - ${codegenResult.error.message}`;
-      logger.error("FSM compilation failed", { error: codegenResult.error, attempt: attempt + 1 });
+      // Use warn for intermediate failures - only error after all retries exhausted
+      logger.warn("FSM compilation failed (will retry)", {
+        error: codegenResult.error,
+        attempt: attempt + 1,
+      });
       lastError = new Error(`FSM compilation failed: ${errorMsg}`);
       previousAttempt = { code: fsmCode, error: errorMsg };
       continue;
@@ -170,7 +175,11 @@ export async function generateTaskFSM(
       const errorMessages = buildResult.error
         .map((e: BuildError) => `${e.type}: ${e.message}`)
         .join("; ");
-      logger.error("FSM build failed", { errors: buildResult.error, attempt: attempt + 1 });
+      // Use warn for intermediate failures - only error after all retries exhausted
+      logger.warn("FSM build failed (will retry)", {
+        errors: buildResult.error,
+        attempt: attempt + 1,
+      });
       lastError = new Error(`FSM build failed: ${errorMessages}`);
       previousAttempt = { code: fsmCode, error: errorMessages };
       continue;
@@ -198,7 +207,8 @@ export async function generateTaskFSM(
 
     if (!validation.valid) {
       const errorMessages = validation.errors.join("\n");
-      logger.error("FSM validation failed", {
+      // Use warn for intermediate failures - only error after all retries exhausted
+      logger.warn("FSM validation failed (will retry)", {
         errors: validation.errors,
         warnings: validation.warnings,
         fsmId: fsmDefinition.id,
