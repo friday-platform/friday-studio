@@ -5,6 +5,10 @@ import GoogleLogo from "$lib/components/icons/google-logo.svelte";
 
 let submitted = $state(false);
 let agree_to_terms = $state(false);
+
+function handleGoogleAuth() {
+  window.location.href = "/oauth/google/authorize";
+}
 </script>
 
 <svelte:head>
@@ -74,7 +78,7 @@ let agree_to_terms = $state(false);
 
         <h2>Additional Options</h2>
 
-        <Button disabled={submitted || !agree_to_terms} href="/oauth/google/authorize">
+        <Button disabled={submitted || !agree_to_terms} onclick={handleGoogleAuth}>
           {#snippet prepend()}
             <GoogleLogo />
           {/snippet}
