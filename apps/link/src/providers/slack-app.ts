@@ -51,12 +51,31 @@ const SlackAuthTestResponseSchema = z
   .object({ ok: z.boolean(), team: z.string().optional(), error: z.string().optional() })
   .passthrough();
 
-/** Required bot scopes for Atlas Slack integration */
+/**
+ * Required bot scopes for Atlas Slack integration.
+ * @see https://github.com/korotovsky/slack-mcp-server/blob/master/docs/01-authentication-setup.md
+ */
 const SLACK_BOT_SCOPES = [
+  // Messaging
   "chat:write",
+  // Mentions (for signal triggers)
+  "app_mentions:read",
+  // Public channels
   "channels:history",
   "channels:read",
-  "app_mentions:read",
+  // Private channels
+  "groups:history",
+  "groups:read",
+  // Direct messages
+  "im:history",
+  "im:read",
+  "im:write",
+  // Group direct messages
+  "mpim:history",
+  "mpim:read",
+  "mpim:write",
+  // User directory (required for slack-mcp-server RefreshUsers)
+  "users:read",
 ] as const;
 
 /**
