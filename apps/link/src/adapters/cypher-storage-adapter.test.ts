@@ -58,6 +58,14 @@ Deno.test("CypherStorageAdapter", async (t) => {
     secret: { key: "sk-test-key" },
   };
 
+  const testOAuthCredentialInput: CredentialInput = {
+    type: "oauth",
+    provider: "google",
+    label: "test@example.com",
+    userIdentifier: "test@example.com",
+    secret: { access_token: "ya29.test", refresh_token: "1//test" },
+  };
+
   await t.step("save: encrypts secret before storing and returns ID", async () => {
     const encryptCalls: string[][] = [];
     const mockCypher = createMockCypher({
@@ -99,7 +107,35 @@ Deno.test("CypherStorageAdapter", async (t) => {
     assertEquals(values[1], "apikey"); // type
     assertEquals(values[2], "openai"); // provider
     assertEquals(values[3], "My API Key"); // label
-    assertEquals(values[4], 'enc:{"key":"sk-test-key"}'); // encrypted_secret
+    assertEquals(values[4], null); // user_identifier (null for apikey)
+    assertEquals(values[5], 'enc:{"key":"sk-test-key"}'); // encrypted_secret
+  });
+
+  await t.step("save: persists userIdentifier for OAuth credentials", async () => {
+    const sqlCalls: { query: string; values: unknown[] }[] = [];
+    const mockSql = createMockSql({
+      queryResult: [
+        {
+          id: "oauth-cred-id",
+          created_at: new Date("2024-01-01T00:00:00Z"),
+          updated_at: new Date("2024-01-01T00:00:00Z"),
+        },
+      ],
+      trackCalls: sqlCalls,
+    });
+
+    const adapter = new CypherStorageAdapter(createMockCypher(), mockSql);
+    const result = await adapter.save(testOAuthCredentialInput, "user-123");
+
+    assertEquals(result.id, "oauth-cred-id");
+
+    // Verify user_identifier is included in INSERT
+    const values = sqlCalls[2]?.values ?? [];
+    assertEquals(values[0], "user-123"); // user_id
+    assertEquals(values[1], "oauth"); // type
+    assertEquals(values[2], "google"); // provider
+    assertEquals(values[3], "test@example.com"); // label
+    assertEquals(values[4], "test@example.com"); // user_identifier
   });
 
   await t.step("save: throws on encryption error", async () => {
@@ -157,6 +193,7 @@ Deno.test("CypherStorageAdapter", async (t) => {
           type: "apikey",
           provider: "openai",
           label: "My API Key",
+          user_identifier: null,
           encrypted_secret: 'enc:{"key":"sk-test-key"}',
           created_at: new Date("2024-01-01T00:00:00Z"),
           updated_at: new Date("2024-01-01T00:00:00Z"),
@@ -175,6 +212,37 @@ Deno.test("CypherStorageAdapter", async (t) => {
     assertExists(result);
     assertEquals(result.id, "cred-123");
     assertEquals(result.secret, { key: "sk-test-key" });
+    assertEquals(result.userIdentifier, undefined); // null in DB becomes undefined
+  });
+
+  await t.step("get: returns userIdentifier for OAuth credentials", async () => {
+    const mockCypher = createMockCypher({
+      decrypt: (ciphertext) => Promise.resolve(ciphertext.map((c) => c.replace("enc:", ""))),
+    });
+
+    const mockSql = createMockSql({
+      queryResult: [
+        {
+          id: "oauth-cred-123",
+          user_id: "user-123",
+          type: "oauth",
+          provider: "google",
+          label: "test@example.com",
+          user_identifier: "test@example.com",
+          encrypted_secret: 'enc:{"access_token":"ya29.test"}',
+          created_at: new Date("2024-01-01T00:00:00Z"),
+          updated_at: new Date("2024-01-01T00:00:00Z"),
+        },
+      ],
+    });
+
+    const adapter = new CypherStorageAdapter(mockCypher, mockSql);
+    const result = await adapter.get("oauth-cred-123", "user-123");
+
+    assertExists(result);
+    assertEquals(result.id, "oauth-cred-123");
+    assertEquals(result.userIdentifier, "test@example.com");
+    assertEquals(result.type, "oauth");
   });
 
   await t.step("get: returns null for not found", async () => {
@@ -210,6 +278,7 @@ Deno.test("CypherStorageAdapter", async (t) => {
           type: "apikey",
           provider: "openai",
           label: "Key 1",
+          user_identifier: null,
           created_at: new Date("2024-01-01"),
           updated_at: new Date("2024-01-01"),
         },
@@ -224,6 +293,29 @@ Deno.test("CypherStorageAdapter", async (t) => {
     assertEquals(result[0]?.id, "cred-1");
     // Summaries should not have secret field
     assertEquals("secret" in (result[0] ?? {}), false);
+  });
+
+  await t.step("list: returns userIdentifier in summaries", async () => {
+    const mockSql = createMockSql({
+      queryResult: [
+        {
+          id: "oauth-cred-1",
+          type: "oauth",
+          provider: "google",
+          label: "test@example.com",
+          user_identifier: "test@example.com",
+          created_at: new Date("2024-01-01"),
+          updated_at: new Date("2024-01-01"),
+        },
+      ],
+    });
+
+    const adapter = new CypherStorageAdapter(createMockCypher(), mockSql);
+    const result = await adapter.list("oauth", "user-123");
+
+    assertEquals(result.length, 1);
+    assertEquals(result[0]?.id, "oauth-cred-1");
+    assertEquals(result[0]?.userIdentifier, "test@example.com");
   });
 
   await t.step("update: encrypts secret and returns metadata", async () => {
@@ -261,9 +353,10 @@ Deno.test("CypherStorageAdapter", async (t) => {
     assertEquals(values[0], "apikey"); // type
     assertEquals(values[1], "openai"); // provider
     assertEquals(values[2], "My API Key"); // label
-    assertEquals(values[3], 'enc:{"key":"sk-test-key"}'); // encrypted_secret
-    assertEquals(values[4], "cred-123"); // id
-    assertEquals(values[5], "user-123"); // user_id
+    assertEquals(values[3], null); // user_identifier (null for apikey)
+    assertEquals(values[4], 'enc:{"key":"sk-test-key"}'); // encrypted_secret
+    assertEquals(values[5], "cred-123"); // id
+    assertEquals(values[6], "user-123"); // user_id
   });
 
   await t.step("update: throws on encryption error", async () => {

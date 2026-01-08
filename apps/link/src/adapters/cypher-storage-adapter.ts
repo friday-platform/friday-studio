@@ -24,6 +24,7 @@ interface CredentialRow {
   type: string;
   provider: string;
   label: string;
+  user_identifier: string | null;
   encrypted_secret: string;
   created_at: Date;
   updated_at: Date;
@@ -63,12 +64,13 @@ export class CypherStorageAdapter implements StorageAdapter {
 
     return await withUserContext(this.sql, userId, async (tx) => {
       const rows = await tx<{ id: string; created_at: Date; updated_at: Date }[]>`
-        INSERT INTO public.credential (user_id, type, provider, label, encrypted_secret)
+        INSERT INTO public.credential (user_id, type, provider, label, user_identifier, encrypted_secret)
         VALUES (
           ${userId},
           ${input.type},
           ${input.provider},
           ${input.label},
+          ${input.userIdentifier ?? null},
           ${encryptedSecret}
         )
         RETURNING id, created_at, updated_at
@@ -94,17 +96,19 @@ export class CypherStorageAdapter implements StorageAdapter {
 
     return await withUserContext(this.sql, userId, async (tx) => {
       const rows = await tx<{ id: string; created_at: Date; updated_at: Date }[]>`
-        INSERT INTO public.credential (user_id, type, provider, label, encrypted_secret)
+        INSERT INTO public.credential (user_id, type, provider, label, user_identifier, encrypted_secret)
         VALUES (
           ${userId},
           ${input.type},
           ${input.provider},
           ${input.label},
+          ${input.userIdentifier ?? null},
           ${encryptedSecret}
         )
         ON CONFLICT (user_id, provider, label) WHERE deleted_at IS NULL
         DO UPDATE SET
-          encrypted_secret = EXCLUDED.encrypted_secret
+          encrypted_secret = EXCLUDED.encrypted_secret,
+          user_identifier = EXCLUDED.user_identifier
         RETURNING id, created_at, updated_at
       `;
 
@@ -131,6 +135,7 @@ export class CypherStorageAdapter implements StorageAdapter {
           type = ${input.type},
           provider = ${input.provider},
           label = ${input.label},
+          user_identifier = ${input.userIdentifier ?? null},
           encrypted_secret = ${encryptedSecret}
         WHERE id = ${id} AND user_id = ${userId} AND deleted_at IS NULL
         RETURNING created_at, updated_at
@@ -148,7 +153,7 @@ export class CypherStorageAdapter implements StorageAdapter {
   async get(id: string, userId: string): Promise<Credential | null> {
     return await withUserContext(this.sql, userId, async (tx) => {
       const rows = await tx<CredentialRow[]>`
-        SELECT id, user_id, type, provider, label, encrypted_secret, created_at, updated_at
+        SELECT id, user_id, type, provider, label, user_identifier, encrypted_secret, created_at, updated_at
         FROM public.credential
         WHERE id = ${id} AND user_id = ${userId} AND deleted_at IS NULL
       `;
@@ -179,6 +184,7 @@ export class CypherStorageAdapter implements StorageAdapter {
         type: CredentialTypeSchema.parse(row.type),
         provider: row.provider,
         label: row.label,
+        userIdentifier: row.user_identifier ?? undefined,
         secret,
         metadata: {
           createdAt: row.created_at.toISOString(),
@@ -191,7 +197,7 @@ export class CypherStorageAdapter implements StorageAdapter {
   async list(type: string, userId: string): Promise<CredentialSummary[]> {
     return await withUserContext(this.sql, userId, async (tx) => {
       const rows = await tx<CredentialRow[]>`
-        SELECT id, type, provider, label, created_at, updated_at
+        SELECT id, type, provider, label, user_identifier, created_at, updated_at
         FROM public.credential
         WHERE user_id = ${userId} AND type = ${type} AND deleted_at IS NULL
       `;
@@ -202,6 +208,7 @@ export class CypherStorageAdapter implements StorageAdapter {
         type: CredentialTypeSchema.parse(row.type),
         provider: row.provider,
         label: row.label,
+        userIdentifier: row.user_identifier ?? undefined,
         metadata: {
           createdAt: row.created_at.toISOString(),
           updatedAt: row.updated_at.toISOString(),
@@ -228,7 +235,7 @@ export class CypherStorageAdapter implements StorageAdapter {
     return await withUserContext(this.sql, userId, async (tx) => {
       // Get all credentials for this user + provider
       const rows = await tx<CredentialRow[]>`
-        SELECT id, user_id, type, provider, label, encrypted_secret, created_at, updated_at
+        SELECT id, user_id, type, provider, label, user_identifier, encrypted_secret, created_at, updated_at
         FROM public.credential
         WHERE user_id = ${userId} AND provider = ${provider} AND deleted_at IS NULL
       `;
@@ -253,6 +260,7 @@ export class CypherStorageAdapter implements StorageAdapter {
             type: CredentialTypeSchema.parse(row.type),
             provider: row.provider,
             label: row.label,
+            userIdentifier: row.user_identifier ?? undefined,
             secret,
             metadata: {
               createdAt: row.created_at.toISOString(),

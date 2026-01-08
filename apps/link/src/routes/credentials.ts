@@ -295,6 +295,7 @@ export function createInternalCredentialsRoutes(
               const credentialInput: CredentialInput = {
                 type: credential.type,
                 provider: credential.provider,
+                userIdentifier: credential.userIdentifier,
                 label: credential.label,
                 secret: updatedSecret,
               };

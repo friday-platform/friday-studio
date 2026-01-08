@@ -419,6 +419,7 @@ export class OAuthService {
     const credentialInput = {
       type: "oauth" as const,
       provider: credential.provider,
+      userIdentifier: credential.userIdentifier,
       label: credential.label,
       secret: updatedSecret,
     };
