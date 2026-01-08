@@ -180,7 +180,7 @@ func newEmailSignup(w http.ResponseWriter, r *http.Request) {
 		},
 		RecipientName:  body.Payload.Email,
 		RecipientEmail: body.Payload.Email,
-		SenderName:     "Atlas",
+		SenderName:     "Friday",
 		SenderEmail:    "noreply@" + cfg.EmailDomain,
 	})
 	if err != nil {

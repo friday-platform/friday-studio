@@ -39,7 +39,7 @@ func newSendgridEmail(cfg Config, opts *SendgridEmailConfig) (SendgridEmailConfi
 	}
 
 	if opts.SenderName == "" {
-		opts.SenderName = "Tempest"
+		opts.SenderName = "Friday"
 	}
 
 	for k, v := range opts.Data {
@@ -60,6 +60,7 @@ func (s SendgridEmailConfig) Send() error {
 	m := mail.NewV3Mail()
 	m.SetFrom(from)
 	m.SetTemplateID(s.TemplateID)
+	m.SetIPPoolID("friday-mgmt")
 
 	p := mail.NewPersonalization()
 	p.AddTos(to)
