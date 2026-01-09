@@ -32,14 +32,14 @@ async function validateUpload(file: File): Promise<ValidationResult> {
       detectedType: detected.mime,
       detectedExt: detected.ext,
     });
-    return { valid: false, error: "Binary files not allowed. Supported: CSV, JSON, TXT, MD" };
+    return { valid: false, error: "Binary files not allowed. Supported: CSV, JSON, TXT, MD, YML" };
   }
 
   // No magic bytes = not a known binary format, trust extension
   const ext = "." + file.name.toLowerCase().split(".").pop();
   const mimeType = EXTENSION_TO_MIME.get(ext);
   if (!mimeType) {
-    return { valid: false, error: "File type not allowed. Supported: CSV, JSON, TXT, MD" };
+    return { valid: false, error: "File type not allowed. Supported: CSV, JSON, TXT, MD, YML" };
   }
   return { valid: true, mimeType };
 }

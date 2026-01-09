@@ -6,8 +6,16 @@ import { DropdownMenu } from "$lib/components/dropdown-menu";
 import { Icons } from "$lib/components/icons";
 import { IconSmall } from "$lib/components/icons/small";
 import { toast } from "$lib/components/notification/notification.svelte";
-import { copyToClipboard, downloadCsv, downloadJson, getUniqueFileName } from "$lib/utils/files";
-import { BaseDirectory, openFile, openPath, writeTextFile } from "$lib/utils/tauri-loader";
+import BasicTable from "$lib/components/primitives/basic-table.svelte";
+import MarkdownContent from "$lib/components/primitives/markdown-content.svelte";
+import { type ParsedContent, parseFileContents } from "$lib/modules/artifacts/file-utils";
+import {
+  copyToClipboard,
+  downloadFile,
+  getUniqueFileName,
+  openInDownloads,
+} from "$lib/utils/files.svelte";
+import { BaseDirectory, writeTextFile } from "$lib/utils/tauri-loader";
 
 type Props = { data: FileData; artifactId: string };
 
@@ -25,9 +33,14 @@ const fileName = $derived.by(() => {
 
 let fileContents = $state<string | undefined>();
 
+const parsedContent = $derived.by((): ParsedContent | undefined => {
+  if (!fileContents) return undefined;
+  return parseFileContents(fileContents, data.mimeType);
+});
+
 async function fetchFile() {
   const result = await parseResult(
-    client.artifactsStorage[":id"].contents.$get({ param: { id: artifactId }, query: {} }),
+    client.artifactsStorage[":id"].$get({ param: { id: artifactId }, query: {} }),
   );
 
   if (!result.ok) {
@@ -53,32 +66,19 @@ async function handleDownload(content: string) {
         title: "Done",
         description: `${uniqueName} has been downloaded.`,
         viewLabel: "View File",
-        viewAction: () => handleOpenInFinder(uniqueName),
+        viewAction: () => openInDownloads(uniqueName),
       });
     } catch (e) {
       console.error("Failed to save file:", e);
     }
   } else {
-    if (data.mimeType === "text/csv") {
-      downloadCsv(fileName, content);
-    } else {
-      downloadJson(fileName, content);
-    }
-  }
-}
-
-async function handleOpenInFinder(savedFileName: string) {
-  if (!openPath || !BaseDirectory.Download) return;
-  try {
-    await openFile(savedFileName, { read: true, baseDir: BaseDirectory.Download });
-  } catch (e) {
-    console.error("Failed to open downloads folder:", e);
+    downloadFile(fileName, content, data.mimeType);
   }
 }
 </script>
 
 {#if data}
-	<article class="container" {...$root} use:root>
+	<article {...$root} use:root>
 		<header>
 			<DropdownMenu.Root
 				positioning={{
@@ -123,8 +123,21 @@ async function handleOpenInFinder(savedFileName: string) {
 		</header>
 
 		<div class="contents" use:content {...$content} class:expanded={$open}>
-			{#if fileContents}
-				<pre><code>{fileContents}</code></pre>
+			{#if parsedContent}
+				{#if parsedContent.type === 'markdown'}
+					<MarkdownContent content={parsedContent.content} />
+				{:else if parsedContent.type === 'csv'}
+					<BasicTable headers={parsedContent.headers} rows={parsedContent.rows} />
+				{:else if parsedContent.type === 'json' || parsedContent.type === 'yaml'}
+					<pre><code>{parsedContent.content}</code></pre>
+				{:else if parsedContent.type === 'plaintext'}
+					<p class="plaintext">{parsedContent.content}</p>
+				{:else if parsedContent.type === 'error'}
+					<p class="error">{parsedContent.message}</p>
+					<pre><code>{parsedContent.raw}</code></pre>
+				{:else}
+					<pre><code>{parsedContent.content}</code></pre>
+				{/if}
 			{/if}
 		</div>
 
@@ -190,6 +203,7 @@ async function handleOpenInFinder(savedFileName: string) {
 		background-color: var(--color-surface-1);
 		border-radius: var(--radius-5);
 		max-block-size: var(--size-48);
+		max-inline-size: 100%;
 		padding: var(--size-4);
 		overflow: hidden;
 
@@ -200,6 +214,7 @@ async function handleOpenInFinder(savedFileName: string) {
 
 		pre {
 			margin: 0;
+			max-inline-size: 100%;
 			white-space: pre;
 			word-wrap: normal;
 
@@ -212,6 +227,14 @@ async function handleOpenInFinder(savedFileName: string) {
 
 		.error {
 			color: var(--color-error);
+			margin: 0;
+			margin-block-end: var(--size-2);
+		}
+
+		.plaintext {
+			margin: 0;
+			white-space: pre-wrap;
+			font-size: var(--font-size-2);
 		}
 
 		.unsupported,

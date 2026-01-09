@@ -11,8 +11,8 @@ import { toast } from "$lib/components/notification/notification.svelte";
 import { SegmentedControl } from "$lib/components/segmented-control";
 import { getSpacesContext } from "$lib/modules/spaces/context.svelte";
 import { getActivePage } from "$lib/utils/active-page.svelte";
-import { downloadYaml, getUniqueFileName } from "$lib/utils/files";
-import { BaseDirectory, openFile, writeTextFile } from "$lib/utils/tauri-loader";
+import { downloadFile, getUniqueFileName, openInDownloads } from "$lib/utils/files.svelte";
+import { BaseDirectory, writeTextFile } from "$lib/utils/tauri-loader";
 
 interface Workspace {
   id: string;
@@ -53,7 +53,7 @@ async function handleExportWorkspace() {
           title: "Exported",
           description: `${uniqueName} has been downloaded.`,
           viewLabel: "View File",
-          viewAction: () => handleOpenExportedFile(uniqueName),
+          viewAction: () => openInDownloads(uniqueName),
         });
         return;
       } catch (e) {
@@ -62,19 +62,10 @@ async function handleExportWorkspace() {
       }
     }
 
-    downloadYaml(filename, yamlContent);
+    downloadFile(filename, yamlContent, "text/yaml");
   } catch (error) {
     console.error("Failed to export workspace:", error);
     alert(`Failed to export workspace: ${error instanceof Error ? error.message : String(error)}`);
-  }
-}
-
-async function handleOpenExportedFile(filename: string) {
-  if (!openFile || !BaseDirectory?.Download) return;
-  try {
-    await openFile(filename, { read: true, baseDir: BaseDirectory.Download });
-  } catch (e) {
-    console.error("Failed to open file:", e);
   }
 }
 
@@ -108,7 +99,7 @@ async function handleDeleteWorkspace() {
 
 		<Breadcrumbs.Segment />
 
-		<Breadcrumbs.Title>
+		<Breadcrumbs.Title hasActions>
 			{workspace.name}
 
 			{#snippet actions(actionsOpen)}

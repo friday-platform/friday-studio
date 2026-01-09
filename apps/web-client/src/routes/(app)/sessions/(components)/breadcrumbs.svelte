@@ -12,7 +12,7 @@ let { session }: { session: SessionHistoryTimeline } = $props();
 
 		<Breadcrumbs.Segment />
 
-		<Breadcrumbs.Title>
+		<Breadcrumbs.Title hasActions>
 			Session Details
 
 			{#snippet actions()}

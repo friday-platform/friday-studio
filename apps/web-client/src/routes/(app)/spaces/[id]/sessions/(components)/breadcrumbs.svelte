@@ -29,7 +29,7 @@ const workspaceId = $derived(session.metadata.workspaceId);
 
 		<Breadcrumbs.Segment />
 
-		<Breadcrumbs.Title>
+		<Breadcrumbs.Title hasActions>
 			Session Details
 
 			{#snippet actions()}

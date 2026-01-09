@@ -43,6 +43,7 @@ const READABLE_MIME_TYPES = new Set([
   "text/plain",
   "text/markdown",
   "text/x-markdown",
+  "text/yaml",
 ]);
 
 /**
@@ -433,7 +434,7 @@ export class LocalStorageAdapter implements ArtifactStorageAdapter {
 
     if (!READABLE_MIME_TYPES.has(mimeType)) {
       return fail(
-        `Unsupported mime type for reading: ${mimeType}. Supported: JSON, CSV, plain text, Markdown.`,
+        `Unsupported mime type for reading: ${mimeType}. Supported: JSON, CSV, plain text, Markdown, YAML.`,
       );
     }
 

@@ -1,10 +1,13 @@
+import { BaseDirectory, openFile } from "$lib/utils/tauri-loader";
+
 /**
- * Downloads a JSON file to the user's computer.
+ * Downloads a file to the user's computer.
  * @param filename The name of the file to download.
  * @param content The content of the file to download.
+ * @param mimeType The MIME type of the file.
  */
-export function downloadJson(filename: string, content: string) {
-  const blob = new Blob([content], { type: "application/json" });
+export function downloadFile(filename: string, content: string, mimeType: string) {
+  const blob = new Blob([content], { type: mimeType });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -16,37 +19,16 @@ export function downloadJson(filename: string, content: string) {
 }
 
 /**
- * Downloads a YAML file to the user's computer.
- * @param filename The name of the file to download.
- * @param content The content of the file to download.
+ * Opens a file in the Downloads folder using the system default handler.
+ * Tauri only - no-op in browser builds.
  */
-export function downloadYaml(filename: string, content: string) {
-  const blob = new Blob([content], { type: "text/yaml" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-}
-
-/**
- * Downloads a CSV file to the user's computer.
- * @param filename The name of the file to download.
- * @param content The content of the file to download.
- */
-export function downloadCsv(filename: string, content: string) {
-  const blob = new Blob([content], { type: "text/csv" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+export async function openInDownloads(filename: string): Promise<void> {
+  if (!openFile || !BaseDirectory?.Download) return;
+  try {
+    await openFile(filename, { read: true, baseDir: BaseDirectory.Download });
+  } catch (e) {
+    console.error("Failed to open file:", e);
+  }
 }
 
 export async function copyToClipboard(text: string | Array<string | null>) {

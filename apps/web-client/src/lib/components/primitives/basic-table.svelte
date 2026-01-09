@@ -1,29 +1,27 @@
 <script lang="ts">
-import Document from "$lib/components/primitives/document.svelte";
+type Props = { headers: string[]; rows: Record<string, string | number>[] };
 
-const { data }: { data: { headers: string[]; rows: Record<string, string | number>[] } } = $props();
+const { headers, rows }: Props = $props();
 </script>
 
-<Document name="Table">
-	<table>
-		<thead>
+<table>
+	<thead>
+		<tr>
+			{#each headers as header (header)}
+				<th>{header}</th>
+			{/each}
+		</tr>
+	</thead>
+	<tbody>
+		{#each rows as row, i (i)}
 			<tr>
-				{#each data.headers as header (header)}
-					<th>{header}</th>
+				{#each headers as header (header)}
+					<td>{row[header]}</td>
 				{/each}
 			</tr>
-		</thead>
-		<tbody>
-			{#each data.rows as row, i (i)}
-				<tr>
-					{#each data.headers as header (header)}
-						<td>{row[header]}</td>
-					{/each}
-				</tr>
-			{/each}
-		</tbody>
-	</table>
-</Document>
+		{/each}
+	</tbody>
+</table>
 
 <style>
 	table {

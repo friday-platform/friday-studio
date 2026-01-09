@@ -8,14 +8,15 @@ type Props = {
   children: Snippet;
   prepend?: Snippet;
   actions?: Snippet<[Writable<boolean>]>;
+  hasActions: boolean;
   menuVisible?: boolean;
 };
 
-let { children, prepend, actions, menuVisible = true }: Props = $props();
+let { children, prepend, actions, menuVisible = true, hasActions }: Props = $props();
 </script>
 
 {#snippet trigger()}
-	<div class="title" class:actions={actions !== undefined}>
+	<div class="title" class:actions={actions !== undefined && hasActions}>
 		{#if prepend}
 			<span class="prepend">
 				{@render prepend()}
@@ -26,13 +27,13 @@ let { children, prepend, actions, menuVisible = true }: Props = $props();
 			{@render children()}
 		</span>
 
-		{#if actions}
+		{#if actions && hasActions}
 			<IconSmall.CaretDown />
 		{/if}
 	</div>
 {/snippet}
 
-{#if actions}
+{#if actions && hasActions}
 	<DropdownMenu.Root
 		positioning={{
 			placement: 'bottom-start',

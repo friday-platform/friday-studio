@@ -70,11 +70,6 @@ export const listen = __TAURI_BUILD__
   ? (event: string, handler: (event: unknown) => void) => _tauriEvent?.listen(event, handler)
   : undefined;
 
-// Opener plugin
-export const openPath = __TAURI_BUILD__
-  ? (path: string) => _tauriOpener?.openPath(path)
-  : undefined;
-
 export const openUrl = __TAURI_BUILD__ ? (url: string) => _tauriOpener?.openUrl(url) : undefined;
 
 // FS plugin

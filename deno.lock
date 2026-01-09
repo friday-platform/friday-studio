@@ -90,9 +90,10 @@
     "npm:@tanstack/svelte-table@9.0.0-alpha.10": "9.0.0-alpha.10_svelte@5.46.1__acorn@8.15.0",
     "npm:@tauri-apps/api@2.9.1": "2.9.1",
     "npm:@tauri-apps/cli@^2.9.6": "2.9.6",
-    "npm:@tauri-apps/plugin-fs@~2.4.5": "2.4.5",
-    "npm:@tauri-apps/plugin-opener@^2.5.3": "2.5.3",
+    "npm:@tauri-apps/plugin-fs@~2.4.4": "2.4.5",
+    "npm:@tauri-apps/plugin-opener@^2.5.2": "2.5.3",
     "npm:@total-typescript/ts-reset@~0.6.1": "0.6.1",
+    "npm:@types/papaparse@^5.5.2": "5.5.2",
     "npm:@types/react@^19.2.7": "19.2.7",
     "npm:@worker-tools/html-rewriter@0.1.0-pre.19": "0.1.0-pre.19",
     "npm:ai@^5.0.118": "5.0.118_zod@4.3.5",
@@ -2410,6 +2411,12 @@
       "integrity": "sha512-W609buLVRVmeW693xKfzHeIV6nJGGz98uCPfeXI1ELMLXVeKYZ9m15fAMSaUPBHYLGFsVRcMmSCksQOrZV9BYA==",
       "dependencies": [
         "undici-types"
+      ]
+    },
+    "@types/papaparse@5.5.2": {
+      "integrity": "sha512-gFnFp/JMzLHCwRf7tQHrNnfhN4eYBVYYI897CGX4MY1tzY9l2aLkVyx2IlKZ/SAqDbB3I1AOZW5gTMGGsqWliA==",
+      "dependencies": [
+        "@types/node"
       ]
     },
     "@types/pg-pool@2.0.6": {
@@ -5531,13 +5538,15 @@
             "npm:@tanstack/svelte-table@9.0.0-alpha.10",
             "npm:@tauri-apps/api@2.9.1",
             "npm:@tauri-apps/cli@^2.9.6",
-            "npm:@tauri-apps/plugin-fs@~2.4.5",
-            "npm:@tauri-apps/plugin-opener@^2.5.3",
+            "npm:@tauri-apps/plugin-fs@~2.4.4",
+            "npm:@tauri-apps/plugin-opener@^2.5.2",
+            "npm:@types/papaparse@^5.5.2",
             "npm:ai@^5.0.118",
             "npm:eslint-config-prettier@^10.1.8",
             "npm:eslint-plugin-svelte@^3.14.0",
             "npm:eslint@^9.39.2",
             "npm:globals@17",
+            "npm:papaparse@^5.5.3",
             "npm:prettier-plugin-svelte@^3.4.1",
             "npm:prettier@^3.7.4",
             "npm:svelte-check@^4.3.5",

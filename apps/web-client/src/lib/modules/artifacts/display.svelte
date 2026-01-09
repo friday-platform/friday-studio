@@ -2,12 +2,13 @@
 import { client, parseResult } from "@atlas/client/v2";
 import { ArtifactDataSchema } from "@atlas/core/artifacts";
 import { z } from "zod";
+import BasicTable from "$lib/components/primitives/basic-table.svelte";
+import Document from "$lib/components/primitives/document.svelte";
 import File from "$lib/components/primitives/file.svelte";
+import MarkdownContent from "$lib/components/primitives/markdown-content.svelte";
 import Schedule from "$lib/components/primitives/schedule.svelte";
-import Summary from "$lib/components/primitives/summary.svelte";
-import Table from "$lib/components/primitives/table.svelte";
 import WebSearch from "$lib/components/primitives/web-search.svelte";
-import MessageWrapper from "../messages/wrapper.svelte";
+import MessageWrapper from "$lib/modules/messages/wrapper.svelte";
 import WorkspacePlan from "./workspace-plan.svelte";
 
 type Props = { artifactId: string };
@@ -21,9 +22,9 @@ $effect(() => {
 
   async function grabArtifact() {
     try {
-      const result = (await parseResult(
+      const result = await parseResult(
         client.artifactsStorage[":id"].$get({ param: { id: artifactId }, query: {} }),
-      )) as unknown as { ok: boolean; data: { artifact: { data: unknown } } };
+      );
 
       if (!result.ok) throw new Error("Failed to get artifact");
 
@@ -49,16 +50,32 @@ $effect(() => {
 			{:else if artifact.type === 'web-search'}
 				<WebSearch data={artifact.data} />
 			{:else if artifact.type === 'summary'}
-				<Summary data={artifact.data} />
+				<Document name="Search Result">
+					<div class="summary">
+						<MarkdownContent content={artifact.data} />
+					</div>
+				</Document>
 			{:else if artifact.type === 'slack-summary'}
-				<Summary data={artifact.data} source="slack" />
+				<Document name="Slack Summary">
+					<div class="summary">
+						<MarkdownContent content={artifact.data} />
+					</div>
+				</Document>
 			{:else if artifact.type === 'workspace-plan'}
 				<WorkspacePlan workspacePlan={artifact.data} />
 			{:else if artifact.type === 'table'}
-				<Table data={artifact.data} />
+				<Document name="Table">
+					<BasicTable headers={artifact.data.headers} rows={artifact.data.rows} />
+				</Document>
 			{:else if artifact.type === 'file'}
 				<File data={artifact.data} {artifactId} />
 			{/if}
 		</div>
 	{/if}
 </MessageWrapper>
+
+<style>
+	.summary {
+		padding: var(--size-6);
+	}
+</style>

@@ -10,6 +10,7 @@ const { children }: { children: Snippet } = $props();
 
 <style>
 	.component {
+		max-inline-size: 100%;
 		position: relative;
 		z-index: var(--layer-1);
 	}
