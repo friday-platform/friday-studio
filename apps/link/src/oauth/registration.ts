@@ -54,7 +54,7 @@ export async function registerClient(
       authServer,
       {
         redirect_uris: [callbackUrl],
-        client_name: "Link",
+        client_name: "Friday",
         token_endpoint_auth_method: "none",
         grant_types: ["authorization_code", "refresh_token"],
         response_types: ["code"],

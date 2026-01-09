@@ -28,7 +28,7 @@ async function createMcpClient(accessToken: string): Promise<Client> {
   const transport = new StreamableHTTPClientTransport(new URL("https://mcp.notion.com/mcp"), {
     requestInit: { headers: { Authorization: `Bearer ${accessToken}` } },
   });
-  const client = new Client({ name: "atlas-link", version: "1.0.0" }, { capabilities: {} });
+  const client = new Client({ name: "friday", version: "1.0.0" }, { capabilities: {} });
   await client.connect(transport);
   return client;
 }
