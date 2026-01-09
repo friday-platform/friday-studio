@@ -4,7 +4,7 @@ import { type AtlasUIMessagePart } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
 import { getAtlasDaemonUrl } from "@atlas/oapi-client";
 import { DefaultChatTransport } from "ai";
-import { onMount } from "svelte";
+import { onMount, setContext } from "svelte";
 import { SvelteMap } from "svelte/reactivity";
 import { afterNavigate } from "$app/navigation";
 import { getAppContext, handleFileDrop } from "$lib/app-context.svelte";
@@ -39,6 +39,10 @@ function formatFileSize(bytes: number): string {
 }
 
 const { data }: { data: PageData } = $props();
+
+// Expose artifacts map to child components via context
+const ARTIFACTS_KEY = Symbol.for("artifacts");
+setContext(ARTIFACTS_KEY, data.artifacts);
 
 const appCtx = getAppContext();
 const chatContext = getChatContext();

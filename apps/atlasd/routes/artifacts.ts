@@ -1,5 +1,9 @@
 import { mkdir, unlink, writeFile } from "node:fs/promises";
-import { CreateArtifactSchema, UpdateArtifactSchema } from "@atlas/core/artifacts";
+import {
+  type ArtifactWithContents,
+  CreateArtifactSchema,
+  UpdateArtifactSchema,
+} from "@atlas/core/artifacts";
 import { EXTENSION_TO_MIME, MAX_FILE_SIZE } from "@atlas/core/artifacts/file-upload";
 import { ArtifactStorage } from "@atlas/core/artifacts/server";
 import { createLogger } from "@atlas/logger";
@@ -52,7 +56,10 @@ const ListArtifactsQuery = z.object({
   limit: z.coerce.number().int().positive().max(1000).default(100),
 });
 
-const BatchGetBody = z.object({ ids: z.array(z.string()).min(1).max(1000) });
+const BatchGetBody = z.object({
+  ids: z.array(z.string()).min(1).max(1000),
+  includeContents: z.boolean().optional(),
+});
 
 const artifactsApp = daemonFactory
   .createApp()
@@ -91,14 +98,33 @@ const artifactsApp = daemonFactory
   )
   /** Batch get artifacts by IDs (latest revisions only) */
   .post("/batch-get", zValidator("json", BatchGetBody), async (c) => {
-    const { ids } = c.req.valid("json");
+    const { ids, includeContents } = c.req.valid("json");
     const result = await ArtifactStorage.getManyLatest({ ids });
 
     if (!result.ok) {
       return c.json({ error: result.error }, 500);
     }
 
-    return c.json({ artifacts: result.data }, 200);
+    if (!includeContents) {
+      return c.json({ artifacts: result.data }, 200);
+    }
+
+    // Fetch contents for file artifacts in parallel
+    const artifactsWithContents: ArtifactWithContents[] = await Promise.all(
+      result.data.map(async (artifact) => {
+        if (artifact.data.type !== "file") {
+          return artifact;
+        }
+        const contentsResult = await ArtifactStorage.readFileContents({ id: artifact.id });
+        if (contentsResult.ok) {
+          return { ...artifact, contents: contentsResult.data };
+        }
+        // If read fails (binary file, etc.), return artifact without contents
+        return artifact;
+      }),
+    );
+
+    return c.json({ artifacts: artifactsWithContents }, 200);
   })
   /** Get artifact by ID (includes file contents inline for file artifacts) */
   .get(

@@ -146,3 +146,9 @@ export const ArtifactSchema = z.object({
 });
 
 export type Artifact = z.infer<typeof ArtifactSchema>;
+
+/**
+ * Artifact with optional contents loaded.
+ * Used when artifact file contents have been fetched alongside metadata.
+ */
+export type ArtifactWithContents = Artifact & { contents?: string };

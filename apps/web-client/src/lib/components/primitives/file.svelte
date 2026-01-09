@@ -1,5 +1,4 @@
 <script lang="ts">
-import { client, parseResult } from "@atlas/client/v2";
 import { type FileData } from "@atlas/core/artifacts";
 import { createCollapsible } from "@melt-ui/svelte";
 import { DropdownMenu } from "$lib/components/dropdown-menu";
@@ -17,9 +16,14 @@ import {
 } from "$lib/utils/files.svelte";
 import { BaseDirectory, writeTextFile } from "$lib/utils/tauri-loader";
 
-type Props = { data: FileData; artifactId: string };
+type Props = { data: FileData; contents?: string };
 
-let { data, artifactId }: Props = $props();
+let { data, contents }: Props = $props();
+
+const parsedContent = $derived.by((): ParsedContent | undefined => {
+  if (!contents) return undefined;
+  return parseFileContents(contents, data.mimeType);
+});
 
 const {
   elements: { root, trigger, content },
@@ -31,30 +35,7 @@ const fileName = $derived.by(() => {
   return paths[paths.length - 1];
 });
 
-let fileContents = $state<string | undefined>();
-
-const parsedContent = $derived.by((): ParsedContent | undefined => {
-  if (!fileContents) return undefined;
-  return parseFileContents(fileContents, data.mimeType);
-});
-
-async function fetchFile() {
-  const result = await parseResult(
-    client.artifactsStorage[":id"].$get({ param: { id: artifactId }, query: {} }),
-  );
-
-  if (!result.ok) {
-    console.warn("Failed to fetch file contents");
-  } else {
-    fileContents = result.data.contents;
-  }
-}
-
-$effect(() => {
-  if (artifactId) {
-    fetchFile();
-  }
-});
+const fileContents = $derived(contents);
 
 async function handleDownload(content: string) {
   if (__TAURI_BUILD__ && writeTextFile && BaseDirectory) {

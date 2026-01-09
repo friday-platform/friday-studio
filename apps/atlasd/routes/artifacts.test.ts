@@ -25,6 +25,21 @@ const ArtifactResponseSchema = z.object({
     .passthrough(),
 });
 
+/** Schema for batch-get response */
+const BatchGetResponseSchema = z.object({
+  artifacts: z.array(
+    z
+      .object({
+        id: z.string(),
+        type: z.string(),
+        title: z.string(),
+        data: z.object({ type: z.string() }).passthrough(),
+        contents: z.string().optional(),
+      })
+      .passthrough(),
+  ),
+});
+
 /**
  * Assert error response shape matches expected error string.
  */
@@ -130,7 +145,8 @@ Deno.test("Upload endpoint", async (t) => {
 
     assertEquals(response.status, 415);
     const body = await response.json();
-    assertErrorResponse(body, "File type not allowed. Supported: CSV, JSON, TXT, MD");
+    // Magic byte detection correctly identifies this as binary, even though extension says .exe
+    assertErrorResponse(body, "Binary files not allowed. Supported: CSV, JSON, TXT, MD");
   });
 
   await t.step("uses extension fallback when MIME type empty", async () => {
@@ -210,4 +226,117 @@ Deno.test("Upload endpoint", async (t) => {
 
   // Cleanup
   await rm(tempDir, { recursive: true });
+});
+
+Deno.test("Batch-get endpoint", async (t) => {
+  await t.step("includes contents when includeContents=true for file artifacts", async () => {
+    // Create a file artifact via upload
+    const csvContent = "name,age\nAlice,30\nBob,25";
+    const file = createTestFile(csvContent, "people.csv", "text/csv");
+    const formData = new FormData();
+    formData.set("file", file);
+
+    const uploadResponse = await artifactsApp.request("/upload", {
+      method: "POST",
+      body: formData,
+    });
+    assertEquals(uploadResponse.status, 201);
+    const { artifact } = ArtifactResponseSchema.parse(await uploadResponse.json());
+
+    // Batch-get with includeContents: true
+    const batchResponse = await artifactsApp.request("/batch-get", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: [artifact.id], includeContents: true }),
+    });
+
+    assertEquals(batchResponse.status, 200);
+    const batchBody = BatchGetResponseSchema.parse(await batchResponse.json());
+
+    assertEquals(batchBody.artifacts.length, 1);
+    assertEquals(batchBody.artifacts[0]!.id, artifact.id);
+    assertEquals(batchBody.artifacts[0]!.contents, csvContent);
+  });
+
+  await t.step("omits contents when includeContents=false", async () => {
+    // Create a file artifact via upload
+    const csvContent = "col1,col2\nval1,val2";
+    const file = createTestFile(csvContent, "data.csv", "text/csv");
+    const formData = new FormData();
+    formData.set("file", file);
+
+    const uploadResponse = await artifactsApp.request("/upload", {
+      method: "POST",
+      body: formData,
+    });
+    assertEquals(uploadResponse.status, 201);
+    const { artifact } = ArtifactResponseSchema.parse(await uploadResponse.json());
+
+    // Batch-get with includeContents: false (default)
+    const batchResponse = await artifactsApp.request("/batch-get", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: [artifact.id] }),
+    });
+
+    assertEquals(batchResponse.status, 200);
+    const batchBody = BatchGetResponseSchema.parse(await batchResponse.json());
+
+    assertEquals(batchBody.artifacts.length, 1);
+    assertEquals(batchBody.artifacts[0]!.id, artifact.id);
+    assertEquals(batchBody.artifacts[0]!.contents, undefined);
+  });
+
+  await t.step("handles mixed artifact types with includeContents", async () => {
+    // Create a file artifact via upload
+    const txtContent = "Hello, World!";
+    const file = createTestFile(txtContent, "greeting.txt", "text/plain");
+    const formData = new FormData();
+    formData.set("file", file);
+
+    const uploadResponse = await artifactsApp.request("/upload", {
+      method: "POST",
+      body: formData,
+    });
+    assertEquals(uploadResponse.status, 201);
+    const { artifact: fileArtifact } = ArtifactResponseSchema.parse(await uploadResponse.json());
+
+    // Create a non-file artifact (summary type) via the create endpoint
+    const createResponse = await artifactsApp.request("/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: "Test Summary",
+        summary: "A test summary artifact",
+        data: { type: "summary", version: 1, data: "Summary content here" },
+      }),
+    });
+    assertEquals(createResponse.status, 200);
+    const { artifact: summaryArtifact } = ArtifactResponseSchema.parse(await createResponse.json());
+
+    // Batch-get both with includeContents: true
+    const batchResponse = await artifactsApp.request("/batch-get", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: [fileArtifact.id, summaryArtifact.id], includeContents: true }),
+    });
+
+    assertEquals(batchResponse.status, 200);
+    const batchBody = BatchGetResponseSchema.parse(await batchResponse.json());
+
+    assertEquals(batchBody.artifacts.length, 2);
+
+    // Find each artifact in the response (order not guaranteed)
+    const returnedFile = batchBody.artifacts.find((a) => a.id === fileArtifact.id);
+    const returnedSummary = batchBody.artifacts.find((a) => a.id === summaryArtifact.id);
+
+    assertExists(returnedFile);
+    assertExists(returnedSummary);
+
+    // File artifact should have contents
+    assertEquals(returnedFile.contents, txtContent);
+
+    // Summary artifact should NOT have contents (not a file type)
+    assertEquals(returnedSummary.contents, undefined);
+  });
 });

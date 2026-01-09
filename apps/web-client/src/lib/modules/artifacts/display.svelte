@@ -1,6 +1,7 @@
 <script lang="ts">
 import { client, parseResult } from "@atlas/client/v2";
-import { ArtifactDataSchema } from "@atlas/core/artifacts";
+import { ArtifactDataSchema, type ArtifactWithContents } from "@atlas/core/artifacts";
+import { getContext } from "svelte";
 import { z } from "zod";
 import BasicTable from "$lib/components/primitives/basic-table.svelte";
 import Document from "$lib/components/primitives/document.svelte";
@@ -11,15 +12,29 @@ import WebSearch from "$lib/components/primitives/web-search.svelte";
 import MessageWrapper from "$lib/modules/messages/wrapper.svelte";
 import WorkspacePlan from "./workspace-plan.svelte";
 
+const ARTIFACTS_KEY = Symbol.for("artifacts");
+
 type Props = { artifactId: string };
 
 let { artifactId }: Props = $props();
 
+const artifactsMap = getContext<Map<string, ArtifactWithContents> | undefined>(ARTIFACTS_KEY);
+
 let artifact = $state<z.infer<typeof ArtifactDataSchema>>();
+let contents = $state<string | undefined>(undefined);
 
 $effect(() => {
   if (artifact || !artifactId) return;
 
+  // Check context first (batch-loaded artifacts)
+  const cached = artifactsMap?.get(artifactId);
+  if (cached) {
+    artifact = ArtifactDataSchema.parse(cached.data);
+    contents = cached.contents;
+    return;
+  }
+
+  // Fallback: fetch individually (streaming case)
   async function grabArtifact() {
     try {
       const result = await parseResult(
@@ -29,6 +44,7 @@ $effect(() => {
       if (!result.ok) throw new Error("Failed to get artifact");
 
       artifact = ArtifactDataSchema.parse(result.data.artifact.data);
+      contents = result.data.contents;
     } catch (error) {
       console.error(error);
     }
@@ -68,7 +84,7 @@ $effect(() => {
 					<BasicTable headers={artifact.data.headers} rows={artifact.data.rows} />
 				</Document>
 			{:else if artifact.type === 'file'}
-				<File data={artifact.data} {artifactId} />
+				<File data={artifact.data} {contents} />
 			{/if}
 		</div>
 	{/if}

@@ -10,6 +10,7 @@ export type {
   ArtifactDataInput,
   ArtifactRevisionSummary,
   ArtifactType,
+  ArtifactWithContents,
   CreateArtifactInput,
 } from "./model.ts";
 export {
