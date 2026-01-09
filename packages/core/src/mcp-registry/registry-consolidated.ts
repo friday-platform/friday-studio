@@ -7,16 +7,6 @@ import type { MCPServerMetadata, MCPServersRegistry } from "./schemas.ts";
  */
 const GOOGLE_WORKSPACE_SERVICES = [
   {
-    id: "google-calendar",
-    name: "Google Calendar",
-    domains: ["google-calendar", "calendar", "gcal", "scheduling", "meetings", "events"],
-    urlDomains: ["calendar.google.com"],
-    description:
-      "Full Google Calendar management via OAuth - list calendars, search/get events, create events with attendees and Google Meet, modify events, delete events",
-    constraints:
-      "Requires OAuth. Use for reading calendar, checking availability, creating meetings, modifying events, deleting events.",
-  },
-  {
     id: "google-gmail",
     name: "Gmail",
     domains: ["google-gmail", "gmail", "email", "inbox"],
