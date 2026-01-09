@@ -120,9 +120,17 @@ export class LocalStorageAdapter implements ArtifactStorageAdapter {
       tx.set(keys.byChat(input.chatId, id), primaryKey);
     }
 
-    const result = await tx.commit();
-    if (!result.ok) {
-      return fail("Failed to create artifact");
+    try {
+      const result = await tx.commit();
+      if (!result.ok) {
+        return fail("Failed to create artifact");
+      }
+    } catch (error) {
+      // Deno KV has a 64KB limit per value
+      if (error instanceof TypeError && error.message.includes("Value too large")) {
+        return fail("Artifact data exceeds maximum size (64KB)");
+      }
+      throw error;
     }
 
     return success(artifact);
@@ -209,9 +217,17 @@ export class LocalStorageAdapter implements ArtifactStorageAdapter {
       tx.set(keys.byChat(newArtifact.chatId, input.id), newPrimaryKey);
     }
 
-    const result = await tx.commit();
-    if (!result.ok) {
-      return fail("Failed to update artifact");
+    try {
+      const result = await tx.commit();
+      if (!result.ok) {
+        return fail("Failed to update artifact");
+      }
+    } catch (error) {
+      // Deno KV has a 64KB limit per value
+      if (error instanceof TypeError && error.message.includes("Value too large")) {
+        return fail("Artifact data exceeds maximum size (64KB)");
+      }
+      throw error;
     }
 
     return success(newArtifact);
