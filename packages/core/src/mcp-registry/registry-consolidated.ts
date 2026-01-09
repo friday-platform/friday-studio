@@ -10,6 +10,7 @@ const GOOGLE_WORKSPACE_SERVICES = [
     id: "google-calendar",
     name: "Google Calendar",
     domains: ["google-calendar", "calendar", "gcal", "scheduling", "meetings", "events"],
+    urlDomains: ["calendar.google.com"],
     description:
       "Full Google Calendar management via OAuth - list calendars, search/get events, create events with attendees and Google Meet, modify events, delete events",
     constraints:
@@ -19,6 +20,7 @@ const GOOGLE_WORKSPACE_SERVICES = [
     id: "google-gmail",
     name: "Gmail",
     domains: ["google-gmail", "gmail", "email", "inbox"],
+    urlDomains: ["mail.google.com"],
     description:
       "Full Gmail management via OAuth - search messages, read content and attachments, send emails, create drafts, manage labels and filters, batch operations",
     constraints:
@@ -28,6 +30,7 @@ const GOOGLE_WORKSPACE_SERVICES = [
     id: "google-drive",
     name: "Google Drive",
     domains: ["google-drive", "drive", "gdrive", "files", "storage"],
+    urlDomains: ["drive.google.com"],
     description:
       "Full Google Drive management via OAuth - search files, list folders, create/update files, manage sharing and permissions, get download URLs",
     constraints:
@@ -37,6 +40,7 @@ const GOOGLE_WORKSPACE_SERVICES = [
     id: "google-docs",
     name: "Google Docs",
     domains: ["google-docs", "docs", "documents"],
+    urlDomains: ["docs.google.com"],
     description:
       "Full Google Docs management via OAuth - search docs, create documents, edit text, insert images/tables, find and replace, export to PDF",
     constraints:
@@ -46,6 +50,7 @@ const GOOGLE_WORKSPACE_SERVICES = [
     id: "google-sheets",
     name: "Google Sheets",
     domains: ["google-sheets", "sheets", "spreadsheet", "spreadsheets"],
+    urlDomains: ["docs.google.com"],
     description:
       "Full Google Sheets management via OAuth - list spreadsheets, read/write values, create sheets, format cells, conditional formatting",
     constraints:
@@ -71,6 +76,7 @@ function createGoogleWorkspaceEntry(
     id: spec.id,
     name: spec.name,
     domains: [...spec.domains],
+    urlDomains: [...spec.urlDomains],
     description: spec.description,
     constraints: spec.constraints,
     source: "static",
@@ -102,6 +108,7 @@ export const mcpServersRegistry: MCPServersRegistry = {
       id: "github",
       name: "GitHub",
       domains: ["github"],
+      urlDomains: ["github.com", "githubusercontent.com"],
       source: "static",
       securityRating: "high",
       configTemplate: {
@@ -122,6 +129,7 @@ export const mcpServersRegistry: MCPServersRegistry = {
       id: "hubspot",
       name: "HubSpot",
       domains: ["hubspot"],
+      urlDomains: ["hubspot.com", "app.hubspot.com"],
       source: "static",
       securityRating: "high",
       configTemplate: {
@@ -330,6 +338,7 @@ export const mcpServersRegistry: MCPServersRegistry = {
       id: "linear",
       name: "Linear Project Management",
       domains: ["linear"],
+      urlDomains: ["linear.app"],
       source: "static",
       securityRating: "high",
       configTemplate: {
@@ -345,6 +354,7 @@ export const mcpServersRegistry: MCPServersRegistry = {
       id: "atlassian",
       name: "Atlassian (Jira & Confluence)",
       domains: ["jira", "atlassian", "confluence"],
+      urlDomains: ["atlassian.net", "atlassian.com", "jira.com", "confluence.com"],
       source: "static",
       securityRating: "high",
       configTemplate: {
@@ -366,6 +376,7 @@ export const mcpServersRegistry: MCPServersRegistry = {
       id: "trello",
       name: "Trello Board Management",
       domains: ["trello"],
+      urlDomains: ["trello.com"],
       source: "static",
       securityRating: "medium",
       configTemplate: {
@@ -391,6 +402,7 @@ export const mcpServersRegistry: MCPServersRegistry = {
       id: "notion",
       name: "Notion Workspace",
       domains: ["notion"],
+      urlDomains: ["notion.so", "notion.site"],
       source: "static",
       securityRating: "high",
       configTemplate: {
@@ -420,6 +432,7 @@ export const mcpServersRegistry: MCPServersRegistry = {
       id: "posthog",
       name: "PostHog Analytics & Feature Flags",
       domains: ["posthog"],
+      urlDomains: ["posthog.com", "app.posthog.com", "eu.posthog.com", "us.posthog.com"],
       source: "static",
       securityRating: "high",
       configTemplate: {
@@ -433,6 +446,7 @@ export const mcpServersRegistry: MCPServersRegistry = {
       id: "sentry",
       name: "Sentry Error Tracking",
       domains: ["sentry"],
+      urlDomains: ["sentry.io", "sentry.dev"],
       source: "static",
       securityRating: "high",
       configTemplate: {
@@ -448,6 +462,7 @@ export const mcpServersRegistry: MCPServersRegistry = {
       id: "discord",
       name: "Discord Bot Integration",
       domains: ["discord", "chat", "messaging", "community"],
+      urlDomains: ["discord.com", "discord.gg"],
       source: "static",
       securityRating: "medium",
       configTemplate: {

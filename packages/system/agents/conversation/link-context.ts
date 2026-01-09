@@ -6,6 +6,7 @@
  */
 
 import { client, type InferResponseType, parseResult } from "@atlas/client/v2";
+import { mcpServersRegistry } from "@atlas/core/mcp-registry/registry-consolidated";
 import type { Logger } from "@atlas/logger";
 
 /**
@@ -42,6 +43,7 @@ export async function fetchLinkSummary(logger: Logger): Promise<SummaryResponse 
 /**
  * Format credentials into system prompt section.
  * Uses flat XML with status attributes for unambiguous service state.
+ * Includes urlDomains for URL-to-MCP mapping.
  *
  * @param summary - Summary response from Link service
  * @returns Formatted XML section for system prompt
@@ -57,14 +59,17 @@ export function formatIntegrationsSection(summary: SummaryResponse): string {
     credentialLabels.set(cred.provider, existing ? `${existing}, ${cred.label}` : cred.label);
   }
 
-  // Build flat XML
+  // Build flat XML with urlDomains from MCP registry
   let section = "<integrations>\n";
   for (const provider of providers) {
     const label = credentialLabels.get(provider.id);
+    const mcpEntry = mcpServersRegistry.servers[provider.id];
+    const urlDomains = mcpEntry?.urlDomains?.join(",") ?? "";
+
     if (label) {
-      section += `  <service id="${provider.id}" status="ready" label="${label}"/>\n`;
+      section += `  <service id="${provider.id}" status="ready" label="${label}" urlDomains="${urlDomains}"/>\n`;
     } else {
-      section += `  <service id="${provider.id}" status="unconnected"/>\n`;
+      section += `  <service id="${provider.id}" status="unconnected" urlDomains="${urlDomains}"/>\n`;
     }
   }
   section += "</integrations>";

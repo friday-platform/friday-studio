@@ -33,7 +33,10 @@ export type MCPServerMetadata = {
   // Identity
   id: string;
   name: string;
+  /** Semantic keywords for capability matching (e.g., "calendar", "gcal") */
   domains: string[];
+  /** URL domains for URL-to-MCP mapping (e.g., "linear.app", "github.com") */
+  urlDomains?: string[];
 
   // Description & Constraints (for LLM prompt injection)
   /** What this server does - shown to LLMs for capability selection */

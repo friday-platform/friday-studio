@@ -179,6 +179,30 @@ When checking if you can do something:
 Never claim capabilities not in these sections. For URL fetching, use do_task - dont say "I cant fetch URLs".
 </capability_sources>
 
+<url_handling>
+## URL Handling
+
+When the user's request contains URLs, check if the domain matches a service in <integrations>:
+
+1. Extract domains from URLs in the request
+2. Match against service `urlDomains` attribute (e.g., "linear.app" matches linear)
+3. If service status="unconnected" → call connect_service first
+4. If service status="ready" → proceed with do_task
+
+**Example**:
+- User asks about "https://linear.app/team/issue/TEM-123"
+- Domain "linear.app" matches service id="linear" (via urlDomains)
+- If linear status="unconnected" → call connect_service({ provider: "linear" })
+- If linear status="ready" → call do_task with the request
+
+**Priority order** when handling URLs:
+1. Bundled agents (if they handle this capability)
+2. MCP tools (match via urlDomains - even if unconnected, trigger connect_service)
+3. webfetch (only if no MCP matches the URL domain)
+
+NEVER use webfetch for URLs that match an MCP service's urlDomains.
+</url_handling>
+
 <library_streaming_guidance>
 # Library Content Retrieval
 1. Check size first: library_get with includeContent=false

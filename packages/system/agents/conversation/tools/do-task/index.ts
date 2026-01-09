@@ -4,16 +4,18 @@
 import { client, parseResult } from "@atlas/client/v2";
 import type { MCPServerConfig } from "@atlas/config";
 import { GlobalMCPServerPool } from "@atlas/core";
+import { mcpServersRegistry } from "@atlas/core/mcp-registry/registry-consolidated";
 import { GlobalMCPToolProvider } from "@atlas/fsm-engine";
 import { smallLLM } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
 import type { UIMessageStreamWriter } from "ai";
 import { jsonSchema, tool } from "ai";
+import { fetchLinkSummary } from "../../link-context.ts";
 import { getAgentCatalog } from "./catalog.ts";
 import { extractArtifactsFromOutput, sanitizeAgentOutput } from "./extract-artifacts.ts";
 import { executeTaskViaFSM } from "./fsm-executor.ts";
 import { generateTaskFSM } from "./fsm-generator.ts";
-import { planTaskEnhanced } from "./planner.ts";
+import { planTaskEnhanced, type MCPContext } from "./planner.ts";
 import type { TaskExecutionContext, TaskProgressEvent } from "./types.ts";
 
 /**
@@ -164,7 +166,20 @@ export function createDoTaskTool(
         // 1. Planning
         emitProgress({ type: "planning" });
         const catalog = await getAgentCatalog();
-        const planResult = await planTaskEnhanced(intent, catalog, abortSignal);
+
+        // Build MCP context for URL domain matching
+        const linkSummary = await fetchLinkSummary(logger);
+        const connectedProviders = new Set(linkSummary?.credentials.map((c) => c.provider) ?? []);
+
+        const mcpContext: MCPContext[] = Object.entries(mcpServersRegistry.servers).map(
+          ([id, entry]) => ({
+            id,
+            urlDomains: entry.urlDomains ?? [],
+            connected: connectedProviders.has(id),
+          }),
+        );
+
+        const planResult = await planTaskEnhanced(intent, catalog, mcpContext, abortSignal);
 
         if (!planResult.success) {
           return { success: false, error: planResult.reason };

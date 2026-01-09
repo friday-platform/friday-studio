@@ -14,6 +14,15 @@ import {
 } from "../../../fsm-workspace-creator/enrichers/mcp-servers.ts";
 import type { CatalogAgent } from "./catalog.ts";
 
+/**
+ * MCP context for planner - provides domain-to-MCP mapping
+ */
+export interface MCPContext {
+  id: string;
+  urlDomains: string[];
+  connected: boolean;
+}
+
 // Enhanced types for FSM-based execution
 export interface EnhancedTaskStep {
   agentId?: string; // for agent steps
@@ -70,16 +79,29 @@ async function generateFriendlyDescriptions(
 /**
  * Enhanced planning with execution type detection and MCP server generation.
  * Identifies which steps need bundled agents vs ad-hoc LLM + MCP tools.
+ *
+ * @param intent - User's intent/request
+ * @param agents - Available bundled agents
+ * @param mcpContext - MCP servers with URL domain mappings for tool selection priority
+ * @param abortSignal - Optional abort signal
  */
 export async function planTaskEnhanced(
   intent: string,
   agents: CatalogAgent[],
+  mcpContext: MCPContext[],
   abortSignal?: AbortSignal,
 ): Promise<EnhancedPlanResult> {
   const model = registry.languageModel("anthropic:claude-sonnet-4-5");
 
   // Build agent catalog for prompt
   const agentList = agents.map((a) => `- ${a.id}: ${a.description}`).join("\n");
+
+  // Build MCP context for URL domain matching
+  const mcpWithDomains = mcpContext.filter((m) => m.urlDomains.length > 0);
+  const mcpList =
+    mcpWithDomains.length > 0
+      ? mcpWithDomains.map((m) => `- ${m.id}: ${m.urlDomains.join(", ")}`).join("\n")
+      : "(none)";
 
   const prompt = `You are a task planner. Analyze the user's intent and determine execution strategy.
 
@@ -88,23 +110,37 @@ ${agentList}
 
 User intent: "${intent}"
 
+## Tool Selection Priority (CRITICAL)
+
+When handling URLs, follow this priority order:
+1. Bundled agents (check available agents first)
+2. MCP tools (check URL domain against Available MCPs below)
+3. webfetch (ONLY if no MCP matches the URL domain)
+
+Available MCPs with URL domains:
+${mcpList}
+
+**IMPORTANT**: If a URL domain matches an MCP, use needs=["<mcp-id>"], NOT webfetch.
+- https://linear.app/... → needs=["linear"]
+- https://github.com/... → needs=["github"]
+- https://notion.so/... → needs=["notion"]
+- https://example.com/... (no MCP) → needs=[] (uses webfetch)
+
 ## Built-in Capabilities (always available to LLM steps)
 
 LLM steps (executionType="llm") automatically have these tools:
-- webfetch: Fetch content from any URL (read-only)
+- webfetch: Fetch content from generic URLs that don't match any MCP
 - artifacts_create, artifacts_get, artifacts_update: Store/retrieve task outputs
-
-These require NO entries in needs[]. Use needs=[] when only webfetch or artifacts needed.
-
-CRITICAL: For URL fetching, use executionType="llm" with needs=[]. Do NOT use research agent (research = web SEARCH, not direct URL fetch).
 
 For each step, determine:
 1. Can a bundled agent handle this? → Use agent
-2. Requires MCP tools without bundled agent? → Use ad-hoc LLM with MCP tools
+2. Does the URL match an MCP domain? → Use LLM with needs=[mcp-id]
+3. Generic URL with no MCP? → Use LLM with needs=[]
 
 Think through:
 - What capabilities are needed (calendar, slack, github, email, etc)?
 - Which bundled agents provide those capabilities?
+- Does any URL match an available MCP's domain?
 - What needs MCP tools but has no bundled agent?
 
 Output JSON with this exact structure:
@@ -114,7 +150,7 @@ Output JSON with this exact structure:
       "agentId": "agent-id",  // only if using bundled agent
       "description": "specific task description",
       "executionType": "agent",  // or "llm"
-      "needs": ["capability1", "capability2"]  // e.g., ["slack", "calendar"]
+      "needs": ["capability1", "capability2"]  // e.g., ["slack", "calendar", "linear"]
     }
   ]
 }
@@ -122,7 +158,8 @@ Output JSON with this exact structure:
 Rules:
 - executionType="agent" requires agentId from available agents
 - executionType="llm" means ad-hoc LLM call with MCP tools (no agentId)
-- needs array identifies required capabilities (slack, github, calendar, etc)
+- needs array identifies required capabilities (slack, github, calendar, linear, etc)
+- If URL matches MCP domain, include MCP id in needs array
 - Order steps logically (dependencies first)
 - If NO solution possible, output: { "error": "explanation" }
 - Output ONLY valid JSON, no markdown
@@ -149,24 +186,28 @@ Output: {
   }]
 }
 
-User: "check calendar and post summary to Slack"
+User: "summarize this Linear issue: https://linear.app/team/TEM-123"
+(linear.app matches MCP "linear")
 Output: {
-  "steps": [
-    {
-      "agentId": "google-calendar",
-      "description": "Fetch today's calendar events",
-      "executionType": "agent",
-      "needs": ["calendar"]
-    },
-    {
-      "description": "Post calendar summary to Slack #general",
-      "executionType": "llm",
-      "needs": ["slack"]
-    }
-  ]
+  "steps": [{
+    "description": "Fetch Linear issue TEM-123 details using Linear MCP",
+    "executionType": "llm",
+    "needs": ["linear"]
+  }]
+}
+
+User: "what's in this GitHub PR: https://github.com/org/repo/pull/456"
+(github.com matches MCP "github")
+Output: {
+  "steps": [{
+    "description": "Fetch GitHub PR #456 details using GitHub MCP",
+    "executionType": "llm",
+    "needs": ["github"]
+  }]
 }
 
 User: "read the content at https://example.com/page"
+(example.com has no MCP match → use webfetch)
 Output: {
   "steps": [{
     "description": "Fetch content from https://example.com/page using webfetch",
@@ -176,6 +217,7 @@ Output: {
 }
 
 User: "fetch this URL and summarize it: https://news.com/article"
+(news.com has no MCP match → use webfetch)
 Output: {
   "steps": [
     {
