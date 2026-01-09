@@ -57,7 +57,7 @@ export const githubAgent = createAgent({
 
     // 5. Execute with your LLM
     const result = await generateText({
-      model: anthropic('claude-3-sonnet-20240229'),
+      model: anthropic('anthropic:claude-sonnet-4-5'),
       prompt,
       tools: githubTools
     });
@@ -101,7 +101,7 @@ handler: (async (prompt, { stream }) => {
 
   // Stream LLM responses
   const result = await streamText({
-    model: anthropic("claude-3-sonnet"),
+    model: anthropic("anthropic:claude-sonnet-4-5"),
     prompt,
     onChunk: ({ chunk }) => {
       if (chunk.text) {
@@ -263,7 +263,7 @@ export const slackAgent = createAgent({
     import { anthropic } from '@ai-sdk/anthropic';
 
     const result = await generateText({
-      model: anthropic('claude-3-sonnet'),
+      model: anthropic('anthropic:claude-sonnet-4-5'),
       prompt,
       tools: tools  // Slack tools available here
     });

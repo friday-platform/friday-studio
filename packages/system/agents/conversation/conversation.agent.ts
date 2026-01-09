@@ -617,7 +617,7 @@ export const conversationAgent = createAgent({
         try {
           try {
             result = streamText({
-              model: registry.languageModel("groq:openai/gpt-oss-120b"),
+              model: registry.languageModel("anthropic:claude-sonnet-4-5"),
               experimental_repairToolCall: repairToolCall,
               messages: [
                 {

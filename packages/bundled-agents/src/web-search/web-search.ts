@@ -129,7 +129,7 @@ ${excerpts}`;
     .join("\n\n---\n\n");
 
   const result = await generateObject({
-    model: wrapAISDKModel(registry.languageModel("groq:openai/gpt-oss-120b")),
+    model: wrapAISDKModel(registry.languageModel("anthropic:claude-sonnet-4-5")),
     abortSignal,
     schema: ResponseSchema,
     experimental_repairText: repairJson,
@@ -218,7 +218,7 @@ export const webSearchAgent = createAgent<string, WebSearchAgentResult>({
 
     try {
       await generateText({
-        model: wrapAISDKModel(registry.languageModel("groq:openai/gpt-oss-120b")),
+        model: wrapAISDKModel(registry.languageModel("anthropic:claude-sonnet-4-5")),
         messages: [
           { role: "system", content: QUERY_ANALYSIS_PROMPT },
           { role: "system", content: `Today's date: ${getTodaysDate()}` },

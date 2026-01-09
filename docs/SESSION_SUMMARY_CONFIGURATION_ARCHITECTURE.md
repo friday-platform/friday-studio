@@ -63,7 +63,7 @@ The goal was to separate concerns between:
 ```yaml
 version: "1.0"
 workspaceSupervisor:
-  model: "claude-4-sonnet-20250514"
+  model: "claude-sonnet-4-5"
   capabilities: [signal_analysis, context_filtering, session_spawning, job_selection]
   prompts:
     system: "You are a WorkspaceSupervisor responsible for analyzing signals..."
@@ -72,11 +72,11 @@ workspaceSupervisor:
     job_selection: "Select appropriate jobs based on signal analysis..."
 
 sessionSupervisor:
-  model: "claude-4-sonnet-20250514"
+  model: "claude-sonnet-4-5"
   capabilities: [execution_planning, agent_coordination, progress_evaluation]
 
 agentSupervisor:
-  model: "claude-4-sonnet-20250514"
+  model: "claude-sonnet-4-5"
   capabilities: [agent_analysis, safety_assessment, environment_preparation]
   prompts:
     system: "You are an AgentSupervisor responsible for safe agent loading..."
@@ -113,7 +113,7 @@ agents:
   # LLM agents with custom prompts and tools
   memory-agent:
     type: "llm"
-    model: "claude-4-sonnet-20250514"
+    model: "claude-sonnet-4-5"
     purpose: "Manages memory operations at session start and end"
     tools: ["memory-storage", "pattern-analysis", "context-retrieval"]
 

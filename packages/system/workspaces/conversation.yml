@@ -185,7 +185,7 @@ agents:
     agent: "conversation"
     description: "Handle conversations with scope awareness and workspace creation"
     config:
-      model: "claude-sonnet-4-20250514"
+      model: "claude-sonnet-4-5"
       tools:
         # advanced workspace creation
         - "atlas_update_workspace"

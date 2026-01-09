@@ -35,7 +35,7 @@ Atlas-managed configuration for supervisor behavior and core platform capabiliti
 ```yaml
 version: "1.0"
 workspaceSupervisor:
-  model: "claude-4-sonnet-20250514"
+  model: "claude-sonnet-4-5"
   capabilities:
     - job_trigger_evaluation
     - context_filtering
@@ -54,7 +54,7 @@ workspaceSupervisor:
       Filter based on job requirements, agent capabilities, and memory relevance.
 
 sessionSupervisor:
-  model: "claude-4-sonnet-20250514"
+  model: "claude-sonnet-4-5"
   capabilities:
     - execution_planning
     - agent_coordination
@@ -97,7 +97,7 @@ agents:
   # User-defined LLM agent
   frontend-reviewer:
     type: "llm"
-    model: "claude-4-sonnet-20250514"
+    model: "claude-sonnet-4-5"
     purpose: "Reviews frontend code for best practices"
     tools: ["file-reader", "diff-analyzer", "web-accessibility-checker"]
     prompts:
@@ -295,7 +295,7 @@ playwright-agent:
 ```yaml
 frontend-reviewer:
   type: "llm"
-  model: "claude-4-sonnet-20250514"
+  model: "claude-sonnet-4-5"
   purpose: "Reviews frontend code for best practices"
   tools: ["file-reader", "diff-analyzer"]
   prompts:

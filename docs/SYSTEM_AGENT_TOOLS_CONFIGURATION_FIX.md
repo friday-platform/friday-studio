@@ -47,7 +47,7 @@ agents:
     agent: "conversation"
     description: "Handle conversations with scope awareness"
     config:
-      model: "claude-sonnet-4-20250514"
+      model: "claude-sonnet-4-5"
       temperature: 0.7
       max_tokens: 8000
       tools:  # CORRECT: tools inside config
@@ -68,7 +68,7 @@ agents:
     description: "Agent description (required)"
     config:
       provider: "anthropic"           # Required
-      model: "claude-sonnet-4-20250514"  # Required
+      model: "claude-sonnet-4-5"  # Required
       prompt: "System prompt..."      # Required
       temperature: 0.3                # Optional (0-0.7)
       max_tokens: 4000                # Optional
@@ -90,7 +90,7 @@ agents:
     agent: "conversation"             # Required: system agent identifier
     description: "Agent description (required)"
     config:                           # Optional
-      model: "claude-sonnet-4-20250514"
+      model: "claude-sonnet-4-5"
       temperature: 0.5
       max_tokens: 4000
       tools:
