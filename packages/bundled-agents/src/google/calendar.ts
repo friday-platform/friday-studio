@@ -2,7 +2,7 @@ import { env } from "node:process";
 import type { LinkCredentialRef, ToolCall, ToolResult } from "@atlas/agent-sdk";
 import { createAgent, repairJson, repairToolCall } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
-import { CalendarSchedule, CalendarScheduleSchema } from "@atlas/core/artifacts";
+import { type CalendarSchedule, CalendarScheduleSchema } from "@atlas/core/artifacts";
 import { getDefaultProviderOpts, registry, smallLLM } from "@atlas/llm";
 import { stringifyError } from "@atlas/utils";
 import { generateObject, generateText, stepCountIs } from "ai";

@@ -90,6 +90,7 @@ export class CortexStorageAdapter implements ArtifactStorageAdapter {
   /**
    * Generic HTTP request with timeout and authentication.
    * Handles common error cases and response parsing.
+   * Strings are sent as-is, objects are JSON.stringify'd.
    */
   private async request<T>(
     method: string,
@@ -107,7 +108,7 @@ export class CortexStorageAdapter implements ArtifactStorageAdapter {
           "Content-Type": "application/json",
           Authorization: `Bearer ${this.getAuthToken()}`,
         },
-        body: body ? JSON.stringify(body) : undefined,
+        body: body ? (typeof body === "string" ? body : JSON.stringify(body)) : undefined,
         signal: controller.signal,
       });
 
@@ -196,7 +197,7 @@ export class CortexStorageAdapter implements ArtifactStorageAdapter {
       const fileUploadResponse = await this.request<CreateObjectResponse>(
         "POST",
         "/objects",
-        { content: contentForUpload },
+        contentForUpload,
         { parseJson: true },
       );
 
@@ -223,7 +224,7 @@ export class CortexStorageAdapter implements ArtifactStorageAdapter {
       const artifactDataUploadResponse = await this.request<CreateObjectResponse>(
         "POST",
         "/objects",
-        { content: artifactDataJson },
+        artifactDataJson,
         { parseJson: true },
       );
 
@@ -268,7 +269,7 @@ export class CortexStorageAdapter implements ArtifactStorageAdapter {
         const uploadResponse = await this.request<CreateObjectResponse>(
           "POST",
           "/objects",
-          { content: blobContent },
+          blobContent,
           { parseJson: true },
         );
 
@@ -363,7 +364,7 @@ export class CortexStorageAdapter implements ArtifactStorageAdapter {
         const uploadResponse = await this.request<CreateObjectResponse>(
           "POST",
           "/objects",
-          { content: blobContent },
+          blobContent,
           { parseJson: true },
         );
 

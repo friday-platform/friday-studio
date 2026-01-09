@@ -1,7 +1,7 @@
-import { tool } from "ai";
-import { z } from "zod";
 import { client, parseResult } from "@atlas/client/v2";
 import { createLogger } from "@atlas/logger";
+import { tool } from "ai";
+import { z } from "zod";
 
 const logger = createLogger({ name: "display-artifact" });
 
