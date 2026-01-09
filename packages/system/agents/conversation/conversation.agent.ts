@@ -33,6 +33,7 @@ import { getCapabilitiesSection } from "./capabilities.ts";
 import { fetchLinkSummary, formatIntegrationsSection } from "./link-context.ts";
 import { estimateTokens, processMessageHistory } from "./message-windowing.ts";
 import SYSTEM_PROMPT from "./prompt.txt" with { type: "text" };
+import { wrapToolsWithSessionContext } from "./session-context.ts";
 import { formatSkillsSection } from "./skills/index.ts";
 import { createConnectServiceTool } from "./tools/connect-service.ts";
 import { createDoTaskTool } from "./tools/do-task/index.ts";
@@ -347,6 +348,15 @@ export const conversationAgent = createAgent({
           throw new Error("Stream ID is required");
         }
 
+        // Session context for tool injection (datetime enables timezone-aware operations)
+        const sessionContext = {
+          sessionId: session.sessionId,
+          workspaceId: session.workspaceId,
+          userId: session.userId,
+          streamId: session.streamId,
+          datetime: session.datetime,
+        };
+
         /**
          * Register ONLY system agents with custom inputSchemas as direct tools.
          * These agents (workspace-planner, fsm-workspace-creator) need structured inputs.
@@ -381,15 +391,7 @@ export const conversationAgent = createAgent({
                 const result = await agentServer.callTool(
                   {
                     name: agent.name,
-                    arguments: {
-                      ...input,
-                      _sessionContext: {
-                        sessionId: session.sessionId,
-                        workspaceId: session.workspaceId,
-                        userId: session.userId,
-                        streamId: session.streamId,
-                      },
-                    },
+                    arguments: { ...input, _sessionContext: sessionContext },
                     _meta: { requestId },
                   },
                   undefined,
@@ -476,9 +478,8 @@ export const conversationAgent = createAgent({
           "system_version",
         ]);
 
-        const filteredTools = Object.fromEntries(
-          Object.entries(tools).filter(([name]) => ALLOWED_TOOLS.has(name)),
-        );
+        // Wrap platform tools to inject session context (datetime for timezone-aware operations)
+        const filteredTools = wrapToolsWithSessionContext(tools, sessionContext, ALLOWED_TOOLS);
 
         // Create do_task tool with writer closure for progress
         const doTaskTool = createDoTaskTool(

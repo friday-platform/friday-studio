@@ -15,7 +15,7 @@ import { getAgentCatalog } from "./catalog.ts";
 import { extractArtifactsFromOutput, sanitizeAgentOutput } from "./extract-artifacts.ts";
 import { executeTaskViaFSM } from "./fsm-executor.ts";
 import { generateTaskFSM } from "./fsm-generator.ts";
-import { planTaskEnhanced, type MCPContext } from "./planner.ts";
+import { type MCPContext, planTaskEnhanced } from "./planner.ts";
 import type { TaskExecutionContext, TaskProgressEvent } from "./types.ts";
 
 /**

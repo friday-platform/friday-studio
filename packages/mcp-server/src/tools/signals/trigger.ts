@@ -23,13 +23,19 @@ export function registerSignalTriggerTool(server: McpServer, ctx: ToolContext) {
           .record(z.string(), z.unknown())
           .optional()
           .describe("Optional payload data to send with the signal"),
+        // Session context injected by callers - we extract datetime for timezone-aware signals
+        _sessionContext: z.record(z.string(), z.unknown()).optional(),
       },
     },
-    async ({ workspaceId, signalId, payload }) => {
+    async ({ workspaceId, signalId, payload, _sessionContext }) => {
+      // Extract datetime from session context for timezone-aware signal processing
+      const datetime = _sessionContext?.datetime;
+
       ctx.logger.info("MCP workspace_signal_trigger called", {
         workspaceId,
         signalId,
         hasPayload: !!payload,
+        hasDatetime: !!datetime,
       });
 
       // Validate payload against signal schema
@@ -64,10 +70,13 @@ export function registerSignalTriggerTool(server: McpServer, ctx: ToolContext) {
       }
 
       try {
+        // Merge datetime into payload for timezone-aware FSM agents
+        const enrichedPayload = datetime ? { ...payload, datetime } : payload || {};
+
         const result = await parseResult(
           client.workspace[":workspaceId"].signals[":signalId"].$post({
             param: { workspaceId, signalId },
-            json: { payload: payload || {} },
+            json: { payload: enrichedPayload },
           }),
         );
 
