@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import process from "node:process";
 import { logger } from "@atlas/logger";
 import { flush as flushSentry, initSentry } from "@atlas/sentry";
+import { getConnInfo } from "hono/deno";
 import { HTTPException } from "hono/http-exception";
 import { jwt } from "hono/jwt";
 import { routePath } from "hono/route";
@@ -135,7 +136,14 @@ export function createApp(
     // Record metrics using route pattern (e.g., /v1/credentials/:id) for bounded cardinality
     recordRequest(method, routePath(c), status, duration);
 
-    logger.info("request", { method, path, status, durationMs: duration, userId: c.get("userId") });
+    logger.info("request", {
+      method,
+      path,
+      status,
+      durationMs: duration,
+      userId: c.get("userId"),
+      sourceIp: c.env ? getConnInfo(c).remote.address : undefined,
+    });
   });
 
   const baseApp = factory
@@ -166,6 +174,7 @@ export function createApp(
         logger.error("JWT verification failed", {
           path: c.req.path,
           error: err.cause instanceof Error ? err.cause.message : err.message,
+          sourceIp: c.env ? getConnInfo(c).remote.address : undefined,
         });
         return err.getResponse();
       }
