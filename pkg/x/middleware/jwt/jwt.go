@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/go-chi/httplog/v2"
 	"github.com/golang-jwt/jwt/v5"
 )
 
@@ -113,8 +114,9 @@ func AuthMiddleware(publicKey *rsa.PublicKey, logger *slog.Logger) func(http.Han
 				return
 			}
 
-			// Add user ID to context
+			// Add user ID to context and log fields
 			ctx := WithUserID(r.Context(), userID)
+			httplog.LogEntrySetFields(r.Context(), map[string]any{"userID": userID})
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
