@@ -135,6 +135,19 @@ export const CalendarScheduleSchema = z.object({
           "End date of the event (ISO 8601 with timezone offset, e.g. 2024-01-15T10:00:00-08:00)",
         ),
       link: z.string().optional().describe("Direct url to the event, if available"),
+      attendees: z
+        .array(
+          z.object({
+            email: z.string().describe("Email address of the attendee"),
+            responseStatus: z
+              .string()
+              .optional()
+              .describe("RSVP status: needsAction, declined, tentative, or accepted"),
+            organizer: z.boolean().optional().describe("Whether this attendee is the organizer"),
+          }),
+        )
+        .optional()
+        .describe("List of event attendees with their email addresses and RSVP status"),
     }),
   ),
   source: z.string().describe("Source of the schedule (eg. Google Calendar, iCal, etc.)"),

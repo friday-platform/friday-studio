@@ -116,7 +116,7 @@ export const ArtifactTypeSchema = z.enum([
 export const CreateArtifactSchema = z.object({
   data: ArtifactDataInputSchema,
   title: z.string().min(1).max(200),
-  summary: z.string().min(1).max(1000),
+  summary: z.string().min(1).max(5000),
   workspaceId: z.string().optional(),
   chatId: z.string().optional(),
 });
@@ -127,7 +127,7 @@ export const UpdateArtifactSchema = z.object({
   type: ArtifactTypeSchema,
   data: ArtifactDataInputSchema,
   title: z.string().min(1).max(200).optional(),
-  summary: z.string().min(1).max(1000),
+  summary: z.string().min(1).max(5000),
   revisionMessage: z.string().optional(),
 });
 
