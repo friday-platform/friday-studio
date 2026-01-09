@@ -10,6 +10,7 @@ type Event = {
   hourEnd: number;
   duration: string;
   link?: string;
+  isAllDay: boolean;
 };
 
 let { events, source, sourceUrl }: CalendarSchedule = $props();
@@ -37,6 +38,23 @@ function getDateKey(date: Date): string {
   return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
 }
 
+function roundDownTo15(hour: number): number {
+  const hours = Math.floor(hour);
+  const minutes = (hour - hours) * 60;
+  const roundedMinutes = Math.floor(minutes / 15) * 15;
+  return hours + roundedMinutes / 60;
+}
+
+function isAllDayEvent(start: Date, end: Date): boolean {
+  return (
+    start.getHours() === 0 &&
+    start.getMinutes() === 0 &&
+    end.getHours() === 0 &&
+    end.getMinutes() === 0 &&
+    end.getTime() > start.getTime()
+  );
+}
+
 const EventsSchema = CalendarScheduleSchema.shape.events;
 
 let eventsContainer: HTMLDivElement | null = $state(null);
@@ -48,6 +66,7 @@ let parsedEvents: Map<string, Event> = $derived.by(() => {
     .forEach((event) => {
       const start = new Date(event.startDate);
       const end = new Date(event.endDate);
+      const allDay = isAllDayEvent(start, end);
 
       eventsMap.set(event.id, {
         id: event.id,
@@ -55,13 +74,15 @@ let parsedEvents: Map<string, Event> = $derived.by(() => {
         link: event?.link,
         date: start,
         endDate: end,
-        hourStart: start.getHours() + start.getMinutes() / 60,
-        hourEnd: end.getHours() + end.getMinutes() / 60,
-        duration:
-          `${start.toLocaleTimeString(undefined, { hour: "numeric", minute: "numeric" })} - ${end.toLocaleTimeString(undefined, { hour: "numeric", minute: "numeric" })}`
-            .replaceAll("AM", "am")
-            .replaceAll("PM", "pm")
-            .replaceAll(" ", ""),
+        isAllDay: allDay,
+        hourStart: allDay ? 0 : roundDownTo15(start.getHours() + start.getMinutes() / 60),
+        hourEnd: allDay ? 0.5 : roundDownTo15(end.getHours() + end.getMinutes() / 60),
+        duration: allDay
+          ? "All Day"
+          : `${start.toLocaleTimeString(undefined, { hour: "numeric", minute: "numeric" })} - ${end.toLocaleTimeString(undefined, { hour: "numeric", minute: "numeric" })}`
+              .replaceAll("AM", "am")
+              .replaceAll("PM", "pm")
+              .replaceAll(" ", ""),
       });
     });
 
@@ -105,18 +126,20 @@ const eventsByDay = $derived.by(() => {
   return Array.from(grouped.values());
 });
 
+const hasAllDayEvents = $derived(Array.from(parsedEvents.values()).some((event) => event.isAllDay));
+
+const allDayRowOffset = $derived(hasAllDayEvents ? 4 : 0);
+
 const startTime = $derived(
-  Array.from(parsedEvents.values()).reduce(
-    (min, event) => Math.min(min, Math.floor(event.hourStart)),
-    Infinity,
-  ),
+  Array.from(parsedEvents.values())
+    .filter((event) => !event.isAllDay)
+    .reduce((min, event) => Math.min(min, Math.floor(event.hourStart)), Infinity),
 );
 
 const endTime = $derived(
-  Array.from(parsedEvents.values()).reduce(
-    (max, event) => Math.max(max, Math.ceil(event.hourEnd), 0),
-    0,
-  ),
+  Array.from(parsedEvents.values())
+    .filter((event) => !event.isAllDay)
+    .reduce((max, event) => Math.max(max, Math.ceil(event.hourEnd), 0), 0),
 );
 
 const blocks = $derived(endTime - startTime);
@@ -146,7 +169,7 @@ function hasConflictingEvents(id: string, start: number, end: number) {
 {#snippet hour(time: number)}
 	<div class="hour">
 		<span class="time">
-			{#if time === 12}
+			{#if time === 12 || time === 0}
 				12
 			{:else if time === 24}
 				12
@@ -159,19 +182,25 @@ function hasConflictingEvents(id: string, start: number, end: number) {
 {/snippet}
 
 {#snippet event(item: [string, Event])}
-	{@const conflicts = hasConflictingEvents(item[0], item[1].hourStart, item[1].hourEnd)}
+	{@const evt = item[1]}
+	{@const conflicts = evt.isAllDay
+		? false
+		: hasConflictingEvents(item[0], evt.hourStart, evt.hourEnd)}
+	{@const gridRowStart = evt.isAllDay ? 1 : (evt.hourStart - startTime) * 4 + 1 + allDayRowOffset}
+	{@const gridRowEnd = evt.isAllDay ? 3 : (evt.hourEnd - startTime) * 4 + 1 + allDayRowOffset}
 
 	<article
 		class="event"
-		class:small={item[1].hourEnd - item[1].hourStart < 0.5}
-		class:large={item[1].hourEnd - item[1].hourStart > 0.75}
+		class:tiny={evt.hourEnd - evt.hourStart === 0.25}
+		class:small={evt.isAllDay || evt.hourEnd - evt.hourStart <= 0.5}
+		class:large={evt.hourEnd - evt.hourStart > 0.75}
 		style:grid-column={conflicts ? 'auto' : '1 / span ' + largestColumn}
-		style:--grid-row-start={(item[1].hourStart - startTime) * 4 + 1}
-		style:--grid-row-end={(item[1].hourEnd - startTime) * 4 + 1}
+		style:--grid-row-start={gridRowStart}
+		style:--grid-row-end={gridRowEnd}
 	>
-		<svelte:element this={item[1].link ? 'a' : 'div'} href={item[1].link} target="_blank">
-			<h2>{item[1].name}</h2>
-			<time>{item[1].duration}</time>
+		<svelte:element this={evt.link ? 'a' : 'div'} href={evt.link} target="_blank">
+			<h2>{evt.name}</h2>
+			<time>{evt.duration}</time>
 		</svelte:element>
 	</article>
 {/snippet}
@@ -228,14 +257,19 @@ function hasConflictingEvents(id: string, start: number, end: number) {
 				{/if}
 
 				{#if source}
-					<svelte:element this={sourceUrl ? 'a' : 'span'} href={sourceUrl} target="_blank"
-						>{source}</svelte:element
-					>
+					<svelte:element this={sourceUrl ? 'a' : 'span'} href={sourceUrl} target="_blank">
+						{source}
+					</svelte:element>
 				{/if}
 			</header>
 
-			<div class="schedule" style:--block-count={blocks * 4}>
+			<div class="schedule" style:--block-count={blocks * 4 + allDayRowOffset}>
 				<div class="hours">
+					{#if hasAllDayEvents}
+						<div class="hour all-day-hour">
+							<span class="time">All Day</span>
+						</div>
+					{/if}
 					{#each Array.from({ length: blocks }, (_, i) => i + startTime) as time (time)}
 						{@render hour(time)}
 					{/each}
@@ -251,6 +285,7 @@ function hasConflictingEvents(id: string, start: number, end: number) {
 					<div
 						class="current-time"
 						style:--position={currentTime.getHours() + currentTime.getMinutes() / 60 - startTime}
+						style:--all-day-offset={hasAllDayEvents ? 1 : 0}
 					>
 						<time>
 							<svg
@@ -328,13 +363,13 @@ function hasConflictingEvents(id: string, start: number, end: number) {
 	.schedule {
 		display: grid;
 		grid-template-columns: 1fr;
-		grid-template-rows: repeat(var(--block-count, 1), var(--size-3));
+		grid-template-rows: repeat(var(--block-count, 1), var(--size-3-5));
 		position: relative;
 
 		.current-time {
 			block-size: var(--size-4);
 			position: absolute;
-			inset-block-start: calc(var(--position) * var(--size-12));
+			inset-block-start: calc((var(--position) + var(--all-day-offset, 0)) * var(--size-12));
 			inset-inline: 0;
 			transform: translateY(-50%);
 			z-index: var(--layer-2);
@@ -422,29 +457,11 @@ function hasConflictingEvents(id: string, start: number, end: number) {
 			padding-inline: var(--size-2);
 		}
 
-		&.small {
-			padding-block: var(--size-px);
-
-			div {
-				align-items: start;
-				padding-block: 0;
-			}
-		}
-
-		&.large {
-			div {
-				flex-direction: column;
-				padding-block-start: var(--size-2);
-			}
-		}
-
 		h2 {
 			color: var(--color-purple);
 			font-size: var(--font-size-1);
 			font-weight: var(--font-weight-5);
-			line-height: var(--font-lineheight-0);
-			text-overflow: ellipsis;
-			white-space: nowrap;
+			line-height: var(--font-lineheight-1);
 
 			@media (prefers-color-scheme: dark) {
 				color: color-mix(in oklch, var(--color-purple), var(--color-text) 65%);
@@ -456,9 +473,39 @@ function hasConflictingEvents(id: string, start: number, end: number) {
 			font-weight: var(--font-weight-4-5);
 			line-height: var(--font-lineheight-0);
 			opacity: 0.5;
-			overflow: hidden;
-			text-overflow: ellipsis;
 			white-space: nowrap;
+		}
+
+		&.tiny {
+			h2,
+			time {
+				font-size: var(--font-size-0);
+				white-space: nowrap;
+			}
+		}
+
+		&.tiny,
+		&.small {
+			padding-block: var(--size-px);
+
+			div,
+			a {
+				align-items: center;
+				padding-block: 0;
+			}
+
+			h2 {
+				flex: 1;
+				overflow: hidden;
+				text-overflow: ellipsis;
+			}
+		}
+
+		&.large {
+			div {
+				flex-direction: column;
+				padding-block-start: var(--size-2);
+			}
 		}
 	}
 

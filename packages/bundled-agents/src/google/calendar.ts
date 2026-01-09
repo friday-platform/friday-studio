@@ -148,7 +148,7 @@ Rules:
 Filtering events:
 When calling get_events, you MUST set the "time_min" value:
   - Use the user's Local Timezone Offset from Context Facts to construct the time_min bound.
-  - If the user asks for their schedule today, start at midnight. Example: If today is January 8 and offset is -08:00, use time_min: 2026-01-08T00:00:00-08:00
+  - If the user asks for their schedule today, start at midnight
   - If the user asks for their upcoming events, start at the current time
 This ensures events later in the day aren't excluded due to UTC date boundary, and that past events are shown when the user requests their calendar for the full day.`;
 
