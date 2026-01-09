@@ -48,8 +48,9 @@ async function globalSetup() {
   await createTestUser();
   console.log("✓ Test user created");
 
-  // 4. Create adapter instance
-  adapter = new CortexStorageAdapter(cortexServer.url, cortexServer.authToken);
+  // 4. Set auth token and create adapter instance
+  process.env.ATLAS_KEY = cortexServer.authToken;
+  adapter = new CortexStorageAdapter(cortexServer.url);
   console.log("✓ Test environment ready\n");
 }
 
@@ -934,16 +935,21 @@ Deno.test("Cortex: Batch - getManyLatest with empty array returns empty", async 
 Deno.test("Cortex: Errors - authentication failure", async () => {
   await resetTestData();
 
-  const badAdapter = new CortexStorageAdapter(cortexServer.url, "invalid-token");
+  const originalKey = process.env.ATLAS_KEY;
+  process.env.ATLAS_KEY = "invalid-token";
+  try {
+    const badAdapter = new CortexStorageAdapter(cortexServer.url);
+    const result = await badAdapter.create(createSummaryArtifactInput());
 
-  const result = await badAdapter.create(createSummaryArtifactInput());
-
-  assertResultFail(result);
-  assertEquals(result.error.includes("Authentication") || result.error.includes("401"), true);
+    assertResultFail(result);
+    assertEquals(result.error.includes("Authentication") || result.error.includes("401"), true);
+  } finally {
+    process.env.ATLAS_KEY = originalKey;
+  }
 });
 
 Deno.test("Cortex: Errors - invalid base URL", async () => {
-  const badAdapter = new CortexStorageAdapter("invalid-url", "token");
+  const badAdapter = new CortexStorageAdapter("invalid-url");
 
   const result = await badAdapter.create(createSummaryArtifactInput());
 

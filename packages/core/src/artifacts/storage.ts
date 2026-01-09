@@ -14,7 +14,7 @@ const logger = createLogger({ name: "artifact-storage" });
  * - ARTIFACT_STORAGE_ADAPTER: "local" (default) or "cortex"
  * - ARTIFACT_STORAGE_PATH: Override default KV path (local only)
  * - CORTEX_URL: Cortex service URL (required for cortex adapter)
- * - ATLAS_KEY: JWT token for Cortex authentication (required for cortex adapter)
+ * - ATLAS_KEY: JWT token for Cortex authentication (read at request time, not startup)
  */
 function createArtifactStorageAdapter(): ArtifactStorageAdapter {
   const adapterType = process.env.ARTIFACT_STORAGE_ADAPTER || "local";
@@ -28,21 +28,15 @@ function createArtifactStorageAdapter(): ArtifactStorageAdapter {
 
     case "cortex": {
       const cortexUrl = process.env.CORTEX_URL;
-      const atlasKey = process.env.ATLAS_KEY;
-
       if (!cortexUrl) {
         throw new Error(
           "CORTEX_URL environment variable is required when ARTIFACT_STORAGE_ADAPTER=cortex",
         );
       }
-      if (!atlasKey) {
-        throw new Error(
-          "ATLAS_KEY environment variable is required when ARTIFACT_STORAGE_ADAPTER=cortex",
-        );
-      }
 
+      // ATLAS_KEY is read from env at request time, not module load (same pattern as Link routes)
       logger.info("Using CortexStorageAdapter", { cortexUrl });
-      return new CortexStorageAdapter(cortexUrl, atlasKey);
+      return new CortexStorageAdapter(cortexUrl);
     }
 
     default:

@@ -1,3 +1,4 @@
+import process from "node:process";
 import { createLogger } from "@atlas/logger";
 import { fail, type Result, stringifyError, success } from "@atlas/utils";
 import { deadline } from "@std/async";
@@ -73,12 +74,17 @@ interface CreateObjectResponse {
  */
 export class CortexStorageAdapter implements ArtifactStorageAdapter {
   private readonly baseUrl: string;
-  private readonly authToken: string;
 
-  constructor(baseUrl: string, authToken: string) {
-    // Note: URL validation deferred to first request to allow test setup
+  constructor(baseUrl: string) {
     this.baseUrl = baseUrl ? baseUrl.replace(/\/+$/, "") : ""; // Remove trailing slashes
-    this.authToken = authToken;
+  }
+
+  private getAuthToken(): string {
+    const token = process.env.ATLAS_KEY;
+    if (!token) {
+      throw new Error("ATLAS_KEY not available for Cortex authentication");
+    }
+    return token;
   }
 
   /**
@@ -97,7 +103,10 @@ export class CortexStorageAdapter implements ArtifactStorageAdapter {
     try {
       const response = await fetch(`${this.baseUrl}${endpoint}`, {
         method,
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${this.authToken}` },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${this.getAuthToken()}`,
+        },
         body: body ? JSON.stringify(body) : undefined,
         signal: controller.signal,
       });
