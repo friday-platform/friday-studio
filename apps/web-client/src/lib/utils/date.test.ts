@@ -5,6 +5,7 @@ import {
   formatFullDate,
   formatOutlineDate,
   formatSessionDate,
+  getDatetimeContext,
 } from "./date.ts";
 
 Deno.test("formatChatDate - just now", () => {
@@ -365,4 +366,29 @@ Deno.test("formatFullDate - accepts number timestamp", () => {
   const timestamp = date.getTime();
   const result = formatFullDate(timestamp);
   assertEquals(result, "March 15, 2025");
+});
+
+Deno.test("getDatetimeContext - timezoneOffset matches ±HH:MM pattern", () => {
+  const ctx = getDatetimeContext();
+  const offsetPattern = /^[+-]\d{2}:\d{2}$/;
+  assertEquals(
+    offsetPattern.test(ctx.timezoneOffset),
+    true,
+    `Expected timezoneOffset to match ±HH:MM pattern, got: ${ctx.timezoneOffset}`,
+  );
+});
+
+Deno.test("getDatetimeContext - returns all required fields", () => {
+  const ctx = getDatetimeContext();
+  assertEquals(typeof ctx.timezone, "string");
+  assertEquals(typeof ctx.timestamp, "string");
+  assertEquals(typeof ctx.localDate, "string");
+  assertEquals(typeof ctx.localTime, "string");
+  assertEquals(typeof ctx.timezoneOffset, "string");
+});
+
+Deno.test("getDatetimeContext - timestamp contains timezone offset", () => {
+  const ctx = getDatetimeContext();
+  // Timestamp should end with the timezone offset
+  assertEquals(ctx.timestamp.endsWith(ctx.timezoneOffset), true);
 });

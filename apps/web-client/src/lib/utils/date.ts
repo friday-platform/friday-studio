@@ -250,3 +250,38 @@ export function formatOutlineDate(dateInput: string | number): string {
   // Different year
   return `${shortMonthNames[date.getMonth()]} ${dateDay}, ${dateYear} at ${displayHours}:${minutes}${ampm}`;
 }
+
+export interface DatetimeContext {
+  timezone: string; // IANA e.g. 'America/Los_Angeles'
+  timestamp: string; // ISO8601 with offset e.g. '2026-01-08T12:44:39-08:00'
+  localDate: string; // e.g. 'Thursday, January 8, 2026'
+  localTime: string; // e.g. '12:44 PM'
+  timezoneOffset: string; // e.g. '-08:00'
+}
+
+export function getDatetimeContext(): DatetimeContext {
+  const now = new Date();
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const offsetMinutes = now.getTimezoneOffset();
+  const offsetHours = Math.floor(Math.abs(offsetMinutes) / 60);
+  const offsetMins = Math.abs(offsetMinutes) % 60;
+  const offsetSign = offsetMinutes <= 0 ? "+" : "-";
+  const timezoneOffset = `${offsetSign}${String(offsetHours).padStart(2, "0")}:${String(offsetMins).padStart(2, "0")}`;
+
+  // Build local ISO timestamp
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const timestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}${timezoneOffset}`;
+
+  return {
+    timezone,
+    timestamp,
+    localDate: now.toLocaleDateString("en-US", {
+      weekday: "long",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    }),
+    localTime: now.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }),
+    timezoneOffset,
+  };
+}

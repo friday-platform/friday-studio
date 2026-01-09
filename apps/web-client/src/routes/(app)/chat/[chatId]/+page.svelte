@@ -25,6 +25,7 @@ import Reasoning from "$lib/modules/messages/reasoning.svelte";
 import Request from "$lib/modules/messages/request.svelte";
 import Response from "$lib/modules/messages/response.svelte";
 import ShowDetails from "$lib/modules/messages/show-details.svelte";
+import { getDatetimeContext } from "$lib/utils/date";
 import { shareChat } from "$lib/utils/share-chat";
 import type { PageData } from "./$types";
 
@@ -61,7 +62,7 @@ function setup() {
         transport: new DefaultChatTransport({
           api: `${getAtlasDaemonUrl()}/api/chat`,
           prepareSendMessagesRequest({ messages, id }) {
-            return { body: { message: messages.at(-1), id } };
+            return { body: { message: messages.at(-1), id, datetime: getDatetimeContext() } };
           },
         }),
       }),
@@ -361,16 +362,18 @@ let showDetails = new SvelteMap<string, boolean>();
 													Add Files
 												</DropdownMenu.Item>
 
-												{#if chatContext.newChat.messages.length > 0}
+												{@const currentChatMessages = chatContext.chats.get(data.chatId)?.messages ?? []}
+												{#if currentChatMessages.length > 0}
 													<DropdownMenu.Item
 														onclick={async () => {
-															if (chatContext.newChat.messages) {
+															const messages = chatContext.chats.get(data.chatId)?.messages;
+															if (messages) {
 																const chatTitle =
 																	chatContext.recentChats.find(
-																		(c) => c.id === chatContext.newChat.id
+																		(c) => c.id === data.chatId
 																	)?.title ?? 'Untitled';
 
-																await shareChat(chatContext.newChat.messages, chatTitle);
+																await shareChat(messages, chatTitle);
 															}
 														}}
 													>

@@ -98,6 +98,19 @@ signals:
           type: "string"
         streamId:
           type: "string"
+        datetime:
+          type: "object"
+          properties:
+            timezone:
+              type: "string"
+            timestamp:
+              type: "string"
+            localDate:
+              type: "string"
+            localTime:
+              type: "string"
+            timezoneOffset:
+              type: "string"
         scope:
           type: "object"
           properties:

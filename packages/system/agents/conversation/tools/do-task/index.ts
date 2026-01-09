@@ -113,6 +113,13 @@ export function createDoTaskTool(
     streamId: string;
     userId?: string;
     daemonUrl?: string;
+    datetime?: {
+      timezone: string;
+      timestamp: string;
+      localDate: string;
+      localTime: string;
+      timezoneOffset: string;
+    };
   },
   logger: Logger,
   abortSignal?: AbortSignal,
@@ -201,6 +208,7 @@ export function createDoTaskTool(
             streamId: session.streamId,
             userId: session.userId,
             daemonUrl: session.daemonUrl,
+            datetime: session.datetime,
             abortSignal,
             onProgress: emitProgress,
           };

@@ -22,6 +22,7 @@ export function executeTaskViaFSM(
     streamId: context.streamId,
     userId: context.userId,
     daemonUrl: context.daemonUrl,
+    datetime: context.datetime,
     mcpServerPool,
     mcpToolProvider,
     onProgress: context.onProgress,

@@ -16,6 +16,17 @@ export type TaskProgressEvent =
   | { type: "step-complete"; stepIndex: number; success: boolean };
 
 /**
+ * Datetime context from client session
+ */
+export interface DatetimeContext {
+  timezone: string;
+  timestamp: string;
+  localDate: string;
+  localTime: string;
+  timezoneOffset: string;
+}
+
+/**
  * Execution context with progress callback and cancellation.
  * Passed to FSM executor.
  */
@@ -25,6 +36,7 @@ export interface TaskExecutionContext {
   streamId: string;
   userId?: string;
   daemonUrl?: string;
+  datetime?: DatetimeContext;
   onProgress?: (event: TaskProgressEvent) => void;
   abortSignal?: AbortSignal;
 }

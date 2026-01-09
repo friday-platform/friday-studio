@@ -656,11 +656,23 @@ export class WorkspaceRuntime {
         ? conversationContext.data.streamId
         : undefined;
 
+    // Extract datetime from signal data for session context
+    const datetime = signal.data?.datetime as
+      | {
+          timezone: string;
+          timestamp: string;
+          localDate: string;
+          localTime: string;
+          timezoneOffset: string;
+        }
+      | undefined;
+
     // Execute agent via orchestrator
     const result = await this.orchestrator.executeAgent(agentId, prompt, {
       sessionId: signal._context?.sessionId || crypto.randomUUID(), // Use signal's sessionId or generate new
       workspaceId: signal._context?.workspaceId || this.workspace.id,
       streamId, // Pass streamId for conversation agent streaming support
+      datetime, // Pass client datetime context
       // Wrap callback: orchestrator sends AtlasUIMessageChunk, signal callback expects FSMEvent
       // TypeScript can't prove discriminated union compatibility, but at runtime
       // all agent events are valid AtlasUIMessageChunk types that pass through

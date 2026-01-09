@@ -15,7 +15,7 @@ import {
 import { createFSMOutputValidator, SupervisionLevel } from "@atlas/hallucination";
 import { logger } from "@atlas/logger";
 import type { EnhancedTaskStep } from "./planner.ts";
-import type { TaskProgressEvent } from "./types.ts";
+import type { DatetimeContext, TaskProgressEvent } from "./types.ts";
 
 interface ExecutionContext {
   sessionId: string;
@@ -23,6 +23,7 @@ interface ExecutionContext {
   streamId: string;
   userId?: string;
   daemonUrl?: string;
+  datetime?: DatetimeContext;
   mcpServerPool?: GlobalMCPServerPool;
   mcpToolProvider?: MCPToolProvider;
   onProgress?: (event: TaskProgressEvent) => void;
@@ -144,7 +145,10 @@ export async function executeTaskViaFSMDirect(
         .map((doc) => `${doc.type}(${doc.id}): ${JSON.stringify(doc.data)}`)
         .join("\n");
       const taskDescription = stepInfo?.step.description || "Execute task step";
-      const prompt = `Task: ${taskDescription}\n\nContext:\n${contextDocs}`;
+      const datetimeSection = context.datetime
+        ? `## Context Facts\n- Current Date: ${context.datetime.localDate}\n- Current Time: ${context.datetime.localTime} (${context.datetime.timezone})\n- Timestamp: ${context.datetime.timestamp}\n- Timezone Offset: ${context.datetime.timezoneOffset}\n\n`
+        : "";
+      const prompt = `${datetimeSection}Task: ${taskDescription}\n\nContext:\n${contextDocs}`;
 
       // Execute agent via orchestrator
       if (!orchestrator) {

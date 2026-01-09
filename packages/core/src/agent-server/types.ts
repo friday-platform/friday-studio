@@ -115,6 +115,15 @@ const AgentSessionDataSchema = z.object({
   workspaceId: z.string(),
   userId: z.string().optional(),
   streamId: z.string().optional(),
+  datetime: z
+    .object({
+      timezone: z.string(),
+      timestamp: z.string(),
+      localDate: z.string(),
+      localTime: z.string(),
+      timezoneOffset: z.string(),
+    })
+    .optional(),
 });
 
 /**

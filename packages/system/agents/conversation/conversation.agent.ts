@@ -489,6 +489,7 @@ export const conversationAgent = createAgent({
             streamId: session.streamId,
             userId: session.userId,
             daemonUrl: getAtlasDaemonUrl(),
+            datetime: session.datetime,
           },
           logger,
           abortSignal,
@@ -521,7 +522,9 @@ export const conversationAgent = createAgent({
           userIdentitySection,
         );
 
-        const datetimeMessage = `Current datetime (UTC): ${new Date().toISOString()}`;
+        const datetimeMessage = session.datetime
+          ? `## Context Facts\n- Current Date: ${session.datetime.localDate}\n- Current Time: ${session.datetime.localTime} (${session.datetime.timezone})\n- Timestamp: ${session.datetime.timestamp}\n- Timezone Offset: ${session.datetime.timezoneOffset}`
+          : `Current datetime (UTC): ${new Date().toISOString()}`;
 
         // Capture system prompt context on first turn (fire-and-forget)
         // Must happen after datetimeMessage is defined to capture actual messages sent to LLM
@@ -631,7 +634,9 @@ export const conversationAgent = createAgent({
                 },
                 {
                   role: ROLE_SYSTEM,
-                  content: `Current datetime (UTC): ${new Date().toISOString()}`,
+                  content: session.datetime
+                    ? `## Context Facts\n- Current Date: ${session.datetime.localDate}\n- Current Time: ${session.datetime.localTime} (${session.datetime.timezone})\n- Timestamp: ${session.datetime.timestamp}\n- Timezone Offset: ${session.datetime.timezoneOffset}`
+                    : `Current datetime (UTC): ${new Date().toISOString()}`,
                 },
                 // Add scratchpad context as third system message if it exists
                 ...(scratchpadContext ? [{ role: ROLE_SYSTEM, content: scratchpadContext }] : []),

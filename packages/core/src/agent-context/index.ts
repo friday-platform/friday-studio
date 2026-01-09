@@ -53,6 +53,11 @@ export function createAgentContextBuilder(deps: AgentContextBuilderDeps) {
 
     // 1. Fetch all tools directly from MCP servers
     let allTools: Record<string, AtlasTool> = {};
+    agentLogger.debug("Building agent context", {
+      agentId: agent.metadata.id,
+      hasMcpConfig: !!agent.mcpConfig,
+      mcpConfigKeys: agent.mcpConfig ? Object.keys(agent.mcpConfig) : [],
+    });
     try {
       allTools = await fetchAllTools(
         sessionData.workspaceId,
@@ -151,6 +156,7 @@ async function fetchAllTools(
   logger.debug("Fetching tools from MCP servers", {
     workspaceId,
     agentMCPServerCount: agentMCPConfig ? Object.keys(agentMCPConfig).length : 0,
+    agentMCPServerIds: agentMCPConfig ? Object.keys(agentMCPConfig) : [],
   });
 
   // Get workspace config from daemon

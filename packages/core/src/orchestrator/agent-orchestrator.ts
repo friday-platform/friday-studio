@@ -50,6 +50,13 @@ export interface AgentExecutionContext {
   workspaceId: string;
   userId?: string;
   streamId?: string; // For HTTP streaming
+  datetime?: {
+    timezone: string;
+    timestamp: string;
+    localDate: string;
+    localTime: string;
+    timezoneOffset: string;
+  };
   previousResults?: AgentResult[];
   additionalContext?: unknown;
   reasoning?: string;
@@ -545,6 +552,7 @@ export class AgentOrchestrator implements IAgentOrchestrator {
           workspaceId: context.workspaceId,
           userId: context.userId,
           streamId: context.streamId,
+          datetime: context.datetime,
         },
       };
 

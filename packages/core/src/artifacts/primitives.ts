@@ -124,8 +124,16 @@ export const CalendarScheduleSchema = z.object({
         .string()
         .describe("Unique identifier for the event. Look for an ID key or something similar."),
       eventName: z.string().describe("Name of the event"),
-      startDate: z.iso.datetime({ offset: true }).describe("Start date of the event (ISO 8601)"),
-      endDate: z.iso.datetime({ offset: true }).describe("End date of the event (ISO 8601)"),
+      startDate: z
+        .string()
+        .describe(
+          "Start date of the event (ISO 8601 with timezone offset, e.g. 2024-01-15T09:00:00-08:00)",
+        ),
+      endDate: z
+        .string()
+        .describe(
+          "End date of the event (ISO 8601 with timezone offset, e.g. 2024-01-15T10:00:00-08:00)",
+        ),
       link: z.string().optional().describe("Direct url to the event, if available"),
     }),
   ),

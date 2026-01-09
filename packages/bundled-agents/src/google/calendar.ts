@@ -1,12 +1,11 @@
 import { env } from "node:process";
 import type { LinkCredentialRef, ToolCall, ToolResult } from "@atlas/agent-sdk";
-import { createAgent, repairToolCall } from "@atlas/agent-sdk";
-import {
-  collectToolUsageFromSteps,
-  extractArtifactRefsFromToolResults,
-} from "@atlas/agent-sdk/vercel-helpers";
+import { createAgent, repairJson, repairToolCall } from "@atlas/agent-sdk";
+import { client, parseResult } from "@atlas/client/v2";
+import { CalendarScheduleSchema } from "@atlas/core/artifacts";
 import { getDefaultProviderOpts, registry } from "@atlas/llm";
-import { generateText, stepCountIs } from "ai";
+import { stringifyError } from "@atlas/utils";
+import { generateObject, generateText, stepCountIs } from "ai";
 import { z } from "zod";
 
 /**
@@ -77,33 +76,37 @@ export const googleCalendarAgent = createAgent<string, GoogleCalendarAgentResult
 
   handler: async (
     prompt,
-    { tools, logger, abortSignal, stream },
+    { tools, logger, abortSignal, stream, session },
   ): Promise<GoogleCalendarAgentResult> => {
     if (!env.ANTHROPIC_API_KEY && !env.LITELLM_API_KEY) {
       throw new Error("ANTHROPIC_API_KEY or LITELLM_API_KEY environment variable is required");
     }
 
-    const system = `
-      You are a Google Calendar assistant with full access to manage calendars. Be concise, direct, and factual. Do not narrate intentions or plans. Never use phrases like 'I'll', 'I will', or 'Let me'. Output only the result without prefacing text.
+    const system = `You are a Google Calendar assistant. Be concise, direct, and factual.
 
-      Available capabilities:
-      - list_calendars: List all accessible calendars
-      - get_events: Search and retrieve calendar events (by time range, query, or event ID)
-      - create_event: Create new events with attendees, Google Meet, reminders, attachments
-      - modify_event: Update existing events (title, time, attendees, location, etc.)
-      - delete_event: Remove events from calendar
+Available capabilities:
+- list_calendars: List all accessible calendars
+- get_events: Search and retrieve calendar events (by time range, query, or event ID)
+- create_event: Create new events with attendees, Google Meet, reminders, attachments
+- modify_event: Update existing events (title, time, attendees, location, etc.)
+- delete_event: Remove events from calendar
 
-      Follow these rules:
-      - Never fabricate information. Only use information from tool outputs.
-      - If no Google Calendar tools are available, reply: 'Cannot complete: Google Calendar tools unavailable.'
-      - If any tool call errors (timeout, authorization, unknown), state the failure briefly and stop.
-      - For READ operations (get_events, list_calendars): Summarize tool outputs concisely. After successfully retrieving events, create an artifact using artifacts_create with type 'calendar-schedule'. Return only the number of events in the summary.
-      - For WRITE operations (create_event, modify_event, delete_event): Confirm the action was completed with key details (event title, time, link).
-      - When creating events with attendees, use their email addresses.
-      - When asked to add Google Meet, set add_google_meet=true.
-      - When modifying events, first use get_events to find the event ID, then use modify_event.
-      - When deleting events, first use get_events to find the event ID, then use delete_event.
-    `;
+Rules:
+- Never fabricate information. Only use tool outputs.
+- If no tools available: 'Cannot complete: Google Calendar tools unavailable.'
+- If tool errors: state failure briefly and stop.
+- For READ operations: Filter tool results to only include events matching the user's request. YOU MUST KEEP the original response intact.
+- For WRITE operations: Confirm with event title, time, and link.
+- When creating events with attendees, use email addresses.
+- For Google Meet, set add_google_meet=true.
+- For modify/delete: first get_events to find event ID, then modify/delete.
+
+Filtering events:
+When calling get_events, you MUST set the "time_min" value:
+  - Use the user's Local Timezone Offset from Context Facts to construct the time_min bound.
+  - If the user asks for their schedule today, start at midnight. Example: If today is January 8 and offset is -08:00, use time_min: 2026-01-08T00:00:00-08:00
+  - If the user asks for their upcoming events, start at the current time
+This ensures events later in the day aren't excluded due to UTC date boundary, and that past events are shown when the user requests their calendar for the full day.`;
 
     try {
       // Progress: starting execution
@@ -142,28 +145,88 @@ export const googleCalendarAgent = createAgent<string, GoogleCalendarAgentResult
         usage: result.usage,
       });
 
-      const { steps, toolCalls, toolResults, text } = result;
+      const { steps, text } = result;
 
-      const { assembledToolResults } = collectToolUsageFromSteps({ steps, toolCalls, toolResults });
+      // Extract tool names from all steps to determine what operations were performed
+      const calledToolNames = new Set<string>();
+      for (const step of steps) {
+        if (step.toolCalls) {
+          for (const tc of step.toolCalls) {
+            calledToolNames.add(tc.toolName);
+          }
+        }
+      }
 
-      const artifactRefs = extractArtifactRefsFromToolResults(assembledToolResults);
+      const writeToolNames = new Set(["create_event", "modify_event", "delete_event"]);
+      const calledWriteTools = [...calledToolNames].some((name) => writeToolNames.has(name));
+      const calledGetEvents = calledToolNames.has("get_events");
 
-      if (artifactRefs.length > 0) {
+      // Only create artifact if get_events was called AND no write operations were performed
+      if (calledGetEvents && !calledWriteTools) {
+        const extractionResult = await generateObject({
+          model: registry.languageModel("anthropic:claude-haiku-4-5"),
+          schema: CalendarScheduleSchema,
+          experimental_repairText: repairJson,
+          abortSignal,
+          messages: [
+            {
+              role: "system",
+              content: `Extract all calendar events from the tool results into the schema. Set source to "Google Calendar". If no events found, return an empty events array.`,
+              providerOptions: getDefaultProviderOpts("anthropic"),
+            },
+            { role: "user", content: `Extract all events from:\n${result.text}` },
+          ],
+        });
+
+        const calendarData = extractionResult.object;
+
+        // Determine summary text
+        const eventCount = calendarData.events.length;
+        const summary =
+          eventCount === 0 ? "No events" : `${eventCount} event${eventCount === 1 ? "" : "s"}`;
+
+        // Create artifact via direct API call
+        const artifactResponse = await parseResult(
+          client.artifactsStorage.index.$post({
+            json: {
+              data: { type: "calendar-schedule", version: 1, data: calendarData },
+              title: "Calendar Schedule",
+              summary,
+              workspaceId: session.workspaceId,
+              chatId: session.streamId,
+            },
+          }),
+        );
+
+        if (!artifactResponse.ok) {
+          throw new Error(
+            `Failed to create calendar artifact: ${stringifyError(artifactResponse.error)}`,
+          );
+        }
+
+        const artifactId = artifactResponse.data.artifact.id;
+
         stream?.emit({
           type: "data-outline-update",
           data: {
             id: "google-calendar",
-            content: "A calendar summary was generated",
+            content: summary,
             title: "Calendar retrieved",
             icon,
             timestamp: Date.now(),
-            artifactId: artifactRefs?.[0]?.id,
+            artifactId,
             artifactLabel: "View Calendar",
           },
         });
+
+        return {
+          response: "",
+          artifactRefs: [{ id: artifactId, type: "calendar-schedule", summary }],
+        };
       }
 
-      return { response: text.trim(), artifactRefs };
+      // No artifact for write operations or when get_events wasn't called
+      return { response: text.trim() };
     } catch (error) {
       logger.error("google-calendar failed", { error });
       throw error;

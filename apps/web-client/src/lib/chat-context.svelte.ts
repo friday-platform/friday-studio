@@ -8,6 +8,7 @@ import { getContext, setContext } from "svelte";
 import { SvelteMap } from "svelte/reactivity";
 import { goto } from "$app/navigation";
 import { resolve } from "$app/paths";
+import { getDatetimeContext } from "$lib/utils/date";
 
 const KEY = Symbol();
 
@@ -47,7 +48,7 @@ class ChatContext {
       transport: new DefaultChatTransport({
         api: `${getAtlasDaemonUrl()}/api/chat`,
         prepareSendMessagesRequest({ messages, id }) {
-          return { body: { message: messages.at(-1), id } };
+          return { body: { message: messages.at(-1), id, datetime: getDatetimeContext() } };
         },
       }),
     }),

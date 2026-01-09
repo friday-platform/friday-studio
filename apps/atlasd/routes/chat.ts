@@ -9,7 +9,19 @@ import { stream } from "hono/streaming";
 import { z } from "zod";
 import { daemonFactory } from "../src/factory.ts";
 
-const chatRequestSchema = z.object({ id: z.string().min(1), message: z.unknown() });
+const chatRequestSchema = z.object({
+  id: z.string().min(1),
+  message: z.unknown(),
+  datetime: z
+    .object({
+      timezone: z.string(),
+      timestamp: z.string(),
+      localDate: z.string(),
+      localTime: z.string(),
+      timezoneOffset: z.string(),
+    })
+    .optional(),
+});
 const appendMessageSchema = z.object({ message: z.unknown() });
 const updateTitleSchema = z.object({ title: z.string() });
 const listChatsQuerySchema = z.object({
@@ -49,7 +61,7 @@ const chatRoutes = daemonFactory
    */
   .post("/", zValidator("json", chatRequestSchema), async (c) => {
     const ctx = c.get("app");
-    const { id: chatId, message } = c.req.valid("json");
+    const { id: chatId, message, datetime } = c.req.valid("json");
     const userId = getUserId();
     const workspaceId = c.req.header("X-Workspace-Id") || "atlas-conversation";
 
@@ -78,8 +90,7 @@ const chatRoutes = daemonFactory
       runtime
         .triggerSignalWithSession(
           "conversation-stream",
-          // Conversation agent just pulls the entire message history (including user message) from chat history.
-          { chatId, message: "", userId, streamId: chatId },
+          { chatId, message: "", userId, streamId: chatId, datetime },
           chatId,
           async (event: unknown) => {
             try {
