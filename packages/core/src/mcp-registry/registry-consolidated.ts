@@ -7,6 +7,16 @@ import type { MCPServerMetadata, MCPServersRegistry } from "./schemas.ts";
  */
 const GOOGLE_WORKSPACE_SERVICES = [
   {
+    id: "google-calendar",
+    name: "Google Calendar",
+    domains: ["google-calendar", "calendar", "gcal", "events", "schedule"],
+    urlDomains: ["calendar.google.com"],
+    description:
+      "Full Google Calendar management via OAuth - list calendars, search events, create/modify/delete events, add attendees, create Google Meet links",
+    constraints:
+      "Requires OAuth. Use for calendar queries, event creation, scheduling, meeting management. Bundled google-calendar agent provides high-level calendar operations.",
+  },
+  {
     id: "google-gmail",
     name: "Gmail",
     domains: ["google-gmail", "gmail", "email", "inbox"],
@@ -46,7 +56,7 @@ const GOOGLE_WORKSPACE_SERVICES = [
     constraints:
       "Requires OAuth. Use for spreadsheet data, formulas, formatting, and conditional formatting.",
   },
-] as const;
+];
 
 /**
  * Get Google Workspace MCP URL from environment.

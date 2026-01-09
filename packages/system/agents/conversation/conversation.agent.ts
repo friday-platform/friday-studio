@@ -447,6 +447,7 @@ export const conversationAgent = createAgent({
           agentCount: agentNames.length,
           integrations: linkSummary ? linkSummary.credentials.length : "unavailable",
           providers: linkSummary ? linkSummary.providers.length : "unavailable",
+          providerIds: linkSummary ? linkSummary.providers.map((p) => p.id) : "unavailable",
           userIdentity: userIdentitySection ? "available" : "unavailable",
         });
 
