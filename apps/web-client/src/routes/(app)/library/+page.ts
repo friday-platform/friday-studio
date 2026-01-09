@@ -4,9 +4,7 @@ import { z } from "zod";
 import type { PageLoad } from "./$types";
 
 export const load: PageLoad = async () => {
-  const result = (await parseResult(
-    client.artifactsStorage.index.$get({ query: { limit: "50" } }),
-  )) as unknown as { ok: boolean; data: { artifacts: unknown[] } };
+  const result = await parseResult(client.artifactsStorage.index.$get({ query: { limit: "50" } }));
 
   if (!result.ok) {
     return { artifacts: [] };

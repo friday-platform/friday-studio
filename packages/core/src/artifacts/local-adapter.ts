@@ -268,8 +268,6 @@ export class LocalStorageAdapter implements ArtifactStorageAdapter {
     const entries = db.list<ArtifactKey>({ prefix: ["artifacts_by_workspace", input.workspaceId] });
 
     for await (const entry of entries) {
-      if (artifacts.length >= limit) break;
-
       const [, id] = entry.value;
 
       const deletedResult = await db.get<Date>(keys.deleted(id));
@@ -281,7 +279,9 @@ export class LocalStorageAdapter implements ArtifactStorageAdapter {
       }
     }
 
-    return success(artifacts);
+    artifacts.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+    return success(artifacts.slice(0, limit));
   }
 
   /** List chat artifacts (latest revisions only) */
@@ -294,8 +294,6 @@ export class LocalStorageAdapter implements ArtifactStorageAdapter {
     const entries = db.list<ArtifactKey>({ prefix: ["artifacts_by_chat", input.chatId] });
 
     for await (const entry of entries) {
-      if (artifacts.length >= limit) break;
-
       const [, id] = entry.value;
 
       const deletedResult = await db.get<Date>(keys.deleted(id));
@@ -307,7 +305,9 @@ export class LocalStorageAdapter implements ArtifactStorageAdapter {
       }
     }
 
-    return success(artifacts);
+    artifacts.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+    return success(artifacts.slice(0, limit));
   }
 
   /** List all artifacts (latest revisions only) */
@@ -321,8 +321,6 @@ export class LocalStorageAdapter implements ArtifactStorageAdapter {
     const entries = db.list<number>({ prefix: ["artifact_latest"] });
 
     for await (const entry of entries) {
-      if (artifacts.length >= limit) break;
-
       const id = entry.key[1] as string;
 
       if (seenIds.has(id)) continue;
@@ -338,7 +336,9 @@ export class LocalStorageAdapter implements ArtifactStorageAdapter {
       }
     }
 
-    return success(artifacts);
+    artifacts.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+    return success(artifacts.slice(0, limit));
   }
 
   /** Soft delete (data preserved) */
