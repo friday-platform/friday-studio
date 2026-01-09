@@ -330,7 +330,7 @@ $(cat "${DIRS_LIST_FILE}")
 $(cat "${FILES_LIST_FILE}")
 
 %changelog
-* $(date "+%a %b %d %Y") Tempest Labs <support@tempestdx.com> - ${VERSION}-1
+* $(date "+%a %b %d %Y") Tempest Labs <support@hellofriday.ai> - ${VERSION}-1
 - Initial release of Atlas
 EOF
 

@@ -31,20 +31,20 @@ const email = $derived($page.url.searchParams.get("email"));
 
         <a href="/signup-retry" data-sveltekit-reload>Resend</a>
         or
-        <a href="mailto:support@tempestdx.com">contact support</a>
+        <a href="mailto:support@hellofriday.ai">contact support</a>
       </p>
     </div>
 
     <footer>
       <p>
         By signing up for Friday, you agree to our <a
-          href="https://tempestdx.com/company/privacypolicy"
+          href="https://hellofriday.ai/privacy"
           target="_blank"
         >
           Privacy Policy
         </a>
         and
-        <a href="https://tempestdx.com/company/terms" target="_blank">Terms of Service</a>
+        <a href="https://hellofriday.ai/terms" target="_blank">Terms of Service</a>
       </p>
     </footer>
   </section>

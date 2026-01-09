@@ -348,8 +348,8 @@ evalite<{ prompt: string; expectedFrom: string }, SenderValidationResult, string
       {
         input: {
           prompt:
-            "Send an email from support@tempestdx.com to customer@business.com with subject 'Response' saying: Thank you for your inquiry.",
-          expectedFrom: "support@tempestdx.com",
+            "Send an email from support@hellofriday.ai to customer@business.com with subject 'Response' saying: Thank you for your inquiry.",
+          expectedFrom: "support@hellofriday.ai",
         },
         expected: "Explicit sender in prompt should be used",
       },

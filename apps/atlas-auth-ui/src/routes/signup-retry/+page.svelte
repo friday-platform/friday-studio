@@ -83,13 +83,13 @@ let submitted = $state(false);
     <footer>
       <p>
         By signing up for Friday, you agree to our <a
-          href="https://tempestdx.com/company/privacypolicy"
+          href="https://hellofriday.ai/privacy"
           target="_blank"
         >
           Privacy Policy
         </a>
         and
-        <a href="https://tempestdx.com/company/terms" target="_blank">Terms of Service</a>
+        <a href="https://hellofriday.ai/terms" target="_blank">Terms of Service</a>
       </p>
     </footer>
   </section>

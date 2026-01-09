@@ -72,7 +72,7 @@ cat > "${PKG_DIR}/DEBIAN/control" << EOF
 Package: atlas
 Version: ${DEB_VERSION}
 Architecture: ${DEB_ARCH}
-Maintainer: Tempest Labs, Inc. <support@tempestdx.com>
+Maintainer: Tempest Labs, Inc. <support@hellofriday.ai>
 Depends: libc6, debconf (>= 1.5.19), wget, libgtk-3-0, libwebkit2gtk-4.1-0, libayatana-appindicator3-1
 Section: utils
 Priority: optional
@@ -318,7 +318,7 @@ FORMATTED_EULA_COPYRIGHT=$(printf '%s\n' "${EULA_CONTENT}" | sed 's/^/ /')
 cat > "${PKG_DIR}/usr/share/doc/atlas/copyright" << EOF
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: Atlas
-Upstream-Contact: Tempest Labs, Inc. <support@tempestdx.com>
+Upstream-Contact: Tempest Labs, Inc. <support@hellofriday.ai>
 Source: https://hellofriday.ai
 
 Files: *
