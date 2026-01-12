@@ -18,7 +18,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.8.0
 	github.com/joho/godotenv v1.5.1
-	github.com/k3a/html2text v1.2.1
+	github.com/k3a/html2text v1.3.0
 	github.com/phuslu/lru v1.0.18
 	github.com/prometheus/client_golang v1.23.2
 	github.com/sendgrid/rest v2.6.9+incompatible
