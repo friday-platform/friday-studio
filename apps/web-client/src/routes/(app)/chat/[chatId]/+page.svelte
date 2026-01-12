@@ -6,7 +6,7 @@ import { getAtlasDaemonUrl } from "@atlas/oapi-client";
 import { DefaultChatTransport } from "ai";
 import { onMount, setContext } from "svelte";
 import { SvelteMap } from "svelte/reactivity";
-import { afterNavigate } from "$app/navigation";
+import { afterNavigate, beforeNavigate } from "$app/navigation";
 import { getAppContext, handleFileDrop } from "$lib/app-context.svelte";
 import { getChatContext } from "$lib/chat-context.svelte";
 import ChatBufferBlur from "$lib/components/chat-buffer-blur.svelte";
@@ -52,6 +52,7 @@ let message = $state<string>("");
 
 // Follow scroll handling
 let scrollContainer = $state<HTMLDivElement | null>(null);
+let showContents = $state(false);
 
 function setup() {
   if (!chatContext.chats.has(data.chatId)) {
@@ -60,9 +61,6 @@ function setup() {
       new Chat({
         id: data.chatId,
         messages: data.messages,
-        onFinish: () => {
-          scrollToBottom();
-        },
         transport: new DefaultChatTransport({
           api: `${getAtlasDaemonUrl()}/api/chat`,
           prepareSendMessagesRequest({ messages, id }) {
@@ -72,7 +70,17 @@ function setup() {
       }),
     );
   }
+
+  userHasScrolled = false;
+
+  setTimeout(() => {
+    showContents = true;
+  }, 100);
 }
+
+beforeNavigate(() => {
+  showContents = false;
+});
 
 afterNavigate(setup);
 
@@ -107,11 +115,12 @@ onMount(async () => {
   }
 });
 
-let _userHasScrolled = $state(false);
+let userHasScrolled = $state(false);
+let animationFrameId = $state<number | null>(null);
 
 // Handle Scrolling
 function handleScroll() {
-  _userHasScrolled = true;
+  userHasScrolled = true;
 
   if (!scrollContainer) return;
 
@@ -120,13 +129,33 @@ function handleScroll() {
 
   // If user scrolls away from bottom, mark as manually scrolled
   if (!isAtBottom) {
-    _userHasScrolled = true;
+    userHasScrolled = true;
   }
   // If user scrolls back to bottom, reset the flag
   if (isAtBottom) {
-    _userHasScrolled = false;
+    userHasScrolled = false;
   }
 }
+
+// Scroll to the bottom of the container
+function continuouslyScrollToBottom() {
+  if (!scrollContainer) return;
+  scrollContainer.scrollTop = scrollContainer.scrollHeight;
+  animationFrameId = requestAnimationFrame(continuouslyScrollToBottom);
+}
+
+// Auto-scroll when new messages are added, unless user has manually scrolled
+$effect(() => {
+  if (!showContents) return;
+
+  if (userHasScrolled && animationFrameId) {
+    cancelAnimationFrame(animationFrameId);
+    animationFrameId = null;
+  }
+  if (!userHasScrolled && !animationFrameId) {
+    animationFrameId = requestAnimationFrame(continuouslyScrollToBottom);
+  }
+});
 
 // Scroll to the bottom of the container
 function scrollToBottom() {
@@ -160,7 +189,7 @@ let showDetails = new SvelteMap<string, boolean>();
 </script>
 
 {#if chatContext.chats.has(data.chatId)}
-	<div class="chat">
+	<div class="chat" class:visible={showContents}>
 		<div class="main">
 			<div class="messages" bind:this={scrollContainer} onscroll={handleScroll}>
 				<div
@@ -290,7 +319,7 @@ let showDetails = new SvelteMap<string, boolean>();
 									message = '';
 									appCtx.stagedFiles.clear();
 
-									_userHasScrolled = false;
+									userHasScrolled = false;
 									scrollToBottom();
 								}
 							}}
@@ -366,16 +395,16 @@ let showDetails = new SvelteMap<string, boolean>();
 													Add Files
 												</DropdownMenu.Item>
 
-												{@const currentChatMessages = chatContext.chats.get(data.chatId)?.messages ?? []}
+												{@const currentChatMessages =
+													chatContext.chats.get(data.chatId)?.messages ?? []}
 												{#if currentChatMessages.length > 0}
 													<DropdownMenu.Item
 														onclick={async () => {
 															const messages = chatContext.chats.get(data.chatId)?.messages;
 															if (messages) {
 																const chatTitle =
-																	chatContext.recentChats.find(
-																		(c) => c.id === data.chatId
-																	)?.title ?? 'Untitled';
+																	chatContext.recentChats.find((c) => c.id === data.chatId)
+																		?.title ?? 'Untitled';
 
 																await shareChat(messages, chatTitle);
 															}
@@ -448,8 +477,14 @@ let showDetails = new SvelteMap<string, boolean>();
 		grid-template-columns: 1fr;
 		inline-size: 100%;
 		overflow: hidden;
+		opacity: 0;
 		position: relative;
+		transition: all 200ms ease;
 		z-index: var(--layer-0);
+
+		&.visible {
+			opacity: 1;
+		}
 	}
 
 	.main {
@@ -478,7 +513,7 @@ let showDetails = new SvelteMap<string, boolean>();
 		padding-block: 0 var(--size-16);
 		position: relative;
 		scrollbar-width: thin;
-		scroll-behavior: smooth;
+		/* scroll-behavior: smooth; */
 	}
 
 	.spacer {
