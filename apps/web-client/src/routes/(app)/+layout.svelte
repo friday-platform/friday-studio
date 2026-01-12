@@ -10,15 +10,18 @@ import { setClientContext } from "$lib/modules/client/context.svelte";
 import { setSpacesContext } from "$lib/modules/spaces/context.svelte";
 import WorkspaceDropHandler from "$lib/modules/spaces/workspace-drop-handler.svelte";
 
-const { children } = $props();
+const { data, children } = $props();
 
 const appCtx = getAppContext();
+
 const spacesCtx = setSpacesContext();
 const ctx = setClientContext();
 
 let unlisten: (() => void) | undefined;
 
 onMount(async () => {
+  appCtx.user = data.user;
+
   // Load spaces
   spacesCtx.fetchWorkspaces();
 

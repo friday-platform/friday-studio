@@ -27,6 +27,23 @@ const currentChatId = $derived(page.params.chatId);
 
 <header class:is-app-sidebar={__TAURI_BUILD__}>
 	<nav>
+		{#if ctx.user && !__TAURI_BUILD__}
+			<div class="user">
+				<DropdownMenu.Root>
+					<DropdownMenu.Trigger>
+						<span class="user-name">
+							{ctx.user.display_name}
+
+							<IconSmall.CaretDown />
+						</span>
+					</DropdownMenu.Trigger>
+					<DropdownMenu.Content>
+						<DropdownMenu.Item href="/logout" data-sveltekit-reload>Logout</DropdownMenu.Item>
+					</DropdownMenu.Content>
+				</DropdownMenu.Root>
+			</div>
+		{/if}
+
 		<ul class="section-list">
 			<li>
 				<a href={ctx.routes.main} class:active={getActivePage('/')} class="sidebar-item">
@@ -71,16 +88,6 @@ const currentChatId = $derived(page.params.chatId);
 					<span class="text">Settings</span>
 				</a>
 			</li>
-
-			{#if !__TAURI_BUILD__}
-				<li>
-					<a href="/logout" class="sidebar-item" data-sveltekit-reload>
-						<Icons.LogOut />
-
-						<span class="text">Logout</span>
-					</a>
-				</li>
-			{/if}
 		</ul>
 
 		<span class="section-header">
@@ -252,6 +259,19 @@ const currentChatId = $derived(page.params.chatId);
 		}
 	}
 
+	.user {
+		padding-inline: var(--size-2-5);
+		margin-block: var(--size-1) var(--size-6);
+
+		.user-name {
+			align-items: center;
+			display: flex;
+			font-size: var(--font-size-4);
+			font-weight: var(--font-weight-5);
+			gap: var(--size-1);
+		}
+	}
+
 	ul {
 		display: flex;
 		flex-direction: column;
@@ -270,7 +290,7 @@ const currentChatId = $derived(page.params.chatId);
 		font-size: var(--font-size-3);
 		font-weight: var(--font-weight-4-5);
 		gap: var(--size-2);
-		padding-inline: var(--size-2);
+		/* padding-inline: var(--size-7); */
 		outline: none;
 
 		& :global(svg) {
@@ -287,49 +307,6 @@ const currentChatId = $derived(page.params.chatId);
 		&:focus-visible {
 			background-color: var(--color-highlight-1);
 		}
-	}
-
-	.logo {
-		align-items: center;
-		background-color: #181c2f;
-		block-size: var(--size-8);
-		border-radius: var(--radius-3);
-		color: #fff;
-		display: flex;
-		inline-size: var(--size-8);
-		justify-content: center;
-		margin-inline: auto;
-		mix-blend-mode: exclusion;
-		transition: all 150ms ease;
-
-		img {
-			block-size: var(--size-4-5);
-		}
-	}
-
-	.help {
-		align-items: center;
-		background-color: var(--color-surface-1);
-		block-size: var(--size-7);
-		border-radius: var(--radius-round);
-		box-shadow: var(--shadow-1);
-		color: var(--text-1);
-		display: flex;
-		flex: none;
-		font-size: var(--font-size-2);
-		font-weight: var(--font-weight-7);
-		inline-size: var(--size-7);
-		inset-block-end: 0;
-		justify-content: center;
-		margin-block: auto var(--size-1);
-		margin-inline: var(--size-5) 0;
-		position: sticky;
-		transition: all 150ms ease;
-	}
-
-	.help {
-		margin-block-end: 0;
-		margin-inline: var(--size-2) 0;
 	}
 
 	.section-header {
@@ -435,5 +412,25 @@ const currentChatId = $derived(page.params.chatId);
 	.chat-trigger:hover,
 	:global(:focus-visible) .chat-trigger {
 		background-color: var(--color-border-1);
+	}
+
+	.help {
+		align-items: center;
+		background-color: var(--color-surface-1);
+		block-size: var(--size-7);
+		border-radius: var(--radius-round);
+		box-shadow: var(--shadow-1);
+		color: var(--text-1);
+		display: flex;
+		flex: none;
+		font-size: var(--font-size-2);
+		font-weight: var(--font-weight-7);
+		inline-size: var(--size-7);
+		inset-block-end: 0;
+		justify-content: center;
+		margin-block: auto 0;
+		margin-inline: var(--size-2) 0;
+		position: sticky;
+		transition: all 150ms ease;
 	}
 </style>

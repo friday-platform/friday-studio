@@ -1,3 +1,4 @@
+import type { UserIdentity } from "@atlas/atlasd";
 import {
   ALLOWED_EXTENSIONS,
   ALLOWED_MIME_TYPES,
@@ -107,6 +108,7 @@ class AppContext {
   stagedFiles = createStagedFiles();
 
   addWorkspaceDialogOpen = $state(false);
+  user = $state<UserIdentity | null>(null);
 }
 
 export function setAppContext() {
