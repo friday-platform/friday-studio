@@ -8,6 +8,7 @@ type Props = {
   size?: "regular" | "small";
   autoFocus?: boolean;
   disabled?: boolean;
+  onResize?: (value: number) => void;
 } & HTMLTextareaAttributes;
 
 let {
@@ -17,6 +18,7 @@ let {
   size: _size = "regular",
   autoFocus: _autoFocus = false,
   disabled = false,
+  onResize,
   ...rest
 }: Props = $props();
 
@@ -32,6 +34,10 @@ function updateDimensions(_value?: string | null | undefined) {
   text.innerHTML = `${textarea.value} <br />`;
   const bounds = text.getBoundingClientRect();
   textarea.style.height = `${bounds.height}px`;
+
+  if (onResize) {
+    onResize(bounds.height);
+  }
 }
 </script>
 

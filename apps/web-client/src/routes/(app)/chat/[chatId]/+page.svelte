@@ -49,6 +49,8 @@ const chatContext = getChatContext();
 
 let form = $state<HTMLFormElement | null>(null);
 let message = $state<string>("");
+//
+let textareaAdditionalSize = $state(1);
 
 // Follow scroll handling
 let scrollContainer = $state<HTMLDivElement | null>(null);
@@ -188,6 +190,7 @@ let showDetails = new SvelteMap<string, boolean>();
 			<div class="messages" bind:this={scrollContainer} onscroll={handleScroll}>
 				<div
 					class="messages-container"
+					style:--additional-padding="{textareaAdditionalSize}px"
 					class:has-outline={chatContext.chats
 						.get(data.chatId)
 						?.messages.some((msg) => msg.parts.some((part) => part.type === 'data-outline-update'))}
@@ -426,6 +429,9 @@ let showDetails = new SvelteMap<string, boolean>();
 									onTextChange={(value) => {
 										message = value;
 									}}
+									onResize={(value) => {
+										textareaAdditionalSize = value - 40;
+									}}
 								/>
 
 								<div class="form-action">
@@ -514,7 +520,7 @@ let showDetails = new SvelteMap<string, boolean>();
 	.messages-container {
 		display: grid;
 		grid-template-columns: 1fr 0;
-		padding-block: var(--size-10) var(--size-16);
+		padding-block: var(--size-10) calc(var(--size-16) + var(--additional-padding, 0));
 		transition:
 			grid-template-columns 450ms ease-in-out,
 			gap 450ms ease-in-out;
