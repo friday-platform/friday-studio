@@ -45,7 +45,7 @@
     "@ianvs/prettier-plugin-sort-imports": "^4.7.0",
     "@std/assert": "npm:@jsr/std__assert@^1.0.14",
     "@sveltejs/adapter-static": "^3.0.10",
-    "@sveltejs/vite-plugin-svelte": "^6.2.3",
+    "@sveltejs/vite-plugin-svelte": "^6.2.4",
     "@tauri-apps/cli": "^2.9.6",
     "eslint": "^9.39.2",
     "eslint-config-prettier": "^10.1.8",
