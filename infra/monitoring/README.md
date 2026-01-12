@@ -82,6 +82,7 @@ gcloud alpha monitoring policies create \
 | Alert | Severity | Condition | Notification |
 |-------|----------|-----------|--------------|
 | GKE Container Restarts | Warning | >5 restarts in 10min (cluster-wide) | PagerDuty |
+| Deployment Replicas Not Updated | Critical | Replicas mismatch for 30min (excludes atlas ns) | PagerDuty |
 | Infrastructure Pod Restart Loop | Warning | >3 restarts in 10min | Slack |
 | User Atlas Pod Restart Loop | Warning | >3 restarts in 10min | Slack |
 | High Memory Usage | Warning | >80% limit for 5min | Slack |
