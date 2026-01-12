@@ -4,9 +4,7 @@ import { IconSmall } from "$lib/components/icons/small";
 import { formatDuration } from "$lib/utils/date";
 import MessageWrapper from "./wrapper.svelte";
 
-const { actions, timestamp }: { actions: AtlasUIMessagePart[]; timestamp?: string } = $props();
-
-const startTime = $derived(timestamp ? new Date(timestamp).getTime() : undefined);
+const { actions }: { actions: AtlasUIMessagePart[] } = $props();
 
 // Collapse consecutive identical messages into single entries
 const dedupedActions = $derived.by(() => {
@@ -24,20 +22,42 @@ const dedupedActions = $derived.by(() => {
 
   return result;
 });
+
+let displayStart = $state(Date.now());
 let endTime = $state(Date.now());
 let open = $state(false);
+let hiddenAt = $state<number | null>(null);
+let prevActionsLength = 0;
+
+// Reset timer when a new streaming session starts (actions goes from 0 to >0)
+$effect(() => {
+  if (prevActionsLength === 0 && actions.length > 0) {
+    displayStart = endTime = Date.now();
+  }
+  prevActionsLength = actions.length;
+});
 
 $effect(() => {
-  let interval: ReturnType<typeof setInterval> | null = null;
-
-  interval = setInterval(() => {
+  const interval = setInterval(() => {
     endTime = Date.now();
   }, 1000);
 
-  return () => {
-    if (interval) {
-      clearInterval(interval);
+  const onVisibilityChange = () => {
+    if (document.hidden) {
+      hiddenAt = Date.now();
+    } else if (hiddenAt !== null) {
+      // Reset timer display if hidden for 30+ seconds
+      if (Date.now() - hiddenAt > 30_000) {
+        displayStart = endTime = Date.now();
+      }
+      hiddenAt = null;
     }
+  };
+
+  document.addEventListener("visibilitychange", onVisibilityChange);
+  return () => {
+    clearInterval(interval);
+    document.removeEventListener("visibilitychange", onVisibilityChange);
   };
 });
 
@@ -90,9 +110,7 @@ function getMessage(
 
 			{#if open}
 				<footer>
-					{#if startTime}
-						<time>{formatDuration(startTime, endTime)}</time>
-					{/if}
+					<time>{formatDuration(displayStart, endTime)}</time>
 				</footer>
 
 				<ul class="steps">
@@ -105,10 +123,8 @@ function getMessage(
 				</ul>
 			{:else}
 				<footer>
-					{#if startTime}
-						<time>{formatDuration(startTime, endTime)}</time>
-						{#if dedupedActions.length > 0}•{/if}
-					{/if}
+					<time>{formatDuration(displayStart, endTime)}</time>
+					{#if dedupedActions.length > 0}•{/if}
 
 					<div class="actions">
 						{#each dedupedActions as action, index (index)}

@@ -68,9 +68,7 @@ let form = $state<HTMLFormElement | null>(null);
 let message = $state<string>("");
 let showChats = $state(false);
 
-let actionsAfterLastUser = $state<{ parts: AtlasUIMessagePart[]; timestamp?: string }>({
-  parts: [],
-});
+let actionsAfterLastUser = $state<{ parts: AtlasUIMessagePart[] }>({ parts: [] });
 
 $effect(() => {
   const lastAssistantMessage = chatContext.newChat.messages.findLast(
@@ -83,11 +81,7 @@ $effect(() => {
     return;
   }
 
-  // Return everything after the last user message
-  actionsAfterLastUser = {
-    parts: lastAssistantMessage.parts,
-    timestamp: lastAssistantMessage.metadata?.startTimestamp,
-  };
+  actionsAfterLastUser = { parts: lastAssistantMessage.parts };
 });
 
 let showDetails = new SvelteMap<string, boolean>();
@@ -158,10 +152,7 @@ let showDetails = new SvelteMap<string, boolean>();
 					{/each}
 
 					{#if chatContext.newChat.status === 'streaming' || chatContext.newChat.status === 'submitted'}
-						<Progress
-							actions={actionsAfterLastUser.parts}
-							timestamp={actionsAfterLastUser.timestamp}
-						/>
+						<Progress actions={actionsAfterLastUser.parts} />
 					{/if}
 				</div>
 

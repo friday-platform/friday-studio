@@ -163,9 +163,7 @@ function scrollToBottom() {
   scrollContainer.scrollTop = scrollContainer.scrollHeight;
 }
 
-let actionsAfterLastUser = $state<{ parts: AtlasUIMessagePart[]; timestamp?: string }>({
-  parts: [],
-});
+let actionsAfterLastUser = $state<{ parts: AtlasUIMessagePart[] }>({ parts: [] });
 
 $effect(() => {
   const lastAssistantMessage = (chatContext.chats.get(data.chatId)?.messages ?? []).findLast(
@@ -178,11 +176,7 @@ $effect(() => {
     return;
   }
 
-  // Return everything after the last user message
-  actionsAfterLastUser = {
-    parts: lastAssistantMessage.parts,
-    timestamp: lastAssistantMessage.metadata?.startTimestamp,
-  };
+  actionsAfterLastUser = { parts: lastAssistantMessage.parts };
 });
 
 let showDetails = new SvelteMap<string, boolean>();
@@ -253,10 +247,7 @@ let showDetails = new SvelteMap<string, boolean>();
 						{/each}
 
 						{#if chatContext.chats.get(data.chatId)?.status === 'streaming' || chatContext.chats.get(data.chatId)?.status === 'submitted'}
-							<Progress
-								actions={actionsAfterLastUser.parts}
-								timestamp={actionsAfterLastUser.timestamp}
-							/>
+							<Progress actions={actionsAfterLastUser.parts} />
 						{/if}
 					</div>
 
