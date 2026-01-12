@@ -5,7 +5,7 @@
   "main": "./src/index.ts",
   "exports": { ".": "./src/index.ts" },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.2.2",
+    "@anthropic-ai/claude-agent-sdk": "^0.2.5",
     "@atlas/agent-sdk": "workspace:*",
     "@atlas/config": "workspace:*",
     "@atlas/llm": "workspace:*",
