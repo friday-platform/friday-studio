@@ -32,7 +32,7 @@
     "@tanstack/svelte-table": "9.0.0-alpha.10",
     "@tauri-apps/api": "2.9.1",
     "@tauri-apps/plugin-fs": "~2.4.5",
-    "@tauri-apps/plugin-opener": "^2.5.2",
+    "@tauri-apps/plugin-opener": "^2.5.3",
     "@types/papaparse": "^5.5.2",
     "ai": "^5.0.119",
     "papaparse": "^5.5.3",
