@@ -80,7 +80,6 @@ onMount(() => {
           showDiagnosticsDialog = true;
         });
         unlistenSettings = await listen("show-settings-dialog", () => {
-          ctx.sidebarExpanded = true;
           goto(ctx.routes.settings);
         });
         unlistenFind = await listen("show-find", () => {

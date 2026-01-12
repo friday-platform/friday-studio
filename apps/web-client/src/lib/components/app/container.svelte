@@ -1,11 +1,8 @@
 <script lang="ts">
 import type { Snippet } from "svelte";
 import { onMount } from "svelte";
-import { getAppContext } from "$lib/app-context.svelte";
 
 let { children }: { children: Snippet } = $props();
-
-const appCtx = getAppContext();
 let mounted = $state(false);
 
 onMount(() => {
@@ -16,7 +13,7 @@ onMount(() => {
 });
 </script>
 
-<div class:expanded={appCtx.sidebarExpanded} class:mounted>
+<div class:mounted>
 	{@render children()}
 </div>
 
@@ -24,15 +21,12 @@ onMount(() => {
 	div {
 		block-size: 100dvh;
 		display: grid;
-		grid-template-columns: calc(var(--size-23) + var(--size-px)) 1fr;
+		/* grid-template-columns: calc(var(--size-23) + var(--size-px)) 1fr; */
+		grid-template-columns: var(--size-56) 1fr;
 		flex-direction: column;
 
 		&.mounted {
 			transition: all 0.2s ease-in-out;
-		}
-
-		&.expanded {
-			grid-template-columns: var(--size-56) 1fr;
 		}
 	}
 </style>

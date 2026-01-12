@@ -101,36 +101,12 @@ function getRouteConfig() {
   } as const;
 }
 
-function getInitialSidebarState(): boolean {
-  if (typeof window === "undefined") return false;
-  const stored = localStorage.getItem("atlas:sidebarExpanded");
-  if (stored !== null) {
-    const parsed = JSON.parse(stored);
-    if (typeof parsed === "boolean") {
-      return parsed;
-    }
-  }
-  return false;
-}
-
 class AppContext {
   keyboard = createKeyboard();
   routes = getRouteConfig();
   stagedFiles = createStagedFiles();
 
-  #sidebarExpanded = $state(getInitialSidebarState());
   addWorkspaceDialogOpen = $state(false);
-
-  get sidebarExpanded() {
-    return this.#sidebarExpanded;
-  }
-
-  set sidebarExpanded(value: boolean) {
-    this.#sidebarExpanded = value;
-    if (typeof window !== "undefined") {
-      localStorage.setItem("atlas:sidebarExpanded", JSON.stringify(value));
-    }
-  }
 }
 
 export function setAppContext() {
