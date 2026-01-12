@@ -1,5 +1,5 @@
-import { assertEquals } from "@std/assert";
 import type { AtlasUIMessage, AtlasUIMessagePart } from "@atlas/agent-sdk";
+import { assertEquals } from "@std/assert";
 import { extractArtifactIds } from "./artifacts.ts";
 
 /**

@@ -616,6 +616,14 @@ export class AgentOrchestrator implements IAgentOrchestrator {
         toolResults: undefined,
       };
     } finally {
+      // Clean up stream handler - must happen here to avoid race conditions
+      // with late-arriving notifications after finish event
+      if (context.onStreamEvent && context.streamId) {
+        const handlerKey = this.getStreamHandlerKey(context.sessionId, agentId);
+        this.activeStreamHandlers.delete(handlerKey);
+        logger.debug("Cleaned up stream handler", { handlerKey });
+      }
+
       // Always clean up execution tracking, whether success or failure
       const executionKey = `${context.sessionId}:${agentId}`;
       const wasTracking = this.activeAgentExecutions.delete(executionKey);
@@ -843,12 +851,6 @@ export class AgentOrchestrator implements IAgentOrchestrator {
         const handler = this.activeStreamHandlers.get(handlerKey);
         if (handler) {
           handler(evt);
-
-          if (evt.type === "finish") {
-            this.activeStreamHandlers.delete(handlerKey);
-          }
-        } else {
-          this.logger.error("No handler found for SSE Stream", { handlerKey });
         }
       });
 
