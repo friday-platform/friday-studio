@@ -23,7 +23,7 @@
     "zod-form-data": "^3.0.1"
   },
   "devDependencies": {
-    "@eslint/compat": "^2.0.0",
+    "@eslint/compat": "^2.0.1",
     "@eslint/js": "^9.39.2",
     "@ianvs/prettier-plugin-sort-imports": "^4.7.0",
     "@sveltejs/adapter-node": "^5.4.0",

@@ -42,7 +42,7 @@
     "npm:@ai-sdk/svelte@^3.0.119": "3.0.119_svelte@5.46.1__acorn@8.15.0_zod@4.3.5",
     "npm:@anthropic-ai/claude-agent-sdk@~0.2.5": "0.2.5_zod@4.3.5",
     "npm:@biomejs/biome@*": "2.3.11",
-    "npm:@eslint/compat@2": "2.0.0_eslint@9.39.2",
+    "npm:@eslint/compat@^2.0.1": "2.0.1_eslint@9.39.2",
     "npm:@eslint/js@^9.39.2": "9.39.2",
     "npm:@faker-js/faker@^10.1.0": "10.2.0",
     "npm:@faker-js/faker@^10.2.0": "10.2.0",
@@ -706,10 +706,10 @@
     "@eslint-community/regexpp@4.12.2": {
       "integrity": "sha512-EriSTlt5OC9/7SXkRSCAhfSxxoSUgBm33OH+IkwbdpgoqsSsUg7y3uh+IICI/Qg4BBWr3U2i39RpmycbxMq4ew=="
     },
-    "@eslint/compat@2.0.0_eslint@9.39.2": {
-      "integrity": "sha512-T9AfE1G1uv4wwq94ozgTGio5EUQBqAVe1X9qsQtSNVEYW6j3hvtZVm8Smr4qL1qDPFg+lOB2cL5RxTRMzq4CTA==",
+    "@eslint/compat@2.0.1_eslint@9.39.2": {
+      "integrity": "sha512-yl/JsgplclzuvGFNqwNYV4XNPhP3l62ZOP9w/47atNAdmDtIFCx6X7CSk/SlWUuBGkT4Et/5+UD+WyvX2iiIWA==",
       "dependencies": [
-        "@eslint/core@1.0.0",
+        "@eslint/core@1.0.1",
         "eslint"
       ],
       "optionalPeers": [
@@ -736,8 +736,8 @@
         "@types/json-schema"
       ]
     },
-    "@eslint/core@1.0.0": {
-      "integrity": "sha512-PRfWP+8FOldvbApr6xL7mNCw4cJcSTq4GA7tYbgq15mRb0kWKO/wEB2jr+uwjFH3sZvEZneZyCUGTxsv4Sahyw==",
+    "@eslint/core@1.0.1": {
+      "integrity": "sha512-r18fEAj9uCk+VjzGt2thsbOmychS+4kxI14spVNibUO2vqKX7obOG+ymZljAwuPZl+S3clPGwCwTDtrdqTiY6Q==",
       "dependencies": [
         "@types/json-schema"
       ]
@@ -5445,7 +5445,7 @@
       "apps/atlas-auth-ui": {
         "packageJson": {
           "dependencies": [
-            "npm:@eslint/compat@2",
+            "npm:@eslint/compat@^2.0.1",
             "npm:@eslint/js@^9.39.2",
             "npm:@ianvs/prettier-plugin-sort-imports@^4.7.0",
             "npm:@melt-ui/svelte@~0.86.6",
@@ -5523,7 +5523,7 @@
         "packageJson": {
           "dependencies": [
             "npm:@ai-sdk/svelte@^3.0.119",
-            "npm:@eslint/compat@2",
+            "npm:@eslint/compat@^2.0.1",
             "npm:@eslint/js@^9.39.2",
             "npm:@ianvs/prettier-plugin-sort-imports@^4.7.0",
             "npm:@jsr/std__assert@^1.0.14",
