@@ -1,5 +1,7 @@
 <script lang="ts">
 import { enhance } from "$app/forms";
+import logoMark from "$lib/assets/logo-mark.png";
+import logoMarkDark from "$lib/assets/logo-mark-dark.png";
 import Button from "$lib/components/button.svelte";
 import GoogleLogo from "$lib/components/icons/google-logo.svelte";
 
@@ -25,6 +27,12 @@ function handleGoogleAuth() {
   <section>
     <div class="form">
       <div class="title">
+        <picture>
+          <source srcset={logoMark} media="(prefers-color-scheme: light)" />
+          <source srcset={logoMarkDark} media="(prefers-color-scheme: dark)" />
+          <img src={logoMark} alt="Friday logo" />
+        </picture>
+
         <h1>Sign up for Friday</h1>
       </div>
 
@@ -131,10 +139,16 @@ function handleGoogleAuth() {
     padding: var(--size-8);
 
     .title {
+      & :global(img) {
+        inline-size: var(--size-28);
+        margin: 0 auto;
+      }
+
       h1 {
         font-size: var(--font-size-7);
         font-weight: var(--font-weight-7);
         margin-block-start: var(--size-6);
+        text-align: center;
       }
     }
 

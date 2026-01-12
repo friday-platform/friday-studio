@@ -1,9 +1,10 @@
 <script lang="ts">
 import { zfd } from "zod-form-data";
+import logoMark from "$lib/assets/logo-mark.png";
+import logoMarkDark from "$lib/assets/logo-mark-dark.png";
 import Button from "$lib/components/button.svelte";
 import Decal from "$lib/components/decal.svelte";
 import { Form } from "$lib/components/form";
-import Wordmark from "$lib/components/logos/friday-wordmark.svelte";
 import { toast } from "$lib/components/notifications/notifications.svelte";
 
 const { data } = $props();
@@ -18,7 +19,11 @@ const signupSchema = zfd.formData({ user_full_name: zfd.text() });
 
   <section>
     <div class="wordmark">
-      <Wordmark />
+      <picture>
+        <source srcset={logoMark} media="(prefers-color-scheme: light)" />
+        <source srcset={logoMarkDark} media="(prefers-color-scheme: dark)" />
+        <img src={logoMark} alt="Friday logo" />
+      </picture>
     </div>
 
     <form
@@ -46,9 +51,7 @@ const signupSchema = zfd.formData({ user_full_name: zfd.text() });
               method: "POST",
               credentials: "include",
               headers: { Accept: "application/json", "Content-Type": "application/json" },
-              body: JSON.stringify({
-                userFullName: input.data.user_full_name,
-              }),
+              body: JSON.stringify({ userFullName: input.data.user_full_name }),
             });
 
             if (response.ok) {
@@ -123,6 +126,12 @@ const signupSchema = zfd.formData({ user_full_name: zfd.text() });
       inset-block-start: var(--size-8);
       inset-inline-start: var(--size-8);
       position: absolute;
+
+      img {
+        aspect-ratio: 1 / 1;
+        object-fit: contain;
+        inline-size: 100%;
+      }
     }
 
     .title {

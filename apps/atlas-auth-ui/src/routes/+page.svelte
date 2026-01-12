@@ -1,5 +1,7 @@
 <script lang="ts">
 import { onMount } from "svelte";
+import logoMark from "$lib/assets/logo-mark.png";
+import logoMarkDark from "$lib/assets/logo-mark-dark.png";
 import Button from "$lib/components/button.svelte";
 import Decal from "$lib/components/decal.svelte";
 import GoogleLogo from "$lib/components/icons/google-logo.svelte";
@@ -65,6 +67,14 @@ onMount(() => {
           Go back
         </button>
       {:else}
+        <div class="wordmark">
+          <picture>
+            <source srcset={logoMark} media="(prefers-color-scheme: light)" />
+            <source srcset={logoMarkDark} media="(prefers-color-scheme: dark)" />
+            <img src={logoMark} alt="Friday logo" />
+          </picture>
+        </div>
+
         <h1>Login to Friday</h1>
 
         <div class="login-form">
@@ -137,6 +147,10 @@ onMount(() => {
     margin-block-start: var(--size-6);
     text-wrap: balance;
     transform: translateY(calc(-1 * var(--size-2)));
+  }
+
+  .wordmark img {
+    inline-size: var(--size-28);
   }
 
   .details {

@@ -1,8 +1,9 @@
 <script lang="ts">
 import { enhance } from "$app/forms";
+import logoMark from "$lib/assets/logo-mark.png";
+import logoMarkDark from "$lib/assets/logo-mark-dark.png";
 import Button from "$lib/components/button.svelte";
 import Decal from "$lib/components/decal.svelte";
-import Wordmark from "$lib/components/logos/friday-wordmark.svelte";
 import { toast } from "$lib/components/notifications/notifications.svelte";
 
 let success = $state(false);
@@ -19,7 +20,11 @@ let submitted = $state(false);
   <section>
     <div class="details">
       <div class="title">
-        <Wordmark />
+        <picture>
+          <source srcset={logoMark} media="(prefers-color-scheme: light)" />
+          <source srcset={logoMarkDark} media="(prefers-color-scheme: dark)" />
+          <img src={logoMark} alt="Friday logo" />
+        </picture>
 
         <h1>Resend Confirmation Email</h1>
         <p>Enter the email you used to sign up with to get a new one.</p>
@@ -111,7 +116,7 @@ let submitted = $state(false);
     padding-block-end: 0;
 
     .title {
-      & :global(svg) {
+      & :global(img) {
         inline-size: var(--size-28);
         margin: 0 auto;
       }

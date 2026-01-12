@@ -1,9 +1,10 @@
 <script lang="ts">
-import { page } from "$app/stores";
+import { page } from "$app/state";
+import logoMark from "$lib/assets/logo-mark.png";
+import logoMarkDark from "$lib/assets/logo-mark-dark.png";
 import Decal from "$lib/components/decal.svelte";
-import Wordmark from "$lib/components/logos/friday-wordmark.svelte";
 
-const email = $derived($page.url.searchParams.get("email"));
+const email = $derived(page.url.searchParams.get("email"));
 </script>
 
 <svelte:head>
@@ -16,7 +17,11 @@ const email = $derived($page.url.searchParams.get("email"));
   <section>
     <div class="details">
       <div class="title">
-        <Wordmark />
+        <picture>
+          <source srcset={logoMark} media="(prefers-color-scheme: light)" />
+          <source srcset={logoMarkDark} media="(prefers-color-scheme: dark)" />
+          <img src={logoMark} alt="Friday logo" />
+        </picture>
 
         <h1>Almost done!</h1>
         {#if email}
@@ -37,12 +42,8 @@ const email = $derived($page.url.searchParams.get("email"));
 
     <footer>
       <p>
-        By signing up for Friday, you agree to our <a
-          href="https://hellofriday.ai/privacy"
-          target="_blank"
-        >
-          Privacy Policy
-        </a>
+        By signing up for Friday, you agree to our
+        <a href="https://hellofriday.ai/privacy" target="_blank">Privacy Policy</a>
         and
         <a href="https://hellofriday.ai/terms" target="_blank">Terms of Service</a>
       </p>
@@ -66,7 +67,7 @@ const email = $derived($page.url.searchParams.get("email"));
     padding-block-end: 0;
 
     .title {
-      & :global(svg) {
+      & :global(img) {
         inline-size: var(--size-28);
         margin: 0 auto;
       }
