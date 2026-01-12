@@ -39,7 +39,7 @@
     "@std/path": "npm:@jsr/std__path@^1.1.2",
     "@std/testing": "npm:@jsr/std__testing@^1.0.16",
     "hono": "^4.11.3",
-    "ai": "^5.0.118",
+    "ai": "^5.0.119",
     "jose": "^6.1.3",
     "papaparse": "^5.5.3",
     "xstate": "^5.25.0",
