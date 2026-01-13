@@ -39,7 +39,7 @@
     "npm:@ai-sdk/mcp@^0.0.13": "0.0.13_zod@4.3.5",
     "npm:@ai-sdk/openai@^2.0.89": "2.0.89_zod@4.3.5",
     "npm:@ai-sdk/provider@^2.0.1": "2.0.1",
-    "npm:@ai-sdk/svelte@^3.0.119": "3.0.119_svelte@5.46.1__acorn@8.15.0_zod@4.3.5",
+    "npm:@ai-sdk/svelte@^3.0.121": "3.0.121_svelte@5.46.1__acorn@8.15.0_zod@4.3.5",
     "npm:@anthropic-ai/claude-agent-sdk@~0.2.6": "0.2.6_zod@4.3.5",
     "npm:@biomejs/biome@*": "2.3.11",
     "npm:@eslint/compat@^2.0.1": "2.0.1_eslint@9.39.2",
@@ -260,21 +260,12 @@
         "zod"
       ]
     },
-    "@ai-sdk/gateway@2.0.25_zod@4.3.5": {
-      "integrity": "sha512-Rq+FX55ne7lMiqai7NcvvDZj4HLsr+hg77WayqmySqc6zhw3tIOLxd4Ty6OpwNj0C0bVMi3iCl2zvJIEirh9XA==",
-      "dependencies": [
-        "@ai-sdk/provider",
-        "@ai-sdk/provider-utils",
-        "@vercel/oidc@3.0.5",
-        "zod"
-      ]
-    },
     "@ai-sdk/gateway@2.0.27_zod@4.3.5": {
       "integrity": "sha512-8hbezMsGa0crSt7/DKjkYL1UbbJJW/UFxTfhmf5qcIeYeeWG4dTNmm+DWbUdIsTaWvp59KC4eeC9gYXBbTHd7w==",
       "dependencies": [
         "@ai-sdk/provider",
         "@ai-sdk/provider-utils",
-        "@vercel/oidc@3.1.0",
+        "@vercel/oidc",
         "zod"
       ]
     },
@@ -326,11 +317,11 @@
         "json-schema"
       ]
     },
-    "@ai-sdk/svelte@3.0.119_svelte@5.46.1__acorn@8.15.0_zod@4.3.5": {
-      "integrity": "sha512-hcrurRwguMpGKvsRdgicS2iNothf3qfxg0gP5ULv2TzgyZa2o01j/N0vaMRvLgR2Fcb6z+7rxY4aeatjDzLMWg==",
+    "@ai-sdk/svelte@3.0.121_svelte@5.46.1__acorn@8.15.0_zod@4.3.5": {
+      "integrity": "sha512-17b/OjLTrwKx/yoQqzUotpO45oN4B2x0GK2139ap1A56j5P+GwpsMT2z8SsDbZ9k1j5qka3vax0s88SFin/Klw==",
       "dependencies": [
         "@ai-sdk/provider-utils",
-        "ai@5.0.119_zod@4.3.5",
+        "ai",
         "svelte",
         "zod"
       ],
@@ -2565,9 +2556,6 @@
         "eslint-visitor-keys@4.2.1"
       ]
     },
-    "@vercel/oidc@3.0.5": {
-      "integrity": "sha512-fnYhv671l+eTTp48gB4zEsTW/YtRgRPnkI2nT7x6qw5rkI1Lq2hTmQIpHPgyThI0znLK+vX2n9XxKdXZ7BUbbw=="
-    },
     "@vercel/oidc@3.1.0": {
       "integrity": "sha512-Fw28YZpRnA3cAHHDlkt7xQHiJ0fcL+NRcIqsocZQUSmbzeIKRpwttJjik5ZGanXP+vlA4SbTg+AbA3bP363l+w=="
     },
@@ -2670,20 +2658,10 @@
     "agent-base@7.1.4": {
       "integrity": "sha512-MnA+YT8fwfJPgBx3m60MNqakm30XOkyIoH1y6huTQvC0PwZG7ki8NacLBcrPbNoo8vEZy7Jpuk7+jMO+CUovTQ=="
     },
-    "ai@5.0.119_zod@4.3.5": {
-      "integrity": "sha512-HUOwhc17fl2SZTJGZyA/99aNu706qKfXaUBCy9vgZiXBwrxg2eTzn2BCz7kmYDsfx6Fg2ACBy2icm41bsDXCTw==",
-      "dependencies": [
-        "@ai-sdk/gateway@2.0.25_zod@4.3.5",
-        "@ai-sdk/provider",
-        "@ai-sdk/provider-utils",
-        "@opentelemetry/api",
-        "zod"
-      ]
-    },
     "ai@5.0.121_zod@4.3.5": {
       "integrity": "sha512-3iYPdARKGLryC/7OA9RgBUaym1gynvWS7UPy8NwoRNCKP52lshldtHB5xcEfVviw7liWH2zJlW9yEzsDglcIEQ==",
       "dependencies": [
-        "@ai-sdk/gateway@2.0.27_zod@4.3.5",
+        "@ai-sdk/gateway",
         "@ai-sdk/provider",
         "@ai-sdk/provider-utils",
         "@opentelemetry/api",
@@ -3320,7 +3298,7 @@
         "@stricli/core",
         "@vitest/runner",
         "@vitest/utils",
-        "ai@5.0.121_zod@4.3.5",
+        "ai",
         "dotenv@16.6.1",
         "fastify",
         "file-type@19.6.0",
@@ -3331,7 +3309,7 @@
         "tinyrainbow"
       ],
       "optionalPeers": [
-        "ai@5.0.121_zod@4.3.5"
+        "ai"
       ],
       "bin": true
     },
@@ -5554,7 +5532,7 @@
       "apps/web-client": {
         "packageJson": {
           "dependencies": [
-            "npm:@ai-sdk/svelte@^3.0.119",
+            "npm:@ai-sdk/svelte@^3.0.121",
             "npm:@eslint/compat@^2.0.1",
             "npm:@eslint/js@^9.39.2",
             "npm:@ianvs/prettier-plugin-sort-imports@^4.7.0",
