@@ -12,7 +12,7 @@ the simplest version?" before building. Be a sparring partner, not a yes-man.
 
 - Deno + TypeScript (core platform)
 - Go (operator, auth, supporting services)
-- XState 5 (state machines)
+- @atlas/fsm-engine (state machines, workflows)
 - Zod v4 (all external input validation)
 - Hono (HTTP framework)
 
@@ -111,8 +111,8 @@ packages/
   @atlas/memory     # CoALA/MECMF memory system
   @atlas/signals    # Signal types and routing
   @atlas/storage    # Persistence layer
-src/
-  core/             # Workspace runtime (XState machine, sessions)
+src/                  # atlasd internals (not a separate app)
+  core/             # Workspace runtime (fsm-engine, sessions)
   cli/              # CLI commands
   services/         # Daemon services
 ```
@@ -138,9 +138,35 @@ Quick mental model:
 5. Agents execute with MCP tool access
 6. Results stored in memory system
 
-## Agent Feedback Loop
+## Local Development with CLI
 
-Use the `friday-debugging` skill for local and remote debugging instructions.
+Daemon runs on `localhost:8080`. Auto-restarts on code changes.
+
+```bash
+# Start daemon
+deno task atlas daemon start --detached
+
+# Send test prompt - returns chatId in cli-summary JSON
+deno task atlas prompt "test your changes"
+
+# Continue conversation
+deno task atlas prompt --chat <chatId> "follow up"
+
+# View transcript
+deno task atlas chat <chatId>              # JSON
+deno task atlas chat <chatId> --human      # readable
+
+# List recent chats
+deno task atlas chat
+
+# Stop daemon
+deno task atlas daemon stop
+```
+
+**CLI gaps:** Not all APIs have CLI commands. Check `apps/atlasd/routes/` and curl
+`localhost:8080` directly when needed.
+
+**Debugging:** Use the `debugging-friday` skill for log analysis (local + GCS).
 
 ## Issue Tracking with bd (beads)
 
