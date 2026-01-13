@@ -42,6 +42,6 @@ export async function encodeState(payload: Omit<StatePayload, "exp">): Promise<s
  * @throws If signature invalid or token expired
  */
 export async function decodeState(state: string): Promise<StatePayload> {
-  const payload = await verify(state, STATE_JWT_SECRET);
+  const payload = await verify(state, STATE_JWT_SECRET, "HS256");
   return StatePayloadSchema.parse(payload);
 }

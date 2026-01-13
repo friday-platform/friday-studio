@@ -42,6 +42,6 @@ export async function encodeAppInstallState(
  * @throws If signature invalid or token expired
  */
 export async function decodeAppInstallState(state: string): Promise<AppInstallState> {
-  const payload = await verify(state, STATE_JWT_SECRET);
+  const payload = await verify(state, STATE_JWT_SECRET, "HS256");
   return AppInstallStateSchema.parse(payload);
 }

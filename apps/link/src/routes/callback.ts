@@ -56,7 +56,7 @@ export function createCallbackRoutes(
     // Decode state to get flow type and redirectUri
     let flowType: z.infer<typeof FlowTypeSchema>;
     try {
-      const payload = await verify(state, STATE_JWT_SECRET);
+      const payload = await verify(state, STATE_JWT_SECRET, "HS256");
       flowType = FlowTypeSchema.parse(payload);
     } catch {
       return renderErrorResponse(c, "invalid_state", "OAuth state invalid or expired");
