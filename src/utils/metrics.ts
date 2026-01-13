@@ -144,9 +144,13 @@ export const AtlasMetrics = {
 
   /**
    * Record a session execution.
-   * @param status - Session status: "completed", "failed", "cancelled"
+   * @param status - Session status:
+   *   - "completed": Session finished successfully
+   *   - "failed": Platform/system error
+   *   - "cancelled": User or system cancelled
+   *   - "skipped": User configuration issue (OAuth not connected, missing env vars)
    */
-  recordSession(status: "completed" | "failed" | "cancelled"): void {
+  recordSession(status: "completed" | "failed" | "cancelled" | "skipped"): void {
     if (!isEnabled || !sessionsCounter) return;
     sessionsCounter.add(1, { status });
   },

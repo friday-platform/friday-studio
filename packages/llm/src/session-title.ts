@@ -7,7 +7,13 @@ const MIN_TITLE_LENGTH = 3;
 export interface GenerateSessionTitleInput {
   signal: { type: string; id: string; data?: Record<string, unknown> };
   output: unknown;
-  status: "completed" | "failed";
+  /**
+   * Session status:
+   * - "completed": Finished successfully
+   * - "failed": Platform/system error
+   * - "skipped": User configuration issue (OAuth not connected, missing env vars)
+   */
+  status: "completed" | "failed" | "skipped";
   jobName?: string;
   /** @internal Test-only: override LLM function */
   _llm?: typeof smallLLM;
@@ -89,10 +95,12 @@ function generateFallbackTitle(input: GenerateSessionTitleInput): string {
 }
 
 /**
- * Applies formatting: truncation and failed prefix.
+ * Applies formatting: truncation and status prefix.
  */
-function formatTitle(title: string, status: "completed" | "failed"): string {
-  const prefix = status === "failed" ? "Failed: " : "";
+function formatTitle(title: string, status: "completed" | "failed" | "skipped"): string {
+  // Add prefix for non-success statuses
+  // "skipped" = user config issue (OAuth not connected), "failed" = platform error
+  const prefix = status === "failed" ? "Failed: " : status === "skipped" ? "Skipped: " : "";
   const maxContentLength = MAX_TITLE_LENGTH - prefix.length;
 
   let truncated = title;

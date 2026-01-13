@@ -1,5 +1,6 @@
 import process from "node:process";
 import { assertEquals, assertRejects } from "@std/assert";
+import { UserConfigurationError } from "../errors/user-configuration-error.ts";
 import { createEnvironmentContext } from "./environment-context.ts";
 
 // Mock logger - cast to bypass full interface requirement
@@ -37,14 +38,15 @@ Deno.test("validateEnvironment - passes when required var exists", async () => {
   }
 });
 
-Deno.test("validateEnvironment - throws when required var missing", async () => {
+Deno.test("validateEnvironment - throws UserConfigurationError when required var missing", async () => {
   delete process.env.MISSING_VAR;
   const validate = createEnvironmentContext(mockLogger);
-  await assertRejects(
+  const error = await assertRejects(
     () => validate("workspace", "agent", { required: [reqVar("MISSING_VAR")] }),
     Error,
     "Required environment variables not found: MISSING_VAR",
   );
+  assertEquals(error instanceof UserConfigurationError, true);
 });
 
 Deno.test("validateEnvironment - LITELLM_API_KEY substitutes for ANTHROPIC_API_KEY", async () => {
@@ -75,15 +77,16 @@ Deno.test("validateEnvironment - prefers primary key over LITELLM substitute", a
   }
 });
 
-Deno.test("validateEnvironment - throws when both primary and LITELLM missing", async () => {
+Deno.test("validateEnvironment - throws UserConfigurationError when both primary and LITELLM missing", async () => {
   delete process.env.ANTHROPIC_API_KEY;
   delete process.env.LITELLM_API_KEY;
   const validate = createEnvironmentContext(mockLogger);
-  await assertRejects(
+  const error = await assertRejects(
     () => validate("workspace", "agent", { required: [reqVar("ANTHROPIC_API_KEY")] }),
     Error,
     "Required environment variables not found: ANTHROPIC_API_KEY",
   );
+  assertEquals(error instanceof UserConfigurationError, true);
 });
 
 Deno.test("validateEnvironment - LITELLM does not substitute for non-LLM keys", async () => {
@@ -91,11 +94,12 @@ Deno.test("validateEnvironment - LITELLM does not substitute for non-LLM keys", 
   process.env.LITELLM_API_KEY = "sk-litellm-test";
   try {
     const validate = createEnvironmentContext(mockLogger);
-    await assertRejects(
+    const error = await assertRejects(
       () => validate("workspace", "agent", { required: [reqVar("SOME_OTHER_KEY")] }),
       Error,
       "Required environment variables not found: SOME_OTHER_KEY",
     );
+    assertEquals(error instanceof UserConfigurationError, true);
   } finally {
     delete process.env.LITELLM_API_KEY;
   }
@@ -127,9 +131,9 @@ Deno.test("validateEnvironment - runs regex validation for primary key", async (
   }
 });
 
-Deno.test("validateEnvironment - shows connect message when user hasn't linked account", async () => {
+Deno.test("validateEnvironment - throws UserConfigurationError when user hasn't linked account", async () => {
   // Mock fetch to return empty credentials, triggering CredentialNotFoundError.
-  // This tests the new code path: user hasn't connected → "Please connect your account"
+  // This tests the code path: user hasn't connected → UserConfigurationError
   const originalFetch = globalThis.fetch;
   globalThis.fetch = () =>
     Promise.resolve(
@@ -142,7 +146,7 @@ Deno.test("validateEnvironment - shows connect message when user hasn't linked a
   delete process.env.GOOGLE_CALENDAR_ACCESS_TOKEN;
   try {
     const validate = createEnvironmentContext(mockLogger);
-    await assertRejects(
+    const error = await assertRejects(
       () =>
         validate("workspace", "agent", {
           required: [
@@ -156,6 +160,7 @@ Deno.test("validateEnvironment - shows connect message when user hasn't linked a
       Error,
       "Please connect your google-calendar account to continue",
     );
+    assertEquals(error instanceof UserConfigurationError, true);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -178,7 +183,7 @@ Deno.test("validateEnvironment - LITELLM does not substitute when linkRef is pre
   process.env.LITELLM_API_KEY = "sk-litellm-test";
   try {
     const validate = createEnvironmentContext(mockLogger);
-    await assertRejects(
+    const error = await assertRejects(
       () =>
         validate("workspace", "agent", {
           required: [
@@ -192,18 +197,19 @@ Deno.test("validateEnvironment - LITELLM does not substitute when linkRef is pre
       Error,
       "Please connect your anthropic account to continue",
     );
+    assertEquals(error instanceof UserConfigurationError, true);
   } finally {
     delete process.env.LITELLM_API_KEY;
     globalThis.fetch = originalFetch;
   }
 });
 
-Deno.test("validateEnvironment - shows reconnect message when Link API fails", async () => {
+Deno.test("validateEnvironment - throws UserConfigurationError with cause when credential refresh fails", async () => {
   // Tests the API failure path: when Link HTTP call fails with a
-  // non-CredentialNotFoundError, users see "credentials could not be loaded".
+  // non-CredentialNotFoundError, throws UserConfigurationError with original error as cause.
   delete process.env.GOOGLE_CALENDAR_ACCESS_TOKEN;
   const validate = createEnvironmentContext(mockLogger);
-  await assertRejects(
+  const error = await assertRejects(
     () =>
       validate("workspace", "agent", {
         required: [
@@ -215,6 +221,9 @@ Deno.test("validateEnvironment - shows reconnect message when Link API fails", a
         ],
       }),
     Error,
-    "credentials could not be loaded",
+    "credentials could not be refreshed",
   );
+  // Verify it's a UserConfigurationError with original error preserved as cause
+  assertEquals(error instanceof UserConfigurationError, true);
+  assertEquals(error.cause instanceof Error, true);
 });

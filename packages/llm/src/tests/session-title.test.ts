@@ -52,6 +52,13 @@ Deno.test("generateSessionTitle - adds Failed prefix for failed sessions", async
   assertEquals(result, "Failed: Database migration");
 });
 
+Deno.test("generateSessionTitle - adds Skipped prefix for skipped sessions", async () => {
+  const result = await generateSessionTitle(
+    makeInput({ status: "skipped", _llm: mockLLM("Calendar sync") }),
+  );
+  assertEquals(result, "Skipped: Calendar sync");
+});
+
 Deno.test("generateSessionTitle - fallback prefers jobName over signal.type", async () => {
   const result = await generateSessionTitle(
     makeInput({

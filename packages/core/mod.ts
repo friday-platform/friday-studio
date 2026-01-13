@@ -28,6 +28,8 @@ export { conversationStorage } from "./src/chat-storage.ts";
 export * from "./src/constants/supervisor-status.ts";
 // Credential Fetcher
 export * from "./src/credential-fetcher.ts";
+// User Configuration Errors (don't count as platform failures)
+export { UserConfigurationError } from "./src/errors/user-configuration-error.ts";
 export {
   CredentialNotFoundError,
   resolveCredentialsByProvider,

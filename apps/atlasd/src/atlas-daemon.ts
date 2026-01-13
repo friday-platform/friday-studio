@@ -943,9 +943,8 @@ export class AtlasDaemon {
         daemonUrl: `http://localhost:${this.options.port}`, // Pass daemon URL for MCP tool fetching
         onSessionFinished: async ({ workspaceId, sessionId, status, finishedAt, summary }) => {
           // Record session completion metric
-          if (status === "completed" || status === "failed" || status === "cancelled") {
-            AtlasMetrics.recordSession(status);
-          }
+          // "skipped" = user config error (OAuth not connected, missing env vars) - NOT a platform failure
+          AtlasMetrics.recordSession(status);
 
           try {
             const mgr = this.getWorkspaceManager();

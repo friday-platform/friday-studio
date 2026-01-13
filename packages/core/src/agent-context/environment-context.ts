@@ -9,6 +9,7 @@
 import process from "node:process";
 import type { AgentEnvironmentConfig } from "@atlas/agent-sdk";
 import type { Logger } from "@atlas/logger";
+import { UserConfigurationError } from "../errors/user-configuration-error.ts";
 import {
   CredentialNotFoundError,
   fetchLinkCredential,
@@ -112,10 +113,10 @@ export function createEnvironmentContext(logger: Logger) {
                 provider: reqVar.linkRef.provider,
                 error: err,
               });
-              throw new Error(
-                `Can't execute ${agentId}: Your '${reqVar.linkRef.provider}' credentials could not be loaded. ` +
-                  `Please reconnect your ${reqVar.linkRef.provider} account and try again.`,
-                { cause: err },
+              throw UserConfigurationError.credentialRefreshFailed(
+                agentId,
+                reqVar.linkRef.provider,
+                err,
               );
             }
           }
@@ -194,25 +195,10 @@ export function createEnvironmentContext(logger: Logger) {
       }
     }
 
-    // If there are missing credentials or variables, throw detailed error
+    // If there are missing credentials or variables, throw UserConfigurationError
+    // This error type is handled specially - sessions won't be marked as "failed"
+    // in metrics, preventing false alerts for user configuration issues.
     if (missingProviders.size > 0 || missingRequired.length > 0) {
-      const errorParts: string[] = [];
-
-      // Link credentials require OAuth connection, not .env file
-      if (missingProviders.size > 0) {
-        const providers = [...missingProviders];
-        errorParts.push(
-          `Please connect your ${providers.join(", ")} account${providers.length > 1 ? "s" : ""} to continue.`,
-        );
-      }
-
-      // Regular env vars need .env file
-      if (missingRequired.length > 0) {
-        errorParts.push(
-          `Required environment variables not found: ${missingRequired.join(", ")}. Please add these to your workspace .env file.`,
-        );
-      }
-
       // Use warn (not error) since this is an expected user scenario - they haven't
       // connected their OAuth account or configured required environment variables yet.
       // This shouldn't alert in Sentry; it's handled gracefully in the UI.
@@ -220,16 +206,12 @@ export function createEnvironmentContext(logger: Logger) {
         missingVariables: missingRequired,
         missingProviders: [...missingProviders],
       });
-      throw new Error(
-        `Can't execute ${agentId} in workspace '${workspaceId}': ${errorParts.join(" ")}`,
-        {
-          cause: {
-            missingVariables: missingRequired,
-            missingProviders: [...missingProviders],
-            workspaceId,
-            agentId,
-          },
-        },
+
+      throw UserConfigurationError.missingConfiguration(
+        agentId,
+        workspaceId,
+        [...missingProviders],
+        missingRequired,
       );
     }
 

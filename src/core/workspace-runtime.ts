@@ -15,6 +15,7 @@ import {
   type GlobalMCPServerPool,
   ReasoningResultStatus,
   SessionHistoryStorage,
+  UserConfigurationError,
 } from "@atlas/core";
 import { FileSystemDocumentStore } from "@atlas/document-store";
 import {
@@ -47,6 +48,17 @@ import type {
 } from "../types/core.ts";
 import { MessageUser } from "../types/core.ts";
 import { buildAgentPrompt, validateAgentOutput } from "./agent-helpers.ts";
+
+/**
+ * Classify an error to determine session status.
+ * UserConfigurationError (OAuth not connected, missing env vars) → "skipped"
+ * All other errors → "failed"
+ *
+ * @internal Exported for testing
+ */
+export function classifySessionError(error: unknown): "skipped" | "failed" {
+  return error instanceof UserConfigurationError ? "skipped" : "failed";
+}
 
 // WorkspaceRuntime signal type - plain payload without full IAtlasScope implementation
 interface WorkspaceRuntimeSignal {
@@ -119,7 +131,13 @@ interface WorkspaceRuntimeOptions {
   onSessionFinished?: (data: {
     workspaceId: string;
     sessionId: string;
-    status: "completed" | "failed";
+    /**
+     * Session status:
+     * - "completed": Finished successfully
+     * - "failed": Platform/system error
+     * - "skipped": User configuration issue (OAuth not connected, missing env vars)
+     */
+    status: "completed" | "failed" | "skipped";
     finishedAt: string;
     summary?: string;
   }) => void | Promise<void>;
@@ -146,7 +164,14 @@ interface ActiveSession {
 interface SessionResult {
   id: string;
   workspaceId: string;
-  status: "active" | "completed" | "failed";
+  /**
+   * Session status:
+   * - "active": Currently running
+   * - "completed": Finished successfully
+   * - "failed": Platform/system error
+   * - "skipped": User configuration issue (OAuth not connected, missing env vars)
+   */
+  status: "active" | "completed" | "failed" | "skipped";
   startedAt: Date;
   completedAt?: Date;
   artifacts: IWorkspaceArtifact[];
@@ -462,23 +487,8 @@ export class WorkspaceRuntime {
       this.sessionCompletionEmitter.emit(`session:${sessionResult.id}`, sessionResult);
     }
 
-    // Call onSessionFinished callback if provided
-    if (this.options.onSessionFinished && sessionResult.status !== "active") {
-      const status: "completed" | "failed" =
-        sessionResult.status === "completed" ? "completed" : "failed";
-      await this.options.onSessionFinished({
-        workspaceId: this.workspace.id,
-        sessionId: sessionResult.id,
-        status,
-        finishedAt: new Date().toISOString(),
-        summary: `Session ${sessionResult.id}: ${sessionResult.status}`,
-      });
-
-      // Remove completed session
-      this.sessions.delete(sessionResult.id);
-      // Clean up session result after callback
-      this.sessionResults.delete(sessionResult.id);
-    }
+    // Call onSessionFinished callback and cleanup
+    await this.handleSessionCompletion(sessionResult);
 
     return activeSession.session;
   }
@@ -572,16 +582,25 @@ export class WorkspaceRuntime {
         jobName: job.name,
       });
     } catch (error) {
-      session.status = "failed";
       session.completedAt = new Date();
       session.error = error instanceof Error ? error : new Error(String(error));
+      session.status = classifySessionError(error);
 
-      logger.error("Signal processing failed", {
-        sessionId: session.id,
-        error: session.error.message,
-        currentState: job.engine.state,
-        jobName: job.name,
-      });
+      // Log appropriately based on error type
+      if (session.status === "skipped") {
+        logger.warn("Session skipped: user configuration issue", {
+          sessionId: session.id,
+          error: session.error.message,
+          jobName: job.name,
+        });
+      } else {
+        logger.error("Signal processing failed", {
+          sessionId: session.id,
+          error: session.error.message,
+          currentState: job.engine.state,
+          jobName: job.name,
+        });
+      }
     } finally {
       // Emit session-finish event for stream rotation and completion tracking
       if (onStreamEvent) {
@@ -1001,23 +1020,8 @@ export class WorkspaceRuntime {
       this.sessionCompletionEmitter.emit(`session:${sessionResult.id}`, sessionResult);
     }
 
-    // Call onSessionFinished callback if provided
-    if (this.options.onSessionFinished && sessionResult.status !== "active") {
-      const status: "completed" | "failed" =
-        sessionResult.status === "completed" ? "completed" : "failed";
-      await this.options.onSessionFinished({
-        workspaceId: this.workspace.id,
-        sessionId: sessionResult.id,
-        status,
-        finishedAt: new Date().toISOString(),
-        summary: `Session ${sessionResult.id}: ${sessionResult.status}`,
-      });
-
-      // Remove completed session
-      this.sessions.delete(sessionResult.id);
-      // Clean up session result after callback
-      this.sessionResults.delete(sessionResult.id);
-    }
+    // Call onSessionFinished callback and cleanup
+    await this.handleSessionCompletion(sessionResult);
 
     logger.info("Job execution completed", {
       workspaceId: this.workspace.id,
@@ -1173,6 +1177,27 @@ export class WorkspaceRuntime {
   getSignalProvider(signalId: string): string | undefined {
     const signals = this.config?.workspace?.signals || {};
     return signals[signalId]?.provider;
+  }
+
+  /**
+   * Handle session completion: call callback and cleanup tracking maps
+   */
+  private async handleSessionCompletion(sessionResult: SessionResult): Promise<void> {
+    const { status } = sessionResult;
+    if (status === "active") return;
+
+    if (this.options.onSessionFinished) {
+      await this.options.onSessionFinished({
+        workspaceId: this.workspace.id,
+        sessionId: sessionResult.id,
+        status,
+        finishedAt: new Date().toISOString(),
+        summary: `Session ${sessionResult.id}: ${status}`,
+      });
+    }
+
+    this.sessions.delete(sessionResult.id);
+    this.sessionResults.delete(sessionResult.id);
   }
 
   /**
@@ -1388,17 +1413,20 @@ export class WorkspaceRuntime {
       }
 
       // Generate title before other writes to avoid race condition
-      await this.generateAndStoreTitle(sessionResult.id, {
-        signal: { type: signal.type, id: signal.id, data: signal.data },
-        output: sessionResult.artifacts[0]?.data,
-        status: sessionResult.status === "completed" ? "completed" : "failed",
-        jobName: job.name,
-      }).catch((error) => {
-        logger.warn("Title generation failed", {
-          sessionId: sessionResult.id,
-          error: stringifyError(error),
+      const { status } = sessionResult;
+      if (status !== "active") {
+        await this.generateAndStoreTitle(sessionResult.id, {
+          signal: { type: signal.type, id: signal.id, data: signal.data },
+          output: sessionResult.artifacts[0]?.data,
+          status,
+          jobName: job.name,
+        }).catch((error) => {
+          logger.warn("Title generation failed", {
+            sessionId: sessionResult.id,
+            error: stringifyError(error),
+          });
         });
-      });
+      }
 
       // Append session-start event
       await SessionHistoryStorage.appendSessionEvent({

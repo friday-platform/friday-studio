@@ -20,7 +20,8 @@ export const WorkspaceMetadataSchema = z.object({
   lastFinishedSession: z
     .object({
       id: z.string(),
-      status: z.enum(["completed", "failed"]),
+      // "skipped" = user config error (OAuth not connected, missing env vars)
+      status: z.enum(["completed", "failed", "skipped"]),
       finishedAt: z.iso.datetime(),
       summary: z.string().optional(),
     })
