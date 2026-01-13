@@ -5,6 +5,7 @@
  * Guards and actions are executed via dynamic import from code strings.
  */
 
+import { type FailInput, FailInputSchema } from "@atlas/agent-sdk";
 import { logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
 import { type Tool, tool } from "ai";
@@ -610,11 +611,10 @@ export class FSMEngine {
 
         // Inject failStep tool for explicit failure signaling
         const failStepTool = tool({
-          description: `Signal that you cannot complete this task. Use this when you lack required information, encounter an unrecoverable error, or the task is impossible to complete.`,
-          inputSchema: z.object({
-            reason: z.string().describe("Why the task cannot be completed"),
-          }),
-          execute: ({ reason }) => ({ failed: true, reason }),
+          description:
+            "Signal that you cannot complete this task. Use this when you lack required information, encounter an unrecoverable error, or the task is impossible to complete.",
+          inputSchema: FailInputSchema,
+          execute: (input: FailInput) => ({ failed: true, reason: input.reason }),
         });
 
         const tools: Record<string, Tool> = { ...baseTools, failStep: failStepTool };

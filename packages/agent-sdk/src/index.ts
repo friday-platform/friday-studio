@@ -14,6 +14,9 @@ export type {
 } from "./adapter.ts";
 // Core API
 export { createAgent } from "./create-agent.ts";
+export type { CreateFailToolOptions, FailInput } from "./fail-tool.ts";
+// Fail tool for graceful agent failure signaling
+export { createFailTool, FailInputSchema } from "./fail-tool.ts";
 export type {
   AtlasDataEvents,
   AtlasUIMessage,

@@ -1,5 +1,5 @@
 import process from "node:process";
-import { createAgent, repairJson, repairToolCall } from "@atlas/agent-sdk";
+import { createAgent, createFailTool, repairJson, repairToolCall } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
 import { registry, smallLLM } from "@atlas/llm";
 import { fail, getTodaysDate, type Result, success } from "@atlas/utils";
@@ -233,16 +233,12 @@ export const webSearchAgent = createAgent<string, WebSearchAgentResult>({
               return { ok: true };
             },
           }),
-          failQuery: tool({
+          failQuery: createFailTool({
+            onFail: ({ reason }) => {
+              state.value = { status: "failed", reason };
+            },
             description:
               "Signal that the query cannot be researched due to missing information or being impossible to search for",
-            inputSchema: z.object({
-              reason: z.string().describe("Why the query cannot be researched"),
-            }),
-            execute: ({ reason }) => {
-              state.value = { status: "failed", reason };
-              return { ok: false };
-            },
           }),
         },
         toolChoice: "required",

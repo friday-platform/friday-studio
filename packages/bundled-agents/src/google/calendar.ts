@@ -1,6 +1,6 @@
 import { env } from "node:process";
 import type { LinkCredentialRef, ToolCall, ToolResult } from "@atlas/agent-sdk";
-import { createAgent, repairJson, repairToolCall } from "@atlas/agent-sdk";
+import { createAgent, createFailTool, repairJson, repairToolCall } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
 import { type CalendarSchedule, CalendarScheduleSchema } from "@atlas/core/artifacts";
 import { getDefaultProviderOpts, registry, smallLLM } from "@atlas/llm";
@@ -139,6 +139,7 @@ Rules:
 - Never fabricate information. Only use tool outputs.
 - If no tools available: 'Cannot complete: Google Calendar tools unavailable.'
 - If tool errors: state failure briefly and stop.
+- If you cannot complete the request, call the fail tool with a clear reason.
 - For READ operations: Filter tool results to only include events matching the user's request. YOU MUST KEEP the original response intact.
 - For WRITE operations: Confirm with event title, time, and link.
 - When creating events with attendees, use email addresses.
@@ -151,6 +152,17 @@ When calling get_events, you MUST set the "time_min" value:
   - If the user asks for their schedule today, start at midnight
   - If the user asks for their upcoming events, start at the current time
 This ensures events later in the day aren't excluded due to UTC date boundary, and that past events are shown when the user requests their calendar for the full day.`;
+
+    // Failure tracking for fail tool
+    const state: { failure: { reason: string } | null } = { failure: null };
+
+    const failTool = createFailTool({
+      onFail: ({ reason }) => {
+        state.failure = { reason };
+      },
+      description:
+        "Signal that the calendar operation cannot be completed. Use when required information is missing, the calendar is inaccessible, or the request is impossible to fulfill.",
+    });
 
     try {
       // Progress: starting execution
@@ -176,7 +188,7 @@ This ensures events later in the day aren't excluded due to UTC date boundary, a
           { role: "system", content: system, providerOptions: getDefaultProviderOpts("anthropic") },
           { role: "user", content: prompt },
         ],
-        tools,
+        tools: { ...tools, fail: failTool },
         maxOutputTokens: 3000,
         providerOptions: { anthropic: { thinking: { type: "enabled", budgetTokens: 12000 } } },
         stopWhen: stepCountIs(20),
@@ -188,6 +200,11 @@ This ensures events later in the day aren't excluded due to UTC date boundary, a
         step: "calendar-query-execution",
         usage: result.usage,
       });
+
+      // Check if the agent signaled failure
+      if (state.failure) {
+        return { response: state.failure.reason };
+      }
 
       const { steps, text } = result;
 
