@@ -232,7 +232,7 @@ const currentChatId = $derived(page.params.chatId);
 		</ScrollListener>
 	</nav>
 
-	<a href="https://discord.gg/eKQkRnKa7T" target="_blank" class="help" aria-label="Get Help"> ? </a>
+	<a href="https://docs.hellofriday.ai" target="_blank" class="help" aria-label="Get Help"> ? </a>
 </header>
 
 <style>
