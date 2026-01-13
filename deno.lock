@@ -96,8 +96,8 @@
     "npm:@types/papaparse@^5.5.2": "5.5.2",
     "npm:@types/react@^19.2.8": "19.2.8",
     "npm:@worker-tools/html-rewriter@0.1.0-pre.19": "0.1.0-pre.19",
-    "npm:ai@^5.0.119": "5.0.119_zod@4.3.5",
-    "npm:ai@^5.0.93": "5.0.119_zod@4.3.5",
+    "npm:ai@^5.0.121": "5.0.121_zod@4.3.5",
+    "npm:ai@^5.0.93": "5.0.121_zod@4.3.5",
     "npm:concurrently@*": "9.2.1",
     "npm:cookie@^1.0.2": "1.1.1",
     "npm:cron-parser@^5.4.0": "5.4.0",
@@ -105,7 +105,7 @@
     "npm:eslint-config-prettier@^10.1.8": "10.1.8_eslint@9.39.2",
     "npm:eslint-plugin-svelte@^3.14.0": "3.14.0_eslint@9.39.2_svelte@5.46.1__acorn@8.15.0_postcss@8.5.6",
     "npm:eslint@^9.39.2": "9.39.2",
-    "npm:evalite@^1.0.0-beta.15": "1.0.0-beta.15_ai@5.0.119__zod@4.3.5_zod@4.3.5",
+    "npm:evalite@^1.0.0-beta.15": "1.0.0-beta.15_ai@5.0.121__zod@4.3.5_zod@4.3.5",
     "npm:fast-glob@^3.3.3": "3.3.3",
     "npm:file-type@^21.3.0": "21.3.0",
     "npm:globals@17": "17.0.0",
@@ -265,7 +265,16 @@
       "dependencies": [
         "@ai-sdk/provider",
         "@ai-sdk/provider-utils",
-        "@vercel/oidc",
+        "@vercel/oidc@3.0.5",
+        "zod"
+      ]
+    },
+    "@ai-sdk/gateway@2.0.27_zod@4.3.5": {
+      "integrity": "sha512-8hbezMsGa0crSt7/DKjkYL1UbbJJW/UFxTfhmf5qcIeYeeWG4dTNmm+DWbUdIsTaWvp59KC4eeC9gYXBbTHd7w==",
+      "dependencies": [
+        "@ai-sdk/provider",
+        "@ai-sdk/provider-utils",
+        "@vercel/oidc@3.1.0",
         "zod"
       ]
     },
@@ -321,7 +330,7 @@
       "integrity": "sha512-hcrurRwguMpGKvsRdgicS2iNothf3qfxg0gP5ULv2TzgyZa2o01j/N0vaMRvLgR2Fcb6z+7rxY4aeatjDzLMWg==",
       "dependencies": [
         "@ai-sdk/provider-utils",
-        "ai",
+        "ai@5.0.119_zod@4.3.5",
         "svelte",
         "zod"
       ],
@@ -2549,6 +2558,9 @@
     "@vercel/oidc@3.0.5": {
       "integrity": "sha512-fnYhv671l+eTTp48gB4zEsTW/YtRgRPnkI2nT7x6qw5rkI1Lq2hTmQIpHPgyThI0znLK+vX2n9XxKdXZ7BUbbw=="
     },
+    "@vercel/oidc@3.1.0": {
+      "integrity": "sha512-Fw28YZpRnA3cAHHDlkt7xQHiJ0fcL+NRcIqsocZQUSmbzeIKRpwttJjik5ZGanXP+vlA4SbTg+AbA3bP363l+w=="
+    },
     "@vitest/expect@4.0.16": {
       "integrity": "sha512-eshqULT2It7McaJkQGLkPjPjNph+uevROGuIMJdG3V+0BSR2w9u6J9Lwu+E8cK5TETlfou8GRijhafIMhXsimA==",
       "dependencies": [
@@ -2651,7 +2663,17 @@
     "ai@5.0.119_zod@4.3.5": {
       "integrity": "sha512-HUOwhc17fl2SZTJGZyA/99aNu706qKfXaUBCy9vgZiXBwrxg2eTzn2BCz7kmYDsfx6Fg2ACBy2icm41bsDXCTw==",
       "dependencies": [
-        "@ai-sdk/gateway",
+        "@ai-sdk/gateway@2.0.25_zod@4.3.5",
+        "@ai-sdk/provider",
+        "@ai-sdk/provider-utils",
+        "@opentelemetry/api",
+        "zod"
+      ]
+    },
+    "ai@5.0.121_zod@4.3.5": {
+      "integrity": "sha512-3iYPdARKGLryC/7OA9RgBUaym1gynvWS7UPy8NwoRNCKP52lshldtHB5xcEfVviw7liWH2zJlW9yEzsDglcIEQ==",
+      "dependencies": [
+        "@ai-sdk/gateway@2.0.27_zod@4.3.5",
         "@ai-sdk/provider",
         "@ai-sdk/provider-utils",
         "@opentelemetry/api",
@@ -3279,7 +3301,7 @@
     "etag@1.8.1": {
       "integrity": "sha512-aIL5Fx7mawVa300al2BnEE4iNvo1qETxLrPI/o05L7z6go7fCw1J6EQmbK4FmJ2AS7kgVF/KEZWufBfdClMcPg=="
     },
-    "evalite@1.0.0-beta.15_ai@5.0.119__zod@4.3.5_zod@4.3.5": {
+    "evalite@1.0.0-beta.15_ai@5.0.121__zod@4.3.5_zod@4.3.5": {
       "integrity": "sha512-/4D4Iap7/FTrzUYf4fZpkaGaycRnKt8gDgMDJ/fRAr5YdfUBJuwJVPQFRSPNvtkg5AVSDI7+kgivJnfP69kFEA==",
       "dependencies": [
         "@fastify/static",
@@ -3288,7 +3310,7 @@
         "@stricli/core",
         "@vitest/runner",
         "@vitest/utils",
-        "ai",
+        "ai@5.0.121_zod@4.3.5",
         "dotenv@16.6.1",
         "fastify",
         "file-type@19.6.0",
@@ -3299,7 +3321,7 @@
         "tinyrainbow"
       ],
       "optionalPeers": [
-        "ai"
+        "ai@5.0.121_zod@4.3.5"
       ],
       "bin": true
     },
@@ -5430,7 +5452,7 @@
         "npm:@opentelemetry/api@^1.9.0",
         "npm:@total-typescript/ts-reset@~0.6.1",
         "npm:@types/react@^19.2.8",
-        "npm:ai@^5.0.119",
+        "npm:ai@^5.0.121",
         "npm:ink@^6.6.0",
         "npm:js-levenshtein@^1.1.6",
         "npm:knip@5.80.2",
@@ -5541,7 +5563,7 @@
             "npm:@tauri-apps/plugin-fs@~2.4.5",
             "npm:@tauri-apps/plugin-opener@^2.5.3",
             "npm:@types/papaparse@^5.5.2",
-            "npm:ai@^5.0.119",
+            "npm:ai@^5.0.121",
             "npm:eslint-config-prettier@^10.1.8",
             "npm:eslint-plugin-svelte@^3.14.0",
             "npm:eslint@^9.39.2",
@@ -5564,7 +5586,7 @@
           "dependencies": [
             "npm:@jsr/std__assert@^1.0.14",
             "npm:@opentelemetry/api@^1.9.0",
-            "npm:ai@^5.0.119",
+            "npm:ai@^5.0.121",
             "npm:jsonrepair@^3.13.1",
             "npm:zod@^4.3.5"
           ]
@@ -5586,7 +5608,7 @@
             "npm:@jsr/std__encoding@^1.0.10",
             "npm:@jsr/std__media-types@^1.1.0",
             "npm:@jsr/std__path@^1.1.2",
-            "npm:ai@^5.0.119",
+            "npm:ai@^5.0.121",
             "npm:evalite@^1.0.0-beta.15",
             "npm:parallel-web@0.2.4",
             "npm:zod@^4.3.5"
@@ -5624,7 +5646,7 @@
             "npm:@jsr/std__path@^1.1.2",
             "npm:@jsr/std__testing@^1.0.16",
             "npm:@socotra/modelcontextprotocol-sdk@^1.18.0",
-            "npm:ai@^5.0.119",
+            "npm:ai@^5.0.121",
             "npm:hono@^4.11.3",
             "npm:jose@^6.1.3",
             "npm:papaparse@^5.5.3",
@@ -5673,7 +5695,7 @@
       "packages/hallucination": {
         "packageJson": {
           "dependencies": [
-            "npm:ai@^5.0.119",
+            "npm:ai@^5.0.121",
             "npm:zod@^4.3.5"
           ]
         }
@@ -5688,7 +5710,7 @@
             "npm:@ai-sdk/provider@^2.0.1",
             "npm:@jsr/std__assert@^1.0.14",
             "npm:@jsr/std__collections@^1.1.3",
-            "npm:ai@^5.0.119",
+            "npm:ai@^5.0.121",
             "npm:evalite@^1.0.0-beta.15",
             "npm:zod@^4.3.5"
           ]
@@ -5710,7 +5732,7 @@
             "npm:@jsr/std__testing@^1.0.16",
             "npm:@opentelemetry/api@^1.9.0",
             "npm:@socotra/modelcontextprotocol-sdk@^1.18.0",
-            "npm:ai@^5.0.119",
+            "npm:ai@^5.0.121",
             "npm:zod@^4.3.5"
           ]
         }
@@ -5722,7 +5744,7 @@
             "npm:@jsr/std__path@^1.1.2",
             "npm:@socotra/modelcontextprotocol-sdk@^1.18.0",
             "npm:@worker-tools/html-rewriter@0.1.0-pre.19",
-            "npm:ai@^5.0.119",
+            "npm:ai@^5.0.121",
             "npm:fast-glob@^3.3.3",
             "npm:minimatch@^10.1.1",
             "npm:papaparse@^5.5.3",
@@ -5794,7 +5816,7 @@
             "npm:@jsr/std__text@^1.0.16",
             "npm:@jsr/std__yaml@^1.0.10",
             "npm:@modelcontextprotocol/sdk@^1.25.2",
-            "npm:ai@^5.0.119",
+            "npm:ai@^5.0.121",
             "npm:evalite@^1.0.0-beta.15",
             "npm:zod@^4.3.5"
           ]
@@ -5842,7 +5864,7 @@
             "npm:@jsr/std__path@^1.1.2",
             "npm:@jsr/std__text@^1.0.16",
             "npm:@opentelemetry/api@^1.9.0",
-            "npm:ai@^5.0.119",
+            "npm:ai@^5.0.121",
             "npm:papaparse@^5.5.3",
             "npm:zod@^4.3.5"
           ]
@@ -5856,7 +5878,7 @@
         "packageJson": {
           "dependencies": [
             "npm:@jsr/std__assert@^1.0.14",
-            "npm:ai@^5.0.119",
+            "npm:ai@^5.0.121",
             "npm:dotenv@17.2.3",
             "npm:evalite@^1.0.0-beta.15",
             "npm:vitest@^4.0.16",

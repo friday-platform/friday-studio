@@ -12,7 +12,7 @@
     "@modelcontextprotocol/sdk": "npm:@socotra/modelcontextprotocol-sdk@^1.18.0",
     "@std/path": "npm:@jsr/std__path@^1.1.2",
     "@worker-tools/html-rewriter": "0.1.0-pre.19",
-    "ai": "^5.0.119",
+    "ai": "^5.0.121",
     "fast-glob": "^3.3.3",
     "minimatch": "^10.1.1",
     "papaparse": "^5.5.3",
