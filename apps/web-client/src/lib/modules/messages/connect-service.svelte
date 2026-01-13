@@ -33,6 +33,12 @@ let popupBlocked = $state(false);
 
 $effect(() => {
   async function fetchProvider() {
+    // Guard against empty provider (can happen during streaming before tool output is populated)
+    if (!provider) {
+      error = "No provider specified";
+      return;
+    }
+
     const result = await parseResult(
       client.link.v1.providers[":id"].$get({ param: { id: provider } }),
     );

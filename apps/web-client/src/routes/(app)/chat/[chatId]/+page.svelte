@@ -214,7 +214,7 @@ let showDetails = new SvelteMap<string, boolean>();
 												<Response {message} parts={messageContainer.parts} />
 											{:else if message.type === 'tool_call' && message.metadata?.toolName === 'display_artifact' && message.metadata?.artifactId}
 												<DisplayArtifact artifactId={message.metadata.artifactId as string} />
-											{:else if message.type === 'tool_call' && message.metadata?.toolName === 'connect_service'}
+											{:else if message.type === 'tool_call' && message.metadata?.toolName === 'connect_service' && message.metadata?.provider}
 												{@const currentChat = chatContext.chats.get(data.chatId)}
 												{#if currentChat}
 													<ConnectService
