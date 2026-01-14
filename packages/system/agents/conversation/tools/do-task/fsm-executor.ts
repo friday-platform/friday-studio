@@ -15,6 +15,7 @@ export function executeTaskViaFSM(
   context: TaskExecutionContext,
   mcpServerPool?: GlobalMCPServerPool,
   mcpToolProvider?: MCPToolProvider,
+  intent?: string,
 ): Promise<ExecutionResult> {
   return executeTaskViaFSMDirect(fsmDefinition, steps, {
     sessionId: context.sessionId,
@@ -27,5 +28,6 @@ export function executeTaskViaFSM(
     mcpToolProvider,
     onProgress: context.onProgress,
     abortSignal: context.abortSignal,
+    intent,
   });
 }

@@ -28,8 +28,14 @@ export async function generateSessionTitle(input: GenerateSessionTitleInput): Pr
   try {
     const prompt = buildPrompt(input);
     const result = await llm({
-      system:
-        "You are a title generator. Generate a concise, descriptive title for a completed task. Return ONLY the title, no quotes, no explanation. Max 60 characters.",
+      system: `You are a title generator. Generate a concise, descriptive title summarizing what was accomplished.
+
+CONSTRAINTS:
+- Return ONLY the title text, no quotes, no explanation
+- Max 60 characters
+- Focus on the ACTION and RESULT, not job names or workspace names
+- Do NOT include status words like "completed", "failed", "success"
+- Do NOT include generic prefixes like "Task:", "Job:", "Session:"`,
       prompt,
       maxOutputTokens: 30,
     });
@@ -39,7 +45,7 @@ export async function generateSessionTitle(input: GenerateSessionTitleInput): Pr
       return generateFallbackTitle(input);
     }
 
-    return formatTitle(title, input.status);
+    return formatTitle(title);
   } catch (error) {
     logger.debug("Title generation failed, using fallback", { error });
     return generateFallbackTitle(input);
@@ -48,65 +54,71 @@ export async function generateSessionTitle(input: GenerateSessionTitleInput): Pr
 
 /**
  * Builds the prompt for title generation from input data.
+ * Focuses on signal data and output - excludes job/workspace names to avoid redundant titles.
  */
 function buildPrompt(input: GenerateSessionTitleInput): string {
   const parts: string[] = [];
 
-  if (input.jobName) {
-    parts.push(`Job: ${input.jobName}`);
-  }
+  // Include signal type for context, but not job name (avoid "daily-report Daily Report" titles)
+  parts.push(`Trigger: ${input.signal.type}`);
 
-  parts.push(`Signal type: ${input.signal.type}`);
-  parts.push(`Signal ID: ${input.signal.id}`);
-
+  // Signal data often contains the most meaningful context (intent, task, etc.)
   if (input.signal.data) {
     const dataStr = JSON.stringify(input.signal.data);
-    // Truncate data if too long
-    parts.push(`Signal data: ${dataStr.slice(0, 200)}`);
+    parts.push(`Input: ${dataStr.slice(0, 200)}`);
   }
 
   if (input.output !== undefined && input.output !== null) {
     const outputStr =
       typeof input.output === "string" ? input.output : JSON.stringify(input.output);
-    parts.push(`Output: ${outputStr.slice(0, 300)}`);
+    parts.push(`Result: ${outputStr.slice(0, 300)}`);
   }
-
-  parts.push(`Status: ${input.status}`);
 
   return parts.join("\n");
 }
 
 /**
  * Deterministic fallback title generation.
+ * Priority: intent/task from signal data > jobName > signal type
  * Pattern: "daily-report" → "Daily report"
  */
 function generateFallbackTitle(input: GenerateSessionTitleInput): string {
-  // Use jobName if available, otherwise signal type
-  const base = input.jobName ?? input.signal.type;
+  // Prefer intent/task from signal data - these are most meaningful
+  let base: string | undefined;
 
-  // Convert kebab-case/snake_case to sentence case
-  const title = base
-    .replace(/[-_]/g, " ")
-    .replace(/([a-z])([A-Z])/g, "$1 $2") // camelCase split
-    .toLowerCase()
-    .replace(/^\w/, (c) => c.toUpperCase());
+  if (input.signal.data && typeof input.signal.data === "object") {
+    const data = input.signal.data as Record<string, unknown>;
+    // Check common intent/task fields
+    if (typeof data.intent === "string" && data.intent.length >= MIN_TITLE_LENGTH) {
+      base = data.intent;
+    } else if (typeof data.task === "string" && data.task.length >= MIN_TITLE_LENGTH) {
+      base = data.task;
+    } else if (typeof data.prompt === "string" && data.prompt.length >= MIN_TITLE_LENGTH) {
+      base = data.prompt;
+    }
+  }
 
-  return formatTitle(title, input.status);
+  // Fall back to jobName, then signal type
+  if (!base) {
+    base = input.jobName ?? input.signal.type;
+    // Convert kebab-case/snake_case to sentence case
+    base = base
+      .replace(/[-_]/g, " ")
+      .replace(/([a-z])([A-Z])/g, "$1 $2") // camelCase split
+      .toLowerCase()
+      .replace(/^\w/, (c) => c.toUpperCase());
+  }
+
+  return formatTitle(base);
 }
 
 /**
- * Applies formatting: truncation and status prefix.
+ * Applies formatting: truncation only.
+ * Status is shown via UI badge, not in title.
  */
-function formatTitle(title: string, status: "completed" | "failed" | "skipped"): string {
-  // Add prefix for non-success statuses
-  // "skipped" = user config issue (OAuth not connected), "failed" = platform error
-  const prefix = status === "failed" ? "Failed: " : status === "skipped" ? "Skipped: " : "";
-  const maxContentLength = MAX_TITLE_LENGTH - prefix.length;
-
-  let truncated = title;
-  if (truncated.length > maxContentLength) {
-    truncated = `${truncated.slice(0, maxContentLength - 3)}...`;
+function formatTitle(title: string): string {
+  if (title.length <= MAX_TITLE_LENGTH) {
+    return title;
   }
-
-  return prefix + truncated;
+  return `${title.slice(0, MAX_TITLE_LENGTH - 3)}...`;
 }

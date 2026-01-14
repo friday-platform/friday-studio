@@ -3,7 +3,14 @@
  * Used by FSM-based task execution path
  */
 
-import { AgentOrchestrator, type GlobalMCPServerPool } from "@atlas/core";
+import {
+  AgentOrchestrator,
+  type GlobalMCPServerPool,
+  mapFsmEventToSessionEvent,
+  ReasoningResultStatus,
+  SessionHistoryStorage,
+} from "@atlas/core";
+import { ChatStorage } from "@atlas/core/chat/storage";
 import { InMemoryDocumentStore } from "@atlas/document-store";
 import type { Context, FSMDefinition, FSMEvent, SignalWithContext } from "@atlas/fsm-engine";
 import {
@@ -28,6 +35,8 @@ interface ExecutionContext {
   mcpToolProvider?: MCPToolProvider;
   onProgress?: (event: TaskProgressEvent) => void;
   abortSignal?: AbortSignal;
+  /** Task intent for session history */
+  intent?: string;
 }
 
 export interface ExecutionResult {
@@ -205,30 +214,43 @@ export async function executeTaskViaFSMDirect(
       stateToStepIndex.set(`step_${i}`, i);
     }
 
+    // Collect FSM events for session history persistence
+    const collectedFsmEvents: FSMEvent[] = [];
+
     // Handle FSM events for LLM actions (agent actions already handled by agentExecutor)
     const onEvent = (event: FSMEvent) => {
-      if (event.type !== "data-fsm-action-execution") return;
-      if (event.data.actionType !== "llm") return;
+      // Collect FSM events for session history persistence
+      // Note: data-fsm-state-transition is no longer persisted
+      if (
+        event.type === "data-fsm-action-execution" ||
+        event.type === "data-fsm-tool-call" ||
+        event.type === "data-fsm-tool-result"
+      ) {
+        collectedFsmEvents.push(event);
+      }
 
-      const stepIndex = stateToStepIndex.get(event.data.state);
-      if (stepIndex === undefined) return;
+      // Handle progress events for LLM actions
+      if (event.type === "data-fsm-action-execution" && event.data.actionType === "llm") {
+        const stepIndex = stateToStepIndex.get(event.data.state);
+        if (stepIndex === undefined) return;
 
-      const step = steps[stepIndex];
-      if (!step || !context.onProgress) return;
+        const step = steps[stepIndex];
+        if (!step || !context.onProgress) return;
 
-      if (event.data.status === "started") {
-        context.onProgress({
-          type: "step-start",
-          stepIndex,
-          totalSteps: steps.length,
-          description: step.friendlyDescription || step.description,
-        });
-      } else if (event.data.status === "completed" || event.data.status === "failed") {
-        context.onProgress({
-          type: "step-complete",
-          stepIndex,
-          success: event.data.status === "completed",
-        });
+        if (event.data.status === "started") {
+          context.onProgress({
+            type: "step-start",
+            stepIndex,
+            totalSteps: steps.length,
+            description: step.friendlyDescription || step.description,
+          });
+        } else if (event.data.status === "completed" || event.data.status === "failed") {
+          context.onProgress({
+            type: "step-complete",
+            stepIndex,
+            success: event.data.status === "completed",
+          });
+        }
       }
     };
 
@@ -299,7 +321,19 @@ export async function executeTaskViaFSMDirect(
     const success = results.every((r) => r.success);
     logger.info("FSM execution completed", { success, stepCount: results.length });
 
-    return { success, results };
+    const execResult: ExecutionResult = { success, results };
+
+    // Persist session record and FSM events
+    await persistTaskSession({
+      taskSessionId,
+      context,
+      fsmDefinition,
+      steps,
+      collectedFsmEvents,
+      execResult,
+    });
+
+    return execResult;
   } catch (error) {
     logger.error("FSM execution failed", { error, step: currentStepIndex });
     return {
@@ -319,5 +353,101 @@ export async function executeTaskViaFSMDirect(
     if (orchestrator) {
       await orchestrator.shutdown();
     }
+  }
+}
+
+/**
+ * Persist task session record and FSM events to session history.
+ * Non-blocking - logs warning on failure but doesn't throw.
+ */
+async function persistTaskSession(params: {
+  taskSessionId: string;
+  context: ExecutionContext;
+  fsmDefinition: FSMDefinition;
+  steps: EnhancedTaskStep[];
+  collectedFsmEvents: FSMEvent[];
+  execResult: ExecutionResult;
+}): Promise<void> {
+  const { taskSessionId, context, fsmDefinition, steps, collectedFsmEvents, execResult } = params;
+  const success = execResult.success;
+
+  try {
+    // Fetch parent chat title
+    let parentTitle: string | undefined;
+    if (context.streamId) {
+      try {
+        const parentChatResult = await ChatStorage.getChat(context.streamId);
+        if (parentChatResult.ok && parentChatResult.data) {
+          parentTitle = parentChatResult.data.title;
+        }
+      } catch {
+        // Parent chat might not exist - continue without title
+      }
+    }
+
+    // Create session record with intent as title
+    await SessionHistoryStorage.createSessionRecord({
+      sessionId: taskSessionId,
+      workspaceId: context.workspaceId,
+      status: success ? ReasoningResultStatus.COMPLETED : ReasoningResultStatus.FAILED,
+      signal: {
+        id: "do-task",
+        provider: { id: "conversation-agent", name: "Conversation Agent" },
+        workspaceId: context.workspaceId,
+      },
+      signalPayload: { intent: context.intent },
+      jobSpecificationId: fsmDefinition.id,
+      availableAgents: steps.map((s) => s.agentId).filter((id): id is string => Boolean(id)),
+      streamId: context.streamId,
+      summary: context.intent?.slice(0, 200),
+      title: context.intent?.slice(0, 60), // Use intent as title (truncated to 60 chars)
+      parentStreamId: context.streamId,
+      parentTitle,
+      sessionType: "task",
+    });
+
+    // Persist FSM events
+    const sortedEvents = [...collectedFsmEvents].sort(
+      (a, b) => a.data.timestamp - b.data.timestamp,
+    );
+    for (const fsmEvent of sortedEvents) {
+      const historyEvent = mapFsmEventToSessionEvent(fsmEvent);
+      await SessionHistoryStorage.appendSessionEvent({
+        sessionId: taskSessionId,
+        emittedBy: "do-task",
+        emittedAt: new Date(fsmEvent.data.timestamp).toISOString(),
+        event: historyEvent,
+      });
+    }
+
+    // Emit session-finish event with output
+    await SessionHistoryStorage.appendSessionEvent({
+      sessionId: taskSessionId,
+      emittedBy: "do-task",
+      event: {
+        type: "session-finish" as const,
+        data: {
+          status: success ? ("completed" as const) : ("failed" as const),
+          durationMs: 0, // Could calculate from collectedFsmEvents
+          output: execResult.results,
+        },
+      },
+    });
+
+    // Mark session complete with output
+    await SessionHistoryStorage.markSessionComplete(
+      taskSessionId,
+      success ? "completed" : "failed",
+      new Date().toISOString(),
+      { output: execResult.results },
+    );
+
+    logger.debug("Persisted task session", { taskSessionId, eventCount: sortedEvents.length });
+  } catch (error) {
+    logger.warn("Failed to persist task session", {
+      taskSessionId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    // Don't fail - task result is more important than persistence
   }
 }

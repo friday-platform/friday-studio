@@ -9,7 +9,7 @@ import {
 import { resolve } from "$app/paths";
 import { Breadcrumbs } from "$lib/components/breadcrumbs";
 import { Table } from "$lib/components/table";
-import { DetailsColumn, StatusColumn, TimeColumn } from "$lib/modules/sessions/table-columns";
+import { DetailsColumn, TimeColumn } from "$lib/modules/sessions/table-columns";
 import type { PageData } from "./$types";
 
 let { data }: { data: PageData } = $props();
@@ -24,6 +24,9 @@ const columnHelper = createColumnHelper<{
   updatedAt: string;
   summary?: string | undefined;
   title?: string | undefined;
+  sessionType?: "conversation" | "task";
+  parentStreamId?: string;
+  parentTitle?: string;
 }>();
 
 const table = createTable({
@@ -39,7 +42,9 @@ const table = createTable({
           job: info.row.original.sessionId,
           summary: info.row.original.summary ?? "",
           workspaceName: info.row.original.workspaceName,
-          title: info.row.original.title,
+          sessionType: info.row.original.sessionType,
+          parentTitle: info.row.original.parentTitle,
+          status: info.row.original.status,
         });
       },
       meta: { minWidth: "0" },
@@ -49,12 +54,6 @@ const table = createTable({
       header: "Date",
       cell: (info) => renderComponent(TimeColumn, { date: info.getValue() }),
       meta: { align: "center", faded: true, shrink: true, size: "small" },
-    }),
-    columnHelper.accessor("status", {
-      id: "status",
-      cell: (info) => renderComponent(StatusColumn, { status: info.getValue() }),
-      meta: { align: "center", faded: true, shrink: true, size: "small" },
-      enableSorting: false,
     }),
   ],
   getCoreRowModel: getCoreRowModel(),

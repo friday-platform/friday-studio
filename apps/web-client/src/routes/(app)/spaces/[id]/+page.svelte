@@ -29,6 +29,9 @@ const sessionColumnHelper = createColumnHelper<{
   createdAt: string;
   updatedAt: string;
   summary?: string | undefined;
+  title?: string | undefined;
+  sessionType?: "conversation" | "task";
+  parentTitle?: string;
 }>();
 
 const sessionColumns = [
@@ -39,6 +42,9 @@ const sessionColumns = [
       return renderComponent(DetailsColumn, {
         job: info.row.original.sessionId,
         summary: info.row.original.summary ?? "",
+        title: info.row.original.title,
+        sessionType: info.row.original.sessionType,
+        parentTitle: info.row.original.parentTitle,
       });
     },
     meta: { minWidth: "0" },

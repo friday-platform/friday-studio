@@ -37,7 +37,7 @@ go build                # Build
 - Use `@atlas/logger`, never `console.*`
 - No `any` types - use `unknown` or proper types
 - No `as` assertions - use Zod schemas for parsing
-- Static imports only (top of file, no inline `import("pkg")` in types)
+- Static imports only (top of file) - no `import("@pkg")` in type positions
 - Validate all external input with Zod
 - Use `process.env` from `node:process`, not `Deno.env` (migrating away from
   Deno APIs)
@@ -66,6 +66,10 @@ go build                # Build
 - Is this solving a problem we have today?
 - What's the simplest thing that works?
 - What can I delete instead of add?
+
+## Test Quality
+
+Use the `testing-anti-patterns` skill for guidance.
 
 ## Communication
 
@@ -163,8 +167,8 @@ deno task atlas chat
 deno task atlas daemon stop
 ```
 
-**CLI gaps:** Not all APIs have CLI commands. Check `apps/atlasd/routes/` and curl
-`localhost:8080` directly when needed.
+**CLI gaps:** Not all APIs have CLI commands. Check `apps/atlasd/routes/` and
+curl `localhost:8080` directly when needed.
 
 **Debugging:** Use the `debugging-friday` skill for log analysis (local + GCS).
 

@@ -11,8 +11,8 @@ import type { AgentResult, AtlasUIMessageChunk } from "@atlas/agent-sdk";
 import type { MergedConfig } from "@atlas/config";
 import {
   AgentOrchestrator,
-  type AgentSnapshot,
   type GlobalMCPServerPool,
+  mapFsmEventToSessionEvent,
   ReasoningResultStatus,
   SessionHistoryStorage,
   UserConfigurationError,
@@ -25,6 +25,7 @@ import {
   createEngine,
   FSMDefinitionSchema,
   type FSMEngine,
+  type FSMEvent,
   GlobalMCPToolProvider,
   loadFromFile,
   type MCPToolProvider,
@@ -41,13 +42,15 @@ import type {
   ITempestContextManager,
   ITempestMemoryManager,
   ITempestMessageManager,
-  IWorkspace,
   IWorkspaceArtifact,
   IWorkspaceSession,
   SessionSummary,
 } from "../types/core.ts";
 import { MessageUser } from "../types/core.ts";
 import { buildAgentPrompt, validateAgentOutput } from "./agent-helpers.ts";
+
+// Re-export for backward compatibility (was previously defined locally)
+export type { SessionHistoryEventPayload } from "@atlas/core";
 
 /**
  * Classify an error to determine session status.
@@ -69,6 +72,56 @@ interface WorkspaceRuntimeSignal {
   provider?: { id: string; name: string };
 }
 
+/** Minimal workspace info needed by WorkspaceRuntimeInit (internal use only) */
+interface WorkspaceRuntimeInit {
+  id: string;
+}
+
+/**
+ * Convert FSMEvent to AtlasUIMessageChunk for streaming
+ *
+ * FSMEvent types (data-fsm-state-transition, data-fsm-action-execution) are
+ * structurally compatible with AtlasUIMessageChunk data events. This function
+ * performs explicit property mapping to satisfy TypeScript without unsafe casts.
+ *
+ * @returns AtlasUIMessageChunk or null if event is not an FSM event
+ */
+function fsmEventToStreamChunk(event: FSMEvent): AtlasUIMessageChunk | null {
+  if (event.type === "data-fsm-state-transition") {
+    return {
+      type: "data-fsm-state-transition",
+      data: {
+        sessionId: event.data.sessionId,
+        workspaceId: event.data.workspaceId,
+        jobName: event.data.jobName,
+        fromState: event.data.fromState,
+        toState: event.data.toState,
+        triggeringSignal: event.data.triggeringSignal,
+        timestamp: event.data.timestamp,
+      },
+    };
+  }
+  if (event.type === "data-fsm-action-execution") {
+    return {
+      type: "data-fsm-action-execution",
+      data: {
+        sessionId: event.data.sessionId,
+        workspaceId: event.data.workspaceId,
+        jobName: event.data.jobName,
+        actionType: event.data.actionType,
+        actionId: event.data.actionId,
+        state: event.data.state,
+        status: event.data.status,
+        durationMs: event.data.durationMs,
+        error: event.data.error,
+        timestamp: event.data.timestamp,
+        inputSnapshot: event.data.inputSnapshot,
+      },
+    };
+  }
+  return null;
+}
+
 // Zod schema for AgentResult artifact data validation
 const AgentResultArtifactSchema = z.object({
   agentId: z.string(),
@@ -81,23 +134,6 @@ const AgentResultArtifactSchema = z.object({
   timestamp: z.string(),
   toolCalls: z.array(z.any()).optional(),
   toolResults: z.array(z.any()).optional(),
-});
-
-// Zod schema for AgentSnapshot document data validation
-const AgentSnapshotDataSchema = z.object({
-  agentId: z.string().default("fsm-agent"),
-  task: z.string().default("FSM action"),
-  input: z.unknown().optional(),
-  output: z.unknown().optional(),
-  reasoning: z.string().optional(),
-  toolCalls: z.array(z.any()).optional(),
-  toolResults: z.array(z.any()).optional(),
-  artifacts: z
-    .array(z.object({ id: z.string(), type: z.string(), summary: z.string() }))
-    .optional(),
-  duration: z.number().optional(),
-  timestamp: z.string().optional(),
-  error: z.string().optional(),
 });
 
 // Stub factory functions for minimal IAtlasScope manager implementations
@@ -150,6 +186,8 @@ interface FSMJob {
   documentStore?: FileSystemDocumentStore; // Per-job document store
   signals: string[]; // Signal IDs this FSM handles
   fsmDefinition?: unknown; // Inline FSM definition from workspace.yml
+  /** Human-readable description from workspace config */
+  description?: string;
 }
 
 interface ActiveSession {
@@ -176,6 +214,8 @@ interface SessionResult {
   completedAt?: Date;
   artifacts: IWorkspaceArtifact[];
   error?: Error;
+  /** Captured FSM events (state transitions and action executions) for batch persistence */
+  collectedFsmEvents?: FSMEvent[];
 }
 
 /**
@@ -187,7 +227,7 @@ interface SessionResult {
  * - Direct FSMEngine integration (no wrapper layer)
  */
 export class WorkspaceRuntime {
-  private workspace: IWorkspace;
+  private workspace: WorkspaceRuntimeInit;
   private config: MergedConfig;
   private options: WorkspaceRuntimeOptions;
   private initialized = false;
@@ -203,7 +243,11 @@ export class WorkspaceRuntime {
   private sessionResults = new Map<string, SessionResult>();
   private sessionCompletionEmitter = new EventEmitter();
 
-  constructor(workspace: IWorkspace, config: MergedConfig, options: WorkspaceRuntimeOptions = {}) {
+  constructor(
+    workspace: WorkspaceRuntimeInit,
+    config: MergedConfig,
+    options: WorkspaceRuntimeOptions = {},
+  ) {
     this.workspace = workspace;
     this.config = config;
     this.options = options;
@@ -260,6 +304,7 @@ export class WorkspaceRuntime {
         fsmPath: "", // Empty for inline FSM
         signals,
         fsmDefinition: jobSpec.fsm,
+        description: jobSpec.description,
       });
 
       logger.debug("Registered inline FSM job from config", {
@@ -535,12 +580,14 @@ export class WorkspaceRuntime {
     }
 
     const sessionId = crypto.randomUUID();
+    const collectedFsmEvents: FSMEvent[] = [];
     const session: SessionResult = {
       id: sessionId,
       workspaceId: this.workspace.id,
       status: "active",
       startedAt: new Date(),
       artifacts: [],
+      collectedFsmEvents,
     };
 
     logger.info("Processing signal via FSM", {
@@ -559,14 +606,34 @@ export class WorkspaceRuntime {
           sessionId: session.id,
           workspaceId: this.workspace.id,
           abortSignal,
-          // Wrap callback: FSMEvent types are valid AtlasUIMessageChunk types
-          // TypeScript can't prove the discriminated union compatibility, but
-          // at runtime FSMEvent is guaranteed to be a valid data event chunk
-          onEvent: onStreamEvent
-            ? (event) => {
+          // Handle streaming events from FSM actions and agent execution
+          // Events may be:
+          // 1. FSM events (data-fsm-*) - convert and forward, also capture for persistence
+          // 2. Agent stream events (text, reasoning, tool-*, etc.) - forward directly
+          onEvent: (event) => {
+            if (onStreamEvent) {
+              // Check if this is an FSM event that needs conversion
+              const fsmChunk = fsmEventToStreamChunk(event);
+              if (fsmChunk) {
+                // FSM event - forward converted chunk
+                onStreamEvent(fsmChunk);
+              } else {
+                // Non-FSM event (text, reasoning, etc.) - forward directly
+                // These come from agent execution and are already AtlasUIMessageChunk format
                 onStreamEvent(event as unknown as AtlasUIMessageChunk);
               }
-            : undefined,
+            }
+
+            // Capture FSM events for persistence (only actual FSM events)
+            // Note: data-fsm-state-transition is no longer persisted
+            if (
+              event.type === "data-fsm-action-execution" ||
+              event.type === "data-fsm-tool-call" ||
+              event.type === "data-fsm-tool-result"
+            ) {
+              collectedFsmEvents.push(event);
+            }
+          },
         },
       );
 
@@ -692,13 +759,18 @@ export class WorkspaceRuntime {
       workspaceId: signal._context?.workspaceId || this.workspace.id,
       streamId, // Pass streamId for conversation agent streaming support
       datetime, // Pass client datetime context
-      // Wrap callback: orchestrator sends AtlasUIMessageChunk, signal callback expects FSMEvent
-      // TypeScript can't prove discriminated union compatibility, but at runtime
-      // all agent events are valid AtlasUIMessageChunk types that pass through
+      // Forward ALL streaming events (text, reasoning, tool calls, FSM events, etc.)
+      // The orchestrator emits AtlasUIMessageChunk which includes text streaming.
+      // The signal._context.onEvent callback handles both:
+      // 1. FSM events (data-fsm-*) - captured for session history persistence
+      // 2. All other events (text, reasoning, etc.) - streamed to client
+      // We cast to unknown first since FSMEvent is a subset of AtlasUIMessageChunk
       onStreamEvent: signal._context?.onEvent
         ? (chunk) => {
             const callback = signal._context?.onEvent;
             if (callback) {
+              // Forward all chunks - the outer callback in processSignalForJob
+              // handles routing FSM events to persistence and all events to the stream
               callback(chunk as unknown as import("@atlas/fsm-engine").FSMEvent);
             }
           }
@@ -1219,7 +1291,7 @@ export class WorkspaceRuntime {
   /**
    * Get workspace
    */
-  getWorkspace(): IWorkspace {
+  getWorkspace(): WorkspaceRuntimeInit {
     return this.workspace;
   }
 
@@ -1254,98 +1326,6 @@ export class WorkspaceRuntime {
     }
 
     return data;
-  }
-
-  /**
-   * Create AgentSnapshot from FSM document data
-   */
-  private createAgentSnapshot(doc: {
-    id: string;
-    type: string;
-    data: Record<string, unknown>;
-  }): AgentSnapshot {
-    const parsed = AgentSnapshotDataSchema.parse(doc.data);
-
-    return {
-      agentId: parsed.agentId,
-      task: parsed.task,
-      inputData: { structured: parsed.input ?? {} },
-      outputText: typeof parsed.output === "string" ? parsed.output : undefined,
-      structuredOutput: typeof parsed.output !== "string" ? parsed.output : undefined,
-      reasoning: parsed.reasoning,
-      toolCalls: parsed.toolCalls,
-      toolResults: parsed.toolResults,
-      artifacts: parsed.artifacts,
-      result: {
-        agentId: parsed.agentId,
-        task: parsed.task,
-        input: parsed.input,
-        output: parsed.output,
-        reasoning: parsed.reasoning,
-        error: parsed.error,
-        duration: parsed.duration ?? 0,
-        timestamp: parsed.timestamp ?? new Date().toISOString(),
-        toolCalls: parsed.toolCalls,
-        toolResults: parsed.toolResults,
-      },
-    };
-  }
-
-  /**
-   * Convert FSM documents to session history events
-   */
-  private async convertFSMDocumentsToEvents(
-    sessionResult: SessionResult,
-    job: FSMJob,
-  ): Promise<void> {
-    if (!job.engine) return;
-
-    const documents = job.engine.documents;
-
-    for (const doc of documents) {
-      // Skip internal FSM documents
-      if (doc.id === "conversation-context") continue;
-
-      // Truncate large fields before storing (preserves Record type)
-      const truncatedData = this.truncateLargeFields(doc.data);
-
-      // Determine if this looks like an agent result
-      const isAgentResult = ["agent-result", "AgentResult", "LLMResult"].includes(doc.type);
-
-      if (isAgentResult) {
-        // Convert to agent-output event
-        const executionId = crypto.randomUUID();
-        const agentId =
-          typeof truncatedData.agentId === "string" ? truncatedData.agentId : "unknown";
-        await SessionHistoryStorage.appendSessionEvent({
-          sessionId: sessionResult.id,
-          emittedBy: "workspace-runtime",
-          event: {
-            type: "agent-output",
-            context: { agentId, executionId },
-            data: {
-              agentId,
-              executionId,
-              snapshot: this.createAgentSnapshot({ ...doc, data: truncatedData }),
-            },
-          },
-        });
-      } else {
-        // Convert to generic supervisor-action event
-        await SessionHistoryStorage.appendSessionEvent({
-          sessionId: sessionResult.id,
-          emittedBy: "workspace-runtime",
-          event: {
-            type: "supervisor-action",
-            context: { metadata: { documentId: doc.id, documentType: doc.type } },
-            data: {
-              action: "fsm-document-created",
-              details: { documentId: doc.id, documentType: doc.type, data: truncatedData },
-            },
-          },
-        });
-      }
-    }
   }
 
   /**
@@ -1402,6 +1382,7 @@ export class WorkspaceRuntime {
         streamId: undefined, // FSM runtime doesn't have streamId
         artifactIds: sessionResult.artifacts.map((a) => a.id),
         summary: `FSM ${job.name}: ${sessionResult.status}`,
+        jobDescription: job.description,
       });
 
       if (!createResult.ok) {
@@ -1444,8 +1425,60 @@ export class WorkspaceRuntime {
         },
       });
 
-      // Convert FSM documents to events
-      await this.convertFSMDocumentsToEvents(sessionResult, job);
+      // Persist FSM events: use captured events if available, fallback to document conversion
+      if (sessionResult.collectedFsmEvents && sessionResult.collectedFsmEvents.length > 0) {
+        // Sort events by timestamp for chronological order
+        const sortedEvents = [...sessionResult.collectedFsmEvents].sort(
+          (a, b) => a.data.timestamp - b.data.timestamp,
+        );
+
+        let successCount = 0;
+        let failureCount = 0;
+
+        for (const fsmEvent of sortedEvents) {
+          try {
+            const mappedEvent = mapFsmEventToSessionEvent(fsmEvent);
+            // Preserve original FSM event timestamp instead of using persistence time
+            const originalTimestamp = new Date(fsmEvent.data.timestamp).toISOString();
+            await SessionHistoryStorage.appendSessionEvent({
+              sessionId: sessionResult.id,
+              emittedBy: "workspace-runtime",
+              event: mappedEvent,
+              emittedAt: originalTimestamp,
+            });
+            successCount++;
+          } catch (eventError) {
+            failureCount++;
+            logger.debug("Failed to persist individual FSM event", {
+              sessionId: sessionResult.id,
+              eventType: fsmEvent.type,
+              error: stringifyError(eventError),
+            });
+          }
+        }
+
+        // Log warning for partial failures
+        if (failureCount > 0) {
+          logger.warn("Partial failure persisting FSM events", {
+            sessionId: sessionResult.id,
+            successCount,
+            failureCount,
+            totalEvents: sortedEvents.length,
+          });
+        } else {
+          logger.debug("All FSM events persisted successfully", {
+            sessionId: sessionResult.id,
+            eventCount: successCount,
+          });
+        }
+      }
+      // Note: Legacy fallback (convertFSMDocumentsToEvents) removed - old sessions
+      // without collectedFsmEvents will simply have no step events
+
+      // Extract output from FSM result documents
+      const output = job.engine?.documents
+        .filter((doc) => doc.type === "result" || doc.id.endsWith("_result"))
+        .map((doc) => ({ id: doc.id, data: doc.data }));
 
       // Append session-finish event
       const durationMs =
@@ -1464,6 +1497,7 @@ export class WorkspaceRuntime {
             durationMs,
             failureReason: sessionResult.error?.message,
             summary: `FSM execution ${sessionResult.status}`,
+            output,
           },
         },
       });
@@ -1477,6 +1511,7 @@ export class WorkspaceRuntime {
           durationMs,
           failureReason: sessionResult.error?.message,
           summary: `FSM ${job.name}: ${sessionResult.status}`,
+          output,
         },
       );
 

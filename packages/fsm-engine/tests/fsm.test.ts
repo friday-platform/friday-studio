@@ -363,7 +363,7 @@ describe("FSM Engine - Core Mechanics", () => {
 
       const completedEvent = actionEvents[1];
       assertEquals(completedEvent?.data.status, "completed");
-      assertEquals(typeof completedEvent?.data.duration, "number");
+      assertEquals(typeof completedEvent?.data.durationMs, "number");
     });
 
     it("should inherit callback context for cascaded signals", async () => {

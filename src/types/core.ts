@@ -6,7 +6,21 @@ import type { AgentOrchestrator } from "@atlas/core";
 import type { CoALAMemoryEntry, CoALAMemoryType } from "@atlas/memory";
 import type { MaybePromise } from "@atlas/utils";
 
-// Session summary returned from FSM execution
+/**
+ * Summary of session execution state for supervisor coordination.
+ *
+ * Returned from FSM execution to track phase/agent counts and overall
+ * status. Used by the supervisor to coordinate multi-step execution
+ * and determine when a session is complete.
+ *
+ * @remarks
+ * This is distinct from {@link SessionDigest} (packages/core/src/session/build-session-digest.ts)
+ * which captures full I/O content for agent analysis. SessionSummary focuses
+ * on orchestration metrics; SessionDigest focuses on actual data.
+ *
+ * Use SessionSummary when: supervisor needs execution progress/state
+ * Use SessionDigest when: agent needs to understand what happened
+ */
 export interface SessionSummary {
   sessionId: string;
   workspaceId: string;

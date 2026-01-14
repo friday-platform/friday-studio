@@ -45,18 +45,18 @@ Deno.test("generateSessionTitle - uses fallback when LLM returns less than 3 cha
   assertEquals(result, "User sync");
 });
 
-Deno.test("generateSessionTitle - adds Failed prefix for failed sessions", async () => {
+Deno.test("generateSessionTitle - no prefix for failed sessions (status shown via UI badge)", async () => {
   const result = await generateSessionTitle(
     makeInput({ status: "failed", _llm: mockLLM("Database migration") }),
   );
-  assertEquals(result, "Failed: Database migration");
+  assertEquals(result, "Database migration");
 });
 
-Deno.test("generateSessionTitle - adds Skipped prefix for skipped sessions", async () => {
+Deno.test("generateSessionTitle - no prefix for skipped sessions (status shown via UI badge)", async () => {
   const result = await generateSessionTitle(
     makeInput({ status: "skipped", _llm: mockLLM("Calendar sync") }),
   );
-  assertEquals(result, "Skipped: Calendar sync");
+  assertEquals(result, "Calendar sync");
 });
 
 Deno.test("generateSessionTitle - fallback prefers jobName over signal.type", async () => {
@@ -68,4 +68,25 @@ Deno.test("generateSessionTitle - fallback prefers jobName over signal.type", as
     }),
   );
   assertEquals(result, "Weekly cleanup");
+});
+
+Deno.test("generateSessionTitle - fallback prefers intent from signal.data over jobName", async () => {
+  const result = await generateSessionTitle(
+    makeInput({
+      signal: { type: "http", id: "req-123", data: { intent: "Summarize meeting notes" } },
+      jobName: "weekly-cleanup",
+      _llm: mockLLM(new Error("API error")),
+    }),
+  );
+  assertEquals(result, "Summarize meeting notes");
+});
+
+Deno.test("generateSessionTitle - fallback uses task from signal.data", async () => {
+  const result = await generateSessionTitle(
+    makeInput({
+      signal: { type: "do-task", id: "task-456", data: { task: "Generate quarterly report" } },
+      _llm: mockLLM(new Error("API error")),
+    }),
+  );
+  assertEquals(result, "Generate quarterly report");
 });

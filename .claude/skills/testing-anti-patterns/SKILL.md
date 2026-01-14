@@ -20,6 +20,7 @@ isolate, not the thing being tested.
 1. NEVER test mock behavior
 2. NEVER add test-only methods to production classes
 3. NEVER mock without understanding dependencies
+4. Apply Pareto: 20% of tests catch 80% of bugs
 ```
 
 ## Anti-Pattern 1: Testing Mock Behavior
@@ -243,7 +244,98 @@ BEFORE creating mock responses:
   If uncertain: Include all documented fields
 ```
 
-## Anti-Pattern 5: Integration Tests as Afterthought
+## Anti-Pattern 5: Testing Ceremony Over Substance (Pareto Violation)
+
+**The violation:**
+
+```typescript
+// ❌ BAD: 3 tests for one fallback chain
+it("extracts task from signalPayload.intent", () => { ... });
+it("extracts task from signalPayload.body.task", () => { ... });
+it("falls back to metadata.summary", () => { ... });
+
+// ❌ BAD: Testing absence of non-existent feature
+it("preserves full output without truncation", () => {
+  const largeOutput = { data: "x".repeat(10000) };
+  // There's no truncation code - what are we testing?
+});
+
+// ❌ BAD: Testing array initialization
+it("returns empty errors array when no failures", () => {
+  assertEquals(digest.errors, []);  // TypeScript already guarantees this
+});
+```
+
+**Why this is wrong:**
+
+- **Pareto principle:** 20% of tests catch 80% of bugs
+- **Testing property access:** TypeScript validates at compile time
+- **Testing absence of features:** You can't test that code doesn't exist
+- **Excessive granularity:** One behavior split into many trivial tests
+
+**The fix:**
+
+```typescript
+// ✅ GOOD: One test for the whole fallback chain
+it("extracts input with fallback chain: intent -> body.task -> summary", () => {
+  // intent wins
+  assertEquals(buildDigest(withIntent).input.task, "Research AI");
+  // body.task fallback
+  assertEquals(buildDigest(withBodyTask).input.task, "Process doc");
+  // summary fallback
+  assertEquals(buildDigest(withSummary).input.task, "Summary");
+});
+
+// ✅ GOOD: Delete tests for non-existent behavior
+// Don't test "no truncation" - there's no truncation code
+
+// ✅ GOOD: Let integration test cover trivial paths
+// Empty arrays, property access, etc. are covered by comprehensive tests
+```
+
+### Gate Function
+
+```
+BEFORE writing a test, ask:
+  1. "Would this catch a bug that could actually happen?"
+  2. "Is this testing real logic or just property access?"
+  3. "Is there already a test that covers this path?"
+  4. "Am I testing the absence of code that doesn't exist?"
+
+IF answer to #1 is "no" or #2-4 is "yes":
+  STOP - Don't write this test
+
+Pareto checklist - HIGH VALUE tests:
+  ✓ Edge cases that have caused bugs
+  ✓ Complex branching logic
+  ✓ Integration points between systems
+  ✓ Error handling paths
+  ✓ State transitions
+
+Pareto checklist - LOW VALUE tests (skip these):
+  ✗ Property access (TypeScript validates)
+  ✗ Built-in methods (Array.filter works)
+  ✗ Absence of features ("doesn't truncate")
+  ✗ Each branch of trivial if/else
+  ✗ Default values / empty arrays
+```
+
+### Consolidation Patterns
+
+**Fallback chains:** One test with multiple assertions, not N tests
+
+**Truth tables:** Parameterized tests for status derivation, type mapping, etc.
+
+**Edge cases:** Combine related edge cases into one test when they exercise the
+same code path
+
+### Ratio Awareness
+
+- `< 1:1` test-to-impl ratio - Probably under-tested
+- `1:1 to 2:1` ratio - Healthy range
+- `> 3:1` ratio - Review for ceremony/redundancy
+
+## Anti-Pattern 6: Integration Tests as Afterthought
 
 **The violation:**
 
@@ -295,6 +387,40 @@ mocks
 **If you're testing mock behavior, you violated TDD** - you added mocks without
 watching test fail against real code first.
 
+### Ratio Awareness
+
+- `< 1:1` test-to-impl ratio - Probably under-tested
+- `1:1 to 2:1` ratio - Healthy range for most code
+- `> 3:1` ratio - Review for verbosity/redundancy
+
+### What to Test (High Value)
+
+- Edge cases that have caused or could cause bugs
+- Integration points between systems
+- Complex branching logic (not simple if/else)
+- Error handling paths
+- State transitions
+
+### What NOT to Test (Low Value)
+
+- Property access (TypeScript validates at compile time)
+- Built-in methods (sorting, array ops - they work)
+- Absence of features ("this field is undefined when...")
+- Each branch of trivial if/else chains
+
+### Test Naming
+
+Name tests by **behavior**, not internal function names:
+
+- Good: `"filters code actions from agent step groups"`
+- Bad: `"buildToolCallsByAgent returns empty map"`
+
+### Consolidation Patterns
+
+- Use parameterized tests for truth tables (status derivation, etc.)
+- One comprehensive ordering test beats three partial ones
+- Keep fixtures minimal - 50+ line setup for 2 assertions is a smell
+
 ## Quick Reference
 
 | Anti-Pattern                    | Fix                                           |
@@ -303,6 +429,7 @@ watching test fail against real code first.
 | Test-only methods in production | Move to test utilities                        |
 | Mock without understanding      | Understand dependencies first, mock minimally |
 | Incomplete mocks                | Mirror real API completely                    |
+| Testing ceremony (Pareto)       | Ask "would this catch a real bug?"            |
 | Tests as afterthought           | TDD - tests first                             |
 | Over-complex mocks              | Consider integration tests                    |
 
@@ -314,6 +441,11 @@ watching test fail against real code first.
 - Test fails when you remove mock
 - Can't explain why mock is needed
 - Mocking "just to be safe"
+- Test-to-impl ratio > 3:1
+- Multiple tests for one fallback chain
+- Testing "doesn't truncate" (absence of code)
+- Testing empty array initialization
+- Testing property access TypeScript already validates
 
 ## The Bottom Line
 

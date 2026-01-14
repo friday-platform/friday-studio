@@ -72,13 +72,14 @@ describe("SessionHistoryStorage", () => {
         sessionId,
         emittedBy: "session-supervisor",
         event: {
-          type: "agent-start",
-          context: { phaseId: "phase-1", agentId: "agent-1" },
+          type: "fsm-action",
+          context: { agentId: "agent-1", executionId: "exec-1" },
           data: {
-            agentId: "agent-1",
-            executionId: "exec-1",
-            input: { task: "demo" },
-            promptSummary: "Analyze input",
+            jobName: "test-job",
+            state: "processing",
+            actionType: "agent",
+            actionId: "agent-1",
+            status: "started",
           },
         },
       };
@@ -98,6 +99,38 @@ describe("SessionHistoryStorage", () => {
       assert(result.ok);
       assertEquals(result.data, null);
     });
+
+    // Custom emittedAt preserves original timestamps
+    it("preserves custom emittedAt timestamp", async () => {
+      const sessionId = crypto.randomUUID();
+      await SessionHistoryStorage.createSessionRecord(createMetadataInput(sessionId));
+
+      const customTimestamp = "2024-01-15T10:30:00.000Z";
+      const eventInput: AppendSessionEventInput = {
+        sessionId,
+        emittedBy: "workspace-runtime",
+        emittedAt: customTimestamp,
+        event: {
+          type: "fsm-action",
+          context: { metadata: { fsmEventType: "action" } },
+          data: {
+            jobName: "test-job",
+            state: "processing",
+            actionType: "emit",
+            status: "completed",
+          },
+        },
+      };
+
+      const appendResult = await SessionHistoryStorage.appendSessionEvent(eventInput);
+      assert(appendResult.ok);
+      assertEquals(appendResult.data.emittedAt, customTimestamp);
+
+      const timelineResult = await SessionHistoryStorage.loadSessionTimeline(sessionId);
+      assert(timelineResult.ok);
+      assert(timelineResult.data);
+      assertEquals(timelineResult.data.events[0]?.emittedAt, customTimestamp);
+    });
   });
 
   describe("Concurrency", () => {
@@ -112,7 +145,15 @@ describe("SessionHistoryStorage", () => {
           SessionHistoryStorage.appendSessionEvent({
             sessionId,
             emittedBy: "test",
-            event: { type: "supervisor-action", data: { action: `concurrent-${i}` } },
+            event: {
+              type: "fsm-action",
+              data: {
+                jobName: "test-job",
+                state: "processing",
+                actionType: "emit",
+                status: "completed",
+              },
+            },
           }),
         );
         promises.push(
@@ -175,7 +216,16 @@ describe("SessionHistoryStorage", () => {
       await SessionHistoryStorage.appendSessionEvent({
         sessionId,
         emittedBy: "test",
-        event: { type: "supervisor-action", data: { action: "important" } },
+        event: {
+          type: "fsm-action",
+          data: {
+            jobName: "test-job",
+            state: "processing",
+            actionType: "agent",
+            actionId: "test-agent",
+            status: "completed",
+          },
+        },
       });
 
       const result2 = await SessionHistoryStorage.createSessionRecord(
@@ -187,6 +237,131 @@ describe("SessionHistoryStorage", () => {
       assert(finalSession.ok);
       assertEquals(finalSession.data?.events.length, 1);
       assertEquals(finalSession.data?.metadata.createdAt, result1.data.createdAt);
+    });
+  });
+
+  describe("inputSnapshot Schema Validation", () => {
+    // Full inputSnapshot object parses successfully
+    it("parses event with full inputSnapshot", async () => {
+      const sessionId = crypto.randomUUID();
+      await SessionHistoryStorage.createSessionRecord(createMetadataInput(sessionId));
+
+      const eventInput: AppendSessionEventInput = {
+        sessionId,
+        emittedBy: "fsm-engine",
+        event: {
+          type: "fsm-action",
+          context: { metadata: { fsmEventType: "action" } },
+          data: {
+            jobName: "test-job",
+            actionType: "agent",
+            actionId: "researcher",
+            state: "processing",
+            status: "started",
+            inputSnapshot: {
+              task: "Research market trends",
+              requestDocId: "req-123",
+              config: { maxResults: 10, format: "json" },
+            },
+          },
+        },
+      };
+
+      const appendResult = await SessionHistoryStorage.appendSessionEvent(eventInput);
+      assert(appendResult.ok);
+
+      const timeline = await SessionHistoryStorage.loadSessionTimeline(sessionId);
+      assert(timeline.ok);
+      assert(timeline.data);
+
+      const event = timeline.data.events[0];
+      assert(event);
+      assertEquals(event.type, "fsm-action");
+      // Verify inputSnapshot was persisted and can be retrieved
+      const data = event.data as {
+        inputSnapshot?: { task?: string; requestDocId?: string; config?: Record<string, unknown> };
+      };
+      assert(data.inputSnapshot);
+      assertEquals(data.inputSnapshot.task, "Research market trends");
+      assertEquals(data.inputSnapshot.requestDocId, "req-123");
+      assertEquals(data.inputSnapshot.config?.maxResults, 10);
+    });
+
+    // Partial inputSnapshot (task only) parses successfully
+    it("parses event with partial inputSnapshot (task only)", async () => {
+      const sessionId = crypto.randomUUID();
+      await SessionHistoryStorage.createSessionRecord(createMetadataInput(sessionId));
+
+      const eventInput: AppendSessionEventInput = {
+        sessionId,
+        emittedBy: "fsm-engine",
+        event: {
+          type: "fsm-action",
+          context: { metadata: { fsmEventType: "action" } },
+          data: {
+            jobName: "test-job",
+            actionType: "llm",
+            actionId: "analyzer",
+            state: "analyzing",
+            status: "completed",
+            durationMs: 1500,
+            inputSnapshot: {
+              task: "Analyze sentiment",
+              // No requestDocId or config
+            },
+          },
+        },
+      };
+
+      const appendResult = await SessionHistoryStorage.appendSessionEvent(eventInput);
+      assert(appendResult.ok);
+
+      const timeline = await SessionHistoryStorage.loadSessionTimeline(sessionId);
+      assert(timeline.ok);
+      assert(timeline.data);
+
+      const event = timeline.data.events[0];
+      assert(event);
+      const data = event.data as { inputSnapshot?: { task?: string; requestDocId?: string } };
+      assert(data.inputSnapshot);
+      assertEquals(data.inputSnapshot.task, "Analyze sentiment");
+      assertEquals(data.inputSnapshot.requestDocId, undefined);
+    });
+
+    // Event without inputSnapshot parses successfully (backwards compatible)
+    it("parses event without inputSnapshot (backwards compatible)", async () => {
+      const sessionId = crypto.randomUUID();
+      await SessionHistoryStorage.createSessionRecord(createMetadataInput(sessionId));
+
+      const eventInput: AppendSessionEventInput = {
+        sessionId,
+        emittedBy: "fsm-engine",
+        event: {
+          type: "fsm-action",
+          context: { metadata: { fsmEventType: "action" } },
+          data: {
+            jobName: "test-job",
+            actionType: "code",
+            actionId: "processData",
+            state: "processing",
+            status: "completed",
+            durationMs: 50,
+            // No inputSnapshot - code actions don't have one
+          },
+        },
+      };
+
+      const appendResult = await SessionHistoryStorage.appendSessionEvent(eventInput);
+      assert(appendResult.ok);
+
+      const timeline = await SessionHistoryStorage.loadSessionTimeline(sessionId);
+      assert(timeline.ok);
+      assert(timeline.data);
+
+      const event = timeline.data.events[0];
+      assert(event);
+      const data = event.data as { inputSnapshot?: unknown };
+      assertEquals(data.inputSnapshot, undefined);
     });
   });
 
@@ -226,13 +401,34 @@ describe("SessionHistoryStorage", () => {
       await SessionHistoryStorage.appendSessionEvent({
         sessionId: session1,
         emittedBy: "test",
-        event: { type: "supervisor-action", data: { action: "update" } },
+        event: {
+          type: "fsm-action",
+          data: { jobName: "test-job", state: "idle", actionType: "emit", status: "completed" },
+        },
       });
 
       const result = await SessionHistoryStorage.listSessions({ workspaceId: "workspace-123" });
       assert(result.ok);
       assertEquals(result.data.sessions.length, 3);
       assertEquals(result.data.sessions[0]?.sessionId, session1);
+    });
+
+    it("excludes workspaces by excludeWorkspaceIds", async () => {
+      const session1 = crypto.randomUUID();
+      const session2 = crypto.randomUUID();
+
+      await SessionHistoryStorage.createSessionRecord(createMetadataInput(session1));
+      await SessionHistoryStorage.createSessionRecord({
+        ...createMetadataInput(session2),
+        workspaceId: "atlas-conversation",
+      });
+
+      const result = await SessionHistoryStorage.listSessions({
+        excludeWorkspaceIds: ["atlas-conversation"],
+      });
+
+      assert(result.ok);
+      assert(result.data.sessions.every((s) => s.workspaceId !== "atlas-conversation"));
     });
   });
 });

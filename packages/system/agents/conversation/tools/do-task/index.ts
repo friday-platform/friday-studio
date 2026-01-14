@@ -234,6 +234,7 @@ export function createDoTaskTool(
             context,
             mcpServerPool,
             mcpToolProvider,
+            intent,
           );
 
           // 5. Extract artifacts from agent outputs

@@ -1,10 +1,10 @@
 import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
-import type { AgentResult, ArtifactRef, ToolCall, ToolResult } from "@atlas/agent-sdk";
+import type { ToolCall, ToolResult } from "@atlas/agent-sdk";
 import { createLogger } from "@atlas/logger";
 import { fail, isErrnoException, type Result, stringifyError, success } from "@atlas/utils";
 import { getAtlasHome } from "@atlas/utils/paths.server";
 import { join } from "@std/path";
-import type { LanguageModelUsage, ReasoningOutput } from "ai";
+
 import { z } from "zod";
 import type { IWorkspaceSignal } from "../../../../src/types/core.ts";
 import {
@@ -52,42 +52,6 @@ const SessionHistoryEventContextSchema = z.object({
   metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
-export interface AgentSnapshot {
-  agentId: string;
-  task: string;
-  inputData: { structured: unknown; raw?: string };
-  promptSummary?: string;
-  reasoning?: string;
-  toolCalls?: ToolCall[];
-  toolResults?: ToolResult[];
-  outputText?: string;
-  structuredOutput?: unknown;
-  artifacts?: ArtifactRef[];
-  usage?: LanguageModelUsage;
-  response?: ReasoningOutput | string;
-  messages?: unknown[];
-  result: AgentResult;
-}
-
-const AgentSnapshotSchema: z.ZodType<AgentSnapshot> = z.object({
-  agentId: z.string(),
-  task: z.string(),
-  inputData: z.object({ structured: z.unknown(), raw: z.string().optional() }),
-  promptSummary: z.string().optional(),
-  reasoning: z.string().optional(),
-  toolCalls: z.custom<ToolCall[]>((value) => Array.isArray(value)).optional(),
-  toolResults: z.custom<ToolResult[]>((value) => Array.isArray(value)).optional(),
-  outputText: z.string().optional(),
-  structuredOutput: z.unknown().optional(),
-  artifacts: z
-    .array(z.object({ id: z.string(), type: z.string(), summary: z.string() }))
-    .optional(),
-  usage: z.custom<LanguageModelUsage>(() => true).optional(),
-  response: z.custom<ReasoningOutput | string>(() => true).optional(),
-  messages: z.array(z.unknown()).optional(),
-  result: z.custom<AgentResult>(),
-});
-
 export interface SessionHistoryEventBase<TType extends SessionHistoryEventType, TData> {
   eventId: string;
   sessionId: string;
@@ -108,65 +72,14 @@ const SessionHistoryEventBaseSchema = z.object({
 
 export type SessionHistoryEventType =
   | "session-start"
-  | "plan-created"
-  | "plan-updated"
-  | "phase-start"
-  | "phase-complete"
-  | "agent-start"
-  | "agent-output"
-  | "agent-error"
   | "agent-tool-call"
   | "agent-tool-result"
-  | "agent-retry"
-  | "supervisor-action"
-  | "validation-result"
-  | "memory-update"
-  | "session-finish";
+  | "session-finish"
+  | "fsm-action";
 
 type SessionStartEvent = SessionHistoryEventBase<
   "session-start",
   { status: ReasoningResultStatusType; message?: string }
->;
-
-type PlanCreatedEvent = SessionHistoryEventBase<
-  "plan-created",
-  { plan: unknown; reasoning?: string; strategy?: string }
->;
-
-type PlanUpdatedEvent = SessionHistoryEventBase<
-  "plan-updated",
-  { plan: unknown; reasoning?: string; strategy?: string }
->;
-
-type PhaseStartEvent = SessionHistoryEventBase<
-  "phase-start",
-  {
-    phaseId: string;
-    name: string;
-    executionStrategy: "sequential" | "parallel";
-    agents: string[];
-    reasoning?: string;
-  }
->;
-
-type PhaseCompleteEvent = SessionHistoryEventBase<
-  "phase-complete",
-  { phaseId: string; status: ReasoningResultStatusType; durationMs?: number; issues?: string[] }
->;
-
-type AgentStartEvent = SessionHistoryEventBase<
-  "agent-start",
-  { agentId: string; executionId: string; promptSummary?: string; input: unknown }
->;
-
-type AgentOutputEvent = SessionHistoryEventBase<
-  "agent-output",
-  { agentId: string; executionId: string; snapshot: AgentSnapshot }
->;
-
-type AgentErrorEvent = SessionHistoryEventBase<
-  "agent-error",
-  { agentId: string; executionId: string; error: string; retryable?: boolean }
 >;
 
 type AgentToolCallEvent = SessionHistoryEventBase<
@@ -179,32 +92,6 @@ type AgentToolResultEvent = SessionHistoryEventBase<
   { agentId: string; executionId: string; toolResult: ToolResult }
 >;
 
-type AgentRetryEvent = SessionHistoryEventBase<
-  "agent-retry",
-  { agentId: string; executionId: string; attempt: number; reason?: string }
->;
-
-type SupervisorActionEvent = SessionHistoryEventBase<
-  "supervisor-action",
-  { action: string; details?: Record<string, unknown> }
->;
-
-type ValidationResultEvent = SessionHistoryEventBase<
-  "validation-result",
-  {
-    agentId: string;
-    executionId: string;
-    score: number;
-    verdict: "pass" | "fail" | "retry";
-    analysis?: Record<string, unknown>;
-  }
->;
-
-type MemoryUpdateEvent = SessionHistoryEventBase<
-  "memory-update",
-  { memoryType: string; entries: unknown[]; summary?: string }
->;
-
 type SessionFinishEvent = SessionHistoryEventBase<
   "session-finish",
   {
@@ -212,87 +99,35 @@ type SessionFinishEvent = SessionHistoryEventBase<
     durationMs: number;
     failureReason?: string;
     summary?: string;
+    output?: unknown;
+  }
+>;
+
+export type FSMActionEvent = SessionHistoryEventBase<
+  "fsm-action",
+  {
+    jobName: string;
+    state: string;
+    actionType: "agent" | "llm" | "code" | "emit";
+    actionId?: string;
+    status: "started" | "completed" | "failed";
+    durationMs?: number;
+    error?: string;
+    inputSnapshot?: { task?: string; requestDocId?: string; config?: Record<string, unknown> };
   }
 >;
 
 export type SessionHistoryEvent =
   | SessionStartEvent
-  | PlanCreatedEvent
-  | PlanUpdatedEvent
-  | PhaseStartEvent
-  | PhaseCompleteEvent
-  | AgentStartEvent
-  | AgentOutputEvent
-  | AgentErrorEvent
   | AgentToolCallEvent
   | AgentToolResultEvent
-  | AgentRetryEvent
-  | SupervisorActionEvent
-  | ValidationResultEvent
-  | MemoryUpdateEvent
-  | SessionFinishEvent;
+  | SessionFinishEvent
+  | FSMActionEvent;
 
 const SessionHistoryEventSchema: z.ZodType<SessionHistoryEvent> = z.discriminatedUnion("type", [
   SessionHistoryEventBaseSchema.extend({
     type: z.literal("session-start"),
     data: z.object({ status: ReasoningStatusSchema, message: z.string().optional() }),
-  }),
-  SessionHistoryEventBaseSchema.extend({
-    type: z.literal("plan-created"),
-    data: z.object({
-      plan: z.unknown(),
-      reasoning: z.string().optional(),
-      strategy: z.string().optional(),
-    }),
-  }),
-  SessionHistoryEventBaseSchema.extend({
-    type: z.literal("plan-updated"),
-    data: z.object({
-      plan: z.unknown(),
-      reasoning: z.string().optional(),
-      strategy: z.string().optional(),
-    }),
-  }),
-  SessionHistoryEventBaseSchema.extend({
-    type: z.literal("phase-start"),
-    data: z.object({
-      phaseId: z.string(),
-      name: z.string(),
-      executionStrategy: z.union([z.literal("sequential"), z.literal("parallel")]),
-      agents: z.array(z.string()),
-      reasoning: z.string().optional(),
-    }),
-  }),
-  SessionHistoryEventBaseSchema.extend({
-    type: z.literal("phase-complete"),
-    data: z.object({
-      phaseId: z.string(),
-      status: ReasoningStatusSchema,
-      durationMs: z.number().optional(),
-      issues: z.array(z.string()).optional(),
-    }),
-  }),
-  SessionHistoryEventBaseSchema.extend({
-    type: z.literal("agent-start"),
-    data: z.object({
-      agentId: z.string(),
-      executionId: z.string(),
-      promptSummary: z.string().optional(),
-      input: z.unknown(),
-    }),
-  }),
-  SessionHistoryEventBaseSchema.extend({
-    type: z.literal("agent-output"),
-    data: z.object({ agentId: z.string(), executionId: z.string(), snapshot: AgentSnapshotSchema }),
-  }),
-  SessionHistoryEventBaseSchema.extend({
-    type: z.literal("agent-error"),
-    data: z.object({
-      agentId: z.string(),
-      executionId: z.string(),
-      error: z.string(),
-      retryable: z.boolean().optional(),
-    }),
   }),
   SessionHistoryEventBaseSchema.extend({
     type: z.literal("agent-tool-call"),
@@ -311,43 +146,37 @@ const SessionHistoryEventSchema: z.ZodType<SessionHistoryEvent> = z.discriminate
     }),
   }),
   SessionHistoryEventBaseSchema.extend({
-    type: z.literal("agent-retry"),
-    data: z.object({
-      agentId: z.string(),
-      executionId: z.string(),
-      attempt: z.number(),
-      reason: z.string().optional(),
-    }),
-  }),
-  SessionHistoryEventBaseSchema.extend({
-    type: z.literal("supervisor-action"),
-    data: z.object({ action: z.string(), details: z.record(z.string(), z.unknown()).optional() }),
-  }),
-  SessionHistoryEventBaseSchema.extend({
-    type: z.literal("validation-result"),
-    data: z.object({
-      agentId: z.string(),
-      executionId: z.string(),
-      score: z.number(),
-      verdict: z.union([z.literal("pass"), z.literal("fail"), z.literal("retry")]),
-      analysis: z.record(z.string(), z.unknown()).optional(),
-    }),
-  }),
-  SessionHistoryEventBaseSchema.extend({
-    type: z.literal("memory-update"),
-    data: z.object({
-      memoryType: z.string(),
-      entries: z.array(z.unknown()),
-      summary: z.string().optional(),
-    }),
-  }),
-  SessionHistoryEventBaseSchema.extend({
     type: z.literal("session-finish"),
     data: z.object({
       status: ReasoningStatusSchema,
       durationMs: z.number(),
       failureReason: z.string().optional(),
       summary: z.string().optional(),
+      output: z.unknown().optional(),
+    }),
+  }),
+  SessionHistoryEventBaseSchema.extend({
+    type: z.literal("fsm-action"),
+    data: z.object({
+      jobName: z.string(),
+      state: z.string(),
+      actionType: z.union([
+        z.literal("agent"),
+        z.literal("llm"),
+        z.literal("code"),
+        z.literal("emit"),
+      ]),
+      actionId: z.string().optional(),
+      status: z.union([z.literal("started"), z.literal("completed"), z.literal("failed")]),
+      durationMs: z.number().optional(),
+      error: z.string().optional(),
+      inputSnapshot: z
+        .object({
+          task: z.string().optional(),
+          requestDocId: z.string().optional(),
+          config: z.record(z.string(), z.unknown()).optional(),
+        })
+        .optional(),
     }),
   }),
 ]);
@@ -369,6 +198,12 @@ const StoredSessionSchema = z.object({
   failureReason: z.string().optional(),
   summary: z.string().optional(),
   title: z.string().optional(),
+  parentStreamId: z.string().optional(),
+  parentTitle: z.string().optional(),
+  sessionType: z.enum(["conversation", "task"]).optional(),
+  output: z.unknown().optional(),
+  /** Job description from workspace config - human-readable explanation of what the job does */
+  jobDescription: z.string().optional(),
   events: z.array(z.unknown()),
 });
 
@@ -386,6 +221,9 @@ export interface SessionHistoryListItem {
   updatedAt: string;
   summary?: string;
   title?: string;
+  parentStreamId?: string;
+  parentTitle?: string;
+  sessionType?: "conversation" | "task";
 }
 
 export interface SessionHistoryTimeline {
@@ -404,16 +242,26 @@ export interface CreateSessionMetadataInput {
   streamId?: string;
   artifactIds?: string[];
   summary?: string;
+  /** Human-readable title for the session */
+  title?: string;
+  parentStreamId?: string;
+  parentTitle?: string;
+  sessionType?: "conversation" | "task";
+  /** Job description from workspace config - human-readable explanation of what the job does */
+  jobDescription?: string;
 }
 
 export interface AppendSessionEventInput {
   sessionId: string;
   emittedBy: string;
   event: Omit<SessionHistoryEvent, "eventId" | "emittedAt" | "sessionId" | "emittedBy">;
+  /** Optional timestamp to use instead of now. Useful for preserving original event timestamps when batching. */
+  emittedAt?: string;
 }
 
 export interface ListSessionsOptions {
   workspaceId?: string;
+  excludeWorkspaceIds?: string[];
 }
 
 export interface ListSessionsResult {
@@ -533,6 +381,11 @@ export async function createSessionRecord(
       streamId: input.streamId,
       artifactIds: input.artifactIds,
       summary: input.summary,
+      title: input.title,
+      parentStreamId: input.parentStreamId,
+      parentTitle: input.parentTitle,
+      sessionType: input.sessionType,
+      jobDescription: input.jobDescription,
       events: [],
     };
 
@@ -557,7 +410,7 @@ export async function appendSessionEvent(
 
     const session = await readSessionFromHandle(file);
 
-    const timestamp = new Date().toISOString();
+    const timestamp = input.emittedAt || new Date().toISOString();
     const eventId = crypto.randomUUID();
     const event: SessionHistoryEvent = SessionHistoryEventSchema.parse({
       ...input.event,
@@ -588,7 +441,7 @@ export async function markSessionComplete(
   sessionId: string,
   status: ReasoningResultStatusType,
   finishedAt: string,
-  details?: { durationMs?: number; failureReason?: string; summary?: string },
+  details?: { durationMs?: number; failureReason?: string; summary?: string; output?: unknown },
 ): Promise<Result<SessionHistoryMetadata, string>> {
   try {
     await ensureSessionDir();
@@ -604,6 +457,7 @@ export async function markSessionComplete(
     if (details?.durationMs !== undefined) session.durationMs = details.durationMs;
     if (details?.failureReason !== undefined) session.failureReason = details.failureReason;
     if (details?.summary !== undefined) session.summary = details.summary;
+    if (details?.output !== undefined) session.output = details.output;
 
     await writeSessionToHandle(file, session);
 
@@ -710,6 +564,7 @@ export async function listSessions(
     for (const { path } of fileInfos) {
       try {
         const session = await readAndValidateSession(path);
+        if (options.excludeWorkspaceIds?.includes(session.workspaceId)) continue;
         if (!options.workspaceId || session.workspaceId === options.workspaceId) {
           sessions.push({
             sessionId: session.sessionId,
@@ -719,6 +574,9 @@ export async function listSessions(
             updatedAt: session.updatedAt,
             summary: session.summary,
             title: session.title,
+            parentStreamId: session.parentStreamId,
+            parentTitle: session.parentTitle,
+            sessionType: session.sessionType,
           });
         }
       } catch (error) {
@@ -753,63 +611,6 @@ export async function loadSessionTimeline(
   }
 }
 
-// ---------------------------------------------------------------------------
-// Normalization adapters
-// ---------------------------------------------------------------------------
-
-export function toAgentSnapshot(
-  result: AgentResult & {
-    outputText?: string;
-    structuredOutput?: unknown;
-    promptSummary?: string;
-    usage?: LanguageModelUsage;
-    response?: ReasoningOutput | string;
-    messages?: unknown[];
-  },
-): AgentSnapshot {
-  const snapshot: AgentSnapshot = {
-    agentId: result.agentId,
-    task: result.task,
-    inputData: {
-      structured: result.input,
-      raw: typeof result.input === "string" ? result.input : undefined,
-    },
-    promptSummary: result.promptSummary,
-    reasoning: result.reasoning,
-    toolCalls: result.toolCalls,
-    toolResults: result.toolResults,
-    outputText:
-      result.outputText ?? (typeof result.output === "string" ? result.output : undefined),
-    structuredOutput:
-      result.structuredOutput ?? (typeof result.output === "string" ? undefined : result.output),
-    artifacts: result.artifactRefs,
-    usage: result.usage,
-    response: result.response,
-    messages: result.messages,
-    result,
-  };
-
-  return AgentSnapshotSchema.parse(snapshot);
-}
-
-export function toToolCallEvent(
-  agentId: string,
-  executionId: string,
-  toolCall: ToolCall,
-  context?: SessionHistoryEventContext,
-): AppendSessionEventInput["event"] {
-  return { type: "agent-tool-call", context, data: { agentId, executionId, toolCall } };
-}
-
-export function toToolResultEvent(
-  agentId: string,
-  executionId: string,
-  toolResult: ToolResult,
-  context?: SessionHistoryEventContext,
-): AppendSessionEventInput["event"] {
-  return { type: "agent-tool-result", context, data: { agentId, executionId, toolResult } };
-}
-
 export const SessionHistoryStorage = {
   createSessionRecord,
   appendSessionEvent,
@@ -818,7 +619,4 @@ export const SessionHistoryStorage = {
   getSessionMetadata,
   listSessions,
   loadSessionTimeline,
-  toAgentSnapshot,
-  toToolCallEvent,
-  toToolResultEvent,
 };

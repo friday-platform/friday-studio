@@ -12,6 +12,7 @@
     "./library": "./src/library/types.ts",
     "./chat/storage": "./src/chat/storage.ts",
     "./session/history-storage": "./src/session/history-storage.ts",
+    "./session/build-session-digest": "./src/session/build-session-digest.ts",
     "./mcp-registry/registry-consolidated": "./src/mcp-registry/registry-consolidated.ts",
     "./mcp-registry/schemas": "./src/mcp-registry/schemas.ts",
     "./mcp-registry/deterministic-matching": "./src/mcp-registry/deterministic-matching.ts",

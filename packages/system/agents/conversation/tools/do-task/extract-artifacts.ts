@@ -1,24 +1,20 @@
 import { type ArtifactRef, ArtifactRefSchema } from "@atlas/agent-sdk";
 import { z } from "zod";
 
-const OutputWithArtifactsSchema = z
-  .object({
-    artifactRef: ArtifactRefSchema.optional(),
-    artifactRefs: z.array(ArtifactRefSchema).optional(),
-  })
-  .passthrough();
+const OutputWithArtifactsSchema = z.looseObject({
+  artifactRef: ArtifactRefSchema.optional(),
+  artifactRefs: z.array(ArtifactRefSchema).optional(),
+});
 
 const ResultWrapperSchema = z.object({ ok: z.literal(true), data: OutputWithArtifactsSchema });
 
-const SanitizableDataSchema = z
-  .object({
-    response: z.string().optional(),
-    summary: z.string().optional(),
-    content: z.string().optional(),
-    artifactRef: z.unknown().optional(),
-    artifactRefs: z.unknown().optional(),
-  })
-  .passthrough();
+const SanitizableDataSchema = z.looseObject({
+  response: z.string().optional(),
+  summary: z.string().optional(),
+  content: z.string().optional(),
+  artifactRef: z.unknown().optional(),
+  artifactRefs: z.unknown().optional(),
+});
 
 const SanitizableWrapperSchema = z.object({
   ok: z.boolean(),

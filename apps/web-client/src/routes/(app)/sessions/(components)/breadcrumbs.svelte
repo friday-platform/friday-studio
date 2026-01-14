@@ -1,9 +1,9 @@
 <script lang="ts">
-import type { SessionHistoryTimeline } from "@atlas/core/session/history-storage";
+import type { SessionDigest } from "@atlas/core/session/build-session-digest";
 import { Breadcrumbs } from "$lib/components/breadcrumbs";
 import { DropdownMenu } from "$lib/components/dropdown-menu";
 
-let { session }: { session: SessionHistoryTimeline } = $props();
+let { session }: { session: SessionDigest } = $props();
 </script>
 
 {#if session}
@@ -16,19 +16,19 @@ let { session }: { session: SessionHistoryTimeline } = $props();
 			Session Details
 
 			{#snippet actions()}
-				<DropdownMenu.Label>Copy</DropdownMenu.Label>
-				<DropdownMenu.Item
-					onclick={() => {
-						if (!session) return;
-						navigator.clipboard.writeText(session.metadata.sessionId);
-					}}>Session ID</DropdownMenu.Item
-				>
-				<DropdownMenu.Item
-					onclick={() => {
-						if (!session) return;
-						navigator.clipboard.writeText(session.metadata.workspaceId);
-					}}>Workspace ID</DropdownMenu.Item
-				>
+			<DropdownMenu.Label>Copy</DropdownMenu.Label>
+			<DropdownMenu.Item
+				onclick={() => {
+					if (!session) return;
+					navigator.clipboard.writeText(session.id);
+				}}>Session ID</DropdownMenu.Item
+			>
+			<DropdownMenu.Item
+				onclick={() => {
+					if (!session) return;
+					navigator.clipboard.writeText(session.workspaceId);
+				}}>Workspace ID</DropdownMenu.Item
+			>
 			{/snippet}
 		</Breadcrumbs.Title>
 	</Breadcrumbs.Root>

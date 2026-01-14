@@ -516,6 +516,12 @@ export class FSMEngine {
   ): Promise<void> {
     const actionStartTime = Date.now();
 
+    // Compute inputSnapshot for agent/llm actions (includes task description from request doc)
+    const inputSnapshot =
+      action.type === "agent" || action.type === "llm"
+        ? this.findRequestDocument(action, documents)
+        : undefined;
+
     // Emit action started event
     if (sig._context?.onEvent) {
       sig._context.onEvent({
@@ -525,15 +531,11 @@ export class FSMEngine {
           workspaceId: sig._context.workspaceId,
           jobName: this.definition.id,
           actionType: action.type,
-          actionId:
-            action.type === "agent"
-              ? action.agentId
-              : action.type === "code"
-                ? action.function
-                : undefined,
+          actionId: this.getActionId(action),
           state: currentState,
           status: "started",
           timestamp: actionStartTime,
+          inputSnapshot,
         },
       });
     }
@@ -560,249 +562,386 @@ export class FSMEngine {
       deleteDoc: this.makeDeleteDocFn(documents, currentState),
     };
 
-    switch (action.type) {
-      case "code": {
-        const actionFn = this._actionFunctions.get(action.function);
-        if (!actionFn) {
-          throw new Error(`Action function "${action.function}" not found`);
-        }
+    try {
+      switch (action.type) {
+        case "code": {
+          const actionFn = this._actionFunctions.get(action.function);
+          if (!actionFn) {
+            throw new Error(`Action function "${action.function}" not found`);
+          }
 
-        logger.debug("Executing code action", {
-          function: action.function,
-          state: currentState,
-          signalType: sig.type,
-        });
+          logger.debug("Executing code action", {
+            function: action.function,
+            state: currentState,
+            signalType: sig.type,
+          });
 
-        try {
-          await actionFn(context, sig);
-          logger.debug("Code action completed", { function: action.function, state: currentState });
-        } catch (error) {
-          throw new Error(`Action "${action.function}" threw error: ${stringifyError(error)}`);
-        }
-        break;
-      }
-
-      case "emit": {
-        events.push({ event: action.event, data: action.data });
-        logger.debug("Event emitted", { event: action.event, data: action.data });
-
-        // If we have an emit function in context, call it to trigger transitions
-        if (context.emit && action.event) {
-          await context.emit({ type: action.event, data: action.data });
-        }
-        break;
-      }
-
-      case "llm": {
-        if (!this.options.llmProvider) {
-          throw new Error("LLM action requires llmProvider in FSMEngineOptions");
-        }
-
-        logger.debug("Executing LLM action", {
-          model: action.model,
-          state: currentState,
-          hasTools: !!action.tools,
-          toolCount: action.tools?.length ?? 0,
-          outputTo: action.outputTo,
-        });
-
-        // Build base tools from action definition
-        const baseTools = action.tools ? await this.buildTools(action.tools, context) : {};
-
-        // Inject failStep tool for explicit failure signaling
-        const failStepTool = tool({
-          description:
-            "Signal that you cannot complete this task. Use this when you lack required information, encounter an unrecoverable error, or the task is impossible to complete.",
-          inputSchema: FailInputSchema,
-          execute: (input: FailInput) => ({ failed: true, reason: input.reason }),
-        });
-
-        const tools: Record<string, Tool> = { ...baseTools, failStep: failStepTool };
-
-        // Append failStep instruction to prompt with expanded artifact content
-        const contextPrompt =
-          (await this.buildContextPrompt(action.prompt, documents)) +
-          "\n\nIMPORTANT: If you cannot complete this task, call the failStep tool with a reason.";
-
-        let response = await this.options.llmProvider.call({
-          model: action.model,
-          prompt: contextPrompt,
-          tools,
-          toolChoice: "auto", // Let LLM decide when to stop calling tools
-        });
-
-        // Check if LLM called failStep
-        if (response.calledTool?.name === "failStep") {
-          throw new Error(`LLM step failed: ${JSON.stringify(response.calledTool.args)}`);
-        }
-
-        // Validate output if validator provided
-        if (this.options.validateOutput) {
-          const trace = buildLLMActionTrace(response, action.model, contextPrompt);
-
-          const validation = await this.options.validateOutput(trace);
-          // Note: If validator throws, error propagates and aborts the action (fail-closed)
-
-          if (!validation.valid) {
-            logger.warn("LLM action failed validation, retrying with feedback", {
+          try {
+            await actionFn(context, sig);
+            logger.debug("Code action completed", {
+              function: action.function,
               state: currentState,
-              model: action.model,
-              feedback: validation.feedback,
             });
+          } catch (error) {
+            throw new Error(`Action "${action.function}" threw error: ${stringifyError(error)}`);
+          }
+          break;
+        }
 
-            const retryPrompt =
-              `${contextPrompt}\n\n` +
-              `<validation-feedback>\n${validation.feedback ?? "Output failed validation."}\n</validation-feedback>\n` +
-              `IMPORTANT: Use only data from tool results. If you cannot comply, call failStep.`;
+        case "emit": {
+          events.push({ event: action.event, data: action.data });
+          logger.debug("Event emitted", { event: action.event, data: action.data });
 
-            response = await this.options.llmProvider.call({
-              model: action.model,
-              prompt: retryPrompt,
-              tools,
-              toolChoice: "auto", // Let LLM decide when to stop calling tools
-            });
+          // If we have an emit function in context, call it to trigger transitions
+          if (context.emit && action.event) {
+            await context.emit({ type: action.event, data: action.data });
+          }
+          break;
+        }
 
-            // Check if LLM called failStep on retry
-            if (response.calledTool?.name === "failStep") {
-              throw new Error(
-                `LLM step failed on retry: ${JSON.stringify(response.calledTool.args)}`,
-              );
-            }
+        case "llm": {
+          if (!this.options.llmProvider) {
+            throw new Error("LLM action requires llmProvider in FSMEngineOptions");
+          }
 
-            const retryTrace = buildLLMActionTrace(response, action.model, retryPrompt);
-            const retryValidation = await this.options.validateOutput(retryTrace);
+          logger.debug("Executing LLM action", {
+            model: action.model,
+            state: currentState,
+            hasTools: !!action.tools,
+            toolCount: action.tools?.length ?? 0,
+            outputTo: action.outputTo,
+          });
 
-            if (!retryValidation.valid) {
-              logger.error("LLM action failed validation after retry", {
+          // Build base tools from action definition
+          const baseTools = action.tools ? await this.buildTools(action.tools, context) : {};
+
+          // Inject failStep tool for explicit failure signaling
+          const failStepTool = tool({
+            description:
+              "Signal that you cannot complete this task. Use this when you lack required information, encounter an unrecoverable error, or the task is impossible to complete.",
+            inputSchema: FailInputSchema,
+            execute: (input: FailInput) => ({ failed: true, reason: input.reason }),
+          });
+
+          const tools: Record<string, Tool> = { ...baseTools, failStep: failStepTool };
+
+          // Append failStep instruction to prompt with expanded artifact content
+          const contextPrompt =
+            (await this.buildContextPrompt(action.prompt, documents)) +
+            "\n\nIMPORTANT: If you cannot complete this task, call the failStep tool with a reason.";
+
+          let response = await this.options.llmProvider.call({
+            model: action.model,
+            prompt: contextPrompt,
+            tools,
+            toolChoice: "auto", // Let LLM decide when to stop calling tools
+          });
+
+          // Emit tool events for UI visibility
+          this.emitToolEvents(response, action, sig, currentState);
+
+          // Check if LLM called failStep
+          if (response.calledTool?.name === "failStep") {
+            throw new Error(`LLM step failed: ${JSON.stringify(response.calledTool.args)}`);
+          }
+
+          // Validate output if validator provided
+          if (this.options.validateOutput) {
+            const trace = buildLLMActionTrace(response, action.model, contextPrompt);
+
+            const validation = await this.options.validateOutput(trace);
+            // Note: If validator throws, error propagates and aborts the action (fail-closed)
+
+            if (!validation.valid) {
+              logger.warn("LLM action failed validation, retrying with feedback", {
                 state: currentState,
                 model: action.model,
-                feedback: retryValidation.feedback,
+                feedback: validation.feedback,
               });
-              throw new Error(
-                `LLM action failed validation after retry: ${retryValidation.feedback ?? "no feedback"}`,
-              );
+
+              const retryPrompt =
+                `${contextPrompt}\n\n` +
+                `<validation-feedback>\n${validation.feedback ?? "Output failed validation."}\n</validation-feedback>\n` +
+                `IMPORTANT: Use only data from tool results. If you cannot comply, call failStep.`;
+
+              response = await this.options.llmProvider.call({
+                model: action.model,
+                prompt: retryPrompt,
+                tools,
+                toolChoice: "auto", // Let LLM decide when to stop calling tools
+              });
+
+              // Emit tool events for UI visibility (retry call)
+              this.emitToolEvents(response, action, sig, currentState);
+
+              // Check if LLM called failStep on retry
+              if (response.calledTool?.name === "failStep") {
+                throw new Error(
+                  `LLM step failed on retry: ${JSON.stringify(response.calledTool.args)}`,
+                );
+              }
+
+              const retryTrace = buildLLMActionTrace(response, action.model, retryPrompt);
+              const retryValidation = await this.options.validateOutput(retryTrace);
+
+              if (!retryValidation.valid) {
+                logger.error("LLM action failed validation after retry", {
+                  state: currentState,
+                  model: action.model,
+                  feedback: retryValidation.feedback,
+                });
+                throw new Error(
+                  `LLM action failed validation after retry: ${retryValidation.feedback ?? "no feedback"}`,
+                );
+              }
+
+              logger.info("LLM action passed validation on retry", {
+                state: currentState,
+                model: action.model,
+              });
             }
-
-            logger.info("LLM action passed validation on retry", {
-              state: currentState,
-              model: action.model,
-            });
           }
+
+          if (action.outputTo) {
+            const outputDoc = documents.get(action.outputTo);
+            if (outputDoc) {
+              outputDoc.data = { ...outputDoc.data, ...response.data, content: response.content };
+            } else {
+              documents.set(action.outputTo, {
+                id: action.outputTo,
+                type: "LLMResult",
+                data: { ...response.data, content: response.content },
+              });
+            }
+          }
+
+          logger.debug("LLM action completed", { model: action.model, outputTo: action.outputTo });
+          break;
         }
 
-        if (action.outputTo) {
-          const outputDoc = documents.get(action.outputTo);
-          if (outputDoc) {
-            outputDoc.data = { ...outputDoc.data, ...response.data, content: response.content };
-          } else {
-            documents.set(action.outputTo, {
-              id: action.outputTo,
-              type: "LLMResult",
-              data: { ...response.data, content: response.content },
-            });
+        case "agent": {
+          if (!this.options.agentExecutor) {
+            throw new Error(
+              `Agent action requires agentExecutor in FSMEngineOptions. ` +
+                `Pass agentExecutor callback that integrates with your agent system. ` +
+                `Agent: ${action.agentId}`,
+            );
           }
+
+          logger.debug("Executing agent action", {
+            agentId: action.agentId,
+            state: currentState,
+            outputTo: action.outputTo,
+          });
+
+          // Build context for agent execution
+          const agentContext: Context = {
+            documents: Array.from(documents.values()),
+            state: currentState,
+            emit: context.emit,
+            updateDoc: (id: string, data: Record<string, unknown>) => {
+              const doc = documents.get(id);
+              if (doc) {
+                doc.data = { ...doc.data, ...data };
+              }
+            },
+            createDoc: (doc: Document) => {
+              documents.set(doc.id, doc);
+            },
+            deleteDoc: (id: string) => {
+              documents.delete(id);
+            },
+          };
+
+          // Execute agent via callback, passing signal context
+          const result = await this.options.agentExecutor(action.agentId, agentContext, sig);
+
+          if (result.error) {
+            throw new Error(`Agent ${action.agentId} failed: ${result.error}`);
+          }
+
+          // Store result in document if outputTo specified
+          if (action.outputTo && result.output) {
+            const parsed = z.record(z.string(), z.unknown()).safeParse(result.output);
+            const baseData = parsed.success ? parsed.data : { value: result.output };
+
+            // Include artifactRefs so subsequent steps can access artifact references
+            const data =
+              result.artifactRefs && result.artifactRefs.length > 0
+                ? { ...baseData, artifactRefs: result.artifactRefs }
+                : baseData;
+
+            const existingDoc = documents.get(action.outputTo);
+            if (existingDoc) {
+              existingDoc.data = { ...existingDoc.data, ...data };
+            } else {
+              documents.set(action.outputTo, { id: action.outputTo, type: "AgentResult", data });
+            }
+          }
+
+          logger.debug("Agent action completed", {
+            agentId: action.agentId,
+            outputTo: action.outputTo,
+            duration: result.duration,
+          });
+          break;
         }
 
-        logger.debug("LLM action completed", { model: action.model, outputTo: action.outputTo });
-        break;
+        default: {
+          logger.error("Unknown action type", { action });
+          throw new Error(`Unknown action type`);
+        }
       }
 
-      case "agent": {
-        if (!this.options.agentExecutor) {
-          throw new Error(
-            `Agent action requires agentExecutor in FSMEngineOptions. ` +
-              `Pass agentExecutor callback that integrates with your agent system. ` +
-              `Agent: ${action.agentId}`,
-          );
-        }
-
-        logger.debug("Executing agent action", {
-          agentId: action.agentId,
-          state: currentState,
-          outputTo: action.outputTo,
+      // Emit action completed event
+      if (sig._context?.onEvent) {
+        sig._context.onEvent({
+          type: "data-fsm-action-execution",
+          data: {
+            sessionId: sig._context.sessionId,
+            workspaceId: sig._context.workspaceId,
+            jobName: this.definition.id,
+            actionType: action.type,
+            actionId: this.getActionId(action),
+            state: currentState,
+            status: "completed",
+            durationMs: Date.now() - actionStartTime,
+            timestamp: Date.now(),
+            inputSnapshot,
+          },
         });
-
-        // Build context for agent execution
-        const agentContext: Context = {
-          documents: Array.from(documents.values()),
-          state: currentState,
-          emit: context.emit,
-          updateDoc: (id: string, data: Record<string, unknown>) => {
-            const doc = documents.get(id);
-            if (doc) {
-              doc.data = { ...doc.data, ...data };
-            }
-          },
-          createDoc: (doc: Document) => {
-            documents.set(doc.id, doc);
-          },
-          deleteDoc: (id: string) => {
-            documents.delete(id);
-          },
-        };
-
-        // Execute agent via callback, passing signal context
-        const result = await this.options.agentExecutor(action.agentId, agentContext, sig);
-
-        if (result.error) {
-          throw new Error(`Agent ${action.agentId} failed: ${result.error}`);
-        }
-
-        // Store result in document if outputTo specified
-        if (action.outputTo && result.output) {
-          const parsed = z.record(z.string(), z.unknown()).safeParse(result.output);
-          const baseData = parsed.success ? parsed.data : { value: result.output };
-
-          // Include artifactRefs so subsequent steps can access artifact references
-          const data =
-            result.artifactRefs && result.artifactRefs.length > 0
-              ? { ...baseData, artifactRefs: result.artifactRefs }
-              : baseData;
-
-          const existingDoc = documents.get(action.outputTo);
-          if (existingDoc) {
-            existingDoc.data = { ...existingDoc.data, ...data };
-          } else {
-            documents.set(action.outputTo, { id: action.outputTo, type: "AgentResult", data });
-          }
-        }
-
-        logger.debug("Agent action completed", {
-          agentId: action.agentId,
-          outputTo: action.outputTo,
-          duration: result.duration,
-        });
-        break;
       }
+    } catch (error) {
+      // Emit action failed event before rethrowing
+      if (sig._context?.onEvent) {
+        sig._context.onEvent({
+          type: "data-fsm-action-execution",
+          data: {
+            sessionId: sig._context.sessionId,
+            workspaceId: sig._context.workspaceId,
+            jobName: this.definition.id,
+            actionType: action.type,
+            actionId: this.getActionId(action),
+            state: currentState,
+            status: "failed",
+            durationMs: Date.now() - actionStartTime,
+            error: stringifyError(error),
+            timestamp: Date.now(),
+            inputSnapshot,
+          },
+        });
+      }
+      throw error;
+    }
+  }
 
-      default: {
-        logger.error("Unknown action type", { action });
-        throw new Error(`Unknown action type`);
+  /**
+   * Get a meaningful identifier for an action based on its type
+   */
+  private getActionId(action: Action): string | undefined {
+    switch (action.type) {
+      case "agent":
+        return action.agentId;
+      case "code":
+        return action.function;
+      case "emit":
+        return action.event;
+      case "llm":
+        return action.outputTo;
+      default:
+        return undefined;
+    }
+  }
+
+  /**
+   * Emit tool call and tool result events from an LLM response.
+   * Called after LLM calls to stream tool activity for UI visibility.
+   * @param response - The LLM response containing toolCalls/toolResults
+   * @param action - The LLM action being executed (used for actionId correlation)
+   * @param sig - Signal with context containing onEvent callback
+   * @param currentState - Current FSM state for event correlation
+   */
+  private emitToolEvents(
+    response: LLMResponse,
+    action: Action,
+    sig: SignalWithContext,
+    currentState: string,
+  ): void {
+    if (!sig._context?.onEvent) return;
+
+    const actionId = this.getActionId(action);
+    const timestamp = Date.now();
+    const baseData = {
+      sessionId: sig._context.sessionId,
+      workspaceId: sig._context.workspaceId,
+      jobName: this.definition.id,
+      actionId,
+      state: currentState,
+      timestamp,
+    };
+
+    // Emit tool call events
+    if (response.data?.toolCalls) {
+      for (const toolCall of response.data.toolCalls) {
+        sig._context.onEvent({ type: "data-fsm-tool-call", data: { ...baseData, toolCall } });
       }
     }
 
-    // Emit action completed event
-    if (sig._context?.onEvent) {
-      sig._context.onEvent({
-        type: "data-fsm-action-execution",
-        data: {
-          sessionId: sig._context.sessionId,
-          workspaceId: sig._context.workspaceId,
-          jobName: this.definition.id,
-          actionType: action.type,
-          actionId:
-            action.type === "agent"
-              ? action.agentId
-              : action.type === "code"
-                ? action.function
-                : undefined,
-          state: currentState,
-          status: "completed",
-          duration: Date.now() - actionStartTime,
-          timestamp: Date.now(),
-        },
-      });
+    // Emit tool result events
+    if (response.data?.toolResults) {
+      for (const toolResult of response.data.toolResults) {
+        sig._context.onEvent({ type: "data-fsm-tool-result", data: { ...baseData, toolResult } });
+      }
     }
+  }
+
+  /**
+   * Derive request document ID from action outputTo field
+   * Convention: foo_result -> foo-request (underscore to kebab-case)
+   */
+  private getRequestDocIdFromOutputTo(outputTo: string): string | undefined {
+    const match = outputTo.match(/^(.+)_result$/);
+    if (!match?.[1]) return undefined;
+
+    const kebab = match[1].replaceAll("_", "-");
+    return `${kebab}-request`;
+  }
+
+  /**
+   * Find request document for an action based on its outputTo field
+   * Returns task and config from the request document if found
+   * @internal Used by executeAction to include in action execution events
+   */
+  private findRequestDocument(
+    action: { type: string; outputTo?: string },
+    documents: Map<string, unknown>,
+  ): { task?: string; requestDocId?: string; config?: Record<string, unknown> } | undefined {
+    // Get outputTo from agent or llm actions only
+    const outputTo =
+      action.type === "agent" || action.type === "llm"
+        ? (action as { outputTo?: string }).outputTo
+        : undefined;
+
+    if (!outputTo) return undefined;
+
+    const requestDocId = this.getRequestDocIdFromOutputTo(outputTo);
+    if (!requestDocId) return undefined;
+
+    const doc = documents.get(requestDocId);
+    if (!doc) return undefined;
+
+    const data = (doc as { data?: Record<string, unknown> }).data;
+    if (!data) return undefined;
+
+    const task = typeof data.task === "string" ? data.task : undefined;
+    const config =
+      typeof data.config === "object" && data.config !== null
+        ? (data.config as Record<string, unknown>)
+        : undefined;
+
+    if (!task && !config) return undefined;
+
+    return { task, requestDocId, config };
   }
 
   private async buildContextPrompt(

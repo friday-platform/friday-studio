@@ -51,6 +51,18 @@ export type {
 } from "./src/orchestrator/agent-orchestrator.ts";
 // Agent Orchestrator
 export { AgentOrchestrator } from "./src/orchestrator/agent-orchestrator.ts";
+// Session Digest Builder
+export {
+  buildSessionDigest,
+  type DigestError,
+  type DigestInput,
+  type DigestStep,
+  type DigestToolCall,
+  type SessionDigest,
+} from "./src/session/build-session-digest.ts";
+export type { SessionHistoryEventPayload } from "./src/session/fsm-event-mapper.ts";
+// FSM Event Mapper
+export { mapFsmEventToSessionEvent } from "./src/session/fsm-event-mapper.ts";
 // Session History Storage
 export * from "./src/session/history-storage.ts";
 // Stream Emitters

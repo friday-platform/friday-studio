@@ -11,5 +11,6 @@ export const load: PageLoad = async ({ params }) => {
     error(500, `Failed to load session: ${JSON.stringify(res.error)}`);
   }
 
+  // Type assertion - API returns SessionDigest with workspaceName
   return { session: res.data };
 };

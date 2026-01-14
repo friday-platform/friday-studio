@@ -1,14 +1,13 @@
 <script lang="ts">
-import type { SessionHistoryTimeline } from "@atlas/core/session/history-storage";
+import type { SessionDigest } from "@atlas/core/session/build-session-digest";
 import { getAppContext } from "$lib/app-context.svelte";
 import { Breadcrumbs } from "$lib/components/breadcrumbs";
 import { DropdownMenu } from "$lib/components/dropdown-menu";
 
-let { session, workspaceName }: { session: SessionHistoryTimeline; workspaceName?: string } =
-  $props();
+let { session, workspaceName }: { session: SessionDigest; workspaceName?: string } = $props();
 
 const appCtx = getAppContext();
-const workspaceId = $derived(session.metadata.workspaceId);
+const workspaceId = $derived(session.workspaceId);
 </script>
 
 {#if session}
@@ -38,12 +37,12 @@ const workspaceId = $derived(session.metadata.workspaceId);
 
 				<DropdownMenu.Separator /> -->
 				<DropdownMenu.Label>Copy</DropdownMenu.Label>
-				<DropdownMenu.Item
-					onclick={() => {
-						if (!session) return;
-						navigator.clipboard.writeText(session.metadata.sessionId);
-					}}>Session ID</DropdownMenu.Item
-				>
+			<DropdownMenu.Item
+				onclick={() => {
+					if (!session) return;
+					navigator.clipboard.writeText(session.id);
+				}}>Session ID</DropdownMenu.Item
+			>
 				<DropdownMenu.Item
 					onclick={() => {
 						navigator.clipboard.writeText(workspaceId);

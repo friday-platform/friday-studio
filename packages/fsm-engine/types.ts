@@ -3,6 +3,10 @@
  */
 
 import type { ToolCall, ToolResult } from "@atlas/agent-sdk";
+
+// Re-export ToolCall and ToolResult for FSM event consumers
+export type { ToolCall, ToolResult };
+
 import type { DocumentScope } from "../document-store/node.ts";
 
 // Re-export DocumentScope for convenience
@@ -136,13 +140,54 @@ export interface FSMActionExecutionEvent {
     actionId?: string;
     state: string;
     status: "started" | "completed" | "failed";
-    duration?: number;
+    durationMs?: number;
     error?: string;
+    timestamp: number;
+    inputSnapshot?: { task?: string; requestDocId?: string; config?: Record<string, unknown> };
+  };
+}
+
+/**
+ * Tool call event emitted during LLM action execution.
+ * actionId MUST match the actionId from the parent FSMActionExecutionEvent
+ * to allow UI correlation.
+ */
+export interface FSMToolCallEvent {
+  type: "data-fsm-tool-call";
+  data: {
+    sessionId: string;
+    workspaceId: string;
+    jobName: string;
+    actionId?: string;
+    state: string;
+    toolCall: ToolCall;
     timestamp: number;
   };
 }
 
-export type FSMEvent = FSMStateTransitionEvent | FSMActionExecutionEvent;
+/**
+ * Tool result event emitted during LLM action execution.
+ * actionId MUST match the actionId from the parent FSMActionExecutionEvent
+ * to allow UI correlation.
+ */
+export interface FSMToolResultEvent {
+  type: "data-fsm-tool-result";
+  data: {
+    sessionId: string;
+    workspaceId: string;
+    jobName: string;
+    actionId?: string;
+    state: string;
+    toolResult: ToolResult;
+    timestamp: number;
+  };
+}
+
+export type FSMEvent =
+  | FSMStateTransitionEvent
+  | FSMActionExecutionEvent
+  | FSMToolCallEvent
+  | FSMToolResultEvent;
 
 /**
  * Signal with additional context for execution tracking and event streaming

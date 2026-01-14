@@ -1,29 +1,25 @@
 <script lang="ts">
-import type {
-  SessionHistoryEvent,
-  SessionHistoryMetadata,
-} from "@atlas/core/session/history-storage";
-import type { AgentGroup } from "$lib/utils/session-timeline";
-import EventGroup from "./event-group.svelte";
+import type { DigestStep } from "$lib/utils/session-timeline";
+import StepCard from "./step-card.svelte";
 
 interface Props {
-  metadata: SessionHistoryMetadata;
-  sessionEvents: SessionHistoryEvent[];
-  agentGroups: AgentGroup[];
+  steps?: DigestStep[];
+  /** Fallback task description when step.task is missing (from session input) */
+  fallbackTask?: string;
 }
 
-let { agentGroups }: Props = $props();
+let { steps = [], fallbackTask }: Props = $props();
 </script>
 
 <div class="timeline-main">
-	{#if agentGroups.length === 0}
-		<div class="empty-state">
-			<p>No agent executions found for this session.</p>
-		</div>
-	{:else}
-		{#each agentGroups as group (group.executionId)}
-			<EventGroup {group} />
+	{#if steps.length > 0}
+		{#each steps as step (step.state)}
+			<StepCard {step} {fallbackTask} />
 		{/each}
+	{:else}
+		<div class="empty-state">
+			<p>No timeline events found for this session.</p>
+		</div>
 	{/if}
 </div>
 
@@ -31,6 +27,7 @@ let { agentGroups }: Props = $props();
 	.timeline-main {
 		display: flex;
 		flex-direction: column;
+		padding-block-start: var(--size-3);
 	}
 
 	.empty-state {

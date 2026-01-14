@@ -24,6 +24,8 @@ const columnHelper = createColumnHelper<{
   updatedAt: string;
   summary?: string | undefined;
   title?: string | undefined;
+  sessionType?: "conversation" | "task";
+  parentTitle?: string;
 }>();
 
 const columns = [
@@ -35,6 +37,8 @@ const columns = [
         job: info.row.original.sessionId,
         summary: info.row.original.summary ?? "",
         title: info.row.original.title,
+        sessionType: info.row.original.sessionType,
+        parentTitle: info.row.original.parentTitle,
       });
     },
     meta: { minWidth: "0" },

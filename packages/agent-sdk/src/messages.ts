@@ -39,7 +39,9 @@ export const AtlasDataEventSchemas = {
   "agent-start": z.object({ agentId: z.string(), task: z.string() }),
   "agent-finish": z.object({ agentId: z.string(), duration: z.number() }),
   "agent-error": z.object({ agentId: z.string(), duration: z.number(), error: z.string() }),
-  "data-fsm-state-transition": z.object({
+  // FSM events: key without "data-" prefix since DataUIMessageChunk adds "data-" prefix
+  // Result: type "fsm-state-transition" → DataUIMessageChunk type "data-fsm-state-transition"
+  "fsm-state-transition": z.object({
     sessionId: z.string(),
     workspaceId: z.string(),
     jobName: z.string(),
@@ -48,7 +50,7 @@ export const AtlasDataEventSchemas = {
     triggeringSignal: z.string(),
     timestamp: z.number(),
   }),
-  "data-fsm-action-execution": z.object({
+  "fsm-action-execution": z.object({
     sessionId: z.string(),
     workspaceId: z.string(),
     jobName: z.string(),
@@ -56,9 +58,16 @@ export const AtlasDataEventSchemas = {
     actionId: z.string().optional(),
     state: z.string(),
     status: z.enum(["started", "completed", "failed"]),
-    duration: z.number().optional(),
+    durationMs: z.number().optional(),
     error: z.string().optional(),
     timestamp: z.number(),
+    inputSnapshot: z
+      .object({
+        task: z.string().optional(),
+        requestDocId: z.string().optional(),
+        config: z.record(z.string(), z.unknown()).optional(),
+      })
+      .optional(),
   }),
   "agent-timeout": z.object({
     agentId: z.string(),
@@ -105,8 +114,10 @@ export type AtlasDataEvents = {
   "user-message": z.infer<(typeof AtlasDataEventSchemas)["user-message"]>;
   "tool-progress": z.infer<(typeof AtlasDataEventSchemas)["tool-progress"]>;
   "outline-update": z.infer<(typeof AtlasDataEventSchemas)["outline-update"]>;
-  "data-fsm-state-transition": z.infer<(typeof AtlasDataEventSchemas)["data-fsm-state-transition"]>;
-  "data-fsm-action-execution": z.infer<(typeof AtlasDataEventSchemas)["data-fsm-action-execution"]>;
+  // FSM events: keys match schema keys (without data- prefix)
+  // DataUIMessageChunk adds "data-" prefix → final type is "data-fsm-state-transition"
+  "fsm-state-transition": z.infer<(typeof AtlasDataEventSchemas)["fsm-state-transition"]>;
+  "fsm-action-execution": z.infer<(typeof AtlasDataEventSchemas)["fsm-action-execution"]>;
   "credential-linked": z.infer<(typeof AtlasDataEventSchemas)["credential-linked"]>;
 };
 
