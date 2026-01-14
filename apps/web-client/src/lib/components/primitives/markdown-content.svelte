@@ -60,14 +60,19 @@ const htmlContent = $derived(content ? markdownToHTML(content) : null);
 				opacity: 1;
 			}
 
-			&:global(:where(ul)) {
-				list-style-type: '⋅ ';
-				list-style-position: inside;
+			&:global(:where(ol)) {
+				padding-inline-start: var(--size-6);
+				list-style-type: decimal;
 			}
 
-			&:global(:where(ol)) {
-				list-style-type: decimal;
-				list-style-position: inside;
+			&:global(:where(ul)) {
+				padding-inline-start: var(--size-5);
+				list-style-type: '⋅ ';
+			}
+
+			&:global(:where(li > ul, li > ol)) {
+				margin-block-start: var(--size-1);
+				margin-block-end: var(--size-1);
 			}
 
 			&:global(:where(strong)) {

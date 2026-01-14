@@ -206,3 +206,27 @@ Deno.test("markdownToHTML - mixed content", () => {
 
   assertEquals(markdownToHTML(markdown), expected);
 });
+
+Deno.test("markdownToHTML - nested bullet list", () => {
+  const markdown = `- Item 1
+    - Nested item`;
+  const expected = "<ul><li>Item 1<ul><li>Nested item</li></ul></li></ul>";
+  assertEquals(markdownToHTML(markdown), expected);
+});
+
+Deno.test("markdownToHTML - ordered list with nested bullets", () => {
+  const markdown = `1. First item
+    - Sub bullet
+2. Second item`;
+  const expected = "<ol><li>First item<ul><li>Sub bullet</li></ul></li><li>Second item</li></ol>";
+  assertEquals(markdownToHTML(markdown), expected);
+});
+
+Deno.test("markdownToHTML - deeply nested lists", () => {
+  const markdown = `1. Top level
+    - Second level
+        - Third level`;
+  const expected =
+    "<ol><li>Top level<ul><li>Second level<ul><li>Third level</li></ul></li></ul></li></ol>";
+  assertEquals(markdownToHTML(markdown), expected);
+});

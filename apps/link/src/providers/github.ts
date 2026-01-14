@@ -24,27 +24,20 @@ export const githubProvider = defineApiKeyProvider({
   description: "GitHub access via Personal Access Token",
   secretSchema: GitHubSecretSchema,
   setupInstructions: `
-## Creating a GitHub Personal Access Token
-
-1. Go to [GitHub Settings → Developer Settings → Personal Access Tokens](https://github.com/settings/tokens)
-
-2. Choose token type:
-   - **Fine-grained tokens** (recommended): Click "Generate new token" under Fine-grained tokens
-   - **Classic tokens**: Click "Generate new token (classic)"
-
+1. Go to [GitHub Settings → Developer Settings → Personal Access Tokens](https://github.com/settings/tokens/new)
+2. Choose Classic Token as token type: Click "Generate new token (classic)"
+    - Classic PATs start with \`ghp_\`
 3. Configure your token:
-   - Give it a descriptive name
-   - Set an expiration (shorter is more secure)
-   - Select the scopes/permissions needed for your use case
+    - Give it a descriptive name
+    - Set an expiration (shorter is more secure but will require updates)
+    - Select the required scopes/permissions for your use case
+        - For read-only access: \`repo:status\`, \`public_repo\`, \`read:org\`
+        - For write access: \`repo\`
 
 4. Click "Generate token" and copy the token immediately (you won't see it again)
-
-5. Paste the token in the field above
-
-### Token Format
-- Classic PATs start with \`ghp_\`
-- Fine-grained PATs start with \`github_pat_\`
+5. Share the token with Friday via Connect Github below
 `.trim(),
+
   health: async (secret) => {
     try {
       const response = await fetch("https://api.github.com/user", {
