@@ -5,6 +5,7 @@
  * Note: Callback is handled by unified /v1/callback/:provider route
  */
 
+import { zValidator } from "@hono/zod-validator";
 import type { Context } from "hono";
 import { z } from "zod";
 import { AppInstallError } from "../app-install/errors.ts";
@@ -23,6 +24,7 @@ const ReconcileBodySchema = z.object({ credential_id: z.string().min(1) });
  * Routes:
  * - GET /:provider/authorize - Initiate OAuth app install flow
  * - POST /:provider/reconcile - Re-upsert route for existing credential
+ * - DELETE /:provider/:credentialId - Uninstall app (remove route and credential)
  *
  * @param service - App install service for flow management
  * @returns Hono router with app install endpoints
@@ -99,6 +101,28 @@ export function createAppInstallRoutes(service: AppInstallService) {
           return c.json({ error: "reconcile_failed", message }, 500);
         }
       })
+      /**
+       * DELETE /v1/app-install/:provider/:credentialId
+       * Uninstall app - removes route and credential
+       */
+      .delete(
+        "/:provider/:credentialId",
+        zValidator("param", z.object({ provider: z.string(), credentialId: z.string() })),
+        async (c) => {
+          const userId = c.get("userId");
+          const { provider, credentialId } = c.req.valid("param");
+
+          try {
+            await service.uninstall(provider, credentialId, userId);
+            return c.body(null, 204);
+          } catch (error) {
+            if (error instanceof AppInstallError) {
+              return mapAppInstallErrorToResponse(c, error);
+            }
+            return c.json({ error: "Failed to uninstall" }, 500);
+          }
+        },
+      )
   );
 }
 

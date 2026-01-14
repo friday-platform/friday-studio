@@ -19,12 +19,10 @@ type Config struct {
 	PostgresConnection string `env:"POSTGRES_CONNECTION" envDefault:"postgresql://postgres:postgres@localhost:54322/postgres?sslmode=disable"`
 
 	// Slack configuration (required).
-	SlackBotToken      string `env:"SLACK_BOT_TOKEN"`
 	SlackSigningSecret string `env:"SLACK_SIGNING_SECRET"`
 
 	// Atlas instance configuration.
-	AtlasURLTemplate  string `env:"ATLAS_URL_TEMPLATE" envDefault:"https://atlas-%s.atlas.svc.cluster.local"`
-	CallbackURLPrefix string `env:"CALLBACK_URL_PREFIX" envDefault:"https://signal-gateway.atlas-operator.svc.cluster.local/callback"`
+	AtlasURLTemplate string `env:"ATLAS_URL_TEMPLATE" envDefault:"https://atlas-%s.atlas.svc.cluster.local"`
 
 	// HTTP client configuration.
 	AtlasTimeoutSeconds int `env:"ATLAS_TIMEOUT_SECONDS" envDefault:"10"`
@@ -40,13 +38,8 @@ type Config struct {
 }
 
 // Validate checks configuration validity.
-// Service requires complete Slack configuration.
+// Service requires Slack signing secret for webhook verification.
 func (c Config) Validate() error {
-	// Validate Slack configuration completeness (both required).
-	if c.SlackBotToken == "" {
-		return fmt.Errorf("SLACK_BOT_TOKEN is required")
-	}
-
 	if c.SlackSigningSecret == "" {
 		return fmt.Errorf("SLACK_SIGNING_SECRET is required")
 	}

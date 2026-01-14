@@ -212,6 +212,45 @@ export class AppInstallService {
   }
 
   /**
+   * Uninstall app installation. Deletes route AND credential.
+   * @throws {AppInstallError} If credential not found or provider mismatch
+   */
+  async uninstall(providerId: string, credentialId: string, userId: string): Promise<void> {
+    const provider = this.requireAppInstallProvider(providerId);
+    const credential = await this.credentialStorage.get(credentialId, userId);
+
+    if (!credential) {
+      this.log.warn("app_install_uninstall_not_found", { credentialId, userId });
+      return; // Idempotent - already gone
+    }
+
+    if (credential.provider !== providerId) {
+      throw new AppInstallError(
+        "INVALID_PROVIDER_TYPE",
+        `Credential provider mismatch: expected ${providerId}, got ${credential.provider}`,
+      );
+    }
+
+    // Get team_id from credential secret
+    const secretResult = AppInstallCredentialSecretSchema.safeParse(credential.secret);
+    if (!secretResult.success) {
+      throw new AppInstallError("INVALID_CREDENTIAL", "Credential secret malformed");
+    }
+
+    // Delete route first (stops events), then credential
+    await this.routeStorage.delete(secretResult.data.externalId, userId);
+    await this.credentialStorage.delete(credentialId, userId);
+
+    this.log.info("app_install_uninstalled", {
+      provider: providerId,
+      platform: provider.platform,
+      externalId: secretResult.data.externalId,
+      credentialId,
+      userId,
+    });
+  }
+
+  /**
    * Get app install provider from registry and validate type.
    * @throws {AppInstallError} If provider not found or not app_install type
    */

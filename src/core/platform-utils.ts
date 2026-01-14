@@ -51,7 +51,7 @@ export async function initializePlatformChat(
   userMessage: string,
   source: "slack" | "discord",
 ): Promise<Result<void, string>> {
-  const { ChatStorage } = await import("@atlas/core/src/chat/storage.ts");
+  const { ChatStorage } = await import("@atlas/core/chat/storage");
 
   // Create or get existing chat (idempotent)
   const createResult = await ChatStorage.createChat({ chatId, userId, workspaceId, source });

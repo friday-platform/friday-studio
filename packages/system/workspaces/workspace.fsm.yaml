@@ -38,6 +38,14 @@ fsm:
             - type: code
               function: storeConversationContext
 
+        slack:
+          target: processing
+          actions:
+            - type: code
+              function: cleanup_previous_conversation
+            - type: code
+              function: storeSlackContext
+
         conversation-list:
           target: listing
           actions:
@@ -168,3 +176,21 @@ fsm:
           // Context cleanup after conversation processing
           // Documents are automatically persisted by FSM engine
         }
+
+    storeSlackContext:
+      type: action
+      code: |
+        export default function storeSlackContext(context, event) {
+          // Map Slack signal payload to conversation context
+          context.createDoc({
+            id: 'conversation-context',
+            type: 'ConversationContext',
+            data: {
+              conversationId: event.data.chatId,
+              userId: event.data._slack?.user_id,
+              message: event.data.text,
+              streamId: event.data.sessionId
+            }
+          });
+        }
+

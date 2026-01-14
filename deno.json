@@ -39,7 +39,7 @@
     "google-mcp:stop": "docker stop google-workspace-mcp && docker rm google-workspace-mcp",
     "google-mcp:logs": "docker logs -f google-workspace-mcp",
     "dev": "LINK_DEV_MODE=true deno run -A npm:concurrently -n daemon,link,web -c blue,green,magenta 'deno task atlas daemon start' 'cd apps/link && deno task dev' 'cd apps/web-client && deno task dev'",
-    "dev:full": "LINK_DEV_MODE=true deno run -A npm:concurrently -n daemon,link,web,gateway,bounce -c blue,green,magenta,yellow,cyan 'deno task atlas daemon start' 'cd apps/link && deno task dev' 'cd apps/web-client && deno task dev' 'PORT=8087 DOT_ENV=$HOME/.atlas/gateway.env go run ./apps/gateway' 'PORT=8083 METRICS_PORT=9091 DOT_ENV=$HOME/.atlas/bounce.env go run ./apps/bounce'",
+    "dev:full": "LINK_DEV_MODE=true deno run -A npm:concurrently -n daemon,link,web,gateway,bounce,signal -c blue,green,magenta,yellow,cyan,red 'deno task atlas daemon start' 'cd apps/link && deno task dev' 'cd apps/web-client && deno task dev' 'PORT=8087 DOT_ENV=$HOME/.atlas/gateway.env go run ./apps/gateway' 'PORT=8083 METRICS_PORT=9091 DOT_ENV=$HOME/.atlas/bounce.env go run ./apps/bounce' 'test -f $HOME/.atlas/signal-gateway.env && PORT=8081 METRICS_PORT=9092 DOT_ENV=$HOME/.atlas/signal-gateway.env go run ./apps/signal-gateway || echo signal-gateway skipped - create ~/.atlas/signal-gateway.env to enable'",
     "test": "OTEL_DENO=true DENO_TESTING=true LINK_DEV_MODE=true deno test --allow-all --unstable-raw-imports --no-check --env-file",
     "test:unit": "OTEL_DENO=true DENO_TESTING=true LINK_DEV_MODE=true deno test --allow-all --env-file --no-check --ignore='integration-tests/**/*.test.ts'",
     "fmt": "deno run -A npm:@biomejs/biome format --write",

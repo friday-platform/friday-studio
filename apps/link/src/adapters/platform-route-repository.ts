@@ -11,6 +11,12 @@ export interface PlatformRouteRepository {
    * If team_id exists, update user_id. Idempotent.
    */
   upsert(teamId: string, userId: string): Promise<void>;
+
+  /**
+   * Delete a platform route by team_id and user_id.
+   * Requires user_id for authorization (no RLS on this table).
+   */
+  delete(teamId: string, userId: string): Promise<void>;
 }
 
 /**
@@ -20,6 +26,11 @@ export interface PlatformRouteRepository {
 export class NoOpPlatformRouteRepository implements PlatformRouteRepository {
   upsert(teamId: string, userId: string): Promise<void> {
     logger.info("platform_route_upsert_noop", { teamId, userId });
+    return Promise.resolve();
+  }
+
+  delete(teamId: string, userId: string): Promise<void> {
+    logger.info("platform_route_delete_noop", { teamId, userId });
     return Promise.resolve();
   }
 }
@@ -42,5 +53,9 @@ export class PostgresPlatformRouteRepository implements PlatformRouteRepository 
       ON CONFLICT (team_id)
       DO UPDATE SET user_id = EXCLUDED.user_id
     `;
+  }
+
+  async delete(teamId: string, userId: string): Promise<void> {
+    await this.sql`DELETE FROM platform_route WHERE team_id = ${teamId} AND user_id = ${userId}`;
   }
 }

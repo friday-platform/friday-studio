@@ -1,17 +1,17 @@
 /**
- * Slack signal endpoint for Signal Gateway integration.
+ * Slack signal endpoint - responds directly to Slack.
  *
- * Signal Gateway POSTs Slack events to this endpoint with:
+ * Receives Slack events from Signal Gateway with:
  * - text: User message
- * - callback_url: Where to send response
  * - _slack: Platform context for routing responses
  *
- * Atlas MUST:
- * 1. Return 202 immediately (within 10s)
- * 2. Process signal asynchronously
- * 3. POST response to callback_url with platform context echoed back
+ * Atlas:
+ * 1. Returns 202 immediately
+ * 2. Processes signal asynchronously
+ * 3. Posts response directly to Slack using team-scoped bot token
  */
 
+import { ChatStorage } from "@atlas/core/chat/storage";
 import { logger } from "@atlas/logger";
 import { Hono } from "hono";
 import { z } from "zod";
@@ -20,6 +20,8 @@ import {
   initializePlatformChat,
 } from "../../../../src/core/platform-utils.ts";
 import type { AtlasDaemon } from "../../src/atlas-daemon.ts";
+import { postSlackMessage } from "../../src/services/slack-client.ts";
+import { getSlackTokenByTeamId } from "../../src/services/slack-credentials.ts";
 
 // ==============================================================================
 // SCHEMAS
@@ -27,11 +29,10 @@ import type { AtlasDaemon } from "../../src/atlas-daemon.ts";
 
 const SlackSignalPayloadSchema = z.object({
   text: z.string(),
-  callback_url: z.string().url().optional(),
   _slack: z.object({
     channel_id: z.string(),
     team_id: z.string(),
-    channel_type: z.enum(["dm", "channel", "group", "mpim", "app_home"]),
+    channel_type: z.enum(["im", "channel", "group", "mpim", "app_home"]),
     thread_ts: z.string().optional(),
     user_id: z.string(),
     timestamp: z.string(),
@@ -60,7 +61,6 @@ export function createPlatformSignalRoutes(daemon: AtlasDaemon) {
         channelId: payload._slack.channel_id,
         teamId: payload._slack.team_id,
         channelType: payload._slack.channel_type,
-        hasCallback: !!payload.callback_url,
       });
 
       // Route to atlas-conversation workspace
@@ -96,126 +96,72 @@ async function processSlackSignal(
   signalId: string,
   payload: SlackSignalPayload,
 ): Promise<void> {
-  try {
-    // Generate deterministic chat ID
-    const chatId = await generateSlackChatId(
-      payload._slack.team_id,
-      payload._slack.channel_id,
-      payload._slack.user_id,
-    );
+  const { team_id, channel_id, channel_type, thread_ts, user_id, timestamp } = payload._slack;
 
-    // Initialize chat storage
-    const chatResult = await initializePlatformChat(
-      chatId,
-      payload._slack.user_id,
-      workspaceId,
-      payload.text,
-      "slack",
-    );
+  // Threading: DMs = no thread, channels = always thread
+  const isDM = channel_type === "im";
+  const replyThreadTs = isDM ? undefined : (thread_ts ?? timestamp);
 
-    if (!chatResult.ok) {
-      throw new Error(`Failed to initialize chat: ${chatResult.error}`);
-    }
+  // Look up Slack token from Link API
+  // Returns null if no credential configured (handled below)
+  // Throws on Link API failure → caught by outer handler (line 71)
+  const slackToken = await getSlackTokenByTeamId(team_id);
+  if (!slackToken) {
+    logger.warn("slack_integration_not_configured", { team_id });
+    return; // Silent fail - no Slack connected for this team
+  }
 
-    // Trigger workspace signal
-    const streamId = crypto.randomUUID();
-    let accumulatedText = "";
+  // Generate chat ID
+  const chatId = await generateSlackChatId(team_id, channel_id, user_id);
 
-    const result = await daemon.triggerWorkspaceSignal(
-      workspaceId,
-      signalId,
-      { ...payload, chatId, sessionId: chatId },
-      streamId,
-      (chunk) => {
-        // @ts-expect-error - chunk types from ai SDK are complex, checking for text parts
-        if (chunk.type === "text" && chunk.text) {
-          // @ts-expect-error - dynamic property access
-          accumulatedText += chunk.text;
-        }
-      },
-    );
+  // Initialize chat storage
+  const chatResult = await initializePlatformChat(
+    chatId,
+    user_id,
+    workspaceId,
+    payload.text,
+    "slack",
+  );
+  if (!chatResult.ok) {
+    throw new Error(`Failed to initialize chat: ${chatResult.error}`);
+  }
 
-    // Wait for completion
-    const completed = await daemon.waitForSignalCompletion(workspaceId, result.sessionId, 300_000);
+  // Trigger signal - blocks until FSM completion
+  const result = await daemon.triggerWorkspaceSignal(workspaceId, signalId, {
+    ...payload,
+    chatId,
+    sessionId: chatId,
+  });
 
-    if (!completed) {
-      throw new Error("Signal processing timed out");
-    }
+  // Read response from chat storage (same pattern as web UI)
+  const storedChat = await ChatStorage.getChat(chatId);
+  let responseText = "No response generated";
 
-    // Send callback to gateway
-    if (payload.callback_url) {
-      await sendGatewayCallback(payload.callback_url, {
-        text: accumulatedText || "No response generated",
-        status: "success",
-        // Flatten platform context fields (Go handler expects root-level)
-        channel_id: payload._slack.channel_id,
-        thread_ts: payload._slack.thread_ts,
-      });
-    }
+  if (storedChat.ok && storedChat.data) {
+    // Find last assistant message
+    const messages = storedChat.data.messages;
+    const lastAssistantMessage = [...messages].reverse().find((m) => m.role === "assistant");
 
-    logger.info("Slack signal processed successfully", {
-      chatId,
-      sessionId: result.sessionId,
-      responseLength: accumulatedText.length,
-    });
-  } catch (error) {
-    logger.error("Slack signal processing failed", { error, payload });
-
-    if (payload.callback_url) {
-      await sendGatewayCallback(payload.callback_url, {
-        error: error instanceof Error ? error.message : "Unknown error",
-        status: "failed",
-        // Flatten platform context fields (Go handler expects root-level)
-        channel_id: payload._slack.channel_id,
-        thread_ts: payload._slack.thread_ts,
-      }).catch((e) => logger.error("Failed to send error callback", { error: e }));
+    if (lastAssistantMessage) {
+      // Extract text from message parts
+      const textParts = lastAssistantMessage.parts
+        .filter((p): p is { type: "text"; text: string } => p.type === "text" && "text" in p)
+        .map((p) => p.text);
+      responseText = textParts.join("") || responseText;
     }
   }
-}
 
-// ==============================================================================
-// CALLBACK HELPER
-// ==============================================================================
+  // Reply to Slack - throws on API error
+  await postSlackMessage({
+    token: slackToken,
+    channel: channel_id,
+    text: responseText,
+    threadTs: replyThreadTs,
+  });
 
-/**
- * Send callback to Signal Gateway
- *
- * Gateway expects flat structure:
- * - text or error: Response content
- * - status: "success" | "failed"
- * - channel_id: Slack channel ID
- * - thread_ts: Optional thread timestamp
- *
- * Retry logic: Atlas retries 1x with 5s backoff, then logs error
- */
-const CALLBACK_TIMEOUT_MS = 10_000; // 10 seconds
-
-async function sendGatewayCallback(
-  callbackUrl: string,
-  body: Record<string, unknown>,
-  retries = 1,
-): Promise<void> {
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    try {
-      const response = await fetch(callbackUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-        signal: AbortSignal.timeout(CALLBACK_TIMEOUT_MS),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Gateway callback failed: ${response.status} ${response.statusText}`);
-      }
-
-      return; // Success
-    } catch (error) {
-      if (attempt < retries) {
-        logger.warn("Gateway callback failed, retrying", { attempt, error });
-        await new Promise((resolve) => setTimeout(resolve, 5000)); // 5s backoff
-      } else {
-        throw error; // Final attempt failed
-      }
-    }
-  }
+  logger.info("slack_signal_processed", {
+    chatId,
+    sessionId: result.sessionId,
+    responseLength: responseText.length,
+  });
 }

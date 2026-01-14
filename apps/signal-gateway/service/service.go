@@ -10,7 +10,6 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/httplog/v2"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/slack-go/slack"
 	"github.com/tempestteam/atlas/apps/signal-gateway/repo"
 	"github.com/tempestteam/atlas/pkg/server"
 	"github.com/tempestteam/atlas/pkg/x/middleware/secure"
@@ -23,7 +22,6 @@ type service struct {
 	mux         *chi.Mux
 	tlsConfig   *server.TLSConfig
 	db          *pgxpool.Pool
-	slackClient *slack.Client // For callback API calls
 	eventRouter *EventRouter
 	ctx         context.Context
 	cancel      context.CancelFunc
@@ -77,12 +75,8 @@ func (s *service) Init(ctx context.Context) error {
 		cacheTTL,
 		atlasTimeout,
 		s.cfg.AtlasURLTemplate,
-		s.cfg.CallbackURLPrefix,
 		s.cfg.SlackSigningSecret,
 	)
-
-	// Initialize Slack client for callback API calls
-	s.slackClient = slack.New(s.cfg.SlackBotToken)
 
 	s.logger.Info("Signal Gateway service initialized successfully")
 
@@ -122,9 +116,6 @@ func (s *service) routes(r *chi.Mux) *chi.Mux {
 
 	// Slack webhook endpoint
 	r.Post("/webhook/slack", handleSlackWebhook(s.eventRouter))
-
-	// Slack callback endpoint
-	r.Post("/callback/slack", handleSlackCallback(s.slackClient))
 
 	return r
 }

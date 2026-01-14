@@ -26,9 +26,8 @@ const (
 
 // AtlasSlackPayload represents the payload sent to Atlas for Slack events.
 type AtlasSlackPayload struct {
-	CallbackURL string              `json:"callback_url"`
-	Text        string              `json:"text"`
-	Slack       AtlasSlackEventData `json:"_slack"`
+	Text  string              `json:"text"`
+	Slack AtlasSlackEventData `json:"_slack"`
 }
 
 // AtlasSlackEventData contains Slack-specific event metadata.
@@ -43,14 +42,13 @@ type AtlasSlackEventData struct {
 
 // EventRouter routes platform events to Atlas instances.
 type EventRouter struct {
-	queries           *repo.Queries
-	cache             *lru.TTLCache[string, string]
-	cacheTTL          time.Duration
-	httpClient        *http.Client
-	atlasURLTemplate  string          // e.g., "https://atlas-%s.atlas.svc.cluster.local" or "http://localhost:8080"
-	callbackURLPrefix string          // e.g., "https://signal-gateway.atlas-operator.svc.cluster.local/callback"
-	signingSecret     string          // Slack signing secret for webhook verification
-	ctx               context.Context // Service context for async operations
+	queries          *repo.Queries
+	cache            *lru.TTLCache[string, string]
+	cacheTTL         time.Duration
+	httpClient       *http.Client
+	atlasURLTemplate string          // e.g., "https://atlas-%s.atlas.svc.cluster.local" or "http://localhost:8080"
+	signingSecret    string          // Slack signing secret for webhook verification
+	ctx              context.Context // Service context for async operations
 }
 
 // Cache size for route lookups (number of team_id -> user_id mappings).
@@ -63,7 +61,6 @@ func NewEventRouter(
 	cacheTTL time.Duration,
 	atlasTimeout time.Duration,
 	atlasURLTemplate string,
-	callbackURLPrefix string,
 	signingSecret string,
 ) *EventRouter {
 	// Configure HTTP transport with connection pooling
@@ -82,10 +79,9 @@ func NewEventRouter(
 			Timeout:   atlasTimeout,
 			Transport: transport,
 		},
-		atlasURLTemplate:  atlasURLTemplate,
-		callbackURLPrefix: callbackURLPrefix,
-		signingSecret:     signingSecret,
-		ctx:               ctx,
+		atlasURLTemplate: atlasURLTemplate,
+		signingSecret:    signingSecret,
+		ctx:              ctx,
 	}
 }
 
@@ -104,13 +100,11 @@ func (er *EventRouter) RouteSlackEvent(ctx context.Context, event *SlackMessageE
 		return fmt.Errorf("failed to lookup route: %w", err)
 	}
 
-	// Construct URLs and forward to Atlas
+	// Construct URL and forward to Atlas
 	atlasURL := er.constructAtlasURL(userID)
-	callbackURL := er.callbackURLPrefix + "/slack"
 
 	payload := AtlasSlackPayload{
-		CallbackURL: callbackURL,
-		Text:        event.Text,
+		Text: event.Text,
 		Slack: AtlasSlackEventData{
 			ChannelID:   event.Channel,
 			TeamID:      event.TeamID,

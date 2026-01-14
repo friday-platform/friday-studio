@@ -130,6 +130,11 @@ class MockPlatformRouteRepository implements PlatformRouteRepository {
     return Promise.resolve();
   }
 
+  delete(teamId: string): Promise<void> {
+    this.routes.delete(teamId);
+    return Promise.resolve();
+  }
+
   /** Test helper - get route for assertions */
   getRoute(teamId: string): string | undefined {
     return this.routes.get(teamId);

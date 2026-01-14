@@ -138,6 +138,11 @@ class MockPlatformRouteRepository implements PlatformRouteRepository {
     this.routes.set(teamId, userId);
     return Promise.resolve();
   }
+
+  delete(teamId: string): Promise<void> {
+    this.routes.delete(teamId);
+    return Promise.resolve();
+  }
 }
 
 describe("App Install Routes", () => {

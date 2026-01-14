@@ -5486,6 +5486,7 @@
             "npm:@jsr/std__assert@^1.0.16",
             "npm:@jsr/std__fs@^1.0.19",
             "npm:@jsr/std__path@^1.1.2",
+            "npm:@jsr/std__testing@^1.0.16",
             "npm:@jsr/std__yaml@^1.0.10",
             "npm:file-type@^21.3.0",
             "npm:hono-openapi@^1.1.2",
