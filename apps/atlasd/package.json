@@ -20,7 +20,7 @@
     "@atlas/workspace": "workspace:*",
     "@atlas/link": "workspace:*",
     "@atlas-vendor/hono-mcp": "workspace:*",
-    "@hono/standard-validator": "^0.2.1",
+    "@hono/standard-validator": "^0.2.2",
     "@hono/zod-validator": "^0.7.6",
     "@std/fs": "npm:@jsr/std__fs@^1.0.19",
     "@std/path": "npm:@jsr/std__path@^1.1.2",
