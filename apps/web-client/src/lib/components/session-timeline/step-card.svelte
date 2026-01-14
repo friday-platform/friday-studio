@@ -1,64 +1,69 @@
 <script lang="ts">
-import { createCollapsible } from "@melt-ui/svelte";
-import { slide } from "svelte/transition";
-import { Icons } from "$lib/components/icons";
-import { IconSmall } from "$lib/components/icons/small";
-import { formatDuration } from "$lib/utils/date";
-import type { DigestStep } from "$lib/utils/session-timeline";
+  import { createCollapsible } from "@melt-ui/svelte";
+  import { Icons } from "$lib/components/icons";
+  import { IconSmall } from "$lib/components/icons/small";
+  import { formatDuration } from "$lib/utils/date";
+  import type { DigestStep } from "$lib/utils/session-timeline";
+  import { slide } from "svelte/transition";
 
-interface Props {
-  step: DigestStep;
-  /** Fallback task description when step.task is missing (from session input) */
-  fallbackTask?: string;
-}
-
-let { step, fallbackTask }: Props = $props();
-
-// Use step.task if available, otherwise fall back to session's input task
-const taskDescription = $derived(step.task ?? fallbackTask ?? "No task description available");
-
-const duration = $derived(step.durationMs ? formatDuration(0, step.durationMs) : null);
-const isFailed = $derived(step.status === "failed");
-
-// Details accordion for tool calls (collapsed by default)
-const {
-  elements: { root: detailsRoot, trigger: detailsTrigger, content: detailsContent },
-  states: { open: detailsOpen },
-} = createCollapsible({ defaultOpen: false });
-
-const TRUNCATE_LENGTH = 300;
-
-function formatContent(value: unknown): string {
-  if (typeof value === "string") return value;
-  return JSON.stringify(value, null, 2);
-}
-
-function truncate(str: string): string {
-  if (str.length <= TRUNCATE_LENGTH) return str;
-  return str.slice(0, TRUNCATE_LENGTH) + "...";
-}
-
-let expandedToolCalls = $state<Set<string>>(new Set());
-
-function toggleToolCall(toolCallId: string) {
-  if (expandedToolCalls.has(toolCallId)) {
-    expandedToolCalls.delete(toolCallId);
-  } else {
-    expandedToolCalls.add(toolCallId);
+  interface Props {
+    step: DigestStep;
+    /** Fallback task description when step.task is missing (from session input) */
+    fallbackTask?: string;
   }
-  expandedToolCalls = new Set(expandedToolCalls);
-}
+
+  let { step, fallbackTask }: Props = $props();
+
+  // Use step.task if available, otherwise fall back to session's input task
+  const taskDescription = $derived(step.task ?? fallbackTask ?? "No task description available");
+
+  const duration = $derived(step.durationMs ? formatDuration(0, step.durationMs) : null);
+  const isFailed = $derived(step.status === "failed");
+
+  // Details accordion for tool calls (collapsed by default)
+  const {
+    elements: { root: detailsRoot, trigger: detailsTrigger, content: detailsContent },
+    states: { open: detailsOpen },
+  } = createCollapsible({ defaultOpen: false });
+
+  const TRUNCATE_LENGTH = 300;
+
+  function formatContent(value: unknown): string {
+    if (typeof value === "string") return value;
+    return JSON.stringify(value, null, 2);
+  }
+
+  function truncate(str: string): string {
+    if (str.length <= TRUNCATE_LENGTH) return str;
+    return str.slice(0, TRUNCATE_LENGTH) + "...";
+  }
+
+  let expandedToolCalls = $state<Set<string>>(new Set());
+
+  function toggleToolCall(toolCallId: string) {
+    if (expandedToolCalls.has(toolCallId)) {
+      expandedToolCalls.delete(toolCallId);
+    } else {
+      expandedToolCalls.add(toolCallId);
+    }
+    expandedToolCalls = new Set(expandedToolCalls);
+  }
 </script>
 
 <div class="step-card">
   <div class="step-header">
     <div class="header-left">
-      <span class="status-icon" class:completed={step.status === 'completed'} class:failed={isFailed} class:in-progress={step.status === 'in-progress'}>
-        {#if step.status === 'completed'}
+      <span
+        class="status-icon"
+        class:completed={step.status === "completed"}
+        class:failed={isFailed}
+        class:in-progress={step.status === "in-progress"}
+      >
+        {#if step.status === "completed"}
           <IconSmall.Check />
         {:else if isFailed}
           <IconSmall.Close />
-        {:else if step.status === 'in-progress'}
+        {:else if step.status === "in-progress"}
           <IconSmall.Progress />
         {:else}
           <Icons.DotFilled />
@@ -70,11 +75,11 @@ function toggleToolCall(toolCallId: string) {
 
     <div class="header-right">
       <span class="status-text" class:failed={isFailed}>
-        {#if step.status === 'completed'}
+        {#if step.status === "completed"}
           Completed
         {:else if isFailed}
           Failed
-        {:else if step.status === 'in-progress'}
+        {:else if step.status === "in-progress"}
           Running
         {:else}
           Pending
@@ -102,14 +107,19 @@ function toggleToolCall(toolCallId: string) {
     {#if step.toolCalls.length > 0}
       <div class="details-accordion" {...$detailsRoot} use:detailsRoot>
         <button class="details-trigger" type="button" {...$detailsTrigger} use:detailsTrigger>
-          <span class="details-label">{$detailsOpen ? 'Hide' : 'Show'} Details</span>
+          <span class="details-label">{$detailsOpen ? "Hide" : "Show"} Details</span>
           <span class="details-icon" class:open={$detailsOpen}>
             <IconSmall.CaretRight />
           </span>
         </button>
 
         {#if $detailsOpen}
-          <div class="details-content" {...$detailsContent} use:detailsContent transition:slide={{ duration: 200 }}>
+          <div
+            class="details-content"
+            {...$detailsContent}
+            use:detailsContent
+            transition:slide={{ duration: 200 }}
+          >
             <div class="tool-calls-section">
               <div class="section-label">Tool Calls</div>
               <div class="tool-calls-list">
@@ -119,7 +129,11 @@ function toggleToolCall(toolCallId: string) {
                   {@const resultStr = tc.result !== undefined ? formatContent(tc.result) : null}
 
                   <div class="tool-call-item">
-                    <button class="tool-call-header" type="button" onclick={() => toggleToolCall(tc.toolCallId)}>
+                    <button
+                      class="tool-call-header"
+                      type="button"
+                      onclick={() => toggleToolCall(tc.toolCallId)}
+                    >
                       <IconSmall.ToolCall />
                       <span class="tool-name">{tc.tool}</span>
                       <span class="expand-icon" class:expanded>▼</span>

@@ -25,4 +25,23 @@ jobs:
         run: deno install --frozen
 
       - name: Run Biome check
-        run: deno task lint
+        run: deno task lint:check
+
+      - name: Check for trailing whitespace
+        run: |
+          # Find files with trailing whitespace (excluding binary files and certain paths)
+          if git grep -I -n '[[:space:]]$' -- \
+            ':!*.lock' \
+            ':!*.svg' \
+            ':!*.ico' \
+            ':!*.png' \
+            ':!*.jpg' \
+            ':!*.woff*' \
+            ':!*.ttf' \
+            ':!*.snap' \
+            ':!node_modules' \
+            ':!dist' \
+            ':!.git'; then
+            echo "Error: Found trailing whitespace in the files above"
+            exit 1
+          fi

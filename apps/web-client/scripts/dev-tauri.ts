@@ -3,7 +3,6 @@
  * Cross-platform script to run Tauri build with TAURI_BUILD environment variable
  * Works on Windows, macOS, and Linux
  */
-
 import process from "node:process";
 
 // Set environment variable

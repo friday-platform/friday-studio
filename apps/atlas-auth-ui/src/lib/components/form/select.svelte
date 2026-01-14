@@ -1,30 +1,30 @@
 <script lang="ts">
-import { hasContext, type Snippet } from "svelte";
-import type { HTMLSelectAttributes } from "svelte/elements";
-import type { JsonValue } from "$lib/utils/json-schema";
-import CaretDown from "../icons/caret-down.svelte";
-import { FIELD_CONTEXT, getFieldContext } from "./context";
+  import type { JsonValue } from "$lib/utils/json-schema";
+  import { hasContext, type Snippet } from "svelte";
+  import type { HTMLSelectAttributes } from "svelte/elements";
+  import CaretDown from "../icons/caret-down.svelte";
+  import { FIELD_CONTEXT, getFieldContext } from "./context";
 
-type Props = {
-  children: Snippet;
-  value?: JsonValue;
-  variant?: "small" | "regular";
-  width?: "fill" | "auto";
-};
+  type Props = {
+    children: Snippet;
+    value?: JsonValue;
+    variant?: "small" | "regular";
+    width?: "fill" | "auto";
+  };
 
-let {
-  children,
-  variant = "regular",
-  width = "fill",
-  value = $bindable(),
-  ...rest
-}: Props & HTMLSelectAttributes = $props();
+  let {
+    children,
+    variant = "regular",
+    width = "fill",
+    value = $bindable(),
+    ...rest
+  }: Props & HTMLSelectAttributes = $props();
 
-let id = $state<string>();
+  let id = $state<string>();
 
-if (hasContext(FIELD_CONTEXT)) {
-  id = getFieldContext().id;
-}
+  if (hasContext(FIELD_CONTEXT)) {
+    id = getFieldContext().id;
+  }
 </script>
 
 <div class="{variant} width--{width}">

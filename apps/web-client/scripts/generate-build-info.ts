@@ -2,10 +2,9 @@
 
 // This script generates build information at compile time
 // It should be run before building the application in CI/CD
-
-import { dirname, fromFileUrl, join } from "jsr:@std/path@^1.0.0";
 import { readFile, writeFile } from "node:fs/promises";
 import process, { env } from "node:process";
+import { dirname, fromFileUrl, join } from "jsr:@std/path@^1.0.0";
 
 const __dirname = dirname(fromFileUrl(import.meta.url));
 

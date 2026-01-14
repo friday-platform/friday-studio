@@ -1,7 +1,7 @@
 <script lang="ts">
-type Props = { value: string; onchange: (value: string) => void; onblur: () => void };
+  type Props = { value: string; onchange: (value: string) => void; onblur: () => void };
 
-let { value, onchange, onblur }: Props = $props();
+  let { value, onchange, onblur }: Props = $props();
 </script>
 
 <input

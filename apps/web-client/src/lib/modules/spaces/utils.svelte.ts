@@ -1,9 +1,9 @@
 import { client, parseResult } from "@atlas/client/v2";
-import { type WorkspaceConfig, WorkspaceConfigSchema } from "@atlas/config";
+import { WorkspaceConfigSchema, type WorkspaceConfig } from "@atlas/config";
 import { parse } from "@std/yaml";
-import { ZodError } from "zod";
 import { goto } from "$app/navigation";
 import { toast } from "$lib/components/notification/notification.svelte";
+import { ZodError } from "zod";
 
 /**
  * Handle .yml/.yaml file selection - parses workspace config from File object

@@ -1,4 +1,4 @@
-import { client, type InferResponseType, parseResult } from "@atlas/client/v2";
+import { client, parseResult, type InferResponseType } from "@atlas/client/v2";
 import { getContext, setContext } from "svelte";
 
 const KEY = Symbol("spaces");

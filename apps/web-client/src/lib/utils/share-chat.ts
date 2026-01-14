@@ -1,13 +1,13 @@
 import type { AtlasUIMessage } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
 import {
-  type ArtifactData,
   ArtifactDataSchema,
-  type CalendarSchedule,
   escapeHTML,
-  type FileData,
   renderTableHTML,
   renderWorkspacePlanHTML,
+  type ArtifactData,
+  type CalendarSchedule,
+  type FileData,
   type TableData,
   type WorkspacePlan,
 } from "@atlas/core/artifacts";

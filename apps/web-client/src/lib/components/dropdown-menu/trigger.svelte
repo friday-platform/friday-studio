@@ -1,46 +1,46 @@
 <script lang="ts">
-import { type Snippet } from "svelte";
-import type { HTMLAttributes } from "svelte/elements";
-import { getContext } from "./context";
+  import { type Snippet } from "svelte";
+  import type { HTMLAttributes } from "svelte/elements";
+  import { getContext } from "./context";
 
-type Props = { children: Snippet };
+  type Props = { children: Snippet };
 
-let { children, ...rest }: Props & HTMLAttributes<HTMLButtonElement> = $props();
+  let { children, ...rest }: Props & HTMLAttributes<HTMLButtonElement> = $props();
 
-const { trigger } = getContext();
+  const { trigger } = getContext();
 </script>
 
 <button
-	type="button"
-	{...rest}
-	{...$trigger}
-	use:trigger
-	onclick={(e: MouseEvent) => {
-		if (!e.target) return;
+  type="button"
+  {...rest}
+  {...$trigger}
+  use:trigger
+  onclick={(e: MouseEvent) => {
+    if (!e.target) return;
 
-		const target = e.currentTarget as HTMLButtonElement;
-		const controls = target.getAttribute('aria-controls');
+    const target = e.currentTarget as HTMLButtonElement;
+    const controls = target.getAttribute("aria-controls");
 
-		e.currentTarget?.dispatchEvent(
-			new CustomEvent('closemenu', { bubbles: true, detail: { controls } })
-		);
-	}}
+    e.currentTarget?.dispatchEvent(
+      new CustomEvent("closemenu", { bubbles: true, detail: { controls } }),
+    );
+  }}
 >
-	{@render children()}
+  {@render children()}
 </button>
 
 <style>
-	button {
-		max-inline-size: 100%;
-		transition: opacity 100ms ease;
+  button {
+    max-inline-size: 100%;
+    transition: opacity 100ms ease;
 
-		&:focus {
-			outline: none;
-		}
+    &:focus {
+      outline: none;
+    }
 
-		:global(body:has([role='dialog'][data-state='open'])) & {
-			opacity: 0;
-			visibility: hidden;
-		}
-	}
+    :global(body:has([role="dialog"][data-state="open"])) & {
+      opacity: 0;
+      visibility: hidden;
+    }
+  }
 </style>

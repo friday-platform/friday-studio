@@ -113,10 +113,10 @@ For nodes that contain markdown syntax in their content, clean the text:
 
 ```javascript
 // Example for StrongEmphasis
-content.replace(/^(\*\*|__)/, '').replace(/(\*\*|__)$/, '');
+content.replace(/^(\*\*|__)/, "").replace(/(\*\*|__)$/, "");
 
 // Example for Headers
-content.replace(/^#+\s*/, '');
+content.replace(/^#+\s*/, "");
 
 // Example for Links
 content.match(/\[([^\]]+)\]\(([^)]+)\)/); // Extract text and URL
@@ -150,8 +150,15 @@ This is a paragraph.
 
 ```html
 <ul>
-	<li><strong>Bold item</strong> with text</li>
-	<li>Item with <em>italic</em> text</li>
+  <li>
+    <strong>Bold item</strong>
+    with text
+  </li>
+  <li>
+    Item with
+    <em>italic</em>
+    text
+  </li>
 </ul>
 ```
 
@@ -175,10 +182,19 @@ Here is a paragraph with **bold** and _italic_ text.
 ```
 
 ```html
-<p>Here is a paragraph with <strong>bold</strong> and <em>italic</em> text.</p>
+<p>
+  Here is a paragraph with
+  <strong>bold</strong>
+  and
+  <em>italic</em>
+  text.
+</p>
 <ol>
-	<li>First item</li>
-	<li>Second item with <a href="https://example.com">a link</a></li>
+  <li>First item</li>
+  <li>
+    Second item with
+    <a href="https://example.com">a link</a>
+  </li>
 </ol>
 ```
 
@@ -216,84 +232,84 @@ Here is a paragraph with **bold** and _italic_ text.
 
 ```javascript
 // Test: Simple paragraph
-input: 'Hello world';
-expected: '<p>Hello world</p>';
+input: "Hello world";
+expected: "<p>Hello world</p>";
 
 // Test: Bold text
-input: '**bold text**';
-expected: '<p><strong>bold text</strong></p>';
+input: "**bold text**";
+expected: "<p><strong>bold text</strong></p>";
 
 // Test: Italic text
-input: '*italic text*';
-expected: '<p><em>italic text</em></p>';
+input: "*italic text*";
+expected: "<p><em>italic text</em></p>";
 
 // Test: Strikethrough
-input: '~~struck text~~';
-expected: '<p><del>struck text</del></p>';
+input: "~~struck text~~";
+expected: "<p><del>struck text</del></p>";
 
 // Test: Link
-input: '[link text](https://example.com)';
+input: "[link text](https://example.com)";
 expected: '<p><a href="https://example.com">link text</a></p>';
 
 // Test: Inline code
-input: '`code`';
-expected: '<p><code>code</code></p>';
+input: "`code`";
+expected: "<p><code>code</code></p>";
 ```
 
 #### Lists
 
 ```javascript
 // Test: Unordered list
-input: '- Item 1\n- Item 2';
-expected: '<ul><li>Item 1</li><li>Item 2</li></ul>';
+input: "- Item 1\n- Item 2";
+expected: "<ul><li>Item 1</li><li>Item 2</li></ul>";
 
 // Test: Ordered list
-input: '1. First\n2. Second';
-expected: '<ol><li>First</li><li>Second</li></ol>';
+input: "1. First\n2. Second";
+expected: "<ol><li>First</li><li>Second</li></ol>";
 
 // Test: List with inline formatting
-input: '- **Bold** item\n- *Italic* item';
-expected: '<ul><li><strong>Bold</strong> item</li><li><em>Italic</em> item</li></ul>';
+input: "- **Bold** item\n- *Italic* item";
+expected: "<ul><li><strong>Bold</strong> item</li><li><em>Italic</em> item</li></ul>";
 ```
 
 #### Headers to Paragraphs
 
 ```javascript
 // Test: H1 to bold paragraph
-input: '# Header 1';
-expected: '<p><strong>Header 1</strong></p>';
+input: "# Header 1";
+expected: "<p><strong>Header 1</strong></p>";
 
 // Test: H2 to bold paragraph
-input: '## Header 2';
-expected: '<p><strong>Header 2</strong></p>';
+input: "## Header 2";
+expected: "<p><strong>Header 2</strong></p>";
 
 // Test: Header with inline formatting
-input: '## Header with *italic*';
-expected: '<p><strong>Header with <em>italic</em></strong></p>';
+input: "## Header with *italic*";
+expected: "<p><strong>Header with <em>italic</em></strong></p>";
 ```
 
 #### Edge Cases
 
 ```javascript
 // Test: Horizontal rule removal
-input: 'Text\n\n---\n\nMore text';
-expected: '<p>Text</p><p>More text</p>';
+input: "Text\n\n---\n\nMore text";
+expected: "<p>Text</p><p>More text</p>";
 
 // Test: Empty list item
-input: '- \n- Item';
-expected: '<ul><li></li><li>Item</li></ul>';
+input: "- \n- Item";
+expected: "<ul><li></li><li>Item</li></ul>";
 
 // Test: Nested emphasis
-input: '**bold with *italic* inside**';
-expected: '<p><strong>bold with <em>italic</em> inside</strong></p>';
+input: "**bold with *italic* inside**";
+expected: "<p><strong>bold with <em>italic</em> inside</strong></p>";
 
 // Test: Incomplete markdown (streaming)
-input: 'This is **bold';
-expected: '<p>This is **bold</p>'; // Should handle gracefully
+input: "This is **bold";
+expected: "<p>This is **bold</p>"; // Should handle gracefully
 
 // Test: Mixed line breaks
-input: 'Line 1\n\nLine 2';
-expected: '<p>Line 1</p><p>Line 2</p>';
+input: "Line 1\n\nLine 2";
+expected: "<p>Line 1</p><p>Line 2</p>";
 ```
 
 ### Visual Testing

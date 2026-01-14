@@ -1,10 +1,10 @@
 <script lang="ts">
-import { page } from "$app/state";
-import logoMark from "$lib/assets/logo-mark.png";
-import logoMarkDark from "$lib/assets/logo-mark-dark.png";
-import Decal from "$lib/components/decal.svelte";
+  import { page } from "$app/state";
+  import logoMarkDark from "$lib/assets/logo-mark-dark.png";
+  import logoMark from "$lib/assets/logo-mark.png";
+  import Decal from "$lib/components/decal.svelte";
 
-const email = $derived(page.url.searchParams.get("email"));
+  const email = $derived(page.url.searchParams.get("email"));
 </script>
 
 <svelte:head>

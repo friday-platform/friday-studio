@@ -1,13 +1,17 @@
 <script lang="ts">
-import type { Snippet } from "svelte";
-import { createContext } from "./context";
-import type { Layout } from "./types";
+  import type { Snippet } from "svelte";
+  import { createContext } from "./context";
+  import type { Layout } from "./types";
 
-type Props = { children: Snippet; spacing?: "small" | "regular" | "large" | "xl"; layout?: Layout };
+  type Props = {
+    children: Snippet;
+    spacing?: "small" | "regular" | "large" | "xl";
+    layout?: Layout;
+  };
 
-let { children, spacing = "regular", layout = "inline" }: Props = $props();
+  let { children, spacing = "regular", layout = "inline" }: Props = $props();
 
-createContext({ layout });
+  createContext({ layout });
 </script>
 
 <div class="spacing--{spacing}">

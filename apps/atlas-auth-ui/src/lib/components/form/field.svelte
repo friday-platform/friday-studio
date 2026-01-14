@@ -1,45 +1,45 @@
 <script lang="ts">
-import { hasContext, type Snippet } from "svelte";
-import { createFieldContext, FORM_CONTEXT, getContext } from "./context";
-import type { Layout } from "./types";
+  import { hasContext, type Snippet } from "svelte";
+  import { createFieldContext, FORM_CONTEXT, getContext } from "./context";
+  import type { Layout } from "./types";
 
-type Props = {
-  children: Snippet<[string]>;
-  label?: string;
-  error?: string;
-  labelSnippet?: Snippet;
-  description?: string;
-  isRequired?: boolean;
-  layout?: Layout;
-  align?: "left" | "center" | "end" | "inherit";
-};
+  type Props = {
+    children: Snippet<[string]>;
+    label?: string;
+    error?: string;
+    labelSnippet?: Snippet;
+    description?: string;
+    isRequired?: boolean;
+    layout?: Layout;
+    align?: "left" | "center" | "end" | "inherit";
+  };
 
-let {
-  children,
-  error,
-  label,
-  labelSnippet,
-  description,
-  layout,
-  isRequired,
-  align = "inherit",
-}: Props = $props();
+  let {
+    children,
+    error,
+    label,
+    labelSnippet,
+    description,
+    layout,
+    isRequired,
+    align = "inherit",
+  }: Props = $props();
 
-let contextLayout: Layout = "inline";
+  let contextLayout: Layout = "inline";
 
-if (hasContext(FORM_CONTEXT)) {
-  contextLayout = getContext().layout;
-}
-
-function getLayoutForField() {
-  if (layout) {
-    return `layout-${layout}`;
+  if (hasContext(FORM_CONTEXT)) {
+    contextLayout = getContext().layout;
   }
 
-  return `layout-${contextLayout}`;
-}
+  function getLayoutForField() {
+    if (layout) {
+      return `layout-${layout}`;
+    }
 
-const { id } = createFieldContext();
+    return `layout-${contextLayout}`;
+  }
+
+  const { id } = createFieldContext();
 </script>
 
 <div class="tempest-component__form-field align--{align} {getLayoutForField()}">

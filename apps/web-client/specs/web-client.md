@@ -243,9 +243,7 @@ const result = await parseResult(
 );
 
 // For non-JSON responses (like text/yaml), use the client without parseResult
-const response = await client.workspace[":workspaceId"].export.$get({
-  param: { workspaceId: id },
-});
+const response = await client.workspace[":workspaceId"].export.$get({ param: { workspaceId: id } });
 const text = await response.text();
 
 // Bad - don't use raw fetch for daemon APIs

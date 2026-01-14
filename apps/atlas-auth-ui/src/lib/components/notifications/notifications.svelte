@@ -1,16 +1,17 @@
 <script lang="ts" module>
-import { createToaster } from "@melt-ui/svelte";
+  import { createToaster } from "@melt-ui/svelte";
 
-export type ToastData = { title: string; error: boolean };
+  export type ToastData = { title: string; error: boolean };
 
-const {
-  elements: { content, title },
-  helpers,
-  states: { toasts },
-  actions: { portal },
-} = createToaster<ToastData>({ closeDelay: 4000 });
+  const {
+    elements: { content, title },
+    helpers,
+    states: { toasts },
+    actions: { portal },
+  } = createToaster<ToastData>({ closeDelay: 4000 });
 
-export const toast = (title: string, error = false) => helpers.addToast({ data: { title, error } });
+  export const toast = (title: string, error = false) =>
+    helpers.addToast({ data: { title, error } });
 </script>
 
 <script lang="ts">

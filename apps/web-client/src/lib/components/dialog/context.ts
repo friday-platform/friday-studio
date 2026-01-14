@@ -1,4 +1,4 @@
-import { type CreateDialogProps, createDialog } from "@melt-ui/svelte";
+import { createDialog, type CreateDialogProps } from "@melt-ui/svelte";
 import { getContext as _getContext, setContext } from "svelte";
 
 export const KEY = Symbol();

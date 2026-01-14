@@ -1,27 +1,27 @@
 <script lang="ts">
-import type { Snippet } from "svelte";
-import type { HTMLButtonAttributes } from "svelte/elements";
+  import type { Snippet } from "svelte";
+  import type { HTMLButtonAttributes } from "svelte/elements";
 
-type Props = {
-  children: Snippet;
-  prepend?: Snippet;
-  append?: Snippet;
-  variant?: "default" | "primary" | "fill" | "none";
-  size?: "regular" | "large" | "small" | "icon" | "icon-small";
-  accent?: "none" | "destructive" | "information" | "faded" | "primary" | "text";
-  type?: "button" | "submit";
-};
+  type Props = {
+    children: Snippet;
+    prepend?: Snippet;
+    append?: Snippet;
+    variant?: "default" | "primary" | "fill" | "none";
+    size?: "regular" | "large" | "small" | "icon" | "icon-small";
+    accent?: "none" | "destructive" | "information" | "faded" | "primary" | "text";
+    type?: "button" | "submit";
+  };
 
-let {
-  children,
-  prepend,
-  append,
-  variant = "default",
-  size = "regular",
-  accent = "none",
-  type = "button",
-  ...rest
-}: Props & HTMLButtonAttributes = $props();
+  let {
+    children,
+    prepend,
+    append,
+    variant = "default",
+    size = "regular",
+    accent = "none",
+    type = "button",
+    ...rest
+  }: Props & HTMLButtonAttributes = $props();
 </script>
 
 <button {type} {...rest} class="button variant-{variant} size-{size} accent-{accent}">
@@ -46,7 +46,9 @@ let {
     align-items: center;
     background: var(--background-1);
     block-size: var(--size-6-5);
-    box-shadow: var(--shadow-1), 0 0 0 1px var(--button-shadow-outline-color);
+    box-shadow:
+      var(--shadow-1),
+      0 0 0 1px var(--button-shadow-outline-color);
     border-radius: var(--radius-2-5);
     box-sizing: border-box;
     color: var(--text-1);
@@ -96,7 +98,9 @@ let {
   @media (prefers-color-scheme: dark) {
     .button {
       --button-shadow-outline-color: rgba(225, 225, 239, 0);
-      box-shadow: 0 0 0 1px var(--button-shadow-outline-color), var(--shadow-1);
+      box-shadow:
+        0 0 0 1px var(--button-shadow-outline-color),
+        var(--shadow-1);
     }
   }
 

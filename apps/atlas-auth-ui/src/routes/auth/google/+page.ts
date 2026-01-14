@@ -1,4 +1,4 @@
-import { type LoadEvent, redirect } from "@sveltejs/kit";
+import { redirect, type LoadEvent } from "@sveltejs/kit";
 
 export const prerender = false;
 

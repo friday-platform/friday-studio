@@ -1,6 +1,6 @@
-import { type Actions, fail, redirect } from "@sveltejs/kit";
-import { zfd } from "zod-form-data";
+import { fail, redirect, type Actions } from "@sveltejs/kit";
 import { BOUNCE_URL } from "$lib/env";
+import { zfd } from "zod-form-data";
 
 const signupSchema = zfd.formData({ email: zfd.text() });
 

@@ -3,7 +3,9 @@
   "version": "1.0.0-beta",
   "type": "module",
   "main": "./mod.ts",
-  "exports": { ".": "./mod.ts" },
+  "exports": {
+    ".": "./mod.ts"
+  },
   "scripts": {
     "dev": "vite dev",
     "build": "vite build",
@@ -13,7 +15,6 @@
     "sync": "svelte-kit sync",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
-    "format": "prettier --write .",
     "lint": "prettier --check . && eslint .",
     "tauri": "tauri",
     "tauri:build": "tauri build",

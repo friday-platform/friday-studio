@@ -1,30 +1,30 @@
 <script lang="ts">
-import { hasContext } from "svelte";
-import type { HTMLButtonAttributes } from "svelte/elements";
-import { FIELD_CONTEXT, getFieldContext } from "$lib/components/form/context";
-import { Icons } from "$lib/components/icons";
+  import { FIELD_CONTEXT, getFieldContext } from "$lib/components/form/context";
+  import { Icons } from "$lib/components/icons";
+  import { hasContext } from "svelte";
+  import type { HTMLButtonAttributes } from "svelte/elements";
 
-type Props = {
-  checked: boolean;
-  name?: string;
-  disabled?: boolean;
-  // checked is bound so we don't need to separately pass the value, but we should pass e
-  onUpdate?: (e: MouseEvent & { currentTarget: EventTarget & HTMLButtonElement }) => void;
-};
+  type Props = {
+    checked: boolean;
+    name?: string;
+    disabled?: boolean;
+    // checked is bound so we don't need to separately pass the value, but we should pass e
+    onUpdate?: (e: MouseEvent & { currentTarget: EventTarget & HTMLButtonElement }) => void;
+  };
 
-let {
-  checked = $bindable(),
-  name,
-  disabled = false,
-  onUpdate,
-  ...rest
-}: Props & HTMLButtonAttributes = $props();
+  let {
+    checked = $bindable(),
+    name,
+    disabled = false,
+    onUpdate,
+    ...rest
+  }: Props & HTMLButtonAttributes = $props();
 
-let id = $state<string>();
+  let id = $state<string>();
 
-if (hasContext(FIELD_CONTEXT)) {
-  id = getFieldContext().id;
-}
+  if (hasContext(FIELD_CONTEXT)) {
+    id = getFieldContext().id;
+  }
 </script>
 
 <button

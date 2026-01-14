@@ -1,16 +1,16 @@
 <script lang="ts">
-import { enhance } from "$app/forms";
-import logoMark from "$lib/assets/logo-mark.png";
-import logoMarkDark from "$lib/assets/logo-mark-dark.png";
-import Button from "$lib/components/button.svelte";
-import GoogleLogo from "$lib/components/icons/google-logo.svelte";
+  import { enhance } from "$app/forms";
+  import logoMarkDark from "$lib/assets/logo-mark-dark.png";
+  import logoMark from "$lib/assets/logo-mark.png";
+  import Button from "$lib/components/button.svelte";
+  import GoogleLogo from "$lib/components/icons/google-logo.svelte";
 
-let submitted = $state(false);
-let agree_to_terms = $state(false);
+  let submitted = $state(false);
+  let agree_to_terms = $state(false);
 
-function handleGoogleAuth() {
-  window.location.href = "/auth/google?signup=true";
-}
+  function handleGoogleAuth() {
+    window.location.href = "/auth/google?signup=true";
+  }
 </script>
 
 <svelte:head>

@@ -163,19 +163,12 @@ svg {
 
   /* Shadows */
   --shadow-1:
-    0px 0px 0px 1px rgba(0, 1, 165, 0.06), 0px 2px 3px -1px rgba(26, 83, 204, 0.06), 0px 3px 12px -4px rgba(
-      26,
-      83,
-      204,
-      0.05
-    ), 0px 4px 16px -8px rgba(26, 83, 204, 0.05), 0px 0px 0px 1px rgba(225, 225, 239, 0.5);
+    0px 0px 0px 1px rgba(0, 1, 165, 0.06), 0px 2px 3px -1px rgba(26, 83, 204, 0.06),
+    0px 3px 12px -4px rgba(26, 83, 204, 0.05), 0px 4px 16px -8px rgba(26, 83, 204, 0.05),
+    0px 0px 0px 1px rgba(225, 225, 239, 0.5);
   --shadow-4:
-    0px 0px 0px 1px rgba(0, 1, 165, 0.08), 0px 6px 16px -4px rgba(26, 83, 204, 0.12), 0px 16px 32px -8px rgba(
-      26,
-      83,
-      204,
-      0.1
-    ), 0px 24px 48px -12px rgba(26, 83, 204, 0.08);
+    0px 0px 0px 1px rgba(0, 1, 165, 0.08), 0px 6px 16px -4px rgba(26, 83, 204, 0.12),
+    0px 16px 32px -8px rgba(26, 83, 204, 0.1), 0px 24px 48px -12px rgba(26, 83, 204, 0.08);
 
   @media (color-gamut: p3) {
     --color-surface-1: color(display-p3 0.9961 0.9961 1);
@@ -205,19 +198,12 @@ svg {
 
     /* Shadows */
     --shadow-1:
-      0px 0px 0px 1px rgba(0, 0, 0, 0.12), 0px 2px 3px -1px rgba(0, 0, 0, 0.12), 0px 3px 12px -4px rgba(
-        0,
-        0,
-        0,
-        0.12
-      ), 0px 4px 16px -8px rgba(0, 0, 0, 0.12), 0px 0px 0px 1px rgba(237, 234, 223, 0.2);
+      0px 0px 0px 1px rgba(0, 0, 0, 0.12), 0px 2px 3px -1px rgba(0, 0, 0, 0.12),
+      0px 3px 12px -4px rgba(0, 0, 0, 0.12), 0px 4px 16px -8px rgba(0, 0, 0, 0.12),
+      0px 0px 0px 1px rgba(237, 234, 223, 0.2);
     --shadow-4:
-      0px 0px 0px 1px rgba(0, 0, 0, 0.2), 0px 6px 16px -4px rgba(0, 0, 0, 0.24), 0px 16px 32px -8px rgba(
-        0,
-        0,
-        0,
-        0.2
-      ), 0px 24px 48px -12px rgba(0, 0, 0, 0.16);
+      0px 0px 0px 1px rgba(0, 0, 0, 0.2), 0px 6px 16px -4px rgba(0, 0, 0, 0.24),
+      0px 16px 32px -8px rgba(0, 0, 0, 0.2), 0px 24px 48px -12px rgba(0, 0, 0, 0.16);
   }
 
   @media (prefers-color-scheme: dark) and (color-gamut: p3) {

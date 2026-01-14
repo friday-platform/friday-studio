@@ -1,9 +1,9 @@
 <script lang="ts">
-import { Icons } from "$lib/components/icons";
+  import { Icons } from "$lib/components/icons";
 
-type Props = { onclick: () => void };
+  type Props = { onclick: () => void };
 
-let { onclick }: Props = $props();
+  let { onclick }: Props = $props();
 </script>
 
 <button type="button" class="remove-button" {onclick} aria-label="Remove entry">

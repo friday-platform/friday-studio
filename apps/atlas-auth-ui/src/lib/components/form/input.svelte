@@ -1,22 +1,22 @@
 <script lang="ts">
-import { hasContext } from "svelte";
-import type { HTMLInputAttributes } from "svelte/elements";
-import { FIELD_CONTEXT, getFieldContext } from "./context";
+  import { hasContext } from "svelte";
+  import type { HTMLInputAttributes } from "svelte/elements";
+  import { FIELD_CONTEXT, getFieldContext } from "./context";
 
-type Props = { value?: string | number; variant?: "small" | "regular"; readOnly?: boolean };
+  type Props = { value?: string | number; variant?: "small" | "regular"; readOnly?: boolean };
 
-let {
-  value = $bindable(),
-  variant = "regular",
-  readOnly = false,
-  ...rest
-}: Props & HTMLInputAttributes = $props();
+  let {
+    value = $bindable(),
+    variant = "regular",
+    readOnly = false,
+    ...rest
+  }: Props & HTMLInputAttributes = $props();
 
-let id = $state<string>();
+  let id = $state<string>();
 
-if (hasContext(FIELD_CONTEXT)) {
-  id = getFieldContext().id;
-}
+  if (hasContext(FIELD_CONTEXT)) {
+    id = getFieldContext().id;
+  }
 </script>
 
 {#if readOnly}

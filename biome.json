@@ -14,7 +14,9 @@
       "!**/target",
       "!**/node_modules",
       "!**/vendor",
-      "!packages/vendor"
+      "!packages/vendor",
+      "!apps/web-client",
+      "!apps/atlas-auth-ui"
     ]
   },
   "html": { "parser": { "interpolation": true } },

@@ -2,13 +2,13 @@ import { Chat } from "@ai-sdk/svelte";
 import type { AtlasUIMessage } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
 import { getAtlasDaemonUrl } from "@atlas/oapi-client";
+import { goto } from "$app/navigation";
+import { resolve } from "$app/paths";
+import { getDatetimeContext } from "$lib/utils/date";
 import { DefaultChatTransport } from "ai";
 import { nanoid } from "nanoid";
 import { getContext, setContext } from "svelte";
 import { SvelteMap } from "svelte/reactivity";
-import { goto } from "$app/navigation";
-import { resolve } from "$app/paths";
-import { getDatetimeContext } from "$lib/utils/date";
 
 const KEY = Symbol();
 

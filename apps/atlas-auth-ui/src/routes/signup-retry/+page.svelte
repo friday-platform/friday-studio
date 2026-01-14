@@ -1,13 +1,13 @@
 <script lang="ts">
-import { enhance } from "$app/forms";
-import logoMark from "$lib/assets/logo-mark.png";
-import logoMarkDark from "$lib/assets/logo-mark-dark.png";
-import Button from "$lib/components/button.svelte";
-import Decal from "$lib/components/decal.svelte";
-import { toast } from "$lib/components/notifications/notifications.svelte";
+  import { enhance } from "$app/forms";
+  import logoMarkDark from "$lib/assets/logo-mark-dark.png";
+  import logoMark from "$lib/assets/logo-mark.png";
+  import Button from "$lib/components/button.svelte";
+  import Decal from "$lib/components/decal.svelte";
+  import { toast } from "$lib/components/notifications/notifications.svelte";
 
-let success = $state(false);
-let submitted = $state(false);
+  let success = $state(false);
+  let submitted = $state(false);
 </script>
 
 <svelte:head>

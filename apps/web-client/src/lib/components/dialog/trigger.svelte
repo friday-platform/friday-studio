@@ -1,22 +1,22 @@
 <script lang="ts">
-import type { Snippet } from "svelte";
-import { getContext } from "./context";
+  import type { Snippet } from "svelte";
+  import { getContext } from "./context";
 
-const { trigger } = getContext();
+  const { trigger } = getContext();
 
-type Props = { children: Snippet };
+  type Props = { children: Snippet };
 
-let { children }: Props = $props();
+  let { children }: Props = $props();
 </script>
 
 <button {...$trigger} use:trigger>
-	{@render children()}
+  {@render children()}
 </button>
 
 <style>
-	button {
-		&:focus {
-			outline: none;
-		}
-	}
+  button {
+    &:focus {
+      outline: none;
+    }
+  }
 </style>

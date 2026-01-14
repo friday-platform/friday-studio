@@ -1,17 +1,17 @@
 <script lang="ts">
-import { zfd } from "zod-form-data";
-import logoMark from "$lib/assets/logo-mark.png";
-import logoMarkDark from "$lib/assets/logo-mark-dark.png";
-import Button from "$lib/components/button.svelte";
-import Decal from "$lib/components/decal.svelte";
-import { Form } from "$lib/components/form";
-import { toast } from "$lib/components/notifications/notifications.svelte";
+  import logoMarkDark from "$lib/assets/logo-mark-dark.png";
+  import logoMark from "$lib/assets/logo-mark.png";
+  import Button from "$lib/components/button.svelte";
+  import Decal from "$lib/components/decal.svelte";
+  import { Form } from "$lib/components/form";
+  import { toast } from "$lib/components/notifications/notifications.svelte";
+  import { zfd } from "zod-form-data";
 
-const { data } = $props();
+  const { data } = $props();
 
-let submitted = $state(false);
+  let submitted = $state(false);
 
-const signupSchema = zfd.formData({ user_full_name: zfd.text() });
+  const signupSchema = zfd.formData({ user_full_name: zfd.text() });
 </script>
 
 <main>

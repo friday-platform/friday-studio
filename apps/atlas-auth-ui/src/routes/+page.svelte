@@ -1,51 +1,51 @@
 <script lang="ts">
-import { onMount } from "svelte";
-import logoMark from "$lib/assets/logo-mark.png";
-import logoMarkDark from "$lib/assets/logo-mark-dark.png";
-import Button from "$lib/components/button.svelte";
-import Decal from "$lib/components/decal.svelte";
-import GoogleLogo from "$lib/components/icons/google-logo.svelte";
+  import logoMarkDark from "$lib/assets/logo-mark-dark.png";
+  import logoMark from "$lib/assets/logo-mark.png";
+  import Button from "$lib/components/button.svelte";
+  import Decal from "$lib/components/decal.svelte";
+  import GoogleLogo from "$lib/components/icons/google-logo.svelte";
+  import { onMount } from "svelte";
 
-let emailValue = $state("");
-let visible = $state(false);
-let magiclinkSent = $state(false);
-let isSubmitting = $state(false);
+  let emailValue = $state("");
+  let visible = $state(false);
+  let magiclinkSent = $state(false);
+  let isSubmitting = $state(false);
 
-function handleGoogleAuth() {
-  window.location.href = "/auth/google";
-}
-
-async function handleMagicLink(event: Event) {
-  event.preventDefault();
-  if (isSubmitting || !emailValue) return;
-
-  isSubmitting = true;
-
-  try {
-    const response = await fetch("/magiclink", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: emailValue }),
-    });
-
-    if (response.ok) {
-      magiclinkSent = true;
-    } else {
-      alert("Failed to send magic link. Please try again.");
-    }
-  } catch (error) {
-    console.error(error);
-    alert("An error occurred. Please try again.");
-  } finally {
-    isSubmitting = false;
+  function handleGoogleAuth() {
+    window.location.href = "/auth/google";
   }
-}
 
-onMount(() => {
-  setTimeout(() => {
-    visible = true;
-  }, 750);
-});
+  async function handleMagicLink(event: Event) {
+    event.preventDefault();
+    if (isSubmitting || !emailValue) return;
+
+    isSubmitting = true;
+
+    try {
+      const response = await fetch("/magiclink", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: emailValue }),
+      });
+
+      if (response.ok) {
+        magiclinkSent = true;
+      } else {
+        alert("Failed to send magic link. Please try again.");
+      }
+    } catch (error) {
+      console.error(error);
+      alert("An error occurred. Please try again.");
+    } finally {
+      isSubmitting = false;
+    }
+  }
+
+  onMount(() => {
+    setTimeout(() => {
+      visible = true;
+    }, 750);
+  });
 </script>
 
 <main>

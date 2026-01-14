@@ -1,5 +1,4 @@
-import { type CreateDropdownMenuProps, createDropdownMenu } from "@melt-ui/svelte";
-
+import { createDropdownMenu, type CreateDropdownMenuProps } from "@melt-ui/svelte";
 import { getContext as _getContext, setContext } from "svelte";
 
 const CONTEXT = Symbol();

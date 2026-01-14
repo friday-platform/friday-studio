@@ -1,109 +1,111 @@
 <script lang="ts">
-import type { AtlasUIMessage } from "@atlas/agent-sdk";
-import { formatOutlineDate } from "$lib/utils/date";
-import OutlineItemDescription from "./outline-item-description.svelte";
+  import type { AtlasUIMessage } from "@atlas/agent-sdk";
+  import { formatOutlineDate } from "$lib/utils/date";
+  import OutlineItemDescription from "./outline-item-description.svelte";
 
-let { messages }: { messages: AtlasUIMessage[] } = $props();
+  let { messages }: { messages: AtlasUIMessage[] } = $props();
 </script>
 
 {#if messages.length > 0}
-	<div class="component">
-		{#each messages as message, mi (mi)}
-			{#each message.parts as part, pi (pi)}
-				{#if part.type === 'data-outline-update'}
-					<article>
-						<header>
-							<h2>
-								{#if part.data.icon}
-									<img src={part.data.icon} alt={part.data.title} />
-								{/if}
+  <div class="component">
+    {#each messages as message, mi (mi)}
+      {#each message.parts as part, pi (pi)}
+        {#if part.type === "data-outline-update"}
+          <article>
+            <header>
+              <h2>
+                {#if part.data.icon}
+                  <img src={part.data.icon} alt={part.data.title} />
+                {/if}
 
-								{part.data.title}
-							</h2>
+                {part.data.title}
+              </h2>
 
-							<time>{formatOutlineDate(part.data.timestamp)}</time>
-						</header>
+              <time>{formatOutlineDate(part.data.timestamp)}</time>
+            </header>
 
-						{#if part.data.content}
-							<OutlineItemDescription content={part.data.content} />
-						{/if}
+            {#if part.data.content}
+              <OutlineItemDescription content={part.data.content} />
+            {/if}
 
-						{#if part.data.artifactId}
-							<a
-								href={`#artifact-${part.data.artifactId}`}
-								onclick={(e) => {
-									const match = document.getElementById(`artifact-${part.data.artifactId}`);
-									if (match) {
-										e.preventDefault();
+            {#if part.data.artifactId}
+              <a
+                href={`#artifact-${part.data.artifactId}`}
+                onclick={(e) => {
+                  const match = document.getElementById(`artifact-${part.data.artifactId}`);
+                  if (match) {
+                    e.preventDefault();
 
-										match.scrollIntoView({ behavior: 'smooth' });
-									}
-								}}>{part.data.artifactLabel ?? 'View'}</a
-							>
-						{/if}
-					</article>
-				{/if}
-			{/each}
-		{/each}
-	</div>
+                    match.scrollIntoView({ behavior: "smooth" });
+                  }
+                }}
+              >
+                {part.data.artifactLabel ?? "View"}
+              </a>
+            {/if}
+          </article>
+        {/if}
+      {/each}
+    {/each}
+  </div>
 {/if}
 
 <style>
-	.component {
-		block-size: max-content;
-		max-block-size: calc(100dvh - var(--size-16));
-		display: flex;
-		flex-direction: column;
-		justify-content: flex-end;
-		gap: var(--size-6);
-		inline-size: var(--size-56);
-		overflow: auto;
-		inset-block-start: var(--size-10);
-		inset-inline-end: 0;
-		scrollbar-width: none;
-		padding-inline-end: var(--size-10);
-		padding-block-end: var(--size-20);
-		position: fixed;
-	}
+  .component {
+    block-size: max-content;
+    max-block-size: calc(100dvh - var(--size-16));
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    gap: var(--size-6);
+    inline-size: var(--size-56);
+    overflow: auto;
+    inset-block-start: var(--size-10);
+    inset-inline-end: 0;
+    scrollbar-width: none;
+    padding-inline-end: var(--size-10);
+    padding-block-end: var(--size-20);
+    position: fixed;
+  }
 
-	article {
-		display: flex;
-		flex-direction: column;
-		gap: var(--size-1-5);
+  article {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-1-5);
 
-		h2 {
-			color: color-mix(in srgb, var(--color-text) 90%, transparent);
-			display: flex;
-			align-items: center;
-			gap: var(--size-1);
-			font-size: var(--font-size-3);
-			font-weight: var(--font-weight-5);
-			line-height: var(--font-lineheight-0);
+    h2 {
+      color: color-mix(in srgb, var(--color-text) 90%, transparent);
+      display: flex;
+      align-items: center;
+      gap: var(--size-1);
+      font-size: var(--font-size-3);
+      font-weight: var(--font-weight-5);
+      line-height: var(--font-lineheight-0);
 
-			img {
-				block-size: var(--size-4);
-				inline-size: var(--size-4);
-				object-fit: contain;
-			}
-		}
+      img {
+        block-size: var(--size-4);
+        inline-size: var(--size-4);
+        object-fit: contain;
+      }
+    }
 
-		time {
-			font-size: var(--font-size-1);
-			opacity: 0.7;
-		}
+    time {
+      font-size: var(--font-size-1);
+      opacity: 0.7;
+    }
 
-		a {
-			font-size: var(--font-size-1);
-			opacity: 0.7;
-			text-decoration-style: dotted;
-			text-decoration-line: underline;
-			font-weight: var(--font-weight-5);
-			text-underline-offset: var(--size-0-5);
-			transition: opacity 0.2s ease-in-out;
+    a {
+      font-size: var(--font-size-1);
+      opacity: 0.7;
+      text-decoration-style: dotted;
+      text-decoration-line: underline;
+      font-weight: var(--font-weight-5);
+      text-underline-offset: var(--size-0-5);
+      transition: opacity 0.2s ease-in-out;
 
-			&:hover {
-				opacity: 1;
-			}
-		}
-	}
+      &:hover {
+        opacity: 1;
+      }
+    }
+  }
 </style>

@@ -5,9 +5,9 @@ import {
   MAX_FILE_SIZE,
 } from "@atlas/core/artifacts/file-upload";
 import { getAtlasDaemonUrl } from "@atlas/oapi-client";
+import { resolve } from "$app/paths";
 import { getContext, setContext } from "svelte";
 import { SvelteMap } from "svelte/reactivity";
-import { resolve } from "$app/paths";
 
 const KEY = Symbol();
 
