@@ -17,7 +17,6 @@ export type SkillId = (typeof skills)[number]["id"];
  * Format skills as XML section for system prompt injection.
  */
 export function formatSkillsSection(): string {
-  // biome-ignore lint/complexity/useSimplifiedLogicExpression: future-proofing for empty skills array
   if (!skills.length) return "";
   return `<available_skills>
 <instruction>Load skills with load_skill when task matches.</instruction>

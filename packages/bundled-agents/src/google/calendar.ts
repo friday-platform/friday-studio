@@ -71,7 +71,7 @@ async function generateCalendarSummary(
     return compressed.trim().substring(0, SUMMARY_MAX_CHARS);
   } catch {
     // Fallback: truncate tier 1 summary
-    return scheduleString.substring(0, SUMMARY_MAX_CHARS - 3) + "...";
+    return `${scheduleString.substring(0, SUMMARY_MAX_CHARS - 3)}...`;
   }
 }
 

@@ -125,6 +125,7 @@ describe("resolveCredentialsByProvider", () => {
 
     const credentials = await resolveCredentialsByProvider("slack");
     assertEquals(credentials.length, 1);
+    // biome-ignore lint/style/noNonNullAssertion: length assertion above guarantees [0] exists
     assertEquals(credentials[0]!.id, "cred_abc");
   });
 
@@ -146,7 +147,9 @@ describe("resolveCredentialsByProvider", () => {
 
     const credentials = await resolveCredentialsByProvider("slack");
     assertEquals(credentials.length, 2);
+    // biome-ignore lint/style/noNonNullAssertion: length assertion above guarantees indices exist
     assertEquals(credentials[0]!.id, "cred_abc");
+    // biome-ignore lint/style/noNonNullAssertion: length assertion above guarantees indices exist
     assertEquals(credentials[1]!.id, "cred_xyz");
   });
 });
@@ -183,7 +186,9 @@ describe("Google credential resolution", () => {
 
       const credentials = await resolveCredentialsByProvider(provider);
       assertEquals(credentials.length, 1);
+      // biome-ignore lint/style/noNonNullAssertion: length assertion above guarantees [0] exists
       assertEquals(credentials[0]!.provider, provider);
+      // biome-ignore lint/style/noNonNullAssertion: length assertion above guarantees [0] exists
       assertEquals(credentials[0]!.type, "oauth");
     });
   }

@@ -21,7 +21,7 @@ export class CortexTestServer {
   constructor(port = 8181) {
     this.port = port;
     this.url = `http://localhost:${port}`;
-    this.userId = "test-user-" + crypto.randomUUID();
+    this.userId = `test-user-${crypto.randomUUID()}`;
   }
 
   async start(): Promise<void> {
@@ -46,7 +46,7 @@ export class CortexTestServer {
         // This automatically disables auth and uses the mock server
         STORAGE_EMULATOR_HOST: "localhost:4443",
         GCS_BUCKET: "test-bucket", // Mock bucket name
-        JWT_PUBLIC_KEY_FILE: this.jwtPublicKeyPath!,
+        JWT_PUBLIC_KEY_FILE: this.jwtPublicKeyPath ?? "",
         LOG_LEVEL: "error", // Reduce noise in tests
       },
       stdout: "inherit",
@@ -135,7 +135,7 @@ export class CortexTestServer {
       }
 
       const pid = parseInt(pidStr, 10);
-      if (isNaN(pid)) {
+      if (Number.isNaN(pid)) {
         logger.warn("Invalid PID from lsof", { pidStr });
         return;
       }

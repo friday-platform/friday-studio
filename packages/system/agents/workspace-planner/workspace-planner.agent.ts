@@ -432,6 +432,7 @@ ${integrationsXml}`,
                 targetType: "agent",
                 agentId: agent.id,
                 field: field.envKey,
+                // biome-ignore lint/style/noNonNullAssertion: length check above guarantees [0] exists
                 credentialId: creds[0]!.id,
                 provider: field.provider,
                 key: field.key,

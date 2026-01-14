@@ -124,7 +124,7 @@ describe("credential-resolver integration tests", () => {
 
   it("resolves single credential by provider", async () => {
     if (!linkAvailable) {
-      throw new Error("SKIP: Link service not available at " + LINK_BASE_URL);
+      throw new Error(`SKIP: Link service not available at ${LINK_BASE_URL}`);
     }
 
     // Create test credential
@@ -137,6 +137,7 @@ describe("credential-resolver integration tests", () => {
 
       assertEquals(credentials.length, 1, "Should return exactly one credential");
       assertEquals(
+        // biome-ignore lint/style/noNonNullAssertion: length assertion above guarantees [0] exists
         credentials[0]!.id,
         credId,
         "Resolved credential ID should match created credential",
@@ -150,7 +151,7 @@ describe("credential-resolver integration tests", () => {
 
   it("throws CredentialNotFoundError when no credentials exist", async () => {
     if (!linkAvailable) {
-      throw new Error("SKIP: Link service not available at " + LINK_BASE_URL);
+      throw new Error(`SKIP: Link service not available at ${LINK_BASE_URL}`);
     }
 
     const nonExistentProvider = `test-nonexistent-${crypto.randomUUID()}`;
@@ -164,7 +165,7 @@ describe("credential-resolver integration tests", () => {
 
   it("returns all credentials when multiple exist", async () => {
     if (!linkAvailable) {
-      throw new Error("SKIP: Link service not available at " + LINK_BASE_URL);
+      throw new Error(`SKIP: Link service not available at ${LINK_BASE_URL}`);
     }
 
     // Use registered "test" provider - Link requires known providers
@@ -215,7 +216,7 @@ describe("Google OAuth credential resolution (requires completed OAuth flow)", (
   for (const provider of GOOGLE_PROVIDERS) {
     it(`resolves ${provider} credentials when OAuth is configured`, async () => {
       if (!linkAvailable) {
-        throw new Error("SKIP: Link service not available at " + LINK_BASE_URL);
+        throw new Error(`SKIP: Link service not available at ${LINK_BASE_URL}`);
       }
 
       const hasCredential = await hasGoogleCredential(provider);
@@ -231,14 +232,16 @@ describe("Google OAuth credential resolution (requires completed OAuth flow)", (
         true,
         `Should have at least one ${provider} credential`,
       );
+      // biome-ignore lint/style/noNonNullAssertion: length assertion above guarantees [0] exists
       assertEquals(credentials[0]!.provider, provider);
+      // biome-ignore lint/style/noNonNullAssertion: length assertion above guarantees [0] exists
       assertEquals(credentials[0]!.type, "oauth");
     });
   }
 
   it("resolves google-calendar access_token format (ya29.*)", async () => {
     if (!linkAvailable) {
-      throw new Error("SKIP: Link service not available at " + LINK_BASE_URL);
+      throw new Error(`SKIP: Link service not available at ${LINK_BASE_URL}`);
     }
 
     const hasCredential = await hasGoogleCredential("google-calendar");
@@ -251,6 +254,7 @@ describe("Google OAuth credential resolution (requires completed OAuth flow)", (
     const credentials = await resolveCredentialsByProvider("google-calendar");
 
     // Get full credential to check token format
+    // biome-ignore lint/style/noNonNullAssertion: resolveCredentialsByProvider throws if empty
     const credId = credentials[0]!.id;
     const response = await fetch(`${LINK_BASE_URL}/internal/v1/credentials/${credId}`, {
       headers: { "X-Atlas-User-ID": TEST_USER_ID },
@@ -258,7 +262,7 @@ describe("Google OAuth credential resolution (requires completed OAuth flow)", (
 
     if (!response.ok) {
       throw new Error(
-        "SKIP: Could not fetch full credential - internal API returned " + response.status,
+        `SKIP: Could not fetch full credential - internal API returned ${response.status}`,
       );
     }
 

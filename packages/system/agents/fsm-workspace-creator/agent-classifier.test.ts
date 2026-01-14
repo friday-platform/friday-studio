@@ -17,9 +17,11 @@ describe("classifyAgents", () => {
     const classified = classifyAgents(plan);
 
     assertEquals(classified.length, 1);
-    assertEquals(classified[0]!.type.kind, "bundled");
-    if (classified[0]!.type.kind === "bundled") {
-      assertEquals(classified[0]!.type.bundledId, "email");
+    // biome-ignore lint/style/noNonNullAssertion: length assertion above guarantees [0] exists
+    const first = classified[0]!;
+    assertEquals(first.type.kind, "bundled");
+    if (first.type.kind === "bundled") {
+      assertEquals(first.type.bundledId, "email");
     }
   });
 
@@ -42,9 +44,11 @@ describe("classifyAgents", () => {
     const classified = classifyAgents(plan);
 
     assertEquals(classified.length, 1);
-    assertEquals(classified[0]!.type.kind, "bundled", "html-email should match email agent");
-    if (classified[0]!.type.kind === "bundled") {
-      assertEquals(classified[0]!.type.bundledId, "email");
+    // biome-ignore lint/style/noNonNullAssertion: length assertion above guarantees [0] exists
+    const first = classified[0]!;
+    assertEquals(first.type.kind, "bundled", "html-email should match email agent");
+    if (first.type.kind === "bundled") {
+      assertEquals(first.type.bundledId, "email");
     }
   });
 
@@ -66,7 +70,9 @@ describe("classifyAgents", () => {
     const classified = classifyAgents(plan);
 
     assertEquals(classified.length, 1);
-    assertEquals(classified[0]!.type.kind, "bundled", "email-formatting should match email agent");
+    // biome-ignore lint/style/noNonNullAssertion: length assertion above guarantees [0] exists
+    const first = classified[0]!;
+    assertEquals(first.type.kind, "bundled", "email-formatting should match email agent");
   });
 
   it("classifies agent with no matching capability as llm", () => {
@@ -87,6 +93,8 @@ describe("classifyAgents", () => {
     const classified = classifyAgents(plan);
 
     assertEquals(classified.length, 1);
-    assertEquals(classified[0]!.type.kind, "llm");
+    // biome-ignore lint/style/noNonNullAssertion: length assertion above guarantees [0] exists
+    const first = classified[0]!;
+    assertEquals(first.type.kind, "llm");
   });
 });

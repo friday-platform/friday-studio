@@ -254,7 +254,9 @@ Deno.test("Batch-get endpoint", async (t) => {
     const batchBody = BatchGetResponseSchema.parse(await batchResponse.json());
 
     assertEquals(batchBody.artifacts.length, 1);
+    // biome-ignore lint/style/noNonNullAssertion: length assertion above guarantees [0] exists
     assertEquals(batchBody.artifacts[0]!.id, artifact.id);
+    // biome-ignore lint/style/noNonNullAssertion: length assertion above guarantees [0] exists
     assertEquals(batchBody.artifacts[0]!.contents, csvContent);
   });
 
@@ -283,7 +285,9 @@ Deno.test("Batch-get endpoint", async (t) => {
     const batchBody = BatchGetResponseSchema.parse(await batchResponse.json());
 
     assertEquals(batchBody.artifacts.length, 1);
+    // biome-ignore lint/style/noNonNullAssertion: length assertion above guarantees [0] exists
     assertEquals(batchBody.artifacts[0]!.id, artifact.id);
+    // biome-ignore lint/style/noNonNullAssertion: length assertion above guarantees [0] exists
     assertEquals(batchBody.artifacts[0]!.contents, undefined);
   });
 

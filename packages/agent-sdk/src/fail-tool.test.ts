@@ -11,6 +11,7 @@ Deno.test("createFailTool - calls onFail with reason when executed", async () =>
   });
 
   // AI SDK types execute as optional, but createFailTool always provides it
+  // biome-ignore lint/style/noNonNullAssertion: createFailTool always provides execute
   const result = await tool.execute!(
     { reason: "Missing credentials" },
     { toolCallId: "test-call-id", messages: [] },

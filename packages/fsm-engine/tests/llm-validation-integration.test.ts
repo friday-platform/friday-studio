@@ -68,7 +68,10 @@ async function createIntegrationEngine(opts: { llmResponses: LLMResponse[] }) {
       const response =
         opts.llmResponses[callCount] ?? opts.llmResponses[opts.llmResponses.length - 1];
       callCount++;
-      return Promise.resolve(response!);
+      if (!response) {
+        throw new Error("No LLM response available for mock");
+      }
+      return Promise.resolve(response);
     },
   };
 

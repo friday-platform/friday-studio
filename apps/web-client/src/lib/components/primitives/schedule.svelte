@@ -121,6 +121,7 @@ const eventsByDay = $derived.by(() => {
     if (!grouped.has(key)) {
       grouped.set(key, { date: event.date, events: [] });
     }
+    // biome-ignore lint/style/noNonNullAssertion: key guaranteed to exist - set on line above if missing
     grouped.get(key)!.events.push(event);
   }
   return Array.from(grouped.values());

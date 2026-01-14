@@ -41,9 +41,8 @@ function createMockSql(options?: {
 
   // Add begin method for transaction support (used by withUserContext)
   // @ts-expect-error - Mock doesn't need to match full postgres.js begin signature
-  // biome-ignore lint/suspicious/noExplicitAny: TransactionSql type is complex and not exported, using any for test mocks
-  // deno-lint-ignore no-explicit-any require-await
-  mockSql.begin = async <T>(callback: (tx: any) => Promise<T>): Promise<T> => {
+  // deno-lint-ignore require-await
+  mockSql.begin = async <T>(callback: (tx: Sql) => Promise<T>): Promise<T> => {
     return callback(handler as Sql);
   };
 

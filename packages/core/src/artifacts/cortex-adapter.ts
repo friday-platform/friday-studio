@@ -337,6 +337,7 @@ export class CortexStorageAdapter implements ArtifactStorageAdapter {
         return fail(`Artifact ${input.id} not found`);
       }
 
+      // biome-ignore lint/style/noNonNullAssertion: length check above guarantees [0] exists
       const currentObject = currentObjects[0]!;
       const currentRevision = currentObject.metadata.revision;
 
@@ -498,7 +499,7 @@ export class CortexStorageAdapter implements ArtifactStorageAdapter {
         params["metadata.is_latest"] = "true";
       }
 
-      const queryUrl = `/objects?` + new URLSearchParams(params);
+      const queryUrl = `/objects?${new URLSearchParams(params)}`;
       let objects = await this.request<CortexObject[]>("GET", queryUrl, undefined, {
         parseJson: true,
       });
@@ -511,7 +512,7 @@ export class CortexStorageAdapter implements ArtifactStorageAdapter {
           artifactId: input.id,
         });
 
-        const fallbackUrl = `/objects?` + new URLSearchParams({ "metadata.artifact_id": input.id });
+        const fallbackUrl = `/objects?${new URLSearchParams({ "metadata.artifact_id": input.id })}`;
         objects = await this.request<CortexObject[]>("GET", fallbackUrl, undefined, {
           parseJson: true,
         });
@@ -527,7 +528,7 @@ export class CortexStorageAdapter implements ArtifactStorageAdapter {
 
         logger.debug("Fallback query found artifact during race window", {
           artifactId: input.id,
-          revision: objects[0]!.metadata.revision,
+          revision: objects[0]?.metadata.revision,
         });
       }
 
@@ -536,6 +537,7 @@ export class CortexStorageAdapter implements ArtifactStorageAdapter {
       }
 
       // Take the first object (highest revision during race window, or the is_latest=true object normally)
+      // biome-ignore lint/style/noNonNullAssertion: length check above guarantees [0] exists
       const cortexObject = objects[0]!;
 
       // Download blob and parse artifact data
@@ -691,7 +693,7 @@ export class CortexStorageAdapter implements ArtifactStorageAdapter {
         params.set("limit", String(limit));
       }
 
-      const queryUrl = `/objects?` + params.toString();
+      const queryUrl = `/objects?${params.toString()}`;
       const objects = await this.request<CortexObject[]>("GET", queryUrl, undefined, {
         parseJson: true,
       });
@@ -778,7 +780,7 @@ export class CortexStorageAdapter implements ArtifactStorageAdapter {
   async deleteArtifact(input: { id: string }): Promise<Result<void, string>> {
     try {
       // Get all revisions for this artifact
-      const queryUrl = `/objects?` + new URLSearchParams({ "metadata.artifact_id": input.id });
+      const queryUrl = `/objects?${new URLSearchParams({ "metadata.artifact_id": input.id })}`;
 
       const objects = await this.request<CortexObject[]>("GET", queryUrl, undefined, {
         parseJson: true,

@@ -105,7 +105,7 @@ function formatTitle(title: string, status: "completed" | "failed" | "skipped"):
 
   let truncated = title;
   if (truncated.length > maxContentLength) {
-    truncated = truncated.slice(0, maxContentLength - 3) + "...";
+    truncated = `${truncated.slice(0, maxContentLength - 3)}...`;
   }
 
   return prefix + truncated;

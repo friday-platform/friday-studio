@@ -84,6 +84,7 @@ export async function validateRequiredFields(
           resolvedCredentials.push({
             field: linkField.envKey,
             provider: linkField.provider,
+            // biome-ignore lint/style/noNonNullAssertion: resolveCredentialsByProvider throws if empty
             credentialId: credentials[0]!.id,
             key: linkField.key,
           });
@@ -142,6 +143,7 @@ export async function validateRequiredFields(
           resolvedCredentials.push({
             field: field.key,
             provider: envDef.provider,
+            // biome-ignore lint/style/noNonNullAssertion: resolveCredentialsByProvider throws if empty
             credentialId: credentials[0]!.id,
             key: envDef.key,
           });

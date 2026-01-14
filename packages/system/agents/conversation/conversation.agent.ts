@@ -536,10 +536,12 @@ export const conversationAgent = createAgent({
             datetimeMessage,
             ...(scratchpadContext ? [scratchpadContext] : []),
           ];
-          ChatStorage.setSystemPromptContext(session.streamId!, { systemMessages }).catch(
-            (err: unknown) =>
-              logger.warn("Failed to capture system prompt context", { error: err }),
-          );
+          if (session.streamId) {
+            ChatStorage.setSystemPromptContext(session.streamId, { systemMessages }).catch(
+              (err: unknown) =>
+                logger.warn("Failed to capture system prompt context", { error: err }),
+            );
+          }
         }
         const systemTokens =
           estimateTokens(systemPrompt) + // Already includes workspacesSection + agentsSection + integrationsSection

@@ -40,7 +40,7 @@ async function validateUpload(file: File): Promise<ValidationResult> {
   }
 
   // No magic bytes = not a known binary format, trust extension
-  const ext = "." + file.name.toLowerCase().split(".").pop();
+  const ext = `.${file.name.toLowerCase().split(".").pop()}`;
   const mimeType = EXTENSION_TO_MIME.get(ext);
   if (!mimeType) {
     return { valid: false, error: "File type not allowed. Supported: CSV, JSON, TXT, MD, YML" };

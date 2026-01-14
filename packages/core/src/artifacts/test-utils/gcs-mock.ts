@@ -31,7 +31,7 @@ export class MockGCSServer {
       const body = await c.req.arrayBuffer();
       const contentType = c.req.header("Content-Type") || "";
 
-      let fileContent: Uint8Array;
+      let fileContent: Uint8Array | undefined;
 
       // Parse multipart/related format used by Go SDK
       // Format: Part 1 = JSON metadata, Part 2 = actual file content
@@ -68,7 +68,7 @@ export class MockGCSServer {
       }
 
       // If multipart parsing failed or no multipart, use raw body
-      if (!fileContent!) {
+      if (!fileContent) {
         fileContent = new Uint8Array(body);
       }
 
