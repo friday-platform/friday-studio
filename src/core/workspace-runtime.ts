@@ -1289,10 +1289,22 @@ export class WorkspaceRuntime {
     const { status, userId } = sessionResult;
     if (status === "active") return;
 
+    logger.debug("handleSessionCompletion", {
+      sessionId: sessionResult.id,
+      status,
+      userId: userId ?? "NOT_SET",
+      willEmitAnalytics: Boolean(userId && (status === "completed" || status === "failed")),
+    });
+
     // Emit analytics event for session completion (skip "skipped" status - it's a user config issue)
     if (userId && (status === "completed" || status === "failed")) {
       const eventName =
         status === "completed" ? EventNames.SESSION_COMPLETED : EventNames.SESSION_FAILED;
+      logger.debug("Emitting session analytics", {
+        eventName,
+        userId,
+        sessionId: sessionResult.id,
+      });
       analytics.emit({
         eventName,
         userId,
