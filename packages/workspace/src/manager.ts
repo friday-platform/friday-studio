@@ -199,7 +199,7 @@ export class WorkspaceManager {
    */
   async registerWorkspace(
     workspacePath: string,
-    metadata?: { name?: string; description?: string; tags?: string[] },
+    options?: { name?: string; description?: string; tags?: string[]; createdBy?: string },
   ): Promise<{ workspace: WorkspaceEntry; created: boolean }> {
     const absolutePath = await Deno.realPath(workspacePath);
 
@@ -241,16 +241,17 @@ export class WorkspaceManager {
 
     const entry: WorkspaceEntry = {
       id,
-      name: metadata?.name || config.workspace.workspace.name || basename(absolutePath),
+      name: options?.name || config.workspace.workspace.name || basename(absolutePath),
       path: absolutePath,
       configPath,
       status: "inactive",
       createdAt: new Date().toISOString(),
       lastSeen: new Date().toISOString(),
       metadata: {
-        description: metadata?.description || config.workspace.workspace.description,
-        tags: metadata?.tags,
+        description: options?.description || config.workspace.workspace.description,
+        tags: options?.tags,
         atlasVersion: Deno.version.deno,
+        createdBy: options?.createdBy,
         ephemeral: isEphemeral,
         expiresAt: isEphemeral
           ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()

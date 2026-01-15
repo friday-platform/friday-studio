@@ -27,8 +27,8 @@ type Config struct {
 	AuthUIURL                 string `env:"AUTH_UI_URL" envDefault:"http://localhost:8080"`
 	BounceServiceURL          string `env:"BOUNCE_SERVICE_URL" envDefault:"http://localhost:8083"`
 	CookieDomain              string `env:"COOKIE_DOMAIN" envDefault:"localhost"`
-	CookieName                string `env:"COOKIE_NAME" envDefault:"atlas_token"`
-	EmailDomain               string `env:"EMAIL_DOMAIN" envDefault:"atlas.tempestdx.dev"`
+	CookieName                string `env:"COOKIE_NAME" envDefault:"friday_token"`
+	EmailDomain               string `env:"EMAIL_DOMAIN" envDefault:"hellofriday.dev"`
 	JWTPrivateKey             string `env:"JWT_PRIVATE_KEY_FILE,file,required"`
 	JWTPublicKey              string `env:"JWT_PUBLIC_KEY_FILE,file,required"`
 	LogLevel                  string `env:"LOG_LEVEL" envDefault:"debug"`

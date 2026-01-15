@@ -17,7 +17,6 @@ export type SkillId = (typeof skills)[number]["id"];
  * Format skills as XML section for system prompt injection.
  */
 export function formatSkillsSection(): string {
-  if (!skills.length) return "";
   return `<available_skills>
 <instruction>Load skills with load_skill when task matches.</instruction>
 ${skills.map((s) => `<skill id="${s.id}">${s.description}</skill>`).join("\n")}

@@ -10,6 +10,7 @@ import (
 
 	"github.com/caarlos0/env/v11"
 	"github.com/joho/godotenv"
+	"github.com/tempestteam/atlas/apps/bounce/analytics"
 	"github.com/tempestteam/atlas/apps/bounce/service"
 	"github.com/tempestteam/atlas/pkg/metrics"
 	"github.com/tempestteam/atlas/pkg/profiler"
@@ -114,6 +115,11 @@ func main() {
 				os.Exit(1)
 			}
 			svc.Logger.Info("Graceful shutdown completed successfully")
+		}
+
+		// Flush analytics events before shutdown
+		if err := analytics.Shutdown(shutdownCtx); err != nil {
+			svc.Logger.Error("Error shutting down analytics", "error", err)
 		}
 
 		// Close service resources

@@ -1,0 +1,14 @@
+{
+  "name": "@atlas/analytics",
+  "version": "1.0.0",
+  "type": "module",
+  "exports": { ".": "./mod.ts" },
+  "main": "./mod.ts",
+  "dependencies": {
+    "@opentelemetry/api-logs": "^0.57.0",
+    "@opentelemetry/sdk-logs": "^0.57.0",
+    "@opentelemetry/exporter-logs-otlp-http": "^0.57.0",
+    "@std/assert": "npm:@jsr/std__assert@^1.0.13",
+    "@std/testing": "npm:@jsr/std__testing@^1.0.16"
+  }
+}

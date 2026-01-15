@@ -8,6 +8,7 @@
 import { EventEmitter } from "node:events";
 import { stat } from "node:fs/promises";
 import type { AgentResult, AtlasUIMessageChunk } from "@atlas/agent-sdk";
+import { createAnalyticsClient, EventNames } from "@atlas/analytics";
 import type { MergedConfig } from "@atlas/config";
 import {
   AgentOrchestrator,
@@ -75,6 +76,7 @@ interface WorkspaceRuntimeSignal {
 /** Minimal workspace info needed by WorkspaceRuntimeInit (internal use only) */
 interface WorkspaceRuntimeInit {
   id: string;
+  members?: { userId?: string };
 }
 
 /**
@@ -214,9 +216,13 @@ interface SessionResult {
   completedAt?: Date;
   artifacts: IWorkspaceArtifact[];
   error?: Error;
+  /** User ID from signal data, used for analytics */
+  userId?: string;
   /** Captured FSM events (state transitions and action executions) for batch persistence */
   collectedFsmEvents?: FSMEvent[];
 }
+
+const analytics = createAnalyticsClient();
 
 /**
  * WorkspaceRuntime coordinates multiple FSM executions (jobs) within a workspace.
@@ -231,6 +237,7 @@ export class WorkspaceRuntime {
   private config: MergedConfig;
   private options: WorkspaceRuntimeOptions;
   private initialized = false;
+  private createdByUserId?: string;
 
   // Shared resources
   private orchestrator: AgentOrchestrator;
@@ -243,6 +250,22 @@ export class WorkspaceRuntime {
   private sessionResults = new Map<string, SessionResult>();
   private sessionCompletionEmitter = new EventEmitter();
 
+  // Track emitted jobs to prevent duplicate analytics events on hot-reload
+  private emittedJobs = new Set<string>();
+
+  /** Emit job.defined analytics event (once per job, prevents duplicates on hot-reload) */
+  private emitJobDefined(jobName: string): void {
+    if (this.createdByUserId && !this.emittedJobs.has(jobName)) {
+      this.emittedJobs.add(jobName);
+      analytics.emit({
+        eventName: EventNames.JOB_DEFINED,
+        userId: this.createdByUserId,
+        workspaceId: this.workspace.id,
+        jobName,
+      });
+    }
+  }
+
   constructor(
     workspace: WorkspaceRuntimeInit,
     config: MergedConfig,
@@ -251,6 +274,7 @@ export class WorkspaceRuntime {
     this.workspace = workspace;
     this.config = config;
     this.options = options;
+    this.createdByUserId = workspace.members?.userId;
 
     // Create shared AgentOrchestrator (can handle concurrent executions)
     const agentsServerUrl = options.daemonUrl || "http://localhost:8080";
@@ -307,6 +331,8 @@ export class WorkspaceRuntime {
         description: jobSpec.description,
       });
 
+      this.emitJobDefined(jobName);
+
       logger.debug("Registered inline FSM job from config", {
         jobName,
         signals,
@@ -337,6 +363,8 @@ export class WorkspaceRuntime {
       const signals = Object.keys(this.config.workspace.signals || {});
 
       this.jobs.set(jobName, { name: jobName, fsmPath: fsmFile, signals });
+
+      this.emitJobDefined(jobName);
 
       logger.debug("Registered standalone FSM job", { jobName, fsmPath: fsmFile, signals });
     }
@@ -580,6 +608,8 @@ export class WorkspaceRuntime {
     }
 
     const sessionId = crypto.randomUUID();
+    // Extract userId from signal data for analytics
+    const userId = typeof signal.data?.userId === "string" ? signal.data.userId : undefined;
     const collectedFsmEvents: FSMEvent[] = [];
     const session: SessionResult = {
       id: sessionId,
@@ -587,6 +617,7 @@ export class WorkspaceRuntime {
       status: "active",
       startedAt: new Date(),
       artifacts: [],
+      userId,
       collectedFsmEvents,
     };
 
@@ -1252,11 +1283,23 @@ export class WorkspaceRuntime {
   }
 
   /**
-   * Handle session completion: call callback and cleanup tracking maps
+   * Handle session completion: call callback, emit analytics, and cleanup tracking maps
    */
   private async handleSessionCompletion(sessionResult: SessionResult): Promise<void> {
-    const { status } = sessionResult;
+    const { status, userId } = sessionResult;
     if (status === "active") return;
+
+    // Emit analytics event for session completion (skip "skipped" status - it's a user config issue)
+    if (userId && (status === "completed" || status === "failed")) {
+      const eventName =
+        status === "completed" ? EventNames.SESSION_COMPLETED : EventNames.SESSION_FAILED;
+      analytics.emit({
+        eventName,
+        userId,
+        workspaceId: sessionResult.workspaceId,
+        sessionId: sessionResult.id,
+      });
+    }
 
     if (this.options.onSessionFinished) {
       await this.options.onSessionFinished({

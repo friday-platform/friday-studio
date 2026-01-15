@@ -1,4 +1,5 @@
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { createAnalyticsClient, EventNames } from "@atlas/analytics";
 import { WorkspaceConfigSchema } from "@atlas/config";
 import { logger } from "@atlas/logger";
 import { FilesystemWorkspaceCreationAdapter } from "@atlas/storage";
@@ -9,7 +10,10 @@ import { join } from "@std/path";
 import { stringify } from "@std/yaml";
 import { z } from "zod";
 import { daemonFactory } from "../../src/factory.ts";
+import { getCurrentUser } from "../me/adapter.ts";
 import { createWorkspaceFromConfigSchema } from "./schemas.ts";
+
+const analytics = createAnalyticsClient();
 
 // Export shared schemas and types
 export * from "./schemas.ts";
@@ -70,13 +74,27 @@ const workspacesRoutes = daemonFactory
 
         await workspaceAdapter.writeWorkspaceFiles(workspacePath, yamlConfig, { ephemeral });
 
+        // Get current user for analytics and metadata
+        const userResult = await getCurrentUser();
+        const userId = userResult.ok ? userResult.data?.id : undefined;
+
         // Register workspace with manager
         const ctx = c.get("app");
         const manager = ctx.daemon.getWorkspaceManager();
         const { workspace, created } = await manager.registerWorkspace(workspacePath, {
           name: finalWorkspaceName,
           description: validatedConfig.workspace.description,
+          createdBy: userId,
         });
+
+        // Emit workspace.created analytics event for new workspaces
+        if (created && userId) {
+          analytics.emit({
+            eventName: EventNames.WORKSPACE_CREATED,
+            userId,
+            workspaceId: workspace.id,
+          });
+        }
 
         return c.json({
           success: true,
@@ -111,12 +129,22 @@ const workspacesRoutes = daemonFactory
         return c.json({ error: "Path is required" }, 400);
       }
 
+      // Get current user for analytics and metadata
+      const userResult = await getCurrentUser();
+      const userId = userResult.ok ? userResult.data?.id : undefined;
+
       const manager = ctx.daemon.getWorkspaceManager();
 
       const { workspace: entry, created } = await manager.registerWorkspace(path, {
         name,
         description,
+        createdBy: userId,
       });
+
+      // Emit workspace.created analytics event for new workspaces
+      if (created && userId) {
+        analytics.emit({ eventName: EventNames.WORKSPACE_CREATED, userId, workspaceId: entry.id });
+      }
 
       // Convert to API response format
       const workspaceInfo = {

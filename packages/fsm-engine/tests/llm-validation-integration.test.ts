@@ -63,8 +63,8 @@ async function createIntegrationEngine(opts: { llmResponses: LLMResponse[] }) {
   };
 
   let callCount = 0;
-  const mockLLMProvider = {
-    call: () => {
+  const mockLLMProvider: import("../types.ts").LLMProvider = {
+    call: (_params) => {
       const response =
         opts.llmResponses[callCount] ?? opts.llmResponses[opts.llmResponses.length - 1];
       callCount++;

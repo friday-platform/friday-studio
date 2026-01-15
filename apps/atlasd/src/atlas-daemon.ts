@@ -1,6 +1,7 @@
 import { stat } from "node:fs/promises";
 import process, { env } from "node:process";
 import type { AgentRegistry as AgentRegistryType, AtlasUIMessageChunk } from "@atlas/agent-sdk";
+import { createAnalyticsClient } from "@atlas/analytics";
 import { type SupervisorDefaults, supervisorDefaultsWrapped } from "@atlas/config";
 import {
   AtlasAgentsMCPServer,
@@ -916,6 +917,7 @@ export class AtlasDaemon {
         id: workspace.id,
         name: workspace.name,
         role: WorkspaceMemberRole.OWNER,
+        userId: workspace.metadata?.createdBy,
       });
 
       logger.debug("Workspace object created", {
@@ -1532,6 +1534,15 @@ export class AtlasDaemon {
       } catch (error) {
         logger.error("Error shutting down HTTP server", { error });
       }
+    }
+
+    // Flush analytics events before exit
+    try {
+      const analytics = createAnalyticsClient();
+      await analytics.shutdown();
+      logger.info("Analytics provider shutdown complete");
+    } catch (error) {
+      logger.error("Error shutting down analytics provider", { error });
     }
 
     // Flush Sentry events before exit

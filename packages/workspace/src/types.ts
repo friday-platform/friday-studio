@@ -9,6 +9,8 @@ export const WorkspaceMetadataSchema = z.object({
   tags: z.array(z.string()).optional(),
   system: z.boolean().optional(),
   atlasVersion: z.string().optional(),
+  /** User ID who created this workspace, used for analytics */
+  createdBy: z.string().optional(),
   // Ephemeral workspace controls
   ephemeral: z.boolean().optional(),
   expiresAt: z.iso.datetime().optional(),

@@ -18,6 +18,7 @@
   },
   "dependencies": {
     "@atlas/agent-sdk": "workspace:*",
+    "@atlas/analytics": "workspace:*",
     "@atlas/atlasd": "workspace:*",
     "@atlas/client": "workspace:*",
     "@atlas/config": "workspace:*",

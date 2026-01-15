@@ -78,7 +78,7 @@ dist/
 # Slack cache files
 .channels_cache_v2.json
 .users_cache.json
-bounce
+/bounce
 
 # Temp files
 temp/
@@ -93,3 +93,4 @@ gateway
 
 # cypheradmin binary
 apps/cypher/cypheradmin/cypheradmin
+atlas-otel-collector

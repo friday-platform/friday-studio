@@ -1,5 +1,6 @@
 import process from "node:process";
 import { validateAtlasUIMessages } from "@atlas/agent-sdk";
+import { createAnalyticsClient, EventNames } from "@atlas/analytics";
 import { ChatStorage } from "@atlas/core/chat/storage";
 import { extractTempestUserId } from "@atlas/core/credentials";
 import { logger } from "@atlas/logger";
@@ -8,6 +9,8 @@ import { zValidator } from "@hono/zod-validator";
 import { stream } from "hono/streaming";
 import { z } from "zod";
 import { daemonFactory } from "../src/factory.ts";
+
+const analytics = createAnalyticsClient();
 
 const chatRequestSchema = z.object({
   id: z.string().min(1),
@@ -69,6 +72,13 @@ const chatRoutes = daemonFactory
     if (!result.ok) {
       return c.json({ error: "Failed to create chat" }, 500);
     }
+
+    analytics.emit({
+      eventName: EventNames.CONVERSATION_STARTED,
+      userId,
+      workspaceId,
+      conversationId: chatId,
+    });
 
     // // Validate and parse the message
     const [userMessage] = await validateAtlasUIMessages([message]);

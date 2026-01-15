@@ -14,6 +14,7 @@ import (
 	pgx "github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/tempestteam/atlas/apps/bounce/analytics"
 	bouncerepo "github.com/tempestteam/atlas/apps/bounce/repo"
 	pgxerr "github.com/tempestteam/atlas/pkg/x/pgxhelper"
 	"golang.org/x/oauth2"
@@ -509,6 +510,7 @@ func (p oauthProvider) authCallback(w http.ResponseWriter, r *http.Request) {
 
 	if isSignup {
 		RecordAuth("google_oauth", "success")
+		analytics.Emit(ctx, "user.signed_up", tempestUser.ID, nil)
 		http.Redirect(w, r, cfg.AuthUIURL+"/complete-setup", http.StatusFound)
 		return
 	}
@@ -517,5 +519,6 @@ func (p oauthProvider) authCallback(w http.ResponseWriter, r *http.Request) {
 	redirectURL := cfg.RedirectURI + claims.RedirectTo
 	log.Info("OAuth callback successful, redirecting", "userID", tempestUser.ID, "redirectURL", redirectURL)
 	RecordAuth("google_oauth", "success")
+	analytics.Emit(ctx, "user.logged_in", tempestUser.ID, nil)
 	http.Redirect(w, r, redirectURL, http.StatusFound)
 }

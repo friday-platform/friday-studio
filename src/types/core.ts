@@ -170,6 +170,8 @@ export interface IWorkspaceMember {
   id: string;
   name: string;
   role: WorkspaceMemberRole;
+  /** User ID who created this workspace, used for analytics */
+  userId?: string;
 }
 
 export enum WorkspaceMemberRole {
