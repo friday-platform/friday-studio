@@ -1,10 +1,9 @@
 /**
  * CSV Parser
  *
- * Parses CSV files for file artifacts.
+ * Parses CSV content for file artifacts.
  */
 
-import { readFile } from "node:fs/promises";
 import Papa from "papaparse";
 import { z } from "zod";
 
@@ -48,10 +47,9 @@ function findHeaderLine(content: string): string {
 }
 
 /**
- * Parse a CSV file from the given file path.
+ * Parse CSV content from a string.
  */
-export async function parseCsv(filePath: string): Promise<CsvParseResult> {
-  const rawContent = await readFile(filePath, "utf-8");
+export function parseCsvContent(rawContent: string, source?: string): CsvParseResult {
   const content = findHeaderLine(rawContent);
 
   const parsed = Papa.parse<Record<string, CsvCell>>(content, {
@@ -62,7 +60,7 @@ export async function parseCsv(filePath: string): Promise<CsvParseResult> {
   });
 
   if (!parsed.meta.fields || parsed.meta.fields.length === 0) {
-    throw new Error(`CSV file ${filePath} has no header row or columns`);
+    throw new Error(`CSV ${source ?? "content"} has no header row or columns`);
   }
 
   // Filter out rows where all values are null/empty

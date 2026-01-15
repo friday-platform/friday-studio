@@ -8,13 +8,14 @@
  */
 
 import { mkdir, writeFile } from "node:fs/promises";
-import type { Artifact } from "@atlas/core/artifacts";
-import { FileDataSchema } from "@atlas/core/artifacts";
-import { ArtifactStorage, CsvParseResultSchema, parseCsv } from "@atlas/core/artifacts/server";
+import {
+  ArtifactStorage,
+  CsvParseResultSchema,
+  parseCsvContent,
+} from "@atlas/core/artifacts/server";
 import { stringifyError } from "@atlas/utils";
 import { getWorkspaceFilesDir } from "@atlas/utils/paths.server";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { basename } from "@std/path";
 import Papa from "papaparse";
 import { z } from "zod";
 import type { ToolContext } from "../../types.ts";
@@ -25,29 +26,19 @@ import { executeCsvOperation } from "./utils.ts";
 /**
  * Input schema for CSV operations tool
  */
-const CsvOperationInputSchema = z
-  .object({
-    csvArtifactIds: z
-      .array(z.string())
-      .optional()
-      .describe("Array of file artifact IDs containing CSV data"),
-    filePaths: z.array(z.string()).optional().describe("Array of file paths to CSV files on disk"),
-    task: z
-      .string()
-      .min(1)
-      .describe(
-        "Description of the operation to perform (e.g., 'filter rows where sales > 1000', 'sort by date descending', 'join on customer_id')",
-      ),
-    workspaceId: z.string().min(1).describe("Workspace ID where the result artifact will be saved"),
-  })
-  .refine(
-    (data) => {
-      const hasArtifactIds = data.csvArtifactIds && data.csvArtifactIds.length > 0;
-      const hasFilePaths = data.filePaths && data.filePaths.length > 0;
-      return hasArtifactIds !== hasFilePaths; // XOR - exactly one must be provided
-    },
-    { message: "Must provide either csvArtifactIds or filePaths (not both)" },
-  );
+const CsvOperationInputSchema = z.object({
+  csvArtifactIds: z
+    .array(z.string())
+    .min(1)
+    .describe("Array of file artifact IDs containing CSV data"),
+  task: z
+    .string()
+    .min(1)
+    .describe(
+      "Description of the operation to perform (e.g., 'filter rows where sales > 1000', 'sort by date descending', 'join on customer_id')",
+    ),
+  workspaceId: z.string().min(1).describe("Workspace ID where the result artifact will be saved"),
+});
 
 /**
  * Register the CSV analysis tool with the MCP server
@@ -57,13 +48,12 @@ export function registerCsvTool(server: McpServer, context: ToolContext): void {
     "csv",
     {
       description:
-        "Use this tool to read CSV files and perform operations such as filtering, sorting, joining, and aggregating. Provide either csvArtifactIds (for existing artifacts) or filePaths (for files on disk). The result will be saved as a file artifact.",
+        "Use this tool to read CSV files and perform operations such as filtering, sorting, joining, and aggregating. Provide artifact IDs for existing CSV artifacts. The result will be saved as a file artifact.",
       inputSchema: {
         csvArtifactIds: z
           .array(z.string())
-          .optional()
+          .min(1)
           .describe("File artifact IDs containing CSV data"),
-        filePaths: z.array(z.string()).optional().describe("File paths to CSV files on disk"),
         task: z
           .string()
           .describe("Plain-language instruction for the operation (e.g. 'filter where x > 10')"),
@@ -83,82 +73,43 @@ export function registerCsvTool(server: McpServer, context: ToolContext): void {
         }
         const input = inputResult.data;
 
-        // 2. Create artifacts from file paths if provided
-        let artifactIds: string[] = [];
-        if (input.filePaths && input.filePaths.length > 0) {
-          context.logger.info("Creating artifacts from file paths", {
-            count: input.filePaths.length,
-          });
-          for (const filePath of input.filePaths) {
-            const fileName = basename(filePath);
+        // 2. Load and parse CSV artifacts
+        context.logger.info("Loading CSV artifacts", { count: input.csvArtifactIds.length });
+        const parsed: ParsedCsvFile[] = [];
 
-            const createResult = await ArtifactStorage.create({
-              data: { type: "file", version: 1, data: { path: filePath } },
-              title: fileName,
-              summary: `CSV file: ${fileName}`,
-              workspaceId: input.workspaceId,
-            });
-
-            if (!createResult.ok) {
-              const err = stringifyError(createResult.error);
-              context.logger.error("Failed to create artifact from file path", {
-                error: err,
-                filePath,
-              });
-              return createErrorResponse(`Failed to create artifact from ${filePath}: ${err}`);
-            }
-
-            artifactIds.push(createResult.data.id);
-          }
-        } else if (input.csvArtifactIds) {
-          artifactIds = input.csvArtifactIds;
-        }
-
-        // 3. Load artifact metadata
-        context.logger.info("Loading CSV artifacts", { count: artifactIds.length });
-        const loadedArtifacts: Artifact[] = [];
-        for (const artifactId of artifactIds) {
-          const result = await ArtifactStorage.get({ id: artifactId });
-          if (!result.ok) {
+        for (const artifactId of input.csvArtifactIds) {
+          // Get artifact metadata
+          const artifactResult = await ArtifactStorage.get({ id: artifactId });
+          if (!artifactResult.ok) {
             return createErrorResponse(`Artifact ${artifactId} not found`);
           }
 
-          const artifact = result.data;
+          const artifact = artifactResult.data;
           if (!artifact) {
             return createErrorResponse(`Artifact ${artifactId} not found`);
           }
 
-          // Validate it's a file artifact
           if (artifact.data.type !== "file") {
             return createErrorResponse(`Artifact ${artifactId} is not a file artifact`);
           }
 
-          // Parse and validate file data
-          const fileDataResult = FileDataSchema.safeParse(artifact.data.data);
-          if (!fileDataResult.success) {
-            return createErrorResponse(`Artifact ${artifactId} has invalid file data`);
+          // Read file contents via storage adapter
+          const contentsResult = await ArtifactStorage.readFileContents({ id: artifactId });
+          if (!contentsResult.ok) {
+            return createErrorResponse(
+              `Failed to read artifact ${artifactId}: ${contentsResult.error}`,
+            );
           }
 
-          loadedArtifacts.push(artifact);
-        }
-
-        // 4. Parse CSV files
-        context.logger.info("Parsing CSV files from artifacts");
-        const parsed: ParsedCsvFile[] = [];
-        for (const artifact of loadedArtifacts) {
-          // We validated this is a file artifact with valid FileData above
-          if (artifact.data.type !== "file") continue;
-
-          const fileDataResult = FileDataSchema.parse(artifact.data.data);
-          const csvResult = await parseCsv(fileDataResult.path);
-
-          // Validate the parse result matches expected schema
+          // Parse CSV content
+          const csvResult = parseCsvContent(contentsResult.data, artifactId);
           const validatedResult = CsvParseResultSchema.parse(csvResult);
 
-          const fileName = basename(fileDataResult.path);
+          // Use artifact title or ID as filename
+          const fileName = artifact.title || artifactId.slice(0, 8);
 
           parsed.push({
-            filePath: fileDataResult.path,
+            filePath: artifactId,
             fileName,
             data: validatedResult.data,
             rowCount: validatedResult.rowCount,
@@ -166,7 +117,7 @@ export function registerCsvTool(server: McpServer, context: ToolContext): void {
           });
         }
 
-        // 5. Check for file name collisions
+        // 3. Check for file name collisions
         const fileNames = parsed.map((f) => f.fileName);
         const uniqueNames = new Set(fileNames);
         if (fileNames.length !== uniqueNames.size) {
@@ -176,10 +127,10 @@ export function registerCsvTool(server: McpServer, context: ToolContext): void {
           );
         }
 
-        // 6. Execute operation with LLM
+        // 4. Execute operation with LLM
         const { summary, result } = await executeCsvOperation(parsed, input.task, context);
 
-        // 7. Save results as file artifacts
+        // 5. Save results as file artifacts
         const resultArtifactIds: string[] = [];
         const nameToIdPairs: string[] = [];
 

@@ -4,7 +4,7 @@
  */
 
 // CSV Parsing (server-only, uses papaparse Node dependency)
-export type { CsvParseResult } from "./parsers/mod.ts";
-export { CsvParseResultSchema, parseCsv } from "./parsers/mod.ts";
+export type { CsvCell, CsvParseResult } from "./parsers/mod.ts";
+export { CsvParseResultSchema, parseCsvContent } from "./parsers/mod.ts";
 // Storage (server-only, uses Deno.openKv)
 export { ArtifactStorage } from "./storage.ts";

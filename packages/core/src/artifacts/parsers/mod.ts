@@ -4,5 +4,5 @@
  * Parsers for reading file artifacts.
  */
 
-export type { CsvParseResult } from "./csv.ts";
-export { CsvParseResultSchema, parseCsv } from "./csv.ts";
+export type { CsvCell, CsvParseResult } from "./csv.ts";
+export { CsvParseResultSchema, parseCsvContent } from "./csv.ts";

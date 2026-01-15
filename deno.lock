@@ -5872,7 +5872,6 @@
         "packageJson": {
           "dependencies": [
             "npm:@jsr/std__expect@^1.0.17",
-            "npm:@jsr/std__path@^1.1.2",
             "npm:@socotra/modelcontextprotocol-sdk@^1.18.0",
             "npm:@worker-tools/html-rewriter@0.1.0-pre.19",
             "npm:ai@^5.0.121",

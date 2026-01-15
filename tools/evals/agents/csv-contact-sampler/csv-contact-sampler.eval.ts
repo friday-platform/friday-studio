@@ -2,7 +2,7 @@
  * Eval tests for CSV Filter Sampler agent
  *
  * Tests the agent's ability to:
- * 1. Parse CSV files
+ * 1. Read CSV artifacts
  * 2. Filter records based on natural language criteria
  * 3. Randomly sample 3 records
  * 4. Return proper JSON artifact with metadata
@@ -10,7 +10,8 @@
 
 import { readFile, rm } from "node:fs/promises";
 import { csvFilterSamplerAgent } from "@atlas/bundled-agents";
-import { ArtifactStorage, parseCsv } from "@atlas/core/artifacts/server";
+import type { CsvCell } from "@atlas/core/artifacts/server";
+import { ArtifactStorage, parseCsvContent } from "@atlas/core/artifacts/server";
 import { makeTempDir } from "@atlas/utils/temp.server";
 import { assert, assertEquals } from "@std/assert";
 import { join } from "@std/path";
@@ -71,8 +72,27 @@ Deno.test("CSV Filter Sampler Agent", async (t) => {
   const csvPath = join(tempDir, "fake-contacts.csv");
   await generateFakeCSV(csvPath, 1000, 0.35, 0.25);
 
-  // Parse CSV to get ground truth counts
-  const parsedCsv = await parseCsv(csvPath);
+  // Create artifact from the CSV file
+  const workspaceId = "test-workspace";
+  const createResult = await ArtifactStorage.create({
+    data: { type: "file", version: 1, data: { path: csvPath } },
+    title: "fake-contacts.csv",
+    summary: "Test CSV file for eval",
+    workspaceId,
+  });
+
+  if (!createResult.ok) {
+    throw new Error(`Failed to create artifact: ${createResult.error}`);
+  }
+
+  const artifactId = createResult.data.id;
+
+  // Read artifact content and parse CSV for ground truth counts
+  const contentsResult = await ArtifactStorage.readFileContents({ id: artifactId });
+  if (!contentsResult.ok) {
+    throw new Error(`Failed to read artifact: ${contentsResult.error}`);
+  }
+  const parsedCsv = parseCsvContent(contentsResult.data, artifactId);
   const totalRecords = parsedCsv.rowCount;
   const expectedFilteredCount = parsedCsv.data.filter(isUSADecisionMaker).length;
 
@@ -90,7 +110,7 @@ Deno.test("CSV Filter Sampler Agent", async (t) => {
     const context = adapter.createContext({ telemetry: true });
 
     const prompt =
-      `Read ${csvPath} and filter for United States contacts with any decision-making title ` +
+      `Read artifact ${artifactId} and filter for United States contacts with any decision-making title ` +
       `(Director, Chief, VP, President, CEO, CFO, CTO, CMO, COO, Owner, Founder, or Senior/C-suite seniority)`;
 
     const startTime = performance.now();
@@ -163,7 +183,9 @@ Deno.test("CSV Filter Sampler Agent", async (t) => {
 
     // Verify all samples exist in original CSV and have matching values (comparing values, not types)
     for (const sample of samples) {
-      const matchingRecord = parsedCsv.data.find((record) => record.Email === sample.Email);
+      const matchingRecord = parsedCsv.data.find(
+        (record: Record<string, CsvCell>) => record.Email === sample.Email,
+      );
       assert(matchingRecord, `Sample with email ${sample.Email} should exist in original CSV`);
 
       // Compare field values (coerce types for comparison since SQLite returns TEXT)
@@ -198,7 +220,7 @@ Deno.test("CSV Filter Sampler Agent", async (t) => {
     adapter.reset();
 
     const prompt =
-      `Read ${csvPath} and filter for United States contacts with any decision-making title ` +
+      `Read artifact ${artifactId} and filter for United States contacts with any decision-making title ` +
       `(Director, Chief, VP, President, CEO, CFO, CTO, CMO, COO, Owner, Founder, or Senior/C-suite seniority)`;
 
     // Run agent multiple times and collect samples
@@ -262,7 +284,7 @@ Deno.test("CSV Filter Sampler Agent", async (t) => {
     const context = adapter.createContext({ telemetry: true });
 
     // Use impossible filter that should match zero records
-    const prompt = `Read ${csvPath} and filter for contacts from Antarctica with CEO title`;
+    const prompt = `Read artifact ${artifactId} and filter for contacts from Antarctica with CEO title`;
 
     const startTime = performance.now();
     const result = await csvFilterSamplerAgent.execute(prompt, context);

@@ -1,11 +1,10 @@
-import { mkdir, stat, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { type ArtifactRef, createAgent, repairToolCall } from "@atlas/agent-sdk";
-import { ArtifactStorage, parseCsv } from "@atlas/core/artifacts/server";
+import { ArtifactStorage, parseCsvContent } from "@atlas/core/artifacts/server";
 import { registry } from "@atlas/llm";
-import { isErrnoException } from "@atlas/utils";
 import { getWorkspaceFilesDir } from "@atlas/utils/paths.server";
 import { Database } from "@db/sqlite";
-import { basename, join } from "@std/path";
+import { join } from "@std/path";
 import type { ModelMessage } from "ai";
 import { generateText, tool } from "ai";
 import { z } from "zod";
@@ -29,9 +28,9 @@ export const csvFilterSamplerAgent = createAgent<string, CsvFilterSamplerResult>
   expertise: {
     domains: ["csv", "filtering", "sampling"],
     examples: [
-      "Read /data/contacts.csv and filter for United States contacts with decision-making titles, sample 3",
-      "Filter leads.csv for qualified prospects in the enterprise segment, select 5 random samples",
-      "Show me 3 random samples from prospects.csv where industry is SaaS and company size > 100",
+      "Read artifact 17602586-f090-11f0-b0d1-33569426ac3c and filter for United States contacts with decision-making titles, sample 3",
+      "Filter artifact abc123 for qualified prospects in the enterprise segment, select 5 random samples",
+      "Show me 3 random samples from artifact xyz789 where industry is SaaS and company size > 100",
     ],
   },
 
@@ -40,14 +39,15 @@ export const csvFilterSamplerAgent = createAgent<string, CsvFilterSamplerResult>
     { session, logger, abortSignal, stream },
   ): Promise<CsvFilterSamplerResult> => {
     try {
-      logger.info("Parsing prompt to extract CSV path and filter criteria");
+      logger.info("Parsing prompt to extract artifact ID and filter criteria");
 
-      let csvPath = "";
+      let artifactId = "";
       let filterCriteria = "";
       let sampleCount = 3;
+      let csvContent: string | null = null;
 
-      const PathExtractionSchema = z.object({
-        csvPath: z.string().describe("Absolute path to the CSV file"),
+      const ArtifactExtractionSchema = z.object({
+        artifactId: z.string().describe("The artifact ID (UUID) containing the CSV data"),
         filterCriteria: z
           .string()
           .describe("Natural language filter criteria extracted from the prompt"),
@@ -59,43 +59,40 @@ export const csvFilterSamplerAgent = createAgent<string, CsvFilterSamplerResult>
           .describe("Number of random samples to select (extract from prompt, default 3)"),
       });
 
-      const validatePathTool = tool({
-        description: "Validate extracted CSV path exists on filesystem",
-        inputSchema: PathExtractionSchema,
-        execute: async (params: z.infer<typeof PathExtractionSchema>) => {
-          try {
-            const stats = await stat(params.csvPath);
-            if (!stats.isFile()) {
-              throw new Error(`Path exists but is not a file: ${params.csvPath}`);
-            }
+      const validateArtifactTool = tool({
+        description: "Validate that the artifact exists and contains CSV data.",
+        inputSchema: ArtifactExtractionSchema,
+        execute: async (params: z.infer<typeof ArtifactExtractionSchema>) => {
+          logger.info("Validating artifact", { artifactId: params.artifactId });
 
-            csvPath = params.csvPath;
-            filterCriteria = params.filterCriteria;
-            sampleCount = params.sampleCount;
-
-            logger.info("CSV path validated", { csvPath, filterCriteria, sampleCount });
-
-            return { success: true, message: `Valid CSV file path: ${params.csvPath}` };
-          } catch (error) {
-            if (isErrnoException(error) && error.code === "ENOENT") {
-              throw new Error(`CSV file not found: ${params.csvPath}`);
-            }
-            throw error;
+          const contentsResult = await ArtifactStorage.readFileContents({ id: params.artifactId });
+          if (!contentsResult.ok) {
+            throw new Error(
+              `Failed to read artifact ${params.artifactId}: ${contentsResult.error}`,
+            );
           }
+
+          csvContent = contentsResult.data;
+          artifactId = params.artifactId;
+          filterCriteria = params.filterCriteria;
+          sampleCount = params.sampleCount;
+
+          logger.info("Artifact validated", { artifactId, filterCriteria, sampleCount });
+          return { success: true, message: `Valid artifact: ${params.artifactId}` };
         },
       });
 
       const parseMessages: Array<ModelMessage> = [
         {
           role: "system",
-          content: `Extract the CSV file path, filter criteria, and sample count from the user's prompt.
+          content: `Extract the artifact ID, filter criteria, and sample count from the user's prompt.
 
 IMPORTANT:
-- The CSV path MUST be an absolute path to an existing file
+- The artifact ID is a UUID identifying a CSV file stored in the system (e.g., 17602586-f090-11f0-b0d1-33569426ac3c)
 - The filter criteria should be the natural language description of what to filter for
 - The sample count is how many random records to select (look for numbers like "3 contacts", "5 samples", etc.). Default to 3 if not specified.
 
-Call validatePath tool with the extracted information to verify the path exists.`,
+Call validateArtifact tool with the extracted information to verify the artifact exists.`,
         },
         { role: "user", content: prompt },
       ];
@@ -104,7 +101,7 @@ Call validatePath tool with the extracted information to verify the path exists.
         model: registry.languageModel("groq:openai/gpt-oss-120b"),
         abortSignal,
         messages: parseMessages,
-        tools: { validatePath: validatePathTool },
+        tools: { validateArtifact: validateArtifactTool },
         experimental_repairToolCall: repairToolCall,
       });
 
@@ -115,15 +112,16 @@ Call validatePath tool with the extracted information to verify the path exists.
         usage: parseResult.usage,
       });
 
-      if (!csvPath) {
-        throw new Error("Failed to extract valid CSV path from prompt");
+      if (!artifactId || !csvContent) {
+        throw new Error("Failed to extract valid artifact ID from prompt");
       }
 
-      logger.info("Parsing CSV file", { csvPath });
-      const parsedCsv = await parseCsv(csvPath);
+      logger.info("Parsing CSV", { artifactId });
+
+      const parsedCsv = parseCsvContent(csvContent, artifactId);
 
       logger.info("CSV parsed successfully", {
-        fileName: basename(csvPath),
+        artifactId,
         totalRecords: parsedCsv.rowCount,
         columns: parsedCsv.columns,
       });
@@ -282,7 +280,7 @@ Call buildSqlWhere tool with your WHERE clause (WITHOUT the 'WHERE' keyword).`,
           filteredCount,
           sampleCount: samples.length,
           unprocessedCount: filteredCount - samples.length,
-          csvPath,
+          sourceArtifactId: artifactId,
           filterCriteria,
           sqlWhereClause: whereClause || "(no filter)",
           timestamp,
@@ -303,7 +301,7 @@ Call buildSqlWhere tool with your WHERE clause (WITHOUT the 'WHERE' keyword).`,
       const createResult = await ArtifactStorage.create({
         workspaceId: session.workspaceId,
         data: { type: "file", version: 1, data: { path: jsonFilePath } },
-        title: `CSV Filter: ${basename(csvPath)}`,
+        title: `CSV Filter: ${artifactId.slice(0, 8)}`,
         summary: `CSV filter results: ${samples.length} sample(s) from ${filteredCount} filtered record(s)`,
       });
 
