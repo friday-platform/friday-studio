@@ -48,7 +48,7 @@ func getLogger() log.Logger {
 		}
 
 		provider = sdklog.NewLoggerProvider(
-			sdklog.WithProcessor(sdklog.NewSimpleProcessor(exporter)),
+			sdklog.WithProcessor(sdklog.NewBatchProcessor(exporter)),
 		)
 	})
 
