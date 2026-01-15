@@ -1,3 +1,5 @@
+import type { Buffer } from "node:buffer";
+import * as fs from "node:fs";
 import { env } from "node:process";
 import { logger } from "@atlas/logger";
 import { SeverityNumber } from "@opentelemetry/api-logs";
@@ -16,7 +18,23 @@ function getAnalyticsLogger() {
 
   if (!analyticsProvider) {
     logger.debug("Creating analytics provider", { endpoint });
-    const exporter = new OTLPLogExporter({ url: endpoint });
+
+    // Read CA certificate for TLS verification
+    const certPath = env.OTEL_EXPORTER_OTLP_CERTIFICATE;
+    let ca: Buffer | undefined;
+    if (certPath) {
+      try {
+        ca = fs.readFileSync(certPath);
+        logger.debug("Loaded CA certificate", { path: certPath, size: ca.length });
+      } catch (err) {
+        logger.warn("Failed to read CA certificate", { path: certPath, error: String(err) });
+      }
+    }
+
+    const exporter = new OTLPLogExporter({
+      url: endpoint,
+      httpAgentOptions: ca ? { ca } : undefined,
+    });
     const processor = new SimpleLogRecordProcessor(exporter);
     analyticsProvider = new LoggerProvider({ processors: [processor] });
     environment = env.ENVIRONMENT || "development";
