@@ -62,6 +62,13 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Initialize analytics with client TLS config
+	if clientTLS, err := cfg.TLSConfig.ClientTLSConfig(); err != nil {
+		svc.Logger.Error("Failed to get client TLS config for analytics", "error", err)
+	} else {
+		analytics.Init(clientTLS)
+	}
+
 	// Start metrics server (shares TLS config with main server)
 	metricsServer := metrics.StartServer(cfg.MetricsPort, cfg.TLSConfig)
 	svc.Logger.Info("Started metrics server", "port", cfg.MetricsPort)

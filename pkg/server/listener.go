@@ -108,3 +108,21 @@ func (c *TLSConfig) GetRootCA() (*x509.CertPool, error) {
 
 	return rootCAs, nil
 }
+
+// ClientTLSConfig returns a TLS config for outbound client connections.
+// Uses the same CA certificate as the server for verifying peer certificates.
+func (c *TLSConfig) ClientTLSConfig() (*tls.Config, error) {
+	if c.CAPath == "" {
+		return nil, nil
+	}
+
+	rootCAs, err := c.GetRootCA()
+	if err != nil {
+		return nil, err
+	}
+
+	return &tls.Config{
+		RootCAs:    rootCAs,
+		MinVersion: tls.VersionTLS12,
+	}, nil
+}

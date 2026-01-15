@@ -3,6 +3,7 @@ package analytics
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	golog "log"
 	"os"
@@ -23,7 +24,14 @@ var (
 	providerOnce sync.Once
 	disabled     bool
 	environment  string
+	clientTLS    *tls.Config
 )
+
+// Init sets up TLS configuration for analytics. Must be called before Emit
+// if the analytics endpoint requires TLS.
+func Init(tlsConfig *tls.Config) {
+	clientTLS = tlsConfig
+}
 
 func getLogger() log.Logger {
 	providerOnce.Do(func() {
@@ -38,9 +46,15 @@ func getLogger() log.Logger {
 			environment = "development"
 		}
 
-		exporter, err := otlploghttp.New(context.Background(),
+		opts := []otlploghttp.Option{
 			otlploghttp.WithEndpointURL(endpoint),
-		)
+		}
+
+		if clientTLS != nil && strings.HasPrefix(endpoint, "https://") {
+			opts = append(opts, otlploghttp.WithTLSClientConfig(clientTLS))
+		}
+
+		exporter, err := otlploghttp.New(context.Background(), opts...)
 		if err != nil {
 			golog.Printf("analytics: failed to create OTEL exporter: %v (analytics disabled)", err)
 			disabled = true
