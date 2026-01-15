@@ -9,6 +9,7 @@ import (
 	"github.com/open-telemetry/opentelemetry-collector-contrib/processor/transformprocessor"
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/exporter"
+	"go.opentelemetry.io/collector/exporter/debugexporter"
 	"go.opentelemetry.io/collector/exporter/otlpexporter"
 	"go.opentelemetry.io/collector/exporter/otlphttpexporter"
 	"go.opentelemetry.io/collector/extension"
@@ -37,6 +38,7 @@ func components() (otelcol.Factories, error) {
 		otlphttpexporter.NewFactory(),
 		googlecloudexporter.NewFactory(),
 		prometheusexporter.NewFactory(),
+		debugexporter.NewFactory(),
 		NewFactory(),
 	)
 	if err != nil {
