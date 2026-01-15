@@ -1,1 +1,0 @@
-{ "hooks": { "Stop": [{ "hooks": [{ "type": "command", "command": "deno task fmt" }] }] } }
