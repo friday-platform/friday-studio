@@ -14,10 +14,9 @@ function getAnalyticsLogger() {
   }
 
   if (!analyticsProvider) {
-    analyticsProvider = new LoggerProvider();
-    analyticsProvider.addLogRecordProcessor(
-      new SimpleLogRecordProcessor(new OTLPLogExporter({ url: endpoint })),
-    );
+    const exporter = new OTLPLogExporter({ url: endpoint });
+    const processor = new SimpleLogRecordProcessor(exporter);
+    analyticsProvider = new LoggerProvider({ processors: [processor] });
     environment = env.ENVIRONMENT || "development";
   }
   return analyticsProvider.getLogger("analytics");
