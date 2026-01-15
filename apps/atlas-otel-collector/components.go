@@ -7,7 +7,6 @@ import (
 	"github.com/open-telemetry/opentelemetry-collector-contrib/processor/filterprocessor"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/processor/resourceprocessor"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/processor/transformprocessor"
-	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/exporter"
 	"go.opentelemetry.io/collector/exporter/debugexporter"
 	"go.opentelemetry.io/collector/exporter/otlpexporter"
@@ -19,7 +18,7 @@ import (
 	"go.opentelemetry.io/collector/processor/batchprocessor"
 	"go.opentelemetry.io/collector/receiver"
 	"go.opentelemetry.io/collector/receiver/otlpreceiver"
-	"go.opentelemetry.io/collector/service/telemetry"
+	"go.opentelemetry.io/collector/service/telemetry/otelconftelemetry"
 )
 
 func components() (otelcol.Factories, error) {
@@ -63,7 +62,7 @@ func components() (otelcol.Factories, error) {
 		return otelcol.Factories{}, err
 	}
 
-	factories.Telemetry = telemetry.NewFactory(func() component.Config { return nil })
+	factories.Telemetry = otelconftelemetry.NewFactory()
 
 	return factories, nil
 }
