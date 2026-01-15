@@ -7,7 +7,7 @@ require (
 	cloud.google.com/go/bigquery v1.72.0
 	cloud.google.com/go/profiler v0.4.3
 	cloud.google.com/go/secretmanager v1.16.0
-	cloud.google.com/go/storage v1.59.0
+	cloud.google.com/go/storage v1.59.1
 	github.com/caarlos0/env/v11 v11.3.1
 	github.com/ggicci/httpin v0.20.2
 	github.com/go-chi/chi/v5 v5.2.3
@@ -54,7 +54,9 @@ require (
 	go.opentelemetry.io/collector/processor/batchprocessor v0.143.0
 	go.opentelemetry.io/collector/receiver v1.49.0
 	go.opentelemetry.io/collector/receiver/otlpreceiver v0.143.0
+	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp v0.14.0
 	go.opentelemetry.io/otel/log v0.15.0
+	go.opentelemetry.io/otel/sdk/log v0.14.0
 	go.uber.org/zap v1.27.1
 	golang.org/x/oauth2 v0.34.0
 	google.golang.org/api v0.259.0
@@ -273,7 +275,6 @@ require (
 	go.opentelemetry.io/contrib/zpages v0.63.0 // indirect
 	go.opentelemetry.io/otel v1.39.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc v0.14.0 // indirect
-	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp v0.14.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc v1.38.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp v1.38.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.38.0 // indirect
@@ -285,7 +286,6 @@ require (
 	go.opentelemetry.io/otel/exporters/stdout/stdouttrace v1.38.0 // indirect
 	go.opentelemetry.io/otel/metric v1.39.0 // indirect
 	go.opentelemetry.io/otel/sdk v1.39.0 // indirect
-	go.opentelemetry.io/otel/sdk/log v0.14.0 // indirect
 	go.opentelemetry.io/otel/sdk/metric v1.39.0 // indirect
 	go.opentelemetry.io/otel/trace v1.39.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.7.1 // indirect
