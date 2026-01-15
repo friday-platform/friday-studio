@@ -7,6 +7,7 @@ import (
 	"github.com/open-telemetry/opentelemetry-collector-contrib/processor/filterprocessor"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/processor/resourceprocessor"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/processor/transformprocessor"
+	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/exporter"
 	"go.opentelemetry.io/collector/exporter/otlpexporter"
 	"go.opentelemetry.io/collector/exporter/otlphttpexporter"
@@ -17,6 +18,7 @@ import (
 	"go.opentelemetry.io/collector/processor/batchprocessor"
 	"go.opentelemetry.io/collector/receiver"
 	"go.opentelemetry.io/collector/receiver/otlpreceiver"
+	"go.opentelemetry.io/collector/service/telemetry"
 )
 
 func components() (otelcol.Factories, error) {
@@ -55,6 +57,11 @@ func components() (otelcol.Factories, error) {
 		zpagesextension.NewFactory(),
 		healthcheckextension.NewFactory(),
 	)
+	if err != nil {
+		return otelcol.Factories{}, err
+	}
 
-	return factories, err
+	factories.Telemetry = telemetry.NewFactory(func() component.Config { return nil })
+
+	return factories, nil
 }
