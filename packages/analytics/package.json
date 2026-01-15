@@ -5,7 +5,7 @@
   "exports": { ".": "./mod.ts" },
   "main": "./mod.ts",
   "dependencies": {
-    "@opentelemetry/api-logs": "^0.57.0",
+    "@opentelemetry/api-logs": "^0.210.0",
     "@opentelemetry/sdk-logs": "^0.210.0",
     "@opentelemetry/exporter-logs-otlp-http": "^0.210.0",
     "@std/assert": "npm:@jsr/std__assert@^1.0.13",
