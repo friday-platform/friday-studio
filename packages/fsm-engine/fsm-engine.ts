@@ -17,12 +17,10 @@ import { jsonSchemaToZod, validateJSONSchema } from "./json-schema-to-zod.ts";
 import * as serializer from "./serializer.ts";
 import type {
   Action,
-  ActionFunction,
   Context,
   Document,
   EmittedEvent,
   FSMDefinition,
-  GuardFunction,
   LLMActionTrace,
   LLMProvider,
   LLMResponse,
@@ -31,6 +29,7 @@ import type {
   SignalWithContext,
   TransitionDefinition,
 } from "./types.ts";
+import { WorkerExecutor } from "./worker-executor.ts";
 
 const FSMStateSchema = z.object({ state: z.string() });
 
@@ -101,8 +100,11 @@ export class FSMEngine {
   private _recursionDepth = 0;
   private _compiledSchemas = new Map<string, z.ZodType>();
   private _emittedEvents: EmittedEvent[] = [];
-  private _guardFunctions = new Map<string, GuardFunction>();
-  private _actionFunctions = new Map<string, ActionFunction>();
+  private _guardFunctions = new Map<string, string>(); // Store CODE, not compiled fn
+  private _actionFunctions = new Map<string, string>(); // Store CODE, not compiled fn
+  private _guardExecutor: WorkerExecutor;
+  private _actionExecutor: WorkerExecutor;
+  private _toolExecutor: WorkerExecutor;
   private static readonly MAX_RECURSION_DEPTH = 10;
   private static readonly MAX_PROCESSED_SIGNALS = 100;
   private _processedSignalsCount = 0;
@@ -115,6 +117,14 @@ export class FSMEngine {
 
     // Documents will be loaded in initialize() to avoid race condition
     // between definition and persistent storage
+
+    this._guardExecutor = new WorkerExecutor({ timeout: 1000, functionType: "guard" });
+    this._actionExecutor = new WorkerExecutor({ timeout: 10000, functionType: "action" });
+    this._toolExecutor = new WorkerExecutor({
+      timeout: 180000,
+      functionType: "tool",
+      permissions: { net: true, read: true, env: true },
+    });
   }
 
   async initialize(): Promise<void> {
@@ -166,11 +176,9 @@ export class FSMEngine {
       for (const [name, func] of Object.entries(this.definition.functions)) {
         try {
           if (func.type === "guard") {
-            const compiled = await this.compileFunctionCode<GuardFunction>(func.code, name);
-            this._guardFunctions.set(name, compiled);
+            this._guardFunctions.set(name, func.code);
           } else {
-            const compiled = await this.compileFunctionCode<ActionFunction>(func.code, name);
-            this._actionFunctions.set(name, compiled);
+            this._actionFunctions.set(name, func.code);
           }
 
           logger.debug(`Compiled ${func.type} function: ${name}`);
@@ -244,35 +252,6 @@ export class FSMEngine {
     }
 
     this._initialized = true;
-  }
-
-  /**
-   * Compile function code string to executable function
-   * Uses dynamic import with data URL for code execution (UTF-8 safe)
-   */
-  private async compileFunctionCode<
-    T = (context: Context, event: Signal, ...args: unknown[]) => unknown,
-  >(code: string, name: string): Promise<T> {
-    // Wrap code in module format if it's not already
-    const moduleCode = code.includes("export default") ? code : `export default ${code}`;
-
-    // Encode to UTF-8 bytes then to base64 (btoa only supports Latin1)
-    const encoder = new TextEncoder();
-    const utf8Bytes = encoder.encode(moduleCode);
-    const base64 = btoa(String.fromCharCode(...utf8Bytes));
-
-    // Create data URL for dynamic import
-    const dataUrl = `data:text/javascript;base64,${base64}`;
-
-    try {
-      const module = await import(dataUrl);
-      if (!module.default || typeof module.default !== "function") {
-        throw new Error(`Function "${name}" must export a default function`);
-      }
-      return module.default as T;
-    } catch (error) {
-      throw new Error(`Failed to compile function "${name}": ${stringifyError(error)}`);
-    }
   }
 
   async signal(
@@ -351,13 +330,14 @@ export class FSMEngine {
       // Check all guards
       let allGuardsPassed = true;
       for (const guardName of t.guards) {
-        const guardFn = this._guardFunctions.get(guardName);
-        if (!guardFn) {
+        const guardCode = this._guardFunctions.get(guardName);
+        if (!guardCode) {
           throw new Error(`Guard function "${guardName}" not found`);
         }
 
         try {
-          const passed = guardFn(this.context, sig);
+          const result = await this._guardExecutor.execute(guardCode, guardName, this.context, sig);
+          const passed = Boolean(result);
           logger.debug("Guard evaluated", {
             guardName,
             passed,
@@ -565,8 +545,8 @@ export class FSMEngine {
     try {
       switch (action.type) {
         case "code": {
-          const actionFn = this._actionFunctions.get(action.function);
-          if (!actionFn) {
+          const actionCode = this._actionFunctions.get(action.function);
+          if (!actionCode) {
             throw new Error(`Action function "${action.function}" not found`);
           }
 
@@ -577,7 +557,7 @@ export class FSMEngine {
           });
 
           try {
-            await actionFn(context, sig);
+            await this._actionExecutor.execute(actionCode, action.function, context, sig);
             logger.debug("Code action completed", {
               function: action.function,
               state: currentState,
@@ -982,12 +962,15 @@ export class FSMEngine {
         throw new Error(`Tool ${toolName} not found in FSM definition`);
       }
       const zodSchema = jsonSchemaToZod(toolDef.inputSchema);
-      const toolFn = await this.compileFunctionCode(toolDef.code, toolName);
 
       tools[toolName] = {
         description: toolDef.description,
         inputSchema: zodSchema,
-        execute: (args) => toolFn(context, { type: "__tool__", data: args }),
+        execute: (args) =>
+          this._toolExecutor.execute(toolDef.code, toolName, context, {
+            type: "__tool__",
+            data: args,
+          }),
       };
     }
 
@@ -1169,7 +1152,7 @@ export class FSMEngine {
   }
 
   stop(): void {
-    // No-op (no worker to stop yet)
+    // No-op: Workers are terminated after each call, no cleanup needed
   }
 
   /**
