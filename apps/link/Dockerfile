@@ -1,6 +1,6 @@
 # Atlas Link service Dockerfile
 
-FROM denoland/deno:alpine-2.6.4 AS builder
+FROM denoland/deno:alpine-2.6.5 AS builder
 
 WORKDIR /app
 
