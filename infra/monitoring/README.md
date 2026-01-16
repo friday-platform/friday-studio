@@ -2,6 +2,37 @@
 
 GCP Cloud Monitoring dashboard and observability for Atlas.
 
+## Grafana Dashboards
+
+### Friday Activation & Usage Metrics
+
+Dashboard for tracking user activation funnel and usage metrics.
+
+- **Grafana URL:** https://tempestteam.grafana.net/d/c89e9e3c-71af-4d62-87cf-a2745b85a8f8/friday-activation-and-usage-metrics
+- **Data Source:** BigQuery (`tempest-production.friday_analytics`)
+- **Dashboard JSON:** `friday-activation-dashboard.json`
+
+**Panels:**
+- Scorecards: Total Signups, Activated Users, Activation Rate, Median Minutes to Activation, Total Sessions, Successful Sessions
+- Activation Funnel by Weekly Cohort (bar chart)
+- Session Outcomes by Weekly Cohort (stacked bar)
+- Time to Activation by Weekly Cohort in Minutes (bar chart)
+- Usage per User by Weekly Cohort (bar chart)
+- Weekly Cohort Funnel Table
+- Session Outcomes Table
+
+**To restore/update:**
+```bash
+# Import via Grafana API
+curl -X POST \
+  -H "Authorization: Bearer $GRAFANA_TOKEN" \
+  -H "Content-Type: application/json" \
+  "https://tempestteam.grafana.net/api/dashboards/db" \
+  -d "{\"dashboard\": $(cat friday-activation-dashboard.json), \"overwrite\": true}"
+```
+
+**BigQuery Views:** See `analytics/dashboards/activation_metrics.sql`
+
 ## Dashboard IDs
 
 - Production: `projects/180211378242/dashboards/38286001-e8a9-49a4-a47f-9731d5a632bf`
