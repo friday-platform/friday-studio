@@ -464,7 +464,7 @@ func completeSignup(w http.ResponseWriter, r *http.Request) {
 	conn.Release()
 
 	log.Info("User completed signup", "userID", userID, "fullName", user.FullName)
-	analytics.Emit(ctx, "user.signed_up", userID, nil)
+	analytics.Emit(ctx, "user.profile_completed", userID, nil)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)

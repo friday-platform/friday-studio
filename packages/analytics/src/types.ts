@@ -18,6 +18,7 @@ export interface AnalyticsClient {
 
 export const EventNames = {
   USER_SIGNED_UP: "user.signed_up",
+  USER_PROFILE_COMPLETED: "user.profile_completed",
   USER_LOGGED_IN: "user.logged_in",
   CONVERSATION_STARTED: "conversation.started",
   WORKSPACE_CREATED: "workspace.created",

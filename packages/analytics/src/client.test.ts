@@ -86,6 +86,7 @@ describe("createAnalyticsClient", () => {
 describe("EventNames", () => {
   it("has expected event names", () => {
     assertEquals(EventNames.USER_SIGNED_UP, "user.signed_up");
+    assertEquals(EventNames.USER_PROFILE_COMPLETED, "user.profile_completed");
     assertEquals(EventNames.USER_LOGGED_IN, "user.logged_in");
     assertEquals(EventNames.CONVERSATION_STARTED, "conversation.started");
     assertEquals(EventNames.WORKSPACE_CREATED, "workspace.created");
