@@ -15,7 +15,7 @@
   "dependencies": {
     "@melt-ui/svelte": "^0.86.6",
     "@sentry/sveltekit": "^10.34.0",
-    "@sveltejs/kit": "^2.49.4",
+    "@sveltejs/kit": "^2.49.5",
     "nanoid": "^5.1.6",
     "svelte": "^5.46.3",
     "zod": "^4.3.5",
