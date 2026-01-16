@@ -96,6 +96,9 @@ export const AtlasDataEventSchemas = {
     provider: z.string(), // e.g., 'google-calendar'
     displayName: z.string(), // e.g., 'Google Calendar'
   }),
+  intent: z.object({
+    content: z.string(), // e.g., 'Connecting to Notion', 'Creating plan'
+  }),
 };
 
 /**
@@ -119,6 +122,7 @@ export type AtlasDataEvents = {
   "fsm-state-transition": z.infer<(typeof AtlasDataEventSchemas)["fsm-state-transition"]>;
   "fsm-action-execution": z.infer<(typeof AtlasDataEventSchemas)["fsm-action-execution"]>;
   "credential-linked": z.infer<(typeof AtlasDataEventSchemas)["credential-linked"]>;
+  intent: z.infer<(typeof AtlasDataEventSchemas)["intent"]>;
 };
 
 /**

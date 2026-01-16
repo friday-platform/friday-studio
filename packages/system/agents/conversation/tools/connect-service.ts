@@ -12,6 +12,8 @@ export function createConnectServiceTool(providers: string[]) {
     inputSchema: z.object({
       provider: z.enum(providers).describe("Provider ID from the available services list"),
     }),
-    execute: ({ provider }) => ({ provider }),
+    execute: ({ provider }) => {
+      return { provider };
+    },
   });
 }

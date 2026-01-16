@@ -204,6 +204,8 @@ export const workspacePlannerAgent = createAgent<WorkspacePlannerInput, Workspac
         ? formatIntegrationsSection(linkSummary)
         : "<integrations><!-- No OAuth services connected --></integrations>";
 
+      // TODO: These progress events don't reach the UI - conversation agent lacks MCP notification handler.
+      // The initial data-intent ("Creating plan") is emitted via onChunk in conversation.agent.ts instead.
       stream?.emit({
         type: "data-tool-progress",
         data: { toolName: "Workspace Planner", content: "Analyzing requirements" },

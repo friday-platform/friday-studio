@@ -657,6 +657,16 @@ export const conversationAgent = createAgent({
               experimental_context: { conversationSessionId: session.sessionId },
               // Pass telemetry config if provided in context
               experimental_telemetry: telemetry ? { isEnabled: true, ...telemetry } : undefined,
+              onChunk: ({ chunk }) => {
+                // Emit intent before tool execution
+                if (chunk.type === "tool-input-start") {
+                  if (chunk.toolName === "connect_service") {
+                    writer.write({ type: "data-intent", data: { content: "Requesting Access" } });
+                  } else if (chunk.toolName === "workspace-planner") {
+                    writer.write({ type: "data-intent", data: { content: "Creating plan" } });
+                  }
+                }
+              },
               onFinish: ({ text }) => {
                 finalText = text;
               },

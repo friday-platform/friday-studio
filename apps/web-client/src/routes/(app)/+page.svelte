@@ -14,6 +14,7 @@
   import CredentialLinked from "$lib/modules/messages/credential-linked.svelte";
   import ErrorMessage from "$lib/modules/messages/error-message.svelte";
   import { formatMessage } from "$lib/modules/messages/format";
+  import Intent from "$lib/modules/messages/intent.svelte";
   import Progress from "$lib/modules/messages/progress.svelte";
   import Reasoning from "$lib/modules/messages/reasoning.svelte";
   import Request from "$lib/modules/messages/request.svelte";
@@ -125,6 +126,8 @@
                       />
                     {:else if message.type === "credential_linked"}
                       <CredentialLinked {message} />
+                    {:else if message.type === "intent"}
+                      <Intent {message} />
                     {:else if message.type === "error"}
                       <ErrorMessage {message} />
                     {/if}

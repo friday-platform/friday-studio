@@ -114,6 +114,13 @@ export function formatMessage(
         timestamp: new Date().toISOString(),
         content: part.data.error,
       };
+    } else if (part.type === "data-intent") {
+      return {
+        id: crypto.randomUUID(),
+        type: "intent",
+        timestamp: new Date().toISOString(),
+        content: part.data.content,
+      };
     }
   }
 }

@@ -10,7 +10,8 @@ export interface OutputEntry {
     | "error"
     | "header"
     | "typing"
-    | "credential_linked";
+    | "credential_linked"
+    | "intent";
   author?: string;
   timestamp?: string;
   content?: string;
