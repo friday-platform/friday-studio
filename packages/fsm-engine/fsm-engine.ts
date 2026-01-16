@@ -737,7 +737,7 @@ export class FSMEngine {
           const result = await this.options.agentExecutor(action.agentId, agentContext, sig);
 
           if (result.error) {
-            throw new Error(`Agent ${action.agentId} failed: ${result.error}`);
+            throw new Error(result.error);
           }
 
           // Store result in document if outputTo specified

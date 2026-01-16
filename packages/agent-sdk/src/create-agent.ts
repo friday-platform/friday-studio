@@ -5,6 +5,7 @@
  * prompts and accomplish tasks within their expertise.
  */
 
+import { stringifyError } from "@atlas/utils";
 import { z } from "zod";
 import type {
   AgentContext,
@@ -98,12 +99,9 @@ class AtlasAgentImpl<TInput = string, TOutput = unknown> implements AtlasAgent<T
         throw error;
       }
 
-      // Wrap other errors with agent context
-      throw new Error(
-        `Agent ${this.metadata.id} execution failed: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
+      // Re-throw other errors without wrapping - agent context is already in AgentResult
+      // Wrapping here would create redundancy since orchestrator/callers already have agent metadata
+      throw new Error(stringifyError(error));
     }
   }
 

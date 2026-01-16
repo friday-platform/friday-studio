@@ -304,7 +304,7 @@ export function getErrorDisplayMessage(errorCause: ErrorCause): string {
   } else {
     // For unknown errors, include the original error if available
     if (errorCause.type === "unknown" && errorCause.originalError) {
-      return `Error: ${errorCause.originalError}`;
+      return errorCause.originalError;
     }
 
     return "An unexpected error occurred. Please try again.";
