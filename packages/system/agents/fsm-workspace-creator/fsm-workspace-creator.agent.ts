@@ -16,7 +16,7 @@ import { toKebabCase } from "@std/text";
 import { stringify as stringifyYaml } from "@std/yaml";
 import { z } from "zod";
 import { classifyAgents } from "./agent-classifier.ts";
-import { flattenAgent } from "./agent-helpers.ts";
+import { enrichAgentsWithPipelineContext, flattenAgent } from "./agent-helpers.ts";
 import { enrichAgentCredentials } from "./enrichers/agent-credentials.ts";
 import { generateMCPServers } from "./enrichers/mcp-servers.ts";
 import { enrichSignal } from "./enrichers/signals.ts";
@@ -200,10 +200,16 @@ export const fsmWorkspaceCreatorAgent = createAgent<FSMCreatorInput, FSMCreatorR
           return fail({ reason: `Duplicate job ID: ${job.id}` });
         }
 
-        // Filter and flatten agents for this job
-        const jobAgents = agents
+        // Filter and flatten agents for this job, then enrich with pipeline context
+        // Pipeline context fixes bugs like TEM-3625 where LLM chose wrong API params
+        const flattenedAgents = agents
           .filter((a) => job.steps.some((s) => s.agentId === a.id))
           .map(flattenAgent);
+        const jobAgents = await enrichAgentsWithPipelineContext(
+          flattenedAgents,
+          job.steps,
+          abortSignal,
+        );
 
         const triggerSignal = plan.signals.find((s) => s.id === job.triggerSignalId);
         if (!triggerSignal) {

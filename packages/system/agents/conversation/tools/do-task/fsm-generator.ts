@@ -10,6 +10,7 @@ import { type FSMDefinition, validateFSMStructure } from "@atlas/fsm-engine";
 import { logger } from "@atlas/logger";
 import { fail, type Result, success } from "@atlas/utils";
 import { type BuildError, executeCodegen } from "@atlas/workspace-builder";
+import { enrichAgentsWithPipelineContext } from "../../../fsm-workspace-creator/agent-helpers.ts";
 import {
   generateFSMCode,
   type PreviousAttempt,
@@ -64,8 +65,14 @@ export async function generateTaskFSM(
     needsCount: plan.needs.length,
   });
 
-  // 1. Convert plan steps to SimplifiedAgent[]
-  const agents: SimplifiedAgent[] = plan.steps.map((step, index) => {
+  // 1. Build job steps structure (needed for both jobPlan and enrichment)
+  const jobSteps = plan.steps.map((step, index) => ({
+    agentId: step.agentId || `llm-step-${index}`,
+    description: step.description,
+  }));
+
+  // 2. Convert plan steps to SimplifiedAgent[] with raw descriptions
+  const rawAgents: SimplifiedAgent[] = plan.steps.map((step, index) => {
     if (step.executionType === "agent") {
       const agentId = step.agentId;
       if (!agentId) {
@@ -76,49 +83,47 @@ export async function generateTaskFSM(
         name: agentId,
         description: step.description,
         config: {},
-        executionType: "bundled",
+        executionType: "bundled" as const,
         bundledAgentId: agentId,
       };
-    } else {
-      // Ad-hoc LLM agent with MCP tools
-      // Map capability names to server IDs using registry
-      const serverIds = mapCapabilitiesToServerIds(step.needs);
-      logger.debug("Mapped capabilities to server IDs", {
-        stepIndex: index,
-        capabilities: step.needs,
-        serverIds,
-      });
-      return {
-        id: `llm-step-${index}`,
-        name: step.description,
-        description: step.description,
-        config: {},
-        executionType: "llm",
-        mcpTools: serverIds,
-      };
     }
+    // Ad-hoc LLM agent with MCP tools
+    const serverIds = mapCapabilitiesToServerIds(step.needs);
+    logger.debug("Mapped capabilities to server IDs", {
+      stepIndex: index,
+      capabilities: step.needs,
+      serverIds,
+    });
+    return {
+      id: `llm-step-${index}`,
+      name: step.description,
+      description: step.description,
+      config: {},
+      executionType: "llm" as const,
+      mcpTools: serverIds,
+    };
   });
 
-  // 2. Build job plan structure
+  // 3. Enrich agents with downstream data requirements (fixes TEM-3625)
+  const agents = await enrichAgentsWithPipelineContext(rawAgents, jobSteps, abortSignal);
+
+  // 4. Build job plan structure
   const jobPlan: WorkspaceJobPlan = {
     id: "task-job",
     name: "Task Execution",
-    triggerSignalId: "task-job-trigger", // Must match signal ID below
-    steps: plan.steps.map((step) => ({
-      agentId: step.agentId || `llm-step-${plan.steps.indexOf(step)}`,
-      description: step.description,
-    })),
+    triggerSignalId: "task-job-trigger",
+    steps: jobSteps,
     behavior: "sequential",
   };
 
-  // 3. Create trigger signal (ID must match what executor will send)
+  // 5. Create trigger signal (ID must match what executor will send)
   const triggerSignal: WorkspaceSignal = {
     id: "task-job-trigger", // Matches fsmId.replace(/-fsm$/, "-trigger")
     name: "Task Trigger",
     description: intent,
   };
 
-  // 4. Generate FSM code via LLM with retry on validation failures
+  // 6. Generate FSM code via LLM with retry on validation failures
   const MAX_RETRIES = 2;
   let previousAttempt: PreviousAttempt | undefined;
   let lastError: Error | undefined;

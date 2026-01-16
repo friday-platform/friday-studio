@@ -3,6 +3,8 @@
  */
 
 import type { JSONSchema } from "@atlas/fsm-engine";
+import { smallLLM } from "@atlas/llm";
+import { logger } from "@atlas/logger";
 import type { ClassifiedAgent, Job, Signal, SimplifiedAgent } from "./types.ts";
 
 /**
@@ -19,6 +21,101 @@ export function flattenAgent(classified: ClassifiedAgent): SimplifiedAgent {
     bundledAgentId: classified.type.kind === "bundled" ? classified.type.bundledId : undefined,
     mcpTools: classified.type.kind === "llm" ? classified.type.mcpTools : undefined,
   };
+}
+
+/**
+ * Infer what data a downstream step needs based on its description.
+ * Uses LLM to analyze the step and extract concrete data requirements.
+ */
+async function inferDownstreamDataNeeds(
+  currentStepDescription: string,
+  downstreamSteps: Array<{ description: string }>,
+  abortSignal?: AbortSignal,
+): Promise<string> {
+  const downstreamList = downstreamSteps.map((s, i) => `${i + 1}. ${s.description}`).join("\n");
+
+  try {
+    const result = await smallLLM({
+      system: `You analyze pipeline steps to determine what data the current step must produce for downstream steps to succeed.
+
+Output a brief, specific list of data requirements (2-4 bullet points).
+Focus on WHAT data is needed, not HOW to get it.
+Be concrete: "full email body text" not "email data".
+
+Examples:
+- "Full message body content (not just headers/metadata)"
+- "Complete file contents (not just filenames)"
+- "Detailed event information including description and attendees"
+- "Raw API response data (not summarized)"`,
+      prompt: `Current step: ${currentStepDescription}
+
+Downstream steps that will consume this step's output:
+${downstreamList}
+
+What specific data must the current step produce for downstream steps to work?`,
+      maxOutputTokens: 200,
+      abortSignal,
+    });
+
+    return result.trim();
+  } catch (error) {
+    logger.warn("Failed to infer downstream data needs, using fallback", { error });
+    // Fallback to generic guidance
+    return "Complete data content (not just metadata or identifiers) for downstream processing.";
+  }
+}
+
+/**
+ * Enrich agents with pipeline context for a specific job.
+ *
+ * Uses LLM to analyze downstream steps and infer what data they need,
+ * then adds that context to agent descriptions.
+ *
+ * Fixes issues like Ken's email triage bug (TEM-3625) where step 0 fetched emails
+ * with format="metadata" instead of format="full" because it didn't know step 1
+ * needed full content to extract TODOs.
+ *
+ * @param agents - Flattened agents for the job
+ * @param jobSteps - Steps in the job (in execution order)
+ * @param abortSignal - Optional abort signal
+ * @returns Agents with pipeline-aware descriptions
+ */
+export async function enrichAgentsWithPipelineContext(
+  agents: SimplifiedAgent[],
+  jobSteps: Array<{ agentId: string; description: string }>,
+  abortSignal?: AbortSignal,
+): Promise<SimplifiedAgent[]> {
+  const enrichmentPromises = agents.map(async (agent) => {
+    // Find which step uses this agent
+    const stepIndex = jobSteps.findIndex((s) => s.agentId === agent.id);
+    if (stepIndex === -1) {
+      return agent;
+    }
+
+    // Get downstream steps
+    const downstreamSteps = jobSteps.slice(stepIndex + 1);
+    if (downstreamSteps.length === 0) {
+      return agent;
+    }
+
+    // Use LLM to infer what downstream steps need
+    // stepIndex is valid here (checked above), so currentStep exists
+    const currentStep = jobSteps[stepIndex]!;
+    const dataNeeds = await inferDownstreamDataNeeds(
+      currentStep.description,
+      downstreamSteps,
+      abortSignal,
+    );
+
+    const enrichedDescription = `${agent.description}
+
+DOWNSTREAM DATA REQUIREMENTS:
+${dataNeeds}`;
+
+    return { ...agent, description: enrichedDescription };
+  });
+
+  return await Promise.all(enrichmentPromises);
 }
 
 /**
@@ -146,9 +243,12 @@ For LLM agents (check if agent.executionType === 'llm'), use llmAction() helper:
   provider: 'anthropic',
   model: 'claude-sonnet-4-5',
   prompt: \`\${agent.description}\\n\\nUse available MCP tools to complete this task.\\nStore results in the output document.\`,
-  tools: agent.mcpTools,  // This will be an array of tool names
+  tools: agent.mcpTools,
   outputTo: \`\${agent.id.replaceAll('-', '_')}_result\`
 }))
+
+Note: agent.description already contains downstream data requirements (e.g., "DOWNSTREAM DATA REQUIREMENTS: Full email body content...").
+Use the description as-is - it includes what downstream steps need.
 
 **Example:**
 If agent = { id: "quality-checker", executionType: "bundled", bundledAgentId: "parallel-quality-checker" }:
