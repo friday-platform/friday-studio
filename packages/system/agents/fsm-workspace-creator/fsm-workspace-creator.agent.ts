@@ -33,7 +33,9 @@ export type { MissingCredential } from "./preflight-validator.ts";
 
 type FSMCreatorResult = Result<
   {
-    workspacePath: string;
+    workspaceId: string;
+    workspaceName: string;
+    workspaceUrl: string;
     jobCount: number;
     metadata: {
       generatedCode: Record<string, string>; // jobId -> generated TypeScript code
@@ -371,7 +373,9 @@ export const fsmWorkspaceCreatorAgent = createAgent<FSMCreatorInput, FSMCreatorR
       });
 
       return success({
-        workspacePath: ymlPath,
+        workspaceId: registrationResponse.data.id,
+        workspaceName: plan.workspace.name,
+        workspaceUrl: `/spaces/${registrationResponse.data.id}`,
         jobCount: plan.jobs.length,
         metadata: { generatedCode: generatedCodeMap, codegenAttempts: codegenAttemptsMap },
       });
