@@ -124,7 +124,7 @@
         {
           "format": 1,
           "rawQuery": true,
-          "rawSql": "SELECT ROUND(100.0 * successful_sessions / NULLIF(total_sessions + successful_sessions, 0), 1) as success_rate FROM `tempest-production.friday_analytics.overall_summary`",
+          "rawSql": "SELECT ROUND(100.0 * SUM(successful_sessions) / NULLIF(SUM(successful_sessions) + SUM(failed_sessions) + SUM(incomplete_sessions), 0), 1) as success_rate FROM `tempest-production.friday_analytics.session_success_by_cohort`",
           "refId": "A"
         }
       ],

@@ -234,7 +234,18 @@ export class AtlasDaemon {
       signalData,
     ) => {
       try {
-        await this.triggerWorkspaceSignal(workspaceId, signalId, signalData);
+        // Inject workspace owner's userId for analytics if not present in signal
+        // This ensures cron/schedule signals track analytics correctly
+        let enrichedSignalData = signalData;
+        if (!signalData.userId) {
+          const manager = this.getWorkspaceManager();
+          const workspace = await manager.find({ id: workspaceId });
+          if (workspace?.metadata?.createdBy) {
+            enrichedSignalData = { ...signalData, userId: workspace.metadata.createdBy };
+          }
+        }
+
+        await this.triggerWorkspaceSignal(workspaceId, signalId, enrichedSignalData);
 
         logger.info("Signal processed", { workspaceId, signalId });
       } catch (error) {
