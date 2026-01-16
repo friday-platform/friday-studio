@@ -144,7 +144,7 @@
               { "color": "red", "value": 180 }
             ]
           },
-          "unit": "m"
+          "unit": "s"
         },
         "overrides": []
       },
@@ -160,12 +160,43 @@
         {
           "format": 1,
           "rawQuery": true,
-          "rawSql": "SELECT ROUND(median_hours_to_activation * 60, 1) as median_minutes FROM `tempest-production.friday_analytics.overall_summary`",
+          "rawSql": "SELECT median_seconds_to_activation FROM `tempest-production.friday_analytics.overall_summary`",
           "refId": "A"
         }
       ],
       "title": "Median Time to Activation",
       "type": "stat"
+    },
+    {
+      "datasource": { "type": "grafana-bigquery-datasource", "uid": "afaat0pt5ko3ka" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "fixedColor": "super-light-blue", "mode": "fixed" },
+          "max": 100,
+          "min": 0,
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 6, "w": 5, "x": 0, "y": 4 },
+      "id": 18,
+      "options": {
+        "barWidth": 0.8,
+        "legend": { "displayMode": "hidden", "showLegend": false },
+        "orientation": "horizontal",
+        "showValue": "always",
+        "stacking": "none"
+      },
+      "targets": [
+        {
+          "format": 1,
+          "rawQuery": true,
+          "rawSql": "SELECT FORMAT_DATE(\"%Y-%m-%d\", DATE(cohort_week)) as Cohort, pct_profile_completed as Pct FROM `tempest-production.friday_analytics.activation_funnel_by_cohort` ORDER BY cohort_week DESC LIMIT 8",
+          "refId": "A"
+        }
+      ],
+      "title": "% Completed Profile",
+      "type": "barchart"
     },
     {
       "datasource": { "type": "grafana-bigquery-datasource", "uid": "afaat0pt5ko3ka" },
@@ -178,10 +209,11 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 4 },
+      "gridPos": { "h": 6, "w": 5, "x": 5, "y": 4 },
       "id": 6,
       "options": {
         "barWidth": 0.8,
+        "legend": { "displayMode": "hidden", "showLegend": false },
         "orientation": "horizontal",
         "showValue": "always",
         "stacking": "none"
@@ -208,10 +240,11 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 4 },
+      "gridPos": { "h": 6, "w": 5, "x": 10, "y": 4 },
       "id": 7,
       "options": {
         "barWidth": 0.8,
+        "legend": { "displayMode": "hidden", "showLegend": false },
         "orientation": "horizontal",
         "showValue": "always",
         "stacking": "none"
@@ -238,10 +271,11 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 6, "w": 6, "x": 12, "y": 4 },
+      "gridPos": { "h": 6, "w": 5, "x": 15, "y": 4 },
       "id": 8,
       "options": {
         "barWidth": 0.8,
+        "legend": { "displayMode": "hidden", "showLegend": false },
         "orientation": "horizontal",
         "showValue": "always",
         "stacking": "none"
@@ -268,10 +302,11 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 6, "w": 6, "x": 18, "y": 4 },
+      "gridPos": { "h": 6, "w": 4, "x": 20, "y": 4 },
       "id": 9,
       "options": {
         "barWidth": 0.8,
+        "legend": { "displayMode": "hidden", "showLegend": false },
         "orientation": "horizontal",
         "showValue": "always",
         "stacking": "none"
@@ -290,13 +325,40 @@
     {
       "datasource": { "type": "grafana-bigquery-datasource", "uid": "afaat0pt5ko3ka" },
       "fieldConfig": {
-        "defaults": { "color": { "fixedColor": "blue", "mode": "fixed" }, "unit": "m" },
+        "defaults": { "color": { "fixedColor": "super-light-blue", "mode": "fixed" }, "unit": "s" },
         "overrides": []
       },
-      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 10 },
+      "gridPos": { "h": 6, "w": 5, "x": 0, "y": 10 },
+      "id": 19,
+      "options": {
+        "barWidth": 0.8,
+        "legend": { "displayMode": "hidden", "showLegend": false },
+        "orientation": "horizontal",
+        "showValue": "always",
+        "stacking": "none"
+      },
+      "targets": [
+        {
+          "format": 1,
+          "rawQuery": true,
+          "rawSql": "SELECT FORMAT_DATE(\"%Y-%m-%d\", DATE(cohort_week)) as Cohort, avg_seconds_to_profile_completed as Seconds FROM `tempest-production.friday_analytics.time_to_activation_by_cohort` ORDER BY cohort_week DESC LIMIT 8",
+          "refId": "A"
+        }
+      ],
+      "title": "Time to Complete Profile",
+      "type": "barchart"
+    },
+    {
+      "datasource": { "type": "grafana-bigquery-datasource", "uid": "afaat0pt5ko3ka" },
+      "fieldConfig": {
+        "defaults": { "color": { "fixedColor": "blue", "mode": "fixed" }, "unit": "s" },
+        "overrides": []
+      },
+      "gridPos": { "h": 6, "w": 5, "x": 5, "y": 10 },
       "id": 10,
       "options": {
         "barWidth": 0.8,
+        "legend": { "displayMode": "hidden", "showLegend": false },
         "orientation": "horizontal",
         "showValue": "always",
         "stacking": "none"
@@ -305,23 +367,24 @@
         {
           "format": 1,
           "rawQuery": true,
-          "rawSql": "SELECT FORMAT_DATE(\"%Y-%m-%d\", DATE(cohort_week)) as Cohort, ROUND(avg_hours_to_conversation * 60, 1) as Minutes FROM `tempest-production.friday_analytics.time_to_activation_by_cohort` ORDER BY cohort_week DESC LIMIT 8",
+          "rawSql": "SELECT FORMAT_DATE(\"%Y-%m-%d\", DATE(cohort_week)) as Cohort, avg_seconds_to_conversation as Seconds FROM `tempest-production.friday_analytics.time_to_activation_by_cohort` ORDER BY cohort_week DESC LIMIT 8",
           "refId": "A"
         }
       ],
-      "title": "Minutes to Conversation",
+      "title": "Time to Conversation",
       "type": "barchart"
     },
     {
       "datasource": { "type": "grafana-bigquery-datasource", "uid": "afaat0pt5ko3ka" },
       "fieldConfig": {
-        "defaults": { "color": { "fixedColor": "orange", "mode": "fixed" }, "unit": "m" },
+        "defaults": { "color": { "fixedColor": "orange", "mode": "fixed" }, "unit": "s" },
         "overrides": []
       },
-      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 10 },
+      "gridPos": { "h": 6, "w": 5, "x": 10, "y": 10 },
       "id": 11,
       "options": {
         "barWidth": 0.8,
+        "legend": { "displayMode": "hidden", "showLegend": false },
         "orientation": "horizontal",
         "showValue": "always",
         "stacking": "none"
@@ -330,23 +393,24 @@
         {
           "format": 1,
           "rawQuery": true,
-          "rawSql": "SELECT FORMAT_DATE(\"%Y-%m-%d\", DATE(cohort_week)) as Cohort, ROUND(avg_hours_to_workspace * 60, 1) as Minutes FROM `tempest-production.friday_analytics.time_to_activation_by_cohort` ORDER BY cohort_week DESC LIMIT 8",
+          "rawSql": "SELECT FORMAT_DATE(\"%Y-%m-%d\", DATE(cohort_week)) as Cohort, avg_seconds_to_workspace as Seconds FROM `tempest-production.friday_analytics.time_to_activation_by_cohort` ORDER BY cohort_week DESC LIMIT 8",
           "refId": "A"
         }
       ],
-      "title": "Minutes to Workspace",
+      "title": "Time to Workspace",
       "type": "barchart"
     },
     {
       "datasource": { "type": "grafana-bigquery-datasource", "uid": "afaat0pt5ko3ka" },
       "fieldConfig": {
-        "defaults": { "color": { "fixedColor": "purple", "mode": "fixed" }, "unit": "m" },
+        "defaults": { "color": { "fixedColor": "purple", "mode": "fixed" }, "unit": "s" },
         "overrides": []
       },
-      "gridPos": { "h": 6, "w": 6, "x": 12, "y": 10 },
+      "gridPos": { "h": 6, "w": 5, "x": 15, "y": 10 },
       "id": 12,
       "options": {
         "barWidth": 0.8,
+        "legend": { "displayMode": "hidden", "showLegend": false },
         "orientation": "horizontal",
         "showValue": "always",
         "stacking": "none"
@@ -355,23 +419,24 @@
         {
           "format": 1,
           "rawQuery": true,
-          "rawSql": "SELECT FORMAT_DATE(\"%Y-%m-%d\", DATE(cohort_week)) as Cohort, ROUND(avg_hours_to_first_run * 60, 1) as Minutes FROM `tempest-production.friday_analytics.time_to_activation_by_cohort` ORDER BY cohort_week DESC LIMIT 8",
+          "rawSql": "SELECT FORMAT_DATE(\"%Y-%m-%d\", DATE(cohort_week)) as Cohort, avg_seconds_to_first_run as Seconds FROM `tempest-production.friday_analytics.time_to_activation_by_cohort` ORDER BY cohort_week DESC LIMIT 8",
           "refId": "A"
         }
       ],
-      "title": "Minutes to First Run",
+      "title": "Time to First Run",
       "type": "barchart"
     },
     {
       "datasource": { "type": "grafana-bigquery-datasource", "uid": "afaat0pt5ko3ka" },
       "fieldConfig": {
-        "defaults": { "color": { "fixedColor": "green", "mode": "fixed" }, "unit": "m" },
+        "defaults": { "color": { "fixedColor": "green", "mode": "fixed" }, "unit": "s" },
         "overrides": []
       },
-      "gridPos": { "h": 6, "w": 6, "x": 18, "y": 10 },
+      "gridPos": { "h": 6, "w": 4, "x": 20, "y": 10 },
       "id": 13,
       "options": {
         "barWidth": 0.8,
+        "legend": { "displayMode": "hidden", "showLegend": false },
         "orientation": "horizontal",
         "showValue": "always",
         "stacking": "none"
@@ -380,11 +445,11 @@
         {
           "format": 1,
           "rawQuery": true,
-          "rawSql": "SELECT FORMAT_DATE(\"%Y-%m-%d\", DATE(cohort_week)) as Cohort, ROUND(avg_hours_to_first_success * 60, 1) as Minutes FROM `tempest-production.friday_analytics.time_to_activation_by_cohort` ORDER BY cohort_week DESC LIMIT 8",
+          "rawSql": "SELECT FORMAT_DATE(\"%Y-%m-%d\", DATE(cohort_week)) as Cohort, avg_seconds_to_first_success as Seconds FROM `tempest-production.friday_analytics.time_to_activation_by_cohort` ORDER BY cohort_week DESC LIMIT 8",
           "refId": "A"
         }
       ],
-      "title": "Minutes to First Success",
+      "title": "Time to First Success",
       "type": "barchart"
     },
     {
@@ -402,6 +467,7 @@
       "id": 14,
       "options": {
         "barWidth": 0.8,
+        "legend": { "displayMode": "hidden", "showLegend": false },
         "orientation": "horizontal",
         "showValue": "always",
         "stacking": "none"
@@ -440,6 +506,7 @@
       "id": 15,
       "options": {
         "barWidth": 0.8,
+        "legend": { "displayMode": "hidden", "showLegend": false },
         "orientation": "horizontal",
         "showValue": "always",
         "stacking": "normal"
@@ -473,7 +540,7 @@
         {
           "format": 1,
           "rawQuery": true,
-          "rawSql": "SELECT FORMAT_DATE(\"%Y-%m-%d\", DATE(cohort_week)) as Cohort, total_signups as Signups, CONCAT(CAST(users_with_conversation AS STRING), \" (\", CAST(pct_conversation AS STRING), \"%)\") as Conversation, CONCAT(CAST(users_with_workspace AS STRING), \" (\", CAST(pct_workspace AS STRING), \"%)\") as Workspace, CONCAT(CAST(users_with_session_started AS STRING), \" (\", CAST(pct_session_started AS STRING), \"%)\") as Session, CONCAT(CAST(users_with_session_completed AS STRING), \" (\", CAST(pct_session_completed AS STRING), \"%)\") as Activated FROM `tempest-production.friday_analytics.activation_funnel_by_cohort` ORDER BY cohort_week DESC LIMIT 15",
+          "rawSql": "SELECT FORMAT_DATE(\"%Y-%m-%d\", DATE(cohort_week)) as Cohort, total_signups as Signups, CONCAT(CAST(users_with_profile_completed AS STRING), \" (\", CAST(pct_profile_completed AS STRING), \"%)\") as Profile, CONCAT(CAST(users_with_conversation AS STRING), \" (\", CAST(pct_conversation AS STRING), \"%)\") as Conversation, CONCAT(CAST(users_with_workspace AS STRING), \" (\", CAST(pct_workspace AS STRING), \"%)\") as Workspace, CONCAT(CAST(users_with_session_started AS STRING), \" (\", CAST(pct_session_started AS STRING), \"%)\") as Session, CONCAT(CAST(users_with_session_completed AS STRING), \" (\", CAST(pct_session_completed AS STRING), \"%)\") as Activated FROM `tempest-production.friday_analytics.activation_funnel_by_cohort` ORDER BY cohort_week DESC LIMIT 15",
           "refId": "A"
         }
       ],
@@ -513,5 +580,5 @@
   "timezone": "browser",
   "title": "Friday Activation & Usage Metrics",
   "uid": "c89e9e3c-71af-4d62-87cf-a2745b85a8f8",
-  "version": 10
+  "version": 17
 }

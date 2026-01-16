@@ -31,6 +31,7 @@ WITH first_events AS (
   WHERE environment = 'production'
     AND event_name IN (
       'user.signed_up',
+      'user.profile_completed',
       'conversation.started',
       'workspace.created',
       'session.started',
@@ -43,11 +44,13 @@ SELECT
   c.cohort_week,
   c.signup_timestamp,
   -- Funnel timestamps
+  MAX(CASE WHEN f.event_name = 'user.profile_completed' THEN f.first_event_timestamp END) AS first_profile_completed_at,
   MAX(CASE WHEN f.event_name = 'conversation.started' THEN f.first_event_timestamp END) AS first_conversation_at,
   MAX(CASE WHEN f.event_name = 'workspace.created' THEN f.first_event_timestamp END) AS first_workspace_at,
   MAX(CASE WHEN f.event_name = 'session.started' THEN f.first_event_timestamp END) AS first_session_started_at,
   MAX(CASE WHEN f.event_name = 'session.completed' THEN f.first_event_timestamp END) AS first_session_completed_at,
   -- Funnel flags
+  MAX(CASE WHEN f.event_name = 'user.profile_completed' THEN 1 ELSE 0 END) AS has_profile_completed,
   MAX(CASE WHEN f.event_name = 'conversation.started' THEN 1 ELSE 0 END) AS has_conversation,
   MAX(CASE WHEN f.event_name = 'workspace.created' THEN 1 ELSE 0 END) AS has_workspace,
   MAX(CASE WHEN f.event_name = 'session.started' THEN 1 ELSE 0 END) AS has_session_started,
@@ -65,11 +68,13 @@ SELECT
   cohort_week,
   -- Counts
   COUNT(DISTINCT user_id) AS total_signups,
+  COUNTIF(has_profile_completed = 1) AS users_with_profile_completed,
   COUNTIF(has_conversation = 1) AS users_with_conversation,
   COUNTIF(has_workspace = 1) AS users_with_workspace,
   COUNTIF(has_session_started = 1) AS users_with_session_started,
   COUNTIF(has_session_completed = 1) AS users_with_session_completed,
   -- Percentages (conversion rates)
+  ROUND(100.0 * COUNTIF(has_profile_completed = 1) / COUNT(DISTINCT user_id), 1) AS pct_profile_completed,
   ROUND(100.0 * COUNTIF(has_conversation = 1) / COUNT(DISTINCT user_id), 1) AS pct_conversation,
   ROUND(100.0 * COUNTIF(has_workspace = 1) / COUNT(DISTINCT user_id), 1) AS pct_workspace,
   ROUND(100.0 * COUNTIF(has_session_started = 1) / COUNT(DISTINCT user_id), 1) AS pct_session_started,
@@ -80,19 +85,20 @@ ORDER BY cohort_week DESC;
 
 -- ----------------------------------------------------------------------------
 -- VIEW 4: Time to Activation by Cohort
--- Average time from signup to each milestone
+-- Average time from signup to each milestone (in seconds for dynamic formatting)
 -- ----------------------------------------------------------------------------
 CREATE OR REPLACE VIEW `tempest-production.friday_analytics.time_to_activation_by_cohort` AS
 SELECT
   cohort_week,
   COUNT(DISTINCT user_id) AS total_users,
-  -- Average time to first event (in hours)
-  ROUND(AVG(TIMESTAMP_DIFF(first_conversation_at, signup_timestamp, MINUTE)) / 60.0, 1) AS avg_hours_to_conversation,
-  ROUND(AVG(TIMESTAMP_DIFF(first_workspace_at, signup_timestamp, MINUTE)) / 60.0, 1) AS avg_hours_to_workspace,
-  ROUND(AVG(TIMESTAMP_DIFF(first_session_started_at, signup_timestamp, MINUTE)) / 60.0, 1) AS avg_hours_to_first_run,
-  ROUND(AVG(TIMESTAMP_DIFF(first_session_completed_at, signup_timestamp, MINUTE)) / 60.0, 1) AS avg_hours_to_first_success,
+  -- Average time to first event (in seconds)
+  ROUND(AVG(TIMESTAMP_DIFF(first_profile_completed_at, signup_timestamp, SECOND)), 0) AS avg_seconds_to_profile_completed,
+  ROUND(AVG(TIMESTAMP_DIFF(first_conversation_at, signup_timestamp, SECOND)), 0) AS avg_seconds_to_conversation,
+  ROUND(AVG(TIMESTAMP_DIFF(first_workspace_at, signup_timestamp, SECOND)), 0) AS avg_seconds_to_workspace,
+  ROUND(AVG(TIMESTAMP_DIFF(first_session_started_at, signup_timestamp, SECOND)), 0) AS avg_seconds_to_first_run,
+  ROUND(AVG(TIMESTAMP_DIFF(first_session_completed_at, signup_timestamp, SECOND)), 0) AS avg_seconds_to_first_success,
   -- Median time (using APPROX_QUANTILES)
-  ROUND(APPROX_QUANTILES(TIMESTAMP_DIFF(first_session_completed_at, signup_timestamp, MINUTE), 100)[OFFSET(50)] / 60.0, 1) AS median_hours_to_first_success
+  ROUND(APPROX_QUANTILES(TIMESTAMP_DIFF(first_session_completed_at, signup_timestamp, SECOND), 100)[OFFSET(50)], 0) AS median_seconds_to_first_success
 FROM `tempest-production.friday_analytics.user_funnel_events`
 WHERE first_session_completed_at IS NOT NULL
 GROUP BY cohort_week
@@ -192,7 +198,7 @@ SELECT
    WHERE event_name = 'session.started' AND environment = 'production') AS total_sessions,
   (SELECT COUNT(DISTINCT session_id) FROM `tempest-production.friday_analytics.analytics_events`
    WHERE event_name = 'session.completed' AND environment = 'production') AS successful_sessions,
-  -- Time to activation (median)
-  (SELECT ROUND(APPROX_QUANTILES(TIMESTAMP_DIFF(first_session_completed_at, signup_timestamp, MINUTE), 100)[OFFSET(50)] / 60.0, 1)
+  -- Time to activation (median, in seconds for dynamic formatting)
+  (SELECT ROUND(APPROX_QUANTILES(TIMESTAMP_DIFF(first_session_completed_at, signup_timestamp, SECOND), 100)[OFFSET(50)], 0)
    FROM `tempest-production.friday_analytics.user_funnel_events`
-   WHERE first_session_completed_at IS NOT NULL) AS median_hours_to_activation;
+   WHERE first_session_completed_at IS NOT NULL) AS median_seconds_to_activation;
