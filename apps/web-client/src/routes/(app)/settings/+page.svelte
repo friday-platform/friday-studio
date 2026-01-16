@@ -210,7 +210,7 @@
       showMessage(result);
     } catch (err) {
       console.error("Failed to restart daemon:", err);
-      alert("Failed to restart Atlas daemon");
+      alert("Failed to restart Friday daemon");
     } finally {
       isRestarting = false;
     }

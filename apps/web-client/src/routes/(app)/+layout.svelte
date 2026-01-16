@@ -76,7 +76,7 @@
         {#if ctx.daemonStatus === "error"}
           <div class="daemon-error">
             <p>
-              The connection to Atlas was lost
+              The connection to Friday was lost
               {#if ctx.reconnectCountdown > 0}
                 <span class="reconnect-countdown">(reconnecting in {ctx.reconnectCountdown}s)</span>
               {:else if ctx.reconnectCountdown === 0}

@@ -120,7 +120,7 @@ async function generateChatHTML(messages: AtlasUIMessage[], title?: string): Pro
     .filter(Boolean)
     .join("\n");
 
-  const displayTitle = title ? `Atlas Chat - ${escapeHTML(title)}` : "Atlas Chat";
+  const displayTitle = title ? `Friday Chat - ${escapeHTML(title)}` : "Friday Chat";
 
   return `<!DOCTYPE html>
 <html lang="en">
