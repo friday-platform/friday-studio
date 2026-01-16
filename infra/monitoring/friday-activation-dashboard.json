@@ -11,7 +11,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 0 },
+      "gridPos": { "h": 4, "w": 3, "x": 0, "y": 0 },
       "id": 1,
       "options": {
         "colorMode": "value",
@@ -40,7 +40,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 0 },
+      "gridPos": { "h": 4, "w": 3, "x": 3, "y": 0 },
       "id": 2,
       "options": {
         "colorMode": "value",
@@ -76,7 +76,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 5, "x": 8, "y": 0 },
+      "gridPos": { "h": 4, "w": 4, "x": 6, "y": 0 },
       "id": 3,
       "options": {
         "colorMode": "value",
@@ -112,7 +112,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 5, "x": 13, "y": 0 },
+      "gridPos": { "h": 4, "w": 4, "x": 10, "y": 0 },
       "id": 4,
       "options": {
         "colorMode": "value",
@@ -148,7 +148,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "gridPos": { "h": 4, "w": 4, "x": 14, "y": 0 },
       "id": 5,
       "options": {
         "colorMode": "value",
@@ -165,6 +165,64 @@
         }
       ],
       "title": "Median Time to Activation",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "grafana-bigquery-datasource", "uid": "afaat0pt5ko3ka" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "orange", "value": null }] },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 3, "x": 18, "y": 0 },
+      "id": 20,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "format": 1,
+          "rawQuery": true,
+          "rawSql": "SELECT total_artifacts FROM `tempest-production.friday_analytics.overall_summary`",
+          "refId": "A"
+        }
+      ],
+      "title": "Total Artifacts",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "grafana-bigquery-datasource", "uid": "afaat0pt5ko3ka" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "purple", "value": null }] },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 3, "x": 21, "y": 0 },
+      "id": 21,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "format": 1,
+          "rawQuery": true,
+          "rawSql": "SELECT total_gists FROM `tempest-production.friday_analytics.overall_summary`",
+          "refId": "A"
+        }
+      ],
+      "title": "Total Gists",
       "type": "stat"
     },
     {
@@ -565,7 +623,7 @@
         {
           "format": 1,
           "rawQuery": true,
-          "rawSql": "SELECT FORMAT_DATE(\"%Y-%m-%d\", DATE(cohort_week)) as Cohort, total_users as Users, ROUND(avg_conversations_per_user, 1) as Avg_Conversations, ROUND(avg_workspaces_per_user, 1) as Avg_Workspaces, ROUND(avg_sessions_per_user, 1) as Avg_Sessions, ROUND(avg_active_days_per_user, 1) as Avg_Active_Days FROM `tempest-production.friday_analytics.usage_summary_by_cohort` ORDER BY cohort_week DESC LIMIT 15",
+          "rawSql": "SELECT FORMAT_DATE(\"%Y-%m-%d\", DATE(cohort_week)) as Cohort, total_users as Users, ROUND(avg_conversations_per_user, 1) as Avg_Conversations, ROUND(avg_workspaces_per_user, 1) as Avg_Workspaces, ROUND(avg_sessions_per_user, 1) as Avg_Sessions, ROUND(avg_artifacts_per_user, 1) as Avg_Artifacts, ROUND(avg_gists_per_user, 1) as Avg_Gists, ROUND(avg_active_days_per_user, 1) as Avg_Active_Days FROM `tempest-production.friday_analytics.usage_summary_by_cohort` ORDER BY cohort_week DESC LIMIT 15",
           "refId": "A"
         }
       ],

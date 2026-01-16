@@ -204,6 +204,11 @@ SELECT
    WHERE event_name = 'session.started' AND environment = 'production') AS total_sessions,
   (SELECT COUNT(DISTINCT session_id) FROM `tempest-production.friday_analytics.analytics_events`
    WHERE event_name = 'session.completed' AND environment = 'production') AS successful_sessions,
+  -- Artifact and gist counts
+  (SELECT COUNT(*) FROM `tempest-production.friday_analytics.analytics_events`
+   WHERE event_name = 'artifact.created' AND environment = 'production') AS total_artifacts,
+  (SELECT COUNT(*) FROM `tempest-production.friday_analytics.analytics_events`
+   WHERE event_name = 'gist.created' AND environment = 'production') AS total_gists,
   -- Time to activation (median, in seconds for dynamic formatting)
   (SELECT ROUND(APPROX_QUANTILES(TIMESTAMP_DIFF(first_session_completed_at, signup_timestamp, SECOND), 100)[OFFSET(50)], 0)
    FROM `tempest-production.friday_analytics.user_funnel_events`
