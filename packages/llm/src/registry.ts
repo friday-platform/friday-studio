@@ -1,5 +1,7 @@
 import process from "node:process";
+import type { OpenAIProvider } from "@ai-sdk/openai";
 import { createOpenAI } from "@ai-sdk/openai";
+import type { ProviderV2 } from "@ai-sdk/provider";
 import { createProviderRegistry } from "ai";
 import { createAnthropicWithOptions } from "./anthropic.ts";
 import { createGoogleWithOptions } from "./google.ts";
@@ -7,10 +9,28 @@ import { createGroqWithOptions } from "./groq.ts";
 import { createOpenAIWithOptions } from "./openai.ts";
 
 /**
+ * Creates a wrapper provider that forces the Chat Completions API.
+ *
+ * The @ai-sdk/openai package defaults to the Responses API when you call provider(modelId).
+ * LiteLLM does not properly support the Responses API format for non-OpenAI models
+ * (e.g., returns null for text fields in tool calls).
+ *
+ * This wrapper ensures we use provider.chat(modelId) which uses the Chat Completions API.
+ */
+function createChatCompletionsProvider(baseProvider: OpenAIProvider): ProviderV2 {
+  return {
+    languageModel: (modelId: string) => baseProvider.chat(modelId),
+    textEmbeddingModel: (modelId: string) => baseProvider.textEmbeddingModel(modelId),
+    imageModel: (modelId: string) => baseProvider.imageModel(modelId),
+  };
+}
+
+/**
  * Creates provider registry based on environment.
  * If LITELLM_API_KEY is set, routes requests through LiteLLM proxy.
- * - Anthropic: Uses native /v1/messages endpoint (avoids tool message translation bugs)
- * - Others: Uses OpenAI-compatible /chat/completions endpoint
+ * - Anthropic: Uses native /v1/messages passthrough
+ * - Google & OpenAI: Uses OpenAI-compatible /chat/completions endpoint
+ * - Groq: Uses native SDK to preserve provider-specific options
  * Otherwise, uses direct provider connections.
  */
 function createRegistry() {
@@ -29,14 +49,17 @@ function createRegistry() {
     // Groq: Use native SDK to preserve provider-specific options (e.g., reasoningFormat)
     const groqViaLitellm = createGroqWithOptions({ apiKey: litellmKey, baseURL: litellmBaseURL });
 
-    // Other providers: Use OpenAI-compatible /chat/completions
+    // Google & OpenAI: Force Chat Completions API via createChatCompletionsProvider.
+    // The default @ai-sdk/openai uses Responses API, which LiteLLM doesn't properly
+    // support for non-OpenAI models (returns null for text fields in tool calls).
     const litellmOpenAI = createOpenAI({ apiKey: litellmKey, baseURL: litellmBaseURL });
+    const litellmChatProvider = createChatCompletionsProvider(litellmOpenAI);
 
     return createProviderRegistry({
       anthropic: anthropicViaLitellm,
-      google: litellmOpenAI,
+      google: litellmChatProvider,
       groq: groqViaLitellm,
-      openai: litellmOpenAI,
+      openai: litellmChatProvider,
     });
   }
 

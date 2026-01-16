@@ -12,6 +12,8 @@ import { createProxyFetch, PROVIDER_ENV_VARS } from "./util.ts";
 interface GoogleOptions {
   /** API key for Google AI. Defaults to GEMINI_API_KEY env var */
   apiKey?: string;
+  /** Base URL for API calls. Defaults to Google's API */
+  baseURL?: string;
   /** HTTP proxy URL. Defaults to GOOGLE_PROXY_URL env var */
   httpProxy?: string;
 }
@@ -29,6 +31,9 @@ export function createGoogleWithOptions(opts: GoogleOptions = {}): GoogleGenerat
   const googleOptions: GoogleGenerativeAIProviderSettings = {
     apiKey: opts.apiKey || process.env[PROVIDER_ENV_VARS.google],
   };
+  if (opts.baseURL) {
+    googleOptions.baseURL = opts.baseURL;
+  }
   if (httpProxy) {
     googleOptions.fetch = createProxyFetch(httpProxy);
   }
