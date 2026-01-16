@@ -82,7 +82,8 @@ Deno.test("WorkspaceRuntime emits FSM transition and action events via chunk cal
     assert(transitionEvents.length === 2, `Expected 2 transitions, got ${transitionEvents.length}`);
 
     // First transition: idle -> processing (triggered by test-signal)
-    const firstTransition = transitionEvents[0]!;
+    const firstTransition = transitionEvents[0];
+    assert(firstTransition, "First transition event should exist");
     assert(firstTransition.data.fromState === "idle", "First transition should be from idle");
     assert(
       firstTransition.data.toState === "processing",
@@ -95,7 +96,8 @@ Deno.test("WorkspaceRuntime emits FSM transition and action events via chunk cal
     );
 
     // Second transition: processing -> complete (triggered by DONE emit)
-    const secondTransition = transitionEvents[1]!;
+    const secondTransition = transitionEvents[1];
+    assert(secondTransition, "Second transition event should exist");
     assert(
       secondTransition.data.fromState === "processing",
       "Second transition should be from processing",

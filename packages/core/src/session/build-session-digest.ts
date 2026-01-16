@@ -168,21 +168,20 @@ function buildToolCallsByExecution(events: SessionHistoryEvent[]): Map<string, D
   for (const event of events) {
     if (event.type === "agent-tool-call") {
       const { executionId, toolCall } = event.data;
-      if (!byExecution.has(executionId)) {
-        byExecution.set(executionId, []);
-      }
-
       const resultKey = `${executionId}:${toolCall.toolCallId}`;
       const result = toolResultMap.get(resultKey);
 
-      byExecution
-        .get(executionId)!
-        .push({
-          toolCallId: toolCall.toolCallId,
-          tool: toolCall.toolName,
-          args: toolCall.input,
-          result,
-        });
+      let execTools = byExecution.get(executionId);
+      if (!execTools) {
+        execTools = [];
+        byExecution.set(executionId, execTools);
+      }
+      execTools.push({
+        toolCallId: toolCall.toolCallId,
+        tool: toolCall.toolName,
+        args: toolCall.input,
+        result,
+      });
     }
   }
 
@@ -228,8 +227,12 @@ function groupActionsByState(events: SessionHistoryEvent[]): Map<string, FSMActi
   const byState = new Map<string, FSMActionEvent[]>();
   for (const event of workActions) {
     const state = event.data.state;
-    if (!byState.has(state)) byState.set(state, []);
-    byState.get(state)!.push(event);
+    const stateActions = byState.get(state);
+    if (stateActions) {
+      stateActions.push(event);
+    } else {
+      byState.set(state, [event]);
+    }
   }
 
   // For each state, group by executionId and keep only the most recent execution
@@ -239,8 +242,12 @@ function groupActionsByState(events: SessionHistoryEvent[]): Map<string, FSMActi
     const byExecution = new Map<string, FSMActionEvent[]>();
     for (const event of stateEvents) {
       const execId = event.context?.executionId || event.eventId;
-      if (!byExecution.has(execId)) byExecution.set(execId, []);
-      byExecution.get(execId)!.push(event);
+      const execEvents = byExecution.get(execId);
+      if (execEvents) {
+        execEvents.push(event);
+      } else {
+        byExecution.set(execId, [event]);
+      }
     }
 
     // Pick the most recent execution (latest start time)
