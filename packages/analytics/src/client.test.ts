@@ -91,6 +91,7 @@ describe("EventNames", () => {
     assertEquals(EventNames.CONVERSATION_STARTED, "conversation.started");
     assertEquals(EventNames.WORKSPACE_CREATED, "workspace.created");
     assertEquals(EventNames.JOB_DEFINED, "job.defined");
+    assertEquals(EventNames.SESSION_STARTED, "session.started");
     assertEquals(EventNames.SESSION_COMPLETED, "session.completed");
     assertEquals(EventNames.SESSION_FAILED, "session.failed");
   });

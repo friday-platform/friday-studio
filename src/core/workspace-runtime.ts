@@ -629,6 +629,17 @@ export class WorkspaceRuntime {
       jobName: job.name,
     });
 
+    // Emit session.started analytics event
+    if (userId) {
+      analytics.emit({
+        eventName: EventNames.SESSION_STARTED,
+        userId,
+        workspaceId: this.workspace.id,
+        sessionId: session.id,
+        jobName: job.name,
+      });
+    }
+
     try {
       // Process signal through FSM with callback context
       await job.engine.signal(
@@ -1300,16 +1311,20 @@ export class WorkspaceRuntime {
     if (userId && (status === "completed" || status === "failed")) {
       const eventName =
         status === "completed" ? EventNames.SESSION_COMPLETED : EventNames.SESSION_FAILED;
+      const jobName = this.sessions.get(sessionResult.id)?.jobName;
+
       logger.debug("Emitting session analytics", {
         eventName,
         userId,
         sessionId: sessionResult.id,
+        jobName,
       });
       analytics.emit({
         eventName,
         userId,
         workspaceId: sessionResult.workspaceId,
         sessionId: sessionResult.id,
+        jobName,
       });
     }
 

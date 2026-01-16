@@ -23,6 +23,7 @@ export const EventNames = {
   CONVERSATION_STARTED: "conversation.started",
   WORKSPACE_CREATED: "workspace.created",
   JOB_DEFINED: "job.defined",
+  SESSION_STARTED: "session.started",
   SESSION_COMPLETED: "session.completed",
   SESSION_FAILED: "session.failed",
 } as const;
