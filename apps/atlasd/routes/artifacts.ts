@@ -1,4 +1,5 @@
 import { mkdir, unlink, writeFile } from "node:fs/promises";
+import { createAnalyticsClient, EventNames } from "@atlas/analytics";
 import {
   type ArtifactWithContents,
   CreateArtifactSchema,
@@ -14,8 +15,10 @@ import { dirname, extname, join } from "@std/path";
 import { fileTypeFromBlob } from "file-type";
 import { z } from "zod";
 import { daemonFactory } from "../src/factory.ts";
+import { getCurrentUserId } from "./me/adapter.ts";
 
 const logger = createLogger({ name: "artifacts-upload" });
+const analytics = createAnalyticsClient();
 
 type ValidationResult = { valid: true; mimeType: string } | { valid: false; error: string };
 
@@ -70,6 +73,17 @@ const artifactsApp = daemonFactory
 
     if (!result.ok) {
       return c.json({ error: result.error }, 400);
+    }
+
+    // Emit analytics event
+    const userId = await getCurrentUserId();
+    if (userId) {
+      analytics.emit({
+        eventName: EventNames.ARTIFACT_CREATED,
+        userId,
+        workspaceId: result.data.workspaceId,
+        attributes: { artifactId: result.data.id, artifactType: result.data.data.type },
+      });
     }
 
     return c.json({ artifact: result.data }, 200);
@@ -229,7 +243,7 @@ const artifactsApp = daemonFactory
 
     const chatId = formData.get("chatId")?.toString() || undefined;
 
-    // Path traversal defense
+    // Path traversal defense - chatId is used in storage path
     if (chatId && (chatId.includes("..") || chatId.startsWith("/"))) {
       return c.json({ error: "Invalid chatId" }, 400);
     }
@@ -269,6 +283,16 @@ const artifactsApp = daemonFactory
         // Clean up orphaned file if artifact creation failed
         await unlink(storagePath).catch(() => {});
         return c.json({ error: result.error }, 500);
+      }
+
+      // Emit analytics event
+      const userId = await getCurrentUserId();
+      if (userId) {
+        analytics.emit({
+          eventName: EventNames.ARTIFACT_CREATED,
+          userId,
+          attributes: { artifactId: result.data.id, artifactType: "file", chatId },
+        });
       }
 
       return c.json({ artifact: result.data }, 201);

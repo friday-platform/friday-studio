@@ -7,6 +7,10 @@ import { type UserIdentity, UserIdentitySchema } from "./schemas.ts";
 const logger = createLogger({ name: "user-identity" });
 const TIMEOUT_MS = 10_000;
 
+// Cached user ID - extracted from ATLAS_KEY, constant for daemon lifetime
+let cachedUserId: string | null = null;
+let userIdResolved = false;
+
 /**
  * Get user identity from configured source.
  *
@@ -24,6 +28,24 @@ export function getCurrentUser(): Promise<Result<UserIdentity | null, string>> {
 
   // Local mode: extract from JWT
   return Promise.resolve(extractFromJwt(atlasKey));
+}
+
+/**
+ * Get just the user ID, cached for efficiency.
+ * Use this for analytics where only the ID is needed.
+ * Only caches successful results - errors allow retry.
+ */
+export async function getCurrentUserId(): Promise<string | undefined> {
+  if (userIdResolved) {
+    return cachedUserId ?? undefined;
+  }
+
+  const result = await getCurrentUser();
+  if (result.ok) {
+    userIdResolved = true;
+    cachedUserId = result.data?.id ?? null;
+  }
+  return result.ok ? (result.data?.id ?? undefined) : undefined;
 }
 
 function extractFromJwt(atlasKey: string | undefined): Result<UserIdentity | null, string> {

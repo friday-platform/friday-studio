@@ -10,8 +10,8 @@ import (
 
 	"github.com/caarlos0/env/v11"
 	"github.com/joho/godotenv"
-	"github.com/tempestteam/atlas/apps/bounce/analytics"
 	"github.com/tempestteam/atlas/apps/bounce/service"
+	"github.com/tempestteam/atlas/pkg/analytics"
 	"github.com/tempestteam/atlas/pkg/metrics"
 	"github.com/tempestteam/atlas/pkg/profiler"
 	"github.com/tempestteam/atlas/pkg/server"

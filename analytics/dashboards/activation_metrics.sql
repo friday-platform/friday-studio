@@ -150,6 +150,8 @@ SELECT
   COUNTIF(e.event_name = 'session.started') AS session_started_count,
   COUNTIF(e.event_name = 'session.completed') AS session_completed_count,
   COUNTIF(e.event_name = 'session.failed') AS session_failed_count,
+  COUNTIF(e.event_name = 'artifact.created') AS artifact_count,
+  COUNTIF(e.event_name = 'gist.created') AS gist_count,
   COUNT(DISTINCT e.workspace_id) AS unique_workspaces,
   COUNT(DISTINCT DATE(e.timestamp)) AS active_days
 FROM `tempest-production.friday_analytics.user_cohorts` c
@@ -170,10 +172,14 @@ SELECT
   SUM(workspace_count) AS total_workspaces,
   SUM(session_started_count) AS total_sessions_started,
   SUM(session_completed_count) AS total_sessions_completed,
+  SUM(artifact_count) AS total_artifacts,
+  SUM(gist_count) AS total_gists,
   -- Averages per user
   ROUND(AVG(conversation_count), 1) AS avg_conversations_per_user,
   ROUND(AVG(workspace_count), 1) AS avg_workspaces_per_user,
   ROUND(AVG(session_started_count), 1) AS avg_sessions_per_user,
+  ROUND(AVG(artifact_count), 1) AS avg_artifacts_per_user,
+  ROUND(AVG(gist_count), 1) AS avg_gists_per_user,
   ROUND(AVG(active_days), 1) AS avg_active_days_per_user
 FROM `tempest-production.friday_analytics.user_usage_metrics`
 GROUP BY cohort_week

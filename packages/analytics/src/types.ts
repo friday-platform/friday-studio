@@ -26,4 +26,6 @@ export const EventNames = {
   SESSION_STARTED: "session.started",
   SESSION_COMPLETED: "session.completed",
   SESSION_FAILED: "session.failed",
+  ARTIFACT_CREATED: "artifact.created",
+  GIST_CREATED: "gist.created",
 } as const;

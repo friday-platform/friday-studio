@@ -1,4 +1,4 @@
-// Package analytics provides user metrics tracking for bounce service.
+// Package analytics provides user metrics tracking via OpenTelemetry.
 package analytics
 
 import (
@@ -18,6 +18,21 @@ import (
 )
 
 const logType = "analytics"
+
+// Event name constants. Keep in sync with packages/analytics/src/types.ts.
+const (
+	EventUserSignedUp        = "user.signed_up"
+	EventUserProfileComplete = "user.profile_completed"
+	EventUserLoggedIn        = "user.logged_in"
+	EventConversationStarted = "conversation.started"
+	EventWorkspaceCreated    = "workspace.created"
+	EventJobDefined          = "job.defined"
+	EventSessionStarted      = "session.started"
+	EventSessionCompleted    = "session.completed"
+	EventSessionFailed       = "session.failed"
+	EventArtifactCreated     = "artifact.created"
+	EventGistCreated         = "gist.created"
+)
 
 var (
 	provider     *sdklog.LoggerProvider

@@ -8,8 +8,8 @@ import (
 
 	"github.com/go-chi/httplog/v2"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/tempestteam/atlas/apps/bounce/analytics"
 	bouncerepo "github.com/tempestteam/atlas/apps/bounce/repo"
+	"github.com/tempestteam/atlas/pkg/analytics"
 	pgxerr "github.com/tempestteam/atlas/pkg/x/pgxhelper"
 )
 
@@ -262,6 +262,6 @@ func verifyMagicLink(w http.ResponseWriter, r *http.Request) {
 	redirectURL := cfg.RedirectURI + "/"
 	log.Info("Magic link verification successful, redirecting", "userID", tu.ID, "redirectURL", redirectURL)
 	RecordAuth("magiclink", "success")
-	analytics.Emit(ctx, "user.logged_in", tu.ID, nil)
+	analytics.Emit(ctx, analytics.EventUserLoggedIn, tu.ID, nil)
 	http.Redirect(w, r, redirectURL, http.StatusFound)
 }

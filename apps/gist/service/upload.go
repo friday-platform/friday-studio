@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/httplog/v2"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
+	"github.com/tempestteam/atlas/pkg/analytics"
 )
 
 const maxUploadRetries = 3
@@ -83,13 +84,20 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 
 	shareURL := baseURL + "/space/" + id.String()
 
-	// Extract user email from Bearer token for logging (permissive - no auth enforcement)
-	userEmail := extractUserEmail(r)
+	// Extract user info from Bearer token for logging/analytics (permissive - no auth enforcement)
+	userID, userEmail := extractUserInfo(r)
 
 	if userEmail != "" {
 		log.Info("gist uploaded", "id", id.String(), "url", shareURL, "user", userEmail)
 	} else {
 		log.Info("gist uploaded", "id", id.String(), "url", shareURL)
+	}
+
+	// Emit analytics event
+	if userID != "" {
+		analytics.Emit(ctx, analytics.EventGistCreated, userID, map[string]any{
+			"gist_id": id.String(),
+		})
 	}
 
 	RecordUpload("success")
@@ -98,31 +106,29 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]string{"id": id.String(), "url": shareURL})
 }
 
-// extractUserEmail extracts the email claim from a Bearer token.
-// This is permissive - it never rejects requests, just returns empty string on failure.
-func extractUserEmail(r *http.Request) string {
+// extractUserInfo extracts user ID (sub) and email claims from a Bearer token.
+// This is permissive - it never rejects requests, just returns empty strings on failure.
+func extractUserInfo(r *http.Request) (userID, email string) {
 	authHeader := r.Header.Get("Authorization")
 	if !strings.HasPrefix(authHeader, "Bearer ") {
-		return ""
+		return "", ""
 	}
 
 	tokenString := strings.TrimPrefix(authHeader, "Bearer ")
 
-	// Parse without validation - just extract claims for logging
+	// Parse without validation - just extract claims for logging/analytics
 	token, _, err := jwt.NewParser().ParseUnverified(tokenString, jwt.MapClaims{})
 	if err != nil {
-		return ""
+		return "", ""
 	}
 
 	claims, ok := token.Claims.(jwt.MapClaims)
 	if !ok {
-		return ""
+		return "", ""
 	}
 
-	email, ok := claims["email"].(string)
-	if !ok {
-		return ""
-	}
+	userID, _ = claims["sub"].(string)
+	email, _ = claims["email"].(string)
 
-	return email
+	return userID, email
 }

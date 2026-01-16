@@ -17,9 +17,9 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/tempestteam/atlas/apps/bounce/analytics"
 	bouncerepo "github.com/tempestteam/atlas/apps/bounce/repo"
 	"github.com/tempestteam/atlas/apps/bounce/stripe"
+	"github.com/tempestteam/atlas/pkg/analytics"
 	pgxdb "github.com/tempestteam/atlas/pkg/x/middleware/pgxdb"
 	pgxerr "github.com/tempestteam/atlas/pkg/x/pgxhelper"
 )
@@ -328,7 +328,7 @@ func verifyEmailSignup(w http.ResponseWriter, r *http.Request) {
 
 	// This route is hosted in the SvelteKit app at auth.atlas.tempestdx.dev/complete-setup
 	RecordAuth("email", "success")
-	analytics.Emit(ctx, "user.signed_up", tu.ID, nil)
+	analytics.Emit(ctx, analytics.EventUserSignedUp, tu.ID, nil)
 	http.Redirect(w, r, cfg.AuthUIURL+"/complete-setup", http.StatusTemporaryRedirect)
 }
 
@@ -464,7 +464,7 @@ func completeSignup(w http.ResponseWriter, r *http.Request) {
 	conn.Release()
 
 	log.Info("User completed signup", "userID", userID, "fullName", user.FullName)
-	analytics.Emit(ctx, "user.profile_completed", userID, nil)
+	analytics.Emit(ctx, analytics.EventUserProfileComplete, userID, nil)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
