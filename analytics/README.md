@@ -1,10 +1,10 @@
 # Friday Analytics
 
-We track user behavior to understand how people use Atlas and where they get stuck. This data helps us answer questions like "Are users getting value from Atlas?" and "Where do we lose people?"
+We track user behavior to understand how people use Friday and where they get stuck. This data helps us answer questions like "Are users getting value from Friday?" and "Where do we lose people?"
 
 ## Activation Funnel
 
-Our north star metric is **activation rate** - users who successfully execute at least one job. A successful job means Atlas actually did useful work for them.
+Our north star metric is **activation rate** - users who successfully execute at least one job. A successful job means Friday actually did useful work for them.
 
 ```
               THE ACTIVATION FUNNEL (illustration)
@@ -28,8 +28,8 @@ Each drop-off represents users who got stuck or lost interest. Check the dashboa
 |--------------------------|-------------------------------------------|--------------------------|
 | `user.signed_up`         | New account created                       | Getting Started          |
 | `user.profile_completed` | Filled out profile                        | Getting Started          |
-| `user.logged_in`         | Returned to Atlas                         | Getting Started          |
-| `conversation.started`   | Started chatting with Atlas               | Getting Started          |
+| `user.logged_in`         | Returned to Friday                         | Getting Started          |
+| `conversation.started`   | Started chatting with Friday               | Getting Started          |
 | `workspace.created`      | Created a workspace                       | Set Up                   |
 | `session.started`        | Job began executing                       | Execution & Monitoring   |
 | `session.completed`      | Job finished successfully ← **ACTIVATED** | Execution & Monitoring   |
@@ -143,7 +143,7 @@ Best for: Custom analysis, deep dives, exports
 
 ```
 ┌─────────────┐     ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│   Atlas     │     │    OTel     │     │  BigQuery   │     │   Grafana   │
+│   Friday    │     │    OTel     │     │  BigQuery   │     │   Grafana   │
 │  Services   │ ──▶ │  Collector  │ ──▶ │   Tables    │ ──▶ │  Dashboard  │
 └─────────────┘     └─────────────┘     └─────────────┘     └─────────────┘
      emit              transform           store              visualize
