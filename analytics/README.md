@@ -1,4 +1,4 @@
-# Atlas Analytics
+# Friday Analytics
 
 We track user behavior to understand how people use Atlas and where they get stuck. This data helps us answer questions like "Are users getting value from Atlas?" and "Where do we lose people?"
 
