@@ -29,7 +29,7 @@
     "@lezer/common": "^1.5.0",
     "@lezer/markdown": "^1.6.3",
     "@std/yaml": "npm:@jsr/std__yaml@^1.0.10",
-    "@sveltejs/kit": "^2.49.5",
+    "@sveltejs/kit": "^2.50.0",
     "@tanstack/svelte-table": "9.0.0-alpha.10",
     "@tauri-apps/api": "2.9.1",
     "@tauri-apps/plugin-fs": "~2.4.5",
