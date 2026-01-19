@@ -104,7 +104,7 @@
     "npm:ai@^5.0.93": "5.0.121_zod@4.3.5",
     "npm:concurrently@*": "9.2.1",
     "npm:cookie@^1.0.2": "1.1.1",
-    "npm:cron-parser@^5.4.0": "5.4.0",
+    "npm:cron-parser@^5.5.0": "5.5.0",
     "npm:dotenv@17.2.3": "17.2.3",
     "npm:eslint-config-prettier@^10.1.8": "10.1.8_eslint@9.39.2",
     "npm:eslint-plugin-svelte@^3.14.0": "3.14.0_eslint@9.39.2_svelte@5.46.4__acorn@8.15.0_postcss@8.5.6",
@@ -3058,8 +3058,8 @@
         "vary"
       ]
     },
-    "cron-parser@5.4.0": {
-      "integrity": "sha512-HxYB8vTvnQFx4dLsZpGRa0uHp6X3qIzS3ZJgJ9v6l/5TJMgeWQbLkR5yiJ5hOxGbc9+jCADDnydIe15ReLZnJA==",
+    "cron-parser@5.5.0": {
+      "integrity": "sha512-oML4lKUXxizYswqmxuOCpgFS8BNUJpIu6k/2HVHyaL8Ynnf3wdf9tkns0yRdJLSIjkJ+b0DXHMZEHGpMwjnPww==",
       "dependencies": [
         "luxon"
       ]
@@ -5760,7 +5760,7 @@
       "packages/config": {
         "packageJson": {
           "dependencies": [
-            "npm:cron-parser@^5.4.0",
+            "npm:cron-parser@^5.5.0",
             "npm:zod-from-json-schema@~0.5.2",
             "npm:zod@^4.3.5"
           ]
@@ -5789,7 +5789,7 @@
       "packages/cron": {
         "packageJson": {
           "dependencies": [
-            "npm:cron-parser@^5.4.0"
+            "npm:cron-parser@^5.5.0"
           ]
         }
       },
