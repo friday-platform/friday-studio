@@ -17,7 +17,7 @@
     "@sentry/sveltekit": "^10.34.0",
     "@sveltejs/kit": "^2.50.0",
     "nanoid": "^5.1.6",
-    "svelte": "^5.46.4",
+    "svelte": "^5.47.0",
     "zod": "^4.3.5",
     "zod-form-data": "^3.0.1"
   },
