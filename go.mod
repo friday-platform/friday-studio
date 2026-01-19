@@ -33,7 +33,7 @@ require (
 	github.com/slack-go/slack v0.17.3
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1
-	github.com/stripe/stripe-go/v84 v84.1.0
+	github.com/stripe/stripe-go/v84 v84.2.0
 	github.com/tink-crypto/tink-go-gcpkms/v2 v2.2.0
 	github.com/tink-crypto/tink-go/v2 v2.6.0
 	go.opentelemetry.io/collector/component v1.49.0
