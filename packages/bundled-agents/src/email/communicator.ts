@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { env } from "node:process";
 import { createAgent, repairToolCall } from "@atlas/agent-sdk";
 import type { EmailParams } from "@atlas/config";
+import type { OutlineRef } from "@atlas/core";
 import { getDefaultProviderOpts, registry } from "@atlas/llm";
 import { getTodaysDate } from "@atlas/utils";
 import { encodeBase64 } from "@std/encoding/base64";
@@ -25,6 +26,7 @@ type Result = {
   response: string;
   message_id?: string;
   email?: { to: string | string[]; subject: string; content: string; from: string };
+  outlineRefs?: OutlineRef[];
 };
 
 export const emailAgent = createAgent<string, Result>({
@@ -313,16 +315,6 @@ CONTENT GUIDELINES (for composeEmail):
 
     logger.info("Email sent successfully", { to: emailParams.to, message_id });
 
-    stream?.emit({
-      type: "data-outline-update",
-      data: {
-        id: "email-sent",
-        content: `Email sent successfully to ${emailParams.to}`,
-        title: "Email sent",
-        timestamp: Date.now(),
-      },
-    });
-
     return {
       response: `Email sent successfully to ${params.to}`,
       message_id,
@@ -332,6 +324,13 @@ CONTENT GUIDELINES (for composeEmail):
         content: emailParams.content,
         from: fromEmail,
       },
+      outlineRefs: [
+        {
+          service: "email",
+          title: "Email sent",
+          content: `Email sent successfully to ${emailParams.to}`,
+        },
+      ],
     };
   },
 });

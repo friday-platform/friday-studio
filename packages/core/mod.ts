@@ -81,4 +81,11 @@ export type {
   NetworkErrorCause,
   UnknownErrorCause,
 } from "./src/types/error-causes.ts";
+// Outline Reference schemas for standardized agent outline updates
+export {
+  type OutlineRef,
+  OutlineRefSchema,
+  type OutlineRefsResult,
+  OutlineRefsResultSchema,
+} from "./src/types/outline-ref.ts";
 export { createErrorCause, throwWithCause } from "./src/utils/error-helpers.ts";

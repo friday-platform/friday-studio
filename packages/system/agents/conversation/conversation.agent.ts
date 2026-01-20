@@ -12,6 +12,7 @@ import type { AtlasTools, AtlasUIMessage } from "@atlas/agent-sdk";
 import { createAgent, repairToolCall, validateAtlasUIMessages } from "@atlas/agent-sdk";
 import { pipeUIMessageStream } from "@atlas/agent-sdk/vercel-helpers";
 import { client, parseResult } from "@atlas/client/v2";
+import { OutlineRefsResultSchema } from "@atlas/core";
 import { ChatStorage } from "@atlas/core/chat/storage";
 import { createErrorCause, getErrorDisplayMessage, parseAPICallError } from "@atlas/core/errors";
 import { registry, smallLLM } from "@atlas/llm";
@@ -29,6 +30,7 @@ import {
   streamText,
   tool,
 } from "ai";
+import { z } from "zod";
 import { getCapabilitiesSection } from "./capabilities.ts";
 import { fetchLinkSummary, formatIntegrationsSection } from "./link-context.ts";
 import { estimateTokens, processMessageHistory } from "./message-windowing.ts";
@@ -442,6 +444,36 @@ export const conversationAgent = createAgent({
           connectServiceTool.connect_service = createConnectServiceTool(providerIds);
         }
 
+        // Emit outline for newly connected credential (last user message only)
+        const lastUserMsg = [...messages].reverse().find((m) => m.role === "user");
+        if (lastUserMsg) {
+          const CredentialLinkedSchema = z.object({
+            provider: z.string(),
+            displayName: z.string(),
+          });
+          for (const part of lastUserMsg.parts) {
+            if (part.type === "data-credential-linked") {
+              const parsed = CredentialLinkedSchema.safeParse(part.data);
+
+              if (parsed.success) {
+                const credential = linkSummary?.credentials.find(
+                  (c) => c.provider === parsed.data.provider,
+                );
+
+                writer.write({
+                  type: "data-outline-update",
+                  data: {
+                    id: parsed.data.provider,
+                    title: `${parsed.data.displayName} Access Provided`,
+                    timestamp: Date.now(),
+                    content: credential?.label || undefined,
+                  },
+                });
+              }
+            }
+          }
+        }
+
         logger.debug("Startup context sections prepared", {
           workspaceCount: workspaces.length,
           agentCount: agentNames.length,
@@ -658,6 +690,25 @@ export const conversationAgent = createAgent({
               // Pass telemetry config if provided in context
               experimental_telemetry: telemetry ? { isEnabled: true, ...telemetry } : undefined,
               onChunk: ({ chunk }) => {
+                // Handle outline refs from tool results
+                if (chunk.type === "tool-result" && "result" in chunk) {
+                  const parsed = OutlineRefsResultSchema.safeParse(chunk.result);
+                  if (parsed.success && parsed.data.outlineRefs) {
+                    for (const ref of parsed.data.outlineRefs) {
+                      writer.write({
+                        type: "data-outline-update",
+                        data: {
+                          id: ref.service,
+                          title: ref.title,
+                          timestamp: Date.now(),
+                          content: ref.content,
+                          artifactId: ref.artifactId,
+                          artifactLabel: ref.artifactLabel,
+                        },
+                      });
+                    }
+                  }
+                }
                 // Emit intent before tool execution
                 if (chunk.type === "tool-input-start") {
                   if (chunk.toolName === "connect_service") {

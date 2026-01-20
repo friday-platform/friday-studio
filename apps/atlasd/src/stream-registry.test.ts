@@ -4,7 +4,7 @@ import {
   FINISHED_TTL_MS,
   MAX_EVENTS,
   STALE_TTL_MS,
-  StreamController,
+  type StreamController,
   StreamRegistry,
 } from "./stream-registry.ts";
 

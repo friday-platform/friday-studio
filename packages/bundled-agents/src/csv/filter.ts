@@ -1,5 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { type ArtifactRef, createAgent, repairToolCall } from "@atlas/agent-sdk";
+import type { OutlineRef } from "@atlas/core";
 import { ArtifactStorage, parseCsvContent } from "@atlas/core/artifacts/server";
 import { registry } from "@atlas/llm";
 import { getWorkspaceFilesDir } from "@atlas/utils/paths.server";
@@ -17,7 +18,11 @@ import { z } from "zod";
  * Designed for CSV filtering and sampling workflows.
  */
 
-type CsvFilterSamplerResult = { summary: string; artifactRef: ArtifactRef };
+type CsvFilterSamplerResult = {
+  summary: string;
+  artifactRef: ArtifactRef;
+  outlineRefs?: OutlineRef[];
+};
 
 export const csvFilterSamplerAgent = createAgent<string, CsvFilterSamplerResult>({
   id: "csv-filter-sampler",
@@ -34,10 +39,7 @@ export const csvFilterSamplerAgent = createAgent<string, CsvFilterSamplerResult>
     ],
   },
 
-  handler: async (
-    prompt,
-    { session, logger, abortSignal, stream },
-  ): Promise<CsvFilterSamplerResult> => {
+  handler: async (prompt, { session, logger, abortSignal }): Promise<CsvFilterSamplerResult> => {
     try {
       logger.info("Parsing prompt to extract artifact ID and filter criteria");
 
@@ -313,21 +315,19 @@ Call buildSqlWhere tool with your WHERE clause (WITHOUT the 'WHERE' keyword).`,
 
       const summary = `Filtered ${parsedCsv.rowCount} total records to ${filteredCount} matching records, sampled ${samples.length} random record(s). ${filteredCount - samples.length} record(s) left unprocessed.`;
 
-      stream?.emit({
-        type: "data-outline-update",
-        data: {
-          id: "csv-filter-sampler",
-          content: summary,
-          title: "CSV Filter",
-          timestamp: Date.now(),
-          artifactId: createResult.data.id,
-          artifactLabel: "View Filter",
-        },
-      });
-
       return {
         summary,
         artifactRef: { id: createResult.data.id, type: "file", summary: createResult.data.summary },
+        outlineRefs: [
+          {
+            service: "internal",
+            title: "CSV Filter",
+            content: summary,
+            artifactId: createResult.data.id,
+            artifactLabel: "View Filter",
+            type: "file",
+          },
+        ],
       };
     } catch (error) {
       logger.error("CSV filter agent failed", { error });

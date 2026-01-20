@@ -1,6 +1,7 @@
 import process from "node:process";
 import { createAgent, createFailTool, repairJson, repairToolCall } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
+import type { OutlineRef } from "@atlas/core";
 import { registry, smallLLM } from "@atlas/llm";
 import { fail, getTodaysDate, type Result, success } from "@atlas/utils";
 import { generateObject, generateText, tool } from "ai";
@@ -11,7 +12,11 @@ import { executeSearch } from "./search-tool.ts";
 import { type QueryAnalysis, QueryAnalysisSchema, type SearchResult } from "./types.ts";
 
 export type WebSearchAgentResult = Result<
-  { summary: string; artifactRef: { id: string; type: string; summary: string } },
+  {
+    summary: string;
+    artifactRef: { id: string; type: string; summary: string };
+    outlineRefs: OutlineRef[];
+  },
   { reason: string }
 >;
 
@@ -308,20 +313,21 @@ export const webSearchAgent = createAgent<string, WebSearchAgentResult>({
 
     const artifactId = response.data.artifact.id;
 
-    stream?.emit({
-      type: "data-outline-update",
-      data: {
-        id: "web-search",
-        title: "Search Result",
-        content: reportDescription,
-        timestamp: Date.now(),
-        artifactId,
-        artifactLabel: "View Report",
-      },
-    });
-
     logger.info("Research completed", { artifactId });
 
-    return success({ summary, artifactRef: { id: artifactId, type: "web-search", summary } });
+    return success({
+      summary,
+      artifactRef: { id: artifactId, type: "web-search", summary },
+      outlineRefs: [
+        {
+          service: "internal",
+          title: "Search Result",
+          content: reportDescription,
+          artifactId,
+          artifactLabel: "View Report",
+          type: "web-search",
+        },
+      ],
+    });
   },
 });

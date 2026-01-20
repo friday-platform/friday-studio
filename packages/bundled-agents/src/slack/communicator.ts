@@ -10,6 +10,7 @@ import {
   collectToolUsageFromSteps,
   extractArtifactRefsFromToolResults,
 } from "@atlas/agent-sdk/vercel-helpers";
+import type { OutlineRef } from "@atlas/core";
 import { getDefaultProviderOpts, registry } from "@atlas/llm";
 import { generateObject, generateText, stepCountIs } from "ai";
 import { z } from "zod";
@@ -22,10 +23,7 @@ import { executorSystem, planSystem, translateSystem } from "./prompts.ts";
  * and invoked from Slack through slack-mcp-server. It takes a plain
  * text prompt and returns a concise helpful answer.
  */
-type Result = { response: string; artifactRefs: ArtifactRef[] | null };
-
-const icon =
-  "data:image/svg+xml;base64,PHN2ZyBlbmFibGUtYmFja2dyb3VuZD0ibmV3IDAgMCAyNDQ3LjYgMjQ1Mi41IiB2aWV3Qm94PSIwIDAgMjQ0Ny42IDI0NTIuNSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBjbGlwLXJ1bGU9ImV2ZW5vZGQiIGZpbGwtcnVsZT0iZXZlbm9kZCI+PHBhdGggZD0ibTg5Ny40IDBjLTEzNS4zLjEtMjQ0LjggMTA5LjktMjQ0LjcgMjQ1LjItLjEgMTM1LjMgMTA5LjUgMjQ1LjEgMjQ0LjggMjQ1LjJoMjQ0Ljh2LTI0NS4xYy4xLTEzNS4zLTEwOS41LTI0NS4xLTI0NC45LTI0NS4zLjEgMCAuMSAwIDAgMG0wIDY1NGgtNjUyLjZjLTEzNS4zLjEtMjQ0LjkgMTA5LjktMjQ0LjggMjQ1LjItLjIgMTM1LjMgMTA5LjQgMjQ1LjEgMjQ0LjcgMjQ1LjNoNjUyLjdjMTM1LjMtLjEgMjQ0LjktMTA5LjkgMjQ0LjgtMjQ1LjIuMS0xMzUuNC0xMDkuNS0yNDUuMi0yNDQuOC0yNDUuM3oiIGZpbGw9IiMzNmM1ZjAiLz48cGF0aCBkPSJtMjQ0Ny42IDg5OS4yYy4xLTEzNS4zLTEwOS41LTI0NS4xLTI0NC44LTI0NS4yLTEzNS4zLjEtMjQ0LjkgMTA5LjktMjQ0LjggMjQ1LjJ2MjQ1LjNoMjQ0LjhjMTM1LjMtLjEgMjQ0LjktMTA5LjkgMjQ0LjgtMjQ1LjN6bS02NTIuNyAwdi02NTRjLjEtMTM1LjItMTA5LjQtMjQ1LTI0NC43LTI0NS4yLTEzNS4zLjEtMjQ0LjkgMTA5LjktMjQ0LjggMjQ1LjJ2NjU0Yy0uMiAxMzUuMyAxMDkuNCAyNDUuMSAyNDQuNyAyNDUuMyAxMzUuMy0uMSAyNDQuOS0xMDkuOSAyNDQuOC0yNDUuM3oiIGZpbGw9IiMyZWI2N2QiLz48cGF0aCBkPSJtMTU1MC4xIDI0NTIuNWMxMzUuMy0uMSAyNDQuOS0xMDkuOSAyNDQuOC0yNDUuMi4xLTEzNS4zLTEwOS41LTI0NS4xLTI0NC44LTI0NS4yaC0yNDQuOHYyNDUuMmMtLjEgMTM1LjIgMTA5LjUgMjQ1IDI0NC44IDI0NS4yem0wLTY1NC4xaDY1Mi43YzEzNS4zLS4xIDI0NC45LTEwOS45IDI0NC44LTI0NS4yLjItMTM1LjMtMTA5LjQtMjQ1LjEtMjQ0LjctMjQ1LjNoLTY1Mi43Yy0xMzUuMy4xLTI0NC45IDEwOS45LTI0NC44IDI0NS4yLS4xIDEzNS40IDEwOS40IDI0NS4yIDI0NC43IDI0NS4zeiIgZmlsbD0iI2VjYjIyZSIvPjxwYXRoIGQ9Im0wIDE1NTMuMmMtLjEgMTM1LjMgMTA5LjUgMjQ1LjEgMjQ0LjggMjQ1LjIgMTM1LjMtLjEgMjQ0LjktMTA5LjkgMjQ0LjgtMjQ1LjJ2LTI0NS4yaC0yNDQuOGMtMTM1LjMuMS0yNDQuOSAxMDkuOS0yNDQuOCAyNDUuMnptNjUyLjcgMHY2NTRjLS4yIDEzNS4zIDEwOS40IDI0NS4xIDI0NC43IDI0NS4zIDEzNS4zLS4xIDI0NC45LTEwOS45IDI0NC44LTI0NS4ydi02NTMuOWMuMi0xMzUuMy0xMDkuNC0yNDUuMS0yNDQuNy0yNDUuMy0xMzUuNCAwLTI0NC45IDEwOS44LTI0NC44IDI0NS4xIDAgMCAwIC4xIDAgMCIgZmlsbD0iI2UwMWU1YSIvPjwvZz48L3N2Zz4=";
+type Result = { response: string; artifactRefs: ArtifactRef[] | null; outlineRefs?: OutlineRef[] };
 
 export const slackCommunicatorAgent = createAgent<string, Result>({
   id: "slack",
@@ -176,20 +174,6 @@ export const slackCommunicatorAgent = createAgent<string, Result>({
 
       artifactRefs = extractArtifactRefsFromToolResults(assembledToolResults);
 
-      if (artifactRefs && artifactRefs.length > 0) {
-        stream?.emit({
-          type: "data-outline-update",
-          data: {
-            id: "slack-translated-summary",
-            title: "Formatted Summary",
-            icon,
-            timestamp: Date.now(),
-            artifactId: artifactRefs?.[0]?.id,
-            artifactLabel: "View Summary",
-          },
-        });
-      }
-
       logger.info("slack-summarizer summary", { text });
 
       // Progress: summarization complete
@@ -267,24 +251,30 @@ export const slackCommunicatorAgent = createAgent<string, Result>({
         experimental_repairToolCall: repairToolCall,
       });
 
-      stream?.emit({
-        type: "data-outline-update",
-        data: {
-          id: "slack-execution-result",
-          title: "Message sent",
-          icon,
-          timestamp: Date.now(),
-          content: executionResult.text,
-        },
-      });
-
       logger.debug("AI SDK generateText completed", {
         agent: "slack",
         step: "execute-slack-actions",
         usage: executionResult.usage,
       });
 
-      return { response: executionResult.text, artifactRefs };
+      // Build outlineRefs for the result
+      const outlineRefs: OutlineRef[] = [];
+
+      // Add outline ref for translated summary if we have artifacts
+      const firstArtifact = artifactRefs?.[0];
+      if (firstArtifact) {
+        outlineRefs.push({
+          service: "slack",
+          title: "Formatted Summary",
+          artifactId: firstArtifact.id,
+          artifactLabel: "View Summary",
+        });
+      }
+
+      // Add outline ref for the execution result
+      outlineRefs.push({ service: "slack", title: "Message sent", content: executionResult.text });
+
+      return { response: executionResult.text, artifactRefs, outlineRefs };
     } catch (error) {
       logger.error("slack-communicator failed", { error });
       throw error;

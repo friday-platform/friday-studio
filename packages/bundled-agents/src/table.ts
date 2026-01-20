@@ -6,12 +6,19 @@
 
 import { createAgent, repairJson } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
+import type { OutlineRef } from "@atlas/core";
 import { TableDataSchema } from "@atlas/core/artifacts";
 import { getDefaultProviderOpts, registry } from "@atlas/llm";
 import { stringifyError } from "@atlas/utils";
 import { generateObject } from "ai";
 
-type TableAgentResult = { artifactId: string; type: string; summary: string; rowCount: number };
+type TableAgentResult = {
+  artifactId: string;
+  type: string;
+  summary: string;
+  rowCount: number;
+  outlineRefs: OutlineRef[];
+};
 
 export const tableAgent = createAgent<string, TableAgentResult>({
   id: "table",
@@ -80,24 +87,21 @@ Output clean, well-organized data appropriate for tabular display.`;
       const artifactId = artifactResponse.data.artifact.id;
       const rowCount = tableData.rows.length;
 
-      // Emit outline update
-      stream?.emit({
-        type: "data-outline-update",
-        data: {
-          id: "table-generator",
-          content: artifactResponse.data.artifact.summary,
-          title: "Table",
-          timestamp: Date.now(),
-          artifactId,
-          artifactLabel: "View Table",
-        },
-      });
-
       return {
         artifactId,
         type: "table",
         summary: artifactResponse.data.artifact.summary,
         rowCount,
+        outlineRefs: [
+          {
+            service: "internal",
+            title: "Table",
+            content: artifactResponse.data.artifact.summary,
+            artifactId,
+            artifactLabel: "View Table",
+            type: "table",
+          },
+        ],
       };
     } catch (error) {
       logger.error("table agent failed", { error });

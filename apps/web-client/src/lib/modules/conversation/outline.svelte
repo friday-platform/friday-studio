@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { AtlasUIMessage } from "@atlas/agent-sdk";
+  import { getServiceIcon } from "$lib/modules/integrations/icons.svelte";
   import { formatOutlineDate } from "$lib/utils/date";
   import OutlineItemDescription from "./outline-item-description.svelte";
 
@@ -8,14 +9,20 @@
 
 {#if messages.length > 0}
   <div class="component">
-    {#each messages as message, mi (mi)}
-      {#each message.parts as part, pi (pi)}
+    {#each messages as message (message.id)}
+      {#each message.parts as part, index (index)}
         {#if part.type === "data-outline-update"}
+          {@const serviceIcon = getServiceIcon(part.data.id)}
           <article>
             <header>
               <h2>
-                {#if part.data.icon}
-                  <img src={part.data.icon} alt={part.data.title} />
+                {#if serviceIcon}
+                  {#if serviceIcon.type === "component"}
+                    {@const Component = serviceIcon.src}
+                    <Component />
+                  {:else}
+                    <img src={serviceIcon.src} alt={part.data.id} />
+                  {/if}
                 {/if}
 
                 {part.data.title}
@@ -82,10 +89,11 @@
       font-weight: var(--font-weight-5);
       line-height: var(--font-lineheight-0);
 
+      :global(svg),
       img {
         block-size: var(--size-4);
+        flex-shrink: 0;
         inline-size: var(--size-4);
-        object-fit: contain;
       }
     }
 
