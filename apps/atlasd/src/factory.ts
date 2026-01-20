@@ -4,6 +4,7 @@ import { cors } from "hono/cors";
 import { createFactory } from "hono/factory";
 import type { LibraryStorageAdapter } from "../../../src/core/storage/library-storage-adapter.ts";
 import type { WorkspaceRuntime } from "../../../src/core/workspace-runtime.ts";
+import type { StreamRegistry } from "./stream-registry.ts";
 
 type SSEClient = {
   controller: ReadableStreamDefaultController<Uint8Array>;
@@ -34,6 +35,9 @@ export interface AppContext {
 
   // Core daemon access
   daemon: AtlasDaemon;
+
+  // Stream registry for managing chat streams
+  streamRegistry: StreamRegistry;
 }
 
 // Define variables available in context
@@ -52,7 +56,7 @@ export const createApp = (context: AppContext) => {
     await next();
   });
 
-  app.use("*", cors());
+  app.use("*", cors({ origin: "*", exposeHeaders: ["X-Turn-Started-At"] }));
 
   return app;
 };

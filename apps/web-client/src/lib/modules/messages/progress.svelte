@@ -4,7 +4,12 @@
   import { formatDuration } from "$lib/utils/date";
   import MessageWrapper from "./wrapper.svelte";
 
-  const { actions }: { actions: AtlasUIMessagePart[] } = $props();
+  interface Props {
+    actions: AtlasUIMessagePart[];
+    turnStartedAt?: number | null;
+  }
+
+  const { actions, turnStartedAt }: Props = $props();
 
   // Collapse consecutive identical messages into single entries
   const dedupedActions = $derived.by(() => {
@@ -23,18 +28,26 @@
     return result;
   });
 
-  let displayStart = $state(Date.now());
+  let displayStart = $state(turnStartedAt ?? Date.now());
   let endTime = $state(Date.now());
   let open = $state(false);
   let hiddenAt = $state<number | null>(null);
   let prevActionsLength = 0;
 
   // Reset timer when a new streaming session starts (actions goes from 0 to >0)
+  // Only reset if we don't have a server-provided timestamp
   $effect(() => {
-    if (prevActionsLength === 0 && actions.length > 0) {
+    if (prevActionsLength === 0 && actions.length > 0 && !turnStartedAt) {
       displayStart = endTime = Date.now();
     }
     prevActionsLength = actions.length;
+  });
+
+  // Update displayStart when server provides a timestamp
+  $effect(() => {
+    if (turnStartedAt) {
+      displayStart = turnStartedAt;
+    }
   });
 
   $effect(() => {
@@ -46,8 +59,8 @@
       if (document.hidden) {
         hiddenAt = Date.now();
       } else if (hiddenAt !== null) {
-        // Reset timer display if hidden for 30+ seconds
-        if (Date.now() - hiddenAt > 30_000) {
+        // Reset timer display if hidden for 30+ seconds, unless we have server timestamp
+        if (Date.now() - hiddenAt > 30_000 && !turnStartedAt) {
           displayStart = endTime = Date.now();
         }
         hiddenAt = null;

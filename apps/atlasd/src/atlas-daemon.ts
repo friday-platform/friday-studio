@@ -50,12 +50,12 @@ import { scratchpadApp } from "../routes/scratchpad/index.ts";
 import { sessionHistoryRoutes, sessionsRoutes } from "../routes/sessions/index.ts";
 import { shareRoutes } from "../routes/share.ts";
 import { createPlatformSignalRoutes } from "../routes/signals/platform.ts";
-import { streamsRoutes } from "../routes/streams/index.ts";
 import { userRoutes } from "../routes/user/index.ts";
 import { workspacesRoutes } from "../routes/workspaces/index.ts";
 import { createApp } from "./factory.ts";
 import { CronSignalRegistrar } from "./signal-registrars/cron-registrar.ts";
 import { FsWatchSignalRegistrar } from "./signal-registrars/fs-watch-registrar.ts";
+import { StreamRegistry } from "./stream-registry.ts";
 import { getAtlasDaemonUrl } from "./utils.ts";
 
 export interface AtlasDaemonOptions {
@@ -101,6 +101,7 @@ export class AtlasDaemon {
   private cronManager: CronManager | null = null;
   private mcpServerPool: GlobalMCPServerPool | null = null;
   private workspaceManager: WorkspaceManager | null = null;
+  public streamRegistry!: StreamRegistry;
   private sseHealthCheckInterval: number | null = null;
   private agentSessionCleanupInterval: number | null = null;
   // Store per-session MCP servers and transports
@@ -157,6 +158,9 @@ export class AtlasDaemon {
       destroyWorkspaceRuntime: this.destroyWorkspaceRuntime.bind(this),
       getLibraryStorage: this.getLibraryStorage.bind(this),
       daemon: this,
+      get streamRegistry() {
+        return this.daemon.streamRegistry;
+      },
     };
     this.app = createApp(context);
     this.setupRoutes();
@@ -298,6 +302,10 @@ export class AtlasDaemon {
 
     // Start CronManager
     await this.cronManager.start();
+
+    // Initialize StreamRegistry
+    this.streamRegistry = new StreamRegistry();
+    this.streamRegistry.start();
 
     // Start SSE health check interval
     this.startSSEHealthCheck();
@@ -574,7 +582,6 @@ export class AtlasDaemon {
     this.app.route("/api/sessions", sessionsRoutes);
     this.app.route("/api/sessions-history", sessionHistoryRoutes);
     this.app.route("/api/agents", agentsRoutes);
-    this.app.route("/api/sse", streamsRoutes);
     this.app.route("/api/library", libraryRoutes);
     this.app.route("/api/daemon", daemonApp);
     this.app.route("/api/share", shareRoutes);
@@ -1440,6 +1447,9 @@ export class AtlasDaemon {
       this.destroyWorkspaceRuntime(workspaceId),
     );
     await Promise.all(shutdownPromises);
+
+    // Shutdown StreamRegistry
+    this.streamRegistry?.shutdown();
 
     // Clear all idle timeouts
     for (const timeoutId of this.idleTimeouts.values()) {

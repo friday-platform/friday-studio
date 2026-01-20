@@ -120,7 +120,7 @@
       <button
         class="section__add-new"
         onclick={() => {
-          chatContext.resetNewChat();
+          chatContext.startNewChat();
         }}
         aria-label="New Conversation"
       >
@@ -206,7 +206,7 @@
                               if (res.ok) {
                                 await chatContext.loadChats({ reset: true });
                                 if (currentChatId === chat.id) {
-                                  chatContext.resetNewChat();
+                                  chatContext.startNewChat();
                                 }
                               }
                             }}

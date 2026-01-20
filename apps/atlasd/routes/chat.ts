@@ -1,5 +1,5 @@
 import process from "node:process";
-import { validateAtlasUIMessages } from "@atlas/agent-sdk";
+import { type AtlasUIMessageChunk, validateAtlasUIMessages } from "@atlas/agent-sdk";
 import { createAnalyticsClient, EventNames } from "@atlas/analytics";
 import { ChatStorage } from "@atlas/core/chat/storage";
 import { extractTempestUserId } from "@atlas/core/credentials";
@@ -93,6 +93,9 @@ const chatRoutes = daemonFactory
 
     const runtime = await ctx.getOrCreateWorkspaceRuntime(workspaceId);
 
+    // Initialize stream buffer for resumption support
+    ctx.streamRegistry.createStream(chatId);
+
     // Stream response directly with SSE format
     return stream(c, async (streamWriter) => {
       let sessionComplete = false;
@@ -103,18 +106,20 @@ const chatRoutes = daemonFactory
           { chatId, message: "", userId, streamId: chatId, datetime },
           chatId,
           async (event: unknown) => {
+            const chunk = event as AtlasUIMessageChunk;
+
+            // Buffer event for potential resumption
+            ctx.streamRegistry.appendEvent(chatId, chunk);
+
+            // Write to this HTTP connection
             try {
               await streamWriter.write(`data: ${JSON.stringify(event)}\n\n`);
-              if (
-                typeof event === "object" &&
-                event !== null &&
-                "type" in event &&
-                event.type === "data-session-finish"
-              ) {
-                sessionComplete = true;
-              }
             } catch (error) {
-              logger.error("Error writing event to stream", { error, chatId });
+              // Client disconnected - events continue buffering in registry
+              logger.debug("Client disconnected during stream", { chatId, error });
+            }
+
+            if (chunk.type === "data-session-finish") {
               sessionComplete = true;
             }
           },
@@ -129,6 +134,9 @@ const chatRoutes = daemonFactory
           );
           streamWriter.writeln("");
           sessionComplete = true;
+        })
+        .finally(() => {
+          ctx.streamRegistry.finishStream(chatId);
         });
 
       // Keep stream alive until session completes
@@ -139,6 +147,66 @@ const chatRoutes = daemonFactory
       // Send completion marker
       await streamWriter.writeln("data: [DONE]");
       await streamWriter.writeln("");
+    });
+  })
+
+  /**
+   * DELETE /api/chat/:chatId/stream
+   * Mark a stream as finished (cosmetic stop).
+   *
+   * The agent continues running in the background, but the client stops
+   * receiving events and the UI shows the conversation as complete.
+   * Idempotent - safe to call multiple times.
+   */
+  .delete("/:chatId/stream", (c) => {
+    const ctx = c.get("app");
+    const chatId = c.req.param("chatId");
+
+    ctx.streamRegistry.finishStream(chatId);
+
+    return c.json({ success: true }, 200);
+  })
+
+  /**
+   * GET /api/chat/:chatId/stream
+   * Reconnect to an active chat stream for resumption.
+   *
+   * Returns 200 with SSE stream if active, replaying buffered events.
+   * Returns 204 if stream doesn't exist or is finished.
+   */
+  .get("/:chatId/stream", (c) => {
+    const ctx = c.get("app");
+    const chatId = c.req.param("chatId");
+
+    const buffer = ctx.streamRegistry.getStream(chatId);
+
+    // No active stream - return 204
+    if (!buffer || !buffer.active) {
+      return c.body(null, 204);
+    }
+
+    // Set header for client-side timer synchronization
+    c.header("X-Turn-Started-At", String(buffer.createdAt));
+
+    // Return SSE stream with replay + live events
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        const subscribed = ctx.streamRegistry.subscribe(chatId, controller);
+        if (!subscribed) {
+          controller.close();
+          return;
+        }
+
+        c.req.raw.signal.addEventListener("abort", () => {
+          ctx.streamRegistry.unsubscribe(chatId, controller);
+        });
+      },
+    });
+
+    return c.body(stream, 200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
     });
   })
 

@@ -85,6 +85,30 @@ Responsibilities:
 Invariant: Workspace runtimes are lazy. Created on first signal, destroyed after
 idle timeout (default 5 min). Max 10 concurrent workspaces with LRU eviction.
 
+### StreamRegistry (Stream Resumption)
+
+StreamRegistry enables chat stream resumption after page refresh or navigation. It's a daemon-level service that buffers events for active chat streams.
+
+**Key Behavior:**
+- Events buffered in memory (max 1000 per stream)
+- Client reconnect replays buffered events + continues live
+- Finished streams kept 5 min (for late reconnect)
+- Stale streams cleaned after 30 min
+- NOT persisted across daemon restarts
+
+**Endpoints:**
+- `POST /api/chat` - Creates stream, buffers all events
+- `GET /api/chat/:chatId/stream` - Reconnect (200 with SSE or 204 if inactive)
+- `DELETE /api/chat/:chatId/stream` - Mark finished (cosmetic stop)
+
+**Client Pattern:**
+- Chat instances are page-local (not shared via context)
+- `chat.resumeStream()` called on mount for existing chats
+- URL updates via replaceState after first message
+- Stop is cosmetic - agent continues server-side
+
+**Location:** `apps/atlasd/src/stream-registry.ts`
+
 ### src/core - Workspace Runtime & Session Supervision
 
 XState 5 state machine managing workspace lifecycle and session spawning.
