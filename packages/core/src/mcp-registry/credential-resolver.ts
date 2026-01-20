@@ -1,6 +1,6 @@
 import process from "node:process";
 import type { LinkCredentialRef } from "@atlas/agent-sdk";
-import { client, parseResult } from "@atlas/client/v2";
+import { client, DetailedError, parseResult } from "@atlas/client/v2";
 import type { Logger } from "@atlas/logger";
 
 /** Minimal credential info from Link summary endpoint */
@@ -18,6 +18,18 @@ export class CredentialNotFoundError extends Error {
   constructor(public readonly provider: string) {
     super(`No credentials found for provider '${provider}'`);
     this.name = "CredentialNotFoundError";
+  }
+}
+
+/** Error thrown when a specific credential ID is not found in Link (404) */
+export class LinkCredentialNotFoundError extends Error {
+  constructor(public readonly credentialId: string) {
+    super(
+      `Credential '${credentialId}' not found in Link. ` +
+        `The credential may have been deleted or revoked. ` +
+        `Update your workspace.yml with a valid credential ID.`,
+    );
+    this.name = "LinkCredentialNotFoundError";
   }
 }
 
@@ -71,6 +83,10 @@ export async function fetchLinkCredential(
   );
 
   if (!result.ok) {
+    // Check for 404 specifically - credential was deleted or never existed
+    if (result.error instanceof DetailedError && result.error.statusCode === 404) {
+      throw new LinkCredentialNotFoundError(credentialId);
+    }
     throw new Error(
       `Failed to fetch credential '${credentialId}' from Link service: ${result.error}`,
     );

@@ -32,6 +32,7 @@ export * from "./src/credential-fetcher.ts";
 export { UserConfigurationError } from "./src/errors/user-configuration-error.ts";
 export {
   CredentialNotFoundError,
+  LinkCredentialNotFoundError,
   resolveCredentialsByProvider,
 } from "./src/mcp-registry/credential-resolver.ts";
 // MCP Registry

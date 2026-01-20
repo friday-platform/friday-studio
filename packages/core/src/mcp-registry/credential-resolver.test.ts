@@ -3,6 +3,7 @@ import { createLogger } from "@atlas/logger";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   CredentialNotFoundError,
+  LinkCredentialNotFoundError,
   resolveCredentialsByProvider,
   resolveEnvValues,
 } from "./credential-resolver.ts";
@@ -157,6 +158,32 @@ describe("CredentialNotFoundError", () => {
     expect(error.message).toEqual("No credentials found for provider 'github'");
     expect(error.name).toEqual("CredentialNotFoundError");
     expect(error.provider).toEqual("github");
+  });
+});
+
+describe("LinkCredentialNotFoundError", () => {
+  it("includes credential ID in message and exposes property", () => {
+    const error = new LinkCredentialNotFoundError("y68kjj12ep14pzj");
+    expect(error.message).toContain("y68kjj12ep14pzj");
+    expect(error.message).toContain("not found in Link");
+    expect(error.message).toContain("Update your workspace.yml");
+    expect(error.name).toEqual("LinkCredentialNotFoundError");
+    expect(error.credentialId).toEqual("y68kjj12ep14pzj");
+  });
+
+  it("is thrown when fetching a non-existent credential", async () => {
+    const logger = createLogger({ name: "test", level: "silent" });
+    const nonExistentCredId = "does_not_exist_xyz";
+
+    globalThis.fetch = mockLinkFetch("any-provider", [], {});
+
+    const env = {
+      SOME_TOKEN: { from: "link" as const, id: nonExistentCredId, key: "access_token" },
+    };
+
+    const error = await resolveEnvValues(env, logger).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(LinkCredentialNotFoundError);
+    expect((error as LinkCredentialNotFoundError).credentialId).toEqual(nonExistentCredId);
   });
 });
 

@@ -183,9 +183,9 @@ describe("MCPManager - Link Credential Integration", () => {
       env: { API_KEY: { from: "link" as const, id: "cred_nonexistent", key: "token" } },
     };
 
-    // Should fail with credential fetch error
+    // Should fail with credential not found error (404 from Link)
     await expect(manager.registerServer(config)).rejects.toThrow(
-      /Failed to fetch credential 'cred_nonexistent'/,
+      /Credential 'cred_nonexistent' not found in Link/,
     );
   });
 

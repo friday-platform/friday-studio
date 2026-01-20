@@ -15,7 +15,10 @@ import {
   MCPServerToolFilterSchema,
   MCPTransportConfigSchema,
 } from "@atlas/config";
-import { resolveEnvValues } from "@atlas/core/mcp-registry/credential-resolver";
+import {
+  LinkCredentialNotFoundError,
+  resolveEnvValues,
+} from "@atlas/core/mcp-registry/credential-resolver";
 import { logger } from "@atlas/logger";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Span } from "@opentelemetry/api";
@@ -284,11 +287,15 @@ export class MCPManager {
         error instanceof Error ? error.message : String(error),
       );
 
-      // For platform server connection issues, log at debug level (not critical)
+      // Classify error type to determine appropriate log level
       const isPlatformConnectionIssue =
         config.id === "atlas-platform" &&
         error instanceof Error &&
         (error.message.includes("timeout") || error.message.includes("connection"));
+
+      // Credential not found is a user configuration issue (deleted/revoked credential)
+      // Log at warn level - not a platform bug, user needs to update workspace config
+      const isCredentialNotFoundError = error instanceof LinkCredentialNotFoundError;
 
       if (isPlatformConnectionIssue) {
         logger.debug(`Platform MCP server temporarily unavailable: ${config.id}`, {
@@ -296,6 +303,15 @@ export class MCPManager {
           serverId: config.id,
           reason: error instanceof Error ? error.message : String(error),
           transport: config.transport,
+        });
+      } else if (isCredentialNotFoundError) {
+        logger.warn(`Failed to register MCP server: ${config.id}`, {
+          operation: "mcp_server_registration",
+          serverId: config.id,
+          credentialId: error.credentialId,
+          error: error.message,
+          transport: config.transport,
+          hint: "Credential was deleted or revoked. Update workspace.yml with a valid credential ID.",
         });
       } else {
         logger.error(`Failed to register MCP server: ${config.id}`, {
